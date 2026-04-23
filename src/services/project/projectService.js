@@ -1,0 +1,76 @@
+// ─── Project service ─────────────────────────────────────────────────────────
+// Pure shape + view-model helpers for the "projects" slice of state —
+// workspaces that group chats and artifacts. The create/update/delete
+// mutations stay in desktopStore until the Phase 10 state split; this
+// module only owns canonicalization + UI decoration.
+//
+// This module owns:
+//   - normalizeProject(raw, { sanitizeWorkspacePath, fallbackWorkspaceRoot,
+//     defaultProjectTime }) — shape-coerce one project record. The three
+//     named deps are passed in so the module does not depend on APP_ROOT
+//     or the workspace-file module directly; callers wrap this with a
+//     thin closure that binds their env.
+//   - summarizeProject(project, chats, artifacts) — decorate with the
+//     relational counts + a human `updatedLabel` built from the most
+//     recent of project/chat/artifact timestamps. Pure view-model.
+//
+// Extracted from desktopStore.js in the Phase 9c refactor (see
+// _refactor-backup/REFACTOR_PLAN.md). Pure module — only imports shared
+// helpers + node:crypto.
+
+import { randomUUID } from 'node:crypto';
+import { coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
+
+/**
+ * Canonicalize a raw project record.
+ *
+ * @param {object} project — raw record (possibly partial, possibly legacy)
+ * @param {object} deps
+ * @param {(rawPath: string) => string} deps.sanitizeWorkspacePath —
+ *   project workspace-path sanitizer, pre-bound to the caller's APP_ROOT.
+ * @param {string} deps.fallbackWorkspaceRoot — root to fall back to when
+ *   the incoming project has no workspacePath.
+ * @param {string} deps.defaultProjectTime — ISO string used for missing
+ *   createdAt/updatedAt fields. The desktopStore computes this as
+ *   "one day ago" so new blobs sort below existing projects.
+ */
+export function normalizeProject(project, deps) {
+  const { sanitizeWorkspacePath, fallbackWorkspaceRoot, defaultProjectTime } = deps;
+  return {
+    id: project?.id || randomUUID(),
+    name: project?.name || 'Untitled project',
+    summary: project?.summary || 'A local Melo project.',
+    tag: project?.tag || 'Project',
+    instructions:
+      project?.instructions ||
+      'Keep this project focused, actionable, and easy to continue later.',
+    workspacePath: sanitizeWorkspacePath(project?.workspacePath || fallbackWorkspaceRoot),
+    createdAt: coerceIso(project?.createdAt, defaultProjectTime),
+    updatedAt: coerceIso(project?.updatedAt, defaultProjectTime),
+  };
+}
+
+/**
+ * Decorate a project with relational counts + a human updatedLabel.
+ * The updatedLabel prefers the most recent of project.updatedAt, the
+ * newest related chat, and the newest related artifact so the UI list
+ * reflects activity inside the project, not just name changes.
+ */
+export function summarizeProject(project, chats, artifacts) {
+  const relatedChats = chats.filter(chat => chat.projectId === project.id);
+  const relatedArtifacts = artifacts.filter(artifact => artifact.projectId === project.id);
+  const latestActivity = [
+    project.updatedAt,
+    relatedChats[0]?.updatedAt,
+    relatedArtifacts[0]?.createdAt,
+  ]
+    .filter(Boolean)
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || project.updatedAt;
+
+  return {
+    ...project,
+    updatedLabel: formatUpdatedAt(latestActivity),
+    chatCount: relatedChats.length,
+    artifactCount: relatedArtifacts.length,
+  };
+}

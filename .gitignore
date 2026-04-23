@@ -1,0 +1,24 @@
+.tmp/
+node_modules/
+npm-debug.log*
+.env
+.env.local
+.DS_Store
+*.log
+*.melo-smoke-output.md
+*smoke-output.md
+
+# Build artefacts and bundled .app
+Melo.app/
+
+# Playwright CLI cache
+.playwright-cli/
+
+# Tesseract language models (large binaries — download on demand)
+*.traineddata
+
+# Local debug / scratch
+.tmp/desktop-app-debug.txt
+desktop-app-debug.txt
+last-launch.txt
+last-launch-pid.txt

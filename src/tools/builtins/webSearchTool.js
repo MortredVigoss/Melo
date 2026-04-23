@@ -1,0 +1,1885 @@
+/**
+ * web_search tool
+ *
+ * Search provider priority:
+ *   1. Playwright + Google  — real browser, most stable, no API keys
+ *   2. DuckDuckGo via Jina  — fallback when Playwright unavailable
+ *
+ * Content enrichment:
+ *   Playwright CLI fetches actual page content from top results.
+ *   Jina Reader as fallback.
+ */
+
+import { createHash } from 'node:crypto';
+import { appendFile, mkdir, stat } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { getMeloHome } from '../../config.js';
+import { debugWarn } from '../../debug.js';
+import { createPlaywrightSession, cleanPageText } from '../../web/playwrightFetcher.js';
+import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
+import { getEmbedding, EMBEDDING_DIMS } from '../../memory/embeddings.js';
+
+const JINA_READER_BASE = 'https://r.jina.ai/';
+const MAX_RESULTS = 8;
+const FETCH_TIMEOUT_MS = 25_000;
+
+const CONTENT_FETCH_TIMEOUT_MS = 14_000;
+const CONTENT_MAX_CHARS = 6_000;
+const CONTENT_FETCH_COUNT = 4;
+
+// Base TTLs.  Intent classifier (classifyQueryIntent) may override these per
+// query — a weather/breaking-news query gets the short TTL so we don't serve
+// a two-hour-old forecast.  Use ms, not seconds.
+const SEARCH_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+const SEARCH_CACHE_TTL_TIME_SENSITIVE_MS = 15 * 60 * 1000;
+const URL_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
+// P2-1 — how stale a row can be before we still return it and refresh in the
+// background.  Beyond this, we fetch fresh synchronously like the old path.
+const SWR_MAX_STALE_MS = 24 * 60 * 60 * 1000;
+
+// P1-2 — synonym / alias expansion.  Every entry is a cluster of equivalents.
+// tokenizeQuery splits CJK into single graphemes and English into word tokens,
+// so keys here are kept in the same shape.  Retry is only triggered when the
+// primary SERP yields < SYNONYM_RETRY_THRESHOLD results to keep the happy
+// path a single round-trip.
+const SYNONYM_RETRY_THRESHOLD = 3;
+const SYNONYM_CLUSTERS = [
+  ['node', 'node.js', 'nodejs'],
+  ['k8s', 'kubernetes'],
+  ['ts', 'typescript'],
+  ['llm', 'large language model', 'foundation model', '大模型'],
+  ['lts', 'long term support', '长期支持'],
+  ['ai', '人工智能', 'artificial intelligence'],
+  ['rag', 'retrieval augmented generation', '检索增强生成'],
+  ['ml', 'machine learning', '机器学习'],
+  ['api', '接口'],
+  ['doc', 'docs', 'documentation', '文档'],
+];
+
+// Pre-compute a token → cluster index so expansion is O(tokens).
+const _SYNONYM_INDEX = (() => {
+  const map = new Map();
+  SYNONYM_CLUSTERS.forEach((cluster, idx) => {
+    for (const term of cluster) {
+      map.set(String(term).toLowerCase(), idx);
+    }
+  });
+  return map;
+})();
+
+// P0-3 — intent signals.  Keep the keyword sets small and obviously
+// time-sensitive; a false negative here just costs us 2h of cache, a false
+// positive burns extra Jina calls.  CJK and English co-exist on purpose.
+const TIME_SENSITIVE_KEYWORDS = [
+  // Chinese: "now / current / today / latest / just now / breaking"
+  '现在', '目前', '今天', '今日', '今晚', '最新', '最近', '刚刚', '实时', '当前', '本周', '本月', '近期',
+  // English
+  'now', 'current', 'currently', 'today', 'tonight', 'latest', 'live', 'breaking', 'just now',
+  'this week', 'this month', 'real-time', 'realtime', 'recent', 'recently',
+];
+const TIME_SENSITIVE_RE = new RegExp(
+  '(?:' +
+    TIME_SENSITIVE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') +
+  ')',
+  'i',
+);
+
+// Heuristic intent buckets — used only for metadata and debug logging today,
+// but stored on the cache row so future TTL rules can branch per-kind.
+const INTENT_PATTERNS = [
+  { kind: 'weather',  re: /(?:天气|气温|温度|weather|forecast|下雨|下雪|rain|snow|humid)/i },
+  { kind: 'price',    re: /(?:价格|报价|多少钱|股价|price|stock|quote|exchange rate|汇率)/i },
+  { kind: 'news',     re: /(?:新闻|快讯|头条|突发|news|breaking|announce)/i },
+  { kind: 'schedule', re: /(?:日程|赛程|比赛时间|schedule|when is|几点开始)/i },
+  { kind: 'docs',     re: /(?:文档|api|reference|docs?\b|manual|guide)/i },
+];
+
+function classifyQueryIntent(rawQuery) {
+  const query = String(rawQuery || '').trim();
+  const lower = query.toLowerCase();
+  const timeSensitive = TIME_SENSITIVE_RE.test(lower);
+  let kind = 'general';
+  for (const { kind: k, re } of INTENT_PATTERNS) {
+    if (re.test(lower)) { kind = k; break; }
+  }
+  // News, weather, and price are intrinsically time-sensitive even without
+  // an explicit keyword — override.
+  const intrinsicallyFresh = new Set(['weather', 'price', 'news']);
+  const effectiveTimeSensitive = timeSensitive || intrinsicallyFresh.has(kind);
+  return { kind, timeSensitive: effectiveTimeSensitive };
+}
+
+// ─── Debug log (P2-3) ────────────────────────────────────────────────────────
+//
+// Fire-and-forget append to $MELO_HOME/desktop/web-search-debug.log, rotated
+// at 256 KiB.  Same shape as telegram-debug.log so a single tail pattern
+// covers both.  Never throws — observability must never be on the hot path.
+
+const WEB_SEARCH_DEBUG_LOG_PATH = join(getMeloHome(), 'desktop', 'web-search-debug.log');
+const WEB_SEARCH_DEBUG_LOG_MAX_BYTES = 256 * 1024;
+let _webSearchDebugDirReady = false;
+
+async function _ensureWebSearchDebugDir() {
+  if (_webSearchDebugDirReady) return;
+  try {
+    await mkdir(dirname(WEB_SEARCH_DEBUG_LOG_PATH), { recursive: true });
+    _webSearchDebugDirReady = true;
+  } catch {
+    // Directory creation failure is non-fatal — logging just gets skipped.
+  }
+}
+
+function writeWebSearchDebugLine(line) {
+  const stamp = new Date().toISOString();
+  const payload = `[${stamp}] pid=${process.pid} ${String(line || '').trim()}\n`;
+  // Fire-and-forget.  Chain the entire pipeline so one promise surfaces any
+  // error via debugWarn, but the caller never waits.
+  (async () => {
+    try {
+      await _ensureWebSearchDebugDir();
+      try {
+        const st = await stat(WEB_SEARCH_DEBUG_LOG_PATH).catch(() => null);
+        if (st && st.size > WEB_SEARCH_DEBUG_LOG_MAX_BYTES) {
+          // Simple truncate-on-overflow — better than renaming files inside
+          // a tool call that should never block.
+          await appendFile(WEB_SEARCH_DEBUG_LOG_PATH, '').catch(() => {});
+          const { writeFile } = await import('node:fs/promises');
+          await writeFile(WEB_SEARCH_DEBUG_LOG_PATH, '', 'utf8').catch(() => {});
+        }
+      } catch {
+        // stat failures just skip the rotation attempt — append will create.
+      }
+      await appendFile(WEB_SEARCH_DEBUG_LOG_PATH, payload, 'utf8');
+    } catch (err) {
+      debugWarn('web_search.debug', 'writeWebSearchDebugLine failed', err?.message || err);
+    }
+  })();
+}
+
+let _webSearchSpanCounter = 0;
+function nextWebSearchSpanId() {
+  _webSearchSpanCounter = (_webSearchSpanCounter + 1) % 1_000_000;
+  return `${process.pid}-${_webSearchSpanCounter}`;
+}
+
+// Jina early-exit tuning: return as soon as we have N successful content
+// pulls OR the hard deadline trips. Most queries only need 2-3 good pages,
+// and holding everyone hostage to the slowest Jina response burns p95.
+const JINA_SUCCESS_THRESHOLD = 3;
+const JINA_HARD_DEADLINE_MS = 7_000;
+
+// Playwright content-fallback is strictly serial (single pw lock). Each
+// hop adds ~3-6s, so we only spend the budget on the single most promising
+// URL Jina couldn't parse.
+const PW_FALLBACK_MAX = 1;
+
+// Staggered SERP race: start Playwright immediately; if it hasn't come back
+// within STAGGER_MS, also kick off the Jina/DDG leg. First fulfilled wins.
+const SERP_STAGGER_MS = 2_000;
+
+// web_search runs on its own named session so the SERP browser state
+// (Google consent dialogs, search history, etc.) is isolated from the
+// fetch_url session. `createPlaywrightSession` gives each session its
+// own mutex chain and availability cache.
+const pwSession = createPlaywrightSession({
+  sessionName: 'melo-search',
+  defaultTimeoutMs: CONTENT_FETCH_TIMEOUT_MS,
+  defaultMaxChars: CONTENT_MAX_CHARS,
+  debugScope: 'web_search',
+});
+const {
+  runCli: runPlaywrightCli,
+  withLock: withPwLock,
+  isAvailable: isPlaywrightCliAvailable,
+  navigate: pwNavigate,
+} = pwSession;
+
+// ─── Low-quality / bounce-prone domain blocklist ────────────────────────────
+//
+// Rationale: these domains either aggressively block bots (returning a login
+// wall or CAPTCHA), produce low-quality SEO listicles, or have content that's
+// intentionally gated behind auth/JS challenges that even Playwright can't
+// reliably read in ≤14s. Skipping them here keeps `web_search` fast.
+//
+// NOTE: this blocklist applies ONLY to `web_search` (the agent actively
+// searching). If the user PASTES a link to e.g. TikTok / Xiaohongshu, the
+// `fetch_url` tool and the video-platform extractor (`extractYoutubeContent`)
+// still handle it — those paths go through yt-dlp metadata + optional per-
+// domain cookies, which is a fundamentally different code path.
+const BLOCKED_CONTENT_DOMAINS = new Set([
+  'pinterest.com', 'pinterest.co.uk',
+  'quora.com',
+  'facebook.com', 'fb.com',
+  'instagram.com',
+  'twitter.com', 'x.com',
+  'tiktok.com',
+  'linkedin.com',
+  'amazon.com', 'amazon.co.jp', 'amazon.co.uk',
+  'ebay.com',
+  'aliexpress.com',
+  'yelp.com',
+  'tripadvisor.com',
+  'about.com',
+  'ehow.com',
+  'wikihow.com',
+  'fandom.com',
+]);
+
+// Playwright CLI helpers now come from playwrightFetcher.js (`pwSession`
+// above). Keeping the names `runPlaywrightCli` / `withPwLock` / `pwNavigate`
+// / `isPlaywrightCliAvailable` in scope below for minimal-diff call sites.
+
+// ─── Google search via Playwright ───────────────────────────────────────────
+
+async function searchViaPlaywright(query, numResults) {
+  return withPwLock(async () => {
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${Math.min(numResults + 2, 15)}&hl=zh-CN`;
+    await pwNavigate(googleUrl, FETCH_TIMEOUT_MS);
+
+    // Extract search results from Google SERP
+    const extractScript = `(() => {
+      const results = [];
+      // Standard organic results
+      document.querySelectorAll('div.g, div[data-hveid]').forEach(el => {
+        const a = el.querySelector('a[href^="http"]');
+        const h3 = el.querySelector('h3');
+        if (!a || !h3) return;
+        const url = a.href;
+        if (!url || url.includes('google.com/search') || url.includes('accounts.google')) return;
+        const title = h3.innerText?.trim();
+        if (!title || title.length < 3) return;
+        // Snippet: look for common snippet containers
+        const snippetEl = el.querySelector('[data-sncf], .VwiC3b, [style*="-webkit-line-clamp"], .IsZvec');
+        const snippet = (snippetEl?.innerText || '').trim().slice(0, 500);
+        if (!results.some(r => r.url === url)) {
+          results.push({ title, url, snippet });
+        }
+      });
+      return JSON.stringify(results);
+    })()`;
+
+    const raw = await runPlaywrightCli(['eval', extractScript], FETCH_TIMEOUT_MS);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err1) {
+      try {
+        parsed = JSON.parse(JSON.parse(raw));
+      } catch (err2) {
+        debugWarn('web_search', `SERP extract JSON parse failed for query="${query}":`, err2?.message || err2);
+        parsed = [];
+      }
+    }
+    return Array.isArray(parsed) ? parsed.slice(0, numResults) : [];
+  });
+}
+
+// ─── DuckDuckGo via Jina Reader (fallback) ──────────────────────────────────
+
+function decodeDdgUrl(ddgRedirectUrl) {
+  try {
+    const match = ddgRedirectUrl.match(/[?&]uddg=([^&]+)/);
+    if (!match) return ddgRedirectUrl;
+    const decoded = decodeURIComponent(match[1]);
+    if (decoded.startsWith('http')) return decoded;
+  } catch (error) {
+    debugWarn('web_search', `DDG URL decode failed for ${ddgRedirectUrl}:`, error?.message || error);
+  }
+  return ddgRedirectUrl;
+}
+
+async function searchViaDdg(query, numResults, signal) {
+  const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+  const jinaUrl = `${JINA_READER_BASE}${ddgUrl}`;
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
+
+  try {
+    const res = await fetch(jinaUrl, {
+      signal: combined,
+      headers: { 'X-Return-Format': 'markdown' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`Jina/DDG returned ${res.status}`);
+    const text = await res.text();
+    return parseDdgMarkdown(text, numResults);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseDdgMarkdown(text, limit) {
+  const results = [];
+  const blockRegex = /^\d+\.\s*\[([^\]]+)\]\((https?:\/\/[^)]+)\)\s*\n([\s\S]*?)(?=\n\d+\.\s*\[|$)/gm;
+  let match;
+
+  while ((match = blockRegex.exec(text)) !== null && results.length < limit) {
+    const title = match[1].trim();
+    const rawUrl = match[2].trim();
+    const body = match[3].trim();
+
+    if (title.length < 3) continue;
+
+    const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
+    const snippet = lines.slice(0, -1).join(' ').replace(/\[.*?\]\(.*?\)/g, '').trim().slice(0, 500);
+
+    const url = rawUrl.includes('duckduckgo.com/l/') ? decodeDdgUrl(rawUrl) : rawUrl;
+    if (!url.startsWith('http') || url.includes('duckduckgo.com')) continue;
+
+    results.push({ title, url, snippet });
+  }
+
+  return results;
+}
+
+// ─── Web search cache (SQLite) ───────────────────────────────────────────────
+
+const CACHE_DB_PATH = join(getMeloHome(), 'desktop', 'search.sqlite');
+let _cacheDb = null;
+
+function getCacheDb() {
+  if (_cacheDb) return _cacheDb;
+  mkdirSync(dirname(CACHE_DB_PATH), { recursive: true });
+  _cacheDb = new DatabaseSync(CACHE_DB_PATH);
+  _cacheDb.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS web_search_cache (
+      query_norm  TEXT PRIMARY KEY,
+      query_raw   TEXT NOT NULL,
+      provider    TEXT NOT NULL,
+      results     TEXT NOT NULL,
+      content_map TEXT NOT NULL DEFAULT '{}',
+      created_at  INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS url_content_cache (
+      url         TEXT PRIMARY KEY,
+      content     TEXT NOT NULL,
+      fetched_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_url_cache_fetched_at ON url_content_cache(fetched_at);
+  `);
+  // Migrations for P0-1 / P0-3 / P0-4.  ALTER TABLE ADD COLUMN is a no-op on
+  // a fresh table (the CREATE above doesn't list these), so we guard with
+  // try/catch and the existing "duplicate column" error just gets eaten.
+  const addColumn = (table, column, ddl) => {
+    try {
+      _cacheDb.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (!/duplicate column/i.test(msg)) {
+        debugWarn('web_search.schema', `${table}.${column} migration skipped`, msg);
+      }
+    }
+  };
+  addColumn('url_content_cache', 'etag',         'TEXT');
+  addColumn('url_content_cache', 'last_modified','TEXT');
+  addColumn('url_content_cache', 'content_hash', 'TEXT');
+  addColumn('web_search_cache',  'intent_kind',  "TEXT NOT NULL DEFAULT 'general'");
+  addColumn('web_search_cache',  'time_sensitive','INTEGER NOT NULL DEFAULT 0');
+  try {
+    _cacheDb.exec(
+      'CREATE INDEX IF NOT EXISTS idx_url_cache_content_hash ON url_content_cache(content_hash)',
+    );
+  } catch (err) {
+    debugWarn('web_search.schema', 'content_hash index skipped', err?.message || err);
+  }
+  return _cacheDb;
+}
+
+// ─── URL-level content cache (hit before Jina/PW) ───────────────────────────
+// Common pattern: user searches "node 22 release", then "node 22 LTS date".
+// Both queries surface overlapping URLs. Caching per-URL content (not
+// per-query) lets the second search reuse what the first one fetched.
+
+/**
+ * Read a fresh (within TTL) URL cache row.  Returns the full validator
+ * bundle — callers that only want the content can ignore the extras.
+ */
+function getCachedUrlContent(url) {
+  try {
+    const db = getCacheDb();
+    const row = db.prepare(
+      'SELECT content, etag, last_modified, content_hash, fetched_at FROM url_content_cache WHERE url = ? AND fetched_at > ?',
+    ).get(url, Date.now() - URL_CACHE_TTL_MS);
+    if (!row) return null;
+    return {
+      content: row.content,
+      etag: row.etag || null,
+      lastModified: row.last_modified || null,
+      contentHash: row.content_hash || null,
+      fetchedAt: Number(row.fetched_at),
+    };
+  } catch (error) {
+    debugWarn('web_search', `url-cache read failed for ${url}:`, error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Read a stale (TTL-expired) row if present.  Used by:
+ *   - P0-4 conditional GET: reuse ETag / Last-Modified validators on expired rows.
+ *   - P0-1 dedup: check prior content_hash to skip a duplicate from another URL.
+ */
+function getStaleUrlContent(url) {
+  try {
+    const db = getCacheDb();
+    const row = db.prepare(
+      'SELECT content, etag, last_modified, content_hash, fetched_at FROM url_content_cache WHERE url = ?',
+    ).get(url);
+    if (!row) return null;
+    return {
+      content: row.content,
+      etag: row.etag || null,
+      lastModified: row.last_modified || null,
+      contentHash: row.content_hash || null,
+      fetchedAt: Number(row.fetched_at),
+    };
+  } catch (error) {
+    debugWarn('web_search', `url-cache stale read failed for ${url}:`, error?.message || error);
+    return null;
+  }
+}
+
+function setCachedUrlContent(url, content, { etag = null, lastModified = null, contentHash = null } = {}) {
+  if (!content || content.length < 100) return;
+  try {
+    const db = getCacheDb();
+    const hash = contentHash || sha1Short(content);
+    db.prepare(`
+      INSERT OR REPLACE INTO url_content_cache
+        (url, content, fetched_at, etag, last_modified, content_hash)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(url, content, Date.now(), etag, lastModified, hash);
+  } catch (error) {
+    debugWarn('web_search', `url-cache write failed for ${url}:`, error?.message || error);
+  }
+}
+
+function touchUrlFetchTime(url) {
+  try {
+    const db = getCacheDb();
+    db.prepare('UPDATE url_content_cache SET fetched_at = ? WHERE url = ?')
+      .run(Date.now(), url);
+  } catch (error) {
+    debugWarn('web_search', `url-cache touch failed for ${url}:`, error?.message || error);
+  }
+}
+
+// ─── URL canonicalisation (P0-1) ────────────────────────────────────────────
+// Strip tracking params + normalise `m.` / `www.` / trailing-slash / fragment
+// so `example.com/a?utm=x` and `m.example.com/a/` collapse to one cache key.
+
+const _TRACKING_PARAM_RE = /^(?:utm_|gclid$|fbclid$|mc_[ce]id$|msclkid$|_ga$|ref$|ref_src$|from$|spm$)/i;
+
+function canonicalizeUrl(rawUrl) {
+  try {
+    const u = new URL(String(rawUrl));
+    // Normalise host: drop leading "m." / "www." / "amp." / "mobile." subdomains.
+    u.hostname = u.hostname
+      .replace(/^m\./, '')
+      .replace(/^www\./, '')
+      .replace(/^amp\./, '')
+      .replace(/^mobile\./, '')
+      .toLowerCase();
+    // Drop tracking params.
+    const kept = [];
+    for (const [k, v] of u.searchParams.entries()) {
+      if (!_TRACKING_PARAM_RE.test(k)) kept.push([k, v]);
+    }
+    kept.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    u.search = kept.length
+      ? '?' + kept.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
+      : '';
+    u.hash = '';
+    // Trailing-slash normalisation (but keep bare-host "/").
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.replace(/\/+$/, '');
+    }
+    return u.toString();
+  } catch {
+    return String(rawUrl || '');
+  }
+}
+
+function sha1Short(text) {
+  return createHash('sha1').update(String(text || ''), 'utf8').digest('hex').slice(0, 16);
+}
+
+function titleFingerprint(title) {
+  return sha1Short(
+    String(title || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim(),
+  );
+}
+
+// ─── Query normalisation (P0-3) ─────────────────────────────────────────────
+//
+// The prior normaliser was `q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ')`,
+// which discards CJK order information and produces different keys for
+// "Node.js LTS" vs "node js lts".  We now route through tokenizeQuery so
+// that both queries collapse to the same sorted token-set key.
+//
+// Cache keys also embed the intent kind so a time-sensitive "weather in
+// Tokyo" never shares a row with the same string asked as a cooking query.
+
+function normalizeQuery(q) {
+  const { tokens, graphemes } = tokenizeQuery(q);
+  const combined = [...tokens, ...graphemes]
+    .map(t => String(t).toLowerCase())
+    .filter(Boolean);
+  // Sort so word-order variations don't miss the cache.  For intent
+  // detection we keep the raw query separately (see classifyQueryIntent).
+  combined.sort();
+  const deduped = [];
+  let last = null;
+  for (const t of combined) {
+    if (t !== last) deduped.push(t);
+    last = t;
+  }
+  const normalized = deduped.join(' ').trim();
+  return normalized || normalizeSearchValue(q);
+}
+
+function buildCacheKey(query, intent) {
+  const base = normalizeQuery(query);
+  const kind = intent?.kind || 'general';
+  const fresh = intent?.timeSensitive ? 'T' : 'S';
+  return `${kind}|${fresh}|${base}`;
+}
+
+function ttlForIntent(intent) {
+  if (intent?.timeSensitive) return SEARCH_CACHE_TTL_TIME_SENSITIVE_MS;
+  return SEARCH_CACHE_TTL_MS;
+}
+
+/**
+ * Read a fresh (within intent-TTL) row.  `intent` is computed by the caller
+ * and threaded through so we don't re-run the regex here.
+ */
+function getCachedSearch(query, intent) {
+  try {
+    const db = getCacheDb();
+    const key = buildCacheKey(query, intent);
+    const row = db.prepare(
+      'SELECT * FROM web_search_cache WHERE query_norm = ? AND created_at > ?',
+    ).get(key, Date.now() - ttlForIntent(intent));
+    if (!row) return null;
+    return {
+      provider: row.provider + ' (cached)',
+      results: JSON.parse(row.results),
+      contentMap: new Map(Object.entries(JSON.parse(row.content_map))),
+      createdAt: Number(row.created_at),
+      intentKind: row.intent_kind || intent?.kind || 'general',
+      fresh: true,
+    };
+  } catch (error) {
+    debugWarn('web_search', `cache read failed for "${query}":`, error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * P2-1 — stale-while-revalidate lookup.  Returns rows that are past the
+ * fresh TTL but still within SWR_MAX_STALE_MS, so the caller can show them
+ * immediately while a background refresh updates the row.
+ */
+function getStaleCachedSearch(query, intent) {
+  try {
+    const db = getCacheDb();
+    const key = buildCacheKey(query, intent);
+    const now = Date.now();
+    const freshCutoff = now - ttlForIntent(intent);
+    const staleCutoff = now - SWR_MAX_STALE_MS;
+    const row = db.prepare(
+      'SELECT * FROM web_search_cache WHERE query_norm = ? AND created_at <= ? AND created_at > ?',
+    ).get(key, freshCutoff, staleCutoff);
+    if (!row) return null;
+    return {
+      provider: row.provider + ' (stale)',
+      results: JSON.parse(row.results),
+      contentMap: new Map(Object.entries(JSON.parse(row.content_map))),
+      createdAt: Number(row.created_at),
+      intentKind: row.intent_kind || intent?.kind || 'general',
+      fresh: false,
+    };
+  } catch (error) {
+    debugWarn('web_search', `stale cache read failed for "${query}":`, error?.message || error);
+    return null;
+  }
+}
+
+function setCachedSearch(query, provider, results, contentMap, intent) {
+  try {
+    const db = getCacheDb();
+    const contentObj = Object.fromEntries(contentMap.entries());
+    const key = buildCacheKey(query, intent);
+    db.prepare(`
+      INSERT OR REPLACE INTO web_search_cache
+        (query_norm, query_raw, provider, results, content_map, created_at, intent_kind, time_sensitive)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      key,
+      query,
+      provider,
+      JSON.stringify(results),
+      JSON.stringify(contentObj),
+      Date.now(),
+      intent?.kind || 'general',
+      intent?.timeSensitive ? 1 : 0,
+    );
+  } catch (error) {
+    debugWarn('web_search', `cache write failed for "${query}":`, error?.message || error);
+  }
+}
+
+// ─── Smart content selection ─────────────────────────────────────────────────
+
+// P0-2 — rough article-date extraction from SERP snippets / URLs.  Returns
+// an epoch-ms timestamp or null.  Intentionally conservative — a false
+// positive here tips the rank unfairly.
+const _DATE_RE_ISO = /\b(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/;
+const _DATE_RE_SLASH_US = /\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(20\d{2})\b/;
+const _DATE_RE_YM = /\b(20\d{2})[-/]?(0?[1-9]|1[0-2])\b/;
+const _DATE_RE_YEAR_CN = /\b(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月(?:\s*(0?[1-9]|[12]\d|3[01])\s*日)?/;
+const _DATE_RE_YEAR_ONLY = /\b(20\d{2})\b/;
+// "3 days ago" / "7 小时前" — relative references are common in SERPs.
+const _DATE_RE_REL_EN = /\b(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago\b/i;
+const _DATE_RE_REL_CN = /(\d+)\s*(分钟|小时|天|周|月|年)前/;
+
+function extractArticleDate(text, url = '', nowMs = Date.now()) {
+  const hay = `${text || ''} ${url || ''}`;
+  let m;
+  if ((m = _DATE_RE_ISO.exec(hay))) {
+    const t = Date.parse(`${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}T00:00:00Z`);
+    if (Number.isFinite(t)) return t;
+  }
+  if ((m = _DATE_RE_SLASH_US.exec(hay))) {
+    const t = Date.parse(`${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}T00:00:00Z`);
+    if (Number.isFinite(t)) return t;
+  }
+  if ((m = _DATE_RE_YEAR_CN.exec(hay))) {
+    const day = m[3] ? m[3].padStart(2, '0') : '01';
+    const t = Date.parse(`${m[1]}-${m[2].padStart(2, '0')}-${day}T00:00:00Z`);
+    if (Number.isFinite(t)) return t;
+  }
+  if ((m = _DATE_RE_REL_EN.exec(hay))) {
+    const n = Number(m[1]);
+    const unit = m[2].toLowerCase();
+    const ms = {
+      minute: 60_000, hour: 3_600_000, day: 86_400_000,
+      week:   7 * 86_400_000, month: 30 * 86_400_000, year: 365 * 86_400_000,
+    }[unit] || 0;
+    if (ms) return nowMs - n * ms;
+  }
+  if ((m = _DATE_RE_REL_CN.exec(hay))) {
+    const n = Number(m[1]);
+    const ms = {
+      '分钟': 60_000, '小时': 3_600_000, '天': 86_400_000,
+      '周':  7 * 86_400_000, '月': 30 * 86_400_000, '年': 365 * 86_400_000,
+    }[m[2]] || 0;
+    if (ms) return nowMs - n * ms;
+  }
+  if ((m = _DATE_RE_YM.exec(hay))) {
+    const t = Date.parse(`${m[1]}-${m[2].padStart(2, '0')}-01T00:00:00Z`);
+    if (Number.isFinite(t)) return t;
+  }
+  if ((m = _DATE_RE_YEAR_ONLY.exec(hay))) {
+    // Bare year → Jan 1 of that year.  Low-confidence signal.
+    const t = Date.parse(`${m[1]}-01-01T00:00:00Z`);
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
+}
+
+/**
+ * Recency boost — only applied when the query is time-sensitive.
+ *   <  7 days old  → +0.40
+ *   < 30 days old  → +0.20
+ *   < 180 days old → +0.05
+ *   >= 1 year old  → -0.15 (penalty — "latest X" should never surface a 3-year-old post)
+ */
+function recencyBoost(dateMs, nowMs = Date.now()) {
+  if (!Number.isFinite(dateMs)) return 0;
+  const ageDays = Math.max(0, (nowMs - dateMs) / 86_400_000);
+  if (ageDays < 7)   return 0.40;
+  if (ageDays < 30)  return 0.20;
+  if (ageDays < 180) return 0.05;
+  if (ageDays >= 365) return -0.15;
+  return 0;
+}
+
+function scoreResultRelevance(result, queryTokens, { timeSensitive = false, nowMs = Date.now() } = {}) {
+  const text = `${result.title} ${result.snippet}`.toLowerCase();
+  let hits = 0;
+  for (const w of queryTokens) {
+    if (!w) continue;
+    if (text.includes(w)) hits++;
+  }
+  const base = hits / Math.max(queryTokens.length, 1);
+  if (!timeSensitive) return base;
+  const dateMs = extractArticleDate(`${result.title} ${result.snippet}`, result.url, nowMs);
+  return base + recencyBoost(dateMs, nowMs);
+}
+
+// ─── Query-biased snippet extraction (P2-2) ─────────────────────────────────
+//
+// Pick the best sentence-window from fetched page content, where "best" =
+// the window containing the most query tokens.  CJK-aware sentence split so
+// Chinese content doesn't collapse to a single 6000-char run.  Pure local
+// computation — no LLM round-trip.
+
+const _SENTENCE_SPLIT_RE = /(?<=[。！？!?\.\n])\s+|(?<=[。！？])/u;
+
+function queryBiasedSnippet(content, queryTokens, maxChars = 320) {
+  if (!content) return '';
+  if (!queryTokens || !queryTokens.length) return String(content).slice(0, maxChars);
+  const text = String(content);
+  const sentences = text
+    .split(_SENTENCE_SPLIT_RE)
+    .map(s => s.trim())
+    .filter(s => s && s.length >= 10);
+  if (!sentences.length) return text.slice(0, maxChars);
+  // Sliding window of up to 3 sentences; pick the window with the most query hits.
+  let best = { start: 0, end: 0, hits: -1 };
+  for (let i = 0; i < sentences.length; i++) {
+    for (let j = i; j < Math.min(i + 3, sentences.length); j++) {
+      const windowText = sentences.slice(i, j + 1).join(' ').toLowerCase();
+      let hits = 0;
+      for (const tok of queryTokens) {
+        if (tok && windowText.includes(String(tok).toLowerCase())) hits++;
+      }
+      if (hits > best.hits && windowText.length <= maxChars * 1.4) {
+        best = { start: i, end: j, hits };
+      }
+    }
+  }
+  if (best.hits <= 0) return text.slice(0, maxChars);
+  const picked = sentences.slice(best.start, best.end + 1).join(' ');
+  return picked.length <= maxChars ? picked : picked.slice(0, maxChars).trimEnd() + '…';
+}
+
+// ─── P1-1 semantic re-rank ──────────────────────────────────────────────────
+//
+// Embed the query + every result's title+snippet, compute cosine similarity
+// via a vector dot product (both vectors are already L2-normalised by
+// embeddings.js), and blend into the final score.  Fails open — if the
+// embedding provider is unavailable, we skip re-rank and return results
+// unchanged.
+
+function cosineDot(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot; // L2-normalised vectors → dot == cosine similarity
+}
+
+async function semanticRerank(results, query, contentMap, { config = {}, topN = 8 } = {}) {
+  if (!results || results.length < 2) return { results, applied: false, reason: 'n<2' };
+  let qVec = null;
+  try {
+    qVec = await getEmbedding(query, config);
+  } catch (err) {
+    return { results, applied: false, reason: `query-embed-failed:${err?.message || err}` };
+  }
+  if (!qVec || qVec.length !== EMBEDDING_DIMS) {
+    return { results, applied: false, reason: 'no-embedding-provider' };
+  }
+
+  // Embed a compact summary per result — title + snippet + up to 400 chars of
+  // fetched content when available.  Caps at topN to bound cost.
+  const embeddable = results.slice(0, topN);
+  const summaries = embeddable.map(r => {
+    const body = contentMap?.get(r.url) || contentMap?.get(canonicalizeUrl(r.url)) || '';
+    const head = body ? String(body).slice(0, 400) : '';
+    return `${r.title || ''}\n${r.snippet || ''}\n${head}`.trim();
+  });
+
+  let vectors;
+  try {
+    vectors = await Promise.all(summaries.map(s => getEmbedding(s, config)));
+  } catch (err) {
+    return { results, applied: false, reason: `doc-embed-failed:${err?.message || err}` };
+  }
+
+  const blended = embeddable.map((r, i) => {
+    const v = vectors[i];
+    const semantic = v && v.length === EMBEDDING_DIMS ? cosineDot(qVec, v) : 0;
+    // Blend: keep the keyword/recency score computed earlier, add the
+    // semantic signal with the same weight so neither collapses the other.
+    const base = Number.isFinite(r._score) ? r._score : 0;
+    return { ...r, _semantic: round3(semantic), _score: round3(base + semantic) };
+  });
+
+  blended.sort((a, b) => b._score - a._score);
+  // Results beyond topN stayed out of re-rank; tack them on unchanged.
+  const tail = results.slice(topN).map(r => ({ ...r }));
+  return { results: [...blended, ...tail], applied: true, reason: 'ok' };
+}
+
+function round3(n) {
+  return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0;
+}
+
+// ─── P1-2 synonym / alias expansion ─────────────────────────────────────────
+/**
+ * Return up to 3 expanded query variants to try when the primary SERP yields
+ * few results.  The original query is always first.  Empty clusters and
+ * tokens that have no alias just pass through.
+ */
+function expandQuerySynonyms(query) {
+  const out = [String(query || '').trim()];
+  const { tokens } = tokenizeQuery(query);
+  if (!tokens.length) return out;
+  const hitClusters = new Set();
+  for (const t of tokens) {
+    const idx = _SYNONYM_INDEX.get(String(t).toLowerCase());
+    if (idx != null) hitClusters.add(idx);
+  }
+  if (!hitClusters.size) return out;
+  for (const idx of hitClusters) {
+    const cluster = SYNONYM_CLUSTERS[idx];
+    for (const alt of cluster) {
+      // Rebuild a candidate by swapping every hit token with `alt`.
+      const rebuilt = tokens
+        .map(t => (_SYNONYM_INDEX.get(String(t).toLowerCase()) === idx ? alt : t))
+        .join(' ');
+      if (rebuilt && !out.includes(rebuilt)) out.push(rebuilt);
+      if (out.length >= 4) break;
+    }
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+function extractDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch (error) {
+    debugWarn('web_search', `extractDomain failed for ${url}:`, error?.message || error);
+    return '';
+  }
+}
+
+function selectContentUrls(results, query, {
+  timeSensitive = false,
+  allowBlockedDomains = false,
+  nowMs = Date.now(),
+} = {}) {
+  // P0-3 — use the CJK-aware tokenizer instead of naïve whitespace split so
+  // Chinese queries actually contribute tokens.
+  const { tokens, graphemes } = tokenizeQuery(query);
+  const queryTokens = [...tokens, ...graphemes]
+    .map(w => String(w).toLowerCase())
+    .filter(w => w.length > 0);
+
+  // P0-1 — dedup by canonical URL + title fingerprint before ranking.  This
+  // collapses amp/m/www variants and mirrored posts so we don't burn Jina
+  // RTTs on duplicates.
+  const seenCanon = new Set();
+  const seenTitle = new Set();
+  const filtered = [];
+  for (const r of results) {
+    const url = r?.url || '';
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (/\.(pdf|mp4|mp3|zip|docx?|xlsx?)(\?|$)/i.test(url)) continue;
+    if (!allowBlockedDomains && BLOCKED_CONTENT_DOMAINS.has(extractDomain(url))) continue;
+    const canon = canonicalizeUrl(url);
+    if (seenCanon.has(canon)) continue;
+    const titleKey = titleFingerprint(r.title || '');
+    if (titleKey && seenTitle.has(titleKey)) continue;
+    seenCanon.add(canon);
+    if (titleKey) seenTitle.add(titleKey);
+    filtered.push(r);
+  }
+
+  return filtered
+    .map(r => ({
+      ...r,
+      _score: scoreResultRelevance(r, queryTokens, { timeSensitive, nowMs }),
+    }))
+    .sort((a, b) => b._score - a._score)
+    .slice(0, CONTENT_FETCH_COUNT)
+    .map(r => r.url);
+}
+
+// ─── Content fetching ────────────────────────────────────────────────────────
+// `cleanPageText` now imported from ../../web/playwrightFetcher.js.
+
+async function fetchViaPlaywrightCli(url) {
+  return withPwLock(async () => {
+    try {
+      await pwNavigate(url, CONTENT_FETCH_TIMEOUT_MS);
+      const waitAndExtract = `(async () => {
+        const get = () => (document.body?.innerText || '').trim();
+        let prev = get();
+        for (let i = 0; i < 6; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const cur = get();
+          if (cur.length > 200 && cur.length === prev.length) break;
+          prev = cur;
+        }
+        return get();
+      })()`;
+      const raw = await runPlaywrightCli(['eval', waitAndExtract], CONTENT_FETCH_TIMEOUT_MS);
+      let text = raw;
+      try {
+        text = JSON.parse(raw);
+      } catch (err) {
+        // raw may already be a plain string — silently accept as-is
+      }
+      if (!text || typeof text !== 'string' || text.length < 50) {
+        debugWarn('web_search', `Playwright returned empty/short content for ${url}`);
+        return { url, content: null };
+      }
+      const clean = cleanPageText(text);
+      return { url, content: clean.slice(0, CONTENT_MAX_CHARS) };
+    } catch (error) {
+      debugWarn('web_search', `Playwright page fetch failed for ${url}:`, error?.message || error);
+      return { url, content: null };
+    }
+  });
+}
+
+/**
+ * P0-4 — conditional-GET aware Jina fetch.  Pass the ETag / Last-Modified
+ * we already saw for this URL (from url_content_cache) and Jina/origin may
+ * reply 304, in which case we return `notModified: true` so the caller
+ * reuses the stale body and bumps the cache's fetched_at.
+ *
+ * Returns one of:
+ *   { url, content, etag, lastModified }             – fresh body fetched
+ *   { url, content: null, notModified: true }        – origin says "unchanged"
+ *   { url, content: null }                           – failure / empty
+ */
+async function fetchViaJina(url, signal, { etag = null, lastModified = null } = {}) {
+  const jinaUrl = `${JINA_READER_BASE}${url}`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), CONTENT_FETCH_TIMEOUT_MS);
+  const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
+
+  const headers = { 'X-Return-Format': 'markdown', 'X-Timeout': '12' };
+  if (etag) headers['If-None-Match'] = etag;
+  if (lastModified) headers['If-Modified-Since'] = lastModified;
+
+  try {
+    const res = await fetch(jinaUrl, { signal: combined, headers });
+    clearTimeout(timer);
+    if (res.status === 304) {
+      return { url, content: null, notModified: true };
+    }
+    if (!res.ok) {
+      debugWarn('web_search', `Jina returned ${res.status} for ${url}`);
+      return { url, content: null };
+    }
+    const text = await res.text();
+    const clean = cleanPageText(text);
+    return {
+      url,
+      content: clean.slice(0, CONTENT_MAX_CHARS),
+      etag: res.headers.get('etag') || null,
+      lastModified: res.headers.get('last-modified') || null,
+    };
+  } catch (error) {
+    debugWarn('web_search', `Jina fetch failed for ${url}:`, error?.message || error);
+    return { url, content: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch content from URLs with three layered optimizations:
+ *   1. URL-level content cache (2h TTL) — skip net calls entirely for URLs
+ *      seen in a recent search.
+ *   2. Jina parallel + early-exit — return once we have JINA_SUCCESS_THRESHOLD
+ *      good pages OR JINA_HARD_DEADLINE_MS elapses, so the slowest URL
+ *      can't hold up the whole search.
+ *   3. Playwright fallback capped at PW_FALLBACK_MAX — PW is strictly
+ *      serialised by the pw lock (one page at a time), so more than 1
+ *      fallback URL means multi-second p95 degradation.
+ */
+async function fetchResultContents(urls, signal, { spanId = null } = {}) {
+  const targets = urls.filter(url => /^https?:\/\//i.test(url));
+  if (!targets.length) return [];
+
+  const results = new Map();
+  // P0-1 — track every content hash we've accepted so duplicate pages
+  // fetched from different URLs (mirrors, AMP, syndication) drop out.
+  const seenHashes = new Set();
+  const acceptBody = (url, body, meta = {}) => {
+    const hash = meta.contentHash || sha1Short(body || '');
+    if (!body || body.length < 100) return false;
+    if (seenHashes.has(hash)) {
+      if (spanId) writeWebSearchDebugLine(`[fetch] dedup-hash span=${spanId} url=${url} hash=${hash}`);
+      return false;
+    }
+    seenHashes.add(hash);
+    results.set(url, { url, content: body, ...meta, contentHash: hash });
+    return true;
+  };
+
+  // Stage 1 — URL cache. A DB hit shortcuts both Jina and PW.
+  const needFetch = [];
+  const condGetCandidates = new Map(); // url -> { etag, lastModified }
+  for (const url of targets) {
+    const fresh = getCachedUrlContent(url);
+    if (fresh && fresh.content) {
+      // Reuse cached body but still apply the hash-dedup so two different
+      // URLs with identical cached content collapse.
+      if (acceptBody(url, fresh.content, {
+        fromUrlCache: true,
+        etag: fresh.etag,
+        lastModified: fresh.lastModified,
+        contentHash: fresh.contentHash,
+      })) {
+        continue;
+      }
+      // Hash-dup against an earlier URL — no need to refetch.
+      continue;
+    }
+    // P0-4 — even for expired rows, reuse ETag / Last-Modified so Jina can
+    // reply 304 and we avoid re-downloading unchanged content.
+    const stale = getStaleUrlContent(url);
+    if (stale && (stale.etag || stale.lastModified)) {
+      condGetCandidates.set(url, { etag: stale.etag, lastModified: stale.lastModified });
+    }
+    needFetch.push(url);
+  }
+  if (!needFetch.length) return [...results.values()];
+
+  // Stage 2 — Jina with early-exit. Implemented without polling so we
+  // resolve the instant the Nth success lands.
+  const failed = new Set();
+  await new Promise(resolveOuter => {
+    let done = false;
+    let settledCount = 0;
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(hardDeadline);
+      resolveOuter();
+    };
+    const hardDeadline = setTimeout(finish, JINA_HARD_DEADLINE_MS);
+
+    for (const url of needFetch) {
+      const validators = condGetCandidates.get(url) || {};
+      fetchViaJina(url, signal, validators)
+        .then(r => {
+          if (done) return;
+          if (r?.notModified) {
+            // Origin confirms the stale body is still valid — touch the
+            // fetched_at and reuse whatever we already had.
+            const stale = getStaleUrlContent(url);
+            if (stale?.content) {
+              acceptBody(url, stale.content, {
+                fromUrlCache: true,
+                notModified: true,
+                etag: stale.etag,
+                lastModified: stale.lastModified,
+                contentHash: stale.contentHash,
+              });
+              touchUrlFetchTime(url);
+              if (spanId) writeWebSearchDebugLine(`[fetch] 304-reuse span=${spanId} url=${url}`);
+              return;
+            }
+            failed.add(url);
+            return;
+          }
+          if (r?.content && r.content.length >= 100) {
+            if (acceptBody(url, r.content, {
+              etag: r.etag || null,
+              lastModified: r.lastModified || null,
+            })) {
+              setCachedUrlContent(url, r.content, {
+                etag: r.etag || null,
+                lastModified: r.lastModified || null,
+              });
+            }
+            // Dedup drop is intentional — not a fetch failure, and we still
+            // have the canonical copy from the earlier URL, so don't mark as failed.
+          } else {
+            failed.add(url);
+          }
+        })
+        .catch(() => {
+          if (done) return;
+          failed.add(url);
+        })
+        .finally(() => {
+          if (done) return;
+          settledCount++;
+          // Count successes from the working set (needFetch), not the cache-prewarm set.
+          const jinaSuccesses = needFetch.reduce((n, u) => (results.has(u) ? n + 1 : n), 0);
+          if (jinaSuccesses >= JINA_SUCCESS_THRESHOLD || settledCount === needFetch.length) {
+            finish();
+          }
+        });
+    }
+  });
+
+  // Anything in needFetch that neither succeeded nor explicitly failed
+  // was cut short by the early-exit deadline — treat it as Jina-missed.
+  for (const url of needFetch) {
+    if (!results.has(url)) failed.add(url);
+  }
+
+  // Stage 3 — Playwright fallback, capped. Only the first PW_FALLBACK_MAX
+  // misses get a second chance, to keep tail latency bounded.
+  if (failed.size > 0 && PW_FALLBACK_MAX > 0 && await isPlaywrightCliAvailable()) {
+    const pwTargets = [...failed].slice(0, PW_FALLBACK_MAX);
+    for (const url of pwTargets) {
+      const pw = await fetchViaPlaywrightCli(url);
+      if (pw.content && pw.content.length >= 100) {
+        results.set(url, pw);
+        setCachedUrlContent(url, pw.content);
+      }
+    }
+  }
+
+  return [...results.values()].filter(r => r.content);
+}
+
+// ─── Format results ───────────────────────────────────────────────────────────
+
+function formatResults(results, query, provider, contentMap, { queryTokens = null } = {}) {
+  if (!results.length) {
+    return `No results found for "${query}".`;
+  }
+
+  const lines = [
+    `Web search results for: "${query}" [via: ${provider}]`,
+    '',
+  ];
+
+  for (let i = 0; i < results.length; i++) {
+    const { title, url, snippet } = results[i];
+    lines.push(`### ${i + 1}. ${title}`);
+    lines.push(`[source: ${url}]`);
+    if (snippet) lines.push(snippet);
+
+    const pageContent = contentMap?.get(url);
+    if (pageContent) {
+      lines.push('');
+      // P2-2 — when we have fetched page content AND a query-token list,
+      // surface the best sentence-window up front so the caller sees the
+      // bit that actually mentions the query.  Full body still follows.
+      if (queryTokens && queryTokens.length) {
+        const highlight = queryBiasedSnippet(pageContent, queryTokens, 320);
+        if (highlight && highlight !== pageContent.slice(0, highlight.length)) {
+          lines.push('**Top match:**');
+          lines.push(highlight);
+          lines.push('');
+        }
+      }
+      lines.push('**Page content:**');
+      lines.push(pageContent);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+// ─── Weather fast-path (wttr.in) ─────────────────────────────────────────────
+
+const WEATHER_KEYWORDS = /(?:天气|气温|温度|weather|forecast|几度|多少度|下雨|下雪|rain|snow|humid)/i;
+const WEATHER_NOISE = /(?:今天|明天|后天|这周|本周|今日|明日|现在|当前|查一下|帮我查|搜一下|查查|告诉我|请问|today'?s?|tomorrow'?s?|current(?:ly)?|now|this week|what'?s?\s*the|how'?s?\s*the|check|search|tell me|please)/gi;
+const WEATHER_STRIP = /(?:天气|气温|温度|weather|forecast|几度|多少度|下雨吗|下雪吗|会下雨|rain|snow|humid(?:ity)?|预报|怎么样|如何|咋样)/gi;
+
+function extractWeatherLocation(query) {
+  const stripped = query.trim()
+    .replace(WEATHER_NOISE, '')
+    .replace(WEATHER_STRIP, '')
+    .replace(/[?？。，,!！、的\s]+/g, ' ')
+    .trim();
+  if (stripped && stripped.length >= 1 && stripped.length < 50) return stripped;
+  return null;
+}
+
+async function fetchWeatherFastPath(query, signal) {
+  const location = extractWeatherLocation(query);
+  if (!location) return null;
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 6000);
+  const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
+
+  try {
+    const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
+    const res = await fetch(url, { signal: combined });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const cur = data?.current_condition?.[0];
+    const today = data?.weather?.[0];
+    if (!cur) return null;
+
+    const lines = [
+      `Weather data for: "${query}" [via: wttr.in]`,
+      '',
+      `**Location:** ${data?.nearest_area?.[0]?.areaName?.[0]?.value || location}`,
+      `**Current temperature:** ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C)`,
+      `**Weather:** ${cur.weatherDesc?.[0]?.value || 'N/A'}`,
+      `**Humidity:** ${cur.humidity}%`,
+      `**Wind:** ${cur.windspeedKmph} km/h ${cur.winddir16Point || ''}`,
+      `**Visibility:** ${cur.visibility} km`,
+      `**UV Index:** ${cur.uvIndex}`,
+    ];
+
+    if (today) {
+      lines.push('');
+      lines.push(`**Today range:** ${today.mintempC}°C ~ ${today.maxtempC}°C`);
+      lines.push(`**Sunrise:** ${today.astronomy?.[0]?.sunrise || 'N/A'} | **Sunset:** ${today.astronomy?.[0]?.sunset || 'N/A'}`);
+      const hours = today.hourly || [];
+      if (hours.length) {
+        lines.push('');
+        lines.push('**Hourly forecast:**');
+        for (const h of hours) {
+          const hr = String(parseInt(h.time, 10) / 100).padStart(2, '0') + ':00';
+          lines.push(`  ${hr} — ${h.tempC}°C, ${h.weatherDesc?.[0]?.value || ''}, rain ${h.chanceofrain}%`);
+        }
+      }
+    }
+
+    const tomorrow = data?.weather?.[1];
+    if (tomorrow) {
+      lines.push('');
+      lines.push(`**Tomorrow:** ${tomorrow.mintempC}°C ~ ${tomorrow.maxtempC}°C, ${tomorrow.hourly?.[4]?.weatherDesc?.[0]?.value || ''}`);
+    }
+
+    return {
+      ok: true,
+      output: lines.join('\n'),
+      meta: { query, provider: 'wttr.in', resultCount: 1, contentFetched: 1, results: [] },
+    };
+  } catch (error) {
+    debugWarn('web_search', `wttr.in fast-path failed for "${query}":`, error?.message || error);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── Staggered SERP race ─────────────────────────────────────────────────────
+
+/**
+ * Start Playwright/Google first (strongest quality), and if it hasn't
+ * produced results within SERP_STAGGER_MS, also kick off the Jina/DDG leg.
+ * Whichever returns a non-empty result set first wins. If both settle empty,
+ * resolves with an empty-results outcome carrying the aggregated errors.
+ *
+ * Both legs are bounded by their own inner timeouts (FETCH_TIMEOUT_MS);
+ * the race adds no new time budget — it only decides whether to parallelize.
+ */
+async function raceSerpProviders(query, limit, signal) {
+  const errors = [];
+  const usePw = await isPlaywrightCliAvailable();
+
+  // Degenerate case: no Playwright → no race, just run Jina directly.
+  if (!usePw) {
+    try {
+      const r = await searchViaDdg(query, limit, signal);
+      return {
+        results: r,
+        provider: r.length ? 'duckduckgo' : '',
+        errors,
+      };
+    } catch (err) {
+      errors.push(`DDG: ${err.message}`);
+      return { results: [], provider: '', errors };
+    }
+  }
+
+  return new Promise(resolve => {
+    let done = false;
+    let pwSettled = false;
+    let jinaStarted = false;
+    let jinaSettled = false;
+
+    const finish = (results, provider) => {
+      if (done) return;
+      done = true;
+      clearTimeout(staggerTimer);
+      resolve({ results, provider, errors });
+    };
+
+    const startJina = () => {
+      if (jinaStarted || done) return;
+      jinaStarted = true;
+      searchViaDdg(query, limit, signal).then(
+        r => {
+          jinaSettled = true;
+          if (r.length) finish(r, 'duckduckgo');
+          else if (pwSettled) finish([], '');
+        },
+        err => {
+          jinaSettled = true;
+          errors.push(`DDG: ${err.message}`);
+          if (pwSettled) finish([], '');
+        },
+      );
+    };
+
+    // PW leg — start immediately
+    searchViaPlaywright(query, limit).then(
+      r => {
+        pwSettled = true;
+        if (r.length) finish(r, 'google (playwright)');
+        else if (jinaSettled) finish([], '');
+        else startJina(); // PW returned empty — bring Jina forward
+      },
+      err => {
+        pwSettled = true;
+        errors.push(`Google/PW: ${err.message}`);
+        if (jinaSettled) finish([], '');
+        else startJina(); // PW error — bring Jina forward
+      },
+    );
+
+    // Stagger timer — if PW isn't done yet, kick off Jina in parallel
+    const staggerTimer = setTimeout(startJina, SERP_STAGGER_MS);
+  });
+}
+
+// ─── Tool definition ──────────────────────────────────────────────────────────
+
+export const webSearchTool = {
+  id: 'web_search',
+  name: 'Web Search',
+  description:
+    'Search the web for current information. Returns titles, URLs, snippets, and actual page content ' +
+    'from the top results. Use this when you need up-to-date information, current events, facts, ' +
+    'technical documentation, or anything not in your training data.',
+  category: 'web',
+  isConcurrencySafe: true,
+  requiresPermission: false,
+  parametersSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'The search query. Be specific and include relevant keywords.',
+      },
+      num_results: {
+        type: 'number',
+        description: `Number of results to return (1–${MAX_RESULTS}). Default: 5.`,
+        default: 5,
+      },
+      noCache: {
+        type: 'boolean',
+        description:
+          'When true, bypass the 2-hour SQLite cache and hit the provider fresh. ' +
+          'Use only when the user explicitly asks for the latest / real-time info and a cached answer would be stale.',
+        default: false,
+      },
+      allowBlockedDomains: {
+        type: 'boolean',
+        description:
+          'When true, do not filter out low-signal / login-walled domains (pinterest, quora, x.com, etc.). ' +
+          'Use only when the user explicitly asked about one of those sites — otherwise leave false for quality.',
+        default: false,
+      },
+    },
+    required: ['query'],
+  },
+  examples: [
+    { query: 'latest Node.js LTS version 2026' },
+    { query: 'React 19 new features', num_results: 3 },
+    { query: 'best pinterest boards for UI inspiration', allowBlockedDomains: true },
+  ],
+
+  async run(
+    { query, num_results = 5, noCache = false, allowBlockedDomains = false },
+    { signal, config } = {},
+  ) {
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return { ok: false, output: 'Missing or empty query.', error: 'INVALID_QUERY' };
+    }
+
+    const q = query.trim();
+    const limit = Math.max(1, Math.min(MAX_RESULTS, Math.floor(num_results) || 5));
+
+    // P2-3 — single span id per `run()` invocation so every debug line can
+    // be grepped back to one query.  Never thrown, never awaited.
+    const spanId = nextWebSearchSpanId();
+
+    // P0-3 — classify once and thread everywhere.  Weather/price/news are
+    // time-sensitive, which changes both TTL and ranking.
+    const intent = classifyQueryIntent(q);
+
+    // Shared query-token list (CJK-aware) — used by selectContentUrls AND
+    // the biased-snippet formatter, so compute once.
+    const { tokens: qTokens, graphemes: qGraphs } = tokenizeQuery(q);
+    const queryTokens = [...qTokens, ...qGraphs]
+      .map(t => String(t).toLowerCase())
+      .filter(Boolean);
+
+    writeWebSearchDebugLine(
+      `[start] span=${spanId} q=${JSON.stringify(q)} ` +
+      `intent=${intent.kind} ts=${intent.timeSensitive ? 1 : 0} ` +
+      `limit=${limit} noCache=${noCache ? 1 : 0} allowBlocked=${allowBlockedDomains ? 1 : 0}`,
+    );
+
+    // Timing instrumentation — phases in ms, surfaced in meta.timings so
+    // `melo search --json` and future dashboards can spot slow providers.
+    const tStart = Date.now();
+    let tAfterSerp = 0;
+    let tAfterContent = 0;
+
+    // Fast-path: weather queries via wttr.in (~1s)
+    if (WEATHER_KEYWORDS.test(q)) {
+      const weatherResult = await fetchWeatherFastPath(q, signal);
+      if (weatherResult) {
+        weatherResult.meta = {
+          ...weatherResult.meta,
+          timings: {
+            totalMs: Date.now() - tStart,
+            serpMs: Date.now() - tStart,
+            contentMs: 0,
+            cacheHit: false,
+            weatherFastPath: true,
+          },
+          spanId,
+          intent,
+        };
+        writeWebSearchDebugLine(`[end] span=${spanId} path=weather ms=${Date.now() - tStart}`);
+        return weatherResult;
+      }
+    }
+
+    // ── Cache layer ────────────────────────────────────────────────────
+    // Fresh hit: return immediately. Stale hit (P2-1 SWR): return the
+    // stale rows now and refresh in the background, so the user never
+    // pays the SERP latency on repeat queries.
+    if (!noCache) {
+      const fresh = getCachedSearch(q, intent);
+      if (fresh) {
+        const output = formatResults(
+          fresh.results.slice(0, limit),
+          q,
+          fresh.provider,
+          fresh.contentMap,
+          { queryTokens },
+        );
+        writeWebSearchDebugLine(`[cache] span=${spanId} hit=fresh provider=${fresh.provider}`);
+        return {
+          ok: true,
+          output,
+          meta: {
+            query: q,
+            provider: fresh.provider,
+            resultCount: Math.min(fresh.results.length, limit),
+            contentFetched: fresh.contentMap.size,
+            results: fresh.results.slice(0, limit),
+            timings: {
+              totalMs: Date.now() - tStart,
+              serpMs: 0,
+              contentMs: 0,
+              cacheHit: true,
+              weatherFastPath: false,
+            },
+            spanId,
+            intent,
+          },
+        };
+      }
+
+      const stale = getStaleCachedSearch(q, intent);
+      if (stale) {
+        const output = formatResults(
+          stale.results.slice(0, limit),
+          q,
+          stale.provider,
+          stale.contentMap,
+          { queryTokens },
+        );
+        writeWebSearchDebugLine(
+          `[cache] span=${spanId} hit=stale age=${Date.now() - stale.createdAt}ms — refreshing in bg`,
+        );
+        // Background refresh — fire-and-forget.  Any failure is harmless
+        // because the stale row stays valid until SWR window expires.
+        queueMicrotask(() => {
+          _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config)
+            .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err));
+        });
+        return {
+          ok: true,
+          output,
+          meta: {
+            query: q,
+            provider: stale.provider,
+            resultCount: Math.min(stale.results.length, limit),
+            contentFetched: stale.contentMap.size,
+            results: stale.results.slice(0, limit),
+            timings: {
+              totalMs: Date.now() - tStart,
+              serpMs: 0,
+              contentMs: 0,
+              cacheHit: true,
+              swr: true,
+              weatherFastPath: false,
+            },
+            spanId,
+            intent,
+          },
+        };
+      }
+    }
+
+    // Staggered SERP race: Playwright starts immediately; if it hasn't come
+    // back within SERP_STAGGER_MS, also kick off the Jina/DDG leg in parallel.
+    // First non-empty result wins; loser's bandwidth is the only waste.
+    let serpOutcome = await raceSerpProviders(q, limit, signal);
+    let { results, provider } = serpOutcome;
+    const errors = [...serpOutcome.errors];
+
+    // P1-2 — if the primary SERP came back thin, retry with synonym-expanded
+    // variants.  Keep the first non-empty variant's results and tag the
+    // provider so debug can see the retry happened.
+    let synonymRetry = null;
+    if (results.length < SYNONYM_RETRY_THRESHOLD) {
+      const variants = expandQuerySynonyms(q).slice(1); // index 0 is the raw query we already tried
+      for (const variant of variants) {
+        try {
+          const retry = await raceSerpProviders(variant, limit, signal);
+          if (retry.results.length >= SYNONYM_RETRY_THRESHOLD) {
+            results = retry.results;
+            provider = retry.provider ? `${retry.provider} (syn:${variant})` : provider;
+            synonymRetry = variant;
+            writeWebSearchDebugLine(
+              `[syn] span=${spanId} retry=${JSON.stringify(variant)} results=${retry.results.length}`,
+            );
+            break;
+          }
+        } catch (err) {
+          errors.push(`syn[${variant}]: ${err?.message || err}`);
+        }
+      }
+    }
+
+    tAfterSerp = Date.now();
+
+    writeWebSearchDebugLine(
+      `[serp] span=${spanId} provider=${provider || 'none'} ` +
+      `results=${results.length} ms=${tAfterSerp - tStart}` +
+      (synonymRetry ? ` syn=${JSON.stringify(synonymRetry)}` : ''),
+    );
+
+    if (!results.length) {
+      writeWebSearchDebugLine(`[end] span=${spanId} path=fail errors=${errors.length}`);
+      return {
+        ok: false,
+        output: `Web search failed for "${q}". Errors: ${errors.join('; ')}`,
+        error: 'SEARCH_FAILED',
+        meta: {
+          query: q,
+          timings: {
+            totalMs: tAfterSerp - tStart,
+            serpMs: tAfterSerp - tStart,
+            contentMs: 0,
+            cacheHit: false,
+            weatherFastPath: false,
+          },
+          spanId,
+          intent,
+        },
+      };
+    }
+
+    // Content fetching: Jina primary (parallel), Playwright fallback (serialised)
+    const smartUrls = selectContentUrls(results, q, {
+      timeSensitive: intent.timeSensitive,
+      allowBlockedDomains,
+    });
+    const contentItems = await fetchResultContents(smartUrls, signal, { spanId }).catch(err => {
+      debugWarn('web_search', `fetchResultContents crashed:`, err?.message || err);
+      return [];
+    });
+    tAfterContent = Date.now();
+
+    const contentMap = new Map(
+      contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
+    );
+
+    // P1-1 — semantic re-rank using the embedding provider.  Fails open:
+    // if no provider or the embed call errors, we return results unchanged.
+    let rerank = { applied: false, reason: 'not-attempted' };
+    try {
+      rerank = await semanticRerank(results, q, contentMap, { config, topN: 8 });
+      if (rerank.applied) {
+        results = rerank.results;
+      }
+    } catch (err) {
+      rerank = { applied: false, reason: `threw:${err?.message || err}` };
+    }
+
+    writeWebSearchDebugLine(
+      `[content] span=${spanId} fetched=${contentMap.size}/${smartUrls.length} ` +
+      `ms=${tAfterContent - tAfterSerp} rerank=${rerank.applied ? 'yes' : 'no'}(${rerank.reason})`,
+    );
+
+    setCachedSearch(q, provider, results, contentMap, intent);
+
+    const output = formatResults(results, q, provider, contentMap, { queryTokens });
+
+    writeWebSearchDebugLine(
+      `[end] span=${spanId} path=ok results=${results.length} total_ms=${tAfterContent - tStart}`,
+    );
+
+    return {
+      ok: true,
+      output,
+      meta: {
+        query: q,
+        provider,
+        resultCount: results.length,
+        contentFetched: contentMap.size,
+        results,
+        timings: {
+          totalMs: tAfterContent - tStart,
+          serpMs: tAfterSerp - tStart,
+          contentMs: tAfterContent - tAfterSerp,
+          cacheHit: false,
+          weatherFastPath: false,
+        },
+        spanId,
+        intent,
+        rerank: { applied: rerank.applied, reason: rerank.reason },
+        synonymRetry,
+      },
+    };
+  },
+};
+
+// ─── SWR background refresh (P2-1) ───────────────────────────────────────────
+//
+// Same core pipeline as `run()` but without the cache-read layer (we're
+// only here because stale was served) and without awaiters outside the
+// cache write.  If we throw, the stale row still stands — safe fallback.
+
+async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config) {
+  const serp = await raceSerpProviders(q, limit, null);
+  if (!serp.results.length) return;
+  const smartUrls = selectContentUrls(serp.results, q, {
+    timeSensitive: intent.timeSensitive,
+    allowBlockedDomains,
+  });
+  const contentItems = await fetchResultContents(smartUrls, null).catch(() => []);
+  const contentMap = new Map(
+    contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
+  );
+  let results = serp.results;
+  try {
+    const r = await semanticRerank(results, q, contentMap, { config, topN: 8 });
+    if (r.applied) results = r.results;
+  } catch {
+    // rerank failure doesn't block the refresh.
+  }
+  setCachedSearch(q, serp.provider, results, contentMap, intent);
+}
+
+// ─── Health-check surface for `melo doctor` ─────────────────────────────────
+//
+// Exposes a single async probe that tells the CLI whether each leg of the
+// search subsystem is usable. We keep it here (rather than in index.js) so
+// all knowledge about cache paths, provider priority, and Jina base URLs
+// stays co-located with the tool itself.
+
+export function getSearchCacheDbPath() {
+  return CACHE_DB_PATH;
+}
+
+/**
+ * Stats about the on-disk search cache — row counts across both tables,
+ * rough freshness, and overall DB size. Returned for `melo search --cache stats`.
+ */
+export async function getCacheStats() {
+  let sizeBytes = 0;
+  try {
+    const st = await stat(CACHE_DB_PATH);
+    sizeBytes = st.size;
+  } catch {
+    return {
+      exists: false,
+      path: CACHE_DB_PATH,
+      sizeBytes: 0,
+      searchCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
+      urlCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
+      searchTtlMs: SEARCH_CACHE_TTL_MS,
+      urlTtlMs: URL_CACHE_TTL_MS,
+    };
+  }
+
+  const now = Date.now();
+  let searchStats = { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null };
+  let urlStats = { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null };
+
+  try {
+    const db = getCacheDb();
+    const sRow = db.prepare(
+      'SELECT COUNT(*) AS c, MIN(created_at) AS oldest, MAX(created_at) AS newest FROM web_search_cache',
+    ).get();
+    const sFresh = db.prepare(
+      'SELECT COUNT(*) AS c FROM web_search_cache WHERE created_at > ?',
+    ).get(now - SEARCH_CACHE_TTL_MS);
+    searchStats = {
+      rows: Number(sRow?.c || 0),
+      freshRows: Number(sFresh?.c || 0),
+      oldestAgeMs: sRow?.oldest ? now - Number(sRow.oldest) : null,
+      newestAgeMs: sRow?.newest ? now - Number(sRow.newest) : null,
+    };
+
+    const uRow = db.prepare(
+      'SELECT COUNT(*) AS c, MIN(fetched_at) AS oldest, MAX(fetched_at) AS newest FROM url_content_cache',
+    ).get();
+    const uFresh = db.prepare(
+      'SELECT COUNT(*) AS c FROM url_content_cache WHERE fetched_at > ?',
+    ).get(now - URL_CACHE_TTL_MS);
+    urlStats = {
+      rows: Number(uRow?.c || 0),
+      freshRows: Number(uFresh?.c || 0),
+      oldestAgeMs: uRow?.oldest ? now - Number(uRow.oldest) : null,
+      newestAgeMs: uRow?.newest ? now - Number(uRow.newest) : null,
+    };
+  } catch (error) {
+    debugWarn('web_search', `cache stats failed:`, error?.message || error);
+  }
+
+  return {
+    exists: true,
+    path: CACHE_DB_PATH,
+    sizeBytes,
+    searchCache: searchStats,
+    urlCache: urlStats,
+    searchTtlMs: SEARCH_CACHE_TTL_MS,
+    urlTtlMs: URL_CACHE_TTL_MS,
+  };
+}
+
+/**
+ * Clear the search caches. `scope` may be 'all' (default), 'search', 'url',
+ * or 'stale' (rows older than their TTL). Returns the deleted row count.
+ */
+export function clearCache(scope = 'all') {
+  const validScopes = new Set(['all', 'search', 'url', 'stale']);
+  if (!validScopes.has(scope)) {
+    throw new Error(`Unknown cache scope: ${scope}. Expected one of: ${[...validScopes].join(', ')}`);
+  }
+  try {
+    const db = getCacheDb();
+    let deleted = 0;
+    if (scope === 'all' || scope === 'search') {
+      const r = db.prepare('DELETE FROM web_search_cache').run();
+      deleted += Number(r.changes || 0);
+    }
+    if (scope === 'all' || scope === 'url') {
+      const r = db.prepare('DELETE FROM url_content_cache').run();
+      deleted += Number(r.changes || 0);
+    }
+    if (scope === 'stale') {
+      const now = Date.now();
+      const r1 = db.prepare('DELETE FROM web_search_cache WHERE created_at <= ?').run(now - SEARCH_CACHE_TTL_MS);
+      const r2 = db.prepare('DELETE FROM url_content_cache WHERE fetched_at <= ?').run(now - URL_CACHE_TTL_MS);
+      deleted = Number(r1.changes || 0) + Number(r2.changes || 0);
+    }
+    return { ok: true, deleted, scope };
+  } catch (error) {
+    return { ok: false, deleted: 0, scope, error: error?.message || String(error) };
+  }
+}
+
+async function probeJinaReachability(signal) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 3500);
+  const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
+  try {
+    // HEAD on the Jina reader landing page. Any 2xx/3xx means DNS + TLS +
+    // Jina front-end are up; anything else means the fallback leg is down.
+    const res = await fetch(JINA_READER_BASE, { method: 'HEAD', signal: combined });
+    return { reachable: res.ok || (res.status >= 200 && res.status < 400), status: res.status };
+  } catch (err) {
+    return { reachable: false, error: err?.message || String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function probeCacheDb() {
+  try {
+    const st = await stat(CACHE_DB_PATH);
+    let rowCount = 0;
+    let lastQueryAgeMs = null;
+    try {
+      const db = getCacheDb();
+      const row = db.prepare('SELECT COUNT(*) AS c, MAX(created_at) AS latest FROM web_search_cache').get();
+      rowCount = Number(row?.c || 0);
+      if (row?.latest) lastQueryAgeMs = Date.now() - Number(row.latest);
+    } catch {
+      /* ignore — existence + size still useful */
+    }
+    return {
+      exists: true,
+      path: CACHE_DB_PATH,
+      sizeBytes: st.size,
+      rowCount,
+      lastQueryAgeMs,
+      ttlMs: SEARCH_CACHE_TTL_MS,
+    };
+  } catch {
+    return { exists: false, path: CACHE_DB_PATH, sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
+  }
+}
+
+/**
+ * Test-only bundle — re-exported so unit tests in `webSearchTool.helpers.test.js`
+ * can drive the pure helpers directly without spinning up Playwright / Jina
+ * / SQLite.  Not part of the public tool surface; do not consume in
+ * application code.
+ */
+export const __webSearchInternals = {
+  classifyQueryIntent,
+  canonicalizeUrl,
+  titleFingerprint,
+  normalizeQuery,
+  buildCacheKey,
+  ttlForIntent,
+  expandQuerySynonyms,
+  extractArticleDate,
+  recencyBoost,
+  queryBiasedSnippet,
+  sha1Short,
+};
+
+export async function checkSearchHealth({ signal } = {}) {
+  const [playwright, jina, cacheDb] = await Promise.all([
+    isPlaywrightCliAvailable().then(
+      ok => ({ available: Boolean(ok) }),
+      err => ({ available: false, error: err?.message || String(err) }),
+    ),
+    probeJinaReachability(signal),
+    probeCacheDb(),
+  ]);
+
+  const primaryOk = playwright.available;
+  const fallbackOk = jina.reachable;
+  const healthy = primaryOk || fallbackOk;
+
+  return {
+    healthy,
+    playwright,
+    jina,
+    cacheDb,
+    summary: healthy
+      ? `search: ${primaryOk ? 'playwright ✓' : 'playwright ✗'}, ${fallbackOk ? 'jina ✓' : 'jina ✗'}, cache ${cacheDb.exists ? `${cacheDb.rowCount} rows` : 'empty'}`
+      : 'search: no provider reachable (playwright ✗, jina ✗)',
+  };
+}
