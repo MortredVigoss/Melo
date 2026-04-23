@@ -15,6 +15,10 @@
 //   - fetchDiscordUpdates(channel, pollLimit) — GET /channels/.../messages
 //     with the "after" cursor. pollLimit is injected by the caller so this
 //     module stays loose from desktopStore's runtime tuning constants.
+//   - sendDiscordMediaReply(channel, incoming, buffer, opts) — multipart
+//     upload (payload_json + files[0]) for any binary attachment. Shared
+//     code path for audio / image / document attachments; callers choose
+//     the mime+filename.
 //
 // Extracted from desktopStore.js in the Phase 6a refactor (see
 // _refactor-backup/REFACTOR_PLAN.md). Pure module — no state dependencies,
@@ -89,6 +93,91 @@ export async function discordApiRequest(
   }
 
   return payload;
+}
+
+/**
+ * Send a binary attachment via the Discord multipart convention
+ * (payload_json + files[0]). Generic across audio / image / document — the
+ * caller picks mimeType + fileName and optionally an inline content string.
+ *
+ * Reply semantics mirror sendDiscordReply: when `incoming.messageId` is
+ * present we include `message_reference` so the attachment shows up as a
+ * reply to that message. The `content` field is optional — Discord accepts
+ * a message with only an attachment.
+ *
+ * On failure we throw with `err.status` and `err.bodyPreview` populated so
+ * the caller can surface actionable details (common cases: 403 Missing
+ * Access, 403 Missing Permissions / ATTACH_FILES, 40005 Payload too large
+ * / > 25 MiB, 50035 Invalid Form Body).
+ */
+export async function sendDiscordMediaReply(
+  channel,
+  incoming,
+  buffer,
+  { mimeType = 'application/octet-stream', fileName = 'file', content = '', timeoutMs = 45000 } = {},
+) {
+  const targetChannelId = String(incoming?.chatId || channel?.channelId || '').trim();
+  if (!targetChannelId) {
+    throw new Error('Discord media reply is missing a channelId.');
+  }
+  const token = String(channel?.botToken || '').trim();
+  if (!token) {
+    throw new Error('Discord media reply needs a bot token.');
+  }
+
+  const safeFileName = fileName || 'file';
+  const safeMime = mimeType || 'application/octet-stream';
+
+  // Discord's multipart convention: one form field named payload_json carrying
+  // the message JSON, plus files[0..N] entries for attachments. The message
+  // JSON's `attachments` array is optional but recommended — it lets us tie
+  // the filename into the message record for thread rendering.
+  const payload = {
+    content: String(content || '').slice(0, 2000),
+    attachments: [{ id: 0, filename: safeFileName }],
+  };
+  if (incoming?.messageId) {
+    payload.message_reference = {
+      message_id: String(incoming.messageId),
+      channel_id: targetChannelId,
+      fail_if_not_exists: false,
+    };
+  }
+
+  const formData = new FormData();
+  formData.append('payload_json', JSON.stringify(payload));
+  formData.append('files[0]', new Blob([buffer], { type: safeMime }), safeFileName);
+
+  const url = buildDiscordUrl(`/channels/${encodeURIComponent(targetChannelId)}/messages`, {});
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bot ${token}`,
+      'user-agent': 'MeloDesktopBot (https://github.com, 1.0)',
+      // NB: do NOT set content-type manually — fetch sets the correct multipart
+      // boundary automatically when the body is a FormData.
+    },
+    body: formData,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (response.status === 204) return null;
+  const text = await response.text();
+  const parsed = text ? (() => { try { return JSON.parse(text); } catch { return null; } })() : null;
+  if (response.status === 429) {
+    const retryAfter = Number(parsed?.retry_after || 1);
+    const err = new Error(`Discord media rate-limited: retry_after=${retryAfter}s`);
+    err.retryAfterMs = Math.max(1000, retryAfter * 1000);
+    throw err;
+  }
+  if (!response.ok) {
+    const reason = parsed?.message || parsed?.error || `HTTP ${response.status}`;
+    const err = new Error(`Discord sendMedia failed (HTTP ${response.status}): ${reason}`);
+    err.status = response.status;
+    err.bodyPreview = (text || '').slice(0, 300);
+    throw err;
+  }
+  return parsed;
 }
 
 export async function pingDiscordChannel(channel) {

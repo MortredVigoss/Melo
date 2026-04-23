@@ -15,6 +15,10 @@
 //     suitable for sendVoice (Telegram requires this exact codec)
 //   - sendTelegramAudioReply — high-level: TTS buffer → sendVoice, with an
 //     automatic fallback to sendAudio if ffmpeg fails
+//   - sendTelegramPhotoReply — image buffer → sendPhoto (thumbnail gallery
+//     item). Used to forward assistant-generated images to Telegram.
+//   - sendTelegramDocumentReply — arbitrary buffer → sendDocument, for
+//     attachments that don't fit the photo/audio/video shape (PDF, …).
 //   - pingTelegramChannel / fetchTelegramUpdates — common method wrappers
 //     used by the polling loop
 //
@@ -139,6 +143,57 @@ export async function sendTelegramAudioReply(telegramChannel, incoming, audioBuf
   if (incoming.messageId) formData.append('reply_to_message_id', String(incoming.messageId));
   formData.append('voice', new Blob([oggBuffer], { type: 'audio/ogg' }), 'voice.ogg');
   return telegramApiFormRequest(telegramChannel, 'sendVoice', formData);
+}
+
+/**
+ * Send a photo as a Telegram photo message (sendPhoto) — renders as a
+ * thumbnail gallery item, tap-to-expand. Caption is optional and supports
+ * the same entity/Markdown rules as sendMessage (we leave parse_mode off
+ * by default so raw text is safe).
+ *
+ * `photoBytes` is a Buffer (or Uint8Array). `mimeType` / `fileName` are
+ * used verbatim in the multipart part — Telegram inspects the bytes
+ * server-side anyway, but a sensible filename helps surface the right
+ * extension in the web client.
+ */
+export async function sendTelegramPhotoReply(
+  telegramChannel,
+  incoming,
+  photoBytes,
+  { caption = '', mimeType = 'image/png', fileName = 'photo.png' } = {},
+) {
+  const formData = new FormData();
+  formData.append('chat_id', String(incoming.chatId));
+  if (incoming.messageThreadId) formData.append('message_thread_id', String(incoming.messageThreadId));
+  if (incoming.messageId) formData.append('reply_to_message_id', String(incoming.messageId));
+  if (caption) formData.append('caption', String(caption));
+  formData.append('photo', new Blob([photoBytes], { type: mimeType || 'image/png' }), fileName || 'photo.png');
+  return telegramApiFormRequest(telegramChannel, 'sendPhoto', formData);
+}
+
+/**
+ * Generic document upload (sendDocument) — used when an attachment isn't
+ * a photo/audio/video but we still want to ship the bytes (PDF, arbitrary
+ * binary, etc.). Telegram previews PDFs inline; everything else downloads
+ * as a file.
+ */
+export async function sendTelegramDocumentReply(
+  telegramChannel,
+  incoming,
+  documentBytes,
+  { caption = '', mimeType = 'application/octet-stream', fileName = 'file' } = {},
+) {
+  const formData = new FormData();
+  formData.append('chat_id', String(incoming.chatId));
+  if (incoming.messageThreadId) formData.append('message_thread_id', String(incoming.messageThreadId));
+  if (incoming.messageId) formData.append('reply_to_message_id', String(incoming.messageId));
+  if (caption) formData.append('caption', String(caption));
+  formData.append(
+    'document',
+    new Blob([documentBytes], { type: mimeType || 'application/octet-stream' }),
+    fileName || 'file',
+  );
+  return telegramApiFormRequest(telegramChannel, 'sendDocument', formData);
 }
 
 export async function pingTelegramChannel(channel) {

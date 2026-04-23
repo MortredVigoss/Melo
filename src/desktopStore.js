@@ -157,6 +157,8 @@ import {
   telegramApiFormRequest,
   convertToOggOpus,
   sendTelegramAudioReply,
+  sendTelegramPhotoReply,
+  sendTelegramDocumentReply,
   pingTelegramChannel,
   fetchTelegramUpdates as fetchTelegramUpdatesFromApi,
   buildTelegramFileUrl,
@@ -194,9 +196,11 @@ import {
   discordApiBase,
   buildDiscordUrl,
   discordApiRequest,
+  sendDiscordMediaReply,
   pingDiscordChannel,
   fetchDiscordUpdates as fetchDiscordUpdatesFromApi,
 } from './services/remote/discordApi.js';
+import { loadAttachmentBytes } from './services/remote/attachmentBytes.js';
 import {
   buildDiscordThreadKey,
   normalizeDiscordAttachmentKind,
@@ -3929,6 +3933,44 @@ export async function processTelegramPollingCycle() {
         runtimeChannel.lastReplyAt = nowIso();
         runtimeChannel.lastReplyPreview = replyText;
 
+        // Image attachments: forward any image the assistant embedded in its
+        // reply (e.g. from the image-generation tool). We already sent the
+        // text portion above; the photos arrive as separate sendPhoto calls
+        // so we don't hit Telegram's 1024-char caption limit.
+        //
+        // Each attachment is loaded via attachmentBytes.js — that module takes
+        // the fast path (signed workspace URL → local readFile) when the URL
+        // was minted by this same process, or falls back to HTTP fetch. We
+        // swallow per-attachment errors so a single bad URL doesn't bork the
+        // whole poll cycle.
+        const imageAttachments = Array.isArray(result?.assistantMessage?.attachments)
+          ? result.assistantMessage.attachments.filter(a => a && a.kind === 'image' && a.url)
+          : [];
+        for (const attachment of imageAttachments) {
+          try {
+            const bytes = await loadAttachmentBytes(attachment, { timeoutMs: 30_000 });
+            if (!bytes) continue;
+            writeTelegramDebugLine(
+              `[tg-send] photo-begin cycle=${cycleId} agent=${agentId} update_id=${update?.update_id} ` +
+                `chat_id=${incoming.chatId} bytes=${bytes.buffer?.length || 0} mime=${bytes.mimeType}`,
+            );
+            const sentPhoto = await sendTelegramPhotoReply(telegramChannel, incoming, bytes.buffer, {
+              mimeType: bytes.mimeType,
+              fileName: bytes.fileName,
+            });
+            writeTelegramDebugLine(
+              `[tg-send] photo-ok cycle=${cycleId} agent=${agentId} update_id=${update?.update_id} ` +
+                `chat_id=${incoming.chatId} out_message_id=${sentPhoto?.result?.message_id || ''}`,
+            );
+          } catch (imgErr) {
+            process.stderr.write(`[tg-photo-reply] error: ${imgErr?.message || imgErr}\n`);
+            writeTelegramDebugLine(
+              `[tg-send] photo-error cycle=${cycleId} agent=${agentId} update_id=${update?.update_id} ` +
+                `url=${String(attachment.url).slice(0, 120)} message=${String(imgErr?.message || imgErr).slice(0, 180)}`,
+            );
+          }
+        }
+
         // Voice reply: synthesize TTS with the rewritten spoken-form text.
         if (shouldVoiceReply) {
           try {
@@ -4209,77 +4251,15 @@ async function sendDiscordReply(channel, incoming, text) {
  * layer already returned.
  */
 async function sendDiscordAudioReply(channel, incoming, audioBuffer, mimeType = 'audio/mpeg') {
-  const targetChannelId = String(incoming?.chatId || channel?.channelId || '').trim();
-  if (!targetChannelId) {
-    throw new Error('Discord audio reply is missing a channelId.');
-  }
-  const token = String(channel?.botToken || '').trim();
-  if (!token) {
-    throw new Error('Discord audio reply needs a bot token.');
-  }
-
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'mp3';
-  const fileName = `reply.${ext}`;
-
-  // Discord's multipart convention: one form field named payload_json carrying
-  // the message JSON, plus files[0..N] entries for attachments. The message
-  // JSON's `attachments` array is optional but recommended — it lets us tie
-  // the filename into the message record for thread rendering.
-  const payload = {
-    content: '',
-    attachments: [{ id: 0, filename: fileName }],
-  };
-  if (incoming?.messageId) {
-    payload.message_reference = {
-      message_id: String(incoming.messageId),
-      channel_id: targetChannelId,
-      fail_if_not_exists: false,
-    };
-  }
-
-  const formData = new FormData();
-  formData.append('payload_json', JSON.stringify(payload));
-  formData.append('files[0]', new Blob([audioBuffer], { type: mimeType }), fileName);
-
-  const url = buildDiscordUrl(
-    `/channels/${encodeURIComponent(targetChannelId)}/messages`,
-    {},
-  );
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      authorization: `Bot ${token}`,
-      'user-agent': 'MeloDesktopBot (https://github.com, 1.0)',
-      // NB: do NOT set content-type manually — fetch sets the correct multipart
-      // boundary automatically when the body is a FormData.
-    },
-    body: formData,
-    signal: AbortSignal.timeout(45000),
+  // Thin wrapper over sendDiscordMediaReply — the multipart convention is
+  // shared across audio / image / document, so the heavy lifting lives in
+  // the Discord API layer. Error shape (err.status, err.bodyPreview) is
+  // preserved by sendDiscordMediaReply.
+  return sendDiscordMediaReply(channel, incoming, audioBuffer, {
+    mimeType,
+    fileName: `reply.${ext}`,
   });
-
-  if (response.status === 204) return null;
-  const text = await response.text();
-  const parsed = text ? (() => { try { return JSON.parse(text); } catch { return null; } })() : null;
-  if (response.status === 429) {
-    const retryAfter = Number(parsed?.retry_after || 1);
-    const err = new Error(`Discord audio rate-limited: retry_after=${retryAfter}s`);
-    err.retryAfterMs = Math.max(1000, retryAfter * 1000);
-    throw err;
-  }
-  if (!response.ok) {
-    const reason = parsed?.message || parsed?.error || `HTTP ${response.status}`;
-    // Preserve status + raw body so the caller can surface actionable detail.
-    // Common failure modes:
-    //   • 403 Missing Access — bot lacks View Channel / Send Messages
-    //   • 403 Missing Permissions — bot lacks ATTACH_FILES on this channel
-    //   • 50035 Invalid Form Body — our multipart payload is malformed
-    //   • 40005 Payload too large — TTS buffer exceeded the 25MB limit
-    const err = new Error(`Discord sendAudio failed (HTTP ${response.status}): ${reason}`);
-    err.status = response.status;
-    err.bodyPreview = (text || '').slice(0, 300);
-    throw err;
-  }
-  return parsed;
 }
 
 export async function processDiscordPollingCycle() {
@@ -4574,6 +4554,43 @@ export async function processDiscordPollingCycle() {
         await sendDiscordReply(runtimeChannel, incoming, replyText);
         runtimeChannel.lastReplyAt = nowIso();
         runtimeChannel.lastReplyPreview = replyText;
+
+        // Image attachments — mirror of the Telegram branch: for every image
+        // kind on the assistant message, resolve URL → bytes and upload via
+        // multipart. Discord renders image attachments inline; no caption
+        // needed because the text reply already went out above. Per-
+        // attachment errors are logged and swallowed so one bad URL doesn't
+        // break the poll cycle.
+        const imageAttachments = Array.isArray(result?.assistantMessage?.attachments)
+          ? result.assistantMessage.attachments.filter(a => a && a.kind === 'image' && a.url)
+          : [];
+        for (const attachment of imageAttachments) {
+          try {
+            const bytes = await loadAttachmentBytes(attachment, { timeoutMs: 30_000 });
+            if (!bytes) continue;
+            writeDiscordDebugLine(
+              `[dc-send] photo-begin agent=${agentId} chat_id=${incoming.chatId} ` +
+                `bytes=${bytes.buffer?.length || 0} mime=${bytes.mimeType}`,
+            );
+            await sendDiscordMediaReply(runtimeChannel, incoming, bytes.buffer, {
+              mimeType: bytes.mimeType,
+              fileName: bytes.fileName,
+            });
+            writeDiscordDebugLine(
+              `[dc-send] photo-ok agent=${agentId} chat_id=${incoming.chatId} ` +
+                `bytes=${bytes.buffer?.length || 0}`,
+            );
+          } catch (imgErr) {
+            process.stderr.write(`[dc-photo-reply] error: ${imgErr?.message || imgErr}\n`);
+            writeDiscordDebugLine(
+              `[dc-send] photo-error agent=${agentId} chat_id=${incoming.chatId} ` +
+                `status=${imgErr?.status || '?'} ` +
+                `url=${String(attachment.url).slice(0, 120)} ` +
+                `message=${(imgErr?.message || String(imgErr)).slice(0, 200)} ` +
+                `body=${(imgErr?.bodyPreview || '').slice(0, 200)}`,
+            );
+          }
+        }
 
         if (shouldDiscordVoiceReply) {
           try {
