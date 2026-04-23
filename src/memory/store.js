@@ -5,10 +5,33 @@ import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../config.js';
 import { EMBEDDING_DIMS, cosineSimilarity } from './embeddings.js';
 import { debugWarn, isDebugEnabled } from '../debug.js';
-import { isSubsequenceMatch } from '../search/scoring.js';
+import { isSubsequenceMatch, scoreFuzzySubsequence } from '../search/scoring.js';
 
-const STORE_PATH = join(getMeloHome(), 'desktop', 'store.sqlite');
+// Resolve STORE_PATH lazily so tests can swap MELO_HOME between runs without
+// the path being frozen at module import time.  Production callers see no
+// behavioural change — the value is effectively constant once MELO_HOME is
+// set, because we cache the db handle on first open.
+function resolveStorePath() {
+  return join(getMeloHome(), 'desktop', 'store.sqlite');
+}
 let db = null;
+let _openedStorePath = null;
+
+/** @internal test-only — close the current db handle and re-read MELO_HOME
+ *  on the next store operation, so each test can scope itself to a fresh
+ *  tmpdir without module-level STORE_PATH leaking between cases. */
+export function _resetStoreForTests() {
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      // Already closed or never opened — ignore.
+    }
+  }
+  db = null;
+  _vecLoaded = false;
+  _openedStorePath = null;
+}
 
 // Insert spaces around CJK characters so unicode61 tokenizer treats each as a word
 function toCjkSpaced(text = '') {
@@ -52,8 +75,10 @@ function getDb() {
     return db;
   }
 
-  mkdirSync(dirname(STORE_PATH), { recursive: true });
-  db = new DatabaseSync(STORE_PATH, { allowExtension: true });
+  const storePath = resolveStorePath();
+  _openedStorePath = storePath;
+  mkdirSync(dirname(storePath), { recursive: true });
+  db = new DatabaseSync(storePath, { allowExtension: true });
   tryLoadVec(db);
 
   db.exec(`
@@ -365,7 +390,7 @@ function normalizeEntry(entry = {}) {
   };
 }
 
-// ─── Memory recall scoring (intentionally local) ─────────────────────────────
+// ─── Memory recall scoring (intentionally local where it must diverge) ──────
 //
 // We DO NOT import the full scoring stack from src/search/scoring.js here, on
 // purpose:
@@ -377,16 +402,18 @@ function normalizeEntry(entry = {}) {
 //      for memory recall where the phrase-as-unit behavior is what gives
 //      meaningful ranking signal.
 //
-//   2. `fuzzySubsequenceScore` below uses base=100 (not 140) because
-//      scoreMemoryRow already multiplies the result by 0.4 and mixes it
-//      with per-token exact-match scores on a different scale.  Migrating
+//   2. `fuzzySubsequenceScore` below delegates to `scoreFuzzySubsequence`
+//      from src/search/scoring.js with base=100 (not the search domain's
+//      140).  scoreMemoryRow multiplies the result by 0.4 and mixes it with
+//      per-token exact-match scores on a different scale, so migrating
 //      memory to the search-domain weights would rebalance every memory
-//      recall ranking.
+//      recall ranking.  Sharing the algorithm core means Bug 5 (noise-floor
+//      removal, gap-penalty math, ≥2-char guard) is fixed in exactly one
+//      place — the base= parameter is the only memory-specific knob.
 //
-// What IS shared: `isSubsequenceMatch` (imported at the top of the file —
-// identical logic and no weight dependency).  Bug 5's noise-floor fix is
-// mirrored below so memory recall gets the same "gap-heavy subsequence
-// matches score zero" cleanup without taking on the search-domain weights.
+// What IS shared:
+//   • `isSubsequenceMatch`  (imported — identical logic, no weight tuning)
+//   • `scoreFuzzySubsequence({ base })`  (imported — same algorithm, base=100)
 function tokenizeQuery(value = '') {
   return String(value || '')
     .toLowerCase()
@@ -395,24 +422,10 @@ function tokenizeQuery(value = '') {
     .filter(Boolean);
 }
 
-function fuzzySubsequenceScore(query, target) {
-  if (!query || !target) return 0;
-  // Bug 5 mirror: single-char subsequence matches are noise; require ≥2.
-  if (query.length < 2) return 0;
+const MEMORY_FUZZY_BASE = 100;
 
-  let searchIndex = 0;
-  let gapPenalty = 0;
-  for (const char of query) {
-    const foundAt = target.indexOf(char, searchIndex);
-    if (foundAt === -1) return 0;
-    gapPenalty += Math.max(0, foundAt - searchIndex);
-    searchIndex = foundAt + 1;
-  }
-  // Bug 5 mirror: let the score fall to 0 when the gap penalty swamps the
-  // base.  The previous floor of 10 meant every "chars appear in order"
-  // match earned points even when the match was spread across the whole
-  // haystack.
-  return Math.max(0, 100 - gapPenalty - Math.max(0, target.length - query.length));
+function fuzzySubsequenceScore(query, target) {
+  return scoreFuzzySubsequence(query, target, { base: MEMORY_FUZZY_BASE });
 }
 
 function scoreMemoryRow(row, query = '') {

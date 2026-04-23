@@ -7,20 +7,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   streamWorkspaceContent,
+  streamWorkspaceContentByFile,
   _setRipgrepBinaryForTests,
 } from './fileSearch.js';
 
-// Probe for rg once — tests that actually need a working ripgrep are
-// skipped when the binary is missing (e.g. on contributor laptops without
-// brew install ripgrep).  The "rg is missing" regression test is NOT
-// skipped: it uses a guaranteed-missing binary name via the test hook so
-// it works everywhere.
+// Probe for rg — prefer the bundled @vscode/ripgrep binary (shipped with the
+// app) and only fall back to PATH.  Tests that need a working ripgrep skip
+// gracefully when neither is available; the "rg is missing" regression test
+// is NOT skipped because it uses a guaranteed-missing binary name through the
+// test hook and works everywhere.
 const HAS_RG = (() => {
+  try {
+    const require = createRequire(import.meta.url);
+    const mod = require('@vscode/ripgrep');
+    if (mod?.rgPath && existsSync(mod.rgPath)) {
+      const res = spawnSync(mod.rgPath, ['--version'], { stdio: 'ignore' });
+      if (res.status === 0) return true;
+    }
+  } catch {
+    /* fall through to PATH probe */
+  }
   try {
     const res = spawnSync('rg', ['--version'], { stdio: 'ignore' });
     return res.status === 0;
@@ -28,7 +40,7 @@ const HAS_RG = (() => {
     return false;
   }
 })();
-const rgOnly = { skip: HAS_RG ? false : 'ripgrep (rg) not installed on this host' };
+const rgOnly = { skip: HAS_RG ? false : 'ripgrep not available (neither bundled nor on PATH)' };
 
 // Teardown resets the binary hook between tests so an environment where rg
 // is not installed doesn't poison the next test's spawn.
@@ -89,6 +101,46 @@ test('missing rg binary yields no hits and does NOT throw (Bug 1)', async () => 
   const root = seedWorkspace();
   const hits = await collect(streamWorkspaceContent(root, 'foo.bar'));
   assert.equal(hits.length, 0, 'zero hits, no exception');
+});
+
+// ─── P2 follow-up #6: by-file aggregation ─────────────────────────────────
+
+test('streamWorkspaceContentByFile groups line hits by file with top-N lines', rgOnly, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'melo-filesearch-groups-'));
+  mkdirSync(join(root, 'src'));
+  // File A: 5 matches, only 3 should ride along in the group.
+  writeFileSync(
+    join(root, 'src', 'a.txt'),
+    Array.from({ length: 5 }, (_, i) => `needle line ${i + 1}\n`).join(''),
+  );
+  // File B: 1 match.
+  writeFileSync(join(root, 'src', 'b.txt'), 'one needle here\n');
+  // File C: 0 matches.
+  writeFileSync(join(root, 'src', 'c.txt'), 'no match in this file\n');
+
+  const groups = await collect(
+    streamWorkspaceContentByFile(root, 'needle', { hitsPerFile: 3 }),
+  );
+  const byPath = Object.fromEntries(groups.map(g => [g.filePath, g]));
+
+  assert.ok(byPath['src/a.txt'], 'file A has a group');
+  assert.equal(byPath['src/a.txt'].hits.length, 3, 'file A caps at 3 hits');
+  assert.equal(byPath['src/a.txt'].kind, 'file-group');
+  assert.ok(byPath['src/b.txt'], 'file B has a group');
+  assert.equal(byPath['src/b.txt'].hits.length, 1, 'file B has its single hit');
+  assert.ok(!byPath['src/c.txt'], 'file C produces no group');
+});
+
+test('streamWorkspaceContentByFile respects maxFiles cap', rgOnly, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'melo-filesearch-maxfiles-'));
+  mkdirSync(join(root, 'src'));
+  for (let i = 0; i < 5; i += 1) {
+    writeFileSync(join(root, 'src', `f${i}.txt`), 'needle\n');
+  }
+  const groups = await collect(
+    streamWorkspaceContentByFile(root, 'needle', { maxFiles: 2, hitsPerFile: 1 }),
+  );
+  assert.equal(groups.length, 2, 'caps at maxFiles groups');
 });
 
 test('early termination via maxMatches does not throw on SIGTERM (Bug 2)', rgOnly, async () => {

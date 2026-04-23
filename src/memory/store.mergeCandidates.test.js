@@ -6,7 +6,32 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertMemory, listMergeCandidates, saveMemoryEmbedding } from './store.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  upsertMemory,
+  listMergeCandidates,
+  saveMemoryEmbedding,
+  _resetStoreForTests,
+} from './store.js';
+
+// Test-isolation fix: the store.js module used to capture STORE_PATH at
+// import time, so every test file in this suite shared one sqlite database.
+// Tests further up the schedule that did not clean up their rows would leave
+// rows with overlapping IDs visible to our listMergeCandidates assertions and
+// flake us intermittently.  The _resetStoreForTests hook now points a fresh
+// tmpdir MELO_HOME at each test, so every case sees an empty DB.
+test.beforeEach(() => {
+  const dir = mkdtempSync(join(tmpdir(), 'melo-merge-cands-'));
+  process.env.MELO_HOME = dir;
+  _resetStoreForTests();
+});
+
+test.afterEach(() => {
+  _resetStoreForTests();
+  delete process.env.MELO_HOME;
+});
 
 function fakeEmbedding(seed = 1) {
   const vec = new Float32Array(1024);

@@ -16,13 +16,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import {
   upsertMemory,
   saveMemoryEmbedding,
   writeStoredEmbeddingModelId,
+  _resetStoreForTests,
 } from './store.js';
+
+// Test-isolation fix: MELO_HOME was frozen at module load, so concurrent
+// test files all wrote to ~/.melo/desktop/store.sqlite — embed_cache rows
+// from earlier cases leaked into ours and caused intermittent failures on
+// the "latest row" SELECT at the bottom of this file.  Each test now runs
+// against a fresh tmpdir DB via _resetStoreForTests.
+test.beforeEach(() => {
+  const dir = mkdtempSync(join(tmpdir(), 'melo-embedcache-'));
+  process.env.MELO_HOME = dir;
+  _resetStoreForTests();
+});
+
+test.afterEach(() => {
+  _resetStoreForTests();
+  delete process.env.MELO_HOME;
+});
 
 const DIMS = 1024;
 

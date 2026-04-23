@@ -84,6 +84,22 @@ test('buildSearchSnippet returns empty string for empty input (P2: no hardcoded 
   assert.equal(buildSearchSnippet(null, 'anything'), '');
 });
 
+test('buildSearchSnippet honours fallback option for empty input (i18n opt-in)', () => {
+  assert.equal(
+    buildSearchSnippet('', 'x', 96, { fallback: '未命名结果' }),
+    '未命名结果',
+  );
+  assert.equal(
+    buildSearchSnippet(null, 'x', 96, { fallback: 'Untitled result' }),
+    'Untitled result',
+  );
+  // Fallback is ignored when the text is non-empty.
+  assert.equal(
+    buildSearchSnippet('real title', 'x', 96, { fallback: 'never-shown' }),
+    'real title',
+  );
+});
+
 // ─── P2: fuzzySubsequenceScore / fuzzySearchScore fallback ─────────────────
 
 test('fuzzySubsequenceScore returns 0 for single-char query (Bug 5 noise guard)', () => {

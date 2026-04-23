@@ -9,6 +9,60 @@ import {
 
 export { normalizeSearchValue };
 
+// ─── Scoring weights (named constants) ───────────────────────────────────────
+// Every magic number in the scorer is named here.  Tweaks (re-calibration on
+// telemetry, A/B, or manual tuning) happen in one place.  The hierarchy is
+// intentional: exact > prefix > contains > token-contains > token-fuzzy >
+// grapheme > raw-fallback.  The "position divisor" constants control how
+// quickly a match buried deep in a haystack is penalised.
+// ─────────────────────────────────────────────────────────────────────────────
+export const SEARCH_WEIGHTS = Object.freeze({
+  // fuzzySubsequenceScore base (before gap + length penalties).
+  FUZZY_BASE: 140,
+  // Whole-haystack equality.
+  EXACT_MATCH: 1200,
+  // Haystack starts with the raw query.
+  PREFIX_MATCH: 880,
+  // Haystack contains the raw query: floor → ceiling.
+  CONTAINS_CEILING: 760,
+  CONTAINS_FLOOR: 420,
+  CONTAINS_POSITION_DIVISOR: 3,
+  // Per-token contains: floor → ceiling.
+  TOKEN_CEILING: 240,
+  TOKEN_FLOOR: 90,
+  TOKEN_POSITION_DIVISOR: 5,
+  // Per-token subsequence bonus (only if token contains missed).
+  TOKEN_SUBSEQUENCE_BONUS: 120,
+  // Per-grapheme CJK presence.
+  GRAPHEME_PRESENCE: 24,
+  // Fallback: raw query as a full subsequence match.
+  RAW_SUBSEQUENCE_FALLBACK: 160,
+  // Length-of-haystack bonus ceiling (shorter haystacks rank higher).
+  LENGTH_BONUS_CEILING: 90,
+  LENGTH_BONUS_DIVISOR: 10,
+});
+
+// Snippet-builder tuning.
+const SNIPPET_CONTEXT_LEAD_RATIO = 0.32;
+
+// ─── LRU cache ───────────────────────────────────────────────────────────────
+// Typing into the search box re-runs fuzzySearchScore against every candidate
+// row on every keystroke.  For a 2 000-row workspace the scorer dominates the
+// keystroke latency budget.  A small LRU (default 512 entries) keyed on
+// (query, haystack) short-circuits the repeat work without growing unbounded.
+//
+// Insertion order of a Map is the eviction order, which gives us LRU for free:
+// `get` removes-and-re-inserts on hit, and we evict the oldest when size goes
+// over the cap.  Exported `_clearFuzzyCache` exists for tests that want a
+// clean slate between runs.
+// ─────────────────────────────────────────────────────────────────────────────
+const FUZZY_CACHE_CAPACITY = 512;
+const _fuzzyCache = new Map();
+
+export function _clearFuzzyCache() {
+  _fuzzyCache.clear();
+}
+
 export function isSubsequenceMatch(text = '', query = '') {
   let queryIndex = 0;
   for (let index = 0; index < text.length && queryIndex < query.length; index += 1) {
@@ -19,7 +73,21 @@ export function isSubsequenceMatch(text = '', query = '') {
   return queryIndex === query.length;
 }
 
-export function fuzzySubsequenceScore(query, target) {
+/**
+ * Shared parametric fuzzy subsequence scorer used by both search and memory.
+ * Both domains need the same "chars appear in order, penalise gaps + length"
+ * core; they differ only in `base` (search=140, memory=100 because memory
+ * multiplies the output by a 0.4 recency factor downstream).
+ *
+ * Exported so src/memory/store.js can stop duplicating the algorithm.  The
+ * Bug 5 noise-floor removal (`Math.max(0, …)` with no hard floor) is baked in
+ * here so both sides inherit the fix automatically.
+ *
+ * @param {string} query
+ * @param {string} target
+ * @param {{ base?: number }} [options]
+ */
+export function scoreFuzzySubsequence(query, target, { base = SEARCH_WEIGHTS.FUZZY_BASE } = {}) {
   if (!query || !target) {
     return 0;
   }
@@ -42,12 +110,14 @@ export function fuzzySubsequenceScore(query, target) {
     searchIndex = foundAt + 1;
   }
 
-  // Bug 5 (P1): the old floor of 18 meant every "query chars appear in order
-  // somewhere in target" result surfaced with non-zero score, which made the
-  // final raw-query fallback (run on a haystack that inevitably contained
-  // every space and vowel) give 18 points to essentially any candidate.  We
-  // now let the score fall to zero when the gap penalty swamps the base.
-  return Math.max(0, 140 - gapPenalty - Math.max(0, target.length - query.length));
+  // Bug 5 (P1): no hard floor — the score is allowed to fall to 0 when the
+  // gap penalty + length penalty swamp the base.  This is what prevents the
+  // raw-query fallback from awarding noise on every long haystack.
+  return Math.max(0, base - gapPenalty - Math.max(0, target.length - query.length));
+}
+
+export function fuzzySubsequenceScore(query, target) {
+  return scoreFuzzySubsequence(query, target);
 }
 
 // ─── Weight hierarchy ────────────────────────────────────────────────────────
@@ -70,52 +140,77 @@ export function fuzzySubsequenceScore(query, target) {
 // weights may produce surprising totals.
 // ─────────────────────────────────────────────────────────────────────────────
 export function fuzzySearchScore(query, ...values) {
-  const haystack = tokenizeHaystack(values.filter(Boolean).join('\n'));
+  // Cache-key prelude: cheap string concat keyed on the normalised query and
+  // the (pre-tokenisation) joined values.  We do this BEFORE the heavier
+  // tokenizer work so a repeat call costs one Map.get instead of two
+  // Intl.Segmenter traversals.  The normaliser on `query` is cheap; skipping
+  // it would conflate "Foo " / "foo" / " foo" in the cache, so we eat it.
+  const joinedRaw = values.filter(Boolean).join('\n');
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery || !joinedRaw) {
+    return 0;
+  }
+  const cacheKey = `${normalizedQuery}\u0000${joinedRaw}`;
+  if (_fuzzyCache.has(cacheKey)) {
+    // Touch for LRU: delete + re-insert bumps it to the freshest slot.
+    const cached = _fuzzyCache.get(cacheKey);
+    _fuzzyCache.delete(cacheKey);
+    _fuzzyCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const haystack = tokenizeHaystack(joinedRaw);
   const { tokens, graphemes, raw } = tokenizeQuery(query);
 
   if (!raw || !haystack) {
+    _rememberFuzzyScore(cacheKey, 0);
     return 0;
   }
 
+  const W = SEARCH_WEIGHTS;
   let score = 0;
   if (haystack === raw) {
-    score += 1200;
+    score += W.EXACT_MATCH;
   }
   if (haystack.startsWith(raw)) {
-    score += 880;
+    score += W.PREFIX_MATCH;
   }
 
   const exactIndex = haystack.indexOf(raw);
   if (exactIndex >= 0) {
-    // Use Math.ceil(exactIndex / 3) instead of exactIndex * 6 so the floor
-    // (420) isn't reached until ~1020 chars in. The old formula hit the floor
-    // at only ~57 chars, which meant any match inside a typical message body
-    // scored the same as a match buried at the end of a 10 000-char document.
-    score += Math.max(420, 760 - Math.ceil(exactIndex / 3));
+    // Position penalty: ceil(index / 3) means the floor is only reached
+    // ~1020 chars in.  Earlier positions outrank later ones, but we stop
+    // punishing once you're clearly deep inside a long document.
+    score += Math.max(
+      W.CONTAINS_FLOOR,
+      W.CONTAINS_CEILING - Math.ceil(exactIndex / W.CONTAINS_POSITION_DIVISOR),
+    );
   }
 
   for (const token of tokens) {
     const tokenIndex = haystack.indexOf(token);
     if (tokenIndex >= 0) {
-      // Same fix for per-token position penalty (floor at ~750 chars vs 60).
-      score += Math.max(90, 240 - Math.ceil(tokenIndex / 5));
+      score += Math.max(
+        W.TOKEN_FLOOR,
+        W.TOKEN_CEILING - Math.ceil(tokenIndex / W.TOKEN_POSITION_DIVISOR),
+      );
       continue;
     }
 
     if (isSubsequenceMatch(haystack, token)) {
-      score += 120;
+      score += W.TOKEN_SUBSEQUENCE_BONUS;
     }
-    score += fuzzySubsequenceScore(token, haystack);
+    score += scoreFuzzySubsequence(token, haystack);
   }
 
   for (const grapheme of graphemes) {
     if (haystack.includes(grapheme)) {
-      score += 24;
+      score += W.GRAPHEME_PRESENCE;
     }
   }
 
   if (!score && isSubsequenceMatch(haystack, raw)) {
-    score += 160;
+    score += W.RAW_SUBSEQUENCE_FALLBACK;
   }
 
   if (!score) {
@@ -124,14 +219,28 @@ export function fuzzySearchScore(query, ...values) {
     // spaces are omnipresent.  Strip every inner whitespace run and run the
     // subsequence scorer on the resulting compact string.
     const compactRaw = raw.replace(/\s+/g, '');
-    score = fuzzySubsequenceScore(compactRaw, haystack);
+    score = scoreFuzzySubsequence(compactRaw, haystack);
   }
 
   if (!score) {
+    _rememberFuzzyScore(cacheKey, 0);
     return 0;
   }
 
-  return score + Math.max(0, 90 - Math.floor(haystack.length / 10));
+  const total =
+    score +
+    Math.max(0, W.LENGTH_BONUS_CEILING - Math.floor(haystack.length / W.LENGTH_BONUS_DIVISOR));
+  _rememberFuzzyScore(cacheKey, total);
+  return total;
+}
+
+function _rememberFuzzyScore(key, value) {
+  _fuzzyCache.set(key, value);
+  if (_fuzzyCache.size > FUZZY_CACHE_CAPACITY) {
+    // Map iteration order is insertion order — the first key IS the LRU.
+    const oldest = _fuzzyCache.keys().next().value;
+    _fuzzyCache.delete(oldest);
+  }
 }
 
 export function weightedKeywordScore(query, keywords = []) {
@@ -163,13 +272,13 @@ export function weightedKeywordScore(query, keywords = []) {
   }, 0);
 }
 
-export function buildSearchSnippet(text, query, maxLength = 96) {
+export function buildSearchSnippet(text, query, maxLength = 96, { fallback = '' } = {}) {
   const rawText = String(text || '').replace(/\s+/g, ' ').trim();
   if (!rawText) {
-    // Search audit P2: return empty string so callers control the localized
-    // placeholder ("Untitled result" / "未命名结果" / …).  The function is
-    // now pure in the sense that it never synthesises English UI strings.
-    return '';
+    // Search audit P2: return caller-supplied fallback (default '').  The
+    // function never synthesises English UI strings of its own — the caller
+    // owns the localized placeholder ("Untitled result" / "未命名结果" / …).
+    return fallback;
   }
 
   const graphemes = splitGraphemes(rawText);
@@ -198,7 +307,7 @@ export function buildSearchSnippet(text, query, maxLength = 96) {
 
   const matchIndex = normalizedText.indexOf(matchToken);
   const matchGraphemeIndex = codeUnitIndexToGraphemeIndex(rawText, matchIndex);
-  const start = Math.max(0, matchGraphemeIndex - Math.floor(maxLength * 0.32));
+  const start = Math.max(0, matchGraphemeIndex - Math.floor(maxLength * SNIPPET_CONTEXT_LEAD_RATIO));
   const end = Math.min(graphemes.length, start + maxLength);
   const prefix = start > 0 ? '…' : '';
   const suffix = end < graphemes.length ? '…' : '';

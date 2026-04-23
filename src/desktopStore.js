@@ -2835,7 +2835,7 @@ function buildRecentSearchSuggestions(state, featureEntries, connectors = [], sk
       id: `prompt-history:${entry.id}`,
       kind: 'prompt-history',
       iconKey: 'bubble',
-      title: buildSearchSnippet(entry.content, entry.content, 86),
+      title: buildSearchSnippet(entry.content, entry.content, 86, { fallback: 'Empty prompt' }),
       subtitle: entry.chatId
         ? state.chats.find(chat => chat.id === entry.chatId)?.title || 'Prompt history'
         : 'Prompt history',
@@ -2959,7 +2959,7 @@ function buildChatMessageSearchEntry(chat, message, query, score) {
     id: `chat-hit:${chat.id}:${message.id}`,
     kind: 'chat-hit',
     iconKey: 'bubble',
-    title: buildSearchSnippet(snippetSource, query, 88),
+    title: buildSearchSnippet(snippetSource, query, 88, { fallback: 'Empty message' }),
     subtitle: `${speakerLabel} · ${chat.title || 'New chat'}`,
     meta: formatUpdatedAt(message.createdAt || chat.updatedAt),
     updatedAt: message.createdAt || chat.updatedAt,
@@ -2988,7 +2988,7 @@ function buildMemorySearchItem(entry, query) {
           : isMediaContent
             ? 'Media context'
             : 'Prompt memory';
-  const title = buildSearchSnippet(entry.text, query, 88);
+  const title = buildSearchSnippet(entry.text, query, 88, { fallback: 'Empty memory' });
   const subtitle = [
     entry.metadata?.senderName ? `said by ${entry.metadata.senderName}` : '',
     entry.metadata?.chatTitle || '',
@@ -3096,7 +3096,7 @@ async function buildSearchResults(query, state, workspace, connectors = [], skil
         id: `prompt-history:${entry.id}`,
         kind: 'prompt-history',
         iconKey: 'bubble',
-        title: buildSearchSnippet(entry.content, query, 88),
+        title: buildSearchSnippet(entry.content, query, 88, { fallback: 'Empty prompt' }),
         subtitle: chat?.title || 'Prompt history',
         meta: formatUpdatedAt(entry.createdAt),
         updatedAt: entry.createdAt,
