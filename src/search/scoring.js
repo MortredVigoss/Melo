@@ -50,6 +50,25 @@ export function fuzzySubsequenceScore(query, target) {
   return Math.max(0, 140 - gapPenalty - Math.max(0, target.length - query.length));
 }
 
+// ─── Weight hierarchy ────────────────────────────────────────────────────────
+// Search relevance is scored from the highest-confidence signal to the
+// weakest, so that an exact hit always outranks a fuzzy one.  Tiers (per call
+// to fuzzySearchScore):
+//
+//   exact haystack === raw            +1200
+//   haystack startsWith raw           + 880
+//   haystack includes raw             + 420–760   (monotone in position)
+//   token-contains (per token)        +  90–240   (monotone in position)
+//   token-subsequence bonus           + 120       (only if contains missed)
+//   fuzzy subsequence score           +   0–140   (gap-penalised)
+//   CJK grapheme presence (per char)  +  24
+//   raw-only subsequence fallback     + 160       (only if nothing else hit)
+//   length bonus (shorter = better)   +   0–90
+//
+// `weightedKeywordScore` multiplies the final number by a caller-supplied
+// weight.  Because weights are external, we clamp: no negative / non-finite
+// weights may produce surprising totals.
+// ─────────────────────────────────────────────────────────────────────────────
 export function fuzzySearchScore(query, ...values) {
   const haystack = tokenizeHaystack(values.filter(Boolean).join('\n'));
   const { tokens, graphemes, raw } = tokenizeQuery(query);
@@ -135,14 +154,22 @@ export function weightedKeywordScore(query, keywords = []) {
       return total;
     }
 
-    return total + Math.round(baseScore * (Number.isFinite(weight) ? weight : 1));
+    // Search audit P2: clamp the weight.  Negative weights would flip the
+    // sort order for that keyword (actively demoting a match); NaN / ±Infinity
+    // would produce NaN totals that propagate through the whole result list.
+    // We default to 1 for anything non-finite and floor at 0.
+    const safeWeight = Math.max(0, Number.isFinite(weight) ? weight : 1);
+    return total + Math.round(baseScore * safeWeight);
   }, 0);
 }
 
 export function buildSearchSnippet(text, query, maxLength = 96) {
   const rawText = String(text || '').replace(/\s+/g, ' ').trim();
   if (!rawText) {
-    return 'Untitled result';
+    // Search audit P2: return empty string so callers control the localized
+    // placeholder ("Untitled result" / "未命名结果" / …).  The function is
+    // now pure in the sense that it never synthesises English UI strings.
+    return '';
   }
 
   const graphemes = splitGraphemes(rawText);

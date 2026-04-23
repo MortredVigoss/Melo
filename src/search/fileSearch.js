@@ -82,6 +82,11 @@ export async function* streamWorkspaceContent(
   // (a) silently crashes on unbalanced parentheses / brackets and (b)
   // turns `.` / `*` / `?` into metacharacters users don't mean.  Callers
   // that actually want regex semantics pass `fixedStrings: false`.
+  // Search audit P2: broaden the exclude list so `--hidden --no-ignore` doesn't
+  // drag in secrets (.env*), editor swap files, stale backups, Finder cruft,
+  // or iCloud placeholder stubs.  --max-count drops from 6 → 3 so a single
+  // densely-matching file cannot exhaust the maxMatches budget and starve the
+  // rest of the workspace from appearing in the result list.
   const args = [
     '--json',
     '--line-number',
@@ -95,8 +100,20 @@ export async function* streamWorkspaceContent(
     '!dist',
     '--glob',
     '!build',
+    '--glob',
+    '!.env*',
+    '--glob',
+    '!*.swp',
+    '--glob',
+    '!*.bak',
+    '--glob',
+    '!*.orig',
+    '--glob',
+    '!.DS_Store',
+    '--glob',
+    '!*.icloud',
     '--max-count',
-    '6',
+    '3',
     '--smart-case',
   ];
   if (fixedStrings) args.push('--fixed-strings');
