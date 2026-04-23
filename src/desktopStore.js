@@ -114,7 +114,7 @@ import {
   normalizeSearchValue,
   weightedKeywordScore,
 } from './search/scoring.js';
-import { streamWorkspaceContent } from './search/fileSearch.js';
+import { streamWorkspaceContent, streamWorkspaceContentByFile } from './search/fileSearch.js';
 import {
   enrichMessageWithMediaContext,
   extractedMediaSearchText,
@@ -463,6 +463,13 @@ function writeDiscordDebugLine(line) {
 // values changes.
 const MAX_RECENT_CHATS = 10;
 const MAX_SEARCH_FILE_CONTENT_MATCHES = 18;
+// Follow-up #2 to the P2 audit: the UI now renders file-grouped results.
+// Cap the number of distinct files we surface at 12 (≈ visible list height)
+// with 3 representative lines each.  That's max 36 line-level matches under
+// the hood — comparable cost to the old 18-line cap — but every row in the
+// UI is a different file instead of several copies of config.json.
+const MAX_SEARCH_FILE_GROUPS = 12;
+const MAX_LINES_PER_FILE_GROUP = 3;
 const MAX_SEARCH_RESULTS = 64;
 const MAX_CONTEXT_RECENT_MESSAGES = 8;
 const MAX_CONTEXT_MEMORY_MESSAGES = 24;
@@ -3325,13 +3332,30 @@ async function buildSearchResults(query, state, workspace, connectors = [], skil
   };
 }
 
-export async function streamSearchFileHits(query = '', projectId = '', onHit = async () => {}) {
+/**
+ * File-search streaming. We now emit one event per FILE (a file-group carrying
+ * up to MAX_LINES_PER_FILE_GROUP representative lines) rather than one event
+ * per line hit.  That gives the search panel a compact per-file row instead
+ * of the pre-change behaviour where a single densely-matching config file
+ * drowned out every other file in the result list.
+ *
+ * streamSearchFileHits is preserved as a thin adapter for any older callers
+ * that expect line-level hits — it lifts each group into N line-level events
+ * matching the original contract.  The server SSE route uses the new
+ * streamSearchFileGroups directly.
+ */
+export async function streamSearchFileGroups(
+  query = '',
+  projectId = '',
+  onGroup = async () => {},
+) {
   const normalizedQuery = String(query || '').trim();
   if (!normalizedQuery) {
     return {
       query: normalizedQuery,
       projectId: projectId || null,
       workspaceExists: false,
+      groups: 0,
       hits: 0,
     };
   }
@@ -3345,17 +3369,21 @@ export async function streamSearchFileHits(query = '', projectId = '', onHit = a
       query: normalizedQuery,
       projectId: project?.id || null,
       workspaceExists: false,
+      groups: 0,
       hits: 0,
     };
   }
 
+  let groups = 0;
   let hits = 0;
   try {
-    for await (const hit of streamWorkspaceContent(workspace.rootPath, normalizedQuery, {
-      maxMatches: MAX_SEARCH_FILE_CONTENT_MATCHES,
+    for await (const group of streamWorkspaceContentByFile(workspace.rootPath, normalizedQuery, {
+      maxFiles: MAX_SEARCH_FILE_GROUPS,
+      hitsPerFile: MAX_LINES_PER_FILE_GROUP,
     })) {
-      await onHit(hit);
-      hits += 1;
+      await onGroup(group);
+      groups += 1;
+      hits += Array.isArray(group.hits) ? group.hits.length : 1;
     }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -3367,8 +3395,21 @@ export async function streamSearchFileHits(query = '', projectId = '', onHit = a
     query: normalizedQuery,
     projectId: project?.id || null,
     workspaceExists: true,
+    groups,
     hits,
   };
+}
+
+/**
+ * Back-compat adapter: streams line-level hits by flattening each file-group.
+ * New code should prefer streamSearchFileGroups directly.
+ */
+export async function streamSearchFileHits(query = '', projectId = '', onHit = async () => {}) {
+  return streamSearchFileGroups(query, projectId, async group => {
+    for (const hit of group.hits || []) {
+      await onHit(hit);
+    }
+  });
 }
 
 function createChatRecord({ mode, projectId, agentId }) {

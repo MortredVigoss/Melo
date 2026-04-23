@@ -2081,46 +2081,42 @@ function currentSearchItems() {
 function mergedSearchFileItems() {
   const results = searchResults();
   const fileItems = results.files || [];
-  const fileHits = uiState.searchFileHits || [];
-  const hitsByPath = new Map();
-  const consumedHitIds = new Set();
+  // Each entry in searchFileHits is now a file-group ({ filePath, hits: [...], ... })
+  // rather than a per-line hit, so we index by filePath directly.
+  const fileGroups = uiState.searchFileHits || [];
+  const groupByPath = new Map();
+  const consumedGroupPaths = new Set();
 
-  for (const hit of fileHits) {
-    const path = hit?.filePath || '';
+  for (const group of fileGroups) {
+    const path = group?.filePath || '';
     if (!path) continue;
-    if (!hitsByPath.has(path)) {
-      hitsByPath.set(path, []);
-    }
-    hitsByPath.get(path).push(hit);
+    groupByPath.set(path, group);
   }
 
   const merged = [];
   for (const fileItem of fileItems) {
-    const hits = hitsByPath.get(fileItem.filePath) || [];
-    if (hits.length === 1 && Math.abs((hits[0].score || 0) - (fileItem.score || 0)) <= 30) {
-      const hit = hits[0];
-      consumedHitIds.add(hit.id);
+    const group = groupByPath.get(fileItem.filePath);
+    if (group) {
+      consumedGroupPaths.add(fileItem.filePath);
       merged.push({
         ...fileItem,
         id: `file-merged:${fileItem.filePath}`,
-        subtitle: hit.subtitle || fileItem.subtitle,
-        meta: hit.meta || fileItem.meta,
-        lineNumber: hit.lineNumber || null,
-        lineText: hit.lineText || '',
-        action: hit.action || fileItem.action,
-        score: Math.max(fileItem.score || 0, hit.score || 0) + 6,
+        subtitle: group.subtitle || fileItem.subtitle,
+        meta: group.meta || fileItem.meta,
+        lineNumber: group.lineNumber || null,
+        lineText: group.lineText || '',
+        hits: group.hits || [],
+        action: group.action || fileItem.action,
+        score: Math.max(fileItem.score || 0, group.score || 0) + 6,
       });
       continue;
     }
-
-    if (!hits.length) {
-      merged.push(fileItem);
-    }
+    merged.push(fileItem);
   }
 
-  for (const hit of fileHits) {
-    if (!consumedHitIds.has(hit.id)) {
-      merged.push(hit);
+  for (const group of fileGroups) {
+    if (!consumedGroupPaths.has(group.filePath)) {
+      merged.push(group);
     }
   }
 
@@ -2576,9 +2572,10 @@ function stopSearchFileStream() {
   uiState.searchFileHits = [];
 }
 
-function mergeStreamedFileHit(hit) {
-  const existing = uiState.searchFileHits.filter(item => item.id !== hit.id);
-  existing.push(hit);
+function mergeStreamedFileGroup(group) {
+  // De-dupe by filePath (groups replace older groups for the same file).
+  const existing = uiState.searchFileHits.filter(item => item.filePath !== group.filePath);
+  existing.push(group);
   uiState.searchFileHits = existing
     .sort((left, right) => {
       if ((right.score || 0) !== (left.score || 0)) {
@@ -2586,7 +2583,7 @@ function mergeStreamedFileHit(hit) {
       }
       return Date.parse(right.updatedAt || 0) - Date.parse(left.updatedAt || 0);
     })
-    .slice(0, 18);
+    .slice(0, 12);
 }
 
 function syncSearchFileStream(query = uiState.searchQuery) {
@@ -2621,13 +2618,17 @@ function syncSearchFileStream(query = uiState.searchQuery) {
   const source = new EventSource(url.toString());
   activeSearchFileSource = source;
 
-  source.addEventListener('hit', event => {
+  // P3 follow-up #2: the server now emits file-grouped events.  We listen to
+  // 'group' as the preferred channel; the legacy 'hit' event is still fired
+  // server-side for transitional compat but we ignore it here — once a group
+  // lands we already have the representative lines.
+  source.addEventListener('group', event => {
     if (sequence !== activeSearchFileSequence) {
       return;
     }
 
     try {
-      mergeStreamedFileHit(JSON.parse(event.data));
+      mergeStreamedFileGroup(JSON.parse(event.data));
       render();
     } catch {}
   });

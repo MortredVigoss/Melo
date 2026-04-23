@@ -37,7 +37,7 @@ import {
   selectWorkspaceFile,
   readWorkspaceFilePreview,
   sendChatMessage,
-  streamSearchFileHits,
+  streamSearchFileGroups,
   createCustomSkill,
   updateCustomSkill,
   removeCustomSkill,
@@ -499,8 +499,16 @@ const server = createServer(async (request, response) => {
       startSse(response);
 
       try {
-        const summary = await streamSearchFileHits(query, projectId, async hit => {
-          writeSseEvent(response, 'hit', hit);
+        // P3 follow-up: emit file-group events (one per file, carrying up to
+        // 3 representative lines) instead of per-line hits.  We also emit a
+        // legacy 'hit' event for each individual line inside the group so
+        // older clients that still listen for 'hit' keep working; the
+        // preferred path for new UIs is the 'group' event.
+        const summary = await streamSearchFileGroups(query, projectId, async group => {
+          writeSseEvent(response, 'group', group);
+          for (const hit of group.hits || []) {
+            writeSseEvent(response, 'hit', hit);
+          }
         });
         writeSseEvent(response, 'done', summary);
         response.end();
