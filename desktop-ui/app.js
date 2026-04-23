@@ -19,6 +19,16 @@ const uiState = {
   searchLoading: false,
   searchFileLoading: false,
   searchFileHits: [],
+  // When the user clicks a search result that carries a specific matching
+  // line, we stash { filePath, line } here so the post-render hook can
+  // scroll the file preview to that line.  Cleared after a successful scroll
+  // so re-rendering the same file later doesn't keep jumping the viewport.
+  pendingGoToLine: null,
+  // Per-file-group toggle state for the search results sub-list.  Keys are
+  // filePath strings; value = true means "show the per-line hits under the
+  // group".  We keep this outside of `searchFileHits` because those records
+  // are replaced wholesale every time a group re-streams.
+  expandedSearchGroups: {},
   composer: '',
   composerHistoryIndex: -1,
   composerHistoryDraft: '',
@@ -2238,7 +2248,18 @@ async function handleOpenSearchResult(result) {
       await handleSelectWorkspaceFile(result.filePath);
       break;
     case 'open-file-match':
-      await handleSelectWorkspaceFile(result.filePath);
+      // `open-file-match` carries a `lineNumber` on the result — wire it
+      // through so the file preview scrolls to the hit line after mount.
+      // We accept the line number from the explicit action payload first
+      // (so sub-list line clicks can specify a different line than the
+      // top-ranked one carried at the group level), then fall back to the
+      // group-level `lineNumber` that ships on the merged row.
+      await handleSelectWorkspaceFile(result.filePath, {
+        lineNumber:
+          (result.action && Number(result.action.lineNumber)) ||
+          Number(result.lineNumber) ||
+          null,
+      });
       break;
     case 'open-chat-thread': {
       prepareThreadNavigation({
@@ -2618,10 +2639,10 @@ function syncSearchFileStream(query = uiState.searchQuery) {
   const source = new EventSource(url.toString());
   activeSearchFileSource = source;
 
-  // P3 follow-up #2: the server now emits file-grouped events.  We listen to
-  // 'group' as the preferred channel; the legacy 'hit' event is still fired
-  // server-side for transitional compat but we ignore it here — once a group
-  // lands we already have the representative lines.
+  // File-grouped events arrive on 'group' — one event per file, each
+  // carrying `filePath` + `subtitle` + up to 3 representative `hits`.
+  // (The transitional per-line 'hit' event was retired in P3 follow-up
+  // #3; both server and smoke harness now speak 'group' only.)
   source.addEventListener('group', event => {
     if (sequence !== activeSearchFileSequence) {
       return;
@@ -5675,13 +5696,20 @@ async function handleRunCommand(form) {
   });
 }
 
-async function handleSelectWorkspaceFile(filePath) {
+async function handleSelectWorkspaceFile(filePath, { lineNumber = null } = {}) {
   const payload = await api('/api/workspace/select-file', {
     method: 'POST',
     body: { filePath },
   });
   resetFileEditor();
   applyBootstrap(payload);
+  // Stash the desired line number for the post-render scroll hook.  We only
+  // record it when the caller actually asked for one; otherwise leave any
+  // previously pending target alone (it gets cleared by the hook once it
+  // scrolls, and by view navigation elsewhere).
+  if (Number.isFinite(lineNumber) && lineNumber > 0) {
+    uiState.pendingGoToLine = { filePath, line: Number(lineNumber) };
+  }
 }
 
 async function handleSaveWorkspaceFile() {
@@ -6680,6 +6708,25 @@ function renderWorkspaceExplorer() {
   `;
 }
 
+// Wrap each line of a file preview in a span carrying a 1-based
+// `data-line-number` attribute so the post-render scroll hook can locate
+// any specific hit line via CSS selector.  We use `<span>` rather than
+// `<div>` so the `<pre>` layout keeps its normal line breaks — the spans
+// only exist as named anchors.
+function renderCodePreviewLines(content = '') {
+  const text = String(content || '');
+  if (!text) return '';
+  const lines = text.split('\n');
+  return lines
+    .map(
+      (line, index) =>
+        `<span class="code-line" data-line-number="${index + 1}">${escapeHtml(
+          line,
+        )}</span>`,
+    )
+    .join('\n');
+}
+
 function renderSelectedFilePreview() {
   const workspace = uiState.bootstrap.workspace;
   const selectedFile = workspace.selectedFile;
@@ -6745,7 +6792,9 @@ function renderSelectedFilePreview() {
               uiState.fileDraftContent,
             )}
           `
-          : `<pre class="code-preview" data-copyable-surface><code>${escapeHtml(selectedFile.content)}</code></pre>`
+          : `<pre class="code-preview" data-copyable-surface><code>${renderCodePreviewLines(
+              selectedFile.content,
+            )}</code></pre>`
       }
     </div>
   `;
@@ -10265,7 +10314,16 @@ function renderSearchBucket(title, itemsHtml, count) {
 }
 
 function renderSearchResultButton(item) {
-  return `
+  // Workspace file-group rows carry a `hits: [...]` array of per-line hits
+  // from `streamWorkspaceContentByFile`.  When we have at least one extra
+  // hit beyond the top-scoring line that the group already advertises, we
+  // render an expandable sub-list so the user can drill into a specific
+  // line without having to open the file first.
+  const hasSubHits =
+    Array.isArray(item.hits) && item.hits.length > 0 && item.filePath;
+
+  if (!hasSubHits) {
+    return `
     <button
       class="search-action-button"
       data-action="open-search-result"
@@ -10292,6 +10350,93 @@ function renderSearchResultButton(item) {
           ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
           : ''
       }
+    </button>
+  `;
+  }
+
+  const isExpanded = Boolean(uiState.expandedSearchGroups?.[item.filePath]);
+  const subHitCount = item.hits.length;
+  const expandLabel = isExpanded
+    ? `Hide ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`
+    : `Show ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`;
+
+  return `
+    <div class="search-action-row search-action-row--file-group${
+      isExpanded ? ' is-expanded' : ''
+    }">
+      <div class="search-action-row-head">
+        <button
+          class="search-action-button search-action-button--grow"
+          data-action="open-search-result"
+          data-result-id="${escapeHtml(item.id)}"
+        >
+          <span class="search-action-icon">${searchResultIcon(item)}</span>
+          <span class="search-action-copy">
+            <span class="search-action-title-row">
+              <span class="search-action-title">${escapeHtml(item.title)}</span>
+              ${
+                item.badge
+                  ? `<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
+                  : ''
+              }
+            </span>
+            ${
+              item.subtitle
+                ? `<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
+                : ''
+            }
+          </span>
+          ${
+            item.meta
+              ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
+              : ''
+          }
+        </button>
+        <button
+          type="button"
+          class="search-action-expand"
+          data-action="toggle-search-group-hits"
+          data-file-path="${escapeHtml(item.filePath)}"
+          aria-expanded="${isExpanded ? 'true' : 'false'}"
+          title="${escapeHtml(expandLabel)}"
+        >
+          <span class="search-action-expand-chip">${subHitCount}</span>
+          <span class="search-action-expand-caret">${isExpanded ? '▾' : '▸'}</span>
+        </button>
+      </div>
+      ${
+        isExpanded
+          ? `<div class="search-action-sublist" role="list">${item.hits
+              .map(hit => renderSearchResultSubHit(item, hit))
+              .join('')}</div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+// Render a single per-line hit underneath an expanded file-group row.
+// Clicking a sub-hit directly opens the file at that specific line (it
+// ignores the group's own top-scoring line in favour of the line the user
+// actually clicked).  We avoid injecting these into `currentSearchItems`
+// because they are drill-downs, not independently rankable results — the
+// click boost is credited to the parent group.
+function renderSearchResultSubHit(parent, hit) {
+  const rawLine = Number(hit?.lineNumber) || 0;
+  const previewText = hit?.lineText || hit?.subtitle || '';
+  const preview = truncate(String(previewText).trim(), 160);
+  return `
+    <button
+      type="button"
+      class="search-action-subhit"
+      role="listitem"
+      data-action="open-file-match-line"
+      data-file-path="${escapeHtml(parent.filePath)}"
+      data-line-number="${rawLine}"
+      data-parent-result-id="${escapeHtml(parent.id)}"
+    >
+      <span class="search-action-subhit-line">L${rawLine || '?'}</span>
+      <span class="search-action-subhit-text">${escapeHtml(preview)}</span>
     </button>
   `;
 }
@@ -10877,6 +11022,7 @@ function render({ background = false } = {}) {
   restoreFormTextareaScrolls(_savedTextareaScrolls);
   syncAgentRuntimeRefresh();
   syncSearchFieldFocus();
+  syncFileEditorGoToLine();
   syncComposerTextareaHeight();
   restoreAgentEditorState();
   // Put the caret back into whichever input/textarea was focused before the
@@ -11098,6 +11244,51 @@ function syncThreadViewport() {
   });
 }
 
+// P3 follow-up #1: after the user opens a search result that pointed at a
+// specific line inside a file, scroll the file preview so that line lands
+// in the middle of the viewport.  We defer to a double-rAF (same trick as
+// `syncThreadScroll`) so the preview DOM is actually mounted before we go
+// looking for the `[data-line-number]` anchor span.  The request is
+// consumed once the scroll happens so later re-renders of the same file
+// (e.g. after unrelated state updates) don't keep jumping the viewport.
+function syncFileEditorGoToLine() {
+  const pending = uiState.pendingGoToLine;
+  if (!pending || !Number.isFinite(pending.line) || pending.line <= 0) {
+    return;
+  }
+
+  const selectedFile = uiState.bootstrap?.workspace?.selectedFile;
+  if (!selectedFile || selectedFile.path !== pending.filePath) {
+    // The file we wanted isn't mounted yet (or the user navigated away).
+    // Leave the request in place; a future render cycle will either mount
+    // it or the next `handleSelectWorkspaceFile` call will overwrite it.
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const preview = document.querySelector('.code-preview');
+      if (!(preview instanceof HTMLElement)) {
+        return;
+      }
+      const target = preview.querySelector(
+        `.code-line[data-line-number="${pending.line}"]`,
+      );
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ block: 'center', behavior: 'auto' });
+        target.classList.add('code-line-hit');
+        window.setTimeout(() => {
+          target.classList.remove('code-line-hit');
+        }, 1600);
+      }
+      // Consume the request whether or not the target existed — if the line
+      // was out of range (truncated preview, short file) we don't want to
+      // keep retrying on every render.
+      uiState.pendingGoToLine = null;
+    });
+  });
+}
+
 function syncSearchFieldFocus() {
   if (
     !uiState.shouldFocusSearch ||
@@ -11239,6 +11430,36 @@ document.addEventListener('click', async event => {
           currentSearchResultById(trigger.dataset.resultId),
         );
         break;
+      case 'toggle-search-group-hits': {
+        // Flip the expansion flag for one file-group row so its hit sub-list
+        // shows / hides.  Keyed by filePath (stable across re-streams).
+        const filePath = trigger.dataset.filePath || '';
+        if (!filePath) break;
+        const current = uiState.expandedSearchGroups || {};
+        if (current[filePath]) {
+          delete current[filePath];
+        } else {
+          current[filePath] = true;
+        }
+        uiState.expandedSearchGroups = { ...current };
+        render();
+        break;
+      }
+      case 'open-file-match-line': {
+        // Direct drill-down from an expanded sub-hit: open the file at the
+        // exact line the user clicked.  We credit the click boost to the
+        // parent group-level result id so ranking still learns from
+        // sub-hit interactions.
+        const filePath = trigger.dataset.filePath || '';
+        const lineNumber = Number(trigger.dataset.lineNumber) || 0;
+        const parentId = trigger.dataset.parentResultId || '';
+        if (!filePath) break;
+        if (parentId) recordSearchClickBoost(parentId);
+        uiState.highlightedMessageId = null;
+        uiState.shouldFocusSearch = false;
+        await handleSelectWorkspaceFile(filePath, { lineNumber });
+        break;
+      }
       case 'open-command-palette':
         uiState.shouldFocusSearch = false;
         openCommandPalette();

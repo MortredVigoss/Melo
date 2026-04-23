@@ -2144,6 +2144,123 @@ select option {
   white-space: nowrap;
 }
 
+/* ─── File-group row + expandable sub-list ────────────────────────────
+   The outer .search-action-row groups the primary row button and an
+   expand chevron so they share the same hover-highlight region; the
+   .search-action-sublist slides under them when expanded. */
+
+.search-action-row--file-group {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.search-action-row--file-group:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.search-action-row--file-group.is-expanded {
+  border-color: rgba(120, 220, 210, 0.18);
+  background: rgba(120, 220, 210, 0.04);
+}
+
+.search-action-row-head {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.search-action-button--grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The row-head already provides the hover surface; the inner button
+   should blend into it rather than stack its own hover rectangle. */
+.search-action-row--file-group .search-action-button--grow:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+.search-action-expand {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-right: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(225, 240, 238, 0.9);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.search-action-expand:hover {
+  border-color: rgba(120, 220, 210, 0.4);
+  background: rgba(120, 220, 210, 0.12);
+}
+
+.search-action-expand-chip {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.search-action-expand-caret {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.search-action-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 10px 52px;
+}
+
+.search-action-subhit {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(225, 240, 238, 0.85);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.search-action-subhit:hover {
+  background: rgba(120, 220, 210, 0.1);
+  border-color: rgba(120, 220, 210, 0.24);
+}
+
+.search-action-subhit-line {
+  color: rgba(120, 220, 210, 0.85);
+  font-weight: 600;
+  text-align: right;
+}
+
+.search-action-subhit-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 .search-input,
 .input,
 .textarea,
@@ -2863,6 +2980,21 @@ select option {
 
 .code-preview {
   max-height: 340px;
+}
+
+/* Each preview line is wrapped in a <span.code-line> carrying a
+   data-line-number. Default display is inline so the <pre> keeps its
+   native line breaks; the hit flash briefly tints the matched line when
+   we scroll to it from a search result. */
+.code-preview .code-line {
+  display: inline;
+  border-radius: 4px;
+  transition: background-color 280ms ease-out;
+}
+
+.code-preview .code-line.code-line-hit {
+  background: rgba(120, 220, 210, 0.22);
+  box-shadow: 0 0 0 2px rgba(120, 220, 210, 0.22);
 }
 
 .code-editor {

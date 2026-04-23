@@ -171,13 +171,13 @@ async function requestEventStream(path, options = {}) {
         continue;
       }
 
-      if (message.event === 'hit' || message.event === 'group') {
-        // P3 follow-up: the server now emits 'group' events (one per file)
-        // and 'hit' events (one per line).  The smoke harness aggregates
-        // either shape — both carry filePath + subtitle so the downstream
-        // assertion on `(hits || []).find(item => item.filePath === …)`
-        // keeps working.  Groups additionally carry a `hits` array, which
-        // we ignore here.
+      if (message.event === 'group') {
+        // P3 follow-up #3: the server now emits only 'group' events (one
+        // per file, carrying `filePath` + `subtitle` + a `hits` array with
+        // up to 3 representative lines).  The transitional per-line 'hit'
+        // event was retired — downstream assertions keep working because
+        // each group already exposes `filePath` + `subtitle` at the top
+        // level, matching the old per-line shape.
         hits.push(message.payload);
       } else if (message.event === 'done') {
         donePayload = message.payload;
