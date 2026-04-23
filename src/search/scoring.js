@@ -23,6 +23,12 @@ export function fuzzySubsequenceScore(query, target) {
   if (!query || !target) {
     return 0;
   }
+  // Bug 5 (P1): single-character subsequence matches are pure noise — every
+  // query letter trivially appears somewhere in any long target.  Require at
+  // least two characters before awarding any score.
+  if (query.length < 2) {
+    return 0;
+  }
 
   let searchIndex = 0;
   let gapPenalty = 0;
@@ -36,7 +42,12 @@ export function fuzzySubsequenceScore(query, target) {
     searchIndex = foundAt + 1;
   }
 
-  return Math.max(18, 140 - gapPenalty - Math.max(0, target.length - query.length));
+  // Bug 5 (P1): the old floor of 18 meant every "query chars appear in order
+  // somewhere in target" result surfaced with non-zero score, which made the
+  // final raw-query fallback (run on a haystack that inevitably contained
+  // every space and vowel) give 18 points to essentially any candidate.  We
+  // now let the score fall to zero when the gap penalty swamps the base.
+  return Math.max(0, 140 - gapPenalty - Math.max(0, target.length - query.length));
 }
 
 export function fuzzySearchScore(query, ...values) {
@@ -89,7 +100,12 @@ export function fuzzySearchScore(query, ...values) {
   }
 
   if (!score) {
-    score = fuzzySubsequenceScore(raw, haystack);
+    // Bug 5 (P1): compact raw before the fallback so multi-word queries like
+    // "hello world" don't score 18 against every haystack merely because
+    // spaces are omnipresent.  Strip every inner whitespace run and run the
+    // subsequence scorer on the resulting compact string.
+    const compactRaw = raw.replace(/\s+/g, '');
+    score = fuzzySubsequenceScore(compactRaw, haystack);
   }
 
   if (!score) {
@@ -135,6 +151,17 @@ export function buildSearchSnippet(text, query, maxLength = 96) {
   }
 
   const normalizedText = rawText.toLowerCase();
+  // Bug 4 (P1): `String.prototype.toLowerCase()` can change the code-unit
+  // length of a string when case-folding expands characters (German ß → ss,
+  // Turkish İ → i̇, a handful of Greek letters).  When that happens, any
+  // indexOf() position computed against `normalizedText` cannot be mapped
+  // back to `rawText` via codeUnitIndexToGraphemeIndex without silently
+  // sliding the snippet window off the real match.  We fall back to a
+  // truncate-only snippet for those (rare) inputs rather than render a
+  // wrong window.
+  if (normalizedText.length !== rawText.length) {
+    return `${sliceByGrapheme(rawText, 0, Math.max(1, maxLength - 1))}…`;
+  }
   const { tokens, graphemes: cjkGraphemes, raw } = tokenizeQuery(query);
   const candidates = [...tokens, ...cjkGraphemes, raw].filter(Boolean);
   const matchToken = candidates.find(token => normalizedText.includes(token));

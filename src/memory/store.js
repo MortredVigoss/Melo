@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../config.js';
 import { EMBEDDING_DIMS, cosineSimilarity } from './embeddings.js';
 import { debugWarn, isDebugEnabled } from '../debug.js';
+import { isSubsequenceMatch } from '../search/scoring.js';
 
 const STORE_PATH = join(getMeloHome(), 'desktop', 'store.sqlite');
 let db = null;
@@ -364,6 +365,28 @@ function normalizeEntry(entry = {}) {
   };
 }
 
+// ─── Memory recall scoring (intentionally local) ─────────────────────────────
+//
+// We DO NOT import the full scoring stack from src/search/scoring.js here, on
+// purpose:
+//
+//   1. `tokenizeQuery` below splits on anything that isn't a letter/number/
+//      whitespace, which keeps a CJK phrase ("北京天气") as a single token.
+//      The search/scoring tokenizer uses Intl.Segmenter and breaks CJK into
+//      individual characters — correct for workspace file search, wrong
+//      for memory recall where the phrase-as-unit behavior is what gives
+//      meaningful ranking signal.
+//
+//   2. `fuzzySubsequenceScore` below uses base=100 (not 140) because
+//      scoreMemoryRow already multiplies the result by 0.4 and mixes it
+//      with per-token exact-match scores on a different scale.  Migrating
+//      memory to the search-domain weights would rebalance every memory
+//      recall ranking.
+//
+// What IS shared: `isSubsequenceMatch` (imported at the top of the file —
+// identical logic and no weight dependency).  Bug 5's noise-floor fix is
+// mirrored below so memory recall gets the same "gap-heavy subsequence
+// matches score zero" cleanup without taking on the search-domain weights.
 function tokenizeQuery(value = '') {
   return String(value || '')
     .toLowerCase()
@@ -372,16 +395,11 @@ function tokenizeQuery(value = '') {
     .filter(Boolean);
 }
 
-function isSubsequenceMatch(haystack, query) {
-  let qi = 0;
-  for (let i = 0; i < haystack.length && qi < query.length; i += 1) {
-    if (haystack[i] === query[qi]) qi += 1;
-  }
-  return qi === query.length;
-}
-
 function fuzzySubsequenceScore(query, target) {
   if (!query || !target) return 0;
+  // Bug 5 mirror: single-char subsequence matches are noise; require ≥2.
+  if (query.length < 2) return 0;
+
   let searchIndex = 0;
   let gapPenalty = 0;
   for (const char of query) {
@@ -390,7 +408,11 @@ function fuzzySubsequenceScore(query, target) {
     gapPenalty += Math.max(0, foundAt - searchIndex);
     searchIndex = foundAt + 1;
   }
-  return Math.max(10, 100 - gapPenalty - Math.max(0, target.length - query.length));
+  // Bug 5 mirror: let the score fall to 0 when the gap penalty swamps the
+  // base.  The previous floor of 10 meant every "chars appear in order"
+  // match earned points even when the match was spread across the whole
+  // haystack.
+  return Math.max(0, 100 - gapPenalty - Math.max(0, target.length - query.length));
 }
 
 function scoreMemoryRow(row, query = '') {
