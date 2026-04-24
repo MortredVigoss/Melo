@@ -166,6 +166,33 @@ test('generateImageViaCodex falls back to response.completed.output when streami
   assert.ok(result.buffer.length >= 2048);
 });
 
+// Regression for the HTTP 400 `{"detail":"Instructions are required"}` that
+// the live /codex/responses endpoint returns for requests missing the
+// `instructions` field. The instruction also serves as a guardrail against
+// the model bailing to "here's an SVG, save it yourself" behavior.
+test('generateImageViaCodex sends a non-empty instructions field that forbids SVG/text fallbacks', async () => {
+  let capturedBody = null;
+  const fetchImpl = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return mockResponseFromEvents([
+      sseEvent({
+        type: 'response.output_item.done',
+        item: { type: 'image_generation_call', result: fakePngBase64(2048), output_format: 'png' },
+      }),
+    ]);
+  };
+  await generateImageViaCodex({
+    prompt: 'anything',
+    fetchImpl,
+    credentialProvider: async () => loggedInCredential(),
+  });
+  assert.equal(typeof capturedBody.instructions, 'string');
+  assert.ok(capturedBody.instructions.length > 0, 'instructions must be non-empty');
+  // Guardrails we rely on — tighten if the text is ever rewritten.
+  assert.match(capturedBody.instructions, /image_generation/);
+  assert.match(capturedBody.instructions, /svg/i);
+});
+
 test('generateImageViaCodex forwards background/input_fidelity into tool config', async () => {
   let capturedBody = null;
   const fetchImpl = async (_url, init) => {

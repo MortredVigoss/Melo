@@ -47,11 +47,30 @@
 // module doesn't drag in the chat-completion plumbing, and vice-versa —
 // the image engine lives next to sdcppEngine.js in src/images/ for a reason.
 
-import { writeFile } from 'node:fs/promises';
+import { writeFile, appendFile, mkdir } from 'node:fs/promises';
 import { platform, release, arch } from 'node:os';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getCodexCredential } from '../codexAuth.js';
+import { getMeloHome } from '../config.js';
 import { detectImageMimeFromBytes } from './imageGen.js';
+
+// ─── Debug log ──────────────────────────────────────────────────────────────
+// Every request writes a timestamped trace to
+// <meloHome>/desktop/image-debug.log so we can tell, for a hung request,
+// whether we never got a response, got a response but no image events, or
+// got image events that failed the magic-byte check. Intentionally
+// fire-and-forget: a full disk / permission denied must not break image gen.
+// Resolve the path lazily per call so test overrides of MELO_HOME take effect.
+async function debugLog(line) {
+  try {
+    const path = join(getMeloHome(), 'desktop', 'image-debug.log');
+    await mkdir(dirname(path), { recursive: true });
+    await appendFile(path, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // best-effort — log failure must not break image gen
+  }
+}
 
 const CODEX_RESPONSES_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
 
@@ -279,10 +298,24 @@ export async function generateImageViaCodex({
   if (background) imageTool.background = String(background);
   if (inputFidelity) imageTool.input_fidelity = String(inputFidelity);
 
+  // The Codex `/codex/responses` endpoint rejects requests without an
+  // `instructions` field with `HTTP 400 {"detail":"Instructions are required"}`
+  // (discovered via image-debug.log after live failures). The instruction
+  // doubles as a guardrail: the model used to sometimes bail to "here is an
+  // SVG, save it as a .svg file and convert it yourself" text, which defeats
+  // the whole point of an image tool. Being explicit fixes that too.
+  const instructions = [
+    'You are an image-generation assistant inside Melo.',
+    'Always call the image_generation tool exactly once to fulfill the user\'s request — do not answer with text descriptions, markdown, code, or SVG/HTML markup.',
+    'Never instruct the user to save anything and convert it themselves; the tool returns a ready-to-view raster image (PNG/JPEG/WebP) and the host app handles display.',
+    'If the request is ambiguous, make a reasonable creative choice and still call the tool.',
+  ].join(' ');
+
   const body = {
     model,
     stream: true,
     store: false,
+    instructions,
     input: [
       {
         role: 'user',
@@ -298,6 +331,10 @@ export async function generateImageViaCodex({
   // otherwise fall back to a manual linkage.
   const fetchSignal = composeSignals(signal, AbortSignal.timeout(timeoutMs));
 
+  const requestStart = Date.now();
+  const tracePrefix = `[codex-img sid=${sessionId.slice(0, 8)} model=${model}]`;
+  await debugLog(`${tracePrefix} → POST ${CODEX_RESPONSES_ENDPOINT} prompt="${prompt.slice(0, 80).replace(/\n/g, ' ')}" timeout=${timeoutMs}ms`);
+
   const response = await fetchImpl(CODEX_RESPONSES_ENDPOINT, {
     method: 'POST',
     headers: buildHeaders({
@@ -307,10 +344,24 @@ export async function generateImageViaCodex({
     }),
     body: JSON.stringify(body),
     signal: fetchSignal,
+  }).catch(async err => {
+    await debugLog(`${tracePrefix} ✗ fetch threw at ${Date.now() - requestStart}ms: ${err?.name}: ${err?.message}`);
+    throw err;
   });
+
+  await debugLog(`${tracePrefix} ← HTTP ${response.status} ${response.statusText || ''} in ${Date.now() - requestStart}ms content-type=${response.headers?.get?.('content-type') || 'n/a'}`);
 
   if (!response.ok) {
     const raw = await safeReadText(response);
+    // Full body to the debug log — vital when the failure mode is an
+    // API-level rejection (e.g. model doesn't expose the image tool,
+    // bad request shape, over-quota). Truncated because some error
+    // payloads include the original prompt back.
+    await debugLog(`${tracePrefix} ✗ error body: ${(raw || '').slice(0, 800).replace(/\s+/g, ' ')}`);
+    // Also dump the outgoing request body on the first few chars so we can
+    // compare request vs. response shape after the fact.
+    await debugLog(`${tracePrefix} ✗ request body preview: ${JSON.stringify(body).slice(0, 400)}`);
+
     let message = `Codex image generation HTTP ${response.status}`;
     try {
       const parsed = raw ? JSON.parse(raw) : null;
@@ -330,16 +381,36 @@ export async function generateImageViaCodex({
   // Walk the stream for the image_generation_call.done event (or, as a
   // fallback, the terminal response.completed event containing the item).
   let completedResponse = null;
+  let eventCount = 0;
+  const eventTypeTally = new Map();
 
   const imageItem = await consumeSseStream(
     response,
-    event => {
+    async event => {
       if (!event) return null;
+
+      eventCount += 1;
+      const type = String(event.type || 'unknown');
+      eventTypeTally.set(type, (eventTypeTally.get(type) || 0) + 1);
+
+      // Log every event for the first 30, then sample afterwards so the log
+      // stays readable even if the stream is chatty. Partial-image events
+      // (response.image_generation_call.partial_image) are the main chatter.
+      if (eventCount <= 30 || eventCount % 20 === 0) {
+        let extra = '';
+        if (event.item?.type) extra += ` item.type=${event.item.type}`;
+        if (event.item?.status) extra += ` item.status=${event.item.status}`;
+        if (typeof event.item?.result === 'string') extra += ` item.result.bytes=${event.item.result.length}`;
+        if (event.response?.status) extra += ` response.status=${event.response.status}`;
+        if (event.response?.error?.message) extra += ` response.error=${event.response.error.message.slice(0, 120)}`;
+        await debugLog(`${tracePrefix}   #${eventCount} ${type}${extra}`);
+      }
 
       // Streaming-path success signal.
       if (event.type === 'response.output_item.done' && event.item?.type === 'image_generation_call') {
         const item = event.item;
         if (typeof item.result === 'string' && item.result) {
+          await debugLog(`${tracePrefix} ✓ image result found (output_item.done) after ${Date.now() - requestStart}ms, ${eventCount} events, base64.bytes=${item.result.length}`);
           return item;
         }
       }
@@ -350,12 +421,16 @@ export async function generateImageViaCodex({
       if (event.type === 'response.completed' || event.type === 'response.done') {
         completedResponse = event.response || completedResponse;
         const fromOutput = findImageResultInOutput(completedResponse?.output);
-        if (fromOutput) return fromOutput;
+        if (fromOutput) {
+          await debugLog(`${tracePrefix} ✓ image result found (response.completed) after ${Date.now() - requestStart}ms, ${eventCount} events`);
+          return fromOutput;
+        }
       }
 
       // Terminal failure.
       if (event.type === 'error' || event.type === 'response.failed') {
         const msg = eventErrorMessage(event);
+        await debugLog(`${tracePrefix} ✗ stream error event after ${Date.now() - requestStart}ms: ${msg}`);
         const err = new Error(msg);
         err.code = 'GENERATE_FAILED';
         throw err;
@@ -364,7 +439,22 @@ export async function generateImageViaCodex({
       return null;
     },
     { idleTimeoutMs: IDLE_TIMEOUT_MS },
-  );
+  ).catch(async err => {
+    const tally = Array.from(eventTypeTally.entries())
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ');
+    await debugLog(`${tracePrefix} ✗ stream ended abnormally at ${Date.now() - requestStart}ms after ${eventCount} events [${tally}]: ${err?.message}`);
+    throw err;
+  });
+
+  if (imageItem) {
+    // log nothing extra — success was already logged above
+  } else {
+    const tally = Array.from(eventTypeTally.entries())
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ');
+    await debugLog(`${tracePrefix} ⚠ stream drained with no image after ${Date.now() - requestStart}ms, ${eventCount} events [${tally}]`);
+  }
 
   if (!imageItem) {
     // Final sweep: if we got a response.completed but missed the image on

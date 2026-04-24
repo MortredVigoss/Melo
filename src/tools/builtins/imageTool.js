@@ -166,7 +166,25 @@ export const imageTool = {
     'generate: text-to-image. Default engine is local sd.cpp + SDXL (fully offline, 15-25s per image on Apple Silicon Metal) when the model file is present; falls back to MiniMax if `engine: "minimax"` is passed or no local model is installed. Returns a URL the UI renders inline.',
   category: 'files',
   isConcurrencySafe: true,
-  requiresPermission: true,
+  // No permission prompt: all four actions are non-destructive —
+  //   • ocr / info      → read-only on the input file
+  //   • process         → writes into the chat workspace (generated/… by
+  //                       default, explicit `output` path is explicit user intent)
+  //   • generate        → writes a new PNG into workspace/generated/
+  // Requiring a permission dialog before "画张图" is a UX regression: the
+  // permission prompt has a 120s timeout (permissions.js) and if the user
+  // doesn't notice / click, the request fails with a misleading "timeout"
+  // error — the actual image engine never even starts. Same risk class as
+  // fetchUrl / webSearch / mediaInfo, which are also permission-free.
+  requiresPermission: false,
+  // Generate-by-diffusion takes real wall clock time:
+  //   • sd.cpp on Apple Silicon: ~15–25s for SDXL @ 30 steps
+  //   • MiniMax:                  ~5–20s HTTP + ~2s download
+  //   • Codex OAuth (gpt-image-2): usually 30–60s, sometimes 90–120s
+  // The engine layer also enforces its own 120s cap; 180s here is a safety
+  // margin around the slower Codex path so the outer tool executor doesn't
+  // preempt a healthy in-progress stream.
+  timeout: 180_000,
   parametersSchema: {
     type: 'object',
     properties: {
