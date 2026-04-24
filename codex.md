@@ -5,26 +5,26 @@
 
 ## 当前状态
 
-- 更新时间：2026/04/24 22:47:25 Australia/Melbourne
+- 更新时间：2026/04/24 23:17:29 Australia/Melbourne
 - 当前分支：master
 
 ## 工作区状态
 
 ```text
-## master...origin/master [ahead 2]
+## master...origin/master [ahead 1]
  M PROGRESS.md
 ```
 
 ## 最近提交
 
+- 7250cd7 refactor(agent): extract agentProfileService pure core (Phase 7c)
+- c06ef49 progress: backfill Phase 7b hashes (33aba21, 0f7d2af)
 - 0f7d2af tune(codex-review): force explicit git log + per-commit git show walk
 - 33aba21 refactor(workspace): extract workspaceService from desktopStore (Phase 7b)
 - c610b75 fix(codex-review): switch to `codex exec` because --base conflicts with custom prompt
 - 3ab4cb0 progress: backfill 2026-04-24 22:10 / 21:47 with real commit hashes
 - 8c03a68 refactor(search): extract searchService from desktopStore (Phase 7a)
 - 3fcbdea chore(progress): auto-generate codex.md snapshot
-- 6fddc01 chore(scripts): add codex-review.sh + git pp alias protocol
-- 95765bb progress: backfill 2026-04-24 timeline with real commit hashes
 
 ## 完整进度时间线
 
@@ -34,6 +34,22 @@
 > 当本文件超过 160 行或 8000 字符时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+
+## 2026-04-24 23:45 — Phase 7c：抽出 agentProfileService 纯逻辑核心（desktopStore 解耦 ③/④）
+
+- 做了什么：新建 `src/services/agent/agentProfileService.js`，提取 `updateAgentProfile` / `createCustomAgent` 里的三块纯逻辑：
+  1. `normalizeAgentUpdatePatch(rawPatch)` — identity/soul 别名消歧（`identify` → `identity`、`soul.md`/`soul` → `soulMd`），把 raw channels 从 patch 里抽出来单独返回（防止绕过下面的 stale-draft guard）。
+  2. `mergeChannelsWithStaleDraftGuard(incomingRaw, persistedRaw)` — 防止 UI 端"空 draft"误覆盖已持久化的 channel 配置的核心逻辑（参考 `feedback_preserve_user_config.md`）；service 里的版本接受 persisted 作为参数，成为一个无状态纯函数。
+  3. `buildNewCustomAgent(existingProfiles)` — 分配下一个 custom agent id + 拼装默认 profile 种子。
+- 为什么：
+  - 这三块逻辑之前是 `updateAgentProfile` 240 行大函数里最复杂也最容易出错的部分，出过至少一次生产事故（channel token 被 `undefined` spread-merge 静默擦掉）。搬到独立模块 = 可独立跑 18 个单元测试验证每条规则（别名优先级、空 draft 检测、voiceReply 单独作为 user config 等），覆盖度远胜原先"只在集成流程里偶然执行到"。
+  - 保留在 desktopStore 的部分：`updateStateAtomically` 原子写 + `writeMarkdownFile` 文件 I/O + UI settings 突变 —— 这些需要 state-machine 锁 + 副作用编排，不是 service 该碰的。
+  - `testAgentChannelConnection` 留给后续 channel-specific service，不在 7c 范围。
+- 产出 / 提交哈希：`7250cd7`
+  - 新增 `src/services/agent/agentProfileService.js`（~180 行含注释，3 个 export）
+  - 新增 `src/services/agent/agentProfileService.test.js`（18 个单元测试，全绿，专门覆盖别名优先级 + stale-draft guard 边界）
+  - `src/desktopStore.js` 精简：`updateAgentProfile` 头部约 100 行 inline 逻辑 → 3 行 service 调用；`createCustomAgent` 中间 ~20 行 → 1 行 `buildNewCustomAgent`
+  - 回归：services + desktopStore + search + state 套件 242/242；跨域 images+tools+media+memory+**agents** 583/583 全绿
 
 ## 2026-04-24 23:00 — Phase 7b：抽出 workspaceService（desktopStore 解耦 ②/④）+ 强化 review prompt
 
