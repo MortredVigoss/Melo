@@ -189,13 +189,25 @@ test('buildNewCustomAgent: empty profiles → allocates first custom agent id', 
   assert.ok(Array.isArray(profile.tools) && profile.tools.length > 0);
 });
 
-test('buildNewCustomAgent: with existing custom agents → allocates a fresh id', () => {
-  const existing = {
-    'custom-1': { isCustom: true, name: 'Existing' },
-  };
-  const { agentId } = buildNewCustomAgent(existing);
-  assert.notEqual(agentId, 'custom-1');
-  assert.ok(agentId.startsWith('custom-'));
+test('buildNewCustomAgent: skips an already-taken `custom-agent-N` id', () => {
+  // Allocator's real namespace is `custom-agent-<N>` (see nextCustomAgentId
+  // in agentLibrary.js). Seeding with an id from that exact namespace is
+  // what actually exercises the "skip taken" branch — our earlier
+  // `custom-1` seed lived in a different namespace and passed trivially.
+  const { agentId } = buildNewCustomAgent({
+    'custom-agent-1': { isCustom: true, name: 'Existing' },
+  });
+  assert.equal(agentId, 'custom-agent-2');
+});
+
+test('buildNewCustomAgent: fills the lowest available gap when ids are non-contiguous', () => {
+  const { agentId } = buildNewCustomAgent({
+    'custom-agent-1': { isCustom: true },
+    'custom-agent-3': { isCustom: true },
+  });
+  // Allocator scans from 1 upward and returns the first free slot, not
+  // max+1. The gap at 2 should be filled before any higher index.
+  assert.equal(agentId, 'custom-agent-2');
 });
 
 test('buildNewCustomAgent: identity and soul fields are consistent across aliases', () => {
