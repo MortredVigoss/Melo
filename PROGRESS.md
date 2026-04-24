@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-04-24 23:00 — Phase 7b：抽出 workspaceService（desktopStore 解耦 ②/④）+ 强化 review prompt
+
+- 做了什么：
+  - **Phase 7b**：把 `readWorkspaceFilePreview` / `saveWorkspaceFile` / `applyArtifactToWorkspaceFile` 的业务逻辑抽到新模块 `src/services/workspace/workspaceService.js`。服务只做 I/O + 输入校验（读/写主动通过 DI 可被 mock），**不碰 state 突变**——UI 状态（selectedFilePath / activeMode / project.updatedAt / saveState）由 desktopStore 的 wrapper 在同一份 state 快照上完成，避免 double-load。`selectWorkspaceFile` 留在 desktopStore 不动（纯 UI 状态突变，不属于 workspace I/O）。
+  - **Review prompt 强化**：之前 Codex 在 21K tokens 里跳过 `git show` 直接结论。把 prompt 改成**强制 4 步探索**（git log → git diff --stat → 逐 commit `git show` → 按需聚焦），并把"不能跳过"、"必须看每个 commit" 写成硬性规则；调整输出格式要求更严格（总评必须三选一、每条发现带文件:行号）。
+- 为什么：
+  - Phase 7b 延续 7a 的低风险范式，继续给 desktopStore 瘦身；同时完善 `src/services/workspace/` 下的层次结构（底层 `workspaceFiles.js` 是原语，新增的 `workspaceService.js` 是 orchestration，职责分层清晰）。
+  - Review prompt 要对得起 "每次 push 强制 review" 这条 CLAUDE.md §1 规则——上次那份输出只看了最后一个 commit，起不到跨 commit 把关的作用。
+- 产出 / 提交哈希：
+  - `33aba21` refactor(workspace): extract workspaceService from desktopStore (Phase 7b)
+  - `0f7d2af` tune(codex-review): force explicit git log + per-commit git show walk
+- 细节：
+  - 新增 `src/services/workspace/workspaceService.js`（~110 行，3 个 export）
+  - 新增 `src/services/workspace/workspaceService.test.js`（12 个单元测试，全绿）
+  - `src/desktopStore.js` 3 个 wrapper 改薄（原 61 行 → 38 行）
+  - `scripts/codex-review.sh` prompt 大改（强制探索步骤 + 硬性规则 + 严格输出格式）
+  - 回归：services+desktopStore+search 套件 224/224；跨域 images+tools+media+memory 442/442 全绿
+
 ## 2026-04-24 22:10 — Phase 7a：抽出 searchService（desktopStore 解耦 ①/④）
 
 - 做了什么：把 `streamSearchFileGroups` / `streamSearchFileHits` 的 orchestration 搬到新模块 `src/services/search/searchService.js`，工作区解析通过 `deps.resolveWorkspace` 注入。desktopStore 保留同名 export 作为 8 行薄壳，只负责把 `loadState → ensureSelectedEntities → findProjectById → buildWorkspaceSnapshot` 组装成 resolver 传进去。常量 `MAX_SEARCH_FILE_GROUPS` / `MAX_LINES_PER_FILE_GROUP` 一并迁移，外加清掉了从未被调用的 `streamWorkspaceContent` 导入。

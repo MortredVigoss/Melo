@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-- 更新时间：2026/04/24 22:34:15 Australia/Melbourne
+- 更新时间：2026/04/24 22:47:25 Australia/Melbourne
 - 当前分支：master
 
 ## 工作区状态
@@ -13,19 +13,18 @@
 ```text
 ## master...origin/master [ahead 2]
  M PROGRESS.md
-?? codex.md
 ```
 
 ## 最近提交
 
+- 0f7d2af tune(codex-review): force explicit git log + per-commit git show walk
+- 33aba21 refactor(workspace): extract workspaceService from desktopStore (Phase 7b)
+- c610b75 fix(codex-review): switch to `codex exec` because --base conflicts with custom prompt
+- 3ab4cb0 progress: backfill 2026-04-24 22:10 / 21:47 with real commit hashes
 - 8c03a68 refactor(search): extract searchService from desktopStore (Phase 7a)
 - 3fcbdea chore(progress): auto-generate codex.md snapshot
 - 6fddc01 chore(scripts): add codex-review.sh + git pp alias protocol
 - 95765bb progress: backfill 2026-04-24 timeline with real commit hashes
-- f87c06c chore: add CLAUDE.md working protocol + PROGRESS.md timeline
-- 8fb3cf9 fix(image): add instructions field required by /codex/responses
-- 5f128c6 fix(audio): transcription soft-fallback + codex env-backed mode
-- 10dd2e5 image(engine): add Codex OAuth path (gpt-image-2 via /codex/responses)
 
 ## 完整进度时间线
 
@@ -35,6 +34,24 @@
 > 当本文件超过 160 行或 8000 字符时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+
+## 2026-04-24 23:00 — Phase 7b：抽出 workspaceService（desktopStore 解耦 ②/④）+ 强化 review prompt
+
+- 做了什么：
+  - **Phase 7b**：把 `readWorkspaceFilePreview` / `saveWorkspaceFile` / `applyArtifactToWorkspaceFile` 的业务逻辑抽到新模块 `src/services/workspace/workspaceService.js`。服务只做 I/O + 输入校验（读/写主动通过 DI 可被 mock），**不碰 state 突变**——UI 状态（selectedFilePath / activeMode / project.updatedAt / saveState）由 desktopStore 的 wrapper 在同一份 state 快照上完成，避免 double-load。`selectWorkspaceFile` 留在 desktopStore 不动（纯 UI 状态突变，不属于 workspace I/O）。
+  - **Review prompt 强化**：之前 Codex 在 21K tokens 里跳过 `git show` 直接结论。把 prompt 改成**强制 4 步探索**（git log → git diff --stat → 逐 commit `git show` → 按需聚焦），并把"不能跳过"、"必须看每个 commit" 写成硬性规则；调整输出格式要求更严格（总评必须三选一、每条发现带文件:行号）。
+- 为什么：
+  - Phase 7b 延续 7a 的低风险范式，继续给 desktopStore 瘦身；同时完善 `src/services/workspace/` 下的层次结构（底层 `workspaceFiles.js` 是原语，新增的 `workspaceService.js` 是 orchestration，职责分层清晰）。
+  - Review prompt 要对得起 "每次 push 强制 review" 这条 CLAUDE.md §1 规则——上次那份输出只看了最后一个 commit，起不到跨 commit 把关的作用。
+- 产出 / 提交哈希：
+  - `33aba21` refactor(workspace): extract workspaceService from desktopStore (Phase 7b)
+  - `0f7d2af` tune(codex-review): force explicit git log + per-commit git show walk
+- 细节：
+  - 新增 `src/services/workspace/workspaceService.js`（~110 行，3 个 export）
+  - 新增 `src/services/workspace/workspaceService.test.js`（12 个单元测试，全绿）
+  - `src/desktopStore.js` 3 个 wrapper 改薄（原 61 行 → 38 行）
+  - `scripts/codex-review.sh` prompt 大改（强制探索步骤 + 硬性规则 + 严格输出格式）
+  - 回归：services+desktopStore+search 套件 224/224；跨域 images+tools+media+memory 442/442 全绿
 
 ## 2026-04-24 22:10 — Phase 7a：抽出 searchService（desktopStore 解耦 ①/④）
 
