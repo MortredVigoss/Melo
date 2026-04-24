@@ -235,6 +235,11 @@ import {
   listWorkspaceEntries,
 } from './services/workspace/workspaceFiles.js';
 import {
+  readWorkspaceFilePreview as readWorkspaceFilePreviewService,
+  saveWorkspaceFileContent as saveWorkspaceFileContentService,
+  applyArtifactContentToWorkspace as applyArtifactContentToWorkspaceService,
+} from './services/workspace/workspaceService.js';
+import {
   normalizeArtifact,
   summarizeArtifact,
   extractArtifacts,
@@ -8203,60 +8208,36 @@ export async function selectWorkspaceFile(filePath) {
   return getDesktopBootstrap();
 }
 
-/**
- * Read a workspace file for read-only preview (citation side viewer).
- *
- * Unlike selectWorkspaceFile this does NOT mutate global state — it's a
- * pure fetch for the NotebookLM-style citation drawer. The frontend calls
- * this when the user clicks a `<cite>` pill so we can render the source
- * file scrolled to the cited line range without kicking the user out of
- * chat view or swapping the persistent selectedFilePath.
- *
- * Rejects paths outside the project workspace (readWorkspaceFile itself
- * calls resolveWorkspaceFilePath which throws on traversal / absolute
- * paths), so the only way to fetch a file is to cite one that actually
- * lives inside the active project root.
- *
- * @param {{ filePath: string, projectId?: string }} params
- * @returns {Promise<{ path: string, name: string, language: string, content: string, truncated: boolean, size: number, isBinary: boolean }>}
- */
-export async function readWorkspaceFilePreview({ filePath, projectId } = {}) {
-  const relative = String(filePath || '').trim();
-  if (!relative) {
-    throw new Error('File path is required.');
-  }
-
-  const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
-  if (!project) {
-    throw new Error('Project not found.');
-  }
-  if (!project.workspacePath) {
-    throw new Error('Project has no workspace.');
-  }
-
-  // Delegates safety checks (traversal, absolute paths, size cap) to the
-  // workspace-file service so this endpoint stays thin.
-  return readWorkspaceFile(project.workspacePath, relative);
+// Workspace I/O orchestration moved to src/services/workspace/workspaceService.js
+// in Phase 7b. These wrappers load state once, pass a state-backed resolver
+// into the service, then apply UI state side-effects (selectedFilePath,
+// activeMode/View, project.updatedAt) on the same snapshot before persisting.
+// selectWorkspaceFile stays below as-is — it's pure state mutation, not I/O.
+function buildWorkspaceProjectResolver(state) {
+  return async projectId =>
+    findProjectById(state, projectId || state.settings.selectedProjectId);
 }
 
-export async function saveWorkspaceFile({ filePath, content, projectId }) {
+/**
+ * Read a workspace file for read-only preview (citation side viewer).
+ * Does NOT mutate state — the NotebookLM-style citation drawer opens
+ * files without kicking the user out of chat view or swapping
+ * selectedFilePath.
+ */
+export async function readWorkspaceFilePreview(params = {}) {
   const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
-  if (!project) {
-    throw new Error('Project not found.');
-  }
+  return readWorkspaceFilePreviewService(params, {
+    resolveProject: buildWorkspaceProjectResolver(state),
+  });
+}
 
-  const relativeFilePath = String(filePath || '').trim();
-  if (!relativeFilePath) {
-    throw new Error('File path is required.');
-  }
+export async function saveWorkspaceFile({ filePath, content, projectId } = {}) {
+  const state = ensureSelectedEntities(await loadState());
+  const { project, relativeFilePath } = await saveWorkspaceFileContentService(
+    { filePath, content, projectId },
+    { resolveProject: buildWorkspaceProjectResolver(state) },
+  );
 
-  if (typeof content !== 'string') {
-    throw new Error('File content must be text.');
-  }
-
-  await writeWorkspaceFile(project.workspacePath, relativeFilePath, content);
   state.settings.selectedFilePath = relativeFilePath;
   state.settings.activeMode = 'code';
   state.settings.activeView = 'chat';
@@ -8293,27 +8274,25 @@ export async function createArtifact({ title, content, language, projectId, kind
   return getDesktopBootstrap();
 }
 
-export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId }) {
+export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {
   const state = ensureSelectedEntities(await loadState());
   const artifact = state.artifacts.find(entry => entry.id === artifactId);
   if (!artifact) {
     throw new Error('Artifact not found.');
   }
 
-  const targetPath = String(filePath || state.settings.selectedFilePath || '').trim();
-  if (!targetPath) {
-    throw new Error('Choose a target file before applying this artifact.');
-  }
-
-  const project = findProjectById(
-    state,
-    projectId || artifact.projectId || state.settings.selectedProjectId,
+  // Resolve the caller's projectId chain (explicit → artifact's project →
+  // selected project) before handing off to the service. The "target path
+  // empty? fall back to selected file" rule is also a state-machine call.
+  const { project, targetPath } = await applyArtifactContentToWorkspaceService(
+    {
+      artifactContent: artifact.content,
+      targetFilePath: filePath || state.settings.selectedFilePath,
+      projectId: projectId || artifact.projectId,
+    },
+    { resolveProject: buildWorkspaceProjectResolver(state) },
   );
-  if (!project) {
-    throw new Error('Project not found.');
-  }
 
-  await writeWorkspaceFile(project.workspacePath, targetPath, artifact.content);
   state.settings.selectedFilePath = targetPath;
   state.settings.activeMode = 'code';
   state.settings.activeView = 'chat';
