@@ -15,6 +15,7 @@
     "install:desktop": "zsh scripts/install-desktop-app.sh",
     "test": "node scripts/verify-red-green.js",
     "verify:red-green": "node scripts/verify-red-green.js",
+    "progress:codex": "node scripts/sync-codex-progress.js",
     "start": "node src/index.js",
     "doctor": "node src/index.js doctor",
     "chat": "node src/index.js chat",

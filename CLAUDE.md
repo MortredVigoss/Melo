@@ -37,6 +37,7 @@ git config --local alias.pp '!./scripts/codex-review.sh'
   ```
 - `PROGRESS.md` 是时间轴日志，不做分章节结构化——按时间倒序从顶部追加最新条目，旧的往下压。
 - 它与 `git log` 的区别：`git log` 面向代码变更，`PROGRESS.md` 面向 **意图与上下文**，便于未来新会话快速接续。
+- 每次更新 `PROGRESS.md` 后运行 `npm run progress:codex`，自动刷新仓库根目录的 `codex.md`。`codex.md` 是给 Claude / Codex 快速接续用的完整进度快照，包含 git 状态、最近提交和完整 `PROGRESS.md` 时间线。
 
 ## 3. 2 页阈值 = 自动摘要压缩
 
