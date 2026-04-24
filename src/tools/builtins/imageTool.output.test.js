@@ -18,21 +18,44 @@ test('generate: missing prompt → INVALID_PARAMS', async () => {
   assert.match(result.output, /prompt/i);
 });
 
-test('generate: missing MiniMax credentials → NOT_CONFIGURED', async () => {
-  // Temporarily clear both the env and the passed config
+test('generate: no configured engine at all → NOT_CONFIGURED with hints for every engine', async () => {
+  // Force auto order to probe every engine: no MiniMax key, no Codex OAuth
+  // session in the test env, no sd.cpp model.  The tool must aggregate all
+  // three NOT_CONFIGURED results into a single actionable message (vs
+  // GENERATE_FAILED, which would mask "the user needs to add a key").
   const prevKey = process.env.MINIMAX_API_KEY;
+  const prevGroup = process.env.MINIMAX_GROUP_ID;
+  const prevCodexHome = process.env.CODEX_HOME;
   delete process.env.MINIMAX_API_KEY;
+  delete process.env.MINIMAX_GROUP_ID;
+  // Point CODEX_HOME at a nonexistent directory so the credential resolver
+  // returns a not-logged-in credential (can't accidentally pick up the
+  // developer's real ~/.codex/auth.json while the suite runs on workstations).
+  process.env.CODEX_HOME = '/tmp/melo-test-no-codex-home';
+
   try {
+    // Also bust the module-level credential cache in codexAuth.js so a
+    // prior test in the same process can't leak a logged-in credential
+    // into this assertion.
+    const { invalidateCodexCredentialCache } = await import('../../codexAuth.js');
+    invalidateCodexCredentialCache();
+
     const result = await imageTool.run(
       { action: 'generate', prompt: 'a cat' },
       { workspacePath: '/tmp/melo-test-ws', config: {} },
     );
     assert.equal(result.ok, false);
     assert.equal(result.error, 'NOT_CONFIGURED');
-    assert.match(result.output, /MiniMax/);
+    // Aggregate message should mention every engine that was attempted so
+    // the user can pick one to enable.
+    assert.match(result.output, /minimax/i);
+    assert.match(result.output, /codex/i);
     assert.match(result.output, /minimaxApiKey/);
   } finally {
     if (prevKey !== undefined) process.env.MINIMAX_API_KEY = prevKey;
+    if (prevGroup !== undefined) process.env.MINIMAX_GROUP_ID = prevGroup;
+    if (prevCodexHome !== undefined) process.env.CODEX_HOME = prevCodexHome;
+    else delete process.env.CODEX_HOME;
   }
 });
 

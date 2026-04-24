@@ -126,18 +126,31 @@ function resolveOutputPath(outputArg, workspacePath) {
 /**
  * Decide the engine try-order for `generate`.
  *
- * - 'sdcpp'   → try sd.cpp only
- * - 'minimax' → try MiniMax only
- * - 'auto' (default) → honour config.imageEngine; otherwise sdcpp → minimax
+ * - 'sdcpp'        → try sd.cpp only
+ * - 'minimax'      → try MiniMax only
+ * - 'codex-oauth'  → try Codex OAuth image tool only
+ * - 'auto' (default) → honour config.imageEngine; otherwise
+ *     codex-oauth → sdcpp → minimax. Codex is first because:
+ *        • zero marginal cost for Plus subscribers (counted against Codex
+ *          usage bucket, not a separate API bill);
+ *        • quality/speed beats local sd.cpp on most Apple-Silicon laptops;
+ *        • gracefully falls through with NOT_CONFIGURED when the user isn't
+ *          signed into Codex, so sdcpp (fully offline) stays the safe
+ *          fallback for anyone without an OAuth session.
  */
 function resolveEngineOrder(engineArg, { config } = {}) {
   if (engineArg === 'sdcpp') return ['sdcpp'];
   if (engineArg === 'minimax') return ['minimax'];
+  if (engineArg === 'codex-oauth' || engineArg === 'codex') return ['codex-oauth'];
   const preferred = String(config?.imageEngine || '').trim().toLowerCase();
-  if (preferred === 'minimax') return ['minimax', 'sdcpp'];
-  if (preferred === 'sdcpp') return ['sdcpp', 'minimax'];
-  // Default: local-first, then cloud fallback.
-  return ['sdcpp', 'minimax'];
+  if (preferred === 'minimax') return ['minimax', 'codex-oauth', 'sdcpp'];
+  if (preferred === 'sdcpp') return ['sdcpp', 'codex-oauth', 'minimax'];
+  if (preferred === 'codex-oauth' || preferred === 'codex') {
+    return ['codex-oauth', 'sdcpp', 'minimax'];
+  }
+  // Default: try the free cloud path (Codex Plus subscription) first, fall
+  // back to local sd.cpp (fully offline), then paid cloud as the last resort.
+  return ['codex-oauth', 'sdcpp', 'minimax'];
 }
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
@@ -184,9 +197,9 @@ export const imageTool = {
       },
       engine: {
         type: 'string',
-        enum: ['auto', 'sdcpp', 'minimax'],
+        enum: ['auto', 'sdcpp', 'minimax', 'codex-oauth'],
         description:
-          'generate: which backend to use. "auto" (default) prefers local sd.cpp when installed and falls back to MiniMax. "sdcpp" forces local; "minimax" forces cloud.',
+          'generate: which backend to use. "auto" (default) tries Codex OAuth (image_generation tool via /codex/responses; free for ChatGPT Plus subscribers) first, then local sd.cpp, then MiniMax. "codex-oauth" forces the OAuth path; "sdcpp" forces local; "minimax" forces paid cloud.',
       },
       steps: {
         type: 'number',
@@ -234,10 +247,20 @@ export const imageTool = {
       // Resolve output path — explicit > workspace auto > error.
       // sd.cpp always writes PNG; MiniMax returns JPG.  Output extension is
       // decided per-engine below so the caller gets a sane default.
+      //
+      // `triedErrors` captures per-engine failures so the aggregate
+      // "nothing worked" branch at the bottom can synthesize a useful
+      // error. Each entry carries { engine, notConfigured, message } —
+      // the `notConfigured` flag lets us promote the aggregate to
+      // NOT_CONFIGURED when every engine bailed on "missing credentials"
+      // (vs actually trying to generate and failing).
       const triedErrors = [];
 
       for (const engine of engines) {
-        const ext = engine === 'sdcpp' ? '.png' : '.jpg';
+        // Default container per engine:
+        //   sdcpp / codex-oauth → PNG (both emit PNG natively)
+        //   minimax             → JPG (the MiniMax API returns JPEG)
+        const ext = engine === 'minimax' ? '.jpg' : '.png';
         let outPath = resolveOutputPath(output, workspacePath);
         if (!outPath) outPath = await allocateWorkspaceOutputPath(workspacePath, ext);
         if (!outPath) {
@@ -288,10 +311,59 @@ export const imageTool = {
             };
           }
 
+          if (engine === 'codex-oauth') {
+            // Codex OAuth image tool. We pass the same `signal` through; the
+            // engine layer also enforces its own 120s timeout. The engine
+            // throws with err.code === 'NOT_CONFIGURED' when the user isn't
+            // signed into Codex, so we route that to a fallthrough rather
+            // than a hard error (matches the minimax branch below).
+            try {
+              const { generateAndSaveImageViaCodex } = await import('../../images/codexImageEngine.js');
+              const result = await generateAndSaveImageViaCodex({
+                prompt,
+                outputPath: outPath,
+                signal,
+              });
+              const url = signWorkspaceFileUrl(result.path);
+              return {
+                ok: true,
+                output:
+                  `Generated image: ${url}\n` +
+                  `(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.mimeType}, engine=codex-oauth, model=${result.model})`,
+                meta: {
+                  path: result.path,
+                  url,
+                  bytes: result.bytes,
+                  mimeType: result.mimeType,
+                  prompt,
+                  engine: 'codex-oauth',
+                  model: result.model,
+                },
+              };
+            } catch (e) {
+              // NOT_CONFIGURED → treat like minimax-without-apiKey so `auto`
+              // falls through to the next engine. GENERATE_FAILED bubbles
+              // up through the surrounding try/catch as a regular error.
+              if (e?.code === 'NOT_CONFIGURED') {
+                triedErrors.push({
+                  engine: 'codex-oauth',
+                  notConfigured: true,
+                  message: e.message,
+                });
+                continue;
+              }
+              throw e;
+            }
+          }
+
           // engine === 'minimax'
           const apiKey = String(config?.minimaxApiKey || process.env.MINIMAX_API_KEY || '').trim();
           if (!apiKey) {
-            triedErrors.push('minimax: not configured (missing minimaxApiKey)');
+            triedErrors.push({
+              engine: 'minimax',
+              notConfigured: true,
+              message: 'missing minimaxApiKey (pass via config or MINIMAX_API_KEY env)',
+            });
             continue;
           }
           const groupId = String(config?.minimaxGroupId || process.env.MINIMAX_GROUP_ID || '').trim() || undefined;
@@ -322,7 +394,16 @@ export const imageTool = {
             },
           };
         } catch (e) {
-          triedErrors.push(`${engine}: ${e.message}`);
+          // Treat NOT_CONFIGURED (Codex) and NOT_INSTALLED (sd.cpp: missing
+          // binary/model) as the same class of "engine not set up on this
+          // machine" failure — both are things the user fixes by
+          // installing/authenticating, not by debugging a runtime error.
+          const isSetupFailure = e?.code === 'NOT_CONFIGURED' || e?.code === 'NOT_INSTALLED';
+          triedErrors.push({
+            engine,
+            notConfigured: isSetupFailure,
+            message: e.message,
+          });
           // If the user forced a specific engine, don't fall through.
           if (engineArg === engine) {
             return {
@@ -336,9 +417,35 @@ export const imageTool = {
         }
       }
 
+      // Every engine bailed.  Aggregate reporting:
+      //   • if 100% of attempts were NOT_CONFIGURED, surface NOT_CONFIGURED
+      //     so the UI can prompt the user to connect a credential (vs
+      //     a generic "it failed" that hides the real fix);
+      //   • otherwise fall back to GENERATE_FAILED.
+      const allMisconfig =
+        triedErrors.length > 0 && triedErrors.every(item => item.notConfigured);
+      const summary = triedErrors
+        .map(item => `${item.engine}: ${item.message}`)
+        .join(' | ');
+      if (allMisconfig) {
+        // Hint which engines the user can enable — keep the list of engine
+        // names compact so the UI can pattern-match for "MiniMax" / "Codex"
+        // / "sd.cpp" without string gymnastics.
+        const engineList = triedErrors.map(item => item.engine).join(', ');
+        return {
+          ok: false,
+          output:
+            `Image generation has no configured engine available. ` +
+            `Connect one of: ${engineList}. Details: ${summary}. ` +
+            `MiniMax needs minimaxApiKey; Codex OAuth needs an active login; ` +
+            `sd.cpp needs a local model file.`,
+          error: 'NOT_CONFIGURED',
+        };
+      }
+
       return {
         ok: false,
-        output: `Image generation failed on all engines. Tried: ${triedErrors.join(' | ')}`,
+        output: `Image generation failed on all engines. Tried: ${summary}`,
         error: 'GENERATE_FAILED',
       };
     }
