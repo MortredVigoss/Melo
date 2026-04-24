@@ -312,6 +312,10 @@ import {
   formatProviderFailureMessage,
 } from './services/chat/providerErrors.js';
 export { formatProviderFailureMessage } from './services/chat/providerErrors.js';
+// Phase 7d-1 re-export: server.js imports buildModelMessagesFromChat from
+// desktopStore. Keep the surface stable by re-exporting the service entry.
+export { buildModelMessagesFromChat } from './services/chat/messageBuilder.js';
+import { summarizeAttachmentsForPrompt } from './services/chat/messageBuilder.js';
 import {
   DEFAULT_SKILL_TASK_SCHEMA,
   BUILTIN_SKILLS,
@@ -2004,25 +2008,10 @@ async function updateStateAtomically(mutator) {
 // moved to `src/state/conversation.js` in Phase 10c. Re-imported at the top
 // of this file.
 
-function summarizeAttachmentsForPrompt(attachments = []) {
-  if (!attachments.length) {
-    return '';
-  }
-
-  return attachments
-    .map(attachment => {
-      const label =
-        attachment.title ||
-        attachment.fileName ||
-        `${titleCase(attachment.kind)} attachment`;
-      const printableUrl =
-        attachment.url && !attachment.url.startsWith('data:')
-          ? ` (${attachment.url})`
-          : '';
-      return `- ${titleCase(attachment.kind)}: ${label}${printableUrl}`;
-    })
-    .join('\n');
-}
+// summarizeAttachmentsForPrompt moved to src/services/chat/messageBuilder.js
+// in Phase 7d-1 and re-imported at the top. Kept in the import block
+// (not the local function table) so both messageTextForContext here and
+// messageToModelContent in the service can share one implementation.
 
 function messageTextForContext(message) {
   const attachments = normalizeMessageAttachments(message?.attachments);
@@ -2107,95 +2096,9 @@ export function buildConversationContinuityContext(chat, latestUserMessage = '')
 }
 
 
-function messageToModelContent(message, { includeSenderPrefix = false } = {}) {
-  const attachments = normalizeMessageAttachments(message?.attachments);
-  const extractedMedia = normalizeExtractedMedia(message?.extractedMedia);
-  const senderPrefix =
-    includeSenderPrefix && message?.role === 'user' && message?.senderName
-      ? `[${message.senderName}]: `
-      : '';
-  const text = `${senderPrefix}${messageVisibleText(message).trim()}`.trim();
-  if (!attachments.length && !extractedMedia.length) {
-    return text;
-  }
-
-  const contentParts = [];
-  const imageAttachments = attachments.filter(attachment =>
-    attachment.kind === 'image' &&
-    /^(https?:\/\/|data:image\/)/i.test(attachment.url),
-  );
-  const audioAttachments = attachments.filter(attachment =>
-    attachment.kind === 'audio' &&
-    /^(https?:\/\/|data:audio\/)/i.test(attachment.url),
-  );
-  const videoAttachments = attachments.filter(attachment =>
-    attachment.kind === 'video' &&
-    /^(https?:\/\/|data:video\/)/i.test(attachment.url),
-  );
-  const nonImageAttachments = attachments.filter(attachment => attachment.kind !== 'image');
-  const attachmentSummary = summarizeAttachmentsForPrompt(nonImageAttachments);
-  const mediaContext = renderExtractedMediaContext(extractedMedia, {
-    maxItems: 4,
-    maxCharsPerItem: 1400,
-  });
-
-  const introText = text ||
-    (imageAttachments.length
-      ? 'Please consider the attached image context.'
-      : 'Please consider the attached context.');
-  if (introText) {
-    contentParts.push({ type: 'text', text: introText });
-  }
-
-  for (const attachment of imageAttachments) {
-    contentParts.push({
-      type: 'image_url',
-      image_url: {
-        url: attachment.url,
-      },
-    });
-  }
-
-  for (const attachment of audioAttachments) {
-    contentParts.push({
-      type: 'audio_attachment',
-      audio_attachment: {
-        url: attachment.url,
-        mimeType: attachment.mimeType,
-        fileName: attachment.fileName,
-      },
-    });
-  }
-
-  for (const attachment of videoAttachments) {
-    contentParts.push({
-      type: 'video_attachment',
-      video_attachment: {
-        url: attachment.url,
-        mimeType: attachment.mimeType,
-        fileName: attachment.fileName,
-      },
-    });
-  }
-
-  if (attachmentSummary) {
-    contentParts.push({
-      type: 'text',
-      text: `Additional attachments:\n${attachmentSummary}`,
-    });
-  }
-
-  if (mediaContext) {
-    contentParts.push({
-      type: 'text',
-      text: mediaContext,
-    });
-  }
-
-  return contentParts.length === 1 && contentParts[0].type === 'text'
-    ? contentParts[0].text
-    : contentParts;
-}
+// messageToModelContent moved to src/services/chat/messageBuilder.js in
+// Phase 7d-1. summarizeAttachmentsForPrompt moved with it (kept as a
+// re-imported symbol above so messageTextForContext still compiles).
 
 // summarizeArtifact was extracted to
 // `src/services/artifact/artifactService.js` in Phase 7b.
@@ -4968,189 +4871,17 @@ function buildReActSystemPrompt({
     .join('\n\n');
 }
 
-const MODEL_IMAGE_ATTACHMENT_PATTERN = /^(https?:\/\/|data:image\/)/i;
-const MODEL_AUDIO_ATTACHMENT_PATTERN = /^(https?:\/\/|data:audio\/)/i;
-const MODEL_VIDEO_ATTACHMENT_PATTERN = /^(https?:\/\/|data:video\/)/i;
-const MODEL_LINK_ATTACHMENT_PATTERN = /^https?:\/\//i;
-const RICH_MEDIA_ATTACHMENT_KINDS = new Set(['image', 'audio', 'video', 'link']);
-const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么)/i;
-const AUDIO_FOLLOW_UP_PATTERN = /(?:\b(?:audio|voice|recording|recordings|voice note|voicemail|transcript|transcribe|what(?:'s| is) being said|what did (?:he|she|they) say|listen to (?:it|this)|what does the audio say)\b|语音|音频|录音|这段语音|这段音频|这段录音|录音里|语音里|音频里|说了什么|讲了什么|转写|听一下|听听|再听一下)/i;
-const VIDEO_FOLLOW_UP_PATTERN = /(?:\b(?:video|clip|footage|scene|what(?:'s| is) in the video|what does the video say|what happens in the video|watch (?:it|this))\b|视频|录像|片段|这段视频|这个视频|视频里|画面里|视频说了什么|视频讲了什么|视频里有什么|再看一下视频)/i;
-const LINK_FOLLOW_UP_PATTERN = /(?:\b(?:link|url|article|page|webpage|website|site|post|post says|summari[sz]e (?:this|that) link|what does this link say|what does the article say|what is on the page)\b|链接|这个链接|那个链接|链接里|文章里|网页里|页面里|这篇文章|这个页面|这个网页|总结一下链接|链接讲了什么|文章讲了什么|页面讲了什么)/i;
-// MODEL_MESSAGE_WINDOW (old hard slice(-12)) replaced by token-based buildRecentWindow().
+// MODEL_* attachment patterns, RICH_MEDIA_ATTACHMENT_KINDS,
+// *_FOLLOW_UP_PATTERN regexes, modelRichMediaAttachments,
+// followUpPatternForSourceMessage, shouldCarryForwardRecentMedia,
+// mergeRichMediaContextIntoMessage, stripHistoricalRichMediaFromMessage,
+// and the buildModelMessagesFromChat entry point all moved to
+// src/services/chat/messageBuilder.js in Phase 7d-1. The export is
+// re-surfaced from desktopStore through the import alias below so
+// server.js and other callers see an identical public API.
+// The dead helper `modelImageAttachments` (unused since 2026-02) was
+// dropped as part of the same move.
 
-function modelImageAttachments(message) {
-  return normalizeMessageAttachments(message?.attachments).filter(attachment =>
-    attachment.kind === 'image' &&
-    MODEL_IMAGE_ATTACHMENT_PATTERN.test(String(attachment.url || '')),
-  );
-}
-
-function modelRichMediaAttachments(message) {
-  return normalizeMessageAttachments(message?.attachments).filter(attachment => {
-    const kind = String(attachment?.kind || '').toLowerCase();
-    if (!RICH_MEDIA_ATTACHMENT_KINDS.has(kind)) {
-      return false;
-    }
-
-    const url = String(attachment?.url || '');
-    if (kind === 'image') return MODEL_IMAGE_ATTACHMENT_PATTERN.test(url);
-    if (kind === 'audio') return MODEL_AUDIO_ATTACHMENT_PATTERN.test(url);
-    if (kind === 'video') return MODEL_VIDEO_ATTACHMENT_PATTERN.test(url);
-    if (kind === 'link') return MODEL_LINK_ATTACHMENT_PATTERN.test(url);
-    return false;
-  });
-}
-
-function followUpPatternForSourceMessage(sourceMessage) {
-  const attachments = modelRichMediaAttachments(sourceMessage);
-  const kinds = new Set(attachments.map(attachment => String(attachment?.kind || '').toLowerCase()));
-
-  if (kinds.has('image')) {
-    return IMAGE_FOLLOW_UP_PATTERN;
-  }
-  if (kinds.has('audio')) {
-    return AUDIO_FOLLOW_UP_PATTERN;
-  }
-  if (kinds.has('video')) {
-    return VIDEO_FOLLOW_UP_PATTERN;
-  }
-  if (kinds.has('link')) {
-    return LINK_FOLLOW_UP_PATTERN;
-  }
-  return null;
-}
-
-function shouldCarryForwardRecentMedia(messages, latestIndex, sourceIndex) {
-  if (latestIndex <= 0 || sourceIndex < 0 || sourceIndex >= latestIndex) {
-    return false;
-  }
-
-  if (latestIndex - sourceIndex > 4) {
-    return false;
-  }
-
-  const latestMessage = messages[latestIndex];
-  const latestText = messageVisibleText(latestMessage).trim();
-  if (!latestText) {
-    return false;
-  }
-
-  const followUpPattern = followUpPatternForSourceMessage(messages[sourceIndex]);
-  return followUpPattern ? followUpPattern.test(latestText) : false;
-}
-
-function mergeRichMediaContextIntoMessage(message, sourceMessage) {
-  const targetAttachments = normalizeMessageAttachments(message?.attachments);
-  const sourceMediaAttachments = modelRichMediaAttachments(sourceMessage);
-  const seenImageUrls = new Set(
-    targetAttachments
-      .filter(attachment => RICH_MEDIA_ATTACHMENT_KINDS.has(String(attachment?.kind || '').toLowerCase()))
-      .map(attachment => String(attachment.url || '').trim())
-      .filter(Boolean),
-  );
-  const mergedMediaAttachments = sourceMediaAttachments.filter(attachment => {
-    const url = String(attachment.url || '').trim();
-    return url && !seenImageUrls.has(url);
-  });
-
-  const targetExtractedMedia = normalizeExtractedMedia(message?.extractedMedia);
-  const sourceExtractedMedia = normalizeExtractedMedia(sourceMessage?.extractedMedia);
-  const existingMediaKeys = new Set(
-    targetExtractedMedia.map(entry =>
-      `${entry.attachmentId || ''}::${entry.kind}::${String(entry.text || '').slice(0, 120)}`,
-    ),
-  );
-  const mergedExtractedMedia = sourceExtractedMedia.filter(entry => {
-    const key = `${entry.attachmentId || ''}::${entry.kind}::${String(entry.text || '').slice(0, 120)}`;
-    return !existingMediaKeys.has(key);
-  });
-
-  if (!mergedMediaAttachments.length && !mergedExtractedMedia.length) {
-    return message;
-  }
-
-  return {
-    ...message,
-    attachments: [...targetAttachments, ...mergedMediaAttachments],
-    extractedMedia: [...targetExtractedMedia, ...mergedExtractedMedia],
-  };
-}
-
-function stripHistoricalRichMediaFromMessage(message) {
-  const attachments = normalizeMessageAttachments(message?.attachments);
-  const richMediaAttachments = attachments.filter(attachment => RICH_MEDIA_ATTACHMENT_KINDS.has(
-    String(attachment?.kind || '').toLowerCase(),
-  ));
-  const hasExtractedMedia = normalizeExtractedMedia(message?.extractedMedia).length > 0;
-
-  if (!richMediaAttachments.length && !hasExtractedMedia) {
-    return message;
-  }
-
-  return {
-    ...message,
-    attachments: attachments.filter(attachment =>
-      !RICH_MEDIA_ATTACHMENT_KINDS.has(String(attachment?.kind || '').toLowerCase()),
-    ),
-    extractedMedia: [],
-  };
-}
-
-export function buildModelMessagesFromChat(chat) {
-  const isGroupChat = chat?.chatType === 'group' || chat?.chatType === 'supergroup';
-  const allMessages = Array.isArray(chat?.messages) ? chat.messages : [];
-
-  // ── Token-bounded sliding window (replaces the old hard slice(-12)) ───────
-  // When a compact summary exists, only consider messages AFTER the compact
-  // boundary so we don't re-send already-summarised history.
-  let candidateMessages = allMessages;
-  const boundaryId = chat?.compactBoundaryMessageId;
-  if (boundaryId) {
-    const boundaryIdx = allMessages.findIndex(m => m.id === boundaryId);
-    if (boundaryIdx >= 0) {
-      candidateMessages = allMessages.slice(boundaryIdx + 1);
-    }
-  }
-
-  // Build a token-bounded recent window from the candidate messages.
-  const messages = buildRecentWindow(candidateMessages);
-
-  const latestIndex = messages.length - 1;
-  let carryForwardSourceIndex = -1;
-
-  if (latestIndex >= 0 && messages[latestIndex]?.role === 'user') {
-    const latestMedia = modelRichMediaAttachments(messages[latestIndex]);
-    if (!latestMedia.length) {
-      for (let index = latestIndex - 1; index >= 0; index -= 1) {
-        if (messages[index]?.role !== 'user') {
-          continue;
-        }
-        if (!modelRichMediaAttachments(messages[index]).length) {
-          continue;
-        }
-        carryForwardSourceIndex = shouldCarryForwardRecentMedia(messages, latestIndex, index)
-          ? index
-          : -1;
-        break;
-      }
-    }
-  }
-
-  return messages.map((message, index) => {
-    let effectiveMessage = message;
-    if (index === latestIndex && message?.role === 'user' && carryForwardSourceIndex >= 0) {
-      effectiveMessage = mergeRichMediaContextIntoMessage(message, messages[carryForwardSourceIndex]);
-    } else if (index !== latestIndex && message?.role === 'user') {
-      effectiveMessage = stripHistoricalRichMediaFromMessage(message);
-    }
-
-    return {
-      role: message.role,
-      content: messageToModelContent(effectiveMessage, { includeSenderPrefix: isGroupChat }),
-    };
-  });
-}
 
 function formatModelMessageForVisionDebug(message, index) {
   const content = message?.content;
