@@ -71,15 +71,25 @@ echo "🔍 Codex review: ${short_base}..${short_head}  (${commit_count} commit(s
 echo "──────────────────────────────────────────────────────────────"
 echo ""
 
-codex review --base "$base_sha" - <<'PROMPT'
-用中文审查刚才推送到远端的这批改动。
+# We can't use `codex review --base <sha>` with a custom prompt — those two
+# flags are mutually exclusive in codex-cli 0.124.0. Workaround: run `codex
+# exec` in read-only sandbox and let the agent invoke `git show / git log`
+# itself to inspect the range. Read-only sandbox keeps it from touching the
+# working tree even by accident.
+codex exec --sandbox read-only - <<PROMPT
+你的任务：审查仓库中从 commit \`${short_base}\` 到 \`${short_head}\` 之间这 ${commit_count} 个 commit 的所有改动。
 
-**输出结构**（严格遵守）：
+**首先** 运行以下命令获取差异上下文：
+- \`git log --oneline --stat ${base_sha}..${head_sha}\`
+- 对每个 commit 需要细看时用 \`git show <sha>\`
+- 按需 \`git diff ${base_sha}..${head_sha} -- <path>\` 聚焦到单个文件
+
+审查完后 **用中文** 输出，严格按以下结构：
 
 1. 首行总评（**必须**是下面之一）：
-   - `✅ 可以合入，无需跟进` — 没有任何需要处理的问题
-   - `🟡 可以合入，但有建议` — 有非阻塞的改进项
-   - `🔴 建议立即跟进修复` — 发现了 bug / 回归 / 安全问题，应该马上再推一个修复 commit
+   - \`✅ 可以合入，无需跟进\` — 没有任何需要处理的问题
+   - \`🟡 可以合入，但有建议\` — 有非阻塞的改进项
+   - \`🔴 建议立即跟进修复\` — 发现了 bug / 回归 / 安全问题，应该马上再推一个修复 commit
 2. 第二行：风险等级（低 / 中 / 高）+ 一句话根据。
 3. 空行。
 4. 按优先级逐条列出发现：
@@ -96,7 +106,7 @@ codex review --base "$base_sha" - <<'PROMPT'
 - 已经被现有测试覆盖且通过的行为
 
 **长度限制**：整份审查 ≤ 60 行。发现少时更短。只列发现，不复述 diff。
-每条发现格式：`[文件:行号] 一句话问题描述 → 建议做法`。
+每条发现格式：\`[文件:行号] 一句话问题描述 → 建议做法\`。
 
-如果确实没问题，只输出 `✅ 可以合入，无需跟进` 这一行。
+如果确实没问题，只输出 \`✅ 可以合入，无需跟进\` 这一行。
 PROMPT
