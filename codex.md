@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-- 更新时间：2026/04/24 23:17:29 Australia/Melbourne
+- 更新时间：2026/04/24 23:47:44 Australia/Melbourne
 - 当前分支：master
 
 ## 工作区状态
@@ -13,18 +13,19 @@
 ```text
 ## master...origin/master [ahead 1]
  M PROGRESS.md
+ M codex.md
 ```
 
 ## 最近提交
 
+- 8c387a4 refactor(chat): extract messageBuilder from desktopStore (Phase 7d-1)
+- 75bdeef test(agent): address Codex review — use real custom-agent-N namespace
+- d26cb5f progress: backfill Phase 7c hash (7250cd7)
 - 7250cd7 refactor(agent): extract agentProfileService pure core (Phase 7c)
 - c06ef49 progress: backfill Phase 7b hashes (33aba21, 0f7d2af)
 - 0f7d2af tune(codex-review): force explicit git log + per-commit git show walk
 - 33aba21 refactor(workspace): extract workspaceService from desktopStore (Phase 7b)
 - c610b75 fix(codex-review): switch to `codex exec` because --base conflicts with custom prompt
-- 3ab4cb0 progress: backfill 2026-04-24 22:10 / 21:47 with real commit hashes
-- 8c03a68 refactor(search): extract searchService from desktopStore (Phase 7a)
-- 3fcbdea chore(progress): auto-generate codex.md snapshot
 
 ## 完整进度时间线
 
@@ -34,6 +35,23 @@
 > 当本文件超过 160 行或 8000 字符时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+
+## 2026-04-25 00:20 — Phase 7d-1：抽出 messageBuilder（chatExecutionService 拆解 ①/N）
+
+- 做了什么：开启 Phase 7d（chatExecutionService 大重构）的第一个子阶段。新建 `src/services/chat/messageBuilder.js`，把 desktopStore 里"chat → model-ready messages" 的整条纯函数流水线搬出来：
+  - 6 个函数：`messageToModelContent`、`modelRichMediaAttachments`、`followUpPatternForSourceMessage`、`shouldCarryForwardRecentMedia`、`mergeRichMediaContextIntoMessage`、`stripHistoricalRichMediaFromMessage`、`buildModelMessagesFromChat`（entry point）+ `summarizeAttachmentsForPrompt`
+  - 9 个常量：`MODEL_{IMAGE,AUDIO,VIDEO,LINK}_ATTACHMENT_PATTERN`、`RICH_MEDIA_ATTACHMENT_KINDS`、`{IMAGE,AUDIO,VIDEO,LINK}_FOLLOW_UP_PATTERN`
+  - 顺便清掉了 dead code `modelImageAttachments`（定义但从未被调用）
+  - desktopStore 通过 `export { buildModelMessagesFromChat }` re-export 保持公共 API 不变；server.js 零改动
+- 为什么：
+  - 7d 是整个解耦任务最大的一块（chat execution graph + 发送流水 + tool 编排），按"最纯函数先抽"的 strangler 策略拆成多个子阶段。先抽 messageBuilder 是因为它纯函数、无状态依赖、自成闭包，也是 7d 后续子阶段（system prompt assembly / graph runner / sendChatMessage）都要依赖的上游。
+  - 带来的好处：这套"chat → 模型消息窗口"的逻辑（compact 边界、token 窗口、rich media carry-forward、历史媒体剥离）之前**零测试覆盖**；现在有 23 个单元测试锁住每条边界（file:// 丢弃 / data: URI 保留 / 4-turn 距离上限 / URL 去重 / group chat senderName 前缀 / compact 边界之前的消息被跳过 等等）。
+  - 过程中发现自己一开始的"简化重写"悄悄改了行为（intro text 回退语 / `audio_attachment` 嵌套结构 / "Additional attachments:" 标签 / 单 text-part collapse），**回退成了字节级忠实移植**。未来 7d 其它子阶段必须继承这条纪律。
+- 产出 / 提交哈希：`8c387a4`
+  - 新增 `src/services/chat/messageBuilder.js`（~280 行含注释，17 个 export）
+  - 新增 `src/services/chat/messageBuilder.test.js`（23 个测试全绿）
+  - `src/desktopStore.js` 净减 **269 行**（原 8527 → 现 8258），这是 Phase 7 所有子阶段里最大的一次瘦身
+  - 回归：services + desktopStore + search + state 套件 266/266；跨域 images+tools+media+memory+agents+openai 583/583 全绿
 
 ## 2026-04-24 23:45 — Phase 7c：抽出 agentProfileService 纯逻辑核心（desktopStore 解耦 ③/④）
 
