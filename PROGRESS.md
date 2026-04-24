@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-24 22:10 — Phase 7a：抽出 searchService（desktopStore 解耦 ①/④）
+
+- 做了什么：把 `streamSearchFileGroups` / `streamSearchFileHits` 的 orchestration 搬到新模块 `src/services/search/searchService.js`，工作区解析通过 `deps.resolveWorkspace` 注入。desktopStore 保留同名 export 作为 8 行薄壳，只负责把 `loadState → ensureSelectedEntities → findProjectById → buildWorkspaceSnapshot` 组装成 resolver 传进去。常量 `MAX_SEARCH_FILE_GROUPS` / `MAX_LINES_PER_FILE_GROUP` 一并迁移，外加清掉了从未被调用的 `streamWorkspaceContent` 导入。
+- 为什么：desktopStore.js 8792 行 / 59 export，是当前架构最大的瓶颈。按照"低风险高信噪比先做"的分阶段策略，search 是最小入口（只 2 个 export、0 个现成测试、下游只有 server.js 1 个调用点），用来沉淀抽服务的范式：DI 边界 + 薄壳 re-export + 独立单元测试。下一步做 workspaceService，再做 agentProfileService。
+- 产出 / 提交哈希：`8c03a68`
+  - 新增 `src/services/search/searchService.js` + `searchService.test.js`（9 个独立测试，全绿）
+  - `src/desktopStore.js` 精简 ~55 行（3351–3417 + 两个常量 + 1 个未用 import）
+  - 回归：services/search/desktopStore 套件 212/212；跨域 images+tools+media+memory 442/442 全绿
+
+
+
+- 做了什么：新增 `scripts/sync-codex-progress.js` 与 `npm run progress:codex`，从 `PROGRESS.md`、git 状态和最近提交自动生成仓库根目录 `codex.md`。
+- 为什么：让 Claude / Codex 后续会话只读一个快照文件就能快速接续，减少跨会话上下文丢失。
+- 产出 / 提交哈希：`3fcbdea`
+
 ## 2026-04-24 21:30 — 首次远程推送 + 工作协议落盘
 
 - 做了什么：配置 `origin = github.com/MortredVigoss/Melo`，把三个积压阶段压成 3 个 commit 全量推送到 `origin/master`（首次推送）。
