@@ -22,3 +22,8 @@ Melo.app/
 desktop-app-debug.txt
 last-launch.txt
 last-launch-pid.txt
+
+# Generated image outputs from live testing (tool writes into workspace/
+# subtree at runtime — repo root is only touched by smoke runs).
+generated/
+/water_molecule*.png
