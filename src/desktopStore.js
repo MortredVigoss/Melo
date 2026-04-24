@@ -392,6 +392,11 @@ import {
   agentPresetById,
 } from './services/agent/agentLibrary.js';
 import {
+  normalizeAgentUpdatePatch,
+  mergeChannelsWithStaleDraftGuard,
+  buildNewCustomAgent,
+} from './services/agent/agentProfileService.js';
+import {
   readAgentIdentityValue,
   readAgentSoulValue,
   withLegacyAgentAliases,
@@ -6834,54 +6839,14 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
   const normalizedAgentId = normalizeAgentStorageId(agentId) || 'main';
   const scope =
     options.scope === 'project' && options.projectId ? 'project' : 'global';
-  // Build nextPatch from `patch`, normalizing identity / soul / channels.
-  //
-  // IMPORTANT: do NOT leave identity / soulMd / channels set to `undefined` on
-  // nextPatch when the caller didn't supply them. The global-scope branch
-  // below does `{...state.agentProfiles[id], ...nextPatch}` and an explicit
-  // `undefined` value still overwrites the existing value. That behavior
-  // silently wiped user-configured channel tokens, guild / channel IDs, and
-  // voiceReply flags any time a caller sent a minimal patch (e.g. changing
-  // only `minimaxVoiceId`). See feedback_preserve_user_config.md — tokens /
-  // checkboxes / IDs must round-trip intact through every edit path.
-  const nextPatch = { ...patch };
 
-  const resolvedIdentity =
-    typeof patch?.identity === 'string'
-      ? patch.identity
-      : typeof patch?.identify === 'string'
-        ? patch.identify
-        : undefined;
-  if (resolvedIdentity !== undefined) {
-    nextPatch.identity = resolvedIdentity;
-  } else {
-    delete nextPatch.identity;
-    delete nextPatch.identify;
-  }
-
-  const resolvedSoulMd =
-    typeof patch?.soulMd === 'string'
-      ? patch.soulMd
-      : typeof patch?.['soul.md'] === 'string'
-        ? patch['soul.md']
-        : typeof patch?.soul === 'string'
-          ? patch.soul
-          : undefined;
-  if (resolvedSoulMd !== undefined) {
-    nextPatch.soulMd = resolvedSoulMd;
-  } else {
-    delete nextPatch.soulMd;
-    delete nextPatch['soul.md'];
-    delete nextPatch.soul;
-  }
-
-  // Channel merge is deferred into the atomic block below so we can compare
-  // against the latest persisted channels and apply a stale-draft guard (see
-  // `mergeIncomingChannels` below). Here we just remember the raw incoming
-  // shape; `nextPatch.channels` itself is set inside the atomic block.
-  const incomingChannelsRaw =
-    patch?.channels && typeof patch.channels === 'object' ? patch.channels : null;
-  delete nextPatch.channels;
+  // Normalize identity/soul aliases and extract the raw channels draft. The
+  // stale-draft channel merge happens inside the atomic block below against
+  // the freshest persisted state. See src/services/agent/agentProfileService.js
+  // and feedback_preserve_user_config.md for why both halves live behind
+  // service helpers: minimal patches (e.g. only `minimaxVoiceId`) used to
+  // wipe user-configured tokens via `undefined` spread-merges.
+  const { nextPatch, incomingChannelsRaw } = normalizeAgentUpdatePatch(patch);
 
   // Wrap the whole read-modify-write in updateStateAtomically so that two
   // concurrent updateAgentProfile calls (for example the poller writing a
@@ -6889,56 +6854,6 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
   // lose each other's update. updateStateAtomically re-reads the latest
   // state inside the write queue, applies the mutator, and then persists
   // — all serialized with every other saveState / updateStateAtomically.
-  // See feedback_preserve_user_config.md.
-  // Stale-draft guard for channel merges. Runs inside the atomic block so we
-  // see the freshest persisted channels. If the incoming patch claims a channel
-  // is "fully empty" (no token, no ids, no username, no nicknames, not enabled,
-  // no voiceReply) AND the persisted channel has any of those set, we preserve
-  // the persisted channel rather than letting the incoming empty shell wipe it.
-  //
-  // Why: the UI always sends BOTH channels in every autosave (UI draft shape is
-  // {telegram, discord}), but if the draft ever gets out of sync with persisted
-  // state — e.g. state.json was hand-edited outside the running app, or a prior
-  // bug left a channel blank in the in-memory draft — the autosave would silently
-  // clobber the real config. The only way a channel becomes "fully empty" in the
-  // draft is if the user deliberately cleared every single field, which is a
-  // rare and recoverable action; accidental clobber of a real config is much
-  // more damaging (see feedback_preserve_user_config.md).
-  function mergeIncomingChannels(persistedChannelsRaw) {
-    if (!incomingChannelsRaw) return null;
-    const persisted = normalizeAgentChannels(persistedChannelsRaw || {});
-    const incoming = normalizeAgentChannels(incomingChannelsRaw);
-    const merged = {};
-    for (const channelId of AGENT_CHANNEL_IDS) {
-      const p = persisted[channelId];
-      const i = incoming[channelId];
-      const incomingHasUserConfig =
-        Boolean(i?.enabled) ||
-        Boolean(i?.botToken) ||
-        Boolean(i?.botUsername) ||
-        Boolean(i?.guildId) ||
-        Boolean(i?.channelId) ||
-        Boolean(i?.chatId) ||
-        Boolean(i?.nicknames) ||
-        Boolean(i?.voiceReply);
-      const persistedHasUserConfig =
-        Boolean(p?.enabled) ||
-        Boolean(p?.botToken) ||
-        Boolean(p?.botUsername) ||
-        Boolean(p?.guildId) ||
-        Boolean(p?.channelId) ||
-        Boolean(p?.chatId) ||
-        Boolean(p?.nicknames) ||
-        Boolean(p?.voiceReply);
-      if (!incomingHasUserConfig && persistedHasUserConfig) {
-        merged[channelId] = p;
-      } else {
-        merged[channelId] = i;
-      }
-    }
-    return merged;
-  }
-
   await updateStateAtomically(async latestState => {
     const state = ensureSelectedEntities(latestState);
     if (scope === 'project') {
@@ -6976,7 +6891,10 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
           currentProjectOverrides?.[projectId]?.[normalizedAgentId]?.channels
           || state.agentProfiles?.[normalizedAgentId]?.channels
           || {};
-        const mergedProjectChannels = mergeIncomingChannels(persistedForProject);
+        const mergedProjectChannels = mergeChannelsWithStaleDraftGuard(
+          incomingChannelsRaw,
+          persistedForProject,
+        );
         if (mergedProjectChannels) {
           nextPatch.channels = mergedProjectChannels;
         }
@@ -7013,7 +6931,8 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
       // freshest persisted channels. If the UI posted both channels but one of
       // them looks empty relative to persisted, preserve persisted instead of
       // letting the incoming shell wipe a real config.
-      const mergedGlobalChannels = mergeIncomingChannels(
+      const mergedGlobalChannels = mergeChannelsWithStaleDraftGuard(
+        incomingChannelsRaw,
         state.agentProfiles?.[normalizedAgentId]?.channels || {},
       );
       if (mergedGlobalChannels) {
@@ -7072,27 +6991,15 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
 
 export async function createCustomAgent() {
   const state = ensureSelectedEntities(await loadState());
-  const agentId = nextCustomAgentId(state.agentProfiles);
-  const displayName = `Custom agent ${agentId.split('-').pop()}`;
-  const createdProfile = normalizeAgentProfile(agentId, {
-    isCustom: true,
-    name: displayName,
-    laneLabel: 'Custom lane',
-    description: 'A user-defined Melo agent lane with its own persona, tools, and channel links.',
-    rolePrompt: `You are ${displayName}, a custom Melo agent lane. Stay aligned with the user\'s intent, act clearly, and use configured tools and channels deliberately.`,
-    identity: `You are ${displayName}, a custom Melo agent inside Melo Desktop.`,
-    identify: `You are ${displayName}, a custom Melo agent inside Melo Desktop.`,
-    soulMd:
-      'Stay adaptive, clear, and dependable. Use the configured tools and channels deliberately, and keep collaboration smooth.',
-    'soul.md':
-      'Stay adaptive, clear, and dependable. Use the configured tools and channels deliberately, and keep collaboration smooth.',
-    mood: 'calm',
-    tools: [...DEFAULT_AGENT_TOOL_IDS],
-  });
+  // Default profile construction (id allocation + seed identity / soul /
+  // tools) is pure logic — lifted into agentProfileService in Phase 7c.
+  // desktopStore still owns the splice into state + markdown-file sync +
+  // saveState side-effects.
+  const { agentId, profile } = buildNewCustomAgent(state.agentProfiles);
 
   state.agentProfiles = {
     ...state.agentProfiles,
-    [agentId]: createdProfile,
+    [agentId]: profile,
   };
   state.settings.selectedCustomizeSection = 'agents';
   state.settings.selectedAgentId = agentId;
