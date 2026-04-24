@@ -120,6 +120,50 @@ test('followUpPatternForSourceMessage: picks pattern based on source media kind'
   assert.equal(followUpPatternForSourceMessage({ attachments: [] }), null);
 });
 
+// Regression (Phase 7d-1 Codex review): the \b word-boundary wrappers on
+// the English branches are load-bearing. Without them, `photo` inside the
+// group matches `photography`, `photographic`, etc. as substrings,
+// spuriously triggering carry-forward. `\b` only protects against
+// prefix/suffix extensions of a keyword — standalone uses of "image" /
+// "screenshot" in otherwise-unrelated sentences are still a match, which
+// is fine because the carry-forward is further guarded by the 4-turn
+// distance cap + the requirement that the latest turn carries no media of
+// its own.
+test('IMAGE_FOLLOW_UP_PATTERN does not false-match keyword prefixes/suffixes', () => {
+  const negativeCases = [
+    'photography question',     // photo + graphy → \b after photo fails
+    'the photographic style',   // photo + graphic
+    'photosynthesis',           // photo + synthesis
+    'imagery in the abstract',  // image + ry
+    'imagination runs wild',    // image + ination
+  ];
+  for (const text of negativeCases) {
+    assert.equal(
+      IMAGE_FOLLOW_UP_PATTERN.test(text),
+      false,
+      `IMAGE_FOLLOW_UP_PATTERN should NOT match: "${text}"`,
+    );
+  }
+});
+
+test('IMAGE_FOLLOW_UP_PATTERN still matches legitimate English follow-ups', () => {
+  const positiveCases = [
+    'what is in the image?',
+    'look at the photo',
+    'this screenshot',
+    'zoom in please',
+    '放大看一下',
+    '图里写了什么',
+  ];
+  for (const text of positiveCases) {
+    assert.equal(
+      IMAGE_FOLLOW_UP_PATTERN.test(text),
+      true,
+      `IMAGE_FOLLOW_UP_PATTERN SHOULD match: "${text}"`,
+    );
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // shouldCarryForwardRecentMedia
 // ═══════════════════════════════════════════════════════════════════════════

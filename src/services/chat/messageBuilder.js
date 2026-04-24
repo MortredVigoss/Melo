@@ -60,7 +60,14 @@ export const RICH_MEDIA_ATTACHMENT_KINDS = new Set(['image', 'audio', 'video', '
 // model can actually respond. These patterns define what "clearly a
 // follow-up about the previous media" looks like.
 
-export const IMAGE_FOLLOW_UP_PATTERN = /(?:(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot))|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么)/i;
+// NOTE: the `\b...\b` wrappers around the English alternation are
+// load-bearing. Without them, `photo` inside the group would match
+// `photography`, `photographic`, etc., spuriously triggering the carry-
+// forward and dragging an old image into an unrelated next turn. This was
+// the exact regression Codex flagged when reviewing the 7d-1 extraction —
+// the original desktopStore pattern had them; I dropped them by accident
+// during the copy and restored them before committing the tests below.
+export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么)/i;
 export const AUDIO_FOLLOW_UP_PATTERN = /(?:\b(?:audio|voice|recording|recordings|voice note|voicemail|transcript|transcribe|what(?:'s| is) being said|what did (?:he|she|they) say|listen to (?:it|this)|what does the audio say)\b|语音|音频|录音|这段语音|这段音频|这段录音|录音里|语音里|音频里|说了什么|讲了什么|转写|听一下|听听|再听一下)/i;
 export const VIDEO_FOLLOW_UP_PATTERN = /(?:\b(?:video|clip|footage|scene|what(?:'s| is) in the video|what does the video say|what happens in the video|watch (?:it|this))\b|视频|录像|片段|这段视频|这个视频|视频里|画面里|视频说了什么|视频讲了什么|视频里有什么|再看一下视频)/i;
 export const LINK_FOLLOW_UP_PATTERN = /(?:\b(?:link|url|article|page|webpage|website|site|post|post says|summari[sz]e (?:this|that) link|what does this link say|what does the article say|what is on the page)\b|链接|这个链接|那个链接|链接里|文章里|网页里|页面里|这篇文章|这个页面|这个网页|总结一下链接|链接讲了什么|文章讲了什么|页面讲了什么)/i;
