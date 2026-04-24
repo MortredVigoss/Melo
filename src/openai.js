@@ -780,10 +780,11 @@ async function buildCodexUserContentParts(content, { signal } = {}) {
 
     if (item?.type === 'audio_attachment') {
       // The Codex/ChatGPT responses endpoint rejects input_audio content parts.
-      // Include a text descriptor so the model knows audio was attached; any
-      // transcript context is already injected as a separate text part upstream.
-      const fileName = String(item.audio_attachment?.fileName || 'audio attachment').trim();
-      parts.push({ type: 'input_text', text: `[Audio attachment: ${fileName}]` });
+      // Transcript context is already injected as a separate text part upstream
+      // (see resolveAudioAttachments / transcript-injection in the bot and chat
+      // pipelines), so we silently drop the raw audio part here instead of
+      // emitting a redundant "[Audio attachment: …]" placeholder that would
+      // confuse the model.
       continue;
     }
 

@@ -64,8 +64,24 @@ function resolveTranscriptionConfig(config = {}) {
     return { apiKey: '', baseUrl, source: 'local' };
   }
 
-  // Priority 4: codex mode (or unknown) → probe local Ollama as auto-fallback
-  // chatgpt.com/backend-api doesn't support Whisper; try local endpoint instead
+  // Priority 4: codex mode (or unknown).
+  // chatgpt.com/backend-api doesn't support Whisper. Prefer env-backed
+  // MELO_API_KEY / MELO_BASE_URL when present so users in codex mode can add
+  // a Whisper-compatible key via env vars without switching authMode. If no
+  // env credentials are set, probe local Ollama as an auto-fallback.
+  const codexEnvKey = String(
+    process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || '',
+  ).trim();
+  const codexEnvBase = String(
+    process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || '',
+  ).trim();
+  if (codexEnvKey) {
+    return {
+      apiKey: codexEnvKey,
+      baseUrl: codexEnvBase || 'https://api.openai.com/v1',
+      source: 'codex-env-fallback',
+    };
+  }
   return {
     apiKey: '',
     baseUrl: 'http://127.0.0.1:11434/v1',
@@ -356,6 +372,20 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
     headers['authorization'] = `Bearer ${apiKey}`;
   }
 
+  // Shared soft-fallback for sources that shouldn't error-out the chat when
+  // the local Whisper endpoint is missing (codex-local-fallback) or
+  // explicitly local-only (authMode === 'local').
+  const localLikeSources = new Set(['codex-local-fallback', 'local']);
+  const softFallback = () => ({
+    kind: 'transcript',
+    text: 'Audio received. Automatic transcription requires a local Whisper endpoint, which is not reachable. To enable transcription, run Ollama locally (ollama serve) with a Whisper-capable model, or add a dedicated Whisper API key in Settings → API Configuration.',
+    metadata: {
+      source: 'whisper-unavailable',
+      fileName: attachment.fileName || '',
+      url: String(attachment.url || '').startsWith('data:') ? '' : (attachment.url || ''),
+    },
+  });
+
   try {
     const response = await fetch(`${baseUrl}/audio/transcriptions`, {
       method: 'POST',
@@ -364,18 +394,11 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
       signal: AbortSignal.timeout(60000),
     });
 
-    // For codex-local-fallback: if local Ollama isn't running, fail silently
+    // For codex-local-fallback / local modes: if local Ollama isn't running,
+    // emit a soft fallback so the user sees an actionable message.
     if (!response.ok) {
-      if (source === 'codex-local-fallback' && !suppressFallback) {
-        return {
-          kind: 'transcript',
-          text: 'Audio received. No local Whisper endpoint detected. To transcribe voice messages in Codex OAuth mode, run Ollama locally (ollama serve) with a Whisper-capable model, or add a dedicated Whisper API key in Settings → API Configuration.',
-          metadata: {
-            source: 'whisper-unavailable',
-            fileName: attachment.fileName || '',
-            url: String(attachment.url || '').startsWith('data:') ? '' : (attachment.url || ''),
-          },
-        };
+      if (localLikeSources.has(source) && !suppressFallback) {
+        return softFallback();
       }
       return null;
     }
@@ -396,6 +419,12 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
       },
     };
   } catch {
+    // Network error / timeout / connection refused. Same contract as the
+    // !response.ok branch: codex-local-fallback and local modes get a soft
+    // fallback; everyone else gets null (real configuration error).
+    if (localLikeSources.has(source) && !suppressFallback) {
+      return softFallback();
+    }
     return null;
   }
 }
