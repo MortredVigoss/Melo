@@ -7,10 +7,23 @@
 - 从第一次写盘开始计时。只要当前阶段累计工作时长 **≥ 60 分钟**，就必须：
   1. `git add` 本阶段改动的相关文件（按文件名点名，不要用 `-A` / `.`）。
   2. `git commit`，用一句话描述 "为什么" 而非 "改了什么"，按仓库现有风格写 message。
-  3. `git push`（如果仓库还没 remote，先提醒用户配置，再继续本地 commit，**不要**因为没 remote 而跳过 commit 那一步）。
+  3. **`git pp`**（= push + Codex 自动审查；等价于 `./scripts/codex-review.sh`）。
+     - 如果本轮修改量小、不想耗 Codex 额度，可以退回 `git push`，但任何超过 1h 的批次必须跑 `git pp`。
+     - `git pp` 在 push 成功 **之后** 才调用 `codex review`，review 不会阻断推送；即便 review 失败，commit 已经落盘到远端。
+     - Review 用中文输出，阶段总评 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
 - 中途如果到了一个天然节点（feature 完成、测试全绿、bug 定位到根因修好），即便不满 1 小时也应该提交，不必死等整点。
 - 永远 **新建 commit**，不要 `--amend` 已经 push 出去的 commit。
 - 永远不要带 `--no-verify` / `--no-gpg-sign` 绕过钩子，除非用户明确要求。
+
+### 新克隆的仓库如何启用 `git pp`
+
+`git pp` 的 alias 存在 `.git/config`（不会进 commit），所以每个新 clone 要跑一次：
+
+```bash
+git config --local alias.pp '!./scripts/codex-review.sh'
+```
+
+脚本本身 (`scripts/codex-review.sh`) 已经入库，不用单独拷贝。前置依赖：`codex` CLI（`npm i -g @openai/codex`）并已登录。
 
 ## 2. PROGRESS.md 作为状态看板
 
