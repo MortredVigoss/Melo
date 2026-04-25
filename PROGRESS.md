@@ -5,6 +5,12 @@
 
 ---
 
+## 2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出
+
+- 做了什么：`scripts/codex-review.sh` 在算出 `commit_count` 后立刻判断为 0 则报错"先 `git pull --rebase`"。原流程会先跑一轮 Codex evaluation 再被 `git push` 拒绝，浪费一轮 token。
+- 为什么：上一轮 `2c43ec2` 过 gate 时 Codex 评 B 留下的唯一非阻塞建议。CLAUDE.md §4 要求"B 的建议要记录并安排修"——既然已经在 gate-fix 流程里就顺手做掉。
+- 提交哈希：（待 commit）
+
 ## 2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push（gate-on-gate-on-gate）
 
 - 做了什么：

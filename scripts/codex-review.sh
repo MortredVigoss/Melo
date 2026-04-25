@@ -210,6 +210,18 @@ commit_count="$(git rev-list --count "${base_sha}..${head_sha}")"
 short_base="$(git rev-parse --short "$base_sha")"
 short_head="$(git rev-parse --short "$head_sha")"
 
+# Bail before paying for a Codex evaluation when there's nothing to push:
+# `base != head` reaches here, but the range is still empty when HEAD is
+# strictly behind upstream (e.g. fetched but not pulled). Without this
+# check we'd run the full pre-push eval, then `git push` would fail with
+# "non-fast-forward" — wasted tokens for a state the user can fix with
+# `git pull --rebase`.
+if [ "$commit_count" = "0" ]; then
+  echo "❌ HEAD has no commits ahead of ${remote}/${remote_branch} (upstream is ahead or you have local diverged commits not yet rebased)." >&2
+  echo "   Run \`git fetch && git pull --rebase\` to sync, then retry \`git pp\`." >&2
+  exit 1
+fi
+
 # ─── Pre-push evaluation gate ────────────────────────────────────────────────
 pre_review_output="$(mktemp -t melo-pre-pp-review.XXXXXX)"
 
