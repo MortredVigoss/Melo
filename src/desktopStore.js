@@ -1976,7 +1976,11 @@ async function readStateSnapshot({ persistRepair = true } = {}) {
   }
 }
 
-async function loadState() {
+// Phase 7d-5α: exposed for the future chatGraphRunner extraction.
+// The body is unchanged — only the `export` keyword was added so other
+// modules can call into the state machine without circular imports
+// through desktopStore. See CLAUDE.md §5 (byte-for-byte rule).
+export async function loadState() {
   return readStateSnapshot({ persistRepair: true });
 }
 
@@ -1991,7 +1995,9 @@ async function persistStateAtomically(state) {
 }
 
 
-async function saveState(state) {
+// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
+// unchanged.
+export async function saveState(state) {
   stateWriteQueue = stateWriteQueue
     .catch(() => {})
     .then(() => persistStateAtomically(state));
@@ -1999,7 +2005,9 @@ async function saveState(state) {
   return state;
 }
 
-async function updateStateAtomically(mutator) {
+// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
+// unchanged.
+export async function updateStateAtomically(mutator) {
   let nextState = null;
   stateWriteQueue = stateWriteQueue
     .catch(() => {})
@@ -2268,7 +2276,9 @@ function commandTemplateDescriptor(template) {
   };
 }
 
-function findProjectById(state, projectId) {
+// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
+// unchanged.
+export function findProjectById(state, projectId) {
   return state.projects.find(project => project.id === projectId) || null;
 }
 
@@ -2510,7 +2520,9 @@ function buildProfile() {
 // use the imports near the top of this file; the re-export of
 // formatProviderFailureMessage keeps the existing test import working.
 
-function ensureSelectedEntities(state) {
+// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
+// unchanged.
+export function ensureSelectedEntities(state) {
   const chats = sortChats(state.chats);
   const normalizedAgentProfiles = normalizeAgentProfiles(state.agentProfiles);
   const availableAgentIds = allAgentIdsFromProfiles(normalizedAgentProfiles);

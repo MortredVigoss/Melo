@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-25 21:30 — Phase 7d-5α：暴露 state-machine helpers 为后续 elephant 移植铺路
+
+- 做了什么：在 `src/desktopStore.js` 给 5 个 state-machine 关键函数加 `export` 关键字（`loadState`、`saveState`、`updateStateAtomically`、`findProjectById`、`ensureSelectedEntities`）。**纯加 export，不动一行逻辑**——严格符合 CLAUDE.md §5 byte-for-byte 规则。
+- 为什么：上一轮调研 elephant (`runChatAgentExecutionGraph` 517 行) 发现它依赖 17 个 desktopStore-local 符号，其中最核心的是 state-machine 锁（`saveState` 等）。要让 elephant 真正搬到 `src/services/chat/chatGraphRunner.js`，必须先消除"被搬走的代码反过来 import desktopStore"造成的循环依赖风险——而消除循环依赖的 byte-for-byte 安全方式就是先 export 现有函数。同时调研中发现：原以为是 elephant 阻塞物的 `createStateGraph` / `runStateGraph` / `GRAPH_END` 已经在 `src/agentGraph.js` 是独立模块（之前历史改造已完成），所以原本 7d-5β 计划已经无效，这一步直接合并掉。
+- 7d-5 后续路线（不做即决断，留给用户）：
+  - **7d-5γ**：把 desktopStore 里 ~10 个 prompt/context helper 一次性搬出去（`buildChannelRoutePrompt`、`buildToolRoutingPrompt`、`buildAgentMemoryNodeContext`、`buildMatcherContextFromChat`、`buildProjectContextSection`、`summarizeConnectorPrompts`、`summarizeSkillsPrompts`、`buildDynamicContext`、`formatSessionMemoryBlock`、`formatModelMessageForVisionDebug`）。
+  - **7d-5δ**：终于可以 byte-for-byte 搬 `runChatAgentExecutionGraph` + `sendChatMessage` + `planChatGraphAction` + `runTaskAgentExecutionGraph`。
+- 产出 / 提交哈希：未提交
+  - 5 处 `export` 添加（共增 ~12 行注释 + 5 个 export 关键字）
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 images+tools+media+memory+agents+openai 583/583 全绿
+  - 这次不增加新测试——纯增加可见性的改动不会改变行为，原有测试已经覆盖这些函数的行为。
+
 ## 2026-04-25 19:30 — Phase 7d-2：抽出 systemPrompt（chatExecutionService 拆解 ②/N）+ 首条 byte-for-byte 移植规则落盘
 
 - 做了什么：
