@@ -13,7 +13,29 @@ function threadsDir() {
 }
 const THREAD_CHECKPOINT_VERSION = 1;
 const MAX_CACHE_ENTRIES = 48;
-const checkpointCache = new Map();
+
+// checkpointCache was originally a flat `Map<threadId, payload>`. After
+// the state machine moved to non-cache-busted modules, the same threadId
+// across two MELO_HOME values would silently return the FIRST home's
+// cached payload — bypassing the lazy `threadsDir()` disk fix because the
+// cache hit returns before disk read. Codex review caught this and the
+// user picked Q3-B + Q4-b (nested Map + allHomes invalidate option).
+//
+// Shape: Map<MELO_HOME, Map<threadId, payload>>. Each home gets its own
+// inner Map, capped at MAX_CACHE_ENTRIES with the same LRU-by-insertion
+// behavior as before. Production has one home → one inner Map → behavior
+// equivalent. CLAUDE.md §5 mechanical adjustment, scope limited to the
+// cross-module isolation requirement.
+const checkpointCacheByHome = new Map();
+function getCacheBucket() {
+  const home = getMeloHome();
+  let bucket = checkpointCacheByHome.get(home);
+  if (!bucket) {
+    bucket = new Map();
+    checkpointCacheByHome.set(home, bucket);
+  }
+  return bucket;
+}
 
 function checkpointPathFor(threadId) {
   return join(threadsDir(), `${encodeURIComponent(String(threadId || '').trim())}.json`);
@@ -28,13 +50,14 @@ function remember(threadId, payload) {
     return payload;
   }
 
-  if (checkpointCache.has(threadId)) {
-    checkpointCache.delete(threadId);
+  const bucket = getCacheBucket();
+  if (bucket.has(threadId)) {
+    bucket.delete(threadId);
   }
-  checkpointCache.set(threadId, payload);
-  while (checkpointCache.size > MAX_CACHE_ENTRIES) {
-    const oldestKey = checkpointCache.keys().next().value;
-    checkpointCache.delete(oldestKey);
+  bucket.set(threadId, payload);
+  while (bucket.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = bucket.keys().next().value;
+    bucket.delete(oldestKey);
   }
   return payload;
 }
@@ -59,8 +82,9 @@ export async function loadThreadCheckpoint(threadId) {
     return null;
   }
 
-  if (checkpointCache.has(normalizedThreadId)) {
-    return clonePayload(remember(normalizedThreadId, checkpointCache.get(normalizedThreadId)));
+  const bucket = getCacheBucket();
+  if (bucket.has(normalizedThreadId)) {
+    return clonePayload(remember(normalizedThreadId, bucket.get(normalizedThreadId)));
   }
 
   try {
@@ -99,7 +123,7 @@ export async function deleteThreadCheckpoint(threadId) {
     return;
   }
 
-  checkpointCache.delete(normalizedThreadId);
+  getCacheBucket().delete(normalizedThreadId);
   await rm(checkpointPathFor(normalizedThreadId), { force: true });
 }
 
@@ -108,6 +132,7 @@ export async function pruneThreadCheckpoints(keepThreadIds = []) {
   const keep = new Set(keepThreadIds.map(value => String(value || '').trim()).filter(Boolean));
   const entries = await readdir(threadsDir(), { withFileTypes: true });
 
+  const bucket = getCacheBucket();
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) {
       continue;
@@ -118,16 +143,38 @@ export async function pruneThreadCheckpoints(keepThreadIds = []) {
       continue;
     }
 
-    checkpointCache.delete(threadId);
+    bucket.delete(threadId);
     await rm(join(threadsDir(), entry.name), { force: true });
   }
 }
 
-export function invalidateThreadCheckpointCache(threadId = null) {
-  if (threadId == null) {
-    checkpointCache.clear();
+/**
+ * Invalidate cached thread checkpoints.
+ *
+ * @param {string | null} threadId — null/omitted clears the entire cache for
+ *   the current home (or every home, when `allHomes` is true).
+ * @param {{ allHomes?: boolean }} [options]
+ *   • `allHomes: true` clears across every recorded MELO_HOME bucket — used
+ *     by tests that swap homes and want a clean slate. Default scope is
+ *     the current home only (Q4-b option from Phase 7d-5α-A1 followup).
+ */
+export function invalidateThreadCheckpointCache(threadId = null, { allHomes = false } = {}) {
+  if (allHomes) {
+    if (threadId == null) {
+      checkpointCacheByHome.clear();
+      return;
+    }
+    const id = String(threadId || '').trim();
+    for (const bucket of checkpointCacheByHome.values()) {
+      bucket.delete(id);
+    }
     return;
   }
 
-  checkpointCache.delete(String(threadId || '').trim());
+  const bucket = getCacheBucket();
+  if (threadId == null) {
+    bucket.clear();
+    return;
+  }
+  bucket.delete(String(threadId || '').trim());
 }

@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-04-26 03:30 — Phase 7d-5α-A1 fix-3：cache-level cross-home isolation（Q3-B + Q4-b + 扩大 audit）
+
+- 做了什么（808db9e 的 Codex review C-grade 修复——这一次是 cache-level，不只是路径）：
+  - **Q3-B 落实**：`src/memory/checkpointer.js` 的 `checkpointCache`（原 `Map<threadId, payload>`）改为嵌套 `Map<MELO_HOME, Map<threadId, payload>>`。新增 `getCacheBucket()` helper，所有 4 个 op (`remember` / `loadThreadCheckpoint` 命中检查 / `deleteThreadCheckpoint` / `pruneThreadCheckpoints`) 都通过 bucket 操作。
+  - **Q4-b 落实**：`invalidateThreadCheckpointCache(threadId, { allHomes = false } = {})` 新签名。默认仅清当前 home（保留旧行为兼容），`allHomes: true` 跨所有 home 清理（测试用例需要）。
+  - **扩大 audit 完成（4 项 module-level state 全部检查）**：
+    - ✅ `markdownPrimeQueued` (markdownSync.js)：原 `let markdownPrimeQueued = false`，单 boolean 跨 home 串读 → 改为 `markdownPrimePendingHomes = new Set()`，按 `getMeloHome()` 索引。
+    - ✅ `stateWriteQueue` (stateStore.js)：单 Promise chain，但**写入路径在 enqueue 时 lazy resolve**（通过 saveState/persistStateAtomically 内部 `statePath()`），所以队列只是 serialize order，不会让 home A 的 payload 写到 home B 的路径。**判定无 leak**，保持单实例。
+    - ✅ `defaultSkillMatchCache` (agents/skillMatchCache.js)：cache key 是 `messageFingerprint + skillsFingerprint + options`，**完全 content-based**——跨 home 命中要求**输入完全相同**，输出也必然相同。**判定无 leak**。
+    - ✅ `getSharedSkillIndex` factory (services/agent/agentTools.js)：cache 用 `fingerprint = fingerprintSkillList(skills)`，跨 home 要求 skills 列表内容完全一致才命中。**判定无 leak**。
+  - **新增 `src/memory/checkpointer.test.js`（3 个测试）**：
+    1. `saveThreadCheckpoint + loadThreadCheckpoint isolate by MELO_HOME (cache)` —— 这就是 Codex 抓到的 cache-leak 的精确回归测试。同 thread id 在两个 home 写不同 payload，验证 home A/B 各读各的，即便切换回去也不串读。
+    2. `invalidateThreadCheckpointCache(id) defaults to current home only` —— Q4-b default 行为
+    3. `invalidateThreadCheckpointCache(id, { allHomes: true }) clears every home bucket` —— Q4-b allHomes 行为
+- 为什么：Codex review 三连击正在生效——每次都抓到真实漏洞。这次 audit 扩到全部 module-level state 后，把"路径常量泄漏"+"flag 单例泄漏"+"cache 跨 home 串读"三类问题彻底覆盖。
+- 这次的关键学习：**byte-for-byte 移植规则只防止"顺手简化"。它防不了"模块边界改变了变量生命周期"这种语义级泄漏**。模块从 cache-busted desktopStore 搬到非-cache-busted state 模块时，所有 module-level mutable state（`let`/`Map`/`Set`/`Promise.resolve()`）都要重新审计是否需要按 home 隔离。这条经验值得加进 CLAUDE.md。
+- 产出 / 提交哈希：未提交
+  - `src/memory/checkpointer.js`：嵌套 Map + Q4-b API
+  - `src/state/markdownSync.js`：`markdownPrimePendingHomes` Set 替换 boolean
+  - `src/memory/checkpointer.test.js`（新，3 tests）
+  - 回归：services + desktopStore + state + memory 套件 611/611（+3 from new isolation tests）；跨域 281/281 全绿
+
 ## 2026-04-26 02:30 — Phase 7d-5α-A1 commit 8+9 fix：MELO_HOME 隔离修复（Q1a + Q2b）+ 串读 audit
 
 - 做了什么（修复 commit 856aa07 在 Codex review 中触发的 C 评级）：

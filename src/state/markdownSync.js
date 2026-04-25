@@ -37,7 +37,13 @@ import {
 } from './agentProfiles.js';
 import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
 
-let markdownPrimeQueued = false;
+// Per-MELO_HOME debounce. Original was a single `let markdownPrimeQueued`
+// boolean; once one home triggered a prime pass, every other home would
+// silently skip because the flag stayed `true` until the in-flight pass
+// finished. After this module became non-cache-busted (Phase 7d-5α-A1),
+// the flag started leaking across test homes the same way `markdownSynced`
+// did. Same fix shape: a Set keyed by current home.
+const markdownPrimePendingHomes = new Set();
 
 export async function importAgentMarkdownFiles(state) {
   let changed = false;
@@ -111,11 +117,12 @@ async function primeAgentMarkdownFiles(state) {
 }
 
 export function queueAgentMarkdownPrime(state) {
-  if (markdownPrimeQueued) {
+  const home = getMeloHome();
+  if (markdownPrimePendingHomes.has(home)) {
     return;
   }
 
-  markdownPrimeQueued = true;
+  markdownPrimePendingHomes.add(home);
   const snapshot = {
     agentProfiles: normalizeAgentProfiles(state.agentProfiles),
     projectAgentOverrides: normalizeProjectAgentOverrides(
@@ -130,7 +137,7 @@ export function queueAgentMarkdownPrime(state) {
       console.warn(`Failed to prime Melo agent markdown files: ${error.message}`);
     })
     .finally(() => {
-      markdownPrimeQueued = false;
+      markdownPrimePendingHomes.delete(home);
     });
 }
 
