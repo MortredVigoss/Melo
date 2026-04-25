@@ -16,7 +16,7 @@
   - byte-for-byte 规则的盲点：防"顺手简化"，但防不了"看漏一个间接绑定"。原 desktopStore 里 `function sanitizeWorkspacePath(rawPath) { return sanitizeWorkspacePathRaw(rawPath, APP_ROOT); }` 只 4 行，搬迁时眼睛漏过去了，结果直接 import 了底层 `sanitizeWorkspacePathRaw`（2-arg）当成 `sanitizeWorkspacePath` 用——源代码看起来 byte-identical 但语义破了。
   - 这次修复 + 测试覆盖应该让相同类型的 bug 在未来被立刻抓到（任何人改了 normalizeProject 都会踩到 relative-path 的回归测试）。
   - audit 提供了对 commits 1-6 的信心：它们都没有同类盲点。
-- 产出 / 提交哈希：未提交
+- 产出 / 提交哈希：`a6c1802`（A 评级，180K tokens，0 critical findings）
   - `src/state/stateHydration.js`：恢复 local `sanitizeWorkspacePath` wrapper（4 行）+ normalizeProject 改用它
   - 新增 `src/state/stateHydration.test.js`（10 个回归测试，全绿）
   - 回归：services + desktopStore + search + state 套件 303/303；跨域 583/583 全绿
