@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-26 02:30 — Phase 7d-5α-A1 commit 8+9 fix：MELO_HOME 隔离修复（Q1a + Q2b）+ 串读 audit
+
+- 做了什么（修复 commit 856aa07 在 Codex review 中触发的 C 评级）：
+  - **Q1a 落实**：`stateStore.js` 把 `let markdownSynced = false` 替换为 `markdownSyncedByHome = new Map()`，所有读写通过 `getMeloHome()` 索引。`isMarkdownSyncedForCurrentHome()` + `markCurrentHomeMarkdownSynced()` 两个 helper 替换原 boolean 直接读写。生产单 home 时 Map 始终只有 1 个 entry——行为等价。
+  - **Q2b 落实**：`createAgentMarkdownFileHelpers({ agentsDir })` 现在接受 string OR `() => string`。`markdownSync.js` 改为传 `() => join(getMeloHome(), 'desktop', 'agents')`，每次 `getAgentMarkdownPaths` 调用都重新解析 home。desktopStore 的现有调用方（传 string）不受影响——纯添加新形态，向后兼容。
+  - **顺手 audit 抓到第三个 bug**：`src/memory/checkpointer.js` 的 `const THREADS_DIR = join(getMeloHome(), 'desktop', 'threads')` 也是模块加载时固定。改成 lazy `threadsDir()` 函数。这个 bug 早就在原代码里，我的 refactor 只是放大了它的可见性（从前 desktopStore 一起 cache-bust 时间接掩盖了）。
+  - **新增 `src/state/stateStoreHomeIsolation.test.js`（3 个测试）**——专门压住这一类 home-leak bug：
+    - 两个 home 各自 state.json 不互相串读
+    - createChat 在 home B 不污染 home A 的 state.json
+    - 两个 home 各自的 IDENTITY.md 都被正确导入（这是 markdownSynced 单例 bug 的精确回归测试，会失败如果 Q1a 没做）
+- 为什么：CLAUDE.md §4 C/D gate 强制——commit 856aa07 评 C，必须先停下来按 Codex 意见重出方案、用户判断后才能动代码。Q1a + Q2b 是用户确认的方案。fix 里同时做了未覆盖的 audit 工作（checkpointer.js）防止下次再撞同类 bug。
+- 产出 / 提交哈希：未提交
+  - 4 个文件改动：
+    - `src/services/agent/markdownFiles.js`：factory 加 `resolveAgentsDir = typeof agentsDir === 'function' ? agentsDir : () => agentsDir`，向后兼容
+    - `src/state/markdownSync.js`：lazy `agentsDir` getter 替换 module-load-time 计算
+    - `src/state/stateStore.js`：`markdownSyncedByHome` Map + 两个 helper
+    - `src/memory/checkpointer.js`：`THREADS_DIR` 改为 `threadsDir()` lazy 函数
+  - 1 个新测试文件：`src/state/stateStoreHomeIsolation.test.js`（3 tests，全绿）
+  - 回归：services + desktopStore + search + state 套件 306/306（+3 from new isolation tests）；跨域 583/583 全绿
+
 ## 2026-04-26 01:30 — Phase 7d-5α-A1 收尾 (Commit 8+9 合并)：state-machine 全部搬出 desktopStore
 
 - 做了什么（一个 big-bang commit 完成 commit 8/9 + cec12c3 cleanup）：

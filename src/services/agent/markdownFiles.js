@@ -78,6 +78,12 @@ export async function writeMarkdownFile(filePath, value = '') {
  *   - `<agentsDir>/global/<agentId>/{IDENTITY,SOUL}.md`
  *   - `<agentsDir>/projects/<projectId>/<agentId>/{IDENTITY,SOUL}.md`
  *
+ * `agentsDir` accepts either a literal string (for callers like desktopStore
+ * that compute the path once and never change it) OR a `() => string` getter
+ * (for callers like src/state/markdownSync.js whose underlying MELO_HOME may
+ * change between calls — see CLAUDE.md §5 carve-out for Phase 7d-5α-A1
+ * commit 9 follow-up). The factory normalizes both forms internally.
+ *
  * The returned object also re-exports the pure helpers so callers can
  * grab them from a single import site.
  */
@@ -85,14 +91,17 @@ export function createAgentMarkdownFileHelpers({ agentsDir }) {
   if (!agentsDir) {
     throw new Error('createAgentMarkdownFileHelpers: agentsDir is required');
   }
+  const resolveAgentsDir =
+    typeof agentsDir === 'function' ? agentsDir : () => agentsDir;
 
   function getAgentMarkdownPaths(agentId, { scope = 'global', projectId = null } = {}) {
     const safeAgentId = normalizeAgentStorageId(agentId);
     const safeProjectId = projectId || 'default-project';
+    const currentAgentsDir = resolveAgentsDir();
     const baseDir =
       scope === 'project'
-        ? join(agentsDir, 'projects', safeProjectId, safeAgentId)
-        : join(agentsDir, 'global', safeAgentId);
+        ? join(currentAgentsDir, 'projects', safeProjectId, safeAgentId)
+        : join(currentAgentsDir, 'global', safeAgentId);
 
     return {
       dir: baseDir,

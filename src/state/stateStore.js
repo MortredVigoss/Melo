@@ -77,16 +77,38 @@ function statePath() {
 }
 
 let stateWriteQueue = Promise.resolve();
-let markdownSynced = false;
+
+// markdownSynced was a single `let` boolean in the original desktopStore.
+// Phase 7d-5α-A1 commit 9 follow-up: after the state machine moved to this
+// (non-cache-busted) module, the test pattern `import('./desktopStore.js?t=...')`
+// for per-test MELO_HOME isolation stopped working — the FIRST test would set
+// `markdownSynced = true` and every subsequent test home would silently skip
+// `importAgentMarkdownFiles`, missing real disk markdown.
+//
+// Fix: key the flag by current MELO_HOME so each test's home tracks its
+// own sync state. Production has only one MELO_HOME so the Map has at most
+// one entry — same effective behavior. CLAUDE.md §5 mechanical adjustment;
+// the `markdownSyncedFor(getMeloHome())` getter / setter call sites below
+// are byte-equivalent to the original `markdownSynced` reads / writes.
+const markdownSyncedByHome = new Map();
+function isMarkdownSyncedForCurrentHome() {
+  return markdownSyncedByHome.get(getMeloHome()) === true;
+}
+function markCurrentHomeMarkdownSynced() {
+  markdownSyncedByHome.set(getMeloHome(), true);
+}
 
 export async function readStateSnapshot({ persistRepair = true } = {}) {
   try {
     const raw = await readFile(statePath(), 'utf8');
     const { parsed, repaired } = parseStatePayload(raw);
     const state = hydrateState(parsed);
-    const markdownImported = markdownSynced ? false : await importAgentMarkdownFiles(state);
-    if (!markdownSynced) {
-      markdownSynced = true;
+    const alreadySyncedThisHome = isMarkdownSyncedForCurrentHome();
+    const markdownImported = alreadySyncedThisHome
+      ? false
+      : await importAgentMarkdownFiles(state);
+    if (!alreadySyncedThisHome) {
+      markCurrentHomeMarkdownSynced();
       queueAgentMarkdownPrime(state);
     }
     const threadRepaired = await hydrateChatThreads(state);
@@ -106,7 +128,7 @@ export async function readStateSnapshot({ persistRepair = true } = {}) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
       const state = createDefaultState();
       await importAgentMarkdownFiles(state);
-      markdownSynced = true;
+      markCurrentHomeMarkdownSynced();
       queueAgentMarkdownPrime(state);
       await hydrateChatThreads(state);
       await mergeDiskSkillsIntoState(state);

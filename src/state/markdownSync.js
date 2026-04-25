@@ -134,14 +134,21 @@ export function queueAgentMarkdownPrime(state) {
     });
 }
 
-// `getAgentMarkdownPaths` is required by both fns above. It comes from the
-// markdownFiles helper factory in services/agent/markdownFiles.js, but the
-// factory binds it to a specific agentsDir. This module imports the same
-// factory the desktopStore uses so the resolved paths are identical.
+// `getAgentMarkdownPaths` is bound LAZILY here. The factory now accepts
+// either a string or a `() => string` for `agentsDir` — by passing the
+// getter form, every getAgentMarkdownPaths(...) call re-reads
+// `getMeloHome()` at call time. This is required because tests in
+// desktopStore.projectsDefault.test.js cache-bust desktopStore.js with
+// per-test MELO_HOME values, but that trick does NOT cascade to
+// dependency modules — markdownSync.js is loaded once. Without lazy
+// resolution this module would freeze AGENTS_DIR to whichever home was
+// active at first load and silently read/write the wrong agents
+// directory across MELO_HOME switches. (Phase 7d-5α-A1 commit 9 follow-up,
+// CLAUDE.md §5 mechanical adjustment.)
 import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
 import { join } from 'node:path';
 import { getMeloHome } from '../config.js';
 
-const DESKTOP_DIR = join(getMeloHome(), 'desktop');
-const AGENTS_DIR = join(DESKTOP_DIR, 'agents');
-const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({ agentsDir: AGENTS_DIR });
+const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
+  agentsDir: () => join(getMeloHome(), 'desktop', 'agents'),
+});

@@ -3,13 +3,20 @@ import { join } from 'node:path';
 import { getMeloHome } from '../config.js';
 import { atomicWriteJson } from '../storage.js';
 
-const THREADS_DIR = join(getMeloHome(), 'desktop', 'threads');
+// THREADS_DIR was originally a module-load-time const. Phase 7d-5α-A1
+// commit 9 follow-up audit caught that this captures MELO_HOME at first
+// import — the same bug class that hit STATE_PATH and AGENTS_DIR after
+// the state-machine moved to its own module. Fix: lazy resolution every
+// time the path is needed. CLAUDE.md §5 mechanical adjustment.
+function threadsDir() {
+  return join(getMeloHome(), 'desktop', 'threads');
+}
 const THREAD_CHECKPOINT_VERSION = 1;
 const MAX_CACHE_ENTRIES = 48;
 const checkpointCache = new Map();
 
 function checkpointPathFor(threadId) {
-  return join(THREADS_DIR, `${encodeURIComponent(String(threadId || '').trim())}.json`);
+  return join(threadsDir(), `${encodeURIComponent(String(threadId || '').trim())}.json`);
 }
 
 function clonePayload(payload) {
@@ -76,7 +83,7 @@ export async function saveThreadCheckpoint(threadId, payload = {}) {
     throw new Error('Thread checkpoint requires a thread id.');
   }
 
-  await mkdir(THREADS_DIR, { recursive: true });
+  await mkdir(threadsDir(), { recursive: true });
   const normalized = normalizeCheckpoint({
     ...payload,
     threadId: normalizedThreadId,
@@ -97,9 +104,9 @@ export async function deleteThreadCheckpoint(threadId) {
 }
 
 export async function pruneThreadCheckpoints(keepThreadIds = []) {
-  await mkdir(THREADS_DIR, { recursive: true });
+  await mkdir(threadsDir(), { recursive: true });
   const keep = new Set(keepThreadIds.map(value => String(value || '').trim()).filter(Boolean));
-  const entries = await readdir(THREADS_DIR, { withFileTypes: true });
+  const entries = await readdir(threadsDir(), { withFileTypes: true });
 
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) {
@@ -112,7 +119,7 @@ export async function pruneThreadCheckpoints(keepThreadIds = []) {
     }
 
     checkpointCache.delete(threadId);
-    await rm(join(THREADS_DIR, entry.name), { force: true });
+    await rm(join(threadsDir(), entry.name), { force: true });
   }
 }
 
