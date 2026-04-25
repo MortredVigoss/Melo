@@ -82,6 +82,38 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 
 **Codex review 的角色：** review prompt 已经强制走完整 `git show` 每个 commit。把"逐字节移植"作为约定后，review 看到的差异越少越好——任何 `-` 行 + `+` 行的代码逻辑差（不是 path/import 调整）都应被高亮为可疑。
 
+## 6. 后台任务 / 异步执行：调度时捕获 env，执行时禁止读 env
+
+任何会跨越 `await` / 微任务 / `Promise.then` / `setTimeout` 等异步边界的函数，**必须在调度时（或函数入口）一次性捕获**所有依赖 `process.env` / `getMeloHome()` / 全局可变状态的派生值（路径、home id、user 上下文等），然后通过参数 / 闭包传给后续异步阶段。**异步执行体内部不允许再读 `process.env.MELO_HOME` 或同类全局动态值**。
+
+**为什么：** Phase 7d-5α-A1 期间连续撞了 4 次同类 bug 的不同 layer：路径常量在 module load 时被冻结 → flag 单例跨 home 串读 → cache 用 thread-id 单 key 跨 home 串读 → **背景 prime 任务在 microtask 里重新读 `getMeloHome()`，把 home A 的 snapshot 写到 home B 的目录**。前 3 个 layer 的修复都基于 "lazy 解析"，第 4 个 layer 暴露出 lazy 解析在异步边界**反而是错的**——本来就需要的就是"绑定到调度时的 env"。
+
+**典型反模式 vs 正确模式：**
+
+```js
+// ❌ 反模式：lazy 路径解析在异步执行体内
+function queueBackgroundJob(state) {
+  Promise.resolve().then(async () => {
+    // 当 microtask 执行时，process.env 可能已经变了！
+    const path = join(getMeloHome(), 'something');  
+    await writeFile(path, payload);
+  });
+}
+
+// ✅ 正确模式：调度时一次性捕获，闭包传递
+function queueBackgroundJob(state) {
+  const home = getMeloHome();                 // capture HERE
+  const path = join(home, 'something');       // resolve HERE
+  Promise.resolve().then(async () => {
+    await writeFile(path, payload);            // use captured value
+  });
+}
+```
+
+对 factory-bound helper 的处理方式相同：调度时**用字面量字符串而不是 `() => getMeloHome()` 形式**绑定 factory，把绑定好的 helper 实例传进异步任务。
+
+**Codex review 关注点：** 任何 commit 引入或修改 `Promise.then` / `async function` / `setTimeout` 调用且函数体内部出现 `getMeloHome()` / `process.env.*` 都应被高亮为潜在 §6 违规。
+
 ## 其他既有规则（不在本文件但仍生效）
 
 - `~/.claude/projects/-Users-mortred-Desktop-melo/memory/MEMORY.md` 中的 Melo 六条硬性规则继续适用（方案评分先行、红绿灯检测、功能隔离、UI 对齐、设计语言统一、配置保留）。

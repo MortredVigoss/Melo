@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-04-26 04:30 — Phase 7d-5α-A1 fix-4：async-timing capture（Q5-B + Q6-b + CLAUDE.md §6 落盘）
+
+- 做了什么（a104f23 的 Codex review C-grade 修复——这次是异步边界 timing bug）：
+  - **Q5-B 落实**：`queueAgentMarkdownPrime` 在调度时**绑定一个 home-specific factory**（用字面量 string 而非 lazy getter），把 `getAgentMarkdownPaths` 函数实例传给 `primeAgentMarkdownFiles(state, getAgentMarkdownPaths)`。异步执行体内部不再通过任何 lazy 路径反向读 `getMeloHome()`。
+  - **顺手修 importAgentMarkdownFiles**：用户明确要求"补"。这个函数虽然是同步入口（被 await），但内部跨 4 个 await 做 disk I/O，如果 env 在 await 期间切换会撞同样的 bug。改成**入口处一次性捕获 home + helpers**，整个函数体只用捕获的 helpers。
+  - **Q6-b 落实——CLAUDE.md §6 落盘**：写下"调度时捕获 env，执行时禁止读 env"的硬规则，附反模式 vs 正确模式代码示例。明确要求 Codex review 把"async function 内部出现 `getMeloHome()` / `process.env.*`"作为高亮可疑点。
+  - **顺手清理**：markdownSync.js 模块底部的 lazy `getAgentMarkdownPaths` 全局绑定（Q2b 时引入）现在已经无人使用——`importAgentMarkdownFiles` 和 `queueAgentMarkdownPrime` 各自有自己的 home-bound factory 实例。删掉死代码 + 改注释解释为什么 lazy form 仅用于真正同步的 caller（如 `desktopStore.syncAgentMarkdownFiles`）。
+  - **新增 `src/state/markdownSyncAsyncTiming.test.js`（2 tests）**：
+    1. `queueAgentMarkdownPrime` 调度后立即切 MELO_HOME，然后等 microtask flush，断言文件写到 home A（调度时的 home）而不是 home B（执行时的 env）
+    2. `importAgentMarkdownFiles` 调用后立即切 MELO_HOME，await 完成，断言读取的 IDENTITY.md 是 home A（入口时的 home）的内容
+- 为什么：这是 Phase 7d-5α-A1 的第 4 次 C 评级，每一次都是同一类 bug 的不同 layer——module-load const → flag 单例 → cache 串读 → **async 体内反向读 env**。前 3 个 layer 都靠 "lazy 解析" 修，第 4 个层暴露出在异步边界 lazy 反而是错的——必须切换到"捕获时机"思维。CLAUDE.md §6 把这个区别明确化，未来类似 background task / async I/O 都按这条规则做就不会再踩。
+- 这次的关键学习（已写进 CLAUDE.md §6）：
+
+  | bug 层 | 修复方向 |
+  |-------|---------|
+  | 路径常量 module-load 时冻结 | lazy getter，每次 call 重新读 |
+  | flag 单例跨 home 串读 | 按 home 索引 Map/Set |
+  | cache 用单维 key 跨 home 串读 | 嵌套 Map<home, Map<key, value>> |
+  | **async 体内 lazy 读 env**（这次）| **调度时捕获，绑死给闭包 / 参数** |
+
+- 产出 / 提交哈希：未提交
+  - `src/state/markdownSync.js`：queueAgentMarkdownPrime 改成捕获 home-bound factory；importAgentMarkdownFiles 同样模式；删除模块底部死代码
+  - `CLAUDE.md`：新增 §6
+  - `src/state/markdownSyncAsyncTiming.test.js`（新，2 tests）
+  - 回归：services + desktopStore + state + memory 套件 613/613（+2 from new async-timing tests）；跨域 281/281 全绿
+
 ## 2026-04-26 03:30 — Phase 7d-5α-A1 fix-3：cache-level cross-home isolation（Q3-B + Q4-b + 扩大 audit）
 
 - 做了什么（808db9e 的 Codex review C-grade 修复——这一次是 cache-level，不只是路径）：

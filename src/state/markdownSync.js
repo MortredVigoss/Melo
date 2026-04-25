@@ -46,12 +46,23 @@ import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
 const markdownPrimePendingHomes = new Set();
 
 export async function importAgentMarkdownFiles(state) {
+  // Capture home-bound path resolver at function entry. This function
+  // spans multiple awaits over disk I/O; if MELO_HOME flips between
+  // them, the lazy resolver would read the new home and write to the
+  // wrong agents/ directory. CLAUDE.md §6: capture-at-entry, never
+  // re-read env during async execution.
+  const home = getMeloHome();
+  const { getAgentMarkdownPaths: getPathsForCapturedHome } =
+    createAgentMarkdownFileHelpers({
+      agentsDir: join(home, 'desktop', 'agents'),
+    });
+
   let changed = false;
   state.agentProfiles = normalizeAgentProfiles(state.agentProfiles);
 
   for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
     const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
-    const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
+    const paths = getPathsForCapturedHome(agentId, { scope: 'global' });
     const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
     const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
     if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
@@ -76,7 +87,7 @@ export async function importAgentMarkdownFiles(state) {
       }
 
       const profile = normalizeAgentProfile(agentId, override);
-      const paths = getAgentMarkdownPaths(agentId, { scope: 'project', projectId });
+      const paths = getPathsForCapturedHome(agentId, { scope: 'project', projectId });
       const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
       const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
       if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
@@ -96,7 +107,21 @@ export async function importAgentMarkdownFiles(state) {
   return changed;
 }
 
-async function primeAgentMarkdownFiles(state) {
+// `primeAgentMarkdownFiles` and `importAgentMarkdownFiles` both run
+// across multiple awaits, AND `queueAgentMarkdownPrime` schedules its
+// prime body as a microtask. In all three cases, reading
+// `getMeloHome()` lazily (the global lazy-getter trick used elsewhere)
+// is wrong: between the call site and the actual disk I/O,
+// `process.env.MELO_HOME` can change. Codex review of a104f23 caught
+// this — exactly the "background task must capture home at schedule
+// time" rule now codified in CLAUDE.md §6.
+//
+// Fix: each function takes an explicit `helpers` (`getAgentMarkdownPaths`
+// bound to a specific agentsDir). queueAgentMarkdownPrime captures the
+// helpers ONCE at queue time and passes them through to the prime body.
+// importAgentMarkdownFiles captures helpers at function entry. Neither
+// reads getMeloHome() during async execution.
+async function primeAgentMarkdownFiles(state, getAgentMarkdownPaths) {
   for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
     const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
     const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
@@ -123,6 +148,13 @@ export function queueAgentMarkdownPrime(state) {
   }
 
   markdownPrimePendingHomes.add(home);
+  // Capture a home-bound factory NOW so the async prime never reads the
+  // current process.env.MELO_HOME. agentsDir is a literal string here
+  // (not the lazy getter form) — that is the whole point.
+  const { getAgentMarkdownPaths: getPathsForCapturedHome } =
+    createAgentMarkdownFileHelpers({
+      agentsDir: join(home, 'desktop', 'agents'),
+    });
   const snapshot = {
     agentProfiles: normalizeAgentProfiles(state.agentProfiles),
     projectAgentOverrides: normalizeProjectAgentOverrides(
@@ -132,7 +164,7 @@ export function queueAgentMarkdownPrime(state) {
   };
 
   Promise.resolve()
-    .then(() => primeAgentMarkdownFiles(snapshot))
+    .then(() => primeAgentMarkdownFiles(snapshot, getPathsForCapturedHome))
     .catch(error => {
       console.warn(`Failed to prime Melo agent markdown files: ${error.message}`);
     })
@@ -141,21 +173,14 @@ export function queueAgentMarkdownPrime(state) {
     });
 }
 
-// `getAgentMarkdownPaths` is bound LAZILY here. The factory now accepts
-// either a string or a `() => string` for `agentsDir` — by passing the
-// getter form, every getAgentMarkdownPaths(...) call re-reads
-// `getMeloHome()` at call time. This is required because tests in
-// desktopStore.projectsDefault.test.js cache-bust desktopStore.js with
-// per-test MELO_HOME values, but that trick does NOT cascade to
-// dependency modules — markdownSync.js is loaded once. Without lazy
-// resolution this module would freeze AGENTS_DIR to whichever home was
-// active at first load and silently read/write the wrong agents
-// directory across MELO_HOME switches. (Phase 7d-5α-A1 commit 9 follow-up,
-// CLAUDE.md §5 mechanical adjustment.)
+// Each export above (importAgentMarkdownFiles + queueAgentMarkdownPrime)
+// constructs its own home-bound factory at the point where the home is
+// known to be stable (function entry / queue time). The earlier lazy-getter
+// form `agentsDir: () => join(getMeloHome(), 'desktop', 'agents')` from
+// Q2b is no longer in use here — it was the right fix for sync call sites
+// but doesn't survive an async microtask boundary. The factory itself
+// still accepts the lazy-getter form for any other consumer that wants it
+// (e.g. desktopStore's syncAgentMarkdownFiles, which is fully sync).
 import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
 import { join } from 'node:path';
 import { getMeloHome } from '../config.js';
-
-const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
-  agentsDir: () => join(getMeloHome(), 'desktop', 'agents'),
-});
