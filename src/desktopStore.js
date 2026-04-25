@@ -432,6 +432,12 @@ import {
   summarizeMessagePreview,
   describeChatForLimit,
 } from './state/conversation.js';
+import {
+  MAX_RECENT_CHATS,
+  oldestUnlockedChat,
+  pruneExcessChats,
+  assertCanCreateChat,
+} from './state/chatPruning.js';
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -494,7 +500,8 @@ function writeDiscordDebugLine(line) {
 // keeping the caps co-located with their normalizers avoids drift with
 // TASK_OWNERS / TASK_STATUSES / APPROVAL_STATUSES when the list of valid
 // values changes.
-const MAX_RECENT_CHATS = 10;
+// MAX_RECENT_CHATS moved to src/state/chatPruning.js in Phase 7d-5α-A1.
+// Re-imported at the top of this file alongside the prune helpers.
 const MAX_SEARCH_FILE_CONTENT_MATCHES = 18;
 // MAX_SEARCH_FILE_GROUPS / MAX_LINES_PER_FILE_GROUP moved to
 // src/services/search/searchService.js in Phase 7a.
@@ -4604,42 +4611,9 @@ export const __offlineBacklogTesting = {
   BACKLOG_CONTEXT_LOOKBACK,
 };
 
-function oldestUnlockedChat(chats = []) {
-  return [...chats]
-    .filter(chat => !chat.locked)
-    .sort(
-      (left, right) =>
-        new Date(left.updatedAt || left.createdAt || 0).getTime() -
-        new Date(right.updatedAt || right.createdAt || 0).getTime(),
-    )[0] || null;
-}
-
-function pruneExcessChats(state) {
-  // Auto-delete the oldest unlocked chats until we are below MAX_RECENT_CHATS.
-  // Locked chats are always preserved. Used both on load (to clear legacy records)
-  // and before creating a new chat (so the user is never blocked by an error).
-  while ((state.chats || []).length >= MAX_RECENT_CHATS) {
-    const oldest = oldestUnlockedChat(state.chats);
-    if (!oldest) {
-      break; // all remaining chats are locked — can't prune further
-    }
-    state.chats = (state.chats || []).filter(c => c.id !== oldest.id);
-  }
-}
-
-function assertCanCreateChat(state) {
-  // First try to make room by pruning excess unlocked chats automatically.
-  pruneExcessChats(state);
-
-  if ((state.chats || []).length < MAX_RECENT_CHATS) {
-    return;
-  }
-
-  // Only reaches here when every existing chat is locked.
-  throw new Error(
-    `Recents is full (${MAX_RECENT_CHATS}) and all chats are locked. Unlock or delete one before starting a new chat.`,
-  );
-}
+// oldestUnlockedChat / pruneExcessChats / assertCanCreateChat moved to
+// src/state/chatPruning.js in Phase 7d-5α-A1. Re-imported at the top of
+// this file alongside MAX_RECENT_CHATS.
 
 // extractArtifacts was extracted to
 // `src/services/artifact/artifactService.js` in Phase 7b.

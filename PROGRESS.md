@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-04-25 22:00 — Phase 7d-5α-A1 (Commit 1/7)：抽出 chatPruning 模块（撤回 cec12c3 错误方向，重做 path A）
+
+- 做了什么：
+  - **承认上一轮 cec12c3 走错了方向**（Codex 评级 C，说"export 不能消除 desktopStore↔runner 循环依赖"）。
+  - 用户选 path A1 稳扎稳打方案：把 state-machine 真搬到 `src/state/` 下的独立叶子模块，每个 commit 处理一个聚类。
+  - **本 commit 是 7 个 commit 中的第 1 个**：把 4 个 chat-pruning 相关符号全量搬出 desktopStore 到新建的 `src/state/chatPruning.js`：
+    - `MAX_RECENT_CHATS`（const）
+    - `oldestUnlockedChat`、`pruneExcessChats`、`assertCanCreateChat`（function）
+  - byte-for-byte：所有函数体逐字节移植，仅加 `export` 关键字 + 文件头注释。
+  - desktopStore 现在通过 `import` 引用，4 个调用点零改动。
+- 为什么：
+  - chatPruning 是 readStateSnapshot 的间接 dep（startup 自动 prune 用到）。把它先搬出去是后续真正抽 stateStore 的前置工作之一。
+  - 选它做第 1 个 commit 是因为它是真正的纯叶子——`oldestUnlockedChat` / `pruneExcessChats` / `assertCanCreateChat` 之间互相调用，但**对 desktopStore 外部无任何依赖**（只摸 `state.chats` + `MAX_RECENT_CHATS` 自身），是 path A1 里风险最低的起手。
+- 后续 commit 计划（如果第 1 个评级过：B 及以上）：
+  - **Commit 2** `chatPersistence.js`：`serializeChatForPersistence` + `persistChatThreads`（后者需顺带处理它对 `ensureChatThreadContext` 的依赖）
+  - **Commit 3** `memorySnapshot.js`：`syncMemoryStoreSnapshot`
+  - **Commit 4** `diskSkills.js`：`mergeDiskSkillsIntoState`
+  - **Commit 5** `stateHydration.js`：`hydrateState` + `hydrateChatThreads` + `createDefaultState`
+  - **Commit 6** `markdownSync.js`：`importAgentMarkdownFiles` + `queueAgentMarkdownPrime`
+  - **Commit 7** `stateStore.js`：quartet (load/save/updateAtomically/persist/readSnapshot) + queue + markdownSynced。在这一步同时清理 cec12c3 留下的 5 个死 export。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/chatPruning.js`（~50 行，4 个 export）
+  - `src/desktopStore.js` 净减约 35 行（删 4 处定义 + 加 6 行 import 块）
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿
+  - 这次没加新测试——纯位置迁移，行为已被现有 desktopStore 测试覆盖
+
 ## 2026-04-25 21:30 — Phase 7d-5α：暴露 state-machine helpers 为后续 elephant 移植铺路
 
 - 做了什么：在 `src/desktopStore.js` 给 5 个 state-machine 关键函数加 `export` 关键字（`loadState`、`saveState`、`updateStateAtomically`、`findProjectById`、`ensureSelectedEntities`）。**纯加 export，不动一行逻辑**——严格符合 CLAUDE.md §5 byte-for-byte 规则。
