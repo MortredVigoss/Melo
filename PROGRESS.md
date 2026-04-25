@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-04-26 00:25 — Phase 7d-5α-A1 (Commit 7/9)：抽出 stateHydration 簇（hydrate 流水线 + 5 个伴随符号）
+
+- 做了什么：把 desktopStore 里 state-hydration 流水线 + 它依赖的所有 desktopStore-local 符号一次性搬到新建的 `src/state/stateHydration.js`：
+  - 4 个 hydrate 函数：`hydrateState` / `hydrateChatThreads` / `createDefaultState` / `threadCheckpointMatches`（后者 hydrateChatThreads 私有）
+  - 2 个 normalize 函数：`normalizeChat` / `normalizeProject`（local wrapper，绑定 sanitizeWorkspacePath/APP_ROOT/defaultProjectTime 给 projectService）
+  - 1 个内部 helper：`buildThreadMemorySummary`（normalizeChat 私有）
+  - 4 个常量数据：`BUILTIN_CONNECTORS` / `defaultProjectTime` / `LEGACY_EXAMPLE_PROJECT_ID` / `LEGACY_EXAMPLE_PROJECT_NAME`
+  - 顺手清掉了 desktopStore 里的 `ONE_DAY_MS` 死 const（仅 defaultProjectTime 一个 caller，已随之迁移）
+- 关于 byte-for-byte 的一处机械适配：`APP_ROOT` 在原 desktopStore.js 里是 `dirname(dirname(fileURLToPath(import.meta.url)))`（自身在 src/ 下），新模块在 src/state/ 下深一层，需多 wrap 一次 `dirname(...)` 才能算出**相同**的目录。**值完全一致**，仅公式形态有 1 个 dirname 的差。文件头注释明确标注了这个适配点。
+- 为什么：
+  - hydrateState 是 readStateSnapshot 调用的 4 个核心 helper 之一（commit 9 stateStore 必须能 import 它）。
+  - normalizeChat 在 desktopStore 里有 5 个调用点，但**只有 hydrateState/hydrateChatThreads 这两个会进入 stateStore 的同侧调用链**——其它 3 处（chat-record builder + telegram + discord）后续可保持现状再 import。
+  - BUILTIN_CONNECTORS 是 createDefaultState 的硬依赖，它有 5 个外部 caller 在 desktopStore，全部改成 import from stateHydration.js（而不是单独建 builtinConnectors.js 增加文件数）。
+  - 所有外部 deps 已经在 src/memory/、src/services/、src/state/agentProfiles.js 等 leaf 模块——零循环。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/stateHydration.js`（~430 行含注释，9 个 export）
+  - `src/desktopStore.js` 净减约 380 行（11 处定义被替换成短注释 + 加 8 行 import 块）
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿
+
 ## 2026-04-25 23:55 — Phase 7d-5α-A1 (Commit 6/9)：抽出 mergeDiskSkillsIntoState
 
 - 做了什么：把 `mergeDiskSkillsIntoState`（41 行）从 desktopStore 搬到新建的 `src/state/diskSkills.js`。byte-for-byte 移植。
