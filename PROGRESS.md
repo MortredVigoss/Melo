@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-04-26 01:30 — Phase 7d-5α-A1 收尾 (Commit 8+9 合并)：state-machine 全部搬出 desktopStore
+
+- 做了什么（一个 big-bang commit 完成 commit 8/9 + cec12c3 cleanup）：
+  - **新增 `src/state/markdownSync.js`**（~140 行，2 个 export + 1 个私有 helper + 1 个本地 let）
+    - `importAgentMarkdownFiles`、`queueAgentMarkdownPrime`、`primeAgentMarkdownFiles`（私有）、`markdownPrimeQueued`（私有 let）
+    - 所有 deps 已外部可达；`getAgentMarkdownPaths` 通过本模块独立 `createAgentMarkdownFileHelpers({ agentsDir })` factory 绑定，与 desktopStore 的实例并行存在但解析到同一目录
+    - `syncAgentMarkdownFiles` **故意留在 desktopStore**——它依赖 `effectiveAgentProfile`（57 caller），不在本 phase 范围
+  - **新增 `src/state/stateStore.js`**（~140 行，6 个 export）
+    - `STATE_PATH` 改为私有 lazy `statePath()` getter（**关键修复**：测试用 `import('./desktopStore.js?t=...')` cache-bust 重载 desktopStore 但 dependency 模块只加载一次，所以 `getMeloHome()` 不能在 module load 时定 — 必须每次 call 时 read）
+    - `stateWriteQueue`、`markdownSynced` 私有 let
+    - `readStateSnapshot`、`persistStateAtomically`、`loadState`、`saveState`：byte-identical bodies
+    - **新增 `enqueueStateWrite(work)` 助手**：CLAUDE.md §5 carve-out — 因为 `updateStateAtomically` 留在 desktopStore（依赖 `ensureSelectedEntities`，57 caller 不能在本 phase 搬），它需要和 stateStore 的 saveState 共享同一个 queue。`enqueueStateWrite` 是这种"模块边界绕开 let-import 只读限制"的最小开销手段。
+  - **`src/desktopStore.js` 改造**：
+    - 删除：`STATE_PATH` const、`stateWriteQueue` let、`markdownSynced` let、`markdownPrimeQueued` let、`readStateSnapshot`、`persistStateAtomically`、`loadState`、`saveState`、`importAgentMarkdownFiles`、`primeAgentMarkdownFiles`、`queueAgentMarkdownPrime`（共 ~200 行）
+    - 改写 `updateStateAtomically` 函数体——从直接突变 `stateWriteQueue` 改成调用 `enqueueStateWrite(work)`。这是**§5 单点 carve-out**，明确记录在 commit message 里。
+    - 删除 `cec12c3` 留下的两个 dead `export` 关键字：`findProjectById` 和 `ensureSelectedEntities`（Codex C-grade 评估明确指出这种 export 不能消除将来 runner 移出时的循环依赖；现在收回）
+    - 添加 import 块从 `./state/markdownSync.js` 和 `./state/stateStore.js`
+- 为什么：
+  - **这是 7d-5α-A1 9-commit 计划的最后一步**。完成后 state-machine 完全搬出 desktopStore，runner 主体（`runChatAgentExecutionGraph`）所需的 `saveState` 现在能 byte-for-byte import from stateStore，不再有循环依赖。
+  - **Phase 7d-5α-A1 至此完成 foundation 部分**。后续 7d-5β / 7d-5γ 还要处理 ~10 个 prompt/context helper 才能真搬 elephant，但那是另一个 phase 的工作。
+- 产出 / 提交哈希：未提交
+  - 2 个新文件（markdownSync.js + stateStore.js）共 ~280 行
+  - desktopStore.js 净减约 196 行（原 7304 → 现 7186）
+  - 累计 7d-5α-A1：8 个 state 模块拆分 + 1 个 fix commit。desktopStore.js 总计从 8527 → 7186 = **净减 1341 行**（-15.7%）
+  - 回归：services + desktopStore + search + state 套件 303/303；跨域 images+tools+media+memory+agents+openai 583/583 全绿
+
 ## 2026-04-26 00:55 — Phase 7d-5α-A1 commit 7 fix：恢复 sanitizeWorkspacePath wrapper + 审计 commits 1-6
 
 - 做了什么：

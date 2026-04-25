@@ -463,11 +463,26 @@ import {
   hydrateState,
   hydrateChatThreads,
 } from './state/stateHydration.js';
+import {
+  importAgentMarkdownFiles,
+  queueAgentMarkdownPrime,
+} from './state/markdownSync.js';
+import {
+  loadState,
+  saveState,
+  persistStateAtomically,
+  readStateSnapshot,
+  enqueueStateWrite,
+} from './state/stateStore.js';
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DESKTOP_DIR = join(getMeloHome(), 'desktop');
-const STATE_PATH = join(DESKTOP_DIR, 'state.json');
+// STATE_PATH moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9 as a
+// lazy `statePath()` getter (private to that module). desktopStore no longer
+// references the path directly; all state I/O goes through the imported
+// loadState / saveState / persistStateAtomically / readStateSnapshot entries.
+
 const AGENTS_DIR = join(DESKTOP_DIR, 'agents');
 
 // Bind the agent markdown file helpers to our AGENTS_DIR once. The helpers
@@ -553,9 +568,12 @@ const TELEGRAM_POLL_LIMIT = 12;
 // Bootstrap built-in tools at module load time (idempotent).
 bootstrapBuiltinTools();
 
-let stateWriteQueue = Promise.resolve();
-let markdownSynced = false;
-let markdownPrimeQueued = false;
+// stateWriteQueue moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
+
+// markdownSynced moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
+
+// markdownPrimeQueued moved alongside queueAgentMarkdownPrime to src/state/markdownSync.js in Phase 7d-5α-A1 commit 8.
+
 // IGNORED_DIR_NAMES lives in `src/services/workspace/workspaceFiles.js`
 // (re-imported above).
 
@@ -968,100 +986,14 @@ async function syncAgentMarkdownFiles(state) {
   return state;
 }
 
-async function importAgentMarkdownFiles(state) {
-  let changed = false;
-  state.agentProfiles = normalizeAgentProfiles(state.agentProfiles);
+// importAgentMarkdownFiles moved to src/state/markdownSync.js in Phase 7d-5α-A1 commit 8.
 
-  for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
-    const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
-    const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
-    const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
-    const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
-    if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
-      changed = true;
-    }
-    state.agentProfiles[agentId] = normalizeAgentProfile(agentId, {
-      ...profile,
-      identity: identityFromDisk,
-      soulMd: soulFromDisk,
-    });
-  }
 
-  state.projectAgentOverrides = normalizeProjectAgentOverrides(
-    state.projectAgentOverrides,
-    state.agentProfiles,
-  );
-  for (const [projectId, overrides] of Object.entries(state.projectAgentOverrides)) {
-    for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
-      const override = overrides?.[agentId];
-      if (!override) {
-        continue;
-      }
+// primeAgentMarkdownFiles moved to src/state/markdownSync.js in Phase 7d-5α-A1 commit 8 (private helper).
 
-      const profile = normalizeAgentProfile(agentId, override);
-      const paths = getAgentMarkdownPaths(agentId, { scope: 'project', projectId });
-      const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
-      const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
-      if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
-        changed = true;
-      }
-      const normalizedOverride = normalizeAgentOverride(agentId, {
-        ...profile,
-        identity: identityFromDisk,
-        soulMd: soulFromDisk,
-      });
-      if (normalizedOverride) {
-        state.projectAgentOverrides[projectId][agentId] = normalizedOverride;
-      }
-    }
-  }
 
-  return changed;
-}
+// queueAgentMarkdownPrime moved to src/state/markdownSync.js in Phase 7d-5α-A1 commit 8.
 
-async function primeAgentMarkdownFiles(state) {
-  for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
-    const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
-    const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
-    await ensureMarkdownFile(paths.identityPath, profile.identity);
-    await ensureMarkdownFile(paths.soulPath, profile.soulMd);
-  }
-
-  for (const [projectId, overrides] of Object.entries(
-    normalizeProjectAgentOverrides(state.projectAgentOverrides, state.agentProfiles),
-  )) {
-    for (const [agentId, override] of Object.entries(overrides || {})) {
-      const profile = normalizeAgentProfile(agentId, override);
-      const paths = getAgentMarkdownPaths(agentId, { scope: 'project', projectId });
-      await ensureMarkdownFile(paths.identityPath, profile.identity);
-      await ensureMarkdownFile(paths.soulPath, profile.soulMd);
-    }
-  }
-}
-
-function queueAgentMarkdownPrime(state) {
-  if (markdownPrimeQueued) {
-    return;
-  }
-
-  markdownPrimeQueued = true;
-  const snapshot = {
-    agentProfiles: normalizeAgentProfiles(state.agentProfiles),
-    projectAgentOverrides: normalizeProjectAgentOverrides(
-      state.projectAgentOverrides,
-      state.agentProfiles,
-    ),
-  };
-
-  Promise.resolve()
-    .then(() => primeAgentMarkdownFiles(snapshot))
-    .catch(error => {
-      console.warn(`Failed to prime Melo agent markdown files: ${error.message}`);
-    })
-    .finally(() => {
-      markdownPrimeQueued = false;
-    });
-}
 
 
 // normalizeAgentProfiles / dedupeAgentChannelTokenOwners / normalizeAgentOverride /
@@ -1102,91 +1034,47 @@ function queueAgentMarkdownPrime(state) {
 // mergeDiskSkillsIntoState moved to src/state/diskSkills.js in
 // Phase 7d-5α-A1 (commit 6/9). Re-imported at the top of this file.
 
-async function readStateSnapshot({ persistRepair = true } = {}) {
-  try {
-    const raw = await readFile(STATE_PATH, 'utf8');
-    const { parsed, repaired } = parseStatePayload(raw);
-    const state = hydrateState(parsed);
-    const markdownImported = markdownSynced ? false : await importAgentMarkdownFiles(state);
-    if (!markdownSynced) {
-      markdownSynced = true;
-      queueAgentMarkdownPrime(state);
-    }
-    const threadRepaired = await hydrateChatThreads(state);
-    await mergeDiskSkillsIntoState(state);
+// readStateSnapshot moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
 
-    // Auto-prune legacy excess chats (from before the MAX_RECENT_CHATS limit was enforced).
-    const excessBefore = (state.chats || []).length;
-    pruneExcessChats(state);
-    const prunedExcess = excessBefore > (state.chats || []).length;
-
-    if ((repaired || markdownImported || threadRepaired || prunedExcess) && persistRepair) {
-      await saveState(state);
-    }
-
-    return state;
-  } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      const state = createDefaultState();
-      await importAgentMarkdownFiles(state);
-      markdownSynced = true;
-      queueAgentMarkdownPrime(state);
-      await hydrateChatThreads(state);
-      await mergeDiskSkillsIntoState(state);
-      return state;
-    }
-
-    throw new Error(`Failed to read desktop state: ${error.message}`);
-  }
-}
 
 // Phase 7d-5α: exposed for the future chatGraphRunner extraction.
 // The body is unchanged — only the `export` keyword was added so other
 // modules can call into the state machine without circular imports
 // through desktopStore. See CLAUDE.md §5 (byte-for-byte rule).
-export async function loadState() {
-  return readStateSnapshot({ persistRepair: true });
-}
+// loadState moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
 
 
-async function persistStateAtomically(state) {
-  await persistChatThreads(state.chats);
-  await atomicWriteJson(STATE_PATH, {
-    ...state,
-    chats: state.chats.map(serializeChatForPersistence),
-  });
-  syncMemoryStoreSnapshot(state);
-}
+
+// persistStateAtomically moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
+
 
 
 // Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
 // unchanged.
-export async function saveState(state) {
-  stateWriteQueue = stateWriteQueue
-    .catch(() => {})
-    .then(() => persistStateAtomically(state));
-  await stateWriteQueue;
-  return state;
-}
+// saveState moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
+
 
 // Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
 // unchanged.
+// updateStateAtomically — body adapted in Phase 7d-5α-A1 commit 9 to use
+// enqueueStateWrite from stateStore.js so the queue can be module-private
+// to stateStore. ensureSelectedEntities still lives in this file (57 callers),
+// which is why this function did not move with saveState. CLAUDE.md §5
+// mechanical adjustment.
 export async function updateStateAtomically(mutator) {
   let nextState = null;
-  stateWriteQueue = stateWriteQueue
-    .catch(() => {})
-    .then(async () => {
-      const latestState = ensureSelectedEntities(
-        await readStateSnapshot({ persistRepair: false }),
-      );
-      const candidateState = await mutator(latestState);
-      nextState = ensureSelectedEntities(candidateState || latestState);
-      await persistStateAtomically(nextState);
-      return nextState;
-    });
-  await stateWriteQueue;
+  await enqueueStateWrite(async () => {
+    const latestState = ensureSelectedEntities(
+      await readStateSnapshot({ persistRepair: false }),
+    );
+    const candidateState = await mutator(latestState);
+    nextState = ensureSelectedEntities(candidateState || latestState);
+    await persistStateAtomically(nextState);
+    return nextState;
+  });
   return nextState;
 }
+
 
 // sortChats / summarizeChat / summarizeMessagePreview / describeChatForLimit
 // moved to `src/state/conversation.js` in Phase 10c. Re-imported at the top
@@ -1428,9 +1316,13 @@ function commandTemplateDescriptor(template) {
   };
 }
 
-// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
-// unchanged.
-export function findProjectById(state, projectId) {
+// Phase 7d-5α-A1 commit 9 cleanup: cec12c3 had added `export` here under
+// the assumption a future chatGraphRunner would import findProjectById
+// directly from desktopStore. Codex review C-grade established that
+// pattern would re-introduce a cycle (desktopStore → runner → desktopStore).
+// Removed the keyword; if/when the runner moves, findProjectById should
+// either be passed via deps or moved to a state module first.
+function findProjectById(state, projectId) {
   return state.projects.find(project => project.id === projectId) || null;
 }
 
@@ -1672,9 +1564,10 @@ function buildProfile() {
 // use the imports near the top of this file; the re-export of
 // formatProviderFailureMessage keeps the existing test import working.
 
-// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
-// unchanged.
-export function ensureSelectedEntities(state) {
+// Phase 7d-5α-A1 commit 9 cleanup: same as findProjectById above —
+// cec12c3 added `export` here for the future runner; Codex review made
+// clear that doesn't break the cycle. Removed.
+function ensureSelectedEntities(state) {
   const chats = sortChats(state.chats);
   const normalizedAgentProfiles = normalizeAgentProfiles(state.agentProfiles);
   const availableAgentIds = allAgentIdsFromProfiles(normalizedAgentProfiles);

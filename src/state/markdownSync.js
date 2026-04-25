@@ -1,0 +1,147 @@
+// Agent markdown-file sync — Phase 7d-5α-A1 (commit 8/9).
+//
+// On state load (readStateSnapshot, now in stateStore.js), Melo:
+//   1. Reads any IDENTITY.md / SOUL.md files the user has authored on
+//      disk and folds them into state.agentProfiles. Disk wins where
+//      it differs from the persisted JSON copy. → importAgentMarkdownFiles
+//   2. After the first state read, kicks off a background "prime" pass
+//      that creates the `.md` files for any agent profile that doesn't
+//      have them yet, so the user can edit them without first triggering
+//      an explicit "save". → queueAgentMarkdownPrime + primeAgentMarkdownFiles
+//
+// The `markdownPrimeQueued` boolean is the debounce: once a prime pass
+// is queued, further calls during that pass become no-ops. The flag is
+// cleared in the .finally() handler so a state load → save → load cycle
+// gets a fresh prime opportunity.
+//
+// What stays in desktopStore: `syncAgentMarkdownFiles` (used only by
+// createCustomAgent). It uses `effectiveAgentProfile` which has 8
+// callers and isn't safe to move in this phase. Two near-identical
+// helpers split across two files is awkward but unavoidable given the
+// dependency graph today.
+//
+// Per CLAUDE.md §5 (byte-for-byte rule), every body below is verbatim
+// from desktopStore.js — only the `export` keyword + this file header
+// were added.
+
+import {
+  readTextIfExists,
+  ensureMarkdownFile,
+} from '../services/agent/markdownFiles.js';
+import { normalizeMarkdownContent } from '../shared/helpers.js';
+import {
+  normalizeAgentProfile,
+  normalizeAgentProfiles,
+  normalizeAgentOverride,
+  normalizeProjectAgentOverrides,
+} from './agentProfiles.js';
+import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
+
+let markdownPrimeQueued = false;
+
+export async function importAgentMarkdownFiles(state) {
+  let changed = false;
+  state.agentProfiles = normalizeAgentProfiles(state.agentProfiles);
+
+  for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
+    const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
+    const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
+    const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
+    const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
+    if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
+      changed = true;
+    }
+    state.agentProfiles[agentId] = normalizeAgentProfile(agentId, {
+      ...profile,
+      identity: identityFromDisk,
+      soulMd: soulFromDisk,
+    });
+  }
+
+  state.projectAgentOverrides = normalizeProjectAgentOverrides(
+    state.projectAgentOverrides,
+    state.agentProfiles,
+  );
+  for (const [projectId, overrides] of Object.entries(state.projectAgentOverrides)) {
+    for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
+      const override = overrides?.[agentId];
+      if (!override) {
+        continue;
+      }
+
+      const profile = normalizeAgentProfile(agentId, override);
+      const paths = getAgentMarkdownPaths(agentId, { scope: 'project', projectId });
+      const identityFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.identityPath)) || profile.identity);
+      const soulFromDisk = normalizeMarkdownContent((await readTextIfExists(paths.soulPath)) || profile.soulMd);
+      if (identityFromDisk !== profile.identity || soulFromDisk !== profile.soulMd) {
+        changed = true;
+      }
+      const normalizedOverride = normalizeAgentOverride(agentId, {
+        ...profile,
+        identity: identityFromDisk,
+        soulMd: soulFromDisk,
+      });
+      if (normalizedOverride) {
+        state.projectAgentOverrides[projectId][agentId] = normalizedOverride;
+      }
+    }
+  }
+
+  return changed;
+}
+
+async function primeAgentMarkdownFiles(state) {
+  for (const agentId of allAgentIdsFromProfiles(state.agentProfiles)) {
+    const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
+    const paths = getAgentMarkdownPaths(agentId, { scope: 'global' });
+    await ensureMarkdownFile(paths.identityPath, profile.identity);
+    await ensureMarkdownFile(paths.soulPath, profile.soulMd);
+  }
+
+  for (const [projectId, overrides] of Object.entries(
+    normalizeProjectAgentOverrides(state.projectAgentOverrides, state.agentProfiles),
+  )) {
+    for (const [agentId, override] of Object.entries(overrides || {})) {
+      const profile = normalizeAgentProfile(agentId, override);
+      const paths = getAgentMarkdownPaths(agentId, { scope: 'project', projectId });
+      await ensureMarkdownFile(paths.identityPath, profile.identity);
+      await ensureMarkdownFile(paths.soulPath, profile.soulMd);
+    }
+  }
+}
+
+export function queueAgentMarkdownPrime(state) {
+  if (markdownPrimeQueued) {
+    return;
+  }
+
+  markdownPrimeQueued = true;
+  const snapshot = {
+    agentProfiles: normalizeAgentProfiles(state.agentProfiles),
+    projectAgentOverrides: normalizeProjectAgentOverrides(
+      state.projectAgentOverrides,
+      state.agentProfiles,
+    ),
+  };
+
+  Promise.resolve()
+    .then(() => primeAgentMarkdownFiles(snapshot))
+    .catch(error => {
+      console.warn(`Failed to prime Melo agent markdown files: ${error.message}`);
+    })
+    .finally(() => {
+      markdownPrimeQueued = false;
+    });
+}
+
+// `getAgentMarkdownPaths` is required by both fns above. It comes from the
+// markdownFiles helper factory in services/agent/markdownFiles.js, but the
+// factory binds it to a specific agentsDir. This module imports the same
+// factory the desktopStore uses so the resolved paths are identical.
+import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
+import { join } from 'node:path';
+import { getMeloHome } from '../config.js';
+
+const DESKTOP_DIR = join(getMeloHome(), 'desktop');
+const AGENTS_DIR = join(DESKTOP_DIR, 'agents');
+const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({ agentsDir: AGENTS_DIR });
