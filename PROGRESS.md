@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-04-25 19:30 — Phase 7d-2：抽出 systemPrompt（chatExecutionService 拆解 ②/N）+ 首条 byte-for-byte 移植规则落盘
+
+- 做了什么：
+  - **CLAUDE.md §5 新增 "byte-for-byte 移植" 硬规则**：第一刀必须逐字节移植，不允许顺手简化。规则配套 5 步流程（移植 → 写测试 → 删原位 → 跑回归 → 后续可选独立简化 commit）。这条规则的契机是 7d-1 中我把 `IMAGE_FOLLOW_UP_PATTERN` 的 `\b` 顺手丢掉，制造了 `photography` 误匹配的真实回归。
+  - **Phase 7d-2 抽 systemPrompt**：新建 `src/services/chat/systemPrompt.js`，把 `buildReActSystemPrompt` + 它依赖的 5 个 helper（`summarizeAgentPrompt`、`buildConversationFormattingRules`、`buildOutputHardConstraints`、`detectInputLanguage`、`buildLanguageConstraint`）整体搬走。**全程 byte-for-byte**，移植过程中自查发现 2 处偏差（`buildLanguageConstraint` 末两行换序了 + Write 工具把 `\uXXXX` 转义成 literal CJK 字符；前者立即修正，后者因 RegExp 编译后语义等价而保留并在 commit message 里说明）。
+  - desktopStore 只保留 3 个内部还在用的符号：`summarizeAgentPrompt`（行 1431 chat-record builder 处用）、`buildLanguageConstraint`（行 5649 chat 执行图）、`buildReActSystemPrompt`（行 5635 + 5994 两处执行图）。其余 3 个（formatting/hardConstraints/detectInputLanguage）在 desktopStore 没有 in-module caller，没回 import。
+- 为什么：
+  - 7d-2 是 chatExecutionService 拆解的第二步，承接 7d-1 messageBuilder 的范式。系统 prompt 的 6 个 helper 都是纯函数、唯一输入是 profile / config / 文本片段，完全无状态依赖，直接搬最干净。
+  - byte-for-byte 规则是 7d-1 上次回归的直接产物——这次 7d-2 全程严格遵守，过程中 2 处偏差自查就抓回来了，证明规则在生效。
+- 产出 / 提交哈希：`ffc477a`
+  - 新增 `src/services/chat/systemPrompt.js`（~210 行，6 个 export，**byte-for-byte 港**）
+  - 新增 `src/services/chat/systemPrompt.test.js`（25 个单元测试全绿，专门覆盖语言检测的 6 大语种 + buildLanguageConstraint 行序回归 + buildReActSystemPrompt 的 base/empty-block/intent-flag/remote-flag 行为）
+  - `CLAUDE.md` 新增 §5 "byte-for-byte" 规则（用户随后又增加 §4 D/C/B/A/S 评分规则，组合在一起形成 7d 后续工作的双重约束）
+  - `src/desktopStore.js` 净减约 195 行（8355 → 8169）
+  - 回归：services + desktopStore + search + state 套件 293/293（增量 27 个新测试）；跨域 images+tools+media+memory+agents+openai 583/583 全绿
+
+## 2026-04-25 19:03 — 增加 git pp 后 D/C/B/A/S 质量评估 gate
+
+- 做了什么：新增 `EVALUATION.md`，把 Claude 代码评估拆成 `D / C / B / A / S` 五档，并明确 `C` 或 `D` 时必须停止继续改写，先按 Codex 意见重新给出方案让用户判断；同步更新 `CLAUDE.md` 和 `scripts/codex-review.sh`，让每次 `git pp` 后的 Codex review 都强制输出质量评级、风险等级和必要的 Claude 整改意见。
+- 为什么：用户要求每次 `pp` 后不只是审查，还要形成可执行的质量判断；当效果只到 `C` 时，不能让 Claude 继续沿着可能错误的方向写，而是先让 Claude 基于 Codex 的思路重出方案，再由用户决定是否重写。
+- 产出 / 提交哈希：未提交
+
 ## 2026-04-25 00:20 — Phase 7d-1：抽出 messageBuilder（chatExecutionService 拆解 ①/N）
 
 - 做了什么：开启 Phase 7d（chatExecutionService 大重构）的第一个子阶段。新建 `src/services/chat/messageBuilder.js`，把 desktopStore 里"chat → model-ready messages" 的整条纯函数流水线搬出来：
