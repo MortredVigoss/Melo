@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-04-25 23:35 — Phase 7d-5α-A1 (Commit 5/9)：抽出 memorySnapshot 簇（最大单个 commit，~400 行）
+
+- 做了什么：把 desktopStore 里 memory-snapshot 流水线一次性搬到新建的 `src/state/memorySnapshot.js`：
+  - `syncMemoryStoreSnapshot`（7 行 — 入口，写错就 console.warn 不阻塞）
+  - `buildMemoryStoreEntries`（**384 行** — 把 state 转换成 memory store 行的核心逻辑）
+  - `buildSpeakerMemoryNamespace`（10 行 — 为 Telegram/Discord 用户生成命名空间）
+- 为什么：
+  - `syncMemoryStoreSnapshot` 是 `persistStateAtomically` 调用的 3 个 helper 之一（commit 9 stateStore 必须能 import 它），所以这步是 stateStore 移动的 prerequisite。
+  - `buildMemoryStoreEntries` 是 `syncMemoryStoreSnapshot` 唯一的内部 caller，必须一起搬。
+  - `buildSpeakerMemoryNamespace` 在 `buildMemoryStoreEntries` 里被用，同时在 desktopStore 还有 3 个 caller（都在 `buildAgentMemoryNodeContext` 内，那是未来 7d-5γ 的 work）。这 3 个 caller 现在 import from memorySnapshot.js。
+  - 这 3 个函数所有外部 deps 都已可达：`replaceMemories` / `extractSpeakerFacts` / `getSpeakerFactStorageKey` / `enabledTiers` / frame+scene helpers / `messageVisibleText` / `messageSearchText` / `messageTextForContext`（commit 3 已搬）/ `normalizePromptHistory` / `normalizeApprovals` / `normalizeTasks` / `allAgentIdsFromProfiles` / `normalizeAgentProfile` / `summarizeAgentPrompt` / `normalizeAgentStorageId` / `nowIso` / `normalizeExtractedMedia` / `memoryKindForExtractedMedia`。零循环。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/memorySnapshot.js`（~430 行含注释，3 个 export，最大单 commit）
+  - `src/desktopStore.js` 净减约 401 行
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿（首次合并跑出现 2 个 flaky 失败，单独跑全绿，确认非本次 commit 引入——是已知的跨套件状态串扰问题，与 memory-isolation.test.js 共用 ~/.melo 路径有关）
+
 ## 2026-04-25 23:10 — Phase 7d-5α-A1 (Commit 4/9)：persistChatThreads 加入 chatPersistence.js
 
 - 做了什么：把 `persistChatThreads`（19 行）从 desktopStore 搬进上一轮已建立的 `src/state/chatPersistence.js`。byte-for-byte 移植。
