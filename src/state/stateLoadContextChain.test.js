@@ -121,6 +121,89 @@ test('readStateSnapshot: thread checkpoint reads honor the home captured at the 
   }
 });
 
+test('readStateSnapshot repair-save: memory store writes land in the captured home (fix-7)', async () => {
+  // The 7th and final layer Codex caught: even after fix-6 routed
+  // state.json + thread checkpoints through ctx, syncMemoryStoreSnapshot
+  // still wrote into whatever sqlite handle was cached on memory/store.js.
+  // If env flipped during the load chain, the captured home's state would
+  // be indexed into the OTHER home's store.sqlite (or worse, into the
+  // first home's already-cached handle while the captured home was a
+  // different disk).
+  //
+  // Fix-7: ctx.storePath travels through saveState → persistStateAtomically
+  // → syncMemoryStoreSnapshot → replaceMemories({ storePath }), which when
+  // the path differs from the cached production handle opens a disposable
+  // db handle bound to the captured home. This test verifies the chain
+  // end-to-end.
+  const homeA = freshHome();
+  const homeB = freshHome();
+  invalidateThreadCheckpointCache(null, { allHomes: true });
+  try {
+    const CHAT_ID = 'memory-store-iso-regression';
+
+    // Seed state.json with a chat that has indexable messages — this
+    // creates memory entries during repair-save's syncMemoryStoreSnapshot.
+    writeFileSync(
+      join(homeA, 'desktop', 'state.json'),
+      JSON.stringify({
+        projects: [],
+        chats: [{
+          id: CHAT_ID,
+          title: 'Memory store fix-7 test',
+          mode: 'chat',
+          projectId: null,
+          agentId: 'main',
+          createdAt: '2025-01-01T00:00:00.000Z',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+          messages: [
+            { id: 'msg-1', role: 'user', content: 'home A captured-load message' },
+          ],
+        }],
+      }),
+    );
+
+    // Cache-bust import — fresh stateStore + memory store handles per
+    // test home.
+    const query = `?t=${Date.now()}-${Math.random()}`;
+    const { _resetStoreForTests } = await import('../memory/store.js');
+    _resetStoreForTests();
+
+    process.env.MELO_HOME = homeA;
+    const { readStateSnapshot } = await import(`./stateStore.js${query}`);
+    const loadPromise = readStateSnapshot({ persistRepair: true });
+
+    // Flip env mid-load, before the repair-save's microtasks fire.
+    process.env.MELO_HOME = homeB;
+
+    await loadPromise;
+
+    // Wait for any background prime work to settle.
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise(r => setImmediate(r));
+    }
+
+    // Assert: home A's store.sqlite was created (the disposable handle
+    // path).
+    assert.ok(
+      existsSync(join(homeA, 'desktop', 'store.sqlite')),
+      `home A's store.sqlite must be present (got home A files: ${readdirSync(join(homeA, 'desktop')).join(', ')})`,
+    );
+    // Assert: home B's store.sqlite was NOT created. If the leak persists,
+    // syncMemoryStoreSnapshot would have either created home B's file or
+    // written into the cached handle (which by env flip time is bound to
+    // home B's path since we _resetStoreForTests'd before starting).
+    assert.equal(
+      existsSync(join(homeB, 'desktop', 'store.sqlite')),
+      false,
+      `home B's store.sqlite must NOT be present. If present, fix-7 ctx.storePath threading regressed (home B files: ${existsSync(join(homeB, 'desktop')) ? readdirSync(join(homeB, 'desktop')).join(', ') : '(no desktop/ dir)'})`,
+    );
+  } finally {
+    cleanup(homeA);
+    cleanup(homeB);
+    invalidateThreadCheckpointCache(null, { allHomes: true });
+  }
+});
+
 test('readStateSnapshot repair-save: thread checkpoint writes land in the captured home', async () => {
   const homeA = freshHome();
   const homeB = freshHome();

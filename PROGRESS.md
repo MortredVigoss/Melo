@@ -31,6 +31,42 @@
   - `src/state/stateLoadContextChain.test.js`（新，2 tests）
   - 回归：services + desktopStore + state + memory 套件 616/616（+2 from new chain isolation tests）；跨域 281/281 全绿
 
+## 2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）
+
+- 做了什么（f3b0f29 触发的第 7 次 C 评级修复——这次是 memory store sqlite 的 cross-home 串读串写）：
+  - **`src/memory/store.js` 大幅重构**：
+    - 提取 `applyMemoryStoreSchema(database, vecLoaded)` 私有函数（schema CREATE TABLE + 全部 migrations + vec0 setup）。`getDb()` 调用它。disposable handle 也调用它。
+    - 新增 `withDisposableStoreAt(storePath, work)`：开 fresh sqlite handle，跑 schema setup，跑 work，关闭。**不**触碰 cached production handle。
+    - 新增 `runInTransactionOn(database, work)`：手动 BEGIN/COMMIT/ROLLBACK 包裹给一个具体 db。disposable path 用它代替 module-level `runInTransaction`（后者通过 `getDb()` 用 cached handle）。
+    - `replaceMemories(entries, { storePath })`：当 storePath 提供且 ≠ `_openedStorePath` 时走 disposable path（withDisposableStoreAt + runInTransactionOn）。否则保持原行为（getDb + runInTransaction）。
+    - 提取 `_runReplaceMemoriesOn(database, entries, vecLoaded, runTx)`：原 replaceMemories 的 ~80 行 SQL body 抽出，参数化 db + vecLoaded + tx wrapper。
+    - **`getCachedEmbedding(text, modelId, database)` 接受 explicit database**（之前 ALWAYS 走 `getDb()`）。passed 时用，否则 fallback。
+    - **`resolveCacheModelId(explicit, database)` 也接受 explicit database**——这个是关键：之前 `getCachedEmbedding` 的 db 是 passed 的，但它内部调 `resolveCacheModelId` 而 `resolveCacheModelId` 又调 `getDb()` —— Codex review 4 个 C 评级才把这个 transitive call chain 暴露完。
+  - **`src/state/memorySnapshot.js`**：`syncMemoryStoreSnapshot(state, { ctx })` 接受 ctx，forward `ctx.storePath` 给 `replaceMemories`。
+  - **`src/state/stateStore.js`**：`captureLoadContext()` 增加 `storePath: join(home, 'desktop', 'store.sqlite')`；`persistStateAtomically({ ctx })` 把 `{ ctx }` 传给 `syncMemoryStoreSnapshot`。
+  - **新增 fix-7 回归测试**：`readStateSnapshot repair-save: memory store writes land in the captured home`——构造 home A 的 state.json 含可索引 chat，readStateSnapshot 启动，立即切 env=B，断言 home A 的 store.sqlite 存在、home B 的 store.sqlite **不**存在。在 fix-7 之前会失败（leaked 到 home B），现在通过。
+- 关于 pre-push gate 的实战：
+  - 用户在 fix-6 commit 之前已经把 `git pp` 改成 push 前先做 Codex evaluation——评 C/D 直接 block push。
+  - fix-6 (08cfab3) push 时 review 评 C 但**没被 gate 拦**（旧版 git pp 还是后审）。
+  - fix-7 之前的 commit (f3b0f29) push 时 **新版 gate 第一次实战**——pre-push evaluation 直接给 C 并 block 推送。**坏代码没出本地**，证明 gate 工作正常。
+  - 所以 f3b0f29 本地有，但远端没有——本次 fix-7 commit 是在 f3b0f29 基础上叠加，最终一并 push。
+- 这是连续第 7 次 C，每次都是同一类 home-leak 在更深层：
+  1. wrapper bypass (sanitizeWorkspacePath)
+  2. path const at module load (lazy resolution)
+  3. cache flat key (nested by home → by dir)
+  4. async body lazy reads env (capture at queue)
+  5. orchestration multi-read (unified outer capture)
+  6. hydrate/persist chains (ctx threading)
+  7. **memory store cached sqlite handle (disposable path + transitive db threading)**
+
+  关键 lesson：transitive call chain 隔离比想象中难。`getCachedEmbedding(database)` 看起来已经 captured 了，但内部 `resolveCacheModelId()` 又自己调 `getDb()`——helper 之间相互调用时，每一步都要传 db。
+- 产出 / 提交哈希：未提交
+  - `src/memory/store.js`：~150 行重构（schema 提取 + disposable handle + db 参数 threading）
+  - `src/state/memorySnapshot.js`：syncMemoryStoreSnapshot 接受 ctx
+  - `src/state/stateStore.js`：captureLoadContext 增加 storePath
+  - `src/state/stateLoadContextChain.test.js`：新增第 3 个测试覆盖 memory store
+  - 回归：services + desktopStore + state + memory 套件 617/617；跨域 281/281 全绿
+
 ## 2026-04-26 00:28 — git pp 改成 push 前先 evaluation
 
 - 做了什么：把 `scripts/codex-review.sh` 从“push 后复查”升级成“双门”流程：先对本地即将 push 的 commit range 做 pre-pp evaluation，解析 `质量评级`；如果评级为 `C` / `D`，或没有按格式输出评分，脚本直接阻止 `git push`。push 成功后仍保留 post-push review 作为兜底复查。

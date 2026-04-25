@@ -70,18 +70,18 @@ function tryLoadVec(database) {
   return _vecLoaded;
 }
 
-function getDb() {
-  if (db) {
-    return db;
-  }
-
-  const storePath = resolveStorePath();
-  _openedStorePath = storePath;
-  mkdirSync(dirname(storePath), { recursive: true });
-  db = new DatabaseSync(storePath, { allowExtension: true });
-  tryLoadVec(db);
-
-  db.exec(`
+/**
+ * Idempotent schema setup. Runs CREATE TABLE / migrations against the
+ * provided database. Used by both `getDb()` (the cached production
+ * singleton) and `withDisposableStoreAt()` (a transient handle bound to
+ * a captured ctx.storePath — Phase 7d-5α-A1 fix-7).
+ *
+ * Pre: caller has already attempted to load sqlite-vec into `database`
+ * and tells us whether that succeeded via `vecLoaded`. We use it to
+ * decide whether to create the vec_memories virtual table.
+ */
+function applyMemoryStoreSchema(database, vecLoaded) {
+  database.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 5000;
     PRAGMA foreign_keys = ON;
@@ -139,13 +139,13 @@ function getDb() {
   //    memories(id).  Once per boot, check the schema and — if needed —
   //    clean orphan hits and rebuild the table with the cascade constraint.
   //    Safe to run repeatedly; a no-op after the first upgrade.
-  const hitsSchema = db.prepare(
+  const hitsSchema = database.prepare(
     `SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_hits'`
   ).get();
   const hasFkCascade = /FOREIGN\s+KEY[^)]*REFERENCES\s+memories\s*\(\s*id\s*\)[^)]*ON\s+DELETE\s+CASCADE/i
     .test(String(hitsSchema?.sql || ''));
   if (!hasFkCascade) {
-    db.exec(`
+    database.exec(`
       BEGIN;
       DELETE FROM memory_hits
        WHERE memory_id NOT IN (SELECT id FROM memories);
@@ -170,7 +170,7 @@ function getDb() {
   }
 
   // Embedding dimension metadata table
-  db.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`);
+  database.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`);
 
   // ── Bug B migration: older databases created embedding_cache with
   //    text_hash as the sole PRIMARY KEY, so cached vectors survived a
@@ -179,13 +179,13 @@ function getDb() {
   //    table with (text_hash, model_id) as the composite primary key,
   //    backfilling existing rows with the currently-stored modelId (or
   //    'unknown' if _meta.embedding_model_id is empty).  Idempotent.
-  const cacheCols = db.prepare(`PRAGMA table_info(embedding_cache)`).all();
+  const cacheCols = database.prepare(`PRAGMA table_info(embedding_cache)`).all();
   const hasModelIdCol = cacheCols.some(c => c.name === 'model_id');
   if (cacheCols.length && !hasModelIdCol) {
-    const storedModel = db.prepare(
+    const storedModel = database.prepare(
       `SELECT value FROM _meta WHERE key = 'embedding_model_id'`,
     ).get()?.value || 'unknown';
-    db.exec(`
+    database.exec(`
       BEGIN;
       CREATE TABLE embedding_cache__new (
         text_hash  TEXT NOT NULL,
@@ -195,11 +195,11 @@ function getDb() {
         PRIMARY KEY (text_hash, model_id)
       );
     `);
-    db.prepare(
+    database.prepare(
       `INSERT OR REPLACE INTO embedding_cache__new (text_hash, model_id, embedding, created_at)
          SELECT text_hash, ?, embedding, created_at FROM embedding_cache`,
     ).run(storedModel);
-    db.exec(`
+    database.exec(`
       DROP TABLE embedding_cache;
       ALTER TABLE embedding_cache__new RENAME TO embedding_cache;
       COMMIT;
@@ -208,7 +208,7 @@ function getDb() {
   }
 
   // Detect dimension mismatch by reading the vec_memories schema (if it exists)
-  const vecSchema = db.prepare(
+  const vecSchema = database.prepare(
     `SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_memories'`,
   ).get();
   const schemaHasRightDims = vecSchema?.sql?.includes(`float[${EMBEDDING_DIMS}]`);
@@ -216,17 +216,21 @@ function getDb() {
 
   if (needVecRebuild) {
     // Dimension mismatch (e.g. nomic 768 → bge-m3 1024): drop stale index and cache
-    try { db.exec(`DROP TABLE IF EXISTS vec_memories`); } catch (err) { debugWarn('memory.store.vec', 'drop vec_memories during rebuild failed', err?.message || err); }
-    db.exec(`DELETE FROM embedding_cache`);
-    db.prepare(`UPDATE memories SET embedding = NULL`).run();
+    try { database.exec(`DROP TABLE IF EXISTS vec_memories`); } catch (err) { debugWarn('memory.store.vec', 'drop vec_memories during rebuild failed', err?.message || err); }
+    database.exec(`DELETE FROM embedding_cache`);
+    database.prepare(`UPDATE memories SET embedding = NULL`).run();
     console.log(`[memory] vec_memories dimension mismatch — dropping and rebuilding for float[${EMBEDDING_DIMS}]`);
   }
-  db.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES ('embedding_dims', ?)`).run(String(EMBEDDING_DIMS));
+  database.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES ('embedding_dims', ?)`).run(String(EMBEDDING_DIMS));
 
-  // Create vec0 table for KNN search if sqlite-vec loaded successfully
-  if (_vecLoaded) {
+  // Create vec0 table for KNN search if sqlite-vec loaded successfully.
+  // `vecLoaded` is captured at call time — for the cached production db
+  // this matches the module-level `_vecLoaded`; for a disposable handle
+  // bound to an alternate storePath, it reflects whether THAT handle
+  // successfully loaded vec0.
+  if (vecLoaded) {
     try {
-      db.exec(`
+      database.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
           memory_id TEXT PRIMARY KEY,
           embedding float[${EMBEDDING_DIMS}]
@@ -234,7 +238,92 @@ function getDb() {
       `);
     } catch (err) {
       debugWarn('memory.store.vec', 'vec_memories create failed, disabling vector search', err?.message || err);
-      _vecLoaded = false; // vec0 creation failed, disable vector search
+      // Caller's vec-loaded flag becomes effectively false on failure.
+      // For the cached singleton path (getDb), this is wired below.
+    }
+  }
+}
+
+/**
+ * Open a sqlite handle bound to an alternate `storePath`, run `work` against
+ * it, then close. CLAUDE.md §6 fix-7: lets `replaceMemories(...)` honor a
+ * captured ctx.storePath that doesn't match the cached production handle's
+ * path — without disturbing the cached handle. Each call opens, sets up
+ * schema, runs work, closes.
+ */
+function withDisposableStoreAt(storePath, work) {
+  mkdirSync(dirname(storePath), { recursive: true });
+  const tempDb = new DatabaseSync(storePath, { allowExtension: true });
+  let vecLoadedHere = false;
+  if (_vecExtPath) {
+    try {
+      tempDb.loadExtension(_vecExtPath);
+      vecLoadedHere = true;
+    } catch (err) {
+      debugWarn('memory.store.vec', 'loadExtension failed (disposable db)', err?.message || err);
+    }
+  }
+  applyMemoryStoreSchema(tempDb, vecLoadedHere);
+  try {
+    tempDb.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA busy_timeout = 5000;
+      PRAGMA foreign_keys = ON;
+    `);
+    return work(tempDb, vecLoadedHere);
+  } finally {
+    try { tempDb.close(); } catch {}
+  }
+}
+
+/**
+ * Manual transaction wrapper for a specific database handle. Used by the
+ * disposable-store path inside `replaceMemories`. Doesn't participate in
+ * the SAVEPOINT-tracking that `runInTransaction` does because a disposable
+ * handle has no concept of "outer transaction" in this codebase.
+ */
+function runInTransactionOn(database, work) {
+  database.exec('BEGIN');
+  try {
+    const result = work(database);
+    database.exec('COMMIT');
+    return result;
+  } catch (error) {
+    try { database.exec('ROLLBACK'); } catch (rollbackErr) {
+      debugWarn('memory.store.tx', 'ROLLBACK failed (disposable)', rollbackErr?.message || rollbackErr);
+    }
+    throw error;
+  }
+}
+
+function getDb() {
+  if (db) {
+    return db;
+  }
+
+  const storePath = resolveStorePath();
+  _openedStorePath = storePath;
+  mkdirSync(dirname(storePath), { recursive: true });
+  db = new DatabaseSync(storePath, { allowExtension: true });
+  tryLoadVec(db);
+
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
+    PRAGMA foreign_keys = ON;
+  `);
+
+  applyMemoryStoreSchema(db, _vecLoaded);
+
+  // applyMemoryStoreSchema may have decided vec0 was unusable even though
+  // tryLoadVec succeeded (e.g. CREATE VIRTUAL TABLE failed). Mirror that
+  // back into the module-level flag so subsequent reads avoid vec paths.
+  if (_vecLoaded) {
+    const vecPresent = db.prepare(
+      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='vec_memories'`,
+    ).get();
+    if (!vecPresent) {
+      _vecLoaded = false;
     }
   }
 
@@ -256,10 +345,15 @@ function textHash(text) {
  * This is intentionally cheap and synchronous — it's called on every cache
  * read/write, so we stay off the network.
  */
-function resolveCacheModelId(explicit) {
+function resolveCacheModelId(explicit, database = null) {
   if (explicit && typeof explicit === 'string' && explicit.trim()) return explicit.trim();
   try {
-    const row = getDb().prepare(
+    // CLAUDE.md §6 fix-7: when called from inside replaceMemories' disposable-
+    // store branch, an explicit `database` is passed so the _meta lookup
+    // happens against the captured home's sqlite — not the cached production
+    // singleton (which would lazily open at the current env path).
+    const dbHandle = database || getDb();
+    const row = dbHandle.prepare(
       `SELECT value FROM _meta WHERE key = 'embedding_model_id'`,
     ).get();
     const v = row?.value;
@@ -273,10 +367,16 @@ function resolveCacheModelId(explicit) {
  * Bug B fix: scoped by modelId so a provider swap (same dims, different
  * vector space) never returns the previous model's vector.
  */
-function getCachedEmbedding(text, modelId = null) {
+function getCachedEmbedding(text, modelId = null, database = null) {
   try {
-    const resolvedModel = resolveCacheModelId(modelId);
-    const row = getDb().prepare(
+    const resolvedModel = resolveCacheModelId(modelId, database);
+    // CLAUDE.md §6 fix-7: when called inside replaceMemories' disposable-
+    // store branch, the caller passes the disposable database explicitly
+    // so the embedding lookup reads the captured-home's cache, not the
+    // cached production singleton (which under cross-home test conditions
+    // would resolve to a different home's path via getDb()'s lazy open).
+    const dbHandle = database || getDb();
+    const row = dbHandle.prepare(
       'SELECT embedding FROM embedding_cache WHERE text_hash = ? AND model_id = ?',
     ).get(textHash(text), resolvedModel);
     if (!row?.embedding) return null;
@@ -939,10 +1039,46 @@ const PRESERVED_METADATA_KEYS = [
   'pinned',
 ];
 
-export function replaceMemories(entries = []) {
+/**
+ * @param {Array} entries
+ * @param {{ storePath?: string }} [options]
+ *   • `storePath` — when provided AND different from the currently
+ *     cached production handle, this call routes through a disposable
+ *     sqlite handle bound to `storePath`. CLAUDE.md §6 fix-7: lets
+ *     readStateSnapshot's repair-save tunnel its captured ctx.storePath
+ *     through replaceMemories without disturbing the cached production
+ *     db. Production callers (which never pass `storePath`) keep using
+ *     the cached singleton path with zero behavior change.
+ */
+export function replaceMemories(entries = [], { storePath } = {}) {
   const normalizedEntries = entries.map(normalizeEntry).filter(Boolean);
-  const database = getDb();
 
+  // Captured-ctx path: target storePath differs from the cached prod
+  // db. Use a disposable handle so we never mix homes on the cached
+  // production singleton.
+  if (storePath && storePath !== _openedStorePath) {
+    return withDisposableStoreAt(storePath, (database, vecLoadedHere) => {
+      return _runReplaceMemoriesOn(
+        database,
+        normalizedEntries,
+        vecLoadedHere,
+        work => runInTransactionOn(database, work),
+      );
+    });
+  }
+
+  // Default path: use the cached prod db + the standard SAVEPOINT-aware
+  // runInTransaction. Behavior unchanged from before fix-7.
+  const database = getDb();
+  return _runReplaceMemoriesOn(
+    database,
+    normalizedEntries,
+    _vecLoaded,
+    work => runInTransaction(work),
+  );
+}
+
+function _runReplaceMemoriesOn(database, normalizedEntries, vecLoaded, runTx) {
   // ─── Preserve dreaming/touch metadata + last_used_at across the rebuild ─
   // Build a map id → { preservedMeta, lastUsedAt } so the re-insert can
   // merge instead of clobber.  We also prune `memory_hits` rows whose
@@ -984,16 +1120,19 @@ export function replaceMemories(entries = []) {
   // vec_memories table in the same transaction.
   const embeddingMap = new Map();
   for (const row of normalizedEntries) {
-    const cached = getCachedEmbedding(row.searchText);
+    // Pass the captured database explicitly so the disposable-store
+    // branch never falls back to getDb()'s lazy resolution, which
+    // would read whatever the current env points at. CLAUDE.md §6.
+    const cached = getCachedEmbedding(row.searchText, null, database);
     if (cached) embeddingMap.set(row.id, cached);
   }
 
   // Clear vec_memories before rebuild (vec0 doesn't support DELETE ... WHERE)
-  if (_vecLoaded) {
+  if (vecLoaded) {
     try { database.exec('DELETE FROM vec_memories'); } catch (err) { debugWarn('memory.store.replace', 'clear vec_memories failed', err?.message || err); }
   }
 
-  const insertVec = _vecLoaded
+  const insertVec = vecLoaded
     ? database.prepare(`INSERT OR REPLACE INTO vec_memories (memory_id, embedding) VALUES (?, ?)`)
     : null;
 
@@ -1003,7 +1142,7 @@ export function replaceMemories(entries = []) {
     `DELETE FROM memory_hits WHERE memory_id NOT IN (SELECT value FROM json_each(?))`,
   );
 
-  runInTransaction(() => {
+  runTx(() => {
     clearMemories.run();
     clearFts.run();
     try { pruneOrphanHits.run(JSON.stringify([...incomingIds])); } catch (err) { debugWarn('memory.store.replace', 'pruneOrphanHits failed', err?.message || err); }

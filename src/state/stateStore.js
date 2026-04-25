@@ -94,10 +94,11 @@ function captureLoadContext() {
   const home = getMeloHome();
   const stateFilePath = join(home, 'desktop', 'state.json');
   const threadsDir = join(home, 'desktop', 'threads');
+  const storePath = join(home, 'desktop', 'store.sqlite');
   const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
     agentsDir: join(home, 'desktop', 'agents'),
   });
-  return { home, stateFilePath, threadsDir, getAgentMarkdownPaths };
+  return { home, stateFilePath, threadsDir, storePath, getAgentMarkdownPaths };
 }
 
 export async function readStateSnapshot({ persistRepair = true } = {}) {
@@ -178,7 +179,10 @@ export async function persistStateAtomically(state, { ctx = null, capturedStateP
     ...state,
     chats: state.chats.map(serializeChatForPersistence),
   });
-  syncMemoryStoreSnapshot(state);
+  // ctx.storePath, when present, lets the memory snapshot land on the
+  // home captured at the top of the load chain, completing the fix-7
+  // chain. Omitted = legacy lazy via the cached production db.
+  syncMemoryStoreSnapshot(state, { ctx });
 }
 
 export async function saveState(state, { ctx = null, capturedStatePath = null } = {}) {

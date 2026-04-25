@@ -472,9 +472,18 @@ export function buildMemoryStoreEntries(state) {
   return entries;
 }
 
-export function syncMemoryStoreSnapshot(state) {
+/**
+ * @param {object} state
+ * @param {{ ctx?: { storePath?: string } }} [options] — when provided,
+ *   `ctx.storePath` is threaded through to `replaceMemories` so writes
+ *   go to the home captured at the top of the load chain (not whatever
+ *   `process.env.MELO_HOME` currently resolves to). CLAUDE.md §6 fix-7:
+ *   closes the last home-leak vector in readStateSnapshot's repair-save
+ *   path. Omitted = legacy lazy resolution via the cached production db.
+ */
+export function syncMemoryStoreSnapshot(state, { ctx } = {}) {
   try {
-    replaceMemories(buildMemoryStoreEntries(state));
+    replaceMemories(buildMemoryStoreEntries(state), { storePath: ctx?.storePath });
   } catch (error) {
     console.warn(`Failed to sync Melo memory store: ${error.message}`);
   }
