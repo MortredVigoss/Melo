@@ -10,7 +10,8 @@
   3. **`git pp`**（= push + Codex 自动审查；等价于 `./scripts/codex-review.sh`）。
      - 如果本轮修改量小、不想耗 Codex 额度，可以退回 `git push`，但任何超过 1h 的批次必须跑 `git pp`。
      - `git pp` 在 push 成功 **之后** 才调用 `codex review`，review 不会阻断推送；即便 review 失败，commit 已经落盘到远端。
-     - Review 用中文输出，阶段总评 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
+     - Review 用中文输出，阶段总评 + D/C/B/A/S 质量评级 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
+     - 如果 Codex review 评级为 `C` 或 `D`，Claude 必须停止继续改写，先按 Codex 意见重新给出方案，让用户判断后再动代码。
 - 中途如果到了一个天然节点（feature 完成、测试全绿、bug 定位到根因修好），即便不满 1 小时也应该提交，不必死等整点。
 - 永远 **新建 commit**，不要 `--amend` 已经 push 出去的 commit。
 - 永远不要带 `--no-verify` / `--no-gpg-sign` 绕过钩子，除非用户明确要求。
@@ -38,6 +39,7 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 - `PROGRESS.md` 是时间轴日志，不做分章节结构化——按时间倒序从顶部追加最新条目，旧的往下压。
 - 它与 `git log` 的区别：`git log` 面向代码变更，`PROGRESS.md` 面向 **意图与上下文**，便于未来新会话快速接续。
 - 每次更新 `PROGRESS.md` 后运行 `npm run progress:codex`，自动刷新仓库根目录的 `codex.md`。`codex.md` 是给 Claude / Codex 快速接续用的完整进度快照，包含 git 状态、最近提交和完整 `PROGRESS.md` 时间线。
+- **`codex.md` 是本地派生产物，已加入 `.gitignore` 不入版本管理**——任何提交进 git 的快照都至少落后一个 commit（它无法引用自己所在的 commit hash），曾被 review 工具误判为"快照陈旧"。新会话开局先跑一次 `npm run progress:codex` 即可拿到最新视图。
 
 ## 3. 2 页阈值 = 自动摘要压缩
 
@@ -49,6 +51,36 @@ git config --local alias.pp '!./scripts/codex-review.sh'
   3. 保留最近 30% 的详细条目不动，再把新条目追加进去。
 - 压缩是 **幂等** 的——每次触发都只压旧条目，最新的永远是完整格式。
 - 压缩后要和正文改动一起进入同一个 commit，message 前缀加 `progress: `。
+
+## 4. D/C/B/A/S 质量评估（每次 git pp 后）
+
+- `EVALUATION.md` 是每次 `git pp` 后 Codex review 的评分依据。
+- `S / A / B`：可以继续推进；其中 `B` 的建议要记录并安排修。
+- `C`：方向或实现已有明显风险。Claude 不允许直接继续重写，必须先把 Codex 的整改意见整理成新方案，交给用户判断。
+- `D`：停止当前实现路线。Claude 必须重新界定问题、风险和验证方式，经用户确认后再改。
+- 对于抽服务 / 搬代码，第一刀必须是 byte-for-byte 移植；如果移植 commit 出现未解释的逻辑差异，默认至少按 `C` 处理。
+
+## 5. 抽服务 = byte-for-byte 移植，不允许顺手"简化"
+
+抽取代码到新模块时（例如 desktopStore → src/services/* 这类 refactor），**第一刀必须是逐字节移植，不改逻辑**。包括但不限于：
+
+- **不要**把多行函数压成一行
+- **不要**重命名内部变量（`existingMediaKeys` → `seenKeys` 这种顺手改也禁止）
+- **不要**简化看起来"重复"的代码（intro-text 回退、嵌套 `audio_attachment` 包装、`"Additional attachments:"` 标签等）
+- **不要**省略看起来无用的注释或空行
+- **不要**修改 regex（特别是 `\b`、`\d`、`?:` 之类的元字符——一个 `\b` 丢失就能造成生产回归）
+
+**为什么：** Phase 7d-1 抽 `messageBuilder` 时，我把原 `IMAGE_FOLLOW_UP_PATTERN` 里的 `\b(?:image|photo|...)\b` 顺手简化成了无 `\b` 版本，结果 `photography` 这类词被误匹配，会把 4 轮内的旧图错误塞回 prompt（错误上下文 + 成本回归 + 隐私风险）。Codex review 抓到了，但理论上完全可能漏过。同一次抽取还隐藏过 4 处 `messageToModelContent` 行为差异（intro 文案、attachment 嵌套结构、标签、collapse 逻辑），自查时发现并回退。
+
+**流程：**
+
+1. **Step 1 — 移植**：纯粹 cut + paste，按需调整 import 路径，**绝不改一个字符的代码本身**。这一步的 commit message 必须明示 "byte-for-byte port"，方便 review 时只看 import 变化。
+2. **Step 2 — 写测试**：基于移植版本写单元测试。如果发现某个边界没法用现有 API 覆盖，**记录下来但不要改代码**——抽取阶段的覆盖缺口是 Step 3 之后的事。
+3. **Step 3 — 删原位 + 接好上下游**：删 desktopStore 里被搬走的代码，加 import / re-export 让公共 API 不变。
+4. **Step 4 — 跑回归 + push**：所有测试绿才算移植成功。
+5. **Step 5（可选，独立 commit）— 简化**：移植成功后才能动逻辑，且每条改动都要单独写测试覆盖。这一步的 commit message 必须独立，写清"基于已绿测试，简化 X 为 Y"，便于回滚。
+
+**Codex review 的角色：** review prompt 已经强制走完整 `git show` 每个 commit。把"逐字节移植"作为约定后，review 看到的差异越少越好——任何 `-` 行 + `+` 行的代码逻辑差（不是 path/import 调整）都应被高亮为可疑。
 
 ## 其他既有规则（不在本文件但仍生效）
 
