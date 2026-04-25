@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数（gate-on-gate 修复）
+
+- 做了什么：
+  - **`scripts/codex-review.sh` 重写流程入口**：
+    - 拒绝任何 `$@` 额外参数（自定义 refspec / `-u` / `--force-with-lease` 等）。原因：从这些 args 推断"实际将被 push 的 commit 集合"等价于重新实现 push 的 refspec 解析；与其猜，不如显式拒绝并提示用户用原生 `git push` 走手动 review。
+    - 强制要求当前分支已有 tracking upstream。无 upstream 时直接报错并提示 `git push -u origin <branch>` 一次性设置。原因：原 fallback `${head_sha}^..${head_sha}` 在首次 push 多个 commit 时只评估 tip，**非 tip 的 commit 静默绕过 C/D 阻断**——Codex 抓到的精确 bug。
+    - 把 `base_sha` / `head_sha` / `commit_count` / `short_base` / `short_head` 提到流程顶部解析一次，pre-push gate 和 post-push review **共用同一个 base**，杜绝两阶段 range 漂移。
+    - 删除原 post-push 段独立的 base 推断分支（${head_sha}^ fallback、`base_sha == head_sha` 早返回、reachability 检查）——这些在新流程下都已经在顶部一次性处理。
+    - `git push` 不再转发 `$@`，固定为"当前分支 → upstream"。
+  - **`CLAUDE.md` §1**：在 `git pp` 条目下补一段"适用范围"，明文说明 upstream 必需 + 不接受额外参数，并指引边角场景用原生 `git push` + 手动 `codex review`。
+- 为什么：`f4bc254`（pre-push gate 启用 commit）首次跑就被自己的 gate 评 C 阻断——发现 fallback 路径在首次 push 场景下会漏审非 tip commit，pre/post 两阶段还共用了不同的 base 推断逻辑。修复直接砍掉边角分支，把 gate 适用域收窄到"有 upstream 的当前分支正常推送"，宁可显式拒绝也不要静默漏审。
+- 提交哈希：（待 commit；本轮要再过一次自己的 gate）
+  - `scripts/codex-review.sh`：refuse-args + require-upstream + 共用 base
+  - `CLAUDE.md`：§1 补适用范围说明
+
 ## 2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）
 
 - 做了什么：

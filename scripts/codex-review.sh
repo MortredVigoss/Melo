@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
-# codex-review.sh — push and review.
+# codex-review.sh — pre-push evaluation gate + post-push backup review.
+#
+# Scope (intentional limitation, see CLAUDE.md §1 / §4):
+#   • Reviews ONLY the range `<branch>@{upstream}..HEAD` of the current branch.
+#   • Refuses to run when the current branch has no tracking upstream.
+#     First-time setup: `git push -u origin <branch>` once, then `git pp` works.
+#   • Refuses any extra arguments (refspecs, -u, --force-with-lease, etc).
+#     For those edge cases use plain `git push` and review manually.
+#
+# Why these limits: the gate exists to evaluate the commit set *actually being
+# pushed*. Inferring "what will be pushed" from forwarded `git push` args
+# requires reimplementing push refspec resolution; we'd rather refuse and stay
+# correct than guess and silently miss commits (Codex caught this on the
+# first iteration of the gate).
 #
 # Flow:
-#   1. Capture upstream SHA (where origin/<branch> is right now).
-#   2. Run a pre-push Codex evaluation for the commits about to be pushed.
-#      If the quality grade is C/D (or the grade is missing), stop before push.
-#   3. git push with whatever args were forwarded.
-#   4. Ask `codex review --base <that_sha>` to review everything between
-#      the old remote position and our new HEAD (i.e. exactly the diff
-#      the remote just received).
+#   1. Resolve base_sha = @{upstream}, head_sha = HEAD. Fail if no upstream
+#      or no commits ahead.
+#   2. Pre-push Codex evaluation over base..head. Block on C/D or unparseable.
+#   3. git push (no args — current branch to its upstream).
+#   4. Post-push Codex review over the SAME base..head. Best-effort backup;
+#      does not block.
 #
-# The pre-push evaluation is the blocking gate. The post-push review is a
-# read-only cross-check after the commits are already on the remote — it does
-# NOT block the push. If post-push review fails (network / quota / user kills
-# it), that's fine, the push has already landed.
-#
-# Install the git alias once per repo:
+# Install once per repo:
 #   git config --local alias.pp '!./scripts/codex-review.sh'
-# Then use `git pp` instead of `git push`.
 
 set -euo pipefail
 
@@ -26,6 +32,18 @@ if ! command -v codex >/dev/null 2>&1; then
   echo "❌ codex CLI not found. Install with: npm install -g @openai/codex" >&2
   echo "   (then run \`codex login\` if it prompts)." >&2
   exit 127
+fi
+
+# ─── Refuse extra arguments ─────────────────────────────────────────────────
+# git pp is intentionally narrow. Forwarding arbitrary push args (refspec,
+# --force-with-lease, multi-branch fan-out) means we can't reliably compute
+# the commit range the remote will actually receive — the gate would miss
+# commits in those cases.
+if [ "$#" -gt 0 ]; then
+  echo "❌ git pp does not forward arguments — it pushes the current branch to its tracked upstream." >&2
+  echo "   For complex push patterns (custom refspec / -u / --force-with-lease / multiple refs)," >&2
+  echo "   use plain \`git push\` and run a manual \`codex review\` afterward." >&2
+  exit 1
 fi
 
 run_codex_range_review() {
@@ -145,113 +163,74 @@ Claude 需停止继续改写，先按以下意见重新出方案给用户判断�
 PROMPT
 }
 
-# ─── Capture pre-push upstream SHA ───────────────────────────────────────────
-# `@{upstream}` is the tracked remote ref (e.g. origin/master). This can fail
-# on a branch that has never been pushed — we detect that and fall back below.
+# ─── Resolve range (single source of truth, shared by pre + post) ────────────
+# `@{upstream}` is the tracked remote ref (e.g. origin/master). We refuse to
+# guess if it's missing — see header.
 base_sha="$(git rev-parse '@{upstream}' 2>/dev/null || true)"
-head_sha="$(git rev-parse HEAD)"
-
-# ─── Pre-push evaluation gate ────────────────────────────────────────────────
-pre_base_sha="$base_sha"
-pre_commit_count="0"
-
-if [ -z "$pre_base_sha" ]; then
-  # First push on this branch: review the tip commit before sending it out.
-  pre_base_sha="$(git rev-parse "${head_sha}^" 2>/dev/null || true)"
-
-  if [ -z "$pre_base_sha" ]; then
-    echo "⚠️  Cannot determine a pre-push review base — blocking push so the change is not sent without evaluation." >&2
-    exit 1
-  fi
-
-  if ! git cat-file -e "${pre_base_sha}^{commit}" 2>/dev/null; then
-    echo "⚠️  Pre-push review base $pre_base_sha is unreachable — blocking push so the change is not sent without evaluation." >&2
-    exit 1
-  fi
-
-  pre_commit_count="$(git rev-list --count "${pre_base_sha}..${head_sha}")"
-elif [ "$pre_base_sha" != "$head_sha" ]; then
-  if ! git cat-file -e "${pre_base_sha}^{commit}" 2>/dev/null; then
-    echo "⚠️  Pre-push review base $pre_base_sha is unreachable — blocking push so the change is not sent without evaluation." >&2
-    exit 1
-  fi
-
-  pre_commit_count="$(git rev-list --count "${pre_base_sha}..${head_sha}")"
-fi
-
-if [ "$pre_commit_count" != "0" ]; then
-  pre_short_base="$(git rev-parse --short "$pre_base_sha")"
-  pre_short_head="$(git rev-parse --short "$head_sha")"
-  pre_review_output="$(mktemp -t melo-pre-pp-review.XXXXXX)"
-
-  echo ""
-  echo "──────────────────────────────────────────────────────────────"
-  echo "🧪 Pre-pp evaluation: ${pre_short_base}..${pre_short_head}  (${pre_commit_count} commit(s))"
-  echo "──────────────────────────────────────────────────────────────"
-  echo ""
-
-  if ! run_codex_range_review \
-    "pre-pp evaluation（push 前阻塞 gate）" \
-    "这是 push 前评估。若质量评级为 C 或 D，本脚本会阻止 git push；请直接给出 Claude 需要如何重出方案。" \
-    "$pre_base_sha" "$head_sha" "$pre_commit_count" "$pre_short_base" "$pre_short_head" | tee "$pre_review_output"; then
-    echo "❌ Pre-pp evaluation failed — blocking push." >&2
-    exit 1
-  fi
-
-  pre_quality_grade="$(sed -nE 's/^质量评级[[:space:]]*[：:][[:space:]]*([SABCD]).*/\1/p' "$pre_review_output" | head -n 1)"
-  rm -f "$pre_review_output"
-
-  if [ -z "$pre_quality_grade" ]; then
-    echo "❌ Pre-pp evaluation did not output a parseable quality grade — blocking push." >&2
-    echo "   Expected line like: 质量评级：A —— ..." >&2
-    exit 1
-  fi
-
-  if [ "$pre_quality_grade" = "C" ] || [ "$pre_quality_grade" = "D" ]; then
-    echo "❌ Pre-pp evaluation grade is ${pre_quality_grade} — blocking push. Claude must re-plan for user approval first." >&2
-    exit 1
-  fi
-else
-  echo "✅ Pre-pp evaluation skipped (no local commits ahead of upstream)."
-fi
-
-# ─── Push ────────────────────────────────────────────────────────────────────
-# Forward every argument (e.g. `git pp -u origin feature`, `git pp --force-with-lease`).
-git push "$@"
-push_exit=$?
-if [ $push_exit -ne 0 ]; then
-  exit $push_exit
-fi
-
-# ─── Determine review range ──────────────────────────────────────────────────
-head_sha="$(git rev-parse HEAD)"
-
 if [ -z "$base_sha" ]; then
-  # First push on this branch: review the tip commit after sending it out.
-  base_sha="${head_sha}^"
-elif [ "$base_sha" = "$head_sha" ]; then
-  echo "✅ Push succeeded (no new commits to review)."
+  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+  echo "❌ Current branch '${current_branch}' has no tracking upstream." >&2
+  echo "   git pp gates the range upstream..HEAD before pushing — without an" >&2
+  echo "   upstream there is no well-defined range to evaluate." >&2
+  echo "" >&2
+  echo "   First-time setup (one-shot, then \`git pp\` works normally):" >&2
+  echo "     git push -u origin ${current_branch}" >&2
+  exit 1
+fi
+
+head_sha="$(git rev-parse HEAD)"
+
+if [ "$base_sha" = "$head_sha" ]; then
+  echo "✅ Already up to date with upstream — nothing to push."
   exit 0
 fi
 
-# Base might be unreachable locally if the branch was force-pushed or
-# the old upstream commit was garbage-collected.
 if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
-  echo "⚠️  Push succeeded, but base ref $base_sha is unreachable — skipping review." >&2
-  exit 0
+  echo "❌ Upstream base $base_sha is unreachable locally (force-pushed or GC'd)." >&2
+  echo "   Run \`git fetch\` to refresh the upstream pointer, then retry \`git pp\`." >&2
+  exit 1
 fi
 
-# Empty range: nothing to review (e.g. re-push of same HEAD).
-if [ "$(git rev-list --count "${base_sha}..${head_sha}")" = "0" ]; then
-  echo "✅ Push succeeded (no new commits to review)."
-  exit 0
-fi
-
-# ─── Review ──────────────────────────────────────────────────────────────────
 commit_count="$(git rev-list --count "${base_sha}..${head_sha}")"
 short_base="$(git rev-parse --short "$base_sha")"
 short_head="$(git rev-parse --short "$head_sha")"
 
+# ─── Pre-push evaluation gate ────────────────────────────────────────────────
+pre_review_output="$(mktemp -t melo-pre-pp-review.XXXXXX)"
+
+echo ""
+echo "──────────────────────────────────────────────────────────────"
+echo "🧪 Pre-pp evaluation: ${short_base}..${short_head}  (${commit_count} commit(s))"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+
+if ! run_codex_range_review \
+  "pre-pp evaluation（push 前阻塞 gate）" \
+  "这是 push 前评估。若质量评级为 C 或 D，本脚本会阻止 git push；请直接给出 Claude 需要如何重出方案。" \
+  "$base_sha" "$head_sha" "$commit_count" "$short_base" "$short_head" | tee "$pre_review_output"; then
+  rm -f "$pre_review_output"
+  echo "❌ Pre-pp evaluation failed — blocking push." >&2
+  exit 1
+fi
+
+pre_quality_grade="$(sed -nE 's/^质量评级[[:space:]]*[：:][[:space:]]*([SABCD]).*/\1/p' "$pre_review_output" | head -n 1)"
+rm -f "$pre_review_output"
+
+if [ -z "$pre_quality_grade" ]; then
+  echo "❌ Pre-pp evaluation did not output a parseable quality grade — blocking push." >&2
+  echo "   Expected line like: 质量评级：A —— ..." >&2
+  exit 1
+fi
+
+if [ "$pre_quality_grade" = "C" ] || [ "$pre_quality_grade" = "D" ]; then
+  echo "❌ Pre-pp evaluation grade is ${pre_quality_grade} — blocking push. Claude must re-plan for user approval first." >&2
+  exit 1
+fi
+
+# ─── Push (no args — branch to upstream) ─────────────────────────────────────
+git push
+
+# ─── Post-push backup review (same range) ────────────────────────────────────
 echo ""
 echo "──────────────────────────────────────────────────────────────"
 echo "🔍 Codex review: ${short_base}..${short_head}  (${commit_count} commit(s))"

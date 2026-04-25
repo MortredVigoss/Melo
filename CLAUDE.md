@@ -13,6 +13,9 @@
      - push 成功 **之后** 会再跑一次 Codex review 作为兜底复查；后审不会阻断已经完成的 push。
      - Review 用中文输出，阶段总评 + D/C/B/A/S 质量评级 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
      - 如果 Codex review 评级为 `C` 或 `D`，Claude 必须停止继续改写，先按 Codex 意见重新给出方案，让用户判断后再动代码。
+     - **`git pp` 适用范围**（脚本在不满足时直接报错，避免 gate 静默漏审）：
+       - 当前分支必须有 tracking upstream（首次推送先用 `git push -u origin <branch>` 设置一次）。
+       - 不接受任何额外参数（不支持自定义 refspec / `--force-with-lease` / 多 ref fan-out）；这些边角场景请用原生 `git push` 并手动跑 `codex review`。
 - 中途如果到了一个天然节点（feature 完成、测试全绿、bug 定位到根因修好），即便不满 1 小时也应该提交，不必死等整点。
 - 永远 **新建 commit**，不要 `--amend` 已经 push 出去的 commit。
 - 永远不要带 `--no-verify` / `--no-gpg-sign` 绕过钩子，除非用户明确要求。
