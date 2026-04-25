@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-25 22:55 — Phase 7d-5α-A1 (Commit 3/9)：抽出 chatThreadContext 簇（缓存 + builder + checkpoint payload）
+
+- 做了什么：把 chat-thread-context 相关 9 个符号一次性搬到新建的 `src/state/chatThreadContext.js`：
+  - 3 个常量：`MAX_CONTEXT_RECENT_MESSAGES`、`MAX_CONTEXT_MEMORY_MESSAGES`、`MAX_CONTEXT_MEMORY_ITEMS`
+  - 6 个函数：`messageTextForContext`、`setChatThreadContextCache`、`getChatThreadContextCache`、`buildThreadContextForChat`、`ensureChatThreadContext`、`buildThreadCheckpointPayload`
+  - 全部 byte-for-byte，函数体逐字节复制，仅加 `export` + 文件头注释。
+- 为什么：
+  - `ensureChatThreadContext` 有 6 个 desktopStore 调用点（persistChatThreads、两个 memory-summary helper、conversation-continuity context builder、chat 执行图入口），是后续 commit 4 (`persistChatThreads`) 和 commit 7 (`hydrateChatThreads`) 都要依赖的 prerequisite。
+  - 这一簇内部互调（cache helper ↔ builder ↔ entry），但**对 desktopStore 外部完全无依赖**——所有外部 deps 都已经在 `src/memory/`、`src/services/chat/`、`src/services/message/` 里。零循环风险。
+  - `MAX_CONTEXT_MEMORY_ITEMS` 在新模块外还有 1 个 caller（`uniqueMemoryLines`），所以 desktopStore re-import；另两个 const 只在 `buildThreadContextForChat`（已搬走）内用，不需要 re-import。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/chatThreadContext.js`（~115 行含注释，9 个 export）
+  - `src/desktopStore.js` 净减约 80 行（删 6 处函数定义 + 3 个常量 + 加 9 行 import 块）
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿
+
 ## 2026-04-25 22:30 — Phase 7d-5α-A1 (Commit 2/9)：抽出 serializeChatForPersistence 纯叶子
 
 - 做了什么：把 desktopStore 里 `serializeChatForPersistence`（17 行 pure object reshape）搬到新建的 `src/state/chatPersistence.js`。

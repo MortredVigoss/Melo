@@ -439,6 +439,14 @@ import {
   assertCanCreateChat,
 } from './state/chatPruning.js';
 import { serializeChatForPersistence } from './state/chatPersistence.js';
+import {
+  MAX_CONTEXT_MEMORY_ITEMS,
+  messageTextForContext,
+  setChatThreadContextCache,
+  buildThreadContextForChat,
+  ensureChatThreadContext,
+  buildThreadCheckpointPayload,
+} from './state/chatThreadContext.js';
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -507,9 +515,12 @@ const MAX_SEARCH_FILE_CONTENT_MATCHES = 18;
 // MAX_SEARCH_FILE_GROUPS / MAX_LINES_PER_FILE_GROUP moved to
 // src/services/search/searchService.js in Phase 7a.
 const MAX_SEARCH_RESULTS = 64;
-const MAX_CONTEXT_RECENT_MESSAGES = 8;
-const MAX_CONTEXT_MEMORY_MESSAGES = 24;
-const MAX_CONTEXT_MEMORY_ITEMS = 6;
+// MAX_CONTEXT_RECENT_MESSAGES / MAX_CONTEXT_MEMORY_MESSAGES /
+// MAX_CONTEXT_MEMORY_ITEMS moved to src/state/chatThreadContext.js in
+// Phase 7d-5α-A1 (commit 3/9). MAX_CONTEXT_MEMORY_ITEMS is re-imported
+// here for the one remaining caller (uniqueMemoryLines); the other two
+// are only consumed inside buildThreadContextForChat which moved with
+// them.
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const TELEGRAM_POLL_LIMIT = 12;
 
@@ -938,33 +949,9 @@ function normalizeChat(chat) {
 // to `src/state/agentProfiles.js` in Phase 10a. Re-imported at the top of
 // this file.
 
-function setChatThreadContextCache(chat, threadContext) {
-  if (!chat || typeof chat !== 'object') {
-    return;
-  }
-
-  Object.defineProperty(chat, '__threadContext', {
-    value: threadContext || null,
-    writable: true,
-    configurable: true,
-    enumerable: false,
-  });
-}
-
-function getChatThreadContextCache(chat) {
-  return chat && typeof chat === 'object' ? chat.__threadContext || null : null;
-}
-
-function buildThreadContextForChat(chat, latestUserMessage = '') {
-  return buildStructuredThreadContext({
-    chat,
-    latestUserMessage,
-    messageTextResolver: messageTextForContext,
-    maxRecentMessages: MAX_CONTEXT_RECENT_MESSAGES,
-    maxMemoryMessages: MAX_CONTEXT_MEMORY_MESSAGES,
-    maxMemoryItems: MAX_CONTEXT_MEMORY_ITEMS,
-  });
-}
+// setChatThreadContextCache / getChatThreadContextCache / buildThreadContextForChat
+// moved to src/state/chatThreadContext.js in Phase 7d-5α-A1 (commit 3/9).
+// Re-imported at the top of this file alongside the rest of the bundle.
 
 function threadCheckpointMatches(checkpoint, chat, threadContext) {
   const messages = Array.isArray(chat?.messages) ? chat.messages : [];
@@ -982,41 +969,8 @@ function threadCheckpointMatches(checkpoint, chat, threadContext) {
   );
 }
 
-function ensureChatThreadContext(chat, latestUserMessage = '') {
-  const cached = getChatThreadContextCache(chat);
-  const lastMessageId = Array.isArray(chat?.messages) && chat.messages.length
-    ? chat.messages[chat.messages.length - 1].id || null
-    : null;
-  const needsRefresh =
-    !cached ||
-    cached.derivedFromMessageId !== lastMessageId ||
-    (latestUserMessage && cached.currentTurn?.user !== normalizeConversationSnippet(latestUserMessage, 220));
-
-  if (needsRefresh) {
-    setChatThreadContextCache(chat, buildThreadContextForChat(chat, latestUserMessage));
-  }
-
-  const resolved = getChatThreadContextCache(chat) || buildThreadContextForChat(chat, latestUserMessage);
-  setChatThreadContextCache(chat, resolved);
-  chat.memorySummary = renderStructuredThreadMemorySnapshot(resolved);
-  return resolved;
-}
-
-function buildThreadCheckpointPayload(chat, threadContext) {
-  return {
-    version: 1,
-    threadId: chat.id,
-    createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-    messages: Array.isArray(chat.messages) ? chat.messages : [],
-    derived: {
-      threadContext,
-      threadContextDerivedFromMessageId: threadContext?.derivedFromMessageId || null,
-      memorySummary: renderStructuredThreadMemorySnapshot(threadContext),
-      renderedThreadContext: renderStructuredThreadContext(threadContext),
-    },
-  };
-}
+// ensureChatThreadContext / buildThreadCheckpointPayload moved to
+// src/state/chatThreadContext.js in Phase 7d-5α-A1 (commit 3/9).
 
 async function hydrateChatThreads(state) {
   let repaired = false;
@@ -2026,19 +1980,8 @@ export async function updateStateAtomically(mutator) {
 // (not the local function table) so both messageTextForContext here and
 // messageToModelContent in the service can share one implementation.
 
-function messageTextForContext(message) {
-  const attachments = normalizeMessageAttachments(message?.attachments);
-  const text = messageVisibleText(message).trim();
-  const attachmentSummary = summarizeAttachmentsForPrompt(attachments);
-  const mediaSummary = extractedMediaPromptText(message, 2, 240);
-
-  const parts = [text, attachmentSummary, mediaSummary].filter(Boolean);
-  if (parts.length) {
-    return parts.join('\n');
-  }
-
-  return '';
-}
+// messageTextForContext moved to src/state/chatThreadContext.js in
+// Phase 7d-5α-A1 (commit 3/9). Re-imported at the top of this file.
 
 function uniqueMemoryLines(values = [], limit = MAX_CONTEXT_MEMORY_ITEMS) {
   const seen = new Set();
