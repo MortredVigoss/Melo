@@ -16,7 +16,7 @@
   - `buildMemoryStoreEntries` 是 `syncMemoryStoreSnapshot` 唯一的内部 caller，必须一起搬。
   - `buildSpeakerMemoryNamespace` 在 `buildMemoryStoreEntries` 里被用，同时在 desktopStore 还有 3 个 caller（都在 `buildAgentMemoryNodeContext` 内，那是未来 7d-5γ 的 work）。这 3 个 caller 现在 import from memorySnapshot.js。
   - 这 3 个函数所有外部 deps 都已可达：`replaceMemories` / `extractSpeakerFacts` / `getSpeakerFactStorageKey` / `enabledTiers` / frame+scene helpers / `messageVisibleText` / `messageSearchText` / `messageTextForContext`（commit 3 已搬）/ `normalizePromptHistory` / `normalizeApprovals` / `normalizeTasks` / `allAgentIdsFromProfiles` / `normalizeAgentProfile` / `summarizeAgentPrompt` / `normalizeAgentStorageId` / `nowIso` / `normalizeExtractedMedia` / `memoryKindForExtractedMedia`。零循环。
-- 产出 / 提交哈希：未提交
+- 产出 / 提交哈希：`f0b528e`
   - 新增 `src/state/memorySnapshot.js`（~430 行含注释，3 个 export，最大单 commit）
   - `src/desktopStore.js` 净减约 401 行
   - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿（首次合并跑出现 2 个 flaky 失败，单独跑全绿，确认非本次 commit 引入——是已知的跨套件状态串扰问题，与 memory-isolation.test.js 共用 ~/.melo 路径有关）
