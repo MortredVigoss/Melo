@@ -9,7 +9,7 @@
 
 - 做了什么：`scripts/codex-review.sh` 在算出 `commit_count` 后立刻判断为 0 则报错"先 `git pull --rebase`"。原流程会先跑一轮 Codex evaluation 再被 `git push` 拒绝，浪费一轮 token。
 - 为什么：上一轮 `2c43ec2` 过 gate 时 Codex 评 B 留下的唯一非阻塞建议。CLAUDE.md §4 要求"B 的建议要记录并安排修"——既然已经在 gate-fix 流程里就顺手做掉。
-- 提交哈希：（待 commit）
+- 提交哈希：`5742e66`
 
 ## 2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push（gate-on-gate-on-gate）
 
@@ -18,7 +18,7 @@
   - 头部注释同步更新流程描述。
 - 为什么：上一轮（`137c9a6`）收紧后再过自己的 gate，被 Codex 评 C：裸 `git push` 受 `push.default` 影响——`matching` 会推**所有同名分支**（含 evaluation 没覆盖的），`current` 可能推到与 `@{upstream}` 不同名的远端 ref。显式 refspec 让 push 目标和 evaluation 范围一一对应，无论用户 git 配置怎么设。
 - 没做的：Codex 还建议加一组 shell smoke 测试覆盖 `push.default=matching/current/simple` 等场景。和用户讨论后认为 ROI 不足（gate 自身每次跑都在测自己，两轮 C 已经准确捕获 bug），暂缓。
-- 提交哈希：（待 commit；本轮要再过一次自己的 gate）
+- 提交哈希：`2c43ec2`
   - `scripts/codex-review.sh`：显式 refspec push
 
 ## 2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数（gate-on-gate 修复）
@@ -32,7 +32,7 @@
     - `git push` 不再转发 `$@`，固定为"当前分支 → upstream"。
   - **`CLAUDE.md` §1**：在 `git pp` 条目下补一段"适用范围"，明文说明 upstream 必需 + 不接受额外参数，并指引边角场景用原生 `git push` + 手动 `codex review`。
 - 为什么：`f4bc254`（pre-push gate 启用 commit）首次跑就被自己的 gate 评 C 阻断——发现 fallback 路径在首次 push 场景下会漏审非 tip commit，pre/post 两阶段还共用了不同的 base 推断逻辑。修复直接砍掉边角分支，把 gate 适用域收窄到"有 upstream 的当前分支正常推送"，宁可显式拒绝也不要静默漏审。
-- 提交哈希：（待 commit；本轮要再过一次自己的 gate）
+- 提交哈希：`137c9a6`
   - `scripts/codex-review.sh`：refuse-args + require-upstream + 共用 base
   - `CLAUDE.md`：§1 补适用范围说明
 
