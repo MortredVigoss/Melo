@@ -21,11 +21,15 @@
   - `src/desktopStore.js` 净减约 195 行（8355 → 8169）
   - 回归：services + desktopStore + search + state 套件 293/293（增量 27 个新测试）；跨域 images+tools+media+memory+agents+openai 583/583 全绿
 
-## 2026-04-25 19:03 — 增加 git pp 后 D/C/B/A/S 质量评估 gate
+## 2026-04-25 19:03 — 增加 git pp 后 D/C/B/A/S 质量评估 gate + codex.md 改本地派生
 
-- 做了什么：新增 `EVALUATION.md`，把 Claude 代码评估拆成 `D / C / B / A / S` 五档，并明确 `C` 或 `D` 时必须停止继续改写，先按 Codex 意见重新给出方案让用户判断；同步更新 `CLAUDE.md` 和 `scripts/codex-review.sh`，让每次 `git pp` 后的 Codex review 都强制输出质量评级、风险等级和必要的 Claude 整改意见。
-- 为什么：用户要求每次 `pp` 后不只是审查，还要形成可执行的质量判断；当效果只到 `C` 时，不能让 Claude 继续沿着可能错误的方向写，而是先让 Claude 基于 Codex 的思路重出方案，再由用户决定是否重写。
-- 产出 / 提交哈希：未提交
+- 做了什么：
+  - 新增 `EVALUATION.md`，把 Claude 代码评估拆成 `D / C / B / A / S` 五档，并明确 `C` 或 `D` 时必须停止继续改写，先按 Codex 意见重新给出方案让用户判断。同步更新 `CLAUDE.md` §4 和 `scripts/codex-review.sh`，让每次 `git pp` 后的 Codex review 都强制输出质量评级、风险等级和必要的 Claude 整改意见。
+  - **`codex.md` 改为本地派生产物**：加进 `.gitignore`、`git rm --cached` 移出版本管理。CLAUDE.md §2 补充新会话开局先跑 `npm run progress:codex` 即可。这是 7d-2 review 抓到的 ⚪-tier 工作流缺陷的处理——任何提交进 git 的 codex.md 都至少落后 1 个 commit（无法引用自己所在的 commit hash），review 工具会反复误判"快照陈旧"。
+- 为什么：
+  - 用户要求每次 `pp` 后不只是审查，还要形成可执行的质量判断；当效果只到 `C` 时，不能让 Claude 继续沿着可能错误的方向写，而是先让 Claude 基于 Codex 的思路重出方案，再由用户决定是否重写。
+  - codex.md untrack 顺便消除每次 PROGRESS 更新都要 churn 一次 codex.md 的两步 commit 浪费——backfill commit 现在只动 PROGRESS.md。
+- 产出 / 提交哈希：`1f636e2`
 
 ## 2026-04-25 00:20 — Phase 7d-1：抽出 messageBuilder（chatExecutionService 拆解 ①/N）
 
