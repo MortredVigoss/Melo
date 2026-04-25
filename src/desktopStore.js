@@ -454,6 +454,7 @@ import {
   buildSpeakerMemoryNamespace,
   syncMemoryStoreSnapshot,
 } from './state/memorySnapshot.js';
+import { mergeDiskSkillsIntoState } from './state/diskSkills.js';
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -1439,47 +1440,8 @@ function hydrateState(parsed = {}) {
  * failures are swallowed (we log once per load) so a broken SKILL.md can
  * never brick desktop startup.
  */
-async function mergeDiskSkillsIntoState(state) {
-  let diskSkills = [];
-  try {
-    diskSkills = await loadSkillsFromDisk();
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn(`[desktopStore] skill disk load failed: ${err.message}`);
-    return;
-  }
-  if (!diskSkills.length) return;
-  if (!Array.isArray(state.settings.customSkills)) {
-    state.settings.customSkills = [];
-  }
-  const jsonById = new Map(
-    state.settings.customSkills
-      .filter(s => s && s.id && s.origin !== 'disk')
-      .map(s => [s.id, s]),
-  );
-  const merged = [];
-  const seen = new Set();
-  for (const disk of diskSkills) {
-    if (!disk || !disk.id) continue;
-    const skill = { ...disk, origin: 'disk' };
-    // Skip skills whose id shadows a built-in; disk authors should rename.
-    if (BUILTIN_SKILLS.some(b => b.id === skill.id)) continue;
-    const normalized = normalizeCustomSkill(skill);
-    if (!normalized) continue;
-    // normalizeCustomSkill resets origin/diskPath/version to defaults,
-    // so re-apply from the disk record.
-    normalized.origin = 'disk';
-    normalized.diskPath = disk.diskPath || null;
-    normalized.version = Number.isFinite(disk.version) ? disk.version : 1;
-    merged.push(normalized);
-    seen.add(normalized.id);
-  }
-  // Keep JSON skills whose ids don't collide.
-  for (const [id, skill] of jsonById) {
-    if (!seen.has(id)) merged.push(skill);
-  }
-  state.settings.customSkills = merged;
-}
+// mergeDiskSkillsIntoState moved to src/state/diskSkills.js in
+// Phase 7d-5α-A1 (commit 6/9). Re-imported at the top of this file.
 
 async function readStateSnapshot({ persistRepair = true } = {}) {
   try {

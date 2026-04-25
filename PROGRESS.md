@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-25 23:55 — Phase 7d-5α-A1 (Commit 6/9)：抽出 mergeDiskSkillsIntoState
+
+- 做了什么：把 `mergeDiskSkillsIntoState`（41 行）从 desktopStore 搬到新建的 `src/state/diskSkills.js`。byte-for-byte 移植。
+- 为什么：
+  - `mergeDiskSkillsIntoState` 是 `readStateSnapshot` 调用的 4 个 helper 之一（commit 9 stateStore 必须能 import 它）。
+  - 它的 3 个 deps（`loadSkillsFromDisk` / `BUILTIN_SKILLS` / `normalizeCustomSkill`）全部已在外部模块（agents/skillsDisk.js + services/skill/skillService.js），是真正的纯叶子。
+  - 在 desktopStore 里另有 1 个外部 caller `reloadDiskSkills`（用户手动"重新扫描磁盘技能"按钮）—— 这个 caller 现在 import from diskSkills.js。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/diskSkills.js`（~65 行含注释，1 个 export）
+  - `src/desktopStore.js` 净减约 39 行
+  - 回归：services + desktopStore + search + state + agents 套件 434/434；跨域 images+tools+media+memory+openai 全绿
+
 ## 2026-04-25 23:35 — Phase 7d-5α-A1 (Commit 5/9)：抽出 memorySnapshot 簇（最大单个 commit，~400 行）
 
 - 做了什么：把 desktopStore 里 memory-snapshot 流水线一次性搬到新建的 `src/state/memorySnapshot.js`：
