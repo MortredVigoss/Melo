@@ -438,7 +438,10 @@ import {
   pruneExcessChats,
   assertCanCreateChat,
 } from './state/chatPruning.js';
-import { serializeChatForPersistence } from './state/chatPersistence.js';
+import {
+  serializeChatForPersistence,
+  persistChatThreads,
+} from './state/chatPersistence.js';
 import {
   MAX_CONTEXT_MEMORY_ITEMS,
   messageTextForContext,
@@ -1014,26 +1017,9 @@ async function hydrateChatThreads(state) {
 // serializeChatForPersistence moved to src/state/chatPersistence.js in
 // Phase 7d-5α-A1 (commit 2/9). Re-imported at the top of this file.
 
-async function persistChatThreads(chats = []) {
-  const keepThreadIds = [];
-
-  for (const chat of chats) {
-    if (!chat?.id) {
-      continue;
-    }
-
-    const messages = Array.isArray(chat.messages) ? chat.messages : [];
-    if (!messages.length) {
-      continue;
-    }
-
-    const threadContext = ensureChatThreadContext(chat);
-    await saveThreadCheckpoint(chat.id, buildThreadCheckpointPayload(chat, threadContext));
-    keepThreadIds.push(chat.id);
-  }
-
-  await pruneThreadCheckpoints(keepThreadIds);
-}
+// persistChatThreads moved to src/state/chatPersistence.js in
+// Phase 7d-5α-A1 (commit 4/9). Re-imported at the top of this file
+// alongside serializeChatForPersistence.
 
 function buildSpeakerMemoryNamespace({ chat, message, agentId = '' } = {}) {
   const source = String(chat?.source || '').trim().toLowerCase();

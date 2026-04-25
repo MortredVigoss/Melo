@@ -1,20 +1,34 @@
-// Chat-persistence helpers — Phase 7d-5α-A1 (commit 2/9).
+// Chat-persistence helpers — Phase 7d-5α-A1.
 //
-// `serializeChatForPersistence` shapes a chat record for the on-disk
-// state.json snapshot — it strips runtime-only fields like `messages`,
-// `compactSummary`, etc. so they don't appear in the serialized state
-// (those live in per-thread checkpoints written by persistChatThreads).
+// Two functions:
 //
-// The function is a pure object reshape (no other dep), which makes it
-// the smallest safe pure-leaf to extract next. `persistChatThreads`
-// (the function that uses this and was originally in the same code
-// region of desktopStore) deliberately stays put for now — it depends
-// on `ensureChatThreadContext` which is broadly called across the
-// store and needs its own commit to lift out before persistChatThreads
-// can join this module.
+//   serializeChatForPersistence — shape a chat record for the on-disk
+//     state.json snapshot. Strips runtime-only fields like `messages`,
+//     `compactSummary`, etc. so they don't appear in the serialized
+//     state (those live in per-thread checkpoints written by
+//     persistChatThreads). Pure object reshape, no deps.
 //
-// Per CLAUDE.md §5 (byte-for-byte rule), the body is verbatim from
+//   persistChatThreads — for each chat with messages, derive a thread
+//     context (ensureChatThreadContext) and persist a checkpoint to
+//     ~/.melo/desktop/threads/<chat.id>.json via saveThreadCheckpoint.
+//     Then prune any older checkpoint files whose chat is no longer
+//     active.
+//
+// History:
+//   • commit 2/9 (4d81ef4): introduced this module with
+//     serializeChatForPersistence.
+//   • commit 4/9 (this commit): added persistChatThreads, made
+//     possible by commit 3 (2cc94a8) lifting ensureChatThreadContext
+//     and buildThreadCheckpointPayload to src/state/chatThreadContext.js.
+//
+// Per CLAUDE.md §5 (byte-for-byte rule), bodies are verbatim from
 // desktopStore.js — only the `export` keyword was added.
+
+import { saveThreadCheckpoint, pruneThreadCheckpoints } from '../memory/checkpointer.js';
+import {
+  ensureChatThreadContext,
+  buildThreadCheckpointPayload,
+} from './chatThreadContext.js';
 
 export function serializeChatForPersistence(chat) {
   return {
@@ -32,4 +46,25 @@ export function serializeChatForPersistence(chat) {
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
   };
+}
+
+export async function persistChatThreads(chats = []) {
+  const keepThreadIds = [];
+
+  for (const chat of chats) {
+    if (!chat?.id) {
+      continue;
+    }
+
+    const messages = Array.isArray(chat.messages) ? chat.messages : [];
+    if (!messages.length) {
+      continue;
+    }
+
+    const threadContext = ensureChatThreadContext(chat);
+    await saveThreadCheckpoint(chat.id, buildThreadCheckpointPayload(chat, threadContext));
+    keepThreadIds.push(chat.id);
+  }
+
+  await pruneThreadCheckpoints(keepThreadIds);
 }
