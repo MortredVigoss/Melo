@@ -9,7 +9,7 @@
 
 - 做了什么：把 `persistChatThreads`（19 行）从 desktopStore 搬进上一轮已建立的 `src/state/chatPersistence.js`。byte-for-byte 移植。
 - 为什么：commit 3 把 `ensureChatThreadContext` + `buildThreadCheckpointPayload` 都搬到了 `src/state/chatThreadContext.js`，所以 `persistChatThreads` 现在所有 deps 都已外部化（4 个全部可达：`saveThreadCheckpoint` + `pruneThreadCheckpoints` 在 memory/checkpointer.js，另两个在 chatThreadContext.js）。`chatPersistence.js` 现在收纳了完整的"chat → 磁盘 state.json + thread checkpoint"持久化路径。
-- 产出 / 提交哈希：未提交
+- 产出 / 提交哈希：`8ab7817`
   - `src/state/chatPersistence.js` 增加 `persistChatThreads` 函数 + 调整文件头注释和 import
   - `src/desktopStore.js` 净减约 17 行（删 1 处定义 + 加 3 行 import）
   - 回归：293/293 + 583/583 全绿
