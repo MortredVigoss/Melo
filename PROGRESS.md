@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push（gate-on-gate-on-gate）
+
+- 做了什么：
+  - **`scripts/codex-review.sh`**：把 `@{upstream}` 用 `git rev-parse --symbolic-full-name` 解出全 ref（如 `refs/remotes/origin/master`），bash regex 拆成 `<remote>` + `<remote-branch>`。push 改为 `git push "$remote" "HEAD:$remote_branch"`，绕开用户的 `push.default`。
+  - 头部注释同步更新流程描述。
+- 为什么：上一轮（`137c9a6`）收紧后再过自己的 gate，被 Codex 评 C：裸 `git push` 受 `push.default` 影响——`matching` 会推**所有同名分支**（含 evaluation 没覆盖的），`current` 可能推到与 `@{upstream}` 不同名的远端 ref。显式 refspec 让 push 目标和 evaluation 范围一一对应，无论用户 git 配置怎么设。
+- 没做的：Codex 还建议加一组 shell smoke 测试覆盖 `push.default=matching/current/simple` 等场景。和用户讨论后认为 ROI 不足（gate 自身每次跑都在测自己，两轮 C 已经准确捕获 bug），暂缓。
+- 提交哈希：（待 commit；本轮要再过一次自己的 gate）
+  - `scripts/codex-review.sh`：显式 refspec push
+
 ## 2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数（gate-on-gate 修复）
 
 - 做了什么：

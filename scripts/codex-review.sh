@@ -15,10 +15,11 @@
 # first iteration of the gate).
 #
 # Flow:
-#   1. Resolve base_sha = @{upstream}, head_sha = HEAD. Fail if no upstream
-#      or no commits ahead.
+#   1. Resolve base_sha = @{upstream}, head_sha = HEAD. Parse upstream into
+#      <remote> + <remote-branch>. Fail if no upstream or no commits ahead.
 #   2. Pre-push Codex evaluation over base..head. Block on C/D or unparseable.
-#   3. git push (no args — current branch to its upstream).
+#   3. git push <remote> HEAD:<remote-branch> — explicit refspec so push.default
+#      can't widen or shift the actually-pushed ref past what we evaluated.
 #   4. Post-push Codex review over the SAME base..head. Best-effort backup;
 #      does not block.
 #
@@ -178,6 +179,20 @@ if [ -z "$base_sha" ]; then
   exit 1
 fi
 
+# Parse upstream into <remote> + <remote-branch> so the actual push uses an
+# explicit refspec, immune to whatever `push.default` is set to. Otherwise
+# `git push` with no args could push extra refs (push.default=matching) or
+# a different branch name (push.default=current) that the evaluation didn't
+# cover — the gate would silently miss commits.
+upstream_full_ref="$(git rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+if [[ ! "$upstream_full_ref" =~ ^refs/remotes/([^/]+)/(.+)$ ]]; then
+  echo "❌ Could not parse upstream as refs/remotes/<remote>/<branch>: '${upstream_full_ref}'." >&2
+  echo "   git pp requires a standard remote-tracking upstream so the push refspec is unambiguous." >&2
+  exit 1
+fi
+remote="${BASH_REMATCH[1]}"
+remote_branch="${BASH_REMATCH[2]}"
+
 head_sha="$(git rev-parse HEAD)"
 
 if [ "$base_sha" = "$head_sha" ]; then
@@ -227,8 +242,11 @@ if [ "$pre_quality_grade" = "C" ] || [ "$pre_quality_grade" = "D" ]; then
   exit 1
 fi
 
-# ─── Push (no args — branch to upstream) ─────────────────────────────────────
-git push
+# ─── Push (explicit refspec — push.default is bypassed) ─────────────────────
+# Always push the local HEAD into the exact upstream branch we just evaluated.
+# Bare `git push` would inherit push.default semantics (matching/current/etc)
+# and could push refs the gate never reviewed.
+git push "$remote" "HEAD:$remote_branch"
 
 # ─── Post-push backup review (same range) ────────────────────────────────────
 echo ""
