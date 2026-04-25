@@ -3,14 +3,17 @@
 #
 # Flow:
 #   1. Capture upstream SHA (where origin/<branch> is right now).
-#   2. git push with whatever args were forwarded.
-#   3. Ask `codex review --base <that_sha>` to review everything between
+#   2. Run a pre-push Codex evaluation for the commits about to be pushed.
+#      If the quality grade is C/D (or the grade is missing), stop before push.
+#   3. git push with whatever args were forwarded.
+#   4. Ask `codex review --base <that_sha>` to review everything between
 #      the old remote position and our new HEAD (i.e. exactly the diff
 #      the remote just received).
 #
-# The review is a read-only cross-check after the commits are already on
-# the remote — it does NOT block the push. If review fails (network /
-# quota / user kills it), that's fine, the push has already landed.
+# The pre-push evaluation is the blocking gate. The post-push review is a
+# read-only cross-check after the commits are already on the remote — it does
+# NOT block the push. If post-push review fails (network / quota / user kills
+# it), that's fine, the push has already landed.
 #
 # Install the git alias once per repo:
 #   git config --local alias.pp '!./scripts/codex-review.sh'
@@ -25,60 +28,26 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 127
 fi
 
-# ─── Capture pre-push upstream SHA ───────────────────────────────────────────
-# `@{upstream}` is the tracked remote ref (e.g. origin/master). This can fail
-# on a branch that has never been pushed — we detect that and fall back below.
-base_sha="$(git rev-parse '@{upstream}' 2>/dev/null || true)"
+run_codex_range_review() {
+  local review_phase="$1"
+  local review_context="$2"
+  local review_base="$3"
+  local review_head="$4"
+  local review_count="$5"
+  local review_short_base="$6"
+  local review_short_head="$7"
 
-# ─── Push ────────────────────────────────────────────────────────────────────
-# Forward every argument (e.g. `git pp -u origin feature`, `git pp --force-with-lease`).
-git push "$@"
-push_exit=$?
-if [ $push_exit -ne 0 ]; then
-  exit $push_exit
-fi
-
-# ─── Determine review range ──────────────────────────────────────────────────
-head_sha="$(git rev-parse HEAD)"
-
-if [ -z "$base_sha" ] || [ "$base_sha" = "$head_sha" ]; then
-  # First push on this branch, OR nothing new pushed (everything was
-  # already on the remote). Fall back to reviewing the tip commit.
-  base_sha="${head_sha}^"
-fi
-
-# Base might be unreachable locally if the branch was force-pushed or
-# the old upstream commit was garbage-collected.
-if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
-  echo "⚠️  Push succeeded, but base ref $base_sha is unreachable — skipping review." >&2
-  exit 0
-fi
-
-# Empty range: nothing to review (e.g. re-push of same HEAD).
-if [ "$(git rev-list --count "${base_sha}..${head_sha}")" = "0" ]; then
-  echo "✅ Push succeeded (no new commits to review)."
-  exit 0
-fi
-
-# ─── Review ──────────────────────────────────────────────────────────────────
-commit_count="$(git rev-list --count "${base_sha}..${head_sha}")"
-short_base="$(git rev-parse --short "$base_sha")"
-short_head="$(git rev-parse --short "$head_sha")"
-
-echo ""
-echo "──────────────────────────────────────────────────────────────"
-echo "🔍 Codex review: ${short_base}..${short_head}  (${commit_count} commit(s))"
-echo "──────────────────────────────────────────────────────────────"
-echo ""
-
-# We can't use `codex review --base <sha>` with a custom prompt — those two
-# flags are mutually exclusive in codex-cli 0.124.0. Workaround: run `codex
-# exec` in read-only sandbox and let the agent invoke `git show / git log`
-# itself to inspect the range. Read-only sandbox keeps it from touching the
-# working tree even by accident.
-codex exec --sandbox read-only - <<PROMPT
+  # We can't use `codex review --base <sha>` with a custom prompt — those two
+  # flags are mutually exclusive in codex-cli 0.124.0. Workaround: run `codex
+  # exec` in read-only sandbox and let the agent invoke `git show / git log`
+  # itself to inspect the range. Read-only sandbox keeps it from touching the
+  # working tree even by accident.
+  codex exec --sandbox read-only - <<PROMPT
 # 任务
-审查仓库中从 commit \`${short_base}\` 到 \`${short_head}\` 之间这 ${commit_count} 个 commit 的所有改动，给出一次**正式**的代码审查，并按 \`EVALUATION.md\` 的 D/C/B/A/S 标准评分。这是每次 push 之后的强制复查，需要认真对待——不是 pre-merge 闲聊。
+审查仓库中从 commit \`${review_short_base}\` 到 \`${review_short_head}\` 之间这 ${review_count} 个 commit 的所有改动，给出一次**正式**的代码审查，并按 \`EVALUATION.md\` 的 D/C/B/A/S 标准评分。
+
+本次审查阶段：${review_phase}
+${review_context}
 
 # 必须按顺序完成的探索步骤（不能跳过任何一步）
 
@@ -92,14 +61,14 @@ cat EVALUATION.md
 ## Step 1 ─ 列出范围
 运行：
 \`\`\`
-git log --oneline --no-decorate ${base_sha}..${head_sha}
+git log --oneline --no-decorate ${review_base}..${review_head}
 \`\`\`
-输出会显示 ${commit_count} 个 commit。**必须**在你的推理中确认：你看到了 ${commit_count} 个 commit；如果数量不符就停下来报错。
+输出会显示 ${review_count} 个 commit。**必须**在你的推理中确认：你看到了 ${review_count} 个 commit；如果数量不符就停下来报错。
 
 ## Step 2 ─ 按文件统计改动体量
 运行：
 \`\`\`
-git diff --stat ${base_sha}..${head_sha}
+git diff --stat ${review_base}..${review_head}
 \`\`\`
 这是"全景图"——哪些文件、分别改了多少行。凭这个决定每个文件值不值得细看。
 
@@ -112,8 +81,8 @@ git show --stat --patch <sha>
 
 ## Step 4 ─（可选）聚焦阅读
 看到可疑点想看某文件的完整上下文时：
-- \`git diff ${base_sha}..${head_sha} -- <path>\` → 这段 push 对该文件的净影响
-- \`cat <path>\` / \`git show ${head_sha}:<path>\` → 新版本全文
+- \`git diff ${review_base}..${review_head} -- <path>\` → 这段 range 对该文件的净影响
+- \`cat <path>\` / \`git show ${review_head}:<path>\` → 新版本全文
 - \`rg <symbol> <path>\` → 看调用关系
 
 # 审查清单（过每一项时心里过一遍）
@@ -174,3 +143,122 @@ Claude 需停止继续改写，先按以下意见重新出方案给用户判断�
 - 评级到 \`C\` 就进入重新方案 gate：Claude 不应直接继续改代码
 
 PROMPT
+}
+
+# ─── Capture pre-push upstream SHA ───────────────────────────────────────────
+# `@{upstream}` is the tracked remote ref (e.g. origin/master). This can fail
+# on a branch that has never been pushed — we detect that and fall back below.
+base_sha="$(git rev-parse '@{upstream}' 2>/dev/null || true)"
+head_sha="$(git rev-parse HEAD)"
+
+# ─── Pre-push evaluation gate ────────────────────────────────────────────────
+pre_base_sha="$base_sha"
+pre_commit_count="0"
+
+if [ -z "$pre_base_sha" ]; then
+  # First push on this branch: review the tip commit before sending it out.
+  pre_base_sha="$(git rev-parse "${head_sha}^" 2>/dev/null || true)"
+
+  if [ -z "$pre_base_sha" ]; then
+    echo "⚠️  Cannot determine a pre-push review base — blocking push so the change is not sent without evaluation." >&2
+    exit 1
+  fi
+
+  if ! git cat-file -e "${pre_base_sha}^{commit}" 2>/dev/null; then
+    echo "⚠️  Pre-push review base $pre_base_sha is unreachable — blocking push so the change is not sent without evaluation." >&2
+    exit 1
+  fi
+
+  pre_commit_count="$(git rev-list --count "${pre_base_sha}..${head_sha}")"
+elif [ "$pre_base_sha" != "$head_sha" ]; then
+  if ! git cat-file -e "${pre_base_sha}^{commit}" 2>/dev/null; then
+    echo "⚠️  Pre-push review base $pre_base_sha is unreachable — blocking push so the change is not sent without evaluation." >&2
+    exit 1
+  fi
+
+  pre_commit_count="$(git rev-list --count "${pre_base_sha}..${head_sha}")"
+fi
+
+if [ "$pre_commit_count" != "0" ]; then
+  pre_short_base="$(git rev-parse --short "$pre_base_sha")"
+  pre_short_head="$(git rev-parse --short "$head_sha")"
+  pre_review_output="$(mktemp -t melo-pre-pp-review.XXXXXX)"
+
+  echo ""
+  echo "──────────────────────────────────────────────────────────────"
+  echo "🧪 Pre-pp evaluation: ${pre_short_base}..${pre_short_head}  (${pre_commit_count} commit(s))"
+  echo "──────────────────────────────────────────────────────────────"
+  echo ""
+
+  if ! run_codex_range_review \
+    "pre-pp evaluation（push 前阻塞 gate）" \
+    "这是 push 前评估。若质量评级为 C 或 D，本脚本会阻止 git push；请直接给出 Claude 需要如何重出方案。" \
+    "$pre_base_sha" "$head_sha" "$pre_commit_count" "$pre_short_base" "$pre_short_head" | tee "$pre_review_output"; then
+    echo "❌ Pre-pp evaluation failed — blocking push." >&2
+    exit 1
+  fi
+
+  pre_quality_grade="$(sed -nE 's/^质量评级[[:space:]]*[：:][[:space:]]*([SABCD]).*/\1/p' "$pre_review_output" | head -n 1)"
+  rm -f "$pre_review_output"
+
+  if [ -z "$pre_quality_grade" ]; then
+    echo "❌ Pre-pp evaluation did not output a parseable quality grade — blocking push." >&2
+    echo "   Expected line like: 质量评级：A —— ..." >&2
+    exit 1
+  fi
+
+  if [ "$pre_quality_grade" = "C" ] || [ "$pre_quality_grade" = "D" ]; then
+    echo "❌ Pre-pp evaluation grade is ${pre_quality_grade} — blocking push. Claude must re-plan for user approval first." >&2
+    exit 1
+  fi
+else
+  echo "✅ Pre-pp evaluation skipped (no local commits ahead of upstream)."
+fi
+
+# ─── Push ────────────────────────────────────────────────────────────────────
+# Forward every argument (e.g. `git pp -u origin feature`, `git pp --force-with-lease`).
+git push "$@"
+push_exit=$?
+if [ $push_exit -ne 0 ]; then
+  exit $push_exit
+fi
+
+# ─── Determine review range ──────────────────────────────────────────────────
+head_sha="$(git rev-parse HEAD)"
+
+if [ -z "$base_sha" ]; then
+  # First push on this branch: review the tip commit after sending it out.
+  base_sha="${head_sha}^"
+elif [ "$base_sha" = "$head_sha" ]; then
+  echo "✅ Push succeeded (no new commits to review)."
+  exit 0
+fi
+
+# Base might be unreachable locally if the branch was force-pushed or
+# the old upstream commit was garbage-collected.
+if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
+  echo "⚠️  Push succeeded, but base ref $base_sha is unreachable — skipping review." >&2
+  exit 0
+fi
+
+# Empty range: nothing to review (e.g. re-push of same HEAD).
+if [ "$(git rev-list --count "${base_sha}..${head_sha}")" = "0" ]; then
+  echo "✅ Push succeeded (no new commits to review)."
+  exit 0
+fi
+
+# ─── Review ──────────────────────────────────────────────────────────────────
+commit_count="$(git rev-list --count "${base_sha}..${head_sha}")"
+short_base="$(git rev-parse --short "$base_sha")"
+short_head="$(git rev-parse --short "$head_sha")"
+
+echo ""
+echo "──────────────────────────────────────────────────────────────"
+echo "🔍 Codex review: ${short_base}..${short_head}  (${commit_count} commit(s))"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+
+run_codex_range_review \
+  "post-push review（push 后兜底复查）" \
+  "这是 push 成功后的兜底复查。review 不会阻断已经完成的 push；若质量评级为 C 或 D，Claude 必须立即停止后续改写并重新给用户方案。" \
+  "$base_sha" "$head_sha" "$commit_count" "$short_base" "$short_head"

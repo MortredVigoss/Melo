@@ -1,6 +1,6 @@
 # Melo 代码评估标准（D/C/B/A/S）
 
-本文件是 `git pp` 后 Codex review 的评分依据，也给 Claude 在写代码前后自查用。目标不是多写评价文字，而是把“能不能继续改、要不要先重做方案”变成明确 gate。
+本文件是 `git pp` 前置 evaluation 和后置 review 的评分依据，也给 Claude 在写代码前后自查用。目标不是多写评价文字，而是把“能不能继续改、能不能 push、要不要先重做方案”变成明确 gate。
 
 ## 评分结论
 
@@ -12,7 +12,10 @@
 
 ## C/D Gate
 
-- 只要 Codex review 评级为 `C` 或 `D`，Claude 必须停止继续改代码。
+- `git pp` 必须先在 push 前评价本地即将提交到远端的 commit range。
+- 只要 Codex evaluation / review 评级为 `C` 或 `D`，Claude 必须停止继续改代码。
+- 如果 `C` 或 `D` 出现在 push 前，脚本必须阻止 push。
+- 如果 `C` 或 `D` 出现在 push 后复查，Claude 必须立即停止后续改写并进入重新方案流程。
 - Claude 必须先把 Codex 的意见整理成一份新方案，说明“准备怎么改、为什么这样改、怎么验证”。
 - 新方案必须交给用户判断；用户确认后，Claude 才能重新改写。
 - `C` 不是失败，而是提醒当前方向需要重新校准；`D` 是必须停下来重设边界。
@@ -33,9 +36,9 @@
 - 简化、重命名、合并逻辑必须放到移植成功后的独立 commit。
 - 如果 review 看到“移植 commit”里出现逻辑差异，默认至少评到 `C`，除非 diff 和测试都能证明这是必要修复。
 
-## `git pp` 后输出要求
+## `git pp` 输出要求
 
-Codex review 每次必须输出：
+Codex pre-pp evaluation 和 post-push review 每次都必须输出：
 
 - 阶段总评。
 - `质量评级：S / A / B / C / D`。

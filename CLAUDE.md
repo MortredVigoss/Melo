@@ -9,7 +9,8 @@
   2. `git commit`，用一句话描述 "为什么" 而非 "改了什么"，按仓库现有风格写 message。
   3. **`git pp`**（= push + Codex 自动审查；等价于 `./scripts/codex-review.sh`）。
      - 如果本轮修改量小、不想耗 Codex 额度，可以退回 `git push`，但任何超过 1h 的批次必须跑 `git pp`。
-     - `git pp` 在 push 成功 **之后** 才调用 `codex review`，review 不会阻断推送；即便 review 失败，commit 已经落盘到远端。
+     - `git pp` 会先在 push 前运行 Codex evaluation；只有质量评级为 `S / A / B` 才允许继续 push。
+     - push 成功 **之后** 会再跑一次 Codex review 作为兜底复查；后审不会阻断已经完成的 push。
      - Review 用中文输出，阶段总评 + D/C/B/A/S 质量评级 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
      - 如果 Codex review 评级为 `C` 或 `D`，Claude 必须停止继续改写，先按 Codex 意见重新给出方案，让用户判断后再动代码。
 - 中途如果到了一个天然节点（feature 完成、测试全绿、bug 定位到根因修好），即便不满 1 小时也应该提交，不必死等整点。
@@ -52,9 +53,11 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 - 压缩是 **幂等** 的——每次触发都只压旧条目，最新的永远是完整格式。
 - 压缩后要和正文改动一起进入同一个 commit，message 前缀加 `progress: `。
 
-## 4. D/C/B/A/S 质量评估（每次 git pp 后）
+## 4. D/C/B/A/S 质量评估（git pp 前置 gate + 后置复查）
 
-- `EVALUATION.md` 是每次 `git pp` 后 Codex review 的评分依据。
+- `EVALUATION.md` 是每次 `git pp` 前置 evaluation 和后置 review 的评分依据。
+- `git pp` 必须先评估本地即将 push 的 commit range；如果评级为 `C` 或 `D`，脚本必须停止，不允许 push。
+- push 成功后再跑一次同范围 review，作为远端落盘后的兜底复查。
 - `S / A / B`：可以继续推进；其中 `B` 的建议要记录并安排修。
 - `C`：方向或实现已有明显风险。Claude 不允许直接继续重写，必须先把 Codex 的整改意见整理成新方案，交给用户判断。
 - `D`：停止当前实现路线。Claude 必须重新界定问题、风险和验证方式，经用户确认后再改。
