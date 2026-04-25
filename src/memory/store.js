@@ -79,8 +79,17 @@ function tryLoadVec(database) {
  * Pre: caller has already attempted to load sqlite-vec into `database`
  * and tells us whether that succeeded via `vecLoaded`. We use it to
  * decide whether to create the vec_memories virtual table.
+ *
+ * Returns `{ vecAvailable }` so callers know whether the vec_memories
+ * virtual table is actually usable on `database`. fix-8: even when
+ * `vecLoaded === true`, the CREATE VIRTUAL TABLE can still fail (extension
+ * loaded but vec0 module rejected — happens on disposable handles), and
+ * downstream code that prepares INSERT/DELETE against `vec_memories` must
+ * see the failure. Without this return value the disposable-store path
+ * would prepare statements against a non-existent table.
  */
 function applyMemoryStoreSchema(database, vecLoaded) {
+  let vecAvailable = false;
   database.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 5000;
@@ -236,12 +245,19 @@ function applyMemoryStoreSchema(database, vecLoaded) {
           embedding float[${EMBEDDING_DIMS}]
         );
       `);
+      // Verify the table is actually present — `IF NOT EXISTS` swallows
+      // "module not found" silently on some sqlite-vec builds.
+      const vecPresent = database.prepare(
+        `SELECT 1 FROM sqlite_master WHERE type='table' AND name='vec_memories'`,
+      ).get();
+      vecAvailable = Boolean(vecPresent);
     } catch (err) {
       debugWarn('memory.store.vec', 'vec_memories create failed, disabling vector search', err?.message || err);
-      // Caller's vec-loaded flag becomes effectively false on failure.
-      // For the cached singleton path (getDb), this is wired below.
+      vecAvailable = false;
     }
   }
+
+  return { vecAvailable };
 }
 
 /**
@@ -263,14 +279,18 @@ function withDisposableStoreAt(storePath, work) {
       debugWarn('memory.store.vec', 'loadExtension failed (disposable db)', err?.message || err);
     }
   }
-  applyMemoryStoreSchema(tempDb, vecLoadedHere);
+  // fix-8: respect what the schema apply actually achieved. Even if the
+  // extension loaded successfully, CREATE VIRTUAL TABLE vec_memories can
+  // still fail; downstream `_runReplaceMemoriesOn` prepares statements
+  // against `vec_memories` based on this flag, so we must not over-claim.
+  const { vecAvailable } = applyMemoryStoreSchema(tempDb, vecLoadedHere);
   try {
     tempDb.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA busy_timeout = 5000;
       PRAGMA foreign_keys = ON;
     `);
-    return work(tempDb, vecLoadedHere);
+    return work(tempDb, vecAvailable);
   } finally {
     try { tempDb.close(); } catch {}
   }
@@ -313,18 +333,13 @@ function getDb() {
     PRAGMA foreign_keys = ON;
   `);
 
-  applyMemoryStoreSchema(db, _vecLoaded);
-
-  // applyMemoryStoreSchema may have decided vec0 was unusable even though
-  // tryLoadVec succeeded (e.g. CREATE VIRTUAL TABLE failed). Mirror that
-  // back into the module-level flag so subsequent reads avoid vec paths.
-  if (_vecLoaded) {
-    const vecPresent = db.prepare(
-      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='vec_memories'`,
-    ).get();
-    if (!vecPresent) {
-      _vecLoaded = false;
-    }
+  // fix-8: applyMemoryStoreSchema returns whether vec_memories actually
+  // exists on the handle after the schema apply. If CREATE VIRTUAL TABLE
+  // failed, mirror that back into the module-level flag so subsequent
+  // reads/writes avoid vec paths.
+  const { vecAvailable } = applyMemoryStoreSchema(db, _vecLoaded);
+  if (_vecLoaded && !vecAvailable) {
+    _vecLoaded = false;
   }
 
   return db;

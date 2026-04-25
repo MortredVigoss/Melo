@@ -188,6 +188,28 @@ test('readStateSnapshot repair-save: memory store writes land in the captured ho
       existsSync(join(homeA, 'desktop', 'store.sqlite')),
       `home A's store.sqlite must be present (got home A files: ${readdirSync(join(homeA, 'desktop')).join(', ')})`,
     );
+    // fix-8 strengthening: don't just check that the file exists — open it
+    // directly and verify the captured chat's message was indexed into the
+    // `memories` table. File existence alone could pass even if the
+    // disposable handle's schema apply silently failed and replaceMemories
+    // never wrote rows.
+    const { DatabaseSync } = await import('node:sqlite');
+    const inspectDb = new DatabaseSync(join(homeA, 'desktop', 'store.sqlite'));
+    try {
+      const messageRow = inspectDb.prepare(
+        `SELECT id, namespace, text FROM memories WHERE namespace = ? AND id LIKE ?`,
+      ).get(`chat:${CHAT_ID}`, `message:chat:${CHAT_ID}:%`);
+      assert.ok(
+        messageRow,
+        `home A's memories table must contain the indexed chat message (got rows: ${JSON.stringify(inspectDb.prepare('SELECT id, namespace FROM memories LIMIT 10').all())})`,
+      );
+      assert.ok(
+        String(messageRow.text || '').includes('home A captured-load message'),
+        `indexed memory row text must contain the original message content (got: ${JSON.stringify(messageRow)})`,
+      );
+    } finally {
+      try { inspectDb.close(); } catch {}
+    }
     // Assert: home B's store.sqlite was NOT created. If the leak persists,
     // syncMemoryStoreSnapshot would have either created home B's file or
     // written into the cached handle (which by env flip time is bound to

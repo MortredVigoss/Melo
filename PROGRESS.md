@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）
+
+- 做了什么：
+  - **`src/memory/store.js`**：`applyMemoryStoreSchema(database, vecLoaded)` 改为返回 `{ vecAvailable }`。`vecAvailable` 反映 `CREATE VIRTUAL TABLE vec_memories` 实际是否成功（用 `SELECT 1 FROM sqlite_master` 验证表存在；`IF NOT EXISTS` 在某些 sqlite-vec 构建上会静默吞掉 "module not found"）。
+  - **`getDb()`**：用返回值的 `vecAvailable` 决定 `_vecLoaded` 是否回退到 false——替换原来的"先 apply、再单独跑 SELECT 验证"两步逻辑（语义不变，避免重复 SQL）。
+  - **`withDisposableStoreAt()`**：把返回的 `vecAvailable` 传给 `work(tempDb, vecAvailable)`，**而不是**之前传入的 `vecLoadedHere`（loadExtension 成功标志）。Codex fix-7 review 抓到的精确 bug：disposable handle 上即使 extension 加载成功，CREATE VIRTUAL TABLE 仍可能失败，下游 `_runReplaceMemoriesOn` 用旧的 `vecLoadedHere` 准备 INSERT/DELETE 语句，会 prepare 不存在的 `vec_memories` 表崩溃。
+  - **`src/state/stateLoadContextChain.test.js` fix-7 测试加固**：除 store.sqlite 文件存在 + home B 不存在两个断言外，新增直接打开 home A 的 sqlite，`SELECT id, namespace, text FROM memories WHERE namespace = 'chat:CHAT_ID' AND id LIKE 'message:chat:CHAT_ID:%'` 验证消息内容真的写进了 memories 表。文件存在不等于行写入——schema apply 静默失败的话仍可能落出空 db。
+- 为什么：第 8 轮 C 评级的发现："applyMemoryStoreSchema 捕获 vec_memories 建表失败后没有把 vecLoadedHere 降为 false，work(tempDb, vecLoadedHere) 仍会让 _runReplaceMemoriesOn 在 store.js:1135 prepare 不存在的 vec_memories"。把"是否真正可用"作为函数返回值——而不是依赖外层副作用（如 SELECT 验证再回写 _vecLoaded）——杜绝下游误用。
+- 回归：`stateLoadContextChain.test.js` 3/3 绿；memory + state 套件 324/324 绿。
+- 产出 / 提交哈希：(待提交，gate 决定能不能 push)
+  - `src/memory/store.js`
+  - `src/state/stateLoadContextChain.test.js`
+
 ## 2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）
 
 - 做了什么（用户选 (i) — 把 home 升格为 first-class context object，贯穿整个 state I/O 子系统）：
