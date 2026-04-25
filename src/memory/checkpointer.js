@@ -3,13 +3,23 @@ import { join } from 'node:path';
 import { getMeloHome } from '../config.js';
 import { atomicWriteJson } from '../storage.js';
 
-// THREADS_DIR was originally a module-load-time const. Phase 7d-5α-A1
-// commit 9 follow-up audit caught that this captures MELO_HOME at first
-// import — the same bug class that hit STATE_PATH and AGENTS_DIR after
-// the state-machine moved to its own module. Fix: lazy resolution every
-// time the path is needed. CLAUDE.md §5 mechanical adjustment.
-function threadsDir() {
+// `threadsDir` resolution evolved across multiple Phase 7d-5α-A1 fix
+// rounds:
+//   • fix-2 (lazy): replaced a module-load-time const with a function
+//     so MELO_HOME swaps at test time picked up the right path.
+//   • fix-6 (current — CLAUDE.md §6): lazy reads alone aren't enough
+//     across async boundaries inside readStateSnapshot's load chain.
+//     Every public op now accepts an optional explicit `threadsDir`
+//     argument; when provided, the caller has captured the home up
+//     front and the op operates entirely under that captured path.
+//     Default-undefined preserves the legacy lazy behavior for
+//     callers that aren't part of a multi-step orchestration (UI
+//     handlers, single-shot writes from the chat path, etc.).
+function defaultThreadsDir() {
   return join(getMeloHome(), 'desktop', 'threads');
+}
+function resolveThreadsDir(explicit) {
+  return explicit || defaultThreadsDir();
 }
 const THREAD_CHECKPOINT_VERSION = 1;
 const MAX_CACHE_ENTRIES = 48;
@@ -26,31 +36,40 @@ const MAX_CACHE_ENTRIES = 48;
 // behavior as before. Production has one home → one inner Map → behavior
 // equivalent. CLAUDE.md §5 mechanical adjustment, scope limited to the
 // cross-module isolation requirement.
-const checkpointCacheByHome = new Map();
-function getCacheBucket() {
-  const home = getMeloHome();
-  let bucket = checkpointCacheByHome.get(home);
+// fix-3 keyed buckets by `getMeloHome()`. fix-6: key by the resolved
+// threadsDir instead so the bucket key is always 1:1 with the actual
+// disk path being read/written. When the caller supplies an explicit
+// threadsDir for a captured load chain, both the path and the cache
+// bucket trace back to the same source — eliminating the last cache-
+// vs-disk consistency hazard.
+const checkpointCacheByDir = new Map();
+function getCacheBucket(explicitThreadsDir) {
+  const dir = resolveThreadsDir(explicitThreadsDir);
+  let bucket = checkpointCacheByDir.get(dir);
   if (!bucket) {
     bucket = new Map();
-    checkpointCacheByHome.set(home, bucket);
+    checkpointCacheByDir.set(dir, bucket);
   }
   return bucket;
 }
 
-function checkpointPathFor(threadId) {
-  return join(threadsDir(), `${encodeURIComponent(String(threadId || '').trim())}.json`);
+function checkpointPathFor(threadId, explicitThreadsDir) {
+  return join(
+    resolveThreadsDir(explicitThreadsDir),
+    `${encodeURIComponent(String(threadId || '').trim())}.json`,
+  );
 }
 
 function clonePayload(payload) {
   return payload ? structuredClone(payload) : null;
 }
 
-function remember(threadId, payload) {
+function remember(threadId, payload, explicitThreadsDir) {
   if (!threadId || !payload) {
     return payload;
   }
 
-  const bucket = getCacheBucket();
+  const bucket = getCacheBucket(explicitThreadsDir);
   if (bucket.has(threadId)) {
     bucket.delete(threadId);
   }
@@ -76,21 +95,33 @@ function normalizeCheckpoint(payload = {}) {
   };
 }
 
-export async function loadThreadCheckpoint(threadId) {
+/**
+ * Load a thread checkpoint by id.
+ *
+ * @param {string} threadId
+ * @param {{ threadsDir?: string }} [options]
+ *   • `threadsDir` — explicit directory to read from. CLAUDE.md §6:
+ *     callers inside a multi-await orchestration (e.g. readStateSnapshot's
+ *     hydrateChatThreads pass) should supply the threadsDir captured at
+ *     the top of the chain so reads under that orchestration cannot
+ *     leak across MELO_HOME flips. When omitted, falls back to lazy
+ *     resolution from current `getMeloHome()`.
+ */
+export async function loadThreadCheckpoint(threadId, { threadsDir } = {}) {
   const normalizedThreadId = String(threadId || '').trim();
   if (!normalizedThreadId) {
     return null;
   }
 
-  const bucket = getCacheBucket();
+  const bucket = getCacheBucket(threadsDir);
   if (bucket.has(normalizedThreadId)) {
-    return clonePayload(remember(normalizedThreadId, bucket.get(normalizedThreadId)));
+    return clonePayload(remember(normalizedThreadId, bucket.get(normalizedThreadId), threadsDir));
   }
 
   try {
-    const raw = await readFile(checkpointPathFor(normalizedThreadId), 'utf8');
+    const raw = await readFile(checkpointPathFor(normalizedThreadId, threadsDir), 'utf8');
     const parsed = normalizeCheckpoint(JSON.parse(raw));
-    remember(normalizedThreadId, parsed);
+    remember(normalizedThreadId, parsed, threadsDir);
     return clonePayload(parsed);
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
@@ -101,38 +132,56 @@ export async function loadThreadCheckpoint(threadId) {
   }
 }
 
-export async function saveThreadCheckpoint(threadId, payload = {}) {
+/**
+ * Save a thread checkpoint to disk.
+ *
+ * @param {string} threadId
+ * @param {object} [payload]
+ * @param {{ threadsDir?: string }} [options]
+ *   • `threadsDir` — explicit directory to write to. Same semantics as
+ *     loadThreadCheckpoint above.
+ */
+export async function saveThreadCheckpoint(threadId, payload = {}, { threadsDir } = {}) {
   const normalizedThreadId = String(threadId || '').trim();
   if (!normalizedThreadId) {
     throw new Error('Thread checkpoint requires a thread id.');
   }
 
-  await mkdir(threadsDir(), { recursive: true });
+  const dir = resolveThreadsDir(threadsDir);
+  await mkdir(dir, { recursive: true });
   const normalized = normalizeCheckpoint({
     ...payload,
     threadId: normalizedThreadId,
   });
-  await atomicWriteJson(checkpointPathFor(normalizedThreadId), normalized);
-  remember(normalizedThreadId, normalized);
+  await atomicWriteJson(checkpointPathFor(normalizedThreadId, threadsDir), normalized);
+  remember(normalizedThreadId, normalized, threadsDir);
   return clonePayload(normalized);
 }
 
-export async function deleteThreadCheckpoint(threadId) {
+export async function deleteThreadCheckpoint(threadId, { threadsDir } = {}) {
   const normalizedThreadId = String(threadId || '').trim();
   if (!normalizedThreadId) {
     return;
   }
 
-  getCacheBucket().delete(normalizedThreadId);
-  await rm(checkpointPathFor(normalizedThreadId), { force: true });
+  getCacheBucket(threadsDir).delete(normalizedThreadId);
+  await rm(checkpointPathFor(normalizedThreadId, threadsDir), { force: true });
 }
 
-export async function pruneThreadCheckpoints(keepThreadIds = []) {
-  await mkdir(threadsDir(), { recursive: true });
+/**
+ * Remove on-disk thread checkpoints whose ids are NOT in `keepThreadIds`,
+ * and drop their cached entries.
+ *
+ * @param {string[]} [keepThreadIds]
+ * @param {{ threadsDir?: string }} [options]
+ */
+export async function pruneThreadCheckpoints(keepThreadIds = [], { threadsDir } = {}) {
+  const dir = resolveThreadsDir(threadsDir);
+  await mkdir(dir, { recursive: true });
   const keep = new Set(keepThreadIds.map(value => String(value || '').trim()).filter(Boolean));
-  const entries = await readdir(threadsDir(), { withFileTypes: true });
+  const entries = await readdir(dir, { withFileTypes: true });
 
-  const bucket = getCacheBucket();
+  const bucket = getCacheBucket(threadsDir);
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) {
       continue;
@@ -144,7 +193,7 @@ export async function pruneThreadCheckpoints(keepThreadIds = []) {
     }
 
     bucket.delete(threadId);
-    await rm(join(threadsDir(), entry.name), { force: true });
+    await rm(join(dir, entry.name), { force: true });
   }
 }
 
@@ -152,26 +201,28 @@ export async function pruneThreadCheckpoints(keepThreadIds = []) {
  * Invalidate cached thread checkpoints.
  *
  * @param {string | null} threadId — null/omitted clears the entire cache for
- *   the current home (or every home, when `allHomes` is true).
- * @param {{ allHomes?: boolean }} [options]
- *   • `allHomes: true` clears across every recorded MELO_HOME bucket — used
- *     by tests that swap homes and want a clean slate. Default scope is
- *     the current home only (Q4-b option from Phase 7d-5α-A1 followup).
+ *   the targeted directory (or every directory, when `allHomes` is true).
+ * @param {{ allHomes?: boolean, threadsDir?: string }} [options]
+ *   • `allHomes: true` clears across every recorded threadsDir bucket —
+ *     used by tests that swap homes and want a clean slate.
+ *   • `threadsDir` — explicit directory to scope to (matches the
+ *     bucketing key in fix-6's by-dir cache). Default scope is the
+ *     directory derived from current `getMeloHome()`.
  */
-export function invalidateThreadCheckpointCache(threadId = null, { allHomes = false } = {}) {
+export function invalidateThreadCheckpointCache(threadId = null, { allHomes = false, threadsDir } = {}) {
   if (allHomes) {
     if (threadId == null) {
-      checkpointCacheByHome.clear();
+      checkpointCacheByDir.clear();
       return;
     }
     const id = String(threadId || '').trim();
-    for (const bucket of checkpointCacheByHome.values()) {
+    for (const bucket of checkpointCacheByDir.values()) {
       bucket.delete(id);
     }
     return;
   }
 
-  const bucket = getCacheBucket();
+  const bucket = getCacheBucket(threadsDir);
   if (threadId == null) {
     bucket.clear();
     return;

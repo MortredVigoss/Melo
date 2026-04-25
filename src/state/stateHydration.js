@@ -303,12 +303,21 @@ function threadCheckpointMatches(checkpoint, chat, threadContext) {
   );
 }
 
-export async function hydrateChatThreads(state) {
+/**
+ * @param {object} state
+ * @param {{ threadsDir?: string }} [options] — when provided, every
+ *   loadThreadCheckpoint call in this hydrate pass uses the same
+ *   captured threadsDir. CLAUDE.md §6: protects the load chain from
+ *   MELO_HOME flips happening across the disk-read awaits inside this
+ *   loop. Omitted = legacy lazy resolution (still works for any
+ *   single-shot caller outside readStateSnapshot's orchestration).
+ */
+export async function hydrateChatThreads(state, { threadsDir } = {}) {
   let repaired = false;
   const hydratedChats = [];
 
   for (const storedChat of Array.isArray(state.chats) ? state.chats : []) {
-    const checkpoint = await loadThreadCheckpoint(storedChat.id);
+    const checkpoint = await loadThreadCheckpoint(storedChat.id, { threadsDir });
     const hasLegacyMessages = Array.isArray(storedChat.messages) && storedChat.messages.length > 0;
     const sourceMessages = Array.isArray(checkpoint?.messages)
       ? checkpoint.messages

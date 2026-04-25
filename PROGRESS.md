@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）
+
+- 做了什么（用户选 (i) — 把 home 升格为 first-class context object，贯穿整个 state I/O 子系统）：
+  - **checkpointer.js**：`loadThreadCheckpoint` / `saveThreadCheckpoint` / `pruneThreadCheckpoints` / `deleteThreadCheckpoint` / `invalidateThreadCheckpointCache` 全部接受可选 `{ threadsDir }` 参数。提供时使用显式目录；不提供时 lazy 解析（向后兼容）。
+  - **缓存改 by-dir 索引**：原 `checkpointCacheByHome`（以 `getMeloHome()` 为 key）改为 `checkpointCacheByDir`（以 resolved threadsDir 为 key）。bucket 与磁盘路径 1:1 对应——不会再发生"buck 命中但磁盘指向另一个目录"。
+  - **stateHydration.js**：`hydrateChatThreads(state, { threadsDir? })` 接受参数，贯穿到内部的 `loadThreadCheckpoint` 调用。
+  - **chatPersistence.js**：`persistChatThreads(chats, { threadsDir? })` 接受参数，贯穿到 `saveThreadCheckpoint` + `pruneThreadCheckpoints`。
+  - **stateStore.js — 核心整合**：
+    - `captureLoadContext()` 扩展为 `{ home, stateFilePath, threadsDir, getAgentMarkdownPaths }`
+    - `readStateSnapshot` 一次性捕获 ctx，把 `threadsDir` 传给 `hydrateChatThreads`，把整个 `ctx` 传给 `saveState`（用于 repair-save）
+    - `saveState({ ctx? })` 和 `persistStateAtomically({ ctx? })` 接受 ctx 选项；如果有就用 ctx 的 `stateFilePath` + `threadsDir`，否则 lazy fallback（保留 `capturedStatePath` 兼容老调用方但不推荐）
+  - **新增 `src/state/stateLoadContextChain.test.js`（2 个测试）**：
+    1. `readStateSnapshot: thread checkpoint reads honor the home captured at the top of the load chain` —— 在 home A 和 home B 各放一份**相同 chat id 不同内容**的 checkpoint，readStateSnapshot 启动后立即切 env，断言 hydrate 回来的 chat.messages 是 home A 的内容。这是抓 fix-5 漏掉的"hydrateChatThreads 跨 home 串读"的精确回归测试。
+    2. `readStateSnapshot repair-save: thread checkpoint writes land in the captured home` —— state.json 有 chat with inline messages（触发 hydration 修复 + repair-save），启动 load 后切 env，断言 home A 的 threads/ 收到 checkpoint 文件、home B 的 threads/ 保持空。
+- 为什么：6 次 C 评级的核心信号是**state machine 与 memory 子系统的 home 处理深度纠缠**——单纯逐函数 capture 不够，需要在外层 orchestration 一次捕获、贯穿整个调用 chain 的所有 home-derived 路径。fix-6 把 ctx 作为 first-class 参数传穿了 state I/O 全栈（read + hydrate + repair-save 三条路径）。
+- 关于剩余的潜在 leak（已确认不修）：
+  - `mergeDiskSkillsIntoState` 走的是 `os.homedir()` 派生的 `SKILLS_DISK_ROOT`，**不读 MELO_HOME**——不属于本类 bug。
+  - `memory/store.js` 有自己的 `_resetStoreForTests` API + 缓存 sqlite 句柄，跨 home 切换需要测试主动 reset，不是 fix-6 的范围。
+- 产出 / 提交哈希：未提交
+  - `src/memory/checkpointer.js`：4 个 op 接受 `{ threadsDir }`，缓存改 by-dir
+  - `src/state/stateHydration.js`：`hydrateChatThreads` 接受 `{ threadsDir }`
+  - `src/state/chatPersistence.js`：`persistChatThreads` 接受 `{ threadsDir }`
+  - `src/state/stateStore.js`：ctx 扩展 + 贯穿 readStateSnapshot 到 saveState
+  - `src/state/stateLoadContextChain.test.js`（新，2 tests）
+  - 回归：services + desktopStore + state + memory 套件 616/616（+2 from new chain isolation tests）；跨域 281/281 全绿
+
+## 2026-04-26 00:28 — git pp 改成 push 前先 evaluation
+
+- 做了什么：把 `scripts/codex-review.sh` 从“push 后复查”升级成“双门”流程：先对本地即将 push 的 commit range 做 pre-pp evaluation，解析 `质量评级`；如果评级为 `C` / `D`，或没有按格式输出评分，脚本直接阻止 `git push`。push 成功后仍保留 post-push review 作为兜底复查。
+- 为什么：用户指出 evaluation 放在 `pp` 之后太晚，问题 commit 已经到了远端。现在改成先拦住坏方向，再用后审兜底，符合 `EVALUATION.md` 的 C/D gate。
+- 产出 / 提交哈希：未提交
+
 ## 2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）
 
 - 做了什么（2063d9e 触发的第 5 次 C 评级修复——这次是整体 capture chain 一致性）：

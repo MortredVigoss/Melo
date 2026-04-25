@@ -82,23 +82,30 @@ let stateWriteQueue = Promise.resolve();
 
 // Build a home-bound load context. CLAUDE.md §6: every async hop inside
 // readStateSnapshot uses the SAME captured home. The state.json path,
-// the agents/ helper factory, the synced-flag key, and the prime
-// scheduling all derive from this one capture — no later getMeloHome()
-// reads, no lazy resolvers.
+// the threads dir, the agents/ helper factory, the synced-flag key,
+// and the prime scheduling all derive from this one capture — no later
+// getMeloHome() reads, no lazy resolvers.
+//
+// fix-6 expansion: ctx now includes threadsDir + bound markdown helpers.
+// Every state-machine helper that touches a home-derived path
+// (hydrateChatThreads, persistChatThreads via the chain, the four
+// checkpointer ops) accepts this ctx and uses its threadsDir.
 function captureLoadContext() {
   const home = getMeloHome();
   const stateFilePath = join(home, 'desktop', 'state.json');
+  const threadsDir = join(home, 'desktop', 'threads');
   const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
     agentsDir: join(home, 'desktop', 'agents'),
   });
-  return { home, stateFilePath, getAgentMarkdownPaths };
+  return { home, stateFilePath, threadsDir, getAgentMarkdownPaths };
 }
 
 export async function readStateSnapshot({ persistRepair = true } = {}) {
   // Capture once at entry. Any later getMeloHome() reads inside this
   // function (or any function it awaits into) would be a §6 violation
   // and would re-introduce the cross-home leak Codex caught at fix-4.
-  const { home, stateFilePath, getAgentMarkdownPaths } = captureLoadContext();
+  const ctx = captureLoadContext();
+  const { home, stateFilePath, threadsDir, getAgentMarkdownPaths } = ctx;
 
   try {
     const raw = await readFile(stateFilePath, 'utf8');
@@ -112,7 +119,7 @@ export async function readStateSnapshot({ persistRepair = true } = {}) {
       markSyncedFor(home);
       queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
     }
-    const threadRepaired = await hydrateChatThreads(state);
+    const threadRepaired = await hydrateChatThreads(state, { threadsDir });
     await mergeDiskSkillsIntoState(state);
 
     // Auto-prune legacy excess chats (from before the MAX_RECENT_CHATS limit was enforced).
@@ -121,10 +128,10 @@ export async function readStateSnapshot({ persistRepair = true } = {}) {
     const prunedExcess = excessBefore > (state.chats || []).length;
 
     if ((repaired || markdownImported || threadRepaired || prunedExcess) && persistRepair) {
-      // Pass the captured stateFilePath through so the repair save also
-      // writes to the home we read from, regardless of any env flip
-      // during this load chain.
-      await saveState(state, { capturedStatePath: stateFilePath });
+      // Pass the entire captured ctx so the repair save also writes
+      // state.json + thread checkpoints to the home we read from,
+      // regardless of any env flip during this load chain.
+      await saveState(state, { ctx });
     }
 
     return state;
@@ -134,7 +141,7 @@ export async function readStateSnapshot({ persistRepair = true } = {}) {
       await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
       markSyncedFor(home);
       queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
-      await hydrateChatThreads(state);
+      await hydrateChatThreads(state, { threadsDir });
       await mergeDiskSkillsIntoState(state);
       return state;
     }
@@ -152,17 +159,21 @@ export async function loadState() {
  *
  * @param {object} state — desktop state to persist.
  * @param {object} [options]
- *   • capturedStatePath — when provided, write to this exact path instead
- *     of resolving from current MELO_HOME. CLAUDE.md §6: lets callers like
- *     readStateSnapshot's repair-save tunnel the home captured at the top
- *     of the load chain through the async write path, even if env flips.
- *     Falls back to lazy `getMeloHome()` resolution for callers (like
- *     desktopStore's updateStateAtomically) that don't have a captured
- *     path of their own.
+ *   • ctx — full captured load context `{ home, stateFilePath,
+ *     threadsDir, getAgentMarkdownPaths }`. CLAUDE.md §6: lets callers
+ *     like readStateSnapshot's repair-save tunnel the home captured at
+ *     the top of the load chain through the entire async write path
+ *     (state.json AND thread checkpoints), even if env flips during
+ *     the await. Falls back to lazy resolution for callers without a
+ *     ctx of their own (e.g. desktopStore's updateStateAtomically).
+ *   • capturedStatePath — DEPRECATED in favor of `ctx`; kept for any
+ *     caller still using the older shape from fix-5.
  */
-export async function persistStateAtomically(state, { capturedStatePath = null } = {}) {
-  await persistChatThreads(state.chats);
-  const targetPath = capturedStatePath || join(getMeloHome(), 'desktop', 'state.json');
+export async function persistStateAtomically(state, { ctx = null, capturedStatePath = null } = {}) {
+  const threadsDir = ctx?.threadsDir;
+  await persistChatThreads(state.chats, { threadsDir });
+  const targetPath =
+    ctx?.stateFilePath || capturedStatePath || join(getMeloHome(), 'desktop', 'state.json');
   await atomicWriteJson(targetPath, {
     ...state,
     chats: state.chats.map(serializeChatForPersistence),
@@ -170,10 +181,10 @@ export async function persistStateAtomically(state, { capturedStatePath = null }
   syncMemoryStoreSnapshot(state);
 }
 
-export async function saveState(state, { capturedStatePath = null } = {}) {
+export async function saveState(state, { ctx = null, capturedStatePath = null } = {}) {
   stateWriteQueue = stateWriteQueue
     .catch(() => {})
-    .then(() => persistStateAtomically(state, { capturedStatePath }));
+    .then(() => persistStateAtomically(state, { ctx, capturedStatePath }));
   await stateWriteQueue;
   return state;
 }

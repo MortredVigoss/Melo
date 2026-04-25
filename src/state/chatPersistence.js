@@ -48,7 +48,16 @@ export function serializeChatForPersistence(chat) {
   };
 }
 
-export async function persistChatThreads(chats = []) {
+/**
+ * @param {Array} chats
+ * @param {{ threadsDir?: string }} [options] — explicit threadsDir to
+ *   route every saveThreadCheckpoint + pruneThreadCheckpoints call
+ *   through. CLAUDE.md §6: required when called from inside a captured
+ *   load chain (e.g. readStateSnapshot's repair-save) so the disk
+ *   target stays pinned to the home that started the chain. Omitted =
+ *   legacy lazy resolution.
+ */
+export async function persistChatThreads(chats = [], { threadsDir } = {}) {
   const keepThreadIds = [];
 
   for (const chat of chats) {
@@ -62,9 +71,13 @@ export async function persistChatThreads(chats = []) {
     }
 
     const threadContext = ensureChatThreadContext(chat);
-    await saveThreadCheckpoint(chat.id, buildThreadCheckpointPayload(chat, threadContext));
+    await saveThreadCheckpoint(
+      chat.id,
+      buildThreadCheckpointPayload(chat, threadContext),
+      { threadsDir },
+    );
     keepThreadIds.push(chat.id);
   }
 
-  await pruneThreadCheckpoints(keepThreadIds);
+  await pruneThreadCheckpoints(keepThreadIds, { threadsDir });
 }
