@@ -12,7 +12,7 @@
   - `mergeDiskSkillsIntoState` 是 `readStateSnapshot` 调用的 4 个 helper 之一（commit 9 stateStore 必须能 import 它）。
   - 它的 3 个 deps（`loadSkillsFromDisk` / `BUILTIN_SKILLS` / `normalizeCustomSkill`）全部已在外部模块（agents/skillsDisk.js + services/skill/skillService.js），是真正的纯叶子。
   - 在 desktopStore 里另有 1 个外部 caller `reloadDiskSkills`（用户手动"重新扫描磁盘技能"按钮）—— 这个 caller 现在 import from diskSkills.js。
-- 产出 / 提交哈希：未提交
+- 产出 / 提交哈希：`c332b07`
   - 新增 `src/state/diskSkills.js`（~65 行含注释，1 个 export）
   - `src/desktopStore.js` 净减约 39 行
   - 回归：services + desktopStore + search + state + agents 套件 434/434；跨域 images+tools+media+memory+openai 全绿
