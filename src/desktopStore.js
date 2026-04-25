@@ -438,6 +438,7 @@ import {
   pruneExcessChats,
   assertCanCreateChat,
 } from './state/chatPruning.js';
+import { serializeChatForPersistence } from './state/chatPersistence.js';
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -1056,23 +1057,8 @@ async function hydrateChatThreads(state) {
   return repaired;
 }
 
-function serializeChatForPersistence(chat) {
-  return {
-    id: chat.id,
-    title: chat.title,
-    mode: chat.mode,
-    projectId: chat.projectId || null,
-    agentId: chat.agentId || 'main',
-    source: chat.source || 'desktop',
-    chatType: chat.chatType || 'private',
-    chatTitle: chat.chatTitle || '',
-    messageThreadId: chat.messageThreadId || null,
-    externalThreadKey: chat.externalThreadKey || '',
-    locked: Boolean(chat.locked),
-    createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-  };
-}
+// serializeChatForPersistence moved to src/state/chatPersistence.js in
+// Phase 7d-5α-A1 (commit 2/9). Re-imported at the top of this file.
 
 async function persistChatThreads(chats = []) {
   const keepThreadIds = [];

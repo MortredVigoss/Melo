@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-25 22:30 — Phase 7d-5α-A1 (Commit 2/9)：抽出 serializeChatForPersistence 纯叶子
+
+- 做了什么：把 desktopStore 里 `serializeChatForPersistence`（17 行 pure object reshape）搬到新建的 `src/state/chatPersistence.js`。
+- 为什么：
+  - 上一轮 Commit 1 chatPruning 拿到 A 评级、零 findings，path A1 范式有效。继续按 leaf-first 顺序推进。
+  - `serializeChatForPersistence` 是 `persistStateAtomically` 调用的三个 helper 之一，本身完全无依赖（纯对象 reshape），是这一轮唯一可以独立搬走的。
+  - 同 layer 的 `persistChatThreads` 暂时**不**搬——它依赖 `ensureChatThreadContext`（被 6 处调用，跨 chat 域非纯 state-store 范畴），需要一个单独 commit (Commit 3) 处理。
+- 调研发现的小幅计划修订：原"7 个 commit"扩展到"9 个 commit"（多出 chatThreadContext 模块、且 chatPersistence 分两次 commit 才完整）。
+- 产出 / 提交哈希：未提交
+  - 新增 `src/state/chatPersistence.js`（~35 行含注释，1 个 export）
+  - `src/desktopStore.js` 净减约 14 行（删 1 处定义 + 加 1 行 import）
+  - 回归：services + desktopStore + search + state 套件 293/293；跨域 583/583 全绿
+
 ## 2026-04-25 22:00 — Phase 7d-5α-A1 (Commit 1/7)：抽出 chatPruning 模块（撤回 cec12c3 错误方向，重做 path A）
 
 - 做了什么：
