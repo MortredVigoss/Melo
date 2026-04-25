@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）
+
+- 做了什么（2063d9e 触发的第 5 次 C 评级修复——这次是整体 capture chain 一致性）：
+  - `readStateSnapshot` 入口处通过 `captureLoadContext()` **一次性捕获** home + stateFilePath + getAgentMarkdownPaths，整个 load chain 共享这一组捕获值。函数体内部**零 `getMeloHome()` 读取**——所有需要 home 的 helper（`isMarkdownSyncedFor` / `markSyncedFor` / `importAgentMarkdownFiles` / `queueAgentMarkdownPrime` / 修复保存 `saveState`）都接受显式参数。
+  - `markdownSyncedByHome` 的 helper 重命名为 `isMarkdownSyncedFor(home)` / `markSyncedFor(home)` —— 接受显式 home 参数而不是各自再读 env。
+  - `importAgentMarkdownFiles(state, providedGetAgentMarkdownPaths?)` 和 `queueAgentMarkdownPrime(state, providedHome?, providedGetAgentMarkdownPaths?)` 接受可选的 captured helpers / home。如果不传，函数自己捕获（向后兼容任何同步调用方）。
+  - `saveState(state, { capturedStatePath })` 和 `persistStateAtomically(state, { capturedStatePath })` 新增 optional `capturedStatePath` 选项，让 readStateSnapshot 的 repair-save 路径绑死到捕获的 stateFilePath。
+  - **强化测试**：原 `importAgentMarkdownFiles` 测试只断言 `main` agent，但 `main` 是循环第一个，路径在第一个 await 之前就解析了——旧 lazy 代码可能假绿。改成断言 `research`（第二个内置 agent，至少在一个 await 之后才解析路径），真正能抓到"async 体内 lazy 读 env"的旧 bug。
+  - **新增 `readStateSnapshot wraps the entire load chain in a single home capture` 测试**：调度 readStateSnapshot 之后立即切 MELO_HOME，等 prime microtask flush 完成，断言 home A（捕获的 home）收到所有写入、home B（flip 后的 env）零写入。
+- 为什么：CLAUDE.md §6 已经写下了"调度时捕获 env"的规则，但 fix-4 只把规则应用在 markdownSync.js 的两个独立函数上。Codex review 指出**调用链整体的 capture 一致性也是 §6 的范围**——单独捕获每个函数还不够，外层 orchestration 必须给整个 chain 一次性 capture。这次修复把 `readStateSnapshot` 重新定位为唯一 capture 点。
+- 这是连续第 5 次 C，每次都是 §6 规则的不同 layer：模块级 const → flag 单例 → 缓存 key → async 体内 lazy → **multi-step orchestration 整体 capture**。
+- 产出 / 提交哈希：未提交
+  - `src/state/stateStore.js`：`captureLoadContext()` helper、isMarkdownSyncedFor/markSyncedFor 接受 home 参数、saveState/persistStateAtomically 接受 capturedStatePath 选项
+  - `src/state/markdownSync.js`：importAgentMarkdownFiles + queueAgentMarkdownPrime 接受 optional captured helpers/home（向后兼容）
+  - `src/state/markdownSyncAsyncTiming.test.js`：原测试改成断言 `research` agent；新增 readStateSnapshot full-chain capture 测试
+  - 回归：services + desktopStore + state + memory 套件 614/614（+1 from new full-chain test，原 import 测试改强）；跨域 281/281 全绿
+
 ## 2026-04-26 04:30 — Phase 7d-5α-A1 fix-4：async-timing capture（Q5-B + Q6-b + CLAUDE.md §6 落盘）
 
 - 做了什么（a104f23 的 Codex review C-grade 修复——这次是异步边界 timing bug）：

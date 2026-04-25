@@ -59,57 +59,58 @@ import {
   importAgentMarkdownFiles,
   queueAgentMarkdownPrime,
 } from './markdownSync.js';
+import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
 import {
   persistChatThreads,
   serializeChatForPersistence,
 } from './chatPersistence.js';
 import { syncMemoryStoreSnapshot } from './memorySnapshot.js';
 
-// Path resolution is intentionally lazy. `getMeloHome()` reads
-// `process.env.MELO_HOME`, which the test suite swaps between fixtures —
-// desktopStore.projectsDefault.test.js cache-busts desktopStore.js with a
-// query-string trick to load it fresh per test, but that trick does NOT
-// cascade to dependency modules like this one. So we re-read MELO_HOME
-// on every call site instead of caching it at module load. Behavior is
-// byte-equivalent: a fresh value either way, just resolved later.
-function statePath() {
-  return join(getMeloHome(), 'desktop', 'state.json');
+// Per-home markdown-sync flag. CLAUDE.md §6 fix-5: the flag is keyed by an
+// explicit `home` argument (not by `getMeloHome()` at access time) so the
+// readStateSnapshot capture chain can pin every read+write to a single
+// home value, even across awaits.
+const markdownSyncedByHome = new Map();
+function isMarkdownSyncedFor(home) {
+  return markdownSyncedByHome.get(home) === true;
+}
+function markSyncedFor(home) {
+  markdownSyncedByHome.set(home, true);
 }
 
 let stateWriteQueue = Promise.resolve();
 
-// markdownSynced was a single `let` boolean in the original desktopStore.
-// Phase 7d-5α-A1 commit 9 follow-up: after the state machine moved to this
-// (non-cache-busted) module, the test pattern `import('./desktopStore.js?t=...')`
-// for per-test MELO_HOME isolation stopped working — the FIRST test would set
-// `markdownSynced = true` and every subsequent test home would silently skip
-// `importAgentMarkdownFiles`, missing real disk markdown.
-//
-// Fix: key the flag by current MELO_HOME so each test's home tracks its
-// own sync state. Production has only one MELO_HOME so the Map has at most
-// one entry — same effective behavior. CLAUDE.md §5 mechanical adjustment;
-// the `markdownSyncedFor(getMeloHome())` getter / setter call sites below
-// are byte-equivalent to the original `markdownSynced` reads / writes.
-const markdownSyncedByHome = new Map();
-function isMarkdownSyncedForCurrentHome() {
-  return markdownSyncedByHome.get(getMeloHome()) === true;
-}
-function markCurrentHomeMarkdownSynced() {
-  markdownSyncedByHome.set(getMeloHome(), true);
+// Build a home-bound load context. CLAUDE.md §6: every async hop inside
+// readStateSnapshot uses the SAME captured home. The state.json path,
+// the agents/ helper factory, the synced-flag key, and the prime
+// scheduling all derive from this one capture — no later getMeloHome()
+// reads, no lazy resolvers.
+function captureLoadContext() {
+  const home = getMeloHome();
+  const stateFilePath = join(home, 'desktop', 'state.json');
+  const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
+    agentsDir: join(home, 'desktop', 'agents'),
+  });
+  return { home, stateFilePath, getAgentMarkdownPaths };
 }
 
 export async function readStateSnapshot({ persistRepair = true } = {}) {
+  // Capture once at entry. Any later getMeloHome() reads inside this
+  // function (or any function it awaits into) would be a §6 violation
+  // and would re-introduce the cross-home leak Codex caught at fix-4.
+  const { home, stateFilePath, getAgentMarkdownPaths } = captureLoadContext();
+
   try {
-    const raw = await readFile(statePath(), 'utf8');
+    const raw = await readFile(stateFilePath, 'utf8');
     const { parsed, repaired } = parseStatePayload(raw);
     const state = hydrateState(parsed);
-    const alreadySyncedThisHome = isMarkdownSyncedForCurrentHome();
+    const alreadySyncedThisHome = isMarkdownSyncedFor(home);
     const markdownImported = alreadySyncedThisHome
       ? false
-      : await importAgentMarkdownFiles(state);
+      : await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
     if (!alreadySyncedThisHome) {
-      markCurrentHomeMarkdownSynced();
-      queueAgentMarkdownPrime(state);
+      markSyncedFor(home);
+      queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
     }
     const threadRepaired = await hydrateChatThreads(state);
     await mergeDiskSkillsIntoState(state);
@@ -120,16 +121,19 @@ export async function readStateSnapshot({ persistRepair = true } = {}) {
     const prunedExcess = excessBefore > (state.chats || []).length;
 
     if ((repaired || markdownImported || threadRepaired || prunedExcess) && persistRepair) {
-      await saveState(state);
+      // Pass the captured stateFilePath through so the repair save also
+      // writes to the home we read from, regardless of any env flip
+      // during this load chain.
+      await saveState(state, { capturedStatePath: stateFilePath });
     }
 
     return state;
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
       const state = createDefaultState();
-      await importAgentMarkdownFiles(state);
-      markCurrentHomeMarkdownSynced();
-      queueAgentMarkdownPrime(state);
+      await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
+      markSyncedFor(home);
+      queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
       await hydrateChatThreads(state);
       await mergeDiskSkillsIntoState(state);
       return state;
@@ -143,19 +147,33 @@ export async function loadState() {
   return readStateSnapshot({ persistRepair: true });
 }
 
-export async function persistStateAtomically(state) {
+/**
+ * Persist state to disk.
+ *
+ * @param {object} state — desktop state to persist.
+ * @param {object} [options]
+ *   • capturedStatePath — when provided, write to this exact path instead
+ *     of resolving from current MELO_HOME. CLAUDE.md §6: lets callers like
+ *     readStateSnapshot's repair-save tunnel the home captured at the top
+ *     of the load chain through the async write path, even if env flips.
+ *     Falls back to lazy `getMeloHome()` resolution for callers (like
+ *     desktopStore's updateStateAtomically) that don't have a captured
+ *     path of their own.
+ */
+export async function persistStateAtomically(state, { capturedStatePath = null } = {}) {
   await persistChatThreads(state.chats);
-  await atomicWriteJson(statePath(), {
+  const targetPath = capturedStatePath || join(getMeloHome(), 'desktop', 'state.json');
+  await atomicWriteJson(targetPath, {
     ...state,
     chats: state.chats.map(serializeChatForPersistence),
   });
   syncMemoryStoreSnapshot(state);
 }
 
-export async function saveState(state) {
+export async function saveState(state, { capturedStatePath = null } = {}) {
   stateWriteQueue = stateWriteQueue
     .catch(() => {})
-    .then(() => persistStateAtomically(state));
+    .then(() => persistStateAtomically(state, { capturedStatePath }));
   await stateWriteQueue;
   return state;
 }

@@ -45,17 +45,23 @@ import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
 // did. Same fix shape: a Set keyed by current home.
 const markdownPrimePendingHomes = new Set();
 
-export async function importAgentMarkdownFiles(state) {
-  // Capture home-bound path resolver at function entry. This function
-  // spans multiple awaits over disk I/O; if MELO_HOME flips between
-  // them, the lazy resolver would read the new home and write to the
-  // wrong agents/ directory. CLAUDE.md §6: capture-at-entry, never
-  // re-read env during async execution.
-  const home = getMeloHome();
-  const { getAgentMarkdownPaths: getPathsForCapturedHome } =
-    createAgentMarkdownFileHelpers({
-      agentsDir: join(home, 'desktop', 'agents'),
-    });
+/**
+ * Import agent IDENTITY.md / SOUL.md from disk into state.agentProfiles.
+ *
+ * @param {object} state — state object to mutate (and optionally normalize).
+ * @param {Function} [providedGetAgentMarkdownPaths] — caller's home-bound
+ *   path resolver. CLAUDE.md §6: when readStateSnapshot calls this from
+ *   inside a single load-chain, it passes the helper captured at the top
+ *   of the chain so every disk path here resolves under the SAME home,
+ *   even across the multiple awaits inside this function. When omitted,
+ *   the function captures its own helper at entry — preserves legacy
+ *   call shape for any sync caller that doesn't span an env-flip risk.
+ */
+export async function importAgentMarkdownFiles(state, providedGetAgentMarkdownPaths) {
+  const getPathsForCapturedHome = providedGetAgentMarkdownPaths
+    || createAgentMarkdownFileHelpers({
+      agentsDir: join(getMeloHome(), 'desktop', 'agents'),
+    }).getAgentMarkdownPaths;
 
   let changed = false;
   state.agentProfiles = normalizeAgentProfiles(state.agentProfiles);
@@ -141,20 +147,33 @@ async function primeAgentMarkdownFiles(state, getAgentMarkdownPaths) {
   }
 }
 
-export function queueAgentMarkdownPrime(state) {
-  const home = getMeloHome();
+/**
+ * Schedule a background "prime" pass that creates IDENTITY.md / SOUL.md
+ * files for any agent profile that doesn't have them yet. Debounced
+ * per-home so concurrent state loads don't fan out.
+ *
+ * @param {object} state — agent profiles to prime.
+ * @param {string} [providedHome] — home captured at the call site. When
+ *   provided, this is used both to key the pending-Set and to bind the
+ *   factory used by the async prime body. When omitted, falls back to
+ *   reading the env at call time — only safe if the caller is fully
+ *   synchronous (no awaits between this call and any MELO_HOME mutation).
+ *   CLAUDE.md §6.
+ * @param {Function} [providedGetAgentMarkdownPaths] — pre-bound path
+ *   resolver matching providedHome. When both are provided the prime
+ *   body sees zero env reads end-to-end.
+ */
+export function queueAgentMarkdownPrime(state, providedHome, providedGetAgentMarkdownPaths) {
+  const home = providedHome || getMeloHome();
   if (markdownPrimePendingHomes.has(home)) {
     return;
   }
 
   markdownPrimePendingHomes.add(home);
-  // Capture a home-bound factory NOW so the async prime never reads the
-  // current process.env.MELO_HOME. agentsDir is a literal string here
-  // (not the lazy getter form) — that is the whole point.
-  const { getAgentMarkdownPaths: getPathsForCapturedHome } =
-    createAgentMarkdownFileHelpers({
+  const getPathsForCapturedHome = providedGetAgentMarkdownPaths
+    || createAgentMarkdownFileHelpers({
       agentsDir: join(home, 'desktop', 'agents'),
-    });
+    }).getAgentMarkdownPaths;
   const snapshot = {
     agentProfiles: normalizeAgentProfiles(state.agentProfiles),
     projectAgentOverrides: normalizeProjectAgentOverrides(
