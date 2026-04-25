@@ -46,7 +46,7 @@ import {
 } from '../shared/helpers.js';
 import { normalizeMessageBlocks } from '../services/message/messageBlocks.js';
 import { normalizeExtractedMedia } from '../media/index.js';
-import { sanitizeWorkspacePath } from '../services/workspace/workspaceFiles.js';
+import { sanitizeWorkspacePath as sanitizeWorkspacePathRaw } from '../services/workspace/workspaceFiles.js';
 import { normalizeProject as normalizeProjectRaw } from '../services/project/projectService.js';
 import { BUILTIN_SKILLS } from '../services/skill/skillService.js';
 import {
@@ -79,6 +79,19 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 // `dirname()` for the resolved path to be identical. The output is the same
 // directory; only the formula differs.
 const APP_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+
+// IMPORTANT (Phase 7d-5α-A1 commit 7 follow-up — Codex review C-grade fix):
+// The original desktopStore.js had a local 1-arg wrapper that bound APP_ROOT
+// as the second arg of the 2-arg sanitizeWorkspacePath from workspaceFiles.js,
+// then handed THAT 1-arg wrapper to normalizeProjectRaw via deps. The first
+// version of this extraction grabbed the 2-arg function directly and dropped
+// the binding — when projectService.normalizeProject called the dep with one
+// arg for relative workspacePath, the underlying `resolve(undefined, rawPath)`
+// threw TypeError. Restoring the local 1-arg wrapper exactly mirrors the
+// original behavior. CLAUDE.md §5: this is the "byte-for-byte" version.
+function sanitizeWorkspacePath(rawPath) {
+  return sanitizeWorkspacePathRaw(rawPath, APP_ROOT);
+}
 
 export const BUILTIN_CONNECTORS = [
   {

@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-04-26 00:55 — Phase 7d-5α-A1 commit 7 fix：恢复 sanitizeWorkspacePath wrapper + 审计 commits 1-6
+
+- 做了什么：
+  - **commit 7 (`7b051fa`) 触发 C 评级回归修复**：原 desktopStore 里 `sanitizeWorkspacePath` 是个 1-arg local wrapper（绑定 `APP_ROOT` 给 2-arg 的 `sanitizeWorkspacePathRaw`），`normalizeProject` 通过它调用。我搬到 stateHydration.js 时**绕过了 1-arg wrapper**，直接用了 2-arg 函数，导致相对路径 `workspacePath` 进入 normalizeProjectRaw 后调 `resolve(undefined, rawPath)` 抛 TypeError。
+  - 修复：在 stateHydration.js 中重新引入 local 1-arg wrapper（与原 desktopStore 字面一致），改回 normalizeProject 使用它。这才是真正的 byte-for-byte。
+  - **顺手 audit 之前 6 个 commit**（chatPruning / chatPersistence / chatThreadContext / memorySnapshot / diskSkills + commit 7 的其它部分）—— 检查每个搬过去的函数是否漏掉同类 wrapper。**结果干净**：commits 1-6 没有同类 bug。bug 仅限于 commit 7 的 `normalizeProject` —— 它是唯一一个搬走的"local wrapper 函数本身又依赖另一个 local wrapper"的案例。
+  - **新增 `src/state/stateHydration.test.js`（10 个测试）**——专门覆盖：相对路径 / 嵌套相对路径 / 绝对路径 / 空路径四种 workspacePath 输入、hydrateState 走完整流水线时相对路径仍然解析、legacy "How to use Melo" 项目过滤逻辑、createDefaultState 形状、normalizeChat 最小输入 + viz/citations/metadata 保留。
+- 为什么：
+  - byte-for-byte 规则的盲点：防"顺手简化"，但防不了"看漏一个间接绑定"。原 desktopStore 里 `function sanitizeWorkspacePath(rawPath) { return sanitizeWorkspacePathRaw(rawPath, APP_ROOT); }` 只 4 行，搬迁时眼睛漏过去了，结果直接 import 了底层 `sanitizeWorkspacePathRaw`（2-arg）当成 `sanitizeWorkspacePath` 用——源代码看起来 byte-identical 但语义破了。
+  - 这次修复 + 测试覆盖应该让相同类型的 bug 在未来被立刻抓到（任何人改了 normalizeProject 都会踩到 relative-path 的回归测试）。
+  - audit 提供了对 commits 1-6 的信心：它们都没有同类盲点。
+- 产出 / 提交哈希：未提交
+  - `src/state/stateHydration.js`：恢复 local `sanitizeWorkspacePath` wrapper（4 行）+ normalizeProject 改用它
+  - 新增 `src/state/stateHydration.test.js`（10 个回归测试，全绿）
+  - 回归：services + desktopStore + search + state 套件 303/303；跨域 583/583 全绿
+
 ## 2026-04-26 00:25 — Phase 7d-5α-A1 (Commit 7/9)：抽出 stateHydration 簇（hydrate 流水线 + 5 个伴随符号）
 
 - 做了什么：把 desktopStore 里 state-hydration 流水线 + 它依赖的所有 desktopStore-local 符号一次性搬到新建的 `src/state/stateHydration.js`：
