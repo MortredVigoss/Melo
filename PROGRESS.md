@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）
+
+- 做了什么：
+  - **新增 `src/services/search/searchResultsBuilder.js`** —— 把以下 8 个相互私有的 LOCAL 一并 byte-for-byte 搬走：
+    - `MAX_SEARCH_RESULTS`（const）
+    - `sortSearchItems`（cap helper）
+    - `buildFeatureSearchEntries`（149 行，feature catalogue）
+    - `buildRecentSearchSuggestions`（87 行）
+    - `buildChatThreadSearchEntry` / `buildChatMessageSearchEntry`
+    - `buildMemorySearchItem`（71 行）
+    - `buildSearchResults`（281 行，唯一对外 export 的入口）
+  - 11 个 imports 全部映射到现有 leaf 模块（memory/store, search/scoring, message/messageBlocks, message/messageSearch, conversation, etc.）。
+  - **`src/desktopStore.js`**：顶部 import 块加 5 行（含注释）；删 644 行的 cluster body 换 9 行 stub。唯一外部 caller 是 getDesktopBootstrap（line ~3445），走 imported name。
+- 用 Python 脚本机械抽出 cluster body + 头部注释 + import 块拼装新文件，避免手抄 644 行可能漏字符。`node --check` 验证语法 + 全套测试绿。
+- 为什么：getDesktopBootstrap 还有 4 个 LOCAL 依赖（buildAgentProfiles / buildProfile / availableModelsForConfig / buildSearchResults）。`buildSearchResults` 是其中体量最大且 domain-specific（search），单独抽干净；剩 3 个小的下一刀和 getDesktopBootstrap 一起搬。
+- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 5408 → 4764（-644 行；本会话累计 8527→4764 = **-3763 行 = -44.1%**）
+
 ## 2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors
 
 - 做了什么：
