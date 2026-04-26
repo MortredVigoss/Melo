@@ -443,6 +443,29 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // ── Shared classifier modules from src/media/ ────────────────────────────
+    // The composer's Link button needs the same URL classifier that text-paste
+    // promotion uses (detectUrlKind / promoteTextUrlsToAttachments) so that
+    // YouTube links, .mp3, .pdf, etc. produce identical kind / mimeType / title
+    // regardless of how the user attached them. The module is pure regex with
+    // no Node dependencies — safe to import from the browser.
+    if (url.pathname === '/shared/urlDetector.js' && request.method === 'GET') {
+      const absPath = join(rootDir, 'src', 'media', 'urlDetector.js');
+      try {
+        const fileStat = await stat(absPath);
+        if (!fileStat.isFile()) throw new Error('not a file');
+        response.writeHead(200, {
+          'content-type': 'text/javascript; charset=utf-8',
+          'content-length': fileStat.size,
+          'cache-control': 'public, max-age=86400',
+        });
+        createReadStream(absPath).pipe(response);
+      } catch {
+        sendJson(response, 404, { error: 'Shared module not found.' });
+      }
+      return;
+    }
+
     // ── Signed workspace-file endpoint ───────────────────────────────────────
     // Tools that produce files (image edits, generated PDFs, MiniMax images)
     // mint a signed URL via src/web/urlSigning.js → signWorkspaceFileUrl(), and

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-27 01:10 — Composer Link 入口统一 URL 分类（共用 detectUrlKind/promoteTextUrlsToAttachments）
+
+- 用户要求："手动点 Link 添加时也调用同一套 detectUrlKind/promoteTextUrlsToAttachments，YouTube/音频/视频/PDF/普通网页不管是粘贴文字还是点 Link，都得到同样的 kind/mimeType/title"。
+- 之前 `desktop-ui/app.js → promptComposerLinkAttachment` 硬编码 `kind: 'link'`，跟 `src/services/chat/sendChatMessage.js` 走 `promoteTextUrlsToAttachments` 的"粘贴文字"路径分类完全脱钩——粘 `https://youtu.be/X` 拿 `kind: 'video'`，点 Link 输入同 URL 拿 `kind: 'link'`，下游模型 prompt 拿到不同信号。
+- 修复：
+  - `src/server.js` 加 `/shared/urlDetector.js` 静态路由（仿 `/vendor/three/` 套路），把 `src/media/urlDetector.js` 暴露给浏览器。该文件纯 regex 无 Node 依赖，浏览器直接 `import` 安全。
+  - `desktop-ui/app.js` 顶部 `import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js'`；`promptComposerLinkAttachment` 改为先 validate http(s)、再交给 `promoteTextUrlsToAttachments(url, uiState.composerAttachments)`，结果 enrich `id: crypto.randomUUID()` + `sizeLabel: ''` 后 push，URL 已存在自动 dedup（顺手修了之前 manual link 不去重的小坑）。
+  - `src/media/urlDetector.test.js` 加 6 个 case 锁住"promoted shape 跨所有 kind 一致"的契约（video-platform→video / image / audio / PDF→link+pdf-mime / plain link / 单 bare URL 一份附件），避免未来无意识改动让 manual-link 路径默默 drift。
+- 验证：syntax check 三个文件全过；regression `services + state + desktopStore + media` 303/303 绿（之前 285，新增 6 个 urlDetector + 12 个 media 周边自检）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 00:45 — Artifacts UI 重新设计：按钮统一文字版（设计语言一致）
 
 - 用户截图反馈："右边这个 ui 太丑了，两个巨大的按钮，然后中间的 edit 又不像是按钮很难点击到，你去重新设计一下 ui，记得 ui 设计的统一性，按钮设计的风格语言要统一"。

@@ -7,6 +7,7 @@ import {
   installCitationDrawer,
   resetCitationPreviewCache,
 } from './viz/citationRenderer.js';
+import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 
 const app = document.querySelector('#app');
 
@@ -3327,18 +3328,22 @@ function promptComposerLinkAttachment() {
     showError('Please paste a full http or https link.');
     return;
   }
-  uiState.composerAttachments = [
-    ...uiState.composerAttachments,
-    {
-      id: crypto.randomUUID(),
-      kind: 'link',
-      url,
-      title: url.replace(/^https?:\/\//i, '').slice(0, 120),
-      fileName: '',
-      mimeType: '',
-      sizeLabel: '',
-    },
-  ].slice(0, 8);
+  // Reuse the same classifier as text-paste promotion so YouTube / audio /
+  // video / PDF / plain web pages produce identical kind / mimeType / title
+  // regardless of how the user attached them.
+  const promoted = promoteTextUrlsToAttachments(url, uiState.composerAttachments);
+  if (!promoted.length) {
+    // URL was already in composerAttachments — silently no-op.
+    uiState.composerAttachmentMenuOpen = false;
+    render();
+    return;
+  }
+  const enriched = promoted.map(a => ({
+    ...a,
+    id: crypto.randomUUID(),
+    sizeLabel: '',
+  }));
+  uiState.composerAttachments = [...uiState.composerAttachments, ...enriched].slice(0, 8);
   uiState.composerAttachmentMenuOpen = false;
   render();
 }
