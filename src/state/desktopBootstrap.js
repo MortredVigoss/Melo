@@ -61,14 +61,23 @@ import { summarizeTask } from '../services/task/taskService.js';
 import { summarizeApproval } from '../services/approval/approvalService.js';
 import { buildSearchResults } from '../services/search/searchResultsBuilder.js';
 
-// `getAgentMarkdownPaths` is produced by the markdownFiles factory bound
-// to MELO_HOME's `desktop/agents/` directory. We use the lazy `() => path`
-// form so the factory respects the current MELO_HOME at call time
-// (CLAUDE.md §6: schedule-time / call-time env capture instead of
-// freezing AGENTS_DIR at module load).
-const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({
-  agentsDir: () => join(getMeloHome(), 'desktop', 'agents'),
-});
+// CLAUDE.md §6: capture MELO_HOME synchronously at the top of every
+// invocation of getDesktopBootstrap, then derive every home-rooted path
+// (state.json, threads/, store.sqlite, agents/, plus a home-bound
+// `getAgentMarkdownPaths`) from that single captured value. Pass it
+// through to every async hop (saveState's `ctx`, buildAgentProfiles's
+// path-helper arg) so an env flip mid-bootstrap can't desync the state
+// we loaded from the paths we report. Same `captureLoadContext` pattern
+// stateStore.js uses internally for readStateSnapshot.
+function captureBootstrapContext() {
+  const home = getMeloHome();
+  const stateFilePath = join(home, 'desktop', 'state.json');
+  const threadsDir = join(home, 'desktop', 'threads');
+  const storePath = join(home, 'desktop', 'store.sqlite');
+  const agentsDir = join(home, 'desktop', 'agents');
+  const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({ agentsDir });
+  return { home, stateFilePath, threadsDir, storePath, getAgentMarkdownPaths };
+}
 
 function availableModelsForConfig(config) {
   const authMode = config.authMode || DEFAULT_CONFIG.authMode;
@@ -159,7 +168,12 @@ function summarizeAgentProfile(profile) {
   };
 }
 
-function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}) {
+// `getAgentMarkdownPaths` is now an explicit parameter rather than a
+// module-bound singleton — see captureBootstrapContext above. This is
+// the §6 fix Codex caught on commit 8e: passing the home-bound helper
+// in keeps the resolved paths consistent with the state snapshot the
+// bootstrap loaded, even if MELO_HOME flips during the async chain.
+function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}, getAgentMarkdownPaths) {
   const editingScope = scope === 'project' && projectId ? 'project' : 'global';
 
   return allAgentIdsFromProfiles(state.agentProfiles).map(agentId => {
@@ -195,6 +209,10 @@ function buildProfile() {
 }
 
 export async function getDesktopBootstrap(query = '') {
+  // CLAUDE.md §6: capture the ctx synchronously before any await so a
+  // mid-bootstrap MELO_HOME flip can't desync the state we loaded from
+  // the paths we report (Codex caught the original lazy form).
+  const ctx = captureBootstrapContext();
   const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
   const state = ensureSelectedEntities(rawState);
   const chats = sortChats(state.chats);
@@ -225,16 +243,21 @@ export async function getDesktopBootstrap(query = '') {
   }
 
   if (shouldPersistState) {
-    await saveState(state);
+    // Pass the entry-captured ctx so the persisted state.json + thread
+    // checkpoints + memory snapshot all land under the home we loaded
+    // from, even if MELO_HOME flipped after our `loadState()`. Mirrors
+    // readStateSnapshot's repair-save path.
+    await saveState(state, { ctx });
   }
 
   const skills = buildSkills(state.settings.enabledSkillIds, state.settings.customSkills);
   const activeAgentScope =
     state.settings.selectedAgentScope === 'project' && activeProject ? 'project' : 'global';
-  const agents = buildAgentProfiles(state, {
-    projectId: activeProject?.id || null,
-    scope: activeAgentScope,
-  });
+  const agents = buildAgentProfiles(
+    state,
+    { projectId: activeProject?.id || null, scope: activeAgentScope },
+    ctx.getAgentMarkdownPaths,
+  );
   const projectArtifacts = state.artifacts
     .filter(artifact => artifact.projectId === activeProject?.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
