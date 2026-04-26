@@ -12,7 +12,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 5 行；删 latestUserMessageRecord 定义（5 行）+ buildAgentMemoryNodeContext 定义（337 行）共 342 行，换成两段共 6 行 stub 注释。唯一内部 caller (line ~3955 prepare-node) 走 imported name。
 - 关于"7+ LOCAL deps"实查更正：commit 3 一样，Explore agent 的报告把外部 imported 的符号误判为 LOCAL。实际只有 1 个真 LOCAL（latestUserMessageRecord），其余 12 个全是从 memory/store.js、memory/attic.js、memory/heuristics.js、memory/speakerProfile.js、state/memorySnapshot.js、services/activity/、services/approval/、services/task/ 里 import 来的。**Lesson**：Explore agent 的"deps 报告"必须再用 desktopStore 顶部 import 块逐个 cross-check，不能盲信。
 - 回归：services + state + desktopStore + memory + agents 全绿；这是单 commit 史上最大瘦身。
-- 提交哈希：（待 commit）
+- 提交哈希：`b30d563`
   - desktopStore: 6902 → 6572（-330 行；本会话内累计已减 633 行：8527→6572，进度近 40%）
 
 ## 2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子，差点踩到 import 路径错认）
@@ -22,7 +22,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 5 行；删原函数定义（117 行）换 3 行 stub。唯一内部 caller (line ~4387 prepare-node) 走 imported name。
 - 中间踩坑：第一次写新文件时把 `normalizeConversationSnippet` 错误写成从 `../viz/citation.js` 来。原因：之前 grep desktopStore 头部 import 块时 `sed` 范围跨越了多个 `import` 块，把同一行 `normalizeConversationSnippet` 误归到下面的 `citation.js` 块——其实它在 `./memory/heuristics.js` 块里。**byte-for-byte 不防 import 路径错认；下次抽函数前要逐 import 确认每个符号的真实来源**。回归 18 个测试 SyntaxError 直接抓到，修一行 import 路径后全绿。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`8bda000`
   - desktopStore: 7011 → 6902（-109 行，本 commit 单步最大瘦身，超过 commit 1+2 之和）
 
 ## 2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（依靠 commit 1 把唯一 LOCAL 抽走）
@@ -32,7 +32,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 4 行；删原函数定义（34 行）换 3 行 stub。两个内部 caller（line ~4463/~4955）走 imported name。
 - 为什么：commit 1 把 `COMMAND_TEMPLATES` 抽出去之后，`buildToolRoutingPrompt` 就降级成"依赖全外部"的常规叶子。这种"先抽常量、再抽消费者"的两步路径在 byte-for-byte 框架下是最稳的——commit 1 单独验过 gate（A），commit 2 的差异面只有这个函数本身，gate 审查清晰。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`de7815c`
   - desktopStore: 7038 → 7011（-27 行）
 
 ## 2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor
@@ -42,7 +42,7 @@
   - **`src/desktopStore.js`**：顶部加 5 行 import；删原 `COMMAND_TEMPLATES` 定义（39 行）+ `commandTemplateDescriptor` 定义（9 行），换成两段 stub 注释。6 个内部 caller（workspace snapshot UI builder ×3 + workspace snapshot fallback ×1 + 命令执行查找 ×1 + 即将抽走的 buildToolRoutingPrompt ×1）走 imported name 自然链接。
 - 为什么：7d-5γ 第一步。`buildToolRoutingPrompt` 的唯一 LOCAL 依赖就是 `COMMAND_TEMPLATES`——把它单独抽出去，下一 commit 抽 `buildToolRoutingPrompt` 时就是真正的零依赖港。把这两个一起 commit 而不是再分两步，是因为 descriptor 是 COMMAND_TEMPLATES 的单一专用 shaper，分开 commit 会撕裂自然的边界。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`6e2e171`
   - desktopStore: 7072 → 7038（-34 行）
 
 ## 2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext（中等复杂叶子，依赖已外部化）
