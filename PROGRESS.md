@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 15:30 — Phase 7d-5δ commit 4：抽出 taskExecutionPrompt（依赖单 imported helper，又一个真叶子）
+
+- 做了什么：
+  - **新增 `src/services/task/taskPrompt.js`** —— `taskExecutionPrompt`（26 行纯函数）byte-for-byte 搬走。唯一依赖 `agentUsesTool` 已经在 `services/agent/agentTools.js`。
+  - **`src/desktopStore.js`**：顶部 import 块加 2 行；删原函数定义（26 行）换 2 行 stub。唯一内部 caller (line ~4171, inside `runTaskAgentExecutionGraph`) 走 imported name。
+- 为什么：runner 抽取 prerequisite #3。`runTaskAgentExecutionGraph` 的 prepare 节点要 `taskExecutionPrompt`；现在只剩 `effectiveAgentProfile`（最后一个、最大、57 callers）和 runner 本身待抽。
+- 回归：全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6325 → 6303（-22 行）
+
 ## 2026-04-26 15:00 — Phase 7d-5δ commit 3：抽出 buildWorkspaceSnapshot（带 APP_ROOT 深度调整）
 
 - 做了什么：
@@ -57,122 +67,20 @@
 - 提交哈希：`b30d563`
   - desktopStore: 6902 → 6572（-330 行；本会话内累计已减 633 行：8527→6572，进度近 40%）
 
-## 2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子，差点踩到 import 路径错认）
-
-- 做了什么：
-  - **新增 `src/services/remote/channelRoutePrompt.js`** —— `buildChannelRoutePrompt`（117 行）byte-for-byte 搬走。Explore agent 先前报的 5 个 LOCAL 依赖经实查全是已外部化的 import：`normalizeAgentChannels` (agent/agentChannels.js)、`buildGroupRelationshipSummary` + `collectBystanderContext` + `collectKnownTelegramParticipants` (remote/groupRelationship.js)、`normalizeConversationSnippet` (memory/heuristics.js)。函数本身是真零 LOCAL 叶子。
-  - **`src/desktopStore.js`**：顶部 import 块加 5 行；删原函数定义（117 行）换 3 行 stub。唯一内部 caller (line ~4387 prepare-node) 走 imported name。
-- 中间踩坑：第一次写新文件时把 `normalizeConversationSnippet` 错误写成从 `../viz/citation.js` 来。原因：之前 grep desktopStore 头部 import 块时 `sed` 范围跨越了多个 `import` 块，把同一行 `normalizeConversationSnippet` 误归到下面的 `citation.js` 块——其实它在 `./memory/heuristics.js` 块里。**byte-for-byte 不防 import 路径错认；下次抽函数前要逐 import 确认每个符号的真实来源**。回归 18 个测试 SyntaxError 直接抓到，修一行 import 路径后全绿。
-- 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：`8bda000`
-  - desktopStore: 7011 → 6902（-109 行，本 commit 单步最大瘦身，超过 commit 1+2 之和）
-
-## 2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（依靠 commit 1 把唯一 LOCAL 抽走）
-
-- 做了什么：
-  - **新增 `src/services/agent/toolRoutingPrompt.js`** —— `buildToolRoutingPrompt`（34 行）byte-for-byte 搬走。两个依赖：`agentUsesTool` from `./agentTools.js`、`COMMAND_TEMPLATES` from `../command/commandTemplates.js`（commit 1 的产物）——都已是 leaf。
-  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删原函数定义（34 行）换 3 行 stub。两个内部 caller（line ~4463/~4955）走 imported name。
-- 为什么：commit 1 把 `COMMAND_TEMPLATES` 抽出去之后，`buildToolRoutingPrompt` 就降级成"依赖全外部"的常规叶子。这种"先抽常量、再抽消费者"的两步路径在 byte-for-byte 框架下是最稳的——commit 1 单独验过 gate（A），commit 2 的差异面只有这个函数本身，gate 审查清晰。
-- 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：`de7815c`
-  - desktopStore: 7038 → 7011（-27 行）
-
-## 2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor
-
-- 做了什么：
-  - **新增 `src/services/command/commandTemplates.js`**（新建 `command/` 子目录）：`COMMAND_TEMPLATES` 静态数据 + `commandTemplateDescriptor` shaper 一并 byte-for-byte 搬走。两者都是纯数据/纯函数，零 desktopStore-LOCAL 依赖，绑得很紧（descriptor 几乎只在 `COMMAND_TEMPLATES.map(...)` 处被调），合一个 self-contained leaf 是最自然的边界。
-  - **`src/desktopStore.js`**：顶部加 5 行 import；删原 `COMMAND_TEMPLATES` 定义（39 行）+ `commandTemplateDescriptor` 定义（9 行），换成两段 stub 注释。6 个内部 caller（workspace snapshot UI builder ×3 + workspace snapshot fallback ×1 + 命令执行查找 ×1 + 即将抽走的 buildToolRoutingPrompt ×1）走 imported name 自然链接。
-- 为什么：7d-5γ 第一步。`buildToolRoutingPrompt` 的唯一 LOCAL 依赖就是 `COMMAND_TEMPLATES`——把它单独抽出去，下一 commit 抽 `buildToolRoutingPrompt` 时就是真正的零依赖港。把这两个一起 commit 而不是再分两步，是因为 descriptor 是 COMMAND_TEMPLATES 的单一专用 shaper，分开 commit 会撕裂自然的边界。
-- 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：`6e2e171`
-  - desktopStore: 7072 → 7038（-34 行）
-
-## 2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext（中等复杂叶子，依赖已外部化）
-
-- 做了什么：
-  - **新增 `src/services/chat/dynamicContext.js`** —— `buildDynamicContext`（61 行）byte-for-byte 搬走。3 个依赖（`ensureChatThreadContext` from `state/chatThreadContext.js`、`renderThreadContext as renderStructuredThreadContext` from `memory/threadContext.js`、`truncateText` from `shared/helpers.js`）都已经在外部 leaf 模块里，直接 import 即可。
-  - **`src/desktopStore.js`**：顶部 import 块加 1 行；删原函数定义（61 行）换成 2 行 stub 注释。两个内部 caller (line ~4479 / ~4956 prepare-node + task-graph) 走 imported name。
-- 为什么：commit 1+2 抽完真叶子和单依赖。commit 3 是"中等"——3 个依赖但全部已外部化，不需要先搬其它符号，直接抽走。
-- 顺手的 PROGRESS.md 压缩：本次 commit 把 `fix-5/6/7` 三个详细条目（共 ~76 行）移到归档摘要区，只保留 title + 1 句结论 + commit hash。这三个条目对应的修复链已经全部收尾（fix-5→6→7→8 序列闭合），完整版仅在 git history 中需要时可查。
-- 回归：services + state + desktopStore + memory + agents 套件全绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 7128 → 7072（-56 行）
-
-## 2026-04-26 11:30 — Phase 7d-5β commit 2：抽出 buildProjectContextSection（单依赖叶子）
-
-- 做了什么：
-  - **新增 `src/services/project/projectContext.js`** —— `buildProjectContextSection`（5 行）byte-for-byte 搬走。它依赖的 `agentUsesTool` 在新模块里直接 `import` from `../agent/agentTools.js`（已经是 leaf）。
-  - **`src/desktopStore.js`**：顶部 import 块加 1 行（按 project/ 域排在 connector 后面）；删原函数定义（5 行），换成 3 行 stub 注释。两个内部 caller（line 4464 / 4956）走 imported name 自然链接。
-- 为什么：commit 1 抽完 4 个零依赖叶子之后，单依赖（仅依赖一个已 imported 的 leaf）就是下一个最低风险的台阶。`buildProjectContextSection` 不仅短，依赖的 `agentUsesTool` 也已经在 service 模块里了。
-- 回归：services + state + desktopStore + memory + agents 套件全绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 7124 → 7128（+4 是因为 import 块的注释 + import 行多于函数的减量；函数已搬走是关键）
-
-## 2026-04-26 11:00 — Phase 7d-5β commit 1：4 个真叶子 helper 一并 byte-for-byte 抽走
-
-- 做了什么（用户选"4 leaves 合一 commit"）：
-  - **新增 4 个 leaf 模块**（每个零 desktopStore-LOCAL 依赖，纯函数）：
-    - `src/services/chat/matcherContext.js` — `buildMatcherContextFromChat`（30 行）
-    - `src/services/connector/connectorPrompts.js` — `summarizeConnectorPrompts`（6 行）
-    - `src/services/skill/skillPrompts.js` — `summarizeSkillsPrompts`（38 行，原 export）
-    - `src/services/chat/visionDebug.js` — `formatModelMessageForVisionDebug`（24 行）
-  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 4 处函数定义（~95 行），每处替换为 stub 注释。`summarizeSkillsPrompts` 保留 back-compat re-export（gate 第 9 次 C 抓出来的契约）。
-  - **`src/desktopStore.skills.test.js`**：`summarizeSkillsPrompts` import 改成指向新位置作为 canonical 路径（re-export 仍可用）。
-- 为什么：
-  - 7d-5β 目标是 prompt/context helpers 下沉到 services/。这 4 个是 ZERO LOCAL deps 真叶子，最低风险起手。
-  - 用户选"合 commit"——单独 4 commit + 4 gate ROI 不高；一次审 4 个 byte-for-byte port 差异表面清晰。
-- 关于第 9 次 C：第一刀里直接删了 `summarizeSkillsPrompts` 的 export，gate 抓到"契约破坏"。fix（用户选 A 路径）：保留 re-export，把"是否清理 dead export"留给将来独立 cleanup commit。
-- 回归：services + state + desktopStore + memory + agents 套件全绿；总测试数 ~597（+0 from this commit）。
-- 提交哈希：`d056e8d`（commit 1 主体）+ 后续 fixup（保留 re-export，gate 第 9 次 C 修复）
-  - desktopStore: 7205 → 7124（-81 行）
-
-## 2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出
-
-- 做了什么：`scripts/codex-review.sh` 在算出 `commit_count` 后立刻判断为 0 则报错"先 `git pull --rebase`"。原流程会先跑一轮 Codex evaluation 再被 `git push` 拒绝，浪费一轮 token。
-- 为什么：上一轮 `2c43ec2` 过 gate 时 Codex 评 B 留下的唯一非阻塞建议。CLAUDE.md §4 要求"B 的建议要记录并安排修"——既然已经在 gate-fix 流程里就顺手做掉。
-- 提交哈希：`5742e66`
-
-## 2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push（gate-on-gate-on-gate）
-
-- 做了什么：
-  - **`scripts/codex-review.sh`**：把 `@{upstream}` 用 `git rev-parse --symbolic-full-name` 解出全 ref（如 `refs/remotes/origin/master`），bash regex 拆成 `<remote>` + `<remote-branch>`。push 改为 `git push "$remote" "HEAD:$remote_branch"`，绕开用户的 `push.default`。
-  - 头部注释同步更新流程描述。
-- 为什么：上一轮（`137c9a6`）收紧后再过自己的 gate，被 Codex 评 C：裸 `git push` 受 `push.default` 影响——`matching` 会推**所有同名分支**（含 evaluation 没覆盖的），`current` 可能推到与 `@{upstream}` 不同名的远端 ref。显式 refspec 让 push 目标和 evaluation 范围一一对应，无论用户 git 配置怎么设。
-- 没做的：Codex 还建议加一组 shell smoke 测试覆盖 `push.default=matching/current/simple` 等场景。和用户讨论后认为 ROI 不足（gate 自身每次跑都在测自己，两轮 C 已经准确捕获 bug），暂缓。
-- 提交哈希：`2c43ec2`
-  - `scripts/codex-review.sh`：显式 refspec push
-
-## 2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数（gate-on-gate 修复）
-
-- 做了什么：
-  - **`scripts/codex-review.sh` 重写流程入口**：
-    - 拒绝任何 `$@` 额外参数（自定义 refspec / `-u` / `--force-with-lease` 等）。原因：从这些 args 推断"实际将被 push 的 commit 集合"等价于重新实现 push 的 refspec 解析；与其猜，不如显式拒绝并提示用户用原生 `git push` 走手动 review。
-    - 强制要求当前分支已有 tracking upstream。无 upstream 时直接报错并提示 `git push -u origin <branch>` 一次性设置。原因：原 fallback `${head_sha}^..${head_sha}` 在首次 push 多个 commit 时只评估 tip，**非 tip 的 commit 静默绕过 C/D 阻断**——Codex 抓到的精确 bug。
-    - 把 `base_sha` / `head_sha` / `commit_count` / `short_base` / `short_head` 提到流程顶部解析一次，pre-push gate 和 post-push review **共用同一个 base**，杜绝两阶段 range 漂移。
-    - 删除原 post-push 段独立的 base 推断分支（${head_sha}^ fallback、`base_sha == head_sha` 早返回、reachability 检查）——这些在新流程下都已经在顶部一次性处理。
-    - `git push` 不再转发 `$@`，固定为"当前分支 → upstream"。
-  - **`CLAUDE.md` §1**：在 `git pp` 条目下补一段"适用范围"，明文说明 upstream 必需 + 不接受额外参数，并指引边角场景用原生 `git push` + 手动 `codex review`。
-- 为什么：`f4bc254`（pre-push gate 启用 commit）首次跑就被自己的 gate 评 C 阻断——发现 fallback 路径在首次 push 场景下会漏审非 tip commit，pre/post 两阶段还共用了不同的 base 推断逻辑。修复直接砍掉边角分支，把 gate 适用域收窄到"有 upstream 的当前分支正常推送"，宁可显式拒绝也不要静默漏审。
-- 提交哈希：`137c9a6`
-  - `scripts/codex-review.sh`：refuse-args + require-upstream + 共用 base
-  - `CLAUDE.md`：§1 补适用范围说明
-
-## 2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）
-
-- 做了什么：
-  - **`src/memory/store.js`**：`applyMemoryStoreSchema(database, vecLoaded)` 改为返回 `{ vecAvailable }`。`vecAvailable` 反映 `CREATE VIRTUAL TABLE vec_memories` 实际是否成功（用 `SELECT 1 FROM sqlite_master` 验证表存在；`IF NOT EXISTS` 在某些 sqlite-vec 构建上会静默吞掉 "module not found"）。
-  - **`getDb()`**：用返回值的 `vecAvailable` 决定 `_vecLoaded` 是否回退到 false——替换原来的"先 apply、再单独跑 SELECT 验证"两步逻辑（语义不变，避免重复 SQL）。
-  - **`withDisposableStoreAt()`**：把返回的 `vecAvailable` 传给 `work(tempDb, vecAvailable)`，**而不是**之前传入的 `vecLoadedHere`（loadExtension 成功标志）。Codex fix-7 review 抓到的精确 bug：disposable handle 上即使 extension 加载成功，CREATE VIRTUAL TABLE 仍可能失败，下游 `_runReplaceMemoriesOn` 用旧的 `vecLoadedHere` 准备 INSERT/DELETE 语句，会 prepare 不存在的 `vec_memories` 表崩溃。
-  - **`src/state/stateLoadContextChain.test.js` fix-7 测试加固**：除 store.sqlite 文件存在 + home B 不存在两个断言外，新增直接打开 home A 的 sqlite，`SELECT id, namespace, text FROM memories WHERE namespace = 'chat:CHAT_ID' AND id LIKE 'message:chat:CHAT_ID:%'` 验证消息内容真的写进了 memories 表。文件存在不等于行写入——schema apply 静默失败的话仍可能落出空 db。
-- 为什么：第 8 轮 C 评级的发现："applyMemoryStoreSchema 捕获 vec_memories 建表失败后没有把 vecLoadedHere 降为 false，work(tempDb, vecLoadedHere) 仍会让 _runReplaceMemoriesOn 在 store.js:1135 prepare 不存在的 vec_memories"。把"是否真正可用"作为函数返回值——而不是依赖外层副作用（如 SELECT 验证再回写 _vecLoaded）——杜绝下游误用。
-- 回归：`stateLoadContextChain.test.js` 3/3 绿；memory + state 套件 324/324 绿。
-- 产出 / 提交哈希：(待提交，gate 决定能不能 push)
-  - `src/memory/store.js`
-  - `src/state/stateLoadContextChain.test.js`
-
 ## 归档摘要（2026-04-26 04:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
+
+- **2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子）** —— 117 行函数搬到 services/remote/channelRoutePrompt.js；中间踩过一个 import 路径错认（normalizeConversationSnippet 实际在 memory/heuristics.js 不在 viz/citation.js），被测试套件即时捕获。`8bda000`
+- **2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（拿到 S 评级）** —— commit 1 把 COMMAND_TEMPLATES 抽走后 buildToolRoutingPrompt 降级为零依赖叶子。Codex 评 S。`de7815c`
+- **2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor** —— 静态数据 + 专用 shaper 一起搬到新建 services/command/ 子目录，6 个内部 caller 走 imported name。`6e2e171`
+- **2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext + PROGRESS condense** —— 61 行 async 搬到 services/chat/dynamicContext.js；同 commit 把 fix-5/6/7 三个详细条目移入归档。`6d18e87`
+- **2026-04-26 11:30 — Phase 7d-5β commit 2：抽出 buildProjectContextSection（单依赖）** —— 5 行函数搬到 services/project/projectContext.js，唯一依赖 agentUsesTool 已经是 leaf。`8364a5f`
+- **2026-04-26 11:00 — Phase 7d-5β commit 1：4 真叶子 bundle commit + re-export fixup** —— matcherContext / connectorPrompts / skillPrompts / visionDebug 共一个 commit，gate 抓出 contract-break (C → A fixup)。`d056e8d` + `ce56b0c`
+- **2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出** —— 本地落后 upstream 时不再浪费一轮 Codex eval。`5742e66`
+- **2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push** —— 用 `git push <remote> HEAD:<remote-branch>` 替代裸 `git push`，绕开 push.default 影响。`2c43ec2`
+- **2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数** —— 强制 tracking upstream + 拒绝转发任何 args + pre/post 共用 base_sha。`137c9a6`
+- **2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）** —— vec_memories CREATE 失败时把 disposable handle 的 vec 标志降为 false，下游 _runReplaceMemoriesOn 不再 prepare 不存在的 vec_memories；fix-7 测试加固直接查 memories 行。`5d2c6ac`
 
 - **2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）** —— `applyMemoryStoreSchema` 抽出私有函数；`withDisposableStoreAt` + `runInTransactionOn` 给替代 storePath 走独立 sqlite 句柄；`getCachedEmbedding`/`resolveCacheModelId` 都接受 explicit database 参数（transitive call chain 隔离）；新增 fix-7 回归测试。`559fbae`
 - **2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）** —— 把 home 升格为 first-class context object：`checkpointer` 4 op + `hydrateChatThreads` + `persistChatThreads` 全部接受 `{ threadsDir }`；缓存改 by-dir 索引；`captureLoadContext` 扩展为 `{home, stateFilePath, threadsDir, getAgentMarkdownPaths}` 贯穿整个 load chain；新增 stateLoadContextChain.test.js（3 tests）。`f3b0f29`

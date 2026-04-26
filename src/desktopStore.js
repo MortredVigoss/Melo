@@ -506,6 +506,9 @@ import {
 // retained here. desktopStore's wrapper stays put because there is still
 // one in-module caller (line ~5956) outside the snapshot path.
 import { buildWorkspaceSnapshot } from './services/workspace/workspaceSnapshot.js';
+// Phase 7d-5δ commit 4: task-execution prompt builder extracted. Single
+// dependency `agentUsesTool` is already in a leaf module.
+import { taskExecutionPrompt } from './services/task/taskPrompt.js';
 import {
   serializeChatForPersistence,
   persistChatThreads,
@@ -1335,33 +1338,8 @@ function effectiveAgentProfile(state, agentId, projectId = null) {
 // wrapper above is intentionally kept (still has another in-module
 // caller); the new module has its own byte-identical wrapper.
 
-function taskExecutionPrompt(task, project, workspace, profile) {
-  const blocks = [
-    `Task title: ${task.title}`,
-    task.summary ? `Task summary: ${task.summary}` : '',
-    project && agentUsesTool(profile, 'projects')
-      ? `Project: ${project.name}\nSummary: ${project.summary}\nInstructions: ${project.instructions}\nWorkspace: ${project.workspacePath}`
-      : 'Project: (none)',
-    workspace.selectedFile && agentUsesTool(profile, 'local-files')
-      ? [
-          `Selected file: ${workspace.selectedFile.path}`,
-          `\`\`\`${workspace.selectedFile.language}`,
-          workspace.selectedFile.content.slice(0, 4000),
-          '```',
-        ].join('\n')
-      : '',
-    workspace.entries.length && agentUsesTool(profile, 'local-files')
-      ? `Workspace snapshot:\n${workspace.entries
-          .slice(0, 24)
-          .map(entry => `${entry.type === 'directory' ? 'dir' : 'file'}  ${entry.path}`)
-          .join('\n')}`
-      : '',
-    task.latestNote ? `Previous note:\n${task.latestNote}` : '',
-    'Respond with a concise worker update, concrete findings, and next action.',
-  ].filter(Boolean);
-
-  return blocks.join('\n\n');
-}
+// taskExecutionPrompt moved to `src/services/task/taskPrompt.js` in
+// Phase 7d-5δ commit 4. Re-imported at the top of this file.
 
 function markTaskOutcome(task, { success, note }) {
   task.updatedAt = nowIso();
