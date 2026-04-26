@@ -518,6 +518,10 @@ import { taskExecutionPrompt } from './services/task/taskPrompt.js';
 // All 12 of its upstream dependencies were prepared by commits 1-5 of
 // this phase, so the runner moves cleanly with no import cycle.
 import { runTaskAgentExecutionGraph } from './services/chat/taskExecutionRunner.js';
+// Phase 7d-5δ commit 7a: chat mode catalogue extracted to a leaf so the
+// upcoming runChatAgentExecutionGraph (commit 7b) can import it without
+// reimporting desktopStore.
+import { MODE_DEFS } from './services/chat/modeDefs.js';
 import {
   serializeChatForPersistence,
   persistChatThreads,
@@ -676,26 +680,8 @@ function availableModelsForConfig(config) {
   return [DEFAULT_CONFIG.model];
 }
 
-const MODE_DEFS = [
-  {
-    id: 'chat',
-    label: 'Chat',
-    prompt:
-      'You are Melo Chat. Focus on clear answers, planning, and steady collaboration.',
-  },
-  {
-    id: 'cowork',
-    label: 'Cowork',
-    prompt:
-      'You are Melo Cowork. Collaborate like a thoughtful teammate, keep momentum, and suggest next steps.',
-  },
-  {
-    id: 'code',
-    label: 'Code',
-    prompt:
-      'You are Melo Code. Be implementation-focused, structured, and explicit about technical tradeoffs.',
-  },
-];
+// MODE_DEFS moved to `src/services/chat/modeDefs.js` in Phase 7d-5δ
+// commit 7a. Re-imported at the top of this file.
 
 // DEFAULT_SKILL_TASK_SCHEMA and BUILTIN_SKILLS were extracted to
 // `src/services/skill/skillService.js` in Phase 9b and are imported at the

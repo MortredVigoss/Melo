@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 16:45 — Phase 7d-5δ commit 7a：抽出 MODE_DEFS（elephant 抽取的最后一个 prereq）
+
+- 做了什么：
+  - **新增 `src/services/chat/modeDefs.js`** —— `MODE_DEFS` 静态 3 条目数组（chat/cowork/code）byte-for-byte 搬走。零依赖纯数据。
+  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 20 行原定义换 2 行 stub。3 个 caller（line ~1476/~3640/~4176）走 imported name。
+- 为什么：`runChatAgentExecutionGraph`（即将抽走的 elephant）有两个剩余 LOCAL 依赖：`MODE_DEFS` + `getSharedSkillIndex`。前者有 3 callers（runner 占 1，desktopStore 占 2）必须先抽到 leaf；后者只有 runner 1 caller，跟着 runner 一起搬。这是 elephant 抽取前的最后一个 prereq。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6202 → 6188（-14 行）
+
 ## 2026-04-26 16:30 — Phase 7d-5δ commit 6：抽出 runTaskAgentExecutionGraph（第一个 runner 落地，pattern 验证通过）
 
 - 做了什么：
