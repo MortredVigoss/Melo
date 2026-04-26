@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走（project + task + workspace + approval = 17 funcs / 412 行）
+
+- 做了什么：4 个 sibling leaf 模块同 commit 创建：
+  - `src/services/project/projectMutations.js` —— `createProject` + `updateProject`（42 行）。APP_ROOT 4-dirname 重算。`normalizeProject` 用 stateHydration.js 的 1-arg wrapper 形态（不是 projectService.js 的 2-arg 原版）。
+  - `src/services/task/taskMutations.js` —— `markTaskOutcome` + `runTaskWorkerModel`（私有 helpers）+ `createTask` + `updateTask` + `runTask` + `runTaskLane`（共 152 行）。
+  - `src/services/workspace/workspaceMutations.js` —— `selectWorkspaceFile` + `buildWorkspaceProjectResolver`（私有）+ `readWorkspaceFilePreview` + `saveWorkspaceFile` + `createArtifact` + `applyArtifactToWorkspaceFile` + `runLocalCommand`（共 146 行）。APP_ROOT 4-dirname + `sanitizeWorkspacePath` 1-arg wrapper byte-identical 复制 + `execFile = promisify(execFileCallback)` 复制。
+  - `src/services/approval/approvalMutations.js` —— `createApproval` + `rejectApproval` + `executeApproval`（122 行）。executeApproval 派发到 workspaceMutations + externalConnectorMutations。
+  - **`src/desktopStore.js`**：4 个 export-from re-export 块给 server.js；删 17 处函数定义（约 412 行）换 8 行 stub。
+- 关于 path Bπ 选择 4-簇 同 commit：每个簇互相独立、依赖图清晰、pattern 完全相同（load → mutate → updateStateAtomically/saveState → return getDesktopBootstrap()）；分开 4 commit 反而增加 gate cycles 的成本。
+- 回归：services + state + desktopStore + memory + agents 全套绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 3578 → 3166（-412 行；本会话累计 8527→3166 = **-5361 行 = -62.9%**）
+
 ## 2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇（10 个 CRUD entry，~331 行）
 
 - 做了什么：

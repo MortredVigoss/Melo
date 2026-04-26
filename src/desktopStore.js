@@ -446,6 +446,34 @@ export {
   applySkillProposal,
   draftSkillFromChat,
 } from './services/skill/skillMutations.js';
+// Phase 7d-5ε commit 3: project + task + workspace + approval mutation
+// clusters extracted to four sibling leaf modules. Each is a pure
+// state-machine CRUD orchestrator that shares the same pattern (load,
+// mutate, persist, return getDesktopBootstrap()). Re-exported here for
+// server.js's named-import block.
+export {
+  createProject,
+  updateProject,
+} from './services/project/projectMutations.js';
+export {
+  createTask,
+  updateTask,
+  runTask,
+  runTaskLane,
+} from './services/task/taskMutations.js';
+export {
+  selectWorkspaceFile,
+  readWorkspaceFilePreview,
+  saveWorkspaceFile,
+  createArtifact,
+  applyArtifactToWorkspaceFile,
+  runLocalCommand,
+} from './services/workspace/workspaceMutations.js';
+export {
+  createApproval,
+  rejectApproval,
+  executeApproval,
+} from './services/approval/approvalMutations.js';
 // Phase 7d-5δ commit 3: workspace snapshot builder extracted. The new
 // module computes its own APP_ROOT via a deeper dirname chain (same
 // pattern as Phase 7d-5α-A1 commit 7's stateHydration.js) and keeps a
@@ -1140,23 +1168,9 @@ export function buildConversationContinuityContext(chat, latestUserMessage = '')
 // taskExecutionPrompt moved to `src/services/task/taskPrompt.js` in
 // Phase 7d-5δ commit 4. Re-imported at the top of this file.
 
-function markTaskOutcome(task, { success, note }) {
-  task.updatedAt = nowIso();
-  task.lastRunAt = nowIso();
-  task.runCount = (task.runCount || 0) + 1;
-  task.latestNote = note;
-  task.status = success ? 'done' : 'blocked';
-}
+// task-domain mutations moved to a sibling leaf in Phase 7d-5ε
+// commit 3. Re-exported above.
 
-async function runTaskWorkerModel(state, config, task) {
-  const graphResult = await runTaskAgentExecutionGraph({
-    state,
-    config,
-    task,
-  });
-
-  return graphResult.reply;
-}
 
 // buildConnectors moved to `src/services/connector/connectorRollup.js`
 // in Phase 7d-5δ commit 8c. APP_ROOT is recomputed inside the new
@@ -3106,325 +3120,27 @@ export { SKILLS_DISK_ROOT };
 
 
 
-export async function createProject({ name, summary, instructions, tag, workspacePath }) {
-  const state = ensureSelectedEntities(await loadState());
-  const timestamp = nowIso();
-  const project = normalizeProject({
-    id: randomUUID(),
-    name: name?.trim() || 'Untitled project',
-    summary: summary?.trim() || 'A local Melo project.',
-    instructions:
-      instructions?.trim() ||
-      'Keep this project focused, actionable, and easy to continue later.',
-    tag: tag?.trim() || 'Project',
-    workspacePath: workspacePath?.trim() || APP_ROOT,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
+// project-domain mutations moved to a sibling leaf in Phase 7d-5ε
+// commit 3. Re-exported above.
 
-  state.projects.unshift(project);
-  state.settings.selectedProjectId = project.id;
-  state.settings.activeView = 'projects';
-  state.settings.selectedFilePath = null;
-  await saveState(state);
-  return getDesktopBootstrap();
-}
 
-export async function updateProject(projectId, patch) {
-  const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId);
-  if (!project) {
-    throw new Error('Project not found.');
-  }
 
-  Object.assign(project, normalizeProject({
-    ...project,
-    ...patch,
-    id: project.id,
-    createdAt: project.createdAt,
-    updatedAt: nowIso(),
-  }));
 
-  await saveState(state);
-  return getDesktopBootstrap();
-}
 
-export async function createTask({ title, summary, owner, projectId, chatId, kind = 'task' }) {
-  const state = ensureSelectedEntities(await loadState());
-  const task = normalizeTask({
-    id: randomUUID(),
-    kind,
-    title: String(title || '').trim() || 'Untitled task',
-    summary: String(summary || '').trim(),
-    owner,
-    projectId: projectId || state.settings.selectedProjectId,
-    chatId: chatId || state.settings.selectedChatId,
-    status: 'todo',
-    createdAt: nowIso(),
-    updatedAt: nowIso(),
-  });
 
-  state.tasks.unshift(task);
-  state.tasks = normalizeTasks(state.tasks);
-  await saveState(state);
-  return getDesktopBootstrap();
-}
+// approval-domain mutations moved to a sibling leaf in Phase 7d-5ε
+// commit 3. Re-exported above.
 
-export async function updateTask(taskId, patch = {}) {
-  const state = ensureSelectedEntities(await loadState());
-  const task = findTaskById(state, taskId);
-  if (!task) {
-    throw new Error('Task not found.');
-  }
 
-  Object.assign(task, normalizeTask({
-    ...task,
-    ...patch,
-    id: task.id,
-    createdAt: task.createdAt,
-    updatedAt: nowIso(),
-  }));
 
-  state.tasks = normalizeTasks(state.tasks);
-  await saveState(state);
-  return getDesktopBootstrap();
-}
-
-export async function runTask(taskId) {
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
-  const state = ensureSelectedEntities(rawState);
-  const task = findTaskById(state, taskId);
-  if (!task) {
-    throw new Error('Task not found.');
-  }
-
-  const runningState = ensureSelectedEntities(await loadState());
-  const runningTask = findTaskById(runningState, taskId);
-  if (!runningTask) {
-    throw new Error('Task not found.');
-  }
-
-  runningTask.status = 'running';
-  runningTask.updatedAt = nowIso();
-  await saveState(runningState);
-
-  let outcome;
-  try {
-    const note = await runTaskWorkerModel(state, config, task);
-    outcome = { success: true, note };
-  } catch (error) {
-    outcome = {
-      success: false,
-      note: error.message || 'Task run failed.',
-    };
-  }
-
-  const latestState = ensureSelectedEntities(await loadState());
-  const latestTask = findTaskById(latestState, taskId);
-  if (!latestTask) {
-    throw new Error('Task not found after worker execution.');
-  }
-
-  markTaskOutcome(latestTask, outcome);
-  latestState.tasks = normalizeTasks(latestState.tasks);
-  await saveState(latestState);
-  return getDesktopBootstrap();
-}
-
-export async function runTaskLane(owner) {
-  const normalizedOwner = TASK_OWNERS.includes(owner) ? owner : 'main';
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
-  const state = ensureSelectedEntities(rawState);
-  const queuedTasks = state.tasks.filter(
-    task =>
-      task.kind === 'agent' &&
-      task.owner === normalizedOwner &&
-      ['todo', 'blocked'].includes(task.status),
-  );
-
-  if (!queuedTasks.length) {
-    throw new Error(`No queued agent tasks for ${normalizedOwner}.`);
-  }
-
-  const queuedTaskIds = queuedTasks.map(task => task.id);
-  const runningState = ensureSelectedEntities(await loadState());
-  const runningTasks = runningState.tasks.filter(task => queuedTaskIds.includes(task.id));
-  if (!runningTasks.length) {
-    throw new Error(`No queued agent tasks for ${normalizedOwner}.`);
-  }
-
-  for (const task of runningTasks) {
-    task.status = 'running';
-    task.updatedAt = nowIso();
-  }
-  await saveState(runningState);
-
-  const results = await Promise.allSettled(
-    queuedTasks.map(task => runTaskWorkerModel(state, config, task)),
-  );
-
-  const latestState = ensureSelectedEntities(await loadState());
-  for (let index = 0; index < queuedTasks.length; index += 1) {
-    const task = findTaskById(latestState, queuedTasks[index]?.id);
-    const result = results[index];
-    if (!task || !result) continue;
-
-    if (result.status === 'fulfilled') {
-      markTaskOutcome(task, { success: true, note: result.value });
-    } else {
-      markTaskOutcome(task, {
-        success: false,
-        note: result.reason?.message || 'Task run failed.',
-      });
-    }
-  }
-
-  latestState.tasks = normalizeTasks(latestState.tasks);
-  await saveState(latestState);
-  return getDesktopBootstrap();
-}
-
-export async function createApproval({
-  kind,
-  title,
-  description,
-  payload,
-  projectId,
-  chatId,
-}) {
-  await updateStateAtomically(state => {
-    const approval = normalizeApproval({
-      id: randomUUID(),
-      kind,
-      title: String(title || '').trim() || 'Pending approval',
-      description: String(description || '').trim(),
-      payload,
-      projectId: projectId || state.settings.selectedProjectId,
-      chatId: chatId || state.settings.selectedChatId,
-      status: 'pending',
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    });
-
-    state.approvals.unshift(approval);
-    state.approvals = normalizeApprovals(state.approvals);
-    return state;
-  });
-  return getDesktopBootstrap();
-}
-
-export async function rejectApproval(approvalId) {
-  await updateStateAtomically(state => {
-    const approval = findApprovalById(state, approvalId);
-    if (!approval) {
-      throw new Error('Approval request not found.');
-    }
-
-    approval.status = 'rejected';
-    approval.updatedAt = nowIso();
-    approval.resultSummary = 'Request rejected.';
-    state.approvals = normalizeApprovals(state.approvals);
-    return state;
-  });
-  return getDesktopBootstrap();
-}
-
-export async function executeApproval(approvalId) {
-  const state = ensureSelectedEntities(await loadState());
-  const approval = findApprovalById(state, approvalId);
-  if (!approval) {
-    throw new Error('Approval request not found.');
-  }
-
-  await updateStateAtomically(latestState => {
-    const runningApproval = findApprovalById(latestState, approvalId);
-    if (!runningApproval) {
-      throw new Error('Approval request not found.');
-    }
-
-    runningApproval.status = 'running';
-    runningApproval.updatedAt = nowIso();
-    runningApproval.resultSummary = 'Running approved action...';
-    latestState.approvals = normalizeApprovals(latestState.approvals);
-    return latestState;
-  });
-
-  try {
-    let result;
-    switch (approval.kind) {
-      case 'command':
-        result = await runLocalCommand(approval.payload);
-        break;
-      case 'file-save':
-        result = await saveWorkspaceFile(approval.payload);
-        break;
-      case 'artifact-apply':
-        result = await applyArtifactToWorkspaceFile(approval.payload);
-        break;
-      case 'external-tool':
-        result = await invokeExternalConnectorTool(approval.payload);
-        break;
-      default:
-        throw new Error(`Unsupported approval kind: ${approval.kind}`);
-    }
-
-    await updateStateAtomically(latestState => {
-      const completedApproval = findApprovalById(latestState, approvalId);
-      if (!completedApproval) {
-        return latestState;
-      }
-
-      completedApproval.status = 'approved';
-      completedApproval.updatedAt = nowIso();
-      completedApproval.executedAt = nowIso();
-      completedApproval.resultSummary =
-        result?.commandRun?.label ||
-        result?.toolRun?.toolName ||
-        result?.workspace?.selectedFilePath ||
-        'Action completed.';
-      latestState.approvals = normalizeApprovals(latestState.approvals);
-      return latestState;
-    });
-
-    return {
-      ...(result || {}),
-      bootstrap: await getDesktopBootstrap(),
-    };
-  } catch (error) {
-    await updateStateAtomically(latestState => {
-      const failedApproval = findApprovalById(latestState, approvalId);
-      if (!failedApproval) {
-        return latestState;
-      }
-
-      failedApproval.status = 'rejected';
-      failedApproval.updatedAt = nowIso();
-      failedApproval.resultSummary = error.message;
-      latestState.approvals = normalizeApprovals(latestState.approvals);
-      return latestState;
-    });
-    throw error;
-  }
-}
-
-export async function selectWorkspaceFile(filePath) {
-  const state = ensureSelectedEntities(await loadState());
-  state.settings.selectedFilePath = filePath || null;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  await saveState(state);
-  return getDesktopBootstrap();
-}
+// workspace-domain mutations moved to a sibling leaf in Phase 7d-5ε
+// commit 3. Re-exported above.
 
 // Workspace I/O orchestration moved to src/services/workspace/workspaceService.js
 // in Phase 7b. These wrappers load state once, pass a state-backed resolver
 // into the service, then apply UI state side-effects (selectedFilePath,
 // activeMode/View, project.updatedAt) on the same snapshot before persisting.
 // selectWorkspaceFile stays below as-is — it's pure state mutation, not I/O.
-function buildWorkspaceProjectResolver(state) {
-  return async projectId =>
-    findProjectById(state, projectId || state.settings.selectedProjectId);
-}
 
 /**
  * Read a workspace file for read-only preview (citation side viewer).
@@ -3432,138 +3148,10 @@ function buildWorkspaceProjectResolver(state) {
  * files without kicking the user out of chat view or swapping
  * selectedFilePath.
  */
-export async function readWorkspaceFilePreview(params = {}) {
-  const state = ensureSelectedEntities(await loadState());
-  return readWorkspaceFilePreviewService(params, {
-    resolveProject: buildWorkspaceProjectResolver(state),
-  });
-}
 
-export async function saveWorkspaceFile({ filePath, content, projectId } = {}) {
-  const state = ensureSelectedEntities(await loadState());
-  const { project, relativeFilePath } = await saveWorkspaceFileContentService(
-    { filePath, content, projectId },
-    { resolveProject: buildWorkspaceProjectResolver(state) },
-  );
 
-  state.settings.selectedFilePath = relativeFilePath;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  project.updatedAt = nowIso();
-  await saveState(state);
 
-  return getDesktopBootstrap();
-}
 
-export async function createArtifact({ title, content, language, projectId, kind = 'note' }) {
-  const state = ensureSelectedEntities(await loadState());
-  const trimmedContent = (content || '').trim();
-  if (!trimmedContent) {
-    throw new Error('Artifact content cannot be empty.');
-  }
-
-  const artifact = normalizeArtifact({
-    id: randomUUID(),
-    title: title?.trim() || 'Untitled artifact',
-    content: trimmedContent,
-    language: language?.trim() || 'text',
-    kind,
-    projectId: projectId || state.settings.selectedProjectId,
-    createdAt: nowIso(),
-  });
-
-  state.artifacts.unshift(artifact);
-  const project = findProjectById(state, artifact.projectId);
-  if (project) {
-    project.updatedAt = nowIso();
-  }
-
-  await saveState(state);
-  return getDesktopBootstrap();
-}
-
-export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {
-  const state = ensureSelectedEntities(await loadState());
-  const artifact = state.artifacts.find(entry => entry.id === artifactId);
-  if (!artifact) {
-    throw new Error('Artifact not found.');
-  }
-
-  // Resolve the caller's projectId chain (explicit → artifact's project →
-  // selected project) before handing off to the service. The "target path
-  // empty? fall back to selected file" rule is also a state-machine call.
-  const { project, targetPath } = await applyArtifactContentToWorkspaceService(
-    {
-      artifactContent: artifact.content,
-      targetFilePath: filePath || state.settings.selectedFilePath,
-      projectId: projectId || artifact.projectId,
-    },
-    { resolveProject: buildWorkspaceProjectResolver(state) },
-  );
-
-  state.settings.selectedFilePath = targetPath;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  project.updatedAt = nowIso();
-  await saveState(state);
-
-  return getDesktopBootstrap();
-}
-
-export async function runLocalCommand({ templateId, query, projectId }) {
-  const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
-  if (!project) {
-    throw new Error('Project not found.');
-  }
-
-  const workspacePath = sanitizeWorkspacePath(project.workspacePath);
-  const template = COMMAND_TEMPLATES.find(entry => entry.id === templateId);
-  if (!template) {
-    throw new Error('Unknown command template.');
-  }
-
-  const trimmedQuery = (query || '').trim();
-  if (template.requiresInput && !trimmedQuery) {
-    throw new Error('This command requires input.');
-  }
-
-  const args = template.args(trimmedQuery);
-  let success = false;
-  let output = '';
-
-  try {
-    const { stdout, stderr } = await execFile(template.command, args, {
-      cwd: workspacePath,
-      timeout: 20000,
-      maxBuffer: 1024 * 1024,
-    });
-    success = true;
-    output = `${stdout || ''}${stderr || ''}`.trim() || '(no output)';
-  } catch (error) {
-    output = `${error.stdout || ''}${error.stderr || ''}`.trim() || error.message;
-  }
-
-  state.commandRuns.unshift({
-    id: randomUUID(),
-    projectId: project.id,
-    templateId: template.id,
-    label: template.label,
-    command: [template.command, ...args].join(' '),
-    query: trimmedQuery,
-    success,
-    output: output.slice(0, 12000),
-    executedAt: nowIso(),
-  });
-  state.commandRuns = state.commandRuns.slice(0, MAX_COMMAND_RUNS);
-  project.updatedAt = nowIso();
-  await saveState(state);
-
-  return {
-    bootstrap: await getDesktopBootstrap(),
-    commandRun: state.commandRuns[0],
-  };
-}
 
 // extractUrlAttachmentsFromText shipped with sendChatMessage in
 // Phase 7d-5δ commit 8f (was a sendChatMessage-private helper).
