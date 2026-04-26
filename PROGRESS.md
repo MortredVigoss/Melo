@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 22:00 — Phase 7d-5ε commit 1：抽出 External Connector CRUD 簇（7 个 CRUD entry，~277 行）
+
+- 做了什么：
+  - **新增 `src/services/connector/externalConnectorMutations.js`** —— byte-for-byte 把 7 个 exported CRUD 函数搬走：`createExternalConnector` / `updateExternalConnector` / `removeExternalConnector` / `pingExternalConnector` / `readExternalConnectorResource` / `previewExternalConnectorPrompt` / `invokeExternalConnectorTool`，共 ~277 行。所有 deps 都已是 leaf（state machine + connector primitives）。
+  - **`src/desktopStore.js`**：6 行 re-export 块（server.js HTTP 路由依赖这些函数名），删 7 处函数定义换 6 行 stub。
+- 为什么：path B 完成后 desktopStore 还有 ~4140 行——其中大块是 server.js 调用的 CRUD entry。External Connector 是其中域最清晰、deps 最少的一组，自然成簇。后续可类似处理 Skill CRUD / Project CRUD / Task & Approval CRUD / Telegram polling / Discord polling。
+- 回归：services + state + desktopStore + memory + agents 全套绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 4144 → 3891（-253 行；本会话累计 8527→3891 = **-4636 行 = -54.4%**）
+
 ## 2026-04-26 21:30 — desktopStore unused-import cleanup（path B 收尾后的第二轮 housekeeping）+ PROGRESS condense
 
 - 做了什么：
