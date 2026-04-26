@@ -12,7 +12,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 2 行；删原函数定义（26 行）换 2 行 stub。唯一内部 caller (line ~4171, inside `runTaskAgentExecutionGraph`) 走 imported name。
 - 为什么：runner 抽取 prerequisite #3。`runTaskAgentExecutionGraph` 的 prepare 节点要 `taskExecutionPrompt`；现在只剩 `effectiveAgentProfile`（最后一个、最大、57 callers）和 runner 本身待抽。
 - 回归：全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`12e85aa`
   - desktopStore: 6325 → 6303（-22 行）
 
 ## 2026-04-26 15:00 — Phase 7d-5δ commit 3：抽出 buildWorkspaceSnapshot（带 APP_ROOT 深度调整）
@@ -25,7 +25,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 `buildWorkspaceSnapshot` 定义（52 行）换 5 行 stub。8 个内部 caller 走 imported name。
 - 为什么：runner 抽取 prerequisite #2。任务 / 聊天执行图的 prepare 节点都要 `buildWorkspaceSnapshot`；要把它们搬出去，先把这个 helper 拎成 leaf。APP_ROOT 处理用上次已经验证过的 commit 7 模式。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`f3f61d5`
   - desktopStore: 6365 → 6325（-40 行）
 
 ## 2026-04-26 14:30 — Phase 7d-5δ commit 2：抽出 4 个 findXById finder 簇
@@ -35,7 +35,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 4 处函数定义（共 16 行）换 4 行 stub。35 个内部 caller 走 imported name。
 - 为什么：runner 抽取的 prerequisite。`runTaskAgentExecutionGraph` / `runChatAgentExecutionGraph` 都用 `findProjectById`；要把 runner 搬到独立 leaf，finder 必须先有自己的 leaf 不然就要走 DI 注入或 export-at-tree（cec12c3 那条路被 gate 评 C）。把 4 个 trivial finder 一起搬是最自然的边界——和 Phase 7d-5γ commit 1（COMMAND_TEMPLATES + descriptor）同款打包。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`be96ec6`
   - desktopStore: 6367 → 6365（-2 行；函数体很小，主要是 import 块抵消了瘦身）
 
 ## 2026-04-26 14:00 — Phase 7d-5δ commit 1：抽出 chat-graph action planner 簇（7 个互引的 LOCAL helper 一并搬走）
@@ -54,7 +54,7 @@
   - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 221 行（7 函数 + 间隔注释）换成 6 行 stub。
 - 为什么：7d-5δ 的目标是 elephant 抽取（runChatAgentExecutionGraph + runTaskAgentExecutionGraph + sendChatMessage）。但执行图依赖 `planChatGraphAction` + `buildApprovalResponse`——这两个又依赖 5 个簇内私有 helper。先把整个 planning 簇拎出去，elephant commit 才能干净 import。这是 7d-5α-A1 的同款"先抽 prerequisite、再抽消费者"路径。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`7866271`
   - desktopStore: 6572 → 6367（-205 行；本会话内累计已减 838 行：8527→6367）
 
 ## 2026-04-26 13:30 — Phase 7d-5γ commit 4：抽出 buildAgentMemoryNodeContext + 私有 helper（最大单 commit 瘦身）
