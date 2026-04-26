@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-26 21:00 — Phase 7d-5δ commit 8f：**抽出 sendChatMessage（path B 真正收尾）+ scanRecentChatsForSkillProposals**
+
+- 做了什么：
+  - **新增 `src/services/chat/sendChatMessage.js`** —— `sendChatMessage`（350 行 async）+ 两个 sendChatMessage-private helper（`extractUrlAttachmentsFromText` 3 行 + `isAbortError` 7 行）byte-for-byte 搬走。共约 360 行。所有 30+ imports 全部映射到 leaf 模块（前 8a-8e 全部铺设的成果）。
+  - **新增 `src/state/skillProposalScan.js`** —— `scanRecentChatsForSkillProposals`（49 行）byte-for-byte 搬走。原本在 desktopStore；I/O orchestrator 跟 pure heuristics（`agents/skillProposals.js`）应该分开住，所以建独立 state-domain 文件而不是塞进 skillProposals.js。
+  - **`src/desktopStore.js`**：4 个 import + 4 个 export-from re-export（`sendChatMessage` 为 server.js / 内部 caller，`scanRecentChatsForSkillProposals` 为 skill-proposals 测试文件）。删 4 处函数定义（共 ~410 行）换 ~12 行 stub。
+  - 用 Python 脚本机械抽取 + 头部 import 块，避免手抄漏字符。
+- **path B 完成**：8 个 sub-commit (8a 到 8f) 把所有 LOCAL prereq + sendChatMessage 全搬出来。整个 chat 主路径现在是独立 leaf 链。
+- 回归：services + state + desktopStore + memory + agents 全套 **724/724 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 4542 → 4159（-383 行；本会话累计 **8527 → 4159 = -4368 行 = -51.2%** ——突破半数）
+
 ## 2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 个 cluster-private helper
 
 - 做了什么：
