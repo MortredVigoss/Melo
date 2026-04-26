@@ -386,6 +386,9 @@ import {
 // Phase 7d-5β: connector prompt summarization moved to a dedicated leaf
 // module. byte-for-byte port (CLAUDE.md §5).
 import { summarizeConnectorPrompts } from './services/connector/connectorPrompts.js';
+// Phase 7d-5β commit 2: project-context block extracted to a leaf module.
+// Single dependency `agentUsesTool` is now resolved inside the leaf.
+import { buildProjectContextSection } from './services/project/projectContext.js';
 import { createAgentMarkdownFileHelpers } from './services/agent/markdownFiles.js';
 import {
   AGENT_TOOL_OPTIONS,
@@ -3646,11 +3649,9 @@ export const __offlineBacklogTesting = {
 // (also re-exported from this file for back-compat). Both byte-for-byte
 // ports — see CLAUDE.md §5.
 
-function buildProjectContextSection(project, activeAgentProfile) {
-  return project && agentUsesTool(activeAgentProfile, 'projects')
-    ? `Active project: ${project.name}\nSummary: ${project.summary}\nWorkspace: ${project.workspacePath}\nInstructions: ${project.instructions}`
-    : '';
-}
+// buildProjectContextSection moved to
+// `src/services/project/projectContext.js` in Phase 7d-5β. Re-imported
+// at the top of this file.
 
 // summarizeAgentPrompt + buildConversationFormattingRules +
 // buildOutputHardConstraints + detectInputLanguage +

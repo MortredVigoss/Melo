@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 11:30 — Phase 7d-5β commit 2：抽出 buildProjectContextSection（单依赖叶子）
+
+- 做了什么：
+  - **新增 `src/services/project/projectContext.js`** —— `buildProjectContextSection`（5 行）byte-for-byte 搬走。它依赖的 `agentUsesTool` 在新模块里直接 `import` from `../agent/agentTools.js`（已经是 leaf）。
+  - **`src/desktopStore.js`**：顶部 import 块加 1 行（按 project/ 域排在 connector 后面）；删原函数定义（5 行），换成 3 行 stub 注释。两个内部 caller（line 4464 / 4956）走 imported name 自然链接。
+- 为什么：commit 1 抽完 4 个零依赖叶子之后，单依赖（仅依赖一个已 imported 的 leaf）就是下一个最低风险的台阶。`buildProjectContextSection` 不仅短，依赖的 `agentUsesTool` 也已经在 service 模块里了。
+- 回归：services + state + desktopStore + memory + agents 套件全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 7124 → 7128（+4 是因为 import 块的注释 + import 行多于函数的减量；函数已搬走是关键）
+
 ## 2026-04-26 11:00 — Phase 7d-5β commit 1：4 个真叶子 helper 一并 byte-for-byte 抽走
 
 - 做了什么（用户选"4 leaves 合一 commit"）：
