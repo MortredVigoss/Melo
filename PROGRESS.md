@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）
+
+- 做了什么：用 Python 解析 desktopStore.js 的所有 110 个 import 块，对每个 named import 的 local 名字在文件 body（非 import / 非 export-from）中扫一遍。结果：**39 个 block 含未用 symbol**，其中 22 个整块删、17 个 trim 部分。
+- 中间小坑（自查 + 测试抓到）：第一版脚本没处理"花括号里夹注释"——`./state/agentProfiles.js` import 块里有几行 `// Phase 7d-5δ commit 5: ...` 注释，注释内容包含"projectAgentOverrideFor"字样。脚本把 `{...}` 里逗号 split 成 names 时，**注释和它后面的真 symbol 被合成一个奇怪的 multiline 字符串**——结果 `projectAgentOverrideFor` 没被识别成独立 name，trim 时被丢掉，14 个测试 ReferenceError。手工把它加回 import 即修。
+- **最终保留 desktopStore 完全用得上的 imports**：删了 ~22 个完全死的 import block（agentGraph、tools/registry getTool/getAllTools、retrieval/intentRouter、memory/attic/frame/scene/embeddings/contextCompact/speakerProfile/speakerFacts，等等），trim 了 17 个 block 的部分 symbol（保留还在用的）。
+- 为什么：path B 抽走了大象 + 各 helper 后，desktopStore 自身已经不再调用这些函数——但 import 行作为"再 import 回来给将来可能用"的死代码留了下来。Codex 之前评 D 时也提到 unused imports 是干扰项，独立 cleanup commit 比塞进 byte-for-byte 抽取里更干净。
+- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 5681 → 5576（-105 行；本会话累计 8527→5576 = **-2951 行 = -35%**）
+
 ## 2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第三次 D + 数据丢失事件 + 恢复）
 
 - **事件**：上一次提交（`7b9662e`）的 smoke 测试**没有隔离 MELO_HOME**。在我本地跑测试的瞬间 `~/.melo/desktop/state.json` 被覆盖成 fixture 内容（15376 字节 → 1582 字节），`store.sqlite` 时间戳也被改写（memory 行很可能被 `replaceMemories` 清空）。Gate 评 D 阻断了 push（commit 没出本地）但伤害**已经在本机发生**。

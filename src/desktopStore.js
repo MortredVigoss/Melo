@@ -6,13 +6,10 @@ import {
   renameSync,
   statSync,
 } from 'node:fs';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import {
-  basename,
   dirname,
-  extname,
-  isAbsolute,
   join,
   relative,
   resolve,
@@ -28,19 +25,7 @@ import {
   normalizeModelCatalogs,
   saveConfig,
 } from './config.js';
-import { atomicWriteJson } from './storage.js';
-import {
-  GRAPH_END,
-  createStateGraph,
-  runStateGraph,
-} from './agentGraph.js';
-import { createOpenAICompatibleReply, discoverAvailableModels } from './openai.js';
-import { buildReActOperatingInstructions } from './prompts.js';
-import {
-  loadThreadCheckpoint,
-  saveThreadCheckpoint,
-  pruneThreadCheckpoints,
-} from './memory/checkpointer.js';
+import { discoverAvailableModels } from './openai.js';
 import {
   normalizeConversationSnippet,
   normalizeComparablePhrase,
@@ -49,31 +34,13 @@ import {
   extractClarificationOptions,
   findClarificationOptionMatch,
 } from './memory/heuristics.js';
-import {
-  buildThreadContext as buildStructuredThreadContext,
-  renderConversationContinuityContext as renderStructuredConversationContinuityContext,
-  renderThreadContext as renderStructuredThreadContext,
-  renderThreadMemorySnapshot as renderStructuredThreadMemorySnapshot,
-} from './memory/threadContext.js';
-import {
-  buildRecentWindow,
-  compactConversation,
-  formatCompactContextBlock,
-  shouldCompact,
-} from './memory/contextCompact.js';
-import { bootstrapBuiltinTools, getTool, getAllTools } from './tools/registry.js';
-import { buildSkillTool } from './agents/skillExecutor.js';
+import { renderConversationContinuityContext as renderStructuredConversationContinuityContext, renderThreadMemorySnapshot as renderStructuredThreadMemorySnapshot } from './memory/threadContext.js';
+import { bootstrapBuiltinTools } from './tools/registry.js';
 import {
   defaultSkillProposalStore,
   proposeSkillsFromActivity,
 } from './agents/skillProposals.js';
 import { draftSkillFromConversation } from './agents/skillDrafting.js';
-import {
-  matchSkillsForMessage,
-  buildSkillIndex,
-  defaultSkillMatchCache,
-} from './agents/skillMatcher.js';
-import { getSkillLastRunMap } from './agents/skillRuns.js';
 import {
   loadSkillsFromDisk,
   saveSkillToDisk,
@@ -83,30 +50,11 @@ import {
   parseSkillMarkdown,
   SKILLS_DISK_ROOT,
 } from './agents/skillsDisk.js';
-import { executeToolCalls } from './tools/executor.js';
-import { parseModelResponse, formatToolResultsMessage } from './tools/parser.js';
-import { buildToolsSystemPrompt, shouldInjectToolsPrompt } from './tools/systemPrompt.js';
-import { bootstrapMcpServers, shutdownMcpServers } from './mcp/manager.js';
+import { bootstrapMcpServers } from './mcp/manager.js';
 import { emitHook } from './plugins/hooks.js';
-import {
-  maybeExtractSessionMemory,
-  formatSessionMemoryBlock,
-} from './memory/sessionMemory.js';
-import {
-  extractSpeakerFacts,
-  getSpeakerFactStorageKey,
-} from './memory/speakerFacts.js';
-import {
-  buildIdentityLine,
-  buildSpeakerProfileBlock,
-  shouldCompactSpeakerFacts,
-} from './memory/speakerProfile.js';
-import { recallMemories, replaceMemories, searchMemories, upsertMemory, markMemoriesUsed } from './memory/store.js';
-import { injectHotAttic, atticEnabled, enabledTiers } from './memory/attic.js';
-import { splitFrames, buildFrameEntry } from './memory/frame.js';
-import { groupIntoScenes, buildSceneEntry } from './memory/scene.js';
+import { maybeExtractSessionMemory } from './memory/sessionMemory.js';
+import { searchMemories } from './memory/store.js';
 import { indexMessage } from './memory/conversationIndex.js';
-import { getEmbedding } from './memory/embeddings.js';
 import { promoteAndPersistFacts, scheduleEmbeddingFillIn } from './memory/memoryPromotion.js';
 import {
   buildSearchSnippet,
@@ -118,25 +66,9 @@ import {
   streamSearchFileGroups as streamSearchFileGroupsService,
   streamSearchFileHits as streamSearchFileHitsService,
 } from './services/search/searchService.js';
-import {
-  enrichMessageWithMediaContext,
-  extractedMediaSearchText,
-  memoryKindForExtractedMedia,
-  normalizeExtractedMedia,
-  renderExtractedMediaContext,
-} from './media/index.js';
+import { enrichMessageWithMediaContext } from './media/index.js';
 import { promoteTextUrlsToAttachments } from './media/urlDetector.js';
 import { modelSupportsVision } from './media/visionCapability.js';
-import {
-  classifyIntent,
-  intentRequiresVerification,
-} from './retrieval/intentRouter.js';
-import {
-  applyVerificationToReply,
-  buildUncertaintySignalingRules,
-  parseUncertaintyMarker,
-  verifyUncertainClaim,
-} from './retrieval/selfVerification.js';
 import {
   isBacklogPollCycle,
   recentChatHasBotContext,
@@ -149,22 +81,13 @@ import {
   computeFollowUpScore,
   isLikelyTelegramFollowUpToBot,
   detectImplicitAddress,
-  IMPLICIT_REQUEST_RE,
-  IMPLICIT_IMPERATIVE_RE,
-  IMPLICIT_AT_OTHERS_RE,
 } from './services/remote/replyScoreSignals.js';
 import {
-  telegramApiBase,
-  buildTelegramMethodUrl,
   telegramApiRequest,
-  telegramApiFormRequest,
-  convertToOggOpus,
   sendTelegramAudioReply,
   sendTelegramPhotoReply,
-  sendTelegramDocumentReply,
   pingTelegramChannel,
   fetchTelegramUpdates as fetchTelegramUpdatesFromApi,
-  buildTelegramFileUrl,
 } from './services/remote/telegramApi.js';
 import {
   stripTelegramBotMention,
@@ -267,10 +190,7 @@ import {
   normalizeExternalToolRuns,
   normalizePromptHistory,
 } from './services/activity/activityLog.js';
-import {
-  normalizeProject as normalizeProjectRaw,
-  summarizeProject,
-} from './services/project/projectService.js';
+import { summarizeProject } from './services/project/projectService.js';
 import {
   parseMessageBlocksFromContent,
   normalizeMessageBlock,
@@ -292,14 +212,7 @@ import {
   stripInvisibleSearchDecorators,
   messageSearchText,
 } from './services/message/messageSearch.js';
-import {
-  buildVizSpecInstructions,
-  extractVizSpec,
-} from './services/viz/vizSpec.js';
-import {
-  buildCitationInstructions,
-  extractCitations,
-} from './services/viz/citation.js';
+import { extractVizSpec } from './services/viz/vizSpec.js';
 import {
   updateGroupRelationshipGraph,
   buildGroupRelationshipSummary,
@@ -346,12 +259,10 @@ import {
 // Phase 7d-5γ commit 2: tool-routing prompt block extracted to a leaf
 // (its two upstream deps — `agentUsesTool` and `COMMAND_TEMPLATES` —
 // are already in service modules).
-import { buildToolRoutingPrompt } from './services/agent/toolRoutingPrompt.js';
 // Phase 7d-5γ commit 3: channel-route system-prompt block extracted to a
 // leaf. All five helpers it touches (normalizeAgentChannels, the three
 // groupRelationship helpers, normalizeConversationSnippet) are already
 // in service modules — true zero-LOCAL extraction.
-import { buildChannelRoutePrompt } from './services/remote/channelRoutePrompt.js';
 // Phase 7d-5γ commit 4: agent memory-context system-prompt block + its
 // 5-line `latestUserMessageRecord` private helper extracted together to
 // a single leaf module. All other upstream deps were already in service
@@ -369,16 +280,6 @@ import {
 import {
   DEFAULT_SKILL_TASK_SCHEMA,
   BUILTIN_SKILLS,
-  MAX_SKILL_SYSTEM_PROMPT_CHARS,
-  MAX_SKILL_DESCRIPTION_CHARS,
-  MAX_SKILL_NAME_CHARS,
-  MAX_SKILL_ID_CHARS,
-  MAX_SKILL_FOLDER_CHARS,
-  MAX_SKILL_FOLDERS,
-  MAX_SKILL_TAG_CHARS,
-  MAX_SKILL_TAGS,
-  MAX_SKILL_TRIGGER_CHARS,
-  MAX_SKILL_TRIGGERS,
   SUSPICIOUS_SKILL_PROMPT_PATTERN,
   normalizeSkillParametersSchema,
   normalizeBuiltinSkill,
@@ -435,10 +336,8 @@ import {
   filterConnectorsForAgent,
   filterSkillsForAgent,
   fingerprintSkillList,
-  createSharedSkillIndexFactory,
 } from './services/agent/agentTools.js';
 import {
-  AGENT_CHANNEL_LIBRARY,
   AGENT_CHANNEL_IDS,
   CHANNEL_RUNTIME_FIELDS,
   normalizeAgentChannel,
@@ -473,9 +372,6 @@ import {
   normalizeAgentOverride,
   normalizeProjectAgentOverrides,
   dedupeAgentChannelTokenOwners,
-  // Phase 7d-5δ commit 5: effectiveAgentProfile + projectAgentOverrideFor
-  // moved into this same module since they compose on top of
-  // normalizeAgentProfile and read the same state shape.
   projectAgentOverrideFor,
   effectiveAgentProfile,
 } from './state/agentProfiles.js';
