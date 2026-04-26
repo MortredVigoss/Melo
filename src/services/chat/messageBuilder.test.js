@@ -278,6 +278,64 @@ test('messageToModelContent: group chat includeSenderPrefix prepends [name]: to 
   assert.equal(out, '[Alice]: hello');
 });
 
+// Phase 2: video keyframes ride along on extractedMedia.metadata.keyframes.
+// messageToModelContent must promote each frame to a real image_url part so
+// the vision model actually sees the picture, not just hear the transcript.
+test('messageToModelContent: video attachment + keyframes → image_url parts emitted', () => {
+  const videoAttachment = {
+    id: 'vid-1',
+    kind: 'video',
+    url: 'https://example.com/clip.mp4',
+    fileName: 'clip.mp4',
+    mimeType: 'video/mp4',
+  };
+  const dataUrl1 = 'data:image/jpeg;base64,/9j/4AAQAAAA';
+  const dataUrl2 = 'data:image/jpeg;base64,/9j/4BBQBBBB';
+  const out = messageToModelContent(
+    msg('user', 'What is in this clip?', {
+      attachments: [videoAttachment],
+      extractedMedia: [{
+        attachmentId: 'vid-1',
+        kind: 'transcript',
+        text: 'spoken: hello world',
+        metadata: { keyframes: [dataUrl1, dataUrl2], source: 'video-audio-transcript' },
+      }],
+    }),
+  );
+  assert.ok(Array.isArray(out));
+  const imageUrls = out.filter(p => p.type === 'image_url').map(p => p.image_url.url);
+  assert.deepEqual(imageUrls, [dataUrl1, dataUrl2]);
+  // Image_url parts must precede the video_attachment shell so the model
+  // sees them before the (eventually-dropped) video stub.
+  const firstImageIdx = out.findIndex(p => p.type === 'image_url');
+  const videoIdx = out.findIndex(p => p.type === 'video_attachment');
+  assert.ok(firstImageIdx >= 0 && videoIdx > firstImageIdx, 'image_url before video_attachment');
+});
+
+test('messageToModelContent: video attachment without keyframes still works (graceful fallback)', () => {
+  const videoAttachment = {
+    id: 'vid-2',
+    kind: 'video',
+    url: 'https://example.com/silent.mp4',
+    fileName: 'silent.mp4',
+    mimeType: 'video/mp4',
+  };
+  const out = messageToModelContent(
+    msg('user', 'transcribe this', {
+      attachments: [videoAttachment],
+      extractedMedia: [{
+        attachmentId: 'vid-2',
+        kind: 'transcript',
+        text: 'just the transcript',
+        metadata: { source: 'video-audio-transcript' },  // no keyframes
+      }],
+    }),
+  );
+  assert.ok(Array.isArray(out));
+  assert.ok(!out.some(p => p.type === 'image_url'), 'no image_url when keyframes absent');
+  assert.ok(out.some(p => p.type === 'video_attachment'));
+});
+
 test('messageToModelContent: attachments only (no recognised kind) falls back to text', () => {
   const out = messageToModelContent({
     role: 'user',

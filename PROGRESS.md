@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-04-27 02:00 — Video Phase 2：关键帧抽取上线（音轨 transcript + 5 张关键帧 → 模型真能"看"视频）
+
+- Phase 1 只是文案诚实，模型还是只听音轨。Phase 2 让模型实际拿到画面。
+- **抽帧实现**（`src/media/extractors/videoExtractor.js`）：现有 `-vn` 抽音轨成功后，再跑第二轮 ffmpeg：
+  - 先 `ffprobe` 拿 duration（新建 `probeDurationSec`）。
+  - 间隔 `interval = duration / 5`，clamp 到 [1s, 30s]——短视频不退化成 1 帧密集，长视频不堆爆 token。
+  - 滤镜 `fps=1/${interval},scale=512:-2`（每 N 秒一帧 + 缩到 512px 宽，`-2` 保偶高），`-frames:v 8` 硬 cap，`-q:v 4`（≈JPEG q70）。
+  - 每帧读出来 base64 → `data:image/jpeg;base64,...`，放到 `result.metadata.keyframes: [...]`。
+  - 抽帧失败（ffprobe 缺 / 视频损坏 / mkdir 失败）→ `keyframes = []`，**绝不影响 transcript** 返回路径。新建 `extractKeyframes` 单独 export 给测试用。
+- **plumbing**（`src/services/chat/messageBuilder.js`）：`messageToModelContent` 处理 video attachment 时按 `attachmentId` 查到对应 `extractedMedia` entry，如果有 `metadata.keyframes` 就逐帧 emit `{type:'image_url', image_url:{url:dataUrl}}`，position 在 `video_attachment` 之前（后者反正在 openai.js 被 drop）。`normalizeExtractedMedia` 已经原样保留 metadata，零 schema 改动。
+- **UI 文案同步**（`desktop-ui/app.js`）：附件菜单副标 "audio transcript only" → "transcript + keyframes"；hover title 改成完整说明 "audio is transcribed via Whisper, and ~5 evenly-spaced keyframes are sent to the model alongside the transcript."；drop banner / 消息流卡片 hint 同步。
+- **测试**：
+  - 新建 `src/media/extractors/videoExtractor.test.js`：用 `ffmpeg -f lavfi -i testsrc2=...` 现造一个 6s 320x240 测试视频，断言 `extractKeyframes` 返回 ≥3 ≤8 张 `data:image/jpeg;base64,...`，每张 base64 长度 >100。同 file 加一个 "ffprobe 读不出 duration → 返回 []" 测试。
+  - `src/services/chat/messageBuilder.test.js` 加 2 个 case：video + keyframes → image_url parts emitted（顺序在 video_attachment 之前）；video 无 keyframes → 不 emit image_url（graceful fallback）。
+- **token 成本估算**：512px JPEG q70 ≈ 30-60 KB / 张，5 张 ≈ 250 KB。OpenAI vision 按 `512×512 ≈ 170 token / 帧` 估，5 帧 ≈ 850 token——可接受，跟一张正常用户上传图差不多体量。
+- 验证：`node --check` 全过；regression `services + state + desktopStore + memory + agents + media` **329/329 全绿**（Phase 1 时 303，新增 2 个 videoExtractor + 2 个 messageBuilder test + 媒体周边测试自动 picked up）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 01:35 — Video 改成诚实的功能模型（Phase 1：UI 文案不再暗示能看画面）
 
 - 用户要求："第一阶段 UI 明确写成 Video audio/transcript，不要暗示能看画面"。

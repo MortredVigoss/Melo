@@ -966,11 +966,11 @@ function renderComposerAttachmentMenu() {
         <span class="chip-icon">${icon.image}</span>
         Image
       </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Video → audio is transcribed; visual frames are not sent to the model in this phase.">
+      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Video → audio is transcribed via Whisper, and ~5 evenly-spaced keyframes are sent to the model alongside the transcript.">
         <span class="chip-icon">${icon.video}</span>
         <span class="composer-menu-item-text">
           <span>Video</span>
-          <span class="composer-menu-item-hint">audio transcript only</span>
+          <span class="composer-menu-item-hint">transcript + keyframes</span>
         </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*">
@@ -1147,7 +1147,7 @@ function renderMessageAttachments(message) {
                 <video class="message-video" controls src="${escapeHtml(attachment.url)}"></video>
                 <div class="media-caption">
                   ${escapeHtml(attachmentLabel(attachment))}
-                  <span class="media-caption-hint">audio transcript only</span>
+                  <span class="media-caption-hint">transcript + keyframes</span>
                 </div>
               </div>
             `;
@@ -6489,7 +6489,7 @@ function renderComposerCard({ inline = false } = {}) {
               uiState.composerDragActive
                 ? `
                   <div class="composer-drop-banner">
-                    Drop image, audio, or video here. Video files are sent as audio transcripts only.
+                    Drop image, audio, or video here. Videos are sent as audio transcript plus a few keyframes.
                   </div>
                 `
                 : ''

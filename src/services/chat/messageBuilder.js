@@ -295,6 +295,25 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
   }
 
   for (const attachment of videoAttachments) {
+    // Phase 2: if videoExtractor managed to pull keyframes for this attachment,
+    // emit them as image_url parts so the model actually sees the picture
+    // (alongside the transcript that lands as text via mediaContext below).
+    // Falls back gracefully when no keyframes were captured (no ffmpeg, very
+    // short clip, ffprobe failure, etc.) — model just gets the transcript.
+    const matchedEntry = extractedMedia.find(
+      e => e?.attachmentId && attachment.id && e.attachmentId === attachment.id,
+    );
+    const keyframes = Array.isArray(matchedEntry?.metadata?.keyframes)
+      ? matchedEntry.metadata.keyframes
+      : [];
+    for (const dataUrl of keyframes) {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) continue;
+      contentParts.push({
+        type: 'image_url',
+        image_url: { url: dataUrl },
+      });
+    }
+
     contentParts.push({
       type: 'video_attachment',
       video_attachment: {
