@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功（Codex C-grade fix #3 + 实战 silent-video bug）
+
+- 上轮 Codex 第三次给 C：`extractVideoContent` 在 `audioResult` 为空时直接 `return null`，把已抽到的 keyframes 一起丢——和 UI"transcript + keyframes"承诺不一致。
+- 写 e2e 测试时**意外发现真 bug**：`testsrc2` 生成的视频无音轨，`ffmpeg -vn -acodec libopus` 直接报 "Output file does not contain any stream" 退非零——也就是说**生产里所有 silent video 之前都拿不到 keyframes**，不只是测试问题。
+- 修复（`src/media/extractors/videoExtractor.js`）：
+  - 加 DI hook `_setExtractAudioContentForTests(fn)`（同 `fileSearch.js → _setRipgrepBinaryForTests` 套路），让 `extractVideoContent` 端到端可测，无需 Whisper 凭据。
+  - **音轨抽取 + readFile** 包进独立 try/catch，`audioBuffer = null` 时不抛、继续走 keyframe 路径；`audioResult` 仅在 `audioBuffer` 存在时调 `_extractAudioContentImpl`。
+  - keyframe 抽取**无条件**运行（移到 `if (!audioResult)` 分支之前），返回值结构按结果分两路：
+    - `audioResult` 有：返 `{ kind: 'transcript', text: <真 transcript>, metadata: { source: 'video-audio-transcript', keyframes } }`（happy path）
+    - `audioResult` 无 + keyframes 非空：返 `{ kind: 'transcript', text: '(No audio transcript available; visual keyframes are attached separately.)', metadata: { source: 'video-keyframes-only', keyframes } }`（Phase 3 新分支）
+    - 双失败：返 `null`
+  - source 选 `'video-keyframes-only'` 不在 `media/index.js → isPlaceholderSource` 过滤列表（vision-passthrough / whisper-unavailable / *-placeholder），entry 不被吞。
+- 测试新增 5 个 e2e + 1 个 normalizer 集成（`src/media/extractors/videoExtractor.test.js`）：
+  - 音轨成功 + keyframes 成功 → 两者都在 result，`source: 'video-audio-transcript'`。
+  - **silent video（无音轨）→ frames-only entry**（这条直接验证了刚发现的真 bug 的 fix）。
+  - 音轨 stub 返 null（Whisper 不可用）+ keyframes 成功 → frames-only entry。
+  - 双失败（喂 corrupt mp4）→ `null`。
+  - frames-only entry 喂给 `normalizeExtractedMedia` → 不被过滤、metadata.keyframes 保留（防未来无意改 isPlaceholderSource 让 keyframe entry 默默 drop）。
+  - `buildTestVideo` 加 `withAudio` 选项，silent-video 测试走 `withAudio: false`，真正复现生产场景。
+- UI 文案不动：副标"transcript + keyframes"是**能力描述**不是 per-attachment 承诺；frames-only 实际结果通过模型可见的 placeholder text 自我说明。
+- Codex 反问回应：
+  - **Q1: 无音轨视频是否仍发关键帧 + 标注无 transcript**：已照办，placeholder text 说 "(No audio transcript available; visual keyframes are attached separately.)"
+  - **Q2: UI 是否按结果改文案**：不改，capability vs outcome 区分。
+- 验证：`node --check` 全过；videoExtractor.test.js **15/15**；regression 全套 **342/342 全绿**（03:00 时 337，新增 5 个 e2e 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg（Codex C-grade fix #2）
 
 - 上一刀（02:30）只把 abort 接到 ffmpeg child，**忘了 `probeDurationSec` 里的 ffprobe child**——budget 超时如果发生在 probe 阶段，ffprobe 进程被泄漏。Codex pre-push gate 第二次给 C，理由站得住：取消链路不完整，可能泄漏子进程。

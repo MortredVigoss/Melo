@@ -2,7 +2,16 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractAudioContent } from './audioExtractor.js';
+import { extractAudioContent as _realExtractAudioContent } from './audioExtractor.js';
+
+// DI hook so the "audio fails / Whisper unavailable, but keyframes succeed"
+// path can be tested without real Whisper credentials. Tests call
+// _setExtractAudioContentForTests(stub) to inject a fake; default is the
+// real implementation. Mirrors fileSearch.js's _setRipgrepBinaryForTests.
+let _extractAudioContentImpl = _realExtractAudioContent;
+export function _setExtractAudioContentForTests(fn) {
+  _extractAudioContentImpl = typeof fn === 'function' ? fn : _realExtractAudioContent;
+}
 
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 
@@ -233,43 +242,49 @@ export async function extractVideoContent(attachment, context = {}) {
     }
     await writeFile(videoPath, videoBuffer);
 
-    await new Promise((resolve, reject) => {
-      const ff = spawn('ffmpeg', [
-        '-i',
-        videoPath,
-        '-vn',
-        '-acodec',
-        'libopus',
-        '-b:a',
-        '32k',
-        '-ac',
-        '1',
-        '-ar',
-        '16000',
-        '-y',
-        audioPath,
-      ], { stdio: 'ignore' });
-      ff.on('error', reject);
-      ff.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
-    });
-
-    const audioBuffer = await readFile(audioPath);
-    const audioResult = await extractAudioContent({
-      ...attachment,
-      url: `data:audio/ogg;base64,${audioBuffer.toString('base64')}`,
-      mimeType: 'audio/ogg',
-      fileName: (attachment.fileName || 'video').replace(/\.[^.]+$/, '') + '.ogg',
-    }, context, { suppressFallback: true });
-
-    if (!audioResult) {
-      return null;
+    // The audio-extraction pass can legitimately fail for silent videos
+    // (ffmpeg exits non-zero with "Output file does not contain any stream"
+    // when -vn finds no audio to encode). That MUST NOT take down the whole
+    // extraction — Phase 3 still wants keyframes shipped for silent video.
+    let audioBuffer = null;
+    try {
+      await new Promise((resolve, reject) => {
+        const ff = spawn('ffmpeg', [
+          '-i',
+          videoPath,
+          '-vn',
+          '-acodec',
+          'libopus',
+          '-b:a',
+          '32k',
+          '-ac',
+          '1',
+          '-ar',
+          '16000',
+          '-y',
+          audioPath,
+        ], { stdio: 'ignore' });
+        ff.on('error', reject);
+        ff.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
+      });
+      audioBuffer = await readFile(audioPath);
+    } catch {
+      audioBuffer = null;
     }
 
-    // Phase 2: pull a handful of keyframes so the model can actually see the
-    // video, not just hear it. Failure here MUST NOT take down the transcript
-    // — the outer routeExtraction race is 15s for the WHOLE extraction, so a
-    // slow ffmpeg keyframe pass would otherwise eat the transcript we already
-    // have. withKeyframeBudget caps the pass at 5s and falls back to [].
+    const audioResult = audioBuffer
+      ? await _extractAudioContentImpl({
+          ...attachment,
+          url: `data:audio/ogg;base64,${audioBuffer.toString('base64')}`,
+          mimeType: 'audio/ogg',
+          fileName: (attachment.fileName || 'video').replace(/\.[^.]+$/, '') + '.ogg',
+        }, context, { suppressFallback: true })
+      : null;
+
+    // Phase 2 keyframe pass — runs unconditionally now (Phase 3): the model
+    // should still see the picture even if the audio failed (silent video,
+    // Whisper unavailable, etc.). withKeyframeBudget caps at 5s and falls
+    // back to [], so a slow ffmpeg can't take down the whole extraction.
     let keyframes = [];
     try {
       await mkdir(framesDir, { recursive: true });
@@ -280,16 +295,40 @@ export async function extractVideoContent(attachment, context = {}) {
       keyframes = [];
     }
 
-    return {
-      ...audioResult,
-      kind: 'transcript',
-      metadata: {
-        ...audioResult.metadata,
-        source: 'video-audio-transcript',
-        originalKind: 'video',
-        keyframes,
-      },
-    };
+    if (audioResult) {
+      // Happy path: transcript + keyframes (the UI's stated promise).
+      return {
+        ...audioResult,
+        kind: 'transcript',
+        metadata: {
+          ...audioResult.metadata,
+          source: 'video-audio-transcript',
+          originalKind: 'video',
+          keyframes,
+        },
+      };
+    }
+
+    // Audio failed but keyframes succeeded — ship a "frames-only" entry so
+    // the model still gets visual context. The text is a self-explanatory
+    // placeholder (not in isPlaceholderSource's filter list — it must
+    // survive normalizeExtractedMedia and reach renderExtractedMediaContext).
+    if (keyframes.length > 0) {
+      return {
+        kind: 'transcript',
+        text: 'This video has no audio transcript; visual keyframes are attached separately.',
+        metadata: {
+          source: 'video-keyframes-only',
+          originalKind: 'video',
+          fileName: attachment.fileName || '',
+          url: String(attachment.url || '').startsWith('data:') ? '' : (attachment.url || ''),
+          keyframes,
+        },
+      };
+    }
+
+    // Both failed — nothing useful to send.
+    return null;
   } catch {
     return null;
   } finally {
