@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-26 15:00 — Phase 7d-5δ commit 3：抽出 buildWorkspaceSnapshot（带 APP_ROOT 深度调整）
+
+- 做了什么：
+  - **新增 `src/services/workspace/workspaceSnapshot.js`** —— `buildWorkspaceSnapshot`（~52 行 async）byte-for-byte 搬走。新模块在 `src/services/workspace/`（3 层深），所以：
+    - **APP_ROOT 计算用 4 个 dirname** 替代 desktopStore 的 2 个，值相同公式不同——同 Phase 7d-5α-A1 commit 7 stateHydration.js 的处理方式。
+    - **`sanitizeWorkspacePath` 1-arg wrapper byte-identical 复制**给新模块自用，desktopStore 那份继续保留（还有另一个 in-module caller 在 line ~5956）。同样是 commit 7 的处理方式。
+    - 其余 deps（`stat` / `listWorkspaceEntries` / `readWorkspaceFile` / `COMMAND_TEMPLATES` / `commandTemplateDescriptor`）都已在外部 leaf 模块。
+  - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 `buildWorkspaceSnapshot` 定义（52 行）换 5 行 stub。8 个内部 caller 走 imported name。
+- 为什么：runner 抽取 prerequisite #2。任务 / 聊天执行图的 prepare 节点都要 `buildWorkspaceSnapshot`；要把它们搬出去，先把这个 helper 拎成 leaf。APP_ROOT 处理用上次已经验证过的 commit 7 模式。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6365 → 6325（-40 行）
+
 ## 2026-04-26 14:30 — Phase 7d-5δ commit 2：抽出 4 个 findXById finder 簇
 
 - 做了什么：

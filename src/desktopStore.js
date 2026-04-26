@@ -499,6 +499,13 @@ import {
   findTaskById,
   findApprovalById,
 } from './state/stateLookups.js';
+// Phase 7d-5δ commit 3: workspace snapshot builder extracted. The new
+// module computes its own APP_ROOT via a deeper dirname chain (same
+// pattern as Phase 7d-5α-A1 commit 7's stateHydration.js) and keeps a
+// local 1-arg `sanitizeWorkspacePath` wrapper identical to the one
+// retained here. desktopStore's wrapper stays put because there is still
+// one in-module caller (line ~5956) outside the snapshot path.
+import { buildWorkspaceSnapshot } from './services/workspace/workspaceSnapshot.js';
 import {
   serializeChatForPersistence,
   persistChatThreads,
@@ -1322,58 +1329,11 @@ function effectiveAgentProfile(state, agentId, projectId = null) {
 // readWorkspaceFile / writeWorkspaceFile / listWorkspaceEntries were
 // extracted to `src/services/workspace/workspaceFiles.js` in Phase 7a.
 
-async function buildWorkspaceSnapshot(state, project) {
-  if (!project) {
-    return {
-      rootPath: APP_ROOT,
-      exists: false,
-      entries: [],
-      filePaths: [],
-      fileCount: 0,
-      selectedFilePath: null,
-      selectedFile: null,
-      commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-      commandRuns: [],
-    };
-  }
-
-  const rootPath = sanitizeWorkspacePath(project.workspacePath);
-  const rootStat = await stat(rootPath).catch(() => null);
-  if (!rootStat || !rootStat.isDirectory()) {
-    return {
-      rootPath,
-      exists: false,
-      entries: [],
-      filePaths: [],
-      fileCount: 0,
-      selectedFilePath: null,
-      selectedFile: null,
-      commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-      commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
-    };
-  }
-
-  const { entries, filePaths } = await listWorkspaceEntries(rootPath);
-  const selectedFilePath = filePaths.includes(state.settings.selectedFilePath)
-    ? state.settings.selectedFilePath
-    : filePaths[0] || null;
-
-  const selectedFile = selectedFilePath
-    ? await readWorkspaceFile(rootPath, selectedFilePath).catch(() => null)
-    : null;
-
-  return {
-    rootPath,
-    exists: true,
-    entries,
-    filePaths,
-    fileCount: filePaths.length,
-    selectedFilePath,
-    selectedFile,
-    commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-    commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
-  };
-}
+// buildWorkspaceSnapshot moved to
+// `src/services/workspace/workspaceSnapshot.js` in Phase 7d-5δ commit 3.
+// Re-imported at the top of this file. The local sanitizeWorkspacePath
+// wrapper above is intentionally kept (still has another in-module
+// caller); the new module has its own byte-identical wrapper.
 
 function taskExecutionPrompt(task, project, workspace, profile) {
   const blocks = [
