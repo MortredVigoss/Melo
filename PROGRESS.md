@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-26 11:00 — Phase 7d-5β commit 1：4 个真叶子 helper 一并 byte-for-byte 抽走
+
+- 做了什么（用户选"4 leaves 合一 commit"）：
+  - **新增 4 个 leaf 模块**（每个零 desktopStore-LOCAL 依赖，纯函数）：
+    - `src/services/chat/matcherContext.js` — `buildMatcherContextFromChat`（30 行）
+    - `src/services/connector/connectorPrompts.js` — `summarizeConnectorPrompts`（6 行）
+    - `src/services/skill/skillPrompts.js` — `summarizeSkillsPrompts`（38 行，原 export，唯一外部 caller 是 skills test）
+    - `src/services/chat/visionDebug.js` — `formatModelMessageForVisionDebug`（24 行）
+  - **`src/desktopStore.js`**：
+    - 顶部 import 块加 4 行（按 chat/connector/skill 域和现有 import 邻接）
+    - 删 4 处函数定义（共 ~95 行），每处替换为 1-3 行 stub 注释指向新文件
+    - 没有添加 back-compat re-export——4 个内部 caller (line 4514/4543/4544/4715) 用 imported name 自然链接，唯一外部 caller 是 test 文件直接更新过去
+  - **`src/desktopStore.skills.test.js`**：`summarizeSkillsPrompts` import 路径从 `./desktopStore.js` 改成 `./services/skill/skillPrompts.js`。
+- 为什么：
+  - Phase 7d-5β 的目标是把 desktopStore 里大块 prompt/context helpers 全部下沉到 services/。这 4 个是 ZERO LOCAL deps 的真叶子——既能 byte-for-byte 一刀抽，也是后续 7d-5γ（中等复杂度）和 7d-5δ（runner elephant）的最低风险起手。
+  - 用户选"合 commit"是因为 4 个都是零依赖纯函数，单独 4 commit + 4 gate 循环 ROI 不高；合 1 个 commit 让 gate 一次审完所有 4 个 byte-for-byte port，差异表面清晰。
+- 回归：services + state + desktopStore + memory + agents 套件全绿；总测试数 ~597（+0 from this commit——纯位置迁移，已有测试覆盖）。
+- 提交哈希：（待 commit）
+  - desktopStore: 7205 → 7124（-81 行）
+
 ## 2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出
 
 - 做了什么：`scripts/codex-review.sh` 在算出 `commit_count` 后立刻判断为 0 则报错"先 `git pull --rebase`"。原流程会先跑一轮 Codex evaluation 再被 `git push` 拒绝，浪费一轮 token。

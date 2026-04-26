@@ -328,6 +328,10 @@ import {
   buildLanguageConstraint,
   buildReActSystemPrompt,
 } from './services/chat/systemPrompt.js';
+// Phase 7d-5β leaf extractions: pure helpers with zero desktopStore-local
+// dependencies. byte-for-byte ports (CLAUDE.md §5).
+import { buildMatcherContextFromChat } from './services/chat/matcherContext.js';
+import { formatModelMessageForVisionDebug } from './services/chat/visionDebug.js';
 import {
   DEFAULT_SKILL_TASK_SCHEMA,
   BUILTIN_SKILLS,
@@ -353,6 +357,11 @@ export {
   buildSkills,
   listExecutableSkills,
 } from './services/skill/skillService.js';
+// Phase 7d-5β: skill prompt summarization moved to a dedicated leaf module.
+// byte-for-byte port (CLAUDE.md §5). The single external caller (the
+// desktopStore.skills.test.js suite) is updated in the same commit to
+// import from the new path; no re-export needed.
+import { summarizeSkillsPrompts } from './services/skill/skillPrompts.js';
 import {
   extractVoiceSummary,
   rewriteForVoice,
@@ -371,6 +380,9 @@ import {
   readExternalConnectorResourcePayload,
   readExternalConnectorPromptPayload,
 } from './services/connector/externalConnector.js';
+// Phase 7d-5β: connector prompt summarization moved to a dedicated leaf
+// module. byte-for-byte port (CLAUDE.md §5).
+import { summarizeConnectorPrompts } from './services/connector/connectorPrompts.js';
 import { createAgentMarkdownFileHelpers } from './services/agent/markdownFiles.js';
 import {
   AGENT_TOOL_OPTIONS,
@@ -885,40 +897,9 @@ function latestUserMessageRecord(chat) {
 // imported from agents/skillMatcher.js — avoids a circular import.
 const getSharedSkillIndex = createSharedSkillIndexFactory({ buildSkillIndex });
 
-// Build a [{role, content}] array for the matcher from the chat's recent
-// messages. We only need the last 3 user-facing turns; the matcher
-// weights them newest → oldest (1.0 / 0.6 / 0.3). Falls back to the plain
-// latest user message string if the chat shape is unusual.
-function buildMatcherContextFromChat(chat, latestUserMessage) {
-  const msgs = Array.isArray(chat?.messages) ? chat.messages : [];
-  if (msgs.length === 0) return latestUserMessage || '';
-  // Walk from newest backwards, skipping system / empty messages, keeping
-  // up to 3 messages. Return oldest-first (matcher reverses internally).
-  const picked = [];
-  for (let i = msgs.length - 1; i >= 0 && picked.length < 3; i -= 1) {
-    const m = msgs[i];
-    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
-    const text = typeof m.text === 'string'
-      ? m.text
-      : typeof m.content === 'string'
-        ? m.content
-        : '';
-    if (!text.trim()) continue;
-    picked.unshift({ role: m.role, content: text });
-  }
-  if (picked.length === 0) return latestUserMessage || '';
-  // Ensure the very latest user message is present at the tail even if
-  // it hadn't been persisted onto chat.messages yet.
-  if (latestUserMessage) {
-    const last = picked[picked.length - 1];
-    if (!last || last.role !== 'user' || last.content !== latestUserMessage) {
-      picked.push({ role: 'user', content: latestUserMessage });
-      // Trim back to 3.
-      while (picked.length > 3) picked.shift();
-    }
-  }
-  return picked;
-}
+// buildMatcherContextFromChat moved to
+// `src/services/chat/matcherContext.js` in Phase 7d-5β. Re-imported at
+// the top of this file.
 
 // normalizeAgentProfile moved to `src/state/agentProfiles.js` in Phase 10a.
 // Re-imported at the top of this file.
@@ -3656,52 +3637,11 @@ export const __offlineBacklogTesting = {
 // extractArtifacts was extracted to
 // `src/services/artifact/artifactService.js` in Phase 7b.
 
-function summarizeConnectorPrompts(connectors) {
-  return connectors
-    .filter(connector => connector.enabled)
-    .map(connector => `Connector: ${connector.name}\n${connector.prompt}`)
-    .join('\n\n');
-}
-
-// Legacy prompt-stuffing path. Only `type: 'prompt'` skills get their
-// systemPrompt concatenated here. `type: 'executable'` skills are exposed
-// to the model through the tool registry instead (see listExecutableSkills
-// and the dynamic registration in the prepare node), so we deliberately
-// skip them to keep the system prompt lean and avoid telling the model
-// about skills it can both prompt-invoke AND tool-invoke, which creates
-// ambiguity about which path to pick.
-//
-// `remote: true` returns a lean form suitable for Telegram/Discord bots —
-// just a one-line per-skill summary so the shared skill set is discoverable
-// without blowing the remote token budget. The full executable skill set
-// is still available to the model as tools via buildToolsSystemPrompt.
-export function summarizeSkillsPrompts(skills, { remote = false } = {}) {
-  const candidates = skills.filter(skill =>
-    skill.enabled
-    && skill.type !== 'executable'
-    && typeof skill.systemPrompt === 'string'
-    && skill.systemPrompt.trim().length > 0,
-  );
-
-  if (!candidates.length) return '';
-
-  if (remote) {
-    // One-liner per skill so a Telegram bot still knows what its owner's
-    // desktop skills can do. Truncate aggressively — the full prompt lives
-    // on the desktop; here we only need dispatch-level awareness.
-    const lines = ['Available skills (tools handle execution; these are dispatch hints):'];
-    for (const skill of candidates) {
-      const desc = String(skill.description || skill.name || '').trim();
-      const shortDesc = desc.length > 140 ? desc.slice(0, 137) + '…' : desc;
-      lines.push(`- ${skill.name}${shortDesc ? ` — ${shortDesc}` : ''}`);
-    }
-    return lines.join('\n');
-  }
-
-  return candidates
-    .map(skill => `Skill: ${skill.name}\n${skill.systemPrompt}`)
-    .join('\n\n');
-}
+// summarizeConnectorPrompts moved to
+// `src/services/connector/connectorPrompts.js` in Phase 7d-5β.
+// summarizeSkillsPrompts moved to `src/services/skill/skillPrompts.js`
+// (also re-exported from this file for back-compat). Both byte-for-byte
+// ports — see CLAUDE.md §5.
 
 function buildProjectContextSection(project, activeAgentProfile) {
   return project && agentUsesTool(activeAgentProfile, 'projects')
@@ -3729,30 +3669,9 @@ function buildProjectContextSection(project, activeAgentProfile) {
 // dropped as part of the same move.
 
 
-function formatModelMessageForVisionDebug(message, index) {
-  const content = message?.content;
-  if (!Array.isArray(content)) {
-    return `[vision-debug] msg[${index}] role=${message?.role || 'unknown'}: [plain: ${String(content || '').slice(0, 80)}]`;
-  }
-
-  const parts = content.map(part => {
-    if (part?.type === 'image_url') {
-      return `[image_url: ${String(part?.image_url?.url || '').slice(0, 40)}...]`;
-    }
-    if (part?.type === 'audio_attachment') {
-      return `[audio_attachment: ${String(part?.audio_attachment?.url || '').slice(0, 40)}...]`;
-    }
-    if (part?.type === 'video_attachment') {
-      return `[video_attachment: ${String(part?.video_attachment?.url || '').slice(0, 40)}...]`;
-    }
-    if (part?.type === 'text') {
-      return `[text: ${String(part?.text || '').slice(0, 60)}]`;
-    }
-    return `[${String(part?.type || 'unknown')}]`;
-  }).join(' + ');
-
-  return `[vision-debug] msg[${index}] role=${message?.role || 'unknown'}: ${parts}`;
-}
+// formatModelMessageForVisionDebug moved to
+// `src/services/chat/visionDebug.js` in Phase 7d-5β. Re-imported at the
+// top of this file.
 
 function normalizeGraphNeedle(value = '') {
   return String(value || '')

@@ -23,8 +23,8 @@ import {
   normalizeCustomSkill,
   buildSkills,
   listExecutableSkills,
-  summarizeSkillsPrompts,
 } from './desktopStore.js';
+import { summarizeSkillsPrompts } from './services/skill/skillPrompts.js';
 
 // ─── Phase 1B: normalization caps & shadow rejection ─────────────────────────
 
