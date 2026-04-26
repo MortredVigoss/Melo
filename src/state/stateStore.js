@@ -65,6 +65,12 @@ import {
   serializeChatForPersistence,
 } from './chatPersistence.js';
 import { syncMemoryStoreSnapshot } from './memorySnapshot.js';
+// Phase 7d-5δ commit 8b: ensureSelectedEntities moved to its own leaf
+// (stateSelections.js) in commit 8a, which finally clears the §5 carve-out
+// blocker that kept `updateStateAtomically` in desktopStore.js. The
+// queue itself is module-private here (`stateWriteQueue`), so the
+// natural home for `updateStateAtomically` is right alongside saveState.
+import { ensureSelectedEntities } from './stateSelections.js';
 
 // Per-home markdown-sync flag. CLAUDE.md §6 fix-5: the flag is keyed by an
 // explicit `home` argument (not by `getMeloHome()` at access time) so the
@@ -193,12 +199,34 @@ export async function saveState(state, { ctx = null, capturedStatePath = null } 
   return state;
 }
 
-// CLAUDE.md §5 carve-out: this helper exists so updateStateAtomically (still
-// in desktopStore for ensureSelectedEntities-dependency reasons) can share
-// the same write queue as saveState above. It's a 5-line wrapper that
-// preserves the queue's serialization contract without exposing the let
-// binding (named imports of `let` are read-only across modules).
+// Phase 7d-5α-A1 §5 carve-out (now mostly historical): originally a
+// helper for desktopStore's `updateStateAtomically` to share this
+// queue without owning the let binding. After Phase 7d-5δ commit 8b,
+// `updateStateAtomically` moved here and uses the queue directly via
+// `stateWriteQueue.then(...)`. `enqueueStateWrite` is kept exported
+// because there may still be external callers that opted into the
+// queue-sharing API; it can be retired in a follow-up cleanup.
 export async function enqueueStateWrite(work) {
   stateWriteQueue = stateWriteQueue.catch(() => {}).then(work);
   return stateWriteQueue;
+}
+
+// updateStateAtomically — Phase 7d-5δ commit 8b: byte-for-byte port
+// from desktopStore.js. Reads the latest state through the same queue
+// that saveState uses, lets the caller mutate it, then persists. The
+// double `ensureSelectedEntities` is intentional: once on read so the
+// mutator sees a coerced state, once on the candidate so we never
+// persist invalid selections.
+export async function updateStateAtomically(mutator) {
+  let nextState = null;
+  await enqueueStateWrite(async () => {
+    const latestState = ensureSelectedEntities(
+      await readStateSnapshot({ persistRepair: false }),
+    );
+    const candidateState = await mutator(latestState);
+    nextState = ensureSelectedEntities(candidateState || latestState);
+    await persistStateAtomically(nextState);
+    return nextState;
+  });
+  return nextState;
 }

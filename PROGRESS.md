@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）
+
+- 做了什么：
+  - `updateStateAtomically`（13 行）从 desktopStore byte-for-byte 搬到 `src/state/stateStore.js`——它原本就该在那里（和 saveState / persistStateAtomically / readStateSnapshot 一起）。Phase 7d-5α-A1 commit 9 曾因为 ensureSelectedEntities 的 58 callers 把它留在 desktopStore，加了 §5 carve-out + `enqueueStateWrite` 桥梁。commit 8a 把 ensureSelectedEntities 拎到 stateSelections.js，这个 carve-out 失去存在理由。
+  - `stateStore.js` 增加 1 行 `import { ensureSelectedEntities } from './stateSelections.js'` + 30 行 byte-for-byte 移植。
+  - `enqueueStateWrite` 留 export 但加了备注"now mostly historical, can be retired in cleanup"。
+  - `desktopStore.js` import 列表加 `updateStateAtomically`，删 13 行原定义换 4 行 stub。**24 个内部 caller** 全部走新 import。
+- 为什么：path B 的精神就是"helper 放在该在的地方"。stateStore 是状态机模块——updateStateAtomically 跟 saveState 共用同一个 module-private queue，住一起最干净。
+- 回归：services + state + desktopStore + memory + agents 全套绿（一次小 flake 是已知 store.* 测试 isolation 问题，re-run 全绿）。
+- 提交哈希：（待 commit）
+  - desktopStore: 5516 → 5501（-15 行）
+
 ## 2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖之一）
 
 - 做了什么：

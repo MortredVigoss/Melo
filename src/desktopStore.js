@@ -464,6 +464,7 @@ import {
   persistStateAtomically,
   readStateSnapshot,
   enqueueStateWrite,
+  updateStateAtomically,
 } from './state/stateStore.js';
 
 const execFile = promisify(execFileCallback);
@@ -959,26 +960,10 @@ async function syncAgentMarkdownFiles(state) {
 // saveState moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9.
 
 
-// Phase 7d-5α: exposed for the future chatGraphRunner extraction. Body
-// unchanged.
-// updateStateAtomically — body adapted in Phase 7d-5α-A1 commit 9 to use
-// enqueueStateWrite from stateStore.js so the queue can be module-private
-// to stateStore. ensureSelectedEntities still lives in this file (57 callers),
-// which is why this function did not move with saveState. CLAUDE.md §5
-// mechanical adjustment.
-export async function updateStateAtomically(mutator) {
-  let nextState = null;
-  await enqueueStateWrite(async () => {
-    const latestState = ensureSelectedEntities(
-      await readStateSnapshot({ persistRepair: false }),
-    );
-    const candidateState = await mutator(latestState);
-    nextState = ensureSelectedEntities(candidateState || latestState);
-    await persistStateAtomically(nextState);
-    return nextState;
-  });
-  return nextState;
-}
+// updateStateAtomically moved to `src/state/stateStore.js` in Phase
+// 7d-5δ commit 8b. The §5 carve-out (it lived here because it called
+// ensureSelectedEntities, which had 58 callers) was retired by commit
+// 8a moving ensureSelectedEntities out. Re-imported above.
 
 
 // sortChats / summarizeChat / summarizeMessagePreview / describeChatForLimit
