@@ -7,7 +7,6 @@ import {
   statSync,
 } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { userInfo } from 'node:os';
 import {
   dirname,
   join,
@@ -34,7 +33,7 @@ import {
   extractClarificationOptions,
   findClarificationOptionMatch,
 } from './memory/heuristics.js';
-import { renderConversationContinuityContext as renderStructuredConversationContinuityContext, renderThreadMemorySnapshot as renderStructuredThreadMemorySnapshot } from './memory/threadContext.js';
+import { renderConversationContinuityContext as renderStructuredConversationContinuityContext } from './memory/threadContext.js';
 import { bootstrapBuiltinTools } from './tools/registry.js';
 import {
   defaultSkillProposalStore,
@@ -51,23 +50,11 @@ import {
   SKILLS_DISK_ROOT,
 } from './agents/skillsDisk.js';
 import { bootstrapMcpServers } from './mcp/manager.js';
-import { emitHook } from './plugins/hooks.js';
-import { maybeExtractSessionMemory } from './memory/sessionMemory.js';
-import { searchMemories } from './memory/store.js';
-import { indexMessage } from './memory/conversationIndex.js';
-import { promoteAndPersistFacts, scheduleEmbeddingFillIn } from './memory/memoryPromotion.js';
-import {
-  buildSearchSnippet,
-  fuzzySearchScore,
-  normalizeSearchValue,
-  weightedKeywordScore,
-} from './search/scoring.js';
 import {
   streamSearchFileGroups as streamSearchFileGroupsService,
   streamSearchFileHits as streamSearchFileHitsService,
 } from './services/search/searchService.js';
 import { enrichMessageWithMediaContext } from './media/index.js';
-import { promoteTextUrlsToAttachments } from './media/urlDetector.js';
 import { modelSupportsVision } from './media/visionCapability.js';
 import {
   isBacklogPollCycle,
@@ -212,7 +199,6 @@ import {
   stripInvisibleSearchDecorators,
   messageSearchText,
 } from './services/message/messageSearch.js';
-import { extractVizSpec } from './services/viz/vizSpec.js';
 import {
   updateGroupRelationshipGraph,
   buildGroupRelationshipSummary,
@@ -493,7 +479,6 @@ import {
   saveState,
   persistStateAtomically,
   readStateSnapshot,
-  enqueueStateWrite,
   updateStateAtomically,
 } from './state/stateStore.js';
 

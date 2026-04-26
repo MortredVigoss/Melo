@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-04-26 21:30 — desktopStore unused-import cleanup（path B 收尾后的第二轮 housekeeping）+ PROGRESS condense
+
+- 做了什么：
+  - **`src/desktopStore.js` 第二轮 cleanup**：path B 抽走 sendChatMessage / getDesktopBootstrap / search-results 之后又有一些 import 死了。Python 脚本（这次顺手修了"花括号里夹注释"bug——会先 strip 注释再 split names）扫出 9 个整删 + 2 个 trim。
+  - **PROGRESS.md condense**：从 189 行压到 ~127 行。把 8a / cleanup-1 / 7d / 7b / 7a 这 5 个条目移入归档（保留 5 个最新：8b/8c/8d/8e/8f verbatim）；同时回填了所有 7d-5δ commit hash 占位。
+- 回归：services + state + desktopStore + memory + agents 全套绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 4159 → 4144（-15 行；path B 累计 8527→4144 = **-4383 = -51.4%**）
+
 ## 2026-04-26 21:00 — Phase 7d-5δ commit 8f：**抽出 sendChatMessage（path B 真正收尾）+ scanRecentChatsForSkillProposals**
 
 - 做了什么：
@@ -14,7 +23,7 @@
   - 用 Python 脚本机械抽取 + 头部 import 块，避免手抄漏字符。
 - **path B 完成**：8 个 sub-commit (8a 到 8f) 把所有 LOCAL prereq + sendChatMessage 全搬出来。整个 chat 主路径现在是独立 leaf 链。
 - 回归：services + state + desktopStore + memory + agents 全套 **724/724 全绿**。
-- 提交哈希：（待 commit）
+- 提交哈希：`9895335`（commit 8f 主体）+ `f1ced20`（missing-imports + smoke test fix）
   - desktopStore: 4542 → 4159（-383 行；本会话累计 **8527 → 4159 = -4368 行 = -51.2%** ——突破半数）
 
 ## 2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 个 cluster-private helper
@@ -25,7 +34,7 @@
   - **`src/desktopStore.js`**：1 行 `import { getDesktopBootstrap } from './state/desktopBootstrap.js'` + 1 行 `export { getDesktopBootstrap } from ...`（back-compat re-export，给 server.js + 一些 `import * as store` 测试用）。删 5 处函数定义（共 ~240 行）换 ~10 行 stub。
 - 中间小坑：第一稿没加 re-export，server.js / projectsDefault.test.js 都用 `import * as store` 拿 `store.getDesktopBootstrap`——失败 7 个测试。修：加 export from。同款 commit 7d-5β commit 1 的 contract-break / Phase 7d-5γ commit 1 的 re-export 教训。
 - 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：（待 commit）
+- 提交哈希：`0a05a30`（commit 8e 主体）+ `e7d2872`（§6 home capture fix + regression test）
   - desktopStore: 4764 → 4542（-222 行；本会话累计 8527→4542 = **-3985 行 = -46.7%**）
 
 ## 2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）
@@ -44,7 +53,7 @@
 - 用 Python 脚本机械抽出 cluster body + 头部注释 + import 块拼装新文件，避免手抄 644 行可能漏字符。`node --check` 验证语法 + 全套测试绿。
 - 为什么：getDesktopBootstrap 还有 4 个 LOCAL 依赖（buildAgentProfiles / buildProfile / availableModelsForConfig / buildSearchResults）。`buildSearchResults` 是其中体量最大且 domain-specific（search），单独抽干净；剩 3 个小的下一刀和 getDesktopBootstrap 一起搬。
 - 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：（待 commit）
+- 提交哈希：`edd3e76`
   - desktopStore: 5408 → 4764（-644 行；本会话累计 8527→4764 = **-3763 行 = -44.1%**）
 
 ## 2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors
@@ -55,7 +64,7 @@
   - **`src/desktopStore.js`**：refreshChatMemorySummary 加进现有 `chatThreadContext.js` import 块；buildConnectors 单独 import；删两处函数定义共 105 行换 5 行 stub。所有 5+2 个 callers 走 imported name。
 - 为什么：sendChatMessage 的剩余 LOCAL deps 中两个 mid-size 的，先解决。剩 isAbortError + extractUrlAttachmentsFromText（私有）+ scanRecentChatsForSkillProposals（已 export）+ getDesktopBootstrap（118 行 37 callers，下一刀）。
 - 回归：services + state + desktopStore + memory + agents 全套绿（同款 store.* isolation flake，re-run 干净）。
-- 提交哈希：（待 commit）
+- 提交哈希：`66cd1a8`
   - desktopStore: 5501 → 5408（-93 行）
 
 ## 2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）
@@ -67,80 +76,18 @@
   - `desktopStore.js` import 列表加 `updateStateAtomically`，删 13 行原定义换 4 行 stub。**24 个内部 caller** 全部走新 import。
 - 为什么：path B 的精神就是"helper 放在该在的地方"。stateStore 是状态机模块——updateStateAtomically 跟 saveState 共用同一个 module-private queue，住一起最干净。
 - 回归：services + state + desktopStore + memory + agents 全套绿（一次小 flake 是已知 store.* 测试 isolation 问题，re-run 全绿）。
-- 提交哈希：（待 commit）
+- 提交哈希：`3c71ee6`
   - desktopStore: 5516 → 5501（-15 行）
-
-## 2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖之一）
-
-- 做了什么：
-  - **新增 `src/state/stateSelections.js`** —— `ensureSelectedEntities`（67 行）byte-for-byte 搬走。这个函数对 hydrated state 做"selection coercion"——把无效/已删除的 selectedX 字段回拉到合理默认。所有 7 个上游依赖（normalizeAgentProfiles、sortChats、allAgentIdsFromProfiles、MODE_DEFS、BUILTIN_SKILLS、BUILTIN_CONNECTORS、normalizePromptHistory）都已是 leaf 模块。
-  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 67 行函数定义换 2 行 stub。**58 个内部 caller**全部走 imported name（最大单 commit 的 caller-rewrite 量）。
-- 中间小坑：第一稿写错了 sortChats 的 import path（写成 `./chatPruning.js`，实际在 `./conversation.js`）。18 个测试 SyntaxError 即时抓到。教训：**别凭印象写 import path，每次都 `grep export ... <symbol>` 先确认**。
-- 关于 sendChatMessage（commit 8 还没结束）：
-  - sendChatMessage 实际有 **6 个 LOCAL 依赖**（不止之前估的 4 个）：updateStateAtomically(24 callers) / getDesktopBootstrap(37) / scanRecentChatsForSkillProposals(2) / buildConnectors(3) / refreshChatMemorySummary(6) / isAbortError(2) / extractUrlAttachmentsFromText(2)。
-  - 本 commit 把 ensureSelectedEntities 拎出去作为最大 LOCAL 阻塞物的清理（PROGRESS 旧记录说 57 callers，实测 58——这次 grep 正确）。
-  - 完整 sendChatMessage 抽取还需要 prep 1-2 个剩余 LOCAL 才安全；本 session 不再继续，下次开局再说。
-- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：`9955870`
-  - desktopStore: 5577 → 5516（-61 行；本会话累计 8527→5516 = **-3011 行 = -35.3%**）
-
-## 2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）
-
-- 做了什么：用 Python 解析 desktopStore.js 的所有 110 个 import 块，对每个 named import 的 local 名字在文件 body（非 import / 非 export-from）中扫一遍。结果：**39 个 block 含未用 symbol**，其中 22 个整块删、17 个 trim 部分。
-- 中间小坑（自查 + 测试抓到）：第一版脚本没处理"花括号里夹注释"——`./state/agentProfiles.js` import 块里有几行 `// Phase 7d-5δ commit 5: ...` 注释，注释内容包含"projectAgentOverrideFor"字样。脚本把 `{...}` 里逗号 split 成 names 时，**注释和它后面的真 symbol 被合成一个奇怪的 multiline 字符串**——结果 `projectAgentOverrideFor` 没被识别成独立 name，trim 时被丢掉，14 个测试 ReferenceError。手工把它加回 import 即修。
-- **最终保留 desktopStore 完全用得上的 imports**：删了 ~22 个完全死的 import block（agentGraph、tools/registry getTool/getAllTools、retrieval/intentRouter、memory/attic/frame/scene/embeddings/contextCompact/speakerProfile/speakerFacts，等等），trim 了 17 个 block 的部分 symbol（保留还在用的）。
-- 为什么：path B 抽走了大象 + 各 helper 后，desktopStore 自身已经不再调用这些函数——但 import 行作为"再 import 回来给将来可能用"的死代码留了下来。Codex 之前评 D 时也提到 unused imports 是干扰项，独立 cleanup commit 比塞进 byte-for-byte 抽取里更干净。
-- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：`46a85b8`
-  - desktopStore: 5681 → 5576（-105 行；本会话累计 8527→5576 = **-2951 行 = -35%**）
-
-## 2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第三次 D + 数据丢失事件 + 恢复）
-
-- **事件**：上一次提交（`7b9662e`）的 smoke 测试**没有隔离 MELO_HOME**。在我本地跑测试的瞬间 `~/.melo/desktop/state.json` 被覆盖成 fixture 内容（15376 字节 → 1582 字节），`store.sqlite` 时间戳也被改写（memory 行很可能被 `replaceMemories` 清空）。Gate 评 D 阻断了 push（commit 没出本地）但伤害**已经在本机发生**。
-- **恢复**：
-  - 把 fixture 损坏的 `state.json` 重命名为 `state.json.fixture-overwrite-2026-04-26` 留作取证。
-  - `cp state.json.bak-20260422-224446 state.json` 恢复 4 天前的备份。`memory store.sqlite` 没备份恢复不了——损失的是过去 4 天产生的 chat / 项目设置变更 + 全部 memory rows（chat 历史里 indexed 的那些）。
-- **修复 commit 7c 的测试**：
-  - 顶部 `mkdtempSync(tmpdir())` 创建 `melo-chat-runner-test-XXXXX/`，`process.env.MELO_HOME = TEST_HOME` 在 import runner 之前。
-  - 用 `await import('./chatExecutionRunner.js')` 动态导入，避免 ESM 静态 import 的 hoisting 在 env 设置前就触发。
-  - `after()` hook：rmSync TEST_HOME + 还原 MELO_HOME；并且**捕获 `~/.melo/desktop/state.json` 的 mtime before/after**——如果跑完测试发现真 home 被改 throw 一个明确报错。这是双保险（grandtotal 第二次写错就立即红）。
-- 验证：跑测试前后 `~/.melo/desktop/state.json` mtime + 字节数完全不变，TEST_HOME 里写出 fixture 文件，2/2 测试绿，全套 723 = 721 全绿。
-- Lessons：
-  1. 任何 smoke 测试触发 `saveState` 的，必须在 import 前 mkdtemp + 设 MELO_HOME。CLAUDE.md §6 已经规定异步边界要捕获 env，**测试边界同理**。
-  2. 写新测试**不要在自己的 dev home 上首跑**——应该先在临时目录跑通再视情决定是否安全在 home 上跑。
-  3. 这次事故 gate 抓到了但**事后**——不能靠 gate 兜底所有 destructive bug，需要 review 习惯先看 "saveState / replaceMemories / 写盘函数" 是否经过隔离。
-- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：`b4cc16a`（mtime guard 后续在 7e/follow-up 改为 opt-in 默认关闭，避免并发 dev Melo 误红——此项即 Codex B-finding 跟进）
-
-## 2026-04-26 17:00 — Phase 7d-5δ commit 7b：**抽出 runChatAgentExecutionGraph 大象**（517 行 byte-for-byte 一刀搬走）
-
-- 做了什么：
-  - **新增 `src/services/chat/chatExecutionRunner.js`** —— `runChatAgentExecutionGraph`（517 行 async）byte-for-byte 搬走。**~30 个 imports** 全部映射到现有 leaf 模块——前面所有 commit（7d-5β commit 1 到 7d-5δ commit 7a）都是为了这一刻的零依赖大象。
-  - **`getSharedSkillIndex` 同行迁移**：原 desktopStore module-level singleton（`createSharedSkillIndexFactory({ buildSkillIndex })` 的产物），唯一 caller 就是 runner。和 runner 一起搬到新模块后仍然是 module-private singleton（Node module cache 保持稳定）。
-  - **`src/desktopStore.js`**：顶部 import 块加 8 行；删 517 行函数体 + 4 行 getSharedSkillIndex const 换 6 行 stub。唯一内部 caller (line ~6002, inside `sendChatMessage`) 走 imported name。
-- 为什么：完成 desktopStore 主肉抽取的最关键一步。Chat 主路径（runner）现在是独立 leaf 模块；server.js 和 sendChatMessage 都通过 imported name 访问。结合前面 6 个 prerequisite commit + 1 个 task runner commit，整个 7d-5δ 的设计目标达成。
-- 中间踩坑（gate 抓到一次 D）：
-  - 第一稿忘了 import `buildChannelRoutePrompt`——按 desktopStore 现有 import 块映射时漏了 remote/ 目录。grep 自查发现并修复。
-  - **第二稿被 gate 评 D 阻断**：runner 调用 `getAllTools()` 但 import 块里只导了 `getTool`，主聊天路径 `shouldInjectToolsPrompt() === true` 时直接 ReferenceError。719/719 测试全绿掩盖了——因为 chat runner 没有端到端测试覆盖 prepare 阶段的 tools-prompt 分支。byte-for-byte 规则保护函数体，**不防 import 块漏写**。修复加了 `getAllTools` 到 registry import（1 行）。
-  - **Follow-up TODO（本会话不做）**：给 chatExecutionRunner.js 加一个最小 smoke 测试，至少导入新模块 + 用 mock state 跑通 prepare 阶段，避免下次 import 漏写假绿。
-- **回归**：services + state + desktopStore + memory + agents 全套 **719/719 全绿**——elephant 是最 stress 的整合点，全套通过证明 byte-for-byte 港无漂移。
-- 提交哈希：`9c76db9`（commit 7b 主体）+ `91a25d9`（getAllTools 漏 import 修复）
-  - desktopStore: 6188 → 5681（-507 行；本会话内累计已减 1846 行：8527→5681，进度 56%）
-
-## 2026-04-26 16:45 — Phase 7d-5δ commit 7a：抽出 MODE_DEFS（elephant 抽取的最后一个 prereq）
-
-- 做了什么：
-  - **新增 `src/services/chat/modeDefs.js`** —— `MODE_DEFS` 静态 3 条目数组（chat/cowork/code）byte-for-byte 搬走。零依赖纯数据。
-  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 20 行原定义换 2 行 stub。3 个 caller（line ~1476/~3640/~4176）走 imported name。
-- 为什么：`runChatAgentExecutionGraph`（即将抽走的 elephant）有两个剩余 LOCAL 依赖：`MODE_DEFS` + `getSharedSkillIndex`。前者有 3 callers（runner 占 1，desktopStore 占 2）必须先抽到 leaf；后者只有 runner 1 caller，跟着 runner 一起搬。这是 elephant 抽取前的最后一个 prereq。
-- 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：`2f52bf2`
-  - desktopStore: 6202 → 6188（-14 行）
 
 ## 归档摘要（2026-04-26 04:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖，58 callers）** —— 67 行 selection-coercion helper 搬到 src/state/stateSelections.js；retire 了 §5 carve-out 的 ensureSelectedEntities 阻塞物，让 8b 能把 updateStateAtomically 搬回 stateStore。`9955870`
+- **2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）** —— Python 脚本扫 110 个 import block，22 整删 + 17 trim，共减 105 行；中间踩过"花括号里夹注释"导致 `projectAgentOverrideFor` 被误吞的小 bug，regression suite 即时抓到。`46a85b8`
+- **2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第 3 次 D + 数据丢失事件 + 恢复）** —— 此前 7c smoke 测试没隔离 MELO_HOME，运行时**真覆盖了 ~/.melo/desktop/state.json**；恢复 04-22 备份；测试加 mkdtemp + after() hook + mtime 哨兵双保险。`b4cc16a`
+- **2026-04-26 17:00 — Phase 7d-5δ commit 7b：抽出 runChatAgentExecutionGraph 大象（517 行）** —— 单 commit 史上最大 byte-for-byte 抽取；getSharedSkillIndex 同行迁移；gate 一次 D（getAllTools 漏 import）即时修复。`9c76db9` + `91a25d9`
+- **2026-04-26 16:45 — Phase 7d-5δ commit 7a：抽出 MODE_DEFS** —— 20 行静态数组，elephant 抽取的最后一个 prereq。`2f52bf2`
 - **2026-04-26 16:30 — Phase 7d-5δ commit 6：抽出 runTaskAgentExecutionGraph（第一个 runner，pattern 验证通过）** —— 87 行任务执行图搬到 services/chat/taskExecutionRunner.js，零 desktopStore 反向 import。`ce97d12`
 - **2026-04-26 16:00 — Phase 7d-5δ commit 5：抽出 effectiveAgentProfile + projectAgentOverrideFor** —— 两个 profile 组合 helper 放进现成的 state/agentProfiles.js；实查 8 callers 不是 57。`7055c17`
 - **2026-04-26 15:30 — Phase 7d-5δ commit 4：抽出 taskExecutionPrompt** —— 26 行纯函数搬到 services/task/taskPrompt.js，唯一依赖 agentUsesTool 已是 leaf。`12e85aa`
