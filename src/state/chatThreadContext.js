@@ -115,3 +115,12 @@ export function buildThreadCheckpointPayload(chat, threadContext) {
     },
   };
 }
+
+// Phase 7d-5δ commit 8c: thin alias originally defined in desktopStore as a
+// 3-line helper. byte-for-byte port (CLAUDE.md §5). Lives here because the
+// two functions it composes (ensureChatThreadContext and
+// renderStructuredThreadMemorySnapshot) are both already imported into
+// this module.
+export function refreshChatMemorySummary(chat) {
+  return renderStructuredThreadMemorySnapshot(ensureChatThreadContext(chat));
+}

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors
+
+- 做了什么：
+  - **`refreshChatMemorySummary`（3 行）**：byte-for-byte 追加到 `src/state/chatThreadContext.js`——它的两个 deps（ensureChatThreadContext / renderStructuredThreadMemorySnapshot）已经在那个模块导入。零新 import。
+  - **`buildConnectors`（102 行）**：byte-for-byte 搬到新建 `src/services/connector/connectorRollup.js`。APP_ROOT 用 4 个 dirname 重算（同 workspaceSnapshot.js / stateHydration.js 模式）。其他 deps（BUILTIN_CONNECTORS / COMMAND_TEMPLATES / formatUpdatedAt / maskSecret）都已是 leaf。
+  - **`src/desktopStore.js`**：refreshChatMemorySummary 加进现有 `chatThreadContext.js` import 块；buildConnectors 单独 import；删两处函数定义共 105 行换 5 行 stub。所有 5+2 个 callers 走 imported name。
+- 为什么：sendChatMessage 的剩余 LOCAL deps 中两个 mid-size 的，先解决。剩 isAbortError + extractUrlAttachmentsFromText（私有）+ scanRecentChatsForSkillProposals（已 export）+ getDesktopBootstrap（118 行 37 callers，下一刀）。
+- 回归：services + state + desktopStore + memory + agents 全套绿（同款 store.* isolation flake，re-run 干净）。
+- 提交哈希：（待 commit）
+  - desktopStore: 5501 → 5408（-93 行）
+
 ## 2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）
 
 - 做了什么：

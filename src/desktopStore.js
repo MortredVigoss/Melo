@@ -404,6 +404,11 @@ import {
 // LOCAL helper still blocking sendChatMessage extraction). 58 in-module
 // callers continue to call by the same name via this import.
 import { ensureSelectedEntities } from './state/stateSelections.js';
+// Phase 7d-5δ commit 8c: buildConnectors moved to its own service-domain
+// leaf. byte-for-byte port. (refreshChatMemorySummary moved alongside
+// it but is appended to the existing chatThreadContext import block
+// below to keep imports tidy.)
+import { buildConnectors } from './services/connector/connectorRollup.js';
 // Phase 7d-5δ commit 3: workspace snapshot builder extracted. The new
 // module computes its own APP_ROOT via a deeper dirname chain (same
 // pattern as Phase 7d-5α-A1 commit 7's stateHydration.js) and keeps a
@@ -440,6 +445,7 @@ import {
   buildThreadContextForChat,
   ensureChatThreadContext,
   buildThreadCheckpointPayload,
+  refreshChatMemorySummary,
 } from './state/chatThreadContext.js';
 import {
   buildSpeakerMemoryNamespace,
@@ -1035,9 +1041,9 @@ function findLatestClarificationState(messages = []) {
 // buildThreadMemorySummary moved to src/state/stateHydration.js in Phase 7d-5α-A1 (commit 7/9).
 
 
-function refreshChatMemorySummary(chat) {
-  return renderStructuredThreadMemorySnapshot(ensureChatThreadContext(chat));
-}
+// refreshChatMemorySummary moved to `src/state/chatThreadContext.js` in
+// Phase 7d-5δ commit 8c (byte-for-byte append to the same module that
+// already housed its two upstream deps).
 
 export function buildConversationContinuityContext(chat, latestUserMessage = '') {
   return renderStructuredConversationContinuityContext(
@@ -1220,108 +1226,9 @@ async function runTaskWorkerModel(state, config, task) {
   return graphResult.reply;
 }
 
-function buildConnectors(enabledIds, config, workspace, state, project) {
-  const recentCommandRun = workspace.commandRuns[0] || null;
-  const builtins = BUILTIN_CONNECTORS.map(connector => {
-    let connectorConfig = null;
-
-    switch (connector.id) {
-      case 'openai-compatible':
-        connectorConfig = {
-          authMode: config.authMode,
-          apiKey: config.apiKey,
-          maskedApiKey: config.apiKey
-            ? `${config.apiKey.slice(0, 4)}...${config.apiKey.slice(-4)}`
-            : '(not set)',
-          hasApiKey: Boolean(config.apiKey),
-          hasCredentials:
-            config.authMode === 'codex'
-              ? Boolean(config.codexAuth?.loggedIn)
-              : config.authMode === 'local'
-                ? Boolean(config.baseUrl && config.model)
-                : Boolean(config.apiKey),
-          baseUrl: config.baseUrl,
-          model: config.model,
-          systemPrompt: config.systemPrompt,
-          codexAuth: config.codexAuth || null,
-        };
-        break;
-      case 'projects':
-        connectorConfig = {
-          activeProject: project?.name || '(none)',
-          workspacePath: project?.workspacePath || APP_ROOT,
-        };
-        break;
-      case 'artifacts':
-        connectorConfig = {
-          totalArtifacts: state.artifacts.length,
-          projectArtifacts: state.artifacts.filter(artifact => artifact.projectId === project?.id).length,
-        };
-        break;
-      case 'local-files':
-        connectorConfig = {
-          workspaceRoot: workspace.rootPath,
-          exists: workspace.exists,
-          fileCount: workspace.fileCount,
-          selectedFilePath: workspace.selectedFilePath,
-        };
-        break;
-      case 'local-command':
-        connectorConfig = {
-          templateCount: COMMAND_TEMPLATES.length,
-          lastRun: recentCommandRun
-            ? {
-                label: recentCommandRun.label,
-                success: recentCommandRun.success,
-                executedLabel: formatUpdatedAt(recentCommandRun.executedAt),
-              }
-            : null,
-        };
-        break;
-      default:
-        break;
-    }
-
-    return {
-      ...connector,
-      enabled: enabledIds.includes(connector.id),
-      config: connectorConfig,
-    };
-  });
-
-  const externals = state.externalConnectors.map(connector => ({
-    ...connector,
-    enabled: enabledIds.includes(connector.id),
-    config: {
-      endpoint: connector.endpoint,
-      healthPath: connector.healthPath,
-      manifestPath: connector.manifestPath,
-      contextPath: connector.contextPath,
-      resourcePath: connector.resourcePath,
-      promptPath: connector.promptPath,
-      maskedAuthToken: maskSecret(connector.authToken),
-      lastStatus: connector.lastStatus,
-      lastError: connector.lastError,
-      lastCheckedLabel: connector.lastCheckedAt
-        ? formatUpdatedAt(connector.lastCheckedAt)
-        : 'Never checked',
-      invokePath: connector.invokePath,
-      toolCount: connector.manifest.tools.length,
-      resourceCount: connector.manifest.resources.length,
-      promptCount: connector.manifest.prompts.length,
-      manifest: connector.manifest,
-      recentRuns: state.externalToolRuns
-        .filter(run => run.connectorId === connector.id)
-        .slice(0, 4)
-        .map(run => ({
-          ...run,
-          executedLabel: formatUpdatedAt(run.executedAt),
-        })),
-    },
-  }));
-
-  return [...builtins, ...externals];
-}
+// buildConnectors moved to `src/services/connector/connectorRollup.js`
+// in Phase 7d-5δ commit 8c. APP_ROOT is recomputed inside the new
+// module via deeper dirname (same precedent as workspaceSnapshot.js).
 
 function buildProfile() {
   const rawName = userInfo().username || 'Melo User';
