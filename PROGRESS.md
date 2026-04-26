@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-27 01:35 — Video 改成诚实的功能模型（Phase 1：UI 文案不再暗示能看画面）
+
+- 用户要求："第一阶段 UI 明确写成 Video audio/transcript，不要暗示能看画面"。
+- 现状审计：`src/media/extractors/videoExtractor.js` 跑 `ffmpeg -i ... -vn ...` 把视频里的视频流去掉只留音轨，再走 `extractAudioContent` 转写——下游模型本质拿到的就是 audio transcript。但 UI 上：
+  - 附件菜单按钮就写一个 "Video"，没任何提示
+  - Drop banner "Drop image, video, or audio files here to attach them."
+  - 消息流里渲染成 `<video controls>` 大播放器，没有任何"模型只看到音频"的提示
+  → 容易让用户以为 agent 会看画面、问"视频里那个红色物体是什么"——结果模型只能从音轨转写凭空编。
+- Phase 1 修复（`desktop-ui/app.js` + `desktop-ui/styles.css`）：
+  - Composer 附件菜单 "Video" 按钮：保留主标 + 加 11px 副标 "audio transcript only"；hover title 完整说明 "Video → audio is transcribed; visual frames are not sent to the model in this phase."
+  - Drop banner：改为 "Drop image, audio, or video here. Video files are sent as audio transcripts only."
+  - 消息流里视频卡片的 caption 旁边追加斜体 hint "audio transcript only"——用户回看历史时也能看到模型实际看到了什么。
+  - CSS 加 `.composer-menu-item-text`（flex column, line-height 1.2）+ `.composer-menu-item-hint`（var(--text-soft) 11px）+ `.media-caption-hint`（同色 italic 11px）。
+- Phase 2（未做，留作下一步）：关键帧抽取——每隔 N 秒或场景切换抽 3-8 张图作 image_url / vision context，与音轨 transcript 一起送模型。`videoExtractor.js` 现成路径里加 `ffmpeg -vf "select='eq(pict_type\,I)'"` 关键帧筛选 + base64 image 列表。
+- 验证：`node --check desktop-ui/app.js` 通过；regression 303/303 绿。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 01:10 — Composer Link 入口统一 URL 分类（共用 detectUrlKind/promoteTextUrlsToAttachments）
 
 - 用户要求："手动点 Link 添加时也调用同一套 detectUrlKind/promoteTextUrlsToAttachments，YouTube/音频/视频/PDF/普通网页不管是粘贴文字还是点 Link，都得到同样的 kind/mimeType/title"。
@@ -59,131 +76,20 @@
 - **Tests**：services + state + desktopStore + memory + agents 全套绿。**UI 未做浏览器手测**——CLAUDE.md 说"can't test the UI = say so"。建议你启动 `npm start` 在真实 Melo 里点一下 Edit/Delete 按钮 + 改个 title 验证。
 - 提交哈希：（待 commit）
 
-## 2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走（约 1140 行 / desktopStore -75%）
-
-- 做了什么（一个 commit 同时收两块——用户明确要求"telegram 和 discord 也做完"）：
-  - **`src/state/conversation.js`** —— 追加 `createChatRecord`（17 行纯函数）。原 desktopStore-LOCAL，被 createChat（UI 流程） + ensureTelegramChatRecord + ensureDiscordChatRecord 三处共用。挪到 conversation.js 让两个 polling 模块都能 import 而不反向依赖 desktopStore。同时 desktopStore 加 `createChatRecord` 到现有 import 块，本地定义删除。
-  - **新增 `src/services/remote/telegramPolling.js`**（~610 行）—— byte-for-byte 把 Telegram 簇搬走：3 个 debug log helpers (`nextTelegramCycleId`, `writeTelegramDebugLine`, `renderTelegramTransportText`)、3 个私有 routing helpers (`shouldReplyToTelegramMessage`, `ensureTelegramChatRecord`, `recordTelegramMessageWithoutReply`)、entry `processTelegramPollingCycle`(~328 行)。`renderTelegramTransportText` 单独 `export` 因为 Discord 簇也要用（原 desktopStore 时代就跨用了）。Module-level state（DESKTOP_DIR / TELEGRAM_DEBUG_LOG_PATH / TELEGRAM_DEBUG_LOG_MAX_BYTES / TELEGRAM_POLL_LIMIT / `_telegramCycleCounter` / `telegramDebugLogDirReady`）全部一起搬。
-  - **新增 `src/services/remote/discordPolling.js`**（~750 行）—— 同款打包：debug log helper + 5 个私有 helpers + `processDiscordPollingCycle`(~442 行) + `snowflakeGt`。Discord branch import `renderTelegramTransportText` from `./telegramPolling.js`（保留原代码的跨 cluster reuse）。`snowflakeGt` 单独 export 因为 desktopStore 的 `__discordTesting` 测试 bundle 要 re-export 给 discord 单测用——desktopStore import 它（不 re-export）填进 bundle。
-  - **`src/desktopStore.js`**：2 行 `export { processX } from ...` re-export + 1 行 `import { snowflakeGt }` for 测试 bundle；删 8+8 = 16 处函数定义 + 5 个 module-level state const/let，共减 ~1140 行换 ~13 行 stub。
-- 中间小坑：第一稿 Discord 模块漏了把 `snowflakeGt` `export`，desktopStore 的 `__discordTesting` 引用它失败 18 个测试 ReferenceError。改 1 行（加 export）即修。
-- MELO_HOME 安全：跑测试前后 `~/.melo/desktop/state.json` mtime + size 确认未动。
-- 回归：services + state + desktopStore + memory + agents 全套 **725/725 全绿**。
-- 提交哈希：（待 commit）
-  - desktopStore: 3166 → 2029（-1137 行；本会话累计 8527→2029 = **-6498 行 = -76.2%**）
-
-## 2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走（project + task + workspace + approval = 17 funcs / 412 行）
-
-- 做了什么：4 个 sibling leaf 模块同 commit 创建：
-  - `src/services/project/projectMutations.js` —— `createProject` + `updateProject`（42 行）。APP_ROOT 4-dirname 重算。`normalizeProject` 用 stateHydration.js 的 1-arg wrapper 形态（不是 projectService.js 的 2-arg 原版）。
-  - `src/services/task/taskMutations.js` —— `markTaskOutcome` + `runTaskWorkerModel`（私有 helpers）+ `createTask` + `updateTask` + `runTask` + `runTaskLane`（共 152 行）。
-  - `src/services/workspace/workspaceMutations.js` —— `selectWorkspaceFile` + `buildWorkspaceProjectResolver`（私有）+ `readWorkspaceFilePreview` + `saveWorkspaceFile` + `createArtifact` + `applyArtifactToWorkspaceFile` + `runLocalCommand`（共 146 行）。APP_ROOT 4-dirname + `sanitizeWorkspacePath` 1-arg wrapper byte-identical 复制 + `execFile = promisify(execFileCallback)` 复制。
-  - `src/services/approval/approvalMutations.js` —— `createApproval` + `rejectApproval` + `executeApproval`（122 行）。executeApproval 派发到 workspaceMutations + externalConnectorMutations。
-  - **`src/desktopStore.js`**：4 个 export-from re-export 块给 server.js；删 17 处函数定义（约 412 行）换 8 行 stub。
-- 关于 path Bπ 选择 4-簇 同 commit：每个簇互相独立、依赖图清晰、pattern 完全相同（load → mutate → updateStateAtomically/saveState → return getDesktopBootstrap()）；分开 4 commit 反而增加 gate cycles 的成本。
-- 回归：services + state + desktopStore + memory + agents 全套绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 3578 → 3166（-412 行；本会话累计 8527→3166 = **-5361 行 = -62.9%**）
-
-## 2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇（10 个 CRUD entry，~331 行）
-
-- 做了什么：
-  - **新增 `src/services/skill/skillMutations.js`** —— byte-for-byte 把 10 个 exported skill CRUD 搬走：`toggleSkill` / `createCustomSkill` / `updateCustomSkill` / `removeCustomSkill` / `exportSkillAsMarkdown` / `importSkillFromMarkdown` / `promoteSkillToDisk` / `reloadDiskSkills` / `applySkillProposal`(133 行最大) / `draftSkillFromChat`，共 ~331 行。
-  - 16 个 imports 全部映射到 leaf 模块（state machine + skillService + skillsDisk + skillProposals + skillDrafting + diskSkills）。
-  - **`src/desktopStore.js`**：12 行 re-export 块（server.js 依赖这些 export 名），删 10 处函数定义换 3 行 stub。
-- 为什么：commit 1（external connector CRUD）+ commit 2（skill CRUD）共抽走 17 个 CRUD entry / 共 ~610 行。下一刀候选：project / task / approval CRUD。
-- 回归：services + state + desktopStore + memory + agents 全套绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 3891 → 3578（-313 行；本会话累计 8527→3578 = **-4949 行 = -58.0%**）
-
-## 2026-04-26 22:00 — Phase 7d-5ε commit 1：抽出 External Connector CRUD 簇（7 个 CRUD entry，~277 行）
-
-- 做了什么：
-  - **新增 `src/services/connector/externalConnectorMutations.js`** —— byte-for-byte 把 7 个 exported CRUD 函数搬走：`createExternalConnector` / `updateExternalConnector` / `removeExternalConnector` / `pingExternalConnector` / `readExternalConnectorResource` / `previewExternalConnectorPrompt` / `invokeExternalConnectorTool`，共 ~277 行。所有 deps 都已是 leaf（state machine + connector primitives）。
-  - **`src/desktopStore.js`**：6 行 re-export 块（server.js HTTP 路由依赖这些函数名），删 7 处函数定义换 6 行 stub。
-- 为什么：path B 完成后 desktopStore 还有 ~4140 行——其中大块是 server.js 调用的 CRUD entry。External Connector 是其中域最清晰、deps 最少的一组，自然成簇。后续可类似处理 Skill CRUD / Project CRUD / Task & Approval CRUD / Telegram polling / Discord polling。
-- 回归：services + state + desktopStore + memory + agents 全套绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 4144 → 3891（-253 行；本会话累计 8527→3891 = **-4636 行 = -54.4%**）
-
-## 2026-04-26 21:30 — desktopStore unused-import cleanup（path B 收尾后的第二轮 housekeeping）+ PROGRESS condense
-
-- 做了什么：
-  - **`src/desktopStore.js` 第二轮 cleanup**：path B 抽走 sendChatMessage / getDesktopBootstrap / search-results 之后又有一些 import 死了。Python 脚本（这次顺手修了"花括号里夹注释"bug——会先 strip 注释再 split names）扫出 9 个整删 + 2 个 trim。
-  - **PROGRESS.md condense**：从 189 行压到 ~127 行。把 8a / cleanup-1 / 7d / 7b / 7a 这 5 个条目移入归档（保留 5 个最新：8b/8c/8d/8e/8f verbatim）；同时回填了所有 7d-5δ commit hash 占位。
-- 回归：services + state + desktopStore + memory + agents 全套绿。
-- 提交哈希：（待 commit）
-  - desktopStore: 4159 → 4144（-15 行；path B 累计 8527→4144 = **-4383 = -51.4%**）
-
-## 2026-04-26 21:00 — Phase 7d-5δ commit 8f：**抽出 sendChatMessage（path B 真正收尾）+ scanRecentChatsForSkillProposals**
-
-- 做了什么：
-  - **新增 `src/services/chat/sendChatMessage.js`** —— `sendChatMessage`（350 行 async）+ 两个 sendChatMessage-private helper（`extractUrlAttachmentsFromText` 3 行 + `isAbortError` 7 行）byte-for-byte 搬走。共约 360 行。所有 30+ imports 全部映射到 leaf 模块（前 8a-8e 全部铺设的成果）。
-  - **新增 `src/state/skillProposalScan.js`** —— `scanRecentChatsForSkillProposals`（49 行）byte-for-byte 搬走。原本在 desktopStore；I/O orchestrator 跟 pure heuristics（`agents/skillProposals.js`）应该分开住，所以建独立 state-domain 文件而不是塞进 skillProposals.js。
-  - **`src/desktopStore.js`**：4 个 import + 4 个 export-from re-export（`sendChatMessage` 为 server.js / 内部 caller，`scanRecentChatsForSkillProposals` 为 skill-proposals 测试文件）。删 4 处函数定义（共 ~410 行）换 ~12 行 stub。
-  - 用 Python 脚本机械抽取 + 头部 import 块，避免手抄漏字符。
-- **path B 完成**：8 个 sub-commit (8a 到 8f) 把所有 LOCAL prereq + sendChatMessage 全搬出来。整个 chat 主路径现在是独立 leaf 链。
-- 回归：services + state + desktopStore + memory + agents 全套 **724/724 全绿**。
-- 提交哈希：`9895335`（commit 8f 主体）+ `f1ced20`（missing-imports + smoke test fix）
-  - desktopStore: 4542 → 4159（-383 行；本会话累计 **8527 → 4159 = -4368 行 = -51.2%** ——突破半数）
-
-## 2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 个 cluster-private helper
-
-- 做了什么：
-  - **新增 `src/state/desktopBootstrap.js`** —— byte-for-byte 把 5 个函数搬走：`availableModelsForConfig`(18 行) + `summarizeAgentProfile`(69 行) + `buildAgentProfiles`(25 行) + `buildProfile`(8 行) + `getDesktopBootstrap`(118 行) = ~240 行。前 4 个全是 cluster-private（只有 getDesktopBootstrap 调），打包同行。
-  - **`getAgentMarkdownPaths` 工厂绑定**：`createAgentMarkdownFileHelpers` 是工厂函数，desktopStore 是绑死 `AGENTS_DIR` const 的；新模块用**lazy `() => join(getMeloHome(), 'desktop', 'agents')`** 形式（CLAUDE.md §6 指定的"调用时捕获 env"模式），避免 module-load 时冻结 home。
-  - **`src/desktopStore.js`**：1 行 `import { getDesktopBootstrap } from './state/desktopBootstrap.js'` + 1 行 `export { getDesktopBootstrap } from ...`（back-compat re-export，给 server.js + 一些 `import * as store` 测试用）。删 5 处函数定义（共 ~240 行）换 ~10 行 stub。
-- 中间小坑：第一稿没加 re-export，server.js / projectsDefault.test.js 都用 `import * as store` 拿 `store.getDesktopBootstrap`——失败 7 个测试。修：加 export from。同款 commit 7d-5β commit 1 的 contract-break / Phase 7d-5γ commit 1 的 re-export 教训。
-- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：`0a05a30`（commit 8e 主体）+ `e7d2872`（§6 home capture fix + regression test）
-  - desktopStore: 4764 → 4542（-222 行；本会话累计 8527→4542 = **-3985 行 = -46.7%**）
-
-## 2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）
-
-- 做了什么：
-  - **新增 `src/services/search/searchResultsBuilder.js`** —— 把以下 8 个相互私有的 LOCAL 一并 byte-for-byte 搬走：
-    - `MAX_SEARCH_RESULTS`（const）
-    - `sortSearchItems`（cap helper）
-    - `buildFeatureSearchEntries`（149 行，feature catalogue）
-    - `buildRecentSearchSuggestions`（87 行）
-    - `buildChatThreadSearchEntry` / `buildChatMessageSearchEntry`
-    - `buildMemorySearchItem`（71 行）
-    - `buildSearchResults`（281 行，唯一对外 export 的入口）
-  - 11 个 imports 全部映射到现有 leaf 模块（memory/store, search/scoring, message/messageBlocks, message/messageSearch, conversation, etc.）。
-  - **`src/desktopStore.js`**：顶部 import 块加 5 行（含注释）；删 644 行的 cluster body 换 9 行 stub。唯一外部 caller 是 getDesktopBootstrap（line ~3445），走 imported name。
-- 用 Python 脚本机械抽出 cluster body + 头部注释 + import 块拼装新文件，避免手抄 644 行可能漏字符。`node --check` 验证语法 + 全套测试绿。
-- 为什么：getDesktopBootstrap 还有 4 个 LOCAL 依赖（buildAgentProfiles / buildProfile / availableModelsForConfig / buildSearchResults）。`buildSearchResults` 是其中体量最大且 domain-specific（search），单独抽干净；剩 3 个小的下一刀和 getDesktopBootstrap 一起搬。
-- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
-- 提交哈希：`edd3e76`
-  - desktopStore: 5408 → 4764（-644 行；本会话累计 8527→4764 = **-3763 行 = -44.1%**）
-
-## 2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors
-
-- 做了什么：
-  - **`refreshChatMemorySummary`（3 行）**：byte-for-byte 追加到 `src/state/chatThreadContext.js`——它的两个 deps（ensureChatThreadContext / renderStructuredThreadMemorySnapshot）已经在那个模块导入。零新 import。
-  - **`buildConnectors`（102 行）**：byte-for-byte 搬到新建 `src/services/connector/connectorRollup.js`。APP_ROOT 用 4 个 dirname 重算（同 workspaceSnapshot.js / stateHydration.js 模式）。其他 deps（BUILTIN_CONNECTORS / COMMAND_TEMPLATES / formatUpdatedAt / maskSecret）都已是 leaf。
-  - **`src/desktopStore.js`**：refreshChatMemorySummary 加进现有 `chatThreadContext.js` import 块；buildConnectors 单独 import；删两处函数定义共 105 行换 5 行 stub。所有 5+2 个 callers 走 imported name。
-- 为什么：sendChatMessage 的剩余 LOCAL deps 中两个 mid-size 的，先解决。剩 isAbortError + extractUrlAttachmentsFromText（私有）+ scanRecentChatsForSkillProposals（已 export）+ getDesktopBootstrap（118 行 37 callers，下一刀）。
-- 回归：services + state + desktopStore + memory + agents 全套绿（同款 store.* isolation flake，re-run 干净）。
-- 提交哈希：`66cd1a8`
-  - desktopStore: 5501 → 5408（-93 行）
-
-## 2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）
-
-- 做了什么：
-  - `updateStateAtomically`（13 行）从 desktopStore byte-for-byte 搬到 `src/state/stateStore.js`——它原本就该在那里（和 saveState / persistStateAtomically / readStateSnapshot 一起）。Phase 7d-5α-A1 commit 9 曾因为 ensureSelectedEntities 的 58 callers 把它留在 desktopStore，加了 §5 carve-out + `enqueueStateWrite` 桥梁。commit 8a 把 ensureSelectedEntities 拎到 stateSelections.js，这个 carve-out 失去存在理由。
-  - `stateStore.js` 增加 1 行 `import { ensureSelectedEntities } from './stateSelections.js'` + 30 行 byte-for-byte 移植。
-  - `enqueueStateWrite` 留 export 但加了备注"now mostly historical, can be retired in cleanup"。
-  - `desktopStore.js` import 列表加 `updateStateAtomically`，删 13 行原定义换 4 行 stub。**24 个内部 caller** 全部走新 import。
-- 为什么：path B 的精神就是"helper 放在该在的地方"。stateStore 是状态机模块——updateStateAtomically 跟 saveState 共用同一个 module-private queue，住一起最干净。
-- 回归：services + state + desktopStore + memory + agents 全套绿（一次小 flake 是已知 store.* 测试 isolation 问题，re-run 全绿）。
-- 提交哈希：`3c71ee6`
-  - desktopStore: 5516 → 5501（-15 行）
-
-## 归档摘要（2026-04-26 04:30 之前的所有条目）
+## 归档摘要（2026-04-27 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走** —— `src/services/remote/telegramPolling.js`(~610 行) + `discordPolling.js`(~750 行) byte-for-byte 抽出；desktopStore 净减 ~1140 行 → 2029（本会话累计 -76.2%）。`5419a9b`
+- **2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走** —— project + task + workspace + approval = 17 funcs / 412 行，4 个 sibling leaf 模块同 commit 创建；workspaceMutations.js 后续作为 Artifacts CRUD 升级落点。`b997e14`
+- **2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇** —— `src/services/skill/skillMutations.js` byte-for-byte 把 10 个 exported skill CRUD 搬走（~331 行）。`208e51d`
+- **2026-04-26 22:00 — Phase 7d-5ε commit 1：抽出 External Connector CRUD 簇** —— 7 个 exported CRUD 函数搬到 `src/services/connector/externalConnectorMutations.js`（~277 行）。`9721cd1`
+- **2026-04-26 21:30 — desktopStore unused-import cleanup r2 + PROGRESS condense** —— 第二轮死 import 清理（9 整删 + 2 trim），同时 PROGRESS 从 189 → 127 行。`55b7630`
+- **2026-04-26 21:00 — Phase 7d-5δ commit 8f：抽出 sendChatMessage（path B 真正收尾）+ scanRecentChatsForSkillProposals** —— `src/services/chat/sendChatMessage.js`（~360 行）+ `src/state/skillProposalScan.js`（49 行）；本会话累计突破半数 (-51.2%)。`9895335` + `f1ced20`
+- **2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 cluster-private helper** —— `src/state/desktopBootstrap.js`(~240 行)；getAgentMarkdownPaths 工厂用 lazy `() => join(getMeloHome(), ...)` 形式遵守 CLAUDE.md §6 调度时捕获 env。`0a05a30` + `e7d2872`
+- **2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）** —— `src/services/search/searchResultsBuilder.js` byte-for-byte 抽走整个 cluster；getDesktopBootstrap 的最大 LOCAL 依赖。`edd3e76`
+- **2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors** —— refreshChatMemorySummary 追加到 chatThreadContext.js；buildConnectors 搬到新建 `src/services/connector/connectorRollup.js`（共 105 行）。`66cd1a8`
+- **2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）** —— 13 行 helper 从 desktopStore byte-for-byte 搬到该住的 stateStore.js；§5 carve-out 失去存在理由后退役。`3c71ee6`
 - **2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖，58 callers）** —— 67 行 selection-coercion helper 搬到 src/state/stateSelections.js；retire 了 §5 carve-out 的 ensureSelectedEntities 阻塞物，让 8b 能把 updateStateAtomically 搬回 stateStore。`9955870`
 - **2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）** —— Python 脚本扫 110 个 import block，22 整删 + 17 trim，共减 105 行；中间踩过"花括号里夹注释"导致 `projectAgentOverrideFor` 被误吞的小 bug，regression suite 即时抓到。`46a85b8`
 - **2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第 3 次 D + 数据丢失事件 + 恢复）** —— 此前 7c smoke 测试没隔离 MELO_HOME，运行时**真覆盖了 ~/.melo/desktop/state.json**；恢复 04-22 备份；测试加 mkdtemp + after() hook + mtime 哨兵双保险。`b4cc16a`
