@@ -414,6 +414,14 @@ import { buildConnectors } from './services/connector/connectorRollup.js';
 // to a self-contained leaf. Only the entry-point is exported; the rest are
 // cluster-private. Same packaging pattern as commit 1's chat-action planner.
 import { buildSearchResults } from './services/search/searchResultsBuilder.js';
+// Phase 7d-5δ commit 8e: desktop-bootstrap entry + 4 cluster-private
+// helpers (availableModelsForConfig, summarizeAgentProfile,
+// buildAgentProfiles, buildProfile) extracted to a self-contained
+// state-domain leaf. 37 in-module callers go through the import below;
+// the re-export keeps server.js + the test files that do `import * as
+// store from './desktopStore.js'` working without code changes.
+import { getDesktopBootstrap } from './state/desktopBootstrap.js';
+export { getDesktopBootstrap } from './state/desktopBootstrap.js';
 // Phase 7d-5δ commit 3: workspace snapshot builder extracted. The new
 // module computes its own APP_ROOT via a deeper dirname chain (same
 // pattern as Phase 7d-5α-A1 commit 7's stateHydration.js) and keeps a
@@ -582,24 +590,8 @@ bootstrapBuiltinTools();
 // IGNORED_DIR_NAMES lives in `src/services/workspace/workspaceFiles.js`
 // (re-imported above).
 
-function availableModelsForConfig(config) {
-  const authMode = config.authMode || DEFAULT_CONFIG.authMode;
-  const catalogs = normalizeModelCatalogs(config.modelCatalogs || DEFAULT_MODEL_CATALOGS);
-  const discovered = catalogs[authMode] || [];
-  const models = Array.from(
-    new Set(
-      [config.model, ...discovered]
-        .map(value => String(value || '').trim())
-        .filter(Boolean),
-    ),
-  );
-
-  if (models.length) {
-    return models;
-  }
-
-  return [DEFAULT_CONFIG.model];
-}
+// availableModelsForConfig moved to `src/state/desktopBootstrap.js`
+// in Phase 7d-5δ commit 8e (cluster-private helper for getDesktopBootstrap).
 
 // MODE_DEFS moved to `src/services/chat/modeDefs.js` in Phase 7d-5δ
 // commit 7a. Re-imported at the top of this file.
@@ -1072,101 +1064,11 @@ export function buildConversationContinuityContext(chat, latestUserMessage = '')
 // summarizeTask / summarizeApproval were extracted to the task / approval
 // service modules in Phase 8.
 
-function summarizeAgentProfile(profile) {
-  const mood = moodOptionById(profile.mood);
-  const toolIds = normalizeAgentTools(profile.tools);
-  const tools = summarizeAgentTools(toolIds);
-  const now = Date.now();
-  const channels = Object.values(normalizeAgentChannels(profile.channels)).map(channel => ({
-    ...channel,
-    statusLabel:
-      channel.lastStatus === 'error'
-        ? 'Error'
-        : channel.enabled &&
-            channel.lastStatus === 'connected' &&
-            channel.lastPolledAt &&
-            now - Date.parse(channel.lastPolledAt) < 12_000
-          ? 'Polling live'
-          : channel.lastStatus === 'connected'
-            ? 'Connected'
-            : 'Not checked',
-    runtimeLabel:
-      channel.lastStatus === 'error'
-        ? 'Attention needed'
-        : channel.enabled &&
-            channel.lastStatus === 'connected' &&
-            channel.lastPolledAt &&
-            now - Date.parse(channel.lastPolledAt) < 12_000
-          ? 'Active now'
-          : channel.enabled
-            ? 'Configured'
-            : 'Disabled',
-    lastCheckedLabel: channel.lastCheckedAt ? formatUpdatedAt(channel.lastCheckedAt) : 'Never checked',
-    lastPolledLabel: channel.lastPolledAt ? formatUpdatedAt(channel.lastPolledAt) : 'No recent poll',
-    lastIncomingLabel: channel.lastIncomingAt ? formatUpdatedAt(channel.lastIncomingAt) : 'No incoming messages yet',
-    lastReplyLabel: channel.lastReplyAt ? formatUpdatedAt(channel.lastReplyAt) : 'No replies sent yet',
-    lastIncomingPreview: channel.lastIncomingPreview
-      ? truncateText(channel.lastIncomingPreview.replace(/\s+/g, ' ').trim(), 160)
-      : '',
-    lastReplyPreview: channel.lastReplyPreview
-      ? truncateText(channel.lastReplyPreview.replace(/\s+/g, ' ').trim(), 160)
-      : '',
-    botLabel: channel.botUsername ? `@${channel.botUsername}` : 'Unknown bot',
-    hasActivity: Boolean(channel.lastIncomingAt || channel.lastReplyAt),
-    hasCredentials: Boolean(
-      channel.botToken &&
-        (channel.id === 'telegram'
-          ? true
-          : channel.id === 'discord'
-            ? channel.channelId || channel.guildId
-            : true),
-    ),
-  }));
-  return {
-    ...profile,
-    toolIds,
-    moodLabel: mood.label,
-    moodDescription: mood.description,
-    moodPrompt: mood.prompt,
-    identifyPreview: (profile.identity || profile.identify).slice(0, 180),
-    soulMdPreview: profile.soulMd.slice(0, 180),
-    identityPreview: (profile.identity || profile.identify).slice(0, 180),
-    soulPreview: profile.soulMd.slice(0, 180),
-    tools,
-    toolCount: tools.length,
-    toolsLabel: tools.map(tool => tool.label).join(', '),
-    modelLabel: profile.model || 'Inherit global model',
-    systemPromptPreview: profile.systemPrompt || '',
-    channels,
-    enabledChannelCount: channels.filter(channel => channel.enabled).length,
-  };
-}
+// summarizeAgentProfile moved to `src/state/desktopBootstrap.js`
+// in Phase 7d-5δ commit 8e (cluster-private helper for getDesktopBootstrap).
 
-function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}) {
-  const editingScope = scope === 'project' && projectId ? 'project' : 'global';
-
-  return allAgentIdsFromProfiles(state.agentProfiles).map(agentId => {
-    const profile =
-      scope === 'project' && projectId
-        ? effectiveAgentProfile(state, agentId, projectId)
-        : {
-            ...normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]),
-            scopeSource: 'global',
-            hasProjectOverride: Boolean(projectAgentOverrideFor(state, projectId, agentId)),
-          };
-    const paths = getAgentMarkdownPaths(agentId, {
-      scope: editingScope,
-      projectId: editingScope === 'project' ? projectId : null,
-    });
-
-    return {
-      ...summarizeAgentProfile(profile),
-      identityPath: paths.identityPath,
-      soulPath: paths.soulPath,
-      editingScope,
-    };
-  });
-}
+// buildAgentProfiles moved to `src/state/desktopBootstrap.js`
+// in Phase 7d-5δ commit 8e (cluster-private helper for getDesktopBootstrap).
 
 // summarizeAgentPrompt moved to src/services/chat/systemPrompt.js in Phase 7d-2.
 
@@ -1237,14 +1139,8 @@ async function runTaskWorkerModel(state, config, task) {
 // in Phase 7d-5δ commit 8c. APP_ROOT is recomputed inside the new
 // module via deeper dirname (same precedent as workspaceSnapshot.js).
 
-function buildProfile() {
-  const rawName = userInfo().username || 'Melo User';
-  return {
-    name: titleCase(rawName),
-    plan: 'Local Desktop',
-    initial: rawName.slice(0, 1).toUpperCase() || 'M',
-  };
-}
+// buildProfile moved to `src/state/desktopBootstrap.js`
+// in Phase 7d-5δ commit 8e (cluster-private helper for getDesktopBootstrap).
 
 // generateChatTitle / summarizeProviderFailureDetails /
 // formatProviderFailureMessage were extracted to
@@ -2683,124 +2579,8 @@ export const __offlineBacklogTesting = {
 // Phase 7d-5β. Re-imported at the top of this file.
 
 
-export async function getDesktopBootstrap(query = '') {
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
-  const state = ensureSelectedEntities(rawState);
-  const chats = sortChats(state.chats);
-  const selectedChat = chats.find(chat => chat.id === state.settings.selectedChatId) || null;
-  const activeProject = findProjectById(state, state.settings.selectedProjectId);
-  const workspace = await buildWorkspaceSnapshot(state, activeProject);
-  const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
-  let shouldPersistState = false;
-
-  if (state.settings.selectedFilePath !== workspace.selectedFilePath) {
-    state.settings.selectedFilePath = workspace.selectedFilePath;
-    shouldPersistState = true;
-  }
-
-  if (!connectors.some(connector => connector.id === state.settings.selectedConnectorId)) {
-    state.settings.selectedConnectorId = connectors[0]?.id || null;
-    shouldPersistState = true;
-  }
-
-  if (!allAgentIdsFromProfiles(state.agentProfiles).includes(state.settings.selectedAgentId)) {
-    state.settings.selectedAgentId = 'main';
-    shouldPersistState = true;
-  }
-
-  if (state.settings.selectedAgentScope === 'project' && !activeProject) {
-    state.settings.selectedAgentScope = 'global';
-    shouldPersistState = true;
-  }
-
-  if (shouldPersistState) {
-    await saveState(state);
-  }
-
-  const skills = buildSkills(state.settings.enabledSkillIds, state.settings.customSkills);
-  const activeAgentScope =
-    state.settings.selectedAgentScope === 'project' && activeProject ? 'project' : 'global';
-  const agents = buildAgentProfiles(state, {
-    projectId: activeProject?.id || null,
-    scope: activeAgentScope,
-  });
-  const projectArtifacts = state.artifacts
-    .filter(artifact => artifact.projectId === activeProject?.id)
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .map(summarizeArtifact);
-  const activeChatArtifacts = state.artifacts
-    .filter(artifact => artifact.chatId === selectedChat?.id)
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .map(summarizeArtifact);
-
-  return {
-    profile: buildProfile(),
-    modes: MODE_DEFS,
-    settings: {
-      ...state.settings,
-      config: {
-        provider: config.provider,
-        baseUrl: config.baseUrl,
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        authMode: config.authMode,
-        hasApiKey: Boolean(config.apiKey),
-        hasCredentials:
-          config.authMode === 'codex'
-            ? Boolean(config.codexAuth?.loggedIn)
-            : config.authMode === 'local'
-              ? Boolean(config.baseUrl && config.model)
-              : Boolean(config.apiKey),
-        maskedApiKey: config.apiKey
-          ? `${config.apiKey.slice(0, 4)}...${config.apiKey.slice(-4)}`
-          : '(not set)',
-        hasWhisperKey: Boolean(config.whisperApiKey),
-        maskedWhisperApiKey: config.whisperApiKey
-          ? `${config.whisperApiKey.slice(0, 4)}...${config.whisperApiKey.slice(-4)}`
-          : '(not set)',
-        whisperBaseUrl: config.whisperBaseUrl || '',
-        ttsProvider: config.ttsProvider || '',
-        ttsEdgeVoice: config.ttsEdgeVoice || '',
-        codexAuth: config.codexAuth || null,
-        availableModels: availableModelsForConfig(config),
-        modelCatalogs: normalizeModelCatalogs(config.modelCatalogs || DEFAULT_MODEL_CATALOGS),
-      },
-    },
-    recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
-    chats: chats.map(summarizeChat),
-    activeChat: selectedChat,
-    projects: state.projects.map(project => summarizeProject(project, chats, state.artifacts)),
-    activeProject,
-    artifacts: [...state.artifacts]
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-      .map(summarizeArtifact),
-    projectArtifacts,
-    activeChatArtifacts,
-    tasks: state.tasks.map(summarizeTask),
-    approvals: state.approvals.map(summarizeApproval),
-    customize: {
-      agents,
-      skills,
-      connectors,
-      moods: MOOD_OPTIONS,
-      agentPresets: AGENT_PRESETS,
-      agentTools: AGENT_TOOL_OPTIONS,
-      agentScope: activeAgentScope,
-      agentProject: activeProject
-        ? {
-            id: activeProject.id,
-            name: activeProject.name,
-          }
-        : null,
-      // Background clustering proposals surfaced by Phase 3D — the UI uses
-      // these to offer "save as skill" suggestions without making a
-      // separate API call on every render.
-      skillProposals: defaultSkillProposalStore.list(),
-    },
-    workspace,
-    search: await buildSearchResults(query, state, workspace, connectors, skills),
-  };
-}
+// getDesktopBootstrap moved to `src/state/desktopBootstrap.js`
+// in Phase 7d-5δ commit 8e (cluster-private helper for getDesktopBootstrap).
 
 /**
  * Initialise MCP servers from user config.

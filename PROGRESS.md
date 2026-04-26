@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 个 cluster-private helper
+
+- 做了什么：
+  - **新增 `src/state/desktopBootstrap.js`** —— byte-for-byte 把 5 个函数搬走：`availableModelsForConfig`(18 行) + `summarizeAgentProfile`(69 行) + `buildAgentProfiles`(25 行) + `buildProfile`(8 行) + `getDesktopBootstrap`(118 行) = ~240 行。前 4 个全是 cluster-private（只有 getDesktopBootstrap 调），打包同行。
+  - **`getAgentMarkdownPaths` 工厂绑定**：`createAgentMarkdownFileHelpers` 是工厂函数，desktopStore 是绑死 `AGENTS_DIR` const 的；新模块用**lazy `() => join(getMeloHome(), 'desktop', 'agents')`** 形式（CLAUDE.md §6 指定的"调用时捕获 env"模式），避免 module-load 时冻结 home。
+  - **`src/desktopStore.js`**：1 行 `import { getDesktopBootstrap } from './state/desktopBootstrap.js'` + 1 行 `export { getDesktopBootstrap } from ...`（back-compat re-export，给 server.js + 一些 `import * as store` 测试用）。删 5 处函数定义（共 ~240 行）换 ~10 行 stub。
+- 中间小坑：第一稿没加 re-export，server.js / projectsDefault.test.js 都用 `import * as store` 拿 `store.getDesktopBootstrap`——失败 7 个测试。修：加 export from。同款 commit 7d-5β commit 1 的 contract-break / Phase 7d-5γ commit 1 的 re-export 教训。
+- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 4764 → 4542（-222 行；本会话累计 8527→4542 = **-3985 行 = -46.7%**）
+
 ## 2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）
 
 - 做了什么：
