@@ -343,6 +343,10 @@ import {
   COMMAND_TEMPLATES,
   commandTemplateDescriptor,
 } from './services/command/commandTemplates.js';
+// Phase 7d-5γ commit 2: tool-routing prompt block extracted to a leaf
+// (its two upstream deps — `agentUsesTool` and `COMMAND_TEMPLATES` —
+// are already in service modules).
+import { buildToolRoutingPrompt } from './services/agent/toolRoutingPrompt.js';
 import {
   DEFAULT_SKILL_TASK_SCHEMA,
   BUILTIN_SKILLS,
@@ -4111,40 +4115,9 @@ function buildAgentMemoryNodeContext({
 }
 
 
-function buildToolRoutingPrompt({ activeAgentProfile, agentConnectors = [] }) {
-  const blocks = ['Tool routing rules:'];
-
-  if (agentUsesTool(activeAgentProfile, 'local-command')) {
-    blocks.push(
-      `- Curated local commands are available but must go through approval first: ${COMMAND_TEMPLATES.map(
-        entry => `${entry.label} (${entry.id})`,
-      ).join(', ')}`,
-    );
-  }
-
-  const externalTools = agentConnectors
-    .filter(connector => connector.type === 'external-mcp' && connector.enabled)
-    .flatMap(connector =>
-      (connector.manifest?.tools || []).map(tool => `${connector.name} / ${tool.name}`),
-    );
-
-  if (externalTools.length) {
-    blocks.push(
-      `- External connector tools are available but must go through approval first: ${externalTools.join(
-        ', ',
-      )}`,
-    );
-  }
-
-  if (blocks.length === 1) {
-    return '';
-  }
-
-  blocks.push(
-    '- If the user explicitly asks to run a command or connector tool, prefer creating an approval request instead of pretending it already ran.',
-  );
-  return blocks.join('\n');
-}
+// buildToolRoutingPrompt moved to
+// `src/services/agent/toolRoutingPrompt.js` in Phase 7d-5γ. Re-imported
+// at the top of this file.
 
 function extractSearchQueryFromMessage(message = '') {
   const raw = String(message || '').trim();

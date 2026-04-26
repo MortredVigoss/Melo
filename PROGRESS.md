@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（依靠 commit 1 把唯一 LOCAL 抽走）
+
+- 做了什么：
+  - **新增 `src/services/agent/toolRoutingPrompt.js`** —— `buildToolRoutingPrompt`（34 行）byte-for-byte 搬走。两个依赖：`agentUsesTool` from `./agentTools.js`、`COMMAND_TEMPLATES` from `../command/commandTemplates.js`（commit 1 的产物）——都已是 leaf。
+  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删原函数定义（34 行）换 3 行 stub。两个内部 caller（line ~4463/~4955）走 imported name。
+- 为什么：commit 1 把 `COMMAND_TEMPLATES` 抽出去之后，`buildToolRoutingPrompt` 就降级成"依赖全外部"的常规叶子。这种"先抽常量、再抽消费者"的两步路径在 byte-for-byte 框架下是最稳的——commit 1 单独验过 gate（A），commit 2 的差异面只有这个函数本身，gate 审查清晰。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 7038 → 7011（-27 行）
+
 ## 2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor
 
 - 做了什么：
