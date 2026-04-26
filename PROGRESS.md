@@ -12,7 +12,10 @@
   - **`getSharedSkillIndex` 同行迁移**：原 desktopStore module-level singleton（`createSharedSkillIndexFactory({ buildSkillIndex })` 的产物），唯一 caller 就是 runner。和 runner 一起搬到新模块后仍然是 module-private singleton（Node module cache 保持稳定）。
   - **`src/desktopStore.js`**：顶部 import 块加 8 行；删 517 行函数体 + 4 行 getSharedSkillIndex const 换 6 行 stub。唯一内部 caller (line ~6002, inside `sendChatMessage`) 走 imported name。
 - 为什么：完成 desktopStore 主肉抽取的最关键一步。Chat 主路径（runner）现在是独立 leaf 模块；server.js 和 sendChatMessage 都通过 imported name 访问。结合前面 6 个 prerequisite commit + 1 个 task runner commit，整个 7d-5δ 的设计目标达成。
-- 中间小坑：第一稿忘了 import `buildChannelRoutePrompt`——按 desktopStore 现有 import 块映射时漏了 remote/ 目录。grep 自查发现并修复。
+- 中间踩坑（gate 抓到一次 D）：
+  - 第一稿忘了 import `buildChannelRoutePrompt`——按 desktopStore 现有 import 块映射时漏了 remote/ 目录。grep 自查发现并修复。
+  - **第二稿被 gate 评 D 阻断**：runner 调用 `getAllTools()` 但 import 块里只导了 `getTool`，主聊天路径 `shouldInjectToolsPrompt() === true` 时直接 ReferenceError。719/719 测试全绿掩盖了——因为 chat runner 没有端到端测试覆盖 prepare 阶段的 tools-prompt 分支。byte-for-byte 规则保护函数体，**不防 import 块漏写**。修复加了 `getAllTools` 到 registry import（1 行）。
+  - **Follow-up TODO（本会话不做）**：给 chatExecutionRunner.js 加一个最小 smoke 测试，至少导入新模块 + 用 mock state 跑通 prepare 阶段，避免下次 import 漏写假绿。
 - **回归**：services + state + desktopStore + memory + agents 全套 **719/719 全绿**——elephant 是最 stress 的整合点，全套通过证明 byte-for-byte 港无漂移。
 - 提交哈希：（待 commit）
   - desktopStore: 6188 → 5681（-507 行；本会话内累计已减 1846 行：8527→5681，进度 56%）

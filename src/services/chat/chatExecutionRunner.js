@@ -88,7 +88,7 @@ import {
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
 import { parseModelResponse, formatToolResultsMessage } from '../../tools/parser.js';
-import { getTool } from '../../tools/registry.js';
+import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
 
