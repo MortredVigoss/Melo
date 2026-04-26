@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走（约 1140 行 / desktopStore -75%）
+
+- 做了什么（一个 commit 同时收两块——用户明确要求"telegram 和 discord 也做完"）：
+  - **`src/state/conversation.js`** —— 追加 `createChatRecord`（17 行纯函数）。原 desktopStore-LOCAL，被 createChat（UI 流程） + ensureTelegramChatRecord + ensureDiscordChatRecord 三处共用。挪到 conversation.js 让两个 polling 模块都能 import 而不反向依赖 desktopStore。同时 desktopStore 加 `createChatRecord` 到现有 import 块，本地定义删除。
+  - **新增 `src/services/remote/telegramPolling.js`**（~610 行）—— byte-for-byte 把 Telegram 簇搬走：3 个 debug log helpers (`nextTelegramCycleId`, `writeTelegramDebugLine`, `renderTelegramTransportText`)、3 个私有 routing helpers (`shouldReplyToTelegramMessage`, `ensureTelegramChatRecord`, `recordTelegramMessageWithoutReply`)、entry `processTelegramPollingCycle`(~328 行)。`renderTelegramTransportText` 单独 `export` 因为 Discord 簇也要用（原 desktopStore 时代就跨用了）。Module-level state（DESKTOP_DIR / TELEGRAM_DEBUG_LOG_PATH / TELEGRAM_DEBUG_LOG_MAX_BYTES / TELEGRAM_POLL_LIMIT / `_telegramCycleCounter` / `telegramDebugLogDirReady`）全部一起搬。
+  - **新增 `src/services/remote/discordPolling.js`**（~750 行）—— 同款打包：debug log helper + 5 个私有 helpers + `processDiscordPollingCycle`(~442 行) + `snowflakeGt`。Discord branch import `renderTelegramTransportText` from `./telegramPolling.js`（保留原代码的跨 cluster reuse）。`snowflakeGt` 单独 export 因为 desktopStore 的 `__discordTesting` 测试 bundle 要 re-export 给 discord 单测用——desktopStore import 它（不 re-export）填进 bundle。
+  - **`src/desktopStore.js`**：2 行 `export { processX } from ...` re-export + 1 行 `import { snowflakeGt }` for 测试 bundle；删 8+8 = 16 处函数定义 + 5 个 module-level state const/let，共减 ~1140 行换 ~13 行 stub。
+- 中间小坑：第一稿 Discord 模块漏了把 `snowflakeGt` `export`，desktopStore 的 `__discordTesting` 引用它失败 18 个测试 ReferenceError。改 1 行（加 export）即修。
+- MELO_HOME 安全：跑测试前后 `~/.melo/desktop/state.json` mtime + size 确认未动。
+- 回归：services + state + desktopStore + memory + agents 全套 **725/725 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 3166 → 2029（-1137 行；本会话累计 8527→2029 = **-6498 行 = -76.2%**）
+
 ## 2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走（project + task + workspace + approval = 17 funcs / 412 行）
 
 - 做了什么：4 个 sibling leaf 模块同 commit 创建：

@@ -25,11 +25,39 @@
 // `formatUpdatedAt` from shared/helpers and the already-extracted
 // messageBlocks service.
 
-import { formatUpdatedAt } from '../shared/helpers.js';
+import { randomUUID } from 'node:crypto';
+import {
+  formatUpdatedAt,
+  nowIso,
+  normalizeAgentStorageId,
+} from '../shared/helpers.js';
 import {
   normalizePreviewPlainText,
   messageVisibleText,
 } from '../services/message/messageBlocks.js';
+
+// `createChatRecord` builds a fresh persistent chat shape with safe
+// defaults. Originally lived in desktopStore as a 17-line LOCAL helper
+// shared by createChat (UI flow), ensureTelegramChatRecord, and
+// ensureDiscordChatRecord. Phase 7d-5ζ moves it here so the polling
+// modules can extract without reaching back into desktopStore.
+export function createChatRecord({ mode, projectId, agentId }) {
+  const timestamp = nowIso();
+  return {
+    id: randomUUID(),
+    title: 'New chat',
+    mode,
+    projectId: projectId || null,
+    agentId: agentId ? normalizeAgentStorageId(agentId) : 'main',
+    source: 'desktop',
+    externalThreadKey: '',
+    locked: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    memorySummary: '',
+    messages: [],
+  };
+}
 
 export function sortChats(chats) {
   return [...chats].sort(
