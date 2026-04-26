@@ -40,13 +40,18 @@ import { join } from 'node:path';
 
 // ─── MELO_HOME isolation ────────────────────────────────────────────────────
 //
-// Capture the real `~/.melo/desktop/state.json` mtime so we can fail
-// loudly at the end of the suite if the test somehow still wrote into
-// the developer's real home. This is belt-and-suspenders on top of the
-// MELO_HOME override below.
+// The primary safety net is the MELO_HOME override below — every state
+// write from the runner lands in TEST_HOME. The real `~/.melo` mtime
+// belt-and-suspenders is opt-in via env var: `MELO_TEST_GUARD_REAL_HOME=1`
+// flips it on. By default the guard is off so the suite cannot
+// false-positive when the developer happens to be running real Melo
+// (or another concurrent test) in the same machine session.
 const REAL_HOME_STATE_PATH = join(homedir(), '.melo', 'desktop', 'state.json');
+const REAL_HOME_GUARD_ENABLED = process.env.MELO_TEST_GUARD_REAL_HOME === '1';
 const REAL_STATE_MTIME_BEFORE =
-  existsSync(REAL_HOME_STATE_PATH) ? statSync(REAL_HOME_STATE_PATH).mtimeMs : null;
+  REAL_HOME_GUARD_ENABLED && existsSync(REAL_HOME_STATE_PATH)
+    ? statSync(REAL_HOME_STATE_PATH).mtimeMs
+    : null;
 
 const ORIGINAL_MELO_HOME = process.env.MELO_HOME;
 const TEST_HOME = mkdtempSync(join(tmpdir(), 'melo-chat-runner-test-'));
@@ -65,9 +70,12 @@ after(() => {
   } else {
     process.env.MELO_HOME = ORIGINAL_MELO_HOME;
   }
-  // Hard guard: a regression in the isolation setup would silently
-  // touch the real home; assert here so the suite turns red.
-  if (REAL_STATE_MTIME_BEFORE !== null && existsSync(REAL_HOME_STATE_PATH)) {
+  // Hard guard (opt-in via MELO_TEST_GUARD_REAL_HOME=1): a regression
+  // in the isolation setup would silently touch the real home; assert
+  // here so the suite turns red. Off by default — concurrent Melo runs
+  // or other tests editing real state during this suite would otherwise
+  // produce a false red.
+  if (REAL_HOME_GUARD_ENABLED && REAL_STATE_MTIME_BEFORE !== null && existsSync(REAL_HOME_STATE_PATH)) {
     const after = statSync(REAL_HOME_STATE_PATH).mtimeMs;
     if (after > REAL_STATE_MTIME_BEFORE) {
       throw new Error(
