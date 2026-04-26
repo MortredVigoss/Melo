@@ -301,10 +301,6 @@ const icon = {
   eye: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff:
     '<svg viewBox="0 0 24 24"><path d="M3 3 21 21"/><path d="M10.6 10.7A3 3 0 0 0 13.3 13.4"/><path d="M9.9 5.3A10.8 10.8 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.2 3.7"/><path d="M6.2 6.2A17.1 17.1 0 0 0 2.5 12s3.5 7 9.5 7c1.5 0 2.8-.3 4-.8"/></svg>',
-  pencil:
-    '<svg viewBox="0 0 24 24"><path d="m4 20 4-1 11-11-3-3L5 16Z"/><path d="m14 6 3 3"/></svg>',
-  trash:
-    '<svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M7 7v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7"/><path d="M10 11v6M14 11v6"/></svg>',
 };
 
 const HOME_PROMPT_PRESETS = [
@@ -10325,7 +10321,7 @@ function renderArtifactsPage() {
               active
                 ? uiState.editingArtifactId === active.id
                   ? `
-                    <form class="project-form-card" data-form="artifact-update">
+                    <form class="project-form-card surface-card" data-form="artifact-update">
                       <div class="project-form-grid">
                         <label class="label">
                           Title
@@ -10384,18 +10380,14 @@ function renderArtifactsPage() {
                           class="small-button is-outline"
                           data-action="start-edit-artifact"
                           data-artifact-id="${active.id}"
-                          title="Rename or edit content"
                         >
-                          <span class="toolbar-icon">${icon.pencil}</span>
                           Edit
                         </button>
                         <button
-                          class="small-button is-outline"
+                          class="small-button is-danger"
                           data-action="delete-artifact"
                           data-artifact-id="${active.id}"
-                          title="Delete this artifact"
                         >
-                          <span class="toolbar-icon">${icon.trash}</span>
                           Delete
                         </button>
                         ${

@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-27 00:45 — Artifacts UI 重新设计：按钮统一文字版（设计语言一致）
+
+- 用户截图反馈："右边这个 ui 太丑了，两个巨大的按钮，然后中间的 edit 又不像是按钮很难点击到，你去重新设计一下 ui，记得 ui 设计的统一性，按钮设计的风格语言要统一"。
+- 根因：`<button class="small-button is-outline">` 内部塞 `<span class="toolbar-icon">${icon.pencil}</span>` + 文字，但 `.small-button` 没有 `display: inline-flex` / `gap`（不像 `.ghost-button`），SVG 直接以原始尺寸渲染，文字被挤到旁边——既丑也不像按钮。
+- 修复：改成纯文字 `.small-button` 变体，对齐已有的 `Queue write to <file>` 文字按钮风格：
+  - Edit → `.small-button.is-outline`（克制的次级动作）
+  - Delete → `.small-button.is-danger`（红色，语义警示）
+  - Queue write → `.small-button.is-primary`（保持原色）
+- 顺手清掉新引入但不再用的 `pencil` / `trash` icon 定义；编辑表单加 `surface-card` 类，让它在视觉上跟创建表单一致。
+- 验证：`node --check desktop-ui/app.js` 通过；regression 285/285 绿。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 00:30 — Artifacts CRUD：补 service-layer 单元测试（B-finding 跟进）
 
 - 做了什么：新增 `src/services/workspace/workspaceMutations.test.js`，8 个测试覆盖刚抽出的 `updateArtifact` + `deleteArtifact`：
