@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-26 17:30 — Phase 7d-5δ commit 7c：chatExecutionRunner smoke 测试（gate 第二次 C 的应对）
+
+- 做了什么：
+  - **新建 `src/services/chat/chatExecutionRunner.test.js`**（2 个测试）：
+    - **Test 1**：`latestUserMessage='git status'` + `local-command` agent → 触发 `planCommandAction` 的 approval early-exit。覆盖 prepare 整条路径，含 tools-prompt 装配（即 `shouldInjectToolsPrompt() && getAllTools()` 这个之前漏 import 的关键调用），不会真的调模型。
+    - **Test 2**：合成一个 external-mcp connector + matching message → 触发 `planExternalConnectorAction` early-exit，覆盖另一条 planning 分支。
+  - 用最小 fixtures（`state` 数组全空 / `config` authMode='unset' 让 `classifyIntent` 早返回 'factual'）跑通 prepare 而不需要任何 disk I/O 或网络。
+- 文档化的 gap（follow-up）：finalize 节点的 empty-reply fallback 分支没法在没有 DI / HTTP test server 的情况下测——需要要么改 runner 接 `deps` 参数（违反 byte-for-byte），要么起一个 fake OpenAI compatible server。两条都比这次 fix 范围大，记笔到 follow-up。
+- 为什么：`9c76db9` 大象 commit 被 gate 评 D 阻断（`getAllTools` 漏 import → 主聊天路径 ReferenceError），`91a25d9` 1-行 fix 修了 import 但 gate 又评 C 拒绝 push 直到补 smoke。Codex 论点：719 测试全绿没抓到这种 import 漏写就是覆盖缺口的硬证据。本 commit 接受 gate 的判断，补两个最 minimal 的 approval-exit smoke。
+- 回归：services + state + desktopStore + memory + agents 全套绿（721 = 719+2）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-26 17:00 — Phase 7d-5δ commit 7b：**抽出 runChatAgentExecutionGraph 大象**（517 行 byte-for-byte 一刀搬走）
 
 - 做了什么：
