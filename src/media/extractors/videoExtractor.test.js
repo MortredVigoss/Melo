@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractKeyframes } from './videoExtractor.js';
+import { extractKeyframes, withKeyframeBudget } from './videoExtractor.js';
 
 async function hasFfmpeg() {
   return new Promise(resolve => {
@@ -89,6 +89,68 @@ test('extractKeyframes pulls evenly-spaced JPEG data URLs from a 6s test video',
       const b64 = dataUrl.split(',')[1] || '';
       assert.ok(b64.length > 100, 'JPEG payload should not be trivially small');
     }
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+// ─── withKeyframeBudget contract ────────────────────────────────────────────
+// Codex C-grade finding: the outer routeExtraction race kills the WHOLE
+// extraction at 15s, so a slow ffmpeg keyframe pass could throw away an
+// already-successful transcript. These three tests lock the contract that
+// withKeyframeBudget always resolves to an array within budget, regardless
+// of what the inner work() does — so the caller's transcript stays safe.
+
+test('withKeyframeBudget: hanging work resolves to [] within the budget', async () => {
+  const start = Date.now();
+  const result = await withKeyframeBudget(
+    () => new Promise(() => {}),  // never resolves
+    50,                           // tiny budget for fast test
+  );
+  const elapsed = Date.now() - start;
+  assert.deepEqual(result, []);
+  assert.ok(elapsed < 500, `should bail near budget, took ${elapsed}ms`);
+});
+
+test('withKeyframeBudget: throwing work resolves to []', async () => {
+  const result = await withKeyframeBudget(() => Promise.reject(new Error('boom')));
+  assert.deepEqual(result, []);
+});
+
+test('withKeyframeBudget: fast successful work returns its result unchanged', async () => {
+  const fakeFrames = ['data:image/jpeg;base64,abc', 'data:image/jpeg;base64,def'];
+  const result = await withKeyframeBudget(() => Promise.resolve(fakeFrames));
+  assert.deepEqual(result, fakeFrames);
+});
+
+test('withKeyframeBudget: aborts the work signal on timeout', async () => {
+  let abortFired = false;
+  await withKeyframeBudget(
+    signal => new Promise(resolve => {
+      signal.addEventListener('abort', () => {
+        abortFired = true;
+        resolve(['should-be-ignored']);
+      });
+    }),
+    50,
+  );
+  assert.equal(abortFired, true);
+});
+
+test('extractKeyframes: aborted signal short-circuits with []', { skip: !ffmpegOk || !ffprobeOk }, async () => {
+  const workDir = await mkdtemp(join(tmpdir(), 'melo-video-test-abort-'));
+  const videoPath = join(workDir, 'sample.mp4');
+  const framesDir = join(workDir, 'frames');
+  try {
+    await buildTestVideo(videoPath, 6);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(framesDir, { recursive: true });
+
+    const ac = new AbortController();
+    ac.abort();  // already aborted before we call
+
+    const frames = await extractKeyframes(videoPath, framesDir, { signal: ac.signal });
+    assert.deepEqual(frames, []);
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }

@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时（Codex C-grade fix——transcript 不能被抽帧拖死）
+
+- Phase 2 commit `adb21ca` 被 `git pp` 的 Codex pre-push evaluation 卡 **C 级**——理由是真 bug：`extractKeyframes` 没有内部超时，外层 `routeExtraction` 给整个 extraction 套了 15s race，抽帧慢 → 整个 race 超时 → **已经成功的 transcript 一起丢**。
+- 修复（`src/media/extractors/videoExtractor.js`）：
+  - 新 export `KEYFRAME_BUDGET_MS = 5000`：抽帧硬预算 5s，独立于外层 15s 总预算（transcript 头等公民、keyframes bonus）。
+  - `extractKeyframes(videoPath, framesDir, { signal })` 接受 `AbortSignal`：signal 已 abort 时直接 `return []`；ffmpeg 进行中收到 abort `child.kill('SIGKILL')` 杀子进程避免 zombie；on exit/error 同步 `removeEventListener` 清理。
+  - 新 export `withKeyframeBudget(work, budgetMs)`：用 `AbortController` race 内部任务和 `setTimeout(budget)`，**绝不抛 / 绝不挂**；超时直接 `resolve []` + 同时 abort 信号 → child kill；任何 throw → `[]`；成功 → 原值。
+  - 调用点改 `keyframes = await withKeyframeBudget(signal => extractKeyframes(videoPath, framesDir, { signal }))`，外层保留 try/catch 双保险。
+- 测试新增 5 个 case 锁住契约（`src/media/extractors/videoExtractor.test.js`）：
+  - `withKeyframeBudget` 挂死 work + 50ms 预算 → `[]` 且 elapsed < 500ms（证明真超时不阻塞）。
+  - `withKeyframeBudget` throw → `[]`。
+  - `withKeyframeBudget` 快速成功 → 原值不动。
+  - `withKeyframeBudget` 超时时给 work 的 signal 实际 fire abort（证明子进程清理路径走通）。
+  - `extractKeyframes` 接收已 abort 的 signal → 直接 `[]`，不调 ffprobe / ffmpeg。
+- Codex 反问回应：
+  - **超时预算 5s**：经过 review，确认。典型短视频抽 5 张 1-2s；5s 给 webm/h265 留 margin；且 5s + 10s audio < 15s 外层预算，不蚕食。
+  - **无音轨视频只发 keyframes**：本次不动。改 result.kind 契约（不再是 transcript） + `extractedMedia.text` empty 不让通过 `normalizeMediaText`，影响面比这刀大。留 Phase 3。
+- 验证：`node --check` 全过；regression `services + state + desktopStore + memory + agents + media` **334/334 全绿**（Phase 2 时 329，新增 5 个 timeout/abort 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 02:00 — Video Phase 2：关键帧抽取上线（音轨 transcript + 5 张关键帧 → 模型真能"看"视频）
 
 - Phase 1 只是文案诚实，模型还是只听音轨。Phase 2 让模型实际拿到画面。

@@ -15,6 +15,14 @@ const KEYFRAME_MAX_INTERVAL_SEC = 30;
 const KEYFRAME_WIDTH = 512;
 const KEYFRAME_JPEG_QUALITY = 4;
 
+// Hard budget for the keyframe pass. The transcript is the load-bearing
+// output — keyframes are bonus visual context. If ffmpeg / ffprobe hangs
+// or the codec is unusually slow, we abandon the bonus and ship just the
+// transcript. The outer routeExtraction race in src/media/index.js gives
+// the WHOLE extraction 15s; budgeting keyframes at 5s leaves 10s for the
+// audio pass and bookkeeping.
+export const KEYFRAME_BUDGET_MS = 5000;
+
 // Extensions that indicate a direct binary video stream (not a webpage).
 const DIRECT_VIDEO_URL_RE = /\.(mp4|mov|webm|m4v|mkv|avi|flv|ts|m2ts)(\?|$|#)/i;
 
@@ -53,9 +61,13 @@ async function probeDurationSec(videoPath) {
   });
 }
 
-export async function extractKeyframes(videoPath, framesDir) {
+export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
+  if (signal?.aborted) {
+    return [];
+  }
+
   const durationSec = await probeDurationSec(videoPath);
-  if (!durationSec) {
+  if (!durationSec || signal?.aborted) {
     return [];
   }
 
@@ -77,9 +89,33 @@ export async function extractKeyframes(videoPath, framesDir) {
       '-y',
       join(framesDir, 'frame-%03d.jpg'),
     ], { stdio: 'ignore' });
-    ff.on('error', reject);
-    ff.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg keyframe pass exited ${code}`))));
+    // SIGKILL the ffmpeg child if the caller's budget expires — otherwise
+    // the orphan keeps churning even after we've moved on.
+    const onAbort = () => {
+      try { ff.kill('SIGKILL'); } catch {}
+      reject(new Error('keyframe extraction aborted'));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+    ff.on('error', err => {
+      signal?.removeEventListener?.('abort', onAbort);
+      reject(err);
+    });
+    ff.on('exit', code => {
+      signal?.removeEventListener?.('abort', onAbort);
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg keyframe pass exited ${code}`));
+    });
   });
+
+  if (signal?.aborted) {
+    return [];
+  }
 
   const entries = (await readdir(framesDir))
     .filter(name => /^frame-\d+\.jpg$/i.test(name))
@@ -91,6 +127,36 @@ export async function extractKeyframes(videoPath, framesDir) {
     frames.push(`data:image/jpeg;base64,${buf.toString('base64')}`);
   }
   return frames;
+}
+
+/**
+ * Race a keyframe-producing function against the global keyframe budget.
+ * Always resolves to an array (never throws, never hangs). On timeout the
+ * caller gets [], the signal fires, and any in-flight ffmpeg child is
+ * killed by `extractKeyframes`'s abort handler.
+ *
+ * Exported so the contract "transcript survives keyframe failure" can be
+ * locked by a focused unit test, instead of relying on inspection of the
+ * caller's try/catch composition.
+ */
+export async function withKeyframeBudget(work, budgetMs = KEYFRAME_BUDGET_MS) {
+  const ac = new AbortController();
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      ac.abort();
+      resolve(Array.isArray(val) ? val : []);
+    };
+    const timer = setTimeout(() => finish([]), budgetMs);
+    Promise.resolve()
+      .then(() => work(ac.signal))
+      .then(
+        val => { clearTimeout(timer); finish(val); },
+        () => { clearTimeout(timer); finish([]); },
+      );
+  });
 }
 
 export async function extractVideoContent(attachment, context = {}) {
@@ -164,11 +230,16 @@ export async function extractVideoContent(attachment, context = {}) {
     }
 
     // Phase 2: pull a handful of keyframes so the model can actually see the
-    // video, not just hear it. Failure here MUST NOT take down the transcript.
+    // video, not just hear it. Failure here MUST NOT take down the transcript
+    // — the outer routeExtraction race is 15s for the WHOLE extraction, so a
+    // slow ffmpeg keyframe pass would otherwise eat the transcript we already
+    // have. withKeyframeBudget caps the pass at 5s and falls back to [].
     let keyframes = [];
     try {
       await mkdir(framesDir, { recursive: true });
-      keyframes = await extractKeyframes(videoPath, framesDir);
+      keyframes = await withKeyframeBudget(
+        signal => extractKeyframes(videoPath, framesDir, { signal }),
+      );
     } catch {
       keyframes = [];
     }
