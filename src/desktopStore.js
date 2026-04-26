@@ -490,6 +490,15 @@ import {
   pruneExcessChats,
   assertCanCreateChat,
 } from './state/chatPruning.js';
+// Phase 7d-5δ commit 2: trivial state-entity finders extracted to a leaf
+// module so the chat / task execution graph runners can move out without
+// import cycles. Same packaging pattern as Phase 7d-5γ commit 1.
+import {
+  findProjectById,
+  findExternalConnectorById,
+  findTaskById,
+  findApprovalById,
+} from './state/stateLookups.js';
 import {
   serializeChatForPersistence,
   persistChatThreads,
@@ -1300,21 +1309,10 @@ function effectiveAgentProfile(state, agentId, projectId = null) {
 // pattern would re-introduce a cycle (desktopStore → runner → desktopStore).
 // Removed the keyword; if/when the runner moves, findProjectById should
 // either be passed via deps or moved to a state module first.
-function findProjectById(state, projectId) {
-  return state.projects.find(project => project.id === projectId) || null;
-}
-
-function findExternalConnectorById(state, connectorId) {
-  return state.externalConnectors.find(connector => connector.id === connectorId) || null;
-}
-
-function findTaskById(state, taskId) {
-  return state.tasks.find(task => task.id === taskId) || null;
-}
-
-function findApprovalById(state, approvalId) {
-  return state.approvals.find(approval => approval.id === approvalId) || null;
-}
+// findProjectById / findExternalConnectorById / findTaskById /
+// findApprovalById moved to `src/state/stateLookups.js` in Phase 7d-5δ
+// commit 2. Re-imported at the top of this file alongside the other
+// state-machine helpers.
 
 // externalConnectorUrl / requestExternalConnectorJson /
 // refreshExternalConnectorStatus / fetchExternalConnectorContext /

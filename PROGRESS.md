@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 14:30 — Phase 7d-5δ commit 2：抽出 4 个 findXById finder 簇
+
+- 做了什么：
+  - **新增 `src/state/stateLookups.js`** —— 4 个 trivial finder 一起 byte-for-byte 搬走：`findProjectById` / `findExternalConnectorById` / `findTaskById` / `findApprovalById`，共 ~16 行。每个都是 1 行 `state.X.find(...)` 纯函数。
+  - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 4 处函数定义（共 16 行）换 4 行 stub。35 个内部 caller 走 imported name。
+- 为什么：runner 抽取的 prerequisite。`runTaskAgentExecutionGraph` / `runChatAgentExecutionGraph` 都用 `findProjectById`；要把 runner 搬到独立 leaf，finder 必须先有自己的 leaf 不然就要走 DI 注入或 export-at-tree（cec12c3 那条路被 gate 评 C）。把 4 个 trivial finder 一起搬是最自然的边界——和 Phase 7d-5γ commit 1（COMMAND_TEMPLATES + descriptor）同款打包。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6367 → 6365（-2 行；函数体很小，主要是 import 块抵消了瘦身）
+
 ## 2026-04-26 14:00 — Phase 7d-5δ commit 1：抽出 chat-graph action planner 簇（7 个互引的 LOCAL helper 一并搬走）
 
 - 做了什么：
