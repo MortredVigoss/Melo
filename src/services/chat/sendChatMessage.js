@@ -20,6 +20,8 @@
 // extractions stay free of cycles.
 
 import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getResolvedConfig } from '../../config.js';
 import {
   loadState,
@@ -34,6 +36,10 @@ import { scanRecentChatsForSkillProposals } from '../../state/skillProposalScan.
 import { allAgentIdsFromProfiles } from '../agent/agentLibrary.js';
 import { buildWorkspaceSnapshot } from '../workspace/workspaceSnapshot.js';
 import { buildConnectors } from '../connector/connectorRollup.js';
+import {
+  COMMAND_TEMPLATES,
+  commandTemplateDescriptor,
+} from '../command/commandTemplates.js';
 import { buildSkills } from '../skill/skillService.js';
 import { runChatAgentExecutionGraph } from './chatExecutionRunner.js';
 import {
@@ -61,6 +67,14 @@ import {
   nowIso,
   normalizeMessageAttachments,
 } from '../../shared/helpers.js';
+
+// APP_ROOT — original desktopStore.js: `dirname(dirname(fileURLToPath(import.meta.url)))`.
+// This module sits two levels deeper at `src/services/chat/`, so the formula
+// needs two extra `dirname()` calls to resolve to the same project-root
+// directory. Used by the remote-background workspace fallback below (the
+// `if (shouldUseBackgroundWorkspace)` branch synthesizes an empty workspace
+// rooted at APP_ROOT). Same precedent as workspaceSnapshot.js / connectorRollup.js.
+const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
 function extractUrlAttachmentsFromText(content = '') {
   return normalizeMessageAttachments(promoteTextUrlsToAttachments(content, []));
