@@ -358,10 +358,13 @@ export {
   listExecutableSkills,
 } from './services/skill/skillService.js';
 // Phase 7d-5β: skill prompt summarization moved to a dedicated leaf module.
-// byte-for-byte port (CLAUDE.md §5). The single external caller (the
-// desktopStore.skills.test.js suite) is updated in the same commit to
-// import from the new path; no re-export needed.
+// byte-for-byte port (CLAUDE.md §5). The export from desktopStore is
+// preserved as a back-compat re-export so callers still importing
+// `summarizeSkillsPrompts` from this file keep working — the test was
+// updated to point at the new path as the canonical location, but the
+// public surface stays identical.
 import { summarizeSkillsPrompts } from './services/skill/skillPrompts.js';
+export { summarizeSkillsPrompts } from './services/skill/skillPrompts.js';
 import {
   extractVoiceSummary,
   rewriteForVoice,

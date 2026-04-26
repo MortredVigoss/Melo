@@ -11,18 +11,16 @@
   - **新增 4 个 leaf 模块**（每个零 desktopStore-LOCAL 依赖，纯函数）：
     - `src/services/chat/matcherContext.js` — `buildMatcherContextFromChat`（30 行）
     - `src/services/connector/connectorPrompts.js` — `summarizeConnectorPrompts`（6 行）
-    - `src/services/skill/skillPrompts.js` — `summarizeSkillsPrompts`（38 行，原 export，唯一外部 caller 是 skills test）
+    - `src/services/skill/skillPrompts.js` — `summarizeSkillsPrompts`（38 行，原 export）
     - `src/services/chat/visionDebug.js` — `formatModelMessageForVisionDebug`（24 行）
-  - **`src/desktopStore.js`**：
-    - 顶部 import 块加 4 行（按 chat/connector/skill 域和现有 import 邻接）
-    - 删 4 处函数定义（共 ~95 行），每处替换为 1-3 行 stub 注释指向新文件
-    - 没有添加 back-compat re-export——4 个内部 caller (line 4514/4543/4544/4715) 用 imported name 自然链接，唯一外部 caller 是 test 文件直接更新过去
-  - **`src/desktopStore.skills.test.js`**：`summarizeSkillsPrompts` import 路径从 `./desktopStore.js` 改成 `./services/skill/skillPrompts.js`。
+  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 4 处函数定义（~95 行），每处替换为 stub 注释。`summarizeSkillsPrompts` 保留 back-compat re-export（gate 第 9 次 C 抓出来的契约）。
+  - **`src/desktopStore.skills.test.js`**：`summarizeSkillsPrompts` import 改成指向新位置作为 canonical 路径（re-export 仍可用）。
 - 为什么：
-  - Phase 7d-5β 的目标是把 desktopStore 里大块 prompt/context helpers 全部下沉到 services/。这 4 个是 ZERO LOCAL deps 的真叶子——既能 byte-for-byte 一刀抽，也是后续 7d-5γ（中等复杂度）和 7d-5δ（runner elephant）的最低风险起手。
-  - 用户选"合 commit"是因为 4 个都是零依赖纯函数，单独 4 commit + 4 gate 循环 ROI 不高；合 1 个 commit 让 gate 一次审完所有 4 个 byte-for-byte port，差异表面清晰。
-- 回归：services + state + desktopStore + memory + agents 套件全绿；总测试数 ~597（+0 from this commit——纯位置迁移，已有测试覆盖）。
-- 提交哈希：（待 commit）
+  - 7d-5β 目标是 prompt/context helpers 下沉到 services/。这 4 个是 ZERO LOCAL deps 真叶子，最低风险起手。
+  - 用户选"合 commit"——单独 4 commit + 4 gate ROI 不高；一次审 4 个 byte-for-byte port 差异表面清晰。
+- 关于第 9 次 C：第一刀里直接删了 `summarizeSkillsPrompts` 的 export，gate 抓到"契约破坏"。fix（用户选 A 路径）：保留 re-export，把"是否清理 dead export"留给将来独立 cleanup commit。
+- 回归：services + state + desktopStore + memory + agents 套件全绿；总测试数 ~597（+0 from this commit）。
+- 提交哈希：`d056e8d`（commit 1 主体）+ 后续 fixup（保留 re-export，gate 第 9 次 C 修复）
   - desktopStore: 7205 → 7124（-81 行）
 
 ## 2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出

@@ -3,9 +3,10 @@
 // system-prompt block (or a lean dispatch-hint form for remote/Telegram
 // callers). Byte-for-byte port from desktopStore.js (CLAUDE.md §5).
 //
-// Already exported in the desktopStore version. The single external
-// caller (`src/desktopStore.skills.test.js`) is updated in the same
-// commit to import from this new path; signature unchanged.
+// Already exported in the desktopStore version. desktopStore preserves
+// a back-compat re-export so existing callers don't break; the test
+// (`src/desktopStore.skills.test.js`) is updated to point at this new
+// path as the canonical location.
 
 // Legacy prompt-stuffing path. Only `type: 'prompt'` skills get their
 // systemPrompt concatenated here. `type: 'executable'` skills are exposed
