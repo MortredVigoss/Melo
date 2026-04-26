@@ -5,16 +5,22 @@
 
 ---
 
-## 2026-04-26 17:30 — Phase 7d-5δ commit 7c：chatExecutionRunner smoke 测试（gate 第二次 C 的应对）
+## 2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第三次 D + 数据丢失事件 + 恢复）
 
-- 做了什么：
-  - **新建 `src/services/chat/chatExecutionRunner.test.js`**（2 个测试）：
-    - **Test 1**：`latestUserMessage='git status'` + `local-command` agent → 触发 `planCommandAction` 的 approval early-exit。覆盖 prepare 整条路径，含 tools-prompt 装配（即 `shouldInjectToolsPrompt() && getAllTools()` 这个之前漏 import 的关键调用），不会真的调模型。
-    - **Test 2**：合成一个 external-mcp connector + matching message → 触发 `planExternalConnectorAction` early-exit，覆盖另一条 planning 分支。
-  - 用最小 fixtures（`state` 数组全空 / `config` authMode='unset' 让 `classifyIntent` 早返回 'factual'）跑通 prepare 而不需要任何 disk I/O 或网络。
-- 文档化的 gap（follow-up）：finalize 节点的 empty-reply fallback 分支没法在没有 DI / HTTP test server 的情况下测——需要要么改 runner 接 `deps` 参数（违反 byte-for-byte），要么起一个 fake OpenAI compatible server。两条都比这次 fix 范围大，记笔到 follow-up。
-- 为什么：`9c76db9` 大象 commit 被 gate 评 D 阻断（`getAllTools` 漏 import → 主聊天路径 ReferenceError），`91a25d9` 1-行 fix 修了 import 但 gate 又评 C 拒绝 push 直到补 smoke。Codex 论点：719 测试全绿没抓到这种 import 漏写就是覆盖缺口的硬证据。本 commit 接受 gate 的判断，补两个最 minimal 的 approval-exit smoke。
-- 回归：services + state + desktopStore + memory + agents 全套绿（721 = 719+2）。
+- **事件**：上一次提交（`7b9662e`）的 smoke 测试**没有隔离 MELO_HOME**。在我本地跑测试的瞬间 `~/.melo/desktop/state.json` 被覆盖成 fixture 内容（15376 字节 → 1582 字节），`store.sqlite` 时间戳也被改写（memory 行很可能被 `replaceMemories` 清空）。Gate 评 D 阻断了 push（commit 没出本地）但伤害**已经在本机发生**。
+- **恢复**：
+  - 把 fixture 损坏的 `state.json` 重命名为 `state.json.fixture-overwrite-2026-04-26` 留作取证。
+  - `cp state.json.bak-20260422-224446 state.json` 恢复 4 天前的备份。`memory store.sqlite` 没备份恢复不了——损失的是过去 4 天产生的 chat / 项目设置变更 + 全部 memory rows（chat 历史里 indexed 的那些）。
+- **修复 commit 7c 的测试**：
+  - 顶部 `mkdtempSync(tmpdir())` 创建 `melo-chat-runner-test-XXXXX/`，`process.env.MELO_HOME = TEST_HOME` 在 import runner 之前。
+  - 用 `await import('./chatExecutionRunner.js')` 动态导入，避免 ESM 静态 import 的 hoisting 在 env 设置前就触发。
+  - `after()` hook：rmSync TEST_HOME + 还原 MELO_HOME；并且**捕获 `~/.melo/desktop/state.json` 的 mtime before/after**——如果跑完测试发现真 home 被改 throw 一个明确报错。这是双保险（grandtotal 第二次写错就立即红）。
+- 验证：跑测试前后 `~/.melo/desktop/state.json` mtime + 字节数完全不变，TEST_HOME 里写出 fixture 文件，2/2 测试绿，全套 723 = 721 全绿。
+- Lessons：
+  1. 任何 smoke 测试触发 `saveState` 的，必须在 import 前 mkdtemp + 设 MELO_HOME。CLAUDE.md §6 已经规定异步边界要捕获 env，**测试边界同理**。
+  2. 写新测试**不要在自己的 dev home 上首跑**——应该先在临时目录跑通再视情决定是否安全在 home 上跑。
+  3. 这次事故 gate 抓到了但**事后**——不能靠 gate 兜底所有 destructive bug，需要 review 习惯先看 "saveState / replaceMemories / 写盘函数" 是否经过隔离。
+- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
 - 提交哈希：（待 commit）
 
 ## 2026-04-26 17:00 — Phase 7d-5δ commit 7b：**抽出 runChatAgentExecutionGraph 大象**（517 行 byte-for-byte 一刀搬走）

@@ -8,6 +8,16 @@
 // minimum viable gap so future import-block regressions get caught
 // before push.
 //
+// CRITICAL — MELO_HOME isolation:
+// The approval early-exit triggers `saveState(state)` which writes
+// `state.json` + `threads/*.json` and indexes into `store.sqlite` under
+// `getMeloHome()`. Without isolation those writes go to the developer's
+// real `~/.melo/desktop/` and clobber it. The first version of this
+// test (gate-D, before fix) actually wiped the developer's state.json.
+// Setup below points MELO_HOME at a fresh tmpdir BEFORE the runner
+// module is imported (dynamic `await import` so static imports in the
+// runner module observe the env), and tears it down on test exit.
+//
 // Coverage:
 //   • Test 1 (planCommandAction approval-exit) — exercises prepare phase
 //     in full, including the tools-prompt assembly that previously
@@ -22,15 +32,55 @@
 // in-test HTTP server) are bigger than this fix. Recorded in PROGRESS
 // for a later cleanup commit.
 
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { runChatAgentExecutionGraph } from './chatExecutionRunner.js';
+import { mkdtempSync, rmSync, existsSync, statSync } from 'node:fs';
+import { tmpdir, homedir } from 'node:os';
+import { join } from 'node:path';
+
+// ─── MELO_HOME isolation ────────────────────────────────────────────────────
+//
+// Capture the real `~/.melo/desktop/state.json` mtime so we can fail
+// loudly at the end of the suite if the test somehow still wrote into
+// the developer's real home. This is belt-and-suspenders on top of the
+// MELO_HOME override below.
+const REAL_HOME_STATE_PATH = join(homedir(), '.melo', 'desktop', 'state.json');
+const REAL_STATE_MTIME_BEFORE =
+  existsSync(REAL_HOME_STATE_PATH) ? statSync(REAL_HOME_STATE_PATH).mtimeMs : null;
+
+const ORIGINAL_MELO_HOME = process.env.MELO_HOME;
+const TEST_HOME = mkdtempSync(join(tmpdir(), 'melo-chat-runner-test-'));
+process.env.MELO_HOME = TEST_HOME;
+
+// Dynamic import: ensures the runner module's static imports
+// (state/stateStore.js → getMeloHome() at saveState time) observe the
+// `MELO_HOME` we just set above. A top-level `import { ... } from
+// './chatExecutionRunner.js'` is hoisted and would not.
+const { runChatAgentExecutionGraph } = await import('./chatExecutionRunner.js');
+
+after(() => {
+  try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {}
+  if (ORIGINAL_MELO_HOME === undefined) {
+    delete process.env.MELO_HOME;
+  } else {
+    process.env.MELO_HOME = ORIGINAL_MELO_HOME;
+  }
+  // Hard guard: a regression in the isolation setup would silently
+  // touch the real home; assert here so the suite turns red.
+  if (REAL_STATE_MTIME_BEFORE !== null && existsSync(REAL_HOME_STATE_PATH)) {
+    const after = statSync(REAL_HOME_STATE_PATH).mtimeMs;
+    if (after > REAL_STATE_MTIME_BEFORE) {
+      throw new Error(
+        `MELO_HOME isolation regressed — ${REAL_HOME_STATE_PATH} was modified during this test suite (mtime ${REAL_STATE_MTIME_BEFORE} → ${after}). Tests must not write outside ${TEST_HOME}.`,
+      );
+    }
+  }
+});
 
 // ─── Minimal fixtures ───────────────────────────────────────────────────────
 //
-// The runner pulls deeply into memory store / sqlite paths during prepare.
-// These fixtures stay shape-compatible with the real types but deliberately
-// keep arrays empty so the recall paths return early without DB I/O.
+// Shape-compatible with the real types but kept as small as possible so
+// recall paths return early without DB I/O work.
 
 function fixtureState() {
   return {
@@ -140,6 +190,13 @@ test('runChatAgentExecutionGraph imports + prepare phase resolve cleanly (planCo
   assert.ok(Array.isArray(state.approvals));
   assert.equal(state.approvals.length, 1);
   assert.equal(state.approvals[0].kind, 'command');
+
+  // Belt-and-suspenders: verify saveState wrote into the isolated TEST_HOME
+  // and not into the developer's real `~/.melo`.
+  assert.ok(
+    existsSync(join(TEST_HOME, 'desktop', 'state.json')),
+    `expected state.json to land in TEST_HOME (${TEST_HOME})`,
+  );
 });
 
 test('runChatAgentExecutionGraph approval-exit via planExternalConnectorAction', async () => {
