@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg（Codex C-grade fix #2）
+
+- 上一刀（02:30）只把 abort 接到 ffmpeg child，**忘了 `probeDurationSec` 里的 ffprobe child**——budget 超时如果发生在 probe 阶段，ffprobe 进程被泄漏。Codex pre-push gate 第二次给 C，理由站得住：取消链路不完整，可能泄漏子进程。
+- 修复（`src/media/extractors/videoExtractor.js`）：
+  - 抽 `spawnWithAbort(bin, args, { collectStdout, signal, onSpawn })` 统一封装：pre-abort 立即 SIGKILL + reject；mid-flight abort 监听器 SIGKILL + reject；natural exit/error 清理 listener 防晚 fire；`collectStdout: true` 给 ffprobe 拿 duration text；`onSpawn(child)` callback 给测试观察 child handle。
+  - `probeDurationSec(videoPath, { signal })` 改走 `spawnWithAbort('ffprobe', ..., { collectStdout: true, signal })`。
+  - `extractKeyframes` 把 signal 显式传给 probeDurationSec + spawnWithAbort，整条 ffprobe → ffmpeg → readdir/readFile 链路共享同一 AbortSignal。
+- 测试新增 3 case 锁住"真子进程被杀"契约（不是只测 JS 层 signal）：
+  - `spawnWithAbort` 跑挂死的 `node -e "setInterval(()=>{},1e9)"`，80ms 后 abort → reject 时间 < 1000ms（如果 SIGKILL 没生效，子进程会跑 31 年，测试会被 budget 卡住）。
+  - 预 abort 的 signal → child 立即 killed，elapsed < 500ms，`onSpawn` 观察到 `child.killed === true`（synchronous）。
+  - 子进程自然 exit 后 abort → 不抛、不 late-settle（验证 listener cleanup）。
+- Codex 反问回应：
+  - **5s 覆盖 ffprobe + ffmpeg 总耗时**：是。同一 AbortSignal 横贯整条链路。
+  - **SIGKILL 还是 SIGTERM→SIGKILL**：用 SIGKILL。ffprobe/ffmpeg 无持久状态，graceful shutdown 升级路径徒增复杂度+延迟，得不偿失。
+- 验证：`node --check` 全过；videoExtractor.test.js 10/10；regression 全套 **337/337 全绿**（02:30 时 334，新增 3 个 spawnWithAbort 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时（Codex C-grade fix——transcript 不能被抽帧拖死）
 
 - Phase 2 commit `adb21ca` 被 `git pp` 的 Codex pre-push evaluation 卡 **C 级**——理由是真 bug：`extractKeyframes` 没有内部超时，外层 `routeExtraction` 给整个 extraction 套了 15s race，抽帧慢 → 整个 race 超时 → **已经成功的 transcript 一起丢**。
@@ -43,81 +60,15 @@
 - 验证：`node --check` 全过；regression `services + state + desktopStore + memory + agents + media` **329/329 全绿**（Phase 1 时 303，新增 2 个 videoExtractor + 2 个 messageBuilder test + 媒体周边测试自动 picked up）。
 - 提交哈希：（待 commit）
 
-## 2026-04-27 01:35 — Video 改成诚实的功能模型（Phase 1：UI 文案不再暗示能看画面）
-
-- 用户要求："第一阶段 UI 明确写成 Video audio/transcript，不要暗示能看画面"。
-- 现状审计：`src/media/extractors/videoExtractor.js` 跑 `ffmpeg -i ... -vn ...` 把视频里的视频流去掉只留音轨，再走 `extractAudioContent` 转写——下游模型本质拿到的就是 audio transcript。但 UI 上：
-  - 附件菜单按钮就写一个 "Video"，没任何提示
-  - Drop banner "Drop image, video, or audio files here to attach them."
-  - 消息流里渲染成 `<video controls>` 大播放器，没有任何"模型只看到音频"的提示
-  → 容易让用户以为 agent 会看画面、问"视频里那个红色物体是什么"——结果模型只能从音轨转写凭空编。
-- Phase 1 修复（`desktop-ui/app.js` + `desktop-ui/styles.css`）：
-  - Composer 附件菜单 "Video" 按钮：保留主标 + 加 11px 副标 "audio transcript only"；hover title 完整说明 "Video → audio is transcribed; visual frames are not sent to the model in this phase."
-  - Drop banner：改为 "Drop image, audio, or video here. Video files are sent as audio transcripts only."
-  - 消息流里视频卡片的 caption 旁边追加斜体 hint "audio transcript only"——用户回看历史时也能看到模型实际看到了什么。
-  - CSS 加 `.composer-menu-item-text`（flex column, line-height 1.2）+ `.composer-menu-item-hint`（var(--text-soft) 11px）+ `.media-caption-hint`（同色 italic 11px）。
-- Phase 2（未做，留作下一步）：关键帧抽取——每隔 N 秒或场景切换抽 3-8 张图作 image_url / vision context，与音轨 transcript 一起送模型。`videoExtractor.js` 现成路径里加 `ffmpeg -vf "select='eq(pict_type\,I)'"` 关键帧筛选 + base64 image 列表。
-- 验证：`node --check desktop-ui/app.js` 通过；regression 303/303 绿。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 01:10 — Composer Link 入口统一 URL 分类（共用 detectUrlKind/promoteTextUrlsToAttachments）
-
-- 用户要求："手动点 Link 添加时也调用同一套 detectUrlKind/promoteTextUrlsToAttachments，YouTube/音频/视频/PDF/普通网页不管是粘贴文字还是点 Link，都得到同样的 kind/mimeType/title"。
-- 之前 `desktop-ui/app.js → promptComposerLinkAttachment` 硬编码 `kind: 'link'`，跟 `src/services/chat/sendChatMessage.js` 走 `promoteTextUrlsToAttachments` 的"粘贴文字"路径分类完全脱钩——粘 `https://youtu.be/X` 拿 `kind: 'video'`，点 Link 输入同 URL 拿 `kind: 'link'`，下游模型 prompt 拿到不同信号。
-- 修复：
-  - `src/server.js` 加 `/shared/urlDetector.js` 静态路由（仿 `/vendor/three/` 套路），把 `src/media/urlDetector.js` 暴露给浏览器。该文件纯 regex 无 Node 依赖，浏览器直接 `import` 安全。
-  - `desktop-ui/app.js` 顶部 `import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js'`；`promptComposerLinkAttachment` 改为先 validate http(s)、再交给 `promoteTextUrlsToAttachments(url, uiState.composerAttachments)`，结果 enrich `id: crypto.randomUUID()` + `sizeLabel: ''` 后 push，URL 已存在自动 dedup（顺手修了之前 manual link 不去重的小坑）。
-  - `src/media/urlDetector.test.js` 加 6 个 case 锁住"promoted shape 跨所有 kind 一致"的契约（video-platform→video / image / audio / PDF→link+pdf-mime / plain link / 单 bare URL 一份附件），避免未来无意识改动让 manual-link 路径默默 drift。
-- 验证：syntax check 三个文件全过；regression `services + state + desktopStore + media` 303/303 绿（之前 285，新增 6 个 urlDetector + 12 个 media 周边自检）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 00:45 — Artifacts UI 重新设计：按钮统一文字版（设计语言一致）
-
-- 用户截图反馈："右边这个 ui 太丑了，两个巨大的按钮，然后中间的 edit 又不像是按钮很难点击到，你去重新设计一下 ui，记得 ui 设计的统一性，按钮设计的风格语言要统一"。
-- 根因：`<button class="small-button is-outline">` 内部塞 `<span class="toolbar-icon">${icon.pencil}</span>` + 文字，但 `.small-button` 没有 `display: inline-flex` / `gap`（不像 `.ghost-button`），SVG 直接以原始尺寸渲染，文字被挤到旁边——既丑也不像按钮。
-- 修复：改成纯文字 `.small-button` 变体，对齐已有的 `Queue write to <file>` 文字按钮风格：
-  - Edit → `.small-button.is-outline`（克制的次级动作）
-  - Delete → `.small-button.is-danger`（红色，语义警示）
-  - Queue write → `.small-button.is-primary`（保持原色）
-- 顺手清掉新引入但不再用的 `pencil` / `trash` icon 定义；编辑表单加 `surface-card` 类，让它在视觉上跟创建表单一致。
-- 验证：`node --check desktop-ui/app.js` 通过；regression 285/285 绿。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 00:30 — Artifacts CRUD：补 service-layer 单元测试（B-finding 跟进）
-
-- 做了什么：新增 `src/services/workspace/workspaceMutations.test.js`，8 个测试覆盖刚抽出的 `updateArtifact` + `deleteArtifact`：
-  - title-only patch 保留 content / id / chatId / projectId / createdAt
-  - 空 / 纯空白 content 报错 + 状态不变
-  - 未知 artifactId 报错（update + delete 各一）
-  - 缺失 artifactId 报错
-  - title + language + kind + content 同时 patch + identity 字段 preserved
-  - delete 删除指定行 + 保留其余 + 项目 updatedAt 被 bump
-  - delete 未知 id 报错 + 状态不变
-- 用与 chatExecutionRunner.test.js / desktopBootstrap.test.js 相同的 mkdtemp + dynamic-import + after()-cleanup 模式，跑测前后 `~/.melo/desktop/state.json` mtime + size 验证未变。
-- 回归：service-only 8/8 绿；全套 regression（services + state + desktopStore + memory + agents）合并跑一次有已知 store.* isolation flake，re-run 干净。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 00:00 — Artifacts：从只读产物架升级成可管理知识架（语义闭环修复 + UI/API CRUD）
-
-- **修复语义闭环**：`src/services/chat/dynamicContext.js` 第 ~67 行原读 `artifact.summary`（artifact 记录里**根本没有这个字段**——一直在喂 `undefined`），改成 `truncateText(artifact.content || '', 180)`，让 agent prompt 拿到真正的内容前 180 字符。
-- **后端**：
-  - `src/services/workspace/workspaceMutations.js` 新增 `updateArtifact(artifactId, patch)` + `deleteArtifact(artifactId)`。前者支持 partial patch（只 patch 提供的 title/content/language/kind 字段，identity / chatId / projectId / createdAt 永远不动）；后者从 state.artifacts 过滤删除。两者都用 `updateStateAtomically` 防止与新 artifact 创建并发冲突。
-  - `src/desktopStore.js` 加 re-export。
-  - `src/server.js` 加 `POST /api/artifacts/update` + `POST /api/artifacts/delete` 路由（与已有 `/api/artifacts` create / `/api/artifacts/apply` 同款 POST + body 风格）。
-- **UI**（`desktop-ui/app.js`）：
-  - 新增 `pencil` + `trash` 两个 SVG icon。
-  - `uiState` 加 `editingArtifactId` + `editingArtifactDraft`。
-  - `renderArtifactsPage()` 详情面板：当 `editingArtifactId === active.id` 时渲染 `data-form="artifact-update"` 编辑表单（title/language/kind/content 四字段），否则渲染原视图加 Edit / Delete / Queue write 三个按钮。
-  - 4 个新 handler：`handleStartEditArtifact` / `handleCancelEditArtifact` / `handleUpdateArtifact` / `handleDeleteArtifact`。delete 用 `window.confirm()` 防误触。
-  - 4 个新 action case + 1 个新 form-submit case + 1 个新 input handler 分支（`artifact-update`）。
-- **Decision recorded**：用户选了"可管理的知识架"——现在 UI 文案保留 "Artifacts"，因为它**真的是可管理产物**了（不是 saved snippets）。
-- **Tests**：services + state + desktopStore + memory + agents 全套绿。**UI 未做浏览器手测**——CLAUDE.md 说"can't test the UI = say so"。建议你启动 `npm start` 在真实 Melo 里点一下 Edit/Delete 按钮 + 改个 title 验证。
-- 提交哈希：（待 commit）
-
-## 归档摘要（2026-04-27 之前的所有条目）
+## 归档摘要（2026-04-27 03:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 01:35 — Video Phase 1：UI 文案诚实化** —— 视频 attachment 实际只走 `ffmpeg -vn` 抽音轨转写、无视觉信息，UI 加副标 "audio transcript only" / drop banner / caption hint 三处同步，避免用户误以为模型能看画面。`75b9370`
+- **2026-04-27 01:10 — Composer Link 入口统一 URL 分类** —— `desktop-ui/app.js` 的 manual Link 改走 `promoteTextUrlsToAttachments`（共享 `/shared/urlDetector.js` 静态路由），YouTube/音频/视频/PDF/普通网页粘贴文字 vs 点 Link 得到同样的 kind/mimeType/title；6 个 promoted-shape 契约测试。`207ea6a`
+- **2026-04-27 00:45 — Artifacts UI 按钮重新设计** —— Edit/Delete 改 `.small-button` 文字变体（is-outline / is-danger / is-primary），跟已有 Queue write 同款语言；删 unused pencil/trash icon；编辑表单加 surface-card 类对齐创建表单。`0a8064a`
+- **2026-04-27 00:30 — Artifacts CRUD：补 service-layer 单元测试** —— `workspaceMutations.test.js` 加 8 个测试覆盖刚抽出的 `updateArtifact` + `deleteArtifact`（identity 保留 / 空 content 拒 / 未知 id 报错 / 项目 updatedAt bump 等），用 mkdtemp + dynamic-import + after()-cleanup 同款隔离模式。`fac4732`
+- **2026-04-27 00:00 — Artifacts：只读产物架升级成可管理知识架** —— 修语义闭环（`artifact.summary` 不存在字段 → 改读 `artifact.content` 安全截断）；后端 + UI 加 update/delete CRUD（POST `/api/artifacts/update` / `/api/artifacts/delete`）；UI 加 Edit/Delete 按钮 + 编辑表单 + UUID + uiState.editingArtifact{Id,Draft}。`2777eab`
 - **2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走** —— `src/services/remote/telegramPolling.js`(~610 行) + `discordPolling.js`(~750 行) byte-for-byte 抽出；desktopStore 净减 ~1140 行 → 2029（本会话累计 -76.2%）。`5419a9b`
 - **2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走** —— project + task + workspace + approval = 17 funcs / 412 行，4 个 sibling leaf 模块同 commit 创建；workspaceMutations.js 后续作为 Artifacts CRUD 升级落点。`b997e14`
 - **2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇** —— `src/services/skill/skillMutations.js` byte-for-byte 把 10 个 exported skill CRUD 搬走（~331 行）。`208e51d`

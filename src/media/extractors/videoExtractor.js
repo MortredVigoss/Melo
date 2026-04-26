@@ -38,27 +38,84 @@ async function hasFfmpeg() {
   });
 }
 
-async function probeDurationSec(videoPath) {
-  return new Promise(resolve => {
-    let stdout = '';
+/**
+ * Spawn a child process that respects an external AbortSignal end-to-end:
+ * pre-abort short-circuits with a kill before the process can run; mid-flight
+ * abort SIGKILLs the child and rejects; on natural exit/error the abort
+ * listener is removed so it can't fire late.
+ *
+ * Exported so callers (probeDurationSec, the ffmpeg keyframe pass) and tests
+ * share one definition of "kill on abort" — the previous separate
+ * implementations let probeDurationSec leak orphan ffprobe processes when the
+ * keyframe budget timed out (Codex C-grade fix #2).
+ */
+export function spawnWithAbort(bin, args, { collectStdout = false, signal, onSpawn } = {}) {
+  return new Promise((resolve, reject) => {
+    let child;
     try {
-      const child = spawn('ffprobe', [
-        '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
-        videoPath,
-      ]);
-      child.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); });
-      child.on('error', () => resolve(null));
-      child.on('exit', code => {
-        if (code !== 0) return resolve(null);
-        const dur = parseFloat(stdout.trim());
-        resolve(Number.isFinite(dur) && dur > 0 ? dur : null);
+      child = spawn(bin, args, {
+        stdio: collectStdout ? ['ignore', 'pipe', 'ignore'] : 'ignore',
       });
-    } catch {
-      resolve(null);
+    } catch (err) {
+      return reject(err);
     }
+
+    if (typeof onSpawn === 'function') {
+      try { onSpawn(child); } catch {}
+    }
+
+    let stdoutText = '';
+    if (collectStdout && child.stdout) {
+      child.stdout.on('data', chunk => { stdoutText += chunk.toString('utf8'); });
+    }
+
+    let settled = false;
+    const cleanupAbort = () => {
+      if (signal && onAbort) {
+        try { signal.removeEventListener('abort', onAbort); } catch {}
+      }
+    };
+    const settle = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      cleanupAbort();
+      fn(val);
+    };
+    const onAbort = () => {
+      try { child.kill('SIGKILL'); } catch {}
+      settle(reject, new Error(`${bin} aborted`));
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        try { child.kill('SIGKILL'); } catch {}
+        return settle(reject, new Error(`${bin} aborted before start`));
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    child.on('error', err => settle(reject, err));
+    child.on('exit', code => {
+      if (code === 0) settle(resolve, { code, stdoutText });
+      else settle(reject, new Error(`${bin} exited ${code}`));
+    });
   });
+}
+
+async function probeDurationSec(videoPath, { signal } = {}) {
+  if (signal?.aborted) return null;
+  try {
+    const { stdoutText } = await spawnWithAbort('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath,
+    ], { collectStdout: true, signal });
+    const dur = parseFloat(stdoutText.trim());
+    return Number.isFinite(dur) && dur > 0 ? dur : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
@@ -66,7 +123,10 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
     return [];
   }
 
-  const durationSec = await probeDurationSec(videoPath);
+  // Same signal threads through ffprobe → ffmpeg → readdir/readFile so a
+  // budget timeout at any link in the chain kills the in-flight child instead
+  // of orphaning it. Earlier revision passed signal only to ffmpeg.
+  const durationSec = await probeDurationSec(videoPath, { signal });
   if (!durationSec || signal?.aborted) {
     return [];
   }
@@ -80,38 +140,14 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
     Math.max(KEYFRAME_MIN_INTERVAL_SEC, rawInterval),
   );
 
-  await new Promise((resolve, reject) => {
-    const ff = spawn('ffmpeg', [
-      '-i', videoPath,
-      '-vf', `fps=1/${intervalSec},scale=${KEYFRAME_WIDTH}:-2`,
-      '-frames:v', String(KEYFRAME_MAX_COUNT),
-      '-q:v', String(KEYFRAME_JPEG_QUALITY),
-      '-y',
-      join(framesDir, 'frame-%03d.jpg'),
-    ], { stdio: 'ignore' });
-    // SIGKILL the ffmpeg child if the caller's budget expires — otherwise
-    // the orphan keeps churning even after we've moved on.
-    const onAbort = () => {
-      try { ff.kill('SIGKILL'); } catch {}
-      reject(new Error('keyframe extraction aborted'));
-    };
-    if (signal) {
-      if (signal.aborted) {
-        onAbort();
-        return;
-      }
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
-    ff.on('error', err => {
-      signal?.removeEventListener?.('abort', onAbort);
-      reject(err);
-    });
-    ff.on('exit', code => {
-      signal?.removeEventListener?.('abort', onAbort);
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg keyframe pass exited ${code}`));
-    });
-  });
+  await spawnWithAbort('ffmpeg', [
+    '-i', videoPath,
+    '-vf', `fps=1/${intervalSec},scale=${KEYFRAME_WIDTH}:-2`,
+    '-frames:v', String(KEYFRAME_MAX_COUNT),
+    '-q:v', String(KEYFRAME_JPEG_QUALITY),
+    '-y',
+    join(framesDir, 'frame-%03d.jpg'),
+  ], { signal });
 
   if (signal?.aborted) {
     return [];

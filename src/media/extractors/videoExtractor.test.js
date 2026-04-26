@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractKeyframes, withKeyframeBudget } from './videoExtractor.js';
+import { extractKeyframes, spawnWithAbort, withKeyframeBudget } from './videoExtractor.js';
 
 async function hasFfmpeg() {
   return new Promise(resolve => {
@@ -136,6 +136,64 @@ test('withKeyframeBudget: aborts the work signal on timeout', async () => {
   );
   assert.equal(abortFired, true);
 });
+
+// ─── spawnWithAbort: real child-process kill on abort ──────────────────────
+// Codex C-grade fix #2 reason for existing: previous revision only proved the
+// JS-level signal fired, not that the actual ffmpeg/ffprobe child was killed.
+// These tests use a real `node` child that hangs forever — if abort doesn't
+// SIGKILL it, the test will hang past its budget and the assertion catches it.
+
+test('spawnWithAbort: abort while a hanging child is running rejects within budget', async () => {
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 80);
+
+  const start = Date.now();
+  await assert.rejects(
+    spawnWithAbort('node', ['-e', 'setInterval(()=>{},1e9)'], { signal: ac.signal }),
+    /aborted/i,
+  );
+  const elapsed = Date.now() - start;
+  // If kill didn't work, the node child runs ~31 years. Anything under a
+  // second proves SIGKILL landed and the parent didn't end up waiting on a
+  // zombie that never exits.
+  assert.ok(elapsed < 1000, `spawnWithAbort should reject promptly on abort, took ${elapsed}ms`);
+});
+
+test('spawnWithAbort: signal already aborted at call → child is killed before settling', async () => {
+  const ac = new AbortController();
+  ac.abort();
+
+  let observedChild;
+  const start = Date.now();
+  await assert.rejects(
+    spawnWithAbort('node', ['-e', 'setInterval(()=>{},1e9)'], {
+      signal: ac.signal,
+      onSpawn: c => { observedChild = c; },
+    }),
+    /aborted/i,
+  );
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `pre-aborted spawn should bail fast, took ${elapsed}ms`);
+  assert.ok(observedChild, 'onSpawn must observe the child even when pre-aborted');
+  // Node sets `killed = true` synchronously when kill() is invoked.
+  assert.equal(observedChild.killed, true);
+});
+
+test('spawnWithAbort: clean exit removes the abort listener (no late settle)', async () => {
+  // Use a child that exits quickly. After it exits, fire abort. If the
+  // listener wasn't removed, the abort handler would try to kill an already-
+  // exited process and could cause an unhandled rejection or settle the
+  // already-resolved promise. We assert no exception is thrown post-resolve.
+  const ac = new AbortController();
+  await spawnWithAbort('node', ['-e', 'process.exit(0)'], { signal: ac.signal });
+  // If we reach here the spawn resolved cleanly; aborting now must be a no-op.
+  ac.abort();
+  // Yield once so any stray microtasks fire — would surface a TypeError if
+  // the listener tried to call kill() on a dead handle.
+  await new Promise(r => setTimeout(r, 20));
+});
+
+// ─── extractKeyframes: signal threading ─────────────────────────────────────
 
 test('extractKeyframes: aborted signal short-circuits with []', { skip: !ffmpegOk || !ffprobeOk }, async () => {
   const workDir = await mkdtemp(join(tmpdir(), 'melo-video-test-abort-'));
