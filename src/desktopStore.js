@@ -400,6 +400,10 @@ import {
   findTaskById,
   findApprovalById,
 } from './state/stateLookups.js';
+// Phase 7d-5δ commit 8a: selection-coercion helper extracted (last big
+// LOCAL helper still blocking sendChatMessage extraction). 58 in-module
+// callers continue to call by the same name via this import.
+import { ensureSelectedEntities } from './state/stateSelections.js';
 // Phase 7d-5δ commit 3: workspace snapshot builder extracted. The new
 // module computes its own APP_ROOT via a deeper dirname chain (same
 // pattern as Phase 7d-5α-A1 commit 7's stateHydration.js) and keeps a
@@ -1353,73 +1357,8 @@ function buildProfile() {
 // Phase 7d-5α-A1 commit 9 cleanup: same as findProjectById above —
 // cec12c3 added `export` here for the future runner; Codex review made
 // clear that doesn't break the cycle. Removed.
-function ensureSelectedEntities(state) {
-  const chats = sortChats(state.chats);
-  const normalizedAgentProfiles = normalizeAgentProfiles(state.agentProfiles);
-  const availableAgentIds = allAgentIdsFromProfiles(normalizedAgentProfiles);
-  const activeView = ['chat', 'search', 'agent', 'model', 'customize', 'chats', 'projects', 'artifacts'].includes(
-    state.settings.activeView,
-  )
-    ? state.settings.activeView
-    : 'chat';
-  const activeMode = MODE_DEFS.some(mode => mode.id === state.settings.activeMode)
-    ? state.settings.activeMode
-    : 'chat';
-  const selectedChatId =
-    state.settings.selectedChatId == null
-      ? null
-      : chats.some(chat => chat.id === state.settings.selectedChatId)
-        ? state.settings.selectedChatId
-        : chats[0]?.id || null;
-  // Explicit null means "no project selected" — respect it (the Projects
-  // overview uses null to show the grid of cards). Only auto-pick a project
-  // when selectedProjectId points to something that no longer exists.
-  const persistedProjectId = state.settings.selectedProjectId;
-  const selectedProjectId =
-    persistedProjectId == null
-      ? null
-      : state.projects.some(project => project.id === persistedProjectId)
-        ? persistedProjectId
-        : state.projects[0]?.id || null;
-  const selectedAgentScope =
-    state.settings.selectedAgentScope === 'project' && selectedProjectId ? 'project' : 'global';
-  const selectedCustomizeSection = ['skills', 'agents', 'connectors', 'runtime'].includes(
-    state.settings.selectedCustomizeSection,
-  )
-    ? state.settings.selectedCustomizeSection
-    : 'skills';
-  const selectedAgentId = availableAgentIds.includes(state.settings.selectedAgentId)
-    ? state.settings.selectedAgentId
-    : 'main';
-  const selectedSkillId = BUILTIN_SKILLS.some(skill => skill.id === state.settings.selectedSkillId)
-    ? state.settings.selectedSkillId
-    : BUILTIN_SKILLS[0].id;
-  const selectedConnectorId = [
-    ...BUILTIN_CONNECTORS.map(connector => connector.id),
-    ...state.externalConnectors.map(connector => connector.id),
-  ].includes(state.settings.selectedConnectorId)
-    ? state.settings.selectedConnectorId
-    : BUILTIN_CONNECTORS[0].id;
-
-  return {
-    ...state,
-    chats,
-    agentProfiles: normalizedAgentProfiles,
-    settings: {
-      ...state.settings,
-      activeView,
-      activeMode,
-      selectedChatId,
-      selectedProjectId,
-      selectedAgentScope,
-      selectedCustomizeSection,
-      selectedAgentId,
-      selectedSkillId,
-      selectedConnectorId,
-      promptHistory: normalizePromptHistory(state.settings?.promptHistory),
-    },
-  };
-}
+// ensureSelectedEntities moved to `src/state/stateSelections.js` in
+// Phase 7d-5δ commit 8a. Re-imported at the top of this file.
 
 function sortSearchItems(items = [], limit = MAX_SEARCH_RESULTS) {
   return items

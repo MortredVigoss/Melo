@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖之一）
+
+- 做了什么：
+  - **新增 `src/state/stateSelections.js`** —— `ensureSelectedEntities`（67 行）byte-for-byte 搬走。这个函数对 hydrated state 做"selection coercion"——把无效/已删除的 selectedX 字段回拉到合理默认。所有 7 个上游依赖（normalizeAgentProfiles、sortChats、allAgentIdsFromProfiles、MODE_DEFS、BUILTIN_SKILLS、BUILTIN_CONNECTORS、normalizePromptHistory）都已是 leaf 模块。
+  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删 67 行函数定义换 2 行 stub。**58 个内部 caller**全部走 imported name（最大单 commit 的 caller-rewrite 量）。
+- 中间小坑：第一稿写错了 sortChats 的 import path（写成 `./chatPruning.js`，实际在 `./conversation.js`）。18 个测试 SyntaxError 即时抓到。教训：**别凭印象写 import path，每次都 `grep export ... <symbol>` 先确认**。
+- 关于 sendChatMessage（commit 8 还没结束）：
+  - sendChatMessage 实际有 **6 个 LOCAL 依赖**（不止之前估的 4 个）：updateStateAtomically(24 callers) / getDesktopBootstrap(37) / scanRecentChatsForSkillProposals(2) / buildConnectors(3) / refreshChatMemorySummary(6) / isAbortError(2) / extractUrlAttachmentsFromText(2)。
+  - 本 commit 把 ensureSelectedEntities 拎出去作为最大 LOCAL 阻塞物的清理（PROGRESS 旧记录说 57 callers，实测 58——这次 grep 正确）。
+  - 完整 sendChatMessage 抽取还需要 prep 1-2 个剩余 LOCAL 才安全；本 session 不再继续，下次开局再说。
+- 回归：services + state + desktopStore + memory + agents 全套 **723/723 全绿**。
+- 提交哈希：（待 commit）
+  - desktopStore: 5577 → 5516（-61 行；本会话累计 8527→5516 = **-3011 行 = -35.3%**）
+
 ## 2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）
 
 - 做了什么：用 Python 解析 desktopStore.js 的所有 110 个 import 块，对每个 named import 的 local 名字在文件 body（非 import / 非 export-from）中扫一遍。结果：**39 个 block 含未用 symbol**，其中 22 个整块删、17 个 trim 部分。
