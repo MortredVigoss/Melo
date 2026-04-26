@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-04-26 14:00 — Phase 7d-5δ commit 1：抽出 chat-graph action planner 簇（7 个互引的 LOCAL helper 一并搬走）
+
+- 做了什么：
+  - **新增 `src/services/chat/chatActionPlanning.js`** —— 一个自包含的 7 函数簇 byte-for-byte 搬走（共 ~210 行）：
+    - `normalizeGraphNeedle`（pure string 规整）
+    - `extractSearchQueryFromMessage`（best-effort 搜索词提取）
+    - `planCommandAction`（curated 本地命令匹配）
+    - `extractConnectorToolInput`（external-mcp tool 输入解析）
+    - `planExternalConnectorAction`（external-mcp tool 匹配）
+    - `planChatGraphAction`（thin entry：先 external 再 command 再 null）
+    - `buildApprovalResponse`（plan 落地后写给用户的回复）
+  - 只 export 2 个（planChatGraphAction + buildApprovalResponse），其余 5 个都是簇内私有 helper——它们之间互引但**对外**只有 1 个调用点（line ~3781 / ~3807，全在 `runChatAgentExecutionGraph` 里）。所以一次 commit 把整个簇搬走是最干净的边界。
+  - 唯一外部依赖 `agentUsesTool`（已在 services/agent/agentTools.js）。
+  - **`src/desktopStore.js`**：顶部 import 块加 7 行；删 221 行（7 函数 + 间隔注释）换成 6 行 stub。
+- 为什么：7d-5δ 的目标是 elephant 抽取（runChatAgentExecutionGraph + runTaskAgentExecutionGraph + sendChatMessage）。但执行图依赖 `planChatGraphAction` + `buildApprovalResponse`——这两个又依赖 5 个簇内私有 helper。先把整个 planning 簇拎出去，elephant commit 才能干净 import。这是 7d-5α-A1 的同款"先抽 prerequisite、再抽消费者"路径。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6572 → 6367（-205 行；本会话内累计已减 838 行：8527→6367）
+
 ## 2026-04-26 13:30 — Phase 7d-5γ commit 4：抽出 buildAgentMemoryNodeContext + 私有 helper（最大单 commit 瘦身）
 
 - 做了什么：
