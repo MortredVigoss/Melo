@@ -13,7 +13,7 @@
 - **关于"57 callers"误报的更正**：早前 PROGRESS 记录说 effectiveAgentProfile 有 57 callers——实查只有 **8**。可能那个数字来自另一个会话的笔记，或者跟 `agentUsesTool` 的某个分布混了。今天对函数做 grep -c 确认 8。教训：pre-extraction 调研必须跑实际 grep，不能信旧 PROGRESS 笔记里的体感数字。
 - 为什么：runner 抽取最后一个 prerequisite。`runTaskAgentExecutionGraph` / `runChatAgentExecutionGraph` 都用 `effectiveAgentProfile` 计算当前 agent 的有效 profile；现在它在 leaf 模块，runner 抽出去就没有循环导入风险了。
 - 回归：services + state + desktopStore + memory + agents 全绿。
-- 提交哈希：（待 commit）
+- 提交哈希：`7055c17`
   - desktopStore: 6303 → 6282（-21 行）
 
 ## 2026-04-26 15:30 — Phase 7d-5δ commit 4：抽出 taskExecutionPrompt（依赖单 imported helper，又一个真叶子）
