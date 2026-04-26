@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-04-26 16:30 — Phase 7d-5δ commit 6：抽出 runTaskAgentExecutionGraph（第一个 runner 落地，pattern 验证通过）
+
+- 做了什么：
+  - **新增 `src/services/chat/taskExecutionRunner.js`** —— `runTaskAgentExecutionGraph`（87 行 async）byte-for-byte 搬走。12 个 upstream import 全是 leaf 模块产出（前 5 个 commit 的累计成果）：
+    - agentGraph: `createStateGraph` / `runStateGraph` / `GRAPH_END`
+    - state: `findProjectById` / `effectiveAgentProfile`
+    - services: `buildWorkspaceSnapshot` / `taskExecutionPrompt` / `normalizeTasks` / `normalizeApprovals` / `buildToolRoutingPrompt` / `buildProjectContextSection` / `buildReActSystemPrompt`
+    - memory: `normalizeConversationSnippet`
+    - openai: `createOpenAICompatibleReply`
+  - **零 desktopStore.js 反向 import**——这意味着 runner 抽走没有循环依赖，前 5 个 prerequisite commit 的全部目的就是为了这一刻。
+  - **`src/desktopStore.js`**：顶部 import 块加 4 行；删原函数定义（87 行）换 3 行 stub。唯一内部 caller (line ~1332, inside `runTaskWorkerModel`) 走 imported name。
+- 为什么：runner 抽取的第一刀，验证 path B 整体设计可行。87 行任务执行图相对 chat 执行图（~520 行 elephant）小很多，先抽小的让 gate 复审 pattern。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6282 → 6202（-80 行；本会话内累计已减 1003 行：8527→6202，进度 38%）
+
 ## 2026-04-26 16:00 — Phase 7d-5δ commit 5：抽出 effectiveAgentProfile + projectAgentOverrideFor（实查后 8 callers、不是 57）
 
 - 做了什么：

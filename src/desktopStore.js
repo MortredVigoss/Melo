@@ -514,6 +514,10 @@ import { buildWorkspaceSnapshot } from './services/workspace/workspaceSnapshot.j
 // Phase 7d-5δ commit 4: task-execution prompt builder extracted. Single
 // dependency `agentUsesTool` is already in a leaf module.
 import { taskExecutionPrompt } from './services/task/taskPrompt.js';
+// Phase 7d-5δ commit 6: task-side agent execution graph runner extracted.
+// All 12 of its upstream dependencies were prepared by commits 1-5 of
+// this phase, so the runner moves cleanly with no import cycle.
+import { runTaskAgentExecutionGraph } from './services/chat/taskExecutionRunner.js';
 import {
   serializeChatForPersistence,
   persistChatThreads,
@@ -4109,93 +4113,9 @@ async function runChatAgentExecutionGraph({
   });
 }
 
-async function runTaskAgentExecutionGraph({
-  state,
-  config,
-  task,
-}) {
-  const graph = createStateGraph({
-    start: 'prepare-task',
-    nodes: {
-      // ── prepare-task ───────────────────────────────────────────────────────
-      // Combines the old resolve-task-agent / recall-task-memory /
-      // compose-task-prompt nodes. The only real async work is the workspace
-      // snapshot; everything else is sync and runs immediately after.
-      async 'prepare-task'() {
-        const project = findProjectById(state, task.projectId || state.settings.selectedProjectId);
-        const workspace = await buildWorkspaceSnapshot(state, project);
-        const profile = effectiveAgentProfile(state, task.owner, project?.id || null);
-        const taskPrompt = taskExecutionPrompt(task, project, workspace, profile);
-
-        const siblingTasks = normalizeTasks(state.tasks)
-          .filter(
-            entry =>
-              entry.id !== task.id &&
-              (entry.projectId === project?.id || entry.owner === task.owner),
-          )
-          .slice(0, 3);
-        const pendingApprovals = normalizeApprovals(state.approvals)
-          .filter(
-            approval =>
-              approval.status === 'pending' &&
-              (approval.projectId === project?.id || approval.chatId === task.chatId),
-          )
-          .slice(0, 3);
-
-        const memoryContext = [
-          siblingTasks.length
-            ? `Worker memory nodes:\n${siblingTasks
-                .map(
-                  entry =>
-                    `- ${entry.title} [${entry.status}]${
-                      entry.latestNote
-                        ? ` :: ${normalizeConversationSnippet(entry.latestNote, 140)}`
-                        : ''
-                    }`,
-                )
-                .join('\n')}`
-            : '',
-          pendingApprovals.length
-            ? `Pending approvals:\n${pendingApprovals.map(a => `- ${a.title}`).join('\n')}`
-            : '',
-        ]
-          .filter(Boolean)
-          .join('\n\n');
-
-        const toolRoutingPrompt = buildToolRoutingPrompt({ activeAgentProfile: profile, agentConnectors: [] });
-        const systemPrompt = buildReActSystemPrompt({
-          config,
-          profile,
-          modePrompt: 'Keep the answer structured, execution-oriented, and suitable for a desktop task lane.',
-          projectContext: buildProjectContextSection(project, profile),
-          memoryContext,
-          toolRoutingPrompt,
-          dynamicContext: '',
-          kind: 'task',
-          isRemoteChannel: false,
-        });
-
-        return { profile, systemPrompt, taskPrompt, next: 'invoke-task-model' };
-      },
-
-      // ── invoke-task-model ──────────────────────────────────────────────────
-      async 'invoke-task-model'(graphState) {
-        const reply = await createOpenAICompatibleReply({
-          authMode: config.authMode,
-          apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-          baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-          model: process.env.MELO_MODEL || graphState.profile.model || config.model,
-          systemPrompt: graphState.systemPrompt,
-          messages: [{ role: 'user', content: graphState.taskPrompt }],
-        });
-
-        return { reply, next: GRAPH_END };
-      },
-    },
-  });
-
-  return runStateGraph(graph, { state, config, task });
-}
+// runTaskAgentExecutionGraph moved to
+// `src/services/chat/taskExecutionRunner.js` in Phase 7d-5δ commit 6.
+// Re-imported at the top of this file.
 
 // buildDynamicContext moved to `src/services/chat/dynamicContext.js` in
 // Phase 7d-5β. Re-imported at the top of this file.
