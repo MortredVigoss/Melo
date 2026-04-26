@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-04-27 00:30 — Artifacts CRUD：补 service-layer 单元测试（B-finding 跟进）
+
+- 做了什么：新增 `src/services/workspace/workspaceMutations.test.js`，8 个测试覆盖刚抽出的 `updateArtifact` + `deleteArtifact`：
+  - title-only patch 保留 content / id / chatId / projectId / createdAt
+  - 空 / 纯空白 content 报错 + 状态不变
+  - 未知 artifactId 报错（update + delete 各一）
+  - 缺失 artifactId 报错
+  - title + language + kind + content 同时 patch + identity 字段 preserved
+  - delete 删除指定行 + 保留其余 + 项目 updatedAt 被 bump
+  - delete 未知 id 报错 + 状态不变
+- 用与 chatExecutionRunner.test.js / desktopBootstrap.test.js 相同的 mkdtemp + dynamic-import + after()-cleanup 模式，跑测前后 `~/.melo/desktop/state.json` mtime + size 验证未变。
+- 回归：service-only 8/8 绿；全套 regression（services + state + desktopStore + memory + agents）合并跑一次有已知 store.* isolation flake，re-run 干净。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 00:00 — Artifacts：从只读产物架升级成可管理知识架（语义闭环修复 + UI/API CRUD）
 
 - **修复语义闭环**：`src/services/chat/dynamicContext.js` 第 ~67 行原读 `artifact.summary`（artifact 记录里**根本没有这个字段**——一直在喂 `undefined`），改成 `truncateText(artifact.content || '', 180)`，让 agent prompt 拿到真正的内容前 180 字符。
