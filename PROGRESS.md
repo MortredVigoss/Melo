@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇（10 个 CRUD entry，~331 行）
+
+- 做了什么：
+  - **新增 `src/services/skill/skillMutations.js`** —— byte-for-byte 把 10 个 exported skill CRUD 搬走：`toggleSkill` / `createCustomSkill` / `updateCustomSkill` / `removeCustomSkill` / `exportSkillAsMarkdown` / `importSkillFromMarkdown` / `promoteSkillToDisk` / `reloadDiskSkills` / `applySkillProposal`(133 行最大) / `draftSkillFromChat`，共 ~331 行。
+  - 16 个 imports 全部映射到 leaf 模块（state machine + skillService + skillsDisk + skillProposals + skillDrafting + diskSkills）。
+  - **`src/desktopStore.js`**：12 行 re-export 块（server.js 依赖这些 export 名），删 10 处函数定义换 3 行 stub。
+- 为什么：commit 1（external connector CRUD）+ commit 2（skill CRUD）共抽走 17 个 CRUD entry / 共 ~610 行。下一刀候选：project / task / approval CRUD。
+- 回归：services + state + desktopStore + memory + agents 全套绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 3891 → 3578（-313 行；本会话累计 8527→3578 = **-4949 行 = -58.0%**）
+
 ## 2026-04-26 22:00 — Phase 7d-5ε commit 1：抽出 External Connector CRUD 簇（7 个 CRUD entry，~277 行）
 
 - 做了什么：
