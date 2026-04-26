@@ -62,9 +62,14 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
       .slice(0, 4);
 
     if (relatedArtifacts.length) {
+      // Artifact records have a `content` field but no separate `summary`
+      // — earlier code read `artifact.summary` here and silently fed
+      // `undefined` into the prompt. Truncate the actual content (the
+      // body the user sees in the panel) to keep the prompt-context line
+      // grounded in real text.
       blocks.push(
         `Recent artifacts:\n${relatedArtifacts
-          .map(artifact => `- ${artifact.title}: ${truncateText(artifact.summary, 180)}`)
+          .map(artifact => `- ${artifact.title}: ${truncateText(artifact.content || '', 180)}`)
           .join('\n')}`,
       );
     }

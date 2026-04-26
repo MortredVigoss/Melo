@@ -99,6 +99,16 @@ const uiState = {
     kind: 'note',
     content: '',
   },
+  // When non-null, the artifact detail panel renders an edit form
+  // pre-filled from `editingArtifactDraft` instead of the read-only
+  // preview. Set by `start-edit-artifact`, cleared by save/cancel.
+  editingArtifactId: null,
+  editingArtifactDraft: {
+    title: '',
+    language: '',
+    kind: '',
+    content: '',
+  },
   showTaskForm: false,
   draftTask: {
     title: '',
@@ -291,6 +301,10 @@ const icon = {
   eye: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff:
     '<svg viewBox="0 0 24 24"><path d="M3 3 21 21"/><path d="M10.6 10.7A3 3 0 0 0 13.3 13.4"/><path d="M9.9 5.3A10.8 10.8 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.2 3.7"/><path d="M6.2 6.2A17.1 17.1 0 0 0 2.5 12s3.5 7 9.5 7c1.5 0 2.8-.3 4-.8"/></svg>',
+  pencil:
+    '<svg viewBox="0 0 24 24"><path d="m4 20 4-1 11-11-3-3L5 16Z"/><path d="m14 6 3 3"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M7 7v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7"/><path d="M10 11v6M14 11v6"/></svg>',
 };
 
 const HOME_PROMPT_PRESETS = [
@@ -4425,6 +4439,74 @@ async function handleCreateArtifact() {
     content: '',
   };
   uiState.showArtifactForm = false;
+  applyBootstrap(payload);
+}
+
+function handleStartEditArtifact(artifactId) {
+  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
+  if (!artifact) return;
+  uiState.selectedArtifactId = artifactId;
+  uiState.editingArtifactId = artifactId;
+  uiState.editingArtifactDraft = {
+    title: artifact.title || '',
+    language: artifact.language || 'text',
+    kind: artifact.kind || 'note',
+    content: artifact.content || '',
+  };
+  render();
+}
+
+function handleCancelEditArtifact() {
+  uiState.editingArtifactId = null;
+  uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
+  render();
+}
+
+async function handleUpdateArtifact() {
+  const artifactId = uiState.editingArtifactId;
+  if (!artifactId) return;
+  const draft = uiState.editingArtifactDraft;
+  if (!draft.content.trim()) {
+    showError('Artifact content is required.');
+    return;
+  }
+
+  const payload = await api('/api/artifacts/update', {
+    method: 'POST',
+    body: {
+      artifactId,
+      patch: {
+        title: draft.title,
+        language: draft.language,
+        kind: draft.kind,
+        content: draft.content,
+      },
+    },
+  });
+
+  uiState.editingArtifactId = null;
+  uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
+  applyBootstrap(payload);
+}
+
+async function handleDeleteArtifact(artifactId) {
+  if (!artifactId) return;
+  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
+  const label = artifact?.title ? `"${artifact.title}"` : 'this artifact';
+  if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+    return;
+  }
+  const payload = await api('/api/artifacts/delete', {
+    method: 'POST',
+    body: { artifactId },
+  });
+  if (uiState.selectedArtifactId === artifactId) {
+    uiState.selectedArtifactId = null;
+  }
+  if (uiState.editingArtifactId === artifactId) {
+    uiState.editingArtifactId = null;
+    uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
+  }
   applyBootstrap(payload);
 }
 
@@ -10241,57 +10323,112 @@ function renderArtifactsPage() {
           <section class="surface-card artifact-detail-panel">
             ${
               active
-                ? `
-                  <div class="header-row">
-                    <div>
-                      <h2 class="pane-title">${escapeHtml(active.title)}</h2>
-                      <div class="thread-meta">
-                        <span class="chip is-accent">${escapeHtml(active.language)}</span>
-                        <span class="chip">${escapeHtml(active.kind)}</span>
+                ? uiState.editingArtifactId === active.id
+                  ? `
+                    <form class="project-form-card" data-form="artifact-update">
+                      <div class="project-form-grid">
+                        <label class="label">
+                          Title
+                          <input class="input" name="title" value="${escapeHtml(
+                            uiState.editingArtifactDraft.title,
+                          )}" />
+                        </label>
+                        <label class="label">
+                          Language
+                          <input class="input" name="language" value="${escapeHtml(
+                            uiState.editingArtifactDraft.language,
+                          )}" />
+                        </label>
+                      </div>
+                      <label class="label">
+                        Kind
+                        <input class="input" name="kind" value="${escapeHtml(
+                          uiState.editingArtifactDraft.kind,
+                        )}" />
+                      </label>
+                      <label class="label">
+                        Content
+                        <textarea class="textarea tall" name="content">${escapeHtml(
+                          uiState.editingArtifactDraft.content,
+                        )}</textarea>
+                      </label>
+                      <div class="inline-actions">
+                        <button class="small-button is-primary" type="submit">Save changes</button>
+                        <button class="small-button is-outline" type="button" data-action="cancel-edit-artifact">
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  `
+                  : `
+                    <div class="header-row">
+                      <div>
+                        <h2 class="pane-title">${escapeHtml(active.title)}</h2>
+                        <div class="thread-meta">
+                          <span class="chip is-accent">${escapeHtml(active.language)}</span>
+                          <span class="chip">${escapeHtml(active.kind)}</span>
+                          ${
+                            active.projectId
+                              ? `<span class="chip">${escapeHtml(
+                                  uiState.bootstrap.projects.find(
+                                    item => item.id === active.projectId,
+                                  )?.name || 'Project',
+                              )}</span>`
+                              : ''
+                          }
+                        </div>
+                      </div>
+
+                      <div class="inline-actions">
+                        <button
+                          class="small-button is-outline"
+                          data-action="start-edit-artifact"
+                          data-artifact-id="${active.id}"
+                          title="Rename or edit content"
+                        >
+                          <span class="toolbar-icon">${icon.pencil}</span>
+                          Edit
+                        </button>
+                        <button
+                          class="small-button is-outline"
+                          data-action="delete-artifact"
+                          data-artifact-id="${active.id}"
+                          title="Delete this artifact"
+                        >
+                          <span class="toolbar-icon">${icon.trash}</span>
+                          Delete
+                        </button>
                         ${
-                          active.projectId
-                            ? `<span class="chip">${escapeHtml(
-                                uiState.bootstrap.projects.find(
-                                  item => item.id === active.projectId,
-                                )?.name || 'Project',
-                            )}</span>`
+                          uiState.bootstrap.workspace?.selectedFilePath
+                            ? `
+                              <button
+                                class="small-button is-primary"
+                                data-action="apply-artifact-to-selected-file"
+                                data-artifact-id="${active.id}"
+                              >
+                                Queue write to ${escapeHtml(
+                                  uiState.bootstrap.workspace.selectedFilePath,
+                                )}
+                              </button>
+                            `
                             : ''
                         }
                       </div>
                     </div>
 
-                    <div class="inline-actions">
-                      ${
-                        uiState.bootstrap.workspace?.selectedFilePath
-                          ? `
-                            <button
-                              class="small-button is-primary"
-                              data-action="apply-artifact-to-selected-file"
-                              data-artifact-id="${active.id}"
-                            >
-                              Queue write to ${escapeHtml(
-                                uiState.bootstrap.workspace.selectedFilePath,
-                              )}
-                            </button>
-                          `
-                          : ''
-                      }
-                    </div>
-                  </div>
+                    ${
+                      uiState.bootstrap.workspace?.selectedFile
+                        ? renderPatchPreviewBlock(
+                            'Artifact to file preview',
+                            uiState.bootstrap.workspace.selectedFile.path,
+                            uiState.bootstrap.workspace.selectedFile.content,
+                            active.content,
+                          )
+                        : ''
+                    }
 
-                  ${
-                    uiState.bootstrap.workspace?.selectedFile
-                      ? renderPatchPreviewBlock(
-                          'Artifact to file preview',
-                          uiState.bootstrap.workspace.selectedFile.path,
-                          uiState.bootstrap.workspace.selectedFile.content,
-                          active.content,
-                        )
-                      : ''
-                  }
-
-                  <pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>
-                `
+                    <pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>
+                  `
                 : '<div class="empty-state">Select an artifact to preview it.</div>'
             }
           </section>
@@ -12051,6 +12188,15 @@ document.addEventListener('click', async event => {
       case 'apply-artifact-to-selected-file':
         await handleApplyArtifactToSelectedFile(trigger.dataset.artifactId);
         break;
+      case 'start-edit-artifact':
+        handleStartEditArtifact(trigger.dataset.artifactId);
+        break;
+      case 'cancel-edit-artifact':
+        handleCancelEditArtifact();
+        break;
+      case 'delete-artifact':
+        await handleDeleteArtifact(trigger.dataset.artifactId);
+        break;
       case 'ping-connector':
         await handlePingExternalConnector(trigger.dataset.connectorId);
         break;
@@ -12374,6 +12520,11 @@ document.addEventListener('input', event => {
 
   if (target.form?.dataset.form === 'artifact-create') {
     uiState.draftArtifact[target.name] = target.value;
+    return;
+  }
+
+  if (target.form?.dataset.form === 'artifact-update') {
+    uiState.editingArtifactDraft[target.name] = target.value;
     return;
   }
 
@@ -12739,6 +12890,9 @@ document.addEventListener('submit', async event => {
         break;
       case 'artifact-create':
         await handleCreateArtifact();
+        break;
+      case 'artifact-update':
+        await handleUpdateArtifact();
         break;
       case 'task-create':
         await handleCreateTask();

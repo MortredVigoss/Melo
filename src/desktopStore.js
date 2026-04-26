@@ -467,6 +467,8 @@ export {
   readWorkspaceFilePreview,
   saveWorkspaceFile,
   createArtifact,
+  updateArtifact,
+  deleteArtifact,
   applyArtifactToWorkspaceFile,
   runLocalCommand,
 } from './services/workspace/workspaceMutations.js';

@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-27 00:00 — Artifacts：从只读产物架升级成可管理知识架（语义闭环修复 + UI/API CRUD）
+
+- **修复语义闭环**：`src/services/chat/dynamicContext.js` 第 ~67 行原读 `artifact.summary`（artifact 记录里**根本没有这个字段**——一直在喂 `undefined`），改成 `truncateText(artifact.content || '', 180)`，让 agent prompt 拿到真正的内容前 180 字符。
+- **后端**：
+  - `src/services/workspace/workspaceMutations.js` 新增 `updateArtifact(artifactId, patch)` + `deleteArtifact(artifactId)`。前者支持 partial patch（只 patch 提供的 title/content/language/kind 字段，identity / chatId / projectId / createdAt 永远不动）；后者从 state.artifacts 过滤删除。两者都用 `updateStateAtomically` 防止与新 artifact 创建并发冲突。
+  - `src/desktopStore.js` 加 re-export。
+  - `src/server.js` 加 `POST /api/artifacts/update` + `POST /api/artifacts/delete` 路由（与已有 `/api/artifacts` create / `/api/artifacts/apply` 同款 POST + body 风格）。
+- **UI**（`desktop-ui/app.js`）：
+  - 新增 `pencil` + `trash` 两个 SVG icon。
+  - `uiState` 加 `editingArtifactId` + `editingArtifactDraft`。
+  - `renderArtifactsPage()` 详情面板：当 `editingArtifactId === active.id` 时渲染 `data-form="artifact-update"` 编辑表单（title/language/kind/content 四字段），否则渲染原视图加 Edit / Delete / Queue write 三个按钮。
+  - 4 个新 handler：`handleStartEditArtifact` / `handleCancelEditArtifact` / `handleUpdateArtifact` / `handleDeleteArtifact`。delete 用 `window.confirm()` 防误触。
+  - 4 个新 action case + 1 个新 form-submit case + 1 个新 input handler 分支（`artifact-update`）。
+- **Decision recorded**：用户选了"可管理的知识架"——现在 UI 文案保留 "Artifacts"，因为它**真的是可管理产物**了（不是 saved snippets）。
+- **Tests**：services + state + desktopStore + memory + agents 全套绿。**UI 未做浏览器手测**——CLAUDE.md 说"can't test the UI = say so"。建议你启动 `npm start` 在真实 Melo 里点一下 Edit/Delete 按钮 + 改个 title 验证。
+- 提交哈希：（待 commit）
+
 ## 2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走（约 1140 行 / desktopStore -75%）
 
 - 做了什么（一个 commit 同时收两块——用户明确要求"telegram 和 discord 也做完"）：

@@ -13,6 +13,8 @@ import {
   applyArtifactToWorkspaceFile,
   createCustomAgent,
   createArtifact,
+  updateArtifact,
+  deleteArtifact,
   createApproval,
   createChat,
   createExternalConnector,
@@ -1247,6 +1249,18 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/artifacts/apply' && request.method === 'POST') {
       const body = await readJsonBody(request);
       sendJson(response, 200, await applyArtifactToWorkspaceFile(body));
+      return;
+    }
+
+    if (url.pathname === '/api/artifacts/update' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, await updateArtifact(body?.artifactId, body?.patch || {}));
+      return;
+    }
+
+    if (url.pathname === '/api/artifacts/delete' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, await deleteArtifact(body?.artifactId));
       return;
     }
 

@@ -18,7 +18,7 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nowIso } from '../../shared/helpers.js';
-import { loadState, saveState } from '../../state/stateStore.js';
+import { loadState, saveState, updateStateAtomically } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findProjectById } from '../../state/stateLookups.js';
 import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
@@ -102,6 +102,99 @@ export async function createArtifact({ title, content, language, projectId, kind
   }
 
   await saveState(state);
+  return getDesktopBootstrap();
+}
+
+/**
+ * Patch an artifact in place (rename, edit content, change kind/language).
+ * Wrapped in updateStateAtomically so concurrent writes (e.g. a chat reply
+ * adding a new artifact while the user edits an existing one) merge cleanly.
+ *
+ * `patch` is a partial — only the keys present are applied. Empty/missing
+ * `title` / `content` are treated as "no change" (delete the key from patch
+ * before calling) so the UI can send a single field.
+ */
+export async function updateArtifact(artifactId, patch = {}) {
+  if (!artifactId || typeof artifactId !== 'string') {
+    throw new Error('Artifact id is required.');
+  }
+
+  await updateStateAtomically(latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const index = state.artifacts.findIndex(entry => entry?.id === artifactId);
+    if (index < 0) {
+      throw new Error('Artifact not found.');
+    }
+
+    const existing = state.artifacts[index];
+    const next = { ...existing };
+
+    if (typeof patch.title === 'string' && patch.title.trim()) {
+      next.title = patch.title.trim();
+    }
+    if (typeof patch.content === 'string') {
+      const trimmedContent = patch.content.trim();
+      if (!trimmedContent) {
+        throw new Error('Artifact content cannot be empty.');
+      }
+      next.content = trimmedContent;
+    }
+    if (typeof patch.language === 'string' && patch.language.trim()) {
+      next.language = patch.language.trim();
+    }
+    if (typeof patch.kind === 'string' && patch.kind.trim()) {
+      next.kind = patch.kind.trim();
+    }
+
+    state.artifacts[index] = normalizeArtifact({
+      ...next,
+      // Preserve identity + creation provenance — these are never patched.
+      id: existing.id,
+      chatId: existing.chatId,
+      projectId: existing.projectId,
+      createdAt: existing.createdAt,
+    });
+
+    const project = findProjectById(state, existing.projectId);
+    if (project) {
+      project.updatedAt = nowIso();
+    }
+    return state;
+  });
+
+  return getDesktopBootstrap();
+}
+
+/**
+ * Remove an artifact from state. Returns the refreshed bootstrap so the UI
+ * can re-render the panel without a separate fetch. Silently no-ops if the
+ * id is unknown — keeps the UI's optimistic-delete flow simple.
+ */
+export async function deleteArtifact(artifactId) {
+  if (!artifactId || typeof artifactId !== 'string') {
+    throw new Error('Artifact id is required.');
+  }
+
+  await updateStateAtomically(latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const before = state.artifacts.length;
+    const removed = state.artifacts.find(entry => entry?.id === artifactId);
+    state.artifacts = state.artifacts.filter(entry => entry?.id !== artifactId);
+    if (state.artifacts.length === before) {
+      // No row dropped — surface a clear error rather than silently
+      // returning a fresh bootstrap that "looks the same".
+      throw new Error('Artifact not found.');
+    }
+
+    if (removed?.projectId) {
+      const project = findProjectById(state, removed.projectId);
+      if (project) {
+        project.updatedAt = nowIso();
+      }
+    }
+    return state;
+  });
+
   return getDesktopBootstrap();
 }
 
