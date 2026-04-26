@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor
+
+- 做了什么：
+  - **新增 `src/services/command/commandTemplates.js`**（新建 `command/` 子目录）：`COMMAND_TEMPLATES` 静态数据 + `commandTemplateDescriptor` shaper 一并 byte-for-byte 搬走。两者都是纯数据/纯函数，零 desktopStore-LOCAL 依赖，绑得很紧（descriptor 几乎只在 `COMMAND_TEMPLATES.map(...)` 处被调），合一个 self-contained leaf 是最自然的边界。
+  - **`src/desktopStore.js`**：顶部加 5 行 import；删原 `COMMAND_TEMPLATES` 定义（39 行）+ `commandTemplateDescriptor` 定义（9 行），换成两段 stub 注释。6 个内部 caller（workspace snapshot UI builder ×3 + workspace snapshot fallback ×1 + 命令执行查找 ×1 + 即将抽走的 buildToolRoutingPrompt ×1）走 imported name 自然链接。
+- 为什么：7d-5γ 第一步。`buildToolRoutingPrompt` 的唯一 LOCAL 依赖就是 `COMMAND_TEMPLATES`——把它单独抽出去，下一 commit 抽 `buildToolRoutingPrompt` 时就是真正的零依赖港。把这两个一起 commit 而不是再分两步，是因为 descriptor 是 COMMAND_TEMPLATES 的单一专用 shaper，分开 commit 会撕裂自然的边界。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 7072 → 7038（-34 行）
+
 ## 2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext（中等复杂叶子，依赖已外部化）
 
 - 做了什么：

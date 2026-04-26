@@ -335,6 +335,14 @@ import { formatModelMessageForVisionDebug } from './services/chat/visionDebug.js
 // Phase 7d-5β commit 3: dynamic-context assembly extracted to a leaf
 // module — its three upstream deps were already external.
 import { buildDynamicContext } from './services/chat/dynamicContext.js';
+// Phase 7d-5γ commit 1: COMMAND_TEMPLATES static registry +
+// commandTemplateDescriptor shaper extracted as a self-contained leaf.
+// 6 callers across desktopStore (workspace snapshot UI builders, command
+// runner lookup, tool-routing prompt) now reach them via this import.
+import {
+  COMMAND_TEMPLATES,
+  commandTemplateDescriptor,
+} from './services/command/commandTemplates.js';
 import {
   DEFAULT_SKILL_TASK_SCHEMA,
   BUILTIN_SKILLS,
@@ -654,45 +662,9 @@ const AGENT_ARCHETYPE_SKILL_PRESET = {
   reviewer: ['project-planner', 'artifact-curator'],
 };
 
-const COMMAND_TEMPLATES = [
-  {
-    id: 'pwd',
-    label: 'Show working directory',
-    command: 'pwd',
-    args: () => [],
-    description: 'Confirm the current project workspace root.',
-  },
-  {
-    id: 'list-files',
-    label: 'List files',
-    command: 'ls',
-    args: () => ['-la'],
-    description: 'Show files at the workspace root.',
-  },
-  {
-    id: 'git-status',
-    label: 'Git status',
-    command: 'git',
-    args: () => ['status', '--short', '--branch'],
-    description: 'Inspect local repository state.',
-  },
-  {
-    id: 'npm-build',
-    label: 'Run build',
-    command: 'npm',
-    args: () => ['run', 'build'],
-    description: 'Run the workspace build command if the project supports it.',
-  },
-  {
-    id: 'search-text',
-    label: 'Search text',
-    command: 'rg',
-    requiresInput: true,
-    inputPlaceholder: 'Search term',
-    args: query => ['--line-number', '--hidden', '--glob', '!.git', '--glob', '!node_modules', query],
-    description: 'Search the workspace with ripgrep.',
-  },
-];
+// COMMAND_TEMPLATES moved to `src/services/command/commandTemplates.js`
+// in Phase 7d-5γ. Re-imported at the top of this file alongside
+// commandTemplateDescriptor.
 
 // BUILTIN_CONNECTORS moved to src/state/stateHydration.js in Phase 7d-5α-A1 (commit 7/9). Re-imported at the top of this file.
 
@@ -1296,15 +1268,9 @@ function effectiveAgentProfile(state, agentId, projectId = null) {
 // buildSkills, listExecutableSkills) are re-exported there so existing
 // consumers that still import from desktopStore keep working.
 
-function commandTemplateDescriptor(template) {
-  return {
-    id: template.id,
-    label: template.label,
-    description: template.description,
-    requiresInput: Boolean(template.requiresInput),
-    inputPlaceholder: template.inputPlaceholder || '',
-  };
-}
+// commandTemplateDescriptor moved to
+// `src/services/command/commandTemplates.js` in Phase 7d-5γ. Re-imported
+// at the top of this file.
 
 // Phase 7d-5α-A1 commit 9 cleanup: cec12c3 had added `export` here under
 // the assumption a future chatGraphRunner would import findProjectById
