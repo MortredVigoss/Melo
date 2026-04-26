@@ -258,3 +258,44 @@ export function dedupeAgentChannelTokenOwners(agentProfiles, targetAgentId, chan
 
   return nextProfiles;
 }
+
+// ─── Phase 7d-5δ commit 5 — byte-for-byte port from desktopStore.js ──
+//
+// `projectAgentOverrideFor` returns the per-project override (if any) the
+// state currently holds for `agentId`. `effectiveAgentProfile` composes
+// the base profile with that override and tags the result with which
+// scope produced it. They live next to `normalizeAgentProfile` because
+// they read the same state shape and feed the same downstream consumers
+// (the chat / task execution graphs and the bootstrap loader). Both
+// originally lived in desktopStore.js as LOCAL helpers; this commit
+// moves them out so the runners can extract without an import cycle.
+
+export function projectAgentOverrideFor(state, projectId, agentId) {
+  if (!projectId) {
+    return null;
+  }
+
+  return state.projectAgentOverrides?.[projectId]?.[agentId] || null;
+}
+
+export function effectiveAgentProfile(state, agentId, projectId = null) {
+  const globalProfile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
+  const projectOverride = projectAgentOverrideFor(state, projectId, agentId);
+
+  if (!projectOverride) {
+    return {
+      ...globalProfile,
+      scopeSource: 'global',
+      hasProjectOverride: false,
+    };
+  }
+
+  return {
+    ...normalizeAgentProfile(agentId, {
+      ...globalProfile,
+      ...projectOverride,
+    }),
+    scopeSource: 'project',
+    hasProjectOverride: true,
+  };
+}

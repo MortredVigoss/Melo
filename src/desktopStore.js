@@ -473,6 +473,11 @@ import {
   normalizeAgentOverride,
   normalizeProjectAgentOverrides,
   dedupeAgentChannelTokenOwners,
+  // Phase 7d-5δ commit 5: effectiveAgentProfile + projectAgentOverrideFor
+  // moved into this same module since they compose on top of
+  // normalizeAgentProfile and read the same state shape.
+  projectAgentOverrideFor,
+  effectiveAgentProfile,
 } from './state/agentProfiles.js';
 import {
   recoverLeadingJsonObject,
@@ -1271,35 +1276,9 @@ function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}) 
 // summarizeAgentPrompt moved to src/services/chat/systemPrompt.js in Phase 7d-2.
 
 
-function projectAgentOverrideFor(state, projectId, agentId) {
-  if (!projectId) {
-    return null;
-  }
-
-  return state.projectAgentOverrides?.[projectId]?.[agentId] || null;
-}
-
-function effectiveAgentProfile(state, agentId, projectId = null) {
-  const globalProfile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
-  const projectOverride = projectAgentOverrideFor(state, projectId, agentId);
-
-  if (!projectOverride) {
-    return {
-      ...globalProfile,
-      scopeSource: 'global',
-      hasProjectOverride: false,
-    };
-  }
-
-  return {
-    ...normalizeAgentProfile(agentId, {
-      ...globalProfile,
-      ...projectOverride,
-    }),
-    scopeSource: 'project',
-    hasProjectOverride: true,
-  };
-}
+// projectAgentOverrideFor + effectiveAgentProfile moved to
+// `src/state/agentProfiles.js` in Phase 7d-5δ commit 5. Re-imported at
+// the top of this file alongside normalizeAgentProfile.
 
 // MAX_SKILL_* caps, SUSPICIOUS_SKILL_PROMPT_PATTERN, normalizeCustomSkill,
 // normalizeSkillParametersSchema, normalizeBuiltinSkill, buildSkills, and

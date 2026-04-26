@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-26 16:00 — Phase 7d-5δ commit 5：抽出 effectiveAgentProfile + projectAgentOverrideFor（实查后 8 callers、不是 57）
+
+- 做了什么：
+  - **复用 `src/state/agentProfiles.js`**（已存在的模块，含 normalizeAgentProfile / normalizeAgentProfiles 等）—— `effectiveAgentProfile`（21 行）+ `projectAgentOverrideFor`（8 行）byte-for-byte 追加进去并 export。两者**逻辑上属于同一域**（profile 组合：base + project-level override），自然落在 normalizeAgentProfile 旁边。
+  - **`src/desktopStore.js`**：扩展原 `from './state/agentProfiles.js'` 的 import 列表加 2 行；删两处 LOCAL 定义（共 ~30 行）换 3 行 stub。10 个内部 caller（effectiveAgentProfile 8 + projectAgentOverrideFor 2）全走 imported name。
+- **关于"57 callers"误报的更正**：早前 PROGRESS 记录说 effectiveAgentProfile 有 57 callers——实查只有 **8**。可能那个数字来自另一个会话的笔记，或者跟 `agentUsesTool` 的某个分布混了。今天对函数做 grep -c 确认 8。教训：pre-extraction 调研必须跑实际 grep，不能信旧 PROGRESS 笔记里的体感数字。
+- 为什么：runner 抽取最后一个 prerequisite。`runTaskAgentExecutionGraph` / `runChatAgentExecutionGraph` 都用 `effectiveAgentProfile` 计算当前 agent 的有效 profile；现在它在 leaf 模块，runner 抽出去就没有循环导入风险了。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 6303 → 6282（-21 行）
+
 ## 2026-04-26 15:30 — Phase 7d-5δ commit 4：抽出 taskExecutionPrompt（依赖单 imported helper，又一个真叶子）
 
 - 做了什么：
