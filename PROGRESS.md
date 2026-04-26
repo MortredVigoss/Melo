@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 13:30 — Phase 7d-5γ commit 4：抽出 buildAgentMemoryNodeContext + 私有 helper（最大单 commit 瘦身）
+
+- 做了什么：
+  - **新增 `src/services/agent/agentMemoryContext.js`** —— `buildAgentMemoryNodeContext`（337 行）+ 它唯一专用的 5 行私有 helper `latestUserMessageRecord` 一起 byte-for-byte 搬走。两者绑得很紧（latestUserMessageRecord 只有这一个 caller），合一个 self-contained leaf 是最自然的边界，复用 commit 1（COMMAND_TEMPLATES + descriptor）的同款打包模式。
+  - **`src/desktopStore.js`**：顶部 import 块加 5 行；删 latestUserMessageRecord 定义（5 行）+ buildAgentMemoryNodeContext 定义（337 行）共 342 行，换成两段共 6 行 stub 注释。唯一内部 caller (line ~3955 prepare-node) 走 imported name。
+- 关于"7+ LOCAL deps"实查更正：commit 3 一样，Explore agent 的报告把外部 imported 的符号误判为 LOCAL。实际只有 1 个真 LOCAL（latestUserMessageRecord），其余 12 个全是从 memory/store.js、memory/attic.js、memory/heuristics.js、memory/speakerProfile.js、state/memorySnapshot.js、services/activity/、services/approval/、services/task/ 里 import 来的。**Lesson**：Explore agent 的"deps 报告"必须再用 desktopStore 顶部 import 块逐个 cross-check，不能盲信。
+- 回归：services + state + desktopStore + memory + agents 全绿；这是单 commit 史上最大瘦身。
+- 提交哈希：（待 commit）
+  - desktopStore: 6902 → 6572（-330 行；本会话内累计已减 633 行：8527→6572，进度近 40%）
+
 ## 2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子，差点踩到 import 路径错认）
 
 - 做了什么：
