@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext（中等复杂叶子，依赖已外部化）
+
+- 做了什么：
+  - **新增 `src/services/chat/dynamicContext.js`** —— `buildDynamicContext`（61 行）byte-for-byte 搬走。3 个依赖（`ensureChatThreadContext` from `state/chatThreadContext.js`、`renderThreadContext as renderStructuredThreadContext` from `memory/threadContext.js`、`truncateText` from `shared/helpers.js`）都已经在外部 leaf 模块里，直接 import 即可。
+  - **`src/desktopStore.js`**：顶部 import 块加 1 行；删原函数定义（61 行）换成 2 行 stub 注释。两个内部 caller (line ~4479 / ~4956 prepare-node + task-graph) 走 imported name。
+- 为什么：commit 1+2 抽完真叶子和单依赖。commit 3 是"中等"——3 个依赖但全部已外部化，不需要先搬其它符号，直接抽走。
+- 顺手的 PROGRESS.md 压缩：本次 commit 把 `fix-5/6/7` 三个详细条目（共 ~76 行）移到归档摘要区，只保留 title + 1 句结论 + commit hash。这三个条目对应的修复链已经全部收尾（fix-5→6→7→8 序列闭合），完整版仅在 git history 中需要时可查。
+- 回归：services + state + desktopStore + memory + agents 套件全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 7128 → 7072（-56 行）
+
 ## 2026-04-26 11:30 — Phase 7d-5β commit 2：抽出 buildProjectContextSection（单依赖叶子）
 
 - 做了什么：
@@ -77,89 +88,13 @@
   - `src/memory/store.js`
   - `src/state/stateLoadContextChain.test.js`
 
-## 2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）
-
-- 做了什么（用户选 (i) — 把 home 升格为 first-class context object，贯穿整个 state I/O 子系统）：
-  - **checkpointer.js**：`loadThreadCheckpoint` / `saveThreadCheckpoint` / `pruneThreadCheckpoints` / `deleteThreadCheckpoint` / `invalidateThreadCheckpointCache` 全部接受可选 `{ threadsDir }` 参数。提供时使用显式目录；不提供时 lazy 解析（向后兼容）。
-  - **缓存改 by-dir 索引**：原 `checkpointCacheByHome`（以 `getMeloHome()` 为 key）改为 `checkpointCacheByDir`（以 resolved threadsDir 为 key）。bucket 与磁盘路径 1:1 对应——不会再发生"buck 命中但磁盘指向另一个目录"。
-  - **stateHydration.js**：`hydrateChatThreads(state, { threadsDir? })` 接受参数，贯穿到内部的 `loadThreadCheckpoint` 调用。
-  - **chatPersistence.js**：`persistChatThreads(chats, { threadsDir? })` 接受参数，贯穿到 `saveThreadCheckpoint` + `pruneThreadCheckpoints`。
-  - **stateStore.js — 核心整合**：
-    - `captureLoadContext()` 扩展为 `{ home, stateFilePath, threadsDir, getAgentMarkdownPaths }`
-    - `readStateSnapshot` 一次性捕获 ctx，把 `threadsDir` 传给 `hydrateChatThreads`，把整个 `ctx` 传给 `saveState`（用于 repair-save）
-    - `saveState({ ctx? })` 和 `persistStateAtomically({ ctx? })` 接受 ctx 选项；如果有就用 ctx 的 `stateFilePath` + `threadsDir`，否则 lazy fallback（保留 `capturedStatePath` 兼容老调用方但不推荐）
-  - **新增 `src/state/stateLoadContextChain.test.js`（2 个测试）**：
-    1. `readStateSnapshot: thread checkpoint reads honor the home captured at the top of the load chain` —— 在 home A 和 home B 各放一份**相同 chat id 不同内容**的 checkpoint，readStateSnapshot 启动后立即切 env，断言 hydrate 回来的 chat.messages 是 home A 的内容。这是抓 fix-5 漏掉的"hydrateChatThreads 跨 home 串读"的精确回归测试。
-    2. `readStateSnapshot repair-save: thread checkpoint writes land in the captured home` —— state.json 有 chat with inline messages（触发 hydration 修复 + repair-save），启动 load 后切 env，断言 home A 的 threads/ 收到 checkpoint 文件、home B 的 threads/ 保持空。
-- 为什么：6 次 C 评级的核心信号是**state machine 与 memory 子系统的 home 处理深度纠缠**——单纯逐函数 capture 不够，需要在外层 orchestration 一次捕获、贯穿整个调用 chain 的所有 home-derived 路径。fix-6 把 ctx 作为 first-class 参数传穿了 state I/O 全栈（read + hydrate + repair-save 三条路径）。
-- 关于剩余的潜在 leak（已确认不修）：
-  - `mergeDiskSkillsIntoState` 走的是 `os.homedir()` 派生的 `SKILLS_DISK_ROOT`，**不读 MELO_HOME**——不属于本类 bug。
-  - `memory/store.js` 有自己的 `_resetStoreForTests` API + 缓存 sqlite 句柄，跨 home 切换需要测试主动 reset，不是 fix-6 的范围。
-- 产出 / 提交哈希：未提交
-  - `src/memory/checkpointer.js`：4 个 op 接受 `{ threadsDir }`，缓存改 by-dir
-  - `src/state/stateHydration.js`：`hydrateChatThreads` 接受 `{ threadsDir }`
-  - `src/state/chatPersistence.js`：`persistChatThreads` 接受 `{ threadsDir }`
-  - `src/state/stateStore.js`：ctx 扩展 + 贯穿 readStateSnapshot 到 saveState
-  - `src/state/stateLoadContextChain.test.js`（新，2 tests）
-  - 回归：services + desktopStore + state + memory 套件 616/616（+2 from new chain isolation tests）；跨域 281/281 全绿
-
-## 2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）
-
-- 做了什么（f3b0f29 触发的第 7 次 C 评级修复——这次是 memory store sqlite 的 cross-home 串读串写）：
-  - **`src/memory/store.js` 大幅重构**：
-    - 提取 `applyMemoryStoreSchema(database, vecLoaded)` 私有函数（schema CREATE TABLE + 全部 migrations + vec0 setup）。`getDb()` 调用它。disposable handle 也调用它。
-    - 新增 `withDisposableStoreAt(storePath, work)`：开 fresh sqlite handle，跑 schema setup，跑 work，关闭。**不**触碰 cached production handle。
-    - 新增 `runInTransactionOn(database, work)`：手动 BEGIN/COMMIT/ROLLBACK 包裹给一个具体 db。disposable path 用它代替 module-level `runInTransaction`（后者通过 `getDb()` 用 cached handle）。
-    - `replaceMemories(entries, { storePath })`：当 storePath 提供且 ≠ `_openedStorePath` 时走 disposable path（withDisposableStoreAt + runInTransactionOn）。否则保持原行为（getDb + runInTransaction）。
-    - 提取 `_runReplaceMemoriesOn(database, entries, vecLoaded, runTx)`：原 replaceMemories 的 ~80 行 SQL body 抽出，参数化 db + vecLoaded + tx wrapper。
-    - **`getCachedEmbedding(text, modelId, database)` 接受 explicit database**（之前 ALWAYS 走 `getDb()`）。passed 时用，否则 fallback。
-    - **`resolveCacheModelId(explicit, database)` 也接受 explicit database**——这个是关键：之前 `getCachedEmbedding` 的 db 是 passed 的，但它内部调 `resolveCacheModelId` 而 `resolveCacheModelId` 又调 `getDb()` —— Codex review 4 个 C 评级才把这个 transitive call chain 暴露完。
-  - **`src/state/memorySnapshot.js`**：`syncMemoryStoreSnapshot(state, { ctx })` 接受 ctx，forward `ctx.storePath` 给 `replaceMemories`。
-  - **`src/state/stateStore.js`**：`captureLoadContext()` 增加 `storePath: join(home, 'desktop', 'store.sqlite')`；`persistStateAtomically({ ctx })` 把 `{ ctx }` 传给 `syncMemoryStoreSnapshot`。
-  - **新增 fix-7 回归测试**：`readStateSnapshot repair-save: memory store writes land in the captured home`——构造 home A 的 state.json 含可索引 chat，readStateSnapshot 启动，立即切 env=B，断言 home A 的 store.sqlite 存在、home B 的 store.sqlite **不**存在。在 fix-7 之前会失败（leaked 到 home B），现在通过。
-- 关于 pre-push gate 的实战：
-  - 用户在 fix-6 commit 之前已经把 `git pp` 改成 push 前先做 Codex evaluation——评 C/D 直接 block push。
-  - fix-6 (08cfab3) push 时 review 评 C 但**没被 gate 拦**（旧版 git pp 还是后审）。
-  - fix-7 之前的 commit (f3b0f29) push 时 **新版 gate 第一次实战**——pre-push evaluation 直接给 C 并 block 推送。**坏代码没出本地**，证明 gate 工作正常。
-  - 所以 f3b0f29 本地有，但远端没有——本次 fix-7 commit 是在 f3b0f29 基础上叠加，最终一并 push。
-- 这是连续第 7 次 C，每次都是同一类 home-leak 在更深层：
-  1. wrapper bypass (sanitizeWorkspacePath)
-  2. path const at module load (lazy resolution)
-  3. cache flat key (nested by home → by dir)
-  4. async body lazy reads env (capture at queue)
-  5. orchestration multi-read (unified outer capture)
-  6. hydrate/persist chains (ctx threading)
-  7. **memory store cached sqlite handle (disposable path + transitive db threading)**
-
-  关键 lesson：transitive call chain 隔离比想象中难。`getCachedEmbedding(database)` 看起来已经 captured 了，但内部 `resolveCacheModelId()` 又自己调 `getDb()`——helper 之间相互调用时，每一步都要传 db。
-- 产出 / 提交哈希：未提交
-  - `src/memory/store.js`：~150 行重构（schema 提取 + disposable handle + db 参数 threading）
-  - `src/state/memorySnapshot.js`：syncMemoryStoreSnapshot 接受 ctx
-  - `src/state/stateStore.js`：captureLoadContext 增加 storePath
-  - `src/state/stateLoadContextChain.test.js`：新增第 3 个测试覆盖 memory store
-  - 回归：services + desktopStore + state + memory 套件 617/617；跨域 281/281 全绿
-
-## 2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）
-
-- 做了什么（2063d9e 触发的第 5 次 C 评级修复——这次是整体 capture chain 一致性）：
-  - `readStateSnapshot` 入口处通过 `captureLoadContext()` **一次性捕获** home + stateFilePath + getAgentMarkdownPaths，整个 load chain 共享这一组捕获值。函数体内部**零 `getMeloHome()` 读取**——所有需要 home 的 helper（`isMarkdownSyncedFor` / `markSyncedFor` / `importAgentMarkdownFiles` / `queueAgentMarkdownPrime` / 修复保存 `saveState`）都接受显式参数。
-  - `markdownSyncedByHome` 的 helper 重命名为 `isMarkdownSyncedFor(home)` / `markSyncedFor(home)` —— 接受显式 home 参数而不是各自再读 env。
-  - `importAgentMarkdownFiles(state, providedGetAgentMarkdownPaths?)` 和 `queueAgentMarkdownPrime(state, providedHome?, providedGetAgentMarkdownPaths?)` 接受可选的 captured helpers / home。如果不传，函数自己捕获（向后兼容任何同步调用方）。
-  - `saveState(state, { capturedStatePath })` 和 `persistStateAtomically(state, { capturedStatePath })` 新增 optional `capturedStatePath` 选项，让 readStateSnapshot 的 repair-save 路径绑死到捕获的 stateFilePath。
-  - **强化测试**：原 `importAgentMarkdownFiles` 测试只断言 `main` agent，但 `main` 是循环第一个，路径在第一个 await 之前就解析了——旧 lazy 代码可能假绿。改成断言 `research`（第二个内置 agent，至少在一个 await 之后才解析路径），真正能抓到"async 体内 lazy 读 env"的旧 bug。
-  - **新增 `readStateSnapshot wraps the entire load chain in a single home capture` 测试**：调度 readStateSnapshot 之后立即切 MELO_HOME，等 prime microtask flush 完成，断言 home A（捕获的 home）收到所有写入、home B（flip 后的 env）零写入。
-- 为什么：CLAUDE.md §6 已经写下了"调度时捕获 env"的规则，但 fix-4 只把规则应用在 markdownSync.js 的两个独立函数上。Codex review 指出**调用链整体的 capture 一致性也是 §6 的范围**——单独捕获每个函数还不够，外层 orchestration 必须给整个 chain 一次性 capture。这次修复把 `readStateSnapshot` 重新定位为唯一 capture 点。
-- 这是连续第 5 次 C，每次都是 §6 规则的不同 layer：模块级 const → flag 单例 → 缓存 key → async 体内 lazy → **multi-step orchestration 整体 capture**。
-- 产出 / 提交哈希：未提交
-  - `src/state/stateStore.js`：`captureLoadContext()` helper、isMarkdownSyncedFor/markSyncedFor 接受 home 参数、saveState/persistStateAtomically 接受 capturedStatePath 选项
-  - `src/state/markdownSync.js`：importAgentMarkdownFiles + queueAgentMarkdownPrime 接受 optional captured helpers/home（向后兼容）
-  - `src/state/markdownSyncAsyncTiming.test.js`：原测试改成断言 `research` agent；新增 readStateSnapshot full-chain capture 测试
-  - 回归：services + desktopStore + state + memory 套件 614/614（+1 from new full-chain test，原 import 测试改强）；跨域 281/281 全绿
-
 ## 归档摘要（2026-04-26 04:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）** —— `applyMemoryStoreSchema` 抽出私有函数；`withDisposableStoreAt` + `runInTransactionOn` 给替代 storePath 走独立 sqlite 句柄；`getCachedEmbedding`/`resolveCacheModelId` 都接受 explicit database 参数（transitive call chain 隔离）；新增 fix-7 回归测试。`559fbae`
+- **2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）** —— 把 home 升格为 first-class context object：`checkpointer` 4 op + `hydrateChatThreads` + `persistChatThreads` 全部接受 `{ threadsDir }`；缓存改 by-dir 索引；`captureLoadContext` 扩展为 `{home, stateFilePath, threadsDir, getAgentMarkdownPaths}` 贯穿整个 load chain；新增 stateLoadContextChain.test.js（3 tests）。`f3b0f29`
+- **2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）** —— `captureLoadContext()` 在 readStateSnapshot 入口一次性捕获 home + path + helpers，整个 load chain 共享；`saveState/persistStateAtomically` 接受 `capturedStatePath`；新增 readStateSnapshot full-chain capture 测试。`08cfab3`
 - **2026-04-26 04:30 — Phase 7d-5α-A1 fix-4：async-timing capture (Q5-B + Q6-b + CLAUDE.md §6 落盘)** —— `queueAgentMarkdownPrime` + `importAgentMarkdownFiles` 改成调度/入口时一次性捕获 home-bound factory，async 体内禁止再读 env；CLAUDE.md §6 写入硬规则。`2063d9e`
 - **2026-04-26 03:30 — Phase 7d-5α-A1 fix-3：cache-level cross-home isolation (Q3-B + Q4-b + 扩大 audit)** —— `checkpointCache` 改嵌套 `Map<home, Map<threadId>>`、`markdownPrimeQueued` 改 Set；4 项 module-level state 全审计无遗漏。`a104f23`
 - **2026-04-26 02:30 — Phase 7d-5α-A1 commit 8+9 fix：MELO_HOME 隔离修复 (Q1a + Q2b)** —— `markdownSynced` 单 boolean → by-home Map；`createAgentMarkdownFileHelpers` 接受 lazy `() => agentsDir`；checkpointer.js 的 `THREADS_DIR` const 改 lazy。`808db9e`
