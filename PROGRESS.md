@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子，差点踩到 import 路径错认）
+
+- 做了什么：
+  - **新增 `src/services/remote/channelRoutePrompt.js`** —— `buildChannelRoutePrompt`（117 行）byte-for-byte 搬走。Explore agent 先前报的 5 个 LOCAL 依赖经实查全是已外部化的 import：`normalizeAgentChannels` (agent/agentChannels.js)、`buildGroupRelationshipSummary` + `collectBystanderContext` + `collectKnownTelegramParticipants` (remote/groupRelationship.js)、`normalizeConversationSnippet` (memory/heuristics.js)。函数本身是真零 LOCAL 叶子。
+  - **`src/desktopStore.js`**：顶部 import 块加 5 行；删原函数定义（117 行）换 3 行 stub。唯一内部 caller (line ~4387 prepare-node) 走 imported name。
+- 中间踩坑：第一次写新文件时把 `normalizeConversationSnippet` 错误写成从 `../viz/citation.js` 来。原因：之前 grep desktopStore 头部 import 块时 `sed` 范围跨越了多个 `import` 块，把同一行 `normalizeConversationSnippet` 误归到下面的 `citation.js` 块——其实它在 `./memory/heuristics.js` 块里。**byte-for-byte 不防 import 路径错认；下次抽函数前要逐 import 确认每个符号的真实来源**。回归 18 个测试 SyntaxError 直接抓到，修一行 import 路径后全绿。
+- 回归：services + state + desktopStore + memory + agents 全绿。
+- 提交哈希：（待 commit）
+  - desktopStore: 7011 → 6902（-109 行，本 commit 单步最大瘦身，超过 commit 1+2 之和）
+
 ## 2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（依靠 commit 1 把唯一 LOCAL 抽走）
 
 - 做了什么：
