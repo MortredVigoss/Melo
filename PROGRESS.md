@@ -11,7 +11,7 @@
 - 新增 `src/memory/dreaming/summaryQuality.js`：纯模块，三指标 score = 0.1·length + 0.4·entityCoverage + 0.5·tokenGroundedness。Latin 词 + CJK per-char + bigram 实体抽取，全部 reference-free。`auditSummary({summary, source, label})` 直接 append 到当日 DREAMS.md（一行 audit block，PASS/FAIL + 三指标），diary 写失败 swallow 不破坏热路径。
 - `compact.js` 接入：LLM 返回成功时按 `MELO_COMPACT_QUALITY_GATE` 处理 —— 默认 `audit`（写 diary，行为不变）/ `fallback`（diary + score 不通过则继续下一 candidate）/ `disabled`（完全跳过）。模式在 compactOffline 入口一次性 capture（CLAUDE.md §6）。
 - 验证：18 个新单测（tokenize/extractEntities/evaluateSummaryQuality/auditSummary/diary append-only）+ 整个 memory 测试套 **323/323 全绿**（含原 305 + 18 新加）；check-syntax 全过；compact.test.js 既有 ruleBasedCompact + LLM-disabled 测试不受影响。
-- 提交哈希：待填。
+- 提交哈希：`aad4f72`。
 
 ## 2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）
 
@@ -19,7 +19,7 @@
 - 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js`：默认读 `bench/memory/golden.json`（gitignored，私密 query 不入版本），跑 `recallMemoriesTiered`，按 `expectedIds` + `expectedSubstrings` 判 hit，输出 `results-YYYY-MM-DD.md` 含 Recall@1/5/10、scene/frame/content per-kind hit、平均延迟、misses 详情。
 - CLI: `npm run bench:memory`，支持 `--no-embed`（强制关键词通路）、`--validate`、`--json`、`--threshold-recall5 0.85`（CI gate exit 2）。env 启动时一次性 capture（CLAUDE.md §6）。
 - 验证：305/305 memory unit tests 全绿（未动 src/）；脚本端到端 sandbox MELO_HOME 上跑过 friendly-fail（缺 golden / 空 store）+ 命中（recall@5=100%）+ threshold gate（pass=0/fail=2）+ JSON 模式 + check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`eb74e07`。
 
 ## 2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced
 
