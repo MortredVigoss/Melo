@@ -17,6 +17,7 @@
  */
 
 import { createOpenAICompatibleReply } from '../../openai.js';
+import { auditSummary } from '../dreaming/summaryQuality.js';
 
 const LOCAL_LLM_CANDIDATES = [
   // Order matters — first reachable endpoint wins.
@@ -28,6 +29,27 @@ const LOCAL_LLM_CANDIDATES = [
 const LOCAL_LLM_MODEL = process.env.MELO_LOCAL_COMPACT_MODEL || 'qwen2.5:3b';
 const LOCAL_LLM_TIMEOUT_MS = 15_000;
 const RULE_SUMMARY_MAX_CHARS = 1200;
+
+/**
+ * `MELO_COMPACT_QUALITY_GATE` selects what we do with each LLM-produced
+ * summary:
+ *   - 'audit'    (default) — score + append a one-line entry to today's
+ *                            DREAMS.md; return the LLM summary regardless.
+ *   - 'fallback'           — same audit + skip the LLM result when it
+ *                            fails the quality threshold (try the next
+ *                            candidate; eventually rule fallback).
+ *   - '0' / 'disabled'     — skip scoring entirely.
+ *
+ * The default is 'audit' so operators get a quality trail in the diary
+ * without any behaviour change to the hot path.  `auditSummary` swallows
+ * its own IO errors so a corrupt dreams dir can never break compact.
+ */
+function compactQualityMode() {
+  const raw = String(process.env.MELO_COMPACT_QUALITY_GATE || 'audit').toLowerCase();
+  if (raw === '0' || raw === 'disabled' || raw === 'off') return 'disabled';
+  if (raw === 'fallback') return 'fallback';
+  return 'audit';
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -47,6 +69,10 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
   const transcript = messagesToTranscript(messages);
   if (!transcript.trim()) return '';
 
+  // Capture the quality gate mode once per call so a mid-flight env change
+  // can't make the audit + fallback decisions diverge.  CLAUDE.md §6.
+  const qualityMode = compactQualityMode();
+
   // Try local LLM first — skip if MELO_OFFLINE_ONLY is set AND the user has
   // asked us not to touch any model.  (Local LLMs are still considered
   // "offline" by our definition.)
@@ -54,7 +80,26 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
     for (const candidate of LOCAL_LLM_CANDIDATES) {
       try {
         const summary = await callLocalLlm(candidate, transcript, signal);
-        if (summary && summary.trim()) return summary.trim();
+        if (summary && summary.trim()) {
+          const trimmed = summary.trim();
+          let audit = null;
+          if (qualityMode !== 'disabled') {
+            try {
+              audit = auditSummary({
+                summary: trimmed,
+                source: transcript,
+                label: `compact:${candidate.name}`,
+              });
+            } catch {
+              // Audit must never break the hot path.
+              audit = null;
+            }
+          }
+          if (qualityMode === 'fallback' && audit && !audit.pass) {
+            continue; // hallucinated — try the next candidate, then rule fallback
+          }
+          return trimmed;
+        }
       } catch {
         // try next candidate
       }

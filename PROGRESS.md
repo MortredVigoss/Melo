@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入
+
+- 横评里"本地 LLM 摘要质量没实测"的扣分项。读代码发现 `frame.js` 的 frame summary 是字符切片（grounded≈1，无胡编风险），真正可能胡编的是 `offline/compact.js` 的 LLM compact（qwen2.5:3b 默认），所以 quality gate 接到那里。
+- 新增 `src/memory/dreaming/summaryQuality.js`：纯模块，三指标 score = 0.1·length + 0.4·entityCoverage + 0.5·tokenGroundedness。Latin 词 + CJK per-char + bigram 实体抽取，全部 reference-free。`auditSummary({summary, source, label})` 直接 append 到当日 DREAMS.md（一行 audit block，PASS/FAIL + 三指标），diary 写失败 swallow 不破坏热路径。
+- `compact.js` 接入：LLM 返回成功时按 `MELO_COMPACT_QUALITY_GATE` 处理 —— 默认 `audit`（写 diary，行为不变）/ `fallback`（diary + score 不通过则继续下一 candidate）/ `disabled`（完全跳过）。模式在 compactOffline 入口一次性 capture（CLAUDE.md §6）。
+- 验证：18 个新单测（tokenize/extractEntities/evaluateSummaryQuality/auditSummary/diary append-only）+ 整个 memory 测试套 **323/323 全绿**（含原 305 + 18 新加）；check-syntax 全过；compact.test.js 既有 ruleBasedCompact + LLM-disabled 测试不受影响。
+- 提交哈希：待填。
+
 ## 2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）
 
 - 横评 melo / openclaw / hermes 时把"召回 top-5 ≥ 85%"当成尚未基准化的扣分项；这一刀把它变成可跑的脚本，不动 `src/memory/`。
