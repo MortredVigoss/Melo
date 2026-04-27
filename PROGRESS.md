@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
+
+- 用户审查："硬功能基本都通了，剩下的是体验不够清楚。"4 条按推荐方案改：
+- **#1 TTS Auto 显式化** ([app.js:1074](desktop-ui/app.js#L1074))：默认 `ttsEngine='auto'` 但 Voice 面板没有 Auto radio，选 auto 时面板看起来什么都没勾。新加 Auto radio 在最上，hint "Tries API voice first · falls back to macOS say · default"，匹配 [speakText:4265](desktop-ui/app.js#L4265) 的真实 fallback 顺序。
+- **#2 Browser voice 桌面端改名** ([app.js:1090](desktop-ui/app.js#L1090))：检测到 `window.webkit.messageHandlers.meloVoice`（WKWebView）时 label 从 "Browser voice" 改成 "Desktop native voice"，hint 改成 "AVSpeechSynthesizer via system bridge · picker unused here"。真实浏览器仍叫 Browser voice。逻辑零改，仅命名诚实化。
+- **#3 视频附件状态 chip** ([app.js:1205](desktop-ui/app.js#L1205))：抽 `describeVideoExtractionStatus(message, attachment)` helper，匹配 `extractedMedia[]` 里 `attachmentId === attachment.id` 的 entry，按 `metadata.source` 渲染："video-audio-transcript" → `transcript ✓ · keyframes ✓ (N)`、"video-keyframes-only" → `keyframes ✓ (N) · no audio transcript`、entry 缺失 → `extraction unavailable`。不动 [videoExtractor.js](src/media/extractors/videoExtractor.js) 后端契约，只读已有字段。
+- **#4 Voice 面板底部加跳转** ([app.js:1196](desktop-ui/app.js#L1196))：复用既有 `select-customize-item` action（`section=connectors`, `id=openai-compatible`），加两个 `.tts-panel-link` —— "配置 MiniMax 自定义语音 →" / "配置 Whisper 转写 →"，都跳到同一个 connector 详情面板（MiniMax + Whisper 两套 key 在同一表单 [app.js:8888](desktop-ui/app.js#L8888)）。styles.css 加 `.tts-panel-footer` + `.tts-panel-link`，沿用 `--text-muted` / `--accent` 设计语言。
+- 红绿灯：check-syntax 全过；memory 测试 330/330 不退化（未动 src/）；desktop-ui 无 unit test 框架，UI 实际渲染 + 跳转留用户手测验证。
+- 提交哈希：待填。
+
 ## 2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定
 
 - 上轮 `d339782` 把空 env 改返 null，但 evaluator 看到 `Number.isFinite(null)=false` 仍重读 env —— 契约缺口被 Codex 抓出第三次 B finding。

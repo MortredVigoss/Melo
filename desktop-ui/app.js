@@ -1072,6 +1072,13 @@ function renderTtsVoicePanel() {
       <div class="tts-panel-section-label">Voice source</div>
 
       ${radioRow(
+        'Auto',
+        'Tries API voice first · falls back to macOS say · default',
+        engine === 'auto',
+        'data-action="set-tts-engine"', 'data-engine="auto"'
+      )}
+
+      ${radioRow(
         'macOS voice',
         'System speakers · /usr/bin/say · no setup',
         engine === 'macos',
@@ -1087,12 +1094,19 @@ function renderTtsVoicePanel() {
       ` : ''}
 
       ${(() => {
+        // Naming: in real browsers this is speechSynthesis (WebKit voices);
+        // in the desktop WKWebView wrapper it's actually AVSpeechSynthesizer
+        // via a Swift bridge — same engine code path here, very different
+        // implementation under the hood.  Showing "Browser voice" inside
+        // the desktop app misled users; expose it as "Desktop native voice"
+        // there instead.  Real browsers keep the original label.
         const isWebView = Boolean(window.webkit?.messageHandlers?.meloVoice);
+        const label = isWebView ? 'Desktop native voice' : 'Browser voice';
         const hint = isWebView
-          ? 'Desktop app · uses system voice (picker unused here)'
+          ? 'AVSpeechSynthesizer via system bridge · picker unused here'
           : 'In-page · speechSynthesis · WebKit voices';
         return radioRow(
-          'Browser voice',
+          label,
           hint,
           engine === 'browser',
           'data-action="set-tts-engine"', 'data-engine="browser"',
@@ -1179,8 +1193,62 @@ function renderTtsVoicePanel() {
         `;
       })()}
 
+      <div class="tts-panel-divider"></div>
+      <div class="tts-panel-footer">
+        <button class="tts-panel-link" type="button"
+                data-action="select-customize-item"
+                data-section="connectors"
+                data-id="openai-compatible">
+          ${escapeHtml('配置 MiniMax 自定义语音 →')}
+        </button>
+        <button class="tts-panel-link" type="button"
+                data-action="select-customize-item"
+                data-section="connectors"
+                data-id="openai-compatible">
+          ${escapeHtml('配置 Whisper 转写 →')}
+        </button>
+      </div>
+
     </div>
   `;
+}
+
+/**
+ * Describe what the video extractor actually produced for this attachment.
+ *
+ * The promise on the composer button is "transcript + keyframes", but
+ * `videoExtractor.js` can return any combination — full transcript +
+ * keyframes (the happy path), keyframes-only (audio failed), or null
+ * (both failed and we never created an extractedMedia entry at all).
+ * Reading `message.extractedMedia[]` for the matching attachment lets the
+ * UI show what really got attached instead of repeating the marketing
+ * blurb on every card.
+ */
+function describeVideoExtractionStatus(message, attachment) {
+  const entries = Array.isArray(message?.extractedMedia) ? message.extractedMedia : [];
+  const entry = entries.find(e => e?.attachmentId && attachment?.id && e.attachmentId === attachment.id);
+  if (!entry) {
+    // No matching entry: either still processing (sync extraction usually
+    // means the message wouldn't have been rendered yet) or both audio +
+    // keyframes failed and we shipped nothing.
+    return 'extraction unavailable';
+  }
+  const source = entry?.metadata?.source || '';
+  const keyframes = Array.isArray(entry?.metadata?.keyframes) ? entry.metadata.keyframes : [];
+  const frameCount = keyframes.length;
+  if (source === 'video-keyframes-only') {
+    return frameCount
+      ? `keyframes ✓ (${frameCount}) · no audio transcript`
+      : 'no audio transcript';
+  }
+  if (source === 'video-audio-transcript') {
+    return frameCount
+      ? `transcript ✓ · keyframes ✓ (${frameCount})`
+      : 'transcript ✓';
+  }
+  // Other sources (e.g. user voice transcript injected as extractedMedia)
+  // arrived for this attachment id — treat as transcript only.
+  return frameCount ? `transcript ✓ · keyframes ✓ (${frameCount})` : 'transcript ✓';
 }
 
 function renderMessageAttachments(message) {
@@ -1203,12 +1271,13 @@ function renderMessageAttachments(message) {
           }
 
           if (attachment.kind === 'video') {
+            const status = describeVideoExtractionStatus(message, attachment);
             return `
               <div class="message-attachment-card media-card">
                 <video class="message-video" controls src="${escapeHtml(attachment.url)}"></video>
                 <div class="media-caption">
                   ${escapeHtml(attachmentLabel(attachment))}
-                  <span class="media-caption-hint">transcript + keyframes</span>
+                  <span class="media-caption-hint">${escapeHtml(status)}</span>
                 </div>
               </div>
             `;
