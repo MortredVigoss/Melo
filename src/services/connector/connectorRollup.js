@@ -18,6 +18,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_CONNECTORS } from '../../state/stateHydration.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
+import { visibleArtifacts } from '../artifact/artifactService.js';
 import { formatUpdatedAt } from '../../shared/helpers.js';
 import { maskSecret } from './externalConnector.js';
 
@@ -80,12 +81,17 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
           workspacePath: project?.workspacePath || APP_ROOT,
         };
         break;
-      case 'artifacts':
+      case 'artifacts': {
+        // Counts must match the bootstrap-visible row set so the UI
+        // doesn't display "5 artifacts" while the panel only shows 4
+        // live ones (Codex 2026-04-27 audit).
+        const live = visibleArtifacts(state.artifacts);
         connectorConfig = {
-          totalArtifacts: state.artifacts.length,
-          projectArtifacts: state.artifacts.filter(artifact => artifact.projectId === project?.id).length,
+          totalArtifacts: live.length,
+          projectArtifacts: live.filter(artifact => artifact.projectId === project?.id).length,
         };
         break;
+      }
       case 'local-files':
         connectorConfig = {
           workspaceRoot: workspace.rootPath,

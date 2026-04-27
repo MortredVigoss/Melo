@@ -10,6 +10,7 @@
 import { ensureChatThreadContext } from '../../state/chatThreadContext.js';
 import { renderThreadContext as renderStructuredThreadContext } from '../../memory/threadContext.js';
 import { truncateText } from '../../shared/helpers.js';
+import { isLiveArtifact } from '../artifact/artifactService.js';
 
 export async function buildDynamicContext(state, chat, workspace, connectors, latestUserMessage = '') {
   const blocks = [];
@@ -57,8 +58,17 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
   }
 
   if (connectors.some(connector => connector.id === 'artifacts' && connector.enabled)) {
+    // Soft-deleted artifacts must not bleed into the model's prompt
+    // context.  isLiveArtifact gates that boundary; without it, an
+    // artifact the user just deleted (and whose row is hidden in the
+    // UI) would still show up in the next turn's "recent artifacts"
+    // block — privacy regression flagged in the 2026-04-27 Codex C
+    // post-push review.
     const relatedArtifacts = state.artifacts
-      .filter(artifact => artifact.chatId === chat.id || artifact.projectId === chat.projectId)
+      .filter(artifact =>
+        isLiveArtifact(artifact) &&
+        (artifact.chatId === chat.id || artifact.projectId === chat.projectId),
+      )
       .slice(0, 4);
 
     if (relatedArtifacts.length) {

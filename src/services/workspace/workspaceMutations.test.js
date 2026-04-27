@@ -47,6 +47,7 @@ const {
   deleteArtifact,
   restoreArtifact,
   purgeStaleSoftDeletes,
+  applyArtifactToWorkspaceFile,
 } = await import('./workspaceMutations.js');
 
 after(() => {
@@ -147,6 +148,26 @@ test('updateArtifact: unknown id throws Artifact not found', async () => {
     () => updateArtifact('does-not-exist', { title: 'x' }),
     /Artifact not found/,
   );
+});
+
+test('updateArtifact: rejects soft-deleted rows (id reachable but tombstoned)', async () => {
+  // The bootstrap hides soft-deleted rows from the UI so this is mostly
+  // a defence-in-depth test — but a stale id round-tripping through a
+  // long-lived chat / external caller must not be allowed to mutate
+  // a tombstone (Codex 2026-04-27 audit).
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'art-tomb', deletedAt: '2026-04-26T12:00:00.000Z' }],
+  }));
+
+  await assert.rejects(
+    () => updateArtifact('art-tomb', { title: 'sneaky' }),
+    /Artifact not found/,
+  );
+
+  // State unchanged — the row stays tombstoned with its original title.
+  const after = readPersistedState(TEST_HOME).artifacts.find(a => a.id === 'art-tomb');
+  assert.equal(after.title, baseArtifact.title);
+  assert.equal(after.deletedAt, '2026-04-26T12:00:00.000Z');
 });
 
 test('updateArtifact: missing artifactId throws', async () => {
@@ -329,4 +350,30 @@ test('purgeStaleSoftDeletes: keeps rows with unparseable deletedAt (defensive)',
   assert.equal(result.purged, 0);
   const ids = readPersistedState(TEST_HOME).artifacts.map(a => a.id);
   assert.ok(ids.includes('broken'));
+});
+
+// ─── applyArtifactToWorkspaceFile soft-delete gate ──────────────────────────
+
+test('applyArtifactToWorkspaceFile: rejects soft-deleted artifact ids', async () => {
+  // A stale or buggy caller must not be able to write tombstoned
+  // content back to the workspace via /api/artifacts/apply (Codex
+  // 2026-04-27 🔵 finding).  The pre-flight check throws before
+  // applyArtifactContentToWorkspaceService is reached, so no file IO
+  // happens — we only need to assert the error path here.
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'art-deleted', deletedAt: '2026-04-26T12:00:00.000Z' }],
+  }));
+
+  await assert.rejects(
+    () => applyArtifactToWorkspaceFile({ artifactId: 'art-deleted', filePath: 'x.md' }),
+    /Artifact not found/,
+  );
+});
+
+test('applyArtifactToWorkspaceFile: unknown id throws Artifact not found', async () => {
+  seed(TEST_HOME, fixtureState({ artifacts: [] }));
+  await assert.rejects(
+    () => applyArtifactToWorkspaceFile({ artifactId: 'nope' }),
+    /Artifact not found/,
+  );
 });

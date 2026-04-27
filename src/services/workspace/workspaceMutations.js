@@ -127,6 +127,13 @@ export async function updateArtifact(artifactId, patch = {}) {
     }
 
     const existing = state.artifacts[index];
+    // Soft-deleted rows are bootstrap-invisible; the UI can't reach them
+    // through normal selection, but a stale id on disk (or a buggy
+    // caller) shouldn't be allowed to mutate a tombstone.  Treat as
+    // "not found" so the API surface matches deleteArtifact.
+    if (existing.deletedAt) {
+      throw new Error('Artifact not found.');
+    }
     const next = { ...existing };
 
     if (typeof patch.title === 'string' && patch.title.trim()) {
@@ -292,7 +299,10 @@ export async function purgeStaleSoftDeletes({ olderThanDays = 7, nowMs = Date.no
 export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {
   const state = ensureSelectedEntities(await loadState());
   const artifact = state.artifacts.find(entry => entry.id === artifactId);
-  if (!artifact) {
+  // Reject stale ids that point at a soft-deleted row — writing
+  // tombstoned content back to the workspace would be an obvious data
+  // surprise (Codex 2026-04-27 audit).
+  if (!artifact || artifact.deletedAt) {
     throw new Error('Artifact not found.');
   }
 

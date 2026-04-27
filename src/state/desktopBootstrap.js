@@ -55,7 +55,7 @@ import { MODE_DEFS } from '../services/chat/modeDefs.js';
 import { MAX_RECENT_CHATS } from './chatPruning.js';
 import { buildSkills } from '../services/skill/skillService.js';
 import { defaultSkillProposalStore } from '../agents/skillProposals.js';
-import { summarizeArtifact } from '../services/artifact/artifactService.js';
+import { summarizeArtifact, visibleArtifacts } from '../services/artifact/artifactService.js';
 import { summarizeProject } from '../services/project/projectService.js';
 import { summarizeTask } from '../services/task/taskService.js';
 import { summarizeApproval } from '../services/approval/approvalService.js';
@@ -260,15 +260,17 @@ export async function getDesktopBootstrap(query = '') {
   );
   // Soft-deleted artifacts (deletedAt set by `deleteArtifact`) stay in
   // state.json so the undo path + GC can find them, but they must not
-  // appear in any UI surface.  Filter once at the bootstrap boundary so
-  // every consumer downstream only ever sees live rows.
-  const visibleArtifacts = state.artifacts.filter(entry => !entry?.deletedAt);
+  // appear in any UI surface.  visibleArtifacts() funnels every reader
+  // (here + searchResultsBuilder + connectorRollup + dynamicContext +
+  // applyArtifactToWorkspaceFile + updateArtifact) through the same
+  // predicate so a tombstoned row can't leak via a missed call site.
+  const visibleArtifactRows = visibleArtifacts(state.artifacts);
 
-  const projectArtifacts = visibleArtifacts
+  const projectArtifacts = visibleArtifactRows
     .filter(artifact => artifact.projectId === activeProject?.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
-  const activeChatArtifacts = visibleArtifacts
+  const activeChatArtifacts = visibleArtifactRows
     .filter(artifact => artifact.chatId === selectedChat?.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
@@ -319,9 +321,9 @@ export async function getDesktopBootstrap(query = '') {
     recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
-    projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifacts)),
+    projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
     activeProject,
-    artifacts: [...visibleArtifacts]
+    artifacts: [...visibleArtifactRows]
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       .map(summarizeArtifact),
     projectArtifacts,

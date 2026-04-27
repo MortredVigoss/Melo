@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-27 19:00 — Codex C 第二轮：artifact 软删 reader audit 全闭环 + 11 回归测试
+
+- 上一刀 `af2e3b7` (Codex C pre-pp 阻断 push) 找到 4 处漏过滤的 reader：dynamic prompt 仍注入 deleted artifact（🟠 隐私）/ 全局搜索仍返 deleted（🔴）/ apply API 接 stale id 写回 workspace（🔵）/ artifacts connector 计数仍含 tombstone（🔵）。根因：bootstrap 一处 filter 不够，soft-delete 是横切关注点，所有 reader 都要过滤。
+- **新增 helper** ([artifactService.js](src/services/artifact/artifactService.js#L25))：`isLiveArtifact(artifact)` + `visibleArtifacts(artifacts)`，集中规则。
+- **7 处 reader 全接入**：[bootstrap](src/state/desktopBootstrap.js#L268) (visibleArtifactRows once)、[dynamicContext](src/services/chat/dynamicContext.js#L67) (`isLiveArtifact` filter)、[connectorRollup artifacts count](src/services/connector/connectorRollup.js#L88)、[searchResultsBuilder × 3](src/services/search/searchResultsBuilder.js)（buildRecentSearchSuggestions / buildSearchResults projects + artifacts bucket）、[updateArtifact](src/services/workspace/workspaceMutations.js#L130) 拒 tombstone、[applyArtifactToWorkspaceFile](src/services/workspace/workspaceMutations.js#L301) 拒 tombstone。
+- **11 回归测试**：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) +3（update 拒 deleted / apply 拒 deleted / apply unknown id）；新建 [connectorRollup.test.js](src/services/connector/connectorRollup.test.js) +3（total / projectArtifacts / empty state）；新建 [dynamicContext.test.js](src/services/chat/dynamicContext.test.js) +4（live surface / deleted dropped / mixed live+deleted / connector disabled）；新建 [searchResultsBuilder.test.js](src/services/search/searchResultsBuilder.test.js) +3（artifacts bucket excludes deleted / empty when only deleted match / project summaries count only live）。
+- **契约确认（用户拍板）**：软删后任何 API / 任何上下文都不再可见 except `restoreArtifact`。删除 == 立即完全不可见 until undo。
+- 验证：`node --test 'src/**/*.test.js'` **1104/1104 全绿**（之前 1093 + 11 新加）；`npm run test:ui` 71/71；check-syntax 全过；workspace 套 20/20、connector 套 3/3、dynamicContext 套 4/4、search builder 套 3/3。
+- 提交哈希：待填。
+
 ## 2026-04-27 18:30 — Codex C 修复：artifact 软删契约改为 server-driven（response to e1a8ecf C-grade post-push review）
 
 - 上一刀 `e1a8ecf` 用前端 setTimeout 实现 5s undo 窗口，git pp post-push review 给 C：🔴 reload/close 时 timer 死掉 → server 没删但 UI 说 "Deleted"；🟡 单 toast 实例覆盖前一个 undo；⚪ DOM 状态机无自动化测试。用户选方案 C（最彻底）：后端 soft-delete + restore 端点。
@@ -30,14 +40,6 @@
   - 验证：`npm run test:ui` **71/71 全绿**（55 之前 + 16 undoToast）；memory 套 330/330；check-syntax 全过；UI 实际 toast 弹出 + Undo 行为留用户手测。
 - 提交哈希：`5f9107a`（批 1）+ `e1a8ecf`（批 2）。
 
-## 2026-04-27 17:30 — desktop-ui test harness 落地：videoStatus + advancedPage 双双抽出可测
-
-- 上一会话末标记的 follow-up：desktop-ui 缺 unit-test harness，已累积两条同源 Codex finding（本批 ⚪ `describeVideoExtractionStatus` + 14:30 Advanced page B `smoke/E2E 缺失`）。这一刀一并闭环。
-- **Phase 1 (`a9aa5a8`)**：byte-for-byte port `describeVideoExtractionStatus` → [desktop-ui/videoStatus.js](desktop-ui/videoStatus.js)；app.js 改 `import` 删原位；新增 [videoStatus.test.js](desktop-ui/videoStatus.test.js) 14 个分支测试（no entry / 非 array / id 缺失 / video-audio-transcript ± keyframes / video-keyframes-only ± frames / unknown source / multi-entry pick-match / malformed metadata）；`package.json` 加 `npm run test:ui` → `node --test 'desktop-ui/**/*.test.js'`，把既有 `viz/{citationRenderer,vizRenderer}.test.js` 也纳入入口（之前没有 npm script 跑它们）。
-- **Phase 2**（本 commit）：`renderAdvancedPage` 151 行从 [app.js:9672](desktop-ui/app.js#L9672) 抽到 [advancedPage.js](desktop-ui/advancedPage.js)，改成 `({ data, adv, escapeHtml, scheduleRefresh })` 显式参数（CLAUDE.md §5 "byte-for-byte port + import path 调整"，逻辑零变化；只是 lexical capture → explicit param）。app.js call site 把 `uiState.bootstrap` / `uiState.advanced` / `escapeHtml` / `() => Promise.resolve().then(refreshAdvancedStatus)` 显式传入。新增 [advancedPage.test.js](desktop-ui/advancedPage.test.js) 17 个 smoke：4 subsection 都在、empty-state 4 个、external-mcp 列表 + Ping、cli servers + Disconnect、plugins + 空 hooks、running task + Kill / 非 running 不出现、loading 文案翻转、error alert 转义、4 种 lazy-fetch 短路条件、hostile 输入 escapeHtml 全程。
-- 验证：`npm run test:ui` **52/52 全绿**（21 既有 viz + 14 videoStatus + 17 advancedPage）；memory 套 330/330 不退化；check-syntax 全过；renderAdvancedPage 调用点单一（`renderCustomizePage` 内），call-site 改动 review 范围明确。
-- 闭环：本批 Codex ⚪ + 14:30 Advanced B 两条 follow-up 同步关闭；后续 desktop-ui 改动有了"抽纯函数 + 加 *.test.js"的标准模式可复用。
-- 提交哈希：`a9aa5a8`（Phase 1）+ `7a6710e`（Phase 2）。
 
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
@@ -50,10 +52,11 @@
 - 提交哈希：`9f5a87a`。
 - **未修 follow-up（下次统一）**：desktop-ui 缺 unit test harness，已累积 2 条同源建议 —— 本批 Codex ⚪「`describeVideoExtractionStatus` 多分支无自动覆盖」+ 14:30 Advanced page Codex B「smoke/E2E 缺失」。下次专门一刀：抽 `videoStatus.js` 等纯函数到独立模块、用 `node:test`（或 happy-dom）建 desktop-ui test harness，把两条 follow-up + 未来 UI 纯函数统一纳入。比逐个修更经济。
 
-## 归档摘要（2026-04-27 16:25 之前的所有条目）
+## 归档摘要（2026-04-27 17:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 17:30 — desktop-ui test harness 落地** —— byte-for-byte port `describeVideoExtractionStatus` + 拆 `renderAdvancedPage` 成显式 props；`npm run test:ui` 52/52 全绿；闭环 14:30 Advanced B + 本批 ⚪ 两条 same-root follow-up；后续 desktop-ui "抽纯函数 + .test.js" 标准模式确立。Codex S。`a9aa5a8`+`7a6710e`
 - **2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定** —— compactQualityThreshold 始终返回 finite number（空/非法 → 0.6 默认），evaluator 不再回头读 env；contract test 锁定 mid-call env 突变不影响 fallback 决定。`da4e09e`
 - **2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界** —— `Number('') === 0` 让 fallback 全放行；trim + 空字符串短路 + 2 回归测试。`d339782`
 - **2026-04-27 15:55 — Codex B 4 条 follow-up：bench rank / vec-aware / threshold capture / fallback DI** —— 🔵 `--rank tier\|global` 默认 tier；🟡 `embeddingActive && vecAvailable` 才报 ANN；🟡 入口 capture threshold；⚪ `_setCallLocalLlmForTests` DI hook + 4 mock 测试。`9d504b2`

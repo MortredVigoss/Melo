@@ -33,7 +33,7 @@ import {
   weightedKeywordScore,
 } from '../../search/scoring.js';
 import { normalizePromptHistory } from '../activity/activityLog.js';
-import { summarizeArtifact } from '../artifact/artifactService.js';
+import { summarizeArtifact, visibleArtifacts } from '../artifact/artifactService.js';
 import { messageVisibleText } from '../message/messageBlocks.js';
 import {
   attachmentSearchText,
@@ -245,8 +245,15 @@ function buildRecentSearchSuggestions(state, featureEntries, connectors = [], sk
       action: { type: 'open-chat-thread' },
     }));
 
+  // Soft-deleted artifacts must not bleed into search summaries.
+  // visibleArtifacts() funnels every reader through the same predicate
+  // so a tombstoned row can't reappear in counts, project summaries, or
+  // search hits (Codex 2026-04-27 audit — same fix at the artifacts
+  // bucket below + at line ~599).
+  const liveArtifacts = visibleArtifacts(state.artifacts);
+
   const projectSuggestions = state.projects
-    .map(project => summarizeProject(project, state.chats, state.artifacts))
+    .map(project => summarizeProject(project, state.chats, liveArtifacts))
     .slice(0, 3)
     .map(project => ({
       id: `project:${project.id}`,
@@ -595,8 +602,14 @@ export async function buildSearchResults(query, state, workspace, connectors = [
     return hitCount > 1 || Math.abs((hit.rawScore || 0) - (thread.rawScore || 0)) > 30;
   });
 
+  // Soft-deleted artifacts gate — same predicate as buildRecent-
+  // SearchSuggestions above.  Project summaries and the artifacts
+  // bucket below all consume this filtered list so a tombstoned row
+  // can't be re-surfaced through search.
+  const liveArtifactRows = visibleArtifacts(state.artifacts);
+
   const projects = state.projects
-    .map(project => summarizeProject(project, state.chats, state.artifacts))
+    .map(project => summarizeProject(project, state.chats, liveArtifactRows))
     .filter(project =>
       fuzzySearchScore(
         q,
@@ -621,7 +634,7 @@ export async function buildSearchResults(query, state, workspace, connectors = [
       ) + 22,
   }));
 
-  const artifacts = [...state.artifacts]
+  const artifacts = [...liveArtifactRows]
     .map(summarizeArtifact)
     .filter(artifact =>
       fuzzySearchScore(q, `${artifact.title}\n${artifact.content}\n${artifact.language || ''}`),

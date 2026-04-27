@@ -42,6 +42,35 @@ export function normalizeArtifact(artifact) {
   return out;
 }
 
+/**
+ * Predicate for "this artifact is live" — i.e. it exists and hasn't
+ * been soft-deleted (`deletedAt` set by `deleteArtifact` until either
+ * `restoreArtifact` clears it or `purgeStaleSoftDeletes` evicts the
+ * row).  Every read path that surfaces artifact content to the UI,
+ * the model, search results, or connectors MUST funnel through this
+ * helper (or `visibleArtifacts` below).  Centralised so a new
+ * reader can't silently leak a tombstoned row — Codex audit
+ * 2026-04-27 caught four call sites that had been doing it ad-hoc.
+ *
+ * @param {Object|null|undefined} artifact
+ * @returns {boolean}
+ */
+export function isLiveArtifact(artifact) {
+  return Boolean(artifact) && !artifact.deletedAt;
+}
+
+/**
+ * Filter helper: returns only the live (non-soft-deleted) entries.
+ * Defensively coerces non-array input to `[]` so a partial state load
+ * doesn't crash readers.
+ *
+ * @param {Array|null|undefined} artifacts
+ * @returns {Array}
+ */
+export function visibleArtifacts(artifacts) {
+  return (Array.isArray(artifacts) ? artifacts : []).filter(isLiveArtifact);
+}
+
 export function summarizeArtifact(artifact) {
   return {
     ...artifact,
