@@ -51,6 +51,41 @@ function compactQualityMode() {
   return 'audit';
 }
 
+/**
+ * Read `MELO_SUMMARY_QUALITY_THRESHOLD` once.  Returns null when unset or
+ * malformed so the evaluator falls back to its compiled-in default.
+ *
+ * Capturing this at `compactOffline` entry — instead of letting the
+ * evaluator re-read env every time — closes a Codex B-grade finding: a
+ * long LLM call straddling an env mutation could otherwise audit the
+ * summary at one threshold and then make the fallback decision at a
+ * different one.
+ */
+function compactQualityThreshold() {
+  const raw = Number(process.env.MELO_SUMMARY_QUALITY_THRESHOLD);
+  return Number.isFinite(raw) ? raw : null;
+}
+
+// ─── Test injection (Bug-D / fallback-mode coverage) ─────────────────────────
+//
+// Production callers go straight through `callLocalLlm`, which probes the
+// candidate's `/models` endpoint and then drives `createOpenAICompatibleReply`.
+// Tests need a way to simulate "LLM is reachable, returned a string" without
+// running an actual model — the cleanest answer is a single DI hook that
+// stand-ins for the entire `callLocalLlm` invocation.  When unset (the
+// default), behaviour is byte-identical to before this hook existed.
+let _callLocalLlmForTests = null;
+
+/** Test-only: inject a stub `(candidate, transcript, signal) => string|null`. */
+export function _setCallLocalLlmForTests(fn) {
+  _callLocalLlmForTests = typeof fn === 'function' ? fn : null;
+}
+
+async function _invokeLocalLlm(candidate, transcript, signal) {
+  if (_callLocalLlmForTests) return _callLocalLlmForTests(candidate, transcript, signal);
+  return callLocalLlm(candidate, transcript, signal);
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
@@ -69,9 +104,10 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
   const transcript = messagesToTranscript(messages);
   if (!transcript.trim()) return '';
 
-  // Capture the quality gate mode once per call so a mid-flight env change
-  // can't make the audit + fallback decisions diverge.  CLAUDE.md §6.
+  // Capture the quality gate mode + threshold once per call so a mid-flight
+  // env change can't make the audit + fallback decisions diverge.  CLAUDE.md §6.
   const qualityMode = compactQualityMode();
+  const qualityThreshold = compactQualityThreshold();
 
   // Try local LLM first — skip if MELO_OFFLINE_ONLY is set AND the user has
   // asked us not to touch any model.  (Local LLMs are still considered
@@ -79,7 +115,7 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
   if (process.env.MELO_OFFLINE_DISABLE_LLM !== '1') {
     for (const candidate of LOCAL_LLM_CANDIDATES) {
       try {
-        const summary = await callLocalLlm(candidate, transcript, signal);
+        const summary = await _invokeLocalLlm(candidate, transcript, signal);
         if (summary && summary.trim()) {
           const trimmed = summary.trim();
           let audit = null;
@@ -89,6 +125,7 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
                 summary: trimmed,
                 source: transcript,
                 label: `compact:${candidate.name}`,
+                threshold: qualityThreshold,
               });
             } catch {
               // Audit must never break the hot path.

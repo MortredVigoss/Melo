@@ -1,6 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ruleBasedCompact, extractKeySentences, compactOffline } from './compact.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  ruleBasedCompact,
+  extractKeySentences,
+  compactOffline,
+  _setCallLocalLlmForTests,
+} from './compact.js';
+
+// Helper: run `fn` with MELO_HOME pointed at a tmp dir + arbitrary env
+// overrides, restoring the original values + cleaning the dir afterwards.
+// Centralised so the gate-mode tests below stay readable.
+async function withIsolatedEnv(overrides, fn) {
+  const tmpHome = mkdtempSync(join(tmpdir(), 'melo-compact-test-'));
+  const saved = {};
+  const target = { MELO_HOME: tmpHome, ...overrides };
+  for (const key of Object.keys(target)) saved[key] = process.env[key];
+  for (const [key, value] of Object.entries(target)) process.env[key] = value;
+  try {
+    return await fn(tmpHome);
+  } finally {
+    for (const key of Object.keys(target)) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+}
+
+const FIXTURE_MESSAGES = [
+  { role: 'user', content: 'Please help me decide between bun and npm for the build script.' },
+  { role: 'assistant', content: 'We previously decided on bun for this project.' },
+  { role: 'user', content: 'Right, let us confirm bun stays.' },
+];
 
 test('ruleBasedCompact produces all 6 sections with bullet placeholders', () => {
   const messages = [
@@ -59,4 +93,86 @@ test('compactOffline returns a non-empty summary when transcript has content', a
     if (saved == null) delete process.env.MELO_OFFLINE_DISABLE_LLM;
     else process.env.MELO_OFFLINE_DISABLE_LLM = saved;
   }
+});
+
+// ─── Quality-gate fallback path ──────────────────────────────────────────────
+//
+// These tests simulate "LLM is reachable, returned a string" via the
+// _setCallLocalLlmForTests DI hook so we can drive both branches of the
+// fallback gate without a live model.  Each test isolates MELO_HOME so the
+// audit-diary append goes into a tmp dir that's cleaned up after.
+
+test('quality gate=fallback skips a hallucinated LLM summary and rule-falls-back', async () => {
+  await withIsolatedEnv(
+    { MELO_COMPACT_QUALITY_GATE: 'fallback' },
+    async () => {
+      // Mock summary shares almost no tokens / entities with the source;
+      // both groundedness and entity-coverage should fail the threshold.
+      _setCallLocalLlmForTests(async () =>
+        'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        // Rule fallback always emits the "Primary Request" header — that's
+        // our fingerprint that the LLM result was rejected.
+        assert.ok(summary.includes('Primary Request'));
+        assert.ok(!summary.includes('Carol'));
+        assert.ok(!summary.includes('Redis'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
+test('quality gate=fallback keeps a grounded LLM summary', async () => {
+  await withIsolatedEnv(
+    { MELO_COMPACT_QUALITY_GATE: 'fallback' },
+    async () => {
+      _setCallLocalLlmForTests(async () =>
+        'User asked about bun versus npm; assistant confirmed bun was previously decided for this project build.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        assert.ok(summary.includes('bun'));
+        // Not the 6-section rule template.
+        assert.ok(!summary.includes('Primary Request'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
+test('quality gate=audit (default) keeps even low-quality LLM output (diary-only)', async () => {
+  await withIsolatedEnv(
+    { MELO_COMPACT_QUALITY_GATE: 'audit' },
+    async () => {
+      _setCallLocalLlmForTests(async () =>
+        'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        // Audit mode never rewrites the LLM output — it just records the
+        // score in DREAMS.md.  So we should still see the (bad) LLM text.
+        assert.ok(summary.includes('Carol'));
+        assert.ok(!summary.includes('Primary Request'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
+test('quality gate=disabled skips audit + always returns LLM output unchanged', async () => {
+  await withIsolatedEnv(
+    { MELO_COMPACT_QUALITY_GATE: '0' },
+    async () => {
+      _setCallLocalLlmForTests(async () =>
+        'Some entirely unrelated string that should still be returned.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        assert.equal(summary, 'Some entirely unrelated string that should still be returned.');
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
 });

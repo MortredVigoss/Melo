@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-27 15:55 — Codex B follow-ups：bench rank 模式 / vec-aware 路径 / threshold capture / fallback DI 测试
+
+- 上一刀 git pp 拿 B 评级（可合入 + 4 条建议）。用户选"都修"。
+- 🔵 [scripts/bench-memory.js:152]：`mergeRanked` 全局 score 重排不等于 `recallMemoriesTiered` 的真实分层消费顺序。加 `--rank tier|global`，**默认 tier**（scene → frame → content 各自保 score 排序），`global` 留作 flat-ANN 基线对比；`config.rank` 出现在报告头。
+- 🟡 [scripts/bench-memory.js:349]：原仅看 `embeddingActive` 判 ANN 路径。embedding 可用 + sqlite-vec 不可用时实际走关键词，会误标。改成 `embeddingActive && vecAvailable` 才报 ANN，并在 vec 不可用时显式补 note "embedding ready but vec_memories unavailable"。
+- 🟡 [src/memory/dreaming/summaryQuality.js + offline/compact.js]：`MELO_SUMMARY_QUALITY_THRESHOLD` 此前在 evaluator 内运行时读取，长 LLM 调用期间 env 变化会让 audit 用旧阈值、fallback 决定用新阈值。compactOffline 入口加 `compactQualityThreshold()` 一次性 capture，传给 `auditSummary({ threshold })`。
+- ⚪ [src/memory/offline/compact.js]：加 `_setCallLocalLlmForTests` DI hook（同 `_setTesseractForTests` 模式）+ 4 个 mock 测试覆盖 fallback 跳过低质 / fallback 留高质 / audit 默认留 LLM 输出 / disabled 跳过 audit。`withIsolatedEnv(...)` helper 隔离 MELO_HOME 防 audit 写真实 dreams。
+- 验证：`node --test 'src/memory/**/*.test.js'` **327/327 全绿**（原 323 + 4 fallback 测试）；bench 端到端 sandbox 跑 tier (recall@1=0% 因 scene 排首未命中) / global (recall@1=50% mem_001 frame score 高)；`--rank bogus` friendly fail；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-27 15:30 — F-3C：README 加 Memory & embeddings 引导（bge-m3 部署门槛闭环）
 
 - 横评第三个扣分项：bge-m3 1GB 模型无 onboarding。用户选最轻量方案 C —— README 引导，不动 desktop-ui。
@@ -45,29 +55,11 @@
 - Codex 前置 review 评 **B**（"实现正确，缺少覆盖" + ⚪ 建议补 smoke/E2E 覆盖 advanced 导航 / 关键按钮 / API 映射，desktop-ui 没现成的 E2E 框架，留 follow-up）；cleanup commit 等 review。
 - 提交哈希：`e9eb5b6`（feat 主刀） + `40c747b`（chore cleanup）。
 
-## 2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光
-
-- 用户反馈 + 截图：Customize → Agents → 金冬天 详情面板里，"Operator" preset 卡（包括 `focused` chip 和 Operator 标题）**穿出**外层 detail 卡的圆角下边框继续往下铺。要求审查整个 UI 里其他类似"框互相叠加"的位置。
-- 排查：
-  - 全 stylesheet **零** `position: sticky`、所有 `position: absolute` 都有 `position: relative` 父级——不是 sticky/orphan-absolute 类问题。
-  - 真因：[styles.css:3262](desktop-ui/styles.css#L3262) `.detail-card { height: 100%; }` 把 detail 卡渲染高度钉在 `.agent-detail-column` 可视高度上，内容（Persona scope + meta-grid + Role prompt + Preset import + 编辑器 + Mood + MiniMax voice）比列高时下边框画在中段、子卡 `.preset-card` 物理上铺到边框外面。
-  - `.detail-card` 同时被 Agent / Skill / Connector / Custom skill 详情**全部共用**——一处改全治。
-- 修复（`desktop-ui/styles.css`）：删 line 3262 的 `.detail-card { height: 100% }`。保留 [3953](desktop-ui/styles.css#L3953) 的 `padding: 24px; min-height: 100%`：内容短时仍填满列、内容长时卡随内容长高、下边框始终包住所有子卡。
-- 全局 audit 同步扫了 6 个类别：
-  - 其他 card 类的 `height: 100%` 钉死 — 22 处全检，**仅** `.detail-card` 一处中招。其他要么是 layout 容器（`.page` / `.customize-layout` / `.search-stage`）、要么自带 `overflow:hidden` + 内部 grid 滚动（`.search-panel` / `.model-setup-card`）。
-  - z-index 层级 — 8 处 fixed/absolute 模态层叠合理：toast 9999 > citation drawer 9000 > edit menu 80 > tool permission 60 > palette/agent dropdown 50 > tts panel 5。唯一小隐患 citation drawer 9000 > tool permission 60，两者同时出现概率极低。
-  - `transform: translate` — hover 微抖（1px）+ 抽屉滑入动画，全部范围内偏移无叠加。
-  - 负 margin — 仅 `margin-top: -4px` 两处（`.tts-panel-hint` / `.agent-compact-note`）字距微调。
-  - max-height 无 `overflow:auto` 配套 — 17 处全部带 `overflow: auto/hidden`，无裸溢出。
-  - 其他 `.feature-card` / `.surface-card` / `.artifact-card` / `.project-card` / `.chat-card` — 全部无 height 约束，自然随内容长高。
-- 结论：UI 这一类 bug **根因只有一个**，已修。其他类别没等效问题。
-- Codex 前置 review **A 级**："小范围正确修复，风险低，无具体发现"。
-- 提交哈希：`2731e90`（已 push origin/master）。
-
-## 归档摘要（2026-04-27 13:30 之前的所有条目）
+## 归档摘要（2026-04-27 14:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光** —— 删 styles.css:3262 `height: 100%`，保留 min-height; 6 类 UI 叠加 audit 仅此一处中招。Codex A。`2731e90`
 - **2026-04-27 13:30 — Codex C #16/#17/#18/#19 fix chain：customize grid 1101px+ 真实可用宽度** —— 三轮宽度+折叠 Codex C 闭环：grid 220/270/440 总 700px，撤单列折叠，修 ≤1100px overflow:hidden 裁切。`3022905`+`f20767b`+`bcc2b09`+`ae0a964`
 - **2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理** —— grid 改 220/270/440-1fr；删旧 `.toggle-row` 副本；padding 14×16 给文字呼吸；`.skill-health-card` 加 margin-top。`ab06fca`
 - **2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default** —— `src/shared/minimaxVoiceResolver.js` 抽出纯函数（cache 校验后才优先；stale cache 命中 fallback 链 + drop flag 清 localStorage）；10 个 unit case + 3 个 SECRET_LIKE 防擦 case，bisect 验证。（待 commit）

@@ -54,6 +54,7 @@ function parseArgs(argv) {
     sceneLimit: 3,
     frameLimit: 8,
     contentLimit: 12,
+    rank: 'tier',
     help: false,
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -71,10 +72,16 @@ function parseArgs(argv) {
     else if (a.startsWith('--threshold-recall5=')) args.thresholdRecall5 = Number(a.slice('--threshold-recall5='.length));
     else if (a === '--ks') args.ks = String(eat()).split(',').map(n => Number(n.trim())).filter(Number.isFinite);
     else if (a.startsWith('--ks=')) args.ks = String(a.slice('--ks='.length)).split(',').map(n => Number(n.trim())).filter(Number.isFinite);
+    else if (a === '--rank') args.rank = String(eat() || '').toLowerCase();
+    else if (a.startsWith('--rank=')) args.rank = a.slice('--rank='.length).toLowerCase();
     else {
       console.error(`Unknown argument: ${a}`);
       args.help = true;
     }
+  }
+  if (args.rank !== 'tier' && args.rank !== 'global') {
+    console.error(`Unknown --rank value: ${args.rank} (use 'tier' or 'global')`);
+    args.help = true;
   }
   return args;
 }
@@ -89,6 +96,12 @@ Options:
   --no-embed                 Skip embeddings; force the keyword fallback path
   --validate                 Run Stage-4 validation (default: bypass to isolate recall layer)
   --ks 1,5,10                Comma-separated k values for Recall@k (default: 1,5,10)
+  --rank tier|global         How to merge scene/frame/content for top-k.
+                             tier (default) mirrors the production injection
+                             order (scene → frame → content with each tier
+                             keeping its own score-sorted ranking); global
+                             pools across tiers and sorts by score, useful
+                             when comparing against a flat-ANN baseline.
   --threshold-recall5 0.85   Exit 2 if Recall@5 < threshold
   --help                     Show this message
 `.trim();
@@ -144,18 +157,37 @@ function isHit(row, expectedIds, expectedSubstrings) {
 }
 
 /**
- * Merge scenes/frames/contents into one ranked list by score (descending).
- * Each tier has its own internal score; pulling from one global heap gives a
- * Recall@k that reflects what a downstream consumer would see if it picked
- * top-k across all tiers.
+ * Merge scenes/frames/contents into one ranked list.
+ *
+ * Two modes:
+ *
+ *   - 'tier' (default) — concatenate scene → frame → content, preserving
+ *     each tier's own score ordering.  This mirrors how
+ *     `recallMemoriesTiered` callers actually consume the result: the
+ *     desktop store injects scene blocks first, then frames, then
+ *     contents.  A Recall@k computed on this ordering is what production
+ *     downstream code sees.
+ *
+ *   - 'global' — pool everything and resort by `score` descending.  Useful
+ *     when comparing against a flat-ANN baseline (a single collection
+ *     ranked purely by similarity).  NOT representative of production
+ *     consumption order.
  */
-function mergeRanked(tiered) {
-  const all = [];
-  for (const r of tiered.scenes || [])   all.push({ ...r, _tier: 'scene' });
-  for (const r of tiered.frames || [])   all.push({ ...r, _tier: 'frame' });
-  for (const r of tiered.contents || []) all.push({ ...r, _tier: 'content' });
-  all.sort((a, b) => (b.score || 0) - (a.score || 0));
-  return all;
+function mergeRanked(tiered, mode = 'tier') {
+  if (mode === 'global') {
+    const all = [];
+    for (const r of tiered.scenes || [])   all.push({ ...r, _tier: 'scene' });
+    for (const r of tiered.frames || [])   all.push({ ...r, _tier: 'frame' });
+    for (const r of tiered.contents || []) all.push({ ...r, _tier: 'content' });
+    all.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return all;
+  }
+  // tier mode
+  return [
+    ...(tiered.scenes || []).map(r => ({ ...r, _tier: 'scene' })),
+    ...(tiered.frames || []).map(r => ({ ...r, _tier: 'frame' })),
+    ...(tiered.contents || []).map(r => ({ ...r, _tier: 'content' })),
+  ];
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -235,7 +267,7 @@ async function main() {
       });
       continue;
     }
-    const ranked = mergeRanked(tiered);
+    const ranked = mergeRanked(tiered, args.rank);
     const hitsAtK = {};
     for (const k of ks) {
       hitsAtK[k] = ranked.slice(0, k).some(r => isHit(r, q.expectedIds, q.expectedSubstrings));
@@ -304,6 +336,7 @@ async function main() {
       limits: { scenes: args.sceneLimit, frames: args.frameLimit, contents: args.contentLimit },
       validate: args.validate,
       offlineOnly: ENV.offlineOnly,
+      rank: args.rank,
     },
     recallAtK,
     kindHitTotals,
@@ -346,9 +379,25 @@ function renderMarkdown(report) {
   lines.push(`Golden set: \`${report.goldenPath}\` (version ${report.goldenVersion}) · ` +
              `Store rows: ${report.storeRows}${kindBits ? ` (${kindBits})` : ''} · ` +
              `vec: ${report.vecAvailable ? 'available' : 'unavailable'}`);
-  const recallPath = report.embedding.active ? 'embedding (ANN) primary' : 'keyword fallback';
-  lines.push(`Recall path: **${recallPath}**${report.embedding.note ? ` — ${report.embedding.note}` : ''}`);
-  lines.push(`Limits: scenes=${report.config.limits.scenes}, frames=${report.config.limits.frames}, contents=${report.config.limits.contents} · validate=${report.config.validate}`);
+  // Recall path is "ANN primary" only when BOTH the embedding provider
+  // returned a vector AND the on-disk vec_memories index is loadable.  An
+  // embedding-available + vec-unavailable combo (sqlite-vec extension
+  // failed to load, or the table is missing) silently degrades to keyword
+  // scoring inside `recallMemoriesTiered`; reporting "ANN" in that case
+  // would make a regression invisible.
+  let recallPath;
+  let recallNote = report.embedding.note || null;
+  if (report.embedding.active && report.vecAvailable) {
+    recallPath = 'embedding (ANN) primary';
+  } else if (report.embedding.active && !report.vecAvailable) {
+    recallPath = 'keyword fallback';
+    const extra = 'embedding ready but vec_memories unavailable';
+    recallNote = recallNote ? `${extra}; ${recallNote}` : extra;
+  } else {
+    recallPath = 'keyword fallback';
+  }
+  lines.push(`Recall path: **${recallPath}**${recallNote ? ` — ${recallNote}` : ''}`);
+  lines.push(`Limits: scenes=${report.config.limits.scenes}, frames=${report.config.limits.frames}, contents=${report.config.limits.contents} · validate=${report.config.validate} · rank=${report.config.rank}`);
   lines.push('');
   lines.push('## Recall@k');
   lines.push('');
