@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-04-27 17:30 — desktop-ui test harness 落地：videoStatus + advancedPage 双双抽出可测
+
+- 上一会话末标记的 follow-up：desktop-ui 缺 unit-test harness，已累积两条同源 Codex finding（本批 ⚪ `describeVideoExtractionStatus` + 14:30 Advanced page B `smoke/E2E 缺失`）。这一刀一并闭环。
+- **Phase 1 (`a9aa5a8`)**：byte-for-byte port `describeVideoExtractionStatus` → [desktop-ui/videoStatus.js](desktop-ui/videoStatus.js)；app.js 改 `import` 删原位；新增 [videoStatus.test.js](desktop-ui/videoStatus.test.js) 14 个分支测试（no entry / 非 array / id 缺失 / video-audio-transcript ± keyframes / video-keyframes-only ± frames / unknown source / multi-entry pick-match / malformed metadata）；`package.json` 加 `npm run test:ui` → `node --test 'desktop-ui/**/*.test.js'`，把既有 `viz/{citationRenderer,vizRenderer}.test.js` 也纳入入口（之前没有 npm script 跑它们）。
+- **Phase 2**（本 commit）：`renderAdvancedPage` 151 行从 [app.js:9672](desktop-ui/app.js#L9672) 抽到 [advancedPage.js](desktop-ui/advancedPage.js)，改成 `({ data, adv, escapeHtml, scheduleRefresh })` 显式参数（CLAUDE.md §5 "byte-for-byte port + import path 调整"，逻辑零变化；只是 lexical capture → explicit param）。app.js call site 把 `uiState.bootstrap` / `uiState.advanced` / `escapeHtml` / `() => Promise.resolve().then(refreshAdvancedStatus)` 显式传入。新增 [advancedPage.test.js](desktop-ui/advancedPage.test.js) 17 个 smoke：4 subsection 都在、empty-state 4 个、external-mcp 列表 + Ping、cli servers + Disconnect、plugins + 空 hooks、running task + Kill / 非 running 不出现、loading 文案翻转、error alert 转义、4 种 lazy-fetch 短路条件、hostile 输入 escapeHtml 全程。
+- 验证：`npm run test:ui` **52/52 全绿**（21 既有 viz + 14 videoStatus + 17 advancedPage）；memory 套 330/330 不退化；check-syntax 全过；renderAdvancedPage 调用点单一（`renderCustomizePage` 内），call-site 改动 review 范围明确。
+- 闭环：本批 Codex ⚪ + 14:30 Advanced B 两条 follow-up 同步关闭；后续 desktop-ui 改动有了"抽纯函数 + 加 *.test.js"的标准模式可复用。
+- 提交哈希：`a9aa5a8`（Phase 1）+ 待填（Phase 2）。
+
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
 - 用户审查："硬功能基本都通了，剩下的是体验不够清楚。"4 条按推荐方案改：
@@ -49,26 +58,12 @@
 - 跟 desktop-ui 解耦：选择 C 是因为 90% 用户其实读 README，引导落 README 比起做新弹窗 UI 更省工 + 不破坏既有 UI。如果以后想升 A（启动弹窗），可把这节改成 onboarding 文案的源。
 - 提交哈希：`dece161`。
 
-## 2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入
-
-- 横评里"本地 LLM 摘要质量没实测"的扣分项。读代码发现 `frame.js` 的 frame summary 是字符切片（grounded≈1，无胡编风险），真正可能胡编的是 `offline/compact.js` 的 LLM compact（qwen2.5:3b 默认），所以 quality gate 接到那里。
-- 新增 `src/memory/dreaming/summaryQuality.js`：纯模块，三指标 score = 0.1·length + 0.4·entityCoverage + 0.5·tokenGroundedness。Latin 词 + CJK per-char + bigram 实体抽取，全部 reference-free。`auditSummary({summary, source, label})` 直接 append 到当日 DREAMS.md（一行 audit block，PASS/FAIL + 三指标），diary 写失败 swallow 不破坏热路径。
-- `compact.js` 接入：LLM 返回成功时按 `MELO_COMPACT_QUALITY_GATE` 处理 —— 默认 `audit`（写 diary，行为不变）/ `fallback`（diary + score 不通过则继续下一 candidate）/ `disabled`（完全跳过）。模式在 compactOffline 入口一次性 capture（CLAUDE.md §6）。
-- 验证：18 个新单测（tokenize/extractEntities/evaluateSummaryQuality/auditSummary/diary append-only）+ 整个 memory 测试套 **323/323 全绿**（含原 305 + 18 新加）；check-syntax 全过；compact.test.js 既有 ruleBasedCompact + LLM-disabled 测试不受影响。
-- 提交哈希：`aad4f72`。
-
-## 2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）
-
-- 横评 melo / openclaw / hermes 时把"召回 top-5 ≥ 85%"当成尚未基准化的扣分项；这一刀把它变成可跑的脚本，不动 `src/memory/`。
-- 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js`：默认读 `bench/memory/golden.json`（gitignored，私密 query 不入版本），跑 `recallMemoriesTiered`，按 `expectedIds` + `expectedSubstrings` 判 hit，输出 `results-YYYY-MM-DD.md` 含 Recall@1/5/10、scene/frame/content per-kind hit、平均延迟、misses 详情。
-- CLI: `npm run bench:memory`，支持 `--no-embed`（强制关键词通路）、`--validate`、`--json`、`--threshold-recall5 0.85`（CI gate exit 2）。env 启动时一次性 capture（CLAUDE.md §6）。
-- 验证：305/305 memory unit tests 全绿（未动 src/）；脚本端到端 sandbox MELO_HOME 上跑过 friendly-fail（缺 golden / 空 store）+ 命中（recall@5=100%）+ threshold gate（pass=0/fail=2）+ JSON 模式 + check-syntax 全过。
-- 提交哈希：`eb74e07`。
-
-## 归档摘要（2026-04-27 14:30 之前的所有条目）
+## 归档摘要（2026-04-27 15:15 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入** —— 新增 `src/memory/dreaming/summaryQuality.js`（length / entityCoverage / tokenGroundedness 三指标 score = 0.1+0.4+0.5）+ `auditSummary` 写当日 DREAMS.md；`compact.js` 接入按 `MELO_COMPACT_QUALITY_GATE` 处理 LLM 输出；18 新单测 + memory 套 323/323 全绿。`aad4f72`
+- **2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）** —— 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js` + npm `bench:memory`；支持 `--no-embed` / `--validate` / `--json` / `--threshold-recall5` CI gate；305/305 memory tests 不退化。`eb74e07`
 - **2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced** —— 新增 renderAdvancedPage() 4 subsection；侧栏 Runtime → Advanced 入口 coerce；删 684 行死代码；regression 1057/1057；Codex B。`e9eb5b6`+`40c747b`
 - **2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光** —— 删 styles.css:3262 `height: 100%`，保留 min-height; 6 类 UI 叠加 audit 仅此一处中招。Codex A。`2731e90`
 - **2026-04-27 13:30 — Codex C #16/#17/#18/#19 fix chain：customize grid 1101px+ 真实可用宽度** —— 三轮宽度+折叠 Codex C 闭环：grid 220/270/440 总 700px，撤单列折叠，修 ≤1100px overflow:hidden 裁切。`3022905`+`f20767b`+`bcc2b09`+`ae0a964`
