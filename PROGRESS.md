@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-04-27 19:30 — Codex D 修复：desktopStore.js re-export 缺口 + server import smoke 网
+
+- 上一刀 `768d511` push 被 Codex D 阻断：server.js 从 `./desktopStore.js` 导入 `restoreArtifact` + `purgeStaleSoftDeletes`，但 desktopStore re-export 块没补全 → ESM 装载会立刻 throw "does not provide an export named"，server 起不来。
+- 测试套漏掉是因为 workspaceMutations 单测直接 import `./workspaceMutations.js`，绕过了 desktopStore re-export 层；服务层 1093/1093 全绿但 server 装载会死。
+- 修：[desktopStore.js:469-475](src/desktopStore.js#L469) re-export 块加 `restoreArtifact` + `purgeStaleSoftDeletes`。
+- 防回归网：新建 [src/server.imports.smoke.test.js](src/server.imports.smoke.test.js) —— 解析 server.js 的 `from './desktopStore.js'` import 块（regex `\{([^}]*?)\}` 不跨多个 import block），动态 import desktopStore.js，断言每个 server.js 请求的名字都 reachable。3 个测试：parser 自检 / server requested == desktop exposed / 软删两个新 binding 直接断言可达。下次任何 server.js 加新 import 但 desktopStore 漏 re-export，1100+ 测试套立刻红。
+- 验证：`node --test 'src/**/*.test.js'` **1107/1107 全绿**（前次 1104 + 3 新 smoke）；`npm run test:ui` 71/71；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-27 19:00 — Codex C 第二轮：artifact 软删 reader audit 全闭环 + 11 回归测试
 
 - 上一刀 `af2e3b7` (Codex C pre-pp 阻断 push) 找到 4 处漏过滤的 reader：dynamic prompt 仍注入 deleted artifact（🟠 隐私）/ 全局搜索仍返 deleted（🔴）/ apply API 接 stale id 写回 workspace（🔵）/ artifacts connector 计数仍含 tombstone（🔵）。根因：bootstrap 一处 filter 不够，soft-delete 是横切关注点，所有 reader 都要过滤。
@@ -25,22 +34,6 @@
 - 验证：`npm run test:ui` 71/71；memory 套 330/330；workspace 套 17/17；check-syntax 全过。前端 handleDeleteArtifact 在新模型下变成 fire-and-forget pair (delete → restore on undo)，状态机已经被 server 端 17 个测试覆盖；DOM 部分是薄 toast，需要 jsdom 才能 unit test，留作下次 desktop-ui test harness 升级。
 - 提交哈希：`af2e3b7`。
 
-## 2026-04-27 18:00 — 5 处次级 UX 体验提升（PDF 入口 / state 路径 / lane overflow / search 空状态 / artifacts 软删）
-
-- 用户审查发现"硬功能都通了，剩下的是体验不够清楚"，给了 5 条次级提升。两批 commit：
-- **批 1 (`5f9107a`)** 4 条小改动：
-  - **#5** 附件菜单加 PDF entry —— `accept="application/pdf,.pdf"`，title 解释 pdf-parse 抽取（[app.js:972](desktop-ui/app.js#L972)）。documentExtractor 实测仅支持 PDF（mimeType 含 'pdf' 或 `.pdf` 扩展名），accept 按实情写。
-  - **#2** Advanced 页 Copy state.json path —— [advancedPage.js](desktop-ui/advancedPage.js) 加可选 `statePathHint` 参数（默认 `~/.melo/desktop/state.json`），page-kicker 下加 tip 行 + Copy path 按钮；新 action `copy-melo-state-path` 写剪贴板 + flash-toast 反馈；3 个新测试覆盖默认/自定义/hostile 转义。
-  - **#3** Tasks 区域 overflow menu —— main 留主按钮，research/builder/reviewer 进 "⋯" 下拉（uiState.taskLaneOverflowOpen + outside-click 关闭，复用 composerAttachmentMenu pattern）。
-  - **#4** Search 空状态分类提示 —— 新文案列出 chats & messages / prompt history / memory / artifacts / projects / skills/connectors / workspace files，pre-query 占位也同步更新；加 `.empty-state-title` / `.empty-state-meta` 样式。
-  - 副作用：新加 `showFlashToast` helper（短 toast）给 #2 + 后续 #1 用；styles.css 新增 6 个类（flash-toast / page-kicker-tip / ghost-link / task-lane-overflow-* / empty-state-*），全部沿用 `--text-muted` / `--accent` / `--surface-2` token。
-- **批 2 (本 commit)** Artifacts 软删 + undo toast：
-  - 新增 [desktop-ui/undoToast.js](desktop-ui/undoToast.js) 纯 helper（`formatUndoCountdown` / `formatUndoToastLabel` / `nextCountdownTickMs`），16 单测覆盖整数秒边界 / 100ms floor / 非 finite 输入。
-  - app.js: `pendingArtifactDeletes: Map` state；`handleDeleteArtifact` 重写为软删（5s timer + `setTimeout(commitDelete)`）；`showUndoToast` DOM helper 渲染底部带倒计时的 Undo banner，点 Undo 清 timer + 撤销，超时调真 `/api/artifacts/delete`；artifact card 加 `.is-pending-delete` 灰显类。
-  - 验证：`npm run test:ui` **71/71 全绿**（55 之前 + 16 undoToast）；memory 套 330/330；check-syntax 全过；UI 实际 toast 弹出 + Undo 行为留用户手测。
-- 提交哈希：`5f9107a`（批 1）+ `e1a8ecf`（批 2）。
-
-
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
 - 用户审查："硬功能基本都通了，剩下的是体验不够清楚。"4 条按推荐方案改：
@@ -52,10 +45,11 @@
 - 提交哈希：`9f5a87a`。
 - **未修 follow-up（下次统一）**：desktop-ui 缺 unit test harness，已累积 2 条同源建议 —— 本批 Codex ⚪「`describeVideoExtractionStatus` 多分支无自动覆盖」+ 14:30 Advanced page Codex B「smoke/E2E 缺失」。下次专门一刀：抽 `videoStatus.js` 等纯函数到独立模块、用 `node:test`（或 happy-dom）建 desktop-ui test harness，把两条 follow-up + 未来 UI 纯函数统一纳入。比逐个修更经济。
 
-## 归档摘要（2026-04-27 17:30 之前的所有条目）
+## 归档摘要（2026-04-27 18:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 18:00 — 5 处次级 UX 体验提升** —— 批 1 `5f9107a`：PDF 入口 + Advanced Copy state.json + Tasks lane overflow + Search 空状态分类提示 + showFlashToast helper。批 2 `e1a8ecf`：artifacts 软删 + undo toast 第一版（client-timer，被 18:30 D-grade 改成 server-driven）；undoToast.js + 16 单测。test:ui 71/71，memory 330/330。
 - **2026-04-27 17:30 — desktop-ui test harness 落地** —— byte-for-byte port `describeVideoExtractionStatus` + 拆 `renderAdvancedPage` 成显式 props；`npm run test:ui` 52/52 全绿；闭环 14:30 Advanced B + 本批 ⚪ 两条 same-root follow-up；后续 desktop-ui "抽纯函数 + .test.js" 标准模式确立。Codex S。`a9aa5a8`+`7a6710e`
 - **2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定** —— compactQualityThreshold 始终返回 finite number（空/非法 → 0.6 默认），evaluator 不再回头读 env；contract test 锁定 mid-call env 突变不影响 fallback 决定。`da4e09e`
 - **2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界** —— `Number('') === 0` 让 fallback 全放行；trim + 空字符串短路 + 2 回归测试。`d339782`

@@ -469,6 +469,8 @@ export {
   createArtifact,
   updateArtifact,
   deleteArtifact,
+  restoreArtifact,
+  purgeStaleSoftDeletes,
   applyArtifactToWorkspaceFile,
   runLocalCommand,
 } from './services/workspace/workspaceMutations.js';
