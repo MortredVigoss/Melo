@@ -12,7 +12,7 @@
 - **Phase 2**（本 commit）：`renderAdvancedPage` 151 行从 [app.js:9672](desktop-ui/app.js#L9672) 抽到 [advancedPage.js](desktop-ui/advancedPage.js)，改成 `({ data, adv, escapeHtml, scheduleRefresh })` 显式参数（CLAUDE.md §5 "byte-for-byte port + import path 调整"，逻辑零变化；只是 lexical capture → explicit param）。app.js call site 把 `uiState.bootstrap` / `uiState.advanced` / `escapeHtml` / `() => Promise.resolve().then(refreshAdvancedStatus)` 显式传入。新增 [advancedPage.test.js](desktop-ui/advancedPage.test.js) 17 个 smoke：4 subsection 都在、empty-state 4 个、external-mcp 列表 + Ping、cli servers + Disconnect、plugins + 空 hooks、running task + Kill / 非 running 不出现、loading 文案翻转、error alert 转义、4 种 lazy-fetch 短路条件、hostile 输入 escapeHtml 全程。
 - 验证：`npm run test:ui` **52/52 全绿**（21 既有 viz + 14 videoStatus + 17 advancedPage）；memory 套 330/330 不退化；check-syntax 全过；renderAdvancedPage 调用点单一（`renderCustomizePage` 内），call-site 改动 review 范围明确。
 - 闭环：本批 Codex ⚪ + 14:30 Advanced B 两条 follow-up 同步关闭；后续 desktop-ui 改动有了"抽纯函数 + 加 *.test.js"的标准模式可复用。
-- 提交哈希：`a9aa5a8`（Phase 1）+ 待填（Phase 2）。
+- 提交哈希：`a9aa5a8`（Phase 1）+ `7a6710e`（Phase 2）。
 
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
