@@ -78,6 +78,18 @@ const uiState = {
     wipeInFlight: false,
     wipeResult: null,
   },
+  // Advanced page (developer / experimental ops). Caches CLI MCP server
+  // names, plugin registry, and background-task list — none of these
+  // ride on bootstrap, so we lazy-fetch on first navigation and keep the
+  // values around until an explicit Refresh.
+  advanced: {
+    loading: false,
+    loaded: false,
+    error: null,
+    cliServers: [],
+    plugins: [],
+    tasks: [],
+  },
   // Phase 3 — Skill detail tab: 'overview' (default) or 'markdown'.
   skillDetailTab: 'overview',
   // Cache: skillId → { loading, markdown, error }.  Cleared on import/reload.
@@ -5748,9 +5760,10 @@ async function executePaletteCommand(command) {
       await patchSettings({ activeView: command.payload.view });
       break;
     case 'open-runtime':
+      // Legacy command name preserved; routes to the new Advanced page.
       await patchSettings({
         activeView: 'customize',
-        selectedCustomizeSection: 'runtime',
+        selectedCustomizeSection: 'advanced',
       });
       break;
     case 'open-agents':
@@ -5905,7 +5918,7 @@ async function handleComposerCommand() {
       }
       await patchSettings({
         activeView: 'customize',
-        selectedCustomizeSection: 'runtime',
+        selectedCustomizeSection: 'advanced',
       });
       break;
     default:
@@ -7372,30 +7385,6 @@ function renderCodePage() {
           ${renderTaskPanel({ compact: true })}
 
           ${renderApprovalPanel({ compact: true })}
-
-          <section class="inspector-card">
-            <div class="inspector-header">
-              <div>
-                <div class="eyebrow">External context</div>
-                <h2 class="pane-title">MCP-style connectors</h2>
-              </div>
-              <button class="small-button" data-action="open-view" data-view="customize">
-                Manage
-              </button>
-            </div>
-            ${renderExternalConnectorShelf()}
-          </section>
-
-          <section class="inspector-card">
-            <div class="inspector-header">
-              <div>
-                <div class="eyebrow">Tool calls</div>
-                <h2 class="pane-title">External tools</h2>
-              </div>
-            </div>
-            ${renderExternalToolForms(enabledExternalConnectors())}
-            ${renderExternalToolResults(enabledExternalConnectors())}
-          </section>
 
           <section class="inspector-card">
             <div class="inspector-header">
@@ -9122,164 +9111,27 @@ function renderConnectorDetails(selected) {
   let extra = '';
 
   if (selected.type === 'external-mcp') {
-    extra = `
-      <div class="chip-row">
-        <span class="chip is-accent">${escapeHtml(selected.config.lastStatus || 'idle')}</span>
-        <span class="chip mono">${escapeHtml(selected.config.endpoint || '(missing)')}</span>
-        <span class="chip">${selected.config.toolCount} tools</span>
-        <span class="chip">${selected.config.resourceCount} resources</span>
-        <span class="chip">${selected.config.promptCount} prompts</span>
-      </div>
-
-      ${
-        selected.config.lastError
-          ? `<div class="alert compact-alert">${escapeHtml(selected.config.lastError)}</div>`
-          : ''
-      }
-
-      <form
-        class="config-form"
-        data-form="connector-external-update"
-        data-connector-id="${selected.id}"
-      >
-        <label class="label">
-          Name
-          <input class="input" name="name" value="${escapeHtml(selected.name)}" />
-        </label>
-        <label class="label">
-          Description
-          <input
-            class="input"
-            name="description"
-            value="${escapeHtml(selected.description || '')}"
-          />
-        </label>
-        <label class="label">
-          Endpoint
-          <input
-            class="input mono"
-            name="endpoint"
-            value="${escapeHtml(selected.config.endpoint || '')}"
-            placeholder="http://127.0.0.1:43131"
-          />
-        </label>
-        <label class="label">
-          Prompt
-          <textarea class="config-textarea" name="prompt">${escapeHtml(
-            selected.prompt || '',
-          )}</textarea>
-        </label>
-        <div class="project-form-grid">
-          <label class="label">
-            Health path
-            <input
-              class="input mono"
-              name="healthPath"
-              value="${escapeHtml(selected.config.healthPath || '/health')}"
-            />
-          </label>
-          <label class="label">
-            Manifest path
-            <input
-              class="input mono"
-              name="manifestPath"
-              value="${escapeHtml(selected.config.manifestPath || '/manifest')}"
-            />
-          </label>
-        </div>
-        <label class="label">
-          Context path
-          <input
-            class="input mono"
-            name="contextPath"
-            value="${escapeHtml(selected.config.contextPath || '/context')}"
-          />
-        </label>
-        <div class="project-form-grid">
-          <label class="label">
-            Resource path
-            <input
-              class="input mono"
-              name="resourcePath"
-              value="${escapeHtml(selected.config.resourcePath || '/resource')}"
-            />
-          </label>
-          <label class="label">
-            Prompt path
-            <input
-              class="input mono"
-              name="promptPath"
-              value="${escapeHtml(selected.config.promptPath || '/prompt')}"
-            />
-          </label>
-        </div>
-        <label class="label">
-          Invoke path
-          <input
-            class="input mono"
-            name="invokePath"
-            value="${escapeHtml(selected.config.invokePath || '/invoke')}"
-          />
-        </label>
-        <label class="label">
-          Auth token
-          <input
-            class="input"
-            type="password"
-            name="authToken"
-            value=""
-            placeholder="${escapeHtml(selected.config.maskedAuthToken || '(not set)')}"
-          />
-        </label>
-        <div class="inline-actions">
-          <button class="small-button is-primary" type="submit">Save connector</button>
-          <button
-            class="small-button"
-            type="button"
-            data-action="ping-connector"
-            data-connector-id="${selected.id}"
-          >
-            Ping connector
-          </button>
-          <button
-            class="small-button"
-            type="button"
-            data-action="remove-connector"
-            data-connector-id="${selected.id}"
-          >
-            Remove
-          </button>
-        </div>
-      </form>
-
-      <div class="subsection">
+    // External-MCP connectors are now managed from Customize → Advanced.
+    // The list filter on Customize → Connectors hides them, but a stale
+    // selectedConnectorId can still point here — render a redirect notice
+    // instead of the legacy edit form (Codex audit / config edits deferred).
+    return `
+      <div class="detail-card">
         <div class="header-row">
-          <h3 class="subsection-title">Advertised capabilities</h3>
-          <span class="meta-label">${escapeHtml(selected.config.lastCheckedLabel || 'Never checked')}</span>
+          <div>
+            <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
+            <p class="page-kicker">External MCP connectors moved to Customize → Advanced.</p>
+          </div>
+          <span class="chip is-accent">Experimental</span>
         </div>
-        <div class="chip-row">
-          ${(selected.config.manifest.tools || [])
-            .map(tool => `<span class="chip">${escapeHtml(tool.name)}</span>`)
-            .join('')}
-          ${(selected.config.manifest.resources || [])
-            .map(resource => `<span class="chip">${escapeHtml(resource.name)}</span>`)
-            .join('')}
-          ${(selected.config.manifest.prompts || [])
-            .map(prompt => `<span class="chip">${escapeHtml(prompt.name)}</span>`)
-            .join('')}
+        <div class="detail-meta">
+          <div>Status, reload, and disconnect are available there. Configuration editing is deferred until the dedicated MCP UI lands.</div>
         </div>
-      </div>
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Invoke tools</h3>
-          <span class="meta-label">${selected.config.toolCount} available</span>
-        </div>
-        ${renderExternalToolForms([selected], { compact: true })}
-        ${renderExternalToolResults([selected])}
       </div>
     `;
-  } else if (selected.id === 'openai-compatible') {
+  }
+
+  if (selected.id === 'openai-compatible') {
     extra = `
       <form id="connector-config-form" class="config-form" data-form="connector-config">
         <label class="label">
@@ -9693,6 +9545,74 @@ function formatLastRunAt(epochMs) {
 // ───────────────────────────────────────────────────────────────────────
 // Phase 3 — Memory panel
 // ───────────────────────────────────────────────────────────────────────
+
+async function refreshAdvancedStatus() {
+  if (uiState.advanced.loading) return;
+  uiState.advanced.loading = true;
+  uiState.advanced.error = null;
+  render();
+  try {
+    // Fan out — three independent endpoints, none of which block the
+    // others, so a slow one doesn't gate the rest.
+    const [serversResp, pluginsResp, tasksResp] = await Promise.all([
+      api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
+      api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
+      api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
+    ]);
+    const errors = [serversResp, pluginsResp, tasksResp]
+      .filter(r => r && r._error)
+      .map(r => r._error);
+    if (errors.length === 3) {
+      uiState.advanced.error = errors.join(' · ');
+    } else {
+      uiState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
+      uiState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
+      uiState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
+      uiState.advanced.loaded = true;
+      // Surface partial errors without blanking the panel.
+      if (errors.length > 0) {
+        uiState.advanced.error = `Partial load: ${errors.join(' · ')}`;
+      }
+    }
+  } catch (err) {
+    uiState.advanced.error = err?.message || 'Failed to load advanced status';
+  } finally {
+    uiState.advanced.loading = false;
+    render();
+  }
+}
+
+async function handleReloadMcpServers() {
+  try {
+    const resp = await api('/api/mcp/reload', { method: 'POST' });
+    uiState.advanced.cliServers = Array.isArray(resp?.servers) ? resp.servers : [];
+    showError(`Reloaded ${uiState.advanced.cliServers.length} MCP server(s).`);
+    render();
+  } catch (err) {
+    showError(`MCP reload failed: ${err?.message || err}`);
+  }
+}
+
+async function handleDisconnectMcpServer(name) {
+  if (!name) return;
+  try {
+    await api('/api/mcp/disconnect', { method: 'POST', body: { name } });
+    // Refresh the list so the UI reflects the new state.
+    await refreshAdvancedStatus();
+  } catch (err) {
+    showError(`Disconnect failed: ${err?.message || err}`);
+  }
+}
+
+async function handleKillBackgroundTask(runId) {
+  if (!runId) return;
+  try {
+    await api('/api/background-tasks/kill', { method: 'POST', body: { runId } });
+    await refreshAdvancedStatus();
+  } catch (err) {
+    showError(`Kill task failed: ${err?.message || err}`);
+  }
+}
 
 async function refreshMemoryStatus() {
   if (uiState.memoryStatus.loading) return;
@@ -10140,6 +10060,158 @@ function renderExternalConnectorCreateCard() {
   `;
 }
 
+function renderAdvancedPage() {
+  const data = uiState.bootstrap;
+  const adv = uiState.advanced;
+
+  // Lazy first fetch on initial render of this section.
+  if (!adv.loaded && !adv.loading && !adv.error) {
+    Promise.resolve().then(refreshAdvancedStatus);
+  }
+
+  const externalMcps = (data.connectors || []).filter(c => c.type === 'external-mcp');
+
+  const externalMcpRows = externalMcps.length === 0
+    ? '<div class="empty-state compact">No external MCP connectors configured. Configuration UI is deferred — for now, manage via the connector config files directly.</div>'
+    : externalMcps.map(c => `
+        <div class="list-row">
+          <div class="thread-meta">
+            <span class="chip ${c.config?.lastStatus === 'ok' ? 'is-accent' : ''}">${escapeHtml(c.config?.lastStatus || 'idle')}</span>
+            <span class="chip">${Number(c.config?.toolCount || 0)} tools</span>
+            <span class="chip">${Number(c.config?.resourceCount || 0)} resources</span>
+            <span class="chip">${Number(c.config?.promptCount || 0)} prompts</span>
+            <span class="meta-label">${escapeHtml(c.config?.lastCheckedLabel || 'Never checked')}</span>
+          </div>
+          <div class="list-row-title">${escapeHtml(c.name)}</div>
+          <div class="list-row-meta">${escapeHtml(c.config?.endpoint || '')}</div>
+          <div class="inline-actions">
+            <button class="small-button" type="button" data-action="ping-connector" data-connector-id="${escapeHtml(c.id)}">
+              Ping (refresh)
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+  const cliServerRows = adv.cliServers.length === 0
+    ? '<div class="empty-state compact">No active CLI / stdio MCP servers.</div>'
+    : adv.cliServers.map(name => `
+        <div class="list-row">
+          <div class="list-row-title mono">${escapeHtml(name)}</div>
+          <div class="list-row-meta">stdio-launched MCP server</div>
+          <div class="inline-actions">
+            <button class="small-button" type="button" data-action="disconnect-mcp-server" data-server-name="${escapeHtml(name)}">
+              Disconnect
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+  const pluginRows = adv.plugins.length === 0
+    ? '<div class="empty-state compact">No plugins registered.</div>'
+    : adv.plugins.map(p => `
+        <div class="list-row">
+          <div class="list-row-title mono">${escapeHtml(p.id || '(unnamed)')}</div>
+          <div class="list-row-meta">${escapeHtml((Array.isArray(p.hooks) ? p.hooks : []).join(', ') || 'no hooks')}</div>
+        </div>
+      `).join('');
+
+  const taskRows = adv.tasks.length === 0
+    ? '<div class="empty-state compact">No background runs.</div>'
+    : adv.tasks.map(t => {
+        const isRunning = t.status === 'running';
+        const fmt = t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '—';
+        return `
+          <div class="list-row">
+            <div class="thread-meta">
+              <span class="chip ${isRunning ? 'is-accent' : ''}">${escapeHtml(t.status || 'unknown')}</span>
+              ${t.exitCode != null ? `<span class="chip">exit ${Number(t.exitCode)}</span>` : ''}
+              <span class="meta-label">started ${escapeHtml(fmt)}</span>
+            </div>
+            <div class="list-row-title mono">${escapeHtml(t.command || '(no command)')}</div>
+            ${isRunning
+              ? `<div class="inline-actions">
+                  <button class="small-button is-danger" type="button" data-action="kill-background-task" data-run-id="${escapeHtml(t.runId)}">
+                    Kill
+                  </button>
+                </div>`
+              : ''}
+          </div>
+        `;
+      }).join('');
+
+  const errorBlock = adv.error
+    ? `<div class="alert compact-alert">${escapeHtml(adv.error)}</div>`
+    : '';
+
+  return `
+    <div class="customize-pane page-advanced">
+      <div class="detail-card">
+        <div class="header-row">
+          <div>
+            <h2 class="pane-title">
+              Advanced
+              <span class="chip is-accent">Experimental</span>
+            </h2>
+            <p class="page-kicker">
+              Developer features. Status, reload, disconnect, and kill operations are safe — configuration changes (adding new MCP servers, editing endpoints) happen elsewhere or are deferred.
+            </p>
+          </div>
+          <div class="inline-actions">
+            <button class="small-button" type="button" data-action="refresh-advanced-status">
+              ${adv.loading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        ${errorBlock}
+
+        <div class="subsection">
+          <div class="header-row">
+            <h3 class="subsection-title">External MCP connectors</h3>
+            <span class="meta-label">${externalMcps.length} configured</span>
+          </div>
+          <div class="list-stack">
+            ${externalMcpRows}
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="header-row">
+            <h3 class="subsection-title">CLI / stdio MCP servers</h3>
+            <span class="meta-label">${adv.cliServers.length} active</span>
+          </div>
+          <div class="inline-actions">
+            <button class="small-button" type="button" data-action="reload-mcp-servers">Reload all</button>
+          </div>
+          <div class="list-stack">
+            ${cliServerRows}
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="header-row">
+            <h3 class="subsection-title">Plugins</h3>
+            <span class="meta-label">${adv.plugins.length} registered</span>
+          </div>
+          <div class="list-stack">
+            ${pluginRows}
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="header-row">
+            <h3 class="subsection-title">Background shell tasks</h3>
+            <span class="meta-label">${adv.tasks.length} runs</span>
+          </div>
+          <div class="list-stack">
+            ${taskRows}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderRuntimeBrowserPanes() {
   const connector = selectedRuntimeConnector();
 
@@ -10332,7 +10404,11 @@ function renderRuntimeBrowserPanes() {
 function renderCustomizePage() {
   const data = uiState.bootstrap;
   const selected = selectedCustomizeItem();
-  const section = data.settings.selectedCustomizeSection;
+  // Old saved settings may still carry 'runtime' from before the
+  // Advanced page replaced it — coerce here so the user lands on the
+  // new section without an extra click.
+  const rawSection = data.settings.selectedCustomizeSection;
+  const section = rawSection === 'runtime' ? 'advanced' : rawSection;
 
   return `
     <section class="page page-customize">
@@ -10368,12 +10444,15 @@ function renderCustomizePage() {
               <div class="list-row-meta">Model access, files, commands, projects, and artifacts.</div>
             </button>
             <button
-              class="section-button ${section === 'runtime' ? 'is-active' : ''}"
+              class="section-button ${section === 'advanced' ? 'is-active' : ''}"
               data-action="open-customize-section"
-              data-section="runtime"
+              data-section="advanced"
             >
-              <div class="list-row-title">Runtime</div>
-              <div class="list-row-meta">Browse live tools, resources, prompts, and recent MCP activity.</div>
+              <div class="list-row-title">
+                Advanced
+                <span class="chip is-accent">Experimental</span>
+              </div>
+              <div class="list-row-meta">MCP servers, plugins, background tasks. Status, reload, disconnect, kill — config edits deferred.</div>
             </button>
             <button
               class="section-button ${section === 'memory' ? 'is-active' : ''}"
@@ -10387,8 +10466,8 @@ function renderCustomizePage() {
         </div>
 
         ${
-          section === 'runtime'
-            ? renderRuntimeBrowserPanes()
+          section === 'advanced'
+            ? renderAdvancedPage()
             : section === 'memory'
               ? renderMemoryPane()
               : `
@@ -10406,7 +10485,7 @@ function renderCustomizePage() {
               ? filteredSkills()
               : section === 'agents'
                 ? data.customize.agents
-                : data.customize.connectors)
+                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp'))
               .map(item => {
                 const isActive =
                   section === 'skills'
@@ -10445,15 +10524,13 @@ function renderCustomizePage() {
         <div class="customize-pane">
           ${renderConnectorDetails(selected)}
           ${
-            section === 'connectors'
-              ? `<div class="subsection">${renderExternalConnectorCreateCard()}</div>`
-              : section === 'skills'
-                ? `
-                  ${renderSkillHealthPanel()}
-                  ${renderSkillProposalsPanel()}
-                  <div class="subsection">${renderCustomSkillCreateCard()}</div>
-                `
-                : ''
+            section === 'skills'
+              ? `
+                ${renderSkillHealthPanel()}
+                ${renderSkillProposalsPanel()}
+                <div class="subsection">${renderCustomSkillCreateCard()}</div>
+              `
+              : ''
           }
         </div>
           `
@@ -12448,6 +12525,18 @@ document.addEventListener('click', async event => {
         break;
       case 'remove-connector':
         await handleRemoveExternalConnector(trigger.dataset.connectorId);
+        break;
+      case 'refresh-advanced-status':
+        await refreshAdvancedStatus();
+        break;
+      case 'reload-mcp-servers':
+        await handleReloadMcpServers();
+        break;
+      case 'disconnect-mcp-server':
+        await handleDisconnectMcpServer(trigger.dataset.serverName);
+        break;
+      case 'kill-background-task':
+        await handleKillBackgroundTask(trigger.dataset.runId);
         break;
       case 'remove-custom-skill':
         await handleRemoveCustomSkill(trigger.dataset.skillId);
