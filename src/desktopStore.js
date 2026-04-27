@@ -1615,6 +1615,14 @@ export async function updateModelConfig(patch = {}) {
       : currentVal;
 
   const safePatch = { ...patch };
+  // Fields that fall under the "preserve when blank" rule
+  // (feedback_preserve_user_config.md). Most are credentials, but
+  // minimaxVoiceId joins the list because the TTS panel's
+  // `activate-minimax-voice` action POSTs the resolved voice id —
+  // when no agent / cached voice is available, we used to send '' and
+  // wipe the connector's saved Default Voice ID. Empty here = "no
+  // change", so the user clears via a different code path (e.g. typing
+  // a different value, or a future explicit Clear button).
   const SECRET_LIKE_CONFIG_KEYS = [
     'apiKey',
     'baseUrl',
@@ -1623,6 +1631,7 @@ export async function updateModelConfig(patch = {}) {
     'minimaxApiKey',
     'minimaxGroupId',
     'minimaxBaseUrl',
+    'minimaxVoiceId',
     'ttsApiKey',
     'ttsBaseUrl',
     'elevenLabsApiKey',

@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID
+
+- 上轮 Codex 给 C：saved key 存在但无 agent voice 也无 ttsCustomVoiceId 时，点 TTS 面板的"自定义语音"激活，会送空 `minimaxVoiceId` 给 server，**擦掉 connector 里刚保存的 Default Voice ID**。
+- 修复（双层防护）：
+  - **client (`desktop-ui/app.js`) `activate-minimax-voice` 重写**：voiceId 解析按优先级 ttsCustomVoiceId → 第一个 agent.minimaxVoiceId → **bootstrap.settings.config.minimaxVoiceId（新 fallback）**。三者都空 → `showError("Configure a MiniMax voice first — ...")`，不激活、不发 POST。这是主修复。
+  - **server (`src/desktopStore.js`) `SECRET_LIKE_CONFIG_KEYS`**：把 `minimaxVoiceId` 加进列表（用户选 Q2 = 保留），form 提交空字符串 = "no change"。Belt-and-suspenders：万一 client 漏防护，server 也不会擦。语义换法：用户清空 voiceId 字段保存现在保留旧值；要解绑得换不同值或将来加显式 Clear 按钮。
+- Codex 反问回应：
+  - **Q1 connector Default Voice ID 当 fallback**：是。activate 优先链最后一档读 saved default。
+  - **Q2 用户清空 voiceId 字段是清除还是保留**：保留（用户选）。`SECRET_LIKE_CONFIG_KEYS` 加 `minimaxVoiceId` 防意外擦掉。
+- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测：(a) 没 agent voice + saved default → 激活应直接用 saved default + 不擦；(b) 三者都空 → toast 错误提示。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key
 
 - 上轮 Codex 给 C，3 条都对：
