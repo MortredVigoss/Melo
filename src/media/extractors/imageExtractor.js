@@ -55,29 +55,46 @@ async function runOcrWithAbort(buffer, signal) {
   const { default: Tesseract } = await import('tesseract.js');
   if (signal?.aborted) return null;
 
-  // createWorker returns a worker we can `.terminate()` to kill an
-  // in-flight recognition. The 4th arg's logger no-ops the loud progress
-  // events Tesseract emits.
-  const worker = await Tesseract.createWorker(OCR_LANGS, 1, { logger: () => {} });
-  let terminated = false;
-  const terminateOnce = async () => {
-    if (terminated) return;
-    terminated = true;
-    try { await worker.terminate(); } catch {}
-  };
-
-  if (signal?.aborted) {
-    await terminateOnce();
-    return null;
-  }
+  // Tesseract.createWorker returns a Promise that we can't cancel mid-flight
+  // (no abort hook in the library). On a cold cache, language-data download
+  // takes 5-30s — that time is unavoidable. What we CAN do is register an
+  // abort listener BEFORE invoking createWorker so an abort firing during
+  // worker initialization gets recorded and the freshly-created worker is
+  // terminated the instant it resolves, instead of running a full
+  // recognition pass first. This bounds the post-abort resource leak to
+  // "createWorker remaining time", not "createWorker + full recognize".
+  let workerRef = null;
+  let abortFired = false;
   let onAbort = null;
   if (signal) {
-    onAbort = () => { terminateOnce(); };
+    onAbort = () => {
+      abortFired = true;
+      // If the worker exists, terminate immediately. If it doesn't yet
+      // (still inside createWorker's promise), the post-create check
+      // below will catch the flag and terminate.
+      if (workerRef) {
+        try { workerRef.terminate(); } catch {}
+      }
+    };
     signal.addEventListener('abort', onAbort, { once: true });
   }
 
   try {
+    const worker = await Tesseract.createWorker(OCR_LANGS, 1, { logger: () => {} });
+    workerRef = worker;
+
+    // Abort fired during createWorker — terminate now, return null.
+    if (abortFired || signal?.aborted) {
+      try { worker.terminate(); } catch {}
+      return null;
+    }
+
     const { data } = await worker.recognize(buffer);
+    if (abortFired) {
+      // recognize completed but abort fired during; terminate already
+      // triggered via onAbort, but ensure cleanup.
+      return null;
+    }
     return data;
   } catch {
     return null;
@@ -85,9 +102,10 @@ async function runOcrWithAbort(buffer, signal) {
     if (signal && onAbort) {
       try { signal.removeEventListener('abort', onAbort); } catch {}
     }
-    if (!terminated) {
-      // Natural completion — clean up worker.
-      await terminateOnce();
+    // Final cleanup — terminate if still alive (natural completion path
+    // or abort-after-recognize path).
+    if (workerRef) {
+      try { await workerRef.terminate(); } catch {}
     }
   }
 }

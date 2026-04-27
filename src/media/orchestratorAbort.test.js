@@ -395,13 +395,17 @@ test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
       `if [[ "$1" == "--version" ]]; then`,
       `  echo "1.0.0"; touch "${versionMarker}"; exit 0`,
       `fi`,
-      // Real metadata invocation: write PID + marker, then hang. If we
-      // ever exit naturally (i.e., abort failed) the completed marker
-      // gets written.
+      // Real metadata invocation: write PID + marker, then `exec sleep` so
+      // bash REPLACES itself with sleep. The spawned PID is now sleep
+      // directly — production's SIGKILL on that PID kills the real
+      // blocking process (no orphan sleep child reparented to PID 1).
+      // Without `exec`, every test run would leak a 99999s sleep.
       `echo "$$" > "${pidFile}"`,
       `touch "${metadataMarker}"`,
-      `sleep 99999`,
-      `touch "${completedMarker}"`,  // unreachable unless SIGKILL fails
+      `exec sleep 99999`,
+      // Unreachable: exec replaces the process. Kept as a safety marker —
+      // if `exec` somehow fails, the completed marker would tell us.
+      `touch "${completedMarker}"`,
     ].join('\n') + '\n',
     { mode: 0o755 },
   );

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-04-27 08:30 — Codex C #11 fix：fake yt-dlp 改 exec 防 orphan + OCR 提前注册 abort listener
+
+- 上轮 Codex 抓两条：fake bash `sleep 99999` 是 child，SIGKILL 杀 bash 不杀 sleep（每跑一次测试漏一个 27 小时进程）；OCR abort listener 在 createWorker resolve 之后才注册，cold cache 5-30s 期间 abort 无效。
+- 修复：
+  - `src/media/orchestratorAbort.test.js`：fake yt-dlp 脚本最后一行从 `sleep 99999` 改 `exec sleep 99999`——bash 自我替换为 sleep，spawn 的 PID 就 IS sleep，SIGKILL 直接杀。验证：跑测试前后 `ps aux | grep "sleep 99999"` 数量不变（确认本轮零泄漏；旧测试漏的 31 个 orphan 顺手 `pkill` 清掉）。
+  - `src/media/extractors/imageExtractor.js → runOcrWithAbort`：abort listener 提前到 `createWorker()` 之前注册 + `abortFired` flag + `workerRef` 指针。abort 路径分三种：
+    - createWorker 之前 abort：`signal?.aborted` early-return null；
+    - createWorker 之中 abort：listener 设 flag（worker 还没生）→ createWorker resolve 后 if (abortFired) 立即 terminate + null；
+    - recognize 之中 abort：listener 调 `workerRef.terminate()` → recognize promise reject → return null。
+    cold createWorker 时间不可省（库 promise 不可取消），但 worker handle 不再泄漏；resource leak 上界从"createWorker + 完整 recognize"压缩到"createWorker"。
+- Codex 反问回应：(1) 杀进程树？不必，`exec` 后单 PID 即可。(2) createWorker 期间立即停？做不到（promise 不可取消），降级为"resolve 后立即 terminate"，实现 + 注释明示。
+- 验证：`node --check` 全过；`ps` 验证零泄漏；regression 全套 **363/363 全绿**。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 08:00 — Codex B 跟进：OCR 改 Tesseract worker 可中断 + yt-dlp 测试反假绿加固
 
 - 上轮 push 后 Codex 给 B，两条建议：
