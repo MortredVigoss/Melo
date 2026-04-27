@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界
+
+- 上轮 follow-up 提交 `9d504b2` 后 git pp 又评 B，单条 finding：`Number('') === 0`，导致 `MELO_SUMMARY_QUALITY_THRESHOLD=''` 让 fallback 阈值变 0、几乎全放行。
+- 修：[compact.js::compactQualityThreshold()](src/memory/offline/compact.js#L64) 先 `String(env || '').trim()`，空字符串/空白直接 `return null`，evaluator 仍用 0.6 默认。
+- 加 2 个回归测试（空字符串 + 全空白）：fallback 模式下低质摘要应被拒。
+- 验证：329/329 memory 全绿（前次 327 + 2 新）；compact 子套 11/11。
+- 提交哈希：待填。
+
 ## 2026-04-27 15:55 — Codex B follow-ups：bench rank 模式 / vec-aware 路径 / threshold capture / fallback DI 测试
 
 - 上一刀 git pp 拿 B 评级（可合入 + 4 条建议）。用户选"都修"。

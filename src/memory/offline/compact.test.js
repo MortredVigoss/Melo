@@ -161,6 +161,51 @@ test('quality gate=audit (default) keeps even low-quality LLM output (diary-only
   );
 });
 
+test('quality gate=fallback treats MELO_SUMMARY_QUALITY_THRESHOLD="" as unset (not 0)', async () => {
+  // Regression: Number('') === 0 in JS, so a stray empty env var would
+  // silently set the threshold to 0 and let every LLM summary through the
+  // fallback gate.  compactQualityThreshold() must trim + treat empty as
+  // null so the evaluator's compiled-in default (0.6) still applies.
+  await withIsolatedEnv(
+    {
+      MELO_COMPACT_QUALITY_GATE: 'fallback',
+      MELO_SUMMARY_QUALITY_THRESHOLD: '',
+    },
+    async () => {
+      _setCallLocalLlmForTests(async () =>
+        'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        // Default threshold should still apply → low-quality summary rejected
+        // → rule fallback emits the "Primary Request" header.
+        assert.ok(summary.includes('Primary Request'));
+        assert.ok(!summary.includes('Carol'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
+test('quality gate=fallback honours MELO_SUMMARY_QUALITY_THRESHOLD whitespace as unset', async () => {
+  await withIsolatedEnv(
+    {
+      MELO_COMPACT_QUALITY_GATE: 'fallback',
+      MELO_SUMMARY_QUALITY_THRESHOLD: '   ',
+    },
+    async () => {
+      _setCallLocalLlmForTests(async () =>
+        'Carol decided to use Redis with TTL 30 minutes for sessions.');
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        assert.ok(summary.includes('Primary Request'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
 test('quality gate=disabled skips audit + always returns LLM output unchanged', async () => {
   await withIsolatedEnv(
     { MELO_COMPACT_QUALITY_GATE: '0' },

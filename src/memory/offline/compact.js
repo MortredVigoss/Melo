@@ -60,10 +60,17 @@ function compactQualityMode() {
  * long LLM call straddling an env mutation could otherwise audit the
  * summary at one threshold and then make the fallback decision at a
  * different one.
+ *
+ * Edge case (Codex follow-up #2): `Number('')` is `0`, not `NaN`, so
+ * `MELO_SUMMARY_QUALITY_THRESHOLD=''` would silently set the threshold
+ * to 0 and make `fallback` mode accept every summary.  Treat empty /
+ * whitespace-only values as "unset" before parsing.
  */
 function compactQualityThreshold() {
-  const raw = Number(process.env.MELO_SUMMARY_QUALITY_THRESHOLD);
-  return Number.isFinite(raw) ? raw : null;
+  const raw = String(process.env.MELO_SUMMARY_QUALITY_THRESHOLD || '').trim();
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
 }
 
 // ─── Test injection (Bug-D / fallback-mode coverage) ─────────────────────────
