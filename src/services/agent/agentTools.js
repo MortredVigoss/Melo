@@ -122,6 +122,38 @@ export function normalizeIdWhitelist(value) {
   return value.map(v => String(v || '').trim()).filter(Boolean);
 }
 
+// Normalizes the per-agent MCP server whitelist.  Unlike connectors / skills
+// where `null` means "no restriction", MCP defaults to **deny all** —
+// missing / invalid input returns an empty array, an explicit `null` also
+// returns an empty array.  Stdio MCP servers run arbitrary local processes
+// (file IO, network, exec), so the user's audit said: every agent must
+// opt-in to each server explicitly, no implicit trust.
+export function normalizeMcpServerWhitelist(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(v => String(v || '').trim()).filter(Boolean);
+}
+
+/**
+ * Filter the global tool registry's MCP-prefixed tools (`mcp:<server>:<tool>`)
+ * down to only those whose server id appears in the agent's whitelist.
+ * Non-MCP tools are returned untouched.
+ *
+ * @param {Array<{id: string}>} tools — anything from getAllTools()
+ * @param {Object|null|undefined} profile — agent profile with optional
+ *        enabledMcpServerIds field (defaults to deny-all when missing)
+ * @returns {Array} filtered tools
+ */
+export function filterMcpToolsForAgent(tools, profile) {
+  const whitelist = new Set(normalizeMcpServerWhitelist(profile?.enabledMcpServerIds));
+  return (Array.isArray(tools) ? tools : []).filter(tool => {
+    const id = tool?.id || '';
+    if (!id.startsWith('mcp:')) return true;
+    // Tool id shape: `mcp:<server>:<tool>` — server is the second segment.
+    const serverId = id.split(':')[1] || '';
+    return whitelist.has(serverId);
+  });
+}
+
 export function filterConnectorsForAgent(connectors, profile) {
   const allowedToolIds = new Set(normalizeAgentTools(profile?.tools));
   // Per-agent external-connector whitelist (null = allow all external connectors that pass tool check)

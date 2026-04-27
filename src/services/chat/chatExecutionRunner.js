@@ -25,6 +25,7 @@ import { saveState } from '../../state/stateStore.js';
 import {
   filterConnectorsForAgent,
   filterSkillsForAgent,
+  filterMcpToolsForAgent,
   createSharedSkillIndexFactory,
 } from '../agent/agentTools.js';
 import { buildAgentMemoryNodeContext } from '../agent/agentMemoryContext.js';
@@ -287,9 +288,14 @@ export async function runChatAgentExecutionGraph({
           .filter(Boolean);
 
         // Build tools system prompt — remote channels now get all tools.
+        // Stdio MCP tools (`mcp:<server>:<tool>`) are gated by the agent's
+        // enabledMcpServerIds whitelist; the default is deny-all so a new
+        // agent can't call any MCP without explicit opt-in.  Non-MCP tools
+        // pass through filterMcpToolsForAgent untouched.
         let toolsPrompt = '';
         if (shouldInjectToolsPrompt({ mode: chat.mode })) {
-          toolsPrompt = buildToolsSystemPrompt([...getAllTools(), ...skillTools]);
+          const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
+          toolsPrompt = buildToolsSystemPrompt([...allowedTools, ...skillTools]);
         }
 
         // Session memory block — inject top extracted facts
@@ -408,8 +414,20 @@ export async function runChatAgentExecutionGraph({
           const skillToolsById = new Map(
             (graphState.skillTools || []).map(t => [t.id, t]),
           );
+          // Defence-in-depth: even though the prompt-level filter
+          // already hides non-whitelisted MCP tools, a hallucinated
+          // `mcp:<server>:<tool>` call must not slip through to the
+          // dispatcher.  filterMcpToolsForAgent(...) returns the
+          // allowed tools; we drop any tool call whose target was
+          // filtered out.
+          const allowedDispatchTools = new Set(
+            filterMcpToolsForAgent(getAllTools(), activeAgentProfile).map(t => t.id),
+          );
           const executableCalls = toolCalls.map(tc => {
-            const tool = skillToolsById.get(tc.name) || getTool(tc.name);
+            let tool = skillToolsById.get(tc.name) || getTool(tc.name);
+            if (tool && tool.id?.startsWith('mcp:') && !allowedDispatchTools.has(tool.id)) {
+              tool = null;
+            }
             return { id: tc.id, tool, args: tc.arguments, callRef: tc };
           });
 

@@ -18,8 +18,27 @@
  * Tool IDs registered from MCP follow the format: `mcp:<serverName>:<toolName>`
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { McpStdioClient, mcpResultToToolResult } from './client.js';
 import { registerTool, unregisterTool, getTool } from '../tools/registry.js';
+import { getMeloHome } from '../config.js';
+
+/**
+ * Resolve the per-server working directory under
+ * `<MELO_HOME>/desktop/mcp-workspace/<server>/`.  Each MCP server is spawned
+ * with its cwd locked to this subtree so a misbehaving stdio MCP can't
+ * casually reach into the user's $HOME or melo's own state.  The directory
+ * is created lazily — `mkdirSync({ recursive: true })` is idempotent.
+ *
+ * Captured at connect time so a mid-flight `MELO_HOME` flip in another part
+ * of the process can't desync (CLAUDE.md §6).
+ */
+export function mcpServerWorkspaceDir(serverName) {
+  const home = getMeloHome();
+  const safe = String(serverName || 'mcp-server').replace(/[^A-Za-z0-9._-]/g, '_');
+  return join(home, 'desktop', 'mcp-workspace', safe);
+}
 
 // Active clients: serverName → McpStdioClient
 const _clients = new Map();
@@ -46,11 +65,28 @@ export async function connectMcpServer(serverName, serverConfig) {
     disconnectMcpServer(serverName);
   }
 
+  // Sandbox the server's working directory.  `serverConfig.cwd` opt-out
+  // (e.g. for an MCP that genuinely needs to operate on the user's full
+  // workspace) lets advanced users disable the sandbox by setting it to
+  // null explicitly; everyone else gets the per-server subtree.
+  let cwd = serverConfig.cwd;
+  if (cwd === undefined) {
+    cwd = mcpServerWorkspaceDir(serverName);
+  }
+  if (cwd) {
+    try { mkdirSync(cwd, { recursive: true }); } catch (err) {
+      // mkdir failure isn't fatal; the spawn will surface a more specific
+      // error if the path is genuinely unusable.
+      process.stderr.write(`[mcp:${serverName}] failed to prepare cwd ${cwd}: ${err?.message || err}\n`);
+    }
+  }
+
   const client = new McpStdioClient({
     command: serverConfig.command,
     args: serverConfig.args || [],
     env: serverConfig.env || {},
     name: serverName,
+    cwd,
   });
 
   try {
@@ -136,6 +172,57 @@ const BROWSER_MCP_PRESETS = {
 };
 
 /**
+ * Built-in MCP server presets for productivity tools (charts, document
+ * conversion).  Same flag-driven on/off model as `BROWSER_MCP_PRESETS`;
+ * each entry surfaces in `getBuiltinMcpPresets()` for the Advanced UI to
+ * render a toggle.  Defaults are tuned for safety: only the document
+ * converter is on out of the box (matches user request "默认只启用搜索和
+ * PDF"); chart server stays opt-in because it pulls a heavier dep tree
+ * + can fetch external resources at render time.
+ *
+ *   config.enableMarkdown2PdfMcp = true (default)  → @99xio/markdown2pdf-mcp
+ *   config.enableAntvChartMcp    = false (default) → @antv/mcp-server-chart
+ */
+const BUILTIN_MCP_PRESETS = {
+  'antv-chart': {
+    command: 'npx',
+    args: ['-y', '@antv/mcp-server-chart'],
+    description: 'AntV chart generator — 25+ chart types for data viz.',
+    flag: 'enableAntvChartMcp',
+  },
+  'markdown2pdf': {
+    command: 'npx',
+    args: ['-y', '@99xio/markdown2pdf-mcp'],
+    description: 'Markdown → PDF converter with syntax highlighting.',
+    flag: 'enableMarkdown2PdfMcp',
+  },
+};
+
+/**
+ * Snapshot of every preset (browser + builtin) for UI surfaces — Advanced
+ * page renders one toggle per preset using this list.
+ *
+ * @returns {Array<{ id, command, args, description, flag }>}
+ */
+export function getBuiltinMcpPresets() {
+  const out = [];
+  out.push({
+    id: 'playwright',
+    flag: 'enablePlaywrightMcp',
+    ...BROWSER_MCP_PRESETS.playwright,
+  });
+  out.push({
+    id: 'browserless',
+    flag: 'enableBrowserlessMcp',
+    ...BROWSER_MCP_PRESETS.browserless,
+  });
+  for (const [id, preset] of Object.entries(BUILTIN_MCP_PRESETS)) {
+    out.push({ id, ...preset });
+  }
+  return out;
+}
+
+/**
  * Build the effective MCP server map, merging user config with auto-enabled presets.
  *
  * @param {Object} mcpServers           - user-configured servers from config
@@ -152,6 +239,18 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
   }
   if (flags.enableBrowserlessMcp && !effective.browserless) {
     effective.browserless = BROWSER_MCP_PRESETS.browserless;
+  }
+
+  // Chart + document-conversion presets.  Each preset stores its own flag
+  // name so adding a new built-in is a single map entry; no extra
+  // branching here.  User-supplied entries with the same id always win.
+  for (const [id, preset] of Object.entries(BUILTIN_MCP_PRESETS)) {
+    if (flags[preset.flag] && !effective[id]) {
+      // Strip the preset-only `flag` field before merging — server config
+      // shape only knows about `command` / `args` / `env` / `disabled`.
+      const { flag: _flag, description: _desc, ...serverConfig } = preset;
+      effective[id] = serverConfig;
+    }
   }
 
   return effective;
@@ -195,7 +294,11 @@ export function getActiveMcpServers() {
 
 // ─── Build a Melo Tool object wrapping an MCP tool ────────────────────────────
 
-function buildMcpTool(serverName, mcpTool, client) {
+// Exported so unit tests can pin the security-relevant defaults
+// (requiresPermission, category) without spawning an MCP server.  The
+// `client` parameter is only used inside the `run` callback, so callers
+// in tests can pass a stub.
+export function buildMcpTool(serverName, mcpTool, client) {
   const toolId = `mcp:${serverName}:${mcpTool.name}`;
   // Normalise the MCP inputSchema to our parametersSchema format
   const parametersSchema = mcpTool.inputSchema || { type: 'object', properties: {} };

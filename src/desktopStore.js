@@ -1498,8 +1498,15 @@ export async function initMcpServers() {
     const flags = {
       enablePlaywrightMcp:  Boolean(config.enablePlaywrightMcp),
       enableBrowserlessMcp: Boolean(config.enableBrowserlessMcp),
+      enableAntvChartMcp:    Boolean(config.enableAntvChartMcp),
+      enableMarkdown2PdfMcp: Boolean(config.enableMarkdown2PdfMcp),
     };
-    const hasServers = Object.keys(mcpServers).length || flags.enablePlaywrightMcp || flags.enableBrowserlessMcp;
+    const hasServers =
+      Object.keys(mcpServers).length ||
+      flags.enablePlaywrightMcp ||
+      flags.enableBrowserlessMcp ||
+      flags.enableAntvChartMcp ||
+      flags.enableMarkdown2PdfMcp;
     if (hasServers) {
       const results = await bootstrapMcpServers(mcpServers, flags);
       const connected = Object.entries(results)

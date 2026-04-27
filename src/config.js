@@ -64,6 +64,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   // Browser MCP flags — set to true to auto-launch browser automation servers
   enablePlaywrightMcp:  false,  // @playwright/mcp (brew install playwright required)
   enableBrowserlessMcp: false,  // @browserless/mcp (cloud browser, needs BROWSERLESS_TOKEN)
+  // Productivity MCP flags — chart generation + document conversion. The
+  // markdown→pdf converter is enabled by default because it's strictly
+  // local and matches a common ask; the chart server stays off because it
+  // pulls a heavier dep tree and can fetch external assets at render time.
+  // Each MCP runs in a sandboxed cwd at `~/.melo/desktop/mcp-workspace/<id>/`.
+  enableAntvChartMcp:    false, // @antv/mcp-server-chart (25+ chart types)
+  enableMarkdown2PdfMcp: true,  // @99xio/markdown2pdf-mcp (md → PDF, local)
   // Extra web-search triggers (additive to built-in heuristics). Each item:
   //   { pattern: "regex source", flags?: "iu", weight: 2 }
   // Example:

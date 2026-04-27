@@ -32,12 +32,22 @@ export class McpStdioClient {
    * @param {string[]} [options.args]   - arguments
    * @param {Object}   [options.env]    - extra env vars merged with process.env
    * @param {string}   [options.name]   - human-readable server name for logging
+   * @param {string}   [options.cwd]    - working directory for the child process.
+   *                                     melo limits each MCP server to a
+   *                                     dedicated subtree under
+   *                                     `~/.melo/desktop/mcp-workspace/<name>/`
+   *                                     so a misbehaving server can't reach
+   *                                     into the user's $HOME or melo state
+   *                                     by default. Caller is responsible for
+   *                                     creating the directory before calling
+   *                                     `connect()` (see manager.js).
    */
-  constructor({ command, args = [], env = {}, name = 'mcp-server' }) {
+  constructor({ command, args = [], env = {}, name = 'mcp-server', cwd = null }) {
     this.command  = command;
     this.args     = args;
     this.envVars  = env;
     this.name     = name;
+    this.cwd      = cwd;
     this._proc    = null;
     this._pending = new Map(); // id → { resolve, reject, timer }
     this._buffer  = '';
@@ -50,10 +60,13 @@ export class McpStdioClient {
   async connect() {
     if (this._connected) return;
 
-    this._proc = spawn(this.command, this.args, {
+    const spawnOptions = {
       env: { ...process.env, ...this.envVars },
       stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    };
+    if (this.cwd) spawnOptions.cwd = this.cwd;
+
+    this._proc = spawn(this.command, this.args, spawnOptions);
 
     this._proc.stderr.on('data', chunk => {
       // Surface MCP server stderr to Node stderr prefixed with server name

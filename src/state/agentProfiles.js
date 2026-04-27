@@ -39,6 +39,7 @@ import {
 import {
   normalizeAgentTools,
   normalizeIdWhitelist,
+  normalizeMcpServerWhitelist,
 } from '../services/agent/agentTools.js';
 import { normalizeAgentChannels } from '../services/agent/agentChannels.js';
 
@@ -92,6 +93,10 @@ export function normalizeAgentProfile(agentId, profile) {
   const channels = normalizeAgentChannels(profile?.channels);
   const enabledSkillIds = normalizeIdWhitelist(profile?.enabledSkillIds);
   const enabledConnectorIds = normalizeIdWhitelist(profile?.enabledConnectorIds);
+  // Stdio MCP servers default to **deny all**.  See
+  // `normalizeMcpServerWhitelist` for the rationale: stdio MCPs run
+  // arbitrary local processes, so an agent has to opt-in to each server.
+  const enabledMcpServerIds = normalizeMcpServerWhitelist(profile?.enabledMcpServerIds);
   // Per-agent TTS voice override (MiniMax voice ID)
   const minimaxVoiceId =
     typeof profile?.minimaxVoiceId === 'string' && profile.minimaxVoiceId.trim()
@@ -127,6 +132,7 @@ export function normalizeAgentProfile(agentId, profile) {
       channels,
       enabledSkillIds,
       enabledConnectorIds,
+      enabledMcpServerIds,
       minimaxVoiceId,
       voiceReplyMode,
       voicePersonality,
@@ -189,6 +195,9 @@ export function normalizeAgentOverride(agentId, profile) {
   }
   if (profile.enabledConnectorIds !== undefined) {
     normalized.enabledConnectorIds = normalizeIdWhitelist(profile.enabledConnectorIds);
+  }
+  if (profile.enabledMcpServerIds !== undefined) {
+    normalized.enabledMcpServerIds = normalizeMcpServerWhitelist(profile.enabledMcpServerIds);
   }
 
   return Object.keys(normalized).length ? normalized : null;
