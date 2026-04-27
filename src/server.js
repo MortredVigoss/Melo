@@ -15,6 +15,8 @@ import {
   createArtifact,
   updateArtifact,
   deleteArtifact,
+  restoreArtifact,
+  purgeStaleSoftDeletes,
   createApproval,
   createChat,
   createExternalConnector,
@@ -326,6 +328,19 @@ const _memoryRuntime = await startMemoryRuntime().catch(err => {
 if (_memoryRuntime?.schedulerStarted) {
   process.stdout.write('[memory.runtime] dreaming scheduler armed\n');
 }
+
+// Soft-delete GC: drop tombstones older than 7 days at startup.  The
+// undo window is 5 seconds; a week of grace is generous insurance
+// against clock skew, manual restore-by-editing-state.json, and a user
+// who finds an old soft-delete after digging through their backup.
+// Failure is non-fatal — purge errors get logged and the server boots.
+purgeStaleSoftDeletes({ olderThanDays: 7 }).then(({ purged }) => {
+  if (purged > 0) {
+    process.stdout.write(`[artifacts] purged ${purged} stale soft-delete(s)\n`);
+  }
+}).catch(err => {
+  process.stderr.write(`[artifacts.purge] startup sweep failed: ${err?.message || err}\n`);
+});
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -1389,6 +1404,12 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/artifacts/delete' && request.method === 'POST') {
       const body = await readJsonBody(request);
       sendJson(response, 200, await deleteArtifact(body?.artifactId));
+      return;
+    }
+
+    if (url.pathname === '/api/artifacts/restore' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, await restoreArtifact(body?.artifactId));
       return;
     }
 

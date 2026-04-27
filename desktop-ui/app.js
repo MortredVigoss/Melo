@@ -170,15 +170,6 @@ const uiState = {
   // button and tucks research/builder/reviewer behind a "⋯" dropdown so
   // the lane row doesn't sprout four equal-weight chips.
   taskLaneOverflowOpen: false,
-  // Soft-deleted artifacts pending the undo window.  Map<artifactId,
-  // { timeoutId }>.  While an entry is here:
-  //   - the artifact card renders with the .is-pending-delete class
-  //   - the bottom undo-toast counts down until the destructive
-  //     /api/artifacts/delete actually fires
-  //   - clicking Undo clears the timer and removes the entry
-  // Persisted in memory only; reload of the desktop app would
-  // immediately commit any pending delete via the timeout handler.
-  pendingArtifactDeletes: new Map(),
   composerDragActive: false,
   highlightedMessageId: null,
   shouldFocusSearch: false,
@@ -4683,26 +4674,31 @@ async function handleUpdateArtifact() {
 }
 
 /**
- * Soft-delete an artifact: keep the row visible (greyed out) and pop an
- * undo toast.  Only after the toast expires does the destructive API
- * fire.  The previous implementation used `window.confirm` (no undo,
- * jarring native modal); the audit replaced both with this soft pattern.
+ * Server-driven soft-delete with a 5-second undo window.
+ *
+ * Flow:
+ *   1. POST /api/artifacts/delete → server stamps `deletedAt`. The row
+ *      vanishes from the UI (bootstrap filters soft-deleted out) but
+ *      lives on in state.json so undo + crash recovery + GC all work.
+ *   2. Pop an undo-toast counting down 5s.  Clicking Undo posts to
+ *      /api/artifacts/restore which clears `deletedAt` and the row
+ *      reappears with the same id (no recreate, no broken refs).
+ *   3. If the toast lapses untouched, we do nothing — the server has
+ *      already committed the delete.  `purgeStaleSoftDeletes` evicts
+ *      the tombstone after 7 days at server boot.
+ *
+ * This replaces the older client-timer model that broke when the user
+ * reloaded / closed the window during the undo window (Codex C
+ * finding: setTimeout died, server never deleted, but UI said
+ * "Deleted").  Now every transition is server-acknowledged.
  */
-function handleDeleteArtifact(artifactId) {
+async function handleDeleteArtifact(artifactId) {
   if (!artifactId) return;
   const artifact = uiState.bootstrap?.artifacts?.find(item => item.id === artifactId);
   if (!artifact) return;
-  if (uiState.pendingArtifactDeletes.has(artifactId)) {
-    // Already counting down — a second click is a no-op.
-    return;
-  }
 
-  const label = artifact.title ? `"${artifact.title}"` : 'this artifact';
-
-  // Clear current selection / edit-buffer pre-emptively so the panel
-  // doesn't show stale content for the row we're about to remove.  If
-  // the user hits Undo we just keep the cleared selection — same end
-  // state as if they'd selected away first, no data loss.
+  // Clear current selection / edit-buffer pre-emptively so the detail
+  // panel doesn't render stale content for the row we're about to hide.
   if (uiState.selectedArtifactId === artifactId) {
     uiState.selectedArtifactId = null;
   }
@@ -4711,41 +4707,39 @@ function handleDeleteArtifact(artifactId) {
     uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
   }
 
-  const commitDelete = async () => {
-    // commit can race with Undo — guard via the Map presence check so a
-    // user who clicked Undo after the timer fired (but before the API
-    // round-trip finished) doesn't get the row deleted.
-    if (!uiState.pendingArtifactDeletes.has(artifactId)) return;
-    uiState.pendingArtifactDeletes.delete(artifactId);
-    try {
-      const payload = await api('/api/artifacts/delete', {
-        method: 'POST',
-        body: { artifactId },
-      });
-      applyBootstrap(payload);
-    } catch (err) {
-      uiState.error = String(err?.message || 'Failed to delete artifact.');
-      render();
-      setTimeout(() => { uiState.error = null; render(); }, 4000);
-    }
-  };
+  const label = artifact.title ? `"${artifact.title}"` : 'this artifact';
 
-  const timeoutId = setTimeout(commitDelete, UNDO_TOAST_DEFAULT_MS);
-  uiState.pendingArtifactDeletes.set(artifactId, { timeoutId });
+  let payload;
+  try {
+    payload = await api('/api/artifacts/delete', {
+      method: 'POST',
+      body: { artifactId },
+    });
+  } catch (err) {
+    uiState.error = String(err?.message || 'Failed to delete artifact.');
+    render();
+    setTimeout(() => { uiState.error = null; render(); }, 4000);
+    return;
+  }
+  applyBootstrap(payload);
 
   showUndoToast({
     message: `Deleted ${label}.`,
     ms: UNDO_TOAST_DEFAULT_MS,
-    onUndo: () => {
-      const entry = uiState.pendingArtifactDeletes.get(artifactId);
-      if (!entry) return;
-      clearTimeout(entry.timeoutId);
-      uiState.pendingArtifactDeletes.delete(artifactId);
-      render();
+    onUndo: async () => {
+      try {
+        const restored = await api('/api/artifacts/restore', {
+          method: 'POST',
+          body: { artifactId },
+        });
+        applyBootstrap(restored);
+      } catch (err) {
+        uiState.error = `Restore failed: ${err?.message || err}`;
+        render();
+        setTimeout(() => { uiState.error = null; render(); }, 4000);
+      }
     },
   });
-
-  render();
 }
 
 async function handleSaveConnectorConfig(form) {
@@ -10076,8 +10070,6 @@ function renderArtifactsPage() {
                           <button
                             class="artifact-card ${
                               active?.id === artifact.id ? 'is-active' : ''
-                            } ${
-                              uiState.pendingArtifactDeletes.has(artifact.id) ? 'is-pending-delete' : ''
                             }"
                             data-action="select-artifact"
                             data-artifact-id="${artifact.id}"

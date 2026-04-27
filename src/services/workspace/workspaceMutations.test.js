@@ -42,7 +42,12 @@ function readPersistedState(home) {
 const TEST_HOME = freshHome();
 process.env.MELO_HOME = TEST_HOME;
 
-const { updateArtifact, deleteArtifact } = await import('./workspaceMutations.js');
+const {
+  updateArtifact,
+  deleteArtifact,
+  restoreArtifact,
+  purgeStaleSoftDeletes,
+} = await import('./workspaceMutations.js');
 
 after(() => {
   try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {}
@@ -171,9 +176,9 @@ test('updateArtifact: language + kind + content all patched together, identity p
   assert.equal(a.createdAt, '2025-01-01T00:00:00.000Z');
 });
 
-// ─── deleteArtifact ─────────────────────────────────────────────────────────
+// ─── deleteArtifact (now soft-delete) ───────────────────────────────────────
 
-test('deleteArtifact: removes the matching row + bumps the owner project', async () => {
+test('deleteArtifact: stamps deletedAt instead of dropping the row + bumps the owner project', async () => {
   seed(TEST_HOME, fixtureState({
     artifacts: [
       { ...baseArtifact, id: 'art-del' },
@@ -185,11 +190,32 @@ test('deleteArtifact: removes the matching row + bumps the owner project', async
   await deleteArtifact('art-del');
 
   const after = readPersistedState(TEST_HOME);
-  assert.equal(after.artifacts.length, 1);
-  assert.equal(after.artifacts[0].id, 'art-keep');
+  // Both rows still on disk — soft-delete keeps the data so undo + GC
+  // can reach it without round-tripping the client.
+  assert.equal(after.artifacts.length, 2);
+
+  const deleted = after.artifacts.find(a => a.id === 'art-del');
+  const kept = after.artifacts.find(a => a.id === 'art-keep');
+  assert.ok(typeof deleted.deletedAt === 'string' && Date.parse(deleted.deletedAt));
+  assert.ok(!kept.deletedAt);
 
   const project = after.projects.find(p => p.id === 'proj-x');
   assert.notEqual(project.updatedAt, '2025-01-01T00:00:00.000Z');
+});
+
+test('deleteArtifact: bootstrap response hides soft-deleted rows', async () => {
+  seed(TEST_HOME, fixtureState({
+    artifacts: [
+      { ...baseArtifact, id: 'art-hidden' },
+      { ...baseArtifact, id: 'art-visible', title: 'Visible' },
+    ],
+    projects: [{ id: 'proj-x', name: 'demo', workspacePath: '/tmp/x', summary: '', tag: '', instructions: '', createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z' }],
+  }));
+
+  const bootstrap = await deleteArtifact('art-hidden');
+  const ids = (bootstrap.artifacts || []).map(a => a.id);
+  assert.ok(!ids.includes('art-hidden'), 'soft-deleted artifact must not appear in bootstrap.artifacts');
+  assert.ok(ids.includes('art-visible'));
 });
 
 test('deleteArtifact: unknown id throws Artifact not found', async () => {
@@ -200,11 +226,107 @@ test('deleteArtifact: unknown id throws Artifact not found', async () => {
     /Artifact not found/,
   );
 
-  // State unchanged — nothing removed.
-  assert.equal(readPersistedState(TEST_HOME).artifacts.length, 1);
+  // State unchanged — nothing soft-deleted.
+  const after = readPersistedState(TEST_HOME);
+  assert.equal(after.artifacts.length, 1);
+  assert.ok(!after.artifacts[0].deletedAt);
+});
+
+test('deleteArtifact: double-delete throws Artifact not found (already soft-deleted)', async () => {
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'art-once', deletedAt: '2025-01-02T00:00:00.000Z' }],
+  }));
+
+  await assert.rejects(
+    () => deleteArtifact('art-once'),
+    /Artifact not found/,
+  );
 });
 
 test('deleteArtifact: missing artifactId throws', async () => {
   await assert.rejects(() => deleteArtifact(''), /id is required/i);
   await assert.rejects(() => deleteArtifact(undefined), /id is required/i);
+});
+
+// ─── restoreArtifact ────────────────────────────────────────────────────────
+
+test('restoreArtifact: clears deletedAt + bumps owner project', async () => {
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'art-r', deletedAt: '2025-01-02T00:00:00.000Z' }],
+    projects: [{ id: 'proj-x', name: 'demo', workspacePath: '/tmp/x', summary: '', tag: '', instructions: '', createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z' }],
+  }));
+
+  const bootstrap = await restoreArtifact('art-r');
+  const restored = readPersistedState(TEST_HOME).artifacts.find(a => a.id === 'art-r');
+  assert.equal(restored.deletedAt, undefined);
+
+  // Reappears in bootstrap.
+  const ids = (bootstrap.artifacts || []).map(a => a.id);
+  assert.ok(ids.includes('art-r'));
+
+  const project = readPersistedState(TEST_HOME).projects.find(p => p.id === 'proj-x');
+  assert.notEqual(project.updatedAt, '2025-01-01T00:00:00.000Z');
+});
+
+test('restoreArtifact: unknown id throws Artifact not found', async () => {
+  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-only' }] }));
+  await assert.rejects(() => restoreArtifact('nope'), /Artifact not found/);
+});
+
+test('restoreArtifact: row that was never soft-deleted throws', async () => {
+  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-live' }] }));
+  await assert.rejects(() => restoreArtifact('art-live'), /not soft-deleted/);
+});
+
+test('restoreArtifact: missing id throws', async () => {
+  await assert.rejects(() => restoreArtifact(''), /id is required/i);
+});
+
+// ─── purgeStaleSoftDeletes ──────────────────────────────────────────────────
+
+test('purgeStaleSoftDeletes: drops rows whose deletedAt is older than the cutoff', async () => {
+  const oldIso = '2025-01-01T00:00:00.000Z';   // ~13 months before nowMs
+  const recentIso = '2026-04-26T12:00:00.000Z'; // 1 day before nowMs
+  const nowMs = Date.parse('2026-04-27T12:00:00.000Z');
+
+  seed(TEST_HOME, fixtureState({
+    artifacts: [
+      { ...baseArtifact, id: 'old',    deletedAt: oldIso },
+      { ...baseArtifact, id: 'recent', deletedAt: recentIso },
+      { ...baseArtifact, id: 'live' }, // no deletedAt — must survive
+    ],
+  }));
+
+  const result = await purgeStaleSoftDeletes({ olderThanDays: 7, nowMs });
+  assert.equal(result.purged, 1);
+
+  const ids = readPersistedState(TEST_HOME).artifacts.map(a => a.id);
+  assert.ok(!ids.includes('old'), 'old soft-deleted row should be evicted');
+  assert.ok(ids.includes('recent'), 'recent soft-deleted row stays for the undo window');
+  assert.ok(ids.includes('live'));
+});
+
+test('purgeStaleSoftDeletes: idempotent — second run drops nothing', async () => {
+  const oldIso = '2025-01-01T00:00:00.000Z';
+  const nowMs = Date.parse('2026-04-27T12:00:00.000Z');
+
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'old', deletedAt: oldIso }],
+  }));
+
+  const first = await purgeStaleSoftDeletes({ olderThanDays: 7, nowMs });
+  assert.equal(first.purged, 1);
+  const second = await purgeStaleSoftDeletes({ olderThanDays: 7, nowMs });
+  assert.equal(second.purged, 0);
+});
+
+test('purgeStaleSoftDeletes: keeps rows with unparseable deletedAt (defensive)', async () => {
+  seed(TEST_HOME, fixtureState({
+    artifacts: [{ ...baseArtifact, id: 'broken', deletedAt: 'not-a-date' }],
+  }));
+
+  const result = await purgeStaleSoftDeletes({ olderThanDays: 7, nowMs: Date.now() });
+  assert.equal(result.purged, 0);
+  const ids = readPersistedState(TEST_HOME).artifacts.map(a => a.id);
+  assert.ok(ids.includes('broken'));
 });

@@ -258,11 +258,17 @@ export async function getDesktopBootstrap(query = '') {
     { projectId: activeProject?.id || null, scope: activeAgentScope },
     ctx.getAgentMarkdownPaths,
   );
-  const projectArtifacts = state.artifacts
+  // Soft-deleted artifacts (deletedAt set by `deleteArtifact`) stay in
+  // state.json so the undo path + GC can find them, but they must not
+  // appear in any UI surface.  Filter once at the bootstrap boundary so
+  // every consumer downstream only ever sees live rows.
+  const visibleArtifacts = state.artifacts.filter(entry => !entry?.deletedAt);
+
+  const projectArtifacts = visibleArtifacts
     .filter(artifact => artifact.projectId === activeProject?.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
-  const activeChatArtifacts = state.artifacts
+  const activeChatArtifacts = visibleArtifacts
     .filter(artifact => artifact.chatId === selectedChat?.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
@@ -313,9 +319,9 @@ export async function getDesktopBootstrap(query = '') {
     recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
-    projects: state.projects.map(project => summarizeProject(project, chats, state.artifacts)),
+    projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifacts)),
     activeProject,
-    artifacts: [...state.artifacts]
+    artifacts: [...visibleArtifacts]
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       .map(summarizeArtifact),
     projectArtifacts,

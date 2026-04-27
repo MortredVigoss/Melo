@@ -4602,11 +4602,6 @@ select option {
   outline: none;
 }
 
-.artifact-card.is-pending-delete {
-  opacity: 0.42;
-  filter: grayscale(0.4);
-  pointer-events: none;
-}
 
 .page-kicker-tip {
   margin-top: 6px !important;

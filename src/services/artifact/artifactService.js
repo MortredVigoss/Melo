@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { nowIso, coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
 
 export function normalizeArtifact(artifact) {
-  return {
+  const out = {
     id: artifact?.id || randomUUID(),
     chatId: artifact?.chatId || null,
     projectId: artifact?.projectId || null,
@@ -33,6 +33,13 @@ export function normalizeArtifact(artifact) {
     content: typeof artifact?.content === 'string' ? artifact.content : '',
     createdAt: coerceIso(artifact?.createdAt),
   };
+  // Preserve the soft-delete tombstone if it's a parseable ISO string.
+  // Anything malformed gets dropped so a corrupt state.json can't keep
+  // a row hidden forever.
+  if (typeof artifact?.deletedAt === 'string' && Number.isFinite(Date.parse(artifact.deletedAt))) {
+    out.deletedAt = artifact.deletedAt;
+  }
+  return out;
 }
 
 export function summarizeArtifact(artifact) {

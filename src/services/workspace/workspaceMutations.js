@@ -166,9 +166,26 @@ export async function updateArtifact(artifactId, patch = {}) {
 }
 
 /**
- * Remove an artifact from state. Returns the refreshed bootstrap so the UI
- * can re-render the panel without a separate fetch. Silently no-ops if the
- * id is unknown — keeps the UI's optimistic-delete flow simple.
+ * Soft-delete an artifact: stamp `deletedAt` instead of dropping the row.
+ *
+ * The UI undo flow relies on the server already having recorded the
+ * tombstone — that way a 5-second undo window survives reload, kill -9,
+ * the user dragging Melo into the dock, etc.  The previous version
+ * filtered the row out of `state.artifacts` immediately, which forced
+ * the client to keep the data in memory and synthesise a recreate path
+ * (id changes, breaks any cross-session reference).
+ *
+ * Visibility: `getDesktopBootstrap` filters out rows with `deletedAt`
+ * set, so from the UI's perspective this still looks like an immediate
+ * delete.  `restoreArtifact` clears the field for the undo path; old
+ * rows are eventually evicted by `purgeStaleSoftDeletes`.
+ *
+ * Errors:
+ *   - missing id  → "Artifact id is required."
+ *   - unknown id  → "Artifact not found."
+ *   - already-deleted id → "Artifact not found." (the bootstrap-visible
+ *     state is what counts; double-delete is the same as deleting an
+ *     unknown row)
  */
 export async function deleteArtifact(artifactId) {
   if (!artifactId || typeof artifactId !== 'string') {
@@ -177,17 +194,18 @@ export async function deleteArtifact(artifactId) {
 
   await updateStateAtomically(latestState => {
     const state = ensureSelectedEntities(latestState);
-    const before = state.artifacts.length;
-    const removed = state.artifacts.find(entry => entry?.id === artifactId);
-    state.artifacts = state.artifacts.filter(entry => entry?.id !== artifactId);
-    if (state.artifacts.length === before) {
-      // No row dropped — surface a clear error rather than silently
-      // returning a fresh bootstrap that "looks the same".
+    const target = state.artifacts.find(entry => entry?.id === artifactId);
+    if (!target || target.deletedAt) {
+      // Already gone (or already soft-deleted) — surface a clear error
+      // rather than silently returning a fresh bootstrap that "looks the
+      // same".  Matches the original API surface.
       throw new Error('Artifact not found.');
     }
 
-    if (removed?.projectId) {
-      const project = findProjectById(state, removed.projectId);
+    target.deletedAt = nowIso();
+
+    if (target.projectId) {
+      const project = findProjectById(state, target.projectId);
       if (project) {
         project.updatedAt = nowIso();
       }
@@ -196,6 +214,79 @@ export async function deleteArtifact(artifactId) {
   });
 
   return getDesktopBootstrap();
+}
+
+/**
+ * Reverse a `deleteArtifact` call: clear `deletedAt`, bump the owner
+ * project's `updatedAt`, refresh the bootstrap.  Used by the client's
+ * undo-toast path.  Throws when the id is unknown OR when the artifact
+ * isn't currently soft-deleted (defensive against a double-undo race).
+ */
+export async function restoreArtifact(artifactId) {
+  if (!artifactId || typeof artifactId !== 'string') {
+    throw new Error('Artifact id is required.');
+  }
+
+  await updateStateAtomically(latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const target = state.artifacts.find(entry => entry?.id === artifactId);
+    if (!target) {
+      throw new Error('Artifact not found.');
+    }
+    if (!target.deletedAt) {
+      throw new Error('Artifact is not soft-deleted; nothing to restore.');
+    }
+
+    delete target.deletedAt;
+
+    if (target.projectId) {
+      const project = findProjectById(state, target.projectId);
+      if (project) {
+        project.updatedAt = nowIso();
+      }
+    }
+    return state;
+  });
+
+  return getDesktopBootstrap();
+}
+
+/**
+ * Drop soft-deleted artifacts older than `olderThanDays` (default 7).
+ *
+ * The UI's undo window is 5 seconds; anything still soft-deleted a week
+ * later is ours to evict.  Run this once at server boot so we don't
+ * accumulate tombstones forever.  Pure logic except for the
+ * `updateStateAtomically` write, so it's safe to call from anywhere
+ * (idempotent — running it twice in a row drops nothing the second
+ * time).
+ *
+ * @param {Object} [opts]
+ * @param {number} [opts.olderThanDays=7]
+ * @param {number} [opts.nowMs=Date.now()] override for tests.
+ * @returns {Promise<{purged: number}>} how many rows were evicted.
+ */
+export async function purgeStaleSoftDeletes({ olderThanDays = 7, nowMs = Date.now() } = {}) {
+  const cutoffMs = nowMs - olderThanDays * 86_400_000;
+  let purged = 0;
+
+  await updateStateAtomically(latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const before = state.artifacts.length;
+    state.artifacts = state.artifacts.filter(entry => {
+      if (!entry?.deletedAt) return true;
+      const ts = Date.parse(entry.deletedAt);
+      // Keep rows with unparseable `deletedAt` (treat as "we don't know,
+      // be conservative").  Drop rows whose deletion is older than the
+      // cutoff.
+      if (!Number.isFinite(ts)) return true;
+      return ts > cutoffMs;
+    });
+    purged = before - state.artifacts.length;
+    return state;
+  });
+
+  return { purged };
 }
 
 export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {

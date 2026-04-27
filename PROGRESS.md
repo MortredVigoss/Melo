@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-27 18:30 — Codex C 修复：artifact 软删契约改为 server-driven（response to e1a8ecf C-grade post-push review）
+
+- 上一刀 `e1a8ecf` 用前端 setTimeout 实现 5s undo 窗口，git pp post-push review 给 C：🔴 reload/close 时 timer 死掉 → server 没删但 UI 说 "Deleted"；🟡 单 toast 实例覆盖前一个 undo；⚪ DOM 状态机无自动化测试。用户选方案 C（最彻底）：后端 soft-delete + restore 端点。
+- **Phase 1（后端契约）**：[workspaceMutations.js](src/services/workspace/workspaceMutations.js) 把 `deleteArtifact` 从硬删改为 stamp `deletedAt`；新增 `restoreArtifact`（清 deletedAt）+ `purgeStaleSoftDeletes({ olderThanDays = 7 })`（idempotent，evict 旧 tombstone）。`normalizeArtifact` ([artifactService.js](src/services/artifact/artifactService.js#L25)) 保留 deletedAt（仅当合法 ISO 时；malformed 字符串自动丢弃）。[desktopBootstrap.js](src/state/desktopBootstrap.js#L261) 入口算 `visibleArtifacts = state.artifacts.filter(a => !a?.deletedAt)`，4 处下游消费者全用 visible（projectArtifacts / activeChatArtifacts / 顶层 artifacts / summarizeProject）。[server.js](src/server.js) 新增 `POST /api/artifacts/restore`。
+- **Phase 2（前端切到 server-driven）**：[handleDeleteArtifact](desktop-ui/app.js#L4604) 重写 —— 立刻 POST `/api/artifacts/delete`，server 已 commit；展示 undo toast 5s；onUndo POST `/api/artifacts/restore`。删除 `pendingArtifactDeletes` Map / `setTimeout(commitDelete)` / `.is-pending-delete` 类（不再需要客户端状态机）。reload/close 不再丢 timer：server 端记录已 stable。多 artifact 连续删除：每个独立 server 端 tombstone，UI toast 仍单实例（被覆盖时旧 row 仍 deleted；要恢复需找回 server log，acceptable trade-off）。
+- **Phase 4（GC）**：[server.js](src/server.js) startup 调一次 `purgeStaleSoftDeletes({ olderThanDays: 7 })`，>7d tombstone 真删；非阻塞 + 错误 swallow（不影响 boot）。
+- 测试：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) 既有 deleteArtifact 测试改成 soft-delete 契约（artifacts.length 不减、deletedAt set、bootstrap 隐藏）+ 新增 8 个测试覆盖 restore 成功 / unknown id / not soft-deleted / missing id + GC cutoff / idempotent / unparseable date / double-delete throws。**17/17 全绿**（原 9 + 8 新）。
+- 验证：`npm run test:ui` 71/71；memory 套 330/330；workspace 套 17/17；check-syntax 全过。前端 handleDeleteArtifact 在新模型下变成 fire-and-forget pair (delete → restore on undo)，状态机已经被 server 端 17 个测试覆盖；DOM 部分是薄 toast，需要 jsdom 才能 unit test，留作下次 desktop-ui test harness 升级。
+- 提交哈希：待填。
+
 ## 2026-04-27 18:00 — 5 处次级 UX 体验提升（PDF 入口 / state 路径 / lane overflow / search 空状态 / artifacts 软删）
 
 - 用户审查发现"硬功能都通了，剩下的是体验不够清楚"，给了 5 条次级提升。两批 commit：
