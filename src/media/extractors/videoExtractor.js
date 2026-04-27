@@ -286,7 +286,8 @@ async function audioBranch(videoPath, audioPath, attachment, context, signal) {
   }
 }
 
-export async function extractVideoContent(attachment, context = {}) {
+export async function extractVideoContent(attachment, context = {}, { signal } = {}) {
+  if (signal?.aborted) return null;
   const url = String(attachment?.url || '');
   if (!url) return null;
 
@@ -302,6 +303,7 @@ export async function extractVideoContent(attachment, context = {}) {
   if (!(await hasFfmpeg())) {
     return null;
   }
+  if (signal?.aborted) return null;
 
   const tempDir = await mkdtemp(join(tmpdir(), 'melo-video-'));
   const videoPath = join(tempDir, 'video.bin');
@@ -315,7 +317,13 @@ export async function extractVideoContent(attachment, context = {}) {
       const base64Part = url.split(',')[1] || '';
       videoBuffer = Buffer.from(base64Part, 'base64');
     } else {
-      const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+      // Combine the orchestrator's external signal with the internal 60s
+      // download timeout via AbortSignal.any so an outer abort kills a
+      // hanging remote-video download immediately.
+      const downloadSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
+        : AbortSignal.timeout(60000);
+      const response = await fetch(url, { signal: downloadSignal });
       if (!response.ok) return null;
       videoBuffer = Buffer.from(await response.arrayBuffer());
     }

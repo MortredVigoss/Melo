@@ -188,19 +188,28 @@ export function _resetWhisperCppReadyForTests() {
   whisperCppReady = null;
 }
 
-async function checkWhisperCppReady() {
+async function checkWhisperCppReady({ signal } = {}) {
   if (whisperCppReady !== null) return whisperCppReady;
+  if (signal?.aborted) return false;  // don't cache "false" from abort — that
+                                       // would poison subsequent calls
   try {
     await execFileAsync(getWhisperCli(), ['--help'], {
       timeout: 8000,
       maxBuffer: 1024 * 1024,
+      signal,
     });
     const { existsSync } = await import('node:fs');
     whisperCppReady = existsSync(getWhisperModel());
-  } catch {
+  } catch (err) {
+    // If the failure was due to abort, leave whisperCppReady at null so the
+    // next non-aborted call re-probes. Caching "false" would permanently
+    // disable whisper.cpp after a single cancelled extraction.
+    if (err && (err.name === 'AbortError' || err.code === 'ABORT_ERR')) {
+      return false;
+    }
     whisperCppReady = false;
   }
-  return whisperCppReady;
+  return whisperCppReady ?? false;
 }
 
 /**
@@ -213,7 +222,7 @@ async function checkWhisperCppReady() {
  */
 async function tryWhisperCpp(audioBuffer, attachment = {}, { signal } = {}) {
   if (signal?.aborted) return null;
-  if (!(await checkWhisperCppReady())) return null;
+  if (!(await checkWhisperCppReady({ signal }))) return null;
 
   const wavBuffer = await convertToWavForNative(audioBuffer, attachment, { signal });
   if (!wavBuffer || signal?.aborted) return null;
@@ -258,9 +267,10 @@ async function tryWhisperCpp(audioBuffer, attachment = {}, { signal } = {}) {
 // Falls back to Apple SFSpeechRecognizer when whisper.cpp is unavailable.
 // ---------------------------------------------------------------------------
 
-async function hasFfmpegLocal() {
+async function hasFfmpegLocal({ signal } = {}) {
+  if (signal?.aborted) return false;
   try {
-    await execFileAsync('ffmpeg', ['-version'], { timeout: 5000, maxBuffer: 1024 * 1024 });
+    await execFileAsync('ffmpeg', ['-version'], { timeout: 5000, maxBuffer: 1024 * 1024, signal });
     return true;
   } catch {
     return false;
@@ -277,7 +287,7 @@ async function hasFfmpegLocal() {
 async function convertToWavForNative(audioBuffer, attachment = {}, { signal } = {}) {
   if (signal?.aborted) return null;
   if (!Buffer.isBuffer(audioBuffer) || !audioBuffer.length) return null;
-  if (!(await hasFfmpegLocal())) return null;
+  if (!(await hasFfmpegLocal({ signal }))) return null;
 
   const ext = (() => {
     const mime = String(attachment.mimeType || '').toLowerCase();

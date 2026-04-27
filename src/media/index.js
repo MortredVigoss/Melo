@@ -9,8 +9,15 @@ import { extractYoutubeContent } from './extractors/youtubeExtractor.js';
 import { detectUrlKind } from './urlDetector.js';
 
 const VALID_EXTRACTED_MEDIA_KINDS = new Set(['transcript', 'caption', 'article', 'summary']);
-const TOTAL_BUDGET_MS = 30000;
-const PER_ATTACHMENT_BUDGET_MS = 15000;
+let TOTAL_BUDGET_MS = 30000;
+let PER_ATTACHMENT_BUDGET_MS = 15000;
+
+// Tests inject smaller budgets so abort-path coverage doesn't need to wait
+// the full 15s. Pass `null` to restore production defaults.
+export function _setMediaBudgetsForTests({ totalMs, perAttachmentMs } = {}) {
+  TOTAL_BUDGET_MS = (typeof totalMs === 'number' && totalMs > 0) ? totalMs : 30000;
+  PER_ATTACHMENT_BUDGET_MS = (typeof perAttachmentMs === 'number' && perAttachmentMs > 0) ? perAttachmentMs : 15000;
+}
 
 function isPlaceholderSource(source = '') {
   const normalized = String(source || '').trim().toLowerCase();
@@ -24,11 +31,34 @@ function isPlaceholderSource(source = '') {
   );
 }
 
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise(resolve => setTimeout(() => resolve(null), Math.max(0, ms))),
-  ]);
+/**
+ * Race a workFn against a timeout AND propagate cancellation. The previous
+ * `withTimeout` only raced — when the timer fired, the underlying
+ * extraction (whisper.cpp child / Whisper API fetch / etc.) kept running
+ * in the background. With AbortController the timer also aborts the work,
+ * so backend resources are released immediately.
+ *
+ * Always resolves to either the work's result or null (never rejects,
+ * never hangs past `ms`).
+ */
+function withTimeoutAndAbort(workFn, ms) {
+  const ac = new AbortController();
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      ac.abort();
+      resolve(val);
+    };
+    const timer = setTimeout(() => finish(null), Math.max(0, ms));
+    Promise.resolve()
+      .then(() => workFn(ac.signal))
+      .then(
+        val => { clearTimeout(timer); finish(val); },
+        () => { clearTimeout(timer); finish(null); },
+      );
+  });
 }
 
 function extractedMediaLabel(entry = {}) {
@@ -46,17 +76,18 @@ function extractedMediaLabel(entry = {}) {
   }
 }
 
-async function routeExtraction(attachment, context) {
+async function routeExtraction(attachment, context, signal) {
   if (!attachment?.url) {
     return null;
   }
+  if (signal?.aborted) return null;
 
   if (attachment.kind === 'image') {
     return extractImageContent(attachment, context);
   }
 
   if (attachment.kind === 'audio') {
-    return extractAudioContent(attachment, context);
+    return extractAudioContent(attachment, context, { signal });
   }
 
   if (attachment.kind === 'video') {
@@ -67,7 +98,7 @@ async function routeExtraction(attachment, context) {
         return platformResult;
       }
     }
-    return extractVideoContent(attachment, context);
+    return extractVideoContent(attachment, context, { signal });
   }
 
   if (
@@ -213,13 +244,18 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
       0,
       Math.min(PER_ATTACHMENT_BUDGET_MS, deadline - Date.now()),
     );
-    if (remaining < 1000) {
+    // Skip extraction if there's not enough time left to make meaningful
+    // progress. Production threshold stays at 1s; in test mode with a
+    // very small per-attachment budget, the threshold scales down so the
+    // budget actually gets exercised instead of always-skip.
+    const minRemaining = Math.min(1000, Math.floor(PER_ATTACHMENT_BUDGET_MS / 4));
+    if (remaining < minRemaining) {
       return null;
     }
 
     try {
-      const result = await withTimeout(
-        routeExtraction(attachment, context).catch(() => null),
+      const result = await withTimeoutAndAbort(
+        signal => routeExtraction(attachment, context, signal).catch(() => null),
         remaining,
       );
       if (!result) {
