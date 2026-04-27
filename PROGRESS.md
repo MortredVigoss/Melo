@@ -13,7 +13,7 @@
 - **11 回归测试**：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) +3（update 拒 deleted / apply 拒 deleted / apply unknown id）；新建 [connectorRollup.test.js](src/services/connector/connectorRollup.test.js) +3（total / projectArtifacts / empty state）；新建 [dynamicContext.test.js](src/services/chat/dynamicContext.test.js) +4（live surface / deleted dropped / mixed live+deleted / connector disabled）；新建 [searchResultsBuilder.test.js](src/services/search/searchResultsBuilder.test.js) +3（artifacts bucket excludes deleted / empty when only deleted match / project summaries count only live）。
 - **契约确认（用户拍板）**：软删后任何 API / 任何上下文都不再可见 except `restoreArtifact`。删除 == 立即完全不可见 until undo。
 - 验证：`node --test 'src/**/*.test.js'` **1104/1104 全绿**（之前 1093 + 11 新加）；`npm run test:ui` 71/71；check-syntax 全过；workspace 套 20/20、connector 套 3/3、dynamicContext 套 4/4、search builder 套 3/3。
-- 提交哈希：待填。
+- 提交哈希：`768d511`。
 
 ## 2026-04-27 18:30 — Codex C 修复：artifact 软删契约改为 server-driven（response to e1a8ecf C-grade post-push review）
 
