@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行（Codex C-grade fix #4）
+
+- 03:30 那一刀只解了 audio **失败**路径，没解 audio **慢/挂**路径——Codex 第四次给 C：远端 Whisper 慢/卡死时仍会先撞外层 15s `withTimeout`，已经成功的 keyframes 一起被吃。Phase 3 承诺"transcript 失败但 keyframes 活下来"对 hang 场景不成立；外加音轨 ffmpeg 还在用裸 `spawn` 不走 `spawnWithAbort`。
+- 修复（`src/media/extractors/videoExtractor.js`）：
+  - 新增 `withAudioBudget(work, budgetMs)`（mirror `withKeyframeBudget`）：race work 和 timeout，永不抛、永不挂、超时 abort 信号 + resolve null。
+  - 新增 `audioBranch(videoPath, audioPath, attachment, context, signal)`：把 audio ffmpeg pass 改用 `spawnWithAbort`（signal 贯通子进程），随后 `readFile` + `_extractAudioContentImpl`，整体永不抛。
+  - 新增 `_setBudgetsForTests({ audioMs, keyframeMs })` DI hook 让测试可注入小预算（e.g. 100ms）跑 hanging-audio 测试不需要等 10s。
+  - `extractVideoContent` 关键改写：audio 与 keyframes 用 `Promise.all` 并行，各自独立 budget（audio 10s / keyframe 5s）；max(10, 5) = 10s 仍在外层 15s 之内；任何一路慢/挂都不能 starve 另一路。
+- 测试新增 5 个（共 20 个 video extractor test）：
+  - `withAudioBudget` 三件套：hanging → null within budget；throwing → null；fast success → 原值。
+  - **slow/hanging audio + 100ms budget → frames-only entry**（核心 Phase 3 hang 契约，elapsed < 8s 防回归）。
+  - audio throws → frames-only entry。
+- Codex 反问回应：
+  - **Q1: parallel vs sequential**：parallel（`Promise.all`），两路无依赖串行白等。
+  - **Q2: audio 独立预算 10s**：是。仍在外层 15s 之内，max(10, 5) = 10s。
+- 验证：`node --check` 全过；videoExtractor.test.js **20/20**；regression 全套 **347/347 全绿**（03:30 时 342，新增 5 个 audio-budget / parallelism 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功（Codex C-grade fix #3 + 实战 silent-video bug）
 
 - 上轮 Codex 第三次给 C：`extractVideoContent` 在 `audioResult` 为空时直接 `return null`，把已抽到的 keyframes 一起丢——和 UI"transcript + keyframes"承诺不一致。
@@ -31,65 +49,13 @@
 - 验证：`node --check` 全过；videoExtractor.test.js **15/15**；regression 全套 **342/342 全绿**（03:00 时 337，新增 5 个 e2e 测试）。
 - 提交哈希：（待 commit）
 
-## 2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg（Codex C-grade fix #2）
-
-- 上一刀（02:30）只把 abort 接到 ffmpeg child，**忘了 `probeDurationSec` 里的 ffprobe child**——budget 超时如果发生在 probe 阶段，ffprobe 进程被泄漏。Codex pre-push gate 第二次给 C，理由站得住：取消链路不完整，可能泄漏子进程。
-- 修复（`src/media/extractors/videoExtractor.js`）：
-  - 抽 `spawnWithAbort(bin, args, { collectStdout, signal, onSpawn })` 统一封装：pre-abort 立即 SIGKILL + reject；mid-flight abort 监听器 SIGKILL + reject；natural exit/error 清理 listener 防晚 fire；`collectStdout: true` 给 ffprobe 拿 duration text；`onSpawn(child)` callback 给测试观察 child handle。
-  - `probeDurationSec(videoPath, { signal })` 改走 `spawnWithAbort('ffprobe', ..., { collectStdout: true, signal })`。
-  - `extractKeyframes` 把 signal 显式传给 probeDurationSec + spawnWithAbort，整条 ffprobe → ffmpeg → readdir/readFile 链路共享同一 AbortSignal。
-- 测试新增 3 case 锁住"真子进程被杀"契约（不是只测 JS 层 signal）：
-  - `spawnWithAbort` 跑挂死的 `node -e "setInterval(()=>{},1e9)"`，80ms 后 abort → reject 时间 < 1000ms（如果 SIGKILL 没生效，子进程会跑 31 年，测试会被 budget 卡住）。
-  - 预 abort 的 signal → child 立即 killed，elapsed < 500ms，`onSpawn` 观察到 `child.killed === true`（synchronous）。
-  - 子进程自然 exit 后 abort → 不抛、不 late-settle（验证 listener cleanup）。
-- Codex 反问回应：
-  - **5s 覆盖 ffprobe + ffmpeg 总耗时**：是。同一 AbortSignal 横贯整条链路。
-  - **SIGKILL 还是 SIGTERM→SIGKILL**：用 SIGKILL。ffprobe/ffmpeg 无持久状态，graceful shutdown 升级路径徒增复杂度+延迟，得不偿失。
-- 验证：`node --check` 全过；videoExtractor.test.js 10/10；regression 全套 **337/337 全绿**（02:30 时 334，新增 3 个 spawnWithAbort 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时（Codex C-grade fix——transcript 不能被抽帧拖死）
-
-- Phase 2 commit `adb21ca` 被 `git pp` 的 Codex pre-push evaluation 卡 **C 级**——理由是真 bug：`extractKeyframes` 没有内部超时，外层 `routeExtraction` 给整个 extraction 套了 15s race，抽帧慢 → 整个 race 超时 → **已经成功的 transcript 一起丢**。
-- 修复（`src/media/extractors/videoExtractor.js`）：
-  - 新 export `KEYFRAME_BUDGET_MS = 5000`：抽帧硬预算 5s，独立于外层 15s 总预算（transcript 头等公民、keyframes bonus）。
-  - `extractKeyframes(videoPath, framesDir, { signal })` 接受 `AbortSignal`：signal 已 abort 时直接 `return []`；ffmpeg 进行中收到 abort `child.kill('SIGKILL')` 杀子进程避免 zombie；on exit/error 同步 `removeEventListener` 清理。
-  - 新 export `withKeyframeBudget(work, budgetMs)`：用 `AbortController` race 内部任务和 `setTimeout(budget)`，**绝不抛 / 绝不挂**；超时直接 `resolve []` + 同时 abort 信号 → child kill；任何 throw → `[]`；成功 → 原值。
-  - 调用点改 `keyframes = await withKeyframeBudget(signal => extractKeyframes(videoPath, framesDir, { signal }))`，外层保留 try/catch 双保险。
-- 测试新增 5 个 case 锁住契约（`src/media/extractors/videoExtractor.test.js`）：
-  - `withKeyframeBudget` 挂死 work + 50ms 预算 → `[]` 且 elapsed < 500ms（证明真超时不阻塞）。
-  - `withKeyframeBudget` throw → `[]`。
-  - `withKeyframeBudget` 快速成功 → 原值不动。
-  - `withKeyframeBudget` 超时时给 work 的 signal 实际 fire abort（证明子进程清理路径走通）。
-  - `extractKeyframes` 接收已 abort 的 signal → 直接 `[]`，不调 ffprobe / ffmpeg。
-- Codex 反问回应：
-  - **超时预算 5s**：经过 review，确认。典型短视频抽 5 张 1-2s；5s 给 webm/h265 留 margin；且 5s + 10s audio < 15s 外层预算，不蚕食。
-  - **无音轨视频只发 keyframes**：本次不动。改 result.kind 契约（不再是 transcript） + `extractedMedia.text` empty 不让通过 `normalizeMediaText`，影响面比这刀大。留 Phase 3。
-- 验证：`node --check` 全过；regression `services + state + desktopStore + memory + agents + media` **334/334 全绿**（Phase 2 时 329，新增 5 个 timeout/abort 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 02:00 — Video Phase 2：关键帧抽取上线（音轨 transcript + 5 张关键帧 → 模型真能"看"视频）
-
-- Phase 1 只是文案诚实，模型还是只听音轨。Phase 2 让模型实际拿到画面。
-- **抽帧实现**（`src/media/extractors/videoExtractor.js`）：现有 `-vn` 抽音轨成功后，再跑第二轮 ffmpeg：
-  - 先 `ffprobe` 拿 duration（新建 `probeDurationSec`）。
-  - 间隔 `interval = duration / 5`，clamp 到 [1s, 30s]——短视频不退化成 1 帧密集，长视频不堆爆 token。
-  - 滤镜 `fps=1/${interval},scale=512:-2`（每 N 秒一帧 + 缩到 512px 宽，`-2` 保偶高），`-frames:v 8` 硬 cap，`-q:v 4`（≈JPEG q70）。
-  - 每帧读出来 base64 → `data:image/jpeg;base64,...`，放到 `result.metadata.keyframes: [...]`。
-  - 抽帧失败（ffprobe 缺 / 视频损坏 / mkdir 失败）→ `keyframes = []`，**绝不影响 transcript** 返回路径。新建 `extractKeyframes` 单独 export 给测试用。
-- **plumbing**（`src/services/chat/messageBuilder.js`）：`messageToModelContent` 处理 video attachment 时按 `attachmentId` 查到对应 `extractedMedia` entry，如果有 `metadata.keyframes` 就逐帧 emit `{type:'image_url', image_url:{url:dataUrl}}`，position 在 `video_attachment` 之前（后者反正在 openai.js 被 drop）。`normalizeExtractedMedia` 已经原样保留 metadata，零 schema 改动。
-- **UI 文案同步**（`desktop-ui/app.js`）：附件菜单副标 "audio transcript only" → "transcript + keyframes"；hover title 改成完整说明 "audio is transcribed via Whisper, and ~5 evenly-spaced keyframes are sent to the model alongside the transcript."；drop banner / 消息流卡片 hint 同步。
-- **测试**：
-  - 新建 `src/media/extractors/videoExtractor.test.js`：用 `ffmpeg -f lavfi -i testsrc2=...` 现造一个 6s 320x240 测试视频，断言 `extractKeyframes` 返回 ≥3 ≤8 张 `data:image/jpeg;base64,...`，每张 base64 长度 >100。同 file 加一个 "ffprobe 读不出 duration → 返回 []" 测试。
-  - `src/services/chat/messageBuilder.test.js` 加 2 个 case：video + keyframes → image_url parts emitted（顺序在 video_attachment 之前）；video 无 keyframes → 不 emit image_url（graceful fallback）。
-- **token 成本估算**：512px JPEG q70 ≈ 30-60 KB / 张，5 张 ≈ 250 KB。OpenAI vision 按 `512×512 ≈ 170 token / 帧` 估，5 帧 ≈ 850 token——可接受，跟一张正常用户上传图差不多体量。
-- 验证：`node --check` 全过；regression `services + state + desktopStore + memory + agents + media` **329/329 全绿**（Phase 1 时 303，新增 2 个 videoExtractor + 2 个 messageBuilder test + 媒体周边测试自动 picked up）。
-- 提交哈希：（待 commit）
-
-## 归档摘要（2026-04-27 03:00 之前的所有条目）
+## 归档摘要（2026-04-27 03:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg** —— 抽 `spawnWithAbort(bin, args, { signal, collectStdout, onSpawn })` 统一 child + signal 耦合；`probeDurationSec` 接受 signal；3 个 child-kill 测试用真挂死的 `node -e setInterval` 证 SIGKILL 实落地。`1dba8b4`
+- **2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时** —— 加 `KEYFRAME_BUDGET_MS = 5000`、`extractKeyframes(_,_,{signal})` 接收 AbortSignal、`withKeyframeBudget(work, ms)` race 内部 AbortController 与 setTimeout，超时 SIGKILL ffmpeg 子进程 + resolve []，transcript 成头等公民。`5d33930`
+- **2026-04-27 02:00 — Video Phase 2 上线：关键帧抽取（音轨 transcript + 5 张关键帧）** —— `videoExtractor.js` 加 `probeDurationSec` + `extractKeyframes`，每 N 秒一帧 / scale 512px / JPEG q4 / cap 8 张；`messageBuilder.js` 按 `attachmentId` 把 keyframes emit 成 `image_url` parts；UI 副标改 "transcript + keyframes"。后被 5d33930 / 1dba8b4 / a5d855c 多轮 Codex C-grade gate 修补。`adb21ca`
 - **2026-04-27 01:35 — Video Phase 1：UI 文案诚实化** —— 视频 attachment 实际只走 `ffmpeg -vn` 抽音轨转写、无视觉信息，UI 加副标 "audio transcript only" / drop banner / caption hint 三处同步，避免用户误以为模型能看画面。`75b9370`
 - **2026-04-27 01:10 — Composer Link 入口统一 URL 分类** —— `desktop-ui/app.js` 的 manual Link 改走 `promoteTextUrlsToAttachments`（共享 `/shared/urlDetector.js` 静态路由），YouTube/音频/视频/PDF/普通网页粘贴文字 vs 点 Link 得到同样的 kind/mimeType/title；6 个 promoted-shape 契约测试。`207ea6a`
 - **2026-04-27 00:45 — Artifacts UI 按钮重新设计** —— Edit/Delete 改 `.small-button` 文字变体（is-outline / is-danger / is-primary），跟已有 Queue write 同款语言；删 unused pencil/trash icon；编辑表单加 surface-card 类对齐创建表单。`0a8064a`

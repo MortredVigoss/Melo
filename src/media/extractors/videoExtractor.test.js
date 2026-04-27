@@ -14,10 +14,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  _setBudgetsForTests,
   _setExtractAudioContentForTests,
   extractKeyframes,
   extractVideoContent,
   spawnWithAbort,
+  withAudioBudget,
   withKeyframeBudget,
 } from './videoExtractor.js';
 
@@ -339,6 +341,67 @@ test('extractVideoContent: BOTH audio and keyframes fail → returns null', { sk
   // entry. Locks the explicit `if (keyframes.length > 0)` guard above.
   const result = await runExtractVideoContentWith(async () => null, { corruptInput: true });
   assert.equal(result, null);
+});
+
+// ─── Phase 3 hardening: parallel branches, slow-audio, audio-throw ──────────
+// Codex C-grade fix #4 reason: previous Phase 3 only handled audio FAILURE,
+// not audio HANG. Audio + keyframes now run in parallel via Promise.all
+// with independent budgets — these tests exercise the slow / hanging /
+// throwing audio paths against a small audio budget so the test suite
+// stays fast.
+
+test('withAudioBudget: hanging work resolves to null within budget', async () => {
+  const start = Date.now();
+  const result = await withAudioBudget(() => new Promise(() => {}), 80);
+  const elapsed = Date.now() - start;
+  assert.equal(result, null);
+  assert.ok(elapsed < 500, `expected ~80ms, got ${elapsed}ms`);
+});
+
+test('withAudioBudget: throwing work resolves to null', async () => {
+  const result = await withAudioBudget(() => Promise.reject(new Error('boom')));
+  assert.equal(result, null);
+});
+
+test('withAudioBudget: fast successful work returns its value', async () => {
+  const fake = { kind: 'transcript', text: 'ok', metadata: {} };
+  const result = await withAudioBudget(() => Promise.resolve(fake));
+  assert.deepEqual(result, fake);
+});
+
+test('extractVideoContent: SLOW/hanging audio does not block keyframes (Phase 3 parallelism)', { skip: !ffmpegOk || !ffprobeOk }, async () => {
+  // Slash the audio budget to 100ms so the test stays fast; stub the audio
+  // call to hang forever. Keyframes branch should still settle inside its
+  // own 5s budget (typical 6s test video → 1-2s extraction). End result is
+  // a frames-only entry, NOT null and NOT a hung promise.
+  _setBudgetsForTests({ audioMs: 100 });
+  try {
+    const start = Date.now();
+    const result = await runExtractVideoContentWith(
+      () => new Promise(() => {}),  // hangs forever
+      { withAudio: true },
+    );
+    const elapsed = Date.now() - start;
+
+    assert.ok(result, 'frames-only entry expected, not null');
+    assert.equal(result.metadata.source, 'video-keyframes-only');
+    assert.ok(result.metadata.keyframes.length >= 1);
+    // Sanity: max(audio=100ms, keyframes=~2s) ≈ 2s. If audio actually
+    // blocked the function, we'd hit the 30s test default timeout instead.
+    assert.ok(elapsed < 8000, `extractVideoContent should settle within keyframe budget, took ${elapsed}ms`);
+  } finally {
+    _setBudgetsForTests();  // restore defaults
+  }
+});
+
+test('extractVideoContent: audio throws → keyframes-only entry', { skip: !ffmpegOk || !ffprobeOk }, async () => {
+  const result = await runExtractVideoContentWith(
+    async () => { throw new Error('whisper down'); },
+    { withAudio: true },
+  );
+  assert.ok(result);
+  assert.equal(result.metadata.source, 'video-keyframes-only');
+  assert.ok(result.metadata.keyframes.length >= 1);
 });
 
 test('Phase 3 frames-only entry survives normalizeExtractedMedia', async () => {

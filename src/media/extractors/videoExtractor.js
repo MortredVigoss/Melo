@@ -24,13 +24,24 @@ const KEYFRAME_MAX_INTERVAL_SEC = 30;
 const KEYFRAME_WIDTH = 512;
 const KEYFRAME_JPEG_QUALITY = 4;
 
-// Hard budget for the keyframe pass. The transcript is the load-bearing
-// output — keyframes are bonus visual context. If ffmpeg / ffprobe hangs
-// or the codec is unusually slow, we abandon the bonus and ship just the
-// transcript. The outer routeExtraction race in src/media/index.js gives
-// the WHOLE extraction 15s; budgeting keyframes at 5s leaves 10s for the
-// audio pass and bookkeeping.
+// Independent budgets for the two parallel branches. The outer
+// routeExtraction race in src/media/index.js gives the WHOLE extraction
+// 15s; running audio (≤10s, dominated by Whisper API latency) and
+// keyframes (≤5s, ffprobe + ffmpeg encode) in parallel via Promise.all
+// settles in max(10, 5) = 10s under nominal conditions, leaving 5s
+// headroom for IO + bookkeeping. Either branch can hang and the other
+// still ships its result — that's the Phase 3 contract.
+let _AUDIO_BUDGET_MS = 10000;
+let _KEYFRAME_BUDGET_MS = 5000;
 export const KEYFRAME_BUDGET_MS = 5000;
+export const AUDIO_BUDGET_MS = 10000;
+
+// Tests inject custom budgets so a "hanging audio" e2e doesn't have to
+// wait the real 10s. Pass `null` to restore defaults.
+export function _setBudgetsForTests({ audioMs, keyframeMs } = {}) {
+  _AUDIO_BUDGET_MS = (typeof audioMs === 'number' && audioMs > 0) ? audioMs : 10000;
+  _KEYFRAME_BUDGET_MS = (typeof keyframeMs === 'number' && keyframeMs > 0) ? keyframeMs : 5000;
+}
 
 // Extensions that indicate a direct binary video stream (not a webpage).
 const DIRECT_VIDEO_URL_RE = /\.(mp4|mov|webm|m4v|mkv|avi|flv|ts|m2ts)(\?|$|#)/i;
@@ -175,16 +186,15 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
 }
 
 /**
- * Race a keyframe-producing function against the global keyframe budget.
- * Always resolves to an array (never throws, never hangs). On timeout the
- * caller gets [], the signal fires, and any in-flight ffmpeg child is
- * killed by `extractKeyframes`'s abort handler.
+ * Race a keyframe-producing function against the keyframe budget. Always
+ * resolves to an array (never throws, never hangs). On timeout the caller
+ * gets [], the signal fires, and any in-flight ffmpeg child is killed by
+ * `extractKeyframes`'s abort handler.
  *
- * Exported so the contract "transcript survives keyframe failure" can be
- * locked by a focused unit test, instead of relying on inspection of the
- * caller's try/catch composition.
+ * Tests can override the default budget via `_setBudgetsForTests({ keyframeMs })`.
  */
-export async function withKeyframeBudget(work, budgetMs = KEYFRAME_BUDGET_MS) {
+export async function withKeyframeBudget(work, budgetMs) {
+  const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _KEYFRAME_BUDGET_MS;
   const ac = new AbortController();
   return new Promise(resolve => {
     let settled = false;
@@ -194,7 +204,7 @@ export async function withKeyframeBudget(work, budgetMs = KEYFRAME_BUDGET_MS) {
       ac.abort();
       resolve(Array.isArray(val) ? val : []);
     };
-    const timer = setTimeout(() => finish([]), budgetMs);
+    const timer = setTimeout(() => finish([]), effectiveBudget);
     Promise.resolve()
       .then(() => work(ac.signal))
       .then(
@@ -202,6 +212,78 @@ export async function withKeyframeBudget(work, budgetMs = KEYFRAME_BUDGET_MS) {
         () => { clearTimeout(timer); finish([]); },
       );
   });
+}
+
+/**
+ * Race an audio-producing function against the audio budget. Always
+ * resolves to either an audioResult object or null. Mirrors
+ * withKeyframeBudget — same shape, different default budget.
+ *
+ * The work function receives an AbortSignal that fires on timeout so the
+ * audio ffmpeg child can be SIGKILL'd via spawnWithAbort.
+ */
+export async function withAudioBudget(work, budgetMs) {
+  const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _AUDIO_BUDGET_MS;
+  const ac = new AbortController();
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      ac.abort();
+      resolve(val ?? null);
+    };
+    const timer = setTimeout(() => finish(null), effectiveBudget);
+    Promise.resolve()
+      .then(() => work(ac.signal))
+      .then(
+        val => { clearTimeout(timer); finish(val); },
+        () => { clearTimeout(timer); finish(null); },
+      );
+  });
+}
+
+/**
+ * Audio extraction branch: ffmpeg -vn → readFile → _extractAudioContentImpl.
+ * Returns an audioResult or null. Never throws. Threads `signal` through
+ * the ffmpeg child so a budget timeout kills it cleanly. Reads the audio
+ * file synchronously after ffmpeg exits (fast, signal-irrelevant).
+ *
+ * Exported so e2e tests can drive the branch in isolation if needed,
+ * but the load-bearing tests stub _setExtractAudioContentForTests.
+ */
+async function audioBranch(videoPath, audioPath, attachment, context, signal) {
+  if (signal?.aborted) return null;
+  let audioBuffer = null;
+  try {
+    await spawnWithAbort('ffmpeg', [
+      '-i', videoPath,
+      '-vn',
+      '-acodec', 'libopus',
+      '-b:a', '32k',
+      '-ac', '1',
+      '-ar', '16000',
+      '-y',
+      audioPath,
+    ], { signal });
+    if (signal?.aborted) return null;
+    audioBuffer = await readFile(audioPath);
+  } catch {
+    return null;
+  }
+
+  if (!audioBuffer || signal?.aborted) return null;
+
+  try {
+    return await _extractAudioContentImpl({
+      ...attachment,
+      url: `data:audio/ogg;base64,${audioBuffer.toString('base64')}`,
+      mimeType: 'audio/ogg',
+      fileName: (attachment.fileName || 'video').replace(/\.[^.]+$/, '') + '.ogg',
+    }, context, { suppressFallback: true });
+  } catch {
+    return null;
+  }
 }
 
 export async function extractVideoContent(attachment, context = {}) {
@@ -242,58 +324,19 @@ export async function extractVideoContent(attachment, context = {}) {
     }
     await writeFile(videoPath, videoBuffer);
 
-    // The audio-extraction pass can legitimately fail for silent videos
-    // (ffmpeg exits non-zero with "Output file does not contain any stream"
-    // when -vn finds no audio to encode). That MUST NOT take down the whole
-    // extraction — Phase 3 still wants keyframes shipped for silent video.
-    let audioBuffer = null;
-    try {
-      await new Promise((resolve, reject) => {
-        const ff = spawn('ffmpeg', [
-          '-i',
-          videoPath,
-          '-vn',
-          '-acodec',
-          'libopus',
-          '-b:a',
-          '32k',
-          '-ac',
-          '1',
-          '-ar',
-          '16000',
-          '-y',
-          audioPath,
-        ], { stdio: 'ignore' });
-        ff.on('error', reject);
-        ff.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
-      });
-      audioBuffer = await readFile(audioPath);
-    } catch {
-      audioBuffer = null;
-    }
+    // Phase 3: audio + keyframes run in PARALLEL with independent budgets.
+    // Each branch's withXBudget always settles to a value (audioResult or
+    // null; frames or []) — never throws, never hangs past its budget. This
+    // means a slow Whisper call (audio) cannot starve keyframe extraction,
+    // and vice versa. Promise.all settles in max(10s, 5s) = 10s under the
+    // outer 15s gate. mkdir-for-frames is sync-fast and runs before the
+    // race so the keyframe branch doesn't waste budget creating its dir.
+    try { await mkdir(framesDir, { recursive: true }); } catch {}
 
-    const audioResult = audioBuffer
-      ? await _extractAudioContentImpl({
-          ...attachment,
-          url: `data:audio/ogg;base64,${audioBuffer.toString('base64')}`,
-          mimeType: 'audio/ogg',
-          fileName: (attachment.fileName || 'video').replace(/\.[^.]+$/, '') + '.ogg',
-        }, context, { suppressFallback: true })
-      : null;
-
-    // Phase 2 keyframe pass — runs unconditionally now (Phase 3): the model
-    // should still see the picture even if the audio failed (silent video,
-    // Whisper unavailable, etc.). withKeyframeBudget caps at 5s and falls
-    // back to [], so a slow ffmpeg can't take down the whole extraction.
-    let keyframes = [];
-    try {
-      await mkdir(framesDir, { recursive: true });
-      keyframes = await withKeyframeBudget(
-        signal => extractKeyframes(videoPath, framesDir, { signal }),
-      );
-    } catch {
-      keyframes = [];
-    }
+    const [audioResult, keyframes] = await Promise.all([
+      withAudioBudget(signal => audioBranch(videoPath, audioPath, attachment, context, signal)),
+      withKeyframeBudget(signal => extractKeyframes(videoPath, framesDir, { signal })),
+    ]);
 
     if (audioResult) {
       // Happy path: transcript + keyframes (the UI's stated promise).
