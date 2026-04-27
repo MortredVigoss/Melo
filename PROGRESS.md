@@ -24,9 +24,10 @@
 ## 2026-04-27 13:30 — Codex C #16 fix：customize grid overflow @ 1280px
 
 - Codex 抓到首版 grid `220 270 minmax(440, 1fr)` 总最小 930px，超过 1280px 桌面宽度下 `1280 - 278px sidebar = 1002px` 减去内容 padding 后的可用空间——实际在 1101-1180px viewport 区间（侧栏全宽）会横向溢出，body `overflow: hidden` 导致右侧详情面板被裁切。
-- 修：`200px 240px minmax(360px, 1fr)` 总最小 **800px**，1101px viewport 下（823px 可用）有 23px 缓冲；1280px 下右列拿到 562px 仍宽。
+- 第一刀（C #16）：grid 改 `200 240 minmax(360, 1fr)` 总 800px。Codex C #17 又抓——忘算 `.page` 38×2 = 76px padding；真实 1101 - 278 - 76 = 747px，800 仍溢。
+- 第二刀（C #17）：改加单独 `@media (max-width: 1180px)` 把 customize-layout 提前折叠到单列。1181px+ 可用 ≥ 827px 容下 800 min；1101-1180px 区间走 1-列布局完全没溢出风险。Shell 自身 1100px breakpoint（侧栏变窄）保持不动。
 - 顺手把 13:00 那条 PROGRESS 的"待 commit"占位补上真 hash `ab06fca`。
-- 提交哈希：（待 commit）
+- 提交哈希：`3022905`（首版） + 后跟一刀加 1180px breakpoint。
 
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
 
