@@ -280,7 +280,7 @@ async function audioBranch(videoPath, audioPath, attachment, context, signal) {
       url: `data:audio/ogg;base64,${audioBuffer.toString('base64')}`,
       mimeType: 'audio/ogg',
       fileName: (attachment.fileName || 'video').replace(/\.[^.]+$/, '') + '.ogg',
-    }, context, { suppressFallback: true });
+    }, context, { suppressFallback: true, signal });
   } catch {
     return null;
   }

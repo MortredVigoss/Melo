@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-04-27 04:30 — audioExtractor 全链路 signal 化（Codex C-grade fix #5——视频 abort 真正杀到 whisper.cpp/fetch）
+
+- 上轮 04:00 修了 video 层的 audio budget 取消，但 `extractAudioContent` 内部（whisper.cpp 子进程 / native fetch / OpenAI fetch）不接 signal——budget 返 null 后真实转写仍跑 30-120s，浪费 GPU/带宽。Codex 给 C #5。
+- 用户拍板：**重构**——把 AbortSignal 贯穿 `audioExtractor.js` 全链路。
+- 修改（`src/media/extractors/audioExtractor.js`）：
+  - 新增 `combineSignals(externalSignal, timeoutMs)`：用 `AbortSignal.any()`（Node 20.3+）合并外部 signal 与内部 timeout，任一触发即 abort。
+  - `tryWhisperCpp(buf, attachment, { signal })` → `execFileAsync(..., { ..., signal })`：abort 时 Node 自动 SIGTERM whisper-cli 子进程，GPU 立即释放。
+  - `convertToWavForNative(buf, attachment, { signal })` → 同款 ffmpeg execFile signal 参数。
+  - `tryNativeTranscription(buf, attachment, { signal })`：fetch signal 改用 `combineSignals(signal, 30000)`。
+  - OpenAI Whisper API fetch：同款 `combineSignals(signal, 60000)`。
+  - 新增 `_resetWhisperCppReadyForTests()`：清缓存让测试可在不同 fake binary 间切换。
+  - 公共 API 扩展：`extractAudioContent(attachment, context, { suppressFallback, signal })` + `extractAudioContentFromBuffer(buf, attachment, { config, suppressFallback, signal })`。signal 可选——不传 = 现状行为，**所有现有 caller 零改动**（discord voice / telegram voice / direct audio attachment 全自动保持原契约）。
+- `src/media/extractors/videoExtractor.js`：`audioBranch` 把 `signal` 传进 `_extractAudioContentImpl`，整条 video → audioBranch → audioExtractor → whisper-cli/fetch 共享同一 AbortSignal。
+- 新增 3 个真实可观察的 cancellation 测试（`src/media/extractors/audioExtractor.signal.test.js`）：
+  - 预 abort 的 signal → 立即 null，elapsed < 200ms（不调任何 backend）。
+  - **fake whisper-cli (bash 脚本 sleep 99999)** + 200ms abort → null，elapsed < 5s（如果 signal 没贯通到 execFile 子进程，会 sleep 99999s——SIGTERM 真落地）。
+  - **fake hanging http server** + 200ms abort → null，elapsed < 3s（如果 signal 没合并进 fetch，会等满内部 60s timeout）。
+- Codex 反问回应：
+  - **Q1: 扩展 audioExtractor.js 签名**：是。signal 可选，不传 = 现状，零回归。
+  - **Q2: 统一 abort vs per-backend budget**：统一 abort（caller 控制 budget，backend 只负责响应 signal）。简单、一致、足够。
+- 验证：`node --check` 全过；audioExtractor.signal.test.js **3/3**；regression 全套 **350/350 全绿**（04:00 时 347，新增 3 个 signal cancellation 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行（Codex C-grade fix #4）
 
 - 03:30 那一刀只解了 audio **失败**路径，没解 audio **慢/挂**路径——Codex 第四次给 C：远端 Whisper 慢/卡死时仍会先撞外层 15s `withTimeout`，已经成功的 keyframes 一起被吃。Phase 3 承诺"transcript 失败但 keyframes 活下来"对 hang 场景不成立；外加音轨 ffmpeg 还在用裸 `spawn` 不走 `spawnWithAbort`。

@@ -6,6 +6,16 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+// Combine an optional external AbortSignal with an internal timeout into a
+// single signal that fires when EITHER aborts. AbortSignal.any is in Node
+// 20.3+; Melo runs Node 22. When both args are missing, returns undefined
+// so the caller can pass it through unchanged (no signal = current behavior).
+function combineSignals(externalSignal, timeoutMs) {
+  const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : null;
+  if (externalSignal && timeoutSignal) return AbortSignal.any([externalSignal, timeoutSignal]);
+  return externalSignal || timeoutSignal || undefined;
+}
+
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 // Port where the Swift native transcription server listens.
 // The Swift app starts this server at (Node.js port + 1), defaulting to 43128.
@@ -135,6 +145,12 @@ const WHISPER_CPP_MODEL =
 
 let whisperCppReady = null; // null=unchecked, true/false
 
+// Tests reset this when they swap MELO_WHISPER_CLI between runs so the
+// cached "ready" verdict from a prior test doesn't leak into the next.
+export function _resetWhisperCppReadyForTests() {
+  whisperCppReady = null;
+}
+
 async function checkWhisperCppReady() {
   if (whisperCppReady !== null) return whisperCppReady;
   try {
@@ -153,12 +169,17 @@ async function checkWhisperCppReady() {
 /**
  * Transcribe audio using the local whisper-cli binary with the large-v3-turbo model.
  * Automatically detects language. Returns transcript string or null on failure.
+ *
+ * Honors an external AbortSignal: when fired, execFile sends SIGTERM to the
+ * whisper-cli child so a cancelled video extraction doesn't keep the GPU
+ * pegged for 30-120s in the background.
  */
-async function tryWhisperCpp(audioBuffer, attachment = {}) {
+async function tryWhisperCpp(audioBuffer, attachment = {}, { signal } = {}) {
+  if (signal?.aborted) return null;
   if (!(await checkWhisperCppReady())) return null;
 
-  const wavBuffer = await convertToWavForNative(audioBuffer, attachment);
-  if (!wavBuffer) return null;
+  const wavBuffer = await convertToWavForNative(audioBuffer, attachment, { signal });
+  if (!wavBuffer || signal?.aborted) return null;
 
   const tempDir = await mkdtemp(join(tmpdir(), 'melo-whispercpp-'));
   const wavPath = join(tempDir, 'audio.wav');
@@ -175,7 +196,7 @@ async function tryWhisperCpp(audioBuffer, attachment = {}) {
         '--no-timestamps',      // cleaner output
         '--no-prints',          // suppress model-load messages to stdout
       ],
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024, signal },
     );
 
     // whisper-cli output: one line per segment, possibly with [timestamp] prefix.
@@ -213,8 +234,11 @@ async function hasFfmpegLocal() {
  * Convert an audio buffer to 16-kHz mono WAV using ffmpeg so that
  * SFSpeechURLRecognitionRequest (which doesn't handle OGG/Opus natively) can
  * read it.  Returns null if ffmpeg is unavailable or conversion fails.
+ * Honors an external AbortSignal — the ffmpeg child process is killed when
+ * the signal fires.
  */
-async function convertToWavForNative(audioBuffer, attachment = {}) {
+async function convertToWavForNative(audioBuffer, attachment = {}, { signal } = {}) {
+  if (signal?.aborted) return null;
   if (!Buffer.isBuffer(audioBuffer) || !audioBuffer.length) return null;
   if (!(await hasFfmpegLocal())) return null;
 
@@ -241,7 +265,7 @@ async function convertToWavForNative(audioBuffer, attachment = {}) {
     await execFileAsync(
       'ffmpeg',
       ['-i', inPath, '-vn', '-ac', '1', '-ar', '16000', '-f', 'wav', '-y', outPath],
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
+      { timeout: 60000, maxBuffer: 10 * 1024 * 1024, signal },
     );
     return await readFile(outPath);
   } catch {
@@ -256,9 +280,10 @@ async function convertToWavForNative(audioBuffer, attachment = {}) {
  * transcribe a local WAV file using SFSpeechURLRecognitionRequest.
  * Returns the transcript string or null on any failure.
  */
-async function tryNativeTranscription(audioBuffer, attachment = {}) {
-  const wavBuffer = await convertToWavForNative(audioBuffer, attachment);
-  if (!wavBuffer) return null;
+async function tryNativeTranscription(audioBuffer, attachment = {}, { signal } = {}) {
+  if (signal?.aborted) return null;
+  const wavBuffer = await convertToWavForNative(audioBuffer, attachment, { signal });
+  if (!wavBuffer || signal?.aborted) return null;
 
   const tempDir = await mkdtemp(join(tmpdir(), 'melo-native-'));
   const wavPath = join(tempDir, 'audio.wav');
@@ -272,7 +297,9 @@ async function tryNativeTranscription(audioBuffer, attachment = {}) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: wavPath }),
-        signal: AbortSignal.timeout(30000),
+        // Combine internal 30s timeout with the caller's external signal so
+        // either source triggers the fetch abort.
+        signal: combineSignals(signal, 30000),
       },
     );
 
@@ -288,9 +315,11 @@ async function tryNativeTranscription(audioBuffer, attachment = {}) {
   }
 }
 
-export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}, { config, suppressFallback = false } = {}) {
+export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}, { config, suppressFallback = false, signal } = {}) {
+  if (signal?.aborted) return null;
+
   // Priority 0: whisper.cpp (highest quality, Metal GPU, auto language detection).
-  const whisperCppText = await tryWhisperCpp(audioBuffer, attachment);
+  const whisperCppText = await tryWhisperCpp(audioBuffer, attachment, { signal });
   if (whisperCppText) {
     return {
       kind: 'transcript',
@@ -302,10 +331,11 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
       },
     };
   }
+  if (signal?.aborted) return null;
 
   // Priority 1: Apple SFSpeechRecognizer via Swift native server (fallback).
   // No API key needed, multilingual (system + ko/ja/fr/it/es).
-  const nativeText = await tryNativeTranscription(audioBuffer, attachment);
+  const nativeText = await tryNativeTranscription(audioBuffer, attachment, { signal });
   if (nativeText) {
     return {
       kind: 'transcript',
@@ -386,12 +416,15 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
     },
   });
 
+  if (signal?.aborted) return null;
   try {
     const response = await fetch(`${baseUrl}/audio/transcriptions`, {
       method: 'POST',
       headers,
       body: form,
-      signal: AbortSignal.timeout(60000),
+      // Combine internal 60s timeout with the caller's external signal so
+      // an outer budget abort kills this fetch immediately.
+      signal: combineSignals(signal, 60000),
     });
 
     // For codex-local-fallback / local modes: if local Ollama isn't running,
@@ -429,14 +462,15 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
   }
 }
 
-export async function extractAudioContent(attachment, context = {}, { suppressFallback = false } = {}) {
+export async function extractAudioContent(attachment, context = {}, { suppressFallback = false, signal } = {}) {
+  if (signal?.aborted) return null;
   try {
     const audioBuffer = await readAttachmentBuffer(attachment);
     if (!audioBuffer) {
       return null;
     }
 
-    return extractAudioContentFromBuffer(audioBuffer, attachment, { ...context, suppressFallback });
+    return extractAudioContentFromBuffer(audioBuffer, attachment, { ...context, suppressFallback, signal });
   } catch {
     return null;
   }
