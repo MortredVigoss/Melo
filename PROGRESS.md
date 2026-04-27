@@ -21,13 +21,15 @@
 - 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
 - 提交哈希：`ab06fca`（首版） + 后跟一刀 fix grid overflow at 1280px。
 
-## 2026-04-27 13:30 — Codex C #16 fix：customize grid overflow @ 1280px
+## 2026-04-27 13:30 — Codex C #16/#17/#18 fix chain：customize grid 1101px+ 真实可用宽度
 
-- Codex 抓到首版 grid `220 270 minmax(440, 1fr)` 总最小 930px，超过 1280px 桌面宽度下 `1280 - 278px sidebar = 1002px` 减去内容 padding 后的可用空间——实际在 1101-1180px viewport 区间（侧栏全宽）会横向溢出，body `overflow: hidden` 导致右侧详情面板被裁切。
-- 第一刀（C #16）：grid 改 `200 240 minmax(360, 1fr)` 总 800px。Codex C #17 又抓——忘算 `.page` 38×2 = 76px padding；真实 1101 - 278 - 76 = 747px，800 仍溢。
-- 第二刀（C #17）：改加单独 `@media (max-width: 1180px)` 把 customize-layout 提前折叠到单列。1181px+ 可用 ≥ 827px 容下 800 min；1101-1180px 区间走 1-列布局完全没溢出风险。Shell 自身 1100px breakpoint（侧栏变窄）保持不动。
-- 顺手把 13:00 那条 PROGRESS 的"待 commit"占位补上真 hash `ab06fca`。
-- 提交哈希：`3022905`（首版） + 后跟一刀加 1180px breakpoint。
+- 一连三轮 Codex C，全是宽度计算+折叠语义错位，按时间顺序：
+  - **C #16**：首版 grid `220 270 minmax(440, 1fr)` 总 930px，超过 1280px 下减完 sidebar 的余量。改 `200 240 minmax(360, 1fr)` 总 800px → `3022905`。
+  - **C #17**：800 仍超——忘算 `.page` 38×2 = 76px padding；真实 1101px viewport 可用 = 1101-278-76 = 747px。加单独 `@media (max-width: 1180px)` 折叠到单列 → `f20767b`。
+  - **C #18 这一刀**：单列折叠 + 容器 `height: 100%; overflow: hidden` 让纵向堆叠的 panes 被裁掉够不到（其实 ≤1100px 老 breakpoint 就有同款 bug，只是我把范围扩到 1180px 让更多人撞）。回退 1180px @media，grid 进一步压到 `200 220 minmax(280, 1fr)` 总 **700px**——1101px viewport（747 可用）下 47px buffer，所有桌面宽度都能装下三列、不需要折叠到单列、不需要改 overflow 语义。
+- 权衡：1101-1180px 区间下右列窄到 327-407px。比理想紧但功能性可读，比单列裁切好。1280px+ 用户右列拿到 506px+。
+- 验证：`node --check` 全过；regression **400/400 全绿**；UI 手测留给用户验证 1101 / 1280 / 1440px 三档实际渲染。
+- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → 这一刀（C #18 撤单列改更紧 grid）。
 
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
 

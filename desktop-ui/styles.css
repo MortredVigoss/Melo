@@ -3382,16 +3382,16 @@ select option {
 
 .customize-layout {
   display: grid;
-  /* Narrower nav + middle list, wider detail panel — the right pane
-     hosts long descriptions, prompt text, and config forms that
-     benefit from more horizontal room than the two left-most columns.
-     Total minimum width 800px (200 + 240 + 360). The companion
-     @media block below collapses to a single column at viewports
-     ≤1180px; that's where `viewport - 278px sidebar - 76px .page
-     padding` drops below 827px and 3-col would otherwise overflow
-     the body's `overflow: hidden`. Above 1180px the right column
-     gets `1fr` so it widens well past 360px on real desktops. */
-  grid-template-columns: 200px 240px minmax(360px, 1fr);
+  /* Narrower nav + middle list, wider detail panel.
+     Total minimum width 700px (200 + 220 + 280). Sized to fit even
+     the narrowest desktop envelope where the layout still renders as
+     three columns: at the 1101px shell breakpoint, viewport - 278px
+     full sidebar - 76px .page padding = 747px content, leaving a
+     47px buffer over the 700px minimum. On wider screens the right
+     column gets `1fr` and grows generously (506px @ 1280px content,
+     666px @ 1440px). The shell's existing 1100px @media collapses
+     this layout to a single column for narrower viewports. */
+  grid-template-columns: 200px 220px minmax(280px, 1fr);
   gap: 0;
   border-radius: 28px;
   overflow: hidden;
@@ -3448,20 +3448,6 @@ select option {
   min-height: 0;
   height: 100%;
   max-height: 100%;
-}
-
-/* Collapse to a single column earlier than the shell's 1100px breakpoint:
-   between 1101px and 1180px viewport widths the sidebar is still its full
-   278px and `.page` claims 38px padding on each side, so the available
-   content area is 1101 - 278 - 76 = 747px (low end) to 826px (high end)
-   — below the 800px minimum the 3-column grid actually needs. With
-   `body { overflow: hidden }`, the prior layout silently clipped the
-   right detail pane in this range. Above 1180px the 3-column grid fits
-   with breathing room (1181 - 354 = 827px content > 800px min). */
-@media (max-width: 1180px) {
-  .customize-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .agent-select-label {
