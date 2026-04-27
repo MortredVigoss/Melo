@@ -913,28 +913,12 @@ const server = createServer(async (request, response) => {
         const { execFile } = await import('node:child_process');
         const { promisify } = await import('node:util');
         const execFileAsync = promisify(execFile);
+        const { parseSayVoiceList } = await import('./tts.js');
         const { stdout } = await execFileAsync('/usr/bin/say', ['-v', '?'], {
           timeout: 5000,
           maxBuffer: 1024 * 1024,
         });
-        // Format: `<Name>  <pad>  <lang_LOCALE>  # <sample>`
-        // Name can contain spaces (e.g. "Reed (English (US))"), so split on
-        // the locale token (xx_YY) — that's the stable anchor.
-        const voices = String(stdout || '')
-          .split('\n')
-          .map(line => line.trim())
-          .filter(Boolean)
-          .map(line => {
-            const match = line.match(/^(.+?)\s+([a-z]{2}(?:[_-][A-Z]{2,4})?)\s*#\s*(.*)$/);
-            if (!match) return null;
-            return {
-              name: match[1].trim(),
-              lang: match[2],
-              sample: match[3].trim(),
-            };
-          })
-          .filter(Boolean);
-        sendJson(response, 200, { ok: true, voices });
+        sendJson(response, 200, { ok: true, voices: parseSayVoiceList(stdout) });
       } catch (err) {
         // Non-macOS host or `say` missing — empty list, not an error.
         sendJson(response, 200, { ok: true, voices: [], reason: err?.message || 'say unavailable' });

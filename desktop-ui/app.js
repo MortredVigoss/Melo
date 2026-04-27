@@ -4162,18 +4162,30 @@ async function _streamTtsStart() {
   _streamTts.hasToolCalls = false;
   _streamTts.sentToQueue = false;
   _streamTts.queuedChars = 0;
-  // Stop any leftover playback from the previous response
+  // Stop any leftover playback from the previous response — covers all
+  // three engines: server TTS (speak-stop / queue-clear) AND in-page
+  // speechSynthesis (cancel any utterance still in the browser's queue,
+  // otherwise switching to a new reply with Browser voice would let the
+  // old utterance keep reading).
   try { await api('/api/tts/speak-stop', { method: 'POST', body: {} }); } catch {}
   try { await api('/api/tts/queue-clear', { method: 'POST', body: {} }); } catch {}
+  if (globalThis.speechSynthesis?.speaking || globalThis.speechSynthesis?.pending) {
+    try { speechSynthesis.cancel(); } catch {}
+  }
 }
 
 function _streamTtsOnToolCall() {
   // Tool call started — discard text buffered so far (intermediate "searching..." etc.)
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
-  // Stop any in-progress playback so intermediate phrases don't play
+  // Stop any in-progress playback so intermediate phrases don't play.
+  // Cover server TTS AND browser speechSynthesis (Browser engine could
+  // otherwise keep narrating "let me search…" after the tool fires).
   api('/api/tts/speak-stop', { method: 'POST', body: {} }).catch(() => {});
   api('/api/tts/queue-clear', { method: 'POST', body: {} }).catch(() => {});
+  if (globalThis.speechSynthesis?.speaking || globalThis.speechSynthesis?.pending) {
+    try { speechSynthesis.cancel(); } catch {}
+  }
 }
 
 function _isTtsActive() {

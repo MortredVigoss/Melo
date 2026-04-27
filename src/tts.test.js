@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stripKoreanForMinimax } from './tts.js';
+import { parseSayVoiceList, stripKoreanForMinimax } from './tts.js';
 
 test('pure Chinese text is untouched', () => {
   const s = '今天天气真好';
@@ -87,4 +87,61 @@ test('idempotent: running twice produces the same output', () => {
 
 test('digits adjacent to KR are preserved', () => {
   assert.equal(stripKoreanForMinimax('123어456'), '123456');
+});
+
+// ─── parseSayVoiceList — covers the new TTS macOS-voice split ─────────────
+// Powers GET /api/tts/say-voices. The route handler delegates here so
+// these unit tests lock the parsing contract without spawning `say`.
+
+test('parseSayVoiceList: standard line shape', () => {
+  const stdout = `Albert              en_US    # Hello! My name is Albert.\nAlice               it_IT    # Ciao! Mi chiamo Alice.\n`;
+  assert.deepEqual(parseSayVoiceList(stdout), [
+    { name: 'Albert', lang: 'en_US', sample: 'Hello! My name is Albert.' },
+    { name: 'Alice',  lang: 'it_IT', sample: 'Ciao! Mi chiamo Alice.' },
+  ]);
+});
+
+test('parseSayVoiceList: handles names with spaces and parens', () => {
+  // Real macOS output occasionally includes voices like
+  // "Reed (English (US))" — the regex anchors on the locale token so the
+  // multi-word name is captured intact.
+  const stdout = `Reed (English (US))   en_US    # Hello! My name is Reed.\n`;
+  assert.deepEqual(parseSayVoiceList(stdout), [
+    { name: 'Reed (English (US))', lang: 'en_US', sample: 'Hello! My name is Reed.' },
+  ]);
+});
+
+test('parseSayVoiceList: tolerates locale variants and CJK voices', () => {
+  const stdout = [
+    'Tingting            zh_CN    # 您好我叫Tingting。',
+    'Yuna                ko_KR    # 안녕하세요. 제 이름은 Yuna입니다.',
+    'Kyoko               ja_JP    # こんにちは! 私の名前はKyokoです.',
+    'Karen               en-AU    # G\'day! My name is Karen.',  // hyphen variant
+  ].join('\n');
+  const result = parseSayVoiceList(stdout);
+  assert.equal(result.length, 4);
+  assert.equal(result[0].lang, 'zh_CN');
+  assert.equal(result[1].lang, 'ko_KR');
+  assert.equal(result[2].lang, 'ja_JP');
+  assert.equal(result[3].lang, 'en-AU');
+});
+
+test('parseSayVoiceList: silently skips unparseable lines', () => {
+  // Future macOS may add header lines or trailing notes — tolerant skip
+  // beats throwing on a single bad line.
+  const stdout = [
+    '',                                    // blank
+    '   ',                                 // whitespace
+    'Albert              en_US    # ok',   // valid
+    'something completely unexpected',     // no #, no locale → skip
+    'Alice               it_IT    # ok',   // valid
+  ].join('\n');
+  const result = parseSayVoiceList(stdout);
+  assert.deepEqual(result.map(v => v.name), ['Albert', 'Alice']);
+});
+
+test('parseSayVoiceList: empty / null input returns []', () => {
+  assert.deepEqual(parseSayVoiceList(''),     []);
+  assert.deepEqual(parseSayVoiceList(null),   []);
+  assert.deepEqual(parseSayVoiceList(undefined), []);
 });

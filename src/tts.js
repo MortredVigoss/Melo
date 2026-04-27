@@ -12,6 +12,37 @@
 const TTS_TIMEOUT_MS = 180_000; // 3 min — local voice pack (F5-TTS on CPU) can take ~2 min
 const TTS_MAX_CHARS  = 4096;
 
+/**
+ * Parse the stdout of `/usr/bin/say -v '?'` into `[{ name, lang, sample }]`.
+ * Each line looks like:
+ *
+ *   `Albert              en_US    # Hello! My name is Albert.`
+ *
+ * Name can contain spaces (e.g. "Reed (English (US))") so we anchor on the
+ * locale token (xx or xx_YY) instead of fixed-width columns. Lines that
+ * don't match are silently skipped — a tolerant parser avoids crashing on
+ * future macOS releases that introduce new format quirks.
+ *
+ * Exported so the /api/tts/say-voices route handler in src/server.js can
+ * delegate, and unit tests can lock the contract without spawning `say`.
+ */
+export function parseSayVoiceList(stdout = '') {
+  return String(stdout || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const match = line.match(/^(.+?)\s+([a-z]{2}(?:[_-][A-Z]{2,4})?)\s*#\s*(.*)$/);
+      if (!match) return null;
+      return {
+        name: match[1].trim(),
+        lang: match[2],
+        sample: match[3].trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
 const MINIMAX_TTS_BASE = 'https://api.minimaxi.chat/v1/t2a_v2';
 const MINIMAX_TTS_MODEL = 'speech-01-turbo';
 
