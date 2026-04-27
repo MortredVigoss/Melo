@@ -13,7 +13,7 @@
 - **Phase 4（GC）**：[server.js](src/server.js) startup 调一次 `purgeStaleSoftDeletes({ olderThanDays: 7 })`，>7d tombstone 真删；非阻塞 + 错误 swallow（不影响 boot）。
 - 测试：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) 既有 deleteArtifact 测试改成 soft-delete 契约（artifacts.length 不减、deletedAt set、bootstrap 隐藏）+ 新增 8 个测试覆盖 restore 成功 / unknown id / not soft-deleted / missing id + GC cutoff / idempotent / unparseable date / double-delete throws。**17/17 全绿**（原 9 + 8 新）。
 - 验证：`npm run test:ui` 71/71；memory 套 330/330；workspace 套 17/17；check-syntax 全过。前端 handleDeleteArtifact 在新模型下变成 fire-and-forget pair (delete → restore on undo)，状态机已经被 server 端 17 个测试覆盖；DOM 部分是薄 toast，需要 jsdom 才能 unit test，留作下次 desktop-ui test harness 升级。
-- 提交哈希：待填。
+- 提交哈希：`af2e3b7`。
 
 ## 2026-04-27 18:00 — 5 处次级 UX 体验提升（PDF 入口 / state 路径 / lane overflow / search 空状态 / artifacts 软删）
 
