@@ -11,7 +11,7 @@
 - 修：[compact.js](src/memory/offline/compact.js) import `QUALITY_DEFAULT_THRESHOLD`，`compactQualityThreshold()` 始终返回 finite number（空 / 非法 → 默认 0.6），auditSummary 收到的 threshold 永远 truthy，evaluator 不再回头读 env。
 - 加 contract test：mid-call mock LLM 把 env 改 `'0'`（应让低质摘要通过），但入口已 capture 0.6，bad summary 仍被拒 → rule fallback 触发。证明锁定真正生效。
 - 验证：330/330 memory 全绿。
-- 提交哈希：待填。
+- 提交哈希：`da4e09e`。
 
 ## 2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界
 
