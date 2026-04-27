@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip
+
+- 上轮 push 后 Codex 给 B（不阻断），两条建议留 follow-up：
+  - 🔵 `combineSignals` 直接调 `AbortSignal.any()`，但 package.json 还声明 `node >=18`；Node 18/早期 20 会抛 `TypeError`，导致传 signal 时音频转写默默退化为 null。
+  - ⚪ `audioExtractor.signal.test.js` 的 fake whisper-cli 测试在 `silentWav.length === 0` 时 `return`——runner 记为通过，fixture 生成失败重新形成假绿。
+- 修复：
+  - `src/media/extractors/audioExtractor.js → combineSignals`：复用 `src/images/codexImageEngine.js → composeSignals` 的同款套路——`typeof AbortSignal.any === 'function'` 时走原生路径，否则 fallback 到 `AbortController` + 双 listener 手动转发 abort。低版本 Node 不再退化为 null。
+  - `src/media/extractors/audioExtractor.signal.test.js` 的 whisper-cli 测试 callback 加 `(t)` 参数；`silentWav.length === 0` 改成 `t.skip('ffmpeg lavfi unavailable on this host — cannot generate silent WAV fixture')` 后 return，runner 现在记 "skipped" 而不是"通过"。
+- 验证：`node --check` 全过；audioExtractor.signal.test.js **4/4**；regression 全套 **351/351 全绿**。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（Codex C-grade fix #6）
 
 - 上轮 04:30 落地的 cancellation 测试是**假绿**——Codex 第六次给 C：

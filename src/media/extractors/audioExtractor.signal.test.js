@@ -85,7 +85,7 @@ test('extractAudioContentFromBuffer: pre-aborted signal returns null without inv
 
 // ── whisper.cpp child gets SIGTERM'd on abort ───────────────────────────────
 
-test('extractAudioContentFromBuffer: aborts fake whisper-cli child within budget', { skip: !ffmpegOk }, async () => {
+test('extractAudioContentFromBuffer: aborts fake whisper-cli child within budget', { skip: !ffmpegOk }, async (t) => {
   // Force the fake binary via DI hook so production code uses our hanging
   // bash script, not the real `whisper-cli` (which may not be installed).
   _setWhisperCliForTests(fakeWhisperPath, fakeModelPath);
@@ -105,7 +105,13 @@ test('extractAudioContentFromBuffer: aborts fake whisper-cli child within budget
     ff.on('exit', () => resolve(Buffer.concat(chunks)));
     ff.on('error', () => resolve(Buffer.alloc(0)));
   });
-  if (silentWav.length === 0) return; // ffmpeg lavfi unavailable, skip
+  // Anti-false-green: a silent `return` here would be reported as PASS even
+  // though we never actually exercised the whisper-cli signal path. Skip
+  // explicitly so the runner records "skipped" instead.
+  if (silentWav.length === 0) {
+    t.skip('ffmpeg lavfi unavailable on this host — cannot generate silent WAV fixture');
+    return;
+  }
 
   // Abort delay must be large enough that the abort fires while execFile is
   // actually in flight, not while pre-execFile setup (hasFfmpegLocal probe,
