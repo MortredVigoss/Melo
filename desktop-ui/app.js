@@ -1085,16 +1085,23 @@ function renderTtsVoicePanel() {
         </div>
       ` : ''}
 
-      ${radioRow(
-        'Browser voice',
-        'In-page · speechSynthesis · WebKit voices',
-        engine === 'browser',
-        'data-action="set-tts-engine"', 'data-engine="browser"'
-      )}
+      ${(() => {
+        const isWebView = Boolean(window.webkit?.messageHandlers?.meloVoice);
+        const hint = isWebView
+          ? 'Desktop app · uses system voice (picker unused here)'
+          : 'In-page · speechSynthesis · WebKit voices';
+        return radioRow(
+          'Browser voice',
+          hint,
+          engine === 'browser',
+          'data-action="set-tts-engine"', 'data-engine="browser"',
+        );
+      })()}
 
       ${engine === 'browser' && browserVoices.length > 0 ? `
         <div class="tts-panel-sub">
-          <select class="tts-voice-select" data-action="select-tts-browser-voice">
+          <select class="tts-voice-select" data-action="select-tts-browser-voice"
+                  ${window.webkit?.messageHandlers?.meloVoice ? 'disabled title="Voice picker only applies in actual browsers — desktop app routes to system AVSpeechSynthesizer"' : ''}>
             ${browserVoiceOptions}
           </select>
         </div>
@@ -4034,6 +4041,15 @@ async function loadMacosVoices() {
 }
 
 function speakWithBrowser(text, messageId = null) {
+  // WKWebView (Melo Desktop app) silently drops `speechSynthesis.speak()`
+  // — utterances are queued but no sound comes out. Fall through to the
+  // Swift native bridge (AVSpeechSynthesizer) which DOES output to host
+  // speakers. The dropdown's voice picker only applies in real browsers
+  // because the bridge takes text only — a hint in the panel tells the
+  // user. In real browsers this branch is skipped entirely.
+  if (window.webkit?.messageHandlers?.meloVoice) {
+    return _speakWithNativeBridge(text, messageId);
+  }
   if (!globalThis.speechSynthesis) return false;
   const utterance = new SpeechSynthesisUtterance(text);
   if (uiState.ttsBrowserVoiceName) {
@@ -4163,14 +4179,17 @@ async function _streamTtsStart() {
   _streamTts.sentToQueue = false;
   _streamTts.queuedChars = 0;
   // Stop any leftover playback from the previous response — covers all
-  // three engines: server TTS (speak-stop / queue-clear) AND in-page
-  // speechSynthesis (cancel any utterance still in the browser's queue,
-  // otherwise switching to a new reply with Browser voice would let the
-  // old utterance keep reading).
+  // three engines:
+  //   - server TTS via speak-stop / queue-clear (API + macOS say paths)
+  //   - in-page speechSynthesis.cancel() (real browser Browser voice)
+  //   - WKWebView native bridge stopAudio (Browser voice in desktop app)
   try { await api('/api/tts/speak-stop', { method: 'POST', body: {} }); } catch {}
   try { await api('/api/tts/queue-clear', { method: 'POST', body: {} }); } catch {}
   if (globalThis.speechSynthesis?.speaking || globalThis.speechSynthesis?.pending) {
     try { speechSynthesis.cancel(); } catch {}
+  }
+  if (window.webkit?.messageHandlers?.meloVoice) {
+    try { window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' }); } catch {}
   }
 }
 
@@ -4179,12 +4198,16 @@ function _streamTtsOnToolCall() {
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
   // Stop any in-progress playback so intermediate phrases don't play.
-  // Cover server TTS AND browser speechSynthesis (Browser engine could
-  // otherwise keep narrating "let me search…" after the tool fires).
+  // Covers server TTS, in-page speechSynthesis, AND WKWebView native bridge
+  // (Browser engine in desktop app could otherwise keep narrating
+  // "let me search…" after the tool fires).
   api('/api/tts/speak-stop', { method: 'POST', body: {} }).catch(() => {});
   api('/api/tts/queue-clear', { method: 'POST', body: {} }).catch(() => {});
   if (globalThis.speechSynthesis?.speaking || globalThis.speechSynthesis?.pending) {
     try { speechSynthesis.cancel(); } catch {}
+  }
+  if (window.webkit?.messageHandlers?.meloVoice) {
+    try { window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' }); } catch {}
   }
 }
 

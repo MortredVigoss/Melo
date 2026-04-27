@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-27 10:00 — Browser voice 在 desktop app 没声音 fix：路由到 Swift native bridge
+
+- 用户反馈：选了 Browser voice 点播放没声音。
+- 定位：WKWebView 对 JS `speechSynthesis.speak()` **静默无效**——utterance 入队不报错也不出声。`speakWithBrowser` 返回 true 但听不到。
+- 历史包袱：`_speakWithNativeBridge`（`webkit.messageHandlers.meloVoice` postMessage 给 Swift AVSpeechSynthesizer）一直定义着但**死代码从未被调用**。
+- 修复：
+  - `desktop-ui/app.js → speakWithBrowser`：先检测 `window.webkit.messageHandlers.meloVoice`，存在就走 `_speakWithNativeBridge`（Swift AVSpeechSynthesizer，desktop app 出声）；不存在再走 JS `speechSynthesis`（真浏览器）。同一个 "Browser voice" radio 在两种环境都能出声。
+  - Voice picker 在 desktop app 下 disabled + title 提示：「Voice picker only applies in actual browsers — desktop app routes to system AVSpeechSynthesizer」（Swift bridge 不接 voice 参数）。Radio hint 也分两种：desktop 显示 "Desktop app · uses system voice (picker unused here)"，浏览器显示 "In-page · speechSynthesis · WebKit voices"。
+  - 三个 stop 路径都补 WKWebView native bridge 的 `stopAudio` postMessage：`_streamTtsStart` / `_streamTtsOnToolCall` / `stopCurrentTts`（最后这个已经通过 `_ttsAudio.pause()` 覆盖了，verified）。
+- 验证：`node --check` 全过；tts.test.js 22/22 绿；regression 待跑；UI 手测留给用户。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 09:30 — TTS 拆清楚三种声音来源：Browser / macOS / Edge / MiniMax / API
 
 - 用户审计："System voice"实际是 macOS `say`，但 dropdown 显示 browser `speechSynthesis` voices——选了基本不生效（native path 优先）。要求把"System voice"拆成两个独立选项：
