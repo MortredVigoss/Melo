@@ -466,6 +466,26 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // The TTS panel's "自定义语音" activation needs the same priority
+    // chain that node-side unit tests lock — single source of truth
+    // for cache-valid / saved-default / first-agent / nothing-configured.
+    if (url.pathname === '/shared/minimaxVoiceResolver.js' && request.method === 'GET') {
+      const absPath = join(rootDir, 'src', 'shared', 'minimaxVoiceResolver.js');
+      try {
+        const fileStat = await stat(absPath);
+        if (!fileStat.isFile()) throw new Error('not a file');
+        response.writeHead(200, {
+          'content-type': 'text/javascript; charset=utf-8',
+          'content-length': fileStat.size,
+          'cache-control': 'public, max-age=86400',
+        });
+        createReadStream(absPath).pipe(response);
+      } catch {
+        sendJson(response, 404, { error: 'Shared module not found.' });
+      }
+      return;
+    }
+
     // ── Signed workspace-file endpoint ───────────────────────────────────────
     // Tools that produce files (image edits, generated PDFs, MiniMax images)
     // mint a signed URL via src/web/urlSigning.js → signWorkspaceFileUrl(), and

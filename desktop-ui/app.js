@@ -8,6 +8,7 @@ import {
   resetCitationPreviewCache,
 } from './viz/citationRenderer.js';
 import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
+import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 
 const app = document.querySelector('#app');
 
@@ -12623,37 +12624,43 @@ document.addEventListener('click', async event => {
         break;
       }
       case 'activate-minimax-voice': {
-        // Resolve which voice id to activate, in priority order:
-        //   1. uiState.ttsCustomVoiceId (already-picked, persisted in
-        //      localStorage)
-        //   2. First agent profile that has a minimaxVoiceId
-        //   3. The connector's saved Default Voice ID
-        //      (settings.config.minimaxVoiceId — the new fallback)
-        // If none of those resolve, refuse to activate AND don't POST
-        // — submitting an empty minimaxVoiceId previously wiped the
-        // connector's saved Default Voice ID (Codex C #14). The
-        // server-side SECRET_LIKE_CONFIG_KEYS list now also preserves
-        // blank submissions as belt-and-suspenders, but the client
-        // should still only opt in to writes it actually intends.
-        const firstAgentVoice = allChatAgentProfiles().find(a => a.minimaxVoiceId)?.minimaxVoiceId || '';
+        // Delegate to the shared resolver (src/shared/minimaxVoiceResolver.js)
+        // so the priority chain — cache valid / saved default / first
+        // agent / nothing — is locked by node-side unit tests instead of
+        // re-derived in browser logic. Fixes Codex C #14 (silent wipe)
+        // and C #15 (stale cache wins over fresh save).
+        const agentVoiceIds = allChatAgentProfiles()
+          .map(a => a.minimaxVoiceId)
+          .filter(Boolean);
         const savedDefault = uiState.bootstrap?.settings?.config?.minimaxVoiceId || '';
-        const resolvedVoiceId = uiState.ttsCustomVoiceId || firstAgentVoice || savedDefault;
-        if (!resolvedVoiceId) {
+        const { voiceId, droppedStaleCache } = resolveActiveMinimaxVoiceId({
+          cachedId: uiState.ttsCustomVoiceId,
+          agentVoiceIds,
+          savedDefault,
+        });
+
+        // If the cache no longer matches any valid voice, drop it now —
+        // both in-memory and in localStorage — so a future activation
+        // doesn't see the stale value again.
+        if (droppedStaleCache) {
+          uiState.ttsCustomVoiceId = '';
+          localStorage.removeItem('melo-tts-custom-voice-id');
+        }
+
+        if (!voiceId) {
           showError('Configure a MiniMax voice first — set a Default Voice ID in Settings → Connector or bind one to an agent.');
           break;
         }
+
         uiState.ttsEngine = 'api';
         localStorage.setItem('melo-tts-engine', 'api');
-        if (uiState.ttsCustomVoiceId !== resolvedVoiceId) {
-          uiState.ttsCustomVoiceId = resolvedVoiceId;
-          localStorage.setItem('melo-tts-custom-voice-id', resolvedVoiceId);
+        if (uiState.ttsCustomVoiceId !== voiceId) {
+          uiState.ttsCustomVoiceId = voiceId;
+          localStorage.setItem('melo-tts-custom-voice-id', voiceId);
         }
-        // Only post minimaxVoiceId when we actually have one. Otherwise
-        // the server's keepIfBlank-style preserve already protects us,
-        // but skipping the field keeps the wire payload honest.
         api('/api/settings/model', {
           method: 'POST',
-          body: { ttsProvider: 'minimax', minimaxVoiceId: resolvedVoiceId },
+          body: { ttsProvider: 'minimax', minimaxVoiceId: voiceId },
         }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
         render();
         break;

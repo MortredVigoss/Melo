@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
+
+- 上轮 Codex 给 C #15：localStorage 缓存的 `ttsCustomVoiceId` 可能 stale（用户从 agent 删了那个 voice、又保存了新的 connector default）；我之前的 priority chain 把 cache 放第一，stale cache 会赢过 fresh save，**激活时把 saved default 改回 stale cache 值**。
+- 修复（pure function 抽离 + 单测锁住）：
+  - **新建 `src/shared/minimaxVoiceResolver.js`** export `resolveActiveMinimaxVoiceId({ cachedId, agentVoiceIds, savedDefault })`：
+    - 构建 `validSet = { agent voices } ∪ { saved default }`
+    - 优先级：cache 命中 validSet → cache；否则 saved default；否则首个 agent voice；都没 → `voiceId: ''` + caller refuse
+    - 返 `{ voiceId, droppedStaleCache }`，flag 告诉 caller 清 localStorage
+  - `src/server.js` 加 `/shared/minimaxVoiceResolver.js` 静态路由（仿 `/shared/urlDetector.js`）。
+  - `desktop-ui/app.js`：`activate-minimax-voice` 改成 import + 调用 resolver；`droppedStaleCache: true` 时清掉 `uiState.ttsCustomVoiceId` + `localStorage.removeItem`。
+- 测试新增 13 个：
+  - `src/shared/minimaxVoiceResolver.test.js` 10 个 case：cache valid (agent / default 各一) / cache stale + saved default → 用 default + drop / cache stale + agents → 首 agent + drop / no cache + saved default / no cache + 仅 agents / 完全空 / cache stale 但其他都空 / 空白 sanitize / 无参默认。
+  - `src/desktopStore.minimaxVoiceConfig.test.js` 3 个 case 锁住 SECRET_LIKE 防擦逻辑：blank `minimaxVoiceId` 保留 / 非空覆盖 / blank `minimaxApiKey + minimaxGroupId` 保留（顺手锁 user 选 Q2 = 保留语义）。
+  - **Bisect 验证** SECRET_LIKE：临时把 `'minimaxVoiceId'` 从列表移除 → blank-preserve 测试 fail 1；恢复 → 3/3 绿。
+- Codex 反问回应：
+  - **Q1 stale cache 自动清**：是。`droppedStaleCache: true` flag + caller `localStorage.removeItem`。
+  - **Q2 connector Default 优先于 cache**：cache **校验后** 才优先；不在 validSet 时 saved default 兜底。
+- 验证：`node --check` 全过；regression 全套 **400/400 全绿**（387 + 10 + 3）；UI 手测：(a) 人工设置 stale localStorage 后激活应自动切到 saved default 并清缓存；(b) 完全无配置时激活应 toast 错误。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID
 
 - 上轮 Codex 给 C：saved key 存在但无 agent voice 也无 ttsCustomVoiceId 时，点 TTS 面板的"自定义语音"激活，会送空 `minimaxVoiceId` 给 server，**擦掉 connector 里刚保存的 Default Voice ID**。
