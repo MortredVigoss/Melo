@@ -12,35 +12,51 @@ export function normalizeMediaText(value = '', maxLength = 12000) {
 }
 
 /**
- * Combine an optional external AbortSignal with an internal timeout. Returns
- * a single signal that fires when EITHER aborts. Returns undefined when both
- * args are missing so callers can spread it through unchanged.
+ * Combine N AbortSignals into one that fires when ANY of them aborts.
+ * Falsy entries are filtered out. Returns undefined when nothing's left
+ * so callers can spread it through unchanged.
  *
- * AbortSignal.any is Node 20.3+; package.json still declares node >=18 so
- * the fallback path matters. Without it, calling .any() on Node 18 / early
- * 20 throws synchronously and silently degrades to null. Mirrors the
- * pattern in src/images/codexImageEngine.js → composeSignals.
+ * AbortSignal.any is Node 20.3+; package.json declares node >=18 so the
+ * fallback path matters. Without it, calling .any() on Node 18 / early
+ * 20 throws synchronously and silently degrades. Mirrors the pattern in
+ * src/images/codexImageEngine.js → composeSignals.
+ *
+ * **Media-layer convention**: this and `combineSignals` are the ONLY
+ * sanctioned ways to compose abort signals inside src/media/. Direct
+ * `AbortSignal.any([...])` calls bypass the Node 18 fallback and have
+ * caused regressions twice (Codex C #6, #10). Reviewers should flag
+ * any new direct call.
+ */
+export function composeAbortSignals(...signals) {
+  const filtered = signals.filter(Boolean);
+  if (filtered.length === 0) return undefined;
+  if (filtered.length === 1) return filtered[0];
+
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(filtered);
+  }
+
+  // Manual fallback for Node <20.3
+  for (const sig of filtered) {
+    if (sig.aborted) return sig;
+  }
+  const controller = new AbortController();
+  for (const sig of filtered) {
+    sig.addEventListener('abort', () => {
+      if (!controller.signal.aborted) controller.abort(sig?.reason);
+    }, { once: true });
+  }
+  return controller.signal;
+}
+
+/**
+ * Common ergonomic case: combine an optional external AbortSignal with an
+ * internal timeout. Thin wrapper over composeAbortSignals — a numeric
+ * `timeoutMs` is materialised into an AbortSignal first.
  */
 export function combineSignals(externalSignal, timeoutMs) {
   const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : null;
-  if (!externalSignal && !timeoutSignal) return undefined;
-  if (!externalSignal) return timeoutSignal;
-  if (!timeoutSignal) return externalSignal;
-
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([externalSignal, timeoutSignal]);
-  }
-
-  if (externalSignal.aborted) return externalSignal;
-  if (timeoutSignal.aborted) return timeoutSignal;
-
-  const controller = new AbortController();
-  const forwardAbort = signal => () => {
-    if (!controller.signal.aborted) controller.abort(signal?.reason);
-  };
-  externalSignal.addEventListener('abort', forwardAbort(externalSignal), { once: true });
-  timeoutSignal.addEventListener('abort', forwardAbort(timeoutSignal), { once: true });
-  return controller.signal;
+  return composeAbortSignals(externalSignal, timeoutSignal);
 }
 
 export async function fetchText(url, { timeoutMs = 10000, headers = {}, signal } = {}) {

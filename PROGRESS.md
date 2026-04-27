@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-27 07:30 — Codex C #10 fix：videoExtractor 直接调 AbortSignal.any 改走 composeAbortSignals
+
+- `git pp` 给本轮的 3 个 commit 评级 C #10：videoExtractor.js 里 3 处 `AbortSignal.any([...])` 直接调用绕过了 common.js 的 Node 18 fallback——`withAudioBudget`、`withKeyframeBudget`（parent signal 合并）+ direct-video download fetch。Node 18.0-18.16 会 sync throw → 视频路径在带 parent signal 时退化为 null。
+- 修复：
+  - `src/media/common.js`：抽出更通用的 `composeAbortSignals(...signals)`（支持 N 个 signal 合并 + Node <20.3 fallback）。原 `combineSignals(externalSignal, timeoutMs)` 改成 thin wrapper（先把 timeoutMs 实例化成 AbortSignal.timeout 信号，再走 composeAbortSignals）。
+  - `src/media/extractors/videoExtractor.js`：3 处 `AbortSignal.any` 全替换为 `composeAbortSignals` / `combineSignals`，`AbortSignal.any` 已经绝迹于 media 层（除 common.js 内部 fallback 检测）。
+  - **Convention 写进 common.js docstring**：「media 层禁止直接调 `AbortSignal.any([...])`，统一走 `composeAbortSignals` / `combineSignals`。Reviewers should flag any new direct call.」记 Codex C #6 + #10 两次回归。
+- 测试加 2 个 monkeypatch 回归（`videoExtractor.test.js`）：临时把 `AbortSignal.any = undefined`，跑 `withAudioBudget` / `withKeyframeBudget` + parent signal，断言 fallback 路径仍然 propagate parent abort 给 work signal（80ms 内 elapsed < 500ms）。
+- **Bisect 验证**：把 common.js 里的 fallback 块直接 short-circuit 强制走 `AbortSignal.any` → 两个新测试 sync throw `TypeError`。还原后 2/2 绿。
+- 验证：`node --check` 全过；videoExtractor.test.js 25/25；regression 全套 **362/362 全绿**（07:00 时 360，新增 2 个 Node 18 fallback 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 07:00 — Phase 4 第 1 刀：orchestrator abort 全链路 + 全 extractor signal 贯通
 
 - 用户开新 session，确认三点 follow-up，从 #1（orchestrator abort）起手。
@@ -80,10 +92,13 @@
 - 验证：`node --check` 全过；audioExtractor.signal.test.js **3/3**；regression 全套 **350/350 全绿**（04:00 时 347，新增 3 个 signal cancellation 测试）。
 - 提交哈希：（待 commit）
 
-## 归档摘要（2026-04-27 04:30 之前的所有条目）
+## 归档摘要（2026-04-27 06:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip** —— `combineSignals` 加 Node <20.3 manual fallback；whisper-cli 假绿测试改 `t.skip()`。`424cbe8`
+- **2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（C #6）** —— 加 `_setWhisperCliForTests` DI hook 解决 module-load 资源化；OpenAI 测试 authMode 改 'api-key'；新增 download abort 测试；`readAttachmentBuffer` 接 signal 走 combineSignals。`aadc7dd`
+- **2026-04-27 04:30 — audioExtractor 全链路 signal 化（C #5）** —— `tryWhisperCpp` / `convertToWavForNative` 走 `execFileAsync({ signal })`；native + OpenAI fetch 走 combineSignals；3 个真 child-kill / fetch-abort 测试证明 backend 真响应 abort。`0ed90fd`
 - **2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行** —— audio + keyframes 改 `Promise.all` 并行，独立 budget（audio 10s / keyframe 5s）；新增 `withAudioBudget` + `audioBranch`（spawnWithAbort 接 ffmpeg）；slow/hanging audio + 100ms budget → frames-only entry。`1f29b00`
 - **2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功** —— 加 `_setExtractAudioContentForTests` DI hook；audio 抽取 fail/null 时不再吞 keyframes，改返 `source: 'video-keyframes-only'` entry；意外抓到 silent-video 真 bug（ffmpeg -vn 在无音轨时 reject 整个 extraction）。`a5d855c`
 - **2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg** —— 抽 `spawnWithAbort(bin, args, { signal, collectStdout, onSpawn })` 统一 child + signal 耦合；`probeDurationSec` 接受 signal；3 个 child-kill 测试用真挂死的 `node -e setInterval` 证 SIGKILL 实落地。`1dba8b4`

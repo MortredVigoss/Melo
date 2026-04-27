@@ -369,6 +369,70 @@ test('withAudioBudget: fast successful work returns its value', async () => {
   assert.deepEqual(result, fake);
 });
 
+// ─── Codex C-grade fix #10: Node <20.3 AbortSignal.any fallback ───────────
+// withAudioBudget / withKeyframeBudget go through composeAbortSignals (in
+// common.js) which has a manual fallback for Node 18 / early 20 runtimes
+// where AbortSignal.any throws. On Node 22 the native path runs by default,
+// so this monkeypatch test temporarily blanks AbortSignal.any to exercise
+// the fallback. Without the helper, the parent-signal branches of
+// withAudioBudget / withKeyframeBudget would synchronously throw on those
+// runtimes and silently degrade video extraction to null.
+
+test('withAudioBudget: parent abort reaches work even when AbortSignal.any is unavailable (Node 18 fallback)', async () => {
+  const original = AbortSignal.any;
+  // eslint-disable-next-line no-global-assign
+  AbortSignal.any = undefined;
+  try {
+    const parent = new AbortController();
+    let workSignalAborted = false;
+    const promise = withAudioBudget(
+      workSignal => new Promise(resolve => {
+        workSignal.addEventListener('abort', () => {
+          workSignalAborted = true;
+          resolve(null);
+        });
+      }),
+      30000,
+      parent.signal,
+    );
+    setTimeout(() => parent.abort(), 80);
+    const start = Date.now();
+    const result = await promise;
+    const elapsed = Date.now() - start;
+    assert.equal(result, null);
+    assert.equal(workSignalAborted, true, 'fallback path must still propagate parent abort');
+    assert.ok(elapsed < 500);
+  } finally {
+    AbortSignal.any = original;
+  }
+});
+
+test('withKeyframeBudget: parent abort reaches work even when AbortSignal.any is unavailable (Node 18 fallback)', async () => {
+  const original = AbortSignal.any;
+  // eslint-disable-next-line no-global-assign
+  AbortSignal.any = undefined;
+  try {
+    const parent = new AbortController();
+    let workSignalAborted = false;
+    const promise = withKeyframeBudget(
+      workSignal => new Promise(resolve => {
+        workSignal.addEventListener('abort', () => {
+          workSignalAborted = true;
+          resolve([]);
+        });
+      }),
+      30000,
+      parent.signal,
+    );
+    setTimeout(() => parent.abort(), 80);
+    const result = await promise;
+    assert.deepEqual(result, []);
+    assert.equal(workSignalAborted, true);
+  } finally {
+    AbortSignal.any = original;
+  }
+});
+
 // ─── Codex C-grade fix #8: parent-signal propagation into inner budgets ────
 // withAudioBudget / withKeyframeBudget now accept a parentSignal so an outer
 // orchestrator abort can interrupt the inner work mid-flight, instead of

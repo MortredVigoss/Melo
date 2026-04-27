@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { combineSignals, composeAbortSignals } from '../common.js';
 import { extractAudioContent as _realExtractAudioContent } from './audioExtractor.js';
 
 // DI hook so the "audio fails / Whisper unavailable, but keyframes succeed"
@@ -200,11 +201,9 @@ export async function withKeyframeBudget(work, budgetMs, parentSignal) {
   const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _KEYFRAME_BUDGET_MS;
   const localAc = new AbortController();
   // Combined signal: fires if EITHER the local timeout or the parent
-  // (orchestrator) aborts. The work fn passes this through to ffmpeg /
-  // ffprobe so a parent abort kills the child immediately.
-  const combinedSignal = parentSignal
-    ? AbortSignal.any([localAc.signal, parentSignal])
-    : localAc.signal;
+  // (orchestrator) aborts. Goes through composeAbortSignals so the Node
+  // 18 fallback path is exercised on package-supported runtimes.
+  const combinedSignal = composeAbortSignals(localAc.signal, parentSignal);
   return new Promise(resolve => {
     let settled = false;
     const finish = (val) => {
@@ -241,9 +240,7 @@ export async function withKeyframeBudget(work, budgetMs, parentSignal) {
 export async function withAudioBudget(work, budgetMs, parentSignal) {
   const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _AUDIO_BUDGET_MS;
   const localAc = new AbortController();
-  const combinedSignal = parentSignal
-    ? AbortSignal.any([localAc.signal, parentSignal])
-    : localAc.signal;
+  const combinedSignal = composeAbortSignals(localAc.signal, parentSignal);
   return new Promise(resolve => {
     let settled = false;
     const finish = (val) => {
@@ -342,12 +339,9 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
       videoBuffer = Buffer.from(base64Part, 'base64');
     } else {
       // Combine the orchestrator's external signal with the internal 60s
-      // download timeout via AbortSignal.any so an outer abort kills a
-      // hanging remote-video download immediately.
-      const downloadSignal = signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
-        : AbortSignal.timeout(60000);
-      const response = await fetch(url, { signal: downloadSignal });
+      // download timeout via combineSignals (which uses the Node 18
+      // fallback path when AbortSignal.any isn't available).
+      const response = await fetch(url, { signal: combineSignals(signal, 60000) });
       if (!response.ok) return null;
       videoBuffer = Buffer.from(await response.arrayBuffer());
     }
