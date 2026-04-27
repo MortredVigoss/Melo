@@ -45,6 +45,7 @@ test('renderAdvancedPage shows the four subsection titles + Experimental chip', 
   const html = renderAdvancedPage(freshState());
   assert.match(html, /<h2[^>]*>[\s\S]*?Advanced/);
   assert.match(html, /Experimental/);
+  assert.match(html, /Built-in MCP servers/);
   assert.match(html, /External MCP connectors/);
   assert.match(html, /CLI \/ stdio MCP servers/);
   assert.match(html, /Plugins/);
@@ -79,14 +80,55 @@ test('renderAdvancedPage escapes hostile statePathHint values', () => {
 
 // ─── Empty states ───────────────────────────────────────────────────────────
 
-test('all-empty state renders one empty-state per subsection (4 total)', () => {
+test('all-empty state renders one empty-state per subsection (5 total: presets + 4 originals)', () => {
   const html = renderAdvancedPage(freshState());
   const matches = html.match(/empty-state/g) || [];
-  assert.equal(matches.length, 4);
+  assert.equal(matches.length, 5);
+  assert.match(html, /No built-in MCP server presets registered/);
   assert.match(html, /No external MCP connectors configured/);
   assert.match(html, /No active CLI \/ stdio MCP servers/);
   assert.match(html, /No plugins registered/);
   assert.match(html, /No background runs/);
+});
+
+test('renderAdvancedPage renders one toggle row per built-in MCP preset', () => {
+  const html = renderAdvancedPage(freshState({
+    mcpPresets: [
+      { id: 'antv-chart', flag: 'enableAntvChartMcp', enabled: false,
+        command: 'npx', args: ['-y', '@antv/mcp-server-chart'],
+        description: 'AntV chart generator' },
+      { id: 'markdown2pdf', flag: 'enableMarkdown2PdfMcp', enabled: true,
+        command: 'npx', args: ['-y', '@99xio/markdown2pdf-mcp'],
+        description: 'md→pdf converter' },
+    ],
+  }));
+  // Both server ids appear.
+  assert.match(html, /antv-chart/);
+  assert.match(html, /markdown2pdf/);
+  // Disabled row gets the Enable button (will flip on click).
+  assert.match(html, /data-action="toggle-mcp-preset"[^>]*data-preset-id="antv-chart"[^>]*data-next-enabled="1"/);
+  // Enabled row gets the Disable button.
+  assert.match(html, /data-action="toggle-mcp-preset"[^>]*data-preset-id="markdown2pdf"[^>]*data-next-enabled="0"/);
+  // Header summary reflects 1-of-2 enabled.
+  assert.match(html, /1 of 2 enabled/);
+});
+
+test('renderAdvancedPage MCP presets section escapes hostile fields', () => {
+  const html = renderAdvancedPage(freshState({
+    mcpPresets: [
+      { id: '<script>', flag: '<flag>', enabled: false,
+        command: 'rm', args: ['<arg>'],
+        description: '<script>alert(1)</script>' },
+    ],
+  }));
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /data-preset-id="&lt;script&gt;"/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+});
+
+test('renderAdvancedPage shows enabled count in header even for empty presets', () => {
+  const html = renderAdvancedPage(freshState({ mcpPresets: [] }));
+  assert.match(html, /0 of 0 enabled/);
 });
 
 // ─── External MCP rendering ─────────────────────────────────────────────────

@@ -1148,6 +1148,41 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // Toggle a built-in MCP preset on/off by flipping its config flag.
+    // Body: { flag: 'enableAntvChartMcp', enabled: true }
+    // The flag must match an existing `enable*Mcp` field on the resolved
+    // config; arbitrary writes are refused.  After the write, MCP servers
+    // are re-bootstrapped so the new state takes effect immediately.
+    if (url.pathname === '/api/mcp/preset-toggle' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const flag = String(body?.flag || '').trim();
+      const enabled = Boolean(body?.enabled);
+      // Whitelist: only the four built-in MCP flags are toggleable here.
+      // Anything else routes through the regular config / mcpServers
+      // editing flow.  Hardcoded list (rather than dynamic introspection)
+      // so a stray POST can't enable an arbitrary boolean elsewhere in
+      // config.json.
+      const ALLOWED_MCP_FLAGS = new Set([
+        'enablePlaywrightMcp',
+        'enableBrowserlessMcp',
+        'enableAntvChartMcp',
+        'enableMarkdown2PdfMcp',
+      ]);
+      if (!ALLOWED_MCP_FLAGS.has(flag)) {
+        sendJson(response, 400, { ok: false, error: `Unknown MCP preset flag: ${flag}` });
+        return;
+      }
+      const { updateConfig } = await import('./config.js');
+      await updateConfig(flag, enabled);
+      // Re-bootstrap so the toggled server connects (or its tools get
+      // unregistered if disabled).  Failures are logged inside
+      // initMcpServers; the API returns ok regardless because the config
+      // write itself succeeded.
+      await initMcpServers();
+      sendJson(response, 200, { ok: true, flag, enabled, servers: getActiveMcpServers() });
+      return;
+    }
+
     // ── Background task endpoints ────────────────────────────────────────────
     // Start a background shell command and stream its output via SSE.
     if (url.pathname === '/api/background-tasks/run' && request.method === 'POST') {

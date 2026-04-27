@@ -4843,6 +4843,13 @@ async function handleUpdateAgentProfile(form) {
   const enabledConnectorIds = rawConnectorIds === '__all__'
     ? null
     : String(rawConnectorIds || '').split(',').map(v => v.trim()).filter(Boolean);
+  // Stdio MCP whitelist — unlike skills/connectors above, MCP defaults
+  // to deny-all (`null` is coerced to `[]` by the backend normalizer),
+  // so we never offer the "all servers" sentinel here.  An empty string
+  // means "no MCP servers for this agent".
+  const rawMcpServerIds = formData.get('enabledMcpServerIds');
+  const enabledMcpServerIds = String(rawMcpServerIds || '')
+    .split(',').map(v => v.trim()).filter(Boolean);
   const minimumVisibleMs = 100;
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
 
@@ -4867,6 +4874,7 @@ async function handleUpdateAgentProfile(form) {
           tools,
           enabledSkillIds,
           enabledConnectorIds,
+          enabledMcpServerIds,
           model: String(formData.get('model') || '').trim(),
           systemPrompt: String(formData.get('systemPrompt') || '').trim(),
           voiceReplyMode: String(formData.get('voiceReplyMode') || 'summary').trim(),
@@ -8052,6 +8060,44 @@ function renderAgentWorkbench(selected) {
             : '<input type="hidden" name="enabledConnectorIds" value="__all__" />'
         }
 
+        ${(() => {
+          // Built-in stdio MCP server whitelist.  Unlike connectors / skills
+          // above where missing = "allow all", MCP defaults to deny-all
+          // because stdio MCPs run arbitrary local processes — every agent
+          // must opt-in per server.  See agentTools.normalizeMcpServerWhitelist.
+          const presets = uiState.bootstrap?.customize?.mcpPresets || [];
+          if (!presets.length) {
+            return '<input type="hidden" name="enabledMcpServerIds" value="" />';
+          }
+          const whitelist = new Set(
+            Array.isArray(draft?.enabledMcpServerIds) ? draft.enabledMcpServerIds : [],
+          );
+          return `
+            <input type="hidden" name="enabledMcpServerIds" value="${escapeHtml([...whitelist].join(','))}" />
+            <div class="detail-meta">
+              <div class="meta-block-label">Stdio MCP servers</div>
+              <div>Pick which built-in MCP servers this agent may call. Empty = no MCP access (default — these run local processes, opt-in per agent).</div>
+            </div>
+            <div class="chip-row">
+              ${presets.map(preset => {
+                const enabled = Boolean(preset?.enabled);
+                const allowed = whitelist.has(preset.id);
+                return `
+                  <button
+                    class="chip chip-button ${allowed ? 'is-accent' : ''}"
+                    type="button"
+                    data-action="toggle-agent-mcp-server"
+                    data-agent-id="${selected.id}"
+                    data-mcp-server-id="${escapeHtml(preset.id)}"
+                    title="${enabled ? 'Server enabled globally' : 'Server disabled globally — enable in Advanced first'}"
+                    ${!enabled ? 'disabled' : ''}
+                  >${escapeHtml(preset.id)}${enabled ? '' : ' (off)'}</button>
+                `;
+              }).join('')}
+            </div>
+          `;
+        })()}
+
         <div class="detail-meta">
           <div class="meta-block-label">Mood</div>
           <div>${escapeHtml(selected.moodDescription)}</div>
@@ -9921,6 +9967,7 @@ function renderCustomizePage() {
                 adv: uiState.advanced,
                 escapeHtml,
                 scheduleRefresh: () => Promise.resolve().then(refreshAdvancedStatus),
+                mcpPresets: uiState.bootstrap?.customize?.mcpPresets || [],
               })
             : section === 'memory'
               ? renderMemoryPane()
@@ -11711,6 +11758,55 @@ document.addEventListener('click', async event => {
         currentDraft.enabledConnectorIds = null;
         uiState.agentDrafts[draftKey] = currentDraft;
         render();
+        break;
+      }
+      case 'toggle-agent-mcp-server': {
+        // Toggle a specific stdio MCP server id in the per-agent whitelist.
+        // No "All servers" sentinel here — MCP defaults to deny-all, the
+        // user has to add each server explicitly.
+        const agentId = trigger.dataset.agentId;
+        const mcpServerId = trigger.dataset.mcpServerId;
+        const draftKey = agentDraftKey(agentId);
+        const currentDraft = {
+          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+        };
+        const currentIds = Array.isArray(currentDraft.enabledMcpServerIds)
+          ? new Set(currentDraft.enabledMcpServerIds)
+          : new Set();
+        if (currentIds.has(mcpServerId)) {
+          currentIds.delete(mcpServerId);
+        } else {
+          currentIds.add(mcpServerId);
+        }
+        currentDraft.enabledMcpServerIds = [...currentIds];
+        uiState.agentDrafts[draftKey] = currentDraft;
+        render();
+        break;
+      }
+      case 'toggle-mcp-preset': {
+        // Advanced page MCP toggle — flip the corresponding `enable*Mcp`
+        // config flag and re-bootstrap the MCP servers so the change
+        // takes effect immediately.  Server-side validates that the flag
+        // is one of the whitelisted built-ins.
+        const flag = trigger.dataset.presetFlag;
+        const nextEnabled = trigger.dataset.nextEnabled === '1';
+        if (!flag) break;
+        try {
+          await api('/api/mcp/preset-toggle', {
+            method: 'POST',
+            body: { flag, enabled: nextEnabled },
+          });
+          // Refresh the bootstrap so mcpPresets[].enabled reflects the new
+          // flag values; also clear the Advanced cache so the connected-
+          // tools count updates on the next render.
+          uiState.advanced = { ...uiState.advanced, loaded: false };
+          await loadBootstrap(uiState.searchQuery, { quiet: true });
+          await refreshAdvancedStatus();
+        } catch (err) {
+          uiState.error = `Toggle failed: ${err?.message || err}`;
+          render();
+          setTimeout(() => { uiState.error = null; render(); }, 4000);
+        }
         break;
       }
       case 'toggle-agent-secret': {

@@ -33,6 +33,7 @@ import { sortChats, summarizeChat } from './conversation.js';
 import { findProjectById } from './stateLookups.js';
 import { buildWorkspaceSnapshot } from '../services/workspace/workspaceSnapshot.js';
 import { buildConnectors } from '../services/connector/connectorRollup.js';
+import { getBuiltinMcpPresets } from '../mcp/manager.js';
 import {
   allAgentIdsFromProfiles,
   AGENT_PRESETS,
@@ -348,6 +349,18 @@ export async function getDesktopBootstrap(query = '') {
       // these to offer "save as skill" suggestions without making a
       // separate API call on every render.
       skillProposals: defaultSkillProposalStore.list(),
+      // Built-in stdio MCP presets (browser + chart + md→pdf) so the
+      // Advanced page can render one toggle per server without bouncing
+      // through `/api/mcp/...`. Each entry carries `enabled` derived
+      // from the corresponding `enableXxxMcp` config flag.
+      mcpPresets: getBuiltinMcpPresets().map(preset => ({
+        id: preset.id,
+        command: preset.command,
+        args: preset.args,
+        description: preset.description,
+        flag: preset.flag,
+        enabled: Boolean(config[preset.flag]),
+      })),
     },
     workspace,
     search: await buildSearchResults(query, state, workspace, connectors, skills),

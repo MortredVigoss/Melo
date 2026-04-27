@@ -35,6 +35,14 @@
  *                                         Defaults to the canonical
  *                                         `~/.melo/desktop/state.json`; callers
  *                                         can override when MELO_HOME is custom.
+ * @param {Array<{id: string, command?: string, args?: string[], description?: string,
+ *                flag: string, enabled: boolean}>} [options.mcpPresets]
+ *                                         Built-in MCP server presets (AntV chart,
+ *                                         markdown→pdf, playwright, browserless).
+ *                                         Each row renders as a toggle that flips
+ *                                         the underlying `enable*Mcp` config flag.
+ *                                         When omitted the section shows an
+ *                                         empty-state.
  * @returns {string} HTML string for the Advanced pane.
  */
 export function renderAdvancedPage({
@@ -43,6 +51,7 @@ export function renderAdvancedPage({
   escapeHtml,
   scheduleRefresh,
   statePathHint = '~/.melo/desktop/state.json',
+  mcpPresets = [],
 }) {
   // Lazy first fetch on initial render of this section.
   if (!adv.loaded && !adv.loading && !adv.error) {
@@ -123,6 +132,39 @@ export function renderAdvancedPage({
     ? `<div class="alert compact-alert">${escapeHtml(adv.error)}</div>`
     : '';
 
+  // Built-in MCP server presets (browser automation + AntV chart +
+  // markdown→pdf).  Each row renders as a "list-row" with a toggle so
+  // the user can flip the underlying enableXxxMcp config flag without
+  // hand-editing config.json.  Per-agent whitelisting is a separate
+  // surface in the Customize → Agents page.
+  const presetRows = (mcpPresets || []).length === 0
+    ? '<div class="empty-state compact">No built-in MCP server presets registered.</div>'
+    : (mcpPresets || []).map(preset => {
+        const enabled = Boolean(preset?.enabled);
+        const cmdSummary = `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
+        return `
+          <div class="list-row">
+            <div class="thread-meta">
+              <span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? 'enabled' : 'disabled'}</span>
+              <span class="meta-label">flag: <code>${escapeHtml(preset?.flag || '')}</code></span>
+            </div>
+            <div class="list-row-title mono">${escapeHtml(preset?.id || '(unnamed)')}</div>
+            <div class="list-row-meta">${escapeHtml(preset?.description || '')}</div>
+            <div class="list-row-meta mono">${escapeHtml(cmdSummary)}</div>
+            <div class="inline-actions">
+              <button class="small-button${enabled ? ' is-danger' : ' is-primary'}"
+                      type="button"
+                      data-action="toggle-mcp-preset"
+                      data-preset-id="${escapeHtml(preset?.id || '')}"
+                      data-preset-flag="${escapeHtml(preset?.flag || '')}"
+                      data-next-enabled="${enabled ? '0' : '1'}">
+                ${enabled ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
   return `
     <div class="customize-pane page-advanced">
       <div class="detail-card">
@@ -152,6 +194,19 @@ export function renderAdvancedPage({
         </div>
 
         ${errorBlock}
+
+        <div class="subsection">
+          <div class="header-row">
+            <h3 class="subsection-title">Built-in MCP servers</h3>
+            <span class="meta-label">${(mcpPresets || []).filter(p => p?.enabled).length} of ${(mcpPresets || []).length} enabled</span>
+          </div>
+          <p class="page-kicker-tip">
+            Stdio MCPs run local processes; agents must opt-in to each server in Customize → Agents.
+          </p>
+          <div class="list-stack">
+            ${presetRows}
+          </div>
+        </div>
 
         <div class="subsection">
           <div class="header-row">

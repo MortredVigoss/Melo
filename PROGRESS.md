@@ -5,34 +5,26 @@
 
 ---
 
-## 2026-04-27 19:30 — Codex D 修复：desktopStore.js re-export 缺口 + server import smoke 网
+## 2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）
 
-- 上一刀 `768d511` push 被 Codex D 阻断：server.js 从 `./desktopStore.js` 导入 `restoreArtifact` + `purgeStaleSoftDeletes`，但 desktopStore re-export 块没补全 → ESM 装载会立刻 throw "does not provide an export named"，server 起不来。
-- 测试套漏掉是因为 workspaceMutations 单测直接 import `./workspaceMutations.js`，绕过了 desktopStore re-export 层；服务层 1093/1093 全绿但 server 装载会死。
-- 修：[desktopStore.js:469-475](src/desktopStore.js#L469) re-export 块加 `restoreArtifact` + `purgeStaleSoftDeletes`。
-- 防回归网：新建 [src/server.imports.smoke.test.js](src/server.imports.smoke.test.js) —— 解析 server.js 的 `from './desktopStore.js'` import 块（regex `\{([^}]*?)\}` 不跨多个 import block），动态 import desktopStore.js，断言每个 server.js 请求的名字都 reachable。3 个测试：parser 自检 / server requested == desktop exposed / 软删两个新 binding 直接断言可达。下次任何 server.js 加新 import 但 desktopStore 漏 re-export，1100+ 测试套立刻红。
-- 验证：`node --test 'src/**/*.test.js'` **1107/1107 全绿**（前次 1104 + 3 新 smoke）；`npm run test:ui` 71/71；check-syntax 全过。
-- 提交哈希：`5a888ee`。
-
-## 2026-04-27 19:00 — Codex C 第二轮：artifact 软删 reader audit 全闭环 + 11 回归测试
-
-- 上一刀 `af2e3b7` (Codex C pre-pp 阻断 push) 找到 4 处漏过滤的 reader：dynamic prompt 仍注入 deleted artifact（🟠 隐私）/ 全局搜索仍返 deleted（🔴）/ apply API 接 stale id 写回 workspace（🔵）/ artifacts connector 计数仍含 tombstone（🔵）。根因：bootstrap 一处 filter 不够，soft-delete 是横切关注点，所有 reader 都要过滤。
-- **新增 helper** ([artifactService.js](src/services/artifact/artifactService.js#L25))：`isLiveArtifact(artifact)` + `visibleArtifacts(artifacts)`，集中规则。
-- **7 处 reader 全接入**：[bootstrap](src/state/desktopBootstrap.js#L268) (visibleArtifactRows once)、[dynamicContext](src/services/chat/dynamicContext.js#L67) (`isLiveArtifact` filter)、[connectorRollup artifacts count](src/services/connector/connectorRollup.js#L88)、[searchResultsBuilder × 3](src/services/search/searchResultsBuilder.js)（buildRecentSearchSuggestions / buildSearchResults projects + artifacts bucket）、[updateArtifact](src/services/workspace/workspaceMutations.js#L130) 拒 tombstone、[applyArtifactToWorkspaceFile](src/services/workspace/workspaceMutations.js#L301) 拒 tombstone。
-- **11 回归测试**：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) +3（update 拒 deleted / apply 拒 deleted / apply unknown id）；新建 [connectorRollup.test.js](src/services/connector/connectorRollup.test.js) +3（total / projectArtifacts / empty state）；新建 [dynamicContext.test.js](src/services/chat/dynamicContext.test.js) +4（live surface / deleted dropped / mixed live+deleted / connector disabled）；新建 [searchResultsBuilder.test.js](src/services/search/searchResultsBuilder.test.js) +3（artifacts bucket excludes deleted / empty when only deleted match / project summaries count only live）。
-- **契约确认（用户拍板）**：软删后任何 API / 任何上下文都不再可见 except `restoreArtifact`。删除 == 立即完全不可见 until undo。
-- 验证：`node --test 'src/**/*.test.js'` **1104/1104 全绿**（之前 1093 + 11 新加）；`npm run test:ui` 71/71；check-syntax 全过；workspace 套 20/20、connector 套 3/3、dynamicContext 套 4/4、search builder 套 3/3。
-- 提交哈希：`768d511`。
-
-## 2026-04-27 18:30 — Codex C 修复：artifact 软删契约改为 server-driven（response to e1a8ecf C-grade post-push review）
-
-- 上一刀 `e1a8ecf` 用前端 setTimeout 实现 5s undo 窗口，git pp post-push review 给 C：🔴 reload/close 时 timer 死掉 → server 没删但 UI 说 "Deleted"；🟡 单 toast 实例覆盖前一个 undo；⚪ DOM 状态机无自动化测试。用户选方案 C（最彻底）：后端 soft-delete + restore 端点。
-- **Phase 1（后端契约）**：[workspaceMutations.js](src/services/workspace/workspaceMutations.js) 把 `deleteArtifact` 从硬删改为 stamp `deletedAt`；新增 `restoreArtifact`（清 deletedAt）+ `purgeStaleSoftDeletes({ olderThanDays = 7 })`（idempotent，evict 旧 tombstone）。`normalizeArtifact` ([artifactService.js](src/services/artifact/artifactService.js#L25)) 保留 deletedAt（仅当合法 ISO 时；malformed 字符串自动丢弃）。[desktopBootstrap.js](src/state/desktopBootstrap.js#L261) 入口算 `visibleArtifacts = state.artifacts.filter(a => !a?.deletedAt)`，4 处下游消费者全用 visible（projectArtifacts / activeChatArtifacts / 顶层 artifacts / summarizeProject）。[server.js](src/server.js) 新增 `POST /api/artifacts/restore`。
-- **Phase 2（前端切到 server-driven）**：[handleDeleteArtifact](desktop-ui/app.js#L4604) 重写 —— 立刻 POST `/api/artifacts/delete`，server 已 commit；展示 undo toast 5s；onUndo POST `/api/artifacts/restore`。删除 `pendingArtifactDeletes` Map / `setTimeout(commitDelete)` / `.is-pending-delete` 类（不再需要客户端状态机）。reload/close 不再丢 timer：server 端记录已 stable。多 artifact 连续删除：每个独立 server 端 tombstone，UI toast 仍单实例（被覆盖时旧 row 仍 deleted；要恢复需找回 server log，acceptable trade-off）。
-- **Phase 4（GC）**：[server.js](src/server.js) startup 调一次 `purgeStaleSoftDeletes({ olderThanDays: 7 })`，>7d tombstone 真删；非阻塞 + 错误 swallow（不影响 boot）。
-- 测试：[workspaceMutations.test.js](src/services/workspace/workspaceMutations.test.js) 既有 deleteArtifact 测试改成 soft-delete 契约（artifacts.length 不减、deletedAt set、bootstrap 隐藏）+ 新增 8 个测试覆盖 restore 成功 / unknown id / not soft-deleted / missing id + GC cutoff / idempotent / unparseable date / double-delete throws。**17/17 全绿**（原 9 + 8 新）。
-- 验证：`npm run test:ui` 71/71；memory 套 330/330；workspace 套 17/17；check-syntax 全过。前端 handleDeleteArtifact 在新模型下变成 fire-and-forget pair (delete → restore on undo)，状态机已经被 server 端 17 个测试覆盖；DOM 部分是薄 toast，需要 jsdom 才能 unit test，留作下次 desktop-ui test harness 升级。
-- 提交哈希：`af2e3b7`。
+- 用户审查："MCP 安全风险讨论很多，尤其是 stdio 本地执行类。Melo 接 MCP 时保持 approval、白名单、agent 级权限、只读/写入目录限制，不要让所有 agent 默认拿到所有 MCP。" 4 个 phase 一次性闭环。
+- Web search 选包：AntV chart → `@antv/mcp-server-chart`（默认 stdio transport，npx -y）；markdown→pdf → `@99xio/markdown2pdf-mcp`（专一功能、本地、轻量）。
+- **Phase 1 (`8778052`)** 后端接入：
+  - [mcp/manager.js](src/mcp/manager.js) 新增 `BUILTIN_MCP_PRESETS`（antv-chart 默认关 / markdown2pdf 默认开，匹配 audit "默认只启用搜索和 PDF" 原话）+ `getBuiltinMcpPresets()` 给 UI 用 + `mcpServerWorkspaceDir(name)` 沙盒 cwd（`<MELO_HOME>/desktop/mcp-workspace/<safe-name>/`，路径分隔符等转 `_` 防 traversal）+ `connectMcpServer` 启动时 mkdir cwd 并传给 client。
+  - [mcp/client.js](src/mcp/client.js) `McpStdioClient` 接 `cwd` 参数，spawn 走 sandbox 子目录。
+  - [config.js](src/config.js) `DEFAULT_CONFIG` 加 `enableAntvChartMcp: false` + `enableMarkdown2PdfMcp: true`。`buildEffectiveMcpServers` 从 flag 注入 preset；user-supplied id 撞名时 user wins。
+- **Phase 2 (`8778052`)** per-agent stdio MCP 白名单：
+  - [agentTools.js](src/services/agent/agentTools.js) 加 `normalizeMcpServerWhitelist(value)`（跟 connector/skill 不同：missing/null = **deny all**，stdio 不允许隐式信任）+ `filterMcpToolsForAgent(tools, profile)`（drop 未在白名单的 `mcp:<server>:*` tool）。
+  - [agentProfiles.js](src/state/agentProfiles.js) `normalizeAgentProfile` + `normalizeAgentOverride` 都接入新字段 `enabledMcpServerIds`，默认 `[]`。
+  - [chatExecutionRunner.js](src/services/chat/chatExecutionRunner.js) 两处 enforcement：prompt 装载时过滤 + dispatch 时再次校验（hallucinated tool call 也拦得住）。
+- **Phase 4 (pinned via tests, 已有机制)**：每个 mcp tool 注册时 `requiresPermission: true` 已是默认（[manager.js:309](src/mcp/manager.js#L309)），走 `tools/executor.js + tools/permissions.js` 的 in-app permission modal。新加测试 pin 这个默认值防退化。`buildMcpTool` export 出来便于测试。
+- **Phase 3** UI（本 commit）：
+  - [bootstrap mcpPresets[]](src/state/desktopBootstrap.js) 暴露每个 preset 的 id/command/args/description/flag/enabled，UI 不再瞎猜。
+  - [advancedPage.js](desktop-ui/advancedPage.js) 加 "Built-in MCP servers" subsection，每行一个 toggle 按钮，hostile 字段全 escape。新加 4 个 smoke 测试覆盖渲染 / toggle dataset / 转义 / 计数。
+  - [server.js](src/server.js) `POST /api/mcp/preset-toggle` 端点：白名单仅 4 个内置 flag（防止被滥用写其他 boolean），写完 reconnect。
+  - [app.js](desktop-ui/app.js) agent customize 页加 "Stdio MCP servers" chip-row：每个 preset 一个 chip，全局未开的 chip 灰显（disabled）。新 action `toggle-agent-mcp-server`（per-agent 切换）+ `toggle-mcp-preset`（全局 preset toggle，调端点 + 刷新 bootstrap）。表单 submit 收 `enabledMcpServerIds`，无 `__all__` sentinel（MCP 永远显式 opt-in）。
+- 26 后端单测 + 4 advancedPage smoke 共 30 新测试；`src/**/*.test.js` 1133/1133 全绿；`npm run test:ui` 74/74。
+- 提交哈希：`8778052`（Phase 1+2+4 backend）+ 待填（Phase 3 UI）。
 
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
@@ -45,10 +37,13 @@
 - 提交哈希：`9f5a87a`。
 - **未修 follow-up（下次统一）**：desktop-ui 缺 unit test harness，已累积 2 条同源建议 —— 本批 Codex ⚪「`describeVideoExtractionStatus` 多分支无自动覆盖」+ 14:30 Advanced page Codex B「smoke/E2E 缺失」。下次专门一刀：抽 `videoStatus.js` 等纯函数到独立模块、用 `node:test`（或 happy-dom）建 desktop-ui test harness，把两条 follow-up + 未来 UI 纯函数统一纳入。比逐个修更经济。
 
-## 归档摘要（2026-04-27 18:00 之前的所有条目）
+## 归档摘要（2026-04-27 19:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 19:30 — Codex D fix: desktopStore re-export gap + server import smoke net** — af2e3b7→768d511 left `restoreArtifact`/`purgeStaleSoftDeletes` un-re-exported, server boot would throw on first ESM load; added the missing re-exports + `src/server.imports.smoke.test.js` (parses server.js import list and asserts every name is reachable through desktopStore). Codex S. `5a888ee`
+- **2026-04-27 19:00 — Codex C round 2: artifact soft-delete reader audit + 11 regression tests** — af2e3b7 missed 4 readers (dynamicContext/search/apply/connector count); added `isLiveArtifact`/`visibleArtifacts` helper, wired 7 readers, +11 tests. `768d511`
+- **2026-04-27 18:30 — artifact soft-delete contract → server-driven** — `e1a8ecf` used a client setTimeout (timer lost on reload) → Codex C; switched to server-side `deletedAt` + `/api/artifacts/restore` + 7d GC, client became fire-and-forget pair, 17 backend tests. `af2e3b7`
 - **2026-04-27 18:00 — 5 处次级 UX 体验提升** —— 批 1 `5f9107a`：PDF 入口 + Advanced Copy state.json + Tasks lane overflow + Search 空状态分类提示 + showFlashToast helper。批 2 `e1a8ecf`：artifacts 软删 + undo toast 第一版（client-timer，被 18:30 D-grade 改成 server-driven）；undoToast.js + 16 单测。test:ui 71/71，memory 330/330。
 - **2026-04-27 17:30 — desktop-ui test harness 落地** —— byte-for-byte port `describeVideoExtractionStatus` + 拆 `renderAdvancedPage` 成显式 props；`npm run test:ui` 52/52 全绿；闭环 14:30 Advanced B + 本批 ⚪ 两条 same-root follow-up；后续 desktop-ui "抽纯函数 + .test.js" 标准模式确立。Codex S。`a9aa5a8`+`7a6710e`
 - **2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定** —— compactQualityThreshold 始终返回 finite number（空/非法 → 0.6 默认），evaluator 不再回头读 env；contract test 锁定 mid-call env 突变不影响 fallback 决定。`da4e09e`
