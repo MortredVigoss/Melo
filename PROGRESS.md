@@ -13,7 +13,7 @@
 - **#3 视频附件状态 chip** ([app.js:1205](desktop-ui/app.js#L1205))：抽 `describeVideoExtractionStatus(message, attachment)` helper，匹配 `extractedMedia[]` 里 `attachmentId === attachment.id` 的 entry，按 `metadata.source` 渲染："video-audio-transcript" → `transcript ✓ · keyframes ✓ (N)`、"video-keyframes-only" → `keyframes ✓ (N) · no audio transcript`、entry 缺失 → `extraction unavailable`。不动 [videoExtractor.js](src/media/extractors/videoExtractor.js) 后端契约，只读已有字段。
 - **#4 Voice 面板底部加跳转** ([app.js:1196](desktop-ui/app.js#L1196))：复用既有 `select-customize-item` action（`section=connectors`, `id=openai-compatible`），加两个 `.tts-panel-link` —— "配置 MiniMax 自定义语音 →" / "配置 Whisper 转写 →"，都跳到同一个 connector 详情面板（MiniMax + Whisper 两套 key 在同一表单 [app.js:8888](desktop-ui/app.js#L8888)）。styles.css 加 `.tts-panel-footer` + `.tts-panel-link`，沿用 `--text-muted` / `--accent` 设计语言。
 - 红绿灯：check-syntax 全过；memory 测试 330/330 不退化（未动 src/）；desktop-ui 无 unit test 框架，UI 实际渲染 + 跳转留用户手测验证。
-- 提交哈希：待填。
+- 提交哈希：`9f5a87a`。
 
 ## 2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定
 
