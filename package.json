@@ -20,7 +20,8 @@
     "doctor": "node src/index.js doctor",
     "chat": "node src/index.js chat",
     "rebuild:voice": "npm rebuild @discordjs/opus",
-    "bench:memory": "node scripts/bench-memory.js"
+    "bench:memory": "node scripts/bench-memory.js",
+    "test:ui": "node --test 'desktop-ui/**/*.test.js'"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",
