@@ -11,7 +11,7 @@
 - 修：[compact.js::compactQualityThreshold()](src/memory/offline/compact.js#L64) 先 `String(env || '').trim()`，空字符串/空白直接 `return null`，evaluator 仍用 0.6 默认。
 - 加 2 个回归测试（空字符串 + 全空白）：fallback 模式下低质摘要应被拒。
 - 验证：329/329 memory 全绿（前次 327 + 2 新）；compact 子套 11/11。
-- 提交哈希：待填。
+- 提交哈希：`d339782`。
 
 ## 2026-04-27 15:55 — Codex B follow-ups：bench rank 模式 / vec-aware 路径 / threshold capture / fallback DI 测试
 
