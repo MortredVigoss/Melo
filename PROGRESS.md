@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-04-27 09:00 — Codex B 跟进：OCR 受控测试 + ESRCH 严格断言
+
+- 上轮 push 后 Codex 给 B 两条 ⚪：
+  - OCR pre-abort 之外没覆盖 createWorker 期间 abort 与 recognize 期间 abort 的实际 terminate 行为；
+  - `process.kill(pid, 0)` 断言放松到 `ESRCH|EPERM`，但 EPERM 表示进程存在只是无权限（跟"已死"语义相反）。
+- 修复：
+  - `src/media/extractors/imageExtractor.js`：加 `_setTesseractForTests(fake)` DI hook（`_tesseractImpl` 全局；`loadTesseract()` 间接访问）。tests 注入可控的 fake Tesseract（`createWorker`/`recognize`/`terminate` 时序自定义），绕开真库 cold cache 5-30s 不可测的窘境。
+  - `src/media/orchestratorAbort.test.js` 新增 2 个受控测试：
+    1. **mid-createWorker abort**：fake createWorker 300ms 解析；abort fire @ 100ms。断言 createWorker 真被调（createStarted）+ recognize 永不调（recognizeStarted === false，post-create 早返）+ terminate 被调 + elapsed < 800ms。
+    2. **mid-recognize abort**：fake createWorker 立即解析、recognize 永不解析；abort fire @ 100ms。fake terminate 顺手 reject recognize promise（mirror 真 worker.terminate() 的行为）。断言 recognize 真启动 + terminate 被调 + elapsed < 1000ms。
+  - yt-dlp 测试 `process.kill(pid, 0)` 断言收紧到只接 `/ESRCH/`（删 `|EPERM`），EPERM 注释说明：跑测试 uid 跟 fake 同 uid，永远不该撞 EPERM；如果撞了说明 abort 实际没杀进程，应该判失败而不是放过。
+- 验证：`node --check` 全过；orchestratorAbort.test.js **9/9**；regression 全套 **365/365 全绿**（08:30 时 363，新增 2 个受控 OCR 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 08:30 — Codex C #11 fix：fake yt-dlp 改 exec 防 orphan + OCR 提前注册 abort listener
 
 - 上轮 Codex 抓两条：fake bash `sleep 99999` 是 child，SIGKILL 杀 bash 不杀 sleep（每跑一次测试漏一个 27 小时进程）；OCR abort listener 在 createWorker resolve 之后才注册，cold cache 5-30s 期间 abort 无效。

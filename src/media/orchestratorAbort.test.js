@@ -337,14 +337,15 @@ test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', 
   }
 });
 
-// Codex B finding (#10 follow-up): OCR is now backed by a Tesseract worker
-// that we can `.terminate()` on abort, so a hung OCR pass no longer pins a
-// CPU core after the orchestrator returns. This test feeds a real image
-// data URL through extractImageContent with a pre-aborted signal and asserts
-// the function bails BEFORE invoking Tesseract — proving the wiring exists.
-// The bisect path (remove the early-abort check) regresses elapsed because
-// the function would proceed into createWorker which on a cold cache takes
-// many seconds.
+// Codex B finding (#10 follow-up + #11 follow-up): OCR is backed by a
+// Tesseract worker that we can `.terminate()` on abort, so a hung OCR pass
+// no longer pins a CPU core after the orchestrator returns. The
+// `_setTesseractForTests` DI hook lets us drive the three abort phases
+// against a controllable fake — the real Tesseract's createWorker takes
+// 5-30s on a cold cache and can't be cancelled mid-flight, so a real-lib
+// integration test can't reliably exercise mid-create or mid-recognize
+// abort.
+
 test('orchestrator abort: pre-aborted signal short-circuits OCR worker creation', async () => {
   const { extractImageContent } = await import('./extractors/imageExtractor.js');
   const ac = new AbortController();
@@ -369,6 +370,108 @@ test('orchestrator abort: pre-aborted signal short-circuits OCR worker creation'
   // Tesseract.createWorker on a cold cache takes 5-30s downloading language
   // data. If we bailed in <500ms we definitely never got there.
   assert.ok(elapsed < 500, `pre-abort should bail in <500ms, took ${elapsed}ms`);
+});
+
+test('OCR mid-createWorker abort: terminates the freshly-created worker, returns null', async () => {
+  const { extractImageContent, _setTesseractForTests } = await import('./extractors/imageExtractor.js');
+
+  let createStarted = false;
+  let recognizeStarted = false;
+  let terminateCalled = false;
+  // Fake Tesseract that takes 300ms to create the worker, then would run
+  // recognize forever. Abort at 100ms — during createWorker. When
+  // createWorker resolves, the production code must check the flag and
+  // terminate immediately without calling recognize.
+  _setTesseractForTests({
+    createWorker: () => {
+      createStarted = true;
+      return new Promise(resolve => setTimeout(() => {
+        resolve({
+          recognize: () => { recognizeStarted = true; return new Promise(() => {}); },
+          terminate: async () => { terminateCalled = true; },
+        });
+      }, 300));
+    },
+  });
+
+  try {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 100);
+
+    const buf = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47]),
+      Buffer.alloc(2000, 0xFF),
+    ]);
+    const dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
+    const start = Date.now();
+    const result = await extractImageContent(
+      { url: dataUrl, fileName: 'test.png', mimeType: 'image/png' },
+      { signal: ac.signal },
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(result, null);
+    assert.ok(createStarted, 'createWorker must have been invoked (otherwise abort hit pre-create branch, not mid-create)');
+    // Anti-false-green: the fake's recognize MUST NOT run — abort hit
+    // during createWorker, so the post-create check should terminate
+    // without ever calling recognize.
+    assert.equal(recognizeStarted, false, 'recognize must NOT run when abort fires during createWorker');
+    assert.ok(terminateCalled, 'worker must be terminated after createWorker resolves with abort flag set');
+    // createWorker takes 300ms, abort at 100ms, terminate happens at
+    // ~300ms (when createWorker resolves). Should land under 800ms.
+    assert.ok(elapsed < 800, `mid-create abort should settle near createWorker completion, took ${elapsed}ms`);
+  } finally {
+    _setTesseractForTests(null);
+  }
+});
+
+test('OCR mid-recognize abort: terminates the worker, recognize promise rejected, returns null', async () => {
+  const { extractImageContent, _setTesseractForTests } = await import('./extractors/imageExtractor.js');
+
+  let recognizeStarted = false;
+  let terminateCalled = false;
+  // Fake worker: createWorker returns instantly. recognize hangs forever.
+  // Abort fires at 100ms during recognize. Listener should call terminate;
+  // recognize promise rejects (we make it reject when terminate is called
+  // — that's how the real Tesseract worker would behave).
+  let rejectRecognize = null;
+  _setTesseractForTests({
+    createWorker: async () => ({
+      recognize: () => new Promise((resolve, reject) => {
+        recognizeStarted = true;
+        rejectRecognize = reject;  // captured so terminate can settle it
+      }),
+      terminate: async () => {
+        terminateCalled = true;
+        if (rejectRecognize) rejectRecognize(new Error('worker terminated'));
+      },
+    }),
+  });
+
+  try {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 100);
+
+    const buf = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47]),
+      Buffer.alloc(2000, 0xFF),
+    ]);
+    const dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
+    const start = Date.now();
+    const result = await extractImageContent(
+      { url: dataUrl, fileName: 'test.png', mimeType: 'image/png' },
+      { signal: ac.signal },
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(result, null);
+    assert.ok(recognizeStarted, 'recognize must have started — otherwise abort hit a pre-recognize branch');
+    assert.ok(terminateCalled, 'worker must be terminated when abort fires during recognize');
+    // Abort at 100ms; terminate is synchronous; total should be near 100-200ms.
+    assert.ok(elapsed < 1000, `mid-recognize abort should settle near abort time, took ${elapsed}ms`);
+  } finally {
+    _setTesseractForTests(null);
+  }
 });
 
 test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
@@ -459,7 +562,10 @@ test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
     const pidText = await readFile(pidFile, 'utf8');
     const pid = parseInt(pidText.trim(), 10);
     assert.ok(Number.isFinite(pid) && pid > 0, `pid file should contain a PID, got: ${pidText}`);
-    assert.throws(() => process.kill(pid, 0), /ESRCH|EPERM/, `pid ${pid} must be dead after abort`);
+    // Strictly ESRCH — EPERM would mean the process EXISTS but we lack
+    // permission, which is the opposite of "dead". The fake yt-dlp ran
+    // under the same uid as the test, so we should never hit EPERM here.
+    assert.throws(() => process.kill(pid, 0), /ESRCH/, `pid ${pid} must be dead after abort (only ESRCH accepted)`);
   } finally {
     if (ORIG_BIN === undefined) delete process.env.MELO_YTDLP_BIN;
     else process.env.MELO_YTDLP_BIN = ORIG_BIN;

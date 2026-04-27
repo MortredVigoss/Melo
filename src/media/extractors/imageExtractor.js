@@ -4,6 +4,24 @@ const OCR_LANGS = 'eng+chi_sim+chi_tra+jpn+kor';
 const OCR_MAX_CHARS = 4000;
 const MIN_OCR_BYTES = 1024;
 
+// DI hook so tests can inject a fake Tesseract module with controllable
+// createWorker/recognize/terminate timing — the real library's
+// createWorker takes 5-30s on a cold cache and can't be cancelled
+// mid-flight, which makes mid-create / mid-recognize abort regressions
+// untestable against the real lib. Tests pass an object exposing the
+// same surface (`createWorker(langs, oem, opts) → { recognize, terminate }`).
+// `null` means "use the real `tesseract.js` import".
+let _tesseractImpl = null;
+export function _setTesseractForTests(fake) {
+  _tesseractImpl = fake || null;
+}
+
+async function loadTesseract() {
+  if (_tesseractImpl) return _tesseractImpl;
+  const { default: Tesseract } = await import('tesseract.js');
+  return Tesseract;
+}
+
 export async function extractImageContent(attachment, { modelSupportsVision = false, signal } = {}) {
   if (modelSupportsVision) {
     return null;
@@ -52,7 +70,7 @@ export async function extractImageContent(attachment, { modelSupportsVision = fa
 }
 
 async function runOcrWithAbort(buffer, signal) {
-  const { default: Tesseract } = await import('tesseract.js');
+  const Tesseract = await loadTesseract();
   if (signal?.aborted) return null;
 
   // Tesseract.createWorker returns a Promise that we can't cancel mid-flight
