@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报
+
+- 上一刀让 desktop app 的 Browser voice 路由到 Swift native bridge 出声，但 Codex 抓到一个真 bug：流式自动朗读时 `_streamTtsPushChunk` 每句调一次 `speakWithBrowser` → bridge 的 `speakText` postMessage 每次终止上一句，导致 desktop + auto-speak 只能听到最后一句。
+- 修复方案（用户选 Option 1 末段单播）：
+  - `_streamTts` 加 `browserBatch: ''` 字段，注释说明 WKWebView bridge 不支持 FIFO 队列、所以累积末段单播的权衡。
+  - `_streamTtsPushChunk`：检测 `window.webkit.messageHandlers.meloVoice` → `browserStreamsLive = isBrowser && !isWebView`。真浏览器仍每句调 `speakWithBrowser`（speechSynthesis 自然排队）；WKWebView 下改成 `_streamTts.browserBatch += sentence + ' '`，**不**调 bridge。
+  - `_streamTtsFlush` 的 `useBrowser` 分支：把 `browserBatch + tail` 拼起来 trim → `speakWithBrowser(combined.slice(0, 4096))` 一次性播。Reset `browserBatch = ''`。
+  - `_streamTtsStart` / `_streamTtsOnToolCall` 都清空 `browserBatch`（防上轮残留 + 工具调用时丢弃中间话）。
+- 行为对照：
+  - **真浏览器 + Browser voice + auto-speak**：照旧逐句播（speechSynthesis 排队）。
+  - **Desktop app + Browser voice + auto-speak**：等整段流结束后一次性播。无"边生成边读"，但所有句子都听到。
+  - **Desktop app + Browser voice + 单击 play**：跟之前一样一次性播（`speakText` 走 `speakWithBrowser` → bridge），不受影响。
+  - **macOS / API engines**：完全不受影响。
+- Codex 反问回应：
+  - **Q1 流式 vs 末段单播**：末段单播（Option 1）。Swift 侧 FIFO 队列改动跨 Node/Swift 边界，留 follow-up。
+  - **Q2 picker 在 desktop 不可用是否改名**：不改名，保留 "Browser voice" + 已有的 disabled hint。
+- 验证：`node --check` 全过；regression 全套 **387/387 全绿**（一次 flake re-run 干净，是已知 store.* isolation flake）；UI 手测留给用户。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 10:00 — Browser voice 在 desktop app 没声音 fix：路由到 Swift native bridge
 
 - 用户反馈：选了 Browser voice 点播放没声音。

@@ -4104,6 +4104,14 @@ const _streamTts = {
   hasToolCalls: false,
   sentToQueue: false,   // true when sentences were already queued during streaming
   queuedChars: 0,       // total characters sent to queue during streaming (for timeout estimate)
+  // Browser voice in WKWebView (desktop app) routes through the Swift
+  // native bridge, which terminates any in-flight `say` before starting
+  // a new one — calling it per-sentence during streaming would only let
+  // the LAST sentence be heard. So when the bridge is the active backend,
+  // we accumulate sentences here and speak the full batch once at flush.
+  // Real browser speechSynthesis queues utterances natively; this batch
+  // stays empty for them.
+  browserBatch: '',
 };
 
 // Sentence-break pattern: Chinese/Japanese punctuation or Western end-of-sentence
@@ -4178,6 +4186,7 @@ async function _streamTtsStart() {
   _streamTts.hasToolCalls = false;
   _streamTts.sentToQueue = false;
   _streamTts.queuedChars = 0;
+  _streamTts.browserBatch = '';
   // Stop any leftover playback from the previous response — covers all
   // three engines:
   //   - server TTS via speak-stop / queue-clear (API + macOS say paths)
@@ -4197,6 +4206,7 @@ function _streamTtsOnToolCall() {
   // Tool call started — discard text buffered so far (intermediate "searching..." etc.)
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
+  _streamTts.browserBatch = '';  // also drop accumulated WKWebView Browser-voice batch
   // Stop any in-progress playback so intermediate phrases don't play.
   // Covers server TTS, in-page speechSynthesis, AND WKWebView native bridge
   // (Browser engine in desktop app could otherwise keep narrating
@@ -4225,8 +4235,15 @@ function _streamTtsPushChunk(delta) {
   const isApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
   const isMacos = uiState.ttsEngine === 'macos';
   const isBrowser = uiState.ttsEngine === 'browser';
+  // Real-browser speechSynthesis queues utterances naturally; the WKWebView
+  // bridge does NOT (each `speakText` postMessage terminates the previous
+  // one), so for desktop-app Browser voice we batch sentences and play
+  // them as one utterance at flush — see browserBatch field on _streamTts.
+  const isWebView = Boolean(window.webkit?.messageHandlers?.meloVoice);
+  const browserStreamsLive = isBrowser && !isWebView;
 
-  // Flush complete sentences immediately for real-time speech (API, macOS say, or browser).
+  // Flush complete sentences immediately for real-time speech (API, macOS say,
+  // or real-browser speechSynthesis). Desktop-app Browser voice batches.
   let match;
   while ((match = _SENTENCE_BREAK.exec(_streamTts.buffer)) !== null) {
     const endIdx = match.index + match[0].length;
@@ -4240,9 +4257,11 @@ function _streamTtsPushChunk(delta) {
           method: 'POST',
           body: { text: sentence, lang, voice: uiState.ttsMacosVoiceName },
         }).catch(() => {});
-      } else if (isBrowser) {
-        // speechSynthesis queues utterances naturally — no extra orchestration.
+      } else if (browserStreamsLive) {
         speakWithBrowser(sentence);
+      } else if (isBrowser) {
+        // WKWebView Browser voice — accumulate, speak once at flush.
+        _streamTts.browserBatch += sentence + ' ';
       } else if (isApi) {
         _streamTtsEnqueue(sentence);
         _streamTts.sentToQueue = true;
@@ -4313,8 +4332,15 @@ async function _streamTtsFlush() {
       }).catch(() => {});
     }
   } else if (useBrowser) {
-    if (tail.length >= 2) {
-      speakWithBrowser(tail.slice(0, 400));
+    // Concat any sentences accumulated during streaming (WKWebView bridge
+    // path — see _streamTts.browserBatch comment) with the unflushed tail
+    // and speak as a single utterance. Real browsers had per-sentence
+    // calls already; their browserBatch is empty so this is just `tail`.
+    const batch = (_streamTts.browserBatch || '').trim();
+    _streamTts.browserBatch = '';
+    const combined = (batch && tail ? `${batch} ${tail}` : (batch || tail)).trim();
+    if (combined.length >= 2) {
+      speakWithBrowser(combined.slice(0, 4096));
     }
   }
 }
