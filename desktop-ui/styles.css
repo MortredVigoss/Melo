@@ -3384,8 +3384,13 @@ select option {
   display: grid;
   /* Narrower nav + middle list, wider detail panel — the right pane
      hosts long descriptions, prompt text, and config forms that
-     benefit from more horizontal room than the two left-most columns. */
-  grid-template-columns: 220px 270px minmax(440px, 1fr);
+     benefit from more horizontal room than the two left-most columns.
+     Total minimum width 800px (200 + 240 + 360) keeps the layout
+     fitting inside `1101px viewport - 278px sidebar = 823px content`,
+     the narrowest envelope before the 1100px breakpoint collapses
+     everything to a single column. The right column still gets `1fr`
+     so on wide screens it expands well past 360px. */
+  grid-template-columns: 200px 240px minmax(360px, 1fr);
   gap: 0;
   border-radius: 28px;
   overflow: hidden;

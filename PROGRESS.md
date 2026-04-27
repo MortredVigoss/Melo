@@ -19,6 +19,13 @@
   - **`.toggle-row` 加 `margin-bottom: 16px`**：pillbox 跟下方 section 之间有呼吸。
   - **`.skill-health-card` 加 `margin-top: 18px`**：双保险，确保 Enabled toggle 和 Skill health 之间有清楚分隔。
 - 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
+- 提交哈希：`ab06fca`（首版） + 后跟一刀 fix grid overflow at 1280px。
+
+## 2026-04-27 13:30 — Codex C #16 fix：customize grid overflow @ 1280px
+
+- Codex 抓到首版 grid `220 270 minmax(440, 1fr)` 总最小 930px，超过 1280px 桌面宽度下 `1280 - 278px sidebar = 1002px` 减去内容 padding 后的可用空间——实际在 1101-1180px viewport 区间（侧栏全宽）会横向溢出，body `overflow: hidden` 导致右侧详情面板被裁切。
+- 修：`200px 240px minmax(360px, 1fr)` 总最小 **800px**，1101px viewport 下（823px 可用）有 23px 缓冲；1280px 下右列拿到 562px 仍宽。
+- 顺手把 13:00 那条 PROGRESS 的"待 commit"占位补上真 hash `ab06fca`。
 - 提交哈希：（待 commit）
 
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
