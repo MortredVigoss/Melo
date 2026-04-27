@@ -111,7 +111,8 @@ function resolveWhisperBaseUrl(rawBaseUrl = '') {
     .replace(/\/+$/, '');
 }
 
-async function readAttachmentBuffer(attachment) {
+async function readAttachmentBuffer(attachment, { signal } = {}) {
+  if (signal?.aborted) return null;
   if (!attachment?.url) {
     return null;
   }
@@ -121,8 +122,10 @@ async function readAttachmentBuffer(attachment) {
     return Buffer.from(base64, 'base64');
   }
 
+  // Combine internal 30s timeout with the caller's external signal so an
+  // outer budget abort cancels the download mid-flight.
   const response = await fetch(attachment.url, {
-    signal: AbortSignal.timeout(30000),
+    signal: combineSignals(signal, 30000),
   });
   if (!response.ok) {
     return null;
@@ -143,10 +146,22 @@ const WHISPER_CPP_MODEL =
   process.env.MELO_WHISPER_CPP_MODEL ||
   '/opt/homebrew/share/whisper.cpp/models/ggml-large-v3-turbo.bin';
 
+// MELO_WHISPER_CLI / _MODEL are read at module load — env mutations after
+// import don't take effect. These DI overrides give tests a real handle
+// (mirrors fileSearch.js's _setRipgrepBinaryForTests pattern).
+let _whisperCliOverride = null;
+let _whisperModelOverride = null;
 let whisperCppReady = null; // null=unchecked, true/false
 
-// Tests reset this when they swap MELO_WHISPER_CLI between runs so the
-// cached "ready" verdict from a prior test doesn't leak into the next.
+function getWhisperCli() { return _whisperCliOverride || WHISPER_CLI; }
+function getWhisperModel() { return _whisperModelOverride || WHISPER_CPP_MODEL; }
+
+export function _setWhisperCliForTests(cli, model) {
+  _whisperCliOverride = (typeof cli === 'string' && cli) ? cli : null;
+  _whisperModelOverride = (typeof model === 'string' && model) ? model : null;
+  whisperCppReady = null;  // force re-check on next call
+}
+
 export function _resetWhisperCppReadyForTests() {
   whisperCppReady = null;
 }
@@ -154,12 +169,12 @@ export function _resetWhisperCppReadyForTests() {
 async function checkWhisperCppReady() {
   if (whisperCppReady !== null) return whisperCppReady;
   try {
-    await execFileAsync(WHISPER_CLI, ['--help'], {
+    await execFileAsync(getWhisperCli(), ['--help'], {
       timeout: 8000,
       maxBuffer: 1024 * 1024,
     });
     const { existsSync } = await import('node:fs');
-    whisperCppReady = existsSync(WHISPER_CPP_MODEL);
+    whisperCppReady = existsSync(getWhisperModel());
   } catch {
     whisperCppReady = false;
   }
@@ -188,9 +203,9 @@ async function tryWhisperCpp(audioBuffer, attachment = {}, { signal } = {}) {
     await writeFile(wavPath, wavBuffer);
 
     const { stdout } = await execFileAsync(
-      WHISPER_CLI,
+      getWhisperCli(),
       [
-        '-m', WHISPER_CPP_MODEL,
+        '-m', getWhisperModel(),
         '-f', wavPath,
         '-l', 'auto',          // automatic language detection
         '--no-timestamps',      // cleaner output
@@ -465,7 +480,7 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
 export async function extractAudioContent(attachment, context = {}, { suppressFallback = false, signal } = {}) {
   if (signal?.aborted) return null;
   try {
-    const audioBuffer = await readAttachmentBuffer(attachment);
+    const audioBuffer = await readAttachmentBuffer(attachment, { signal });
     if (!audioBuffer) {
       return null;
     }

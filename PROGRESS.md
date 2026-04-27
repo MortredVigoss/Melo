@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（Codex C-grade fix #6）
+
+- 上轮 04:30 落地的 cancellation 测试是**假绿**——Codex 第六次给 C：
+  - whisper-cli 测试在 import 后才 `process.env.MELO_WHISPER_CLI = fakeWhisperPath`，但 production 代码 `const WHISPER_CLI = process.env.MELO_WHISPER_CLI || 'whisper-cli';` 是 module-load 时资源化的。fake binary **从未被调用**，测试因为 `whisper-cli` 不在 PATH 而快速返回 null 假绿。
+  - OpenAI fetch 测试用 `authMode: 'apiKey'`，但 `resolveTranscriptionConfig` 契约是 `'api-key'`（连字符）。falls through to soft-fallback，fake hanging server **从未被打**，也是假绿。
+  - 公共 API 没把 signal 传给 `readAttachmentBuffer`，远端 audio 下载阶段绕过了承诺。
+- 修复（`src/media/extractors/audioExtractor.js`）：
+  - 加 `_setWhisperCliForTests(cli, model)` DI hook（同 `_setRipgrepBinaryForTests` 套路）+ `getWhisperCli()` / `getWhisperModel()` 间接访问。test 调用即生效，绕开 module-load 资源化问题。
+  - `readAttachmentBuffer(attachment, { signal })` 把外层 signal 用 `combineSignals(signal, 30000)` 注入 fetch；`extractAudioContent` 把 signal 传进去。下载阶段也响应 abort 了。
+- 测试改造（`src/media/extractors/audioExtractor.signal.test.js`）：
+  - whisper-cli 测试用 DI hook + WAV 输入（绕开 `convertToWavForNative` 路径，单测 whisper-cli signal）；abort delay 提到 1500ms 确保 execFile 真在跑时才 abort，避免被 `convertToWavForNative` 后的 `signal?.aborted` 早 check 提前抓住假绿；assert `elapsed >= 1500` anti-false-green 防回归。
+  - OpenAI fetch 测试改 `authMode: 'api-key'`（真契约）；加 `transcriptionRequestReceived` 标志监听 `/audio/transcriptions` POST，断言 fake server **必须** 被打过——否则 elapsed 检查无意义。
+  - 新增第 4 个测试覆盖远端 audio 下载阶段：fake hanging server + abort，断言 connection received + elapsed < 3s。
+- **Bisect 验证**（防 review 时不知道测试有没有真在测 signal）：
+  1. 临时把 execFile 的 `signal` 参数移除 → whisper-cli 测试 8s 超时（hang 直到 suite cancel）✓
+  2. 临时把 fetch signal 改回 `AbortSignal.timeout(60000)` 不合并 → OpenAI 测试 8s 超时 ✓
+  3. 同样 download fetch signal 不合并 → download 测试 8s 超时 ✓
+  4. 全部恢复 → 4/4 绿 ✓
+- 验证：`node --check` 全过；audioExtractor.signal.test.js **4/4** + bisect 验证；regression 全套 **351/351 全绿**（04:30 时 350，新增 1 个 download cancellation 测试）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 04:30 — audioExtractor 全链路 signal 化（Codex C-grade fix #5——视频 abort 真正杀到 whisper.cpp/fetch）
 
 - 上轮 04:00 修了 video 层的 audio budget 取消，但 `extractAudioContent` 内部（whisper.cpp 子进程 / native fetch / OpenAI fetch）不接 signal——budget 返 null 后真实转写仍跑 30-120s，浪费 GPU/带宽。Codex 给 C #5。
@@ -28,54 +49,12 @@
 - 验证：`node --check` 全过；audioExtractor.signal.test.js **3/3**；regression 全套 **350/350 全绿**（04:00 时 347，新增 3 个 signal cancellation 测试）。
 - 提交哈希：（待 commit）
 
-## 2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行（Codex C-grade fix #4）
-
-- 03:30 那一刀只解了 audio **失败**路径，没解 audio **慢/挂**路径——Codex 第四次给 C：远端 Whisper 慢/卡死时仍会先撞外层 15s `withTimeout`，已经成功的 keyframes 一起被吃。Phase 3 承诺"transcript 失败但 keyframes 活下来"对 hang 场景不成立；外加音轨 ffmpeg 还在用裸 `spawn` 不走 `spawnWithAbort`。
-- 修复（`src/media/extractors/videoExtractor.js`）：
-  - 新增 `withAudioBudget(work, budgetMs)`（mirror `withKeyframeBudget`）：race work 和 timeout，永不抛、永不挂、超时 abort 信号 + resolve null。
-  - 新增 `audioBranch(videoPath, audioPath, attachment, context, signal)`：把 audio ffmpeg pass 改用 `spawnWithAbort`（signal 贯通子进程），随后 `readFile` + `_extractAudioContentImpl`，整体永不抛。
-  - 新增 `_setBudgetsForTests({ audioMs, keyframeMs })` DI hook 让测试可注入小预算（e.g. 100ms）跑 hanging-audio 测试不需要等 10s。
-  - `extractVideoContent` 关键改写：audio 与 keyframes 用 `Promise.all` 并行，各自独立 budget（audio 10s / keyframe 5s）；max(10, 5) = 10s 仍在外层 15s 之内；任何一路慢/挂都不能 starve 另一路。
-- 测试新增 5 个（共 20 个 video extractor test）：
-  - `withAudioBudget` 三件套：hanging → null within budget；throwing → null；fast success → 原值。
-  - **slow/hanging audio + 100ms budget → frames-only entry**（核心 Phase 3 hang 契约，elapsed < 8s 防回归）。
-  - audio throws → frames-only entry。
-- Codex 反问回应：
-  - **Q1: parallel vs sequential**：parallel（`Promise.all`），两路无依赖串行白等。
-  - **Q2: audio 独立预算 10s**：是。仍在外层 15s 之内，max(10, 5) = 10s。
-- 验证：`node --check` 全过；videoExtractor.test.js **20/20**；regression 全套 **347/347 全绿**（03:30 时 342，新增 5 个 audio-budget / parallelism 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功（Codex C-grade fix #3 + 实战 silent-video bug）
-
-- 上轮 Codex 第三次给 C：`extractVideoContent` 在 `audioResult` 为空时直接 `return null`，把已抽到的 keyframes 一起丢——和 UI"transcript + keyframes"承诺不一致。
-- 写 e2e 测试时**意外发现真 bug**：`testsrc2` 生成的视频无音轨，`ffmpeg -vn -acodec libopus` 直接报 "Output file does not contain any stream" 退非零——也就是说**生产里所有 silent video 之前都拿不到 keyframes**，不只是测试问题。
-- 修复（`src/media/extractors/videoExtractor.js`）：
-  - 加 DI hook `_setExtractAudioContentForTests(fn)`（同 `fileSearch.js → _setRipgrepBinaryForTests` 套路），让 `extractVideoContent` 端到端可测，无需 Whisper 凭据。
-  - **音轨抽取 + readFile** 包进独立 try/catch，`audioBuffer = null` 时不抛、继续走 keyframe 路径；`audioResult` 仅在 `audioBuffer` 存在时调 `_extractAudioContentImpl`。
-  - keyframe 抽取**无条件**运行（移到 `if (!audioResult)` 分支之前），返回值结构按结果分两路：
-    - `audioResult` 有：返 `{ kind: 'transcript', text: <真 transcript>, metadata: { source: 'video-audio-transcript', keyframes } }`（happy path）
-    - `audioResult` 无 + keyframes 非空：返 `{ kind: 'transcript', text: '(No audio transcript available; visual keyframes are attached separately.)', metadata: { source: 'video-keyframes-only', keyframes } }`（Phase 3 新分支）
-    - 双失败：返 `null`
-  - source 选 `'video-keyframes-only'` 不在 `media/index.js → isPlaceholderSource` 过滤列表（vision-passthrough / whisper-unavailable / *-placeholder），entry 不被吞。
-- 测试新增 5 个 e2e + 1 个 normalizer 集成（`src/media/extractors/videoExtractor.test.js`）：
-  - 音轨成功 + keyframes 成功 → 两者都在 result，`source: 'video-audio-transcript'`。
-  - **silent video（无音轨）→ frames-only entry**（这条直接验证了刚发现的真 bug 的 fix）。
-  - 音轨 stub 返 null（Whisper 不可用）+ keyframes 成功 → frames-only entry。
-  - 双失败（喂 corrupt mp4）→ `null`。
-  - frames-only entry 喂给 `normalizeExtractedMedia` → 不被过滤、metadata.keyframes 保留（防未来无意改 isPlaceholderSource 让 keyframe entry 默默 drop）。
-  - `buildTestVideo` 加 `withAudio` 选项，silent-video 测试走 `withAudio: false`，真正复现生产场景。
-- UI 文案不动：副标"transcript + keyframes"是**能力描述**不是 per-attachment 承诺；frames-only 实际结果通过模型可见的 placeholder text 自我说明。
-- Codex 反问回应：
-  - **Q1: 无音轨视频是否仍发关键帧 + 标注无 transcript**：已照办，placeholder text 说 "(No audio transcript available; visual keyframes are attached separately.)"
-  - **Q2: UI 是否按结果改文案**：不改，capability vs outcome 区分。
-- 验证：`node --check` 全过；videoExtractor.test.js **15/15**；regression 全套 **342/342 全绿**（03:00 时 337，新增 5 个 e2e 测试）。
-- 提交哈希：（待 commit）
-
-## 归档摘要（2026-04-27 03:30 之前的所有条目）
+## 归档摘要（2026-04-27 04:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行** —— audio + keyframes 改 `Promise.all` 并行，独立 budget（audio 10s / keyframe 5s）；新增 `withAudioBudget` + `audioBranch`（spawnWithAbort 接 ffmpeg）；slow/hanging audio + 100ms budget → frames-only entry。`1f29b00`
+- **2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功** —— 加 `_setExtractAudioContentForTests` DI hook；audio 抽取 fail/null 时不再吞 keyframes，改返 `source: 'video-keyframes-only'` entry；意外抓到 silent-video 真 bug（ffmpeg -vn 在无音轨时 reject 整个 extraction）。`a5d855c`
 - **2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg** —— 抽 `spawnWithAbort(bin, args, { signal, collectStdout, onSpawn })` 统一 child + signal 耦合；`probeDurationSec` 接受 signal；3 个 child-kill 测试用真挂死的 `node -e setInterval` 证 SIGKILL 实落地。`1dba8b4`
 - **2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时** —— 加 `KEYFRAME_BUDGET_MS = 5000`、`extractKeyframes(_,_,{signal})` 接收 AbortSignal、`withKeyframeBudget(work, ms)` race 内部 AbortController 与 setTimeout，超时 SIGKILL ffmpeg 子进程 + resolve []，transcript 成头等公民。`5d33930`
 - **2026-04-27 02:00 — Video Phase 2 上线：关键帧抽取（音轨 transcript + 5 张关键帧）** —— `videoExtractor.js` 加 `probeDurationSec` + `extractKeyframes`，每 N 秒一帧 / scale 512px / JPEG q4 / cap 8 张；`messageBuilder.js` 按 `attachmentId` 把 keyframes emit 成 `image_url` parts；UI 副标改 "transcript + keyframes"。后被 5d33930 / 1dba8b4 / a5d855c 多轮 Codex C-grade gate 修补。`adb21ca`
