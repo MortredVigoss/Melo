@@ -12,7 +12,7 @@
 - 修：[desktopStore.js:469-475](src/desktopStore.js#L469) re-export 块加 `restoreArtifact` + `purgeStaleSoftDeletes`。
 - 防回归网：新建 [src/server.imports.smoke.test.js](src/server.imports.smoke.test.js) —— 解析 server.js 的 `from './desktopStore.js'` import 块（regex `\{([^}]*?)\}` 不跨多个 import block），动态 import desktopStore.js，断言每个 server.js 请求的名字都 reachable。3 个测试：parser 自检 / server requested == desktop exposed / 软删两个新 binding 直接断言可达。下次任何 server.js 加新 import 但 desktopStore 漏 re-export，1100+ 测试套立刻红。
 - 验证：`node --test 'src/**/*.test.js'` **1107/1107 全绿**（前次 1104 + 3 新 smoke）；`npm run test:ui` 71/71；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`5a888ee`。
 
 ## 2026-04-27 19:00 — Codex C 第二轮：artifact 软删 reader audit 全闭环 + 11 回归测试
 
