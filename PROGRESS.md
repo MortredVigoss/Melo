@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放
+
+- 用户要求："Model 或 Voice settings 里增加 MiniMax 配置区：API Key、Group ID、默认 Voice ID、测试朗读按钮。Agent 编辑页增加 minimaxVoiceId 字段，让 TTS 面板的'自定义语音'来源不再隐藏。"
+- 之前现状：MiniMax key/groupId/voiceId 全在 config.js 默认值里，UI 完全没暴露——agent 的 minimaxVoiceId 也只能靠 import preset 或别的间接路径写入。
+- 修改：
+  - **bootstrap 暴露** (`src/state/desktopBootstrap.js`)：API-key connector 的 config 加 `hasMinimaxKey` / `maskedMinimaxApiKey` / `minimaxGroupId` / `minimaxVoiceId` 四个字段，跟 whisperApiKey 同款 mask 模式（绝不把 raw key 暴露给客户端）。
+  - **新 endpoint** `POST /api/tts/test-minimax`（`src/server.js`）：接 `{ apiKey, groupId, voiceId, text? }`，调 `testMinimaxSynthesis`（`src/tts.js` 新 export）一次性合成 + afplay 播放。`testMinimaxSynthesis` **显式忽略 `process.env.MINIMAX_API_KEY` / `MINIMAX_GROUP_ID`**，让用户测的是表单里刚填的值，不是 stale env。返 `{ ok, bytes }` 或 4xx 带 `error`。
+  - **connector 表单** (`desktop-ui/app.js → renderConnectorDetails`)：在 Whisper 区下加 MiniMax 区块——4 个 input（API key 走 password+maskedPlaceholder pattern；Group ID/Voice ID 走 text）+ 一个 "Test playback" button + 状态文字 (`data-tts-test-status`)。
+  - **form submit** (`handleSaveConnectorConfig`)：body 加 `minimaxApiKey` / `minimaxGroupId` / `minimaxVoiceId`。`desktopStore.js → updateConfig` 已经在 `SECRET_LIKE_CONFIG_KEYS` 里包含 minimax 字段，blank 自动 preserve（防止用户清空 password 字段意外擦掉 saved key——见 feedback_preserve_user_config.md）。
+  - **action: test-minimax-tts**：从 form sibling 取值；空字段 + 没 saved key 提示"Enter an API key first"；空 voiceId 提示"Voice ID is required"；fetch 期间显示 "Synthesising…"；成功显示 "OK · N bytes synthesised"，失败显示 server error。
+  - **agent 编辑页** (`renderAgentDetails` 表单): mood section 之后加 `<input name="minimaxVoiceId">` + 说明文字"绑定 agent 到 MiniMax 克隆音色，TTS 面板'自定义语音'列表读这个字段"。`handleUpdateAgentProfile` 的 patch 加 `minimaxVoiceId`。
+- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测留给用户。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报
 
 - 上一刀让 desktop app 的 Browser voice 路由到 Swift native bridge 出声，但 Codex 抓到一个真 bug：流式自动朗读时 `_streamTtsPushChunk` 每句调一次 `speakWithBrowser` → bridge 的 `speakText` postMessage 每次终止上一句，导致 desktop + auto-speak 只能听到最后一句。

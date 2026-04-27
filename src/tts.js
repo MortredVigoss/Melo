@@ -206,6 +206,24 @@ export function stripKoreanForMinimax(text) {
     .trim();
 }
 
+/**
+ * Synthesize a one-shot MiniMax test clip from explicit credentials,
+ * deliberately ignoring `process.env.MINIMAX_API_KEY` /
+ * `process.env.MINIMAX_GROUP_ID`. Used by the connector settings "test
+ * playback" button so the user verifies the values they JUST typed,
+ * not whatever stale env var the host happens to carry.
+ *
+ * Throws on backend error so the route can surface a meaningful message.
+ */
+export async function testMinimaxSynthesis(text, { apiKey, groupId, voiceId } = {}) {
+  if (!apiKey)  throw new Error('apiKey is required');
+  if (!voiceId) throw new Error('voiceId is required');
+  const input = String(text || '').trim().slice(0, TTS_MAX_CHARS);
+  if (!input) throw new Error('text is required');
+  const signal = AbortSignal.timeout(30_000);
+  return synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId || '', {});
+}
+
 async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { speed = 1.0, pitch = 0, vol = 1.0 } = {}) {
   // Pre-process: drop Korean runs entirely — the Chinese-trained custom
   // voice (e.g. "金冬天") can't read KR well, and we don't have a

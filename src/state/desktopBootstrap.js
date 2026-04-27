@@ -295,6 +295,16 @@ export async function getDesktopBootstrap(query = '') {
         whisperBaseUrl: config.whisperBaseUrl || '',
         ttsProvider: config.ttsProvider || '',
         ttsEdgeVoice: config.ttsEdgeVoice || '',
+        // MiniMax T2A V2 — surfaced so the UI can render a config block
+        // alongside Whisper. Mirrors the masked-key pattern: never expose
+        // raw secrets to the client; UI sees the prefix...suffix mask plus
+        // a hasMinimaxKey boolean for indicator copy.
+        hasMinimaxKey: Boolean(config.minimaxApiKey),
+        maskedMinimaxApiKey: config.minimaxApiKey
+          ? `${config.minimaxApiKey.slice(0, 4)}...${config.minimaxApiKey.slice(-4)}`
+          : '(not set)',
+        minimaxGroupId: config.minimaxGroupId || '',
+        minimaxVoiceId: config.minimaxVoiceId || '',
         codexAuth: config.codexAuth || null,
         availableModels: availableModelsForConfig(config),
         modelCatalogs: normalizeModelCatalogs(config.modelCatalogs || DEFAULT_MODEL_CATALOGS),

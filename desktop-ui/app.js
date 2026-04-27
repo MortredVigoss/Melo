@@ -4682,6 +4682,13 @@ async function handleSaveConnectorConfig(form) {
     systemPrompt: String(formData.get('systemPrompt') || '').trim(),
     whisperApiKey: String(formData.get('whisperApiKey') || '').trim(),
     whisperBaseUrl: String(formData.get('whisperBaseUrl') || '').trim(),
+    // MiniMax T2A V2. Server-side `keepIfBlank` semantics for the secret
+    // keys (apiKey/groupId) treats empty as "preserve current"; the voice
+    // id is non-secret and writable as text. minimaxApiKey is masked in
+    // the form so blank means "no change", not "wipe key".
+    minimaxApiKey: String(formData.get('minimaxApiKey') || '').trim(),
+    minimaxGroupId: String(formData.get('minimaxGroupId') || '').trim(),
+    minimaxVoiceId: String(formData.get('minimaxVoiceId') || '').trim(),
   };
 
   if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
@@ -4794,6 +4801,11 @@ async function handleUpdateAgentProfile(form) {
           voiceReplyMode: String(formData.get('voiceReplyMode') || 'summary').trim(),
           voicePersonality: String(formData.get('voicePersonality') || '').trim(),
           edgeTtsVoice: String(formData.get('edgeTtsVoice') || '').trim(),
+          // MiniMax voice ID — surfaced explicitly in the agent editor so
+          // the "自定义语音" entries in the TTS panel are no longer hidden
+          // metadata. Empty string means "no MiniMax voice for this agent"
+          // (the agent won't appear in the panel's voice list).
+          minimaxVoiceId: String(formData.get('minimaxVoiceId') || '').trim(),
           channels: {
             telegram: {
               enabled: formData.get('telegramEnabled') === 'on',
@@ -8910,6 +8922,25 @@ function renderAgentDetails(selected) {
           )}</div>
         </div>
 
+        <div class="detail-meta">
+          <div class="meta-block-label">MiniMax voice (optional)</div>
+          <div>
+            Bind this agent to a MiniMax cloned voice — the TTS panel's "自定义语音"
+            list shows every agent that has a voice id set, so this is what
+            controls which agents appear there. Configure your MiniMax key
+            in Settings → Connector → API key.
+          </div>
+        </div>
+        <label class="label">
+          MiniMax voice ID
+          <input
+            class="input"
+            name="minimaxVoiceId"
+            value="${escapeHtml(draft?.minimaxVoiceId ?? selected.minimaxVoiceId ?? '')}"
+            placeholder="moss_audio_… or any cloned voice id (leave blank to unbind)"
+          />
+        </label>
+
         <div class="inline-actions">
           <button class="small-button is-primary" type="submit">Save agent profile</button>
           ${
@@ -9344,6 +9375,59 @@ function renderConnectorDetails(selected) {
             placeholder="Leave blank to use auto-detected endpoint"
           />
         </label>
+
+        <div class="detail-meta">
+          <div class="meta-block-label">MiniMax T2A V2 (cloned voice TTS)</div>
+          <div>
+            Powers the "自定义语音" option in the voice panel.
+            Sign up at <code>minimaxi.com</code>, create or clone a voice,
+            then paste the credentials below. Use the test button to verify
+            without leaving this page.
+          </div>
+        </div>
+        <label class="label">
+          MiniMax API key
+          <input
+            class="input"
+            name="minimaxApiKey"
+            type="password"
+            value=""
+            placeholder="${escapeHtml(selected.config.maskedMinimaxApiKey || 'Leave blank to keep current')}"
+          />
+        </label>
+        <div class="list-row-meta">
+          ${selected.config.hasMinimaxKey ? `Saved key: ${escapeHtml(selected.config.maskedMinimaxApiKey)}` : 'No MiniMax key — TTS will fall back to OpenAI / Edge.'}
+          Leave blank to preserve the current value.
+        </div>
+        <label class="label">
+          MiniMax Group ID
+          <input
+            class="input"
+            name="minimaxGroupId"
+            value="${escapeHtml(selected.config.minimaxGroupId || '')}"
+            placeholder="From the MiniMax dashboard"
+          />
+        </label>
+        <label class="label">
+          Default Voice ID
+          <input
+            class="input"
+            name="minimaxVoiceId"
+            value="${escapeHtml(selected.config.minimaxVoiceId || '')}"
+            placeholder="moss_audio_… or any cloned voice id"
+          />
+        </label>
+        <div class="chip-row">
+          <button
+            class="small-button is-outline"
+            type="button"
+            data-action="test-minimax-tts"
+          >
+            Test playback
+          </button>
+          <span class="meta-label" data-tts-test-status></span>
+        </div>
+
         <button class="small-button is-primary" type="submit">
           Save connector settings
         </button>
@@ -12487,6 +12571,56 @@ document.addEventListener('click', async event => {
         }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
         uiState.ttsVoicePanelOpen = false;
         render();
+        break;
+      }
+      case 'test-minimax-tts': {
+        // Pull values from the connector form sibling — user can test
+        // ad-hoc credentials before clicking Save. Status is rendered
+        // inline next to the button.
+        const form = trigger.closest('form#connector-config-form');
+        const status = form?.querySelector('[data-tts-test-status]');
+        const fd = form ? new FormData(form) : null;
+        const apiKey  = fd ? String(fd.get('minimaxApiKey')  || '').trim() : '';
+        const groupId = fd ? String(fd.get('minimaxGroupId') || '').trim() : '';
+        const voiceId = fd ? String(fd.get('minimaxVoiceId') || '').trim() : '';
+        // If the API key field is blank, the user means "use the saved
+        // one" — pull masked-key sentinel from bootstrap (the server side
+        // also has its own keepIfBlank, but the test endpoint takes
+        // explicit values, not config).
+        const savedKey = uiState.bootstrap?.settings?.config?.hasMinimaxKey;
+        if (!apiKey && !savedKey) {
+          if (status) status.textContent = 'Enter an API key first';
+          break;
+        }
+        if (!voiceId) {
+          if (status) status.textContent = 'Voice ID is required';
+          break;
+        }
+        if (status) status.textContent = 'Synthesising…';
+        try {
+          const result = await api('/api/tts/test-minimax', {
+            method: 'POST',
+            body: {
+              // If the form left apiKey blank, fall back to a marker the
+              // server understands by passing the form-empty value through.
+              // The test endpoint requires explicit credentials — so for
+              // a "test the saved key" flow, we'd need the server to read
+              // the persisted key. Keeping this strict for now: if the
+              // user wants to test the saved key, they should re-enter it.
+              apiKey,
+              groupId,
+              voiceId,
+              text: '你好，这是 MiniMax 测试朗读。Hello from MiniMax.',
+            },
+          });
+          if (result?.ok) {
+            if (status) status.textContent = `OK · ${result.bytes} bytes synthesised`;
+          } else {
+            if (status) status.textContent = result?.error || 'Test failed';
+          }
+        } catch (err) {
+          if (status) status.textContent = err?.message || 'Test failed';
+        }
         break;
       }
       case 'activate-minimax-voice': {

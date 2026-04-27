@@ -859,6 +859,42 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // ── Test playback for a candidate MiniMax config ─────────────────────────
+    // Lets the connector settings UI verify a MiniMax key/groupId/voiceId
+    // BEFORE persisting. Body: { apiKey, groupId, voiceId, text? }.
+    // synthesizeSpeech receives a one-shot config override (no global save)
+    // and on success the audio plays through host speakers via afplay so
+    // the user hears the result immediately.
+    if (url.pathname === '/api/tts/test-minimax' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const apiKey  = String(body?.apiKey  || '').trim();
+      const groupId = String(body?.groupId || '').trim();
+      const voiceId = String(body?.voiceId || '').trim();
+      const text    = String(body?.text || '你好，这是 MiniMax 测试朗读').slice(0, 200);
+      if (!apiKey || !voiceId) {
+        sendJson(response, 400, { ok: false, error: 'apiKey and voiceId are required' });
+        return;
+      }
+      try {
+        const { testMinimaxSynthesis } = await import('./tts.js');
+        // testMinimaxSynthesis explicitly ignores env vars so the user
+        // tests the values they just typed, not a stale MINIMAX_API_KEY.
+        const result = await testMinimaxSynthesis(text, { apiKey, groupId, voiceId });
+        if (!result) {
+          sendJson(response, 502, { ok: false, error: 'MiniMax synthesis returned null — check API key, Group ID, and voice ID.' });
+          return;
+        }
+        // Play through host speakers (same pattern as /api/tts/speak-text).
+        sendJson(response, 200, { ok: true, bytes: result.buffer.length });
+        _playBufferWithAfplay(result.buffer, result.mimeType).catch(e => {
+          process.stderr.write(`[tts/test-minimax] playback error: ${e?.message || e}\n`);
+        });
+      } catch (e) {
+        sendJson(response, 400, { ok: false, error: e?.message || 'Unexpected error during synthesis' });
+      }
+      return;
+    }
+
     // ── Native TTS via macOS `say` command (plays audio directly on host) ────
     // Uses `say` without -o so audio plays through system speakers immediately.
     // Responds immediately; a separate /api/tts/native-stop can kill the process.
