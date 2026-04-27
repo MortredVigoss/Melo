@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）
+
+- 横评 melo / openclaw / hermes 时把"召回 top-5 ≥ 85%"当成尚未基准化的扣分项；这一刀把它变成可跑的脚本，不动 `src/memory/`。
+- 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js`：默认读 `bench/memory/golden.json`（gitignored，私密 query 不入版本），跑 `recallMemoriesTiered`，按 `expectedIds` + `expectedSubstrings` 判 hit，输出 `results-YYYY-MM-DD.md` 含 Recall@1/5/10、scene/frame/content per-kind hit、平均延迟、misses 详情。
+- CLI: `npm run bench:memory`，支持 `--no-embed`（强制关键词通路）、`--validate`、`--json`、`--threshold-recall5 0.85`（CI gate exit 2）。env 启动时一次性 capture（CLAUDE.md §6）。
+- 验证：305/305 memory unit tests 全绿（未动 src/）；脚本端到端 sandbox MELO_HOME 上跑过 friendly-fail（缺 golden / 空 store）+ 命中（recall@5=100%）+ threshold gate（pass=0/fail=2）+ JSON 模式 + check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced
 
 - 用户要求："MCP、plugins、background-tasks 先不要全塞主 UI。建议做一个 Advanced / Runtime 页面，明确标注实验性/开发者功能。里面只放查看状态、reload、disconnect、kill task 这种安全操作，新增/编辑配置可以晚一点做。"
@@ -41,37 +49,12 @@
 - Codex 前置 review **A 级**："小范围正确修复，风险低，无具体发现"。
 - 提交哈希：`2731e90`（已 push origin/master）。
 
-## 2026-04-27 13:30 — Codex C #16/#17/#18 fix chain：customize grid 1101px+ 真实可用宽度
-
-- 一连三轮 Codex C，全是宽度计算+折叠语义错位，按时间顺序：
-  - **C #16**：首版 grid `220 270 minmax(440, 1fr)` 总 930px，超过 1280px 下减完 sidebar 的余量。改 `200 240 minmax(360, 1fr)` 总 800px → `3022905`。
-  - **C #17**：800 仍超——忘算 `.page` 38×2 = 76px padding；真实 1101px viewport 可用 = 1101-278-76 = 747px。加单独 `@media (max-width: 1180px)` 折叠到单列 → `f20767b`。
-  - **C #18 这一刀**：单列折叠 + 容器 `height: 100%; overflow: hidden` 让纵向堆叠的 panes 被裁掉够不到（其实 ≤1100px 老 breakpoint 就有同款 bug，只是我把范围扩到 1180px 让更多人撞）。回退 1180px @media，grid 进一步压到 `200 220 minmax(280, 1fr)` 总 **700px**——1101px viewport（747 可用）下 47px buffer，所有桌面宽度都能装下三列、不需要折叠到单列、不需要改 overflow 语义。
-- 权衡：1101-1180px 区间下右列窄到 327-407px。比理想紧但功能性可读，比单列裁切好。1280px+ 用户右列拿到 506px+。
-- 验证：`node --check` 全过；regression **400/400 全绿**；UI 手测留给用户验证 1101 / 1280 / 1440px 三档实际渲染。
-- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → `bcc2b09`（C #18 撤单列改更紧 grid） → `ae0a964`（C #19 修 ≤1100px 单列裁切）。
-- C #19 后续：上一刀的 commit message 提到了 ≤1100px 单列模式有预存的 overflow:hidden 裁切 bug，Codex 抓到"既然你 doc 了就要修"。本刀在已有 `@media (max-width: 1100px)` 块里加了：`.page-customize` 改 `height: auto; overflow-y: auto`；`.customize-layout` 改 `height: auto; overflow: visible`；`.customize-pane` 改 `overflow-y: visible`，外加 border-right → border-bottom 视觉切换让单列堆叠的 pane 之间有分隔线。
-
-## 2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理
-
-- 用户截图反馈："中间选 agent 那个太宽了，左两列也略宽，最右边这列要宽一点；图 1 文字和边框靠太近；图 2 一些框叠加在一起"。
-- 排查：
-  - `.customize-layout` grid 是 `260px 340px minmax(320px, 1fr)`——中间 340px 确实偏宽，右边最小 320px 容纳长 description / role prompt 时换行过密。
-  - `.section-button / .list-row` padding 14px 14px——文字和右边框间距偏紧。
-  - **`.toggle-row` 在 styles.css 里有两份定义**（line 3190 旧分隔线版 + line 3966 新 pillbox 版），cascade 部分混叠（border 一份、padding 另一份），且新版没有 `margin-bottom`——Skills 详情面板的 "Enabled" 按钮跟下方 "Skill health" 标题视觉上没有间距，看起来像叠加。
-- 修复（`desktop-ui/styles.css`）：
-  - **grid 改 `220px 270px minmax(440px, 1fr)`**：左侧 nav 220px / 中间列表 270px / 右侧详情最小 440px，详情面板有空间容长文本。
-  - **`.section-button / .list-row` padding 改 `14px 16px`**：水平多 2px 让文字不撞右边框/active 边框。
-  - **删 line 3190 的旧 `.toggle-row`**（仅留底部 pillbox 那份，单一来源）。
-  - **`.toggle-row` 加 `margin-bottom: 16px`**：pillbox 跟下方 section 之间有呼吸。
-  - **`.skill-health-card` 加 `margin-top: 18px`**：双保险，确保 Enabled toggle 和 Skill health 之间有清楚分隔。
-- 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
-- 提交哈希：`ab06fca`（首版） + 后跟一刀 fix grid overflow at 1280px。
-
-## 归档摘要（2026-04-27 12:30 之前的所有条目）
+## 归档摘要（2026-04-27 13:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 13:30 — Codex C #16/#17/#18/#19 fix chain：customize grid 1101px+ 真实可用宽度** —— 三轮宽度+折叠 Codex C 闭环：grid 220/270/440 总 700px，撤单列折叠，修 ≤1100px overflow:hidden 裁切。`3022905`+`f20767b`+`bcc2b09`+`ae0a964`
+- **2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理** —— grid 改 220/270/440-1fr；删旧 `.toggle-row` 副本；padding 14×16 给文字呼吸；`.skill-health-card` 加 margin-top。`ab06fca`
 - **2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default** —— `src/shared/minimaxVoiceResolver.js` 抽出纯函数（cache 校验后才优先；stale cache 命中 fallback 链 + drop flag 清 localStorage）；10 个 unit case + 3 个 SECRET_LIKE 防擦 case，bisect 验证。（待 commit）
 - **2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID** —— client 优先链加 `bootstrap.settings.config.minimaxVoiceId` fallback + 三者都空时 toast 错误不发 POST；server `SECRET_LIKE_CONFIG_KEYS` 加 `minimaxVoiceId` 兜底防意外擦。（待 commit）
 - **2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key** —— `connectorRollup.js` 给 connector config 加 4+4 字段（minimax/whisper），TTS 面板改读 `hasMinimaxKey`，`/api/tts/test-minimax` 表单空字段 fallback 到 saved。（待 commit）

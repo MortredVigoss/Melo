@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "description": "Example golden set for retrieval bench — copy to golden.json and fill in real queries.",
+  "queries": [
+    {
+      "id": "q-001",
+      "namespaces": ["chat:example"],
+      "query": "Alice 对 LRU capacity 的看法",
+      "expectedIds": [],
+      "expectedSubstrings": [
+        "LRU 的默认 capacity 应该是 64"
+      ],
+      "expectedKinds": ["frame", "content"],
+      "tags": ["technical-detail"],
+      "notes": "Sample only; replace with real conversation excerpts before running."
+    },
+    {
+      "id": "q-002",
+      "namespaces": ["chat:example"],
+      "query": "the deadline for phase 4",
+      "expectedIds": [],
+      "expectedSubstrings": [
+        "Phase 4 target: merge by Friday"
+      ],
+      "expectedKinds": ["scene", "frame", "content"],
+      "tags": ["decision"],
+      "notes": "Cross-language match: query EN vs note ZH/EN mix."
+    }
+  ]
+}

@@ -19,7 +19,8 @@
     "start": "node src/index.js",
     "doctor": "node src/index.js doctor",
     "chat": "node src/index.js chat",
-    "rebuild:voice": "npm rebuild @discordjs/opus"
+    "rebuild:voice": "npm rebuild @discordjs/opus",
+    "bench:memory": "node scripts/bench-memory.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",

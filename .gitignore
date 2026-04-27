@@ -35,3 +35,9 @@ generated/
 # tools mistakenly flag it as "stale" on every push. The Codex / Claude
 # session-start workflow should regenerate it locally.
 /codex.md
+
+# Memory retrieval bench: golden.json holds private conversation excerpts,
+# results-*.md are per-run reports. Only golden.example.json + README are
+# committed.
+/bench/memory/golden.json
+/bench/memory/results-*.md
