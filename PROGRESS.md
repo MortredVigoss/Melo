@@ -13,7 +13,7 @@
 - 🟡 [src/memory/dreaming/summaryQuality.js + offline/compact.js]：`MELO_SUMMARY_QUALITY_THRESHOLD` 此前在 evaluator 内运行时读取，长 LLM 调用期间 env 变化会让 audit 用旧阈值、fallback 决定用新阈值。compactOffline 入口加 `compactQualityThreshold()` 一次性 capture，传给 `auditSummary({ threshold })`。
 - ⚪ [src/memory/offline/compact.js]：加 `_setCallLocalLlmForTests` DI hook（同 `_setTesseractForTests` 模式）+ 4 个 mock 测试覆盖 fallback 跳过低质 / fallback 留高质 / audit 默认留 LLM 输出 / disabled 跳过 audit。`withIsolatedEnv(...)` helper 隔离 MELO_HOME 防 audit 写真实 dreams。
 - 验证：`node --test 'src/memory/**/*.test.js'` **327/327 全绿**（原 323 + 4 fallback 测试）；bench 端到端 sandbox 跑 tier (recall@1=0% 因 scene 排首未命中) / global (recall@1=50% mem_001 frame score 高)；`--rank bogus` friendly fail；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`9d504b2`。
 
 ## 2026-04-27 15:30 — F-3C：README 加 Memory & embeddings 引导（bge-m3 部署门槛闭环）
 
