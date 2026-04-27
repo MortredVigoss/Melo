@@ -24,7 +24,7 @@
   - [server.js](src/server.js) `POST /api/mcp/preset-toggle` 端点：白名单仅 4 个内置 flag（防止被滥用写其他 boolean），写完 reconnect。
   - [app.js](desktop-ui/app.js) agent customize 页加 "Stdio MCP servers" chip-row：每个 preset 一个 chip，全局未开的 chip 灰显（disabled）。新 action `toggle-agent-mcp-server`（per-agent 切换）+ `toggle-mcp-preset`（全局 preset toggle，调端点 + 刷新 bootstrap）。表单 submit 收 `enabledMcpServerIds`，无 `__all__` sentinel（MCP 永远显式 opt-in）。
 - 26 后端单测 + 4 advancedPage smoke 共 30 新测试；`src/**/*.test.js` 1133/1133 全绿；`npm run test:ui` 74/74。
-- 提交哈希：`8778052`（Phase 1+2+4 backend）+ 待填（Phase 3 UI）。
+- 提交哈希：`8778052`（Phase 1+2+4 backend）+ `3ae3285`（Phase 3 UI）。
 
 ## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
 
