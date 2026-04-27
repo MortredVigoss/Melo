@@ -141,18 +141,6 @@ const uiState = {
   agentSaveStates: {},
   agentSecretVisibility: {},
   commandInputs: {},
-  externalToolInputs: {},
-  runtimeSelection: {
-    connectorId: null,
-    type: null,
-    id: null,
-  },
-  runtimePreview: {
-    title: '',
-    content: '',
-    loading: false,
-    error: '',
-  },
   commandPalette: {
     open: false,
     query: '',
@@ -1918,58 +1906,6 @@ function connectorEnabled(connectorId) {
   return Boolean(connectorById(connectorId)?.enabled);
 }
 
-function externalConnectors() {
-  return (uiState.bootstrap?.customize.connectors || []).filter(
-    connector => connector.type === 'external-mcp',
-  );
-}
-
-function enabledExternalConnectors() {
-  return externalConnectors().filter(connector => connector.enabled);
-}
-
-function selectedRuntimeConnector() {
-  const connectors = externalConnectors();
-  if (!connectors.length) return null;
-
-  return (
-    connectors.find(connector => connector.id === uiState.runtimeSelection.connectorId) ||
-    connectors.find(
-      connector => connector.id === uiState.bootstrap?.settings?.selectedConnectorId,
-    ) ||
-    connectors[0]
-  );
-}
-
-function selectedRuntimeEntry() {
-  const connector = selectedRuntimeConnector();
-  if (!connector) return null;
-
-  const manifest = connector.config?.manifest || {
-    tools: [],
-    resources: [],
-    prompts: [],
-  };
-
-  const pool =
-    uiState.runtimeSelection.type === 'resource'
-      ? manifest.resources
-      : uiState.runtimeSelection.type === 'prompt'
-        ? manifest.prompts
-        : manifest.tools;
-
-  const entry =
-    pool.find(item => item.id === uiState.runtimeSelection.id) || pool[0] || null;
-
-  if (!entry) return null;
-
-  return {
-    connector,
-    type: uiState.runtimeSelection.type || 'tool',
-    entry,
-  };
-}
-
 function filteredProjects() {
   const query = uiState.projectSearch.trim().toLowerCase();
   const projects = uiState.bootstrap?.projects || [];
@@ -2399,74 +2335,11 @@ function approvalQueue() {
   return uiState.bootstrap?.approvals || [];
 }
 
-function syncRuntimeSelection() {
-  const connectors = externalConnectors();
-
-  if (!connectors.length) {
-    uiState.runtimeSelection = {
-      connectorId: null,
-      type: null,
-      id: null,
-    };
-    uiState.runtimePreview = {
-      title: '',
-      content: '',
-      loading: false,
-      error: '',
-    };
-    return;
-  }
-
-  const selectedConnector =
-    connectors.find(connector => connector.id === uiState.runtimeSelection.connectorId) ||
-    connectors.find(
-      connector => connector.id === uiState.bootstrap?.settings?.selectedConnectorId,
-    ) ||
-    connectors[0];
-
-  uiState.runtimeSelection.connectorId = selectedConnector.id;
-
-  const manifest = selectedConnector.config?.manifest || {
-    tools: [],
-    resources: [],
-    prompts: [],
-  };
-
-  const selectedPool =
-    uiState.runtimeSelection.type === 'resource'
-      ? manifest.resources
-      : uiState.runtimeSelection.type === 'prompt'
-        ? manifest.prompts
-        : manifest.tools;
-
-  const hasSelected = selectedPool.some(item => item.id === uiState.runtimeSelection.id);
-  if (hasSelected) {
-    return;
-  }
-
-  const firstEntry =
-    manifest.tools[0] ||
-    manifest.resources[0] ||
-    manifest.prompts[0] ||
-    null;
-
-  uiState.runtimeSelection.type = firstEntry
-    ? manifest.tools.includes(firstEntry)
-      ? 'tool'
-      : manifest.resources.includes(firstEntry)
-        ? 'resource'
-        : 'prompt'
-    : null;
-  uiState.runtimeSelection.id = firstEntry?.id || null;
-}
-
 function syncSelectedArtifact() {
   const artifacts = uiState.bootstrap?.artifacts || [];
   if (!artifacts.some(artifact => artifact.id === uiState.selectedArtifactId)) {
     uiState.selectedArtifactId = artifacts[0]?.id || null;
   }
-
-  syncRuntimeSelection();
 }
 
 function resetFileEditor() {
@@ -5337,63 +5210,8 @@ async function handleRemoveCustomSkill(skillId) {
   applyBootstrap(payload);
 }
 
-async function handleCreateExternalConnector(form) {
-  const formData = new FormData(form);
-  const payload = await api('/api/connectors/external', {
-    method: 'POST',
-    body: {
-      name: String(formData.get('name') || '').trim(),
-      description: String(formData.get('description') || '').trim(),
-      endpoint: String(formData.get('endpoint') || '').trim(),
-      prompt: String(formData.get('prompt') || '').trim(),
-      authToken: String(formData.get('authToken') || '').trim(),
-      healthPath: String(formData.get('healthPath') || '').trim(),
-      manifestPath: String(formData.get('manifestPath') || '').trim(),
-      contextPath: String(formData.get('contextPath') || '').trim(),
-      resourcePath: String(formData.get('resourcePath') || '').trim(),
-      promptPath: String(formData.get('promptPath') || '').trim(),
-      invokePath: String(formData.get('invokePath') || '').trim(),
-    },
-  });
-
-  form.reset();
-  applyBootstrap(payload);
-}
-
-async function handleUpdateExternalConnector(form) {
-  const formData = new FormData(form);
-  const payload = await api('/api/connectors/external/update', {
-    method: 'POST',
-    body: {
-      connectorId: form.dataset.connectorId,
-      patch: {
-        name: String(formData.get('name') || '').trim(),
-        description: String(formData.get('description') || '').trim(),
-        endpoint: String(formData.get('endpoint') || '').trim(),
-        prompt: String(formData.get('prompt') || '').trim(),
-        authToken: String(formData.get('authToken') || '').trim(),
-        healthPath: String(formData.get('healthPath') || '').trim(),
-        manifestPath: String(formData.get('manifestPath') || '').trim(),
-        contextPath: String(formData.get('contextPath') || '').trim(),
-        resourcePath: String(formData.get('resourcePath') || '').trim(),
-        promptPath: String(formData.get('promptPath') || '').trim(),
-        invokePath: String(formData.get('invokePath') || '').trim(),
-      },
-    },
-  });
-  applyBootstrap(payload);
-}
-
 async function handlePingExternalConnector(connectorId) {
   const payload = await api('/api/connectors/external/ping', {
-    method: 'POST',
-    body: { connectorId },
-  });
-  applyBootstrap(payload);
-}
-
-async function handleRemoveExternalConnector(connectorId) {
-  const payload = await api('/api/connectors/external/remove', {
     method: 'POST',
     body: { connectorId },
   });
@@ -5483,51 +5301,6 @@ async function handleRejectApproval(approvalId) {
   applyBootstrap(payload);
 }
 
-async function handleLoadRuntimePreview(connectorId, type, id) {
-  if (!connectorId || !type || !id) {
-    showError('Runtime item is incomplete.');
-    return;
-  }
-
-  uiState.runtimePreview = {
-    title: '',
-    content: '',
-    loading: true,
-    error: '',
-  };
-  render();
-
-  try {
-    const path =
-      type === 'resource'
-        ? '/api/connectors/external/resource'
-        : '/api/connectors/external/prompt';
-    const payload = await api(path, {
-      method: 'POST',
-      body: {
-        connectorId,
-        ...(type === 'resource' ? { resourceId: id } : { promptId: id }),
-        projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-      },
-    });
-
-    uiState.runtimePreview = {
-      title: payload.title || `${type} preview`,
-      content: payload.content || '',
-      loading: false,
-      error: '',
-    };
-  } catch (error) {
-    uiState.runtimePreview = {
-      title: '',
-      content: '',
-      loading: false,
-      error: error.message,
-    };
-  }
-
-  render();
-}
 
 function composerCommandCatalog() {
   const dynamicProjects = (uiState.bootstrap?.projects || []).slice(0, 5).map(project => ({
@@ -5929,28 +5702,6 @@ async function handleComposerCommand() {
   uiState.composer = '';
   render();
   return true;
-}
-
-async function handleInvokeExternalTool(form) {
-  const toolName = form.dataset.toolName;
-  const connectorId = form.dataset.connectorId;
-  const formData = new FormData(form);
-  const input = String(formData.get('input') || '').trim() || '{}';
-
-  uiState.externalToolInputs[`${connectorId}:${toolName}`] = input;
-  await createApprovalRequest({
-    kind: 'external-tool',
-    title: `Invoke ${toolName}`,
-    description: `Run ${toolName} from the selected external connector.`,
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
-    payload: {
-      connectorId,
-      toolName,
-      input,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    },
-  });
 }
 
 async function handleRunCommand(form) {
@@ -7159,105 +6910,6 @@ function renderProjectArtifactShelf() {
                 truncate(artifact.content, 140),
               )}</div>
             </button>
-          `,
-        )
-        .join('')}
-    </div>
-  `;
-}
-
-function renderExternalConnectorShelf() {
-  const connectors = enabledExternalConnectors();
-
-  if (!connectors.length) {
-    return '<div class="empty-state compact">No external connectors are enabled yet.</div>';
-  }
-
-  return `
-    <div class="mini-list">
-      ${connectors
-        .map(
-          connector => `
-            <button
-              class="mini-list-item"
-              data-action="open-custom-connector"
-              data-connector-id="${connector.id}"
-            >
-              <div class="thread-meta">
-                <span class="chip is-accent">${escapeHtml(
-                  connector.config.lastStatus || 'idle',
-                )}</span>
-                <span class="chip">${connector.config.toolCount} tools</span>
-                <span class="chip">${connector.config.resourceCount} resources</span>
-              </div>
-              <div class="list-row-title">${escapeHtml(connector.name)}</div>
-              <div class="list-row-meta">${escapeHtml(
-                connector.description || connector.config.endpoint,
-              )}</div>
-            </button>
-          `,
-        )
-        .join('')}
-    </div>
-  `;
-}
-
-function renderExternalToolForms(connectors, { compact = false } = {}) {
-  const cards = connectors.flatMap(connector =>
-    (connector.config?.manifest?.tools || []).map(tool => {
-      const inputKey = `${connector.id}:${tool.name}`;
-      return `
-        <form
-          class="command-card external-tool-card ${compact ? 'is-compact' : ''}"
-          data-form="external-tool-run"
-          data-connector-id="${connector.id}"
-          data-tool-name="${escapeHtml(tool.name)}"
-        >
-          <div class="thread-meta">
-            <span class="chip is-accent">${escapeHtml(connector.name)}</span>
-            <span class="chip">${escapeHtml(tool.name)}</span>
-          </div>
-          <div class="list-row-meta">${escapeHtml(tool.description || 'Invoke external tool')}</div>
-          <textarea
-            class="textarea tool-input"
-            name="input"
-            data-external-tool-input="${escapeHtml(inputKey)}"
-            placeholder='{"query":"latest docs"}'
-          >${escapeHtml(uiState.externalToolInputs[inputKey] || '{}')}</textarea>
-          <button class="small-button is-primary" type="submit">Queue tool approval</button>
-        </form>
-      `;
-    }),
-  );
-
-  if (!cards.length) {
-    return '<div class="empty-state compact">No external tools are advertised yet. Ping a connector to load its manifest.</div>';
-  }
-
-  return `<div class="command-stack">${cards.join('')}</div>`;
-}
-
-function renderExternalToolResults(connectors) {
-  const runs = connectors.flatMap(connector => connector.config?.recentRuns || []);
-
-  if (!runs.length) {
-    return '<div class="empty-state compact">No external tool calls yet.</div>';
-  }
-
-  return `
-    <div class="run-list">
-      ${runs
-        .map(
-          run => `
-            <article class="run-card">
-              <div class="thread-meta">
-                <span class="chip is-accent">${escapeHtml(run.connectorName)}</span>
-                <span class="chip">${escapeHtml(run.toolName)}</span>
-                <span class="chip">${run.success ? 'Success' : 'Error'}</span>
-                <span class="meta-label">${escapeHtml(run.executedLabel || '')}</span>
-              </div>
-              <pre class="run-output" data-copyable-surface><code>${escapeHtml(run.output)}</code></pre>
-            </article>
           `,
         )
         .join('')}
@@ -9985,81 +9637,6 @@ function renderSkillProposalsPanel() {
   `;
 }
 
-function renderExternalConnectorCreateCard() {
-  return `
-    <div class="detail-card create-connector-card">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">Add external connector</h2>
-          <p class="page-kicker">
-            Register an MCP-style HTTP service with health, manifest, and context endpoints.
-          </p>
-        </div>
-      </div>
-
-      <form id="connector-external-create-form" class="config-form" data-form="connector-external-create">
-        <label class="label">
-          Name
-          <input class="input" name="name" placeholder="Docs MCP" />
-        </label>
-        <label class="label">
-          Description
-          <input
-            class="input"
-            name="description"
-            placeholder="Expose docs, search, and retrieval context."
-          />
-        </label>
-        <label class="label">
-          Endpoint
-          <input
-            class="input mono"
-            name="endpoint"
-            placeholder="http://127.0.0.1:43131"
-          />
-        </label>
-        <label class="label">
-          Prompt
-          <textarea class="config-textarea" name="prompt" placeholder="When docs or remote context are relevant, consult this connector."></textarea>
-        </label>
-        <div class="project-form-grid">
-          <label class="label">
-            Health path
-            <input class="input mono" name="healthPath" value="/health" />
-          </label>
-          <label class="label">
-            Manifest path
-            <input class="input mono" name="manifestPath" value="/manifest" />
-          </label>
-        </div>
-        <label class="label">
-          Context path
-          <input class="input mono" name="contextPath" value="/context" />
-        </label>
-        <div class="project-form-grid">
-          <label class="label">
-            Resource path
-            <input class="input mono" name="resourcePath" value="/resource" />
-          </label>
-          <label class="label">
-            Prompt path
-            <input class="input mono" name="promptPath" value="/prompt" />
-          </label>
-        </div>
-        <label class="label">
-          Invoke path
-          <input class="input mono" name="invokePath" value="/invoke" />
-        </label>
-        <label class="label">
-          Auth token
-          <input class="input" name="authToken" type="password" placeholder="Optional bearer token" />
-        </label>
-        <button class="small-button is-primary" type="submit">Create connector</button>
-      </form>
-    </div>
-  `;
-}
-
 function renderAdvancedPage() {
   const data = uiState.bootstrap;
   const adv = uiState.advanced;
@@ -10212,194 +9789,6 @@ function renderAdvancedPage() {
   `;
 }
 
-function renderRuntimeBrowserPanes() {
-  const connector = selectedRuntimeConnector();
-
-  if (!connector) {
-    return `
-      <div class="customize-pane">
-        <div class="customize-pane-header">
-          <h2 class="pane-title">Runtime browser</h2>
-        </div>
-        <div class="empty-state">Enable or add an external connector to browse its live runtime surface.</div>
-      </div>
-      <div class="customize-pane">
-        <div class="empty-state">No MCP-style runtime available yet.</div>
-      </div>
-    `;
-  }
-
-  const manifest = connector.config?.manifest || {
-    tools: [],
-    resources: [],
-    prompts: [],
-  };
-  const selection = selectedRuntimeEntry();
-
-  return `
-    <div class="customize-pane">
-      <div class="customize-pane-header">
-        <h2 class="pane-title">Runtime browser</h2>
-      </div>
-      <div class="list-stack">
-        ${externalConnectors()
-          .map(
-            item => `
-              <button
-                class="list-row ${item.id === connector.id ? 'is-active' : ''}"
-                data-action="select-runtime-connector"
-                data-connector-id="${item.id}"
-              >
-                <div class="thread-meta">
-                  <span class="chip is-accent">${escapeHtml(item.config.lastStatus || 'idle')}</span>
-                  <span class="chip">${item.config.toolCount} tools</span>
-                </div>
-                <div class="list-row-title">${escapeHtml(item.name)}</div>
-                <div class="list-row-meta">${escapeHtml(item.description)}</div>
-              </button>
-            `,
-          )
-          .join('')}
-      </div>
-    </div>
-
-    <div class="customize-pane">
-      <div class="customize-pane-header">
-        <h2 class="pane-title">${escapeHtml(connector.name)}</h2>
-      </div>
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Tools</h3>
-          <span class="meta-label">${manifest.tools.length}</span>
-        </div>
-        <div class="mini-list">
-          ${
-            manifest.tools.length
-              ? manifest.tools
-                  .map(
-                    tool => `
-                      <button class="mini-list-item ${selection?.type === 'tool' && selection?.entry?.id === tool.id ? 'is-active' : ''}" data-action="select-runtime-entry" data-entry-type="tool" data-entry-id="${tool.id}">
-                        <div class="list-row-title">${escapeHtml(tool.name)}</div>
-                        <div class="list-row-meta">${escapeHtml(tool.description || 'Invoke tool')}</div>
-                      </button>
-                    `,
-                  )
-                  .join('')
-              : '<div class="empty-state compact">No tools advertised.</div>'
-          }
-        </div>
-      </div>
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Resources</h3>
-          <span class="meta-label">${manifest.resources.length}</span>
-        </div>
-        <div class="mini-list">
-          ${
-            manifest.resources.length
-              ? manifest.resources
-                  .map(
-                    resource => `
-                      <button class="mini-list-item ${selection?.type === 'resource' && selection?.entry?.id === resource.id ? 'is-active' : ''}" data-action="select-runtime-entry" data-entry-type="resource" data-entry-id="${resource.id}">
-                        <div class="list-row-title">${escapeHtml(resource.name)}</div>
-                        <div class="list-row-meta">${escapeHtml(resource.description || resource.id)}</div>
-                      </button>
-                    `,
-                  )
-                  .join('')
-              : '<div class="empty-state compact">No resources advertised.</div>'
-          }
-        </div>
-      </div>
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Prompts</h3>
-          <span class="meta-label">${manifest.prompts.length}</span>
-        </div>
-        <div class="mini-list">
-          ${
-            manifest.prompts.length
-              ? manifest.prompts
-                  .map(
-                    prompt => `
-                      <button class="mini-list-item ${selection?.type === 'prompt' && selection?.entry?.id === prompt.id ? 'is-active' : ''}" data-action="select-runtime-entry" data-entry-type="prompt" data-entry-id="${prompt.id}">
-                        <div class="list-row-title">${escapeHtml(prompt.name)}</div>
-                        <div class="list-row-meta">${escapeHtml(prompt.description || prompt.id)}</div>
-                      </button>
-                    `,
-                  )
-                  .join('')
-              : '<div class="empty-state compact">No prompts advertised.</div>'
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="customize-pane">
-      ${
-        !selection
-          ? '<div class="empty-state">Select a tool, resource, or prompt to inspect it.</div>'
-          : `
-            <div class="detail-card">
-              <div class="header-row">
-                <div>
-                  <h2 class="pane-title">${escapeHtml(selection.entry.name)}</h2>
-                  <p class="page-kicker">${escapeHtml(selection.entry.description || selection.entry.id)}</p>
-                </div>
-                <span class="chip is-accent">${escapeHtml(selection.type.toUpperCase())}</span>
-              </div>
-
-              ${
-                selection.type === 'tool'
-                  ? `
-                    <div class="detail-meta">
-                      <div>Queue this tool run into the approval lane before execution.</div>
-                    </div>
-                    <form
-                      class="config-form"
-                      data-form="external-tool-run"
-                      data-connector-id="${connector.id}"
-                      data-tool-name="${escapeHtml(selection.entry.name)}"
-                    >
-                      <label class="label">
-                        Tool input
-                        <textarea
-                          class="config-textarea"
-                          name="input"
-                          data-external-tool-input="${escapeHtml(`${connector.id}:${selection.entry.name}`)}"
-                        >${escapeHtml(uiState.externalToolInputs[`${connector.id}:${selection.entry.name}`] || '{}')}</textarea>
-                      </label>
-                      <button class="small-button is-primary" type="submit">Queue tool approval</button>
-                    </form>
-                    ${renderExternalToolResults([connector])}
-                  `
-                  : `
-                    <div class="inline-actions">
-                      <button class="small-button is-primary" data-action="refresh-runtime-preview" data-entry-type="${selection.type}" data-entry-id="${selection.entry.id}">
-                        ${uiState.runtimePreview.loading ? 'Loading…' : 'Load preview'}
-                      </button>
-                    </div>
-                    ${
-                      uiState.runtimePreview.error
-                        ? `<div class="alert compact-alert">${escapeHtml(uiState.runtimePreview.error)}</div>`
-                        : ''
-                    }
-                    ${
-                      uiState.runtimePreview.content
-                        ? `<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(uiState.runtimePreview.content)}</code></pre>`
-                        : '<div class="empty-state compact">Load a preview to inspect this runtime item.</div>'
-                    }
-                  `
-              }
-            </div>
-          `
-      }
-    </div>
-  `;
-}
 
 function renderCustomizePage() {
   const data = uiState.bootstrap;
@@ -12482,13 +11871,6 @@ document.addEventListener('click', async event => {
           }),
         );
         break;
-      case 'open-custom-connector':
-        await patchSettings({
-          activeView: 'customize',
-          selectedCustomizeSection: 'connectors',
-          selectedConnectorId: trigger.dataset.connectorId,
-        });
-        break;
       case 'select-artifact':
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         render();
@@ -12522,9 +11904,6 @@ document.addEventListener('click', async event => {
         break;
       case 'ping-connector':
         await handlePingExternalConnector(trigger.dataset.connectorId);
-        break;
-      case 'remove-connector':
-        await handleRemoveExternalConnector(trigger.dataset.connectorId);
         break;
       case 'refresh-advanced-status':
         await refreshAdvancedStatus();
@@ -12776,55 +12155,6 @@ document.addEventListener('click', async event => {
         await executePaletteCommand(command);
         break;
       }
-      case 'select-runtime-connector':
-        uiState.runtimeSelection.connectorId = trigger.dataset.connectorId;
-        uiState.runtimeSelection.type = null;
-        uiState.runtimeSelection.id = null;
-        uiState.runtimePreview = {
-          title: '',
-          content: '',
-          loading: false,
-          error: '',
-        };
-        await patchSettings({
-          activeView: 'customize',
-          selectedCustomizeSection: 'runtime',
-          selectedConnectorId: trigger.dataset.connectorId,
-        });
-        break;
-      case 'select-runtime-entry': {
-        const connector = selectedRuntimeConnector();
-        uiState.runtimeSelection = {
-          connectorId: connector?.id || uiState.runtimeSelection.connectorId,
-          type: trigger.dataset.entryType,
-          id: trigger.dataset.entryId,
-        };
-        if (trigger.dataset.entryType === 'resource' || trigger.dataset.entryType === 'prompt') {
-          await handleLoadRuntimePreview(
-            connector?.id,
-            trigger.dataset.entryType,
-            trigger.dataset.entryId,
-          );
-        } else {
-          uiState.runtimePreview = {
-            title: '',
-            content: '',
-            loading: false,
-            error: '',
-          };
-          render();
-        }
-        break;
-      }
-      case 'refresh-runtime-preview': {
-        const connector = selectedRuntimeConnector();
-        await handleLoadRuntimePreview(
-          connector?.id,
-          trigger.dataset.entryType,
-          trigger.dataset.entryId,
-        );
-        break;
-      }
       default:
         break;
     }
@@ -12915,11 +12245,6 @@ document.addEventListener('input', event => {
 
   if (target.dataset.commandInput) {
     uiState.commandInputs[target.dataset.commandInput] = target.value;
-    return;
-  }
-
-  if (target.dataset.externalToolInput) {
-    uiState.externalToolInputs[target.dataset.externalToolInput] = target.value;
     return;
   }
 
@@ -13289,20 +12614,11 @@ document.addEventListener('submit', async event => {
       case 'model-config':
         await handleSaveConnectorConfig(form);
         break;
-      case 'connector-external-create':
-        await handleCreateExternalConnector(form);
-        break;
-      case 'connector-external-update':
-        await handleUpdateExternalConnector(form);
-        break;
       case 'skill-custom-create':
         await handleCreateCustomSkill(form);
         break;
       case 'skill-custom-update':
         await handleUpdateCustomSkill(form);
-        break;
-      case 'external-tool-run':
-        await handleInvokeExternalTool(form);
         break;
       case 'artifact-create':
         await handleCreateArtifact();
