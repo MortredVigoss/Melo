@@ -4561,6 +4561,53 @@ select option {
   pointer-events: none;
 }
 
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 10px 9px 18px;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(30, 30, 40, 0.97));
+  color: var(--text-primary, #fff);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  font-size: 13px;
+  z-index: 9999;
+}
+
+.undo-toast-label {
+  white-space: nowrap;
+}
+
+.undo-toast-button {
+  appearance: none;
+  background: rgba(24, 183, 177, 0.18);
+  color: var(--accent, rgba(24, 183, 177, 1));
+  border: 1px solid rgba(24, 183, 177, 0.4);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.undo-toast-button:hover,
+.undo-toast-button:focus-visible {
+  background: rgba(24, 183, 177, 0.32);
+  outline: none;
+}
+
+.artifact-card.is-pending-delete {
+  opacity: 0.42;
+  filter: grayscale(0.4);
+  pointer-events: none;
+}
+
 .page-kicker-tip {
   margin-top: 6px !important;
   font-size: 12px;

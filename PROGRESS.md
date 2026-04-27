@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-27 18:00 — 5 处次级 UX 体验提升（PDF 入口 / state 路径 / lane overflow / search 空状态 / artifacts 软删）
+
+- 用户审查发现"硬功能都通了，剩下的是体验不够清楚"，给了 5 条次级提升。两批 commit：
+- **批 1 (`5f9107a`)** 4 条小改动：
+  - **#5** 附件菜单加 PDF entry —— `accept="application/pdf,.pdf"`，title 解释 pdf-parse 抽取（[app.js:972](desktop-ui/app.js#L972)）。documentExtractor 实测仅支持 PDF（mimeType 含 'pdf' 或 `.pdf` 扩展名），accept 按实情写。
+  - **#2** Advanced 页 Copy state.json path —— [advancedPage.js](desktop-ui/advancedPage.js) 加可选 `statePathHint` 参数（默认 `~/.melo/desktop/state.json`），page-kicker 下加 tip 行 + Copy path 按钮；新 action `copy-melo-state-path` 写剪贴板 + flash-toast 反馈；3 个新测试覆盖默认/自定义/hostile 转义。
+  - **#3** Tasks 区域 overflow menu —— main 留主按钮，research/builder/reviewer 进 "⋯" 下拉（uiState.taskLaneOverflowOpen + outside-click 关闭，复用 composerAttachmentMenu pattern）。
+  - **#4** Search 空状态分类提示 —— 新文案列出 chats & messages / prompt history / memory / artifacts / projects / skills/connectors / workspace files，pre-query 占位也同步更新；加 `.empty-state-title` / `.empty-state-meta` 样式。
+  - 副作用：新加 `showFlashToast` helper（短 toast）给 #2 + 后续 #1 用；styles.css 新增 6 个类（flash-toast / page-kicker-tip / ghost-link / task-lane-overflow-* / empty-state-*），全部沿用 `--text-muted` / `--accent` / `--surface-2` token。
+- **批 2 (本 commit)** Artifacts 软删 + undo toast：
+  - 新增 [desktop-ui/undoToast.js](desktop-ui/undoToast.js) 纯 helper（`formatUndoCountdown` / `formatUndoToastLabel` / `nextCountdownTickMs`），16 单测覆盖整数秒边界 / 100ms floor / 非 finite 输入。
+  - app.js: `pendingArtifactDeletes: Map` state；`handleDeleteArtifact` 重写为软删（5s timer + `setTimeout(commitDelete)`）；`showUndoToast` DOM helper 渲染底部带倒计时的 Undo banner，点 Undo 清 timer + 撤销，超时调真 `/api/artifacts/delete`；artifact card 加 `.is-pending-delete` 灰显类。
+  - 验证：`npm run test:ui` **71/71 全绿**（55 之前 + 16 undoToast）；memory 套 330/330；check-syntax 全过；UI 实际 toast 弹出 + Undo 行为留用户手测。
+- 提交哈希：`5f9107a`（批 1）+ 待填（批 2）。
+
 ## 2026-04-27 17:30 — desktop-ui test harness 落地：videoStatus + advancedPage 双双抽出可测
 
 - 上一会话末标记的 follow-up：desktop-ui 缺 unit-test harness，已累积两条同源 Codex finding（本批 ⚪ `describeVideoExtractionStatus` + 14:30 Advanced page B `smoke/E2E 缺失`）。这一刀一并闭环。
@@ -25,43 +40,14 @@
 - 提交哈希：`9f5a87a`。
 - **未修 follow-up（下次统一）**：desktop-ui 缺 unit test harness，已累积 2 条同源建议 —— 本批 Codex ⚪「`describeVideoExtractionStatus` 多分支无自动覆盖」+ 14:30 Advanced page Codex B「smoke/E2E 缺失」。下次专门一刀：抽 `videoStatus.js` 等纯函数到独立模块、用 `node:test`（或 happy-dom）建 desktop-ui test harness，把两条 follow-up + 未来 UI 纯函数统一纳入。比逐个修更经济。
 
-## 2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定
-
-- 上轮 `d339782` 把空 env 改返 null，但 evaluator 看到 `Number.isFinite(null)=false` 仍重读 env —— 契约缺口被 Codex 抓出第三次 B finding。
-- 修：[compact.js](src/memory/offline/compact.js) import `QUALITY_DEFAULT_THRESHOLD`，`compactQualityThreshold()` 始终返回 finite number（空 / 非法 → 默认 0.6），auditSummary 收到的 threshold 永远 truthy，evaluator 不再回头读 env。
-- 加 contract test：mid-call mock LLM 把 env 改 `'0'`（应让低质摘要通过），但入口已 capture 0.6，bad summary 仍被拒 → rule fallback 触发。证明锁定真正生效。
-- 验证：330/330 memory 全绿。
-- 提交哈希：`da4e09e`。
-
-## 2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界
-
-- 上轮 follow-up 提交 `9d504b2` 后 git pp 又评 B，单条 finding：`Number('') === 0`，导致 `MELO_SUMMARY_QUALITY_THRESHOLD=''` 让 fallback 阈值变 0、几乎全放行。
-- 修：[compact.js::compactQualityThreshold()](src/memory/offline/compact.js#L64) 先 `String(env || '').trim()`，空字符串/空白直接 `return null`，evaluator 仍用 0.6 默认。
-- 加 2 个回归测试（空字符串 + 全空白）：fallback 模式下低质摘要应被拒。
-- 验证：329/329 memory 全绿（前次 327 + 2 新）；compact 子套 11/11。
-- 提交哈希：`d339782`。
-
-## 2026-04-27 15:55 — Codex B follow-ups：bench rank 模式 / vec-aware 路径 / threshold capture / fallback DI 测试
-
-- 上一刀 git pp 拿 B 评级（可合入 + 4 条建议）。用户选"都修"。
-- 🔵 [scripts/bench-memory.js:152]：`mergeRanked` 全局 score 重排不等于 `recallMemoriesTiered` 的真实分层消费顺序。加 `--rank tier|global`，**默认 tier**（scene → frame → content 各自保 score 排序），`global` 留作 flat-ANN 基线对比；`config.rank` 出现在报告头。
-- 🟡 [scripts/bench-memory.js:349]：原仅看 `embeddingActive` 判 ANN 路径。embedding 可用 + sqlite-vec 不可用时实际走关键词，会误标。改成 `embeddingActive && vecAvailable` 才报 ANN，并在 vec 不可用时显式补 note "embedding ready but vec_memories unavailable"。
-- 🟡 [src/memory/dreaming/summaryQuality.js + offline/compact.js]：`MELO_SUMMARY_QUALITY_THRESHOLD` 此前在 evaluator 内运行时读取，长 LLM 调用期间 env 变化会让 audit 用旧阈值、fallback 决定用新阈值。compactOffline 入口加 `compactQualityThreshold()` 一次性 capture，传给 `auditSummary({ threshold })`。
-- ⚪ [src/memory/offline/compact.js]：加 `_setCallLocalLlmForTests` DI hook（同 `_setTesseractForTests` 模式）+ 4 个 mock 测试覆盖 fallback 跳过低质 / fallback 留高质 / audit 默认留 LLM 输出 / disabled 跳过 audit。`withIsolatedEnv(...)` helper 隔离 MELO_HOME 防 audit 写真实 dreams。
-- 验证：`node --test 'src/memory/**/*.test.js'` **327/327 全绿**（原 323 + 4 fallback 测试）；bench 端到端 sandbox 跑 tier (recall@1=0% 因 scene 排首未命中) / global (recall@1=50% mem_001 frame score 高)；`--rank bogus` friendly fail；check-syntax 全过。
-- 提交哈希：`9d504b2`。
-
-## 2026-04-27 15:30 — F-3C：README 加 Memory & embeddings 引导（bge-m3 部署门槛闭环）
-
-- 横评第三个扣分项：bge-m3 1GB 模型无 onboarding。用户选最轻量方案 C —— README 引导，不动 desktop-ui。
-- README.md 加 "Memory and embeddings" 一节：one-time setup（`ollama pull bge-m3` + `doctor` + `memory-status --live`）/ 4 级降级链（bge-m3 → OpenAI fallback → custom HTTP → 关键词）/ 5 个核心 env 开关（含本批次新加的 `MELO_COMPACT_QUALITY_GATE`）/ benchmark 跑法（接 F-1A）。
-- 跟 desktop-ui 解耦：选择 C 是因为 90% 用户其实读 README，引导落 README 比起做新弹窗 UI 更省工 + 不破坏既有 UI。如果以后想升 A（启动弹窗），可把这节改成 onboarding 文案的源。
-- 提交哈希：`dece161`。
-
-## 归档摘要（2026-04-27 15:15 之前的所有条目）
+## 归档摘要（2026-04-27 16:25 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定** —— compactQualityThreshold 始终返回 finite number（空/非法 → 0.6 默认），evaluator 不再回头读 env；contract test 锁定 mid-call env 突变不影响 fallback 决定。`da4e09e`
+- **2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界** —— `Number('') === 0` 让 fallback 全放行；trim + 空字符串短路 + 2 回归测试。`d339782`
+- **2026-04-27 15:55 — Codex B 4 条 follow-up：bench rank / vec-aware / threshold capture / fallback DI** —— 🔵 `--rank tier\|global` 默认 tier；🟡 `embeddingActive && vecAvailable` 才报 ANN；🟡 入口 capture threshold；⚪ `_setCallLocalLlmForTests` DI hook + 4 mock 测试。`9d504b2`
+- **2026-04-27 15:30 — F-3C：README "Memory and embeddings" 节落地** —— bge-m3 onboarding 引导（`ollama pull bge-m3` + 4 级降级链 + env 矩阵 + bench 跑法）；闭环最后一条横评扣分项。`dece161`
 - **2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入** —— 新增 `src/memory/dreaming/summaryQuality.js`（length / entityCoverage / tokenGroundedness 三指标 score = 0.1+0.4+0.5）+ `auditSummary` 写当日 DREAMS.md；`compact.js` 接入按 `MELO_COMPACT_QUALITY_GATE` 处理 LLM 输出；18 新单测 + memory 套 323/323 全绿。`aad4f72`
 - **2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）** —— 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js` + npm `bench:memory`；支持 `--no-embed` / `--validate` / `--json` / `--threshold-recall5` CI gate；305/305 memory tests 不退化。`eb74e07`
 - **2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced** —— 新增 renderAdvancedPage() 4 subsection；侧栏 Runtime → Advanced 入口 coerce；删 684 行死代码；regression 1057/1057；Codex B。`e9eb5b6`+`40c747b`

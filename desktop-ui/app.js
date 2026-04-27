@@ -11,6 +11,11 @@ import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
+import {
+  UNDO_TOAST_DEFAULT_MS,
+  formatUndoToastLabel,
+  nextCountdownTickMs,
+} from './undoToast.js';
 
 const app = document.querySelector('#app');
 
@@ -165,6 +170,15 @@ const uiState = {
   // button and tucks research/builder/reviewer behind a "⋯" dropdown so
   // the lane row doesn't sprout four equal-weight chips.
   taskLaneOverflowOpen: false,
+  // Soft-deleted artifacts pending the undo window.  Map<artifactId,
+  // { timeoutId }>.  While an entry is here:
+  //   - the artifact card renders with the .is-pending-delete class
+  //   - the bottom undo-toast counts down until the destructive
+  //     /api/artifacts/delete actually fires
+  //   - clicking Undo clears the timer and removes the entry
+  // Persisted in memory only; reload of the desktop app would
+  // immediately commit any pending delete via the timeout handler.
+  pendingArtifactDeletes: new Map(),
   composerDragActive: false,
   highlightedMessageId: null,
   shouldFocusSearch: false,
@@ -3626,6 +3640,73 @@ function showFlashToast(message, { ms = 2000 } = {}) {
   setTimeout(() => { if (toast.isConnected) toast.remove(); }, ms);
 }
 
+/**
+ * Soft-delete undo toast.  Bottom-centre banner with a live "Xs"
+ * countdown and an Undo button.  Only one shows at a time — opening a
+ * second one removes the first (and silently commits its underlying
+ * delete by virtue of leaving the timer alone).
+ *
+ * Pure logic (label formatting, tick scheduling) lives in
+ * `desktop-ui/undoToast.js` so it's covered by node:test; this helper
+ * is the DOM glue.
+ */
+function showUndoToast({ message = '', onUndo, ms = UNDO_TOAST_DEFAULT_MS } = {}) {
+  const existing = document.querySelector('#undo-toast');
+  if (existing instanceof HTMLElement) existing.remove();
+
+  const deadline = Date.now() + ms;
+  const toast = document.createElement('div');
+  toast.id = 'undo-toast';
+  toast.className = 'undo-toast';
+  // Two flex children: the live label (message + countdown) and the
+  // Undo button.  innerHTML stays here because the message has already
+  // been built by the caller from trusted state (no user-supplied
+  // markup).
+  toast.innerHTML = `
+    <span class="undo-toast-label" data-role="label"></span>
+    <button class="undo-toast-button" type="button" data-role="undo">Undo</button>
+  `;
+  const labelEl = toast.querySelector('[data-role="label"]');
+  const button = toast.querySelector('[data-role="undo"]');
+  let tickHandle = null;
+
+  function clearTickHandle() {
+    if (tickHandle != null) {
+      clearTimeout(tickHandle);
+      tickHandle = null;
+    }
+  }
+
+  function dismiss() {
+    clearTickHandle();
+    if (toast.isConnected) toast.remove();
+  }
+
+  function tick() {
+    const remaining = deadline - Date.now();
+    if (labelEl) labelEl.textContent = formatUndoToastLabel(message, remaining);
+    if (remaining <= 0) {
+      dismiss();
+      return;
+    }
+    tickHandle = setTimeout(tick, nextCountdownTickMs(remaining));
+  }
+
+  if (button) {
+    button.addEventListener('click', () => {
+      dismiss();
+      try { onUndo?.(); } catch (err) {
+        // Surface but never let the toast itself throw out of the
+        // click handler (would interrupt other UI).
+        console.warn('[undo-toast] onUndo handler threw:', err?.message || err);
+      }
+    });
+  }
+
+  document.body.appendChild(toast);
+  tick();
+}
+
 function showTranscriptToast(text) {
   const existing = document.querySelector('#transcript-toast');
   if (existing instanceof HTMLElement) existing.remove();
@@ -4601,17 +4682,27 @@ async function handleUpdateArtifact() {
   applyBootstrap(payload);
 }
 
-async function handleDeleteArtifact(artifactId) {
+/**
+ * Soft-delete an artifact: keep the row visible (greyed out) and pop an
+ * undo toast.  Only after the toast expires does the destructive API
+ * fire.  The previous implementation used `window.confirm` (no undo,
+ * jarring native modal); the audit replaced both with this soft pattern.
+ */
+function handleDeleteArtifact(artifactId) {
   if (!artifactId) return;
-  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
-  const label = artifact?.title ? `"${artifact.title}"` : 'this artifact';
-  if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+  const artifact = uiState.bootstrap?.artifacts?.find(item => item.id === artifactId);
+  if (!artifact) return;
+  if (uiState.pendingArtifactDeletes.has(artifactId)) {
+    // Already counting down — a second click is a no-op.
     return;
   }
-  const payload = await api('/api/artifacts/delete', {
-    method: 'POST',
-    body: { artifactId },
-  });
+
+  const label = artifact.title ? `"${artifact.title}"` : 'this artifact';
+
+  // Clear current selection / edit-buffer pre-emptively so the panel
+  // doesn't show stale content for the row we're about to remove.  If
+  // the user hits Undo we just keep the cleared selection — same end
+  // state as if they'd selected away first, no data loss.
   if (uiState.selectedArtifactId === artifactId) {
     uiState.selectedArtifactId = null;
   }
@@ -4619,7 +4710,42 @@ async function handleDeleteArtifact(artifactId) {
     uiState.editingArtifactId = null;
     uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
   }
-  applyBootstrap(payload);
+
+  const commitDelete = async () => {
+    // commit can race with Undo — guard via the Map presence check so a
+    // user who clicked Undo after the timer fired (but before the API
+    // round-trip finished) doesn't get the row deleted.
+    if (!uiState.pendingArtifactDeletes.has(artifactId)) return;
+    uiState.pendingArtifactDeletes.delete(artifactId);
+    try {
+      const payload = await api('/api/artifacts/delete', {
+        method: 'POST',
+        body: { artifactId },
+      });
+      applyBootstrap(payload);
+    } catch (err) {
+      uiState.error = String(err?.message || 'Failed to delete artifact.');
+      render();
+      setTimeout(() => { uiState.error = null; render(); }, 4000);
+    }
+  };
+
+  const timeoutId = setTimeout(commitDelete, UNDO_TOAST_DEFAULT_MS);
+  uiState.pendingArtifactDeletes.set(artifactId, { timeoutId });
+
+  showUndoToast({
+    message: `Deleted ${label}.`,
+    ms: UNDO_TOAST_DEFAULT_MS,
+    onUndo: () => {
+      const entry = uiState.pendingArtifactDeletes.get(artifactId);
+      if (!entry) return;
+      clearTimeout(entry.timeoutId);
+      uiState.pendingArtifactDeletes.delete(artifactId);
+      render();
+    },
+  });
+
+  render();
 }
 
 async function handleSaveConnectorConfig(form) {
@@ -9950,6 +10076,8 @@ function renderArtifactsPage() {
                           <button
                             class="artifact-card ${
                               active?.id === artifact.id ? 'is-active' : ''
+                            } ${
+                              uiState.pendingArtifactDeletes.has(artifact.id) ? 'is-pending-delete' : ''
                             }"
                             data-action="select-artifact"
                             data-artifact-id="${artifact.id}"
