@@ -51,6 +51,27 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
           model: config.model,
           systemPrompt: config.systemPrompt,
           codexAuth: config.codexAuth || null,
+          // Whisper transcription override fields. The connector detail
+          // form (`renderConnectorDetails` in desktop-ui/app.js) reads
+          // these as `selected.config.*`; without them the placeholder
+          // would always fall back to "Leave blank to use auto-detected
+          // key", masking that a key is actually saved. Same masking
+          // pattern as the main apiKey above (raw never leaves the
+          // server, UI sees prefix...suffix).
+          hasWhisperKey: Boolean(config.whisperApiKey),
+          maskedWhisperApiKey: config.whisperApiKey
+            ? `${config.whisperApiKey.slice(0, 4)}...${config.whisperApiKey.slice(-4)}`
+            : '(not set)',
+          whisperBaseUrl: config.whisperBaseUrl || '',
+          // MiniMax T2A V2 — same purpose. The form lets the user enter
+          // a cloned-voice id and a Group ID, plus test playback before
+          // committing. Mirrors the masked-key contract above.
+          hasMinimaxKey: Boolean(config.minimaxApiKey),
+          maskedMinimaxApiKey: config.minimaxApiKey
+            ? `${config.minimaxApiKey.slice(0, 4)}...${config.minimaxApiKey.slice(-4)}`
+            : '(not set)',
+          minimaxGroupId: config.minimaxGroupId || '',
+          minimaxVoiceId: config.minimaxVoiceId || '',
         };
         break;
       case 'projects':

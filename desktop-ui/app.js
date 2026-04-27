@@ -1149,7 +1149,11 @@ function renderTtsVoicePanel() {
           .filter(a => a.minimaxVoiceId)
           .map(a => ({ id: a.minimaxVoiceId, label: a.name, agentId: a.id }));
         const isMinimaxActive = engine === 'api' && ttsProvider === 'minimax';
-        const hasMinimaxKey = Boolean(uiState.bootstrap?.settings?.config?.minimaxApiKey);
+        // Read the masked-key flag exposed by the bootstrap; raw
+        // minimaxApiKey is never sent to the client (server returns only
+        // hasMinimaxKey + maskedMinimaxApiKey). Old code Boolean()'d the
+        // raw field which would always be undefined here.
+        const hasMinimaxKey = Boolean(uiState.bootstrap?.settings?.config?.hasMinimaxKey);
 
         if (!customVoices.length && !hasMinimaxKey) return '';
 
@@ -12574,25 +12578,26 @@ document.addEventListener('click', async event => {
         break;
       }
       case 'test-minimax-tts': {
-        // Pull values from the connector form sibling — user can test
-        // ad-hoc credentials before clicking Save. Status is rendered
-        // inline next to the button.
+        // Send whatever the user has typed; the server falls back to the
+        // saved config for any blank field (so the masked password input
+        // doesn't force users to retype an already-saved key). Status
+        // renders inline next to the button.
         const form = trigger.closest('form#connector-config-form');
         const status = form?.querySelector('[data-tts-test-status]');
         const fd = form ? new FormData(form) : null;
         const apiKey  = fd ? String(fd.get('minimaxApiKey')  || '').trim() : '';
         const groupId = fd ? String(fd.get('minimaxGroupId') || '').trim() : '';
         const voiceId = fd ? String(fd.get('minimaxVoiceId') || '').trim() : '';
-        // If the API key field is blank, the user means "use the saved
-        // one" — pull masked-key sentinel from bootstrap (the server side
-        // also has its own keepIfBlank, but the test endpoint takes
-        // explicit values, not config).
-        const savedKey = uiState.bootstrap?.settings?.config?.hasMinimaxKey;
+        // Pre-flight: at least one path (form or saved) must yield a key
+        // and a voice id. The server re-checks both via getResolvedConfig
+        // so the UI message stays advisory.
+        const savedKey   = Boolean(uiState.bootstrap?.settings?.config?.hasMinimaxKey);
+        const savedVoice = Boolean(uiState.bootstrap?.settings?.config?.minimaxVoiceId);
         if (!apiKey && !savedKey) {
-          if (status) status.textContent = 'Enter an API key first';
+          if (status) status.textContent = 'Enter or save a MiniMax API key first';
           break;
         }
-        if (!voiceId) {
+        if (!voiceId && !savedVoice) {
           if (status) status.textContent = 'Voice ID is required';
           break;
         }
@@ -12601,12 +12606,6 @@ document.addEventListener('click', async event => {
           const result = await api('/api/tts/test-minimax', {
             method: 'POST',
             body: {
-              // If the form left apiKey blank, fall back to a marker the
-              // server understands by passing the form-empty value through.
-              // The test endpoint requires explicit credentials — so for
-              // a "test the saved key" flow, we'd need the server to read
-              // the persisted key. Keeping this strict for now: if the
-              // user wants to test the saved key, they should re-enter it.
               apiKey,
               groupId,
               voiceId,

@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key
+
+- 上轮 Codex 给 C，3 条都对：
+  - 🔴 connector 表单读 `selected.config.*`（连接器 rollup），但我把 minimax 字段加到了 `settings.config`（bootstrap），保存后 UI 不回显——Whisper 字段其实也一直有同样的隐 bug；
+  - 🔴 已保存 key 时点 Test 按钮，前端送空 apiKey，server 必然 400；
+  - 🔵 TTS 面板 line 1152 读 `settings.config.minimaxApiKey`（raw），bootstrap 不暴露 raw key。
+- 修复：
+  - **`src/services/connector/connectorRollup.js → 'openai-compatible'`** 给 connector config 块加 8 个字段（4 minimax + 4 whisper）：`hasMinimaxKey/maskedMinimaxApiKey/minimaxGroupId/minimaxVoiceId` + `hasWhisperKey/maskedWhisperApiKey/whisperBaseUrl`。这才是 connector 表单 (`selected.config.*`) 的正确数据来源。`settings.config` 那边的同款字段保留，给 TTS 面板等其他 consumer 用。
+  - **`/api/tts/test-minimax` server fallback**：`apiKey/groupId/voiceId` 任一从表单空时，回退到 `getResolvedConfig().minimax*`。`process.env` 仍忽略——保持"测表单/保存值"的语义不变。前端预校验改成"表单 OR saved 至少有 key 和 voiceId"。
+  - **`desktop-ui/app.js:1152`** 改读 `bootstrap.settings.config.hasMinimaxKey`（masked-key 契约的正确消费者），删 raw key 错误读法。
+- Codex 反问回应：
+  - **Q1 Test 用 saved key**：是。server fallback 实现。
+  - **Q2 Group ID 必填**：否。空 group MiniMax 部分账号正常；server 接受空 group 不报错。
+- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测留给用户验证 connector 表单回显 + Test 按钮 saved key flow。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放
 
 - 用户要求："Model 或 Voice settings 里增加 MiniMax 配置区：API Key、Group ID、默认 Voice ID、测试朗读按钮。Agent 编辑页增加 minimaxVoiceId 字段，让 TTS 面板的'自定义语音'来源不再隐藏。"

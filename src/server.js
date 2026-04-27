@@ -867,18 +867,33 @@ const server = createServer(async (request, response) => {
     // the user hears the result immediately.
     if (url.pathname === '/api/tts/test-minimax' && request.method === 'POST') {
       const body = await readJsonBody(request);
-      const apiKey  = String(body?.apiKey  || '').trim();
-      const groupId = String(body?.groupId || '').trim();
-      const voiceId = String(body?.voiceId || '').trim();
-      const text    = String(body?.text || '你好，这是 MiniMax 测试朗读').slice(0, 200);
-      if (!apiKey || !voiceId) {
-        sendJson(response, 400, { ok: false, error: 'apiKey and voiceId are required' });
+      const formApiKey  = String(body?.apiKey  || '').trim();
+      const formGroupId = String(body?.groupId || '').trim();
+      const formVoiceId = String(body?.voiceId || '').trim();
+      const text        = String(body?.text || '你好，这是 MiniMax 测试朗读').slice(0, 200);
+
+      // Fallback to the persisted config when the form field is blank —
+      // lets users click "Test playback" without retyping a key they
+      // already saved (the password input is masked so blank means
+      // "use the saved one"). Group ID is optional; voice ID can come
+      // from either side. process.env is still ignored so this stays
+      // a "test the form/saved values" semantics, not "test the env".
+      const { getResolvedConfig } = await import('./config.js');
+      const cfg = await getResolvedConfig();
+      const apiKey  = formApiKey  || String(cfg.minimaxApiKey  || '').trim();
+      const groupId = formGroupId || String(cfg.minimaxGroupId || '').trim();
+      const voiceId = formVoiceId || String(cfg.minimaxVoiceId || '').trim();
+
+      if (!apiKey) {
+        sendJson(response, 400, { ok: false, error: 'No MiniMax API key — type one in the form, or save one first.' });
+        return;
+      }
+      if (!voiceId) {
+        sendJson(response, 400, { ok: false, error: 'voiceId is required' });
         return;
       }
       try {
         const { testMinimaxSynthesis } = await import('./tts.js');
-        // testMinimaxSynthesis explicitly ignores env vars so the user
-        // tests the values they just typed, not a stale MINIMAX_API_KEY.
         const result = await testMinimaxSynthesis(text, { apiKey, groupId, voiceId });
         if (!result) {
           sendJson(response, 502, { ok: false, error: 'MiniMax synthesis returned null — check API key, Group ID, and voice ID.' });
