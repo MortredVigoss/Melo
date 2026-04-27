@@ -862,6 +862,11 @@ const server = createServer(async (request, response) => {
     // ── Native TTS via macOS `say` command (plays audio directly on host) ────
     // Uses `say` without -o so audio plays through system speakers immediately.
     // Responds immediately; a separate /api/tts/native-stop can kill the process.
+    //
+    // The UI now passes an explicit `voice` parameter (selected from
+    // /api/tts/say-voices). Falls back to the legacy lang→voice heuristic
+    // (Tingting/Yuna/Kyoko) when no explicit voice is supplied — preserves
+    // backward-compatible behavior for any caller that hasn't migrated.
     if (url.pathname === '/api/tts/native' && request.method === 'POST') {
       const body = await readJsonBody(request);
       const text = String(body?.text || '').trim().slice(0, 400);
@@ -870,9 +875,14 @@ const server = createServer(async (request, response) => {
         return;
       }
       const { spawn } = await import('node:child_process');
+      const explicitVoice = String(body?.voice || '').trim();
       const lang = String(body?.lang || '').toLowerCase();
       const args = [];
-      if (lang.startsWith('zh') || lang.startsWith('cmn')) {
+      if (explicitVoice) {
+        // UI selected a specific voice from the macOS voice list — trust it.
+        // `say -v <name>` is happy with any output of `say -v '?'`.
+        args.push('-v', explicitVoice);
+      } else if (lang.startsWith('zh') || lang.startsWith('cmn')) {
         args.push('-v', 'Tingting');
       } else if (lang.startsWith('ko')) {
         args.push('-v', 'Yuna');
@@ -889,6 +899,46 @@ const server = createServer(async (request, response) => {
       globalThis._meloSayProcess = proc;
       proc.on('exit', () => { if (globalThis._meloSayProcess === proc) globalThis._meloSayProcess = null; });
       sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    // ── List macOS `say` voices ──────────────────────────────────────────────
+    // Parses `say -v '?'` output into [{ name, lang, sample }] so the UI can
+    // populate the macOS voice dropdown with the actual voices installed on
+    // this Mac (instead of recycling the browser's speechSynthesis list,
+    // which is what the legacy "System voice" UI did and was confusingly
+    // ineffective). Returns an empty list on non-macOS hosts.
+    if (url.pathname === '/api/tts/say-voices' && request.method === 'GET') {
+      try {
+        const { execFile } = await import('node:child_process');
+        const { promisify } = await import('node:util');
+        const execFileAsync = promisify(execFile);
+        const { stdout } = await execFileAsync('/usr/bin/say', ['-v', '?'], {
+          timeout: 5000,
+          maxBuffer: 1024 * 1024,
+        });
+        // Format: `<Name>  <pad>  <lang_LOCALE>  # <sample>`
+        // Name can contain spaces (e.g. "Reed (English (US))"), so split on
+        // the locale token (xx_YY) — that's the stable anchor.
+        const voices = String(stdout || '')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean)
+          .map(line => {
+            const match = line.match(/^(.+?)\s+([a-z]{2}(?:[_-][A-Z]{2,4})?)\s*#\s*(.*)$/);
+            if (!match) return null;
+            return {
+              name: match[1].trim(),
+              lang: match[2],
+              sample: match[3].trim(),
+            };
+          })
+          .filter(Boolean);
+        sendJson(response, 200, { ok: true, voices });
+      } catch (err) {
+        // Non-macOS host or `say` missing — empty list, not an error.
+        sendJson(response, 200, { ok: true, voices: [], reason: err?.message || 'say unavailable' });
+      }
       return;
     }
 

@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-04-27 09:30 — TTS 拆清楚三种声音来源：Browser / macOS / Edge / MiniMax / API
+
+- 用户审计："System voice"实际是 macOS `say`，但 dropdown 显示 browser `speechSynthesis` voices——选了基本不生效（native path 优先）。要求把"System voice"拆成两个独立选项：
+  - **Browser voice**：用 `speechSynthesis`，下拉选什么真生效
+  - **macOS voice**：走 `/usr/bin/say`，下拉显示 macOS 实际安装的 voice（不是 browser 的）
+  - Edge / MiniMax / API 保持独立
+- 修改：
+  - `src/server.js`：
+    - 新加 `GET /api/tts/say-voices` 端点：跑 `/usr/bin/say -v '?'`，正则 `/^(.+?)\s+([a-z]{2}(?:[_-][A-Z]{2,4})?)\s*#\s*(.*)$/` 解析每行成 `{name, lang, sample}`，非 macOS 主机返空数组（不报错）。本机实测 184 行 → 183 voices 解析（zh:19, ja:9, ko:9, en + 其他若干）。
+    - `POST /api/tts/native` 支持显式 `voice` 参数：UI 选了具体 voice 时用它；没选时回退到旧的 lang→voice heuristic（Tingting/Yuna/Kyoko），保 backward compat。
+  - `desktop-ui/app.js`：
+    - uiState 加 `ttsMacosVoiceName`（localStorage 持久化）+ `ttsMacosVoices` + `ttsMacosVoicesLoaded`。
+    - 把 `renderTtsVoicePanel` 里 "System voice" 的 radio 拆成 **macOS voice** + **Browser voice** 两个独立 radio，各自下拉：
+      - macOS 下拉用 `/api/tts/say-voices` 拿到的真 macOS voice 列表（按 en 优先 / 其他按 lang 字母排序），首次开 panel 时 lazy load。
+      - Browser 下拉照旧（`speechSynthesis.getVoices()`）。
+    - `speakText` / `_streamTtsPushChunk` / `_streamTtsFlush` / `_streamTtsEnqueue` 4 个 dispatch 路由全改：`useMacos` 走 `/api/tts/native` 加 `voice: ttsMacosVoiceName`；`useBrowser` 走 `speakWithBrowser`（speechSynthesis）；`useApi` 不变。`auto` 仍 fallback 到 macOS（保 backward compat）。
+    - `select-tts-macos-voice` action handler：写入 uiState + localStorage。
+    - `loadMacosVoices()` 异步抓 voice 列表 + render；标 `Loaded` flag 防 panel 反复开关重复抓。
+- **行为变化**：旧 `'browser'` engine 实际上跑的是 macOS say。新版本下，这些用户会真正落到 speechSynthesis（标签所写）。如果要恢复旧行为，去 panel 选 "macOS voice"——dropdown 还能选具体 voice，比之前还好。
+- 验证：`node --check` 全过；regression 全套 **365/365 全绿**；voice list parser 单跑实测 184 → 183 voices 解析正确。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 09:00 — Codex B 跟进：OCR 受控测试 + ESRCH 严格断言
 
 - 上轮 push 后 Codex 给 B 两条 ⚪：

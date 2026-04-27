@@ -184,11 +184,19 @@ const uiState = {
   ttsSpeakingMessageId: null,
   ttsSpeakingLoadingId: null,  // button is loading (synthesis pending), not yet playing
   ttsVoicePanelOpen: false,
-  // 'auto' = try API then fallback to browser; 'api' = API only; 'browser' = browser only
+  // 'auto' = try API then fallback to browser; 'api' = API only;
+  // 'browser' = speechSynthesis only (in-page, dropdown picks browser voice);
+  // 'macos'   = /usr/bin/say only (host speakers, dropdown picks macOS voice).
+  // Legacy values 'browser' from old builds may have meant either path
+  // depending on whether /api/tts/native succeeded — settings panel now
+  // disambiguates explicitly.
   ttsEngine: localStorage.getItem('melo-tts-engine') || 'auto',
   ttsApiVoice: localStorage.getItem('melo-tts-api-voice') || 'nova',
   ttsBrowserVoiceName: localStorage.getItem('melo-tts-browser-voice') || '',
   ttsBrowserVoices: [],
+  ttsMacosVoiceName: localStorage.getItem('melo-tts-macos-voice') || '',
+  ttsMacosVoices: [],   // populated lazily on panel open via /api/tts/say-voices
+  ttsMacosVoicesLoaded: false,
   ttsEdgeVoice: localStorage.getItem('melo-tts-edge-voice') || '',
   ttsCustomVoiceId: localStorage.getItem('melo-tts-custom-voice-id') || '',
   // Active chat agent — which agent handles new chats from the home screen
@@ -1021,6 +1029,32 @@ function renderTtsVoicePanel() {
     </button>
   `;
 
+  // macOS voice options — lazy-loaded via /api/tts/say-voices when the
+  // panel first opens. Until then, show a placeholder so the radio still
+  // renders and reflects the user's persisted selection.
+  const macosVoices = uiState.ttsMacosVoices;
+  const macosVoiceOptions = (() => {
+    if (!uiState.ttsMacosVoicesLoaded) {
+      return `<option value="">Loading…</option>`;
+    }
+    if (macosVoices.length === 0) {
+      return `<option value="">(no /usr/bin/say voices found)</option>`;
+    }
+    // Group by language family — en first (most users), then everything
+    // else alphabetised by lang code.
+    const enMac = macosVoices.filter(v => v.lang.startsWith('en'));
+    const otherMac = macosVoices.filter(v => !v.lang.startsWith('en'))
+      .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+    const opt = v =>
+      `<option value="${escapeHtml(v.name)}" ${uiState.ttsMacosVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
+    return [
+      `<option value="">Auto-detect by language</option>`,
+      ...enMac.map(opt),
+      otherMac.length ? `<option disabled>──────────</option>` : '',
+      ...otherMac.map(opt),
+    ].join('');
+  })();
+
   return `
     <div class="tts-voice-panel">
       <div class="tts-panel-header">
@@ -1037,8 +1071,23 @@ function renderTtsVoicePanel() {
       <div class="tts-panel-section-label">Voice source</div>
 
       ${radioRow(
-        'System voice',
-        'Fast · macOS built-in · no setup needed',
+        'macOS voice',
+        'System speakers · /usr/bin/say · no setup',
+        engine === 'macos',
+        'data-action="set-tts-engine"', 'data-engine="macos"'
+      )}
+
+      ${engine === 'macos' ? `
+        <div class="tts-panel-sub">
+          <select class="tts-voice-select" data-action="select-tts-macos-voice">
+            ${macosVoiceOptions}
+          </select>
+        </div>
+      ` : ''}
+
+      ${radioRow(
+        'Browser voice',
+        'In-page · speechSynthesis · WebKit voices',
         engine === 'browser',
         'data-action="set-tts-engine"', 'data-engine="browser"'
       )}
@@ -3969,6 +4018,21 @@ function _playAudioBuffer(base64, mimeType, messageId) {
   audio.play().catch(cleanup(audio));
 }
 
+async function loadMacosVoices() {
+  if (uiState.ttsMacosVoicesLoaded) return;
+  try {
+    const result = await api('/api/tts/say-voices', { method: 'GET' });
+    const voices = Array.isArray(result?.voices) ? result.voices : [];
+    uiState.ttsMacosVoices = voices;
+    uiState.ttsMacosVoicesLoaded = true;
+    render();
+  } catch {
+    uiState.ttsMacosVoices = [];
+    uiState.ttsMacosVoicesLoaded = true;  // mark loaded even on failure so we don't retry every panel open
+    render();
+  }
+}
+
 function speakWithBrowser(text, messageId = null) {
   if (!globalThis.speechSynthesis) return false;
   const utterance = new SpeechSynthesisUtterance(text);
@@ -4124,9 +4188,10 @@ function _streamTtsPushChunk(delta) {
   _streamTts.buffer += cleaned;
 
   const isApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
+  const isMacos = uiState.ttsEngine === 'macos';
   const isBrowser = uiState.ttsEngine === 'browser';
 
-  // Flush complete sentences immediately for real-time speech (both API and browser)
+  // Flush complete sentences immediately for real-time speech (API, macOS say, or browser).
   let match;
   while ((match = _SENTENCE_BREAK.exec(_streamTts.buffer)) !== null) {
     const endIdx = match.index + match[0].length;
@@ -4134,11 +4199,16 @@ function _streamTtsPushChunk(delta) {
     _streamTts.buffer = _streamTts.buffer.slice(endIdx);
     const sentence = _stripUrlsForTts(raw);
     if (sentence.length >= 4) {
-      if (isBrowser) {
+      if (isMacos) {
         const lang = _detectLang(sentence);
-        api('/api/tts/native', { method: 'POST', body: { text: sentence, lang } }).catch(() => {});
+        api('/api/tts/native', {
+          method: 'POST',
+          body: { text: sentence, lang, voice: uiState.ttsMacosVoiceName },
+        }).catch(() => {});
+      } else if (isBrowser) {
+        // speechSynthesis queues utterances naturally — no extra orchestration.
+        speakWithBrowser(sentence);
       } else if (isApi) {
-        // Queue sentence for parallel synthesis + ordered playback (no gap between sentences)
         _streamTtsEnqueue(sentence);
         _streamTts.sentToQueue = true;
         _streamTts.queuedChars += sentence.length;
@@ -4159,6 +4229,7 @@ async function _streamTtsFlush() {
   _oneTimeAutoSpeak = false;
 
   const useApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
+  const useMacos = uiState.ttsEngine === 'macos';
   const useBrowser = uiState.ttsEngine === 'browser';
 
   if (useApi) {
@@ -4198,17 +4269,24 @@ async function _streamTtsFlush() {
         body: { text: input, voice: uiState.ttsApiVoice },
       }).catch(() => {});
     }
-  } else if (useBrowser) {
-    // Send any remaining tail to native TTS
+  } else if (useMacos) {
     if (tail.length >= 2) {
       const lang = _detectLang(tail);
-      api('/api/tts/native', { method: 'POST', body: { text: tail.slice(0, 400), lang } }).catch(() => {});
+      api('/api/tts/native', {
+        method: 'POST',
+        body: { text: tail.slice(0, 400), lang, voice: uiState.ttsMacosVoiceName },
+      }).catch(() => {});
+    }
+  } else if (useBrowser) {
+    if (tail.length >= 2) {
+      speakWithBrowser(tail.slice(0, 400));
     }
   }
 }
 
 function _streamTtsEnqueue(sentence) {
   const useApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
+  const useMacos = uiState.ttsEngine === 'macos';
   const useBrowser = uiState.ttsEngine === 'browser';
 
   if (useApi) {
@@ -4216,10 +4294,14 @@ function _streamTtsEnqueue(sentence) {
       method: 'POST',
       body: { text: sentence, voice: uiState.ttsApiVoice },
     }).catch(() => {});
-  } else if (useBrowser) {
-    // For system voice, queue via native say (sequential fire-and-forget)
+  } else if (useMacos) {
     const lang = _detectLang(sentence);
-    api('/api/tts/native', { method: 'POST', body: { text: sentence, lang } }).catch(() => {});
+    api('/api/tts/native', {
+      method: 'POST',
+      body: { text: sentence, lang, voice: uiState.ttsMacosVoiceName },
+    }).catch(() => {});
+  } else if (useBrowser) {
+    speakWithBrowser(sentence);
   }
 }
 
@@ -4230,7 +4312,10 @@ async function speakText(text, messageId = null) {
   if (!input) return;
 
   const useApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
-  const useBrowser = uiState.ttsEngine === 'browser' || uiState.ttsEngine === 'auto';
+  // 'auto' falls back to macOS say (current historical behavior); explicit
+  // 'macos' / 'browser' choices are honoured strictly.
+  const useMacos = uiState.ttsEngine === 'macos' || uiState.ttsEngine === 'auto';
+  const useBrowser = uiState.ttsEngine === 'browser';
 
   if (useApi) {
     try {
@@ -4274,14 +4359,14 @@ async function speakText(text, messageId = null) {
     }
   }
 
-  // System voice: use macOS `say` via Node server — plays through host speakers directly,
-  // bypasses WKWebView autoplay restrictions entirely.
-  if (useBrowser || uiState.ttsEngine === 'browser') {
+  // macOS voice: use /usr/bin/say via Node server — plays through host
+  // speakers directly, bypasses WKWebView autoplay restrictions entirely.
+  if (useMacos) {
     try {
       const lang = _detectLang(input);
       const result = await api('/api/tts/native', {
         method: 'POST',
-        body: { text: input.slice(0, 400), lang },
+        body: { text: input.slice(0, 400), lang, voice: uiState.ttsMacosVoiceName },
         signal: AbortSignal.timeout(30_000),
       });
       if (result?.ok) {
@@ -4303,9 +4388,17 @@ async function speakText(text, messageId = null) {
     } catch (err) {
       console.warn('Native TTS failed:', err?.message || err);
     }
-    // Fallback: browser speechSynthesis
+    // Macos failed (no /usr/bin/say, e.g. Linux) — fall back to speechSynthesis.
     if (!speakWithBrowser(input, messageId)) {
       showError('TTS is not available in this environment.');
+    }
+    return;
+  }
+
+  // Explicit Browser voice — speechSynthesis only. No server involvement.
+  if (useBrowser) {
+    if (!speakWithBrowser(input, messageId)) {
+      showError('Browser speech synthesis is not available in this environment.');
     }
     return;
   }
@@ -12276,6 +12369,12 @@ document.addEventListener('click', async event => {
         break;
       case 'toggle-tts-autoplay':
         uiState.ttsVoicePanelOpen = !uiState.ttsVoicePanelOpen;
+        // Lazy-load macOS voices the first time the panel opens so users
+        // see the actual /usr/bin/say voices in the dropdown rather than
+        // the (irrelevant) browser speechSynthesis list.
+        if (uiState.ttsVoicePanelOpen && !uiState.ttsMacosVoicesLoaded) {
+          loadMacosVoices();
+        }
         render();
         break;
       case 'toggle-demon-mode':
@@ -12665,6 +12764,12 @@ document.addEventListener('change', async event => {
     if (target.dataset.action === 'select-tts-browser-voice') {
       uiState.ttsBrowserVoiceName = target.value;
       localStorage.setItem('melo-tts-browser-voice', target.value);
+      return;
+    }
+
+    if (target.dataset.action === 'select-tts-macos-voice') {
+      uiState.ttsMacosVoiceName = target.value;
+      localStorage.setItem('melo-tts-macos-voice', target.value);
       return;
     }
 
