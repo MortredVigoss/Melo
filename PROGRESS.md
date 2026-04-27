@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced
+
+- 用户要求："MCP、plugins、background-tasks 先不要全塞主 UI。建议做一个 Advanced / Runtime 页面，明确标注实验性/开发者功能。里面只放查看状态、reload、disconnect、kill task 这种安全操作，新增/编辑配置可以晚一点做。"
+- audit（详见上一刀提案）：MCP 双入口（Customize → Connectors 详情面板 external-mcp 分支 + Customize → Runtime 整页 + Code 页面侧栏 MCP shelf + Customize → Connectors 顶部 Create 表单）；plugins 后端有 hook 系统但 UI 完全没暴露；background-tasks Code 页面 task panel 在用，`/api/background-tasks/{run,status,kill,list}` 端点存在但 UI 没消费 list/kill。**关键提醒**：openai-compatible LLM provider 跟 external-mcp 共享 Customize → Connectors，LLM 配置不能藏。
+- 走方案 B（中等迁移）：
+  - **新增 `renderAdvancedPage()`**（4 个 subsection）：External MCP connectors（list + Ping refresh）/ CLI stdio MCP servers（list + Reload all + Disconnect by name）/ Plugins（list + hooks 只读）/ Background shell tasks（list + Kill on running）。顶部 `Experimental` chip + 描述文字"安全操作 + 配置编辑延后"。
+  - **uiState.advanced 缓存** + `refreshAdvancedStatus()` 三端点 `Promise.all`（容错：单端点失败 → partial-load 提示，三端点全失败 → 阻塞展示）。
+  - **侧栏改造**：Customize sub-section 列表 Runtime → Advanced；旧 `selectedCustomizeSection: 'runtime'` 在 renderCustomizePage 入口 coerce 成 `'advanced'`（持久化设置不破老用户）。
+  - **Customize → Connectors 拆分**：external-mcp 从列表筛掉 + renderConnectorDetails 的 external-mcp 分支换成"已迁至 Advanced"提示卡 + 顶部 Create 表单删除。LLM provider (openai-compatible) 配置原位保留。
+  - **Code 页面**：删 "MCP-style connectors" inspector card + 删 External tools inspector card；Task panel 保留（agent lane runner 是日常工作流，跟"后台任务管理"不是一回事）。
+  - **slash command + palette**：`/mcp browse` + `open-runtime` palette 命令都改路由到 `selectedCustomizeSection: 'advanced'`。
+  - **后端**：`/api/mcp/{servers,disconnect,reload}` + `/api/background-tasks/{list,kill}` + `/api/plugins` 全部已存在，**零后端改动**。
+- 后续 cleanup：删 684 行死代码——`renderRuntimeBrowserPanes` (188 行) + `renderExternalConnectorShelf` + `renderExternalToolForms/Results` + `renderExternalConnectorCreateCard` + `selectedRuntimeConnector/Entry` + `syncRuntimeSelection` + `handleLoadRuntimePreview` + `handleCreateExternalConnector/UpdateExternalConnector/RemoveExternalConnector/InvokeExternalTool` + 6 个 dead action case + `uiState.runtimeSelection/runtimePreview/externalToolInputs`。
+- 验证：`node --check` 全过；regression 全套 **1057/1057 全绿**；UI 手测留给用户验证 Customize → Advanced 渲染 + Refresh / Reload all / Disconnect / Kill task 功能。
+- Codex 前置 review 评 **B**（"实现正确，缺少覆盖" + ⚪ 建议补 smoke/E2E 覆盖 advanced 导航 / 关键按钮 / API 映射，desktop-ui 没现成的 E2E 框架，留 follow-up）；cleanup commit 等 review。
+- 提交哈希：`e9eb5b6`（feat 主刀） + `40c747b`（chore cleanup）。
+
 ## 2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光
 
 - 用户反馈 + 截图：Customize → Agents → 金冬天 详情面板里，"Operator" preset 卡（包括 `focused` chip 和 Operator 标题）**穿出**外层 detail 卡的圆角下边框继续往下铺。要求审查整个 UI 里其他类似"框互相叠加"的位置。
@@ -51,42 +68,12 @@
 - 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
 - 提交哈希：`ab06fca`（首版） + 后跟一刀 fix grid overflow at 1280px。
 
-## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
-
-- 上轮 Codex 给 C #15：localStorage 缓存的 `ttsCustomVoiceId` 可能 stale（用户从 agent 删了那个 voice、又保存了新的 connector default）；我之前的 priority chain 把 cache 放第一，stale cache 会赢过 fresh save，**激活时把 saved default 改回 stale cache 值**。
-- 修复（pure function 抽离 + 单测锁住）：
-  - **新建 `src/shared/minimaxVoiceResolver.js`** export `resolveActiveMinimaxVoiceId({ cachedId, agentVoiceIds, savedDefault })`：
-    - 构建 `validSet = { agent voices } ∪ { saved default }`
-    - 优先级：cache 命中 validSet → cache；否则 saved default；否则首个 agent voice；都没 → `voiceId: ''` + caller refuse
-    - 返 `{ voiceId, droppedStaleCache }`，flag 告诉 caller 清 localStorage
-  - `src/server.js` 加 `/shared/minimaxVoiceResolver.js` 静态路由（仿 `/shared/urlDetector.js`）。
-  - `desktop-ui/app.js`：`activate-minimax-voice` 改成 import + 调用 resolver；`droppedStaleCache: true` 时清掉 `uiState.ttsCustomVoiceId` + `localStorage.removeItem`。
-- 测试新增 13 个：
-  - `src/shared/minimaxVoiceResolver.test.js` 10 个 case：cache valid (agent / default 各一) / cache stale + saved default → 用 default + drop / cache stale + agents → 首 agent + drop / no cache + saved default / no cache + 仅 agents / 完全空 / cache stale 但其他都空 / 空白 sanitize / 无参默认。
-  - `src/desktopStore.minimaxVoiceConfig.test.js` 3 个 case 锁住 SECRET_LIKE 防擦逻辑：blank `minimaxVoiceId` 保留 / 非空覆盖 / blank `minimaxApiKey + minimaxGroupId` 保留（顺手锁 user 选 Q2 = 保留语义）。
-  - **Bisect 验证** SECRET_LIKE：临时把 `'minimaxVoiceId'` 从列表移除 → blank-preserve 测试 fail 1；恢复 → 3/3 绿。
-- Codex 反问回应：
-  - **Q1 stale cache 自动清**：是。`droppedStaleCache: true` flag + caller `localStorage.removeItem`。
-  - **Q2 connector Default 优先于 cache**：cache **校验后** 才优先；不在 validSet 时 saved default 兜底。
-- 验证：`node --check` 全过；regression 全套 **400/400 全绿**（387 + 10 + 3）；UI 手测：(a) 人工设置 stale localStorage 后激活应自动切到 saved default 并清缓存；(b) 完全无配置时激活应 toast 错误。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID
-
-- 上轮 Codex 给 C：saved key 存在但无 agent voice 也无 ttsCustomVoiceId 时，点 TTS 面板的"自定义语音"激活，会送空 `minimaxVoiceId` 给 server，**擦掉 connector 里刚保存的 Default Voice ID**。
-- 修复（双层防护）：
-  - **client (`desktop-ui/app.js`) `activate-minimax-voice` 重写**：voiceId 解析按优先级 ttsCustomVoiceId → 第一个 agent.minimaxVoiceId → **bootstrap.settings.config.minimaxVoiceId（新 fallback）**。三者都空 → `showError("Configure a MiniMax voice first — ...")`，不激活、不发 POST。这是主修复。
-  - **server (`src/desktopStore.js`) `SECRET_LIKE_CONFIG_KEYS`**：把 `minimaxVoiceId` 加进列表（用户选 Q2 = 保留），form 提交空字符串 = "no change"。Belt-and-suspenders：万一 client 漏防护，server 也不会擦。语义换法：用户清空 voiceId 字段保存现在保留旧值；要解绑得换不同值或将来加显式 Clear 按钮。
-- Codex 反问回应：
-  - **Q1 connector Default Voice ID 当 fallback**：是。activate 优先链最后一档读 saved default。
-  - **Q2 用户清空 voiceId 字段是清除还是保留**：保留（用户选）。`SECRET_LIKE_CONFIG_KEYS` 加 `minimaxVoiceId` 防意外擦掉。
-- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测：(a) 没 agent voice + saved default → 激活应直接用 saved default + 不擦；(b) 三者都空 → toast 错误提示。
-- 提交哈希：（待 commit）
-
-## 归档摘要（2026-04-27 11:30 之前的所有条目）
+## 归档摘要（2026-04-27 12:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default** —— `src/shared/minimaxVoiceResolver.js` 抽出纯函数（cache 校验后才优先；stale cache 命中 fallback 链 + drop flag 清 localStorage）；10 个 unit case + 3 个 SECRET_LIKE 防擦 case，bisect 验证。（待 commit）
+- **2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID** —— client 优先链加 `bootstrap.settings.config.minimaxVoiceId` fallback + 三者都空时 toast 错误不发 POST；server `SECRET_LIKE_CONFIG_KEYS` 加 `minimaxVoiceId` 兜底防意外擦。（待 commit）
 - **2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key** —— `connectorRollup.js` 给 connector config 加 4+4 字段（minimax/whisper），TTS 面板改读 `hasMinimaxKey`，`/api/tts/test-minimax` 表单空字段 fallback 到 saved。（待 commit）
 - **2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放** —— bootstrap 暴露 `hasMinimaxKey/maskedMinimaxApiKey/minimaxGroupId/minimaxVoiceId`；server 加 `POST /api/tts/test-minimax`；connector 表单加 4 input + Test 按钮；agent 编辑页加 minimaxVoiceId 字段。（待 commit）
 - **2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报** —— Desktop app 下 streaming TTS 累积成末段单播（WKWebView bridge 不支持 FIFO 队列）；真浏览器仍逐句 enqueue speechSynthesis。（待 commit）
