@@ -337,17 +337,72 @@ test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', 
   }
 });
 
+// Codex B finding (#10 follow-up): OCR is now backed by a Tesseract worker
+// that we can `.terminate()` on abort, so a hung OCR pass no longer pins a
+// CPU core after the orchestrator returns. This test feeds a real image
+// data URL through extractImageContent with a pre-aborted signal and asserts
+// the function bails BEFORE invoking Tesseract — proving the wiring exists.
+// The bisect path (remove the early-abort check) regresses elapsed because
+// the function would proceed into createWorker which on a cold cache takes
+// many seconds.
+test('orchestrator abort: pre-aborted signal short-circuits OCR worker creation', async () => {
+  const { extractImageContent } = await import('./extractors/imageExtractor.js');
+  const ac = new AbortController();
+  ac.abort();
+
+  // Real-ish PNG header + padding to clear MIN_OCR_BYTES (1024). The exact
+  // bytes don't matter — we never reach Tesseract.recognize.
+  const buf = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    Buffer.alloc(2000, 0xFF),
+  ]);
+  const dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
+
+  const start = Date.now();
+  const result = await extractImageContent(
+    { url: dataUrl, fileName: 'test.png', mimeType: 'image/png' },
+    { signal: ac.signal },
+  );
+  const elapsed = Date.now() - start;
+
+  assert.equal(result, null);
+  // Tesseract.createWorker on a cold cache takes 5-30s downloading language
+  // data. If we bailed in <500ms we definitely never got there.
+  assert.ok(elapsed < 500, `pre-abort should bail in <500ms, took ${elapsed}ms`);
+});
+
 test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
   // Stand up a fake yt-dlp that exits 0 fast for --version (so hasYtDlp()
-  // resolves true) but hangs forever on real metadata calls. If the
-  // orchestrator's signal doesn't reach runProcess's spawn-level signal
-  // listener, the test will hit the test-timeout (default 30s).
+  // resolves true) but hangs forever on real metadata calls. The fake
+  // writes marker files at each entry point so we can prove (anti-false-
+  // green) that:
+  //   - the metadata path was actually reached (not short-circuited),
+  //   - the spawned child PID was killed by SIGKILL (not allowed to finish
+  //     naturally — no "completed" marker, kill -0 fails after abort).
+  // Without these markers, an elapsed-only assertion would pass even if
+  // the fake binary never ran (e.g., routeExtraction failed earlier).
   const fakeBinDir = await mkdtemp(join(tmpdir(), 'melo-fake-ytdlp-'));
   const fakeYtDlp = join(fakeBinDir, 'fake-yt-dlp');
-  const { writeFile, chmod } = await import('node:fs/promises');
+  const versionMarker = join(fakeBinDir, 'version-marker');
+  const metadataMarker = join(fakeBinDir, 'metadata-marker');
+  const completedMarker = join(fakeBinDir, 'completed-marker');
+  const pidFile = join(fakeBinDir, 'metadata-pid');
+  const { writeFile, chmod, readFile, stat } = await import('node:fs/promises');
   await writeFile(
     fakeYtDlp,
-    '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo "1.0.0"; exit 0; fi\nsleep 99999\n',
+    [
+      '#!/bin/bash',
+      `if [[ "$1" == "--version" ]]; then`,
+      `  echo "1.0.0"; touch "${versionMarker}"; exit 0`,
+      `fi`,
+      // Real metadata invocation: write PID + marker, then hang. If we
+      // ever exit naturally (i.e., abort failed) the completed marker
+      // gets written.
+      `echo "$$" > "${pidFile}"`,
+      `touch "${metadataMarker}"`,
+      `sleep 99999`,
+      `touch "${completedMarker}"`,  // unreachable unless SIGKILL fails
+    ].join('\n') + '\n',
     { mode: 0o755 },
   );
   await chmod(fakeYtDlp, 0o755);
@@ -355,8 +410,6 @@ test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
   const ORIG_BIN = process.env.MELO_YTDLP_BIN;
   process.env.MELO_YTDLP_BIN = fakeYtDlp;
 
-  // Reset the yt-dlp availability cache so our fake binary's --version
-  // probe can be the canonical "ready" answer for this test run.
   const { _resetYtDlpAvailabilityForTests } = await import('./extractors/youtubeExtractor.js');
   if (typeof _resetYtDlpAvailabilityForTests === 'function') {
     _resetYtDlpAvailabilityForTests();
@@ -371,10 +424,6 @@ test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
       attachments: [{
         id: 'y1',
         kind: 'video',
-        // Use a non-YouTube video-platform URL so routeExtraction goes
-        // through the universal yt-dlp fallback, not the YouTube-specific
-        // oembed branch (which may succeed on real youtube.com network calls
-        // and bypass our fake binary).
         url: 'https://www.bilibili.com/video/BV1234567890',
         fileName: '',
         mimeType: '',
@@ -385,10 +434,28 @@ test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
     await enrichMessageWithMediaContext(message, {});
     const elapsed = Date.now() - start;
 
-    // Without signal threading the fake yt-dlp would sleep 99999s; we'd
-    // hit the 30s yt-dlp internal timeout at best. With it, abort SIGKILLs
-    // the child near 1500ms.
     assert.ok(elapsed < 4000, `yt-dlp abort took ${elapsed}ms; expected < 4000ms`);
+
+    // Anti-false-green guards:
+    //   1. --version probe ran (otherwise hasYtDlp() returned false and the
+    //      metadata branch never started).
+    await stat(versionMarker);  // throws if missing → test fails
+    //   2. metadata invocation actually reached (otherwise the abort was
+    //      observed at some earlier stage, not at runProcess level).
+    await stat(metadataMarker);
+    //   3. NO "completed" marker — if SIGKILL didn't land, the bash script
+    //      would eventually run `touch completedMarker` after `sleep 99999`
+    //      finishes naturally. Allowing 100ms slack post-abort for the
+    //      filesystem to settle.
+    await new Promise(r => setTimeout(r, 100));
+    await assert.rejects(stat(completedMarker), /ENOENT/);
+    //   4. The metadata-stage child PID is dead. `kill -0 <pid>` returns 0
+    //      if alive, throws if dead/missing. `process.kill(pid, 0)` is the
+    //      Node equivalent. We expect it to throw.
+    const pidText = await readFile(pidFile, 'utf8');
+    const pid = parseInt(pidText.trim(), 10);
+    assert.ok(Number.isFinite(pid) && pid > 0, `pid file should contain a PID, got: ${pidText}`);
+    assert.throws(() => process.kill(pid, 0), /ESRCH|EPERM/, `pid ${pid} must be dead after abort`);
   } finally {
     if (ORIG_BIN === undefined) delete process.env.MELO_YTDLP_BIN;
     else process.env.MELO_YTDLP_BIN = ORIG_BIN;

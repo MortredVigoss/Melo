@@ -24,15 +24,13 @@ export async function extractImageContent(attachment, { modelSupportsVision = fa
     if (!buffer || buffer.length < MIN_OCR_BYTES) {
       return null;
     }
-    // Tesseract.recognize doesn't accept AbortSignal natively, so we can
-    // only short-circuit before invoking it. An OCR pass that's already
-    // started will run to completion (typical 1-5s on small images).
     if (signal?.aborted) return null;
 
-    const { default: Tesseract } = await import('tesseract.js');
-    const { data } = await Tesseract.recognize(buffer, OCR_LANGS, {
-      logger: () => {},
-    });
+    // Run OCR via a Tesseract worker so an external abort can `terminate()`
+    // mid-recognition. The simpler `Tesseract.recognize()` API doesn't
+    // accept a signal, so a hung OCR pass would otherwise pin a CPU core
+    // for ~5-30s after the orchestrator already returned (Codex B finding).
+    const data = await runOcrWithAbort(buffer, signal);
     const text = String(data?.text || '').trim();
     if (!text) {
       return null;
@@ -50,5 +48,46 @@ export async function extractImageContent(attachment, { modelSupportsVision = fa
     };
   } catch {
     return null;
+  }
+}
+
+async function runOcrWithAbort(buffer, signal) {
+  const { default: Tesseract } = await import('tesseract.js');
+  if (signal?.aborted) return null;
+
+  // createWorker returns a worker we can `.terminate()` to kill an
+  // in-flight recognition. The 4th arg's logger no-ops the loud progress
+  // events Tesseract emits.
+  const worker = await Tesseract.createWorker(OCR_LANGS, 1, { logger: () => {} });
+  let terminated = false;
+  const terminateOnce = async () => {
+    if (terminated) return;
+    terminated = true;
+    try { await worker.terminate(); } catch {}
+  };
+
+  if (signal?.aborted) {
+    await terminateOnce();
+    return null;
+  }
+  let onAbort = null;
+  if (signal) {
+    onAbort = () => { terminateOnce(); };
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  try {
+    const { data } = await worker.recognize(buffer);
+    return data;
+  } catch {
+    return null;
+  } finally {
+    if (signal && onAbort) {
+      try { signal.removeEventListener('abort', onAbort); } catch {}
+    }
+    if (!terminated) {
+      // Natural completion — clean up worker.
+      await terminateOnce();
+    }
   }
 }

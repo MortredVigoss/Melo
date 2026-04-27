@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-27 08:00 — Codex B 跟进：OCR 改 Tesseract worker 可中断 + yt-dlp 测试反假绿加固
+
+- 上轮 push 后 Codex 给 B，两条建议：
+  - 🟡 `Tesseract.recognize` 一旦开始就吃 CPU 直到完成，orchestrator abort 没法杀。
+  - ⚪ yt-dlp abort 测试只看 elapsed，不证明 fake binary 真被调用 + 真被 SIGKILL。
+- 修复：
+  - `src/media/extractors/imageExtractor.js`：抽出 `runOcrWithAbort(buffer, signal)`，把 `Tesseract.recognize()` 替换为 `Tesseract.createWorker(OCR_LANGS, 1, ...)` + `worker.recognize()` + `worker.terminate()`。signal 监听 abort 时立即 `worker.terminate()` 杀 OCR webworker；natural completion 也走 terminate 清理；`terminated` flag 防重复 + listener 在 finally removeEventListener 防晚 fire。
+  - `src/media/orchestratorAbort.test.js` 的 yt-dlp 测试重写 fake bash：写 4 个 marker（version-marker / metadata-marker / completed-marker / metadata-pid）。断言：(1) version-marker 存在（hasYtDlp probe 走通）(2) metadata-marker 存在（metadata 分支真命中）(3) completed-marker 不存在（SIGKILL 生效，bash 没机会跑完 sleep）(4) `process.kill(pid, 0)` throws ESRCH（metadata 子进程 PID 真死）。
+  - 加 `extractImageContent` pre-aborted signal 测试：>MIN_OCR_BYTES 的 PNG data URL + pre-abort → elapsed < 500ms（cold Tesseract.createWorker 5-30s，<500ms 证明根本没进 worker 创建路径）。
+- PROGRESS round 7 condense：归档 06:30 / 05:00 / 04:30 三条已落地的 audioExtractor signal 化条目。
+- 验证：`node --check` 全过；orchestratorAbort.test.js **7/7**；regression 全套待跑。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 07:30 — Codex C #10 fix：videoExtractor 直接调 AbortSignal.any 改走 composeAbortSignals
 
 - `git pp` 给本轮的 3 个 commit 评级 C #10：videoExtractor.js 里 3 处 `AbortSignal.any([...])` 直接调用绕过了 common.js 的 Node 18 fallback——`withAudioBudget`、`withKeyframeBudget`（parent signal 合并）+ direct-video download fetch。Node 18.0-18.16 会 sync throw → 视频路径在带 parent signal 时退化为 null。
@@ -35,61 +48,6 @@
   - yt-dlp child SIGKILL on budget timeout：fake bash binary（`--version` 立即 0 退出 + 其余 sleep 99999），1500ms budget → 断言 elapsed < 4s（如果 signal 没贯通到 spawn-level kill listener，会撞 30s yt-dlp 内部 timeout）。
   - 测试加 `server.closeAllConnections?.()` 提前 close + `--test-force-exit` 解决 hanging http server 在 node:test 进程结束时不 release socket pool 的副作用。
 - 验证：`node --check` 全过；regression 全套 **360/360 全绿**（之前 351，新增 9 个：3 cherry-picked orchestrator + 1 video post-download + 4 extractor abort + 1 silentWav skip guard 上轮已合并）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip
-
-- 上轮 push 后 Codex 给 B（不阻断），两条建议留 follow-up：
-  - 🔵 `combineSignals` 直接调 `AbortSignal.any()`，但 package.json 还声明 `node >=18`；Node 18/早期 20 会抛 `TypeError`，导致传 signal 时音频转写默默退化为 null。
-  - ⚪ `audioExtractor.signal.test.js` 的 fake whisper-cli 测试在 `silentWav.length === 0` 时 `return`——runner 记为通过，fixture 生成失败重新形成假绿。
-- 修复：
-  - `src/media/extractors/audioExtractor.js → combineSignals`：复用 `src/images/codexImageEngine.js → composeSignals` 的同款套路——`typeof AbortSignal.any === 'function'` 时走原生路径，否则 fallback 到 `AbortController` + 双 listener 手动转发 abort。低版本 Node 不再退化为 null。
-  - `src/media/extractors/audioExtractor.signal.test.js` 的 whisper-cli 测试 callback 加 `(t)` 参数；`silentWav.length === 0` 改成 `t.skip('ffmpeg lavfi unavailable on this host — cannot generate silent WAV fixture')` 后 return，runner 现在记 "skipped" 而不是"通过"。
-- 验证：`node --check` 全过；audioExtractor.signal.test.js **4/4**；regression 全套 **351/351 全绿**。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（Codex C-grade fix #6）
-
-- 上轮 04:30 落地的 cancellation 测试是**假绿**——Codex 第六次给 C：
-  - whisper-cli 测试在 import 后才 `process.env.MELO_WHISPER_CLI = fakeWhisperPath`，但 production 代码 `const WHISPER_CLI = process.env.MELO_WHISPER_CLI || 'whisper-cli';` 是 module-load 时资源化的。fake binary **从未被调用**，测试因为 `whisper-cli` 不在 PATH 而快速返回 null 假绿。
-  - OpenAI fetch 测试用 `authMode: 'apiKey'`，但 `resolveTranscriptionConfig` 契约是 `'api-key'`（连字符）。falls through to soft-fallback，fake hanging server **从未被打**，也是假绿。
-  - 公共 API 没把 signal 传给 `readAttachmentBuffer`，远端 audio 下载阶段绕过了承诺。
-- 修复（`src/media/extractors/audioExtractor.js`）：
-  - 加 `_setWhisperCliForTests(cli, model)` DI hook（同 `_setRipgrepBinaryForTests` 套路）+ `getWhisperCli()` / `getWhisperModel()` 间接访问。test 调用即生效，绕开 module-load 资源化问题。
-  - `readAttachmentBuffer(attachment, { signal })` 把外层 signal 用 `combineSignals(signal, 30000)` 注入 fetch；`extractAudioContent` 把 signal 传进去。下载阶段也响应 abort 了。
-- 测试改造（`src/media/extractors/audioExtractor.signal.test.js`）：
-  - whisper-cli 测试用 DI hook + WAV 输入（绕开 `convertToWavForNative` 路径，单测 whisper-cli signal）；abort delay 提到 1500ms 确保 execFile 真在跑时才 abort，避免被 `convertToWavForNative` 后的 `signal?.aborted` 早 check 提前抓住假绿；assert `elapsed >= 1500` anti-false-green 防回归。
-  - OpenAI fetch 测试改 `authMode: 'api-key'`（真契约）；加 `transcriptionRequestReceived` 标志监听 `/audio/transcriptions` POST，断言 fake server **必须** 被打过——否则 elapsed 检查无意义。
-  - 新增第 4 个测试覆盖远端 audio 下载阶段：fake hanging server + abort，断言 connection received + elapsed < 3s。
-- **Bisect 验证**（防 review 时不知道测试有没有真在测 signal）：
-  1. 临时把 execFile 的 `signal` 参数移除 → whisper-cli 测试 8s 超时（hang 直到 suite cancel）✓
-  2. 临时把 fetch signal 改回 `AbortSignal.timeout(60000)` 不合并 → OpenAI 测试 8s 超时 ✓
-  3. 同样 download fetch signal 不合并 → download 测试 8s 超时 ✓
-  4. 全部恢复 → 4/4 绿 ✓
-- 验证：`node --check` 全过；audioExtractor.signal.test.js **4/4** + bisect 验证；regression 全套 **351/351 全绿**（04:30 时 350，新增 1 个 download cancellation 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 04:30 — audioExtractor 全链路 signal 化（Codex C-grade fix #5——视频 abort 真正杀到 whisper.cpp/fetch）
-
-- 上轮 04:00 修了 video 层的 audio budget 取消，但 `extractAudioContent` 内部（whisper.cpp 子进程 / native fetch / OpenAI fetch）不接 signal——budget 返 null 后真实转写仍跑 30-120s，浪费 GPU/带宽。Codex 给 C #5。
-- 用户拍板：**重构**——把 AbortSignal 贯穿 `audioExtractor.js` 全链路。
-- 修改（`src/media/extractors/audioExtractor.js`）：
-  - 新增 `combineSignals(externalSignal, timeoutMs)`：用 `AbortSignal.any()`（Node 20.3+）合并外部 signal 与内部 timeout，任一触发即 abort。
-  - `tryWhisperCpp(buf, attachment, { signal })` → `execFileAsync(..., { ..., signal })`：abort 时 Node 自动 SIGTERM whisper-cli 子进程，GPU 立即释放。
-  - `convertToWavForNative(buf, attachment, { signal })` → 同款 ffmpeg execFile signal 参数。
-  - `tryNativeTranscription(buf, attachment, { signal })`：fetch signal 改用 `combineSignals(signal, 30000)`。
-  - OpenAI Whisper API fetch：同款 `combineSignals(signal, 60000)`。
-  - 新增 `_resetWhisperCppReadyForTests()`：清缓存让测试可在不同 fake binary 间切换。
-  - 公共 API 扩展：`extractAudioContent(attachment, context, { suppressFallback, signal })` + `extractAudioContentFromBuffer(buf, attachment, { config, suppressFallback, signal })`。signal 可选——不传 = 现状行为，**所有现有 caller 零改动**（discord voice / telegram voice / direct audio attachment 全自动保持原契约）。
-- `src/media/extractors/videoExtractor.js`：`audioBranch` 把 `signal` 传进 `_extractAudioContentImpl`，整条 video → audioBranch → audioExtractor → whisper-cli/fetch 共享同一 AbortSignal。
-- 新增 3 个真实可观察的 cancellation 测试（`src/media/extractors/audioExtractor.signal.test.js`）：
-  - 预 abort 的 signal → 立即 null，elapsed < 200ms（不调任何 backend）。
-  - **fake whisper-cli (bash 脚本 sleep 99999)** + 200ms abort → null，elapsed < 5s（如果 signal 没贯通到 execFile 子进程，会 sleep 99999s——SIGTERM 真落地）。
-  - **fake hanging http server** + 200ms abort → null，elapsed < 3s（如果 signal 没合并进 fetch，会等满内部 60s timeout）。
-- Codex 反问回应：
-  - **Q1: 扩展 audioExtractor.js 签名**：是。signal 可选，不传 = 现状，零回归。
-  - **Q2: 统一 abort vs per-backend budget**：统一 abort（caller 控制 budget，backend 只负责响应 signal）。简单、一致、足够。
-- 验证：`node --check` 全过；audioExtractor.signal.test.js **3/3**；regression 全套 **350/350 全绿**（04:00 时 347，新增 3 个 signal cancellation 测试）。
 - 提交哈希：（待 commit）
 
 ## 归档摘要（2026-04-27 06:30 之前的所有条目）
