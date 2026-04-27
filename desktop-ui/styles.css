@@ -3187,15 +3187,11 @@ select option {
   line-height: 1.7;
 }
 
-.toggle-row {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
+/* (Older `.toggle-row` definition removed — the pillbox style at the
+   bottom of this file is the canonical one. Keeping a stub here would
+   duplicate the cascade and cause the cramped look in the Skills
+   detail pane where the Enabled toggle visually merged with the Skill
+   health header below it.) */
 
 .toggle-switch {
   width: 52px;
@@ -3386,7 +3382,10 @@ select option {
 
 .customize-layout {
   display: grid;
-  grid-template-columns: 260px 340px minmax(320px, 1fr);
+  /* Narrower nav + middle list, wider detail panel — the right pane
+     hosts long descriptions, prompt text, and config forms that
+     benefit from more horizontal room than the two left-most columns. */
+  grid-template-columns: 220px 270px minmax(440px, 1fr);
   gap: 0;
   border-radius: 28px;
   overflow: hidden;
@@ -3750,7 +3749,9 @@ select option {
   border-radius: 16px;
   background: transparent;
   color: inherit;
-  padding: 14px 14px;
+  /* Slightly more horizontal padding so the title/meta text doesn't
+     bump against the active outline / right border on narrow columns. */
+  padding: 14px 16px;
 }
 
 .section-button:hover,
@@ -3815,6 +3816,10 @@ select option {
 
 /* Phase 3.3.4 — Skill health panel. */
 .skill-health-card {
+  /* Top margin gives breathing room between this panel and the
+     enabled-toggle pillbox above it; bottom keeps existing spacing
+     to subsequent panels (skill proposals, custom skill create). */
+  margin-top: 18px;
   margin-bottom: 12px;
 }
 
@@ -3969,6 +3974,9 @@ select option {
   justify-content: space-between;
   gap: 14px;
   margin-top: 20px;
+  /* Bottom margin so the next section (e.g. Skill health card) doesn't
+     visually merge with this pillbox in narrow columns. */
+  margin-bottom: 16px;
   padding: 14px 16px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);

@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理
+
+- 用户截图反馈："中间选 agent 那个太宽了，左两列也略宽，最右边这列要宽一点；图 1 文字和边框靠太近；图 2 一些框叠加在一起"。
+- 排查：
+  - `.customize-layout` grid 是 `260px 340px minmax(320px, 1fr)`——中间 340px 确实偏宽，右边最小 320px 容纳长 description / role prompt 时换行过密。
+  - `.section-button / .list-row` padding 14px 14px——文字和右边框间距偏紧。
+  - **`.toggle-row` 在 styles.css 里有两份定义**（line 3190 旧分隔线版 + line 3966 新 pillbox 版），cascade 部分混叠（border 一份、padding 另一份），且新版没有 `margin-bottom`——Skills 详情面板的 "Enabled" 按钮跟下方 "Skill health" 标题视觉上没有间距，看起来像叠加。
+- 修复（`desktop-ui/styles.css`）：
+  - **grid 改 `220px 270px minmax(440px, 1fr)`**：左侧 nav 220px / 中间列表 270px / 右侧详情最小 440px，详情面板有空间容长文本。
+  - **`.section-button / .list-row` padding 改 `14px 16px`**：水平多 2px 让文字不撞右边框/active 边框。
+  - **删 line 3190 的旧 `.toggle-row`**（仅留底部 pillbox 那份，单一来源）。
+  - **`.toggle-row` 加 `margin-bottom: 16px`**：pillbox 跟下方 section 之间有呼吸。
+  - **`.skill-health-card` 加 `margin-top: 18px`**：双保险，确保 Enabled toggle 和 Skill health 之间有清楚分隔。
+- 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
 
 - 上轮 Codex 给 C #15：localStorage 缓存的 `ttsCustomVoiceId` 可能 stale（用户从 agent 删了那个 voice、又保存了新的 connector default）；我之前的 priority chain 把 cache 放第一，stale cache 会赢过 fresh save，**激活时把 saved default 改回 stale cache 值**。
