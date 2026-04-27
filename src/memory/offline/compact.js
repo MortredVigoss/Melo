@@ -17,7 +17,7 @@
  */
 
 import { createOpenAICompatibleReply } from '../../openai.js';
-import { auditSummary } from '../dreaming/summaryQuality.js';
+import { auditSummary, QUALITY_DEFAULT_THRESHOLD } from '../dreaming/summaryQuality.js';
 
 const LOCAL_LLM_CANDIDATES = [
   // Order matters — first reachable endpoint wins.
@@ -52,25 +52,31 @@ function compactQualityMode() {
 }
 
 /**
- * Read `MELO_SUMMARY_QUALITY_THRESHOLD` once.  Returns null when unset or
- * malformed so the evaluator falls back to its compiled-in default.
+ * Read `MELO_SUMMARY_QUALITY_THRESHOLD` once at `compactOffline` entry so
+ * a long LLM call straddling an env mutation can't make the audit and the
+ * fallback decision use different thresholds.
  *
- * Capturing this at `compactOffline` entry — instead of letting the
- * evaluator re-read env every time — closes a Codex B-grade finding: a
- * long LLM call straddling an env mutation could otherwise audit the
- * summary at one threshold and then make the fallback decision at a
- * different one.
+ * Always returns a finite number — never null/undefined.  This matters
+ * because `auditSummary({ threshold: <number> })` ultimately reaches
+ * `evaluateSummaryQuality(opts)`, which only honours `opts.threshold`
+ * when `Number.isFinite(opts.threshold)` is true; if we returned null
+ * the evaluator would fall through and re-read the env var, defeating
+ * the whole "capture at entry" contract (Codex follow-up #3).
  *
- * Edge case (Codex follow-up #2): `Number('')` is `0`, not `NaN`, so
- * `MELO_SUMMARY_QUALITY_THRESHOLD=''` would silently set the threshold
- * to 0 and make `fallback` mode accept every summary.  Treat empty /
- * whitespace-only values as "unset" before parsing.
+ * Two boundary cases that previous iterations missed:
+ *   - `Number('')` is 0, not NaN, so unset/empty env was producing 0 and
+ *     letting every summary through.
+ *   - `Number(null) === 0` likewise; `Number.isFinite(null)` is false but
+ *     the evaluator's `||` chain would still fall back to env.
+ *
+ * Both now route through the documented compiled-in default, locking in
+ * the threshold for the lifetime of one compact call.
  */
 function compactQualityThreshold() {
   const raw = String(process.env.MELO_SUMMARY_QUALITY_THRESHOLD || '').trim();
-  if (!raw) return null;
+  if (!raw) return QUALITY_DEFAULT_THRESHOLD;
   const num = Number(raw);
-  return Number.isFinite(num) ? num : null;
+  return Number.isFinite(num) ? num : QUALITY_DEFAULT_THRESHOLD;
 }
 
 // ─── Test injection (Bug-D / fallback-mode coverage) ─────────────────────────

@@ -206,6 +206,39 @@ test('quality gate=fallback honours MELO_SUMMARY_QUALITY_THRESHOLD whitespace as
   );
 });
 
+test('compactOffline captures threshold at entry — mid-call env mutation does not leak', async () => {
+  // Contract test for Codex follow-up #3: previously the threshold
+  // helper could return null on empty env, then the evaluator would
+  // re-read process.env at audit time, breaking the "capture at entry"
+  // contract.  Now the helper always returns a finite number; an LLM
+  // call that mutates the env mid-flight should NOT change the
+  // already-captured threshold.
+  await withIsolatedEnv(
+    {
+      MELO_COMPACT_QUALITY_GATE: 'fallback',
+      MELO_SUMMARY_QUALITY_THRESHOLD: '', // empty → captured as default 0.6
+    },
+    async () => {
+      _setCallLocalLlmForTests(async () => {
+        // Adversary: bump threshold to 0 mid-flight so the bad summary
+        // would slip through if the evaluator re-read env.  The capture
+        // at compactOffline entry must shield us.
+        process.env.MELO_SUMMARY_QUALITY_THRESHOLD = '0';
+        return 'Carol decided to use Redis with TTL 30 minutes for sessions.';
+      });
+      try {
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        // If the contract holds, the captured 0.6 default still rejects
+        // the hallucinated summary → rule fallback fires.
+        assert.ok(summary.includes('Primary Request'));
+        assert.ok(!summary.includes('Carol'));
+      } finally {
+        _setCallLocalLlmForTests(null);
+      }
+    },
+  );
+});
+
 test('quality gate=disabled skips audit + always returns LLM output unchanged', async () => {
   await withIsolatedEnv(
     { MELO_COMPACT_QUALITY_GATE: '0' },

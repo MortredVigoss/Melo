@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定
+
+- 上轮 `d339782` 把空 env 改返 null，但 evaluator 看到 `Number.isFinite(null)=false` 仍重读 env —— 契约缺口被 Codex 抓出第三次 B finding。
+- 修：[compact.js](src/memory/offline/compact.js) import `QUALITY_DEFAULT_THRESHOLD`，`compactQualityThreshold()` 始终返回 finite number（空 / 非法 → 默认 0.6），auditSummary 收到的 threshold 永远 truthy，evaluator 不再回头读 env。
+- 加 contract test：mid-call mock LLM 把 env 改 `'0'`（应让低质摘要通过），但入口已 capture 0.6，bad summary 仍被拒 → rule fallback 触发。证明锁定真正生效。
+- 验证：330/330 memory 全绿。
+- 提交哈希：待填。
+
 ## 2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界
 
 - 上轮 follow-up 提交 `9d504b2` 后 git pp 又评 B，单条 finding：`Number('') === 0`，导致 `MELO_SUMMARY_QUALITY_THRESHOLD=''` 让 fallback 阈值变 0、几乎全放行。
@@ -46,27 +54,11 @@
 - 验证：305/305 memory unit tests 全绿（未动 src/）；脚本端到端 sandbox MELO_HOME 上跑过 friendly-fail（缺 golden / 空 store）+ 命中（recall@5=100%）+ threshold gate（pass=0/fail=2）+ JSON 模式 + check-syntax 全过。
 - 提交哈希：`eb74e07`。
 
-## 2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced
-
-- 用户要求："MCP、plugins、background-tasks 先不要全塞主 UI。建议做一个 Advanced / Runtime 页面，明确标注实验性/开发者功能。里面只放查看状态、reload、disconnect、kill task 这种安全操作，新增/编辑配置可以晚一点做。"
-- audit（详见上一刀提案）：MCP 双入口（Customize → Connectors 详情面板 external-mcp 分支 + Customize → Runtime 整页 + Code 页面侧栏 MCP shelf + Customize → Connectors 顶部 Create 表单）；plugins 后端有 hook 系统但 UI 完全没暴露；background-tasks Code 页面 task panel 在用，`/api/background-tasks/{run,status,kill,list}` 端点存在但 UI 没消费 list/kill。**关键提醒**：openai-compatible LLM provider 跟 external-mcp 共享 Customize → Connectors，LLM 配置不能藏。
-- 走方案 B（中等迁移）：
-  - **新增 `renderAdvancedPage()`**（4 个 subsection）：External MCP connectors（list + Ping refresh）/ CLI stdio MCP servers（list + Reload all + Disconnect by name）/ Plugins（list + hooks 只读）/ Background shell tasks（list + Kill on running）。顶部 `Experimental` chip + 描述文字"安全操作 + 配置编辑延后"。
-  - **uiState.advanced 缓存** + `refreshAdvancedStatus()` 三端点 `Promise.all`（容错：单端点失败 → partial-load 提示，三端点全失败 → 阻塞展示）。
-  - **侧栏改造**：Customize sub-section 列表 Runtime → Advanced；旧 `selectedCustomizeSection: 'runtime'` 在 renderCustomizePage 入口 coerce 成 `'advanced'`（持久化设置不破老用户）。
-  - **Customize → Connectors 拆分**：external-mcp 从列表筛掉 + renderConnectorDetails 的 external-mcp 分支换成"已迁至 Advanced"提示卡 + 顶部 Create 表单删除。LLM provider (openai-compatible) 配置原位保留。
-  - **Code 页面**：删 "MCP-style connectors" inspector card + 删 External tools inspector card；Task panel 保留（agent lane runner 是日常工作流，跟"后台任务管理"不是一回事）。
-  - **slash command + palette**：`/mcp browse` + `open-runtime` palette 命令都改路由到 `selectedCustomizeSection: 'advanced'`。
-  - **后端**：`/api/mcp/{servers,disconnect,reload}` + `/api/background-tasks/{list,kill}` + `/api/plugins` 全部已存在，**零后端改动**。
-- 后续 cleanup：删 684 行死代码——`renderRuntimeBrowserPanes` (188 行) + `renderExternalConnectorShelf` + `renderExternalToolForms/Results` + `renderExternalConnectorCreateCard` + `selectedRuntimeConnector/Entry` + `syncRuntimeSelection` + `handleLoadRuntimePreview` + `handleCreateExternalConnector/UpdateExternalConnector/RemoveExternalConnector/InvokeExternalTool` + 6 个 dead action case + `uiState.runtimeSelection/runtimePreview/externalToolInputs`。
-- 验证：`node --check` 全过；regression 全套 **1057/1057 全绿**；UI 手测留给用户验证 Customize → Advanced 渲染 + Refresh / Reload all / Disconnect / Kill task 功能。
-- Codex 前置 review 评 **B**（"实现正确，缺少覆盖" + ⚪ 建议补 smoke/E2E 覆盖 advanced 导航 / 关键按钮 / API 映射，desktop-ui 没现成的 E2E 框架，留 follow-up）；cleanup commit 等 review。
-- 提交哈希：`e9eb5b6`（feat 主刀） + `40c747b`（chore cleanup）。
-
-## 归档摘要（2026-04-27 14:00 之前的所有条目）
+## 归档摘要（2026-04-27 14:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced** —— 新增 renderAdvancedPage() 4 subsection；侧栏 Runtime → Advanced 入口 coerce；删 684 行死代码；regression 1057/1057；Codex B。`e9eb5b6`+`40c747b`
 - **2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光** —— 删 styles.css:3262 `height: 100%`，保留 min-height; 6 类 UI 叠加 audit 仅此一处中招。Codex A。`2731e90`
 - **2026-04-27 13:30 — Codex C #16/#17/#18/#19 fix chain：customize grid 1101px+ 真实可用宽度** —— 三轮宽度+折叠 Codex C 闭环：grid 220/270/440 总 700px，撤单列折叠，修 ≤1100px overflow:hidden 裁切。`3022905`+`f20767b`+`bcc2b09`+`ae0a964`
 - **2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理** —— grid 改 220/270/440-1fr；删旧 `.toggle-row` 副本；padding 14×16 给文字呼吸；`.skill-health-card` 加 margin-top。`ab06fca`
