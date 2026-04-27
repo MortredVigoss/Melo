@@ -161,6 +161,10 @@ const uiState = {
   },
   composerAttachments: [],
   composerAttachmentMenuOpen: false,
+  // Task panel "Run agent" overflow menu — shows main as the primary
+  // button and tucks research/builder/reviewer behind a "⋯" dropdown so
+  // the lane row doesn't sprout four equal-weight chips.
+  taskLaneOverflowOpen: false,
   composerDragActive: false,
   highlightedMessageId: null,
   shouldFocusSearch: false,
@@ -987,6 +991,13 @@ function renderComposerAttachmentMenu() {
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*">
         <span class="chip-icon">${icon.audio}</span>
         Audio
+      </button>
+      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="application/pdf,.pdf" title="PDF documents are extracted via pdf-parse and the text is sent to the model.">
+        <span class="chip-icon">${icon.file}</span>
+        <span class="composer-menu-item-text">
+          <span>PDF</span>
+          <span class="composer-menu-item-hint">extracted as text</span>
+        </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="add-link-attachment">
         <span class="chip-icon">${icon.link}</span>
@@ -3598,6 +3609,23 @@ async function handleTranscribeAudio() {
   }
 }
 
+/**
+ * Lightweight one-line confirmation toast.  Used by short-lived feedback
+ * like "Copied <path>" — distinct from `showTranscriptToast` (which is a
+ * persistent panel with copy/close affordances).  Auto-dismisses after
+ * `ms` and only ever shows one at a time.
+ */
+function showFlashToast(message, { ms = 2000 } = {}) {
+  const existing = document.querySelector('#flash-toast');
+  if (existing instanceof HTMLElement) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'flash-toast';
+  toast.className = 'flash-toast';
+  toast.textContent = String(message ?? '');
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.isConnected) toast.remove(); }, ms);
+}
+
 function showTranscriptToast(text) {
   const existing = document.querySelector('#transcript-toast');
   if (existing instanceof HTMLElement) existing.remove();
@@ -6124,18 +6152,44 @@ function renderTaskPanel({ compact = false } = {}) {
           ${uiState.showTaskForm ? 'Hide form' : 'New task'}
         </button>
       </div>
-      <div class="chip-row task-lane-row">
-        ${['main', 'research', 'builder', 'reviewer']
-          .map(owner => {
-            const ownerProfile = agentProfileById(owner);
-            return `
-              <button class="chip chip-button" data-action="run-task-lane" data-owner="${owner}">
-                Run ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
-              </button>
-            `;
-          })
-          .join('')}
-      </div>
+      ${(() => {
+        // Lane row: main is the default agent, so it stays as the primary
+        // chip. The other three live behind a "⋯" overflow menu — pre-
+        // 2026-04-27 we shipped all four chips inline, but Codex audit
+        // flagged the density (Tasks region had 4+ persistent buttons).
+        const lanes = ['main', 'research', 'builder', 'reviewer'];
+        const primary = lanes[0];
+        const overflow = lanes.slice(1);
+        const primaryProfile = agentProfileById(primary);
+        const overflowOpen = uiState.taskLaneOverflowOpen;
+        return `
+          <div class="chip-row task-lane-row task-lane-overflow-anchor">
+            <button class="chip chip-button" data-action="run-task-lane" data-owner="${primary}">
+              Run ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
+            </button>
+            <button class="chip chip-button task-lane-overflow-toggle"
+                    type="button"
+                    aria-haspopup="true"
+                    aria-expanded="${overflowOpen ? 'true' : 'false'}"
+                    data-action="toggle-task-lane-overflow"
+                    title="Run other agents">
+              ⋯
+            </button>
+            ${overflowOpen ? `
+              <div class="task-lane-overflow-menu">
+                ${overflow.map(owner => {
+                  const ownerProfile = agentProfileById(owner);
+                  return `
+                    <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
+                      Run ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      })()}
       ${
         uiState.showTaskForm
           ? `
@@ -10255,8 +10309,25 @@ function renderSearchPage() {
                   </div>
                 `
                 : query
-                  ? '<div class="empty-state">No results match that search yet.</div>'
-                  : '<div class="empty-state">Try a feature name, project name, file path, or a phrase from a past chat.</div>'
+                  ? `<div class="empty-state">
+                      <div class="empty-state-title">No matches for "${escapeHtml(query)}".</div>
+                      <div class="empty-state-meta">
+                        Search covers <strong>chats &amp; messages</strong>,
+                        <strong>prompt history</strong>,
+                        <strong>memory</strong>,
+                        <strong>artifacts</strong>,
+                        <strong>projects</strong>,
+                        <strong>skills / connectors</strong>, and
+                        <strong>workspace files</strong>. Try simpler keywords, an exact phrase, or check spelling.
+                      </div>
+                    </div>`
+                  : `<div class="empty-state">
+                      <div class="empty-state-title">Start typing to search.</div>
+                      <div class="empty-state-meta">
+                        Looks across chats, messages, memory, artifacts, projects, and workspace files.
+                        A file path, a project name, or a phrase you remember from a past chat all work.
+                      </div>
+                    </div>`
             }
           </div>
         </div>
@@ -11099,6 +11170,14 @@ document.addEventListener('click', async event => {
     render();
   }
 
+  if (
+    uiState.taskLaneOverflowOpen &&
+    !event.target.closest('.task-lane-overflow-anchor')
+  ) {
+    uiState.taskLaneOverflowOpen = false;
+    render();
+  }
+
   const trigger = event.target.closest('[data-action]');
   if (!trigger || !uiState.bootstrap) {
     if (closedAttachmentMenu) {
@@ -11554,6 +11633,20 @@ document.addEventListener('click', async event => {
       case 'test-agent-channel':
         await handleTestAgentChannel(trigger);
         break;
+      case 'copy-melo-state-path': {
+        const path = trigger.dataset.path || '~/.melo/desktop/state.json';
+        if (navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(path);
+            showFlashToast(`Copied ${path}`);
+          } catch {
+            showFlashToast('Copy failed — clipboard access denied');
+          }
+        } else {
+          showFlashToast('Copy unavailable in this browser');
+        }
+        break;
+      }
       case 'select-customize-item':
         if (trigger.dataset.section === 'skills') {
           await patchSettings({
@@ -11848,7 +11941,14 @@ document.addEventListener('click', async event => {
         await handleRunTask(trigger.dataset.taskId);
         break;
       case 'run-task-lane':
+        // Close the overflow menu after picking a non-primary lane so the
+        // user doesn't have to dismiss it manually.
+        uiState.taskLaneOverflowOpen = false;
         await handleRunTaskLane(trigger.dataset.owner);
+        break;
+      case 'toggle-task-lane-overflow':
+        uiState.taskLaneOverflowOpen = !uiState.taskLaneOverflowOpen;
+        render();
         break;
       case 'insert-command':
         uiState.composer = trigger.dataset.command || '/';

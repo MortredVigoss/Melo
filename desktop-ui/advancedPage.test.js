@@ -57,6 +57,26 @@ test('renderAdvancedPage exposes the safe-ops actions used by the page', () => {
   assert.match(html, /data-action="reload-mcp-servers"/);
 });
 
+test('renderAdvancedPage shows the state.json path hint with a Copy button', () => {
+  const html = renderAdvancedPage(freshState());
+  assert.match(html, /Most settings live in/);
+  assert.match(html, /<code>~\/\.melo\/desktop\/state\.json<\/code>/);
+  assert.match(html, /data-action="copy-melo-state-path"/);
+  assert.match(html, /data-path="~\/\.melo\/desktop\/state\.json"/);
+});
+
+test('renderAdvancedPage honours custom statePathHint (e.g. non-default MELO_HOME)', () => {
+  const html = renderAdvancedPage(freshState({ statePathHint: '/tmp/melo-test/desktop/state.json' }));
+  assert.match(html, /<code>\/tmp\/melo-test\/desktop\/state\.json<\/code>/);
+  assert.match(html, /data-path="\/tmp\/melo-test\/desktop\/state\.json"/);
+});
+
+test('renderAdvancedPage escapes hostile statePathHint values', () => {
+  const html = renderAdvancedPage(freshState({ statePathHint: '<script>alert(1)</script>' }));
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+});
+
 // ─── Empty states ───────────────────────────────────────────────────────────
 
 test('all-empty state renders one empty-state per subsection (4 total)', () => {

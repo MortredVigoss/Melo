@@ -29,9 +29,21 @@
  *                                         the very first render (loaded=false &&
  *                                         loading=false && error=null) so the
  *                                         caller can kick its async refresher.
+ * @param {string} [options.statePathHint] path string shown in the "Most settings
+ *                                         live in …" tip and copied to the
+ *                                         clipboard by the Copy-path button.
+ *                                         Defaults to the canonical
+ *                                         `~/.melo/desktop/state.json`; callers
+ *                                         can override when MELO_HOME is custom.
  * @returns {string} HTML string for the Advanced pane.
  */
-export function renderAdvancedPage({ data, adv, escapeHtml, scheduleRefresh }) {
+export function renderAdvancedPage({
+  data,
+  adv,
+  escapeHtml,
+  scheduleRefresh,
+  statePathHint = '~/.melo/desktop/state.json',
+}) {
   // Lazy first fetch on initial render of this section.
   if (!adv.loaded && !adv.loading && !adv.error) {
     scheduleRefresh();
@@ -122,6 +134,14 @@ export function renderAdvancedPage({ data, adv, escapeHtml, scheduleRefresh }) {
             </h2>
             <p class="page-kicker">
               Developer features. Status, reload, disconnect, and kill operations are safe — configuration changes (adding new MCP servers, editing endpoints) happen elsewhere or are deferred.
+            </p>
+            <p class="page-kicker page-kicker-tip">
+              Most settings live in <code>${escapeHtml(statePathHint)}</code>.
+              <button class="ghost-link" type="button"
+                      data-action="copy-melo-state-path"
+                      data-path="${escapeHtml(statePathHint)}">
+                Copy path
+              </button>
             </p>
           </div>
           <div class="inline-actions">
