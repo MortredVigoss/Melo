@@ -5,6 +5,13 @@
 
 ---
 
+## 2026-04-27 15:30 — F-3C：README 加 Memory & embeddings 引导（bge-m3 部署门槛闭环）
+
+- 横评第三个扣分项：bge-m3 1GB 模型无 onboarding。用户选最轻量方案 C —— README 引导，不动 desktop-ui。
+- README.md 加 "Memory and embeddings" 一节：one-time setup（`ollama pull bge-m3` + `doctor` + `memory-status --live`）/ 4 级降级链（bge-m3 → OpenAI fallback → custom HTTP → 关键词）/ 5 个核心 env 开关（含本批次新加的 `MELO_COMPACT_QUALITY_GATE`）/ benchmark 跑法（接 F-1A）。
+- 跟 desktop-ui 解耦：选择 C 是因为 90% 用户其实读 README，引导落 README 比起做新弹窗 UI 更省工 + 不破坏既有 UI。如果以后想升 A（启动弹窗），可把这节改成 onboarding 文案的源。
+- 提交哈希：待填。
+
 ## 2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入
 
 - 横评里"本地 LLM 摘要质量没实测"的扣分项。读代码发现 `frame.js` 的 frame summary 是字符切片（grounded≈1，无胡编风险），真正可能胡编的是 `offline/compact.js` 的 LLM compact（qwen2.5:3b 默认），所以 quality gate 接到那里。
