@@ -1,6 +1,6 @@
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
-import { normalizeMediaText } from '../common.js';
+import { combineSignals, normalizeMediaText } from '../common.js';
 
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_CONTENT_CHARS = 8000;
@@ -32,19 +32,20 @@ export function extractReadableHtml(html = '', url = '') {
   }
 }
 
-export async function extractLinkContent(url) {
+export async function extractLinkContent(url, { signal } = {}) {
+  if (signal?.aborted) return null;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    // Combine external signal with internal timeout so an outer abort
+    // cancels the fetch immediately. Replaces the manual setTimeout/
+    // controller pair (which only honored the internal timeout).
     const response = await fetch(url, {
-      signal: controller.signal,
+      signal: combineSignals(signal, FETCH_TIMEOUT_MS),
       headers: {
         'user-agent': 'Mozilla/5.0 (compatible; MeloReader/0.2)',
         accept: 'text/html,application/xhtml+xml',
       },
       redirect: 'follow',
     });
-    clearTimeout(timer);
 
     if (!response.ok) {
       return null;
@@ -64,6 +65,7 @@ export async function extractLinkContent(url) {
     if (Buffer.byteLength(html) > MAX_HTML_BYTES) {
       return null;
     }
+    if (signal?.aborted) return null;
 
     return extractReadableHtml(html, url);
   } catch {

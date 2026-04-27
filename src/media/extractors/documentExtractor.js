@@ -1,6 +1,10 @@
+import { combineSignals } from '../common.js';
+
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-export async function extractDocumentContent(attachment) {
+export async function extractDocumentContent(attachment, { signal } = {}) {
+  if (signal?.aborted) return null;
+
   const isPdf =
     String(attachment?.mimeType || '').includes('pdf') ||
     /\.pdf(?:\?|$)/i.test(String(attachment?.url || ''));
@@ -9,8 +13,10 @@ export async function extractDocumentContent(attachment) {
   }
 
   try {
+    // Combine the orchestrator's external signal with the internal 30s
+    // download timeout so an outer abort cancels the fetch mid-flight.
     const response = await fetch(attachment.url, {
-      signal: AbortSignal.timeout(30000),
+      signal: combineSignals(signal, 30000),
     });
     if (!response.ok) {
       return null;
@@ -20,7 +26,10 @@ export async function extractDocumentContent(attachment) {
     if (buffer.length > MAX_PDF_BYTES) {
       return null;
     }
+    if (signal?.aborted) return null;
 
+    // pdf-parse is synchronous-ish CPU work; we can't cancel it mid-parse
+    // but the pre-parse signal check above bails before paying the cost.
     const { default: pdfParse } = await import('pdf-parse');
     const data = await pdfParse(buffer);
     const text = String(data?.text || '').trim();

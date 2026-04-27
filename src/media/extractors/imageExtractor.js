@@ -4,10 +4,11 @@ const OCR_LANGS = 'eng+chi_sim+chi_tra+jpn+kor';
 const OCR_MAX_CHARS = 4000;
 const MIN_OCR_BYTES = 1024;
 
-export async function extractImageContent(attachment, { modelSupportsVision = false } = {}) {
+export async function extractImageContent(attachment, { modelSupportsVision = false, signal } = {}) {
   if (modelSupportsVision) {
     return null;
   }
+  if (signal?.aborted) return null;
 
   try {
     let buffer = null;
@@ -16,13 +17,17 @@ export async function extractImageContent(attachment, { modelSupportsVision = fa
       const base64 = String(attachment?.url || '').split(',')[1] || '';
       buffer = base64 ? Buffer.from(base64, 'base64') : null;
     } else if (attachment?.url) {
-      const fetched = await fetchBuffer(attachment.url, { timeoutMs: 20000 });
+      const fetched = await fetchBuffer(attachment.url, { timeoutMs: 20000, signal });
       buffer = fetched?.buffer || null;
     }
 
     if (!buffer || buffer.length < MIN_OCR_BYTES) {
       return null;
     }
+    // Tesseract.recognize doesn't accept AbortSignal natively, so we can
+    // only short-circuit before invoking it. An OCR pass that's already
+    // started will run to completion (typical 1-5s on small images).
+    if (signal?.aborted) return null;
 
     const { default: Tesseract } = await import('tesseract.js');
     const { data } = await Tesseract.recognize(buffer, OCR_LANGS, {

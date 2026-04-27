@@ -83,7 +83,7 @@ async function routeExtraction(attachment, context, signal) {
   if (signal?.aborted) return null;
 
   if (attachment.kind === 'image') {
-    return extractImageContent(attachment, context);
+    return extractImageContent(attachment, { ...context, signal });
   }
 
   if (attachment.kind === 'audio') {
@@ -93,7 +93,7 @@ async function routeExtraction(attachment, context, signal) {
   if (attachment.kind === 'video') {
     const urlKind = detectUrlKind(attachment.url);
     if (urlKind === 'video-platform') {
-      const platformResult = await extractYoutubeContent(attachment, context?.config);
+      const platformResult = await extractYoutubeContent(attachment, context?.config, { signal });
       if (platformResult) {
         return platformResult;
       }
@@ -105,18 +105,18 @@ async function routeExtraction(attachment, context, signal) {
     String(attachment.mimeType || '').includes('pdf') ||
     /\.pdf(?:\?|$)/i.test(String(attachment.url || ''))
   ) {
-    return extractDocumentContent(attachment);
+    return extractDocumentContent(attachment, { signal });
   }
 
   if (attachment.kind === 'link') {
     const urlKind = detectUrlKind(attachment.url);
     if (urlKind === 'video-platform') {
-      const platformResult = await extractYoutubeContent(attachment, context?.config);
+      const platformResult = await extractYoutubeContent(attachment, context?.config, { signal });
       if (platformResult) {
         return platformResult;
       }
     }
-    return extractLinkContent(attachment.url);
+    return extractLinkContent(attachment.url, { signal });
   }
 
   return null;

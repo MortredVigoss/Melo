@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-27 07:00 — Phase 4 第 1 刀：orchestrator abort 全链路 + 全 extractor signal 贯通
+
+- 用户开新 session，确认三点 follow-up，从 #1（orchestrator abort）起手。
+- 复用：`git cherry-pick 6863972 f6e540f`（reflog 里之前 C #7/#8 fix 的草稿）拿回 orchestrator abort + video 内部分支 parent signal + hasFfmpeg 探针 signal，PROGRESS 冲突保留 HEAD。代码侧自动合并。
+- 新铺 image / PDF / link / yt-dlp 的 signal 链路（之前 C #9 的 finding，本轮一次扫干净）：
+  - `src/media/common.js`：抽出共享 `combineSignals(externalSignal, timeoutMs)`（带 Node <20.3 fallback）；`fetchBuffer` / `fetchText` 加 `{ signal }` 参数走 combineSignals。`audioExtractor.js` 改 import 共享版本，drop 本地 copy。
+  - `src/media/extractors/documentExtractor.js`：`extractDocumentContent(attachment, { signal })`，PDF download fetch 走 combineSignals(signal, 30000)，pre-parse signal 检查避免抓到已 abort 的 buffer。
+  - `src/media/extractors/linkExtractor.js`：`extractLinkContent(url, { signal })`，把原来的"setTimeout + manual AbortController"换成 combineSignals。
+  - `src/media/extractors/imageExtractor.js`：`extractImageContent(attachment, { signal })`，download 阶段 signal 透传给 fetchBuffer；OCR 阶段 Tesseract.recognize 不接受 signal（库限制），只能 pre-OCR 签 signal abort 立即返回。
+  - `src/media/extractors/youtubeExtractor.js`：`runProcess(cmd, args, { timeoutMs, signal })` 接收 signal，abort 时 SIGKILL 子进程；`hasYtDlp({ signal })` 不缓存 abort 失败（避免一次 abort 永久禁用 yt-dlp）；`fetchYoutubeOembed` / `fetchYoutubeTranscript` / `fetchVimeoOembed` / `fetchPlatformMetadataViaYtdlp` 全接 signal；`extractYoutubeContent(_, _, { signal })`。新 export `_resetYtDlpAvailabilityForTests()` 给测试切换 fake binary 用。
+  - `src/media/index.js → routeExtraction`：把 signal 传给所有 extractor（之前只传 audio + video，现在 image / video-platform / PDF / link 全到位）。
+- 新增集成测试（`src/media/orchestratorAbort.test.js` + 4 个 case）：
+  - PDF download cancelled mid-flight：fake hanging server + 200ms budget → 断言 server 真被打 + connection client-side aborted + elapsed < 2s。
+  - link fetch cancelled mid-flight：同款。
+  - image download cancelled mid-flight：OCR 阶段不接 signal 但 download 阶段被 cancel 已经够了。
+  - yt-dlp child SIGKILL on budget timeout：fake bash binary（`--version` 立即 0 退出 + 其余 sleep 99999），1500ms budget → 断言 elapsed < 4s（如果 signal 没贯通到 spawn-level kill listener，会撞 30s yt-dlp 内部 timeout）。
+  - 测试加 `server.closeAllConnections?.()` 提前 close + `--test-force-exit` 解决 hanging http server 在 node:test 进程结束时不 release socket pool 的副作用。
+- 验证：`node --check` 全过；regression 全套 **360/360 全绿**（之前 351，新增 9 个：3 cherry-picked orchestrator + 1 video post-download + 4 extractor abort + 1 silentWav skip guard 上轮已合并）。
+- 提交哈希：（待 commit）
+
 ## 2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip
 
 - 上轮 push 后 Codex 给 B（不阻断），两条建议留 follow-up：

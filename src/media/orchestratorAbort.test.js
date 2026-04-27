@@ -109,6 +109,7 @@ test('enrichMessageWithMediaContext: hanging audio download is aborted by per-at
     await new Promise(r => setTimeout(r, 50));
     assert.ok(connectionAbortedByClient, 'fetch must have been aborted client-side — otherwise the abort signal never reached fetch');
   } finally {
+    server.closeAllConnections?.();
     server.close();
     _setMediaBudgetsForTests();  // restore production defaults
   }
@@ -190,5 +191,211 @@ test('video post-download abort: orchestrator timeout propagates into inner audi
     }
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+// ─── Phase 4 fan-out: image / PDF / link / yt-dlp signal propagation ───────
+// These tests drive the remaining four extractor kinds through the same
+// orchestrator path used by audio/video. Each one stands up a hanging
+// server (or fake hanging child for yt-dlp), runs the orchestrator with a
+// 200ms budget, and asserts:
+//   1. the backend was actually reached (anti-false-green flag),
+//   2. the connection / child was cancelled client-side (proves the abort
+//      signal propagated through routeExtraction → extractor → fetch/spawn),
+//   3. elapsed << internal extractor timeout (proves we're not waiting for
+//      the per-extractor 30s/60s timeout to fire).
+
+test('orchestrator abort: PDF download cancelled mid-flight', async () => {
+  _setMediaBudgetsForTests({ totalMs: 5000, perAttachmentMs: 200 });
+
+  let downloadHit = false;
+  let connectionAborted = false;
+  const server = createServer((req, res) => {
+    downloadHit = true;
+    req.on('close', () => {
+      if (req.aborted || !res.writableEnded) connectionAborted = true;
+    });
+    /* hang */
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+
+  try {
+    const message = {
+      role: 'user',
+      blocks: [{ kind: 'text', text: 'parse this' }],
+      attachments: [{
+        id: 'p1',
+        kind: 'link',  // routeExtraction's PDF detection fires off mimeType / .pdf URL
+        url: `http://127.0.0.1:${port}/spec.pdf`,
+        fileName: 'spec.pdf',
+        mimeType: 'application/pdf',
+      }],
+    };
+
+    const start = Date.now();
+    await enrichMessageWithMediaContext(message, {});
+    const elapsed = Date.now() - start;
+
+    assert.ok(downloadHit, 'PDF server must have received the request');
+    assert.ok(elapsed < 2000, `PDF abort took ${elapsed}ms; expected < 2000ms`);
+    await new Promise(r => setTimeout(r, 50));
+    assert.ok(connectionAborted, 'PDF fetch must be aborted client-side');
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+    _setMediaBudgetsForTests();
+  }
+});
+
+test('orchestrator abort: link fetch cancelled mid-flight', async () => {
+  _setMediaBudgetsForTests({ totalMs: 5000, perAttachmentMs: 200 });
+
+  let downloadHit = false;
+  let connectionAborted = false;
+  const server = createServer((req, res) => {
+    downloadHit = true;
+    req.on('close', () => {
+      if (req.aborted || !res.writableEnded) connectionAborted = true;
+    });
+    /* hang */
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+
+  try {
+    const message = {
+      role: 'user',
+      blocks: [{ kind: 'text', text: 'check this article' }],
+      attachments: [{
+        id: 'l1',
+        kind: 'link',
+        url: `http://127.0.0.1:${port}/article.html`,
+        fileName: '',
+        mimeType: 'text/html',
+      }],
+    };
+
+    const start = Date.now();
+    await enrichMessageWithMediaContext(message, {});
+    const elapsed = Date.now() - start;
+
+    assert.ok(downloadHit, 'link server must have received the request');
+    assert.ok(elapsed < 2000, `link abort took ${elapsed}ms; expected < 2000ms`);
+    await new Promise(r => setTimeout(r, 50));
+    assert.ok(connectionAborted, 'link fetch must be aborted client-side');
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+    _setMediaBudgetsForTests();
+  }
+});
+
+test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', async () => {
+  _setMediaBudgetsForTests({ totalMs: 5000, perAttachmentMs: 200 });
+
+  let downloadHit = false;
+  let connectionAborted = false;
+  const server = createServer((req, res) => {
+    downloadHit = true;
+    req.on('close', () => {
+      if (req.aborted || !res.writableEnded) connectionAborted = true;
+    });
+    /* hang */
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+
+  try {
+    const message = {
+      role: 'user',
+      blocks: [{ kind: 'text', text: 'OCR this' }],
+      attachments: [{
+        id: 'img1',
+        kind: 'image',
+        url: `http://127.0.0.1:${port}/screenshot.png`,
+        fileName: 'screenshot.png',
+        mimeType: 'image/png',
+      }],
+    };
+
+    const start = Date.now();
+    // Force OCR path (modelSupportsVision: false means extractImageContent
+    // runs Tesseract instead of returning null immediately). Default for
+    // unspecified vision context.
+    await enrichMessageWithMediaContext(message, { modelSupportsVision: false });
+    const elapsed = Date.now() - start;
+
+    assert.ok(downloadHit, 'image server must have received the request');
+    assert.ok(elapsed < 2000, `image download abort took ${elapsed}ms; expected < 2000ms`);
+    await new Promise(r => setTimeout(r, 50));
+    assert.ok(connectionAborted, 'image fetch must be aborted client-side');
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+    _setMediaBudgetsForTests();
+  }
+});
+
+test('orchestrator abort: yt-dlp child SIGKILL on budget timeout', async () => {
+  // Stand up a fake yt-dlp that exits 0 fast for --version (so hasYtDlp()
+  // resolves true) but hangs forever on real metadata calls. If the
+  // orchestrator's signal doesn't reach runProcess's spawn-level signal
+  // listener, the test will hit the test-timeout (default 30s).
+  const fakeBinDir = await mkdtemp(join(tmpdir(), 'melo-fake-ytdlp-'));
+  const fakeYtDlp = join(fakeBinDir, 'fake-yt-dlp');
+  const { writeFile, chmod } = await import('node:fs/promises');
+  await writeFile(
+    fakeYtDlp,
+    '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo "1.0.0"; exit 0; fi\nsleep 99999\n',
+    { mode: 0o755 },
+  );
+  await chmod(fakeYtDlp, 0o755);
+
+  const ORIG_BIN = process.env.MELO_YTDLP_BIN;
+  process.env.MELO_YTDLP_BIN = fakeYtDlp;
+
+  // Reset the yt-dlp availability cache so our fake binary's --version
+  // probe can be the canonical "ready" answer for this test run.
+  const { _resetYtDlpAvailabilityForTests } = await import('./extractors/youtubeExtractor.js');
+  if (typeof _resetYtDlpAvailabilityForTests === 'function') {
+    _resetYtDlpAvailabilityForTests();
+  }
+
+  _setMediaBudgetsForTests({ totalMs: 5000, perAttachmentMs: 1500 });
+
+  try {
+    const message = {
+      role: 'user',
+      blocks: [{ kind: 'text', text: 'analyze' }],
+      attachments: [{
+        id: 'y1',
+        kind: 'video',
+        // Use a non-YouTube video-platform URL so routeExtraction goes
+        // through the universal yt-dlp fallback, not the YouTube-specific
+        // oembed branch (which may succeed on real youtube.com network calls
+        // and bypass our fake binary).
+        url: 'https://www.bilibili.com/video/BV1234567890',
+        fileName: '',
+        mimeType: '',
+      }],
+    };
+
+    const start = Date.now();
+    await enrichMessageWithMediaContext(message, {});
+    const elapsed = Date.now() - start;
+
+    // Without signal threading the fake yt-dlp would sleep 99999s; we'd
+    // hit the 30s yt-dlp internal timeout at best. With it, abort SIGKILLs
+    // the child near 1500ms.
+    assert.ok(elapsed < 4000, `yt-dlp abort took ${elapsed}ms; expected < 4000ms`);
+  } finally {
+    if (ORIG_BIN === undefined) delete process.env.MELO_YTDLP_BIN;
+    else process.env.MELO_YTDLP_BIN = ORIG_BIN;
+    if (typeof _resetYtDlpAvailabilityForTests === 'function') {
+      _resetYtDlpAvailabilityForTests();
+    }
+    _setMediaBudgetsForTests();
+    await rm(fakeBinDir, { recursive: true, force: true }).catch(() => {});
   }
 });

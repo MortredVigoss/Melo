@@ -3,40 +3,9 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { combineSignals } from '../common.js';
 
 const execFileAsync = promisify(execFile);
-
-// Combine an optional external AbortSignal with an internal timeout into a
-// single signal that fires when EITHER aborts. When both args are missing,
-// returns undefined so the caller can pass it through unchanged (no signal
-// = current behavior).
-//
-// AbortSignal.any is Node 20.3+; package.json still declares node >=18 so
-// the fallback path matters. Without it, calling .any() on Node 18 / early
-// 20 throws synchronously and audio transcription silently degrades to
-// null whenever a caller passes a signal. Mirrors the pattern in
-// src/images/codexImageEngine.js → composeSignals.
-function combineSignals(externalSignal, timeoutMs) {
-  const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : null;
-  if (!externalSignal && !timeoutSignal) return undefined;
-  if (!externalSignal) return timeoutSignal;
-  if (!timeoutSignal) return externalSignal;
-
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([externalSignal, timeoutSignal]);
-  }
-
-  if (externalSignal.aborted) return externalSignal;
-  if (timeoutSignal.aborted) return timeoutSignal;
-
-  const controller = new AbortController();
-  const forwardAbort = signal => () => {
-    if (!controller.signal.aborted) controller.abort(signal?.reason);
-  };
-  externalSignal.addEventListener('abort', forwardAbort(externalSignal), { once: true });
-  timeoutSignal.addEventListener('abort', forwardAbort(timeoutSignal), { once: true });
-  return controller.signal;
-}
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 // Port where the Swift native transcription server listens.

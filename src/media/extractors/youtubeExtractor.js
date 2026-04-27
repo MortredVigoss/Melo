@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { debugWarn } from '../../debug.js';
+import { combineSignals } from '../common.js';
 
 const YOUTUBE_ID_PATTERNS = [
   /youtube\.com\/watch\?v=([\w-]{11})/i,
@@ -52,12 +53,18 @@ function ytDlpBinary() {
   return String(process.env.MELO_YTDLP_BIN || 'yt-dlp').trim() || 'yt-dlp';
 }
 
-function runProcess(command, args, { timeoutMs = YTDLP_TIMEOUT_MS } = {}) {
+function runProcess(command, args, { timeoutMs = YTDLP_TIMEOUT_MS, signal } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error(`${command} aborted before start`));
+      return;
+    }
+
     let stdout = '';
     let stderr = '';
     let settled = false;
     let timer = null;
+    let onAbort = null;
 
     const finish = handler => value => {
       if (settled) {
@@ -66,6 +73,9 @@ function runProcess(command, args, { timeoutMs = YTDLP_TIMEOUT_MS } = {}) {
       settled = true;
       if (timer) {
         clearTimeout(timer);
+      }
+      if (signal && onAbort) {
+        try { signal.removeEventListener('abort', onAbort); } catch {}
       }
       handler(value);
     };
@@ -89,6 +99,14 @@ function runProcess(command, args, { timeoutMs = YTDLP_TIMEOUT_MS } = {}) {
       });
     }
 
+    if (signal) {
+      onAbort = () => {
+        try { child.kill('SIGKILL'); } catch {}
+        finish(reject)(new Error(`${command} aborted`));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     child.on('error', finish(reject));
     child.on('exit', finish(code => {
       if (code === 0) {
@@ -105,14 +123,32 @@ function runProcess(command, args, { timeoutMs = YTDLP_TIMEOUT_MS } = {}) {
   });
 }
 
-async function hasYtDlp() {
+// Tests reset the cached availability when they swap MELO_YTDLP_BIN
+// between runs so a prior run's verdict doesn't leak across tests.
+export function _resetYtDlpAvailabilityForTests() {
+  ytDlpAvailabilityPromise = null;
+}
+
+async function hasYtDlp({ signal } = {}) {
   if (ytDlpAvailabilityPromise) {
     return ytDlpAvailabilityPromise;
   }
-
-  ytDlpAvailabilityPromise = runProcess(ytDlpBinary(), ['--version'], { timeoutMs: 5000 })
-    .then(() => true)
-    .catch(() => false);
+  // Don't cache "unavailable" verdicts that came from the caller's abort —
+  // a single cancelled probe shouldn't permanently disable yt-dlp on this
+  // process. We resolve from a one-shot run, recording the verdict only
+  // when the probe actually finished or hit a real (non-abort) error.
+  const probe = runProcess(ytDlpBinary(), ['--version'], { timeoutMs: 5000, signal });
+  ytDlpAvailabilityPromise = probe.then(
+    () => true,
+    err => {
+      if (err && /aborted/i.test(String(err.message || ''))) {
+        // Reset cache so the next non-aborted call re-probes.
+        ytDlpAvailabilityPromise = null;
+        return false;
+      }
+      return false;
+    },
+  );
   return ytDlpAvailabilityPromise;
 }
 
@@ -133,11 +169,12 @@ export function parseWebVttTranscript(value = '') {
     .trim();
 }
 
-async function fetchYoutubeOembed(videoId) {
+async function fetchYoutubeOembed(videoId, { signal } = {}) {
+  if (signal?.aborted) return null;
   try {
     const response = await fetch(
       `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
-      { signal: AbortSignal.timeout(8000) },
+      { signal: combineSignals(signal, 8000) },
     );
     if (!response.ok) {
       debugWarn('media', `youtube oembed returned ${response.status} for id=${videoId}`);
@@ -150,8 +187,9 @@ async function fetchYoutubeOembed(videoId) {
   }
 }
 
-async function fetchYoutubeTranscript(videoUrl, videoId) {
-  if (!(await hasYtDlp())) {
+async function fetchYoutubeTranscript(videoUrl, videoId, { signal } = {}) {
+  if (signal?.aborted) return null;
+  if (!(await hasYtDlp({ signal }))) {
     return null;
   }
 
@@ -170,7 +208,7 @@ async function fetchYoutubeTranscript(videoUrl, videoId) {
       '--output',
       outputTemplate,
       videoUrl,
-    ]);
+    ], { signal });
 
     const files = await readdir(tempDir).catch(() => []);
     const subtitleFile =
@@ -195,10 +233,11 @@ async function fetchYoutubeTranscript(videoUrl, videoId) {
 
 // ─── Vimeo oEmbed ────────────────────────────────────────────────────────────
 
-async function fetchVimeoOembed(url) {
+async function fetchVimeoOembed(url, { signal } = {}) {
+  if (signal?.aborted) return null;
   try {
     const endpoint = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`;
-    const res = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(endpoint, { signal: combineSignals(signal, 8000) });
     if (!res.ok) {
       debugWarn('media', `vimeo oembed returned ${res.status} for ${url}`);
       return null;
@@ -221,8 +260,9 @@ async function fetchVimeoOembed(url) {
  * login-gated access (e.g. Douyin, TikTok region-locked content). Cookies are
  * injected via --add-header, mirroring mediaInfoTool.js.
  */
-async function fetchPlatformMetadataViaYtdlp(url, config) {
-  if (!(await hasYtDlp())) return null;
+async function fetchPlatformMetadataViaYtdlp(url, config, { signal } = {}) {
+  if (signal?.aborted) return null;
+  if (!(await hasYtDlp({ signal }))) return null;
 
   const tempDir = await mkdtemp(join(tmpdir(), 'melo-ytdlp-meta-'));
   const outputTemplate = join(tempDir, '%(id)s.%(ext)s');
@@ -250,6 +290,7 @@ async function fetchPlatformMetadataViaYtdlp(url, config) {
 
     const { stdout } = await runProcess(ytDlpBinary(), args, {
       timeoutMs: YTDLP_META_TIMEOUT_MS,
+      signal,
     });
 
     if (!stdout.trim()) return null;
@@ -305,16 +346,17 @@ function formatCount(n) {
 
 // ─── Main entry point: video platform content extractor ──────────────────────
 
-export async function extractYoutubeContent(attachment, config) {
+export async function extractYoutubeContent(attachment, config, { signal } = {}) {
   const url = attachment?.url;
   if (!url) return null;
+  if (signal?.aborted) return null;
 
   // ── YouTube (oembed + yt-dlp subtitles) ───────────────────────────────────
   const videoId = extractYoutubeId(url);
   if (videoId) {
-    const oembed = await fetchYoutubeOembed(videoId);
+    const oembed = await fetchYoutubeOembed(videoId, { signal });
     if (oembed) {
-      const transcript = await fetchYoutubeTranscript(url, videoId);
+      const transcript = await fetchYoutubeTranscript(url, videoId, { signal });
       const text = transcript
         ? `${oembed.title}\n\nby ${oembed.author_name}\n\n${transcript}`
         : `${oembed.title}\n\nby ${oembed.author_name}`;
@@ -335,10 +377,10 @@ export async function extractYoutubeContent(attachment, config) {
 
   // ── Vimeo (oembed) ────────────────────────────────────────────────────────
   if (/vimeo\.com\/\d+/i.test(url)) {
-    const oembed = await fetchVimeoOembed(url);
+    const oembed = await fetchVimeoOembed(url, { signal });
     if (oembed) {
       // yt-dlp subtitle attempt for Vimeo
-      const meta = await fetchPlatformMetadataViaYtdlp(url, config);
+      const meta = await fetchPlatformMetadataViaYtdlp(url, config, { signal });
       const text = [
         oembed.title,
         oembed.author_name ? `by ${oembed.author_name}` : '',
@@ -359,7 +401,7 @@ export async function extractYoutubeContent(attachment, config) {
   }
 
   // ── Universal yt-dlp fallback (Bilibili, TikTok, Douyin, Twitter/X, etc.) ─
-  const meta = await fetchPlatformMetadataViaYtdlp(url, config);
+  const meta = await fetchPlatformMetadataViaYtdlp(url, config, { signal });
   if (!meta) return null;
 
   // Assemble a numeric stats line (Views / Likes / Comments / Date) when present,

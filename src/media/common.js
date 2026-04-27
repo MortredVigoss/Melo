@@ -11,11 +11,44 @@ export function normalizeMediaText(value = '', maxLength = 12000) {
     : normalized;
 }
 
-export async function fetchText(url, { timeoutMs = 10000, headers = {} } = {}) {
+/**
+ * Combine an optional external AbortSignal with an internal timeout. Returns
+ * a single signal that fires when EITHER aborts. Returns undefined when both
+ * args are missing so callers can spread it through unchanged.
+ *
+ * AbortSignal.any is Node 20.3+; package.json still declares node >=18 so
+ * the fallback path matters. Without it, calling .any() on Node 18 / early
+ * 20 throws synchronously and silently degrades to null. Mirrors the
+ * pattern in src/images/codexImageEngine.js → composeSignals.
+ */
+export function combineSignals(externalSignal, timeoutMs) {
+  const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : null;
+  if (!externalSignal && !timeoutSignal) return undefined;
+  if (!externalSignal) return timeoutSignal;
+  if (!timeoutSignal) return externalSignal;
+
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([externalSignal, timeoutSignal]);
+  }
+
+  if (externalSignal.aborted) return externalSignal;
+  if (timeoutSignal.aborted) return timeoutSignal;
+
+  const controller = new AbortController();
+  const forwardAbort = signal => () => {
+    if (!controller.signal.aborted) controller.abort(signal?.reason);
+  };
+  externalSignal.addEventListener('abort', forwardAbort(externalSignal), { once: true });
+  timeoutSignal.addEventListener('abort', forwardAbort(timeoutSignal), { once: true });
+  return controller.signal;
+}
+
+export async function fetchText(url, { timeoutMs = 10000, headers = {}, signal } = {}) {
+  if (signal?.aborted) return null;
   const response = await fetch(url, {
     headers,
     redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: combineSignals(signal, timeoutMs),
   });
 
   if (!response.ok) {
@@ -28,11 +61,12 @@ export async function fetchText(url, { timeoutMs = 10000, headers = {} } = {}) {
   };
 }
 
-export async function fetchBuffer(url, { timeoutMs = 20000, headers = {} } = {}) {
+export async function fetchBuffer(url, { timeoutMs = 20000, headers = {}, signal } = {}) {
+  if (signal?.aborted) return null;
   const response = await fetch(url, {
     headers,
     redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: combineSignals(signal, timeoutMs),
   });
 
   if (!response.ok) {
