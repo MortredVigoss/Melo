@@ -18,7 +18,7 @@
   - 新增 [desktop-ui/undoToast.js](desktop-ui/undoToast.js) 纯 helper（`formatUndoCountdown` / `formatUndoToastLabel` / `nextCountdownTickMs`），16 单测覆盖整数秒边界 / 100ms floor / 非 finite 输入。
   - app.js: `pendingArtifactDeletes: Map` state；`handleDeleteArtifact` 重写为软删（5s timer + `setTimeout(commitDelete)`）；`showUndoToast` DOM helper 渲染底部带倒计时的 Undo banner，点 Undo 清 timer + 撤销，超时调真 `/api/artifacts/delete`；artifact card 加 `.is-pending-delete` 灰显类。
   - 验证：`npm run test:ui` **71/71 全绿**（55 之前 + 16 undoToast）；memory 套 330/330；check-syntax 全过；UI 实际 toast 弹出 + Undo 行为留用户手测。
-- 提交哈希：`5f9107a`（批 1）+ 待填（批 2）。
+- 提交哈希：`5f9107a`（批 1）+ `e1a8ecf`（批 2）。
 
 ## 2026-04-27 17:30 — desktop-ui test harness 落地：videoStatus + advancedPage 双双抽出可测
 
