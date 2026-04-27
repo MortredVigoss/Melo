@@ -29,7 +29,8 @@
   - **C #18 这一刀**：单列折叠 + 容器 `height: 100%; overflow: hidden` 让纵向堆叠的 panes 被裁掉够不到（其实 ≤1100px 老 breakpoint 就有同款 bug，只是我把范围扩到 1180px 让更多人撞）。回退 1180px @media，grid 进一步压到 `200 220 minmax(280, 1fr)` 总 **700px**——1101px viewport（747 可用）下 47px buffer，所有桌面宽度都能装下三列、不需要折叠到单列、不需要改 overflow 语义。
 - 权衡：1101-1180px 区间下右列窄到 327-407px。比理想紧但功能性可读，比单列裁切好。1280px+ 用户右列拿到 506px+。
 - 验证：`node --check` 全过；regression **400/400 全绿**；UI 手测留给用户验证 1101 / 1280 / 1440px 三档实际渲染。
-- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → 这一刀（C #18 撤单列改更紧 grid）。
+- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → `bcc2b09`（C #18 撤单列改更紧 grid） → 这一刀（C #19 修 ≤1100px 单列裁切）。
+- C #19 后续：上一刀的 commit message 提到了 ≤1100px 单列模式有预存的 overflow:hidden 裁切 bug，Codex 抓到"既然你 doc 了就要修"。本刀在已有 `@media (max-width: 1100px)` 块里加了：`.page-customize` 改 `height: auto; overflow-y: auto`；`.customize-layout` 改 `height: auto; overflow: visible`；`.customize-pane` 改 `overflow-y: visible`，外加 border-right → border-bottom 视觉切换让单列堆叠的 pane 之间有分隔线。
 
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
 

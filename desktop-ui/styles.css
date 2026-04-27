@@ -4123,6 +4123,33 @@ select option {
   .ops-grid {
     grid-template-columns: 1fr;
   }
+
+  /* Single-column Customize fix: when the 3-col grid collapses, the
+     three .customize-panes stack vertically. The default layout keeps
+     `height: 100%; overflow: hidden` on both .page-customize and
+     .customize-layout so each pane scrolls independently — that works
+     for side-by-side, but in a stack it clips everything below the
+     first pane. In single-col mode we let .page-customize itself
+     scroll vertically and let the inner panes size to their content. */
+  .page.page-customize {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+  .page.page-customize > .customize-layout,
+  .agent-page-grid > .customize-layout {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .customize-layout > .customize-pane {
+    overflow-y: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .customize-layout > .customize-pane:last-child {
+    border-bottom: 0;
+  }
 }
 
 @media (max-width: 820px) {
