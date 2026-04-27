@@ -3259,9 +3259,12 @@ select option {
   line-height: 1.6;
 }
 
-.detail-card {
-  height: 100%;
-}
+/* The bordered detail card grows with its content. Setting `height: 100%`
+   here used to cap the rendered box at the column's visible height — when
+   content was taller (e.g. agent detail with Preset import + editor + form)
+   the bottom border was painted mid-column and child cards (preset-card,
+   etc.) leaked past it. Use min-height in the consolidated rule below so
+   the card still fills empty columns but stretches with tall content. */
 
 .create-connector-card {
   padding: 22px;
