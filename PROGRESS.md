@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光
+
+- 用户反馈 + 截图：Customize → Agents → 金冬天 详情面板里，"Operator" preset 卡（包括 `focused` chip 和 Operator 标题）**穿出**外层 detail 卡的圆角下边框继续往下铺。要求审查整个 UI 里其他类似"框互相叠加"的位置。
+- 排查：
+  - 全 stylesheet **零** `position: sticky`、所有 `position: absolute` 都有 `position: relative` 父级——不是 sticky/orphan-absolute 类问题。
+  - 真因：[styles.css:3262](desktop-ui/styles.css#L3262) `.detail-card { height: 100%; }` 把 detail 卡渲染高度钉在 `.agent-detail-column` 可视高度上，内容（Persona scope + meta-grid + Role prompt + Preset import + 编辑器 + Mood + MiniMax voice）比列高时下边框画在中段、子卡 `.preset-card` 物理上铺到边框外面。
+  - `.detail-card` 同时被 Agent / Skill / Connector / Custom skill 详情**全部共用**——一处改全治。
+- 修复（`desktop-ui/styles.css`）：删 line 3262 的 `.detail-card { height: 100% }`。保留 [3953](desktop-ui/styles.css#L3953) 的 `padding: 24px; min-height: 100%`：内容短时仍填满列、内容长时卡随内容长高、下边框始终包住所有子卡。
+- 全局 audit 同步扫了 6 个类别：
+  - 其他 card 类的 `height: 100%` 钉死 — 22 处全检，**仅** `.detail-card` 一处中招。其他要么是 layout 容器（`.page` / `.customize-layout` / `.search-stage`）、要么自带 `overflow:hidden` + 内部 grid 滚动（`.search-panel` / `.model-setup-card`）。
+  - z-index 层级 — 8 处 fixed/absolute 模态层叠合理：toast 9999 > citation drawer 9000 > edit menu 80 > tool permission 60 > palette/agent dropdown 50 > tts panel 5。唯一小隐患 citation drawer 9000 > tool permission 60，两者同时出现概率极低。
+  - `transform: translate` — hover 微抖（1px）+ 抽屉滑入动画，全部范围内偏移无叠加。
+  - 负 margin — 仅 `margin-top: -4px` 两处（`.tts-panel-hint` / `.agent-compact-note`）字距微调。
+  - max-height 无 `overflow:auto` 配套 — 17 处全部带 `overflow: auto/hidden`，无裸溢出。
+  - 其他 `.feature-card` / `.surface-card` / `.artifact-card` / `.project-card` / `.chat-card` — 全部无 height 约束，自然随内容长高。
+- 结论：UI 这一类 bug **根因只有一个**，已修。其他类别没等效问题。
+- Codex 前置 review **A 级**："小范围正确修复，风险低，无具体发现"。
+- 提交哈希：`2731e90`（已 push origin/master）。
+
+## 2026-04-27 13:30 — Codex C #16/#17/#18 fix chain：customize grid 1101px+ 真实可用宽度
+
+- 一连三轮 Codex C，全是宽度计算+折叠语义错位，按时间顺序：
+  - **C #16**：首版 grid `220 270 minmax(440, 1fr)` 总 930px，超过 1280px 下减完 sidebar 的余量。改 `200 240 minmax(360, 1fr)` 总 800px → `3022905`。
+  - **C #17**：800 仍超——忘算 `.page` 38×2 = 76px padding；真实 1101px viewport 可用 = 1101-278-76 = 747px。加单独 `@media (max-width: 1180px)` 折叠到单列 → `f20767b`。
+  - **C #18 这一刀**：单列折叠 + 容器 `height: 100%; overflow: hidden` 让纵向堆叠的 panes 被裁掉够不到（其实 ≤1100px 老 breakpoint 就有同款 bug，只是我把范围扩到 1180px 让更多人撞）。回退 1180px @media，grid 进一步压到 `200 220 minmax(280, 1fr)` 总 **700px**——1101px viewport（747 可用）下 47px buffer，所有桌面宽度都能装下三列、不需要折叠到单列、不需要改 overflow 语义。
+- 权衡：1101-1180px 区间下右列窄到 327-407px。比理想紧但功能性可读，比单列裁切好。1280px+ 用户右列拿到 506px+。
+- 验证：`node --check` 全过；regression **400/400 全绿**；UI 手测留给用户验证 1101 / 1280 / 1440px 三档实际渲染。
+- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → `bcc2b09`（C #18 撤单列改更紧 grid） → `ae0a964`（C #19 修 ≤1100px 单列裁切）。
+- C #19 后续：上一刀的 commit message 提到了 ≤1100px 单列模式有预存的 overflow:hidden 裁切 bug，Codex 抓到"既然你 doc 了就要修"。本刀在已有 `@media (max-width: 1100px)` 块里加了：`.page-customize` 改 `height: auto; overflow-y: auto`；`.customize-layout` 改 `height: auto; overflow: visible`；`.customize-pane` 改 `overflow-y: visible`，外加 border-right → border-bottom 视觉切换让单列堆叠的 pane 之间有分隔线。
+
 ## 2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理
 
 - 用户截图反馈："中间选 agent 那个太宽了，左两列也略宽，最右边这列要宽一点；图 1 文字和边框靠太近；图 2 一些框叠加在一起"。
@@ -20,17 +50,6 @@
   - **`.skill-health-card` 加 `margin-top: 18px`**：双保险，确保 Enabled toggle 和 Skill health 之间有清楚分隔。
 - 验证：`node --check` 全过；regression 全套 **400/400 全绿**；UI 手测留给用户验证三列重新分配 + Skills 详情面板间距是否合适。
 - 提交哈希：`ab06fca`（首版） + 后跟一刀 fix grid overflow at 1280px。
-
-## 2026-04-27 13:30 — Codex C #16/#17/#18 fix chain：customize grid 1101px+ 真实可用宽度
-
-- 一连三轮 Codex C，全是宽度计算+折叠语义错位，按时间顺序：
-  - **C #16**：首版 grid `220 270 minmax(440, 1fr)` 总 930px，超过 1280px 下减完 sidebar 的余量。改 `200 240 minmax(360, 1fr)` 总 800px → `3022905`。
-  - **C #17**：800 仍超——忘算 `.page` 38×2 = 76px padding；真实 1101px viewport 可用 = 1101-278-76 = 747px。加单独 `@media (max-width: 1180px)` 折叠到单列 → `f20767b`。
-  - **C #18 这一刀**：单列折叠 + 容器 `height: 100%; overflow: hidden` 让纵向堆叠的 panes 被裁掉够不到（其实 ≤1100px 老 breakpoint 就有同款 bug，只是我把范围扩到 1180px 让更多人撞）。回退 1180px @media，grid 进一步压到 `200 220 minmax(280, 1fr)` 总 **700px**——1101px viewport（747 可用）下 47px buffer，所有桌面宽度都能装下三列、不需要折叠到单列、不需要改 overflow 语义。
-- 权衡：1101-1180px 区间下右列窄到 327-407px。比理想紧但功能性可读，比单列裁切好。1280px+ 用户右列拿到 506px+。
-- 验证：`node --check` 全过；regression **400/400 全绿**；UI 手测留给用户验证 1101 / 1280 / 1440px 三档实际渲染。
-- 提交哈希：`3022905`（C #16 first cut） → `f20767b`（C #17 单列 fix） → `bcc2b09`（C #18 撤单列改更紧 grid） → 这一刀（C #19 修 ≤1100px 单列裁切）。
-- C #19 后续：上一刀的 commit message 提到了 ≤1100px 单列模式有预存的 overflow:hidden 裁切 bug，Codex 抓到"既然你 doc 了就要修"。本刀在已有 `@media (max-width: 1100px)` 块里加了：`.page-customize` 改 `height: auto; overflow-y: auto`；`.customize-layout` 改 `height: auto; overflow: visible`；`.customize-pane` 改 `overflow-y: visible`，外加 border-right → border-bottom 视觉切换让单列堆叠的 pane 之间有分隔线。
 
 ## 2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default
 
@@ -64,166 +83,20 @@
 - 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测：(a) 没 agent voice + saved default → 激活应直接用 saved default + 不擦；(b) 三者都空 → toast 错误提示。
 - 提交哈希：（待 commit）
 
-## 2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key
-
-- 上轮 Codex 给 C，3 条都对：
-  - 🔴 connector 表单读 `selected.config.*`（连接器 rollup），但我把 minimax 字段加到了 `settings.config`（bootstrap），保存后 UI 不回显——Whisper 字段其实也一直有同样的隐 bug；
-  - 🔴 已保存 key 时点 Test 按钮，前端送空 apiKey，server 必然 400；
-  - 🔵 TTS 面板 line 1152 读 `settings.config.minimaxApiKey`（raw），bootstrap 不暴露 raw key。
-- 修复：
-  - **`src/services/connector/connectorRollup.js → 'openai-compatible'`** 给 connector config 块加 8 个字段（4 minimax + 4 whisper）：`hasMinimaxKey/maskedMinimaxApiKey/minimaxGroupId/minimaxVoiceId` + `hasWhisperKey/maskedWhisperApiKey/whisperBaseUrl`。这才是 connector 表单 (`selected.config.*`) 的正确数据来源。`settings.config` 那边的同款字段保留，给 TTS 面板等其他 consumer 用。
-  - **`/api/tts/test-minimax` server fallback**：`apiKey/groupId/voiceId` 任一从表单空时，回退到 `getResolvedConfig().minimax*`。`process.env` 仍忽略——保持"测表单/保存值"的语义不变。前端预校验改成"表单 OR saved 至少有 key 和 voiceId"。
-  - **`desktop-ui/app.js:1152`** 改读 `bootstrap.settings.config.hasMinimaxKey`（masked-key 契约的正确消费者），删 raw key 错误读法。
-- Codex 反问回应：
-  - **Q1 Test 用 saved key**：是。server fallback 实现。
-  - **Q2 Group ID 必填**：否。空 group MiniMax 部分账号正常；server 接受空 group 不报错。
-- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测留给用户验证 connector 表单回显 + Test 按钮 saved key flow。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放
-
-- 用户要求："Model 或 Voice settings 里增加 MiniMax 配置区：API Key、Group ID、默认 Voice ID、测试朗读按钮。Agent 编辑页增加 minimaxVoiceId 字段，让 TTS 面板的'自定义语音'来源不再隐藏。"
-- 之前现状：MiniMax key/groupId/voiceId 全在 config.js 默认值里，UI 完全没暴露——agent 的 minimaxVoiceId 也只能靠 import preset 或别的间接路径写入。
-- 修改：
-  - **bootstrap 暴露** (`src/state/desktopBootstrap.js`)：API-key connector 的 config 加 `hasMinimaxKey` / `maskedMinimaxApiKey` / `minimaxGroupId` / `minimaxVoiceId` 四个字段，跟 whisperApiKey 同款 mask 模式（绝不把 raw key 暴露给客户端）。
-  - **新 endpoint** `POST /api/tts/test-minimax`（`src/server.js`）：接 `{ apiKey, groupId, voiceId, text? }`，调 `testMinimaxSynthesis`（`src/tts.js` 新 export）一次性合成 + afplay 播放。`testMinimaxSynthesis` **显式忽略 `process.env.MINIMAX_API_KEY` / `MINIMAX_GROUP_ID`**，让用户测的是表单里刚填的值，不是 stale env。返 `{ ok, bytes }` 或 4xx 带 `error`。
-  - **connector 表单** (`desktop-ui/app.js → renderConnectorDetails`)：在 Whisper 区下加 MiniMax 区块——4 个 input（API key 走 password+maskedPlaceholder pattern；Group ID/Voice ID 走 text）+ 一个 "Test playback" button + 状态文字 (`data-tts-test-status`)。
-  - **form submit** (`handleSaveConnectorConfig`)：body 加 `minimaxApiKey` / `minimaxGroupId` / `minimaxVoiceId`。`desktopStore.js → updateConfig` 已经在 `SECRET_LIKE_CONFIG_KEYS` 里包含 minimax 字段，blank 自动 preserve（防止用户清空 password 字段意外擦掉 saved key——见 feedback_preserve_user_config.md）。
-  - **action: test-minimax-tts**：从 form sibling 取值；空字段 + 没 saved key 提示"Enter an API key first"；空 voiceId 提示"Voice ID is required"；fetch 期间显示 "Synthesising…"；成功显示 "OK · N bytes synthesised"，失败显示 server error。
-  - **agent 编辑页** (`renderAgentDetails` 表单): mood section 之后加 `<input name="minimaxVoiceId">` + 说明文字"绑定 agent 到 MiniMax 克隆音色，TTS 面板'自定义语音'列表读这个字段"。`handleUpdateAgentProfile` 的 patch 加 `minimaxVoiceId`。
-- 验证：`node --check` 全过；regression 全套 **387/387 全绿**；UI 手测留给用户。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报
-
-- 上一刀让 desktop app 的 Browser voice 路由到 Swift native bridge 出声，但 Codex 抓到一个真 bug：流式自动朗读时 `_streamTtsPushChunk` 每句调一次 `speakWithBrowser` → bridge 的 `speakText` postMessage 每次终止上一句，导致 desktop + auto-speak 只能听到最后一句。
-- 修复方案（用户选 Option 1 末段单播）：
-  - `_streamTts` 加 `browserBatch: ''` 字段，注释说明 WKWebView bridge 不支持 FIFO 队列、所以累积末段单播的权衡。
-  - `_streamTtsPushChunk`：检测 `window.webkit.messageHandlers.meloVoice` → `browserStreamsLive = isBrowser && !isWebView`。真浏览器仍每句调 `speakWithBrowser`（speechSynthesis 自然排队）；WKWebView 下改成 `_streamTts.browserBatch += sentence + ' '`，**不**调 bridge。
-  - `_streamTtsFlush` 的 `useBrowser` 分支：把 `browserBatch + tail` 拼起来 trim → `speakWithBrowser(combined.slice(0, 4096))` 一次性播。Reset `browserBatch = ''`。
-  - `_streamTtsStart` / `_streamTtsOnToolCall` 都清空 `browserBatch`（防上轮残留 + 工具调用时丢弃中间话）。
-- 行为对照：
-  - **真浏览器 + Browser voice + auto-speak**：照旧逐句播（speechSynthesis 排队）。
-  - **Desktop app + Browser voice + auto-speak**：等整段流结束后一次性播。无"边生成边读"，但所有句子都听到。
-  - **Desktop app + Browser voice + 单击 play**：跟之前一样一次性播（`speakText` 走 `speakWithBrowser` → bridge），不受影响。
-  - **macOS / API engines**：完全不受影响。
-- Codex 反问回应：
-  - **Q1 流式 vs 末段单播**：末段单播（Option 1）。Swift 侧 FIFO 队列改动跨 Node/Swift 边界，留 follow-up。
-  - **Q2 picker 在 desktop 不可用是否改名**：不改名，保留 "Browser voice" + 已有的 disabled hint。
-- 验证：`node --check` 全过；regression 全套 **387/387 全绿**（一次 flake re-run 干净，是已知 store.* isolation flake）；UI 手测留给用户。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 10:00 — Browser voice 在 desktop app 没声音 fix：路由到 Swift native bridge
-
-- 用户反馈：选了 Browser voice 点播放没声音。
-- 定位：WKWebView 对 JS `speechSynthesis.speak()` **静默无效**——utterance 入队不报错也不出声。`speakWithBrowser` 返回 true 但听不到。
-- 历史包袱：`_speakWithNativeBridge`（`webkit.messageHandlers.meloVoice` postMessage 给 Swift AVSpeechSynthesizer）一直定义着但**死代码从未被调用**。
-- 修复：
-  - `desktop-ui/app.js → speakWithBrowser`：先检测 `window.webkit.messageHandlers.meloVoice`，存在就走 `_speakWithNativeBridge`（Swift AVSpeechSynthesizer，desktop app 出声）；不存在再走 JS `speechSynthesis`（真浏览器）。同一个 "Browser voice" radio 在两种环境都能出声。
-  - Voice picker 在 desktop app 下 disabled + title 提示：「Voice picker only applies in actual browsers — desktop app routes to system AVSpeechSynthesizer」（Swift bridge 不接 voice 参数）。Radio hint 也分两种：desktop 显示 "Desktop app · uses system voice (picker unused here)"，浏览器显示 "In-page · speechSynthesis · WebKit voices"。
-  - 三个 stop 路径都补 WKWebView native bridge 的 `stopAudio` postMessage：`_streamTtsStart` / `_streamTtsOnToolCall` / `stopCurrentTts`（最后这个已经通过 `_ttsAudio.pause()` 覆盖了，verified）。
-- 验证：`node --check` 全过；tts.test.js 22/22 绿；regression 待跑；UI 手测留给用户。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 09:30 — TTS 拆清楚三种声音来源：Browser / macOS / Edge / MiniMax / API
-
-- 用户审计："System voice"实际是 macOS `say`，但 dropdown 显示 browser `speechSynthesis` voices——选了基本不生效（native path 优先）。要求把"System voice"拆成两个独立选项：
-  - **Browser voice**：用 `speechSynthesis`，下拉选什么真生效
-  - **macOS voice**：走 `/usr/bin/say`，下拉显示 macOS 实际安装的 voice（不是 browser 的）
-  - Edge / MiniMax / API 保持独立
-- 修改：
-  - `src/server.js`：
-    - 新加 `GET /api/tts/say-voices` 端点：跑 `/usr/bin/say -v '?'`，正则 `/^(.+?)\s+([a-z]{2}(?:[_-][A-Z]{2,4})?)\s*#\s*(.*)$/` 解析每行成 `{name, lang, sample}`，非 macOS 主机返空数组（不报错）。本机实测 184 行 → 183 voices 解析（zh:19, ja:9, ko:9, en + 其他若干）。
-    - `POST /api/tts/native` 支持显式 `voice` 参数：UI 选了具体 voice 时用它；没选时回退到旧的 lang→voice heuristic（Tingting/Yuna/Kyoko），保 backward compat。
-  - `desktop-ui/app.js`：
-    - uiState 加 `ttsMacosVoiceName`（localStorage 持久化）+ `ttsMacosVoices` + `ttsMacosVoicesLoaded`。
-    - 把 `renderTtsVoicePanel` 里 "System voice" 的 radio 拆成 **macOS voice** + **Browser voice** 两个独立 radio，各自下拉：
-      - macOS 下拉用 `/api/tts/say-voices` 拿到的真 macOS voice 列表（按 en 优先 / 其他按 lang 字母排序），首次开 panel 时 lazy load。
-      - Browser 下拉照旧（`speechSynthesis.getVoices()`）。
-    - `speakText` / `_streamTtsPushChunk` / `_streamTtsFlush` / `_streamTtsEnqueue` 4 个 dispatch 路由全改：`useMacos` 走 `/api/tts/native` 加 `voice: ttsMacosVoiceName`；`useBrowser` 走 `speakWithBrowser`（speechSynthesis）；`useApi` 不变。`auto` 仍 fallback 到 macOS（保 backward compat）。
-    - `select-tts-macos-voice` action handler：写入 uiState + localStorage。
-    - `loadMacosVoices()` 异步抓 voice 列表 + render；标 `Loaded` flag 防 panel 反复开关重复抓。
-- **行为变化**：旧 `'browser'` engine 实际上跑的是 macOS say。新版本下，这些用户会真正落到 speechSynthesis（标签所写）。如果要恢复旧行为，去 panel 选 "macOS voice"——dropdown 还能选具体 voice，比之前还好。
-- 验证：`node --check` 全过；regression 全套 **365/365 全绿**；voice list parser 单跑实测 184 → 183 voices 解析正确。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 09:00 — Codex B 跟进：OCR 受控测试 + ESRCH 严格断言
-
-- 上轮 push 后 Codex 给 B 两条 ⚪：
-  - OCR pre-abort 之外没覆盖 createWorker 期间 abort 与 recognize 期间 abort 的实际 terminate 行为；
-  - `process.kill(pid, 0)` 断言放松到 `ESRCH|EPERM`，但 EPERM 表示进程存在只是无权限（跟"已死"语义相反）。
-- 修复：
-  - `src/media/extractors/imageExtractor.js`：加 `_setTesseractForTests(fake)` DI hook（`_tesseractImpl` 全局；`loadTesseract()` 间接访问）。tests 注入可控的 fake Tesseract（`createWorker`/`recognize`/`terminate` 时序自定义），绕开真库 cold cache 5-30s 不可测的窘境。
-  - `src/media/orchestratorAbort.test.js` 新增 2 个受控测试：
-    1. **mid-createWorker abort**：fake createWorker 300ms 解析；abort fire @ 100ms。断言 createWorker 真被调（createStarted）+ recognize 永不调（recognizeStarted === false，post-create 早返）+ terminate 被调 + elapsed < 800ms。
-    2. **mid-recognize abort**：fake createWorker 立即解析、recognize 永不解析；abort fire @ 100ms。fake terminate 顺手 reject recognize promise（mirror 真 worker.terminate() 的行为）。断言 recognize 真启动 + terminate 被调 + elapsed < 1000ms。
-  - yt-dlp 测试 `process.kill(pid, 0)` 断言收紧到只接 `/ESRCH/`（删 `|EPERM`），EPERM 注释说明：跑测试 uid 跟 fake 同 uid，永远不该撞 EPERM；如果撞了说明 abort 实际没杀进程，应该判失败而不是放过。
-- 验证：`node --check` 全过；orchestratorAbort.test.js **9/9**；regression 全套 **365/365 全绿**（08:30 时 363，新增 2 个受控 OCR 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 08:30 — Codex C #11 fix：fake yt-dlp 改 exec 防 orphan + OCR 提前注册 abort listener
-
-- 上轮 Codex 抓两条：fake bash `sleep 99999` 是 child，SIGKILL 杀 bash 不杀 sleep（每跑一次测试漏一个 27 小时进程）；OCR abort listener 在 createWorker resolve 之后才注册，cold cache 5-30s 期间 abort 无效。
-- 修复：
-  - `src/media/orchestratorAbort.test.js`：fake yt-dlp 脚本最后一行从 `sleep 99999` 改 `exec sleep 99999`——bash 自我替换为 sleep，spawn 的 PID 就 IS sleep，SIGKILL 直接杀。验证：跑测试前后 `ps aux | grep "sleep 99999"` 数量不变（确认本轮零泄漏；旧测试漏的 31 个 orphan 顺手 `pkill` 清掉）。
-  - `src/media/extractors/imageExtractor.js → runOcrWithAbort`：abort listener 提前到 `createWorker()` 之前注册 + `abortFired` flag + `workerRef` 指针。abort 路径分三种：
-    - createWorker 之前 abort：`signal?.aborted` early-return null；
-    - createWorker 之中 abort：listener 设 flag（worker 还没生）→ createWorker resolve 后 if (abortFired) 立即 terminate + null；
-    - recognize 之中 abort：listener 调 `workerRef.terminate()` → recognize promise reject → return null。
-    cold createWorker 时间不可省（库 promise 不可取消），但 worker handle 不再泄漏；resource leak 上界从"createWorker + 完整 recognize"压缩到"createWorker"。
-- Codex 反问回应：(1) 杀进程树？不必，`exec` 后单 PID 即可。(2) createWorker 期间立即停？做不到（promise 不可取消），降级为"resolve 后立即 terminate"，实现 + 注释明示。
-- 验证：`node --check` 全过；`ps` 验证零泄漏；regression 全套 **363/363 全绿**。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 08:00 — Codex B 跟进：OCR 改 Tesseract worker 可中断 + yt-dlp 测试反假绿加固
-
-- 上轮 push 后 Codex 给 B，两条建议：
-  - 🟡 `Tesseract.recognize` 一旦开始就吃 CPU 直到完成，orchestrator abort 没法杀。
-  - ⚪ yt-dlp abort 测试只看 elapsed，不证明 fake binary 真被调用 + 真被 SIGKILL。
-- 修复：
-  - `src/media/extractors/imageExtractor.js`：抽出 `runOcrWithAbort(buffer, signal)`，把 `Tesseract.recognize()` 替换为 `Tesseract.createWorker(OCR_LANGS, 1, ...)` + `worker.recognize()` + `worker.terminate()`。signal 监听 abort 时立即 `worker.terminate()` 杀 OCR webworker；natural completion 也走 terminate 清理；`terminated` flag 防重复 + listener 在 finally removeEventListener 防晚 fire。
-  - `src/media/orchestratorAbort.test.js` 的 yt-dlp 测试重写 fake bash：写 4 个 marker（version-marker / metadata-marker / completed-marker / metadata-pid）。断言：(1) version-marker 存在（hasYtDlp probe 走通）(2) metadata-marker 存在（metadata 分支真命中）(3) completed-marker 不存在（SIGKILL 生效，bash 没机会跑完 sleep）(4) `process.kill(pid, 0)` throws ESRCH（metadata 子进程 PID 真死）。
-  - 加 `extractImageContent` pre-aborted signal 测试：>MIN_OCR_BYTES 的 PNG data URL + pre-abort → elapsed < 500ms（cold Tesseract.createWorker 5-30s，<500ms 证明根本没进 worker 创建路径）。
-- PROGRESS round 7 condense：归档 06:30 / 05:00 / 04:30 三条已落地的 audioExtractor signal 化条目。
-- 验证：`node --check` 全过；orchestratorAbort.test.js **7/7**；regression 全套待跑。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 07:30 — Codex C #10 fix：videoExtractor 直接调 AbortSignal.any 改走 composeAbortSignals
-
-- `git pp` 给本轮的 3 个 commit 评级 C #10：videoExtractor.js 里 3 处 `AbortSignal.any([...])` 直接调用绕过了 common.js 的 Node 18 fallback——`withAudioBudget`、`withKeyframeBudget`（parent signal 合并）+ direct-video download fetch。Node 18.0-18.16 会 sync throw → 视频路径在带 parent signal 时退化为 null。
-- 修复：
-  - `src/media/common.js`：抽出更通用的 `composeAbortSignals(...signals)`（支持 N 个 signal 合并 + Node <20.3 fallback）。原 `combineSignals(externalSignal, timeoutMs)` 改成 thin wrapper（先把 timeoutMs 实例化成 AbortSignal.timeout 信号，再走 composeAbortSignals）。
-  - `src/media/extractors/videoExtractor.js`：3 处 `AbortSignal.any` 全替换为 `composeAbortSignals` / `combineSignals`，`AbortSignal.any` 已经绝迹于 media 层（除 common.js 内部 fallback 检测）。
-  - **Convention 写进 common.js docstring**：「media 层禁止直接调 `AbortSignal.any([...])`，统一走 `composeAbortSignals` / `combineSignals`。Reviewers should flag any new direct call.」记 Codex C #6 + #10 两次回归。
-- 测试加 2 个 monkeypatch 回归（`videoExtractor.test.js`）：临时把 `AbortSignal.any = undefined`，跑 `withAudioBudget` / `withKeyframeBudget` + parent signal，断言 fallback 路径仍然 propagate parent abort 给 work signal（80ms 内 elapsed < 500ms）。
-- **Bisect 验证**：把 common.js 里的 fallback 块直接 short-circuit 强制走 `AbortSignal.any` → 两个新测试 sync throw `TypeError`。还原后 2/2 绿。
-- 验证：`node --check` 全过；videoExtractor.test.js 25/25；regression 全套 **362/362 全绿**（07:00 时 360，新增 2 个 Node 18 fallback 测试）。
-- 提交哈希：（待 commit）
-
-## 2026-04-27 07:00 — Phase 4 第 1 刀：orchestrator abort 全链路 + 全 extractor signal 贯通
-
-- 用户开新 session，确认三点 follow-up，从 #1（orchestrator abort）起手。
-- 复用：`git cherry-pick 6863972 f6e540f`（reflog 里之前 C #7/#8 fix 的草稿）拿回 orchestrator abort + video 内部分支 parent signal + hasFfmpeg 探针 signal，PROGRESS 冲突保留 HEAD。代码侧自动合并。
-- 新铺 image / PDF / link / yt-dlp 的 signal 链路（之前 C #9 的 finding，本轮一次扫干净）：
-  - `src/media/common.js`：抽出共享 `combineSignals(externalSignal, timeoutMs)`（带 Node <20.3 fallback）；`fetchBuffer` / `fetchText` 加 `{ signal }` 参数走 combineSignals。`audioExtractor.js` 改 import 共享版本，drop 本地 copy。
-  - `src/media/extractors/documentExtractor.js`：`extractDocumentContent(attachment, { signal })`，PDF download fetch 走 combineSignals(signal, 30000)，pre-parse signal 检查避免抓到已 abort 的 buffer。
-  - `src/media/extractors/linkExtractor.js`：`extractLinkContent(url, { signal })`，把原来的"setTimeout + manual AbortController"换成 combineSignals。
-  - `src/media/extractors/imageExtractor.js`：`extractImageContent(attachment, { signal })`，download 阶段 signal 透传给 fetchBuffer；OCR 阶段 Tesseract.recognize 不接受 signal（库限制），只能 pre-OCR 签 signal abort 立即返回。
-  - `src/media/extractors/youtubeExtractor.js`：`runProcess(cmd, args, { timeoutMs, signal })` 接收 signal，abort 时 SIGKILL 子进程；`hasYtDlp({ signal })` 不缓存 abort 失败（避免一次 abort 永久禁用 yt-dlp）；`fetchYoutubeOembed` / `fetchYoutubeTranscript` / `fetchVimeoOembed` / `fetchPlatformMetadataViaYtdlp` 全接 signal；`extractYoutubeContent(_, _, { signal })`。新 export `_resetYtDlpAvailabilityForTests()` 给测试切换 fake binary 用。
-  - `src/media/index.js → routeExtraction`：把 signal 传给所有 extractor（之前只传 audio + video，现在 image / video-platform / PDF / link 全到位）。
-- 新增集成测试（`src/media/orchestratorAbort.test.js` + 4 个 case）：
-  - PDF download cancelled mid-flight：fake hanging server + 200ms budget → 断言 server 真被打 + connection client-side aborted + elapsed < 2s。
-  - link fetch cancelled mid-flight：同款。
-  - image download cancelled mid-flight：OCR 阶段不接 signal 但 download 阶段被 cancel 已经够了。
-  - yt-dlp child SIGKILL on budget timeout：fake bash binary（`--version` 立即 0 退出 + 其余 sleep 99999），1500ms budget → 断言 elapsed < 4s（如果 signal 没贯通到 spawn-level kill listener，会撞 30s yt-dlp 内部 timeout）。
-  - 测试加 `server.closeAllConnections?.()` 提前 close + `--test-force-exit` 解决 hanging http server 在 node:test 进程结束时不 release socket pool 的副作用。
-- 验证：`node --check` 全过；regression 全套 **360/360 全绿**（之前 351，新增 9 个：3 cherry-picked orchestrator + 1 video post-download + 4 extractor abort + 1 silentWav skip guard 上轮已合并）。
-- 提交哈希：（待 commit）
-
-## 归档摘要（2026-04-27 06:30 之前的所有条目）
+## 归档摘要（2026-04-27 11:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key** —— `connectorRollup.js` 给 connector config 加 4+4 字段（minimax/whisper），TTS 面板改读 `hasMinimaxKey`，`/api/tts/test-minimax` 表单空字段 fallback 到 saved。（待 commit）
+- **2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放** —— bootstrap 暴露 `hasMinimaxKey/maskedMinimaxApiKey/minimaxGroupId/minimaxVoiceId`；server 加 `POST /api/tts/test-minimax`；connector 表单加 4 input + Test 按钮；agent 编辑页加 minimaxVoiceId 字段。（待 commit）
+- **2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报** —— Desktop app 下 streaming TTS 累积成末段单播（WKWebView bridge 不支持 FIFO 队列）；真浏览器仍逐句 enqueue speechSynthesis。（待 commit）
+- **2026-04-27 10:00 — Browser voice 在 desktop app 没声音 fix：路由到 Swift native bridge** —— `speakWithBrowser` 检测 `webkit.messageHandlers.meloVoice`，desktop app 走 Swift AVSpeechSynthesizer；voice picker 在 desktop 下 disabled + 提示。（待 commit）
+- **2026-04-27 09:30 — TTS 拆清楚三种声音来源：Browser / macOS / Edge / MiniMax / API** —— 把"System voice"拆成 Browser voice（speechSynthesis）+ macOS voice（/usr/bin/say）；新加 `/api/tts/say-voices` 端点。（待 commit）
+- **2026-04-27 09:00 — Codex B 跟进：OCR 受控测试 + ESRCH 严格断言** —— 加 `_setTesseractForTests` DI hook + 2 个 mid-createWorker / mid-recognize abort 测试；yt-dlp 测试 `process.kill(pid, 0)` 收紧到只接 `/ESRCH/`。（待 commit）
+- **2026-04-27 08:30 — Codex C #11 fix：fake yt-dlp 改 exec 防 orphan + OCR 提前注册 abort listener** —— fake bash 末行 `sleep 99999` → `exec sleep`；`runOcrWithAbort` listener 提前到 createWorker 之前注册 + flag/workerRef 三种 abort 路径。（待 commit）
+- **2026-04-27 08:00 — Codex B 跟进：OCR 改 Tesseract worker 可中断 + yt-dlp 测试反假绿加固** —— `Tesseract.recognize` 换成 `createWorker` + `worker.recognize` + 可 terminate；yt-dlp fake 写 4 marker 证明 SIGKILL 真生效。（待 commit）
+- **2026-04-27 07:30 — Codex C #10 fix：videoExtractor 直接调 AbortSignal.any 改走 composeAbortSignals** —— 抽出 `composeAbortSignals(...signals)` 通用版；videoExtractor.js 3 处 `AbortSignal.any` 全替换；2 个 monkeypatch 回归证 fallback 仍 propagate。（待 commit）
+- **2026-04-27 07:00 — Phase 4 第 1 刀：orchestrator abort 全链路 + 全 extractor signal 贯通** —— image / PDF / link / yt-dlp 信号链路一次扫干净；`combineSignals` 抽到 common.js；4 个 orchestrator-level integration test。（待 commit）
 - **2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip** —— `combineSignals` 加 Node <20.3 manual fallback；whisper-cli 假绿测试改 `t.skip()`。`424cbe8`
 - **2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（C #6）** —— 加 `_setWhisperCliForTests` DI hook 解决 module-load 资源化；OpenAI 测试 authMode 改 'api-key'；新增 download abort 测试；`readAttachmentBuffer` 接 signal 走 combineSignals。`aadc7dd`
 - **2026-04-27 04:30 — audioExtractor 全链路 signal 化（C #5）** —— `tryWhisperCpp` / `convertToWavForNative` 走 `execFileAsync({ signal })`；native + OpenAI fetch 走 combineSignals；3 个真 child-kill / fetch-abort 测试证明 backend 真响应 abort。`0ed90fd`
@@ -269,7 +142,6 @@
 - **2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push** —— 用 `git push <remote> HEAD:<remote-branch>` 替代裸 `git push`，绕开 push.default 影响。`2c43ec2`
 - **2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数** —— 强制 tracking upstream + 拒绝转发任何 args + pre/post 共用 base_sha。`137c9a6`
 - **2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）** —— vec_memories CREATE 失败时把 disposable handle 的 vec 标志降为 false，下游 _runReplaceMemoriesOn 不再 prepare 不存在的 vec_memories；fix-7 测试加固直接查 memories 行。`5d2c6ac`
-
 - **2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）** —— `applyMemoryStoreSchema` 抽出私有函数；`withDisposableStoreAt` + `runInTransactionOn` 给替代 storePath 走独立 sqlite 句柄；`getCachedEmbedding`/`resolveCacheModelId` 都接受 explicit database 参数（transitive call chain 隔离）；新增 fix-7 回归测试。`559fbae`
 - **2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）** —— 把 home 升格为 first-class context object：`checkpointer` 4 op + `hydrateChatThreads` + `persistChatThreads` 全部接受 `{ threadsDir }`；缓存改 by-dir 索引；`captureLoadContext` 扩展为 `{home, stateFilePath, threadsDir, getAgentMarkdownPaths}` 贯穿整个 load chain；新增 stateLoadContextChain.test.js（3 tests）。`f3b0f29`
 - **2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）** —— `captureLoadContext()` 在 readStateSnapshot 入口一次性捕获 home + path + helpers，整个 load chain 共享；`saveState/persistStateAtomically` 接受 `capturedStatePath`；新增 readStateSnapshot full-chain capture 测试。`08cfab3`
