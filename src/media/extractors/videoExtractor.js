@@ -46,16 +46,14 @@ export function _setBudgetsForTests({ audioMs, keyframeMs } = {}) {
 // Extensions that indicate a direct binary video stream (not a webpage).
 const DIRECT_VIDEO_URL_RE = /\.(mp4|mov|webm|m4v|mkv|avi|flv|ts|m2ts)(\?|$|#)/i;
 
-async function hasFfmpeg() {
-  return new Promise(resolve => {
-    try {
-      const child = spawn('ffmpeg', ['-version'], { stdio: 'ignore' });
-      child.on('error', () => resolve(false));
-      child.on('exit', code => resolve(code === 0));
-    } catch {
-      resolve(false);
-    }
-  });
+async function hasFfmpeg({ signal } = {}) {
+  if (signal?.aborted) return false;
+  try {
+    await spawnWithAbort('ffmpeg', ['-version'], { signal });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -191,22 +189,38 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
  * gets [], the signal fires, and any in-flight ffmpeg child is killed by
  * `extractKeyframes`'s abort handler.
  *
+ * `parentSignal` is the orchestrator's AbortSignal — when it fires, this
+ * budget short-circuits to [] AND the work function's signal is also
+ * aborted (via AbortSignal.any), so an outer 15s timeout cancels the
+ * inner ffmpeg child instead of letting it run to its full local budget.
+ *
  * Tests can override the default budget via `_setBudgetsForTests({ keyframeMs })`.
  */
-export async function withKeyframeBudget(work, budgetMs) {
+export async function withKeyframeBudget(work, budgetMs, parentSignal) {
   const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _KEYFRAME_BUDGET_MS;
-  const ac = new AbortController();
+  const localAc = new AbortController();
+  // Combined signal: fires if EITHER the local timeout or the parent
+  // (orchestrator) aborts. The work fn passes this through to ffmpeg /
+  // ffprobe so a parent abort kills the child immediately.
+  const combinedSignal = parentSignal
+    ? AbortSignal.any([localAc.signal, parentSignal])
+    : localAc.signal;
   return new Promise(resolve => {
     let settled = false;
     const finish = (val) => {
       if (settled) return;
       settled = true;
-      ac.abort();
+      localAc.abort();
       resolve(Array.isArray(val) ? val : []);
     };
+    if (parentSignal?.aborted) {
+      finish([]);
+      return;
+    }
     const timer = setTimeout(() => finish([]), effectiveBudget);
+    parentSignal?.addEventListener('abort', () => finish([]), { once: true });
     Promise.resolve()
-      .then(() => work(ac.signal))
+      .then(() => work(combinedSignal))
       .then(
         val => { clearTimeout(timer); finish(val); },
         () => { clearTimeout(timer); finish([]); },
@@ -219,23 +233,33 @@ export async function withKeyframeBudget(work, budgetMs) {
  * resolves to either an audioResult object or null. Mirrors
  * withKeyframeBudget — same shape, different default budget.
  *
- * The work function receives an AbortSignal that fires on timeout so the
- * audio ffmpeg child can be SIGKILL'd via spawnWithAbort.
+ * The work function receives an AbortSignal combining the local timeout
+ * with `parentSignal` (the orchestrator). A parent abort propagates into
+ * the audio ffmpeg child / Whisper fetch so backend resources release
+ * immediately instead of running out the local 10s budget.
  */
-export async function withAudioBudget(work, budgetMs) {
+export async function withAudioBudget(work, budgetMs, parentSignal) {
   const effectiveBudget = (typeof budgetMs === 'number' && budgetMs > 0) ? budgetMs : _AUDIO_BUDGET_MS;
-  const ac = new AbortController();
+  const localAc = new AbortController();
+  const combinedSignal = parentSignal
+    ? AbortSignal.any([localAc.signal, parentSignal])
+    : localAc.signal;
   return new Promise(resolve => {
     let settled = false;
     const finish = (val) => {
       if (settled) return;
       settled = true;
-      ac.abort();
+      localAc.abort();
       resolve(val ?? null);
     };
+    if (parentSignal?.aborted) {
+      finish(null);
+      return;
+    }
     const timer = setTimeout(() => finish(null), effectiveBudget);
+    parentSignal?.addEventListener('abort', () => finish(null), { once: true });
     Promise.resolve()
-      .then(() => work(ac.signal))
+      .then(() => work(combinedSignal))
       .then(
         val => { clearTimeout(timer); finish(val); },
         () => { clearTimeout(timer); finish(null); },
@@ -300,7 +324,7 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
     return null;
   }
 
-  if (!(await hasFfmpeg())) {
+  if (!(await hasFfmpeg({ signal }))) {
     return null;
   }
   if (signal?.aborted) return null;
@@ -341,9 +365,13 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
     // race so the keyframe branch doesn't waste budget creating its dir.
     try { await mkdir(framesDir, { recursive: true }); } catch {}
 
+    // Pass the orchestrator's signal as parent so an outer 15s timeout
+    // also kills the inner audio ffmpeg / Whisper / keyframe ffmpeg
+    // children — instead of letting them run their full inner budgets
+    // (10s/5s) after the parent already returned null.
     const [audioResult, keyframes] = await Promise.all([
-      withAudioBudget(signal => audioBranch(videoPath, audioPath, attachment, context, signal)),
-      withKeyframeBudget(signal => extractKeyframes(videoPath, framesDir, { signal })),
+      withAudioBudget(s => audioBranch(videoPath, audioPath, attachment, context, s), undefined, signal),
+      withKeyframeBudget(s => extractKeyframes(videoPath, framesDir, { signal: s }), undefined, signal),
     ]);
 
     if (audioResult) {

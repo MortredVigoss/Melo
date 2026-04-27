@@ -369,6 +369,79 @@ test('withAudioBudget: fast successful work returns its value', async () => {
   assert.deepEqual(result, fake);
 });
 
+// ─── Codex C-grade fix #8: parent-signal propagation into inner budgets ────
+// withAudioBudget / withKeyframeBudget now accept a parentSignal so an outer
+// orchestrator abort can interrupt the inner work mid-flight, instead of
+// letting it run the full local 10s/5s budget after the parent already
+// returned null.
+
+test('withAudioBudget: parent signal abort reaches the work function', async () => {
+  const parent = new AbortController();
+  let workSignalAborted = false;
+
+  const promise = withAudioBudget(
+    workSignal => new Promise(resolve => {
+      workSignal.addEventListener('abort', () => {
+        workSignalAborted = true;
+        resolve(null);
+      });
+      // Otherwise hang forever — the test relies on parent-signal propagation
+      // to wake us up.
+    }),
+    30000,           // long local budget — only parent should fire
+    parent.signal,
+  );
+
+  setTimeout(() => parent.abort(), 80);
+  const start = Date.now();
+  const result = await promise;
+  const elapsed = Date.now() - start;
+
+  assert.equal(result, null);
+  assert.equal(workSignalAborted, true, 'work signal must fire when parent aborts');
+  assert.ok(elapsed < 500, `parent abort should bail near 80ms, took ${elapsed}ms`);
+});
+
+test('withAudioBudget: pre-aborted parent signal short-circuits without running work', async () => {
+  const parent = new AbortController();
+  parent.abort();
+
+  let workInvoked = false;
+  const result = await withAudioBudget(
+    () => { workInvoked = true; return Promise.resolve({ kind: 'transcript', text: 'oops' }); },
+    30000,
+    parent.signal,
+  );
+
+  assert.equal(result, null);
+  assert.equal(workInvoked, false, 'work must not run when parent is already aborted');
+});
+
+test('withKeyframeBudget: parent signal abort reaches the work function', async () => {
+  const parent = new AbortController();
+  let workSignalAborted = false;
+
+  const promise = withKeyframeBudget(
+    workSignal => new Promise(resolve => {
+      workSignal.addEventListener('abort', () => {
+        workSignalAborted = true;
+        resolve([]);
+      });
+    }),
+    30000,
+    parent.signal,
+  );
+
+  setTimeout(() => parent.abort(), 80);
+  const start = Date.now();
+  const result = await promise;
+  const elapsed = Date.now() - start;
+
+  assert.deepEqual(result, []);
+  assert.equal(workSignalAborted, true, 'keyframe work signal must fire when parent aborts');
+  assert.ok(elapsed < 500, `parent abort should bail near 80ms, took ${elapsed}ms`);
+});
+
 test('extractVideoContent: SLOW/hanging audio does not block keyframes (Phase 3 parallelism)', { skip: !ffmpegOk || !ffprobeOk }, async () => {
   // Slash the audio budget to 100ms so the test stays fast; stub the audio
   // call to hang forever. Keyframes branch should still settle inside its

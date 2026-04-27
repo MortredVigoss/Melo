@@ -13,11 +13,46 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import {
   _setMediaBudgetsForTests,
   enrichMessageWithMediaContext,
 } from './index.js';
+import {
+  _setBudgetsForTests as _setVideoBudgetsForTests,
+  _setExtractAudioContentForTests,
+} from './extractors/videoExtractor.js';
+
+async function ffmpegAvailable() {
+  return new Promise(resolve => {
+    try {
+      const c = spawn('ffmpeg', ['-version'], { stdio: 'ignore' });
+      c.on('error', () => resolve(false));
+      c.on('exit', code => resolve(code === 0));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function buildSilentVideo(videoPath, durationSec = 6) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn('ffmpeg', [
+      '-f', 'lavfi', '-i', `testsrc2=size=320x240:rate=4:duration=${durationSec}`,
+      '-f', 'lavfi', '-i', `anullsrc=r=16000:cl=mono`,
+      '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p', '-shortest',
+      '-y', videoPath,
+    ], { stdio: 'ignore' });
+    ff.on('error', reject);
+    ff.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
+  });
+}
+
+const ffmpegOk = await ffmpegAvailable();
 
 test('enrichMessageWithMediaContext: hanging audio download is aborted by per-attachment budget', async () => {
   // 200ms per-attachment budget so the test is fast. Production default 15s.
@@ -76,5 +111,84 @@ test('enrichMessageWithMediaContext: hanging audio download is aborted by per-at
   } finally {
     server.close();
     _setMediaBudgetsForTests();  // restore production defaults
+  }
+});
+
+// ─── Codex C-grade fix #8: video post-download parent-abort propagation ────
+// extractVideoContent's inner withAudioBudget / withKeyframeBudget create
+// their own AbortControllers. Without parent-signal threading, when the
+// orchestrator's 15s timeout fires AFTER the video download completes and
+// the inner branches have started, those inner branches keep running their
+// full local budgets (audio 10s + keyframe 5s) — leaking ffmpeg / Whisper
+// children for several seconds. This test drives that exact scenario:
+//   1. Real video downloads/decodes successfully (data URL, instant).
+//   2. ffmpeg pre-pass finishes (~50-100ms on testsrc2).
+//   3. The audio stub starts and listens for abort.
+//   4. Orchestrator's 1500ms parent budget fires.
+//   5. Stub's signal MUST fire (proving parent → withAudioBudget combined
+//      signal → stub).
+test('video post-download abort: orchestrator timeout propagates into inner audio branch', { skip: !ffmpegOk }, async () => {
+  const workDir = await mkdtemp(join(tmpdir(), 'melo-orch-video-test-'));
+  const videoPath = join(workDir, 'sample.mp4');
+  try {
+    await buildSilentVideo(videoPath, 6);
+    const { readFile } = await import('node:fs/promises');
+    const videoBuf = await readFile(videoPath);
+    const dataUrl = `data:video/mp4;base64,${videoBuf.toString('base64')}`;
+
+    // Generous inner budgets (30s) so only the parent can fire first.
+    _setMediaBudgetsForTests({ totalMs: 30000, perAttachmentMs: 1500 });
+    _setVideoBudgetsForTests({ audioMs: 30000, keyframeMs: 30000 });
+
+    let audioStubSignalAborted = false;
+    let audioStubReached = false;
+    _setExtractAudioContentForTests((attachment, context, opts) => {
+      audioStubReached = true;
+      return new Promise(resolve => {
+        const sig = opts?.signal;
+        if (!sig) {
+          // Test setup error — without a signal the stub couldn't observe abort
+          return resolve(null);
+        }
+        sig.addEventListener('abort', () => {
+          audioStubSignalAborted = true;
+          resolve(null);
+        });
+        // Otherwise hang until aborted — exact behavior of a slow Whisper backend.
+      });
+    });
+
+    try {
+      const message = {
+        role: 'user',
+        blocks: [{ kind: 'text', text: 'analyze this' }],
+        attachments: [{
+          id: 'v-test',
+          kind: 'video',
+          url: dataUrl,
+          fileName: 'sample.mp4',
+          mimeType: 'video/mp4',
+        }],
+      };
+
+      const start = Date.now();
+      await enrichMessageWithMediaContext(message, {});
+      const elapsed = Date.now() - start;
+
+      // Anti-false-green: the stub MUST have run, otherwise the test proves
+      // nothing about parent-signal propagation.
+      assert.ok(audioStubReached, 'audio stub must have been reached — otherwise ffmpeg pre-pass took longer than parent budget and the test is not exercising the post-download path');
+      // The core contract: parent's 1500ms timeout fires → inner stub's
+      // signal fires → stub resolves null. Without parent-signal threading,
+      // the stub would hang until the inner audio budget (30s) ran out.
+      assert.ok(audioStubSignalAborted, 'parent abort must propagate into the inner audio stub signal');
+      assert.ok(elapsed < 4000, `parent budget ~1.5s + cleanup; should not approach the 30s inner budget. took ${elapsed}ms`);
+    } finally {
+      _setExtractAudioContentForTests(null);
+      _setVideoBudgetsForTests();
+      _setMediaBudgetsForTests();
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 });
