@@ -8082,15 +8082,27 @@ function renderAgentWorkbench(selected) {
               ${presets.map(preset => {
                 const enabled = Boolean(preset?.enabled);
                 const allowed = whitelist.has(preset.id);
+                // Globally-disabled servers stay clickable when the agent
+                // has them in its whitelist, so the user can always REMOVE
+                // a stale authorisation. Adding a new authorisation for a
+                // disabled server is rejected by the action handler with
+                // a toast pointing at Advanced. The `is-disabled-preset`
+                // class greys the chip without using the HTML disabled
+                // attribute (which would block click entirely).
+                const stale = !enabled && allowed;
                 return `
                   <button
-                    class="chip chip-button ${allowed ? 'is-accent' : ''}"
+                    class="chip chip-button${allowed ? ' is-accent' : ''}${!enabled ? ' is-disabled-preset' : ''}"
                     type="button"
                     data-action="toggle-agent-mcp-server"
                     data-agent-id="${selected.id}"
                     data-mcp-server-id="${escapeHtml(preset.id)}"
-                    title="${enabled ? 'Server enabled globally' : 'Server disabled globally — enable in Advanced first'}"
-                    ${!enabled ? 'disabled' : ''}
+                    data-preset-enabled="${enabled ? '1' : '0'}"
+                    title="${enabled
+                      ? 'Server enabled globally'
+                      : stale
+                        ? 'Server disabled globally — click to revoke the stale authorisation'
+                        : 'Server disabled globally — enable in Advanced first'}"
                   >${escapeHtml(preset.id)}${enabled ? '' : ' (off)'}</button>
                 `;
               }).join('')}
@@ -11764,8 +11776,20 @@ document.addEventListener('click', async event => {
         // Toggle a specific stdio MCP server id in the per-agent whitelist.
         // No "All servers" sentinel here — MCP defaults to deny-all, the
         // user has to add each server explicitly.
+        //
+        // Rules:
+        //   - Removing (whitelist already contains the id) is always
+        //     allowed, even when the server is globally disabled. This
+        //     lets the user revoke stale authorisations after toggling
+        //     a server off in Advanced (without it, a re-enable later
+        //     would silently grant the old access back — Codex 🔵
+        //     2026-04-28 audit).
+        //   - Adding a new authorisation for a globally-disabled
+        //     server is refused with a flash-toast pointing the user
+        //     at Advanced. Better than failing silently.
         const agentId = trigger.dataset.agentId;
         const mcpServerId = trigger.dataset.mcpServerId;
+        const presetEnabled = trigger.dataset.presetEnabled === '1';
         const draftKey = agentDraftKey(agentId);
         const currentDraft = {
           ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
@@ -11775,6 +11799,9 @@ document.addEventListener('click', async event => {
           : new Set();
         if (currentIds.has(mcpServerId)) {
           currentIds.delete(mcpServerId);
+        } else if (!presetEnabled) {
+          showFlashToast(`"${mcpServerId}" is disabled globally — enable in Advanced first.`);
+          break;
         } else {
           currentIds.add(mcpServerId);
         }

@@ -32,15 +32,22 @@ export class McpStdioClient {
    * @param {string[]} [options.args]   - arguments
    * @param {Object}   [options.env]    - extra env vars merged with process.env
    * @param {string}   [options.name]   - human-readable server name for logging
-   * @param {string}   [options.cwd]    - working directory for the child process.
-   *                                     melo limits each MCP server to a
-   *                                     dedicated subtree under
+   * @param {string}   [options.cwd]    - default working directory for the
+   *                                     child process. melo defaults each MCP
+   *                                     server to its own subtree under
    *                                     `~/.melo/desktop/mcp-workspace/<name>/`
-   *                                     so a misbehaving server can't reach
-   *                                     into the user's $HOME or melo state
-   *                                     by default. Caller is responsible for
-   *                                     creating the directory before calling
-   *                                     `connect()` (see manager.js).
+   *                                     so artefacts the server writes
+   *                                     without an explicit path land
+   *                                     somewhere predictable.  This is NOT
+   *                                     a sandbox — a misbehaving server can
+   *                                     still touch any path the OS allows
+   *                                     via absolute paths or `..`.  Real
+   *                                     access control is enforced by the
+   *                                     per-agent whitelist + per-call
+   *                                     approval modal in melo. Caller is
+   *                                     responsible for creating the
+   *                                     directory before calling `connect()`
+   *                                     (see manager.js).
    */
   constructor({ command, args = [], env = {}, name = 'mcp-server', cwd = null }) {
     this.command  = command;

@@ -118,6 +118,21 @@ npm run bench:memory -- --threshold-recall5 0.85
 
 `bench/memory/golden.json` is gitignored — it holds private conversation excerpts.
 
+## MCP security model
+
+Melo ships built-in stdio MCP servers (browser automation, AntV chart generator, markdown→PDF, …) but does **not** default-trust them. Stdio MCPs run arbitrary local processes — file IO, network, exec — so the access path is gated through four explicit layers, in order:
+
+| Layer | What it controls | Where you toggle it |
+|---|---|---|
+| **1. Installed** | `npx` can pull the package off-the-shelf when the server starts. Nothing is downloaded ahead of time. | `package.json` only lists transitive deps; the MCP packages are pulled by `npx -y` on first connect. |
+| **2. Globally enabled** | Whether the server starts at all. The associated `enable*Mcp` config flag flips this. | Customize → Advanced → "Built-in MCP servers" toggle, or the `enable*Mcp` field in `~/.melo/config.json`. **All built-ins default to off.** |
+| **3. Agent authorised** | Whether a specific agent (main / research / a custom one) is allowed to call this server's tools. Default is **deny-all** for every agent. | Customize → Agents → the "Stdio MCP servers" chip-row on each agent. Empty = no MCP access. |
+| **4. Per-call approval** | Even after the first three layers pass, every tool invocation pops the in-app Tool Permission Request modal (Allow once / Always allow / Deny). | The modal itself; "Always allow" persists per-tool inside the chat session. |
+
+Each MCP server is launched with its working directory set to `~/.melo/desktop/mcp-workspace/<server>/` so artefacts it writes without an explicit path land in a predictable spot. **This is a default, not a sandbox** — a process that wants to read or write outside that directory still can. Real isolation comes from layers 3 and 4: an agent without authorisation never sees the tool, and an authorised tool call still requires an explicit user approval before it runs.
+
+If the four-layer model feels too strict for a daily setup, leave the layers as-is and use "Always allow" inside the approval modal once per (agent, tool) pair — that turns layer 4 off without weakening 1-3.
+
 ## Test and verification
 
 ```bash

@@ -823,6 +823,22 @@ button {
   cursor: default;
 }
 
+/* Globally-disabled MCP preset chips. Visually muted but still
+   clickable so the user can revoke a stale per-agent authorisation
+   even after the global toggle goes off. The HTML `disabled`
+   attribute is intentionally NOT used — that would also block the
+   click handler. */
+.chip-button.is-disabled-preset {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.chip-button.is-disabled-preset.is-accent {
+  /* The agent still holds an authorisation for this server. Keep
+     the accent tint so the chip looks "stale" rather than "absent". */
+  opacity: 0.7;
+}
+
 .command-suggestions {
   display: grid;
   gap: 8px;

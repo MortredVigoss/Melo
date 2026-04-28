@@ -19,25 +19,59 @@
  */
 
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { McpStdioClient, mcpResultToToolResult } from './client.js';
 import { registerTool, unregisterTool, getTool } from '../tools/registry.js';
 import { getMeloHome } from '../config.js';
 
 /**
- * Resolve the per-server working directory under
- * `<MELO_HOME>/desktop/mcp-workspace/<server>/`.  Each MCP server is spawned
- * with its cwd locked to this subtree so a misbehaving stdio MCP can't
- * casually reach into the user's $HOME or melo's own state.  The directory
- * is created lazily — `mkdirSync({ recursive: true })` is idempotent.
+ * Resolve the **default working directory** for a per-server MCP child
+ * process: `<MELO_HOME>/desktop/mcp-workspace/<server>/`.
  *
- * Captured at connect time so a mid-flight `MELO_HOME` flip in another part
- * of the process can't desync (CLAUDE.md §6).
+ * NOTE — this is *not* a sandbox.  A child process can still read /
+ * write any path it has OS-level permission to via absolute paths,
+ * `..`, or fs APIs.  The cwd lowers the default landing spot for
+ * artefacts the server creates without an explicit path; real access
+ * control is enforced by the three other layers (see config.js):
+ * global enable flag, per-agent whitelist, per-call approval.
+ *
+ * Path safety: server-name segments are sanitised so a name like
+ * `../../etc/passwd` can't escape the mcp-workspace root.  Any of the
+ * following inputs collapse to the fallback `mcp-server`:
+ *   - non-string / null / undefined
+ *   - empty / whitespace-only
+ *   - `.` or `..` after the regex sweep
+ * After sanitisation we re-`resolve` the joined path and assert it's
+ * still inside the workspace root; anything that isn't (defence in
+ * depth) also falls back to `mcp-server`.
+ *
+ * Captured at connect time so a mid-flight `MELO_HOME` flip can't
+ * desync (CLAUDE.md §6).
  */
 export function mcpServerWorkspaceDir(serverName) {
   const home = getMeloHome();
-  const safe = String(serverName || 'mcp-server').replace(/[^A-Za-z0-9._-]/g, '_');
-  return join(home, 'desktop', 'mcp-workspace', safe);
+  const root = join(home, 'desktop', 'mcp-workspace');
+  const fallback = join(root, 'mcp-server');
+
+  const raw = typeof serverName === 'string' ? serverName : '';
+  const trimmed = raw.trim();
+  if (!trimmed) return fallback;
+
+  const sanitised = trimmed.replace(/[^A-Za-z0-9_-]/g, '_');
+  // After the regex sweep the leaf must still be a meaningful directory
+  // name. Reject empty / dot / dot-dot, but also reject anything that
+  // contains no letters or digits (e.g. "..." → "___", "    " → "____",
+  // "._.-" → "_____") — those collapse to gibberish dirs we don't want
+  // to create.
+  if (!sanitised || sanitised === '.' || sanitised === '..') return fallback;
+  if (!/[A-Za-z0-9]/.test(sanitised)) return fallback;
+
+  const candidate = resolve(root, sanitised);
+  // Defence in depth: even if a future regex tweak lets something odd
+  // through, refuse the path unless it actually lives under root.
+  const rootWithSep = root.endsWith('/') ? root : `${root}/`;
+  if (!candidate.startsWith(rootWithSep)) return fallback;
+  return candidate;
 }
 
 // Active clients: serverName → McpStdioClient
@@ -65,10 +99,13 @@ export async function connectMcpServer(serverName, serverConfig) {
     disconnectMcpServer(serverName);
   }
 
-  // Sandbox the server's working directory.  `serverConfig.cwd` opt-out
-  // (e.g. for an MCP that genuinely needs to operate on the user's full
-  // workspace) lets advanced users disable the sandbox by setting it to
-  // null explicitly; everyone else gets the per-server subtree.
+  // Pin the server's *default* working directory under the per-server
+  // subtree so artefacts it writes without an explicit path land in
+  // a predictable spot (see mcpServerWorkspaceDir for details — this
+  // is not a sandbox).  Real access control comes from the per-agent
+  // whitelist + the per-call approval modal.  `serverConfig.cwd: null`
+  // opts out (e.g. for an MCP that genuinely needs to operate on the
+  // user's full workspace).
   let cwd = serverConfig.cwd;
   if (cwd === undefined) {
     cwd = mcpServerWorkspaceDir(serverName);

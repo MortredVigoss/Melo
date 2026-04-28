@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-04-28 10:00 — Codex D 修复：MCP 默认全关 + cwd 不再吹 sandbox + path 加严 + agent UI 撤销已有授权
+
+- 上一刀 `3007bdf` push 被 Codex D 阻断（4 个 finding）。原因是我误读用户原话"默认只启用搜索和 PDF" —— 那指的是 melo 既有的搜索 + PDF 附件入口，**不是** markdown2pdf MCP。stdio MCP 默认开等于 approval/whitelist 之前进程已运行，跟安全模型矛盾。
+- **🟠 默认全关**：[config.js](src/config.js) `enableMarkdown2PdfMcp` 改 `false`（与 `enableAntvChartMcp` 对齐）；注释明文 4 层状态契约。
+- **🟠 cwd 不再叫 sandbox**：[manager.js](src/mcp/manager.js#L37) + [client.js](src/mcp/client.js) 注释重写 —— cwd 只控默认落盘位置，**不限制绝对路径 / `..` / fs API**。真正的访问控制靠 per-agent whitelist + per-call approval。
+- **🟠 path 校验加严**：[mcpServerWorkspaceDir](src/mcp/manager.js#L48) 现禁绝 `.` / `..` / 全空白 / sanitise 后无字母数字 leaf；用 `path.resolve` 做最终路径校验，不在 workspace root 下的强制走 `mcp-server` fallback。新加 2 条边界测试覆盖 dot/dotdot/whitespace/multi-dot + workspace-root 越界。
+- **🔵 agent UI 撤销已有授权**：[app.js:8083](desktop-ui/app.js#L8083) 改 `disabled` 属性 → CSS 类 `.is-disabled-preset`（点击仍生效）。chip 行为：whitelist 已有 → 总是允许撤销（避免 stale 授权在全局重启后静默继承）；whitelist 没有 + 全局关 → 弹 flash-toast 提示 "enable in Advanced first"，不写入 whitelist。
+- **README 加 4 层状态文档**：installed / globally enabled / agent authorised / per-call approval —— 用户能看清"我现在到底在哪一层"。
+- 验证：`src/**/*.test.js` **1135/1135 全绿**（前次 1133 + 2 path 边界）；`npm run test:ui` 74/74；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）
 
 - 用户审查："MCP 安全风险讨论很多，尤其是 stdio 本地执行类。Melo 接 MCP 时保持 approval、白名单、agent 级权限、只读/写入目录限制，不要让所有 agent 默认拿到所有 MCP。" 4 个 phase 一次性闭环。
