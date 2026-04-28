@@ -57,6 +57,15 @@ export const DEFAULT_CONFIG = Object.freeze({
   ttsProvider: '',     // '' = default OpenAI | 'edge' = Edge TTS | 'minimax' = MiniMax
   ttsEdgeVoice: '',    // e.g. 'zh-CN-XiaoxiaoNeural'; empty = auto-detect by language
   ttsAutoPlay: false,  // "Auto-speak replies" — also enables Telegram voice reply
+  // Monotonic revision number bumped by every model-config write that
+  // carries an `_autosaveRevision` metadata field. Server uses it to
+  // reject a stale autosave (older inflight fetch landing AFTER a
+  // newer pending body) from overwriting fresher saved state. Reset
+  // to 0 means "never autosaved"; explicit Save without the meta
+  // field bumps to max(current, Date.now()), invalidating any
+  // in-flight autosave revisions older than that. See
+  // updateModelConfig in src/desktopStore.js + Codex audit 2026-04-28.
+  autosaveRevision: 0,
   // Optional third-party API keys
   lastFmApiKey: '',    // https://www.last.fm/api/account/create
   tavilyApiKey: '',    // https://tavily.com (web search)

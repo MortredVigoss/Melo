@@ -528,6 +528,73 @@ test('wiring — autosave unload flush picks pending over inflight (priority rul
   );
 });
 
+test('wiring — scheduleConnectorAutosave attaches _autosaveRevision to the body before queuing', () => {
+  // Codex C 第十一轮 (2026-04-28): server-side ordering depends on
+  // every autosave/flush body carrying a monotonic revision so that
+  // an older inflight POST can't race a newer pending POST and
+  // overwrite the user's latest typing. The schedule path must
+  // attach Date.now() *before* the body is stored on
+  // pendingConnectorAutosave (so unload flush also picks it up).
+  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
+  assert.ok(fnStart >= 0);
+  const openBrace = APP_SRC.indexOf('{', fnStart);
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < APP_SRC.length; i += 1) {
+    const c = APP_SRC[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) { closeBrace = i; break; }
+    }
+  }
+  assert.ok(closeBrace > openBrace);
+  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
+
+  assert.match(
+    fnBody,
+    /body\._autosaveRevision\s*=\s*Date\.now\(\)/,
+    'scheduleConnectorAutosave must stamp body._autosaveRevision = Date.now() so the server can reject older bodies',
+  );
+  // Stamp must precede the assignment to pendingConnectorAutosave.
+  const stampIdx = fnBody.search(/body\._autosaveRevision\s*=\s*Date\.now\(\)/);
+  const queueIdx = fnBody.search(/pendingConnectorAutosave\s*=\s*\{\s*body\s*\}/);
+  assert.ok(
+    stampIdx >= 0 && queueIdx >= 0 && stampIdx < queueIdx,
+    'revision must be stamped BEFORE the body is queued, so unload flush sees it too',
+  );
+});
+
+test('wiring — handleSaveConnectorConfig deliberately does NOT attach _autosaveRevision (force-write)', () => {
+  // The explicit Save path stays revision-free: server treats a
+  // request without _autosaveRevision as a force-write that bumps
+  // the saved revision past every in-flight autosave. If a future
+  // refactor accidentally forwards modelSetupDraft._autosaveRevision
+  // into the submit body, an older revision than what's saved would
+  // suddenly start being rejected — Save would silently no-op.
+  const fnStart = APP_SRC.indexOf('async function handleSaveConnectorConfig');
+  assert.ok(fnStart >= 0);
+  const openBrace = APP_SRC.indexOf('{', fnStart);
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < APP_SRC.length; i += 1) {
+    const c = APP_SRC[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) { closeBrace = i; break; }
+    }
+  }
+  assert.ok(closeBrace > openBrace);
+  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
+
+  assert.doesNotMatch(
+    fnBody,
+    /_autosaveRevision/,
+    'handleSaveConnectorConfig must NOT carry _autosaveRevision; explicit Save is a force-write that bumps the saved revision past all in-flight autosaves',
+  );
+});
+
 test('wiring — handleLoadModelOptions reads via pickConnectorField, not raw FormData', () => {
   // Codex B-grade follow-up (2026-04-28): the "Read available models"
   // button used `FormData.get('apiKey')` directly, so any background

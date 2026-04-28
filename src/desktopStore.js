@@ -1579,6 +1579,42 @@ export async function updateDesktopSettings(patch) {
 export async function updateModelConfig(patch = {}) {
   const current = await loadConfig();
 
+  // ── Autosave revision gate (Codex audit 2026-04-28) ──────────────────────
+  // The connector form's 3-second idle autosave can race itself: an older
+  // inflight POST 仍在 server 处理时，更新的 pending body 已经被 client
+  // beacon 发出。sendBeacon doesn't guarantee delivery order, so without
+  // server-side ordering the older inflight body could land last and
+  // clobber the newer one. Solution: every autosave/flush attaches a
+  // monotonic `_autosaveRevision` (Date.now() on the client). Server
+  // refuses to apply a patch whose revision is <= the saved revision,
+  // returning the current bootstrap unchanged. Explicit Save (and any
+  // legacy caller) sends NO `_autosaveRevision` and is treated as a
+  // force-write — it always applies and bumps the saved revision to
+  // max(current, Date.now()), invalidating every autosave revision
+  // older than that.
+  const incomingRevision =
+    typeof patch._autosaveRevision === 'number' && Number.isFinite(patch._autosaveRevision)
+      ? patch._autosaveRevision
+      : null;
+  const currentRevision =
+    typeof current.autosaveRevision === 'number' && Number.isFinite(current.autosaveRevision)
+      ? current.autosaveRevision
+      : 0;
+  if (incomingRevision !== null && incomingRevision <= currentRevision) {
+    // Stale autosave — older inflight body losing the race against a
+    // newer pending body that already landed. Keep saved state, return
+    // unchanged bootstrap so the client's applyBootstrap reads the
+    // newer state.
+    return getDesktopBootstrap();
+  }
+  // The "force write" path (explicit Save without _autosaveRevision)
+  // bumps revision to current wall-clock so that any autosave still
+  // in-flight with a smaller Date.now() is automatically rejected
+  // when it lands.
+  const nextAutosaveRevision = incomingRevision !== null
+    ? incomingRevision
+    : Math.max(currentRevision, Date.now());
+
   // Protect secret-like settings: a blank string on the inbound patch must be
   // interpreted as "user didn't provide this field" rather than "user wants
   // this cleared". The old behaviour silently wiped apiKey / baseUrl / TTS
@@ -1592,6 +1628,10 @@ export async function updateModelConfig(patch = {}) {
       : currentVal;
 
   const safePatch = { ...patch };
+  // `_autosaveRevision` is metadata, not a config field — strip before merge
+  // so it doesn't end up persisted twice (once as config field, once via
+  // the explicit autosaveRevision below).
+  delete safePatch._autosaveRevision;
   // Fields that fall under the "preserve when blank" rule
   // (feedback_preserve_user_config.md). Most are credentials, but
   // minimaxVoiceId joins the list because the TTS panel's
@@ -1635,6 +1675,7 @@ export async function updateModelConfig(patch = {}) {
       typeof patch.whisperBaseUrl === 'string' && patch.whisperBaseUrl.trim()
         ? patch.whisperBaseUrl.trim()
         : current.whisperBaseUrl,
+    autosaveRevision: nextAutosaveRevision,
   });
   return getDesktopBootstrap();
 }

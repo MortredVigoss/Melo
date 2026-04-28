@@ -227,6 +227,22 @@ test('buildAutosaveBody tolerates missing inputs without throwing', () => {
   assert.equal(buildAutosaveBody({ formData: null, draft: null }), null);
 });
 
+test('buildAutosaveBody does NOT bake in _autosaveRevision (caller stamps it)', () => {
+  // The revision is wall-clock, so it must be attached at the
+  // schedule callsite — not by this pure helper. Otherwise the
+  // helper's output would change every millisecond and equality
+  // tests would be flaky. The schedule path
+  // (scheduleConnectorAutosave) stamps body._autosaveRevision
+  // = Date.now() AFTER calling this helper.
+  const fd = fakeFormData({ authMode: 'api-key', baseUrl: 'http://x.local' });
+  const body = buildAutosaveBody({ formData: fd, draft: {} });
+  assert.equal(
+    '_autosaveRevision' in body,
+    false,
+    'buildAutosaveBody is pure — revision attachment is the caller\'s responsibility',
+  );
+});
+
 test('regression — paste a MiniMax key, simulate a background render, submit picks the right value', () => {
   // 1. User opens Customize → Connectors → OpenAI. Saved config
   //    has no MiniMax key yet.

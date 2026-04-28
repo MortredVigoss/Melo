@@ -5295,6 +5295,16 @@ function scheduleConnectorAutosave(form) {
     window.clearTimeout(connectorAutosaveTimer);
     return;
   }
+  // Monotonic revision so the server can reject older bodies that
+  // race a newer one. Date.now() is unique enough at human input
+  // cadence (3-second debounce floor) — concurrent same-millisecond
+  // schedules just trigger the "stale or equal" branch on the
+  // server, which is no worse than the previous overwrite. The
+  // explicit Save path (handleSaveConnectorConfig) deliberately
+  // does NOT attach this field, so the server treats it as a
+  // force-write and bumps the saved revision past every in-flight
+  // autosave. Codex C 第十一轮 (2026-04-28).
+  body._autosaveRevision = Date.now();
   pendingConnectorAutosave = { body };
 
   window.clearTimeout(connectorAutosaveTimer);
