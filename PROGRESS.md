@@ -29,7 +29,7 @@
   - 11 处 `gpt-5.4` → `gpt-5.5`（含 src 5 处、desktop-ui 3 处、smoke 2 处、3 个测试 fixture）。`/^gpt-5/i` 的 vision pattern 跨版本通用，不需要扩展白名单。
 - 14 个新 connectorDraft 契约测试（[connectorDraft.test.js](desktop-ui/connectorDraft.test.js)）：默认字段含 minimax/whisper；secrets 默认空（mask 契约）；config fallback 起作用；live draft 覆盖 saved；返回 fresh 对象不共享引用；非 object 输入 graceful；pickConnectorField 优先级 + trim + 非 string 拒绝 + null/undefined 不崩；端到端 regression：粘贴 → background render → submit 拿到正确 key。
 - 验证：`src/**/*.test.js` **1171/1171 全绿**；`npm run test:ui` **100/100 全绿**（前次 86 + 14 新 connectorDraft）；check-syntax 全过。
-- 提交哈希：`<pending>`。
+- 提交哈希：`28a47b1`。
 
 ## 2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）
 
