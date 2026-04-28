@@ -12,7 +12,7 @@
 - 修 + 抽：新建 [desktop-ui/agentDraft.js](desktop-ui/agentDraft.js) export `agentDraftFromProfile(agent)` 纯函数（含 `normalizeChannelsForDraft`），含 `enabledMcpServerIds: Array.isArray(...) ? [...] : []`（deny-all 默认）。app.js 旧 inline 代码替换为 `uiState.agentDrafts[key] || agentDraftFromProfile(agent)`。
 - 12 个新契约测试（[agentDraft.test.js](desktop-ui/agentDraft.test.js)）覆盖 3 条 Codex 关切：① 已有授权 round-trip 保留 + clone 不泄漏；② 未改表单 submit 不丢授权（mock hidden-input pipeline）；③ stale chip whitelist.has 仍 true → 撤销路径正常。还覆盖 missing/null/非数组 → deny-all 默认、connector/skill 仍保 null = no restriction、null/undefined 输入 graceful、normalizeChannelsForDraft 4 个分支。
 - 验证：`npm run test:ui` **86/86 全绿**（前次 74 + 12 新 agentDraft）；`src/**/*.test.js` 1143/1143；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`75f9f72`。
 
 ## 2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）
 
