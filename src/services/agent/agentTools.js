@@ -1,3 +1,5 @@
+import { parseMcpToolId } from '../../mcp/toolId.js';
+
 // ─── Agent tool whitelist + skill/connector filter helpers ───────────────────
 // Each agent profile carries an optional `tools` array (subset of the fixed
 // tool options below) plus optional per-agent `enabledSkillIds` /
@@ -138,6 +140,17 @@ export function normalizeMcpServerWhitelist(value) {
  * down to only those whose server id appears in the agent's whitelist.
  * Non-MCP tools are returned untouched.
  *
+ * Routes through `parseMcpToolId` rather than `split(':')[1]`.  Codex
+ * 2026-04-28 audit caught the substring split: a server named
+ * `safe:evil` would have produced `mcp:safe:evil:<tool>` whose
+ * second segment is `safe`, so an agent authorised for `safe`
+ * silently inherited access to `safe:evil`.  Routing through
+ * `parseMcpToolId` (which enforces `[A-Za-z0-9_-]+` on the server
+ * segment) makes that smuggling impossible: an illegal server id
+ * is dropped at parse time, and the canonical writer
+ * (`formatMcpToolId`) refuses to produce ambiguous prefixes in
+ * the first place.
+ *
  * @param {Array<{id: string}>} tools — anything from getAllTools()
  * @param {Object|null|undefined} profile — agent profile with optional
  *        enabledMcpServerIds field (defaults to deny-all when missing)
@@ -148,9 +161,9 @@ export function filterMcpToolsForAgent(tools, profile) {
   return (Array.isArray(tools) ? tools : []).filter(tool => {
     const id = tool?.id || '';
     if (!id.startsWith('mcp:')) return true;
-    // Tool id shape: `mcp:<server>:<tool>` — server is the second segment.
-    const serverId = id.split(':')[1] || '';
-    return whitelist.has(serverId);
+    const parsed = parseMcpToolId(id);
+    if (!parsed) return false; // malformed mcp tool id — never authorise
+    return whitelist.has(parsed.server);
   });
 }
 

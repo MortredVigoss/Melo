@@ -34,6 +34,7 @@ import { findProjectById } from './stateLookups.js';
 import { buildWorkspaceSnapshot } from '../services/workspace/workspaceSnapshot.js';
 import { buildConnectors } from '../services/connector/connectorRollup.js';
 import { getBuiltinMcpPresets } from '../mcp/manager.js';
+import { isValidMcpServerId } from '../mcp/toolId.js';
 import {
   allAgentIdsFromProfiles,
   AGENT_PRESETS,
@@ -387,6 +388,12 @@ export async function getDesktopBootstrap(query = '') {
           : {};
         for (const [id, cfg] of Object.entries(userServers)) {
           if (!id) continue;
+          // Skip user-configured servers whose id violates the
+          // [A-Za-z0-9_-]+ contract — they're rejected at connect
+          // time too, so surfacing them in the auth UI would let a
+          // user "authorise" a server that can never actually run.
+          // Codex 2026-04-28 audit.
+          if (!isValidMcpServerId(id)) continue;
           // User-configured server is "enabled" iff it isn't explicitly
           // disabled in the user's own config block.  Preset toggles
           // don't apply.

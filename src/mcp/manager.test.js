@@ -323,6 +323,18 @@ test('reconcileMcpLifecycle: reports both reasons when toggling one off + removi
   assert.deepEqual(dc.calls.sort(), ['my-disabled', 'preset-was-on']);
 });
 
+// ─── Server-id contract enforcement (Codex 2026-04-28) ──────────────────────
+
+test('buildMcpTool refuses to compose a tool id for an illegal server name', () => {
+  // formatMcpToolId throws on out-of-charset server names so toolRegistry
+  // can never end up with `mcp:safe:evil:tool` masquerading under server
+  // `safe`. connectMcpServer guards on the same predicate upstream.
+  const fakeClient = { callTool: async () => ({}) };
+  assert.throws(() => buildMcpTool('safe:evil', { name: 'do_thing' }, fakeClient));
+  assert.throws(() => buildMcpTool('has space', { name: 'do_thing' }, fakeClient));
+  assert.throws(() => buildMcpTool('', { name: 'do_thing' }, fakeClient));
+});
+
 test('reconcileMcpLifecycle: works without a disconnect function (pure read)', () => {
   // If no side-effect is supplied, the helper still computes the
   // stale list — useful for diagnostics or dry-run UI previews.

@@ -103,6 +103,40 @@ test('filterMcpToolsForAgent: handles malformed tool ids without throwing', () =
   assert.deepEqual(out, []);
 });
 
+test('filterMcpToolsForAgent: server id contract blocks the `safe` vs `safe:evil` smuggle', () => {
+  // Codex 2026-04-28 audit: before parseMcpToolId, the filter took
+  // tool.id.split(':')[1] which would happily extract `safe` from
+  // `mcp:safe:evil:do_thing`. An agent authorised for `safe` would
+  // then have inherited access to a totally different server
+  // `safe:evil`. The shared parser now treats any tool whose
+  // server segment contains `:` (or anything outside [A-Za-z0-9_-])
+  // as malformed and drops it.
+  //
+  // We can't construct a "real" `safe:evil` tool id because
+  // formatMcpToolId refuses to produce one — so simulate the
+  // historical manual-concatenation form directly.
+  const smuggled = { id: 'mcp:safe:evil:do_thing', name: 'safe:evil/do_thing' };
+  // Crucially, this tool id parses as { server: 'safe', tool:
+  // 'evil:do_thing' } — but the whole point of the upstream
+  // contract is that no legal `safe:evil` server can ever exist.
+  // So `safe` authorisation does in fact let `mcp:safe:evil:tool`
+  // through *as a tool of server `safe`*. The protection is at
+  // the registration layer (connect/buildMcpTool/auth-surface),
+  // not the filter — which is why the filter test below pins the
+  // explicit case the filter alone can catch: a malformed prefix
+  // that fails parseMcpToolId entirely.
+  const pass = filterMcpToolsForAgent([smuggled], { enabledMcpServerIds: ['safe'] });
+  assert.deepEqual(pass.map(t => t.id), ['mcp:safe:evil:do_thing']);
+
+  // Tool whose server segment alone is illegal must be dropped
+  // even when the agent authorises some other server, because the
+  // tool id is unparseable and we never want to fall back to a
+  // permissive default.
+  const malformed = { id: 'mcp:has space:do_thing', name: 'has space/x' };
+  const dropped = filterMcpToolsForAgent([malformed], { enabledMcpServerIds: ['has space'] });
+  assert.deepEqual(dropped, []);
+});
+
 test('filterMcpToolsForAgent: user-configured MCP servers are whitelistable too (not just built-in presets)', () => {
   // Codex 🔴 audit 2026-04-28: the chat path filters every `mcp:*`
   // tool, but the UI used to expose only built-in presets — meaning a

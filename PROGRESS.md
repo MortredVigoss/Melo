@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）
+
+- 上一刀 `75f9f72` push 又被 Codex C 阻断，🟠 finding：[agentTools.js:152](src/services/agent/agentTools.js) 用 `tool.id.split(':')[1]` 解析 server id，但用户配 `mcpServers["safe:evil"]` 时 `mcp:safe:evil:tool` 的第二段是 `safe`，**agent 授权 `safe` 静默放行 `safe:evil`**。授权语义被字符串拼接绕过。
+- 用户拍板 ABCD 全做（Q1=A 启动拒绝并 stderr 提示 / Q2=A 字符集收敛 `[A-Za-z0-9_-]` 跟 cwd sanitiser 对齐）。
+- 修：
+  - **新建 [src/mcp/toolId.js](src/mcp/toolId.js)** —— `MCP_SERVER_ID_PATTERN = /^[A-Za-z0-9_-]+$/` + `isValidMcpServerId(id)` + `formatMcpToolId(server, tool)`（throw on illegal server）+ `parseMcpToolId(toolId)`（返 `{server, tool}` 或 null；server 段必须满足 pattern）。
+  - **manager.js**：`connectMcpServer` 入口 reject 非法 id；`bootstrapMcpServers` Phase 0 过滤 effective map 同时 stderr warn 让用户重命名；`buildMcpTool` 改用 `formatMcpToolId`。
+  - **agentTools.filterMcpToolsForAgent** 用 `parseMcpToolId` 替 `split(':')[1]`，malformed tool id 直接 drop（不再 fallback 到许可默认）。
+  - **desktopBootstrap.mcpAuthSurface** 跳过含非法 id 的 user MCP（不在 UI 显示 → 用户授权了也不会变 active）。
+- 17 新测试：[toolId.test.js](src/mcp/toolId.test.js) ×15（pattern 通过/拒绝、format throw、parse 边界、prefix 检查）+ [agentTools.test.js](src/services/agent/agentTools.test.js) `safe vs safe:evil smuggle` + `malformed prefix dropped` + [manager.test.js](src/mcp/manager.test.js) `buildMcpTool refuses illegal server name`。
+- 验证：`src/**/*.test.js` **1160/1160 全绿**（前次 1143 + 17 新）；`npm run test:ui` 86/86；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-28 11:30 — Codex C 第三轮：agentDraftFor 漏 enabledMcpServerIds → 静默清空 + stale 撤销失效
 
 - 上一刀 `6957783` push 又被 Codex C 阻断。真因：[app.js::agentDraftFor()](desktop-ui/app.js#L1648) inline 拷 `enabledSkillIds` / `enabledConnectorIds` 但忘了 `enabledMcpServerIds` —— 已有授权 agent 打开编辑页 chip-row 全不显示 selected，submit 时 hidden input 是空字符串，server 收到 `[]` → **静默清空 agent MCP 授权**。同时 stale revoke 路径破灭：currentIds 永远空，点击只走 add 分支被 toast 拒绝。
@@ -29,25 +42,11 @@
 - 验证：`src/**/*.test.js` **1143/1143 全绿**（前次 1136 + 7 新 lifecycle）；`npm run test:ui` 74/74；check-syntax 全过。
 - 提交哈希：`6957783`。
 
-## 2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复
-
-- 上一刀 `799a9a4` push 又被 Codex C 阻断，3 个 finding 都真：
-  - 🔴 per-agent UI 只列 built-in presets，**user-configured `mcpServers` 注册了 tool 但 UI 看不见 → user MCP 永远 deny-all 死锁**。
-  - 🟠 `Boolean(body?.enabled)` 把 `"false"` / `"0"` 等 truthy 字符串当 true，`/api/mcp/preset-toggle` 可被误开启。
-  - ⚪ `src/mcp/manager.test.js:78` 行因为我打字时输入 control char 实际有 literal NUL 字节，git 识别为 binary。
-- 用户决定（同意推荐 A+A）：user-configured MCP 跟 built-in 同 4 层模型；全局 preset 关闭后 agent stale 授权保留可撤销（已在前次实现）。
-- 修：
-  - **🔴 `bootstrap.customize.mcpAuthSurface[]`**（[desktopBootstrap.js](src/state/desktopBootstrap.js)）—— built-in presets ∪ user `config.mcpServers` 的 unique 联合；每条带 `source: 'preset'\|'user'`、`enabled` 状态、command/args/description。User 条目 `enabled` 由 `disabled` 字段决定（不受 preset flag 影响）；id 撞名时 user 覆盖 preset（与 `buildEffectiveMcpServers` 同语义）。Agent UI [app.js:8068](desktop-ui/app.js#L8068) 改用 `mcpAuthSurface`（`mcpPresets` 留作 legacy fallback），现在 user MCP 也会出现在 chip-row。
-  - **🟠 `/api/mcp/preset-toggle` 严格 boolean**（[server.js](src/server.js)）：`typeof body.enabled === 'boolean'` 才放行，否则 400 + 错误信息 `"\`enabled\` must be a literal boolean"`。
-  - **⚪ NUL 修**（[manager.test.js](src/mcp/manager.test.js)）—— 用 python 直接定位 byte 3628 替换为 ASCII 空格。`file` 命令现报 UTF-8 text 不再 binary。
-- 新增回归测试：[agentTools.test.js](src/services/agent/agentTools.test.js#L93) 的 `user-configured MCP servers are whitelistable too` —— 显式 pin "filter 不区分 preset vs user，只看 server id" 这个语义；任何 `mcp:my-custom-server:*` 都受同一白名单 gate。
-- 验证：`src/**/*.test.js` **1136/1136 全绿**（前次 1135 + 1 新 user-MCP 测试）；`npm run test:ui` 74/74；check-syntax 全过。`/api/mcp/preset-toggle` boolean 校验是 server.js 内联代码，没有单独 endpoint test 框架；contract 在代码 + 注释 + commit message 里 pin 住。
-- 提交哈希：`4d9dc73`。
-
-## 归档摘要（2026-04-28 10:00 之前的所有条目）
+## 归档摘要（2026-04-28 10:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复** —— bootstrap 暴露 built-in ∪ user MCP 的 union surface（之前 UI 只列 built-in，user MCP 死锁）；`/api/mcp/preset-toggle` 严格 `typeof === 'boolean'`；test 文件里 NUL 字节用 python 替换。`4d9dc73`
 - **2026-04-28 10:00 — Codex D 第一轮：MCP 默认全关 + cwd reframe + path 加严 + agent UI 撤销** —— md2pdf 默认改 false（4 层模型）；cwd 不再叫 sandbox（不限制绝对路径），改 default working dir；path 禁 `.`/`..`/无字母数字 leaf + resolve 校验 root；chip 改 CSS 类（仍可点撤销已有授权）；README 加 4 层状态文档。`799a9a4`
 - **2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）** —— 4 phase 一次性：BUILTIN_MCP_PRESETS（antv-chart + markdown2pdf）+ McpStdioClient cwd + 默认 cwd 子目录；agent profile `enabledMcpServerIds`（deny-all）+ filterMcpToolsForAgent prompt/dispatch 双 enforcement；buildMcpTool 默认 requiresPermission=true 走 approval；bootstrap mcpPresets[] + Advanced toggle UI + agent customize chip-row + `/api/mcp/preset-toggle` 端点。30 新单测，1133/1133 全绿。`8778052` + `3ae3285`
 - **2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点** —— Voice 面板加 Auto radio + WKWebView 改名 Desktop native voice + 视频附件 chip 读 extractedMedia 显示真实状态 + Voice 面板加配置 MiniMax/Whisper 跳转。`9f5a87a`

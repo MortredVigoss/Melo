@@ -23,6 +23,7 @@ import { join, resolve } from 'node:path';
 import { McpStdioClient, mcpResultToToolResult } from './client.js';
 import { registerTool, unregisterTool, getTool } from '../tools/registry.js';
 import { getMeloHome } from '../config.js';
+import { formatMcpToolId, isValidMcpServerId } from './toolId.js';
 
 /**
  * Resolve the **default working directory** for a per-server MCP child
@@ -90,6 +91,21 @@ const _registeredMcpToolIds = new Set();
  * @returns {Promise<{ connected: boolean, toolCount: number, error?: string }>}
  */
 export async function connectMcpServer(serverName, serverConfig) {
+  // Refuse server ids that don't match `[A-Za-z0-9_-]+`.  Codex
+  // 2026-04-28 audit: a server named `safe:evil` produced
+  // `mcp:safe:evil:<tool>` tool ids that the agent-whitelist parser
+  // misattributed to server `safe`, granting access to a different
+  // server's tools.  Pinning the contract at connect time blocks the
+  // attack at its earliest reachable surface; bootstrapMcpServers
+  // also filters them out + warns so this branch is mostly defensive.
+  if (!isValidMcpServerId(serverName)) {
+    return {
+      connected: false,
+      toolCount: 0,
+      error: `invalid server id "${serverName}" — must match [A-Za-z0-9_-]+`,
+    };
+  }
+
   if (serverConfig.disabled) {
     // Codex 🔴 audit 2026-04-28: a previously-running server that
     // flips to disabled=true must actually be stopped — otherwise the
@@ -142,7 +158,11 @@ export async function connectMcpServer(serverName, serverConfig) {
     let registered = 0;
 
     for (const mcpTool of mcpTools) {
-      const toolId = `mcp:${serverName}:${mcpTool.name}`;
+      // formatMcpToolId enforces the server-id contract so a
+      // future buggy caller can't slip an ambiguous prefix in
+      // here.  serverName has already passed isValidMcpServerId
+      // above; this is just the canonical writer call.
+      const toolId = formatMcpToolId(serverName, mcpTool.name);
       if (getTool(toolId)) continue; // already registered
 
       const tool = buildMcpTool(serverName, mcpTool, client);
@@ -362,8 +382,32 @@ export function reconcileMcpLifecycle({ effective = {}, activeNames = [], discon
  *                               or `'disabled'`)
  */
 export async function bootstrapMcpServers(mcpServers = {}, flags = {}) {
-  const effective = buildEffectiveMcpServers(mcpServers, flags);
+  const rawEffective = buildEffectiveMcpServers(mcpServers, flags);
+
+  // Phase 0 — strip entries whose server id violates the contract so
+  // they never reach connectMcpServer / the auth surface / the tool
+  // registry.  Codex 2026-04-28 audit: a `safe:evil` user-config
+  // entry would have masqueraded as `safe` once concatenated into
+  // tool ids.  Surfacing the rejection on stderr (not throwing) so a
+  // bad config entry doesn't kill the whole boot — the rest of the
+  // fleet still comes up.
+  const effective = {};
   const results = {};
+  for (const [name, cfg] of Object.entries(rawEffective)) {
+    if (!isValidMcpServerId(name)) {
+      process.stderr.write(
+        `[mcp] skipping server "${name}": id must match [A-Za-z0-9_-]+ ` +
+        `(rename in config.mcpServers)\n`,
+      );
+      results[name] = {
+        connected: false,
+        toolCount: 0,
+        error: `invalid server id "${name}"`,
+      };
+      continue;
+    }
+    effective[name] = cfg;
+  }
 
   // Phase 1 — reap stale connections.  reconcileMcpLifecycle is the
   // pure half: it inspects effective vs the snapshot of active names
@@ -415,7 +459,12 @@ export function getActiveMcpServers() {
 // `client` parameter is only used inside the `run` callback, so callers
 // in tests can pass a stub.
 export function buildMcpTool(serverName, mcpTool, client) {
-  const toolId = `mcp:${serverName}:${mcpTool.name}`;
+  // Use the canonical writer so a malformed serverName can't reach
+  // toolRegistry as `mcp:<bad>:<tool>` and confuse the auth parser
+  // later.  Throws if serverName violates [A-Za-z0-9_-]+; production
+  // callers (connectMcpServer) gate on the same check upstream so
+  // this throw is unreachable on the happy path.
+  const toolId = formatMcpToolId(serverName, mcpTool?.name);
   // Normalise the MCP inputSchema to our parametersSchema format
   const parametersSchema = mcpTool.inputSchema || { type: 'object', properties: {} };
 
