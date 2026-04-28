@@ -4784,8 +4784,19 @@ async function handleLoadModelOptions(form) {
       method: 'POST',
       body,
     });
-    uiState.modelSetupDraft = null;
-    applyBootstrap(payload);
+    // Preserve modelSetupDraft after refresh (Codex C 第十四轮 audit
+    // 2026-04-28). The server-side refreshModelCatalog is now
+    // catalog-only — it does NOT persist the form's authMode /
+    // baseUrl / model / apiKey / systemPrompt. If we cleared the
+    // draft here, the user's pasted-but-unsaved API key would
+    // vanish from the form the moment they clicked "Read
+    // available models", and the next Save would silently
+    // submit the old saved values. Keep the draft so the form
+    // continues to render the user's typing; applyBootstrap
+    // refreshes the catalog map so the model dropdown reflects
+    // the freshly-discovered options without stomping the rest
+    // of the form.
+    applyBootstrapPreservingDrafts(payload);
   } finally {
     uiState.modelCatalogLoading = false;
     render();

@@ -399,6 +399,44 @@ test('refresh: discovery hoisted out of lock — concurrent updateModelConfig du
   );
 });
 
+test('refresh: catalog-only contract also covers apiKey under api-key authMode (Codex 2026-04-28 ⚪ follow-up)', async () => {
+  // Companion to "form fields in patch are NEVER persisted": when
+  // authMode is api-key (or local), saved apiKey must ALSO be
+  // immune from refresh's patch.apiKey. Without this assertion
+  // the previous test was mute on apiKey because under codex mode
+  // the field is intentionally cleared by updateModelConfig
+  // anyway.
+  const baseRev = Date.now() + 12_000_000;
+  await updateModelConfig({
+    authMode: 'api-key',
+    apiKey: 'sk-saved-real-key',
+    baseUrl: 'https://saved.example/v1',
+    _autosaveRevision: baseRev,
+  });
+
+  const fakeDiscoverFn = async () => ['gpt-4.1', 'discovered-model'];
+  await refreshModelCatalog(
+    {
+      authMode: 'api-key',
+      baseUrl: 'https://refresh-input.example/v1',
+      model: 'gpt-4.1',
+      apiKey: 'sk-REFRESH-INPUT-KEY-MUST-NOT-LAND',
+    },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  const cfgPath = join(TEMP_HOME, 'config.json');
+  const persisted = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  assert.equal(
+    persisted.apiKey,
+    'sk-saved-real-key',
+    'refresh patch.apiKey is a discovery input, NOT a config write — saved key must survive',
+  );
+  // Reset back to codex for subsequent tests so the temp home isn't
+  // left in api-key mode.
+  await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
+});
+
 test('refresh: form fields in patch are NEVER persisted as config (catalog-only contract)', async () => {
   // Companion to the race test above: even when refresh runs alone,
   // the patch.baseUrl / patch.apiKey / patch.systemPrompt etc. are
@@ -408,7 +446,10 @@ test('refresh: form fields in patch are NEVER persisted as config (catalog-only 
   // ordering.
 
   // Seed with known field values via a real updateModelConfig.
-  const baseRev = Date.now() + 11_000_000;
+  // Use a larger offset than the apiKey-preservation test above so
+  // this seed isn't rejected as stale (each test in this file shares
+  // the same temp home and saved autosaveRevision is monotonic).
+  const baseRev = Date.now() + 13_000_000;
   await updateModelConfig({
     minimaxApiKey: 'sk-baseline-2',
     baseUrl: 'http://saved-baseline.example/v1',
