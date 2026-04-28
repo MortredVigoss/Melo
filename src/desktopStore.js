@@ -1491,43 +1491,11 @@ export const __offlineBacklogTesting = {
  * Called once at server startup after other systems are ready.
  * Safe to call multiple times (reconnects any disconnected servers).
  */
-export async function initMcpServers() {
-  try {
-    const config = await getResolvedConfig();
-    const mcpServers = config.mcpServers || {};
-    const flags = {
-      enablePlaywrightMcp:  Boolean(config.enablePlaywrightMcp),
-      enableBrowserlessMcp: Boolean(config.enableBrowserlessMcp),
-      enableAntvChartMcp:    Boolean(config.enableAntvChartMcp),
-      enableMarkdown2PdfMcp: Boolean(config.enableMarkdown2PdfMcp),
-    };
-    const hasServers =
-      Object.keys(mcpServers).length ||
-      flags.enablePlaywrightMcp ||
-      flags.enableBrowserlessMcp ||
-      flags.enableAntvChartMcp ||
-      flags.enableMarkdown2PdfMcp;
-    if (hasServers) {
-      const results = await bootstrapMcpServers(mcpServers, flags);
-      const connected = Object.entries(results)
-        .filter(([, r]) => r.connected)
-        .map(([name, r]) => `${name}(${r.toolCount} tools)`)
-        .join(', ');
-      if (connected) {
-        process.stderr.write(`[mcp] Connected: ${connected}\n`);
-      }
-      const errors = Object.entries(results)
-        .filter(([, r]) => !r.connected && r.error !== 'disabled')
-        .map(([name, r]) => `${name}: ${r.error}`)
-        .join(', ');
-      if (errors) {
-        process.stderr.write(`[mcp] Failed to connect: ${errors}\n`);
-      }
-    }
-  } catch (err) {
-    process.stderr.write(`[mcp] Init error: ${err.message}\n`);
-  }
-}
+// initMcpServers moved to ./mcp/init.js so its lifecycle reconciliation
+// can be unit-tested without booting the desktop store. Re-exported
+// here unchanged so existing callers (server.js, /api/mcp endpoints)
+// keep their import path.
+export { initMcpServers } from './mcp/init.js';
 
 export async function prepareDesktopLaunchState() {
   const state = ensureSelectedEntities(await loadState());

@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
+
+- 上一刀 `3876cdc` push 又被 Codex D 阻断。🔴 finding：[desktopStore.js:1504](src/desktopStore.js) `initMcpServers()` 用 `if (hasServers)` 短路 —— 用户关闭最后一个 MCP（或删最后一个 user-configured）后 hasServers=false，bootstrapMcpServers 根本不调，reconciler 不跑，已 active 子进程 + 已注册 tool 留着。"全局 disable" 又一次失效。
+- 用户拍板 A+B：去 hasServers 短路 + 加集成级测试。Q1 同意（empty config 也 return reconciler 结果给 UI）+ Q2 同意（agent whitelist 不变）。
+- 修：
+  - 新建 [src/mcp/init.js](src/mcp/init.js) 抽出 `initMcpServers({ getConfig, bootstrap, log } = {})` —— DI hook 让测试可注入 stub；总是调用 `bootstrap(mcpServers, flags)` 不论 effective 是否空。`buildMcpFlags(config)` 也 export 给测试。
+  - desktopStore.js 改 `export { initMcpServers } from './mcp/init.js'` re-export，server.js 等调用方零改动。
+  - 日志加 "Reaped:" 行单独显示 disabled / removed 的 server，跟 "Connected:" / "Failed to connect:" 三段独立。
+- 11 个集成测试 [init.test.js](src/mcp/init.test.js)：buildMcpFlags 强转 + 默认；空配置仍 reconcile（核心契约）；最后 built-in toggle off 触发 reaped 日志；最后 user MCP 删除触发 reaped；混合 connected + disabled；健康 connect 路径；hard error 跟 reap 分开日志；getConfig 抛错 swallow 返回 `{}`；bootstrap 抛错 swallow；config 缺 mcpServers 仍 default `{}`。
+- 验证：`src/**/*.test.js` **1171/1171 全绿**（前次 1160 + 11 新）；`npm run test:ui` 86/86；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）
 
 - 上一刀 `75f9f72` push 又被 Codex C 阻断，🟠 finding：[agentTools.js:152](src/services/agent/agentTools.js) 用 `tool.id.split(':')[1]` 解析 server id，但用户配 `mcpServers["safe:evil"]` 时 `mcp:safe:evil:tool` 的第二段是 `safe`，**agent 授权 `safe` 静默放行 `safe:evil`**。授权语义被字符串拼接绕过。
@@ -27,25 +39,11 @@
 - 验证：`npm run test:ui` **86/86 全绿**（前次 74 + 12 新 agentDraft）；`src/**/*.test.js` 1143/1143；check-syntax 全过。
 - 提交哈希：`75f9f72`。
 
-## 2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）
-
-- 上一刀 `4d9dc73` push 又被 Codex D 阻断，3 个 finding 都是 lifecycle 真 bug：
-  - 🔴 `bootstrapMcpServers` 只 connect effective servers，**不 disconnect 已不在 effective map 的 active client**。`/api/mcp/preset-toggle` 关闭 antv-chart 后，effective 没它了，但 child process 还跑、`mcp:antv-chart:*` tools 仍在 toolRegistry 里 register 着，已授权 agent 仍能调 → 全局 disable 实际不生效。
-  - 🔴 `connectMcpServer(disabled=true)` 在 disabled 直接 return，**不 disconnect 同名旧 client**。user 把自己 mcpServers `disabled: true` 后，server 仍跑。
-  - ⚪ preset-toggle 缺 lifecycle 测试。
-- 用户拍板：lifecycle 修 + Q1=保留 stale agent whitelist（用户可撤销，跟之前一致）+ Q2=保留（user 删除 config 后 agent whitelist 也保留）。
-- 修：
-  - **抽 `reconcileMcpLifecycle({ effective, activeNames, disconnect })`** 纯函数（[manager.js](src/mcp/manager.js)）：拿 effective vs active snapshot 对比，标 stale 为 `removed` 或 `disabled`，调 disconnect 副作用。`bootstrapMcpServers` 用它先 reap 再 connect。
-  - **`connectMcpServer(disabled=true)`** return 前先 disconnect 同名旧 client（覆盖 user-server flip 到 disabled 场景）。
-  - 文档化契约：agent stale whitelist 保留是 OK 的，因为 lifecycle 真 unregister 了 tool（modeling 层切断）+ whitelist 在 config 层（保留可撤销），两层独立。
-- 7 个 lifecycle 测试覆盖：preset toggled off / user disabled=true / user removed from config / 健康 steady state / 冷启动 / 混合多 reason 同次 reconcile / 无 disconnect 时 pure read。
-- 验证：`src/**/*.test.js` **1143/1143 全绿**（前次 1136 + 7 新 lifecycle）；`npm run test:ui` 74/74；check-syntax 全过。
-- 提交哈希：`6957783`。
-
-## 归档摘要（2026-04-28 10:30 之前的所有条目）
+## 归档摘要（2026-04-28 11:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）** —— `bootstrapMcpServers` 加 reconciler phase，先 disconnect stale active 再 connect effective；`connectMcpServer(disabled)` 也 disconnect 旧 client；抽 `reconcileMcpLifecycle` 纯函数 + 7 lifecycle 测试。`6957783`
 - **2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复** —— bootstrap 暴露 built-in ∪ user MCP 的 union surface（之前 UI 只列 built-in，user MCP 死锁）；`/api/mcp/preset-toggle` 严格 `typeof === 'boolean'`；test 文件里 NUL 字节用 python 替换。`4d9dc73`
 - **2026-04-28 10:00 — Codex D 第一轮：MCP 默认全关 + cwd reframe + path 加严 + agent UI 撤销** —— md2pdf 默认改 false（4 层模型）；cwd 不再叫 sandbox（不限制绝对路径），改 default working dir；path 禁 `.`/`..`/无字母数字 leaf + resolve 校验 root；chip 改 CSS 类（仍可点撤销已有授权）；README 加 4 层状态文档。`799a9a4`
 - **2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）** —— 4 phase 一次性：BUILTIN_MCP_PRESETS（antv-chart + markdown2pdf）+ McpStdioClient cwd + 默认 cwd 子目录；agent profile `enabledMcpServerIds`（deny-all）+ filterMcpToolsForAgent prompt/dispatch 双 enforcement；buildMcpTool 默认 requiresPermission=true 走 approval；bootstrap mcpPresets[] + Advanced toggle UI + agent customize chip-row + `/api/mcp/preset-toggle` 端点。30 新单测，1133/1133 全绿。`8778052` + `3ae3285`
