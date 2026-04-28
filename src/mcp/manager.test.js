@@ -17,6 +17,7 @@ const {
   getBuiltinMcpPresets,
   mcpServerWorkspaceDir,
   buildMcpTool,
+  reconcileMcpLifecycle,
 } = await import('./manager.js');
 
 after(() => {
@@ -212,4 +213,122 @@ test('buildMcpTool: run() delegates to the injected client', async () => {
   const tool = buildMcpTool('antv-chart', { name: 'pie_chart' }, fakeClient);
   await tool.run({ data: [1, 2, 3] });
   assert.deepEqual(received, { name: 'pie_chart', args: { data: [1, 2, 3] } });
+});
+
+// ─── reconcileMcpLifecycle (Codex 🔴 lifecycle audit 2026-04-28) ──────────────
+//
+// Three paths must lead to a disconnect — global preset toggled off,
+// user-configured server flipped to `disabled: true`, server removed
+// from `mcpServers` entirely.  The pure half of the reconciler is
+// responsible for naming each stale entry; production wires it to
+// `disconnectMcpServer` which kills the child process AND unregisters
+// the `mcp:<name>:*` tools so an agent's stale whitelist entry can't
+// reach a dead tool.
+
+function spyDisconnect() {
+  const calls = [];
+  return { fn: name => calls.push(name), calls };
+}
+
+test('reconcileMcpLifecycle: built-in preset toggled off — server is reaped', () => {
+  // antv-chart was running, but the user just flipped the preset off
+  // so it no longer appears in `effective`.  reconciler must request
+  // disconnect with reason='removed'.
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: { 'markdown2pdf': { command: 'npx', args: [] } },
+    activeNames: ['antv-chart', 'markdown2pdf'],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale, [{ name: 'antv-chart', reason: 'removed' }]);
+  assert.deepEqual(dc.calls, ['antv-chart']);
+});
+
+test('reconcileMcpLifecycle: user server flipped to disabled=true — reaped with reason=disabled', () => {
+  // The server stays in effective (user kept the entry, just turned it
+  // off), but its config now says `disabled: true`.  Disconnect with
+  // a different reason so the caller can tell the situations apart in
+  // the API response.
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: { 'my-mcp': { command: 'python3', args: [], disabled: true } },
+    activeNames: ['my-mcp'],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale, [{ name: 'my-mcp', reason: 'disabled' }]);
+  assert.deepEqual(dc.calls, ['my-mcp']);
+});
+
+test('reconcileMcpLifecycle: user removed server from config entirely — reaped', () => {
+  // Effective drops the server (user deleted the mcpServers entry).
+  // Same disconnect path; the reason 'removed' is shared with the
+  // preset-toggle case because at this layer the cause is
+  // indistinguishable.
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: {},
+    activeNames: ['ghost-server'],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale, [{ name: 'ghost-server', reason: 'removed' }]);
+  assert.deepEqual(dc.calls, ['ghost-server']);
+});
+
+test('reconcileMcpLifecycle: still-effective + still-enabled servers are NOT disconnected', () => {
+  // Healthy steady state: every active name maps to an enabled
+  // effective entry.  No stale, no disconnect calls — connectMcpServer
+  // is the one that handles "config changed but server name same".
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: {
+      'antv-chart':   { command: 'npx', args: ['-y', '@antv/mcp-server-chart'] },
+      'markdown2pdf': { command: 'npx', args: ['-y', '@99xio/markdown2pdf-mcp'] },
+    },
+    activeNames: ['antv-chart', 'markdown2pdf'],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale, []);
+  assert.deepEqual(dc.calls, []);
+});
+
+test('reconcileMcpLifecycle: empty active fleet → nothing to do, no calls', () => {
+  // Cold start: nothing is connected yet, so nothing is stale.
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: { 'antv-chart': { command: 'npx', args: [] } },
+    activeNames: [],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale, []);
+  assert.deepEqual(dc.calls, []);
+});
+
+test('reconcileMcpLifecycle: reports both reasons when toggling one off + removing another in the same pass', () => {
+  // Realistic mixed state: one preset went off (user toggled), one
+  // user-server got `disabled: true`, one is healthy.  Reconciler
+  // must reap exactly the first two and leave the third alone.
+  const dc = spyDisconnect();
+  const stale = reconcileMcpLifecycle({
+    effective: {
+      'my-disabled': { command: 'python3', args: [], disabled: true },
+      'still-on':    { command: 'npx', args: [] },
+    },
+    activeNames: ['preset-was-on', 'my-disabled', 'still-on'],
+    disconnect: dc.fn,
+  });
+  assert.deepEqual(stale.sort((a, b) => a.name.localeCompare(b.name)), [
+    { name: 'my-disabled', reason: 'disabled' },
+    { name: 'preset-was-on', reason: 'removed' },
+  ]);
+  assert.deepEqual(dc.calls.sort(), ['my-disabled', 'preset-was-on']);
+});
+
+test('reconcileMcpLifecycle: works without a disconnect function (pure read)', () => {
+  // If no side-effect is supplied, the helper still computes the
+  // stale list — useful for diagnostics or dry-run UI previews.
+  const stale = reconcileMcpLifecycle({
+    effective: {},
+    activeNames: ['orphan'],
+  });
+  assert.deepEqual(stale, [{ name: 'orphan', reason: 'removed' }]);
 });

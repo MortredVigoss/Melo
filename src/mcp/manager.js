@@ -91,6 +91,14 @@ const _registeredMcpToolIds = new Set();
  */
 export async function connectMcpServer(serverName, serverConfig) {
   if (serverConfig.disabled) {
+    // Codex 🔴 audit 2026-04-28: a previously-running server that
+    // flips to disabled=true must actually be stopped — otherwise the
+    // child process keeps going and its mcp:<name>:* tools stay
+    // registered, so any agent already on the whitelist can still
+    // call them. Disconnect-then-skip closes that gap.
+    if (_clients.has(serverName)) {
+      disconnectMcpServer(serverName);
+    }
     return { connected: false, toolCount: 0, error: 'disabled' };
   }
 
@@ -294,16 +302,87 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
 }
 
 /**
- * Connect all MCP servers defined in config.
- * Called once at startup (idempotent).
+ * Pure half of the bootstrap reconciler.  Decides which currently-active
+ * server names should be disconnected because they're no longer in the
+ * effective config (or are now flagged disabled).  No I/O of its own —
+ * the caller hands in the `disconnect` side-effect (production passes
+ * `disconnectMcpServer`; tests pass a spy).
+ *
+ * @param {Object} opts
+ * @param {Object<string, Object>} opts.effective    server-name → serverConfig
+ * @param {string[]}                opts.activeNames currently-connected names
+ * @param {(name: string) => void}  opts.disconnect  side-effect; called for
+ *                                                   each stale name
+ * @returns {Array<{name: string, reason: 'removed'|'disabled'}>}
+ */
+export function reconcileMcpLifecycle({ effective = {}, activeNames = [], disconnect }) {
+  const stale = [];
+  for (const name of activeNames) {
+    const cfg = effective[name];
+    if (!cfg) {
+      stale.push({ name, reason: 'removed' });
+      if (typeof disconnect === 'function') disconnect(name);
+    } else if (cfg.disabled) {
+      stale.push({ name, reason: 'disabled' });
+      if (typeof disconnect === 'function') disconnect(name);
+    }
+  }
+  return stale;
+}
+
+/**
+ * Bring the running MCP fleet into agreement with the config.  Acts as a
+ * lifecycle reconciler — Codex 🔴 audit 2026-04-28 caught that the
+ * previous version only *added* connections from the effective map, so
+ * toggling a server off (or removing it from `mcpServers`) didn't stop
+ * the running process or unregister its tools, and any agent already on
+ * its whitelist could keep calling.
+ *
+ * The current contract:
+ *
+ *   1. Compute the effective (built-in presets ∪ user-configured) map.
+ *   2. For every currently-connected server name that is either
+ *      missing from the effective map OR present-but-disabled, call
+ *      `disconnectMcpServer`. That kills the child process AND
+ *      unregisters its `mcp:<server>:*` tools so the agent dispatcher
+ *      sees nothing to call.
+ *   3. For every effective entry, call `connectMcpServer` (which has
+ *      its own disabled / already-running guards).
+ *
+ * Agents' `enabledMcpServerIds` whitelists stay untouched on purpose —
+ * they're stale authorisations the user can revoke through the UI; the
+ * tools themselves are gone, so a stale entry can't actually be
+ * exercised until the global toggle comes back on.
  *
  * @param {Object} mcpServers  - map of serverName → serverConfig
- * @param {Object} [flags]     - feature flags (enablePlaywrightMcp, enableBrowserlessMcp)
+ * @param {Object} [flags]     - feature flags (enable*Mcp)
  * @returns {Promise<Object>}  - map of serverName → connection result
+ *                               (disconnected entries report
+ *                               `{ connected: false, error: 'removed' }`
+ *                               or `'disabled'`)
  */
 export async function bootstrapMcpServers(mcpServers = {}, flags = {}) {
   const effective = buildEffectiveMcpServers(mcpServers, flags);
   const results = {};
+
+  // Phase 1 — reap stale connections.  reconcileMcpLifecycle is the
+  // pure half: it inspects effective vs the snapshot of active names
+  // and asks the caller to disconnect each stale entry.  We pass
+  // disconnectMcpServer as the side-effect, and the helper returns
+  // a list of {name, reason} so we can populate `results` uniformly.
+  const stale = reconcileMcpLifecycle({
+    effective,
+    activeNames: [..._clients.keys()],
+    disconnect: disconnectMcpServer,
+  });
+  for (const { name, reason } of stale) {
+    results[name] = { connected: false, toolCount: 0, error: reason };
+  }
+
+  // Phase 2 — connect / reconnect every effective entry.  connectMcpServer
+  // is idempotent: if the same client is already running and the config
+  // hasn't materially changed, it disconnects and reconnects (cheap; the
+  // listTools roundtrip is the dominant cost, not spawn).
   await Promise.all(
     Object.entries(effective).map(async ([name, cfg]) => {
       results[name] = await connectMcpServer(name, cfg);

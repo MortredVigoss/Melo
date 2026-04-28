@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）
+
+- 上一刀 `4d9dc73` push 又被 Codex D 阻断，3 个 finding 都是 lifecycle 真 bug：
+  - 🔴 `bootstrapMcpServers` 只 connect effective servers，**不 disconnect 已不在 effective map 的 active client**。`/api/mcp/preset-toggle` 关闭 antv-chart 后，effective 没它了，但 child process 还跑、`mcp:antv-chart:*` tools 仍在 toolRegistry 里 register 着，已授权 agent 仍能调 → 全局 disable 实际不生效。
+  - 🔴 `connectMcpServer(disabled=true)` 在 disabled 直接 return，**不 disconnect 同名旧 client**。user 把自己 mcpServers `disabled: true` 后，server 仍跑。
+  - ⚪ preset-toggle 缺 lifecycle 测试。
+- 用户拍板：lifecycle 修 + Q1=保留 stale agent whitelist（用户可撤销，跟之前一致）+ Q2=保留（user 删除 config 后 agent whitelist 也保留）。
+- 修：
+  - **抽 `reconcileMcpLifecycle({ effective, activeNames, disconnect })`** 纯函数（[manager.js](src/mcp/manager.js)）：拿 effective vs active snapshot 对比，标 stale 为 `removed` 或 `disabled`，调 disconnect 副作用。`bootstrapMcpServers` 用它先 reap 再 connect。
+  - **`connectMcpServer(disabled=true)`** return 前先 disconnect 同名旧 client（覆盖 user-server flip 到 disabled 场景）。
+  - 文档化契约：agent stale whitelist 保留是 OK 的，因为 lifecycle 真 unregister 了 tool（modeling 层切断）+ whitelist 在 config 层（保留可撤销），两层独立。
+- 7 个 lifecycle 测试覆盖：preset toggled off / user disabled=true / user removed from config / 健康 steady state / 冷启动 / 混合多 reason 同次 reconcile / 无 disconnect 时 pure read。
+- 验证：`src/**/*.test.js` **1143/1143 全绿**（前次 1136 + 7 新 lifecycle）；`npm run test:ui` 74/74；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复
 
 - 上一刀 `799a9a4` push 又被 Codex C 阻断，3 个 finding 都真：
@@ -31,31 +46,11 @@
 - 验证：`src/**/*.test.js` **1135/1135 全绿**（前次 1133 + 2 path 边界）；`npm run test:ui` 74/74；check-syntax 全过。
 - 提交哈希：`799a9a4`。
 
-## 2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）
-
-- 用户审查："MCP 安全风险讨论很多，尤其是 stdio 本地执行类。Melo 接 MCP 时保持 approval、白名单、agent 级权限、只读/写入目录限制，不要让所有 agent 默认拿到所有 MCP。" 4 个 phase 一次性闭环。
-- Web search 选包：AntV chart → `@antv/mcp-server-chart`（默认 stdio transport，npx -y）；markdown→pdf → `@99xio/markdown2pdf-mcp`（专一功能、本地、轻量）。
-- **Phase 1 (`8778052`)** 后端接入：
-  - [mcp/manager.js](src/mcp/manager.js) 新增 `BUILTIN_MCP_PRESETS`（antv-chart 默认关 / markdown2pdf 默认开，匹配 audit "默认只启用搜索和 PDF" 原话）+ `getBuiltinMcpPresets()` 给 UI 用 + `mcpServerWorkspaceDir(name)` 沙盒 cwd（`<MELO_HOME>/desktop/mcp-workspace/<safe-name>/`，路径分隔符等转 `_` 防 traversal）+ `connectMcpServer` 启动时 mkdir cwd 并传给 client。
-  - [mcp/client.js](src/mcp/client.js) `McpStdioClient` 接 `cwd` 参数，spawn 走 sandbox 子目录。
-  - [config.js](src/config.js) `DEFAULT_CONFIG` 加 `enableAntvChartMcp: false` + `enableMarkdown2PdfMcp: true`。`buildEffectiveMcpServers` 从 flag 注入 preset；user-supplied id 撞名时 user wins。
-- **Phase 2 (`8778052`)** per-agent stdio MCP 白名单：
-  - [agentTools.js](src/services/agent/agentTools.js) 加 `normalizeMcpServerWhitelist(value)`（跟 connector/skill 不同：missing/null = **deny all**，stdio 不允许隐式信任）+ `filterMcpToolsForAgent(tools, profile)`（drop 未在白名单的 `mcp:<server>:*` tool）。
-  - [agentProfiles.js](src/state/agentProfiles.js) `normalizeAgentProfile` + `normalizeAgentOverride` 都接入新字段 `enabledMcpServerIds`，默认 `[]`。
-  - [chatExecutionRunner.js](src/services/chat/chatExecutionRunner.js) 两处 enforcement：prompt 装载时过滤 + dispatch 时再次校验（hallucinated tool call 也拦得住）。
-- **Phase 4 (pinned via tests, 已有机制)**：每个 mcp tool 注册时 `requiresPermission: true` 已是默认（[manager.js:309](src/mcp/manager.js#L309)），走 `tools/executor.js + tools/permissions.js` 的 in-app permission modal。新加测试 pin 这个默认值防退化。`buildMcpTool` export 出来便于测试。
-- **Phase 3** UI（本 commit）：
-  - [bootstrap mcpPresets[]](src/state/desktopBootstrap.js) 暴露每个 preset 的 id/command/args/description/flag/enabled，UI 不再瞎猜。
-  - [advancedPage.js](desktop-ui/advancedPage.js) 加 "Built-in MCP servers" subsection，每行一个 toggle 按钮，hostile 字段全 escape。新加 4 个 smoke 测试覆盖渲染 / toggle dataset / 转义 / 计数。
-  - [server.js](src/server.js) `POST /api/mcp/preset-toggle` 端点：白名单仅 4 个内置 flag（防止被滥用写其他 boolean），写完 reconnect。
-  - [app.js](desktop-ui/app.js) agent customize 页加 "Stdio MCP servers" chip-row：每个 preset 一个 chip，全局未开的 chip 灰显（disabled）。新 action `toggle-agent-mcp-server`（per-agent 切换）+ `toggle-mcp-preset`（全局 preset toggle，调端点 + 刷新 bootstrap）。表单 submit 收 `enabledMcpServerIds`，无 `__all__` sentinel（MCP 永远显式 opt-in）。
-- 26 后端单测 + 4 advancedPage smoke 共 30 新测试；`src/**/*.test.js` 1133/1133 全绿；`npm run test:ui` 74/74。
-- 提交哈希：`8778052`（Phase 1+2+4 backend）+ `3ae3285`（Phase 3 UI）。
-
-## 归档摘要（2026-04-27 19:30 之前的所有条目）
+## 归档摘要（2026-04-28 09:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）** —— 4 phase 一次性：BUILTIN_MCP_PRESETS（antv-chart + markdown2pdf）+ McpStdioClient cwd + 默认 cwd 子目录；agent profile `enabledMcpServerIds`（deny-all）+ filterMcpToolsForAgent prompt/dispatch 双 enforcement；buildMcpTool 默认 requiresPermission=true 走 approval；bootstrap mcpPresets[] + Advanced toggle UI + agent customize chip-row + `/api/mcp/preset-toggle` 端点。30 新单测，1133/1133 全绿。`8778052` + `3ae3285`
 - **2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点** —— Voice 面板加 Auto radio + WKWebView 改名 Desktop native voice + 视频附件 chip 读 extractedMedia 显示真实状态 + Voice 面板加配置 MiniMax/Whisper 跳转。`9f5a87a`
 - **2026-04-27 19:30 — Codex D fix: desktopStore re-export gap + server import smoke net** — af2e3b7→768d511 left `restoreArtifact`/`purgeStaleSoftDeletes` un-re-exported, server boot would throw on first ESM load; added the missing re-exports + `src/server.imports.smoke.test.js` (parses server.js import list and asserts every name is reachable through desktopStore). Codex S. `5a888ee`
 - **2026-04-27 19:00 — Codex C round 2: artifact soft-delete reader audit + 11 regression tests** — af2e3b7 missed 4 readers (dynamicContext/search/apply/connector count); added `isLiveArtifact`/`visibleArtifacts` helper, wired 7 readers, +11 tests. `768d511`
