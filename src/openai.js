@@ -28,7 +28,7 @@ const CODEX_EVENT_TYPES = Object.freeze({
 const DEFAULT_DISCOVERED_MODELS = Object.freeze({
   local: ['llama3.1'],
   'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  codex: ['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini'],
+  codex: ['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini'],
 });
 const CODEX_NATIVE_WEB_SEARCH_TOOL = Object.freeze({
   type: 'web_search',

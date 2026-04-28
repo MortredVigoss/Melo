@@ -16,6 +16,20 @@
 - 11 个集成测试 [init.test.js](src/mcp/init.test.js)：buildMcpFlags 强转 + 默认；空配置仍 reconcile（核心契约）；最后 built-in toggle off 触发 reaped 日志；最后 user MCP 删除触发 reaped；混合 connected + disabled；健康 connect 路径；hard error 跟 reap 分开日志；getConfig 抛错 swallow 返回 `{}`；bootstrap 抛错 swallow；config 缺 mcpServers 仍 default `{}`。
 - 验证：`src/**/*.test.js` **1171/1171 全绿**（前次 1160 + 11 新）；`npm run test:ui` 86/86；check-syntax 全过。
 - 提交哈希：`479a897`。
+- Follow-up：上一刀 push 时 Codex 还留了一条 ⚪ B 级 finding —— [toolId.test.js:36](src/mcp/toolId.test.js) 的 last-element 写成了 literal NUL 字节，导致 file/git 把测试源认成 binary、diff/review 看不到断言文本。换成 6 字符 unicode escape 后回到 UTF-8 text、`git diff --text` 干净显示 1 行替换，15 个 toolId 测试仍全绿。提交哈希：`5a9afa9`。
+
+## 2026-04-28 13:30 — 用户截图反馈三连：MiniMax key 保存丢值 + 模型版本 + Voice 面板高度
+
+- 用户报昨天还正常的 MiniMax 自动回复语音今天哑了；MiniMax connector 表单粘贴 API key 后切走或点 Save 输入框就清空；codex 内部已经升 gpt-5.5。三个问题串成一刀。
+- 真因（最关键的 #2）：[app.js:12649](desktop-ui/app.js#L12649) 的 input handler 只对 `dataset.form === 'model-config'` 写 `uiState.modelSetupDraft`。Customize → Connectors → OpenAI 那张表（`data-form="connector-config"`）共享同一份底层 config 但**没接到 draft 镜像**，每次 background render（mcpAuthSurface 轮询、undo-toast tick、autosave 响应）`app.innerHTML = …` 重建 DOM，password input 回到 SSR `value=""`，submit 时 server 的 `keepIfBlank` 把空当 "preserve current" → 用户从未保存上的 key 永远是空。这也解释了 #1：自定义语音 active 条件依赖 hasMinimaxKey，key 没保存上就走不到 MiniMax 路径。
+- 修：
+  - **新建 [desktop-ui/connectorDraft.js](desktop-ui/connectorDraft.js)** —— 抽 `buildConnectorDraft(config, modelSetupDraft)`（pure merge：saved config + 实时 draft，secrets 默认空字符串实现 mask 契约）和 `pickConnectorField(draft, formData, name)`（draft 优先 trim，fallback FormData）。
+  - app.js: input handler 接受 `model-config` ∪ `connector-config` 两个 form；`effectiveModelSetupDraft` 改成 helper 调用；`handleSaveConnectorConfig` + `test-minimax-tts` 都用 `pickConnectorField` 替直接 FormData 读取；connector 表单的非密码 input value 全部从 `effectiveModelSetupDraft()` 回填。
+  - [styles.css:1676](desktop-ui/styles.css#L1676) `.tts-voice-panel` max-height 从 480px 降到 320px；保持 `overflow-y: auto`，Auto + macOS voice 完整可见，其余滚动看，不再覆盖 "Good evening" 行。
+  - 11 处 `gpt-5.4` → `gpt-5.5`（含 src 5 处、desktop-ui 3 处、smoke 2 处、3 个测试 fixture）。`/^gpt-5/i` 的 vision pattern 跨版本通用，不需要扩展白名单。
+- 14 个新 connectorDraft 契约测试（[connectorDraft.test.js](desktop-ui/connectorDraft.test.js)）：默认字段含 minimax/whisper；secrets 默认空（mask 契约）；config fallback 起作用；live draft 覆盖 saved；返回 fresh 对象不共享引用；非 object 输入 graceful；pickConnectorField 优先级 + trim + 非 string 拒绝 + null/undefined 不崩；端到端 regression：粘贴 → background render → submit 拿到正确 key。
+- 验证：`src/**/*.test.js` **1171/1171 全绿**；`npm run test:ui` **100/100 全绿**（前次 86 + 14 新 connectorDraft）；check-syntax 全过。
+- 提交哈希：`<pending>`。
 
 ## 2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）
 

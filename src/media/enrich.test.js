@@ -40,7 +40,7 @@ test('normalizeExtractedMedia keeps only valid structured entries', () => {
 test('modelSupportsVision stays conservative', () => {
   assert.equal(modelSupportsVision('gpt-4o'), true);
   assert.equal(modelSupportsVision('gemini-1.5-pro'), true);
-  assert.equal(modelSupportsVision('gpt-5.4'), true);
+  assert.equal(modelSupportsVision('gpt-5.5'), true);
   assert.equal(modelSupportsVision('o3'), true);
   assert.equal(modelSupportsVision('gpt-3.5-turbo'), false);
 });

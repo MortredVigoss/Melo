@@ -55,7 +55,7 @@ test('persistPermissionRule preserves all other user config fields', async () =>
       systemPrompt: 'custom system prompt',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       authMode: 'codex',
-      model: 'gpt-5.4',
+      model: 'gpt-5.5',
     };
     await writeFile(configPath, JSON.stringify(seeded, null, 2), 'utf8');
 

@@ -17,6 +17,7 @@ import {
   nextCountdownTickMs,
 } from './undoToast.js';
 import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
+import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
 
 const app = document.querySelector('#app');
 
@@ -365,11 +366,11 @@ const MODEL_SETUP_DEFAULTS = {
   },
   'api-key': {
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-5.4',
+    model: 'gpt-5.5',
   },
   codex: {
     baseUrl: 'https://chatgpt.com/backend-api',
-    model: 'gpt-5.4',
+    model: 'gpt-5.5',
   },
 };
 
@@ -4714,23 +4715,31 @@ async function handleDeleteArtifact(artifactId) {
 }
 
 async function handleSaveConnectorConfig(form) {
+  // Password inputs render with value="" so a stale FormData read can
+  // wipe a key the user just pasted but didn't have time to commit
+  // before the next background render rebuilt the DOM. Prefer the
+  // shared draft (kept in sync by the form's input handler) for
+  // every secret-bearing field; the form is only a fallback for
+  // non-secret values that aren't tracked in the draft yet.
   const formData = new FormData(form);
-  const authMode = String(formData.get('authMode') || 'codex').trim();
-  const apiKey = String(formData.get('apiKey') || '').trim();
+  const draft = uiState.modelSetupDraft || {};
+  const pick = name => pickConnectorField(draft, formData, name);
+  const authMode = pick('authMode') || 'codex';
+  const apiKey = pick('apiKey');
   const body = {
     authMode,
-    baseUrl: String(formData.get('baseUrl') || '').trim(),
-    model: String(formData.get('model') || '').trim(),
-    systemPrompt: String(formData.get('systemPrompt') || '').trim(),
-    whisperApiKey: String(formData.get('whisperApiKey') || '').trim(),
-    whisperBaseUrl: String(formData.get('whisperBaseUrl') || '').trim(),
+    baseUrl: pick('baseUrl'),
+    model: pick('model'),
+    systemPrompt: pick('systemPrompt'),
+    whisperApiKey: pick('whisperApiKey'),
+    whisperBaseUrl: pick('whisperBaseUrl'),
     // MiniMax T2A V2. Server-side `keepIfBlank` semantics for the secret
     // keys (apiKey/groupId) treats empty as "preserve current"; the voice
     // id is non-secret and writable as text. minimaxApiKey is masked in
     // the form so blank means "no change", not "wipe key".
-    minimaxApiKey: String(formData.get('minimaxApiKey') || '').trim(),
-    minimaxGroupId: String(formData.get('minimaxGroupId') || '').trim(),
-    minimaxVoiceId: String(formData.get('minimaxVoiceId') || '').trim(),
+    minimaxApiKey: pick('minimaxApiKey'),
+    minimaxGroupId: pick('minimaxGroupId'),
+    minimaxVoiceId: pick('minimaxVoiceId'),
   };
 
   if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
@@ -6152,15 +6161,13 @@ function renderSlashPalette() {
 }
 
 function effectiveModelSetupDraft() {
-  const config = uiState.bootstrap?.settings?.config || {};
-  return {
-    authMode: config.authMode || 'codex',
-    baseUrl: config.baseUrl || '',
-    model: config.model || '',
-    systemPrompt: config.systemPrompt || '',
-    apiKey: '',
-    ...(uiState.modelSetupDraft || {}),
-  };
+  // Pure merge lives in `connectorDraft.js` so node:test can pin the
+  // saved-config + live-draft + masked-secret semantics that Customize
+  // → Connectors and Settings → Model both depend on.
+  return buildConnectorDraft(
+    uiState.bootstrap?.settings?.config,
+    uiState.modelSetupDraft,
+  );
 }
 
 function modelDefaultsForAuthMode(authMode) {
@@ -9023,24 +9030,30 @@ function renderConnectorDetails(selected) {
   }
 
   if (selected.id === 'openai-compatible') {
+    // Read editable values from the shared draft so that any background
+    // render (mcpAuthSurface poll, undo-toast tick, autosave response)
+    // doesn't blow away in-flight typing. Read-only fields (codexAuth,
+    // masked* / has* status flags) keep coming from selected.config.
+    const draft = effectiveModelSetupDraft();
+    const draftAuthMode = draft.authMode || 'codex';
     extra = `
       <form id="connector-config-form" class="config-form" data-form="connector-config">
         <label class="label">
           Auth mode
           <select class="input" name="authMode">
-            <option value="local" ${selected.config.authMode === 'local' ? 'selected' : ''}>
+            <option value="local" ${draftAuthMode === 'local' ? 'selected' : ''}>
               Local model
             </option>
-            <option value="codex" ${selected.config.authMode === 'codex' ? 'selected' : ''}>
+            <option value="codex" ${draftAuthMode === 'codex' ? 'selected' : ''}>
               Codex / ChatGPT OAuth
             </option>
-            <option value="api-key" ${selected.config.authMode === 'api-key' ? 'selected' : ''}>
+            <option value="api-key" ${draftAuthMode === 'api-key' ? 'selected' : ''}>
               OpenAI API key
             </option>
           </select>
         </label>
         ${
-          selected.config.authMode === 'codex'
+          draftAuthMode === 'codex'
             ? `
               <div class="detail-meta">
                 ${
@@ -9071,7 +9084,7 @@ function renderConnectorDetails(selected) {
           <input
             class="input"
             name="baseUrl"
-            value="${escapeHtml(selected.config.baseUrl || '')}"
+            value="${escapeHtml(draft.baseUrl || '')}"
             placeholder="https://api.openai.com/v1"
           />
         </label>
@@ -9080,14 +9093,14 @@ function renderConnectorDetails(selected) {
           <input
             class="input"
             name="model"
-            value="${escapeHtml(selected.config.model || '')}"
-            placeholder="gpt-5.4"
+            value="${escapeHtml(draft.model || '')}"
+            placeholder="gpt-5.5"
           />
         </label>
         <label class="label">
           System prompt
           <textarea class="config-textarea" name="systemPrompt">${escapeHtml(
-            selected.config.systemPrompt || '',
+            draft.systemPrompt || '',
           )}</textarea>
         </label>
         <div class="detail-meta">
@@ -9119,7 +9132,7 @@ function renderConnectorDetails(selected) {
           <input
             class="input"
             name="whisperBaseUrl"
-            value="${escapeHtml(selected.config.whisperBaseUrl || '')}"
+            value="${escapeHtml(draft.whisperBaseUrl || '')}"
             placeholder="Leave blank to use auto-detected endpoint"
           />
         </label>
@@ -9152,7 +9165,7 @@ function renderConnectorDetails(selected) {
           <input
             class="input"
             name="minimaxGroupId"
-            value="${escapeHtml(selected.config.minimaxGroupId || '')}"
+            value="${escapeHtml(draft.minimaxGroupId || '')}"
             placeholder="From the MiniMax dashboard"
           />
         </label>
@@ -9161,7 +9174,7 @@ function renderConnectorDetails(selected) {
           <input
             class="input"
             name="minimaxVoiceId"
-            value="${escapeHtml(selected.config.minimaxVoiceId || '')}"
+            value="${escapeHtml(draft.minimaxVoiceId || '')}"
             placeholder="moss_audio_… or any cloned voice id"
           />
         </label>
@@ -12258,13 +12271,17 @@ document.addEventListener('click', async event => {
         // Send whatever the user has typed; the server falls back to the
         // saved config for any blank field (so the masked password input
         // doesn't force users to retype an already-saved key). Status
-        // renders inline next to the button.
+        // renders inline next to the button. Mirror handleSaveConnectorConfig:
+        // the password input always renders empty, so prefer the shared
+        // draft (kept up to date by the form input handler) before
+        // falling back to FormData.
         const form = trigger.closest('form#connector-config-form');
         const status = form?.querySelector('[data-tts-test-status]');
         const fd = form ? new FormData(form) : null;
-        const apiKey  = fd ? String(fd.get('minimaxApiKey')  || '').trim() : '';
-        const groupId = fd ? String(fd.get('minimaxGroupId') || '').trim() : '';
-        const voiceId = fd ? String(fd.get('minimaxVoiceId') || '').trim() : '';
+        const draft = uiState.modelSetupDraft || {};
+        const apiKey  = pickConnectorField(draft, fd, 'minimaxApiKey');
+        const groupId = pickConnectorField(draft, fd, 'minimaxGroupId');
+        const voiceId = pickConnectorField(draft, fd, 'minimaxVoiceId');
         // Pre-flight: at least one path (form or saved) must yield a key
         // and a voice id. The server re-checks both via getResolvedConfig
         // so the UI message stays advisory.
@@ -12646,7 +12663,20 @@ document.addEventListener('change', async event => {
       return;
     }
 
-    if (target.form?.dataset.form === 'model-config') {
+    // Both `model-config` (Settings → Model page) and `connector-config`
+    // (Customize → Connectors → OpenAI) edit the same underlying config
+    // (apiKey, baseUrl, model, whisper*, minimax*). They share
+    // modelSetupDraft so that any background render — bootstrap refresh,
+    // mcpAuthSurface poll, undo-toast tick — does not blow away the value
+    // the user just typed. Without this mirror the input nodes are
+    // recreated by the next innerHTML swap with their SSR-default value
+    // (empty for masked passwords) and `keepIfBlank` on the server then
+    // silently treats the submission as "no change". See
+    // feedback_preserve_user_config.md.
+    if (
+      target.form?.dataset.form === 'model-config' ||
+      target.form?.dataset.form === 'connector-config'
+    ) {
       const nextDraft = {
         ...(uiState.modelSetupDraft || effectiveModelSetupDraft()),
         [target.name]: target.value,

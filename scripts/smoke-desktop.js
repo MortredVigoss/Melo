@@ -235,7 +235,7 @@ async function main() {
     body: {
       authMode: 'codex',
       baseUrl: 'https://chatgpt.com/backend-api',
-      model: 'gpt-5.4',
+      model: 'gpt-5.5',
     },
   });
 
@@ -882,7 +882,7 @@ async function main() {
     modelOptionsCount: (modelOptionsBootstrap.settings?.config?.availableModels || []).length,
     modelOptionHit:
       (modelOptionsBootstrap.settings?.config?.availableModels || []).find(
-        item => item === 'gpt-5.4',
+        item => item === 'gpt-5.5',
       ) || null,
     chatId,
     savedFile: saved.workspace?.selectedFile?.path || smokeFilePath,

@@ -17,7 +17,7 @@
 //   session_id, user-agent: mirror buildCodexResponsesHeaders
 //   body:
 //   {
-//     "model": "gpt-5.4",              // any image-tool-capable model
+//     "model": "gpt-5.5",              // any image-tool-capable model
 //     "stream": true,
 //     "store": false,
 //     "input": [
@@ -74,10 +74,10 @@ async function debugLog(line) {
 
 const CODEX_RESPONSES_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
 
-// Default model — any image-tool-capable model works. 'gpt-5.4' is the
+// Default model — any image-tool-capable model works. 'gpt-5.5' is the
 // current recommendation; 'gpt-5-codex-mini' does NOT expose the image tool
 // and is explicitly excluded. Callers can override via opts.model.
-const DEFAULT_MODEL = 'gpt-5.4';
+const DEFAULT_MODEL = 'gpt-5.5';
 
 // 120s cap — image generation via Responses is slower than text and often
 // streams partial previews for 30–60s before the final `result` lands.
@@ -250,7 +250,7 @@ async function consumeSseStream(response, handleEvent, { idleTimeoutMs = IDLE_TI
  *
  * @param {object} opts
  * @param {string} opts.prompt              text-to-image prompt
- * @param {string} [opts.model]             default 'gpt-5.4'
+ * @param {string} [opts.model]             default 'gpt-5.5'
  * @param {string} [opts.background]        'transparent' | 'opaque' | 'auto'
  * @param {string} [opts.inputFidelity]     'high' | 'low' (gpt-image-1.5+)
  * @param {AbortSignal} [opts.signal]       request-level abort

@@ -101,7 +101,7 @@ test('generateImageViaCodex returns decoded bytes when output_item.done carries 
     assert.equal(init.method, 'POST');
     // Verify the tool + model shape in the body.
     const body = JSON.parse(init.body);
-    assert.equal(body.model, 'gpt-5.4');
+    assert.equal(body.model, 'gpt-5.5');
     assert.equal(body.stream, true);
     assert.deepEqual(body.tools, [{ type: 'image_generation' }]);
     assert.equal(body.input[0].content[0].text, 'a tabby cat');
@@ -133,7 +133,7 @@ test('generateImageViaCodex returns decoded bytes when output_item.done carries 
   });
   assert.ok(Buffer.isBuffer(result.buffer));
   assert.equal(result.mimeType, 'image/png');
-  assert.equal(result.model, 'gpt-5.4');
+  assert.equal(result.model, 'gpt-5.5');
   assert.ok(result.buffer.length >= 4096);
 });
 

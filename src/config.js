@@ -21,13 +21,13 @@ function deepFreezeCatalogs(catalogs) {
 export const DEFAULT_MODEL_CATALOGS = deepFreezeCatalogs({
   local: ['llama3.1'],
   'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  codex: ['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini'],
+  codex: ['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini'],
 });
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 export const DEFAULT_MODELS_BY_AUTH_MODE = Object.freeze({
   local: 'llama3.1',
   'api-key': 'gpt-4.1-mini',
-  codex: 'gpt-5.4',
+  codex: 'gpt-5.5',
 });
 
 export const DEFAULT_CONFIG = Object.freeze({

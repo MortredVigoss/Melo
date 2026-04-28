@@ -1672,8 +1672,9 @@ select option {
   background: rgba(22, 24, 21, 0.97);
   box-shadow: 0 22px 46px rgba(0, 0, 0, 0.32);
   z-index: 5;
-  /* Prevent the panel from overflowing the viewport upward */
-  max-height: min(480px, calc(100vh - 140px));
+  /* Cap height so the panel never reaches up past the chat greeting area;
+     internal scrolling reveals Edge / API / Custom rows below the fold. */
+  max-height: min(320px, calc(100vh - 140px));
   overflow-y: auto;
 }
 
