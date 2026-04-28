@@ -322,6 +322,77 @@ test('wiring — applyFormInputToDraft is invoked inside the document `input` li
   );
 });
 
+test('wiring — scheduleConnectorAutosave is invoked inside both input and change listeners', () => {
+  // After the dispatcher writes the draft, the same paths must also
+  // schedule the 3-second idle autosave so a user who pastes a key
+  // and walks away (page switch, tab close) doesn't lose the value.
+  // Both listeners must opt in: input handles text/password/textarea;
+  // change handles the authMode <select> (which doesn't fire input).
+  const inputStart = APP_SRC.indexOf("addEventListener('input'");
+  const changeStart = APP_SRC.indexOf("addEventListener('change'");
+  assert.ok(inputStart >= 0 && changeStart > inputStart);
+
+  const findEnd = startIdx => {
+    const openParen = APP_SRC.indexOf('(', startIdx);
+    let depth = 0;
+    for (let i = openParen; i < APP_SRC.length; i += 1) {
+      const c = APP_SRC[i];
+      if (c === '(') depth += 1;
+      else if (c === ')') {
+        depth -= 1;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  };
+
+  const inputBody = APP_SRC.slice(inputStart, findEnd(inputStart));
+  const changeBody = APP_SRC.slice(changeStart, findEnd(changeStart));
+
+  assert.match(
+    inputBody,
+    /scheduleConnectorAutosave\(/,
+    'input listener must call scheduleConnectorAutosave so paste-typed keys land on server after 3s idle',
+  );
+  assert.match(
+    changeBody,
+    /scheduleConnectorAutosave\(/,
+    'change listener must call scheduleConnectorAutosave so authMode <select> changes also autosave',
+  );
+});
+
+test('wiring — flushPendingConnectorAutosaveOnUnload is registered on pagehide / beforeunload', () => {
+  // sendBeacon flush — closing the window mid-paste must still ship
+  // the typed key to the server. Mirrors the agent autosave flush
+  // pattern (line 5256-ish).
+  assert.match(
+    APP_SRC,
+    /flushAllPendingAutosavesOnUnload|flushPendingConnectorAutosaveOnUnload/,
+    'unload flush helper must be defined',
+  );
+  assert.match(
+    APP_SRC,
+    /addEventListener\('pagehide',\s*flush(All|Pending)/,
+    "pagehide must call the unified or connector-specific autosave flush",
+  );
+});
+
+test('wiring — handleLoadModelOptions reads via pickConnectorField, not raw FormData', () => {
+  // Codex B-grade follow-up (2026-04-28): the "Read available models"
+  // button used `FormData.get('apiKey')` directly, so any background
+  // render between paste and click would drop the key. Save path was
+  // already fixed; this asserts the load path uses the same helper.
+  const fnStart = APP_SRC.indexOf('async function handleLoadModelOptions');
+  assert.ok(fnStart >= 0, 'handleLoadModelOptions must exist');
+  // Look at roughly the next ~40 lines — the body is small.
+  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2000);
+  assert.match(
+    fnSnippet,
+    /pickConnectorField\(/,
+    'handleLoadModelOptions must use pickConnectorField for the same draft-first read as the save path',
+  );
+});
+
 test('regression — multi-field paste sequence does not lose any field along the way', () => {
   // User pastes API key, then Group ID, then Voice ID. Between any two
   // of those a background render could fire. Every paste must be

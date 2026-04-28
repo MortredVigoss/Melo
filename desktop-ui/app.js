@@ -4756,14 +4756,21 @@ async function handleSaveConnectorConfig(form) {
 }
 
 async function handleLoadModelOptions(form) {
+  // Same draft-first read as handleSaveConnectorConfig — masked password
+  // inputs always submit "" through FormData, so any background render
+  // between paste and click would otherwise drop the API key the user
+  // pasted before pressing "Read available models" (Codex B follow-up,
+  // 2026-04-28).
   const formData = new FormData(form);
-  const authMode = String(formData.get('authMode') || 'codex').trim();
-  const apiKey = String(formData.get('apiKey') || '').trim();
+  const draft = uiState.modelSetupDraft || {};
+  const pick = name => pickConnectorField(draft, formData, name);
+  const authMode = pick('authMode') || 'codex';
+  const apiKey = pick('apiKey');
   const body = {
     authMode,
-    baseUrl: String(formData.get('baseUrl') || '').trim(),
-    model: String(formData.get('model') || '').trim(),
-    systemPrompt: String(formData.get('systemPrompt') || '').trim(),
+    baseUrl: pick('baseUrl'),
+    model: pick('model'),
+    systemPrompt: pick('systemPrompt'),
   };
 
   if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
@@ -5245,8 +5252,99 @@ function flushPendingAgentAutosavesOnUnload() {
   }
 }
 
-window.addEventListener('pagehide', flushPendingAgentAutosavesOnUnload);
-window.addEventListener('beforeunload', flushPendingAgentAutosavesOnUnload);
+// 3-second idle autosave for the OpenAI connector / model setup form.
+// Mirrors the agent-channel autosave contract (feedback_preserve_user_config.md):
+// the user pastes a key, walks away from the input, and 3 seconds later
+// the value lands on the server without an explicit Save click. The save
+// path uses applyBootstrapPreservingDrafts so the still-typing draft is
+// not wiped — explicit Save (handleSaveConnectorConfig) uses applyBootstrap
+// for "submit & reset" semantics, but the silent background save must not
+// yank values mid-edit.
+let pendingConnectorAutosave = null;
+let connectorAutosaveTimer = null;
+let connectorAutosaveSequence = 0;
+
+function scheduleConnectorAutosave(form) {
+  if (!form) return;
+  const formData = new FormData(form);
+  const draft = uiState.modelSetupDraft || {};
+  const pick = name => pickConnectorField(draft, formData, name);
+  const authMode = pick('authMode') || 'codex';
+  const body = {
+    authMode,
+    baseUrl: pick('baseUrl'),
+    model: pick('model'),
+    systemPrompt: pick('systemPrompt'),
+    whisperApiKey: pick('whisperApiKey'),
+    whisperBaseUrl: pick('whisperBaseUrl'),
+    minimaxApiKey: pick('minimaxApiKey'),
+    minimaxGroupId: pick('minimaxGroupId'),
+    minimaxVoiceId: pick('minimaxVoiceId'),
+  };
+  const apiKey = pick('apiKey');
+  if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
+    body.apiKey = apiKey;
+  }
+  pendingConnectorAutosave = { body };
+
+  window.clearTimeout(connectorAutosaveTimer);
+  // 3-second idle debounce — fire only after the user has stopped
+  // typing for 3 full seconds. Matches the pattern the user explicitly
+  // asked for ("输入了一半三秒没动作就自动保存一下已经输入的内容") and
+  // already in use for agent channel / markdown autosave.
+  connectorAutosaveTimer = window.setTimeout(async () => {
+    const snapshot = pendingConnectorAutosave;
+    pendingConnectorAutosave = null;
+    if (!snapshot) return;
+    const requestSequence = ++connectorAutosaveSequence;
+    try {
+      const payload = await api('/api/settings/model', {
+        method: 'POST',
+        body: snapshot.body,
+      });
+      // Stale-response guard: if a newer autosave fired while this
+      // request was in flight, the newer response wins.
+      if (requestSequence !== connectorAutosaveSequence) return;
+      applyBootstrapPreservingDrafts(payload, { background: true });
+    } catch {
+      // Silent — autosave should not interrupt typing. Errors surface
+      // when the user clicks Save explicitly.
+    }
+  }, 3000);
+}
+
+// pagehide / beforeunload flush — sendBeacon the still-pending body so
+// closing the window mid-edit doesn't lose the typed key.
+function flushPendingConnectorAutosaveOnUnload() {
+  const snapshot = pendingConnectorAutosave;
+  pendingConnectorAutosave = null;
+  window.clearTimeout(connectorAutosaveTimer);
+  if (!snapshot?.body) return;
+  const body = JSON.stringify(snapshot.body);
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        '/api/settings/model',
+        new Blob([body], { type: 'application/json' }),
+      );
+    } else {
+      fetch('/api/settings/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+function flushAllPendingAutosavesOnUnload() {
+  flushPendingAgentAutosavesOnUnload();
+  flushPendingConnectorAutosaveOnUnload();
+}
+
+window.addEventListener('pagehide', flushAllPendingAutosavesOnUnload);
+window.addEventListener('beforeunload', flushAllPendingAutosavesOnUnload);
 
 async function handleImportAgentPreset(agentId, presetId) {
   const preset = agentPresetById(presetId);
@@ -12522,6 +12620,10 @@ document.addEventListener('input', event => {
       // doesn't reach here, so authMode never matches. Keep the
       // gate anyway so the helper contract stays one-way.
       if (dispatch.shouldRender) render();
+      // 3-second idle autosave: snapshot the submit body now (in
+      // case the form gets unmounted by a page switch before the
+      // timer fires) and queue the actual POST.
+      scheduleConnectorAutosave(target.form);
     }
     return;
   }
@@ -12718,6 +12820,9 @@ document.addEventListener('change', async event => {
     if (draftDispatch) {
       uiState.modelSetupDraft = draftDispatch.nextDraft;
       if (draftDispatch.shouldRender) render();
+      // Same 3-second idle autosave as the input listener — covers
+      // the authMode <select>, which doesn't fire `input` events.
+      scheduleConnectorAutosave(target.form);
       return;
     }
 
