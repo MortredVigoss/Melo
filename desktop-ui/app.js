@@ -11617,7 +11617,13 @@ document.addEventListener('click', async event => {
         // scheduleConnectorAutosave 内部已经过滤 authMode='codex'（避免
         // 把已保存 OAuth 切换的瞬间清掉用户存的 OpenAI key），所以这里
         // 无脑接入即可。
-        const authForm = trigger.closest('form');
+        //
+        // ⚠️ render() 之上的 `trigger` 节点已被 app.innerHTML 重建
+        // 从 DOM detach；走 trigger 的 closest-form 查找会拿到 orphan
+        // form 或直接 null，scheduleConnectorAutosave 的 FormData 就
+        // 读不到新 SSR 值，整条接线静默失败。改用稳定 id 在 render
+        // 之后重新查 *活的* form 节点。Codex audit 2026-04-28。
+        const authForm = document.getElementById('model-config-form');
         if (authForm instanceof HTMLFormElement) {
           scheduleConnectorAutosave(authForm);
         }

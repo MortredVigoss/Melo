@@ -384,11 +384,31 @@ test('wiring — set-model-auth-mode button enters the same autosave pipeline', 
   // 的场景需要这个 action 也调 scheduleConnectorAutosave。
   const caseStart = APP_SRC.indexOf("case 'set-model-auth-mode':");
   assert.ok(caseStart >= 0, 'set-model-auth-mode case must exist');
-  const caseSnippet = APP_SRC.slice(caseStart, caseStart + 1500);
+  // Bound the snippet to just this case body — the next `case '…':`
+  // belongs to a different action and may legitimately use
+  // `trigger.closest('form')` (e.g. load-model-options).
+  const nextCaseIdx = APP_SRC.indexOf("\n      case '", caseStart + 1);
+  const caseSnippet = APP_SRC.slice(caseStart, nextCaseIdx > 0 ? nextCaseIdx : caseStart + 2500);
   assert.match(
     caseSnippet,
     /scheduleConnectorAutosave\(/,
     'set-model-auth-mode action must schedule the autosave so button-driven authMode swaps still persist after 3s idle',
+  );
+
+  // Codex C 第九轮 (2026-04-28): the action calls render() before
+  // looking up the form. trigger.closest('form') after render() walks
+  // a detached / orphan node, so the autosave wiring silently breaks.
+  // Re-query by stable id so the FormData snapshot is taken from the
+  // *live* form rebuilt by render().
+  assert.match(
+    caseSnippet,
+    /document\.getElementById\(['"]model-config-form['"]\)/,
+    'set-model-auth-mode must re-query the form by stable id AFTER render(); trigger.closest("form") on a detached trigger silently fails',
+  );
+  assert.doesNotMatch(
+    caseSnippet,
+    /trigger\.closest\(['"]form['"]\)/,
+    'set-model-auth-mode must NOT use trigger.closest("form") — render() detaches the trigger',
   );
 });
 
