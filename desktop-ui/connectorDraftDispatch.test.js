@@ -462,13 +462,14 @@ test('wiring — scheduleConnectorAutosave cancels pending timer on codex skip',
   );
 });
 
-test('wiring — autosave unload flush beacons BOTH pending and inflight bodies', () => {
-  // The earlier single-snapshot design lost configs when the user
-  // closed the window during the 3-second window between fetch()
-  // start and response land — the snapshot was nulled the moment
-  // the POST started, so unload flush had nothing to beacon. The
-  // fix splits state into pending vs inflight; both must be sent
-  // on unload so neither path drops the user's typed key.
+test('wiring — autosave unload flush picks pending over inflight (priority rule)', () => {
+  // Two-snapshot model: `pending` is by definition newer than
+  // `inflight` (pending refills only after inflight moved out).
+  // sendBeacon doesn't guarantee delivery order, so beaconing
+  // BOTH lets the older inflight body race to land last and
+  // overwrite the newer pending body server-side. Codex C 第十轮
+  // (2026-04-28): the unload flush must pick exactly one body,
+  // and pending must win when present.
   assert.match(
     APP_SRC,
     /pendingConnectorAutosave/,
@@ -479,23 +480,49 @@ test('wiring — autosave unload flush beacons BOTH pending and inflight bodies'
     /inflightConnectorAutosave/,
     'must declare an inflight snapshot',
   );
-  // The flush function should iterate both snapshots — easiest
-  // structural check is that the function body mentions both names.
   const fnStart = APP_SRC.indexOf('function flushPendingConnectorAutosaveOnUnload');
   assert.ok(fnStart >= 0);
-  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2500);
+  // Body of the function — matched-brace walk so we don't undershoot
+  // by a long inline rationale comment.
+  const openBrace = APP_SRC.indexOf('{', fnStart);
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < APP_SRC.length; i += 1) {
+    const c = APP_SRC[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) { closeBrace = i; break; }
+    }
+  }
+  assert.ok(closeBrace > openBrace);
+  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
+
   assert.match(
-    fnSnippet,
+    fnBody,
     /pendingConnectorAutosave/,
     'unload flush must read pending snapshot',
   );
   assert.match(
-    fnSnippet,
+    fnBody,
     /inflightConnectorAutosave/,
-    'unload flush must read inflight snapshot too — otherwise closing during the 3s POST loses the body',
+    'unload flush must read inflight snapshot (as a fallback for the inflight-only case)',
+  );
+  // Priority rule: pending || inflight — pending wins when present,
+  // inflight is only the fallback. The earlier "for-of [pending,
+  // inflight]" design beaconed both and lost newest-wins semantics.
+  assert.match(
+    fnBody,
+    /pending\s*\|\|\s*inflight/,
+    'unload flush MUST pick exactly one body via `pending || inflight` priority — beaconing both lets older inflight race to land last and clobber newest typing',
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /for\s*\(\s*const\s+\w+\s+of\s*\[\s*pending\s*,\s*inflight\s*\]/,
+    'unload flush must NOT iterate [pending, inflight]; that beacons both and loses newest-wins',
   );
   assert.match(
-    fnSnippet,
+    fnBody,
     /sendBeacon/,
     'unload flush must use sendBeacon (or keepalive fetch) so the request survives unload',
   );

@@ -5330,42 +5330,47 @@ function scheduleConnectorAutosave(form) {
   }, 3000);
 }
 
-// pagehide / beforeunload flush — sendBeacon every body we know
-// about: pending (timer hasn't fired yet) AND in-flight (timer fired,
-// request still racing the unload). The earlier single-snapshot
-// design lost configs when the user closed the window during the
-// 3-second window between fetch() start and response land.
+// pagehide / beforeunload flush — beacon ONE body. Priority rule
+// (Codex audit 2026-04-28):
+//
+//   pending supersedes inflight
+//
+// `pending` is by definition newer than `inflight`: pending only
+// gets repopulated after inflight has been moved out of pending,
+// which means any keystroke captured into pending happened AFTER
+// inflight started. sendBeacon does NOT guarantee delivery order,
+// so beaconing both lets the older inflight body race to land
+// last and overwrite the newer pending body server-side. Picking
+// just one — the newer — makes the unload-time write deterministic.
+//
+// If only inflight exists (timer fired, no further keystrokes),
+// fall back to it so the user's last typed value still gets a
+// final chance to land in case the in-flight fetch was canceled
+// by the unload itself.
 function flushPendingConnectorAutosaveOnUnload() {
   const pending = pendingConnectorAutosave;
   const inflight = inflightConnectorAutosave;
   pendingConnectorAutosave = null;
   inflightConnectorAutosave = null;
   window.clearTimeout(connectorAutosaveTimer);
-  // Use a Set on the JSON string so identical bodies aren't sent twice
-  // (common case: user idle 4s, timer fired, body is in-flight, but
-  // pending was cleared inside the timer — we'd only have inflight here).
-  const seenBodies = new Set();
-  for (const snapshot of [pending, inflight]) {
-    if (!snapshot?.body) continue;
-    const body = JSON.stringify(snapshot.body);
-    if (seenBodies.has(body)) continue;
-    seenBodies.add(body);
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/settings/model',
-          new Blob([body], { type: 'application/json' }),
-        );
-      } else {
-        fetch('/api/settings/model', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch {}
-  }
+  const snapshot = pending || inflight;
+  if (!snapshot?.body) return;
+  const body = JSON.stringify(snapshot.body);
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        '/api/settings/model',
+        new Blob([body], { type: 'application/json' }),
+      );
+    } else {
+      fetch('/api/settings/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  } catch {}
 }
 
 function flushAllPendingAutosavesOnUnload() {
