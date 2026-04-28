@@ -18,6 +18,7 @@ import {
 } from './undoToast.js';
 import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
+import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 
 const app = document.querySelector('#app');
 
@@ -12664,35 +12665,27 @@ document.addEventListener('change', async event => {
     }
 
     // Both `model-config` (Settings → Model page) and `connector-config`
-    // (Customize → Connectors → OpenAI) edit the same underlying config
-    // (apiKey, baseUrl, model, whisper*, minimax*). They share
-    // modelSetupDraft so that any background render — bootstrap refresh,
-    // mcpAuthSurface poll, undo-toast tick — does not blow away the value
-    // the user just typed. Without this mirror the input nodes are
-    // recreated by the next innerHTML swap with their SSR-default value
-    // (empty for masked passwords) and `keepIfBlank` on the server then
-    // silently treats the submission as "no change". See
-    // feedback_preserve_user_config.md.
-    if (
-      target.form?.dataset.form === 'model-config' ||
-      target.form?.dataset.form === 'connector-config'
-    ) {
-      const nextDraft = {
-        ...(uiState.modelSetupDraft || effectiveModelSetupDraft()),
-        [target.name]: target.value,
-      };
-
-      if (target.name === 'authMode') {
-        const defaults = modelDefaultsForAuthMode(target.value);
-        nextDraft.baseUrl = defaults.baseUrl;
-        nextDraft.model = defaults.model;
-        if (target.value === 'codex') {
-          nextDraft.apiKey = '';
-        }
-      }
-
-      uiState.modelSetupDraft = nextDraft;
-      render();
+    // (Customize → Connectors → OpenAI) edit the same underlying config.
+    // The dispatcher in `connectorDraftDispatch.js` decides whether the
+    // change needs an immediate `render()` — only authMode does. Every
+    // other field (text, textarea, masked password) just mirrors onto
+    // the shared draft and lets the browser's own input buffer keep
+    // showing what the user typed. The earlier cut blindly called
+    // `render()` on every keystroke; that synchronous DOM rebuild
+    // snapped freshly-pasted password values back to "" because the
+    // mask contract renders password inputs with SSR `value=""` and
+    // `restoreFocusedInputState` only preserves caret position.
+    const draftDispatch = applyFormInputToDraft({
+      formName: target.form?.dataset.form,
+      fieldName: target.name,
+      value: target.value,
+      currentDraft: uiState.modelSetupDraft,
+      fallbackDraft: effectiveModelSetupDraft(),
+      modelDefaultsForAuthMode,
+    });
+    if (draftDispatch) {
+      uiState.modelSetupDraft = draftDispatch.nextDraft;
+      if (draftDispatch.shouldRender) render();
       return;
     }
 
