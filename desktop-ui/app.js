@@ -17,7 +17,7 @@ import {
   nextCountdownTickMs,
 } from './undoToast.js';
 import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
-import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
+import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 
 const app = document.querySelector('#app');
@@ -5260,31 +5260,28 @@ function flushPendingAgentAutosavesOnUnload() {
 // not wiped — explicit Save (handleSaveConnectorConfig) uses applyBootstrap
 // for "submit & reset" semantics, but the silent background save must not
 // yank values mid-edit.
+//
+// Two snapshots track the autosave lifecycle (Codex 2026-04-28 audit):
+//   - `pendingConnectorAutosave`: body queued by the debounce timer,
+//     not yet sent. Replaced on every keystroke.
+//   - `inflightConnectorAutosave`: body of the request currently in
+//     flight. Set when the timer fires, cleared once the response
+//     lands. The earlier single-snapshot design nulled the snapshot
+//     the moment the POST started, so a window-close mid-flight let
+//     the browser cancel the request and unload flush had nothing
+//     to beacon.
 let pendingConnectorAutosave = null;
+let inflightConnectorAutosave = null;
 let connectorAutosaveTimer = null;
 let connectorAutosaveSequence = 0;
 
 function scheduleConnectorAutosave(form) {
   if (!form) return;
-  const formData = new FormData(form);
-  const draft = uiState.modelSetupDraft || {};
-  const pick = name => pickConnectorField(draft, formData, name);
-  const authMode = pick('authMode') || 'codex';
-  const body = {
-    authMode,
-    baseUrl: pick('baseUrl'),
-    model: pick('model'),
-    systemPrompt: pick('systemPrompt'),
-    whisperApiKey: pick('whisperApiKey'),
-    whisperBaseUrl: pick('whisperBaseUrl'),
-    minimaxApiKey: pick('minimaxApiKey'),
-    minimaxGroupId: pick('minimaxGroupId'),
-    minimaxVoiceId: pick('minimaxVoiceId'),
-  };
-  const apiKey = pick('apiKey');
-  if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
-    body.apiKey = apiKey;
-  }
+  const body = buildAutosaveBody({
+    formData: new FormData(form),
+    draft: uiState.modelSetupDraft || {},
+  });
+  if (!body) return;
   pendingConnectorAutosave = { body };
 
   window.clearTimeout(connectorAutosaveTimer);
@@ -5296,6 +5293,7 @@ function scheduleConnectorAutosave(form) {
     const snapshot = pendingConnectorAutosave;
     pendingConnectorAutosave = null;
     if (!snapshot) return;
+    inflightConnectorAutosave = snapshot;
     const requestSequence = ++connectorAutosaveSequence;
     try {
       const payload = await api('/api/settings/model', {
@@ -5309,33 +5307,52 @@ function scheduleConnectorAutosave(form) {
     } catch {
       // Silent — autosave should not interrupt typing. Errors surface
       // when the user clicks Save explicitly.
+    } finally {
+      // Only clear in-flight if we're still the latest in-flight; a
+      // newer schedule could have replaced us during the await above.
+      if (inflightConnectorAutosave === snapshot) {
+        inflightConnectorAutosave = null;
+      }
     }
   }, 3000);
 }
 
-// pagehide / beforeunload flush — sendBeacon the still-pending body so
-// closing the window mid-edit doesn't lose the typed key.
+// pagehide / beforeunload flush — sendBeacon every body we know
+// about: pending (timer hasn't fired yet) AND in-flight (timer fired,
+// request still racing the unload). The earlier single-snapshot
+// design lost configs when the user closed the window during the
+// 3-second window between fetch() start and response land.
 function flushPendingConnectorAutosaveOnUnload() {
-  const snapshot = pendingConnectorAutosave;
+  const pending = pendingConnectorAutosave;
+  const inflight = inflightConnectorAutosave;
   pendingConnectorAutosave = null;
+  inflightConnectorAutosave = null;
   window.clearTimeout(connectorAutosaveTimer);
-  if (!snapshot?.body) return;
-  const body = JSON.stringify(snapshot.body);
-  try {
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(
-        '/api/settings/model',
-        new Blob([body], { type: 'application/json' }),
-      );
-    } else {
-      fetch('/api/settings/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    }
-  } catch {}
+  // Use a Set on the JSON string so identical bodies aren't sent twice
+  // (common case: user idle 4s, timer fired, body is in-flight, but
+  // pending was cleared inside the timer — we'd only have inflight here).
+  const seenBodies = new Set();
+  for (const snapshot of [pending, inflight]) {
+    if (!snapshot?.body) continue;
+    const body = JSON.stringify(snapshot.body);
+    if (seenBodies.has(body)) continue;
+    seenBodies.add(body);
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          '/api/settings/model',
+          new Blob([body], { type: 'application/json' }),
+        );
+      } else {
+        fetch('/api/settings/model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {}
+  }
 }
 
 function flushAllPendingAutosavesOnUnload() {
@@ -11581,6 +11598,16 @@ document.addEventListener('click', async event => {
           model: modelOptionsForAuthMode(nextAuthMode)[0] || defaults.model,
         };
         render();
+        // Settings → Model 用按钮切换 authMode（不是 <select>），所以
+        // input/change listener 都不会触发新增的 connector autosave。
+        // 直接走同一管线，让 "切到 api-key 后等 3 秒切走" 也能保存。
+        // scheduleConnectorAutosave 内部已经过滤 authMode='codex'（避免
+        // 把已保存 OAuth 切换的瞬间清掉用户存的 OpenAI key），所以这里
+        // 无脑接入即可。
+        const authForm = trigger.closest('form');
+        if (authForm instanceof HTMLFormElement) {
+          scheduleConnectorAutosave(authForm);
+        }
         break;
       }
       case 'load-model-options': {

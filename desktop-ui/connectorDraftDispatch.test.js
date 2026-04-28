@@ -377,6 +377,60 @@ test('wiring — flushPendingConnectorAutosaveOnUnload is registered on pagehide
   );
 });
 
+test('wiring — set-model-auth-mode button enters the same autosave pipeline', () => {
+  // Codex C 第七轮（2026-04-28）：Settings → Model 用按钮切 Local /
+  // API key / OAuth（不是 <select>），所以 input/change listener 都
+  //不触发新增的 connector autosave。"切到 api-key 等 3 秒后切走"
+  // 的场景需要这个 action 也调 scheduleConnectorAutosave。
+  const caseStart = APP_SRC.indexOf("case 'set-model-auth-mode':");
+  assert.ok(caseStart >= 0, 'set-model-auth-mode case must exist');
+  const caseSnippet = APP_SRC.slice(caseStart, caseStart + 1500);
+  assert.match(
+    caseSnippet,
+    /scheduleConnectorAutosave\(/,
+    'set-model-auth-mode action must schedule the autosave so button-driven authMode swaps still persist after 3s idle',
+  );
+});
+
+test('wiring — autosave unload flush beacons BOTH pending and inflight bodies', () => {
+  // The earlier single-snapshot design lost configs when the user
+  // closed the window during the 3-second window between fetch()
+  // start and response land — the snapshot was nulled the moment
+  // the POST started, so unload flush had nothing to beacon. The
+  // fix splits state into pending vs inflight; both must be sent
+  // on unload so neither path drops the user's typed key.
+  assert.match(
+    APP_SRC,
+    /pendingConnectorAutosave/,
+    'must declare a pending snapshot',
+  );
+  assert.match(
+    APP_SRC,
+    /inflightConnectorAutosave/,
+    'must declare an inflight snapshot',
+  );
+  // The flush function should iterate both snapshots — easiest
+  // structural check is that the function body mentions both names.
+  const fnStart = APP_SRC.indexOf('function flushPendingConnectorAutosaveOnUnload');
+  assert.ok(fnStart >= 0);
+  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2500);
+  assert.match(
+    fnSnippet,
+    /pendingConnectorAutosave/,
+    'unload flush must read pending snapshot',
+  );
+  assert.match(
+    fnSnippet,
+    /inflightConnectorAutosave/,
+    'unload flush must read inflight snapshot too — otherwise closing during the 3s POST loses the body',
+  );
+  assert.match(
+    fnSnippet,
+    /sendBeacon/,
+    'unload flush must use sendBeacon (or keepalive fetch) so the request survives unload',
+  );
+});
+
 test('wiring — handleLoadModelOptions reads via pickConnectorField, not raw FormData', () => {
   // Codex B-grade follow-up (2026-04-28): the "Read available models"
   // button used `FormData.get('apiKey')` directly, so any background
