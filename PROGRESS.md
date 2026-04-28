@@ -18,7 +18,7 @@
   - 文档化契约：agent stale whitelist 保留是 OK 的，因为 lifecycle 真 unregister 了 tool（modeling 层切断）+ whitelist 在 config 层（保留可撤销），两层独立。
 - 7 个 lifecycle 测试覆盖：preset toggled off / user disabled=true / user removed from config / 健康 steady state / 冷启动 / 混合多 reason 同次 reconcile / 无 disconnect 时 pure read。
 - 验证：`src/**/*.test.js` **1143/1143 全绿**（前次 1136 + 7 新 lifecycle）；`npm run test:ui` 74/74；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`6957783`。
 
 ## 2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复
 
