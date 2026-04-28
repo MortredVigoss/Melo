@@ -168,6 +168,61 @@ test('autosave: stale revision rejection returns full bootstrap so client applyB
   assert.equal(stale.settings.config.hasMinimaxKey, true);
 });
 
+test('autosave: concurrent newer + stale revision — race serialized by withConfigLock, newer always wins', async () => {
+  // Codex C 第十二轮 (2026-04-28): the revision check + saveConfig
+  // must execute atomically. Without a lock, two concurrent
+  // updateModelConfig calls can both loadConfig() and read the same
+  // baseline `autosaveRevision`, both pass the gate, and the slower
+  // POST then overwrites the faster one when it finally reaches
+  // saveConfig. This test fires both calls without awaiting, then
+  // asserts the final saved state matches the *newer* body — proving
+  // withConfigLock serializes the read-modify-write, so the slower
+  // path re-reads the freshly-written state and rejects its own
+  // stale body.
+  const baseRev = Date.now() + 8_000_000;
+  // Seed a known baseline so both racers start from the same state.
+  await updateModelConfig({
+    minimaxApiKey: 'sk-baseline',
+    minimaxGroupId: 'group-baseline',
+    _autosaveRevision: baseRev,
+  });
+
+  const newerRev = baseRev + 200;
+  const olderRev = baseRev + 100;
+  // Fire both writes without awaiting in between. Both will queue
+  // through withConfigLock; whichever runs second sees the first
+  // one's saved revision in its loadConfig() snapshot.
+  const [resA, resB] = await Promise.all([
+    updateModelConfig({
+      minimaxApiKey: 'sk-newer-wins',
+      minimaxGroupId: 'group-newer-wins',
+      _autosaveRevision: newerRev,
+    }),
+    updateModelConfig({
+      minimaxApiKey: 'sk-older-loses',
+      minimaxGroupId: 'group-older-loses',
+      _autosaveRevision: olderRev,
+    }),
+  ]);
+
+  // Final on-disk state must reflect the *newer* body, regardless of
+  // which Promise.all slot finished its await first.
+  const cfgPath = join(TEMP_HOME, 'config.json');
+  const persisted = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  assert.equal(persisted.minimaxApiKey, 'sk-newer-wins',
+    'concurrent write race must converge to the newer revision body');
+  assert.equal(persisted.minimaxGroupId, 'group-newer-wins');
+  assert.equal(persisted.autosaveRevision, newerRev,
+    'saved revision must end at the newer rev');
+
+  // Both responses are valid bootstrap snapshots — stale path returns
+  // the unchanged-(at-its-load-time) bootstrap. The bootstrap from
+  // the older path may reflect either pre- or post-newer state
+  // depending on ordering, but neither should crash.
+  assert.ok(resA?.settings?.config);
+  assert.ok(resB?.settings?.config);
+});
+
 test('autosave: invalid _autosaveRevision (NaN / string / negative-but-finite) — falls through to force-write semantics', async () => {
   // Defensive: a malformed revision must not silently reject every
   // future request. Client mistakes / replay attacks are bounded by

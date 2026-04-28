@@ -239,11 +239,40 @@ export async function saveConfig(nextConfig) {
   return payload;
 }
 
+// Serialize every config read-modify-write through one queue. Without
+// this, two concurrent `updateModelConfig` (or any `loadConfig → modify
+// → saveConfig` caller) could both read the same baseline, both pass
+// their guards (autosave revision check, keepIfBlank, etc.), and then
+// race to saveConfig — last writer wins, silently clobbering the
+// other's patch. Mirrors the queue pattern in src/state/stateStore.js.
+// Codex audit 2026-04-28 (revision gate without atomicity is just
+// a slower race).
+let _configWriteQueue = Promise.resolve();
+
+/**
+ * Run a config read-modify-write transaction under the shared
+ * config queue. Caller's `work` function should perform the whole
+ * `loadConfig → mutate → saveConfig` sequence inside its body.
+ *
+ * @template T
+ * @param {() => Promise<T>} work
+ * @returns {Promise<T>}
+ */
+export async function withConfigLock(work) {
+  const next = _configWriteQueue.catch(() => {}).then(work);
+  // Silence unhandled-rejection on the queue tail so a single throwing
+  // caller doesn't poison every subsequent transaction.
+  _configWriteQueue = next.catch(() => {});
+  return next;
+}
+
 export async function updateConfig(key, value) {
-  const current = await loadConfig();
-  return saveConfig({
-    ...current,
-    [key]: value,
+  return withConfigLock(async () => {
+    const current = await loadConfig();
+    return saveConfig({
+      ...current,
+      [key]: value,
+    });
   });
 }
 

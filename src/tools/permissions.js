@@ -211,15 +211,21 @@ export async function resolvePermission(requestId, granted, scope = 'once', tool
  */
 export async function persistPermissionRule(toolId, action) {
   try {
-    const current = await loadConfig();
-    const rules = Array.isArray(current.toolPermissionRules) ? [...current.toolPermissionRules] : [];
-    const idx = rules.findIndex(r => r.toolId === toolId);
-    if (idx >= 0) {
-      rules[idx] = { toolId, action };
-    } else {
-      rules.push({ toolId, action });
-    }
-    await saveConfig({ ...current, toolPermissionRules: rules });
+    // Wrap in withConfigLock so two concurrent "Always allow" clicks
+    // (or a permission write racing an updateModelConfig) can't both
+    // load the same baseline and have one overwrite the other.
+    const { withConfigLock } = await import('../config.js');
+    await withConfigLock(async () => {
+      const current = await loadConfig();
+      const rules = Array.isArray(current.toolPermissionRules) ? [...current.toolPermissionRules] : [];
+      const idx = rules.findIndex(r => r.toolId === toolId);
+      if (idx >= 0) {
+        rules[idx] = { toolId, action };
+      } else {
+        rules.push({ toolId, action });
+      }
+      await saveConfig({ ...current, toolPermissionRules: rules });
+    });
   } catch {
     // Non-fatal — rule just won't persist
   }

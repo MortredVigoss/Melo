@@ -1103,11 +1103,16 @@ const server = createServer(async (request, response) => {
       // persistPermissionRule. Passing only { toolPermissionRules } would
       // wipe apiKey / whisperApiKey / domainCookies / etc. because
       // saveConfig normalizes missing fields back to DEFAULT_CONFIG.
-      const { loadConfig, saveConfig } = await import('./config.js');
-      const current = await loadConfig();
-      const rules = Array.isArray(current.toolPermissionRules) ? current.toolPermissionRules : [];
-      const updated = rules.filter(r => r.toolId !== toolId);
-      await saveConfig({ ...current, toolPermissionRules: updated });
+      // Wrapped in withConfigLock so a concurrent updateModelConfig /
+      // permissions write can't race the load → modify → save here.
+      const { loadConfig, saveConfig, withConfigLock } = await import('./config.js');
+      const updated = await withConfigLock(async () => {
+        const current = await loadConfig();
+        const rules = Array.isArray(current.toolPermissionRules) ? current.toolPermissionRules : [];
+        const next = rules.filter(r => r.toolId !== toolId);
+        await saveConfig({ ...current, toolPermissionRules: next });
+        return next;
+      });
       sendJson(response, 200, { ok: true, rules: updated });
       return;
     }

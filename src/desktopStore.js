@@ -23,6 +23,7 @@ import {
   loadConfig,
   normalizeModelCatalogs,
   saveConfig,
+  withConfigLock,
 } from './config.js';
 import { discoverAvailableModels } from './openai.js';
 import {
@@ -1577,6 +1578,18 @@ export async function updateDesktopSettings(patch) {
 }
 
 export async function updateModelConfig(patch = {}) {
+  // Serialize the entire read-modify-write through the shared config
+  // queue: without atomicity, two concurrent autosaves can both load
+  // the same baseline `autosaveRevision`, both pass the revision
+  // gate below, and the slower POST overwrites the faster one when
+  // it finally reaches saveConfig — exactly the race the gate was
+  // meant to close. (Codex C 第十二轮 audit 2026-04-28.)
+  return withConfigLock(async () => {
+    return updateModelConfigInner(patch);
+  });
+}
+
+async function updateModelConfigInner(patch = {}) {
   const current = await loadConfig();
 
   // ── Autosave revision gate (Codex audit 2026-04-28) ──────────────────────
@@ -1855,6 +1868,16 @@ export async function createCustomAgent() {
 }
 
 export async function refreshModelCatalog(patch = {}) {
+  // Same atomicity rationale as updateModelConfig: the
+  // discoverAvailableModels() call is async, so without the lock a
+  // concurrent updateModelConfig could land between our loadConfig
+  // and saveConfig and lose its patch.
+  return withConfigLock(async () => {
+    return refreshModelCatalogInner(patch);
+  });
+}
+
+async function refreshModelCatalogInner(patch = {}) {
   const current = await loadConfig();
   const authMode =
     typeof patch.authMode === 'string' &&
