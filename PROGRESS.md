@@ -16,7 +16,7 @@
   - **desktopBootstrap.mcpAuthSurface** 跳过含非法 id 的 user MCP（不在 UI 显示 → 用户授权了也不会变 active）。
 - 17 新测试：[toolId.test.js](src/mcp/toolId.test.js) ×15（pattern 通过/拒绝、format throw、parse 边界、prefix 检查）+ [agentTools.test.js](src/services/agent/agentTools.test.js) `safe vs safe:evil smuggle` + `malformed prefix dropped` + [manager.test.js](src/mcp/manager.test.js) `buildMcpTool refuses illegal server name`。
 - 验证：`src/**/*.test.js` **1160/1160 全绿**（前次 1143 + 17 新）；`npm run test:ui` 86/86；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`3876cdc`。
 
 ## 2026-04-28 11:30 — Codex C 第三轮：agentDraftFor 漏 enabledMcpServerIds → 静默清空 + stale 撤销失效
 
