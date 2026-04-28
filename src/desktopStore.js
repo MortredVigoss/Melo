@@ -1867,16 +1867,39 @@ export async function createCustomAgent() {
   return getDesktopBootstrap();
 }
 
-export async function refreshModelCatalog(patch = {}) {
-  // Network discovery (`discoverAvailableModels`) can take up to 15s.
-  // Holding `withConfigLock` across that span would block every other
-  // config writer — autosave, permission persistence, single-key
-  // updates — for the full discovery duration. Codex audit
-  // 2026-04-28 (B-grade follow-up): hoist the network round-trip OUT
-  // of the lock; only the final read-modify-write needs to be atomic.
-  // We re-read inside the lock so a concurrent `updateModelConfig`
-  // landing during discovery is preserved (its fields stay; only the
-  // catalog for the resolved authMode is overlaid).
+/**
+ * `refreshModelCatalog` powers the "Read available models" / "Refresh
+ * model list" button on the model setup page. Its **only** persistent
+ * effect is to refresh the entries in `config.modelCatalogs[authMode]`.
+ *
+ * What it does NOT do (Codex audit 2026-04-28):
+ *
+ *   - It does NOT persist the user's typed authMode/baseUrl/model/
+ *     apiKey/systemPrompt — those fields belong to the autosave +
+ *     explicit-Save pipelines (handleSaveConnectorConfig +
+ *     scheduleConnectorAutosave). Persisting them here would race
+ *     those pipelines: discovery can take up to 15s, and during that
+ *     window any autosave landing through `updateModelConfig` would
+ *     be silently rolled back when refresh's saveConfig overwrote
+ *     the same fields with the form snapshot taken BEFORE discovery.
+ *
+ *   - The patch fields are still consumed as **inputs** to the
+ *     discovery call (the user's chosen baseUrl / apiKey are needed
+ *     to actually talk to the right `/models` endpoint). They just
+ *     don't travel into the saved config.
+ *
+ * Concurrency contract: this function holds the config lock ONLY
+ * around the final `loadConfig + patch modelCatalogs + saveConfig`
+ * sequence. The network round-trip happens outside the lock so it
+ * doesn't stall autosave / permission writes / single-key updates.
+ *
+ * @param {object} patch
+ * @param {object} [options]
+ * @param {(input: object) => Promise<string[]>} [options._discoverFn]
+ *   Test seam — defaults to the real `discoverAvailableModels`.
+ *   Lets a concurrent regression test simulate slow discovery.
+ */
+export async function refreshModelCatalog(patch = {}, options = {}) {
   const initialConfig = await loadConfig();
   const authMode =
     typeof patch.authMode === 'string' &&
@@ -1895,31 +1918,32 @@ export async function refreshModelCatalog(patch = {}) {
     typeof patch.apiKey === 'string' && patch.apiKey.trim()
       ? patch.apiKey.trim()
       : initialConfig.apiKey || '';
-  const systemPrompt =
-    typeof patch.systemPrompt === 'string' && patch.systemPrompt.trim()
-      ? patch.systemPrompt.trim()
-      : initialConfig.systemPrompt || DEFAULT_CONFIG.systemPrompt;
 
   // Network call OUTSIDE the lock — concurrent writers stay unblocked.
-  const discovered = await discoverAvailableModels({
+  // `_discoverFn` is a test seam (default: real discoverAvailableModels)
+  // so a concurrent regression test can simulate a 100ms discovery
+  // window during which an interleaved updateModelConfig writes new
+  // form fields, and assert refresh does NOT roll those back.
+  const discoverFn = typeof options._discoverFn === 'function'
+    ? options._discoverFn
+    : discoverAvailableModels;
+  const discovered = await discoverFn({
     authMode,
     apiKey,
     baseUrl,
     model,
   });
 
-  // Atomic merge + save: re-read inside the lock so we layer the
-  // catalog onto whatever the latest persisted state is, even if
-  // another writer landed during the network round-trip above.
+  // Atomic catalog patch: re-read inside the lock so any
+  // updateModelConfig that landed during discovery is preserved in
+  // full. We touch ONLY the modelCatalogs map for the resolved
+  // authMode; everything else (authMode itself, baseUrl, model,
+  // apiKey, systemPrompt, autosaveRevision, …) flows through from
+  // the freshly-reloaded current state untouched.
   return withConfigLock(async () => {
     const current = await loadConfig();
     await saveConfig({
       ...current,
-      authMode,
-      baseUrl,
-      model,
-      apiKey: authMode === 'api-key' || authMode === 'local' ? apiKey : current.apiKey,
-      systemPrompt,
       modelCatalogs: {
         ...normalizeModelCatalogs(current.modelCatalogs || DEFAULT_MODEL_CATALOGS),
         [authMode]: discovered,

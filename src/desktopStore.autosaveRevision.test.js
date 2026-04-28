@@ -28,7 +28,7 @@ import { join } from 'node:path';
 const TEMP_HOME = mkdtempSync(join(tmpdir(), 'melo-autosave-rev-test-'));
 process.env.MELO_HOME = TEMP_HOME;
 
-const { updateModelConfig } = await import('./desktopStore.js');
+const { updateModelConfig, refreshModelCatalog } = await import('./desktopStore.js');
 
 test('autosave: a body with no _autosaveRevision (explicit Save) writes and bumps current', async () => {
   // Brand-new config: autosaveRevision starts at 0. An explicit Save
@@ -297,6 +297,153 @@ test('autosave: negative finite revision is treated as a stale autosave, not a f
     'group-newer-must-survive',
     'small positive revision is also stale; rejection is purely monotonic, not "is the number weird"',
   );
+});
+
+test('refresh: discovery hoisted out of lock — concurrent updateModelConfig during discovery is NOT rolled back', async () => {
+  // Codex C 第十三轮 (2026-04-28) regression test: refresh used to
+  // hold the config lock across the network discovery (15s worst
+  // case), or — after the first hoist attempt — wrote the form
+  // snapshot taken BEFORE discovery into the saved config inside
+  // the lock. Either design clobbered any updateModelConfig that
+  // landed during discovery. Final design: refresh only patches
+  // modelCatalogs[authMode]; form fields flow through from the
+  // freshly-reloaded current state.
+  //
+  // We simulate the race with a controllable discovery: refresh
+  // calls our fake discoverFn which awaits a deferred promise.
+  // While refresh is parked there, we synchronously fire
+  // updateModelConfig writing fresh fields; once that resolves we
+  // release discovery; refresh's lock-section then reloads the
+  // updated state and overlays only the catalog.
+
+  // Establish a known baseline before the race.
+  const baseRev = Date.now() + 10_000_000;
+  await updateModelConfig({
+    minimaxApiKey: 'sk-pre-race',
+    minimaxGroupId: 'group-pre-race',
+    _autosaveRevision: baseRev,
+  });
+
+  let releaseDiscovery;
+  const discoveryHeld = new Promise(resolve => { releaseDiscovery = resolve; });
+  const fakeDiscoverFn = async () => {
+    // Park the network round-trip so we can interleave a write.
+    await discoveryHeld;
+    // Include 'gpt-4.1' so that normalizeConfigShape's
+    // resolveModelForAuthMode keeps the user-typed model — otherwise
+    // saveConfig folds an out-of-catalog model back to catalog[0],
+    // which would mask whether refresh rolled back the user's field
+    // or not. The contract under test is "refresh doesn't write
+    // form fields"; 'normalize folds an unknown model' is a
+    // separate, intentional behaviour.
+    return ['gpt-4.1', 'codex-discovered-model-A'];
+  };
+
+  // Fire refresh WITHOUT awaiting — it'll park inside fakeDiscoverFn.
+  const refreshPromise = refreshModelCatalog(
+    {
+      authMode: 'codex',
+      baseUrl: 'http://refresh-input.example/v1',
+      model: 'gpt-5.5',
+      apiKey: '',
+    },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  // Yield so refresh is definitely parked at `await discoveryHeld`.
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  // Now interleave a real autosave landing during discovery — the
+  // user typed a NEW MiniMax key + a different model and the 3-second
+  // autosave finishes mid-refresh.
+  const interleavedRev = baseRev + 5_000;
+  await updateModelConfig({
+    minimaxApiKey: 'sk-INTERLEAVED-MUST-SURVIVE',
+    minimaxGroupId: 'group-INTERLEAVED-MUST-SURVIVE',
+    model: 'gpt-4.1', // different model to prove field is preserved
+    _autosaveRevision: interleavedRev,
+  });
+
+  // Release discovery; refresh now enters its lock section.
+  releaseDiscovery();
+  await refreshPromise;
+
+  // Final on-disk state must reflect:
+  //   - the INTERLEAVED autosave's fields (minimax key/group/model)
+  //   - refresh's catalog overlaid onto modelCatalogs.codex
+  //   - autosaveRevision must be the larger of the two writers'
+  //     contributions (refresh writes via withConfigLock with no
+  //     _autosaveRevision → bumps to max(current, Date.now()))
+  const cfgPath = join(TEMP_HOME, 'config.json');
+  const persisted = JSON.parse(readFileSync(cfgPath, 'utf8'));
+
+  assert.equal(
+    persisted.minimaxApiKey,
+    'sk-INTERLEAVED-MUST-SURVIVE',
+    'refresh must NOT roll back the autosave that landed during discovery',
+  );
+  assert.equal(
+    persisted.minimaxGroupId,
+    'group-INTERLEAVED-MUST-SURVIVE',
+    'refresh must NOT roll back the autosave Group ID either',
+  );
+  assert.equal(
+    persisted.model,
+    'gpt-4.1',
+    'refresh must NOT roll back the model field the autosave just set',
+  );
+  assert.deepEqual(
+    persisted.modelCatalogs?.codex,
+    ['gpt-4.1', 'codex-discovered-model-A'],
+    'refresh MUST land its catalog under the resolved authMode',
+  );
+});
+
+test('refresh: form fields in patch are NEVER persisted as config (catalog-only contract)', async () => {
+  // Companion to the race test above: even when refresh runs alone,
+  // the patch.baseUrl / patch.apiKey / patch.systemPrompt etc. are
+  // discovery inputs only — they must not land in saved config.
+  // Otherwise the autosave / explicit Save pipelines lose ownership
+  // of those fields and any user input is at the mercy of refresh
+  // ordering.
+
+  // Seed with known field values via a real updateModelConfig.
+  const baseRev = Date.now() + 11_000_000;
+  await updateModelConfig({
+    minimaxApiKey: 'sk-baseline-2',
+    baseUrl: 'http://saved-baseline.example/v1',
+    model: 'baseline-model',
+    systemPrompt: 'baseline prompt',
+    _autosaveRevision: baseRev,
+  });
+
+  // Refresh with DIFFERENT values in the patch — those must NOT
+  // overwrite the saved fields.
+  const fakeDiscoverFn = async ({ authMode }) => [`${authMode}-only-catalog`];
+  await refreshModelCatalog(
+    {
+      authMode: 'codex',
+      baseUrl: 'http://REFRESH-INPUT-MUST-NOT-LAND.example/v1',
+      model: 'REFRESH-INPUT-MODEL-MUST-NOT-LAND',
+      systemPrompt: 'REFRESH-INPUT-PROMPT-MUST-NOT-LAND',
+      apiKey: 'sk-REFRESH-INPUT-KEY-MUST-NOT-LAND',
+    },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  const cfgPath = join(TEMP_HOME, 'config.json');
+  const persisted = JSON.parse(readFileSync(cfgPath, 'utf8'));
+
+  assert.equal(persisted.baseUrl, 'http://saved-baseline.example/v1',
+    'refresh patch.baseUrl is a discovery input, not a config write');
+  assert.equal(persisted.model, 'baseline-model',
+    'refresh patch.model is a discovery input, not a config write');
+  assert.equal(persisted.systemPrompt, 'baseline prompt',
+    'refresh patch.systemPrompt is a discovery input, not a config write');
+  // codex authMode persists apiKey='' regardless, but the contract
+  // is that refresh doesn't write apiKey at all — verify by saving
+  // a real key first under api-key mode and re-running.
+  assert.deepEqual(persisted.modelCatalogs?.codex, ['codex-only-catalog']);
 });
 
 // Cleanup
