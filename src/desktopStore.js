@@ -1868,39 +1868,39 @@ export async function createCustomAgent() {
 }
 
 export async function refreshModelCatalog(patch = {}) {
-  // Same atomicity rationale as updateModelConfig: the
-  // discoverAvailableModels() call is async, so without the lock a
-  // concurrent updateModelConfig could land between our loadConfig
-  // and saveConfig and lose its patch.
-  return withConfigLock(async () => {
-    return refreshModelCatalogInner(patch);
-  });
-}
-
-async function refreshModelCatalogInner(patch = {}) {
-  const current = await loadConfig();
+  // Network discovery (`discoverAvailableModels`) can take up to 15s.
+  // Holding `withConfigLock` across that span would block every other
+  // config writer — autosave, permission persistence, single-key
+  // updates — for the full discovery duration. Codex audit
+  // 2026-04-28 (B-grade follow-up): hoist the network round-trip OUT
+  // of the lock; only the final read-modify-write needs to be atomic.
+  // We re-read inside the lock so a concurrent `updateModelConfig`
+  // landing during discovery is preserved (its fields stay; only the
+  // catalog for the resolved authMode is overlaid).
+  const initialConfig = await loadConfig();
   const authMode =
     typeof patch.authMode === 'string' &&
     ['local', 'api-key', 'codex'].includes(patch.authMode.trim())
       ? patch.authMode.trim()
-      : current.authMode || DEFAULT_CONFIG.authMode;
+      : initialConfig.authMode || DEFAULT_CONFIG.authMode;
   const baseUrl =
     typeof patch.baseUrl === 'string' && patch.baseUrl.trim()
       ? patch.baseUrl.trim()
-      : current.baseUrl || DEFAULT_CONFIG.baseUrl;
+      : initialConfig.baseUrl || DEFAULT_CONFIG.baseUrl;
   const model =
     typeof patch.model === 'string' && patch.model.trim()
       ? patch.model.trim()
-      : current.model || DEFAULT_CONFIG.model;
+      : initialConfig.model || DEFAULT_CONFIG.model;
   const apiKey =
     typeof patch.apiKey === 'string' && patch.apiKey.trim()
       ? patch.apiKey.trim()
-      : current.apiKey || '';
+      : initialConfig.apiKey || '';
   const systemPrompt =
     typeof patch.systemPrompt === 'string' && patch.systemPrompt.trim()
       ? patch.systemPrompt.trim()
-      : current.systemPrompt || DEFAULT_CONFIG.systemPrompt;
+      : initialConfig.systemPrompt || DEFAULT_CONFIG.systemPrompt;
 
+  // Network call OUTSIDE the lock — concurrent writers stay unblocked.
   const discovered = await discoverAvailableModels({
     authMode,
     apiKey,
@@ -1908,20 +1908,25 @@ async function refreshModelCatalogInner(patch = {}) {
     model,
   });
 
-  await saveConfig({
-    ...current,
-    authMode,
-    baseUrl,
-    model,
-    apiKey: authMode === 'api-key' || authMode === 'local' ? apiKey : current.apiKey,
-    systemPrompt,
-    modelCatalogs: {
-      ...normalizeModelCatalogs(current.modelCatalogs || DEFAULT_MODEL_CATALOGS),
-      [authMode]: discovered,
-    },
+  // Atomic merge + save: re-read inside the lock so we layer the
+  // catalog onto whatever the latest persisted state is, even if
+  // another writer landed during the network round-trip above.
+  return withConfigLock(async () => {
+    const current = await loadConfig();
+    await saveConfig({
+      ...current,
+      authMode,
+      baseUrl,
+      model,
+      apiKey: authMode === 'api-key' || authMode === 'local' ? apiKey : current.apiKey,
+      systemPrompt,
+      modelCatalogs: {
+        ...normalizeModelCatalogs(current.modelCatalogs || DEFAULT_MODEL_CATALOGS),
+        [authMode]: discovered,
+      },
+    });
+    return getDesktopBootstrap();
   });
-
-  return getDesktopBootstrap();
 }
 
 // Skill CRUD + proposal-application + chat-draft moved to

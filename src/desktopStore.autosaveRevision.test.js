@@ -223,28 +223,80 @@ test('autosave: concurrent newer + stale revision — race serialized by withCon
   assert.ok(resB?.settings?.config);
 });
 
-test('autosave: invalid _autosaveRevision (NaN / string / negative-but-finite) — falls through to force-write semantics', async () => {
+test('autosave: malformed _autosaveRevision (NaN / string / null / object) — falls through to force-write semantics', async () => {
   // Defensive: a malformed revision must not silently reject every
-  // future request. Client mistakes / replay attacks are bounded by
-  // the rule "non-finite number means no revision attached".
+  // future request. The server gate's rule is precise:
+  //   `typeof val === 'number' && Number.isFinite(val)` → use as
+  //                                                      revision
+  //   otherwise → no revision attached → force-write applies + bumps
+  //
+  // Negative finite numbers are NOT in this set; they are valid
+  // numbers and therefore go through the monotonic check (covered by
+  // the next test). NaN / strings / null / undefined / objects /
+  // arrays all fail the `typeof === 'number' && isFinite` guard and
+  // are equivalent to no revision.
   await updateModelConfig({
     minimaxGroupId: 'group-baseline',
     _autosaveRevision: Date.now() + 6_000_000,
   });
 
-  for (const bad of [Number.NaN, 'oops', null, undefined, {}, []]) {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 'oops', null, undefined, {}, []]) {
     const bootstrap = await updateModelConfig({
       minimaxGroupId: 'group-after-bad-rev',
       _autosaveRevision: bad,
     });
     // Treated as no revision → force write applies.
-    assert.equal(bootstrap.settings.config.minimaxGroupId, 'group-after-bad-rev');
+    assert.equal(
+      bootstrap.settings.config.minimaxGroupId,
+      'group-after-bad-rev',
+      `_autosaveRevision=${String(bad)} (typeof=${typeof bad}) should fall through to force-write`,
+    );
     // Reset for next iteration.
     await updateModelConfig({
       minimaxGroupId: 'group-baseline',
       _autosaveRevision: Date.now() + 7_000_000,
     });
   }
+});
+
+test('autosave: negative finite revision is treated as a stale autosave, not a force-write', async () => {
+  // Codex audit 2026-04-28 (⚪ follow-up): the previous test name
+  // claimed "negative-but-finite" coverage but actually never sent a
+  // negative number. Pin the real behaviour here: a finite negative
+  // number IS a valid revision (passes typeof+isFinite), so the
+  // monotonic gate compares it against the saved revision. Saved
+  // revision is always >= 0 (DEFAULT_CONFIG starts at 0), so any
+  // negative number is by definition stale and gets rejected — not
+  // promoted to force-write. This is the safer-of-the-two choices:
+  // a buggy/replayed client can't sneak a "very negative" revision
+  // past the gate and clobber saved state.
+  const baseRev = Date.now() + 9_000_000;
+  await updateModelConfig({
+    minimaxGroupId: 'group-newer-must-survive',
+    _autosaveRevision: baseRev,
+  });
+
+  // Negative finite revision → stale → reject.
+  const bootstrap = await updateModelConfig({
+    minimaxGroupId: 'group-from-negative-revision',
+    _autosaveRevision: -1,
+  });
+  assert.equal(
+    bootstrap.settings.config.minimaxGroupId,
+    'group-newer-must-survive',
+    'negative revision is stale (every saved revision is >= 0); reject must preserve newer body',
+  );
+
+  // Same expectation for a small positive revision below the saved one.
+  const bootstrap2 = await updateModelConfig({
+    minimaxGroupId: 'group-from-tiny-positive',
+    _autosaveRevision: 1,
+  });
+  assert.equal(
+    bootstrap2.settings.config.minimaxGroupId,
+    'group-newer-must-survive',
+    'small positive revision is also stale; rejection is purely monotonic, not "is the number weird"',
+  );
 });
 
 // Cleanup
