@@ -361,6 +361,47 @@ export async function getDesktopBootstrap(query = '') {
         flag: preset.flag,
         enabled: Boolean(config[preset.flag]),
       })),
+      // Per-agent authorisation surface — union of built-in presets and
+      // any servers the user added under `config.mcpServers`.  Both kinds
+      // funnel through the same agent-whitelist check (filterMcpToolsFor-
+      // Agent), so the customize → agents UI must offer chips for both.
+      // Preset entries have a `flag`; user entries don't (their "global
+      // enable" is just being present in config). De-duped by id with the
+      // user entry winning when ids collide (matches buildEffective-
+      // McpServers's user-overrides-preset semantics).
+      mcpAuthSurface: (() => {
+        const seen = new Map();
+        for (const preset of getBuiltinMcpPresets()) {
+          seen.set(preset.id, {
+            id: preset.id,
+            source: 'preset',
+            enabled: Boolean(config[preset.flag]),
+            description: preset.description,
+            command: preset.command,
+            args: preset.args,
+            flag: preset.flag,
+          });
+        }
+        const userServers = (config.mcpServers && typeof config.mcpServers === 'object')
+          ? config.mcpServers
+          : {};
+        for (const [id, cfg] of Object.entries(userServers)) {
+          if (!id) continue;
+          // User-configured server is "enabled" iff it isn't explicitly
+          // disabled in the user's own config block.  Preset toggles
+          // don't apply.
+          seen.set(id, {
+            id,
+            source: 'user',
+            enabled: !cfg?.disabled,
+            description: 'User-configured stdio MCP server',
+            command: cfg?.command || '',
+            args: Array.isArray(cfg?.args) ? cfg.args : [],
+            flag: null,
+          });
+        }
+        return [...seen.values()];
+      })(),
     },
     workspace,
     search: await buildSearchResults(query, state, workspace, connectors, skills),

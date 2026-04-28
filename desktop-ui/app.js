@@ -8061,11 +8061,14 @@ function renderAgentWorkbench(selected) {
         }
 
         ${(() => {
-          // Built-in stdio MCP server whitelist.  Unlike connectors / skills
-          // above where missing = "allow all", MCP defaults to deny-all
-          // because stdio MCPs run arbitrary local processes — every agent
-          // must opt-in per server.  See agentTools.normalizeMcpServerWhitelist.
-          const presets = uiState.bootstrap?.customize?.mcpPresets || [];
+          // Stdio MCP server whitelist — unified across built-in presets
+          // and user-configured `mcpServers`. Without this surface the
+          // user's own MCP entries would register tools but never be
+          // reachable via the per-agent whitelist (Codex 🔴 audit
+          // 2026-04-28). Defaults to deny-all per agent.
+          const presets = uiState.bootstrap?.customize?.mcpAuthSurface
+            || uiState.bootstrap?.customize?.mcpPresets // legacy fallback
+            || [];
           if (!presets.length) {
             return '<input type="hidden" name="enabledMcpServerIds" value="" />';
           }

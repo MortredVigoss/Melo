@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复
+
+- 上一刀 `799a9a4` push 又被 Codex C 阻断，3 个 finding 都真：
+  - 🔴 per-agent UI 只列 built-in presets，**user-configured `mcpServers` 注册了 tool 但 UI 看不见 → user MCP 永远 deny-all 死锁**。
+  - 🟠 `Boolean(body?.enabled)` 把 `"false"` / `"0"` 等 truthy 字符串当 true，`/api/mcp/preset-toggle` 可被误开启。
+  - ⚪ `src/mcp/manager.test.js:78` 行因为我打字时输入 control char 实际有 literal NUL 字节，git 识别为 binary。
+- 用户决定（同意推荐 A+A）：user-configured MCP 跟 built-in 同 4 层模型；全局 preset 关闭后 agent stale 授权保留可撤销（已在前次实现）。
+- 修：
+  - **🔴 `bootstrap.customize.mcpAuthSurface[]`**（[desktopBootstrap.js](src/state/desktopBootstrap.js)）—— built-in presets ∪ user `config.mcpServers` 的 unique 联合；每条带 `source: 'preset'\|'user'`、`enabled` 状态、command/args/description。User 条目 `enabled` 由 `disabled` 字段决定（不受 preset flag 影响）；id 撞名时 user 覆盖 preset（与 `buildEffectiveMcpServers` 同语义）。Agent UI [app.js:8068](desktop-ui/app.js#L8068) 改用 `mcpAuthSurface`（`mcpPresets` 留作 legacy fallback），现在 user MCP 也会出现在 chip-row。
+  - **🟠 `/api/mcp/preset-toggle` 严格 boolean**（[server.js](src/server.js)）：`typeof body.enabled === 'boolean'` 才放行，否则 400 + 错误信息 `"\`enabled\` must be a literal boolean"`。
+  - **⚪ NUL 修**（[manager.test.js](src/mcp/manager.test.js)）—— 用 python 直接定位 byte 3628 替换为 ASCII 空格。`file` 命令现报 UTF-8 text 不再 binary。
+- 新增回归测试：[agentTools.test.js](src/services/agent/agentTools.test.js#L93) 的 `user-configured MCP servers are whitelistable too` —— 显式 pin "filter 不区分 preset vs user，只看 server id" 这个语义；任何 `mcp:my-custom-server:*` 都受同一白名单 gate。
+- 验证：`src/**/*.test.js` **1136/1136 全绿**（前次 1135 + 1 新 user-MCP 测试）；`npm run test:ui` 74/74；check-syntax 全过。`/api/mcp/preset-toggle` boolean 校验是 server.js 内联代码，没有单独 endpoint test 框架；contract 在代码 + 注释 + commit message 里 pin 住。
+- 提交哈希：待填。
+
 ## 2026-04-28 10:00 — Codex D 修复：MCP 默认全关 + cwd 不再吹 sandbox + path 加严 + agent UI 撤销已有授权
 
 - 上一刀 `3007bdf` push 被 Codex D 阻断（4 个 finding）。原因是我误读用户原话"默认只启用搜索和 PDF" —— 那指的是 melo 既有的搜索 + PDF 附件入口，**不是** markdown2pdf MCP。stdio MCP 默认开等于 approval/whitelist 之前进程已运行，跟安全模型矛盾。
@@ -37,21 +52,11 @@
 - 26 后端单测 + 4 advancedPage smoke 共 30 新测试；`src/**/*.test.js` 1133/1133 全绿；`npm run test:ui` 74/74。
 - 提交哈希：`8778052`（Phase 1+2+4 backend）+ `3ae3285`（Phase 3 UI）。
 
-## 2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点
-
-- 用户审查："硬功能基本都通了，剩下的是体验不够清楚。"4 条按推荐方案改：
-- **#1 TTS Auto 显式化** ([app.js:1074](desktop-ui/app.js#L1074))：默认 `ttsEngine='auto'` 但 Voice 面板没有 Auto radio，选 auto 时面板看起来什么都没勾。新加 Auto radio 在最上，hint "Tries API voice first · falls back to macOS say · default"，匹配 [speakText:4265](desktop-ui/app.js#L4265) 的真实 fallback 顺序。
-- **#2 Browser voice 桌面端改名** ([app.js:1090](desktop-ui/app.js#L1090))：检测到 `window.webkit.messageHandlers.meloVoice`（WKWebView）时 label 从 "Browser voice" 改成 "Desktop native voice"，hint 改成 "AVSpeechSynthesizer via system bridge · picker unused here"。真实浏览器仍叫 Browser voice。逻辑零改，仅命名诚实化。
-- **#3 视频附件状态 chip** ([app.js:1205](desktop-ui/app.js#L1205))：抽 `describeVideoExtractionStatus(message, attachment)` helper，匹配 `extractedMedia[]` 里 `attachmentId === attachment.id` 的 entry，按 `metadata.source` 渲染："video-audio-transcript" → `transcript ✓ · keyframes ✓ (N)`、"video-keyframes-only" → `keyframes ✓ (N) · no audio transcript`、entry 缺失 → `extraction unavailable`。不动 [videoExtractor.js](src/media/extractors/videoExtractor.js) 后端契约，只读已有字段。
-- **#4 Voice 面板底部加跳转** ([app.js:1196](desktop-ui/app.js#L1196))：复用既有 `select-customize-item` action（`section=connectors`, `id=openai-compatible`），加两个 `.tts-panel-link` —— "配置 MiniMax 自定义语音 →" / "配置 Whisper 转写 →"，都跳到同一个 connector 详情面板（MiniMax + Whisper 两套 key 在同一表单 [app.js:8888](desktop-ui/app.js#L8888)）。styles.css 加 `.tts-panel-footer` + `.tts-panel-link`，沿用 `--text-muted` / `--accent` 设计语言。
-- 红绿灯：check-syntax 全过；memory 测试 330/330 不退化（未动 src/）；desktop-ui 无 unit test 框架，UI 实际渲染 + 跳转留用户手测验证。
-- 提交哈希：`9f5a87a`。
-- **未修 follow-up（下次统一）**：desktop-ui 缺 unit test harness，已累积 2 条同源建议 —— 本批 Codex ⚪「`describeVideoExtractionStatus` 多分支无自动覆盖」+ 14:30 Advanced page Codex B「smoke/E2E 缺失」。下次专门一刀：抽 `videoStatus.js` 等纯函数到独立模块、用 `node:test`（或 happy-dom）建 desktop-ui test harness，把两条 follow-up + 未来 UI 纯函数统一纳入。比逐个修更经济。
-
 ## 归档摘要（2026-04-27 19:30 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点** —— Voice 面板加 Auto radio + WKWebView 改名 Desktop native voice + 视频附件 chip 读 extractedMedia 显示真实状态 + Voice 面板加配置 MiniMax/Whisper 跳转。`9f5a87a`
 - **2026-04-27 19:30 — Codex D fix: desktopStore re-export gap + server import smoke net** — af2e3b7→768d511 left `restoreArtifact`/`purgeStaleSoftDeletes` un-re-exported, server boot would throw on first ESM load; added the missing re-exports + `src/server.imports.smoke.test.js` (parses server.js import list and asserts every name is reachable through desktopStore). Codex S. `5a888ee`
 - **2026-04-27 19:00 — Codex C round 2: artifact soft-delete reader audit + 11 regression tests** — af2e3b7 missed 4 readers (dynamicContext/search/apply/connector count); added `isLiveArtifact`/`visibleArtifacts` helper, wired 7 readers, +11 tests. `768d511`
 - **2026-04-27 18:30 — artifact soft-delete contract → server-driven** — `e1a8ecf` used a client setTimeout (timer lost on reload) → Codex C; switched to server-side `deletedAt` + `/api/artifacts/restore` + 7d GC, client became fire-and-forget pair, 17 backend tests. `af2e3b7`

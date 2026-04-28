@@ -1156,7 +1156,18 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/mcp/preset-toggle' && request.method === 'POST') {
       const body = await readJsonBody(request);
       const flag = String(body?.flag || '').trim();
-      const enabled = Boolean(body?.enabled);
+      // Strict boolean — security-sensitive switch.  `Boolean(body.enabled)`
+      // would coerce the strings "false" / "0" to true (Codex 🟠 audit
+      // 2026-04-28); reject anything that isn't a literal boolean.
+      const enabledRaw = body?.enabled;
+      if (typeof enabledRaw !== 'boolean') {
+        sendJson(response, 400, {
+          ok: false,
+          error: '`enabled` must be a literal boolean (true/false)',
+        });
+        return;
+      }
+      const enabled = enabledRaw;
       // Whitelist: only the four built-in MCP flags are toggleable here.
       // Anything else routes through the regular config / mcpServers
       // editing flow.  Hardcoded list (rather than dynamic introspection)

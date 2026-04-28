@@ -102,3 +102,18 @@ test('filterMcpToolsForAgent: handles malformed tool ids without throwing', () =
   // effectively [] → mcp tool dropped.
   assert.deepEqual(out, []);
 });
+
+test('filterMcpToolsForAgent: user-configured MCP servers are whitelistable too (not just built-in presets)', () => {
+  // Codex 🔴 audit 2026-04-28: the chat path filters every `mcp:*`
+  // tool, but the UI used to expose only built-in presets — meaning a
+  // server the user added under `config.mcpServers` would register
+  // tools and then be invisibly deny-listed.  The filter itself must
+  // not care about preset vs user; only the server id matters.
+  const userTool = { id: 'mcp:my-custom-server:do_thing', name: 'my/custom' };
+  // Explicit allow → tool passes.
+  const allowed = filterMcpToolsForAgent([userTool], { enabledMcpServerIds: ['my-custom-server'] });
+  assert.deepEqual(allowed.map(t => t.id), ['mcp:my-custom-server:do_thing']);
+  // Default deny-all → tool dropped.
+  const denied = filterMcpToolsForAgent([userTool], { enabledMcpServerIds: [] });
+  assert.deepEqual(denied, []);
+});
