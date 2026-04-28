@@ -14,7 +14,7 @@
 - **🔵 agent UI 撤销已有授权**：[app.js:8083](desktop-ui/app.js#L8083) 改 `disabled` 属性 → CSS 类 `.is-disabled-preset`（点击仍生效）。chip 行为：whitelist 已有 → 总是允许撤销（避免 stale 授权在全局重启后静默继承）；whitelist 没有 + 全局关 → 弹 flash-toast 提示 "enable in Advanced first"，不写入 whitelist。
 - **README 加 4 层状态文档**：installed / globally enabled / agent authorised / per-call approval —— 用户能看清"我现在到底在哪一层"。
 - 验证：`src/**/*.test.js` **1135/1135 全绿**（前次 1133 + 2 path 边界）；`npm run test:ui` 74/74；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`799a9a4`。
 
 ## 2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）
 
