@@ -16,6 +16,7 @@ import {
   formatUndoToastLabel,
   nextCountdownTickMs,
 } from './undoToast.js';
+import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 
 const app = document.querySelector('#app');
 
@@ -1630,51 +1631,21 @@ function agentSecretVisibilityKey(agentId, channelId) {
 // checkbox bounce back, the bot token disappear, etc. Normalize to an object
 // at the draft boundary so all downstream code (render, autosave POST, test
 // connection) operates on a plain object.
-function normalizeChannelsForDraft(rawChannels) {
-  if (!rawChannels) return {};
-  const entries = Array.isArray(rawChannels)
-    ? rawChannels
-        .filter(channel => channel && typeof channel === 'object' && typeof channel.id === 'string')
-        .map(channel => [channel.id, channel])
-    : Object.entries(rawChannels);
-  const out = {};
-  for (const [id, channel] of entries) {
-    if (!channel || typeof channel !== 'object') continue;
-    out[id] = structuredClone ? structuredClone(channel) : JSON.parse(JSON.stringify(channel));
-  }
-  return out;
-}
-
 function agentDraftFor(agent) {
   if (!agent) return null;
   const key = agentDraftKey(agent.id);
-  const identity = agent.identity || agent.identify || '';
-  const toolIds = Array.isArray(agent.toolIds)
-    ? [...agent.toolIds]
-    : Array.isArray(agent.tools)
-      ? agent.tools.map(tool => tool.id)
-      : [];
-  return (
-    uiState.agentDrafts[key] || {
-      name: agent.name || '',
-      laneLabel: agent.laneLabel || '',
-      description: agent.description || '',
-      identity,
-      identify: identity,
-      'soul.md': agent.soulMd,
-      mood: agent.mood,
-      tools: toolIds,
-      model: agent.model || '',
-      systemPrompt: agent.systemPrompt || '',
-      voiceReplyMode: typeof agent.voiceReplyMode === 'string' ? agent.voiceReplyMode : 'summary',
-      edgeTtsVoice: typeof agent.edgeTtsVoice === 'string' ? agent.edgeTtsVoice : '',
-      voicePersonality: typeof agent.voicePersonality === 'string' ? agent.voicePersonality : '',
-      channels: normalizeChannelsForDraft(agent.channels),
-      // null = no per-agent restriction; string[] = explicit whitelist
-      enabledSkillIds: Array.isArray(agent.enabledSkillIds) ? [...agent.enabledSkillIds] : null,
-      enabledConnectorIds: Array.isArray(agent.enabledConnectorIds) ? [...agent.enabledConnectorIds] : null,
-    }
-  );
+  // The cached uiState.agentDrafts entry wins so the user's in-progress
+  // edits aren't blown away on every render. When there isn't a cache
+  // hit, agentDraftFromProfile() (lifted to ./agentDraft.js for unit-
+  // testability) builds a fresh draft from the profile — including
+  // `enabledMcpServerIds`, which the previous inline copy forgot to
+  // thread through. Codex 2026-04-28 audit caught that omission
+  // silently dropping the per-agent MCP whitelist on save: the
+  // chip-row read draft.enabledMcpServerIds (undefined → empty Set →
+  // no chip is "selected"), the hidden form input submitted '', and
+  // /api/agents/update happily wrote `enabledMcpServerIds: []` over
+  // whatever the profile had.
+  return uiState.agentDrafts[key] || agentDraftFromProfile(agent);
 }
 
 function mergeAgentDraft(agentId, patch) {

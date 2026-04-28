@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-04-28 11:30 — Codex C 第三轮：agentDraftFor 漏 enabledMcpServerIds → 静默清空 + stale 撤销失效
+
+- 上一刀 `6957783` push 又被 Codex C 阻断。真因：[app.js::agentDraftFor()](desktop-ui/app.js#L1648) inline 拷 `enabledSkillIds` / `enabledConnectorIds` 但忘了 `enabledMcpServerIds` —— 已有授权 agent 打开编辑页 chip-row 全不显示 selected，submit 时 hidden input 是空字符串，server 收到 `[]` → **静默清空 agent MCP 授权**。同时 stale revoke 路径破灭：currentIds 永远空，点击只走 add 分支被 toast 拒绝。
+- 用户拍板 A+B+C：修 draft + 抽纯函数 + 加契约测试。Q1 确认 stale 交互（selected + 灰显 + 点击撤销）；Q2 选小抽（B），desktop-ui workbench 全套 testing harness 留下次。
+- 修 + 抽：新建 [desktop-ui/agentDraft.js](desktop-ui/agentDraft.js) export `agentDraftFromProfile(agent)` 纯函数（含 `normalizeChannelsForDraft`），含 `enabledMcpServerIds: Array.isArray(...) ? [...] : []`（deny-all 默认）。app.js 旧 inline 代码替换为 `uiState.agentDrafts[key] || agentDraftFromProfile(agent)`。
+- 12 个新契约测试（[agentDraft.test.js](desktop-ui/agentDraft.test.js)）覆盖 3 条 Codex 关切：① 已有授权 round-trip 保留 + clone 不泄漏；② 未改表单 submit 不丢授权（mock hidden-input pipeline）；③ stale chip whitelist.has 仍 true → 撤销路径正常。还覆盖 missing/null/非数组 → deny-all 默认、connector/skill 仍保 null = no restriction、null/undefined 输入 graceful、normalizeChannelsForDraft 4 个分支。
+- 验证：`npm run test:ui` **86/86 全绿**（前次 74 + 12 新 agentDraft）；`src/**/*.test.js` 1143/1143；check-syntax 全过。
+- 提交哈希：待填。
+
 ## 2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）
 
 - 上一刀 `4d9dc73` push 又被 Codex D 阻断，3 个 finding 都是 lifecycle 真 bug：
@@ -35,21 +44,11 @@
 - 验证：`src/**/*.test.js` **1136/1136 全绿**（前次 1135 + 1 新 user-MCP 测试）；`npm run test:ui` 74/74；check-syntax 全过。`/api/mcp/preset-toggle` boolean 校验是 server.js 内联代码，没有单独 endpoint test 框架；contract 在代码 + 注释 + commit message 里 pin 住。
 - 提交哈希：`4d9dc73`。
 
-## 2026-04-28 10:00 — Codex D 修复：MCP 默认全关 + cwd 不再吹 sandbox + path 加严 + agent UI 撤销已有授权
-
-- 上一刀 `3007bdf` push 被 Codex D 阻断（4 个 finding）。原因是我误读用户原话"默认只启用搜索和 PDF" —— 那指的是 melo 既有的搜索 + PDF 附件入口，**不是** markdown2pdf MCP。stdio MCP 默认开等于 approval/whitelist 之前进程已运行，跟安全模型矛盾。
-- **🟠 默认全关**：[config.js](src/config.js) `enableMarkdown2PdfMcp` 改 `false`（与 `enableAntvChartMcp` 对齐）；注释明文 4 层状态契约。
-- **🟠 cwd 不再叫 sandbox**：[manager.js](src/mcp/manager.js#L37) + [client.js](src/mcp/client.js) 注释重写 —— cwd 只控默认落盘位置，**不限制绝对路径 / `..` / fs API**。真正的访问控制靠 per-agent whitelist + per-call approval。
-- **🟠 path 校验加严**：[mcpServerWorkspaceDir](src/mcp/manager.js#L48) 现禁绝 `.` / `..` / 全空白 / sanitise 后无字母数字 leaf；用 `path.resolve` 做最终路径校验，不在 workspace root 下的强制走 `mcp-server` fallback。新加 2 条边界测试覆盖 dot/dotdot/whitespace/multi-dot + workspace-root 越界。
-- **🔵 agent UI 撤销已有授权**：[app.js:8083](desktop-ui/app.js#L8083) 改 `disabled` 属性 → CSS 类 `.is-disabled-preset`（点击仍生效）。chip 行为：whitelist 已有 → 总是允许撤销（避免 stale 授权在全局重启后静默继承）；whitelist 没有 + 全局关 → 弹 flash-toast 提示 "enable in Advanced first"，不写入 whitelist。
-- **README 加 4 层状态文档**：installed / globally enabled / agent authorised / per-call approval —— 用户能看清"我现在到底在哪一层"。
-- 验证：`src/**/*.test.js` **1135/1135 全绿**（前次 1133 + 2 path 边界）；`npm run test:ui` 74/74；check-syntax 全过。
-- 提交哈希：`799a9a4`。
-
-## 归档摘要（2026-04-28 09:00 之前的所有条目）
+## 归档摘要（2026-04-28 10:00 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-04-28 10:00 — Codex D 第一轮：MCP 默认全关 + cwd reframe + path 加严 + agent UI 撤销** —— md2pdf 默认改 false（4 层模型）；cwd 不再叫 sandbox（不限制绝对路径），改 default working dir；path 禁 `.`/`..`/无字母数字 leaf + resolve 校验 root；chip 改 CSS 类（仍可点撤销已有授权）；README 加 4 层状态文档。`799a9a4`
 - **2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）** —— 4 phase 一次性：BUILTIN_MCP_PRESETS（antv-chart + markdown2pdf）+ McpStdioClient cwd + 默认 cwd 子目录；agent profile `enabledMcpServerIds`（deny-all）+ filterMcpToolsForAgent prompt/dispatch 双 enforcement；buildMcpTool 默认 requiresPermission=true 走 approval；bootstrap mcpPresets[] + Advanced toggle UI + agent customize chip-row + `/api/mcp/preset-toggle` 端点。30 新单测，1133/1133 全绿。`8778052` + `3ae3285`
 - **2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点** —— Voice 面板加 Auto radio + WKWebView 改名 Desktop native voice + 视频附件 chip 读 extractedMedia 显示真实状态 + Voice 面板加配置 MiniMax/Whisper 跳转。`9f5a87a`
 - **2026-04-27 19:30 — Codex D fix: desktopStore re-export gap + server import smoke net** — af2e3b7→768d511 left `restoreArtifact`/`purgeStaleSoftDeletes` un-re-exported, server boot would throw on first ESM load; added the missing re-exports + `src/server.imports.smoke.test.js` (parses server.js import list and asserts every name is reachable through desktopStore). Codex S. `5a888ee`
