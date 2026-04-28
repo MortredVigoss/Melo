@@ -392,6 +392,56 @@ test('wiring — set-model-auth-mode button enters the same autosave pipeline', 
   );
 });
 
+test('wiring — scheduleConnectorAutosave cancels pending timer on codex skip', () => {
+  // Codex C 第八轮 (2026-04-28): user pastes an api-key, schedule
+  // queues a pending body + 3-second timer. Within those 3 seconds
+  // the user clicks the OAuth button — set-model-auth-mode action
+  // re-enters scheduleConnectorAutosave, but this time
+  // buildAutosaveBody returns null (codex skip). Without an
+  // explicit cancel, the original timer fires and posts the stale
+  // api-key body, undoing the user's just-selected OAuth.
+  //
+  // Static check: the null-body branch must drop pending and
+  // clear the debounce timer before returning. Behaviour test
+  // would need fake timers + a injectable scheduler — left as a
+  // future refactor (Codex ⚪ follow-up). String wiring proves the
+  // cancel exists and is colocated with `if (!body)`.
+  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
+  assert.ok(fnStart >= 0);
+  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2500);
+  // Find the `if (!body)` block, then assert pending cleared + timer cleared inside it.
+  const nullBranchIdx = fnSnippet.search(/if \(!body\)/);
+  assert.ok(nullBranchIdx >= 0, 'scheduleConnectorAutosave must guard against a null body from buildAutosaveBody');
+  // Body of the if block — bounded by the matching `}` at brace
+  // depth 0 starting from the `{` after `if (!body)`. Walk the
+  // braces so we don't accidentally undercut by a long inline
+  // explanation comment, and don't overshoot into the rest of the
+  // function.
+  const openBrace = fnSnippet.indexOf('{', nullBranchIdx);
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < fnSnippet.length; i += 1) {
+    const c = fnSnippet[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) { closeBrace = i; break; }
+    }
+  }
+  assert.ok(closeBrace > openBrace, 'failed to locate the close of the !body branch');
+  const branchBody = fnSnippet.slice(openBrace, closeBrace + 1);
+  assert.match(
+    branchBody,
+    /pendingConnectorAutosave\s*=\s*null/,
+    'codex skip must drop the queued pending body so an old api-key autosave does not fire after the user switched modes',
+  );
+  assert.match(
+    branchBody,
+    /clearTimeout\(connectorAutosaveTimer\)/,
+    'codex skip must clear the debounce timer so the queued body never gets dispatched',
+  );
+});
+
 test('wiring — autosave unload flush beacons BOTH pending and inflight bodies', () => {
   // The earlier single-snapshot design lost configs when the user
   // closed the window during the 3-second window between fetch()

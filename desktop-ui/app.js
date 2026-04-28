@@ -5281,7 +5281,20 @@ function scheduleConnectorAutosave(form) {
     formData: new FormData(form),
     draft: uiState.modelSetupDraft || {},
   });
-  if (!body) return;
+  if (!body) {
+    // codex skip path: buildAutosaveBody refuses to ship authMode='codex'
+    // (would force server-side apiKey=''). If the user just switched
+    // FROM api-key TO codex while a 3-second timer was still counting
+    // down, the old api-key body is still queued in pendingConnectorAutosave.
+    // Cancel it so the stale authMode doesn't get written back over the
+    // user's just-selected codex. In-flight requests are NOT aborted —
+    // their body reflects the user's intent up to ~100ms ago, the
+    // race window is tiny, and aborting could discard a credential
+    // the user actually wanted to save. Codex audit 2026-04-28.
+    pendingConnectorAutosave = null;
+    window.clearTimeout(connectorAutosaveTimer);
+    return;
+  }
   pendingConnectorAutosave = { body };
 
   window.clearTimeout(connectorAutosaveTimer);
