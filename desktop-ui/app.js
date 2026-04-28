@@ -12494,6 +12494,38 @@ document.addEventListener('input', event => {
     return;
   }
 
+  // connector-config (Customize → Connectors → OpenAI) and
+  // model-config (Settings → Model) edit the same underlying config
+  // (apiKey / baseUrl / model / whisper* / minimax*). Mirror the
+  // typed/pasted value onto the shared draft on every keystroke
+  // so a background render — autosave response, MCP preset poll,
+  // undo-toast tick — can't rebuild the masked password inputs
+  // back to value="" before Save reads them. Only authMode (a
+  // <select>) needs an immediate render, and that fires through
+  // the `change` listener below: the type guard at the top of
+  // this `input` listener already filters <select> out.
+  if (
+    target.form?.dataset.form === 'connector-config' ||
+    target.form?.dataset.form === 'model-config'
+  ) {
+    const dispatch = applyFormInputToDraft({
+      formName: target.form.dataset.form,
+      fieldName: target.name,
+      value: target.value,
+      currentDraft: uiState.modelSetupDraft,
+      fallbackDraft: effectiveModelSetupDraft(),
+      modelDefaultsForAuthMode,
+    });
+    if (dispatch) {
+      uiState.modelSetupDraft = dispatch.nextDraft;
+      // shouldRender is always false from this listener: <select>
+      // doesn't reach here, so authMode never matches. Keep the
+      // gate anyway so the helper contract stays one-way.
+      if (dispatch.shouldRender) render();
+    }
+    return;
+  }
+
   if (target.form?.dataset.form === 'agent-profile-update') {
     const agentId = target.form.dataset.agentId;
     if (['telegramBotToken', 'telegramChatId', 'discordBotToken', 'discordGuildId', 'discordChannelId'].includes(target.name)) {

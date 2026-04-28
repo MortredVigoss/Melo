@@ -23,8 +23,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { applyFormInputToDraft, FORMS_OWNED_BY_CONNECTOR_DRAFT } from './connectorDraftDispatch.js';
 import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const APP_SRC = readFileSync(join(HERE, 'app.js'), 'utf8');
 
 // Stand-in for app.js::modelDefaultsForAuthMode — the dispatcher only
 // reads { baseUrl, model } off the return value.
@@ -262,6 +268,58 @@ test('regression — paste MiniMax key, simulate background render, Save still c
     'Save body carries the freshly-pasted MiniMax key');
   assert.equal(submitMinimaxGroupId, '2043976794868035719');
   assert.equal(submitAuthMode, 'codex');
+});
+
+// ─── Wiring assertion — Codex C 建议的"真实事件路径"覆盖 ────────────────────
+
+test('wiring — applyFormInputToDraft is invoked inside the document `input` listener', () => {
+  // Codex C 第六轮（2026-04-28）抓到的本质 bug：上一刀虽然抽了
+  // pure helper 并加了 paste→Save 端到端测试，但 helper 实际
+  // 只挂在 `addEventListener('change', …)` 里 — 用户在密码框
+  // 粘贴时 input event 同步触发，change 要等 blur，所以 paste
+  // 后任何 background render 都能在 draft 写入前抢跑、把 SSR
+  // value="" 推回去清空可见值。helper 单测 100% 假绿。
+  //
+  // 这条 wiring 断言专治这种"helper 写好但没接线"的回归：直接
+  // 读 app.js 源码，找到 `addEventListener('input', …)` 注册
+  // 的范围，确认 connector-config / model-config 那条 dispatch
+  // 路径在范围内。脆但便宜，比起 jsdom 全套 paste→DOM event 仿
+  // 真，这层"接线静态检查"已经够抓死。
+  const inputStart = APP_SRC.indexOf("addEventListener('input'");
+  assert.ok(inputStart >= 0, "expected an `addEventListener('input', …)` registration in app.js");
+
+  // Find the matching closing `});` by tracking brace depth from the
+  // opening `(` of addEventListener.
+  const openParen = APP_SRC.indexOf('(', inputStart);
+  let depth = 0;
+  let inputEnd = -1;
+  for (let i = openParen; i < APP_SRC.length; i += 1) {
+    const c = APP_SRC[i];
+    if (c === '(') depth += 1;
+    else if (c === ')') {
+      depth -= 1;
+      if (depth === 0) { inputEnd = i; break; }
+    }
+  }
+  assert.ok(inputEnd > inputStart, 'failed to locate the close of the `input` listener body');
+
+  const inputBody = APP_SRC.slice(inputStart, inputEnd);
+  assert.match(
+    inputBody,
+    /applyFormInputToDraft/,
+    'applyFormInputToDraft must be invoked inside the `input` listener — '
+      + 'wiring it only inside `change` (blur-triggered) lets pasted password '
+      + 'values vanish before draft is written',
+  );
+
+  // And specifically inside a connector-config / model-config gate so we
+  // don't accidentally run the dispatcher on every keystroke in every
+  // form. Looser regex tolerates whitespace + alternative ordering.
+  assert.match(
+    inputBody,
+    /(connector-config|model-config)[^]*?applyFormInputToDraft/,
+    'the dispatcher should be guarded by a connector-config / model-config form check',
+  );
 });
 
 test('regression — multi-field paste sequence does not lose any field along the way', () => {
