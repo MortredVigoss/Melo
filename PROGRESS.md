@@ -18,7 +18,7 @@
   - **⚪ NUL 修**（[manager.test.js](src/mcp/manager.test.js)）—— 用 python 直接定位 byte 3628 替换为 ASCII 空格。`file` 命令现报 UTF-8 text 不再 binary。
 - 新增回归测试：[agentTools.test.js](src/services/agent/agentTools.test.js#L93) 的 `user-configured MCP servers are whitelistable too` —— 显式 pin "filter 不区分 preset vs user，只看 server id" 这个语义；任何 `mcp:my-custom-server:*` 都受同一白名单 gate。
 - 验证：`src/**/*.test.js` **1136/1136 全绿**（前次 1135 + 1 新 user-MCP 测试）；`npm run test:ui` 74/74；check-syntax 全过。`/api/mcp/preset-toggle` boolean 校验是 server.js 内联代码，没有单独 endpoint test 框架；contract 在代码 + 注释 + commit message 里 pin 住。
-- 提交哈希：待填。
+- 提交哈希：`4d9dc73`。
 
 ## 2026-04-28 10:00 — Codex D 修复：MCP 默认全关 + cwd 不再吹 sandbox + path 加严 + agent UI 撤销已有授权
 
