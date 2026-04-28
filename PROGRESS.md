@@ -15,7 +15,7 @@
   - 日志加 "Reaped:" 行单独显示 disabled / removed 的 server，跟 "Connected:" / "Failed to connect:" 三段独立。
 - 11 个集成测试 [init.test.js](src/mcp/init.test.js)：buildMcpFlags 强转 + 默认；空配置仍 reconcile（核心契约）；最后 built-in toggle off 触发 reaped 日志；最后 user MCP 删除触发 reaped；混合 connected + disabled；健康 connect 路径；hard error 跟 reap 分开日志；getConfig 抛错 swallow 返回 `{}`；bootstrap 抛错 swallow；config 缺 mcpServers 仍 default `{}`。
 - 验证：`src/**/*.test.js` **1171/1171 全绿**（前次 1160 + 11 新）；`npm run test:ui` 86/86；check-syntax 全过。
-- 提交哈希：待填。
+- 提交哈希：`479a897`。
 
 ## 2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）
 
