@@ -210,12 +210,25 @@ function buildProfile() {
   };
 }
 
-export async function getDesktopBootstrap(query = '') {
+export async function getDesktopBootstrap(query = '', { skipModelNormalize = false } = {}) {
+  // `skipModelNormalize` is the catalog-only opt-out forwarded to
+  // `getResolvedConfig` so that `refreshModelCatalog` can return a
+  // bootstrap whose `settings.config.model` is the user's saved
+  // model verbatim, even when the freshly-discovered catalog
+  // doesn't include it. Without this the API/UI surface would
+  // silently fold the model back to catalog[0] on every "Read
+  // available models" click. Default false keeps normal startup /
+  // save-driven bootstraps strict so a stale on-disk model still
+  // gets safely folded. Codex audit 2026-04-29.
+  //
   // CLAUDE.md §6: capture the ctx synchronously before any await so a
   // mid-bootstrap MELO_HOME flip can't desync the state we loaded from
   // the paths we report (Codex caught the original lazy form).
   const ctx = captureBootstrapContext();
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
+  const [config, rawState] = await Promise.all([
+    getResolvedConfig({ skipModelNormalize }),
+    loadState(),
+  ]);
   const state = ensureSelectedEntities(rawState);
   const chats = sortChats(state.chats);
   const selectedChat = chats.find(chat => chat.id === state.settings.selectedChatId) || null;

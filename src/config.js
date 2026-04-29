@@ -295,7 +295,18 @@ export async function updateConfig(key, value) {
   });
 }
 
-export async function getResolvedConfig() {
+export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
+  // `skipModelNormalize` propagates the catalog-only contract used
+  // by `refreshModelCatalog` all the way through the API/UI surface
+  // (Codex audit 2026-04-29). Without this, even after the on-disk
+  // model survived `saveConfig({skipModelNormalize:true})`,
+  // `getResolvedConfig` would re-fold it back to catalog[0] when
+  // building the bootstrap response. The "Read available models"
+  // click would then hand the front-end a silently rewritten
+  // model, the form would render that value, and the next Save
+  // would persist the wrong choice. Refresh-only path; default
+  // remains the original strict normalization for normal startup
+  // and saves so a stale on-disk value still gets safely folded.
   const fileConfig = await loadConfig();
   const authMode = normalizeAuthMode(
     process.env.MELO_AUTH_MODE || fileConfig.authMode || DEFAULT_CONFIG.authMode,
@@ -310,14 +321,17 @@ export async function getResolvedConfig() {
       ? CODEX_OAUTH_BASE_URL
       : baseUrl;
   const modelCatalogs = normalizeModelCatalogs(fileConfig.modelCatalogs);
-  const resolvedModel = resolveModelForAuthMode({
-    authMode,
-    requestedModel: process.env.MELO_MODEL || fileConfig.model,
-    modelCatalogs,
-  });
+  const requestedModel = process.env.MELO_MODEL || fileConfig.model;
+  const resolvedModel = skipModelNormalize
+    ? (String(requestedModel || '').trim() || resolveDefaultModelForAuthMode(authMode, modelCatalogs))
+    : resolveModelForAuthMode({
+        authMode,
+        requestedModel,
+        modelCatalogs,
+      });
 
   const resolved = {
-    ...normalizeConfigShape(fileConfig),
+    ...normalizeConfigShape(fileConfig, { skipModelNormalize }),
     provider: process.env.MELO_PROVIDER || fileConfig.provider,
     baseUrl: normalizedBaseUrl,
     model: resolvedModel,

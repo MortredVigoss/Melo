@@ -1961,7 +1961,12 @@ export async function refreshModelCatalog(patch = {}, options = {}) {
       },
       { skipModelNormalize: true },
     );
-    return getDesktopBootstrap();
+    // Forward the catalog-only opt-out to the bootstrap response so
+    // the API/UI surface doesn't undo the protection by re-folding
+    // the model through `getResolvedConfig` → `resolveModelForAuthMode`.
+    // Codex audit 2026-04-29: without this, the wire returns the
+    // folded model even though disk holds the saved one.
+    return getDesktopBootstrap('', { skipModelNormalize: true });
   });
 }
 

@@ -450,6 +450,53 @@ test('refresh: saved model NOT in new catalog must NOT be silently changed (cata
   await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
 });
 
+test('refresh: BOOTSTRAP RESPONSE keeps saved model when not in new catalog (Codex 第十六轮 catch)', async () => {
+  // Codex C 第十六轮 (2026-04-29): saveConfig({skipModelNormalize:true})
+  // saved disk correctly, but `refreshModelCatalog` then called
+  // `getDesktopBootstrap()` (default = strict normalize) — so the API
+  // response's `settings.config.model` was STILL the catalog[0] fold,
+  // even though disk was correct. Front-end's
+  // applyBootstrapPreservingDrafts would render the folded value and
+  // the next Save would persist the wrong choice. Fix: forward
+  // {skipModelNormalize:true} all the way to getResolvedConfig via a
+  // new optional second arg on getDesktopBootstrap. This test pins
+  // the API contract — it asserts on the function's return value,
+  // not just disk.
+  const baseRev = Date.now() + 20_000_000;
+  await updateModelConfig({
+    authMode: 'api-key',
+    apiKey: 'sk-bootstrap-test',
+    model: 'gpt-4.1-mini',
+    _autosaveRevision: baseRev,
+  });
+
+  const fakeDiscoverFn = async () => ['gpt-4.1', 'gpt-4o'];
+  const bootstrap = await refreshModelCatalog(
+    {
+      authMode: 'api-key',
+      baseUrl: 'https://saved.example/v1',
+      model: 'gpt-4.1-mini',
+      apiKey: 'sk-bootstrap-test',
+    },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  // The whole point: refresh's RETURN value to the client must
+  // carry the saved model, not the folded one.
+  assert.equal(
+    bootstrap.settings.config.model,
+    'gpt-4.1-mini',
+    'refreshModelCatalog return value MUST surface the saved model, not the folded catalog[0]',
+  );
+  assert.deepEqual(
+    bootstrap.settings.config.modelCatalogs?.['api-key'],
+    ['gpt-4.1', 'gpt-4o'],
+    'returned catalog must be the freshly-discovered one',
+  );
+  // Reset for cleanup.
+  await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
+});
+
 test('refresh: catalog-only contract also covers apiKey under api-key authMode (Codex 2026-04-28 ⚪ follow-up)', async () => {
   // Companion to "form fields in patch are NEVER persisted": when
   // authMode is api-key (or local), saved apiKey must ALSO be
@@ -457,9 +504,10 @@ test('refresh: catalog-only contract also covers apiKey under api-key authMode (
   // the previous test was mute on apiKey because under codex mode
   // the field is intentionally cleared by updateModelConfig
   // anyway.
-  // Offset comes after the model-preservation test above which
-  // resets at +14M+100 — pick +15M so this seed isn't stale.
-  const baseRev = Date.now() + 15_000_000;
+  // Offset comes after every preceding test's reset (last reset
+  // is +20M+100 from the bootstrap-response test) — pick +21M so
+  // this seed isn't stale.
+  const baseRev = Date.now() + 21_000_000;
   await updateModelConfig({
     authMode: 'api-key',
     apiKey: 'sk-saved-real-key',
@@ -502,7 +550,7 @@ test('refresh: form fields in patch are NEVER persisted as config (catalog-only 
   // Use a larger offset than every preceding test in this file so
   // this seed isn't rejected as stale (each test in this file shares
   // the same temp home and saved autosaveRevision is monotonic).
-  const baseRev = Date.now() + 16_000_000;
+  const baseRev = Date.now() + 22_000_000;
   await updateModelConfig({
     minimaxApiKey: 'sk-baseline-2',
     baseUrl: 'http://saved-baseline.example/v1',
