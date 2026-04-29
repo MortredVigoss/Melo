@@ -221,6 +221,49 @@ test('clearCommittedSecrets — empty submittedBody field never clears (server d
   assert.equal(draft.minimaxApiKey, 'sk-still-typing');
 });
 
+// ─── Behavioural order: clear MUST happen BEFORE the next chip read ────────
+
+test('order regression — chip read BEFORE clearCommittedSecrets paints stale "pending"', () => {
+  // Codex C 第二十轮 (2026-04-29): the autosave success path used
+  // to be `applyBootstrapPreservingDrafts → clear`. The apply step
+  // synchronously triggers render(), and the credential chip's
+  // pending-vs-saved state is computed AT THAT RENDER from the
+  // live draft. If clear runs AFTER the render, the chip paints
+  // "pending" against the still-populated draft, and the
+  // subsequent clear has no follow-up render to swap the chip
+  // to "saved". This test demonstrates the broken order: even
+  // though config has been updated and the secret matches what
+  // was committed, the chip we'd render under WRONG ordering
+  // returns "pending".
+  const draft = { minimaxApiKey: 'sk-A' };
+  const submitted = { minimaxApiKey: 'sk-A' };
+  const configAfterSave = { hasMinimaxKey: true, maskedMinimaxApiKey: 'sk-A...A' };
+
+  // Simulate WRONG order: read chip BEFORE clear
+  const stillStaleChip = credentialChipState('minimaxApiKey', draft, configAfterSave);
+  assert.equal(
+    stillStaleChip.state,
+    'pending',
+    'reading chip before the post-save clear paints stale pending — exactly the symptom Codex caught',
+  );
+});
+
+test('order correct — clearCommittedSecrets BEFORE chip read paints "saved"', () => {
+  // Same inputs, correct order: clear first, then read chip.
+  // This is the post-fix behaviour: clearCommittedSecrets runs
+  // synchronously before applyBootstrapPreservingDrafts triggers
+  // render(), so by the time the chip's pending check runs the
+  // draft is empty and the config has hasMinimaxKey=true → saved.
+  const draft = { minimaxApiKey: 'sk-A' };
+  const submitted = { minimaxApiKey: 'sk-A' };
+  const configAfterSave = { hasMinimaxKey: true, maskedMinimaxApiKey: 'sk-A...A' };
+
+  clearCommittedSecrets(draft, submitted);
+  const renderedChip = credentialChipState('minimaxApiKey', draft, configAfterSave);
+  assert.equal(renderedChip.state, 'saved', 'clear-before-render flips chip pending → saved as designed');
+  assert.equal(renderedChip.masked, 'sk-A...A');
+});
+
 test('clearCommittedSecrets — does not touch fields outside CREDENTIAL_FIELDS', () => {
   const draft = {
     minimaxApiKey: 'sk-secret',

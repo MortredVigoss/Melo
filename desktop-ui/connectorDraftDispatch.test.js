@@ -594,11 +594,22 @@ test('wiring — scheduleConnectorAutosave invokes clearCommittedSecrets with sn
   assert.ok(closeBrace > openBrace);
   const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
 
-  const applyIdx = fnBody.search(/applyBootstrapPreservingDrafts\(/);
-  const clearIdx = fnBody.search(/clearCommittedSecrets\(/);
+  // Use lastIndexOf so an explanatory comment that names
+  // `applyBootstrapPreservingDrafts()` doesn't mask the real
+  // call site's position.
+  const applyIdx = fnBody.lastIndexOf('applyBootstrapPreservingDrafts(');
+  const clearIdx = fnBody.lastIndexOf('clearCommittedSecrets(');
+  // ORDER MATTERS: clear MUST run BEFORE apply (Codex C 第二十轮
+  // audit 2026-04-29). applyBootstrapPreservingDrafts synchronously
+  // calls render({background:true}); the chip's pending-vs-saved
+  // state is computed at THAT render. Clearing after the apply
+  // would leave the draft still holding the freshly-saved secret
+  // when render runs, so the chip would paint "● 待保存" and the
+  // post-clear update wouldn't trigger another render — chip
+  // permanently stuck yellow.
   assert.ok(
-    applyIdx >= 0 && clearIdx > applyIdx,
-    'clearCommittedSecrets must run AFTER applyBootstrapPreservingDrafts so the chip flips pending → saved on the next render',
+    clearIdx >= 0 && applyIdx > clearIdx,
+    'clearCommittedSecrets must run BEFORE applyBootstrapPreservingDrafts — the apply triggers render() and the chip is computed from the draft at that render time',
   );
   assert.match(
     fnBody,

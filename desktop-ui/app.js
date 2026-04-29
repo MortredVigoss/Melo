@@ -5338,17 +5338,20 @@ function scheduleConnectorAutosave(form) {
       // Stale-response guard: if a newer autosave fired while this
       // request was in flight, the newer response wins.
       if (requestSequence !== connectorAutosaveSequence) return;
-      applyBootstrapPreservingDrafts(payload, { background: true });
-      // Post-save secret sweep — but ONLY for fields whose live
-      // draft value still equals what THIS request shipped. If
-      // the user typed a newer key after we POSTed (the in-flight
-      // race Codex C 第十九轮 caught), `draft[f]` will have moved
-      // on and `clearCommittedSecrets` leaves it alone so the
-      // chip stays "● 待保存" until the next autosave commits the
-      // newer value. Without this equality check, the older
-      // response would silently wipe the user's still-typing
-      // newer paste.
+      // ORDER MATTERS: clear the committed secrets from the draft
+      // FIRST, then apply the new bootstrap.
+      // `applyBootstrapPreservingDrafts()` synchronously calls
+      // `render({background:true})`, and the credential chip's
+      // "pending vs saved" state is computed from the draft AT
+      // THAT RENDER. If we cleared after the apply, render would
+      // see the old draft (still holding the freshly-saved
+      // secret) and paint "● 待保存" instead of "✓ 已保存" —
+      // exactly the regression Codex C 第二十轮 caught. The
+      // sweep itself is still race-safe (only matches values
+      // the user hasn't moved past) so doing it before the
+      // bootstrap apply has no extra risk.
       clearCommittedSecrets(uiState.modelSetupDraft, snapshot.body);
+      applyBootstrapPreservingDrafts(payload, { background: true });
     } catch {
       // Silent — autosave should not interrupt typing. Errors surface
       // when the user clicks Save explicitly.
