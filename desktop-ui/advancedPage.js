@@ -143,22 +143,32 @@ export function renderAdvancedPage({
         const enabled = Boolean(preset?.enabled);
         const unpinned = Boolean(preset?.unpinned);
         const cmdSummary = `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
-        // Codex 三轮 audit 2026-04-29: when a preset is `unpinned`
-        // the toggle button is disabled and labelled so the user
-        // knows clicking would be rejected by the server. Avoids
-        // the "假启用" UX where Advanced says enabled but
-        // connectMcpServer refuses to spawn.
+        // Codex 四轮 audit 2026-04-29: an unpinned preset has 3
+        // possible UI states, not 2:
+        //   - unpinned + enabled  → user can still DISABLE to
+        //     clean up legacy config (was set true before the
+        //     pinning sweep landed); button stays clickable but
+        //     only flips off — server-side toggle refuses
+        //     enabled:true for unpinned, but enabled:false is
+        //     always allowed (cleanup path).
+        //   - unpinned + disabled → "Unavailable", button truly
+        //     disabled; clicking would only ever try to enable.
+        //   - pinned → normal Enable/Disable.
+        const isLegacyEnableOnUnpinned = unpinned && enabled;
         const stateChip = unpinned
-          ? `<span class="chip">unavailable · 未锁定版本</span>`
+          ? (isLegacyEnableOnUnpinned
+              ? `<span class="chip is-warning">假启用 · 未锁定版本</span>`
+              : `<span class="chip">unavailable · 未锁定版本</span>`)
           : `<span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? 'enabled' : 'disabled'}</span>`;
         const buttonLabel = unpinned
-          ? 'Unavailable'
-          : enabled ? 'Disable' : 'Enable';
+          ? (isLegacyEnableOnUnpinned ? 'Disable (清理假启用)' : 'Unavailable')
+          : (enabled ? 'Disable' : 'Enable');
         const buttonClass = unpinned
-          ? 'small-button'
+          ? (isLegacyEnableOnUnpinned ? 'small-button is-danger' : 'small-button')
           : `small-button${enabled ? ' is-danger' : ' is-primary'}`;
+        const buttonDisabled = unpinned && !isLegacyEnableOnUnpinned;
         return `
-          <div class="list-row${unpinned ? ' is-disabled-preset' : ''}">
+          <div class="list-row${unpinned && !isLegacyEnableOnUnpinned ? ' is-disabled-preset' : ''}">
             <div class="thread-meta">
               ${stateChip}
               <span class="meta-label">flag: <code>${escapeHtml(preset?.flag || '')}</code></span>
@@ -167,7 +177,11 @@ export function renderAdvancedPage({
             <div class="list-row-meta">${escapeHtml(preset?.description || '')}</div>
             <div class="list-row-meta mono">${escapeHtml(cmdSummary)}</div>
             ${unpinned
-              ? '<div class="list-row-meta" style="opacity: 0.78;">npm package not yet pinned to an exact version — toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.</div>'
+              ? `<div class="list-row-meta" style="opacity: 0.78;">npm package not yet pinned to an exact version — ${
+                  isLegacyEnableOnUnpinned
+                    ? 'click <strong>Disable</strong> to clear the legacy <code>enable*Mcp:true</code> config flag.'
+                    : 'toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.'
+                }</div>`
               : ''}
             <div class="inline-actions">
               <button class="${buttonClass}"
@@ -176,7 +190,7 @@ export function renderAdvancedPage({
                       data-preset-id="${escapeHtml(preset?.id || '')}"
                       data-preset-flag="${escapeHtml(preset?.flag || '')}"
                       data-next-enabled="${enabled ? '0' : '1'}"
-                      ${unpinned ? 'disabled' : ''}>
+                      ${buttonDisabled ? 'disabled' : ''}>
                 ${buttonLabel}
               </button>
             </div>

@@ -290,6 +290,33 @@ function pinPackageArg(arg) {
   return `${baseName}@${pinned}`;
 }
 
+/**
+ * Decide whether `/api/mcp/preset-toggle` should refuse a request to
+ * ENABLE the preset behind `flag`. Returns a human-readable reason
+ * string when the request must be refused, or `null` when it should
+ * proceed. Disable requests (enabled=false) are NEVER refused —
+ * users must always be able to clear a legacy `enable*Mcp:true`
+ * config flag from the UI.
+ *
+ * Codex 四轮 audit 2026-04-29: extracted from the route handler so
+ * node:test can pin the contract without booting the http server.
+ *
+ * @param {string} flag      one of the ALLOWED_MCP_FLAGS values
+ * @param {boolean} enabled  the request body's enabled field
+ * @returns {string|null}    reason when refused, null when allowed
+ */
+export function mcpPresetToggleRefusalReason(flag, enabled) {
+  if (enabled !== true) return null; // disable always allowed
+  const matched = getBuiltinMcpPresets().find(p => p.flag === flag);
+  if (matched?.unpinned) {
+    return (
+      `Preset "${matched.id}" has no pinned version yet — refuse to enable. ` +
+      `(See PINNED_VERSIONS in src/mcp/manager.js. enabled:false is still allowed for cleanup.)`
+    );
+  }
+  return null;
+}
+
 function presetHasPinnedVersion(preset) {
   // A preset is "pinned" iff every npm package name in its args is
   // present in PINNED_VERSIONS with a non-null exact-version

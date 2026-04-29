@@ -176,6 +176,51 @@ test('every preset args entry is version-pinned (no bare package name, no @lates
   }
 });
 
+// ─── mcpPresetToggleRefusalReason — route contract ─────────────────────────
+
+test('mcpPresetToggleRefusalReason — enable=false on unpinned preset is ALWAYS allowed (cleanup path)', async () => {
+  // Codex 四轮 audit 2026-04-29: a user whose config has a legacy
+  // `enableBrowserlessMcp:true` must be able to disable it from
+  // the UI. Without the cleanup path, they'd be stuck in 假启用
+  // (config says on, runtime refuses to spawn). browserless is
+  // the canonical unpinned preset right now (npm package 404).
+  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
+  assert.equal(mcpPresetToggleRefusalReason('enableBrowserlessMcp', false), null);
+});
+
+test('mcpPresetToggleRefusalReason — enable=true on unpinned preset returns a refusal string', async () => {
+  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
+  const reason = mcpPresetToggleRefusalReason('enableBrowserlessMcp', true);
+  assert.equal(typeof reason, 'string');
+  assert.ok(reason.includes('browserless'), `reason should name the preset, got: ${reason}`);
+  assert.ok(reason.includes('pinned'), `reason should explain the pinning rule, got: ${reason}`);
+});
+
+test('mcpPresetToggleRefusalReason — pinned presets allow both enable and disable', async () => {
+  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
+  for (const flag of ['enablePlaywrightMcp', 'enableAntvChartMcp', 'enableMarkdown2PdfMcp', 'enableMermaidMcp']) {
+    assert.equal(
+      mcpPresetToggleRefusalReason(flag, true),
+      null,
+      `${flag} is pinned — enabling must NOT be refused`,
+    );
+    assert.equal(
+      mcpPresetToggleRefusalReason(flag, false),
+      null,
+      `${flag} disabling must always be allowed`,
+    );
+  }
+});
+
+test('mcpPresetToggleRefusalReason — unknown flag falls through to allow (server-side ALLOWED_MCP_FLAGS already gated)', async () => {
+  // The route handler validates `flag` against ALLOWED_MCP_FLAGS
+  // before calling this helper, so an unknown flag here is a bug,
+  // not a security boundary. We let it through — safer than
+  // claiming a refusal we can't justify.
+  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
+  assert.equal(mcpPresetToggleRefusalReason('enableNonexistentMcp', true), null);
+});
+
 test('DEFAULT_CONFIG keeps every productivity-MCP flag false (no auto-spawn on fresh install)', async () => {
   // Codex C 二轮 audit (2026-04-29): an out-of-the-box melo install
   // must NOT spawn arbitrary npm packages without a user click. The

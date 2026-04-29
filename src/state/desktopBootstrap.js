@@ -407,6 +407,15 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
             command: preset.command,
             args: preset.args,
             flag: preset.flag,
+            // Codex 四轮 audit 2026-04-29: forward `unpinned` so
+            // the agent-authorisation UI shows "unavailable" for
+            // browserless even when the user's legacy config
+            // still has enableBrowserlessMcp:true. Without this,
+            // the chip-row in customize → agents would say "OK to
+            // authorise" while the runtime refuses to spawn the
+            // server — same 假启用 hole the toggle-page just
+            // closed, but on the per-agent surface.
+            unpinned: Boolean(preset.unpinned),
           });
         }
         const userServers = (config.mcpServers && typeof config.mcpServers === 'object')
@@ -431,6 +440,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
             command: cfg?.command || '',
             args: Array.isArray(cfg?.args) ? cfg.args : [],
             flag: null,
+            unpinned: false, // user-supplied servers are not subject to the preset pin map
           });
         }
         return [...seen.values()];

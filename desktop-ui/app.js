@@ -8233,6 +8233,7 @@ function renderAgentWorkbench(selected) {
               ${presets.map(preset => {
                 const enabled = Boolean(preset?.enabled);
                 const allowed = whitelist.has(preset.id);
+                const unpinned = Boolean(preset?.unpinned);
                 // Globally-disabled servers stay clickable when the agent
                 // has them in its whitelist, so the user can always REMOVE
                 // a stale authorisation. Adding a new authorisation for a
@@ -8240,21 +8241,38 @@ function renderAgentWorkbench(selected) {
                 // a toast pointing at Advanced. The `is-disabled-preset`
                 // class greys the chip without using the HTML disabled
                 // attribute (which would block click entirely).
-                const stale = !enabled && allowed;
+                //
+                // Codex 四轮 audit 2026-04-29: a preset can also be
+                // `unpinned: true` — runtime refuses to spawn it, so the
+                // chip says "(unavailable)" even when global enabled is
+                // true (legacy `enableBrowserlessMcp:true` config). Stale
+                // authorisations on unpinned presets stay clickable for
+                // revoke; new authorisations are blocked by the handler
+                // with a toast pointing at Advanced.
+                const stale = (!enabled || unpinned) && allowed;
+                const tagSuffix = unpinned
+                  ? ' (unavailable)'
+                  : (!enabled ? ' (off)' : '');
+                const titleText = unpinned
+                  ? (stale
+                      ? 'Preset unpinned — click to revoke the stale authorisation'
+                      : 'Preset unpinned — agents cannot authorise it until a version is locked in PINNED_VERSIONS')
+                  : (enabled
+                      ? 'Server enabled globally'
+                      : stale
+                        ? 'Server disabled globally — click to revoke the stale authorisation'
+                        : 'Server disabled globally — enable in Advanced first');
                 return `
                   <button
-                    class="chip chip-button${allowed ? ' is-accent' : ''}${!enabled ? ' is-disabled-preset' : ''}"
+                    class="chip chip-button${allowed ? ' is-accent' : ''}${(!enabled || unpinned) ? ' is-disabled-preset' : ''}"
                     type="button"
                     data-action="toggle-agent-mcp-server"
                     data-agent-id="${selected.id}"
                     data-mcp-server-id="${escapeHtml(preset.id)}"
                     data-preset-enabled="${enabled ? '1' : '0'}"
-                    title="${enabled
-                      ? 'Server enabled globally'
-                      : stale
-                        ? 'Server disabled globally — click to revoke the stale authorisation'
-                        : 'Server disabled globally — enable in Advanced first'}"
-                  >${escapeHtml(preset.id)}${enabled ? '' : ' (off)'}</button>
+                    data-preset-unpinned="${unpinned ? '1' : '0'}"
+                    title="${titleText}"
+                  >${escapeHtml(preset.id)}${tagSuffix}</button>
                 `;
               }).join('')}
             </div>
@@ -12053,6 +12071,7 @@ document.addEventListener('click', async event => {
         const agentId = trigger.dataset.agentId;
         const mcpServerId = trigger.dataset.mcpServerId;
         const presetEnabled = trigger.dataset.presetEnabled === '1';
+        const presetUnpinned = trigger.dataset.presetUnpinned === '1';
         const draftKey = agentDraftKey(agentId);
         const currentDraft = {
           ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
@@ -12061,7 +12080,19 @@ document.addEventListener('click', async event => {
           ? new Set(currentDraft.enabledMcpServerIds)
           : new Set();
         if (currentIds.has(mcpServerId)) {
+          // Always allow REMOVE — same rule as the globally-disabled
+          // case: the user can revoke stale authorisations on
+          // unpinned presets too.
           currentIds.delete(mcpServerId);
+        } else if (presetUnpinned) {
+          // Codex 四轮 audit 2026-04-29: refuse to AUTHORISE an
+          // agent for a preset whose npm version isn't pinned.
+          // Even with the global config flag stuck on (legacy
+          // enableBrowserlessMcp:true), connectMcpServer refuses
+          // to spawn it, so authorising would yield a chip that
+          // says "OK" while the server never runs.
+          showFlashToast(`"${mcpServerId}" preset is unpinned — version must be locked in PINNED_VERSIONS first.`);
+          break;
         } else if (!presetEnabled) {
           showFlashToast(`"${mcpServerId}" is disabled globally — enable in Advanced first.`);
           break;
