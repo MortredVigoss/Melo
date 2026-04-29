@@ -565,6 +565,49 @@ test('wiring — scheduleConnectorAutosave attaches _autosaveRevision to the bod
   );
 });
 
+test('wiring — scheduleConnectorAutosave clears secrets from modelSetupDraft after successful POST', () => {
+  // Codex C 第十八轮 (2026-04-29): without this clear, the
+  // credential save-status chip stays stuck on "● 待保存"
+  // forever — applyBootstrapPreservingDrafts deliberately keeps
+  // modelSetupDraft alive (so the user's other typed-but-unsaved
+  // fields aren't yanked), but that means the just-saved
+  // credentials also linger on the draft and the chip's
+  // pending check never sees an empty string. The clear-loop
+  // sweeps CREDENTIAL_FIELDS only, so non-secret in-flight
+  // edits (baseUrl, model, groupId, voiceId, …) are preserved.
+  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
+  assert.ok(fnStart >= 0);
+  const openBrace = APP_SRC.indexOf('{', fnStart);
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < APP_SRC.length; i += 1) {
+    const c = APP_SRC[i];
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) { closeBrace = i; break; }
+    }
+  }
+  assert.ok(closeBrace > openBrace);
+  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
+
+  // The clear must reference CREDENTIAL_FIELDS (so future fields
+  // added to the helper are auto-included) and must run AFTER
+  // applyBootstrapPreservingDrafts (so it doesn't fight with the
+  // bootstrap apply for ordering).
+  const applyIdx = fnBody.search(/applyBootstrapPreservingDrafts\(/);
+  const clearIdx = fnBody.search(/CREDENTIAL_FIELDS/);
+  assert.ok(
+    applyIdx >= 0 && clearIdx > applyIdx,
+    'CREDENTIAL_FIELDS clear-loop must run AFTER applyBootstrapPreservingDrafts so the chip flips pending → saved on the next render',
+  );
+  assert.match(
+    fnBody,
+    /uiState\.modelSetupDraft\[f\]\s*=\s*''/,
+    'clear-loop must zero each credential field from modelSetupDraft so the chip recomputes to saved',
+  );
+});
+
 test('wiring — handleSaveConnectorConfig deliberately does NOT attach _autosaveRevision (force-write)', () => {
   // The explicit Save path stays revision-free: server treats a
   // request without _autosaveRevision as a force-write that bumps
