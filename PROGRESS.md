@@ -36,6 +36,9 @@
 - **无法保证**：Codex 后端的 image_generation tool 是否真支持 image-to-image edit 是黑盒。OpenAI 标准 Responses API gpt-image-1 支持，但 Codex Plus 代理后端可能限制 edit 到 Pro/Team 套餐。若实测仍 fail，需 fall back 到 sdcpp img2img 或 OpenAI api-key 直连。
 - 验证：`src/**/*.test.js` **1244/1244 全绿**（前 1235 + 9 new）。
 - 提交哈希：`2618ec5`。
+- Follow-up（Codex C 第四轮，用户三条 design override + ⚪ payload 测试缺口）：上一刀 push 又被 Codex C，🔵 finding"`messagesHaveInputImages()` 扫整段历史会污染后续无关回合"——但用户明确 override：A. 允许跨回合复用历史图；B. 画新图就重新画（靠 `input_fidelity: 'high'` 的 fall-through 自动处理）；C. Codex 出图默认 model 写死 gpt-5.5。修：① CODEX_INLINE_IMAGE_EDIT_INSTRUCTION 加 EXCEPTIONS block 显式列出"用户要画新图 / 纯文字问答 → ignore this section"；② `effectiveModel = enableInlineImage ? 'gpt-5.5' : model`，所有走 inline image 的 chat 路径强制 gpt-5.5（cheaper SKUs 如 gpt-5-codex-mini 拒 image_generation tool，会留下"我想画但不能"的失败模式），memory compact / sub-agent 等不走 inline image 路径不被 override；③ createCodexResponsesReply 加 `_credentialProvider` + `_fetchImpl` 私有测试 seam（前缀 `_` 标识 private），4 个 payload 级 integration test 覆盖：(workspace + input image → high fidelity tool + edit instructions + model=5.5)、(workspace 无图 → 最简 tool 无 input_fidelity + 无 edit instructions + model=5.5)、(无 workspace + 有图 → 无 image_generation tool + 无 edit + caller's model 保留)、(cross-turn 复用 → 上轮上传图，本轮纯文字 "再换个色" 仍触发 edit-mode + EXCEPTIONS block 在场)。
+- 验证：`src/**/*.test.js` **1248/1248 全绿**（前 1244 + 4 payload-level）。
+- 提交哈希：`672b2c0`。
 
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
