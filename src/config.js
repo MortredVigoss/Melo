@@ -230,16 +230,26 @@ async function ensureParentDir(filePath) {
   await mkdir(dirname(filePath), { recursive: true });
 }
 
-export async function loadConfig() {
+export async function loadConfig({ skipModelNormalize = false } = {}) {
+  // `skipModelNormalize` is the catalog-only opt-out propagated from
+  // refresh/catalog-only callers (refreshModelCatalog,
+  // getResolvedConfig({skipModelNormalize})). Without forwarding it
+  // here, the very first read from disk would already fold the saved
+  // out-of-catalog model — and any later `{skipModelNormalize:true}`
+  // would be operating on the already-clobbered value, with no way
+  // back to the user's saved choice. Default false keeps every other
+  // caller — startup, regular saves, every loadConfig() outside the
+  // refresh path — strictly normalized so a stale on-disk model
+  // still gets safely folded to a real one. Codex audit 2026-04-29.
   const configPath = getConfigPath();
 
   try {
     const raw = await readFile(configPath, 'utf8');
     const parsed = JSON.parse(raw);
-    return normalizeConfigShape(parsed);
+    return normalizeConfigShape(parsed, { skipModelNormalize });
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      return normalizeConfigShape(DEFAULT_CONFIG);
+      return normalizeConfigShape(DEFAULT_CONFIG, { skipModelNormalize });
     }
 
     throw new Error(`Failed to read config at ${configPath}: ${error.message}`);
@@ -307,7 +317,11 @@ export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
   // would persist the wrong choice. Refresh-only path; default
   // remains the original strict normalization for normal startup
   // and saves so a stale on-disk value still gets safely folded.
-  const fileConfig = await loadConfig();
+  // Forward the catalog-only opt-out down into loadConfig so the
+  // very first read from disk doesn't already fold the saved
+  // out-of-catalog model — without this, the resolved-model logic
+  // below would only ever see a pre-folded `fileConfig.model`.
+  const fileConfig = await loadConfig({ skipModelNormalize });
   const authMode = normalizeAuthMode(
     process.env.MELO_AUTH_MODE || fileConfig.authMode || DEFAULT_CONFIG.authMode,
   );

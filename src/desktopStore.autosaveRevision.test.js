@@ -29,6 +29,7 @@ const TEMP_HOME = mkdtempSync(join(tmpdir(), 'melo-autosave-rev-test-'));
 process.env.MELO_HOME = TEMP_HOME;
 
 const { updateModelConfig, refreshModelCatalog } = await import('./desktopStore.js');
+const { loadConfig } = await import('./config.js');
 
 test('autosave: a body with no _autosaveRevision (explicit Save) writes and bumps current', async () => {
   // Brand-new config: autosaveRevision starts at 0. An explicit Save
@@ -586,6 +587,82 @@ test('refresh: form fields in patch are NEVER persisted as config (catalog-only 
   // is that refresh doesn't write apiKey at all — verify by saving
   // a real key first under api-key mode and re-running.
   assert.deepEqual(persisted.modelCatalogs?.codex, ['codex-only-catalog']);
+});
+
+test('loadConfig({skipModelNormalize:true}) returns saved model verbatim — no pre-fold (Codex 第十七轮 catch)', async () => {
+  // Codex C 第十七轮 (2026-04-29) — bottom-most layer: every catalog-
+  // only call ultimately bottoms out on loadConfig(). If loadConfig
+  // itself runs strict normalize, then by the time
+  // getResolvedConfig({skip}) gets the file config, the saved model
+  // is ALREADY folded — there's nowhere to recover it from. Pin the
+  // contract end-to-end: when the catalog has shifted underneath a
+  // saved model, raw loadConfig({skip:true}) must surface the saved
+  // string unchanged, not fold it via the on-disk catalog.
+  const baseRev = Date.now() + 30_000_000;
+  // Seed: api-key mode, save 'gpt-4.1-mini'.
+  await updateModelConfig({
+    authMode: 'api-key',
+    apiKey: 'sk-load-test',
+    model: 'gpt-4.1-mini',
+    _autosaveRevision: baseRev,
+  });
+  // Trigger a refresh whose catalog excludes gpt-4.1-mini.
+  const fakeDiscoverFn = async () => ['gpt-4.1', 'gpt-4o'];
+  await refreshModelCatalog(
+    { authMode: 'api-key', apiKey: 'sk-load-test', model: 'gpt-4.1-mini' },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  // Main contract: loadConfig({skip:true}) must return saved model
+  // verbatim. The default-strict counterpart (folding behaviour) is
+  // covered by the existing buildConnectorDraft / normalizeConfigShape
+  // tests; asserting it here would couple the test to the disk state
+  // left behind by preceding tests in this shared TEMP_HOME, since
+  // the fold path's outcome depends on whether the saved model still
+  // appears in some other authMode's catalog.
+  const skipLoaded = await loadConfig({ skipModelNormalize: true });
+  assert.equal(
+    skipLoaded.model,
+    'gpt-4.1-mini',
+    'raw catalog-only read MUST surface the saved model — without this, every higher-layer skip is operating on a pre-folded value',
+  );
+  // Reset for next test.
+  await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
+});
+
+test('refresh: TWICE in a row — saved out-of-catalog model survives the second cycle (Codex 第十七轮 catch)', async () => {
+  // Codex called out: even after the first refresh writes the
+  // saved model, the SECOND refresh's loadConfig() (without skip)
+  // would re-fold current.model before we save again, killing the
+  // user's saved choice. Pin the repeat-cycle behaviour now that
+  // both reads inside refresh use skipModelNormalize.
+  const baseRev = Date.now() + 31_000_000;
+  await updateModelConfig({
+    authMode: 'api-key',
+    apiKey: 'sk-twice-test',
+    model: 'gpt-4.1-mini',
+    _autosaveRevision: baseRev,
+  });
+
+  const fakeDiscoverFn = async () => ['gpt-4.1', 'gpt-4o'];
+  // First refresh.
+  const bootstrap1 = await refreshModelCatalog(
+    { authMode: 'api-key', model: 'gpt-4.1-mini', apiKey: 'sk-twice-test' },
+    { _discoverFn: fakeDiscoverFn },
+  );
+  assert.equal(bootstrap1.settings.config.model, 'gpt-4.1-mini',
+    'first refresh: saved model preserved');
+
+  // Second refresh, same catalog.
+  const bootstrap2 = await refreshModelCatalog(
+    { authMode: 'api-key', model: 'gpt-4.1-mini', apiKey: 'sk-twice-test' },
+    { _discoverFn: fakeDiscoverFn },
+  );
+  assert.equal(bootstrap2.settings.config.model, 'gpt-4.1-mini',
+    'second refresh: saved model still preserved (regression for Codex "catalog-only 契约会被重复刷新破坏")');
+
+  // Reset.
+  await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
 });
 
 // Cleanup

@@ -1900,7 +1900,10 @@ export async function createCustomAgent() {
  *   Lets a concurrent regression test simulate slow discovery.
  */
 export async function refreshModelCatalog(patch = {}, options = {}) {
-  const initialConfig = await loadConfig();
+  // catalog-only contract: every read on this path uses
+  // skipModelNormalize so an out-of-catalog saved model isn't
+  // pre-folded the moment we touch disk. Codex audit 2026-04-29.
+  const initialConfig = await loadConfig({ skipModelNormalize: true });
   const authMode =
     typeof patch.authMode === 'string' &&
     ['local', 'api-key', 'codex'].includes(patch.authMode.trim())
@@ -1950,7 +1953,12 @@ export async function refreshModelCatalog(patch = {}, options = {}) {
   // exactly what the catalog-only contract forbids. Codex audit
   // 2026-04-29.
   return withConfigLock(async () => {
-    const current = await loadConfig();
+    // Same catalog-only opt-out for the lock-inner re-read: a previous
+    // refresh that wrote an out-of-catalog model to disk must not be
+    // pre-folded by this read, otherwise we'd then save the folded
+    // value and the user's saved choice would die on the second
+    // refresh cycle even though the first one preserved it.
+    const current = await loadConfig({ skipModelNormalize: true });
     await saveConfig(
       {
         ...current,
