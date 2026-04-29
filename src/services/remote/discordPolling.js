@@ -630,7 +630,11 @@ export async function processDiscordPollingCycle() {
                 `textLen=${String(voiceText || '').length} ` +
                 `text="${String(voiceText || '').slice(0, 80)}"`,
             );
-            const { synthesizeSpeech } = await import('./tts.js');
+            // Same broken-relative-path fix as telegramPolling.js — tts.js
+            // is at src/tts.js, not src/services/remote/tts.js. Without
+            // this fix every Discord voice reply silently throws
+            // ERR_MODULE_NOT_FOUND. (Codex audit 2026-04-29.)
+            const { synthesizeSpeech } = await import('../../tts.js');
             const agentVoiceId = profile?.minimaxVoiceId || '';
             const agentEdgeVoice = profile?.edgeTtsVoice || '';
             const agentTtsConfig = { ...discordTtsConfig };

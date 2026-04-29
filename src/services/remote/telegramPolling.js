@@ -530,7 +530,13 @@ export async function processTelegramPollingCycle() {
           try {
             const voiceText = await voiceRewritePromise;
             process.stderr.write(`[tg-voice] voiceText="${String(voiceText||'').slice(0,120)}"\n`);
-            const { synthesizeSpeech } = await import('./tts.js');
+            // `tts.js` lives at src/tts.js, not under src/services/remote/.
+            // The previous './tts.js' relative import resolved to a file
+            // that doesn't exist; voice replies silently failed with
+            // ERR_MODULE_NOT_FOUND for every Telegram message that hit
+            // this path. discordVoiceSession.js uses '../../tts.js'
+            // correctly — match that. (Codex audit 2026-04-29.)
+            const { synthesizeSpeech } = await import('../../tts.js');
             const agentVoiceId = profile?.minimaxVoiceId || '';
             const agentEdgeVoice = profile?.edgeTtsVoice || '';
             const agentTtsConfig = { ...ttsConfig };
