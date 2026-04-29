@@ -18,7 +18,10 @@
 - 验证：`src/**/*.test.js` **1224/1224 全绿**（前 1213 + 10 新 + 1 个 stripe `data:` prefix 多于原计划）。
 - CLAUDE.md §6 合规：workspacePath 在 chat-runner 入口 capture 好；createCodexResponsesReply 闭包 + readCodexSseResponse 的 onInlineImage 都拿这一份 captured string，不在 microtask 里再 `getMeloHome()`。
 - 提交哈希：`1f17365`。
-- Follow-up：PROGRESS.md 现 200+ 行，过 CLAUDE.md §3 的 160 行阈值，下一刀做 70% 归档压缩（独立 `progress:` commit）。
+- Follow-up（Codex C 第一轮，user-approved override + 真 bug 修）：上一刀 push 被 Codex C 阻断三条 finding。① 🔵 user 直接 override：用户拍板"所有 agent / 所有 chat 都要启用 inline image，不接 allowedTools 白名单 gating"，理由 inline image 是 Codex Plus 的免费服务端能力（与 web_search 平行），不是 melo-owned tool；override 写进 buildCodexResponsesTools / chatExecutionRunner / subAgent 三处 design-intent 注释，下次 review 看到直接知道是 known decision。② 🟡 真 bug：emittedImageIds 既当 dedup tracker 又当 "实际 emit 成功" tracker —— save 失败时 id 标记为 emitted → final-text 分支看到 `emittedImageIds.size > 0` 返回 `deltaText`（缺图）而不是 canonical `completedText`，等于失败一次就 swap 整段文字回复。修：拆 `attemptedImageIds`（dedup callback，失败也算）vs `emittedImageIds`（实际注入 deltaText，失败不算）。final-text 路径只看后者，恢复 pre-image 行为。③ ⚪ payload gating 漏测：抽 pure helper `buildCodexResponsesTools({ enableWebSearch, workspacePath })` 并 export，createCodexResponsesReply 改用 helper；6 个新单测覆盖 (web/workspace × 真假) 矩阵 + non-absolute / non-string workspacePath 拒绝（与 signWorkspaceFileUrl 的 absolute-only 契约对齐）。
+- 关键 trap pin：「save 失败 + 非空 completed.output 时仍返回 canonical completedText」回归测试，把 Codex review 描述的 exact failure shape 锁住。
+- 验证：`src/**/*.test.js` **1232/1232 全绿**（前 1224 + 6 buildCodex... + 2 save-failure 回归）。
+- 提交哈希：`e7a7311`。
 
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
