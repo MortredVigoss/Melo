@@ -27,6 +27,16 @@
 - 验证：`src/**/*.test.js` **1235/1235 全绿**（前 1232 + 3 新 round-2 case）。
 - 提交哈希：`6edfc5e`。
 
+## 2026-04-30 09:30 — Codex 内联图编辑模式（image-to-image edit）
+
+- 用户实测：上一刀让 Codex 能从文字直接吐图，但上传截图说"把里面的 5.5 改成 gpt"——desktop / Telegram bot 都回"我需要文件路径"。诊断：图实际**到了**模型 (`buildCodexImageInputPart` 把上传图转 base64 data URI 进 input.content)，但 chat-side 的 image_generation tool 配置 + 默认 system prompt 都没告诉模型"上下文里那张 input_image 可以直接当 edit reference"，模型就 fall back 到训练数据里最常见的"先 read_file 拿 bytes"心智，卡在路径上。
+- 修法（三件事一起，缺一不可）：① 检测器 `messagesHaveInputImages(messages)`——扫 user-role messages 的 content[]，看是否有非空 image_url 部件 (assistant-role 不算，那是上一轮模型自己输出的图)；② tool 配置：`buildCodexResponsesTools` 接 `hasInputImage` 参数，有图 → `{type: 'image_generation', input_fidelity: 'high'}`（OpenAI gpt-image 系 edit-mode 触发，没 high fidelity 会被当 free-form 重画整张图），无图 → 保持原最简配置不无谓涨成本；③ instructions append：当 enableInlineImage AND hasInputImage 同时成立，往 systemPrompt 后追加 `CODEX_INLINE_IMAGE_EDIT_INSTRUCTION` 一段——explicit 多 "DO NOT" (DO NOT ask for path / DO NOT call read_file / 直接调 image_generation)，因为模型的 prior 太强，soft hint 必输。
+- 为什么三件事缺一：只改 tool 不改 instructions → Codex 服务端可能默认把 input_image 当 vision context (一眼看完丢掉)，模型选不到 edit-mode tool 的 fast path；只改 instructions 不改 tool → 即使决心调，默认 fidelity 太低，输出跟原图差很远；只检测不接两边 → 死代码。
+- 10 个新测试：buildCodexResponsesTools edit-mode 矩阵 (workspace × hasInputImage 三 case)；messagesHaveInputImages 6 case (data: URI / 远程 https / assistant-only-image-不算 / 空白 url 不计 / 非 array 不抛错)。
+- **无法保证**：Codex 后端的 image_generation tool 是否真支持 image-to-image edit 是黑盒。OpenAI 标准 Responses API gpt-image-1 支持，但 Codex Plus 代理后端可能限制 edit 到 Pro/Team 套餐。若实测仍 fail，需 fall back 到 sdcpp img2img 或 OpenAI api-key 直连。
+- 验证：`src/**/*.test.js` **1244/1244 全绿**（前 1235 + 9 new）。
+- 提交哈希：`2618ec5`。
+
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
 - 上一刀 `3876cdc` push 又被 Codex D 阻断。🔴 finding：[desktopStore.js:1504](src/desktopStore.js) `initMcpServers()` 用 `if (hasServers)` 短路 —— 用户关闭最后一个 MCP（或删最后一个 user-configured）后 hasServers=false，bootstrapMcpServers 根本不调，reconciler 不跑，已 active 子进程 + 已注册 tool 留着。"全局 disable" 又一次失效。
