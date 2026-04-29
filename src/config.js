@@ -85,7 +85,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   // first time melo boots; explicit opt-in via Customize → Advanced
   // is required.
   enableAntvChartMcp:    false, // @antv/mcp-server-chart (25+ chart types)
-  enableMarkdown2PdfMcp: false, // @99xio/markdown2pdf-mcp (md → PDF, local)
+  enableMarkdown2PdfMcp: false, // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
+  enableMermaidMcp:      false, // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
   // Extra web-search triggers (additive to built-in heuristics). Each item:
   //   { pattern: "regex source", flags?: "iu", weight: 2 }
   // Example:

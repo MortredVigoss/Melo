@@ -46,19 +46,22 @@ test('buildMcpFlags coerces every enable*Mcp field to a boolean', () => {
     enableBrowserlessMcp: 'true',
     enableAntvChartMcp: undefined,
     enableMarkdown2PdfMcp: null,
+    enableMermaidMcp: 'yes-truthy-string',
   });
   assert.equal(flags.enablePlaywrightMcp, true);
   assert.equal(flags.enableBrowserlessMcp, true);
   assert.equal(flags.enableAntvChartMcp, false);
   assert.equal(flags.enableMarkdown2PdfMcp, false);
+  assert.equal(flags.enableMermaidMcp, true);
 });
 
-test('buildMcpFlags returns all four flags even on an empty config', () => {
+test('buildMcpFlags returns all five flags even on an empty config', () => {
   const flags = buildMcpFlags({});
   assert.deepEqual(Object.keys(flags).sort(), [
     'enableAntvChartMcp',
     'enableBrowserlessMcp',
     'enableMarkdown2PdfMcp',
+    'enableMermaidMcp',
     'enablePlaywrightMcp',
   ]);
   for (const v of Object.values(flags)) assert.equal(v, false);

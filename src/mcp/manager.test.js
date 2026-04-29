@@ -97,6 +97,12 @@ test('getBuiltinMcpPresets exposes every built-in (browser + productivity)', () 
   assert.ok(ids.includes('browserless'));
   assert.ok(ids.includes('antv-chart'));
   assert.ok(ids.includes('markdown2pdf'));
+  // mermaid was added 2026-04-29 because @99xio/markdown2pdf-mcp's
+  // dependency graph doesn't include mermaid — bare ```mermaid```
+  // blocks ship as plain text. mcp-mermaid (hustcc / antv-team
+  // author, same as @antv/mcp-server-chart) renders to PNG via
+  // mermaid-isomorphic + playwright.
+  assert.ok(ids.includes('mermaid'));
 });
 
 test('every preset entry carries command + args + flag + description', () => {
@@ -123,6 +129,13 @@ test('buildEffectiveMcpServers adds antv-chart preset when flag is set', () => {
   assert.ok(eff['antv-chart']);
   assert.equal(eff['antv-chart'].command, 'npx');
   assert.deepEqual(eff['antv-chart'].args, ['-y', '@antv/mcp-server-chart']);
+});
+
+test('buildEffectiveMcpServers adds mermaid preset when flag is set', () => {
+  const eff = buildEffectiveMcpServers({}, { enableMermaidMcp: true });
+  assert.ok(eff.mermaid, 'mermaid preset must be registered when enableMermaidMcp is true');
+  assert.equal(eff.mermaid.command, 'npx');
+  assert.deepEqual(eff.mermaid.args, ['-y', 'mcp-mermaid']);
 });
 
 test('buildEffectiveMcpServers adds markdown2pdf preset when flag is set', () => {

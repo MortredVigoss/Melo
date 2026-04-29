@@ -261,6 +261,20 @@ const BUILTIN_MCP_PRESETS = {
     description: 'Markdown → PDF converter with syntax highlighting.',
     flag: 'enableMarkdown2PdfMcp',
   },
+  // mermaid renderer — `markdown2pdf-mcp` deps are remarkable +
+  // highlight.js + puppeteer (no mermaid), so ```mermaid``` blocks
+  // there ship as plain text. `mcp-mermaid` (hustcc / antv-team
+  // author, same shop as @antv/mcp-server-chart) renders the
+  // diagram via mermaid-isomorphic + playwright. Adding it as a
+  // sibling preset means the agent can either inline a mermaid
+  // diagram into chat (rendered to PNG) or — combined with
+  // markdown2pdf — embed pre-rendered images into a PDF.
+  'mermaid': {
+    command: 'npx',
+    args: ['-y', 'mcp-mermaid'],
+    description: 'Mermaid diagram renderer (flowchart, sequence, ER, state, etc.) → PNG.',
+    flag: 'enableMermaidMcp',
+  },
 };
 
 /**

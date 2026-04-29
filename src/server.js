@@ -1183,6 +1183,7 @@ const server = createServer(async (request, response) => {
         'enableBrowserlessMcp',
         'enableAntvChartMcp',
         'enableMarkdown2PdfMcp',
+        'enableMermaidMcp',
       ]);
       if (!ALLOWED_MCP_FLAGS.has(flag)) {
         sendJson(response, 400, { ok: false, error: `Unknown MCP preset flag: ${flag}` });

@@ -33,6 +33,7 @@ export function buildMcpFlags(config = {}) {
     enableBrowserlessMcp:  Boolean(config.enableBrowserlessMcp),
     enableAntvChartMcp:    Boolean(config.enableAntvChartMcp),
     enableMarkdown2PdfMcp: Boolean(config.enableMarkdown2PdfMcp),
+    enableMermaidMcp:      Boolean(config.enableMermaidMcp),
   };
 }
 
