@@ -207,6 +207,37 @@ test('saveCodexInlineImageItem rejects non-image bytes that pass the size check'
   }
 });
 
+test('saveCodexInlineImageItem rejects non-image bytes EVEN WHEN output_format claims png', async () => {
+  // Codex review round 2 (2026-04-29) caught a bypass: previously
+  // codexInlineImageMime fell back to `output_format` when magic-byte
+  // sniff failed, so a payload like
+  //   { result: <non-png bytes>, output_format: 'png' }
+  // would be saved with `.png` extension and passed to the UI as a
+  // valid image. Codex has shipped 200-OK error pages with declared
+  // image content-types in the past — same risk class as imageGen's
+  // "trust the bytes, not the server's story" rule.
+  // Contract: bytes must self-identify; output_format is purely
+  // advisory and cannot rescue corrupt content.
+  const workspace = await mkdtemp(join(tmpdir(), 'melo-inline-img-'));
+  try {
+    // 4KiB of pure ASCII (e.g. an HTML error page) — no PNG magic.
+    const errorPage = Buffer.alloc(4096, 0x41).toString('base64');
+    for (const fmt of ['png', 'jpeg', 'jpg', 'webp', 'gif']) {
+      const result = await saveCodexInlineImageItem(
+        { result: errorPage, output_format: fmt },
+        workspace,
+      );
+      assert.equal(
+        result,
+        null,
+        `output_format=${fmt} must NOT rescue non-image bytes`,
+      );
+    }
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('saveCodexInlineImageItem strips data: URI prefix if upstream emits one', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'melo-inline-img-'));
   try {
@@ -393,6 +424,83 @@ test('save failure with non-empty completed output still returns canonical compl
     /!\[generated image\]/,
     'no markdown URL should survive when the save callback failed',
   );
+});
+
+test('completed-only payload (no text deltas) + canonical text + image keeps both', async () => {
+  // Codex review round 2 (2026-04-29) caught the dual of the
+  // save-failure bug: when `response.completed` carries BOTH a
+  // canonical `output_text` AND an image_generation_call, but the
+  // intermediate `response.output_text.delta` events were missing
+  // (heavy-load completed-only path), the previous logic returned
+  // deltaText (= just the image markdown) and silently dropped the
+  // canonical prose. Pin the contract explicitly: final reply must
+  // contain (a) every word of completedText, (b) every injected
+  // image markdown URL.
+  const item = {
+    id: 'igc_completed_only',
+    type: 'image_generation_call',
+    status: 'completed',
+    result: fakePngBase64(2048),
+    output_format: 'png',
+  };
+  const response = mockResponseFromEvents([
+    // No text deltas. The model's prose only arrives in the terminal
+    // payload's output_text.
+    sseCompleted({
+      output: [
+        {
+          type: 'message',
+          content: [{ text: 'Here is the cat you asked for.' }],
+        },
+        item,
+      ],
+    }),
+  ]);
+
+  const reply = await readCodexSseResponse(response, {
+    onInlineImage: async () => `\n\n![generated image](https://test/cat.png)\n\n`,
+  });
+
+  assert.match(reply, /Here is the cat you asked for\./, 'canonical prose must survive');
+  assert.match(
+    reply,
+    /!\[generated image\]\(https:\/\/test\/cat\.png\)/,
+    'injected image markdown must survive',
+  );
+  // Order: prose first, image after — sensible default when stream
+  // didn't tell us where to splice. Pinned so a future refactor can't
+  // silently flip the order.
+  const proseIndex = reply.indexOf('Here is the cat');
+  const imageIndex = reply.indexOf('![generated image]');
+  assert.ok(
+    proseIndex >= 0 && imageIndex > proseIndex,
+    `expected prose before image (got prose=${proseIndex} image=${imageIndex})`,
+  );
+});
+
+test('streamed text includes every word of completedText AND image → return deltaText', async () => {
+  // Inverse of the previous case: when streaming caught both the
+  // canonical text and we appended images, deltaText is a complete
+  // representation of the user's view. Returning it preserves
+  // streaming order verbatim. Re-appending completedText would
+  // double-quote the prose.
+  const reply = await readCodexSseResponse(
+    mockResponseFromEvents([
+      sseTextDelta('hello world.'),
+      sseImageItemDone({ id: 'igc_x', result: fakePngBase64(2048) }),
+      sseCompleted({
+        output: [
+          { type: 'message', content: [{ text: 'hello world.' }] },
+        ],
+      }),
+    ]),
+    {
+      onInlineImage: async () => '\n\n![generated image](https://test/x.png)\n\n',
+    },
+  );
+  // Single occurrence of "hello world." — no double quote.
+  assert.equal(reply.match(/hello world\./g)?.length, 1);
+  assert.match(reply, /!\[generated image\]\(https:\/\/test\/x\.png\)/);
 });
 
 test('save callback returning null (silent failure) does NOT corrupt completedText path', async () => {

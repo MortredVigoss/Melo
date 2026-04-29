@@ -90,18 +90,23 @@ export function buildCodexResponsesTools({
   return tools;
 }
 
-// Sniff PNG / JPG / WebP / GIF from the response_item bytes; falls back to
-// the `output_format` hint Codex sends alongside `result`. Returns null if
-// neither matches — the caller treats null as a save failure.
-function codexInlineImageMime(buffer, outputFormat) {
-  const sniffed = detectImageMimeFromBytes(buffer);
-  if (sniffed) return sniffed;
-  const f = String(outputFormat || '').toLowerCase().trim();
-  if (f === 'png') return 'image/png';
-  if (f === 'jpeg' || f === 'jpg') return 'image/jpeg';
-  if (f === 'webp') return 'image/webp';
-  if (f === 'gif') return 'image/gif';
-  return null;
+// Sniff PNG / JPG / WebP / GIF from the bytes themselves. We deliberately
+// do NOT fall back to upstream's `output_format` hint:
+//   • matches imageGen.js / codexImageEngine's "trust the bytes, not the
+//     server's story" rule — Codex has shipped 200-OK error pages with
+//     declared image content-types before;
+//   • Codex review (2026-04-29 round 2) flagged the previous fallback as
+//     a hole — `output_format: 'png'` would let non-PNG bytes (truncated
+//     stream, error page, accidental JSON) be saved with a `.png`
+//     extension and rendered as a broken image;
+//   • PNG/JPEG/WebP/GIF magic always sits in the first 12 bytes, well
+//     under our 1024-byte size floor — so a "valid but un-sniffable"
+//     image is essentially impossible.
+// Returns null when the buffer has no recognisable image magic; the
+// caller treats null as a save failure (image dropped, prose still
+// streams).
+function codexInlineImageMime(buffer) {
+  return detectImageMimeFromBytes(buffer) || null;
 }
 
 // Build the workspace destination for an inline image. Mirrors imageTool's
@@ -133,7 +138,7 @@ export async function saveCodexInlineImageItem(item, workspacePath) {
   // and would render as a broken image. Same threshold codexImageEngine uses.
   if (buffer.length < 1024) return null;
 
-  const mimeType = codexInlineImageMime(buffer, item?.output_format);
+  const mimeType = codexInlineImageMime(buffer);
   if (!mimeType) return null;
 
   const dir = join(workspacePath, 'generated');
@@ -1188,25 +1193,33 @@ export async function readCodexSseResponse(
   let deltaText = '';
   let reasoningText = '';
   let completedResponse = null;
-  // Two ID sets with deliberately different semantics — confused for one in
-  // the first cut and Codex review caught the bug:
-  //   • attemptedImageIds — dedup so we don't re-invoke onInlineImage for
-  //     a single image_generation_call that the stream surfaces twice
-  //     (once via response.output_item.done, again inside response.completed).
-  //     A failed callback still goes here: same item, same crash, no point
-  //     retrying within one response.
-  //   • emittedImageIds — only ids whose markdown actually made it into
-  //     deltaText. The "prefer deltaText over completedText" branch keys
-  //     off this set, so a save / sign failure no longer corrupts the
-  //     final-text return contract — we fall back to the canonical
-  //     completedText exactly as the pure-text path always has.
+  // attemptedImageIds — dedup so we don't re-invoke onInlineImage for a
+  // single image_generation_call that the stream surfaces twice (once
+  // via response.output_item.done, again inside response.completed).
+  // A failed callback still gets recorded here — same item, same crash,
+  // no point retrying within one response.
   const attemptedImageIds = new Set();
-  const emittedImageIds = new Set();
+  // injectedImageSnippets — the markdown URL strings we actually appended
+  // into deltaText. The final-text branch uses this list to verify that
+  // whichever text we end up returning (deltaText or canonical
+  // completedText) carries every image we generated. Codex review round 2
+  // (2026-04-29) caught two failure modes a Set-of-ids couldn't pin:
+  //   • SET-only: completed-only path produced deltaText="<image markdown
+  //     only>", emittedImageIds.size > 0 → returned deltaText, dropping
+  //     the canonical text the model emitted in the response.completed
+  //     payload.
+  //   • SET-only: a save failure flipped emittedImageIds.size to 0 even
+  //     though we'd already streamed the markdown to onDelta — but UI
+  //     can't take it back.
+  // Tracking the snippets themselves lets us implement the contract
+  // verbatim: the returned text must contain (a) all canonical prose AND
+  // (b) every image markdown we successfully injected.
+  const injectedImageSnippets = [];
 
   // When an inline image lands, emit it as a markdown URL into the
   // streamed reply text. The snippet is appended to deltaText so the URL
-  // survives the final `return deltaText` path AND streamed via onDelta
-  // so the desktop UI can render it inline before completion.
+  // survives the final return path AND streamed via onDelta so the
+  // desktop UI can render it inline before completion.
   const emitInlineImage = async item => {
     if (typeof onInlineImage !== 'function') return;
     if (!item || typeof item !== 'object') return;
@@ -1219,13 +1232,12 @@ export async function readCodexSseResponse(
     } catch {
       // Save / sign failures must never break the chat reply — we just
       // skip the image. The model's prose still streams normally, and
-      // emittedImageIds stays untouched so the final-text branch picks
-      // completedText (canonical) instead of a deltaText that's missing
-      // the image we couldn't write.
+      // injectedImageSnippets stays untouched so the final-text branch
+      // does not append a markdown URL we never wrote.
       return;
     }
     if (typeof snippet !== 'string' || !snippet) return;
-    emittedImageIds.add(id);
+    injectedImageSnippets.push(snippet);
     deltaText += snippet;
     if (typeof onDelta === 'function') {
       await onDelta({ delta: snippet, text: deltaText });
@@ -1319,26 +1331,66 @@ export async function readCodexSseResponse(
     processEventBlock,
   });
 
-  // When inline image generation fired, deltaText carries the markdown
-  // image URLs we appended in emitInlineImage. The terminal `response.completed`
-  // payload's `output_text` does NOT contain those URLs (they're synthesized
-  // client-side from image_generation_call results), so preferring it would
-  // silently drop every generated image from the final reply. Use deltaText
-  // whenever we emitted at least one image; fall back to completedText for
-  // pure-text replies (matching the pre-image behaviour).
-  if (emittedImageIds.size > 0 && deltaText.trim()) {
-    return deltaText.trim();
-  }
-
+  // Final-text contract (Codex review round 2, 2026-04-29):
+  //
+  //   1. Canonical text — `extractResponsesText(completedResponse)` is
+  //      authoritative when present; it's the model's own final
+  //      answer assembled by the server from all output_text items.
+  //      `deltaText` is just our running concatenation of streamed
+  //      delta chunks plus any image markdown we appended.
+  //
+  //   2. Image markdown — every successfully injected snippet must
+  //      appear in the returned text. Otherwise downstream
+  //      `extractUrlAttachmentsFromText` won't see the .png URL and
+  //      every generated image silently disappears from the assistant
+  //      message.
+  //
+  // Failure modes we MUST NOT regress (each pinned by a test):
+  //   • Pure text reply → return canonical completedText; no behaviour
+  //     change vs pre-image-feature path.
+  //   • Streamed text + image → completedText alone misses the image;
+  //     deltaText already contains both, so return deltaText.
+  //   • Completed-only payload (no text deltas) + image → completedText
+  //     has the prose, deltaText has only the image markdown. Combine.
+  //   • Save failure for one of N images → injectedImageSnippets only
+  //     lists the ones that landed; we don't re-inject failed ones.
   const completedText = extractResponsesText(completedResponse);
+  const trimmedDelta = deltaText.trim();
+  const baseText = completedText || trimmedDelta;
+
+  if (!injectedImageSnippets.length) {
+    if (baseText) return baseText;
+    throw new Error('Codex OAuth request completed without returning a final reply.');
+  }
+
+  // Pick whichever base text already contains every image snippet —
+  // that's the version that actually flowed through onDelta to the UI
+  // in real time (so the user has already seen it inline). When neither
+  // contains them all, append the missing snippets to the canonical
+  // text so the final return matches the streamed UI state.
+  const allInDelta = injectedImageSnippets.every(s => deltaText.includes(s));
+  if (allInDelta && trimmedDelta) {
+    // deltaText already has prose + images interleaved in the stream
+    // order the user saw. Prefer it when completedText is absent OR
+    // its prose is already a substring of deltaText.
+    if (!completedText || deltaText.includes(completedText)) {
+      return trimmedDelta;
+    }
+    // completedText carries prose deltaText didn't catch (e.g. a chunk
+    // arrived as part of the terminal payload, not as an output_text
+    // delta). Append images to canonical text — see contract case 3.
+  }
+
   if (completedText) {
-    return completedText;
+    const missing = injectedImageSnippets.filter(s => !completedText.includes(s));
+    if (!missing.length) return completedText;
+    // Snippets are wrapped with leading+trailing blank lines so a
+    // simple concat keeps the markdown URL parseable by
+    // extractUrlAttachmentsFromText without further glue.
+    return [completedText, ...missing].join('').trimEnd();
   }
 
-  if (deltaText.trim()) {
-    return deltaText.trim();
-  }
-
+  if (trimmedDelta) return trimmedDelta;
   throw new Error('Codex OAuth request completed without returning a final reply.');
 }
 
