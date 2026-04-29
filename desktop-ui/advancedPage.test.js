@@ -131,6 +131,39 @@ test('renderAdvancedPage shows enabled count in header even for empty presets', 
   assert.match(html, /0 of 0 enabled/);
 });
 
+test('renderAdvancedPage unpinned+enabled (legacy 假启用) — chip = 假启用, button = clickable Disable (cleanup path)', () => {
+  // Codex 四轮 audit 2026-04-29 follow-up: when historic config has
+  // enableBrowserlessMcp:true (set when the package was unpinned, or
+  // back when the version-pin sweep didn't exist), Advanced must NOT
+  // render a fully-disabled button — that would strand the user in
+  // 假启用 (config says on, runtime says no). The button stays
+  // clickable but ONLY toggles to disable (data-next-enabled="0").
+  const html = renderAdvancedPage(freshState({
+    mcpPresets: [
+      {
+        id: 'browserless', flag: 'enableBrowserlessMcp', enabled: true,
+        unpinned: true,
+        command: 'npx', args: ['-y', '@browserless/mcp@latest'],
+        description: 'Cloud browser',
+      },
+    ],
+  }));
+  // The "假启用" warning chip surfaces.
+  assert.match(html, /假启用 · 未锁定版本/);
+  // Cleanup-aware label.
+  assert.match(html, /Disable \(清理假启用\)/);
+  // Pull out the actual <button> tag for browserless and assert it
+  // is clickable AND points at disable.
+  const browserlessButton = html.match(/<button[^>]*data-preset-id="browserless"[^>]*>/);
+  assert.ok(browserlessButton, 'browserless button must render');
+  // No `disabled` attribute (must allow click).
+  assert.doesNotMatch(browserlessButton[0], /\sdisabled[\s>]/);
+  // The click must drive enabled → disabled, not the other way.
+  assert.match(browserlessButton[0], /data-next-enabled="0"/);
+  // Cleanup hint text replaces the "toggle disabled" copy.
+  assert.match(html, /click <strong>Disable<\/strong> to clear the legacy/);
+});
+
 test('renderAdvancedPage marks unpinned preset as unavailable + disables its toggle', () => {
   // Codex 三轮 audit 2026-04-29: when a preset has no exact-version
   // pin (browserless today), Advanced must NOT let the user toggle

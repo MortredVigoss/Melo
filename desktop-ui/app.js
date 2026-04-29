@@ -21,6 +21,7 @@ import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './co
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
 import { runProductivityMcpsConsentChoice } from './productivityMcpConsent.js';
+import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 
 const app = document.querySelector('#app');
 
@@ -12076,30 +12077,20 @@ document.addEventListener('click', async event => {
         const currentDraft = {
           ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
         };
-        const currentIds = Array.isArray(currentDraft.enabledMcpServerIds)
-          ? new Set(currentDraft.enabledMcpServerIds)
-          : new Set();
-        if (currentIds.has(mcpServerId)) {
-          // Always allow REMOVE — same rule as the globally-disabled
-          // case: the user can revoke stale authorisations on
-          // unpinned presets too.
-          currentIds.delete(mcpServerId);
-        } else if (presetUnpinned) {
-          // Codex 四轮 audit 2026-04-29: refuse to AUTHORISE an
-          // agent for a preset whose npm version isn't pinned.
-          // Even with the global config flag stuck on (legacy
-          // enableBrowserlessMcp:true), connectMcpServer refuses
-          // to spawn it, so authorising would yield a chip that
-          // says "OK" while the server never runs.
-          showFlashToast(`"${mcpServerId}" preset is unpinned — version must be locked in PINNED_VERSIONS first.`);
+        // Decision lives in `desktop-ui/agentMcpAuthorise.js` so node:test
+        // can pin the remove-always-allowed / add-refused-on-disabled-or-
+        // unpinned table without simulating click events.
+        const decision = decideAgentMcpAuthAction({
+          currentIds: currentDraft.enabledMcpServerIds,
+          serverId: mcpServerId,
+          presetEnabled,
+          presetUnpinned,
+        });
+        if (decision.action.startsWith('refused-') || decision.action === 'refused-invalid') {
+          if (decision.toast) showFlashToast(decision.toast);
           break;
-        } else if (!presetEnabled) {
-          showFlashToast(`"${mcpServerId}" is disabled globally — enable in Advanced first.`);
-          break;
-        } else {
-          currentIds.add(mcpServerId);
         }
-        currentDraft.enabledMcpServerIds = [...currentIds];
+        currentDraft.enabledMcpServerIds = decision.nextIds;
         uiState.agentDrafts[draftKey] = currentDraft;
         render();
         break;
