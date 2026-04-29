@@ -389,6 +389,12 @@ export async function runChatAgentExecutionGraph({
             onDelta: isFirstIteration ? onDelta : undefined,
             onReasoningDelta: isFirstIteration ? onReasoningDelta : undefined,
             providerProfile,
+            // Workspace path enables inline image generation through the
+            // Codex OAuth chat stream (createCodexResponsesReply adds the
+            // image_generation tool when this is truthy and writes the
+            // resulting bytes into <workspace>/generated/). For non-Codex
+            // providers this parameter is currently ignored.
+            workspacePath: workspace?.rootPath || null,
           });
 
           const { thinking, toolCalls } = parseModelResponse(rawReply);

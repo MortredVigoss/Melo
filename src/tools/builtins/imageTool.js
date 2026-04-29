@@ -217,19 +217,16 @@ export const imageTool = {
         type: 'string',
         enum: ['auto', 'sdcpp', 'minimax', 'codex-oauth'],
         description:
-          // Important framing for the model: this is a backend-selection
-          // hint for the `image` tool, NOT an invitation to emit an
-          // inline `image_generation` tool call in the reply itself.
-          // Image generation always happens through THIS tool — melo
-          // dispatches to the chosen backend and returns a saved file
-          // path. The chat-side Responses payload (createCodexResponsesReply
-          // in src/openai.js) does NOT carry the image_generation tool,
-          // so trying to inline it has no effect.
-          'generate: which backend to use. "auto" (default) tries Codex OAuth first ' +
-          '(free for ChatGPT Plus subscribers; melo internally calls /codex/responses ' +
-          'with the image_generation tool — the model itself does NOT inline that call), ' +
-          'then local sd.cpp, then MiniMax. "codex-oauth" forces the OAuth path; ' +
-          '"sdcpp" forces local; "minimax" forces paid cloud.',
+          'generate: which backend to use. "auto" (default) tries Codex OAuth ' +
+          '(image_generation tool via /codex/responses; free for ChatGPT Plus ' +
+          'subscribers) first, then local sd.cpp, then MiniMax. ' +
+          '"codex-oauth" forces the OAuth path; "sdcpp" forces local; "minimax" ' +
+          'forces paid cloud. NOTE: when the user is on Codex OAuth, image ' +
+          'generation is also wired straight into the regular chat stream ' +
+          '(see createCodexResponsesReply) — the model can simply ask for an ' +
+          'image and Codex will inline it; this `image` tool stays available ' +
+          'for explicit-engine selection (forcing sdcpp / minimax) and for ' +
+          'OCR / process / info actions which do not exist on the chat path.',
       },
       steps: {
         type: 'number',

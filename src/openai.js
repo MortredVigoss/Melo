@@ -1,12 +1,15 @@
 import { execFile as execFileCallback } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { arch, platform, release, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import {
   getCodexCredential,
   resolveCodexExecutable,
 } from './codexAuth.js';
+import { signWorkspaceFileUrl } from './web/urlSigning.js';
+import { detectImageMimeFromBytes } from './images/imageGen.js';
 
 const execFile = promisify(execFileCallback);
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 600000;
@@ -37,6 +40,91 @@ const CODEX_NATIVE_WEB_SEARCH_TOOL = Object.freeze({
   type: 'web_search',
   external_web_access: true,
 });
+
+// Inline image generation through the chat stream (Codex OAuth only).
+// When the active chat has a workspace path, we add this tool to the
+// `/codex/responses` payload so the model can call `image_generation`
+// mid-reply. The SSE handler decodes the resulting base64 result, writes
+// it into <workspace>/generated/img-…png, and injects a signed-URL
+// markdown link (`\n\n![generated image](url)\n\n`) into the streamed
+// reply. Downstream the URL → attachment promotion in
+// extractUrlAttachmentsFromText (sendChatMessage) picks up the .png
+// extension and produces an inline image attachment on the assistant
+// message — no caller-side wiring required.
+//
+// Why through the streamed text and not a separate callback channel?
+//   • Streaming naturally interleaves the model's prose with the image,
+//     matching how the user reads the reply ("Here's a cat: <image>").
+//   • TTS / quote / re-render passes already strip URLs from text so
+//     speech and search are unaffected.
+//   • One code path serves desktop + Telegram + Discord — every channel
+//     already respects markdown image URLs in assistant messages.
+const CODEX_NATIVE_IMAGE_GENERATION_TOOL = Object.freeze({
+  type: 'image_generation',
+});
+
+// Sniff PNG / JPG / WebP / GIF from the response_item bytes; falls back to
+// the `output_format` hint Codex sends alongside `result`. Returns null if
+// neither matches — the caller treats null as a save failure.
+function codexInlineImageMime(buffer, outputFormat) {
+  const sniffed = detectImageMimeFromBytes(buffer);
+  if (sniffed) return sniffed;
+  const f = String(outputFormat || '').toLowerCase().trim();
+  if (f === 'png') return 'image/png';
+  if (f === 'jpeg' || f === 'jpg') return 'image/jpeg';
+  if (f === 'webp') return 'image/webp';
+  if (f === 'gif') return 'image/gif';
+  return null;
+}
+
+// Build the workspace destination for an inline image. Mirrors imageTool's
+// allocateWorkspaceOutputPath so all chat-side image artifacts share the
+// same `generated/` folder on disk and the same signed-URL shape.
+function codexInlineImageExt(mimeType) {
+  if (mimeType === 'image/jpeg') return '.jpg';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'image/gif') return '.gif';
+  return '.png';
+}
+
+// Exported for tests so we can assert the save path / mime sniffing /
+// signed-URL shape without going through the streaming pipeline.
+export async function saveCodexInlineImageItem(item, workspacePath) {
+  // `result` is base64 (per the spec). Be defensive: strip a leading data:
+  // URI prefix in case upstream starts emitting one.
+  const raw = String(item?.result || '').trim();
+  if (!raw) return null;
+  const base64 = raw.startsWith('data:') ? raw.replace(/^data:[^,]*,/, '') : raw;
+
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, 'base64');
+  } catch {
+    return null;
+  }
+  // 1KiB floor — anything smaller is almost certainly a partial / placeholder
+  // and would render as a broken image. Same threshold codexImageEngine uses.
+  if (buffer.length < 1024) return null;
+
+  const mimeType = codexInlineImageMime(buffer, item?.output_format);
+  if (!mimeType) return null;
+
+  const dir = join(workspacePath, 'generated');
+  await mkdir(dir, { recursive: true });
+  const ts = Date.now().toString(36);
+  const rand = randomBytes(4).toString('hex');
+  const ext = codexInlineImageExt(mimeType);
+  const path = join(dir, `img-${ts}-${rand}${ext}`);
+  await writeFile(path, buffer);
+
+  let url;
+  try {
+    url = signWorkspaceFileUrl(path);
+  } catch {
+    return null;
+  }
+  return { path, url, mimeType, bytes: buffer.length };
+}
 const WEB_SEARCH_TRIGGER_RULES = Object.freeze([
   { pattern: /\b(latest|current|today's)\s+(news|price|stock|weather|score|update)s?\b/i, weight: 3 },
   { pattern: /\bwhat'?s\s+(happening|new)\b/i, weight: 3 },
@@ -1059,13 +1147,50 @@ async function readSseStream(
   }
 }
 
-async function readCodexSseResponse(
+// Exported for tests: lets the unit test feed a mocked SSE stream directly
+// without faking the full createCodexResponsesReply credential / fetch path.
+export async function readCodexSseResponse(
   response,
-  { onDelta, onReasoningDelta, idleTimeoutMs = resolveStreamIdleTimeoutMs() } = {},
+  {
+    onDelta,
+    onReasoningDelta,
+    onInlineImage,
+    idleTimeoutMs = resolveStreamIdleTimeoutMs(),
+  } = {},
 ) {
   let deltaText = '';
   let reasoningText = '';
   let completedResponse = null;
+  // Track ids we've already emitted so we don't duplicate a single image
+  // when both `response.output_item.done` and the terminal
+  // `response.completed` carry the same image_generation_call.
+  const emittedImageIds = new Set();
+
+  // When an inline image lands, emit it as a markdown URL into the
+  // streamed reply text. Returns a markdown snippet (or null when there's
+  // nothing to emit). The snippet is appended to deltaText so the URL
+  // survives the final `return deltaText` path AND streamed via onDelta
+  // so the desktop UI can render it inline before completion.
+  const emitInlineImage = async item => {
+    if (typeof onInlineImage !== 'function') return;
+    if (!item || typeof item !== 'object') return;
+    const id = String(item.id || `${Date.now()}-${emittedImageIds.size}`);
+    if (emittedImageIds.has(id)) return;
+    emittedImageIds.add(id);
+    let snippet;
+    try {
+      snippet = await onInlineImage(item);
+    } catch {
+      // Save / sign failures must never break the chat reply — we just
+      // skip the image. The model's prose still streams normally.
+      return;
+    }
+    if (typeof snippet !== 'string' || !snippet) return;
+    deltaText += snippet;
+    if (typeof onDelta === 'function') {
+      await onDelta({ delta: snippet, text: deltaText });
+    }
+  };
 
   const processEventBlock = async block => {
     const event = parseCodexSseEvent(block);
@@ -1102,12 +1227,41 @@ async function readCodexSseResponse(
       return;
     }
 
+    // Streaming-path success signal for the built-in image_generation tool.
+    // Same shape as codexImageEngine (which uses this endpoint standalone).
+    if (
+      event.type === 'response.output_item.done' &&
+      event.item?.type === 'image_generation_call' &&
+      typeof event.item.result === 'string' &&
+      event.item.result
+    ) {
+      await emitInlineImage(event.item);
+      return;
+    }
+
     if (
       event.type === CODEX_EVENT_TYPES.COMPLETED ||
       event.type === CODEX_EVENT_TYPES.DONE ||
       event.type === CODEX_EVENT_TYPES.INCOMPLETE
     ) {
       completedResponse = event.response || completedResponse;
+      // Fallback: under heavy load, some output_item.done events arrive
+      // out-of-order or are merged into the terminal response payload.
+      // Walk the completed output once for any image_generation_call we
+      // haven't emitted yet so the user still sees the image.
+      const output = completedResponse?.output;
+      if (Array.isArray(output)) {
+        for (const item of output) {
+          if (
+            item &&
+            item.type === 'image_generation_call' &&
+            typeof item.result === 'string' &&
+            item.result
+          ) {
+            await emitInlineImage(item);
+          }
+        }
+      }
       return;
     }
 
@@ -1124,6 +1278,17 @@ async function readCodexSseResponse(
     idleTimeoutMs,
     processEventBlock,
   });
+
+  // When inline image generation fired, deltaText carries the markdown
+  // image URLs we appended in emitInlineImage. The terminal `response.completed`
+  // payload's `output_text` does NOT contain those URLs (they're synthesized
+  // client-side from image_generation_call results), so preferring it would
+  // silently drop every generated image from the final reply. Use deltaText
+  // whenever we emitted at least one image; fall back to completedText for
+  // pure-text replies (matching the pre-image behaviour).
+  if (emittedImageIds.size > 0 && deltaText.trim()) {
+    return deltaText.trim();
+  }
 
   const completedText = extractResponsesText(completedResponse);
   if (completedText) {
@@ -1304,6 +1469,7 @@ async function createCodexResponsesReply({
   onDelta,
   onReasoningDelta,
   providerProfile = 'default',
+  workspacePath = null,
 }) {
   const credential = await getCodexCredential();
   if (!credential.loggedIn) {
@@ -1329,38 +1495,18 @@ async function createCodexResponsesReply({
     ? resolveFastCodexReasoningEffort(reasoningEffort)
     : reasoningEffort;
   const enableWebSearch = shouldEnableCodexNativeWebSearch(messages);
-  // ── Tool wiring for the chat-side Responses request ──────────────────────
-  // Only `web_search` is wired in here. We deliberately do NOT include the
-  // `image_generation` tool, even though /codex/responses supports it — and
-  // it WOULD be tempting to add since "let Codex inline an image into its
-  // reply" sounds like a free ride. Why we don't:
-  //
-  //   1. The chat stream consumer (`onDelta` and the SSE parser around
-  //      this call) reads `response.output_text.delta` events to render
-  //      streaming text. It doesn't watch `response.output_item.done`
-  //      with `item.type === 'image_generation_call'`, so an inline
-  //      image generation would silently produce a base64 the UI
-  //      never extracts.
-  //   2. melo already has a deliberate path for image generation: the
-  //      `image` builtin tool (src/tools/builtins/imageTool.js), which
-  //      spawns its OWN /codex/responses sub-request (see
-  //      src/images/codexImageEngine.js) and returns a saved file path
-  //      the UI knows how to render. Bypassing that gate would skip
-  //      the per-call permission modal, the per-agent whitelist, AND
-  //      the artifact-saving flow.
-  //   3. Codex audit 2026-04-29: documenting the decision here so a
-  //      future "improvement" doesn't quietly add the tool, ship it
-  //      half-implemented, and then advertise "Codex can inline image
-  //      generation" in a release note that's only true at the API
-  //      level — not at the user-facing one.
-  //
-  // If we ever decide to plumb image_generation through chat, the work
-  // is: (a) include `{type:'image_generation'}` in `tools` here,
-  //     (b) teach the SSE parser to surface
-  //         `response.output_item.done`/`image_generation_call` items
-  //         to the message bubble as an attachment, and
-  //     (c) gate it behind the same permission pipeline as the `image`
-  //         tool. None of (a)-(c) exist today.
+  // Inline image generation only fires when the chat has a workspace path
+  // we can write to. Background jobs that don't bind a workspace (some
+  // Telegram polling code paths) skip the tool, falling back to the
+  // standalone `image` builtin if the model decides to call it.
+  // CLAUDE.md §6: capture `workspacePath` at call time (we already do via
+  // the function param) so the SSE handler's microtasks never reach back
+  // into a different chat's home.
+  const enableInlineImage =
+    typeof workspacePath === 'string' && workspacePath.startsWith('/');
+  const tools = [];
+  if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
+  if (enableInlineImage) tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
   const payload = {
     model,
     store: false,
@@ -1374,11 +1520,11 @@ async function createCodexResponsesReply({
       effort: effectiveReasoningEffort,
       summary: 'auto',
     },
-    ...(enableWebSearch
+    ...(tools.length
       ? {
           tool_choice: 'auto',
           parallel_tool_calls: true,
-          tools: [CODEX_NATIVE_WEB_SEARCH_TOOL],
+          tools,
         }
       : {}),
   };
@@ -1399,7 +1545,26 @@ async function createCodexResponsesReply({
     throw new Error(await readCodexErrorResponse(response));
   }
 
-  return readCodexSseResponse(response, { onDelta, onReasoningDelta });
+  // Closure binds the workspacePath captured at call time. The SSE handler
+  // invokes this for every image_generation_call.done event; on save it
+  // returns a markdown URL snippet which gets appended to the streamed
+  // reply, so the URL flows through extractUrlAttachmentsFromText and
+  // becomes a regular image attachment on the assistantMessage.
+  const onInlineImage = enableInlineImage
+    ? async item => {
+        const saved = await saveCodexInlineImageItem(item, workspacePath);
+        if (!saved) return null;
+        // Bracket the URL with blank lines so it never glues to surrounding
+        // prose ("Here's a cat:![cat](http…)" would render but reads worse).
+        return `\n\n![generated image](${saved.url})\n\n`;
+      }
+    : undefined;
+
+  return readCodexSseResponse(response, {
+    onDelta,
+    onReasoningDelta,
+    onInlineImage,
+  });
 }
 
 export async function discoverAvailableModels({
@@ -1459,6 +1624,7 @@ export async function createOpenAICompatibleReply({
   onDelta,
   onReasoningDelta,
   providerProfile = 'default',
+  workspacePath = null,
 }) {
   if (process.env.MELO_MOCK_RESPONSE) {
     const mockReply = process.env.MELO_MOCK_RESPONSE;
@@ -1487,6 +1653,7 @@ export async function createOpenAICompatibleReply({
         onDelta,
         onReasoningDelta,
         providerProfile,
+        workspacePath,
       });
     } catch (error) {
       if (isAbortError(error)) {
