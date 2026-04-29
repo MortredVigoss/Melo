@@ -158,6 +158,24 @@ export async function runSubAgent({
       // is written into the same `<workspace>/generated/` folder the
       // parent and other tools use, then surfaces in the sub-agent's
       // tool-result text as a signed-URL markdown link.
+      //
+      // DESIGN INTENT (user 2026-04-29): inline image is treated as a
+      // free server-side capability of Codex Plus (parallel to
+      // web_search), NOT as a melo `image` builtin call subject to the
+      // sub-agent's `allowedToolIds` whitelist. Concretely:
+      //   • a sub-agent whose allowed tools EXCLUDE `image` may still
+      //     ask Codex to inline an image — same as it can still benefit
+      //     from web_search;
+      //   • the resulting bytes land in `<workspace>/generated/`, which
+      //     the sub-agent already has read/write reach through every
+      //     other workspace-writing tool;
+      //   • when melo grows other models (or other Codex tiers) where
+      //     this assumption is wrong, gating moves into createCodex...
+      //     itself rather than here.
+      // Codex review 2026-04-29 flagged this as a privilege-escalation
+      // risk; the user explicitly overrode that finding because the
+      // capability is a paid-bucket-bound model feature, not a melo
+      // tool we own.
       workspacePath,
       // No onDelta for sub-agents — output goes through tool result
     });

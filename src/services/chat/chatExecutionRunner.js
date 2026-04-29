@@ -394,6 +394,15 @@ export async function runChatAgentExecutionGraph({
             // image_generation tool when this is truthy and writes the
             // resulting bytes into <workspace>/generated/). For non-Codex
             // providers this parameter is currently ignored.
+            //
+            // DESIGN INTENT (user 2026-04-29): always-on for every chat /
+            // every agent profile when the workspace exists. We intentionally
+            // do NOT gate this on the agent's `image` allowedTools entry —
+            // Codex inline image is a free Plus-bucket server capability
+            // (same model as native web_search), not a melo-owned tool.
+            // Codex review of the first cut flagged this as a possible
+            // privilege bypass; the override is recorded in subAgent.js's
+            // matching block.
             workspacePath: workspace?.rootPath || null,
           });
 

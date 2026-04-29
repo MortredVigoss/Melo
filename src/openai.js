@@ -63,6 +63,33 @@ const CODEX_NATIVE_IMAGE_GENERATION_TOOL = Object.freeze({
   type: 'image_generation',
 });
 
+// Exported for tests: lets the unit suite assert payload-tool gating
+// without faking the whole credential / fetch round trip. Returned in
+// the same insertion order createCodexResponsesReply uses (web_search
+// then image_generation) so a snapshot-style test can also assert
+// stable ordering of the `tools` array sent to /codex/responses.
+//
+// DESIGN INTENT (user 2026-04-29): inline image is gated **only** by
+// the existence of a writable workspace path. It is NOT additionally
+// gated by an agent's allowedTools / sub-agent privilege whitelist —
+// the user's product call is that Codex Plus's native image_generation
+// is a free server-side capability (parallel to web_search) and should
+// be available in every chat / every agent / every sub-agent. When this
+// invariant changes (e.g. a non-Codex provider or a paid-per-image
+// tier shows up), the gate moves into THIS helper rather than into the
+// caller chain.
+export function buildCodexResponsesTools({
+  enableWebSearch = false,
+  workspacePath = null,
+} = {}) {
+  const tools = [];
+  if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
+  if (typeof workspacePath === 'string' && workspacePath.startsWith('/')) {
+    tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
+  }
+  return tools;
+}
+
 // Sniff PNG / JPG / WebP / GIF from the response_item bytes; falls back to
 // the `output_format` hint Codex sends alongside `result`. Returns null if
 // neither matches — the caller treats null as a save failure.
@@ -1161,31 +1188,44 @@ export async function readCodexSseResponse(
   let deltaText = '';
   let reasoningText = '';
   let completedResponse = null;
-  // Track ids we've already emitted so we don't duplicate a single image
-  // when both `response.output_item.done` and the terminal
-  // `response.completed` carry the same image_generation_call.
+  // Two ID sets with deliberately different semantics — confused for one in
+  // the first cut and Codex review caught the bug:
+  //   • attemptedImageIds — dedup so we don't re-invoke onInlineImage for
+  //     a single image_generation_call that the stream surfaces twice
+  //     (once via response.output_item.done, again inside response.completed).
+  //     A failed callback still goes here: same item, same crash, no point
+  //     retrying within one response.
+  //   • emittedImageIds — only ids whose markdown actually made it into
+  //     deltaText. The "prefer deltaText over completedText" branch keys
+  //     off this set, so a save / sign failure no longer corrupts the
+  //     final-text return contract — we fall back to the canonical
+  //     completedText exactly as the pure-text path always has.
+  const attemptedImageIds = new Set();
   const emittedImageIds = new Set();
 
   // When an inline image lands, emit it as a markdown URL into the
-  // streamed reply text. Returns a markdown snippet (or null when there's
-  // nothing to emit). The snippet is appended to deltaText so the URL
+  // streamed reply text. The snippet is appended to deltaText so the URL
   // survives the final `return deltaText` path AND streamed via onDelta
   // so the desktop UI can render it inline before completion.
   const emitInlineImage = async item => {
     if (typeof onInlineImage !== 'function') return;
     if (!item || typeof item !== 'object') return;
-    const id = String(item.id || `${Date.now()}-${emittedImageIds.size}`);
-    if (emittedImageIds.has(id)) return;
-    emittedImageIds.add(id);
+    const id = String(item.id || `${Date.now()}-${attemptedImageIds.size}`);
+    if (attemptedImageIds.has(id)) return;
+    attemptedImageIds.add(id);
     let snippet;
     try {
       snippet = await onInlineImage(item);
     } catch {
       // Save / sign failures must never break the chat reply — we just
-      // skip the image. The model's prose still streams normally.
+      // skip the image. The model's prose still streams normally, and
+      // emittedImageIds stays untouched so the final-text branch picks
+      // completedText (canonical) instead of a deltaText that's missing
+      // the image we couldn't write.
       return;
     }
     if (typeof snippet !== 'string' || !snippet) return;
+    emittedImageIds.add(id);
     deltaText += snippet;
     if (typeof onDelta === 'function') {
       await onDelta({ delta: snippet, text: deltaText });
@@ -1495,18 +1535,20 @@ async function createCodexResponsesReply({
     ? resolveFastCodexReasoningEffort(reasoningEffort)
     : reasoningEffort;
   const enableWebSearch = shouldEnableCodexNativeWebSearch(messages);
-  // Inline image generation only fires when the chat has a workspace path
-  // we can write to. Background jobs that don't bind a workspace (some
-  // Telegram polling code paths) skip the tool, falling back to the
-  // standalone `image` builtin if the model decides to call it.
-  // CLAUDE.md §6: capture `workspacePath` at call time (we already do via
-  // the function param) so the SSE handler's microtasks never reach back
-  // into a different chat's home.
-  const enableInlineImage =
-    typeof workspacePath === 'string' && workspacePath.startsWith('/');
-  const tools = [];
-  if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
-  if (enableInlineImage) tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
+  // Inline image generation only fires when the chat has a workspace
+  // path we can write to. Background jobs that don't bind a workspace
+  // (some Telegram polling code paths) skip the tool, falling back to
+  // the standalone `image` builtin if the model decides to call it.
+  // CLAUDE.md §6: capture `workspacePath` at call time (we already do
+  // via the function param) so the SSE handler's microtasks never reach
+  // back into a different chat's home.
+  //
+  // The decision logic is in `buildCodexResponsesTools` — kept exported
+  // so payload-shape regressions are unit-testable without faking
+  // getCodexCredential + fetch. See the design-intent block on that
+  // helper for why we DON'T also gate on agent/sub-agent allowedTools.
+  const tools = buildCodexResponsesTools({ enableWebSearch, workspacePath });
+  const enableInlineImage = tools.some(t => t?.type === 'image_generation');
   const payload = {
     model,
     store: false,

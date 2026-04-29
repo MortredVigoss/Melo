@@ -36,6 +36,7 @@ import { join } from 'node:path';
 import {
   readCodexSseResponse,
   saveCodexInlineImageItem,
+  buildCodexResponsesTools,
 } from './openai.js';
 
 // PNG magic so the magic-byte sniffer accepts the buffer as image/png.
@@ -84,6 +85,75 @@ function sseCompleted(response = null) {
     response,
   })}`;
 }
+
+// ─── buildCodexResponsesTools (payload gating) ──────────────────────────────
+//
+// These pin the rule the user explicitly endorsed on 2026-04-29: Codex
+// inline image generation is enabled in EVERY chat / agent / sub-agent
+// path that has a usable workspace. The single gate is `workspacePath`.
+// We deliberately do NOT add an additional `allowedTools` / agent-profile
+// gate here — Codex Plus's image_generation is treated as a free
+// server-side capability (parallel to web_search), not a melo tool.
+// If a future provider invalidates that assumption the gate moves into
+// THIS helper, not into the caller chain.
+
+test('buildCodexResponsesTools — no workspace, no web search → empty tool list', () => {
+  const tools = buildCodexResponsesTools({ enableWebSearch: false, workspacePath: null });
+  assert.deepEqual(tools, []);
+});
+
+test('buildCodexResponsesTools — workspacePath alone enables image_generation only', () => {
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: '/tmp/some/workspace',
+  });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].type, 'image_generation');
+});
+
+test('buildCodexResponsesTools — web search alone enables web_search only', () => {
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: true,
+    workspacePath: null,
+  });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].type, 'web_search');
+});
+
+test('buildCodexResponsesTools — both flags emits both tools in stable order (web_search first)', () => {
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: true,
+    workspacePath: '/tmp/melo/chat-workspace',
+  });
+  assert.deepEqual(
+    tools.map(t => t.type),
+    ['web_search', 'image_generation'],
+  );
+});
+
+test('buildCodexResponsesTools — non-absolute workspacePath does NOT enable image_generation', () => {
+  // Defence in depth: a relative path would land somewhere unexpected
+  // inside the running process's cwd. signWorkspaceFileUrl also rejects
+  // non-absolute paths, so this is also an upstream consistency check.
+  for (const bogus of ['relative/dir', '', null, undefined, 42, {}, ['/tmp/x']]) {
+    const tools = buildCodexResponsesTools({
+      enableWebSearch: false,
+      workspacePath: bogus,
+    });
+    assert.deepEqual(
+      tools,
+      [],
+      `bogus workspacePath ${JSON.stringify(bogus)} should not enable image_generation`,
+    );
+  }
+});
+
+test('buildCodexResponsesTools — defaults: zero-arg call yields empty tool list', () => {
+  // Anyone refactoring createCodexResponsesReply could call this without
+  // args to clear the tool slot — make sure that stays a no-op.
+  assert.deepEqual(buildCodexResponsesTools(), []);
+  assert.deepEqual(buildCodexResponsesTools({}), []);
+});
 
 // ─── saveCodexInlineImageItem ───────────────────────────────────────────────
 
@@ -276,6 +346,75 @@ test('save failure leaves text reply intact (no crash, no markdown injected)', a
     0,
     'no image markdown should leak when the save callback throws',
   );
+});
+
+test('save failure with non-empty completed output still returns canonical completedText', async () => {
+  // Codex review (2026-04-29 round 1) caught: the first cut tracked
+  // attempted-and-emitted ids in the same Set, so a save crash would
+  // leave the failed id "marked" → the final-text branch saw
+  // emittedImageIds.size > 0 and returned deltaText (which is missing
+  // the image we couldn't write), corrupting the canonical completedText
+  // contract.
+  //
+  // Contract pinned here: when the save callback fails AND the response
+  // payload provides a usable `output_text`, the reader returns the
+  // canonical text (NOT a partial deltaText). Failure of an inline image
+  // never degrades the prose return path.
+  const inlineCalls = [];
+  const response = mockResponseFromEvents([
+    sseTextDelta('streaming chunk one. '),
+    sseImageItemDone({ id: 'igc_failpath', result: fakePngBase64(2048) }),
+    sseTextDelta('streaming chunk two.'),
+    sseCompleted({
+      output: [
+        {
+          type: 'message',
+          content: [{ text: 'streaming chunk one. streaming chunk two.' }],
+        },
+      ],
+    }),
+  ]);
+
+  const reply = await readCodexSseResponse(response, {
+    onInlineImage: async item => {
+      inlineCalls.push(item.id);
+      throw new Error('simulated workspace write failure');
+    },
+  });
+
+  assert.equal(inlineCalls.length, 1, 'save callback must still fire (we tried)');
+  assert.equal(
+    reply,
+    'streaming chunk one. streaming chunk two.',
+    'save failure must NOT switch the return path to deltaText',
+  );
+  assert.doesNotMatch(
+    reply,
+    /!\[generated image\]/,
+    'no markdown URL should survive when the save callback failed',
+  );
+});
+
+test('save callback returning null (silent failure) does NOT corrupt completedText path', async () => {
+  // `null` is the documented in-band signal for "save failed, skip this
+  // image" (used by saveCodexInlineImageItem when the buffer is too
+  // small / fails magic-byte sniff). Same contract as the throw branch:
+  // attemptedImageIds gets the id (we don't retry), emittedImageIds
+  // does NOT (we didn't actually inject markdown), final-text return
+  // stays on the canonical completedText.
+  const response = mockResponseFromEvents([
+    sseTextDelta('a'),
+    sseImageItemDone({ id: 'igc_null', result: fakePngBase64(2048) }),
+    sseCompleted({
+      output: [{ type: 'message', content: [{ text: 'canonical' }] }],
+    }),
+  ]);
+
+  const reply = await readCodexSseResponse(response, {
+    onInlineImage: async () => null,
+  });
+
+  assert.equal(reply, 'canonical');
 });
 
 test('omits image_generation_call without a result field (e.g. status=in_progress)', async () => {
