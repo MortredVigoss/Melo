@@ -268,7 +268,7 @@ async function captureCodexRequestPayload(callOpts) {
   return captured;
 }
 
-test('payload — edit-mode (workspace + input image): high fidelity tool, edit instructions, model=gpt-5.5', async () => {
+test('payload — edit-mode (workspace + input image): high fidelity tool, edit instructions, caller model preserved', async () => {
   const captured = await captureCodexRequestPayload({
     workspacePath: '/tmp/some/workspace',
     messages: [
@@ -287,6 +287,8 @@ test('payload — edit-mode (workspace + input image): high fidelity tool, edit 
   const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
   assert.ok(imageTool, 'tools must include image_generation');
   assert.equal(imageTool.input_fidelity, 'high', 'edit mode requires input_fidelity=high');
+  // tool_choice must allow the model to invoke image_generation
+  assert.equal(captured.body.tool_choice, 'auto');
   // Instructions: contain the edit-mode block
   assert.match(
     captured.body.instructions,
@@ -298,15 +300,39 @@ test('payload — edit-mode (workspace + input image): high fidelity tool, edit 
     /DO NOT ask the user for a file path/,
     'anti-file-path clause must be appended',
   );
-  // Model override: forced to gpt-5.5 even though caller passed gpt-4.1
+  // Caller's model is preserved — the round-4 force-override to gpt-5.5
+  // was reverted (user 2026-04-30): too wide a hammer that swapped models
+  // even for pure-text turns. Whatever the caller picked stays.
   assert.equal(
     captured.body.model,
-    'gpt-5.5',
-    'enableInlineImage must override model to gpt-5.5 (user decision 2026-04-30)',
+    'gpt-4.1',
+    'caller-supplied model (gpt-4.1) must NOT be silently overridden',
+  );
+  // input flows the user's prompt + the uploaded image as input_image
+  // — the image-edit tool chain the user described in the design audit:
+  //   user upload → backend reads → input_image part → input_text edit prompt
+  //   → image_generation tool with input_fidelity:high → tool returns base64.
+  const userTurn = captured.body.input.find(i => i.role === 'user');
+  assert.ok(userTurn, 'input must contain a user-role entry');
+  const partKinds = userTurn.content.map(p => p.type);
+  assert.ok(
+    partKinds.includes('input_text'),
+    `user content must include input_text part (got ${JSON.stringify(partKinds)})`,
+  );
+  assert.ok(
+    partKinds.includes('input_image'),
+    `user content must include input_image part (got ${JSON.stringify(partKinds)})`,
+  );
+  // input_image must carry the actual image data, not a placeholder
+  const imagePart = userTurn.content.find(p => p.type === 'input_image');
+  assert.match(
+    imagePart.image_url,
+    /^data:image\//,
+    'input_image must inline the user upload as a data: URI',
   );
 });
 
-test('payload — pure text-to-image (workspace + no input image): minimal tool, no edit instructions, model=gpt-5.5', async () => {
+test('payload — pure text-to-image (workspace + no input image): minimal tool, no edit instructions, caller model preserved', async () => {
   const captured = await captureCodexRequestPayload({
     workspacePath: '/tmp/some/workspace',
     messages: [
@@ -330,8 +356,40 @@ test('payload — pure text-to-image (workspace + no input image): minimal tool,
     /INLINE IMAGE EDITING/,
     'edit instructions must not appear when no input image',
   );
-  // Model override: still applies — any inline-image-capable request goes 5.5
-  assert.equal(captured.body.model, 'gpt-5.5');
+  // Caller's model is preserved — pure text-to-image still runs on
+  // whatever the user picked. Codex catalog (gpt-5.5/5.4/4.1) is all
+  // image-capable, so this is safe; gpt-5-codex-mini will get the
+  // model's own "I can't draw" response, which is correct UX.
+  assert.equal(captured.body.model, 'gpt-4.1');
+});
+
+test('payload — plain text Q&A (workspace + no image, no draw intent): caller model preserved, no edit instructions', async () => {
+  // Codex review (2026-04-30 round 4) flagged this exact case: a plain
+  // "今天天气如何" type message under Codex+workspace MUST NOT have its
+  // model silently swapped or its instructions polluted with image
+  // edit guidance. The previous force-override broke this contract;
+  // the revert restores it. Pinned so a future "smart" gate can't
+  // re-introduce the silent swap.
+  const captured = await captureCodexRequestPayload({
+    workspacePath: '/tmp/some/workspace',
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: '今天天气怎么样？' }],
+      },
+    ],
+  });
+
+  assert.equal(
+    captured.body.model,
+    'gpt-4.1',
+    'plain text turn must keep the caller-chosen model verbatim',
+  );
+  assert.doesNotMatch(
+    captured.body.instructions,
+    /INLINE IMAGE EDITING/,
+    'plain text turn must not carry image-edit instructions',
+  );
 });
 
 test('payload — no workspace + input image: no image_generation tool, no edit instructions, caller model preserved', async () => {

@@ -1721,22 +1721,17 @@ export async function createCodexResponsesReply({
       ? `${systemPrompt}\n\n${CODEX_INLINE_IMAGE_EDIT_INSTRUCTION}`
       : systemPrompt;
 
-  // DESIGN INTENT (user 2026-04-30): "Codex 出图默认模型写死是 gpt-5.5".
-  // Whenever the request enables inline image generation we override
-  // the caller's model choice to gpt-5.5 — the only Codex model that
-  // both (a) reliably exposes the image_generation tool and (b) can
-  // still drive normal chat reasoning. Cheaper / older Codex SKUs
-  // (e.g. gpt-5-codex-mini) silently refuse the tool, leaving us with
-  // a chat reply that says "I'd love to draw it but I can't" — exactly
-  // the failure mode the user is trying to eliminate.
-  // We DO NOT override outside the inline-image path; memory compaction,
-  // session summarisation and skill-drafting code paths keep their
-  // caller-chosen model so an agent profile that picked, say,
-  // gpt-5-codex-mini for cheap utility work is left alone.
-  const effectiveModel = enableInlineImage ? 'gpt-5.5' : model;
-
+  // The model is whatever the caller chose. An earlier cut force-
+  // overrode it to gpt-5.5 whenever inline image was enabled — Codex
+  // review caught that as too wide (it silently swapped models for
+  // every Codex+workspace chat including pure-text Q&A) and the user
+  // reverted the rule on 2026-04-30. The default Codex catalog
+  // (gpt-5.5, gpt-5.4, gpt-4.1) is image-tool-capable across the
+  // board, so users only see image-generation failures if they
+  // explicitly switch to gpt-5-codex-mini, in which case the model's
+  // own "I can't draw" response is the right signal.
   const payload = {
-    model: effectiveModel,
+    model,
     store: false,
     stream: true,
     instructions: effectiveInstructions,
