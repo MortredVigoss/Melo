@@ -1245,6 +1245,31 @@ select option {
   color: rgba(222, 255, 252, 0.96);
 }
 
+/* Save-status chips beside masked credential inputs (MiniMax key,
+   Whisper key, OpenAI key). Mask UX hides the value once saved, so
+   the user has no visible confirmation that the form's last Save
+   actually landed. These chips give that confirmation explicitly:
+   green = persisted, yellow = unsaved typing in the draft, gray =
+   no key at all. Codex audit 2026-04-29 (user reported "保存不了"
+   when in fact every save was succeeding). */
+.chip.is-success {
+  background: rgba(72, 187, 120, 0.14);
+  border-color: rgba(72, 187, 120, 0.32);
+  color: rgba(220, 255, 232, 0.96);
+}
+
+.chip.is-warning {
+  background: rgba(237, 178, 47, 0.14);
+  border-color: rgba(237, 178, 47, 0.32);
+  color: rgba(255, 244, 214, 0.96);
+}
+
+.chip.is-tiny {
+  padding: 3px 9px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 /* ── Agent selector chip + dropdown ─────────────────────────────────── */
 
 .chip-btn {
@@ -3251,6 +3276,19 @@ select option {
   gap: 8px;
   color: rgba(255, 255, 255, 0.9);
   font-size: 14px;
+}
+
+/* Inline-flex header for labels that pair the field name with a
+   right-aligned status chip (credentials' Saved/Pending pill). */
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.label-row .chip {
+  margin-left: auto;
 }
 
 .meta-grid {

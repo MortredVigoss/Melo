@@ -9190,6 +9190,27 @@ function renderConnectorDetails(selected) {
     // doesn't blow away in-flight typing. Read-only fields (codexAuth,
     // masked* / has* status flags) keep coming from selected.config.
     const draft = effectiveModelSetupDraft();
+    // Visible save-status chip for masked credential inputs
+    // (Codex audit 2026-04-29 — user reported "保存不了" when in
+    // fact every save was succeeding; the password mask hid the
+    // confirmation). The chip's three states:
+    //   - draft has unsaved typing → yellow ● 3 秒后自动保存
+    //   - server already has a saved key → green ✓ 已保存 sk-a...4Fo
+    //   - neither → muted ● 未配置
+    // The state is read from the live modelSetupDraft (non-empty
+    // string == user typed something) and from selected.config flags
+    // (hasMinimaxKey / hasWhisperKey / hasApiKey).
+    const liveDraft = uiState.modelSetupDraft || {};
+    const credentialChip = (fieldName, hasSavedKey, maskedSavedValue) => {
+      const draftValue = typeof liveDraft[fieldName] === 'string' ? liveDraft[fieldName].trim() : '';
+      if (draftValue) {
+        return `<span class="chip is-warning is-tiny">● 待保存（3 秒后自动保存）</span>`;
+      }
+      if (hasSavedKey) {
+        return `<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(maskedSavedValue || '')}</span>`;
+      }
+      return `<span class="chip is-tiny">● 未配置</span>`;
+    };
     const draftAuthMode = draft.authMode || 'codex';
     extra = `
       <form id="connector-config-form" class="config-form" data-form="connector-config">
@@ -9222,7 +9243,7 @@ function renderConnectorDetails(selected) {
             `
             : `
         <label class="label">
-          OpenAI API key
+          <span class="label-row">OpenAI API key ${credentialChip('apiKey', selected.config.hasApiKey, selected.config.maskedApiKey)}</span>
           <input
             class="input"
             name="apiKey"
@@ -9269,7 +9290,7 @@ function renderConnectorDetails(selected) {
           </div>
         </div>
         <label class="label">
-          Whisper API key (optional override)
+          <span class="label-row">Whisper API key (optional override) ${credentialChip('whisperApiKey', selected.config.hasWhisperKey, selected.config.maskedWhisperApiKey)}</span>
           <input
             class="input"
             name="whisperApiKey"
@@ -9302,7 +9323,7 @@ function renderConnectorDetails(selected) {
           </div>
         </div>
         <label class="label">
-          MiniMax API key
+          <span class="label-row">MiniMax API key ${credentialChip('minimaxApiKey', selected.config.hasMinimaxKey, selected.config.maskedMinimaxApiKey)}</span>
           <input
             class="input"
             name="minimaxApiKey"
