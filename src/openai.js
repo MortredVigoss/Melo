@@ -63,11 +63,80 @@ const CODEX_NATIVE_IMAGE_GENERATION_TOOL = Object.freeze({
   type: 'image_generation',
 });
 
+// Edit-mode variant of the image_generation tool. `input_fidelity: 'high'`
+// tells Codex to keep the original image's structure (composition, layout,
+// non-edited regions) when re-rendering. Without it the model defaults to
+// "interpret the prompt loosely" and a request like "change 5.5 to gpt"
+// re-paints the whole screenshot from scratch — useless for the edit case
+// the user actually asked for.
+//
+// We only swap to this variant when the conversation already carries an
+// uploaded image, so we don't pay the fidelity cost on pure text-to-image
+// requests.
+const CODEX_NATIVE_IMAGE_EDIT_TOOL = Object.freeze({
+  type: 'image_generation',
+  input_fidelity: 'high',
+});
+
+// Appended to `instructions` when the conversation has an input_image AND
+// inline image generation is enabled. The default Codex behaviour, when
+// it sees "edit this screenshot" + a context image, is to fall back to
+// "I need a file path" — because nothing tells it the image_generation
+// tool can reference conversation input_image parts directly. This block
+// states the contract explicitly.
+//
+// Phrased aggressively (explicit "DO NOT") because the failure mode is
+// chronic: the model has years of training data telling it "to edit a
+// file you read it first", and a soft hint won't override that prior.
+const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
+  'INLINE IMAGE EDITING:',
+  'The conversation carries one or more uploaded images as input_image parts.',
+  'When the user is asking to edit, modify, change, fix, replace, recolor, retouch,',
+  'translate, annotate, or otherwise update one of those images, you MUST call the',
+  'built-in image_generation tool directly. The tool reads the conversation input_image',
+  'as the edit reference automatically — you do not need to fetch, read, or locate the',
+  'file yourself. DO NOT ask the user for a file path. DO NOT call read_file or any',
+  'filesystem tool. DO NOT reply with text-only instructions ("please save this file',
+  "and tell me the path\"). Just emit a short edit prompt to image_generation and the",
+  'host app will display the result inline. If multiple images are attached, edit the',
+  'most recently uploaded one unless the user specifies otherwise.',
+].join(' ');
+
+// Returns true when any user-role message in the array carries an
+// image_url content part (with a non-empty URL). Used to decide whether
+// to flip the inline image_generation tool into edit mode + append the
+// edit-mode instruction block. Exported for tests so the detection rule
+// can be pinned independently of the createCodexResponsesReply pipeline.
+export function messagesHaveInputImages(messages) {
+  if (!Array.isArray(messages)) return false;
+  for (const message of messages) {
+    if (message?.role !== 'user') continue;
+    const content = message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      if (
+        item?.type === 'image_url' &&
+        typeof item?.image_url?.url === 'string' &&
+        item.image_url.url.trim()
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Exported for tests: lets the unit suite assert payload-tool gating
 // without faking the whole credential / fetch round trip. Returned in
 // the same insertion order createCodexResponsesReply uses (web_search
 // then image_generation) so a snapshot-style test can also assert
 // stable ordering of the `tools` array sent to /codex/responses.
+//
+// `hasInputImage` flips the image_generation tool to edit-mode
+// (input_fidelity: 'high'). Detected upstream by messagesHaveInputImages
+// — any user-role message with an image_url part qualifies. This is the
+// one knob that turns "redraw from scratch" into "edit in place" so the
+// user-visible feature ("change the 5.5 to gpt in this screenshot") works.
 //
 // DESIGN INTENT (user 2026-04-29): inline image is gated **only** by
 // the existence of a writable workspace path. It is NOT additionally
@@ -81,11 +150,16 @@ const CODEX_NATIVE_IMAGE_GENERATION_TOOL = Object.freeze({
 export function buildCodexResponsesTools({
   enableWebSearch = false,
   workspacePath = null,
+  hasInputImage = false,
 } = {}) {
   const tools = [];
   if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
   if (typeof workspacePath === 'string' && workspacePath.startsWith('/')) {
-    tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
+    tools.push(
+      hasInputImage
+        ? CODEX_NATIVE_IMAGE_EDIT_TOOL
+        : CODEX_NATIVE_IMAGE_GENERATION_TOOL,
+    );
   }
   return tools;
 }
@@ -1599,13 +1673,32 @@ async function createCodexResponsesReply({
   // so payload-shape regressions are unit-testable without faking
   // getCodexCredential + fetch. See the design-intent block on that
   // helper for why we DON'T also gate on agent/sub-agent allowedTools.
-  const tools = buildCodexResponsesTools({ enableWebSearch, workspacePath });
+  //
+  // hasInputImage flips the image_generation tool to edit mode (high
+  // input_fidelity) AND appends the explicit edit-mode instruction
+  // block. Without those, the model defaults to "I need a file path"
+  // when the user asks "edit this screenshot" — chronic failure mode
+  // observed 2026-04-30 in both desktop and Telegram bot scenarios.
+  const hasInputImage = messagesHaveInputImages(messages);
+  const tools = buildCodexResponsesTools({
+    enableWebSearch,
+    workspacePath,
+    hasInputImage,
+  });
   const enableInlineImage = tools.some(t => t?.type === 'image_generation');
+  // Append the edit-mode instruction only when both (a) inline image is
+  // enabled (workspace exists) AND (b) there is actually an input image
+  // — otherwise we'd inject anti-file-path guidance into pure text
+  // turns, which has no upside and risks confusing the model.
+  const effectiveInstructions =
+    enableInlineImage && hasInputImage
+      ? `${systemPrompt}\n\n${CODEX_INLINE_IMAGE_EDIT_INSTRUCTION}`
+      : systemPrompt;
   const payload = {
     model,
     store: false,
     stream: true,
-    instructions: systemPrompt,
+    instructions: effectiveInstructions,
     input: await buildCodexResponsesInput(messages, { signal }),
     text: { verbosity: isFastProfile ? 'low' : DEFAULT_CODEX_TEXT_VERBOSITY },
     include: ['reasoning.encrypted_content'],

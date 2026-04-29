@@ -37,6 +37,7 @@ import {
   readCodexSseResponse,
   saveCodexInlineImageItem,
   buildCodexResponsesTools,
+  messagesHaveInputImages,
 } from './openai.js';
 
 // PNG magic so the magic-byte sniffer accepts the buffer as image/png.
@@ -148,11 +149,148 @@ test('buildCodexResponsesTools — non-absolute workspacePath does NOT enable im
   }
 });
 
+test('buildCodexResponsesTools — hasInputImage + workspace flips image_generation to edit mode (input_fidelity: high)', () => {
+  // User-visible feature: "edit this screenshot" only works when the
+  // image_generation tool runs in high-fidelity edit mode. Without it
+  // Codex re-paints from scratch and a request like "change 5.5 to gpt"
+  // returns a totally different image. Pinned 2026-04-30 after the
+  // user reported the desktop+Telegram failure mode.
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: '/tmp/some/workspace',
+    hasInputImage: true,
+  });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].type, 'image_generation');
+  assert.equal(
+    tools[0].input_fidelity,
+    'high',
+    'edit-mode requires input_fidelity: "high" so original details survive',
+  );
+});
+
+test('buildCodexResponsesTools — pure text-to-image (no input image) keeps minimal tool config', () => {
+  // Negative case: when there is NO input image we MUST NOT set
+  // input_fidelity (it costs more and biases tool behaviour). The
+  // round-1 minimal config stays the default for pure generation.
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: '/tmp/some/workspace',
+    hasInputImage: false,
+  });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].type, 'image_generation');
+  assert.equal(
+    tools[0].input_fidelity,
+    undefined,
+    'pure generation must NOT carry input_fidelity',
+  );
+});
+
+test('buildCodexResponsesTools — hasInputImage without workspace stays empty (no inline image possible)', () => {
+  // Edit mode still requires somewhere to write the result. No workspace
+  // → no image_generation tool at all, regardless of input image.
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: null,
+    hasInputImage: true,
+  });
+  assert.deepEqual(tools, []);
+});
+
 test('buildCodexResponsesTools — defaults: zero-arg call yields empty tool list', () => {
   // Anyone refactoring createCodexResponsesReply could call this without
   // args to clear the tool slot — make sure that stays a no-op.
   assert.deepEqual(buildCodexResponsesTools(), []);
   assert.deepEqual(buildCodexResponsesTools({}), []);
+});
+
+// ─── messagesHaveInputImages (edit-mode trigger) ────────────────────────────
+//
+// This is the one knob that flips inline image from "redraw from
+// scratch" to "edit in place". A miss here means the user sees the
+// failure mode reported on 2026-04-30 — model says "I need a file
+// path" because no signal told it to use the conversation's input_image.
+
+test('messagesHaveInputImages — detects an image_url part in a user message', () => {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'change 5.5 to gpt' },
+        {
+          type: 'image_url',
+          image_url: { url: 'data:image/png;base64,iVBORw0KGgo' },
+        },
+      ],
+    },
+  ];
+  assert.equal(messagesHaveInputImages(messages), true);
+});
+
+test('messagesHaveInputImages — detects remote https image url', () => {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'image_url',
+          image_url: { url: 'https://cdn.example.com/screenshot.png' },
+        },
+      ],
+    },
+  ];
+  assert.equal(messagesHaveInputImages(messages), true);
+});
+
+test('messagesHaveInputImages — pure-text user message returns false', () => {
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+    { role: 'user', content: 'plain string content' },
+  ];
+  assert.equal(messagesHaveInputImages(messages), false);
+});
+
+test('messagesHaveInputImages — image attached only to assistant role does NOT count', () => {
+  // Edit mode is about the user uploading a reference for the next
+  // turn. An image embedded in a previous assistant reply is NOT a
+  // user-supplied edit reference. Pin: assistant-only image returns false.
+  const messages = [
+    {
+      role: 'assistant',
+      content: [
+        {
+          type: 'image_url',
+          image_url: { url: 'data:image/png;base64,QQAA' },
+        },
+      ],
+    },
+  ];
+  assert.equal(messagesHaveInputImages(messages), false);
+});
+
+test('messagesHaveInputImages — empty / blank url skipped', () => {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: '' } },
+        { type: 'image_url', image_url: { url: '   ' } },
+        { type: 'image_url', image_url: {} },
+      ],
+    },
+  ];
+  assert.equal(messagesHaveInputImages(messages), false);
+});
+
+test('messagesHaveInputImages — defensive: bad shapes never throw', () => {
+  for (const bad of [null, undefined, 'string', 42, {}, []]) {
+    assert.equal(
+      messagesHaveInputImages(bad),
+      false,
+      `bad input ${JSON.stringify(bad)} should return false, not throw`,
+    );
+  }
 });
 
 // ─── saveCodexInlineImageItem ───────────────────────────────────────────────
