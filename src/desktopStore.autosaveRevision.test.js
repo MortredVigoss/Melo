@@ -399,6 +399,57 @@ test('refresh: discovery hoisted out of lock — concurrent updateModelConfig du
   );
 });
 
+test('refresh: saved model NOT in new catalog must NOT be silently changed (catalog-only contract, real test)', async () => {
+  // Codex C 第十五轮 (2026-04-29): the previous regression test
+  // muted this scenario by deliberately including the saved model
+  // in the fake discovered catalog. The real risk is the opposite:
+  // saveConfig's normalizeConfigShape → resolveModelForAuthMode
+  // silently folds an out-of-catalog saved model to catalog[0]
+  // (or its sibling default). That side-effect on "Read available
+  // models" violates the catalog-only contract. The fix lives in
+  // saveConfig({skipModelNormalize:true}); this test pins it.
+  //
+  // Setup: api-key mode with `gpt-4.1-mini` saved as the model.
+  // gpt-4.1-mini IS in the default api-key catalog so the seed
+  // write doesn't get folded.
+  const baseRev = Date.now() + 14_000_000;
+  await updateModelConfig({
+    authMode: 'api-key',
+    apiKey: 'sk-keep-mini',
+    model: 'gpt-4.1-mini',
+    _autosaveRevision: baseRev,
+  });
+
+  // Refresh with a discovered catalog that does NOT include
+  // gpt-4.1-mini but includes 'gpt-4.1' — exactly the scenario
+  // that previously folded saved.model to 'gpt-4.1'.
+  const fakeDiscoverFn = async () => ['gpt-4.1', 'gpt-4o'];
+  await refreshModelCatalog(
+    {
+      authMode: 'api-key',
+      baseUrl: 'https://saved.example/v1',
+      model: 'gpt-4.1-mini',
+      apiKey: 'sk-keep-mini',
+    },
+    { _discoverFn: fakeDiscoverFn },
+  );
+
+  const cfgPath = join(TEMP_HOME, 'config.json');
+  const persisted = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  assert.equal(
+    persisted.model,
+    'gpt-4.1-mini',
+    'refresh MUST NOT silently fold saved model to catalog[0] when the new catalog doesn\'t include it',
+  );
+  assert.deepEqual(
+    persisted.modelCatalogs?.['api-key'],
+    ['gpt-4.1', 'gpt-4o'],
+    'refresh DID land its catalog under api-key — it just must not touch model',
+  );
+  // Reset back to codex for subsequent tests.
+  await updateModelConfig({ authMode: 'codex', _autosaveRevision: baseRev + 100 });
+});
+
 test('refresh: catalog-only contract also covers apiKey under api-key authMode (Codex 2026-04-28 ⚪ follow-up)', async () => {
   // Companion to "form fields in patch are NEVER persisted": when
   // authMode is api-key (or local), saved apiKey must ALSO be
@@ -406,7 +457,9 @@ test('refresh: catalog-only contract also covers apiKey under api-key authMode (
   // the previous test was mute on apiKey because under codex mode
   // the field is intentionally cleared by updateModelConfig
   // anyway.
-  const baseRev = Date.now() + 12_000_000;
+  // Offset comes after the model-preservation test above which
+  // resets at +14M+100 — pick +15M so this seed isn't stale.
+  const baseRev = Date.now() + 15_000_000;
   await updateModelConfig({
     authMode: 'api-key',
     apiKey: 'sk-saved-real-key',
@@ -446,10 +499,10 @@ test('refresh: form fields in patch are NEVER persisted as config (catalog-only 
   // ordering.
 
   // Seed with known field values via a real updateModelConfig.
-  // Use a larger offset than the apiKey-preservation test above so
+  // Use a larger offset than every preceding test in this file so
   // this seed isn't rejected as stale (each test in this file shares
   // the same temp home and saved autosaveRevision is monotonic).
-  const baseRev = Date.now() + 13_000_000;
+  const baseRev = Date.now() + 16_000_000;
   await updateModelConfig({
     minimaxApiKey: 'sk-baseline-2',
     baseUrl: 'http://saved-baseline.example/v1',

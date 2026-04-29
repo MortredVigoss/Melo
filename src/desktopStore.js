@@ -1940,15 +1940,27 @@ export async function refreshModelCatalog(patch = {}, options = {}) {
   // authMode; everything else (authMode itself, baseUrl, model,
   // apiKey, systemPrompt, autosaveRevision, …) flows through from
   // the freshly-reloaded current state untouched.
+  //
+  // `skipModelNormalize: true` is the missing piece of the
+  // catalog-only contract — without it, normalizeConfigShape's
+  // resolveModelForAuthMode would silently fold the saved model
+  // to catalog[0] whenever the user's saved model isn't in the
+  // freshly-discovered catalog. That side-effect would write to
+  // the model field on a "Read available models" click, which is
+  // exactly what the catalog-only contract forbids. Codex audit
+  // 2026-04-29.
   return withConfigLock(async () => {
     const current = await loadConfig();
-    await saveConfig({
-      ...current,
-      modelCatalogs: {
-        ...normalizeModelCatalogs(current.modelCatalogs || DEFAULT_MODEL_CATALOGS),
-        [authMode]: discovered,
+    await saveConfig(
+      {
+        ...current,
+        modelCatalogs: {
+          ...normalizeModelCatalogs(current.modelCatalogs || DEFAULT_MODEL_CATALOGS),
+          [authMode]: discovered,
+        },
       },
-    });
+      { skipModelNormalize: true },
+    );
     return getDesktopBootstrap();
   });
 }

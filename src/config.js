@@ -180,19 +180,35 @@ function normalizeWebSearchTriggers(raw) {
     .filter(Boolean);
 }
 
-function normalizeConfigShape(config = {}) {
+function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) {
   const authMode = normalizeAuthMode(config.authMode || DEFAULT_CONFIG.authMode);
   const modelCatalogs = normalizeModelCatalogs(config?.modelCatalogs);
+  // `skipModelNormalize` is the catalog-only opt-out for
+  // `refreshModelCatalog`: when refresh writes a new catalog map,
+  // the saved `model` may legitimately not appear in the new
+  // catalog (e.g. user saved `gpt-4.1-mini` under api-key, then
+  // refresh discovered only `['gpt-4.1']`). The default
+  // `resolveModelForAuthMode` would silently fold the saved model
+  // back to the catalog's first entry — that's a write to the
+  // model field as a side effect of "Read available models",
+  // which violates the catalog-only contract. Refresh therefore
+  // passes `skipModelNormalize: true` so the saved model rides
+  // through verbatim, and the user keeps explicit ownership of
+  // the field.  Codex audit 2026-04-29.
+  const incomingModel = String(config.model || '').trim();
+  const resolvedModel = skipModelNormalize
+    ? (incomingModel || resolveDefaultModelForAuthMode(authMode, modelCatalogs))
+    : resolveModelForAuthMode({
+        authMode,
+        requestedModel: config.model || DEFAULT_CONFIG.model,
+        modelCatalogs,
+      });
   return {
     ...DEFAULT_CONFIG,
     ...config,
     authMode,
     baseUrl: String(config.baseUrl || DEFAULT_CONFIG.baseUrl).trim(),
-    model: resolveModelForAuthMode({
-      authMode,
-      requestedModel: config.model || DEFAULT_CONFIG.model,
-      modelCatalogs,
-    }),
+    model: resolvedModel,
     systemPrompt: String(config.systemPrompt || DEFAULT_CONFIG.systemPrompt),
     apiKey: String(config.apiKey || ''),
     whisperApiKey: String(config.whisperApiKey || ''),
@@ -230,11 +246,14 @@ export async function loadConfig() {
   }
 }
 
-export async function saveConfig(nextConfig) {
+export async function saveConfig(nextConfig, options = {}) {
+  // `options.skipModelNormalize` is forwarded to `normalizeConfigShape`
+  // — see that function's comment block for why catalog-only writers
+  // (refreshModelCatalog) need to bypass the model resolution step.
   const configPath = getConfigPath();
   await ensureParentDir(configPath);
 
-  const payload = normalizeConfigShape(nextConfig);
+  const payload = normalizeConfigShape(nextConfig, options);
   await atomicWriteJson(configPath, payload);
   return payload;
 }
