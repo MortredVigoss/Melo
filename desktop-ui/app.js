@@ -20,6 +20,7 @@ import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.j
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
+import { runProductivityMcpsConsentChoice } from './productivityMcpConsent.js';
 
 const app = document.querySelector('#app');
 
@@ -10862,7 +10863,7 @@ function renderProductivityMcpConsentModal() {
         </div>
         <div class="tool-permission-body">
           <div style="margin-bottom: 12px;">
-            Melo 推荐三个零成本本地 MCP server，全部 stdio、无 API key、无远程网络（除首次 npm 安装）：
+            Melo 推荐三个本地 stdio MCP server（无需 API key）：
           </div>
           <ul style="margin: 0 0 12px 16px; padding: 0; line-height: 1.7;">
             <li><code>@antv/mcp-server-chart@0.9.10</code> — 25+ 种图表</li>
@@ -10870,7 +10871,7 @@ function renderProductivityMcpConsentModal() {
             <li><code>mcp-mermaid@0.4.1</code> — 流程图 / 序列图 → PNG</li>
           </ul>
           <div style="font-size: 13px; opacity: 0.78; line-height: 1.6;">
-            版本已锁定，启用即首次通过 npx 下载并执行这些包。<br>
+            版本已锁定 — 启用即信任以上 pinned npm 包在你机器上执行本地代码（包脚本、子进程、文件 / 网络访问 melo 都无法沙箱）。<br>
             启用后每个 agent 仍需在 Customize → Agents 的 chip-row 里逐个授权才能调用，单次调用还会再问一次。
           </div>
         </div>
@@ -12103,23 +12104,14 @@ document.addEventListener('click', async event => {
         // First-boot consent modal. Either choice flips
         // `productivityMcpsConsented` true so the modal never shows
         // again on this MELO_HOME. "Enable all" additionally turns
-        // on the three flags, triggering the same /api/mcp/preset-
-        // toggle path used by Advanced. The bootstrap reload at the
-        // end picks up both the new consent flag and (if enabled)
-        // the new mcpPresets[].enabled values in one render.
-        const enableAll = action === 'productivity-mcps-enable-all';
+        // on the three flags first via /api/mcp/preset-toggle.
+        // The actual sequence lives in
+        // desktop-ui/productivityMcpConsent.js so node:test can
+        // exercise it without a fake DOM.
         try {
-          if (enableAll) {
-            for (const flag of ['enableAntvChartMcp', 'enableMarkdown2PdfMcp', 'enableMermaidMcp']) {
-              await api('/api/mcp/preset-toggle', {
-                method: 'POST',
-                body: { flag, enabled: true },
-              });
-            }
-          }
-          await api('/api/settings/model', {
-            method: 'POST',
-            body: { productivityMcpsConsented: true },
+          await runProductivityMcpsConsentChoice({
+            enableAll: action === 'productivity-mcps-enable-all',
+            apiFn: api,
           });
           uiState.advanced = { ...uiState.advanced, loaded: false };
           await loadBootstrap(uiState.searchQuery, { quiet: true });

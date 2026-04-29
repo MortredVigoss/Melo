@@ -118,6 +118,20 @@ export async function connectMcpServer(serverName, serverConfig) {
     return { connected: false, toolCount: 0, error: 'disabled' };
   }
 
+  if (serverConfig.unpinned) {
+    // Codex 二轮 audit 2026-04-29: a preset whose npm package isn't
+    // pinned to an exact version (browserless today) must NOT spawn —
+    // doing so would let `npx -y @pkg@latest` execute whatever the
+    // maintainer pushed up at the moment of boot, defeating the
+    // version-lock contract the consent modal promises. Same disconnect-
+    // existing-then-skip dance as the `disabled` branch above so an
+    // earlier-running version doesn't linger after the contract changes.
+    if (_clients.has(serverName)) {
+      disconnectMcpServer(serverName);
+    }
+    return { connected: false, toolCount: 0, error: 'unpinned' };
+  }
+
   // Disconnect existing client if re-connecting
   if (_clients.has(serverName)) {
     disconnectMcpServer(serverName);
@@ -241,9 +255,18 @@ const BROWSER_MCP_PRESETS = {
 // these presets reuses the array — pinning lives here so a single
 // place stays the source of truth, with a sweep applied below to
 // rewrite each `<package>@latest` (or unpinned) into `<package>@<lock>`.
+//
+// The `null` sentinel means "no pinned version exists yet"; the
+// preset gets marked `unpinned: true` and `connectMcpServer` refuses
+// to spawn it.  Keeping a placeholder entry here (instead of dropping
+// the preset entirely) means the UI can still surface the toggle in
+// a disabled state with an explanatory message.  Codex 二轮 audit
+// 2026-04-29: an unpinned `@latest` is the supply-chain hole the
+// pinning sweep was meant to close — letting browserless silently
+// stay on `@latest` would defeat that.
 const PINNED_VERSIONS = Object.freeze({
   '@playwright/mcp':         '0.0.71',
-  '@browserless/mcp':        'latest', // package not on npm yet (404) — keep `latest` until it ships
+  '@browserless/mcp':        null,  // package not on npm yet (404) — preset stays disabled
   '@antv/mcp-server-chart':  '0.9.10',
   '@99xio/markdown2pdf-mcp': '2.2.0',
   'mcp-mermaid':             '0.4.1',
@@ -267,8 +290,28 @@ function pinPackageArg(arg) {
   return `${baseName}@${pinned}`;
 }
 
+function presetHasPinnedVersion(preset) {
+  // A preset is "pinned" iff every npm package name in its args is
+  // present in PINNED_VERSIONS with a non-null exact-version
+  // string. browserless deliberately maps to `null` until its npm
+  // package ships — this function returns false for it, the
+  // `unpinned` flag below records that, and `connectMcpServer`
+  // refuses to spawn it.
+  for (const arg of preset.args) {
+    if (typeof arg !== 'string') continue;
+    const atIdx = arg.lastIndexOf('@');
+    const baseName = atIdx > 0 ? arg.slice(0, atIdx) : arg;
+    if (baseName in PINNED_VERSIONS) {
+      const v = PINNED_VERSIONS[baseName];
+      if (typeof v !== 'string' || !v) return false;
+    }
+  }
+  return true;
+}
+
 for (const preset of Object.values(BROWSER_MCP_PRESETS)) {
   preset.args = preset.args.map(pinPackageArg);
+  if (!presetHasPinnedVersion(preset)) preset.unpinned = true;
 }
 
 /**
@@ -314,9 +357,13 @@ const BUILTIN_MCP_PRESETS = {
 
 // Apply the same version-pin sweep as BROWSER_MCP_PRESETS (Codex
 // 2026-04-29). Keeping the pin map (PINNED_VERSIONS, defined above
-// this preset block) as the single source of truth.
+// this preset block) as the single source of truth.  Any preset
+// whose npm package isn't pinned to an exact version gets the
+// `unpinned: true` marker — `connectMcpServer` will refuse to spawn
+// such servers until the version map is updated.
 for (const preset of Object.values(BUILTIN_MCP_PRESETS)) {
   preset.args = preset.args.map(pinPackageArg);
+  if (!presetHasPinnedVersion(preset)) preset.unpinned = true;
 }
 
 /**
