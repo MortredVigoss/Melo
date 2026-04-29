@@ -133,6 +133,50 @@ function normalizeCatalogEntry(values = []) {
   );
 }
 
+// Past `DEFAULT_MODEL_CATALOGS.codex` shapes shipped by older melo
+// builds.  Keys here are the exact arrays a user disk could contain
+// because the user never explicitly customised the catalog —
+// loadConfig() back then would just round-trip the default through
+// disk on first save, leaving an indistinguishable fingerprint.
+//
+// Codex 2026-04-29 audit: when we change the default codex catalog
+// (5.5+5.4+4.1, user feedback "为什么备选都是 4.1"), already-saved
+// disks that match one of these obsolete fingerprints get the
+// in-place upgrade. A genuinely-customised catalog (anything not
+// in this list) is left alone — we can't safely guess intent.
+const KNOWN_OBSOLETE_CODEX_CATALOGS = Object.freeze([
+  Object.freeze(['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini']),  // pre-5.5 default
+  Object.freeze(['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini']),  // 5.5 first cut, before B
+]);
+
+function arraysEqualOrdered(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * If the saved codex catalog exactly matches a previously-shipped
+ * `DEFAULT_MODEL_CATALOGS.codex`, return the current default
+ * (migrating in place). Otherwise return the saved catalog
+ * unchanged — the user customised it, hands off.
+ *
+ * Pure helper.  Exported so tests can pin all three contract
+ * branches (fresh / obsolete-persisted / custom).
+ */
+export function migrateCodexCatalog(savedCatalog) {
+  if (!Array.isArray(savedCatalog)) return savedCatalog;
+  for (const obsolete of KNOWN_OBSOLETE_CODEX_CATALOGS) {
+    if (arraysEqualOrdered(savedCatalog, obsolete)) {
+      return [...DEFAULT_MODEL_CATALOGS.codex];
+    }
+  }
+  return savedCatalog;
+}
+
 export function normalizeAuthMode(value) {
   const candidate = String(value || '')
     .trim()
@@ -141,12 +185,17 @@ export function normalizeAuthMode(value) {
 }
 
 export function normalizeModelCatalogs(modelCatalogs = {}) {
+  // Apply the codex-catalog migration BEFORE the falsy-fallback step.
+  // Order matters: a missing `modelCatalogs.codex` (undefined) drops
+  // straight to DEFAULT_MODEL_CATALOGS.codex, so migration only runs
+  // when the user has a saved-but-obsolete shape on disk.
+  const migratedCodex = migrateCodexCatalog(modelCatalogs.codex);
   return {
     local: normalizeCatalogEntry(modelCatalogs.local || DEFAULT_MODEL_CATALOGS.local),
     'api-key': normalizeCatalogEntry(
       modelCatalogs['api-key'] || DEFAULT_MODEL_CATALOGS['api-key'],
     ),
-    codex: normalizeCatalogEntry(modelCatalogs.codex || DEFAULT_MODEL_CATALOGS.codex),
+    codex: normalizeCatalogEntry(migratedCodex || DEFAULT_MODEL_CATALOGS.codex),
   };
 }
 
