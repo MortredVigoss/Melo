@@ -382,6 +382,11 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         description: preset.description,
         flag: preset.flag,
         enabled: Boolean(config[preset.flag]),
+        // Codex 三轮 audit 2026-04-29: forward `unpinned` so the
+        // Advanced page can disable that toggle and show a hint.
+        // Without this, browserless looks toggle-able but
+        // connectMcpServer would refuse to spawn it ("假启用").
+        unpinned: Boolean(preset.unpinned),
       })),
       // Per-agent authorisation surface — union of built-in presets and
       // any servers the user added under `config.mcpServers`.  Both kinds

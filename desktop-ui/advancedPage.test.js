@@ -131,6 +131,42 @@ test('renderAdvancedPage shows enabled count in header even for empty presets', 
   assert.match(html, /0 of 0 enabled/);
 });
 
+test('renderAdvancedPage marks unpinned preset as unavailable + disables its toggle', () => {
+  // Codex 三轮 audit 2026-04-29: when a preset has no exact-version
+  // pin (browserless today), Advanced must NOT let the user toggle
+  // it on — toggling would write the config flag true, but
+  // connectMcpServer refuses to spawn the server (returns
+  // error:'unpinned'). Show the truth at the UI boundary.
+  const html = renderAdvancedPage(freshState({
+    mcpPresets: [
+      { id: 'browserless', flag: 'enableBrowserlessMcp', enabled: false,
+        unpinned: true,
+        command: 'npx', args: ['-y', '@browserless/mcp@latest'],
+        description: 'Cloud browser' },
+      { id: 'mermaid', flag: 'enableMermaidMcp', enabled: false,
+        unpinned: false,
+        command: 'npx', args: ['-y', 'mcp-mermaid@0.4.1'],
+        description: 'Mermaid renderer' },
+    ],
+  }));
+  // Unpinned row shows the "未锁定版本" status chip and a disabled
+  // button labelled "Unavailable".
+  assert.match(html, /unavailable.*未锁定版本/);
+  assert.match(html, /data-preset-id="browserless"[^>]*disabled/);
+  assert.match(html, /Unavailable/);
+  assert.match(html, /not yet pinned to an exact version/);
+  // Pinned mermaid row stays normal.
+  assert.match(
+    html,
+    /data-preset-id="mermaid"[^>]*data-next-enabled="1"/,
+    'pinned preset keeps the regular toggle button',
+  );
+  // Sanity: no "disabled" attribute on the pinned row's button.
+  const mermaidButtonMatch = html.match(/data-preset-id="mermaid"[^>]*>[\s\S]*?<\/button>/);
+  assert.ok(mermaidButtonMatch);
+  assert.doesNotMatch(mermaidButtonMatch[0], /\sdisabled[\s>]/);
+});
+
 // ─── External MCP rendering ─────────────────────────────────────────────────
 
 test('external-mcp connectors render with chips and Ping button', () => {

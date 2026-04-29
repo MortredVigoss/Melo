@@ -1189,6 +1189,25 @@ const server = createServer(async (request, response) => {
         sendJson(response, 400, { ok: false, error: `Unknown MCP preset flag: ${flag}` });
         return;
       }
+      if (enabled === true) {
+        // Codex 三轮 audit 2026-04-29: refuse to enable a preset whose
+        // npm package isn't pinned to an exact version. Otherwise the
+        // config flips true, the Advanced toggle paints "enabled", but
+        // connectMcpServer refuses to spawn (returns error:'unpinned')
+        // — silent assert state where UI says enabled and runtime says
+        // no. Surface the truth at the API boundary instead.
+        const { getBuiltinMcpPresets } = await import('./mcp/manager.js');
+        const matched = getBuiltinMcpPresets().find(p => p.flag === flag);
+        if (matched?.unpinned) {
+          sendJson(response, 409, {
+            ok: false,
+            error:
+              `Preset "${matched.id}" has no pinned version yet — refuse to enable. ` +
+              `(See PINNED_VERSIONS in src/mcp/manager.js.)`,
+          });
+          return;
+        }
+      }
       const { updateConfig } = await import('./config.js');
       await updateConfig(flag, enabled);
       // Re-bootstrap so the toggled server connects (or its tools get
