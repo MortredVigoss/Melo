@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-29 00:30 — Codex chat 流内联图：image_generation tool 真正打通
+
+- 用户怒转向：上一刀 (`647383f`) 我把"chat 流不带 image_generation tool 是 by design"写进文档；用户实际想让这条路打通——OAuth 用户在普通聊天里说"画一只猫"就能拿到内联图，不用绕到 image builtin 工具+独立 sub-request。
+- 实现 (src/openai.js)：① createCodexResponsesReply 新参 `workspacePath`，仅当传入合法绝对路径时往 payload.tools 加 `{type: 'image_generation'}`，与 conditional 的 web_search 共存于一个 `tool_choice: 'auto'` 块；② readCodexSseResponse 多支 `response.output_item.done` + image_generation_call → callback `onInlineImage` 返回的 markdown 串 (`\n\n![generated image](url)\n\n`) append 到 deltaText 并立即 onDelta 流给 UI；③ `response.completed` 兜底再扫 output[] 补 emit 没在 done 阶段抓到的 image (emittedImageIds Set 防重复)；④ 新 helper `saveCodexInlineImageItem(item, workspacePath)`：base64 → buffer → 1KiB floor → magic-byte sniff → fallback `output_format` → 写 `<workspace>/generated/img-<ts>-<rand>.<ext>` → signWorkspaceFileUrl 拿带 expiry 的签名 URL；⑤ 返回路径修：当本次响应 emit 过 inline image，**优先**返回 deltaText（含注入的 markdown URL），否则 fallback 到 completedText（保留旧行为，不回归 trailing whitespace 类微妙 case）。
+- 关键 trap：如果不优先 deltaText，`extractResponsesText(completedResponse)` 拿到的 canonical 文本不含我们客户端注入的 URL → `extractUrlAttachmentsFromText` 永远看不到 .png URL → attachment 永远 promote 不出来 → 每张图静默丢失。pinned by `streams an image_generation_call.done into deltaText` 测试。
+- 不 import codexImageEngine.js：openai → codexImageEngine → config → openai 是 ESM cycle (config 读 registerWebSearchTriggers)。新 helper 是 openai.js 本地复制版本；codexImageEngine 头部注释也明确"故意不 import openai.js"，反向也维持。
+- 调用方接线：[chatExecutionRunner.invoke-model](src/services/chat/chatExecutionRunner.js#L381) 透传 `workspace?.rootPath`；[subAgent](src/agents/subAgent.js#L148) 同款透传 parent 的 workspacePath。其他 caller（memory compact / sessionMemory / skillDrafting）没传 → 自动 opt-out（这些场景本就不该挂 inline image）。
+- UI 零端侧改动：signed URL 的 basename 带 `.png?` → `urlDetector.detectUrlKind` 判 'image' → `sendChatMessage` 里现成的 `extractUrlAttachmentsFromText` 自动 promote 成 `attachment[kind: 'image']`。Desktop / Telegram / Discord 三端都已经按 attachment 渲染。
+- imageTool 描述同步：把 `647383f` 加的"NOT inline / does NOT inline that call"否定式 framing 全删，恢复到 positive："when the user is on Codex OAuth, image generation is also wired straight into the regular chat stream (see createCodexResponsesReply) — the model can simply ask for an image and Codex will inline it"。imageTool 仍保留 explicit-engine 强制路径 (sdcpp/minimax) + OCR/process/info action。
+- 测试：[src/openai.codex-inline-image.test.js](src/openai.codex-inline-image.test.js) 10 个 case：saveCodex... 写盘 + signed URL 形态、sub-1KiB 拒绝、非图字节拒绝、`data:` URI prefix 兼容；readCodexSseResponse 流程：单图 emit 进 deltaText、纯文字仍走 completedText（旧行为不回归）、output_item.done + completed 同 id 只 emit 一次、image 仅在 completed.output 时仍补 emit、save throw 不崩流、`status≠completed` / 无 `result` 不 emit。
+- 验证：`src/**/*.test.js` **1224/1224 全绿**（前 1213 + 10 新 + 1 个 stripe `data:` prefix 多于原计划）。
+- CLAUDE.md §6 合规：workspacePath 在 chat-runner 入口 capture 好；createCodexResponsesReply 闭包 + readCodexSseResponse 的 onInlineImage 都拿这一份 captured string，不在 microtask 里再 `getMeloHome()`。
+- 提交哈希：`1f17365`。
+- Follow-up：PROGRESS.md 现 200+ 行，过 CLAUDE.md §3 的 160 行阈值，下一刀做 70% 归档压缩（独立 `progress:` commit）。
+
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
 - 上一刀 `3876cdc` push 又被 Codex D 阻断。🔴 finding：[desktopStore.js:1504](src/desktopStore.js) `initMcpServers()` 用 `if (hasServers)` 短路 —— 用户关闭最后一个 MCP（或删最后一个 user-configured）后 hasServers=false，bootstrapMcpServers 根本不调，reconciler 不跑，已 active 子进程 + 已注册 tool 留着。"全局 disable" 又一次失效。
