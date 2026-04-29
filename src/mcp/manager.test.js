@@ -124,25 +124,73 @@ test('buildEffectiveMcpServers passes through user mcpServers as-is when no flag
   assert.deepEqual(eff, userServers);
 });
 
-test('buildEffectiveMcpServers adds antv-chart preset when flag is set', () => {
+test('buildEffectiveMcpServers adds antv-chart preset when flag is set (pinned version)', () => {
+  // Codex 2026-04-29 supply-chain audit: every preset args entry
+  // must end in `<package>@<exact-version>`, never `@latest` or
+  // unpinned. The version sweep at the end of `manager.js`
+  // rewrites the original `'<pkg>'` literal to `'<pkg>@<lock>'`
+  // before the args object is read by anyone.
   const eff = buildEffectiveMcpServers({}, { enableAntvChartMcp: true });
   assert.ok(eff['antv-chart']);
   assert.equal(eff['antv-chart'].command, 'npx');
-  assert.deepEqual(eff['antv-chart'].args, ['-y', '@antv/mcp-server-chart']);
+  assert.deepEqual(eff['antv-chart'].args, ['-y', '@antv/mcp-server-chart@0.9.10']);
 });
 
-test('buildEffectiveMcpServers adds mermaid preset when flag is set', () => {
+test('buildEffectiveMcpServers adds mermaid preset when flag is set (pinned version)', () => {
   const eff = buildEffectiveMcpServers({}, { enableMermaidMcp: true });
   assert.ok(eff.mermaid, 'mermaid preset must be registered when enableMermaidMcp is true');
   assert.equal(eff.mermaid.command, 'npx');
-  assert.deepEqual(eff.mermaid.args, ['-y', 'mcp-mermaid']);
+  assert.deepEqual(eff.mermaid.args, ['-y', 'mcp-mermaid@0.4.1']);
 });
 
-test('buildEffectiveMcpServers adds markdown2pdf preset when flag is set', () => {
+test('buildEffectiveMcpServers adds markdown2pdf preset when flag is set (pinned version)', () => {
   const eff = buildEffectiveMcpServers({}, { enableMarkdown2PdfMcp: true });
   assert.ok(eff.markdown2pdf);
   assert.equal(eff.markdown2pdf.command, 'npx');
-  assert.deepEqual(eff.markdown2pdf.args, ['-y', '@99xio/markdown2pdf-mcp']);
+  assert.deepEqual(eff.markdown2pdf.args, ['-y', '@99xio/markdown2pdf-mcp@2.2.0']);
+});
+
+test('every preset args entry is version-pinned (no bare package name, no @latest churn)', () => {
+  // Belt-and-suspenders: walk every preset and assert the last
+  // arg matches `<package>@<semver-or-tag>` or browserless's
+  // sentinel `@latest`. browserless is the deliberate exception
+  // because its npm package doesn't exist yet (404); when it
+  // ships, the PINNED_VERSIONS map should be updated, and this
+  // test will let `@latest` through one more release. Any other
+  // preset slipping back to `@latest` is a Codex-audit-grade
+  // regression — one click on first-boot consent and the user
+  // would be downloading whatever a hijacked maintainer publishes.
+  for (const preset of getBuiltinMcpPresets()) {
+    const lastArg = preset.args[preset.args.length - 1];
+    assert.match(
+      lastArg,
+      /@(\d+\.\d+\.\d+|latest)$/,
+      `${preset.id} args must end in '<package>@<version>' (got ${lastArg}) — the preset version sweep should rewrite all unpinned npm names`,
+    );
+    if (preset.id === 'browserless') continue; // package not yet on npm — ok to remain @latest
+    assert.doesNotMatch(
+      lastArg,
+      /@latest$/,
+      `${preset.id} must not stay on @latest after the version sweep (got ${lastArg})`,
+    );
+  }
+});
+
+test('DEFAULT_CONFIG keeps every productivity-MCP flag false (no auto-spawn on fresh install)', async () => {
+  // Codex C 二轮 audit (2026-04-29): an out-of-the-box melo install
+  // must NOT spawn arbitrary npm packages without a user click. The
+  // first-boot consent modal is what flips these flags on. This test
+  // pins the contract — flipping a default to true here re-opens the
+  // unsupervised supply-chain attack surface and breaks consent UX.
+  const { DEFAULT_CONFIG } = await import('../config.js');
+  assert.equal(DEFAULT_CONFIG.enableAntvChartMcp, false);
+  assert.equal(DEFAULT_CONFIG.enableMarkdown2PdfMcp, false);
+  assert.equal(DEFAULT_CONFIG.enableMermaidMcp, false);
+  // Browser MCPs follow the same default-off rule.
+  assert.equal(DEFAULT_CONFIG.enablePlaywrightMcp, false);
+  assert.equal(DEFAULT_CONFIG.enableBrowserlessMcp, false);
+  // Consent gate starts false — first-boot modal sets it true.
+  assert.equal(DEFAULT_CONFIG.productivityMcpsConsented, false);
 });
 
 test('preset config is stripped of the preset-only `flag` + `description` fields', () => {

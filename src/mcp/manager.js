@@ -236,6 +236,41 @@ const BROWSER_MCP_PRESETS = {
   },
 };
 
+// Pinned versions for the args above. We DON'T inline `@version` into
+// `args` directly because every callsite that wants to spawn one of
+// these presets reuses the array — pinning lives here so a single
+// place stays the source of truth, with a sweep applied below to
+// rewrite each `<package>@latest` (or unpinned) into `<package>@<lock>`.
+const PINNED_VERSIONS = Object.freeze({
+  '@playwright/mcp':         '0.0.71',
+  '@browserless/mcp':        'latest', // package not on npm yet (404) — keep `latest` until it ships
+  '@antv/mcp-server-chart':  '0.9.10',
+  '@99xio/markdown2pdf-mcp': '2.2.0',
+  'mcp-mermaid':             '0.4.1',
+});
+
+function pinPackageArg(arg) {
+  // npx args look like `<package>@<spec>` or just `<package>`.  We
+  // rewrite to the locked version when we know one. This stops
+  // `npx -y latest` supply-chain churn (Codex audit 2026-04-29):
+  // first-boot consent confirms the user trusts the pinned versions
+  // listed in the modal; later silent upgrades happen on a melo
+  // release boundary, not on whoever publishes a new npm tag.
+  if (typeof arg !== 'string') return arg;
+  const atIdx = arg.lastIndexOf('@');
+  // scoped names (`@scope/name`) have an `@` at index 0 we must
+  // ignore; only treat `@` as a version separator when it's NOT
+  // the very first character.
+  const baseName = atIdx > 0 ? arg.slice(0, atIdx) : arg;
+  const pinned = PINNED_VERSIONS[baseName];
+  if (!pinned) return arg;
+  return `${baseName}@${pinned}`;
+}
+
+for (const preset of Object.values(BROWSER_MCP_PRESETS)) {
+  preset.args = preset.args.map(pinPackageArg);
+}
+
 /**
  * Built-in MCP server presets for productivity tools (charts, document
  * conversion).  Same flag-driven on/off model as `BROWSER_MCP_PRESETS`;
@@ -276,6 +311,13 @@ const BUILTIN_MCP_PRESETS = {
     flag: 'enableMermaidMcp',
   },
 };
+
+// Apply the same version-pin sweep as BROWSER_MCP_PRESETS (Codex
+// 2026-04-29). Keeping the pin map (PINNED_VERSIONS, defined above
+// this preset block) as the single source of truth.
+for (const preset of Object.values(BUILTIN_MCP_PRESETS)) {
+  preset.args = preset.args.map(pinPackageArg);
+}
 
 /**
  * Snapshot of every preset (browser + builtin) for UI surfaces — Advanced

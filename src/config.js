@@ -74,29 +74,39 @@ export const DEFAULT_CONFIG = Object.freeze({
   enablePlaywrightMcp:  false,  // @playwright/mcp (brew install playwright required)
   enableBrowserlessMcp: false,  // @browserless/mcp (cloud browser, needs BROWSERLESS_TOKEN)
   // Productivity MCP flags — chart generation + document conversion.
-  // ALL THREE default to true (user explicit decision 2026-04-29):
-  // these are zero-cost local-stdio servers (no API key, no network
-  // egress except npm install on first boot) that bring tangible
-  // value to chat (charts, mermaid diagrams, markdown→PDF). The
-  // security model still has 4 layers — what changes is just which
-  // layer requires a click:
-  //   1. installed (npx can pull the package)            ← still true
-  //   2. globally enabled (this flag) — server starts    ← now default ON
-  //   3. agent authorised (agent.enabledMcpServerIds)    ← still deny-all per agent
-  //   4. per-call approval (tools/permissions.js modal)  ← still per call
-  // Layer 3 is the real gate: each agent's `enabledMcpServerIds`
-  // defaults to `[]` (see src/state/agentProfiles.js +
-  // desktop-ui/agentDraft.js), so even with the server registered
-  // an agent will not invoke any of these tools until the user
-  // explicitly toggles the per-agent chip-row.
+  // ALL THREE default to false (Codex C 2026-04-29 二轮 audit):
+  // even though the per-agent whitelist gates tool *call*, it does
+  // NOT gate the npm download / install scripts / server startup
+  // code that run as soon as `initMcpServers` spawns these stdio
+  // children. Default-true would mean every fresh install executes
+  // three external npm packages with zero user click, opening a
+  // supply-chain attack surface that no in-melo gate can close.
   //
-  // Browser MCPs (playwright/browserless) stay default-off:
-  // they ship browser automation that can read any URL, including
-  // file:// and intranet endpoints — that's a different blast radius
-  // than chart/markdown rendering and needs an explicit opt-in.
-  enableAntvChartMcp:    true,  // @antv/mcp-server-chart (25+ chart types)
-  enableMarkdown2PdfMcp: true,  // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
-  enableMermaidMcp:      true,  // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
+  // The product still recommends turning these on — that lives in
+  // the first-boot consent modal (see `productivityMcpsConsented`
+  // below) which lists the exact pinned versions and lets the user
+  // either accept all three or skip with one click. Once accepted,
+  // they ride through every later boot without a prompt.
+  //
+  // 4-layer security model (see docs/MCP-SECURITY.md):
+  //   1. installed (npx can pull the package)
+  //   2. globally enabled (this flag) — first-boot consent modal sets it
+  //   3. agent authorised (agent.enabledMcpServerIds, deny-all default)
+  //   4. per-call approval (tools/permissions.js modal)
+  //
+  // Browser MCPs (playwright/browserless) stay default-off too —
+  // they ship browser automation that can read any URL (file://,
+  // intranet) and need a different consent surface than the chart
+  // / markdown ones bundled into the consent modal.
+  enableAntvChartMcp:    false, // @antv/mcp-server-chart (25+ chart types)
+  enableMarkdown2PdfMcp: false, // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
+  enableMermaidMcp:      false, // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
+  // First-boot consent gate for the three productivity MCPs above.
+  // Stays false until the user dismisses the consent modal in either
+  // direction (Enable all / Skip). Once true, the modal is never
+  // shown again on this MELO_HOME. Toggling the underlying flags
+  // afterwards happens through Customize → Advanced as usual.
+  productivityMcpsConsented: false,
   // Extra web-search triggers (additive to built-in heuristics). Each item:
   //   { pattern: "regex source", flags?: "iu", weight: 2 }
   // Example:
