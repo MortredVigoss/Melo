@@ -1329,6 +1329,38 @@ async function createCodexResponsesReply({
     ? resolveFastCodexReasoningEffort(reasoningEffort)
     : reasoningEffort;
   const enableWebSearch = shouldEnableCodexNativeWebSearch(messages);
+  // ── Tool wiring for the chat-side Responses request ──────────────────────
+  // Only `web_search` is wired in here. We deliberately do NOT include the
+  // `image_generation` tool, even though /codex/responses supports it — and
+  // it WOULD be tempting to add since "let Codex inline an image into its
+  // reply" sounds like a free ride. Why we don't:
+  //
+  //   1. The chat stream consumer (`onDelta` and the SSE parser around
+  //      this call) reads `response.output_text.delta` events to render
+  //      streaming text. It doesn't watch `response.output_item.done`
+  //      with `item.type === 'image_generation_call'`, so an inline
+  //      image generation would silently produce a base64 the UI
+  //      never extracts.
+  //   2. melo already has a deliberate path for image generation: the
+  //      `image` builtin tool (src/tools/builtins/imageTool.js), which
+  //      spawns its OWN /codex/responses sub-request (see
+  //      src/images/codexImageEngine.js) and returns a saved file path
+  //      the UI knows how to render. Bypassing that gate would skip
+  //      the per-call permission modal, the per-agent whitelist, AND
+  //      the artifact-saving flow.
+  //   3. Codex audit 2026-04-29: documenting the decision here so a
+  //      future "improvement" doesn't quietly add the tool, ship it
+  //      half-implemented, and then advertise "Codex can inline image
+  //      generation" in a release note that's only true at the API
+  //      level — not at the user-facing one.
+  //
+  // If we ever decide to plumb image_generation through chat, the work
+  // is: (a) include `{type:'image_generation'}` in `tools` here,
+  //     (b) teach the SSE parser to surface
+  //         `response.output_item.done`/`image_generation_call` items
+  //         to the message bubble as an attachment, and
+  //     (c) gate it behind the same permission pipeline as the `image`
+  //         tool. None of (a)-(c) exist today.
   const payload = {
     model,
     store: false,
