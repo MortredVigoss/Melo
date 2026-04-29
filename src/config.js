@@ -21,7 +21,14 @@ function deepFreezeCatalogs(catalogs) {
 export const DEFAULT_MODEL_CATALOGS = deepFreezeCatalogs({
   local: ['llama3.1'],
   'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  codex: ['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini'],
+  // codex catalog uses ChatGPT-internal API names — gpt-5.5 (current
+  // flagship) + gpt-5.4 (previous flagship, still accepted) + gpt-4.1
+  // (cheap fallback). User feedback 2026-04-29: prefer same-generation
+  // 5.x fallback over 4.1-mini for the codex auth mode, since the
+  // ChatGPT app surfaces 5.5/5.4 as siblings in its model picker.
+  // api-key catalog keeps the OpenAI platform API names (4.1 / 4.1-mini)
+  // because gpt-5.4/5.5 don't exist on platform.openai.com.
+  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
 });
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 export const DEFAULT_MODELS_BY_AUTH_MODE = Object.freeze({

@@ -28,7 +28,10 @@ const CODEX_EVENT_TYPES = Object.freeze({
 const DEFAULT_DISCOVERED_MODELS = Object.freeze({
   local: ['llama3.1'],
   'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  codex: ['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini'],
+  // codex auth mode → ChatGPT-internal API names (5.x sibling fallback).
+  // api-key auth mode → OpenAI platform API names (4.x). See
+  // DEFAULT_MODEL_CATALOGS in src/config.js for the rationale.
+  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
 });
 const CODEX_NATIVE_WEB_SEARCH_TOOL = Object.freeze({
   type: 'web_search',
