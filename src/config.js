@@ -74,19 +74,29 @@ export const DEFAULT_CONFIG = Object.freeze({
   enablePlaywrightMcp:  false,  // @playwright/mcp (brew install playwright required)
   enableBrowserlessMcp: false,  // @browserless/mcp (cloud browser, needs BROWSERLESS_TOKEN)
   // Productivity MCP flags — chart generation + document conversion.
-  // BOTH default to false: stdio MCP servers run arbitrary local
-  // processes (file IO, network, exec), so the security model is
-  // four-layer (see docs/MCP-SECURITY.md):
-  //   1. installed (npx can pull the package)
-  //   2. globally enabled (this flag) — server starts at boot
-  //   3. agent authorised (agent.enabledMcpServerIds)
-  //   4. per-call approval (tools/permissions.js modal)
-  // Defaulting either flag to true would skip layers 3+4 the very
-  // first time melo boots; explicit opt-in via Customize → Advanced
-  // is required.
-  enableAntvChartMcp:    false, // @antv/mcp-server-chart (25+ chart types)
-  enableMarkdown2PdfMcp: false, // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
-  enableMermaidMcp:      false, // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
+  // ALL THREE default to true (user explicit decision 2026-04-29):
+  // these are zero-cost local-stdio servers (no API key, no network
+  // egress except npm install on first boot) that bring tangible
+  // value to chat (charts, mermaid diagrams, markdown→PDF). The
+  // security model still has 4 layers — what changes is just which
+  // layer requires a click:
+  //   1. installed (npx can pull the package)            ← still true
+  //   2. globally enabled (this flag) — server starts    ← now default ON
+  //   3. agent authorised (agent.enabledMcpServerIds)    ← still deny-all per agent
+  //   4. per-call approval (tools/permissions.js modal)  ← still per call
+  // Layer 3 is the real gate: each agent's `enabledMcpServerIds`
+  // defaults to `[]` (see src/state/agentProfiles.js +
+  // desktop-ui/agentDraft.js), so even with the server registered
+  // an agent will not invoke any of these tools until the user
+  // explicitly toggles the per-agent chip-row.
+  //
+  // Browser MCPs (playwright/browserless) stay default-off:
+  // they ship browser automation that can read any URL, including
+  // file:// and intranet endpoints — that's a different blast radius
+  // than chart/markdown rendering and needs an explicit opt-in.
+  enableAntvChartMcp:    true,  // @antv/mcp-server-chart (25+ chart types)
+  enableMarkdown2PdfMcp: true,  // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
+  enableMermaidMcp:      true,  // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
   // Extra web-search triggers (additive to built-in heuristics). Each item:
   //   { pattern: "regex source", flags?: "iu", weight: 2 }
   // Example:
