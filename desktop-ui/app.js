@@ -19,7 +19,7 @@ import {
 import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
-import { credentialChipState, CREDENTIAL_FIELDS } from './credentialChip.js';
+import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
 
 const app = document.querySelector('#app');
 
@@ -5339,22 +5339,16 @@ function scheduleConnectorAutosave(form) {
       // request was in flight, the newer response wins.
       if (requestSequence !== connectorAutosaveSequence) return;
       applyBootstrapPreservingDrafts(payload, { background: true });
-      // Post-save: clear the secrets we just shipped from the live
-      // draft so the credential chip flips from "● 待保存" to
-      // "✓ 已保存". The non-secret fields (baseUrl, model,
-      // minimaxGroupId, minimaxVoiceId, …) stay on the draft —
-      // user may still be editing them. Codex C 第十八轮
-      // (2026-04-29): without this, applyBootstrapPreservingDrafts
-      // keeps modelSetupDraft.minimaxApiKey populated and the chip
-      // never flips off "pending", silently breaking the save-
-      // confirmation contract this whole UX was designed for.
-      if (uiState.modelSetupDraft) {
-        for (const f of CREDENTIAL_FIELDS) {
-          if (typeof uiState.modelSetupDraft[f] === 'string' && uiState.modelSetupDraft[f]) {
-            uiState.modelSetupDraft[f] = '';
-          }
-        }
-      }
+      // Post-save secret sweep — but ONLY for fields whose live
+      // draft value still equals what THIS request shipped. If
+      // the user typed a newer key after we POSTed (the in-flight
+      // race Codex C 第十九轮 caught), `draft[f]` will have moved
+      // on and `clearCommittedSecrets` leaves it alone so the
+      // chip stays "● 待保存" until the next autosave commits the
+      // newer value. Without this equality check, the older
+      // response would silently wipe the user's still-typing
+      // newer paste.
+      clearCommittedSecrets(uiState.modelSetupDraft, snapshot.body);
     } catch {
       // Silent — autosave should not interrupt typing. Errors surface
       // when the user clicks Save explicitly.

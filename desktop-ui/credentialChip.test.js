@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { credentialChipState, CREDENTIAL_FIELDS } from './credentialChip.js';
+import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
 
 // ─── covered fields ─────────────────────────────────────────────────────────
 
@@ -128,10 +128,9 @@ test('regression — autosave success clears secrets from draft → chip flips p
 });
 
 test('regression — non-credential draft fields are NOT cleared by the autosave secret-sweep', () => {
-  // The clear-step in `scheduleConnectorAutosave` only touches
-  // CREDENTIAL_FIELDS; non-secret fields like minimaxGroupId,
-  // minimaxVoiceId, baseUrl, model stay on the draft because
-  // the user may still be editing them.
+  // The clear-step only touches CREDENTIAL_FIELDS; non-secret
+  // fields like minimaxGroupId, minimaxVoiceId, baseUrl, model
+  // stay on the draft because the user may still be editing them.
   const draft = {
     minimaxApiKey: 'sk-typed-then-saved',
     minimaxGroupId: 'group-being-edited',
@@ -139,13 +138,105 @@ test('regression — non-credential draft fields are NOT cleared by the autosave
     baseUrl: 'http://still-typing.local',
     model: 'gpt-5.5',
   };
-  // Apply the same sweep app.js performs after a successful autosave.
-  for (const f of CREDENTIAL_FIELDS) {
-    if (typeof draft[f] === 'string' && draft[f]) draft[f] = '';
-  }
+  const submittedBody = { minimaxApiKey: 'sk-typed-then-saved' };
+  clearCommittedSecrets(draft, submittedBody);
   assert.equal(draft.minimaxApiKey, '');
   assert.equal(draft.minimaxGroupId, 'group-being-edited');
   assert.equal(draft.minimaxVoiceId, 'voice-being-edited');
   assert.equal(draft.baseUrl, 'http://still-typing.local');
   assert.equal(draft.model, 'gpt-5.5');
+});
+
+// ─── clearCommittedSecrets — the in-flight race fix ────────────────────────
+
+test('clearCommittedSecrets — clears a field when draft value equals submittedBody', () => {
+  const draft = { minimaxApiKey: 'sk-paste-1' };
+  const submitted = { minimaxApiKey: 'sk-paste-1' };
+  const cleared = clearCommittedSecrets(draft, submitted);
+  assert.deepEqual(cleared, ['minimaxApiKey']);
+  assert.equal(draft.minimaxApiKey, '');
+});
+
+test('clearCommittedSecrets — leaves a field alone when draft has moved past submittedBody (in-flight race)', () => {
+  // Codex C 第十九轮 (2026-04-29) regression: this is THE scenario
+  // that breaks the naïve sweep. Sequence of events:
+  //   1. user pastes KEY-A → 3s timer fires → POST(KEY-A) in-flight
+  //   2. user pastes KEY-B → schedule replaces pending, draft.minimaxApiKey now KEY-B
+  //   3. KEY-A's response lands first (slower than user typing)
+  //   4. without the equality check we'd clear draft.minimaxApiKey
+  //      to '', losing the user's KEY-B that hasn't been saved yet
+  // The fix: only clear when draft still equals submittedBody.
+  const draft = { minimaxApiKey: 'sk-NEWER-KEY-B' };
+  const submitted = { minimaxApiKey: 'sk-OLDER-KEY-A' };
+  const cleared = clearCommittedSecrets(draft, submitted);
+  assert.deepEqual(cleared, [], 'must NOT clear when draft has moved to a newer value');
+  assert.equal(
+    draft.minimaxApiKey,
+    'sk-NEWER-KEY-B',
+    'newer typed key must survive an older in-flight response',
+  );
+});
+
+test('clearCommittedSecrets — multi-field: only matching fields cleared, the rest survive', () => {
+  // user submitted body had three credentials; while in flight,
+  // user re-pasted minimaxApiKey to KEY-B but left apiKey and
+  // whisperApiKey alone. Only the latter two should clear.
+  const draft = {
+    apiKey: 'sk-openai-A',
+    whisperApiKey: 'sk-whisper-A',
+    minimaxApiKey: 'sk-mini-NEWER-B',
+  };
+  const submitted = {
+    apiKey: 'sk-openai-A',
+    whisperApiKey: 'sk-whisper-A',
+    minimaxApiKey: 'sk-mini-OLDER-A',
+  };
+  const cleared = clearCommittedSecrets(draft, submitted);
+  assert.deepEqual(cleared.sort(), ['apiKey', 'whisperApiKey']);
+  assert.equal(draft.apiKey, '');
+  assert.equal(draft.whisperApiKey, '');
+  assert.equal(draft.minimaxApiKey, 'sk-mini-NEWER-B');
+});
+
+test('clearCommittedSecrets — null/undefined inputs are no-ops (defensive)', () => {
+  // App-side may invoke this even if the draft was nulled by an
+  // explicit Save during the autosave's await window. Don't crash.
+  for (const draft of [null, undefined]) {
+    for (const submitted of [null, undefined, {}]) {
+      assert.deepEqual(clearCommittedSecrets(draft, submitted), []);
+    }
+  }
+  assert.deepEqual(clearCommittedSecrets({ apiKey: 'sk-x' }, null), []);
+  assert.deepEqual(clearCommittedSecrets({ apiKey: 'sk-x' }, undefined), []);
+});
+
+test('clearCommittedSecrets — empty submittedBody field never clears (server didn\'t take it)', () => {
+  // If the autosave body had blank `minimaxApiKey` (mask contract)
+  // and the server kept the existing saved value, we must NOT
+  // clear the draft — there's nothing to confirm.
+  const draft = { minimaxApiKey: 'sk-still-typing' };
+  const submitted = { minimaxApiKey: '' };
+  const cleared = clearCommittedSecrets(draft, submitted);
+  assert.deepEqual(cleared, []);
+  assert.equal(draft.minimaxApiKey, 'sk-still-typing');
+});
+
+test('clearCommittedSecrets — does not touch fields outside CREDENTIAL_FIELDS', () => {
+  const draft = {
+    minimaxApiKey: 'sk-secret',
+    minimaxGroupId: '999',
+    baseUrl: 'http://x.local',
+    customField: 'should-not-clear',
+  };
+  const submitted = {
+    minimaxApiKey: 'sk-secret',
+    minimaxGroupId: '999',
+    baseUrl: 'http://x.local',
+    customField: 'should-not-clear',
+  };
+  clearCommittedSecrets(draft, submitted);
+  assert.equal(draft.minimaxApiKey, '');
+  assert.equal(draft.minimaxGroupId, '999');
+  assert.equal(draft.baseUrl, 'http://x.local');
+  assert.equal(draft.customField, 'should-not-clear');
 });

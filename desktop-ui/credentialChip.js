@@ -48,3 +48,46 @@ export function credentialChipState(fieldName, draft, config) {
 }
 
 export const CREDENTIAL_FIELDS = Object.freeze(['apiKey', 'whisperApiKey', 'minimaxApiKey']);
+
+/**
+ * After a successful autosave POST, sweep the credential fields off
+ * the live `modelSetupDraft` so the chip flips from "● 待保存" to
+ * "✓ 已保存". The catch (Codex C 第十九轮 audit 2026-04-29) is the
+ * in-flight race:
+ *
+ *   1. user pastes KEY-A → 3s timer fires → POST(KEY-A) in-flight
+ *   2. user paste KEY-B → new pending replaces KEY-A's, timer reset
+ *   3. KEY-A's response lands first → without this guard we'd
+ *      blindly clear `draft.minimaxApiKey` → KEY-B gone.
+ *
+ * Solution: only clear a credential field when the live draft value
+ * STILL equals what we actually shipped. Anything else means the
+ * user typed something newer in the meantime and is still waiting
+ * for THAT save to complete — keep the field on the draft so the
+ * chip stays yellow ("待保存") and the next autosave timer can
+ * carry the newer value.
+ *
+ * Mutates `draft` in place. Returns the array of field names that
+ * were actually cleared (handy for tests).
+ *
+ * @param {Object|null|undefined} draft       the live `uiState.modelSetupDraft`
+ * @param {Object|null|undefined} submittedBody  the body that was just POSTed
+ * @returns {string[]} fields that were cleared
+ */
+export function clearCommittedSecrets(draft, submittedBody) {
+  if (!draft || typeof draft !== 'object') return [];
+  if (!submittedBody || typeof submittedBody !== 'object') return [];
+  const cleared = [];
+  for (const f of CREDENTIAL_FIELDS) {
+    const live = typeof draft[f] === 'string' ? draft[f] : '';
+    const submitted = typeof submittedBody[f] === 'string' ? submittedBody[f] : '';
+    if (!live || !submitted) continue;
+    // Strict equality: any keystroke after we POSTed will have
+    // changed `live` away from `submitted` and we must NOT clear.
+    if (live === submitted) {
+      draft[f] = '';
+      cleared.push(f);
+    }
+  }
+  return cleared;
+}

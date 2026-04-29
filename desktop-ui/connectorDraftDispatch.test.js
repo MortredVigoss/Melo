@@ -565,16 +565,19 @@ test('wiring — scheduleConnectorAutosave attaches _autosaveRevision to the bod
   );
 });
 
-test('wiring — scheduleConnectorAutosave clears secrets from modelSetupDraft after successful POST', () => {
-  // Codex C 第十八轮 (2026-04-29): without this clear, the
-  // credential save-status chip stays stuck on "● 待保存"
-  // forever — applyBootstrapPreservingDrafts deliberately keeps
-  // modelSetupDraft alive (so the user's other typed-but-unsaved
-  // fields aren't yanked), but that means the just-saved
-  // credentials also linger on the draft and the chip's
-  // pending check never sees an empty string. The clear-loop
-  // sweeps CREDENTIAL_FIELDS only, so non-secret in-flight
-  // edits (baseUrl, model, groupId, voiceId, …) are preserved.
+test('wiring — scheduleConnectorAutosave invokes clearCommittedSecrets with snapshot.body after successful POST', () => {
+  // Codex C 第十九轮 (2026-04-29): the post-save secret sweep
+  // can't be unconditional — that's the in-flight race that
+  // wipes a newer paste when an older response lands. The fix
+  // lives in `clearCommittedSecrets(draft, submittedBody)` —
+  // it only clears a credential field when the live draft
+  // value still equals what THIS request shipped. The wiring
+  // assertion below pins:
+  //   1. clearCommittedSecrets is invoked (not an inline loop)
+  //   2. it runs AFTER applyBootstrapPreservingDrafts
+  //   3. it gets the in-flight `snapshot.body`, not the latest
+  //      pendingConnectorAutosave (which would defeat the race
+  //      check)
   const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
   assert.ok(fnStart >= 0);
   const openBrace = APP_SRC.indexOf('{', fnStart);
@@ -591,20 +594,16 @@ test('wiring — scheduleConnectorAutosave clears secrets from modelSetupDraft a
   assert.ok(closeBrace > openBrace);
   const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
 
-  // The clear must reference CREDENTIAL_FIELDS (so future fields
-  // added to the helper are auto-included) and must run AFTER
-  // applyBootstrapPreservingDrafts (so it doesn't fight with the
-  // bootstrap apply for ordering).
   const applyIdx = fnBody.search(/applyBootstrapPreservingDrafts\(/);
-  const clearIdx = fnBody.search(/CREDENTIAL_FIELDS/);
+  const clearIdx = fnBody.search(/clearCommittedSecrets\(/);
   assert.ok(
     applyIdx >= 0 && clearIdx > applyIdx,
-    'CREDENTIAL_FIELDS clear-loop must run AFTER applyBootstrapPreservingDrafts so the chip flips pending → saved on the next render',
+    'clearCommittedSecrets must run AFTER applyBootstrapPreservingDrafts so the chip flips pending → saved on the next render',
   );
   assert.match(
     fnBody,
-    /uiState\.modelSetupDraft\[f\]\s*=\s*''/,
-    'clear-loop must zero each credential field from modelSetupDraft so the chip recomputes to saved',
+    /clearCommittedSecrets\(\s*uiState\.modelSetupDraft\s*,\s*snapshot\.body\s*\)/,
+    'clearCommittedSecrets must receive the current modelSetupDraft AND the in-flight snapshot.body — using the latest pending body would defeat the in-flight race check',
   );
 });
 
