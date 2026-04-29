@@ -88,6 +88,15 @@ const CODEX_NATIVE_IMAGE_EDIT_TOOL = Object.freeze({
 // Phrased aggressively (explicit "DO NOT") because the failure mode is
 // chronic: the model has years of training data telling it "to edit a
 // file you read it first", and a soft hint won't override that prior.
+//
+// User decision (2026-04-30): the conversation may keep historical
+// images across turns ("第 2 轮 '再改一下头发' 应该用刚才那张图"). The
+// instruction therefore lists explicit edit verbs but ALSO has an
+// equally explicit pass-through clause for non-edit turns ("画一张新图",
+// plain text Q&A) — so a stale historical image doesn't poison
+// unrelated turns. That pass-through depends on the model's own intent
+// classification + `input_fidelity: 'high'`'s well-known behaviour of
+// silently ignoring an unrelated reference image.
 const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   'INLINE IMAGE EDITING:',
   'The conversation carries one or more uploaded images as input_image parts.',
@@ -100,6 +109,15 @@ const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   "and tell me the path\"). Just emit a short edit prompt to image_generation and the",
   'host app will display the result inline. If multiple images are attached, edit the',
   'most recently uploaded one unless the user specifies otherwise.',
+  // Explicit pass-through. Required because the conversation may carry
+  // a stale uploaded image from earlier turns; this block must not push
+  // the model into edit-mode for unrelated follow-ups.
+  'EXCEPTIONS — treat this section as inactive when the user is:',
+  '(a) asking for a brand-new image unrelated to anything they uploaded',
+  '("draw a fresh cat", "画一张新图"); answer with image_generation but do',
+  'NOT base the result on any historical reference image. Or',
+  '(b) asking a plain question that has nothing to do with images;',
+  'just answer normally without invoking image_generation at all.',
 ].join(' ');
 
 // Returns true when any user-role message in the array carries an
@@ -1626,7 +1644,13 @@ async function createCodexCliReply({ model, systemPrompt, messages, signal, onDe
   }
 }
 
-async function createCodexResponsesReply({
+// Exported for tests so payload-level regressions (Codex review 2026-04-30:
+// `tools` / `instructions` / `model` combinations across edit-mode,
+// pure-generate and pure-text cases) can be pinned without standing up
+// the real credential file or the real /codex/responses endpoint. The
+// `_credentialProvider` and `_fetchImpl` parameters are private test
+// seams — production callers pass the function the usual public shape.
+export async function createCodexResponsesReply({
   baseUrl,
   model,
   systemPrompt,
@@ -1636,8 +1660,10 @@ async function createCodexResponsesReply({
   onReasoningDelta,
   providerProfile = 'default',
   workspacePath = null,
-}) {
-  const credential = await getCodexCredential();
+  _credentialProvider = getCodexCredential,
+  _fetchImpl,
+} = {}) {
+  const credential = await _credentialProvider();
   if (!credential.loggedIn) {
     if (credential.expired) {
       throw new Error('Codex login has expired. Reconnect Codex OAuth inside Melo and retry.');
@@ -1694,8 +1720,23 @@ async function createCodexResponsesReply({
     enableInlineImage && hasInputImage
       ? `${systemPrompt}\n\n${CODEX_INLINE_IMAGE_EDIT_INSTRUCTION}`
       : systemPrompt;
+
+  // DESIGN INTENT (user 2026-04-30): "Codex 出图默认模型写死是 gpt-5.5".
+  // Whenever the request enables inline image generation we override
+  // the caller's model choice to gpt-5.5 — the only Codex model that
+  // both (a) reliably exposes the image_generation tool and (b) can
+  // still drive normal chat reasoning. Cheaper / older Codex SKUs
+  // (e.g. gpt-5-codex-mini) silently refuse the tool, leaving us with
+  // a chat reply that says "I'd love to draw it but I can't" — exactly
+  // the failure mode the user is trying to eliminate.
+  // We DO NOT override outside the inline-image path; memory compaction,
+  // session summarisation and skill-drafting code paths keep their
+  // caller-chosen model so an agent profile that picked, say,
+  // gpt-5-codex-mini for cheap utility work is left alone.
+  const effectiveModel = enableInlineImage ? 'gpt-5.5' : model;
+
   const payload = {
-    model,
+    model: effectiveModel,
     store: false,
     stream: true,
     instructions: effectiveInstructions,
@@ -1717,7 +1758,8 @@ async function createCodexResponsesReply({
   };
 
   await ensureFetchKeepAliveConfigured();
-  const response = await fetch(endpoint, {
+  const fetchFn = _fetchImpl || fetch;
+  const response = await fetchFn(endpoint, {
     method: 'POST',
     headers: buildCodexResponsesHeaders({
       accessToken,

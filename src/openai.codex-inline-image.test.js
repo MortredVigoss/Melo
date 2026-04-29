@@ -38,6 +38,7 @@ import {
   saveCodexInlineImageItem,
   buildCodexResponsesTools,
   messagesHaveInputImages,
+  createCodexResponsesReply,
 } from './openai.js';
 
 // PNG magic so the magic-byte sniffer accepts the buffer as image/png.
@@ -203,6 +204,204 @@ test('buildCodexResponsesTools — defaults: zero-arg call yields empty tool lis
   // args to clear the tool slot — make sure that stays a no-op.
   assert.deepEqual(buildCodexResponsesTools(), []);
   assert.deepEqual(buildCodexResponsesTools({}), []);
+});
+
+// ─── createCodexResponsesReply payload integration ──────────────────────────
+//
+// Codex review (2026-04-30 round 4) flagged: helper-only tests can't
+// catch wiring regressions in the real call site (forgetting to pass
+// hasInputImage / model override / instructions append, etc). These
+// tests build a minimal stub credential + fetch and assert the actual
+// body posted to /codex/responses across the three scenarios the user's
+// design contract cares about.
+
+function loggedInCredentialStub() {
+  return {
+    loggedIn: true,
+    expired: false,
+    accessToken: 'oauth-tok-abc',
+    accountId: 'acct-test',
+    email: 'user@example.com',
+    plan: 'plus',
+    source: 'codex',
+    authPath: '/tmp/auth.json',
+    authMode: 'oauth',
+    expiresAt: Date.now() + 3600_000,
+  };
+}
+
+// Builds a minimal Response-shaped object whose body is an empty SSE
+// stream that just terminates with response.completed. createCodex...
+// will read this, see no events, and resolve to either deltaText or
+// the canonical text — we don't care which because the assertions are
+// on the REQUEST body, not the response.
+function emptyCompletedResponse() {
+  const block = `event: response.completed\ndata: ${JSON.stringify({
+    type: 'response.completed',
+    response: {
+      output: [{ type: 'message', content: [{ text: 'ok' }] }],
+    },
+  })}\n\n`;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(block));
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body: stream };
+}
+
+async function captureCodexRequestPayload(callOpts) {
+  let captured = null;
+  await createCodexResponsesReply({
+    baseUrl: 'https://chatgpt.com/backend-api',
+    model: 'gpt-4.1', // intentionally different from gpt-5.5 to test override
+    systemPrompt: 'You are a helpful assistant.',
+    messages: [],
+    ...callOpts,
+    _credentialProvider: async () => loggedInCredentialStub(),
+    _fetchImpl: async (url, init) => {
+      captured = { url, body: JSON.parse(init.body), headers: init.headers };
+      return emptyCompletedResponse();
+    },
+  });
+  return captured;
+}
+
+test('payload — edit-mode (workspace + input image): high fidelity tool, edit instructions, model=gpt-5.5', async () => {
+  const captured = await captureCodexRequestPayload({
+    workspacePath: '/tmp/some/workspace',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '把这张图里的 5.5 改成 gpt' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+        ],
+      },
+    ],
+  });
+
+  assert.ok(captured, 'fetch must have been invoked');
+  // Tool config: image_generation present, in EDIT mode
+  const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
+  assert.ok(imageTool, 'tools must include image_generation');
+  assert.equal(imageTool.input_fidelity, 'high', 'edit mode requires input_fidelity=high');
+  // Instructions: contain the edit-mode block
+  assert.match(
+    captured.body.instructions,
+    /INLINE IMAGE EDITING/,
+    'edit-mode instructions must be appended when input image present',
+  );
+  assert.match(
+    captured.body.instructions,
+    /DO NOT ask the user for a file path/,
+    'anti-file-path clause must be appended',
+  );
+  // Model override: forced to gpt-5.5 even though caller passed gpt-4.1
+  assert.equal(
+    captured.body.model,
+    'gpt-5.5',
+    'enableInlineImage must override model to gpt-5.5 (user decision 2026-04-30)',
+  );
+});
+
+test('payload — pure text-to-image (workspace + no input image): minimal tool, no edit instructions, model=gpt-5.5', async () => {
+  const captured = await captureCodexRequestPayload({
+    workspacePath: '/tmp/some/workspace',
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: '画一只橘猫' }],
+      },
+    ],
+  });
+
+  const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
+  assert.ok(imageTool, 'tools must include image_generation (workspace present)');
+  assert.equal(
+    imageTool.input_fidelity,
+    undefined,
+    'pure generate must NOT carry input_fidelity (cost + behaviour bias)',
+  );
+  // Instructions: edit block must NOT be appended for pure-generate
+  assert.doesNotMatch(
+    captured.body.instructions,
+    /INLINE IMAGE EDITING/,
+    'edit instructions must not appear when no input image',
+  );
+  // Model override: still applies — any inline-image-capable request goes 5.5
+  assert.equal(captured.body.model, 'gpt-5.5');
+});
+
+test('payload — no workspace + input image: no image_generation tool, no edit instructions, caller model preserved', async () => {
+  // Edge case: a chat without a workspace (e.g. background polling
+  // without bound chat workspace) cannot host inline image generation
+  // even if the user uploaded a reference. The whole image path must
+  // disable, AND the caller's model selection must be preserved (we
+  // don't override gpt-5.5 here because we wouldn't actually generate
+  // images anyway).
+  const captured = await captureCodexRequestPayload({
+    workspacePath: null,
+    model: 'gpt-4.1',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看一下这张图' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+        ],
+      },
+    ],
+  });
+
+  const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
+  assert.equal(imageTool, undefined, 'no workspace → no image_generation tool');
+  assert.doesNotMatch(captured.body.instructions, /INLINE IMAGE EDITING/);
+  assert.equal(
+    captured.body.model,
+    'gpt-4.1',
+    'model override only applies when inline image is actually enabled',
+  );
+});
+
+test('payload — historical image (older user turn) + new edit ask: edit-mode still triggers (cross-turn reuse)', async () => {
+  // User design decision A (2026-04-30): allow cross-turn reuse of
+  // earlier uploaded images. So a conversation where the image was
+  // uploaded two turns ago + the latest user turn says "再换个色"
+  // must still get edit-mode tool config + edit instructions —
+  // otherwise the model would re-paint from scratch and the user's
+  // continuation editing UX breaks.
+  const captured = await captureCodexRequestPayload({
+    workspacePath: '/tmp/some/workspace',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '把这个改成 gpt' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+        ],
+      },
+      { role: 'assistant', content: 'Done. Here you go.' },
+      { role: 'user', content: [{ type: 'text', text: '再换个色' }] },
+    ],
+  });
+
+  const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
+  assert.equal(
+    imageTool.input_fidelity,
+    'high',
+    'cross-turn reuse: edit mode must persist as long as the conversation has any uploaded image',
+  );
+  assert.match(captured.body.instructions, /INLINE IMAGE EDITING/);
+  // Instructions must also contain the EXCEPTIONS clause so model can
+  // peel back to text-to-image when user actually says "draw something
+  // new". Asserts the explicit pass-through is wired in.
+  assert.match(
+    captured.body.instructions,
+    /EXCEPTIONS/,
+    'edit-mode instructions must include the explicit exceptions clause',
+  );
 });
 
 // ─── messagesHaveInputImages (edit-mode trigger) ────────────────────────────
