@@ -22,6 +22,10 @@
 - 关键 trap pin：「save 失败 + 非空 completed.output 时仍返回 canonical completedText」回归测试，把 Codex review 描述的 exact failure shape 锁住。
 - 验证：`src/**/*.test.js` **1232/1232 全绿**（前 1224 + 6 buildCodex... + 2 save-failure 回归）。
 - 提交哈希：`e7a7311`。
+- Follow-up（Codex C 第二轮，自己的 patch 引入新对称 bug 被抓）：上一刀修了"save 失败时不能误返回 deltaText"这条，但留了完美对称的反向 bug —— 当 `response.completed` 同时带 canonical `output_text` AND image_generation_call、但 SSE 流没给 text delta（completed-only path）时，deltaText 仅含图 markdown，`emittedImageIds.size > 0` 触发返回 deltaText → **canonical prose 被丢**。Codex review 当场抓出。修：① 重定义 final-text 契约 from "deltaText vs completedText 二选一" 改成 "返回的文本必须含 (a) 全部 canonical prose AND (b) 每条成功注入的 image markdown"；② 状态从 Set 改成 `injectedImageSnippets[]`（保存实际 markdown 字符串，不是 id），是"用户已经在 UI 看到"的 source of truth；③ resolver 显式走四 case：pure-text / streamed-text+image / completed-only+image+canonical / save-failure，每条都有回归测试；④ snippets 自带前后空行，concat 时 URL 仍可被 `extractUrlAttachmentsFromText` 解析。同轮还修了 🟡 mime sniff 太宽：`codexInlineImageMime` 在 magic-byte 失败时信任 `output_format`，等于 200-OK 错误页声明 `output_format='png'` 仍会以 `.png` 落盘 → UI 渲染坏图。删 fallback，magic-byte sniff 唯一权威，sniff 失败直接 return null。理由对齐 imageGen.js 的"trust the bytes, not the server's story"。
+- 三个新测试：`completed-only payload (no text deltas) + canonical text + image keeps both` (锁顺序：prose 先 image 后)、`streamed text + matching completedText 不双引` (单出现断言抓到累计 bug)、`output_format=png|jpeg|jpg|webp|gif` × 4KiB ASCII → 全部返回 null。前一刀的 "non-image bytes rejected" 测试没带 `output_format`，等于 strict 契约从来没真在测过——这条是 Codex review 抓到的核心测试 gap。
+- 验证：`src/**/*.test.js` **1235/1235 全绿**（前 1232 + 3 新 round-2 case）。
+- 提交哈希：`6edfc5e`。
 
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
