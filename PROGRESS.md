@@ -43,6 +43,10 @@
 - 决策：不做 keyword detection 来缩小 override 范围（用户与 Codex 一致认为 keyword gate 太脆——false positive 污染纯文字、false negative 又错过出图）。正解是"respect caller's model"——用户挑了 image-incapable SKU 由模型自身回 "I can't draw" 信号，melo 不替用户做选择。
 - 验证：`src/**/*.test.js` **1249/1249 全绿**（前 1248 + 1 新负向"plain Q&A 不污染"测试 + 加强 edit-mode 端到端断言）。
 - 提交哈希：`bc640c1`。
+- Follow-up（用户实测：Codex 拒绝 `input_fidelity`）：用户在 desktop / Telegram 实际测试时上传图 + 编辑 prompt，Codex 后端报错"input_fidelity 不支持"——chatgpt.com `/codex/responses` 代理后端虽然 accepts OpenAI Responses API schema 大部分字段，但拒绝 `input_fidelity`（standalone codexImageEngine.js 早就学到这个：`input_fidelity` 仅在 caller 显式 opt-in 时才发，从不默认）。修：① 删 `CODEX_NATIVE_IMAGE_EDIT_TOOL` 常量，统一只用 `CODEX_NATIVE_IMAGE_GENERATION_TOOL`（`{ type: 'image_generation' }` bare form）；② `buildCodexResponsesTools` 的 `hasInputImage` 参数改成 `_hasInputImage`（私有命名表"accepted for API symmetry / forward compat 但当前 intentionally ignored"）；③ instructions block 保持不变，仍是 edit-mode 的 load-bearing piece——告诉模型"DO NOT ask for path / call image_generation directly"，gpt-image 服务端默认会把对话里的 input_image 当 reference。代价：edit 保真度可能略降（无 input_fidelity hint 模型可能 free-form 重画），但**至少能跑**。
+- 测试更新：edit-mode payload 测试从断言 `input_fidelity:'high'` 改成断言**bare {type}** 形态（dictionary 恰好 1 个 key，任何 extra 字段都 risk rejection——pin 防回归）；cross-turn reuse 同款；helper 层 verify hasInputImage variant 与无图 case 输出一致（参数当前是 no-op）。
+- 验证：`src/**/*.test.js` **1249/1249 全绿**。
+- 提交哈希：`3ab34b5`。
 
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
