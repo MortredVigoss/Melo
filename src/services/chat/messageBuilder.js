@@ -68,15 +68,27 @@ export const RICH_MEDIA_ATTACHMENT_KINDS = new Set(['image', 'audio', 'video', '
 // the original desktopStore pattern had them; I dropped them by accident
 // during the copy and restored them before committing the tests below.
 //
-// Extended 2026-04-30 with image-edit phrasing (recolor/retouch/crop/
-// "edit the image", CJK 换背景/改成/抠掉/调亮 etc.) so multi-turn edit
-// flows like "再换个色" / "把背景换掉" carry the historical image
-// forward. Edit verbs that are NOT image-specific (bare 'edit'/'change'/
-// 'modify' / 修改 etc.) are intentionally NOT in this pattern — they
-// would false-positive in code/text/document follow-ups. Edit-intent
-// detection is a separate concern handled by IMAGE_EDIT_INTENT_PATTERN
-// + AND'd against hasInputImage by the chat-router fast-path.
-export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot)|recolor(?:ed|ing)?|retouch(?:ed|ing)?|crop(?:ped|ping)?|edit (?:the |this |that )?(?:image|photo|picture|screenshot)|change (?:the )?(?:color|background|font|style)|make it (?:more|less|brighter|darker|smaller|larger))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么|改成|换成|换色|换背景|换一下|换个色|换个背景|换个|去掉|换掉|加上|加个|抠图|抠掉|裁切|抹掉|调亮|调暗|再改|这张图改|那张图改|这张图换|那张图换|这张图加|这张图去掉|让.{0,5}更|让.{0,5}变)/iu;
+// Tightened 2026-04-30 (Codex review round): the previous extension also
+// had bare CJK verbs like 改成/换成/去掉/换掉/加上/再改/让X更. Those
+// were false-positives in code/text follow-ups — a user who saw an image
+// last turn then asked "把这个函数改成 async" would have the image
+// carried forward AND the fast-path fire on it. Carry-forward MUST stay
+// strict: the trigger has to mention an image OBJECT, not just an edit
+// verb. Anything that doesn't unambiguously reference a picture lives
+// in IMAGE_EDIT_INTENT_PATTERN instead, where it's only consulted
+// alongside an explicit image-object check at the fast-path dispatcher.
+//
+// Allowed: explicit image words (图/图片/照片/截图/image/photo/...),
+// image-object-bound English phrasings (recolor / retouch / crop /
+// "edit the photo" / "change the color|background|font|style" /
+// "make it brighter|..."), and CJK image-specific verbs that are
+// rarely used outside image work (换背景 / 换色 / 换底色 / 抠图 /
+// 抠掉 / 裁切 / 抹掉 / 调亮 / 调暗 / 这张图.* / 那张图.*).
+//
+// Removed (they live in IMAGE_EDIT_INTENT_PATTERN now): 改成 / 换成 /
+// 换一下 / 换个色 / 换个背景 / 换个 / 去掉 / 换掉 / 加上 / 加个 /
+// 再改 / 让.{0,5}更 / 让.{0,5}变 — too generic for carry-forward.
+export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot)|recolor(?:ed|ing)?|retouch(?:ed|ing)?|crop(?:ped|ping)?|edit (?:the |this |that )?(?:image|photo|picture|screenshot)|change (?:the )?(?:color|background|font|style)|make it (?:more|less|brighter|darker|smaller|larger))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么|换背景|换色|换底色|抠图|抠掉|裁切|抹掉|调亮|调暗|这张图改|那张图改|这张图换|那张图换|这张图加|这张图去掉)/iu;
 
 // Image-edit intent detector. Used by chatExecutionRunner's fast-path to
 // short-circuit the agent loop when (Codex auth + has input image +

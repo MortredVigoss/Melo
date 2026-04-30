@@ -537,17 +537,20 @@ test('detectImageEditIntent does NOT trigger on pure conversational chatter', ()
 // keep their image context, while still rejecting the negative cases
 // the existing tests already pinned (photography, etc.).
 
-test('IMAGE_FOLLOW_UP_PATTERN matches image-edit phrasings so multi-turn edits carry forward', () => {
+test('IMAGE_FOLLOW_UP_PATTERN matches image-OBJECT-bound phrasings only (carry-forward stays strict)', () => {
+  // Tightened 2026-04-30 (Codex review round 5): bare CJK edit verbs
+  // 改成 / 换成 / 去掉 / 换掉 / 加上 / 再改 must NOT match — they
+  // false-positive on code/text follow-ups ("把这个函数改成 async"
+  // would otherwise carry forward an unrelated image and the
+  // fast-path would fire on it). Only phrasings that unambiguously
+  // mention an IMAGE OBJECT belong here.
   const positives = [
-    '再换个色',
-    '把背景换掉',
-    '去掉这个字',
-    '改成赛博朋克风',
-    '换背景',
-    '抠掉logo',
-    '裁切右半边',
-    '调亮一点',
-    '加个帽子',
+    '换背景',          // image-only verb: 换 + image object
+    '抠掉logo',        // 抠 only used on images
+    '裁切右半边',      // 裁切 only used on images
+    '调亮一点',        // 调亮 a photo
+    '这张图改一下',    // explicit '这张图' object
+    '那张图换个角度',  // explicit '那张图' object
     'edit the photo',
     'edit the screenshot',
     'change the color',
@@ -564,7 +567,7 @@ test('IMAGE_FOLLOW_UP_PATTERN matches image-edit phrasings so multi-turn edits c
   for (const text of positives) {
     assert.ok(
       IMAGE_FOLLOW_UP_PATTERN.test(text),
-      `IMAGE_FOLLOW_UP_PATTERN should now match: "${text}"`,
+      `IMAGE_FOLLOW_UP_PATTERN should match: "${text}"`,
     );
   }
 });
@@ -590,17 +593,32 @@ test('IMAGE_FOLLOW_UP_PATTERN extension does NOT regress prefix/suffix false pos
   }
 });
 
-test('IMAGE_FOLLOW_UP_PATTERN extension does NOT match generic non-image edit asks', () => {
-  // Bare "edit the code" / "modify variables" / 修改代码 etc. should
-  // NOT carry forward an image — those are code/text edits, not image
-  // edits. The extension only adds image-specific phrases (edit the
-  // image / change the color / 抠掉 etc.).
+test('IMAGE_FOLLOW_UP_PATTERN does NOT carry forward on generic non-image edit asks (CJK + EN)', () => {
+  // Codex review round 5 (2026-04-30) caught a regression where an
+  // earlier image got dragged into a CJK code-edit follow-up because
+  // the pattern naively matched bare 改成 / 修改 / 编辑. Pinning the
+  // explicit non-image cases here so a future "let's add 改 back"
+  // refactor can't quietly re-introduce the misroute.
   const negatives = [
+    // English code/text edits — historically pinned, still fail
     'edit the code',
     'edit my essay',
     'change the variable name',
     'modify the function',
     'replace the algorithm',
+    // CJK code/text edits — newly pinned after the round-5 narrowing
+    '把这个函数改成 async',
+    '修改函数',
+    '修改代码',
+    '编辑这段文字',
+    '改一下文档',
+    '去掉这段日志',
+    '加上单元测试',
+    '换一下变量名',
+    '换掉这段逻辑',
+    '再改一下',         // bare "再改" — no object, must NOT carry forward
+    '让它更快',          // bare "让X更" — code/perf, not an image
+    '让代码更简洁',
   ];
   for (const text of negatives) {
     assert.equal(

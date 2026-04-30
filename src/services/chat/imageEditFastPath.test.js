@@ -237,7 +237,14 @@ function codexConfig(overrides = {}) {
   return { authMode: 'codex', ...overrides };
 }
 
-function buildEditMessages({ withImage = true, latestText = '把里面的 5.5 改成 gpt' } = {}) {
+function buildEditMessages({
+  withImage = true,
+  // Default uses an image-object phrase ('这张图') so it passes both
+  // the intent gate AND the image-follow-up gate after the round-5
+  // narrowing. Tests for the *negative* case (intent without image
+  // object → fall through) pass a different `latestText` explicitly.
+  latestText = '把这张图里的 5.5 改成 gpt',
+} = {}) {
   const content = [{ type: 'text', text: latestText }];
   if (withImage) {
     content.push({ type: 'image_url', image_url: { url: dataUriPng(4096) } });
@@ -283,7 +290,7 @@ test('tryImageEditFastPath happy path: returns markdown URL, calls editFn with b
     // editFn was called with the user's edit prompt + the resolved
     // image bytes (sniffed as image/png from the data: URI).
     assert.equal(editCalls.length, 1);
-    assert.equal(editCalls[0].prompt, '把里面的 5.5 改成 gpt');
+    assert.equal(editCalls[0].prompt, '把这张图里的 5.5 改成 gpt');
     assert.equal(editCalls[0].sourceImageMime, 'image/png');
     assert.ok(editCalls[0].sourceImageBytes.length >= 4096);
     assert.match(editCalls[0].outputPath, /\/generated\/img-.+\.png$/);
@@ -429,7 +436,11 @@ test('tryImageEditFastPath: https image URL → fast-path does NOT fire even wit
       {
         role: 'user',
         content: [
-          { type: 'text', text: '把这个改成蓝色' },
+          // Use an image-object phrase so all four prompt-level gates
+          // pass — the SSRF guard sits at resolveImageBytes BELOW the
+          // gates. We're testing that even with a green prompt path
+          // the URL refusal still kicks in.
+          { type: 'text', text: '把这张图换个色' },
           // The exact attacker primitive: a URL that visually looks
           // like a legitimate image but points at an internal host.
           // resolveImageBytes refuses to fetch ANY http(s) URL, so
@@ -448,13 +459,18 @@ test('tryImageEditFastPath: https image URL → fast-path does NOT fire even wit
   assert.equal(editCalled, 0, 'editFn must NOT fire for any http(s) image URL');
 });
 
-test('tryImageEditFastPath: cross-turn reuse — image two turns back, edit ask in latest user turn → fires', async () => {
+test('tryImageEditFastPath: cross-turn reuse — image carried-forward + image-object edit ask → fires', async () => {
   // Validates the user-design decision: historical images should be
   // reusable across turns. The message-builder upstream lifts the
   // historical image into the latest message via carry-forward, so
   // by the time fast-path sees the messages the latest user turn
   // has both image + edit text. Pinned because losing this would
   // regress the multi-turn edit UX user explicitly endorsed.
+  //
+  // After Codex review round 5 narrowing: the latest user text MUST
+  // contain an image-object phrase ('这张图', '换背景', 'recolor', …)
+  // — bare verbs like '改成蓝色' alone now fall through to the agent
+  // loop. Negative case below pins this on purpose.
   const ws = await mkdtemp(join(tmpdir(), 'melo-fastpath-multi-'));
   try {
     let editCalled = 0;
@@ -470,10 +486,11 @@ test('tryImageEditFastPath: cross-turn reuse — image two turns back, edit ask 
         {
           role: 'user',
           content: [
-            { type: 'text', text: '改成蓝色' },
-            // Image preserved on the latest user turn courtesy of
-            // messageBuilder.carry-forward (which itself triggered on
-            // the IMAGE_FOLLOW_UP_PATTERN extension).
+            // Image-object phrase '换背景' satisfies both gates.
+            { type: 'text', text: '换背景' },
+            // Image preserved on the latest user turn via
+            // messageBuilder carry-forward (which still fires on the
+            // image-specific phrase '换背景').
             { type: 'image_url', image_url: { url: dataUriPng(4096) } },
           ],
         },
@@ -483,6 +500,71 @@ test('tryImageEditFastPath: cross-turn reuse — image two turns back, edit ask 
     });
     assert.ok(reply);
     assert.equal(editCalled, 1);
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+  }
+});
+
+test('tryImageEditFastPath: image_url present but latest text is a CODE edit (no image-object phrase) → null', async () => {
+  // The exact misroute Codex review round 5 caught: an earlier image
+  // got carried forward into a CJK code-edit follow-up because the
+  // pre-narrowing IMAGE_FOLLOW_UP_PATTERN matched bare 改成. Without
+  // the post-narrowing dispatcher's second gate (image-object check),
+  // that turn would have triggered the image edit pipeline and
+  // hallucinated a re-paint of an unrelated screenshot.
+  //
+  // After this fix: even when image_url is on the message AND
+  // detectImageEditIntent is true (`改成` matches), the dispatcher
+  // ALSO requires IMAGE_FOLLOW_UP_PATTERN to match the same text.
+  // 'function 改成 async' has no image object → fast-path drops it,
+  // chat 流 picks it up as a normal code-edit ask.
+  const ws = await mkdtemp(join(tmpdir(), 'melo-fastpath-misroute-'));
+  try {
+    let editCalled = 0;
+    const codeEditCases = [
+      '把这个函数改成 async',
+      '修改函数',
+      '修改代码',
+      '编辑这段文字',
+      '改一下文档',
+      '去掉这段日志',
+      '加上单元测试',
+      '换一下变量名',
+      '换掉这段逻辑',
+      '再改一下',
+      '让它更快',
+    ];
+    for (const codeEditText of codeEditCases) {
+      const reply = await tryImageEditFastPath({
+        config: codexConfig(),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: codeEditText },
+              // Image is in the message (e.g. carry-forward from an
+              // earlier turn) — but the latest text is a code edit.
+              { type: 'image_url', image_url: { url: dataUriPng(4096) } },
+            ],
+          },
+        ],
+        workspace: { rootPath: ws },
+        editFn: async () => {
+          editCalled += 1;
+          return {};
+        },
+      });
+      assert.equal(
+        reply,
+        null,
+        `code-edit text "${codeEditText}" must NOT trigger image fast-path even with carry-forward image present`,
+      );
+    }
+    assert.equal(
+      editCalled,
+      0,
+      'editFn must NOT fire for any of the code-edit phrasings, even with image_url in message',
+    );
   } finally {
     await rm(ws, { recursive: true, force: true });
   }

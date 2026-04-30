@@ -48,7 +48,7 @@ import { join } from 'node:path';
 import { editAndSaveImageViaCodex } from '../../images/codexImageEngine.js';
 import { detectImageMimeFromBytes } from '../../images/imageGen.js';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
-import { detectImageEditIntent } from './messageBuilder.js';
+import { detectImageEditIntent, IMAGE_FOLLOW_UP_PATTERN } from './messageBuilder.js';
 
 // 1KiB floor — same as imageGen / codexImageEngine. Anything smaller is
 // almost certainly a partial / placeholder, not a real image.
@@ -242,6 +242,30 @@ export async function tryImageEditFastPath({
   const userText = findLatestUserText(messages);
   if (!userText) return null;
   if (!detectImageEditIntent(userText)) return null;
+
+  // Gate 5: latest user text must ALSO reference an image OBJECT.
+  // Codex review round 5 (2026-04-30) flagged a misroute case: a
+  // chat with an earlier image + a later "把这个函数改成 async"
+  // had the image carried forward (the old IMAGE_FOLLOW_UP_PATTERN
+  // matched bare 改成) AND detectImageEditIntent matched 改成 →
+  // fast-path fired on a pure code-edit turn.
+  //
+  // After narrowing IMAGE_FOLLOW_UP_PATTERN to image-OBJECT phrases
+  // only, that pattern is now exactly the right "is the user talking
+  // about an image?" check we need on top of the edit-intent check.
+  // The chain is now:
+  //   • IMAGE_EDIT_INTENT_PATTERN — "user wants to edit something"
+  //     (permissive, includes generic verbs)
+  //   • IMAGE_FOLLOW_UP_PATTERN — "user is talking about an image"
+  //     (strict, image-object phrases only)
+  //   • Both must match → it's an image edit, not a code/text edit
+  //     that happens to share verbs.
+  // Examples:
+  //   "把这张图改成 gpt"  edit ✓ + image ✓ → fire
+  //   "把这个函数改成 async"  edit ✓ + image ✗ → fall through
+  //   "换背景"  edit ✓ + image ✓ → fire
+  //   "修改函数"  edit ✓ + image ✗ → fall through
+  if (!IMAGE_FOLLOW_UP_PATTERN.test(userText)) return null;
 
   // ── All gates passed. Resolve bytes and run the edit ────────────────
   // resolveImageBytes intentionally only accepts data: URIs — see the
