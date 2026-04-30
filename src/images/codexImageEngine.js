@@ -525,6 +525,474 @@ export async function generateAndSaveImageViaCodex({ outputPath, ...rest }) {
   };
 }
 
+// ─── Image edit pipeline (two-stage: vision analysis → image_generation) ─────
+//
+// Why a dedicated pipeline rather than reusing generateImageViaCodex:
+//
+// User audit 2026-04-30 noticed that "edit this screenshot" routed
+// through chat 流 + native image_generation tool gave noticeably worse
+// results than ChatGPT's image editor. The diagnosis identified two
+// causes that we CAN address (a third — Codex's rejection of
+// `input_fidelity` — we already worked around in the round-3 revert):
+//
+//   1. Chat-流 system prompt is enormous (memory + project + retrieval +
+//      tool routing + viz spec + citations + …). Image-edit instructions
+//      compete with all of that and lose: model defaults to "I need a
+//      file path" or re-paints loosely.
+//
+//   2. The model has no explicit "preserve list". gpt-image will infer
+//      what to keep from the input_image, but there's no guarantee it
+//      decides "the camera angle stays" or "don't change the unedited
+//      logo" — those need to be SAID.
+//
+// The fix:
+//
+//   Stage 1 — vision analysis. Send the image + the user's edit
+//   request to Codex with NO image_generation tool, just a structured
+//   "describe the image in 4 short lines" instruction. Read back the
+//   resulting text as a frozen reference for stage 2. Best-effort:
+//   stage 1 failure does NOT block stage 2.
+//
+//   Stage 2 — image edit. Send the SAME image + a tightly-scoped edit
+//   prompt that quotes stage 1's reference + the user's request +
+//   the explicit preserve-list. Tools = `[{ type: 'image_generation' }]`,
+//   tool_choice = 'auto'. The model has the spec it just produced, so
+//   it can self-check what to keep.
+//
+// Both stages share session_id (helps with prompt caching on Codex
+// side) but are otherwise independent HTTP calls.
+
+const VISION_ANALYSIS_INSTRUCTIONS = [
+  'You are analyzing an uploaded image to extract a short structured reference',
+  'an image-editor will use on the next call. Output ONLY these four lines',
+  '(one short phrase per line, do not add any other text):',
+  'Subject: <main subject(s) plus identity-defining traits>',
+  'Composition: <camera angle, framing, scale, layout>',
+  'Style: <visual style — photo, illustration, screenshot, sketch, painting, etc.>',
+  'Preserve: <comma-separated list of details that must remain unchanged unless explicitly edited>',
+  'Be concise. Describe only what is visible in the uploaded image. Do NOT invent details.',
+].join(' ');
+
+const EDIT_IMAGE_INSTRUCTIONS = [
+  'You are an image editor inside Melo.',
+  'Call the image_generation tool exactly once to produce the edited image.',
+  'Use the uploaded image as the primary reference.',
+  'Preserve composition, subject identity, face, logo, text layout, colors, camera angle, and proportions.',
+  'Only change what the user explicitly asks for. Do not redraw unrelated parts.',
+  'Do NOT respond with text descriptions, file paths, code, SVG, HTML, or markdown — emit the tool call.',
+  'Do NOT ask for a file path or call any filesystem tool — the image is already attached as input_image.',
+].join(' ');
+
+// Build the stage-2 prompt the model sees as input_text. The user's
+// edit request is the ONLY free-form section; everything else is a
+// fixed scaffold so the prompt budget can't drift across calls.
+//
+// Exported for tests: lets the unit suite assert the exact text shape
+// that hits the model, including the preserve-list scaffold and the
+// reference-from-stage-1 inclusion.
+export function buildEditPromptText({ userPrompt = '', editSpec = '' } = {}) {
+  const lines = [
+    'Edit the uploaded image.',
+    'Preserve composition, subject identity, face, logo, text layout, colors, camera angle, and proportions.',
+  ];
+  const trimmedSpec = String(editSpec || '').trim();
+  if (trimmedSpec) {
+    lines.push('', 'Reference (from analysis):', trimmedSpec);
+  }
+  lines.push('', `Only change: ${String(userPrompt || '').trim()}`);
+  lines.push('Do not redraw unrelated parts.');
+  lines.push('Use the uploaded image as the primary reference.');
+  return lines.join('\n');
+}
+
+// Internal: send a /codex/responses request that expects pure text
+// output (no image_generation tool). Used by stage-1 vision analysis.
+// Returns the canonical text from response.completed when present,
+// else the concatenated output_text deltas. Throws on HTTP error /
+// stream failure / explicit response.failed event.
+async function runCodexResponsesTextRequest({
+  instructions,
+  input,
+  model,
+  credential,
+  sessionId,
+  fetchImpl,
+  signal,
+  timeoutMs,
+  idleTimeoutMs,
+  tracePrefix,
+}) {
+  const body = {
+    model,
+    stream: true,
+    store: false,
+    instructions,
+    input,
+  };
+
+  const fetchSignal = composeSignals(signal, AbortSignal.timeout(timeoutMs));
+  const response = await fetchImpl(CODEX_RESPONSES_ENDPOINT, {
+    method: 'POST',
+    headers: buildHeaders({
+      accessToken: credential.accessToken,
+      accountId: credential.accountId,
+      sessionId,
+    }),
+    body: JSON.stringify(body),
+    signal: fetchSignal,
+  });
+
+  if (!response.ok) {
+    const raw = await safeReadText(response);
+    await debugLog(
+      `${tracePrefix} ✗ HTTP ${response.status}: ${(raw || '').slice(0, 400).replace(/\s+/g, ' ')}`,
+    );
+    let message = `Codex text request HTTP ${response.status}`;
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed?.error?.message) message = `Codex: ${parsed.error.message}`;
+      else if (raw) message += `: ${raw.slice(0, 200)}`;
+    } catch {
+      if (raw) message += `: ${raw.slice(0, 200)}`;
+    }
+    const err = new Error(message);
+    err.code =
+      response.status === 401 || response.status === 403 ? 'NOT_CONFIGURED' : 'GENERATE_FAILED';
+    throw err;
+  }
+
+  let deltaText = '';
+  let canonicalText = '';
+
+  await consumeSseStream(
+    response,
+    async event => {
+      if (!event) return null;
+      if (
+        event.type === 'response.output_text.delta' &&
+        typeof event.delta === 'string'
+      ) {
+        deltaText += event.delta;
+        return null;
+      }
+      if (event.type === 'response.completed' || event.type === 'response.done') {
+        const output = event.response?.output;
+        if (Array.isArray(output)) {
+          for (const item of output) {
+            if (item?.type !== 'message' || !Array.isArray(item.content)) continue;
+            for (const part of item.content) {
+              if (typeof part?.text === 'string' && part.text.trim()) {
+                canonicalText = part.text.trim();
+                break;
+              } else if (
+                part?.text &&
+                typeof part.text === 'object' &&
+                typeof part.text.value === 'string' &&
+                part.text.value.trim()
+              ) {
+                canonicalText = part.text.value.trim();
+                break;
+              }
+            }
+            if (canonicalText) break;
+          }
+        }
+        return { done: true };
+      }
+      if (event.type === 'error' || event.type === 'response.failed') {
+        const msg = eventErrorMessage(event);
+        throw new Error(msg);
+      }
+      return null;
+    },
+    { idleTimeoutMs },
+  );
+
+  return canonicalText || deltaText.trim();
+}
+
+// Internal: send a /codex/responses request with the bare
+// image_generation tool, capture the resulting image bytes. Mirrors
+// the SSE walk inside generateImageViaCodex; copy-pasted (CLAUDE.md
+// §5 — refactor to a shared helper later, in a separate commit, with
+// dedicated tests).
+async function runCodexResponsesImageRequest({
+  instructions,
+  input,
+  model,
+  credential,
+  sessionId,
+  fetchImpl,
+  signal,
+  timeoutMs,
+  idleTimeoutMs,
+  tracePrefix,
+}) {
+  const body = {
+    model,
+    stream: true,
+    store: false,
+    instructions,
+    input,
+    tools: [{ type: 'image_generation' }],
+    tool_choice: 'auto',
+  };
+
+  const fetchSignal = composeSignals(signal, AbortSignal.timeout(timeoutMs));
+  const requestStart = Date.now();
+  await debugLog(`${tracePrefix} → POST ${CODEX_RESPONSES_ENDPOINT} (image stage)`);
+
+  const response = await fetchImpl(CODEX_RESPONSES_ENDPOINT, {
+    method: 'POST',
+    headers: buildHeaders({
+      accessToken: credential.accessToken,
+      accountId: credential.accountId,
+      sessionId,
+    }),
+    body: JSON.stringify(body),
+    signal: fetchSignal,
+  }).catch(async err => {
+    await debugLog(
+      `${tracePrefix} ✗ fetch threw at ${Date.now() - requestStart}ms: ${err?.name}: ${err?.message}`,
+    );
+    throw err;
+  });
+
+  await debugLog(
+    `${tracePrefix} ← HTTP ${response.status} ${response.statusText || ''} in ${Date.now() - requestStart}ms`,
+  );
+
+  if (!response.ok) {
+    const raw = await safeReadText(response);
+    await debugLog(`${tracePrefix} ✗ error body: ${(raw || '').slice(0, 800).replace(/\s+/g, ' ')}`);
+    let message = `Codex image edit HTTP ${response.status}`;
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed?.error?.message) message = `Codex: ${parsed.error.message}`;
+      else if (raw) message += `: ${raw.slice(0, 200)}`;
+    } catch {
+      if (raw) message += `: ${raw.slice(0, 200)}`;
+    }
+    const err = new Error(message);
+    err.code =
+      response.status === 401 || response.status === 403 ? 'NOT_CONFIGURED' : 'GENERATE_FAILED';
+    throw err;
+  }
+
+  let completedResponse = null;
+  let eventCount = 0;
+
+  const imageItem = await consumeSseStream(
+    response,
+    async event => {
+      if (!event) return null;
+      eventCount += 1;
+
+      if (
+        event.type === 'response.output_item.done' &&
+        event.item?.type === 'image_generation_call' &&
+        typeof event.item.result === 'string' &&
+        event.item.result
+      ) {
+        await debugLog(
+          `${tracePrefix} ✓ image result (output_item.done) after ${Date.now() - requestStart}ms, ${eventCount} events`,
+        );
+        return event.item;
+      }
+
+      if (event.type === 'response.completed' || event.type === 'response.done') {
+        completedResponse = event.response || completedResponse;
+        const fromOutput = findImageResultInOutput(completedResponse?.output);
+        if (fromOutput) {
+          await debugLog(
+            `${tracePrefix} ✓ image result (response.completed) after ${Date.now() - requestStart}ms, ${eventCount} events`,
+          );
+          return fromOutput;
+        }
+      }
+
+      if (event.type === 'error' || event.type === 'response.failed') {
+        const msg = eventErrorMessage(event);
+        await debugLog(`${tracePrefix} ✗ stream error after ${Date.now() - requestStart}ms: ${msg}`);
+        const err = new Error(msg);
+        err.code = 'GENERATE_FAILED';
+        throw err;
+      }
+
+      return null;
+    },
+    { idleTimeoutMs },
+  );
+
+  if (!imageItem) {
+    const fromStash = findImageResultInOutput(completedResponse?.output);
+    if (!fromStash) {
+      throw new Error('Codex image edit completed without an image_generation_call result.');
+    }
+    return bytesFromItem(fromStash, model);
+  }
+
+  return bytesFromItem(imageItem, model);
+}
+
+/**
+ * Two-stage edit: vision analysis (stage 1) → image_generation (stage 2).
+ * The two stages run as independent /codex/responses POSTs against the
+ * same session_id. Stage-1 failure is non-fatal — we fall through to
+ * stage 2 with an empty editSpec, accepting reduced fidelity rather
+ * than blocking the whole edit.
+ *
+ * @param {object} opts
+ * @param {string} opts.prompt              user's edit request
+ * @param {Buffer} opts.sourceImageBytes    source image bytes
+ * @param {string} opts.sourceImageMime     'image/png' | 'image/jpeg' | …
+ * @param {string} [opts.model]             default 'gpt-5.5'
+ * @param {AbortSignal} [opts.signal]
+ * @param {number} [opts.timeoutMs]         per-stage timeout (default 120s)
+ * @param {boolean} [opts.skipVisionAnalysis] skip stage 1 entirely
+ * @param {Function} [opts.fetchImpl]       test-only fetch override
+ * @param {Function} [opts.credentialProvider] test-only credential stub
+ * @returns {Promise<{ buffer: Buffer, mimeType: string, model: string, editSpec: string|null }>}
+ */
+export async function editImageViaCodex({
+  prompt,
+  sourceImageBytes,
+  sourceImageMime,
+  model = DEFAULT_MODEL,
+  signal,
+  timeoutMs = GEN_TIMEOUT_MS,
+  skipVisionAnalysis = false,
+  fetchImpl = fetch,
+  credentialProvider = getCodexCredential,
+} = {}) {
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    throw new Error('editImageViaCodex: prompt is required');
+  }
+  if (!Buffer.isBuffer(sourceImageBytes) || sourceImageBytes.length < IMAGE_MIN_BYTES) {
+    throw new Error(
+      `editImageViaCodex: sourceImageBytes must be a Buffer of at least ${IMAGE_MIN_BYTES} bytes`,
+    );
+  }
+  if (!sourceImageMime || typeof sourceImageMime !== 'string') {
+    throw new Error('editImageViaCodex: sourceImageMime is required');
+  }
+
+  const credential = await credentialProvider();
+  if (!credential?.loggedIn) {
+    const err = new Error(
+      credential?.expired
+        ? 'Codex login has expired. Reconnect Codex OAuth inside Melo and retry.'
+        : 'Codex login is not available. Connect Codex OAuth inside Melo and retry.',
+    );
+    err.code = 'NOT_CONFIGURED';
+    throw err;
+  }
+  if (!credential.accountId) {
+    const err = new Error('Codex login is missing the ChatGPT account id.');
+    err.code = 'NOT_CONFIGURED';
+    throw err;
+  }
+
+  const sessionId =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : randomUUID();
+  const tracePrefix = `[codex-edit sid=${sessionId.slice(0, 8)} model=${model}]`;
+  const sourceDataUri = `data:${sourceImageMime};base64,${sourceImageBytes.toString('base64')}`;
+
+  await debugLog(
+    `${tracePrefix} → start. prompt="${prompt.slice(0, 80).replace(/\n/g, ' ')}" image=${sourceImageBytes.length} bytes mime=${sourceImageMime} skipVision=${skipVisionAnalysis}`,
+  );
+
+  // ── Stage 1: vision analysis (best-effort) ───────────────────────────────
+  let editSpec = '';
+  if (!skipVisionAnalysis) {
+    try {
+      const visionInput = [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: `The user is about to ask you to edit this image. Their edit request is: "${prompt
+                .slice(0, 300)
+                .replace(/\n/g, ' ')}". Analyze the image first.`,
+            },
+            { type: 'input_image', image_url: sourceDataUri },
+          ],
+        },
+      ];
+      editSpec = await runCodexResponsesTextRequest({
+        instructions: VISION_ANALYSIS_INSTRUCTIONS,
+        input: visionInput,
+        model,
+        credential,
+        sessionId,
+        fetchImpl,
+        signal,
+        timeoutMs,
+        idleTimeoutMs: IDLE_TIMEOUT_MS,
+        tracePrefix: `${tracePrefix} stage1`,
+      });
+      await debugLog(
+        `${tracePrefix} stage1 spec (${editSpec.length} chars): ${editSpec.slice(0, 200).replace(/\n/g, ' | ')}`,
+      );
+    } catch (err) {
+      // Best-effort: vision failure must not block stage 2.
+      await debugLog(`${tracePrefix} stage1 failed (continuing without spec): ${err?.message}`);
+      editSpec = '';
+    }
+  }
+
+  // ── Stage 2: image edit ──────────────────────────────────────────────────
+  const editPromptText = buildEditPromptText({ userPrompt: prompt, editSpec });
+  const editInput = [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text: editPromptText.slice(0, 4000) },
+        { type: 'input_image', image_url: sourceDataUri },
+      ],
+    },
+  ];
+
+  const result = await runCodexResponsesImageRequest({
+    instructions: EDIT_IMAGE_INSTRUCTIONS,
+    input: editInput,
+    model,
+    credential,
+    sessionId,
+    fetchImpl,
+    signal,
+    timeoutMs,
+    idleTimeoutMs: IDLE_TIMEOUT_MS,
+    tracePrefix: `${tracePrefix} stage2`,
+  });
+
+  await debugLog(
+    `${tracePrefix} ✓ done. result bytes=${result.buffer.length} mime=${result.mimeType}`,
+  );
+
+  return { ...result, editSpec: editSpec || null };
+}
+
+/**
+ * Convenience: edit → save to disk. Mirrors generateAndSaveImageViaCodex.
+ */
+export async function editAndSaveImageViaCodex({ outputPath, ...rest }) {
+  if (!outputPath) throw new Error('editAndSaveImageViaCodex: outputPath required');
+  const result = await editImageViaCodex(rest);
+  await writeFile(outputPath, result.buffer);
+  return {
+    path: outputPath,
+    bytes: result.buffer.length,
+    mimeType: result.mimeType,
+    model: result.model,
+    editSpec: result.editSpec,
+    sourceUrl: null,
+  };
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function safeReadText(response) {
