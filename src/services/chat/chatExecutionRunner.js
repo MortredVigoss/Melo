@@ -33,6 +33,7 @@ import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from './matcherContext.js';
 import { buildModelMessagesFromChat } from './messageBuilder.js';
+import { tryImageEditFastPath } from './imageEditFastPath.js';
 import { formatModelMessageForVisionDebug } from './visionDebug.js';
 import { buildDynamicContext } from './dynamicContext.js';
 import {
@@ -366,6 +367,27 @@ export async function runChatAgentExecutionGraph({
           for (const [index, message] of graphState.modelMessages.entries()) {
             process.stdout.write(`${formatModelMessageForVisionDebug(message, index)}\n`);
           }
+        }
+
+        // ── Image-edit fast path ──────────────────────────────────────────────
+        // Short-circuit the agent ReAct loop when the user has uploaded an
+        // image AND clearly asked to edit it (Codex auth + workspace required).
+        // The dedicated two-stage pipeline (vision analysis → image edit) runs
+        // OUTSIDE the agent system prompt so the model isn't drowning in
+        // memory/project/retrieval context while trying to edit an image.
+        // See imageEditFastPath.js for the gating + pipeline. Failures /
+        // gate misses return null; we fall through to the normal loop and
+        // the agent decides what to do (apologise, re-route, etc.).
+        const fastPathReply = await tryImageEditFastPath({
+          config,
+          messages: graphState.modelMessages,
+          workspace,
+          signal,
+          onDelta,
+          sseEmitter,
+        });
+        if (typeof fastPathReply === 'string' && fastPathReply.trim()) {
+          return { reply: fastPathReply, next: 'finalize' };
         }
 
         const MAX_TOOL_ITERATIONS = 10;
