@@ -48,6 +48,19 @@
 - 验证：`src/**/*.test.js` **1249/1249 全绿**。
 - 提交哈希：`3ab34b5`。
 
+## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
+
+- 用户做 code review 后给的诊断：chat 流 + 裸 image_generation tool 的编辑路径效果远差于 ChatGPT 图片编辑器，原因是 (1) agent system prompt 太重稀释编辑指令 (2) 没有 explicit "preserve list" 锁定未编辑区域 (3) 不能用 `input_fidelity` (Codex 拒)。用户开方案：抽独立两阶段 pipeline（vision analysis → 短 prompt edit）+ edit intent 判断 + 不混 agent prompt。
+- 三步分别 commit（每步独立可验证、独立 push）：
+  1. **`41d20cf` codexImageEngine.editImageViaCodex** —— 两阶段函数：stage 1 vision analysis 调 /codex/responses 不带 tool 拿结构化文本（Subject/Composition/Style/Preserve 4 行），stage 2 调同 endpoint 带裸 image_generation tool + buildEditPromptText scaffold（含 stage 1 spec 作 Reference）。stage 1 失败不阻 stage 2，best-effort fallback。8 新测：scaffold 构造、两阶段顺序与 same input_image、skipVisionAnalysis 短路、stage 1 失败不阻 stage 2、input 校验、editAndSave 写盘。**用户的 prompt 模板逐字 hardcode**："Edit the uploaded image. Preserve composition, subject identity... Only change: <user>... Use the uploaded image as the primary reference."
+  2. **`94518d0` IMAGE_EDIT_INTENT_PATTERN + detectImageEditIntent** —— 新正则 + 导出 helper，permissive on purpose（fast-path 上面 AND hasInputImage 已挡 false positive）。中英覆盖 ~30 个 edit 动词（中：改成/再改/换成/换背景/换个/去掉/加上/抠掉/裁切/调亮/修改/编辑/变成/弄成/搞成/换掉/改掉/让X更Y/让X变Y；英：edit/change/modify/replace/swap/recolor/retouch/crop/redraw/remove/add/put/make it/turn it into/paint over）。**同时扩展 IMAGE_FOLLOW_UP_PATTERN** 加 image-specific 短语（recolor/retouch/crop/edit-the-image/change-the-color/换背景/抠掉/调亮 等），不加 generic 'edit'/'change'/修改 防 code/text 误触。7 新测覆盖正负 case。
+  3. **`2a417b2` chat fast-path 路由** —— 新 module [`src/services/chat/imageEditFastPath.js`](src/services/chat/imageEditFastPath.js)，4 个独立 helper（findLatestUserImageUrl/findLatestUserText/resolveImageBytes/allocateEditedImagePath） + top-level dispatcher。chatExecutionRunner.invoke-model 在 ReAct loop 开始**前**调 tryImageEditFastPath，命中则 short-circuit 直接 return 编辑后图片的 markdown URL，跳过整个 agent loop（无 memory/project/retrieval/tool routing 注入）。失败任何 gate 或 editFn 抛错 → 返 null → 走原 chat 流 fallback。25 新测覆盖 4 gates × 失败模式 + cross-turn reuse + bytes 校验（"trust the bytes" 包括 data: URI 与 https URL，magic-byte sniff 唯一权威）。
+- 关键 design 决策：**保留 chat 流的 native image_generation tool**（给"画一只猫"那种纯 text-to-image 用），fast-path 与之并存不冲突——fast-path 只接管"上传图 + 编辑意图"那条路。两条路各自最优。
+- **input_fidelity 不重出现**：所有 edit 路径仍只用裸 `{ type: 'image_generation' }`（Codex 拒任何 variant）。"高保真模拟"靠 (a) 显式 preserve list（buildEditPromptText scaffold）+ (b) stage 1 vision spec 当 reference 实现，不依赖 tool 字段。
+- 测试：`src/**/*.test.js` **1289/1289 全绿**（前 1249 + 8 stage 1+2 + 7 stage 2+3 + 25 fast-path）。
+- 提交：`41d20cf` (step 1) → `94518d0` (step 2) → `2a417b2` (step 3)。
+- Follow-up 待办：step 4 capability probe（启动时探测 Codex 接受字段 → 持久化 → 自动降级），独立 commit。
+
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
 
 - 上一刀 `3876cdc` push 又被 Codex D 阻断。🔴 finding：[desktopStore.js:1504](src/desktopStore.js) `initMcpServers()` 用 `if (hasServers)` 短路 —— 用户关闭最后一个 MCP（或删最后一个 user-configured）后 hasServers=false，bootstrapMcpServers 根本不调，reconciler 不跑，已 active 子进程 + 已注册 tool 留着。"全局 disable" 又一次失效。
