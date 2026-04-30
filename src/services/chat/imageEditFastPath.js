@@ -113,64 +113,69 @@ export function findLatestUserText(messages) {
 }
 
 /**
- * Resolve an image_url (either data: URI or http(s) URL) to bytes +
- * sniffed mime. Returns null on any failure (network error, too-small
- * buffer, mime sniff failed). Designed to never throw — callers
- * fall through to the agent loop when this returns null.
+ * Resolve an image_url to bytes + sniffed mime. Returns null on any
+ * failure (malformed URI, too-small buffer, mime sniff fail).
+ * Designed to never throw — callers fall through to the agent loop
+ * when this returns null.
+ *
+ * SECURITY: data: URIs ONLY — http(s) URLs are unconditionally rejected.
+ * ─────────────────────────────────────────────────────────────────────
+ * Codex review (2026-04-30) flagged the original draft as a
+ * server-side request forgery (SSRF) risk: melo runs Telegram /
+ * Discord bot pollers, so a remote user could plant a URL like
+ *   `http://127.0.0.1:8080/internal.png`
+ *   `http://169.254.169.254/latest/meta-data/iam/security-credentials/.png`
+ * inside a chat message. melo's URL detector promotes any extension-
+ * matching link to a kind:'image' attachment, the attachment URL ends
+ * up as `image_url` on a model message, and resolveImageBytes would
+ * have happily fetched it server-side and forwarded the body to
+ * Codex — leaking metadata from the host's loopback / private /
+ * link-local network in the process.
+ *
+ * Hardening rule: the only safe image source is one whose bytes
+ * arrive **inline** from the upload step — i.e. a data: URI. data:
+ * URIs are self-contained: the bytes are already in the URL, so
+ * there is no out-of-band fetch and no opportunity for a remote
+ * user to pivot the server's network identity.
+ *
+ * Consequences for Telegram / Discord uploads:
+ *   • Telegram / Discord image attachments arrive as Telegram /
+ *     Discord CDN https URLs, NOT data: URIs. So fast-path will not
+ *     fire for them — they fall through to the normal chat 流, which
+ *     uses the existing buildCodexResponsesInput → readAttachment
+ *     Resource pipeline. That pipeline has its OWN preexisting
+ *     trust boundary (a separate concern, NOT introduced by this
+ *     module); tightening it is a future PR's job.
+ *   • Desktop drag-drop uploads come in as data: URIs already. So
+ *     fast-path is a desktop-only feature in practice, which
+ *     matches the user-visible UX the design audit asked for.
+ *
+ * Future enhancement (out of scope for this PR): also accept
+ * URLs that pass `verifySignedFileUrl` (signed workspace URLs).
+ * Those map to known absolute paths on disk that melo wrote
+ * itself, so reading them locally bypasses any network call.
  */
-export async function resolveImageBytes(url, { signal, fetchImpl = fetch } = {}) {
+export async function resolveImageBytes(url) {
   if (!url || typeof url !== 'string') return null;
+  if (!url.startsWith('data:')) return null;
 
-  // ── data: URI fast path ─────────────────────────────────────────────
-  if (url.startsWith('data:')) {
-    const match = url.match(/^data:(image\/[^;,]+);base64,(.*)$/i);
-    if (!match) return null;
-    let bytes;
-    try {
-      bytes = Buffer.from(match[2], 'base64');
-    } catch {
-      return null;
-    }
-    if (bytes.length < IMAGE_MIN_BYTES) return null;
-    // Trust the bytes, not the data: URI's declared mime — same rule
-    // imageGen / codexImageEngine enforce. A `data:image/png;base64,
-    // <ASCII garbage>` URI is exactly the failure shape Codex review
-    // round 3 made us pin against; we MUST reject it even though the
-    // declared content-type says image.
-    const sniffed = detectImageMimeFromBytes(bytes);
-    if (!sniffed) return null;
-    return { bytes, mime: sniffed };
+  const match = url.match(/^data:(image\/[^;,]+);base64,(.*)$/i);
+  if (!match) return null;
+  let bytes;
+  try {
+    bytes = Buffer.from(match[2], 'base64');
+  } catch {
+    return null;
   }
-
-  // ── http(s) fetch ───────────────────────────────────────────────────
-  if (/^https?:\/\//i.test(url)) {
-    let res;
-    try {
-      res = await fetchImpl(url, { signal });
-    } catch {
-      return null;
-    }
-    if (!res?.ok) return null;
-    let buffer;
-    try {
-      const arrayBuffer = await res.arrayBuffer();
-      buffer = Buffer.from(arrayBuffer);
-    } catch {
-      return null;
-    }
-    if (buffer.length < IMAGE_MIN_BYTES) return null;
-    const sniffed = detectImageMimeFromBytes(buffer);
-    if (!sniffed) {
-      // Trust bytes, not headers — same rule as imageGen.js's
-      // `// We trust the bytes, not the server's story`. A 200-OK
-      // HTML error page declared as image/png must NOT pass.
-      return null;
-    }
-    return { bytes: buffer, mime: sniffed };
-  }
-
-  // Anything else (file:// / blob: / unknown scheme) is unsupported.
-  return null;
+  if (bytes.length < IMAGE_MIN_BYTES) return null;
+  // Trust the bytes, not the data: URI's declared mime — same rule
+  // imageGen / codexImageEngine enforce. A `data:image/png;base64,
+  // <ASCII garbage>` URI is exactly the failure shape Codex review
+  // round 3 made us pin against; we MUST reject it even though the
+  // declared content-type says image.
+  const sniffed = detectImageMimeFromBytes(bytes);
+  if (!sniffed) return null;
+  return { bytes, mime: sniffed };
 }
 
 /**
@@ -209,8 +214,7 @@ export async function allocateEditedImagePath(workspacePath) {
  * @param {AbortSignal} [opts.signal]
  * @param {Function}    [opts.onDelta]  stream callback (UI sees the URL ASAP)
  * @param {Function}    [opts.sseEmitter]
- * @param {Function}    [opts.fetchImpl]   test-only override for HTTPS image fetches
- * @param {Function}    [opts.editFn]      test-only override for editAndSaveImageViaCodex
+ * @param {Function}    [opts.editFn]   test-only override for editAndSaveImageViaCodex
  * @returns {Promise<string|null>}    assistant reply text, or null
  */
 export async function tryImageEditFastPath({
@@ -220,7 +224,6 @@ export async function tryImageEditFastPath({
   signal,
   onDelta,
   sseEmitter,
-  fetchImpl,
   editFn = editAndSaveImageViaCodex,
 } = {}) {
   // Gate 1: Codex OAuth only.
@@ -241,7 +244,14 @@ export async function tryImageEditFastPath({
   if (!detectImageEditIntent(userText)) return null;
 
   // ── All gates passed. Resolve bytes and run the edit ────────────────
-  const resolved = await resolveImageBytes(sourceUrl, { signal, fetchImpl });
+  // resolveImageBytes intentionally only accepts data: URIs — see the
+  // SECURITY block in that function. Any http(s) URL returns null,
+  // dropping the fast-path and routing the request through the normal
+  // chat 流 (which has its own preexisting URL-fetch boundary in
+  // buildCodexResponsesInput). For Telegram / Discord image uploads
+  // (which arrive as CDN https URLs) this means the fast-path is a
+  // desktop-only feature in practice — by design.
+  const resolved = await resolveImageBytes(sourceUrl);
   if (!resolved) return null;
 
   let outputPath;

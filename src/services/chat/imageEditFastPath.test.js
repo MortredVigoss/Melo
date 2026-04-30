@@ -147,53 +147,47 @@ test('resolveImageBytes — data: URI with non-image bytes is rejected', async (
   assert.equal(await resolveImageBytes(big), null);
 });
 
-test('resolveImageBytes — https URL fetched, sniffs mime from body, ignores server content-type', async () => {
-  const fetchImpl = async () => ({
-    ok: true,
-    status: 200,
-    headers: new Map([['content-type', 'application/octet-stream']]),
-    arrayBuffer: async () => fakePng(4096).buffer.slice(0, fakePng(4096).length),
-  });
-  // headers.get is the API we actually call — adapt the Map shape.
-  fetchImpl.headers = { get: () => null };
-  const realFetch = async (url, init) => {
-    const png = fakePng(4096);
-    return {
-      ok: true,
-      status: 200,
-      headers: { get: name => (name.toLowerCase() === 'content-type' ? 'application/octet-stream' : null) },
-      arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
-    };
-  };
-  const result = await resolveImageBytes('https://cdn.example.com/x.png', { fetchImpl: realFetch });
-  assert.ok(result);
-  // Mime comes from magic-byte sniff, NOT from the bogus
-  // application/octet-stream header.
-  assert.equal(result.mime, 'image/png');
-});
-
-test('resolveImageBytes — https URL with non-OK status returns null', async () => {
-  const fetchImpl = async () => ({ ok: false, status: 404 });
-  assert.equal(
-    await resolveImageBytes('https://cdn.example.com/missing.png', { fetchImpl }),
-    null,
-  );
-});
-
-test('resolveImageBytes — https URL serving HTML error page (sniff fails) returns null', async () => {
-  // Codex review (2026-04-30) called out the "trust the bytes" rule
-  // explicitly: a 200 OK response with HTML body declared as image
-  // must NOT pass. Pin this behaviour in the resolver.
-  const fetchImpl = async () => ({
-    ok: true,
-    status: 200,
-    headers: { get: () => 'image/png' }, // server lies
-    arrayBuffer: async () => Buffer.alloc(4096, 0x41).buffer, // ASCII payload
-  });
-  assert.equal(
-    await resolveImageBytes('https://cdn.example.com/lie.png', { fetchImpl }),
-    null,
-  );
+test('resolveImageBytes — http(s) URLs are unconditionally rejected (SSRF guard)', async () => {
+  // Codex review round 4 (2026-04-30) flagged the SSRF risk: melo
+  // runs Telegram / Discord pollers, so a remote user could send a
+  // chat message containing a URL that looks like an image but
+  // points at the host's loopback / private / link-local network or
+  // cloud metadata endpoints. Even an http(s) URL with a perfectly
+  // valid PNG body is a SSRF vector — it lets a remote user check
+  // whether arbitrary URLs are reachable from the server, and if
+  // any happen to return image-magic-byte-resembling bytes, those
+  // get forwarded to Codex.
+  //
+  // Hardening: resolveImageBytes accepts data: URIs ONLY. Any
+  // http(s) URL → null, end of story. Pinned with explicit cases
+  // covering the worst attacker primitives so a future "let's add
+  // an allowlist" refactor doesn't accidentally re-open the hole.
+  const httpUrls = [
+    // Loopback (host-local services)
+    'http://127.0.0.1:8080/x.png',
+    'http://127.0.0.1/admin.png',
+    'http://localhost:3000/internal.png',
+    'http://[::1]:8080/x.png',
+    // Private RFC 1918 / link-local
+    'http://10.0.0.1/foo.png',
+    'http://192.168.1.1/router.png',
+    'http://172.16.0.1/intranet.png',
+    'http://169.254.169.254/latest/meta-data/iam/security-credentials/.png',
+    // Public CDN (still rejected — fast-path is data: only)
+    'https://cdn.example.com/legitimate.png',
+    'https://api.telegram.org/file/bot123/photo.jpg',
+    // Edge cases that historically tripped allowlists
+    'http://0.0.0.0/x.png',
+    'http://2130706433/x.png',  // 127.0.0.1 as decimal
+    'http://[fe80::1]/x.png',   // IPv6 link-local
+  ];
+  for (const url of httpUrls) {
+    assert.equal(
+      await resolveImageBytes(url),
+      null,
+      `resolveImageBytes MUST reject ${url} unconditionally`,
+    );
+  }
 });
 
 test('resolveImageBytes — unsupported scheme returns null without throwing', async () => {
@@ -201,6 +195,7 @@ test('resolveImageBytes — unsupported scheme returns null without throwing', a
     'file:///local/x.png',
     'blob:1234',
     'ftp://x/y',
+    'gopher://x',
     '',
     null,
     undefined,
@@ -417,6 +412,40 @@ test('tryImageEditFastPath: source bytes resolution failure (e.g. tiny image) �
   } finally {
     await rm(ws, { recursive: true, force: true });
   }
+});
+
+test('tryImageEditFastPath: https image URL → fast-path does NOT fire even with all other gates passing (SSRF guard)', async () => {
+  // Layered defense: even if a remote user gets an https URL onto the
+  // image_url part of a user message, the fast-path must NOT fetch
+  // it. The four gates pass (Codex auth + workspace + image_url
+  // present + edit intent), but resolveImageBytes returns null for
+  // anything non-data:, which trips the dispatcher's null check
+  // BEFORE editFn fires. Pinned because it's the canonical SSRF
+  // failure shape Codex round-4 review described.
+  let editCalled = 0;
+  const reply = await tryImageEditFastPath({
+    config: codexConfig(),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '把这个改成蓝色' },
+          // The exact attacker primitive: a URL that visually looks
+          // like a legitimate image but points at an internal host.
+          // resolveImageBytes refuses to fetch ANY http(s) URL, so
+          // editFn never sees these bytes.
+          { type: 'image_url', image_url: { url: 'http://127.0.0.1:8080/internal.png' } },
+        ],
+      },
+    ],
+    workspace: { rootPath: '/tmp' },
+    editFn: async () => {
+      editCalled += 1;
+      return {};
+    },
+  });
+  assert.equal(reply, null);
+  assert.equal(editCalled, 0, 'editFn must NOT fire for any http(s) image URL');
 });
 
 test('tryImageEditFastPath: cross-turn reuse — image two turns back, edit ask in latest user turn → fires', async () => {
