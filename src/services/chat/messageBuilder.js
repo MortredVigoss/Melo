@@ -78,17 +78,44 @@ export const RICH_MEDIA_ATTACHMENT_KINDS = new Set(['image', 'audio', 'video', '
 // in IMAGE_EDIT_INTENT_PATTERN instead, where it's only consulted
 // alongside an explicit image-object check at the fast-path dispatcher.
 //
-// Allowed: explicit image words (图/图片/照片/截图/image/photo/...),
-// image-object-bound English phrasings (recolor / retouch / crop /
-// "edit the photo" / "change the color|background|font|style" /
-// "make it brighter|..."), and CJK image-specific verbs that are
-// rarely used outside image work (换背景 / 换色 / 换底色 / 抠图 /
-// 抠掉 / 裁切 / 抹掉 / 调亮 / 调暗 / 这张图.* / 那张图.*).
+// Allowed phrasings (every entry below must unambiguously refer to a
+// PICTURE — never a CSS file, a Button.jsx component, a Markdown
+// document, or a layout viewport):
 //
-// Removed (they live in IMAGE_EDIT_INTENT_PATTERN now): 改成 / 换成 /
-// 换一下 / 换个色 / 换个背景 / 换个 / 去掉 / 换掉 / 加上 / 加个 /
-// 再改 / 让.{0,5}更 / 让.{0,5}变 — too generic for carry-forward.
-export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot)|recolor(?:ed|ing)?|retouch(?:ed|ing)?|crop(?:ped|ping)?|edit (?:the |this |that )?(?:image|photo|picture|screenshot)|change (?:the )?(?:color|background|font|style)|make it (?:more|less|brighter|darker|smaller|larger))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么|换背景|换色|换底色|抠图|抠掉|裁切|抹掉|调亮|调暗|这张图改|那张图改|这张图换|那张图换|这张图加|这张图去掉)/iu;
+//   English image-object words: image / photo / picture / screenshot
+//   Image-only verbs: recolor / retouch / crop (these are simply not
+//     used outside of image work — "let's recolor the variable" isn't
+//     idiomatic; "let's crop the function" isn't either)
+//   Explicit-object English: 'edit the (image|photo|picture|screenshot)',
+//     'this/that (image|photo|picture|screenshot)', 'look at the …'
+//   Image-leaning brightness adjectives: make it (brighter|darker)
+//     (not used in CSS/layout in practice; we WOULD see "make the
+//     viewport smaller" or "make it more responsive", which DON'T
+//     match because we no longer accept bare make-it-smaller/larger)
+//   CJK image-specific verbs: 换背景 / 换色 / 换底色 / 抠图 / 抠掉 /
+//     裁切 / 抹掉 / 调亮 / 调暗 / 这张图.* / 那张图.* (rarely used
+//     outside image work)
+//
+// Removed in earlier rounds (now lives in IMAGE_EDIT_INTENT_PATTERN
+// only — too ambiguous for carry-forward):
+//   CJK: 改成 / 换成 / 换一下 / 换个色 / 换个背景 / 换个 / 去掉 /
+//        换掉 / 加上 / 加个 / 再改 / 让.{0,5}更 / 让.{0,5}变
+//
+// Removed in THIS round (Codex review round 6, 2026-04-30) — would
+// false-positive on CSS / UI / layout follow-ups when the previous
+// turn happened to have an image (e.g. user shared a screenshot then
+// asked about CSS):
+//   English: 'change the (color|background|font|style)' — common in
+//     CSS / theming / component questions
+//   English: 'make it (smaller|larger|more|less)' — common in
+//     viewport / layout / sizing questions
+//
+// The dropped English phrases are still valid edit-intent signals,
+// just not by themselves enough to drag an image into the next turn.
+// Users who want fast-path on those need to add an explicit image
+// word ('change the background of this photo' still fires because of
+// 'this photo').
+export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot)|recolor(?:ed|ing)?|retouch(?:ed|ing)?|crop(?:ped|ping)?|edit (?:the |this |that )?(?:image|photo|picture|screenshot)|make it (?:brighter|darker))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么|换背景|换色|换底色|抠图|抠掉|裁切|抹掉|调亮|调暗|这张图改|那张图改|这张图换|那张图换|这张图加|这张图去掉)/iu;
 
 // Image-edit intent detector. Used by chatExecutionRunner's fast-path to
 // short-circuit the agent loop when (Codex auth + has input image +

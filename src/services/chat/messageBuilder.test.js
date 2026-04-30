@@ -538,31 +538,42 @@ test('detectImageEditIntent does NOT trigger on pure conversational chatter', ()
 // the existing tests already pinned (photography, etc.).
 
 test('IMAGE_FOLLOW_UP_PATTERN matches image-OBJECT-bound phrasings only (carry-forward stays strict)', () => {
-  // Tightened 2026-04-30 (Codex review round 5): bare CJK edit verbs
-  // 改成 / 换成 / 去掉 / 换掉 / 加上 / 再改 must NOT match — they
-  // false-positive on code/text follow-ups ("把这个函数改成 async"
-  // would otherwise carry forward an unrelated image and the
-  // fast-path would fire on it). Only phrasings that unambiguously
-  // mention an IMAGE OBJECT belong here.
+  // Tightened 2026-04-30 (Codex review rounds 5 + 6):
+  //
+  //   round 5 — bare CJK edit verbs 改成 / 换成 / 去掉 / 换掉 /
+  //     加上 / 再改 must NOT match (false-positive on code/text
+  //     follow-ups: "把这个函数改成 async" would otherwise drag a
+  //     screenshot into a code question).
+  //   round 6 — bare English edit verbs 'change the (color|
+  //     background|font|style)' / 'make it (smaller|larger)' must
+  //     NOT match either (false-positive on CSS/UI/layout follow-
+  //     ups: "change the background color in the CSS" / "make it
+  //     smaller in viewport").
+  //
+  // Only phrasings that unambiguously mention an IMAGE OBJECT belong
+  // here. Image-only verbs (recolor / retouch / crop) and image-
+  // leaning brightness adjectives (make it brighter|darker) stay
+  // because they aren't used in code/CSS contexts.
   const positives = [
-    '换背景',          // image-only verb: 换 + image object
-    '抠掉logo',        // 抠 only used on images
-    '裁切右半边',      // 裁切 only used on images
-    '调亮一点',        // 调亮 a photo
-    '这张图改一下',    // explicit '这张图' object
-    '那张图换个角度',  // explicit '那张图' object
+    // CJK image-only verbs
+    '换背景',
+    '抠掉logo',
+    '裁切右半边',
+    '调亮一点',
+    // CJK explicit object
+    '这张图改一下',
+    '那张图换个角度',
+    // English explicit object
     'edit the photo',
     'edit the screenshot',
-    'change the color',
-    'change the background',
-    'change the font',
-    'change the style',
+    'edit the image',
+    // English image-only verbs
     'recolor',
     'retouch this',
     'crop this',
+    // English image-leaning brightness adjectives
     'make it brighter',
     'make it darker',
-    'make it smaller',
   ];
   for (const text of positives) {
     assert.ok(
@@ -594,19 +605,39 @@ test('IMAGE_FOLLOW_UP_PATTERN extension does NOT regress prefix/suffix false pos
 });
 
 test('IMAGE_FOLLOW_UP_PATTERN does NOT carry forward on generic non-image edit asks (CJK + EN)', () => {
-  // Codex review round 5 (2026-04-30) caught a regression where an
-  // earlier image got dragged into a CJK code-edit follow-up because
-  // the pattern naively matched bare 改成 / 修改 / 编辑. Pinning the
-  // explicit non-image cases here so a future "let's add 改 back"
-  // refactor can't quietly re-introduce the misroute.
+  // Codex review round 5 (2026-04-30) caught CJK regression: an
+  // earlier image got dragged into a code-edit follow-up because
+  // the pattern naively matched bare 改成 / 修改 / 编辑.
+  //
+  // Codex review round 6 (2026-04-30) caught the symmetric English
+  // regression: 'change the color/background/font/style' and 'make
+  // it smaller/larger' are equally common in CSS / UI / layout
+  // questions. Same misroute, English flavor.
+  //
+  // Both negative sets are pinned together so a future "let's add
+  // X back" refactor on either side can't quietly re-introduce
+  // the misroute.
   const negatives = [
-    // English code/text edits — historically pinned, still fail
+    // English code/text edits — historically pinned
     'edit the code',
     'edit my essay',
     'change the variable name',
     'modify the function',
     'replace the algorithm',
-    // CJK code/text edits — newly pinned after the round-5 narrowing
+    // English UI/CSS/layout edits — newly pinned in round 6
+    'change the color in the CSS',
+    'change the background color in main.css',
+    'change the font in Button.jsx',
+    'change the style of the form',
+    'change the color scheme',
+    'make it smaller in the viewport',
+    'make it larger in layout',
+    'make it more responsive',
+    'make it less verbose',
+    'update the color',
+    'update the background',
+    'update the font',
+    // CJK code/text edits — pinned in round 5
     '把这个函数改成 async',
     '修改函数',
     '修改代码',

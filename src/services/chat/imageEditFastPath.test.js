@@ -505,23 +505,28 @@ test('tryImageEditFastPath: cross-turn reuse — image carried-forward + image-o
   }
 });
 
-test('tryImageEditFastPath: image_url present but latest text is a CODE edit (no image-object phrase) → null', async () => {
-  // The exact misroute Codex review round 5 caught: an earlier image
-  // got carried forward into a CJK code-edit follow-up because the
-  // pre-narrowing IMAGE_FOLLOW_UP_PATTERN matched bare 改成. Without
-  // the post-narrowing dispatcher's second gate (image-object check),
-  // that turn would have triggered the image edit pipeline and
-  // hallucinated a re-paint of an unrelated screenshot.
+test('tryImageEditFastPath: image_url present but latest text is a CODE/UI edit (no image-object phrase) → null', async () => {
+  // The exact misroute Codex review caught across two rounds:
   //
-  // After this fix: even when image_url is on the message AND
-  // detectImageEditIntent is true (`改成` matches), the dispatcher
-  // ALSO requires IMAGE_FOLLOW_UP_PATTERN to match the same text.
-  // 'function 改成 async' has no image object → fast-path drops it,
-  // chat 流 picks it up as a normal code-edit ask.
+  //   Round 5 (CJK) — earlier image got carried forward into a CJK
+  //     code-edit follow-up because pre-narrowing
+  //     IMAGE_FOLLOW_UP_PATTERN matched bare 改成.
+  //   Round 6 (EN)  — same pattern, English flavor: "change the
+  //     background color in CSS" / "change the font in Button.jsx"
+  //     dragged a screenshot into a CSS / component question and
+  //     fast-path tried to re-paint it as an image edit.
+  //
+  // After narrowing both sides + dispatcher Gate 5, even when
+  // image_url is on the message AND detectImageEditIntent matches
+  // ('change' / '改成' both match the permissive intent regex),
+  // the dispatcher's second gate (IMAGE_FOLLOW_UP_PATTERN) only
+  // accepts image-object phrasings. Code/UI/CSS asks fall through
+  // to the chat agent loop, which is what they want anyway.
   const ws = await mkdtemp(join(tmpdir(), 'melo-fastpath-misroute-'));
   try {
     let editCalled = 0;
     const codeEditCases = [
+      // CJK code/text edits (round 5 misroute shape)
       '把这个函数改成 async',
       '修改函数',
       '修改代码',
@@ -533,6 +538,23 @@ test('tryImageEditFastPath: image_url present but latest text is a CODE edit (no
       '换掉这段逻辑',
       '再改一下',
       '让它更快',
+      // English UI/CSS/layout edits (round 6 misroute shape)
+      'change the background color in the CSS',
+      'change the background color in main.css',
+      'change the font in Button.jsx',
+      'change the style of the form',
+      'change the color scheme',
+      'make it smaller in the viewport',
+      'make it larger in layout',
+      'make it more responsive',
+      'make it less verbose',
+      'update the color',
+      'update the background',
+      'update the font',
+      // English code edits — historically pinned
+      'modify the function',
+      'replace the algorithm',
+      'edit my essay',
     ];
     for (const codeEditText of codeEditCases) {
       const reply = await tryImageEditFastPath({
@@ -557,13 +579,66 @@ test('tryImageEditFastPath: image_url present but latest text is a CODE edit (no
       assert.equal(
         reply,
         null,
-        `code-edit text "${codeEditText}" must NOT trigger image fast-path even with carry-forward image present`,
+        `code/UI text "${codeEditText}" must NOT trigger image fast-path even with carry-forward image present`,
       );
     }
     assert.equal(
       editCalled,
       0,
-      'editFn must NOT fire for any of the code-edit phrasings, even with image_url in message',
+      'editFn must NOT fire for any code/UI phrasing, even with image_url in message',
+    );
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+  }
+});
+
+test('tryImageEditFastPath: image_url present + image-only verb (recolor/crop/retouch) → fires WITHOUT explicit image word', async () => {
+  // Codex review round 6 design Q1: "english 多轮编辑是否要求每轮
+  // 显式说 image/photo/screenshot, 还是允许 recolor/crop/retouch?"
+  // User answered: allow image-only verbs to fire WITHOUT an explicit
+  // image word — these verbs are not used in code/CSS contexts so
+  // the false-positive risk is bounded. Pin that decision so a
+  // future "tighten further" refactor can't quietly invert it.
+  const ws = await mkdtemp(join(tmpdir(), 'melo-fastpath-image-only-verbs-'));
+  try {
+    let editCalled = 0;
+    const editFn = async opts => {
+      editCalled += 1;
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(opts.outputPath, fakePng(4096));
+      return { path: opts.outputPath, bytes: 4096, mimeType: 'image/png', model: 'gpt-5.5' };
+    };
+    const imageOnlyVerbCases = [
+      'recolor it',
+      'crop the bottom',
+      'retouch this',
+      'make it brighter',
+      'make it darker',
+    ];
+    for (const text of imageOnlyVerbCases) {
+      const reply = await tryImageEditFastPath({
+        config: codexConfig(),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text },
+              { type: 'image_url', image_url: { url: dataUriPng(4096) } },
+            ],
+          },
+        ],
+        workspace: { rootPath: ws },
+        editFn,
+      });
+      assert.ok(
+        reply,
+        `image-only verb "${text}" should still fire fast-path without explicit image word`,
+      );
+    }
+    assert.equal(
+      editCalled,
+      imageOnlyVerbCases.length,
+      'editFn must fire once per image-only-verb case',
     );
   } finally {
     await rm(ws, { recursive: true, force: true });
