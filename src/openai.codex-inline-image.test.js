@@ -150,30 +150,40 @@ test('buildCodexResponsesTools — non-absolute workspacePath does NOT enable im
   }
 });
 
-test('buildCodexResponsesTools — hasInputImage + workspace flips image_generation to edit mode (input_fidelity: high)', () => {
-  // User-visible feature: "edit this screenshot" only works when the
-  // image_generation tool runs in high-fidelity edit mode. Without it
-  // Codex re-paints from scratch and a request like "change 5.5 to gpt"
-  // returns a totally different image. Pinned 2026-04-30 after the
-  // user reported the desktop+Telegram failure mode.
-  const tools = buildCodexResponsesTools({
+test('buildCodexResponsesTools — hasInputImage variant produces the SAME bare config as pure generate', () => {
+  // The chatgpt.com /codex/responses proxy rejects every image_generation
+  // tool variant we tried (input_fidelity:'high', background:'auto', etc.)
+  // other than the bare `{ type: 'image_generation' }`. So this helper
+  // must NOT vary the tool config based on hasInputImage — the gate
+  // for edit-mode behaviour moved entirely into the instructions block.
+  // Pinned 2026-04-30 after the user reported the request being rejected
+  // with "input_fidelity not supported".
+  const editTools = buildCodexResponsesTools({
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
     hasInputImage: true,
   });
-  assert.equal(tools.length, 1);
-  assert.equal(tools[0].type, 'image_generation');
+  const generateTools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: '/tmp/some/workspace',
+    hasInputImage: false,
+  });
+  assert.deepEqual(
+    editTools,
+    generateTools,
+    'tool config must not differ on hasInputImage — Codex rejects edit-only variants',
+  );
+  assert.equal(editTools.length, 1);
+  assert.equal(editTools[0].type, 'image_generation');
   assert.equal(
-    tools[0].input_fidelity,
-    'high',
-    'edit-mode requires input_fidelity: "high" so original details survive',
+    editTools[0].input_fidelity,
+    undefined,
+    'input_fidelity must NEVER appear — Codex /codex/responses rejects it',
   );
 });
 
-test('buildCodexResponsesTools — pure text-to-image (no input image) keeps minimal tool config', () => {
-  // Negative case: when there is NO input image we MUST NOT set
-  // input_fidelity (it costs more and biases tool behaviour). The
-  // round-1 minimal config stays the default for pure generation.
+test('buildCodexResponsesTools — pure text-to-image keeps the same minimal tool config', () => {
+  // Sanity check kept for explicit readability of the null-image case.
   const tools = buildCodexResponsesTools({
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
@@ -181,11 +191,8 @@ test('buildCodexResponsesTools — pure text-to-image (no input image) keeps min
   });
   assert.equal(tools.length, 1);
   assert.equal(tools[0].type, 'image_generation');
-  assert.equal(
-    tools[0].input_fidelity,
-    undefined,
-    'pure generation must NOT carry input_fidelity',
-  );
+  assert.equal(tools[0].input_fidelity, undefined);
+  assert.equal(tools[0].background, undefined);
 });
 
 test('buildCodexResponsesTools — hasInputImage without workspace stays empty (no inline image possible)', () => {
@@ -268,7 +275,7 @@ async function captureCodexRequestPayload(callOpts) {
   return captured;
 }
 
-test('payload — edit-mode (workspace + input image): high fidelity tool, edit instructions, caller model preserved', async () => {
+test('payload — edit-mode (workspace + input image): bare image_generation tool, edit instructions, caller model preserved', async () => {
   const captured = await captureCodexRequestPayload({
     workspacePath: '/tmp/some/workspace',
     messages: [
@@ -283,10 +290,23 @@ test('payload — edit-mode (workspace + input image): high fidelity tool, edit 
   });
 
   assert.ok(captured, 'fetch must have been invoked');
-  // Tool config: image_generation present, in EDIT mode
+  // Tool config: bare image_generation. The Codex proxy rejects
+  // input_fidelity (and other edit-only variants), so the edit-vs-generate
+  // distinction lives ONLY in the instructions block + the input_image
+  // part the model sees in the conversation. Pinned 2026-04-30 after the
+  // user got a "input_fidelity not supported" rejection.
   const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
   assert.ok(imageTool, 'tools must include image_generation');
-  assert.equal(imageTool.input_fidelity, 'high', 'edit mode requires input_fidelity=high');
+  assert.equal(
+    imageTool.input_fidelity,
+    undefined,
+    'input_fidelity must NEVER appear — Codex /codex/responses rejects it',
+  );
+  assert.equal(
+    Object.keys(imageTool).length,
+    1,
+    'image_generation tool must be the bare {type} — any extra field risks rejection',
+  );
   // tool_choice must allow the model to invoke image_generation
   assert.equal(captured.body.tool_choice, 'auto');
   // Instructions: contain the edit-mode block
@@ -445,11 +465,15 @@ test('payload — historical image (older user turn) + new edit ask: edit-mode s
     ],
   });
 
+  // Cross-turn reuse: the tool config stays the bare image_generation
+  // form (Codex proxy doesn't accept variants), but the instructions
+  // block — which is the actual edit-mode trigger now — MUST be present
+  // so the model knows the historical image is fair game.
   const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
   assert.equal(
     imageTool.input_fidelity,
-    'high',
-    'cross-turn reuse: edit mode must persist as long as the conversation has any uploaded image',
+    undefined,
+    'no input_fidelity ever, even on cross-turn edits',
   );
   assert.match(captured.body.instructions, /INLINE IMAGE EDITING/);
   // Instructions must also contain the EXCEPTIONS clause so model can

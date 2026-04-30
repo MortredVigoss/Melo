@@ -59,23 +59,21 @@ const CODEX_NATIVE_WEB_SEARCH_TOOL = Object.freeze({
 //     speech and search are unaffected.
 //   • One code path serves desktop + Telegram + Discord — every channel
 //     already respects markdown image URLs in assistant messages.
+// The single image_generation tool config we send to /codex/responses.
+//
+// Earlier cuts also tried `{ type: 'image_generation', input_fidelity:
+// 'high' }` for the edit case (uploaded image + edit prompt) so Codex
+// would preserve original details. The Codex backend rejected the
+// request — input_fidelity is part of OpenAI's standard Responses API
+// schema but the chatgpt.com /codex/responses proxy strips it. The
+// standalone codexImageEngine.js learned the same lesson: it ALSO only
+// sends input_fidelity when the caller explicitly opts in, never as
+// the default. So this constant is the single, simplest config that
+// Codex actually accepts; edit-mode behaviour now relies on the
+// instructions block + the fact that gpt-image's image_generation tool
+// natively reads the conversation's input_image parts as references.
 const CODEX_NATIVE_IMAGE_GENERATION_TOOL = Object.freeze({
   type: 'image_generation',
-});
-
-// Edit-mode variant of the image_generation tool. `input_fidelity: 'high'`
-// tells Codex to keep the original image's structure (composition, layout,
-// non-edited regions) when re-rendering. Without it the model defaults to
-// "interpret the prompt loosely" and a request like "change 5.5 to gpt"
-// re-paints the whole screenshot from scratch — useless for the edit case
-// the user actually asked for.
-//
-// We only swap to this variant when the conversation already carries an
-// uploaded image, so we don't pay the fidelity cost on pure text-to-image
-// requests.
-const CODEX_NATIVE_IMAGE_EDIT_TOOL = Object.freeze({
-  type: 'image_generation',
-  input_fidelity: 'high',
 });
 
 // Appended to `instructions` when the conversation has an input_image AND
@@ -94,9 +92,10 @@ const CODEX_NATIVE_IMAGE_EDIT_TOOL = Object.freeze({
 // instruction therefore lists explicit edit verbs but ALSO has an
 // equally explicit pass-through clause for non-edit turns ("画一张新图",
 // plain text Q&A) — so a stale historical image doesn't poison
-// unrelated turns. That pass-through depends on the model's own intent
-// classification + `input_fidelity: 'high'`'s well-known behaviour of
-// silently ignoring an unrelated reference image.
+// unrelated turns. With input_fidelity unavailable on Codex, the
+// pass-through depends entirely on the model's own intent reading
+// (these EXCEPTIONS lines below) and gpt-image's default behaviour
+// of ignoring reference images that don't match the prompt.
 const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   'INLINE IMAGE EDITING:',
   'The conversation carries one or more uploaded images as input_image parts.',
@@ -150,11 +149,13 @@ export function messagesHaveInputImages(messages) {
 // then image_generation) so a snapshot-style test can also assert
 // stable ordering of the `tools` array sent to /codex/responses.
 //
-// `hasInputImage` flips the image_generation tool to edit-mode
-// (input_fidelity: 'high'). Detected upstream by messagesHaveInputImages
-// — any user-role message with an image_url part qualifies. This is the
-// one knob that turns "redraw from scratch" into "edit in place" so the
-// user-visible feature ("change the 5.5 to gpt in this screenshot") works.
+// `hasInputImage` is accepted for API symmetry with messagesHaveInputImages
+// upstream, but no longer changes the tool config — the chatgpt.com
+// /codex/responses proxy rejects every variant we tried (input_fidelity,
+// background-only, etc.) other than the bare `{ type: 'image_generation' }`.
+// The `hasInputImage` flag is still meaningful for INSTRUCTIONS-level
+// gating (whether to append the edit-mode block) and stays plumbed in
+// case a future Codex-side schema change re-opens edit-tool variants.
 //
 // DESIGN INTENT (user 2026-04-29): inline image is gated **only** by
 // the existence of a writable workspace path. It is NOT additionally
@@ -168,16 +169,12 @@ export function messagesHaveInputImages(messages) {
 export function buildCodexResponsesTools({
   enableWebSearch = false,
   workspacePath = null,
-  hasInputImage = false,
+  hasInputImage: _hasInputImage = false,
 } = {}) {
   const tools = [];
   if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
   if (typeof workspacePath === 'string' && workspacePath.startsWith('/')) {
-    tools.push(
-      hasInputImage
-        ? CODEX_NATIVE_IMAGE_EDIT_TOOL
-        : CODEX_NATIVE_IMAGE_GENERATION_TOOL,
-    );
+    tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
   }
   return tools;
 }
