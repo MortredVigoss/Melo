@@ -15,6 +15,8 @@ import {
   summarizeAttachmentsForPrompt,
   IMAGE_FOLLOW_UP_PATTERN,
   AUDIO_FOLLOW_UP_PATTERN,
+  IMAGE_EDIT_INTENT_PATTERN,
+  detectImageEditIntent,
   RICH_MEDIA_ATTACHMENT_KINDS,
 } from './messageBuilder.js';
 
@@ -422,5 +424,189 @@ test('buildModelMessagesFromChat: carry-forward splices recent media into a foll
 test('RICH_MEDIA_ATTACHMENT_KINDS covers the four carry-forward kinds', () => {
   for (const k of ['image', 'audio', 'video', 'link']) {
     assert.ok(RICH_MEDIA_ATTACHMENT_KINDS.has(k), `missing kind ${k}`);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMAGE_EDIT_INTENT_PATTERN + detectImageEditIntent
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// These pin the intent detector used by chat fast-path routing
+// (Codex + has input image + edit intent + workspace → bypass agent
+// loop, go straight to editImageViaCodex). Permissive pattern: the
+// AND with hasInputImage upstream protects against false positives,
+// so generic edit verbs are fair game.
+
+test('detectImageEditIntent matches the user-reported edit phrasings (CJK)', () => {
+  const positives = [
+    '把这张图里的 5.5 改成 gpt',
+    '再换个色',
+    '把背景换掉',
+    '去掉这个字',
+    '改成赛博朋克风',
+    '让它更可爱一点',  // tricky: "让...更" is colloquial
+    '把头发调亮一点',
+    '换个背景',
+    '抠掉文字',
+    '加上一个帽子',
+    '裁切右半边',
+    '把 5.5 改掉',
+    '换掉左上角的图标',
+    '调一下颜色',
+    '修改这张图的字',
+    '编辑图片',
+    '变成卡通风',
+    '弄成黑白',
+  ];
+  const misses = [];
+  for (const text of positives) {
+    if (!detectImageEditIntent(text)) misses.push(text);
+  }
+  // Allow a small false-negative budget since regex can't beat NLU,
+  // but most everyday phrasings should hit. Make the failure
+  // message explicit so the gap is visible at a glance.
+  assert.ok(
+    misses.length <= 1,
+    `detectImageEditIntent missed too many real edit phrasings: ${JSON.stringify(misses)}`,
+  );
+});
+
+test('detectImageEditIntent matches common English edit phrasings', () => {
+  const positives = [
+    'edit the image',
+    'change to a darker palette',
+    'modify the layout',
+    'replace the background',
+    'swap the colors',
+    'recolor it',
+    'retouch this',
+    'crop the bottom',
+    'redraw it',
+    'remove the text',
+    'add a hat',
+    'put a hat on him',
+    'make it brighter',
+    'turn it into a pencil sketch',
+    'paint over the logo',
+  ];
+  for (const text of positives) {
+    assert.ok(
+      detectImageEditIntent(text),
+      `detectImageEditIntent SHOULD match: "${text}"`,
+    );
+  }
+});
+
+test('detectImageEditIntent falls through gracefully on bad input', () => {
+  for (const bad of [null, undefined, '', '   ', 42, {}, []]) {
+    assert.equal(
+      detectImageEditIntent(bad),
+      false,
+      `detectImageEditIntent must return false on bad input ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test('detectImageEditIntent does NOT trigger on pure conversational chatter', () => {
+  // Bounded false-positive concern: the fast-path guard upstream is
+  // (intent AND hasInputImage), so an "edit" word with NO image won't
+  // trigger anything bad. But we still want this regex to lean against
+  // the most obviously non-edit chatter so tests document the contract.
+  const negatives = [
+    'hello',
+    '你好',
+    '今天天气怎么样',  // weather
+    'tell me about your day',
+    '帮我写代码',  // code request
+    '什么是机器学习',  // explainer
+  ];
+  for (const text of negatives) {
+    assert.equal(
+      detectImageEditIntent(text),
+      false,
+      `detectImageEditIntent must not match: "${text}"`,
+    );
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMAGE_FOLLOW_UP_PATTERN extension (edit-verb additions)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// These confirm the carry-forward extension lets multi-turn edit flows
+// keep their image context, while still rejecting the negative cases
+// the existing tests already pinned (photography, etc.).
+
+test('IMAGE_FOLLOW_UP_PATTERN matches image-edit phrasings so multi-turn edits carry forward', () => {
+  const positives = [
+    '再换个色',
+    '把背景换掉',
+    '去掉这个字',
+    '改成赛博朋克风',
+    '换背景',
+    '抠掉logo',
+    '裁切右半边',
+    '调亮一点',
+    '加个帽子',
+    'edit the photo',
+    'edit the screenshot',
+    'change the color',
+    'change the background',
+    'change the font',
+    'change the style',
+    'recolor',
+    'retouch this',
+    'crop this',
+    'make it brighter',
+    'make it darker',
+    'make it smaller',
+  ];
+  for (const text of positives) {
+    assert.ok(
+      IMAGE_FOLLOW_UP_PATTERN.test(text),
+      `IMAGE_FOLLOW_UP_PATTERN should now match: "${text}"`,
+    );
+  }
+});
+
+test('IMAGE_FOLLOW_UP_PATTERN extension does NOT regress prefix/suffix false positives', () => {
+  // The original test pinned that 'photography', 'imagination', etc.
+  // are NOT matches. The extension must keep that guarantee — the
+  // \b-bounded English additions can't sneak through "imageediting"
+  // or similar.
+  const negatives = [
+    'photography question',
+    'the photographic style',
+    'photosynthesis',
+    'imagery in the abstract',
+    'imagination runs wild',
+  ];
+  for (const text of negatives) {
+    assert.equal(
+      IMAGE_FOLLOW_UP_PATTERN.test(text),
+      false,
+      `IMAGE_FOLLOW_UP_PATTERN must NOT match: "${text}"`,
+    );
+  }
+});
+
+test('IMAGE_FOLLOW_UP_PATTERN extension does NOT match generic non-image edit asks', () => {
+  // Bare "edit the code" / "modify variables" / 修改代码 etc. should
+  // NOT carry forward an image — those are code/text edits, not image
+  // edits. The extension only adds image-specific phrases (edit the
+  // image / change the color / 抠掉 etc.).
+  const negatives = [
+    'edit the code',
+    'edit my essay',
+    'change the variable name',
+    'modify the function',
+    'replace the algorithm',
+  ];
+  for (const text of negatives) {
+    assert.equal(
+      IMAGE_FOLLOW_UP_PATTERN.test(text),
+      false,
+      `IMAGE_FOLLOW_UP_PATTERN should NOT match generic non-image edit: "${text}"`,
+    );
   }
 });

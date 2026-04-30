@@ -67,7 +67,36 @@ export const RICH_MEDIA_ATTACHMENT_KINDS = new Set(['image', 'audio', 'video', '
 // the exact regression Codex flagged when reviewing the 7d-1 extraction —
 // the original desktopStore pattern had them; I dropped them by accident
 // during the copy and restored them before committing the tests below.
-export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么)/i;
+//
+// Extended 2026-04-30 with image-edit phrasing (recolor/retouch/crop/
+// "edit the image", CJK 换背景/改成/抠掉/调亮 etc.) so multi-turn edit
+// flows like "再换个色" / "把背景换掉" carry the historical image
+// forward. Edit verbs that are NOT image-specific (bare 'edit'/'change'/
+// 'modify' / 修改 etc.) are intentionally NOT in this pattern — they
+// would false-positive in code/text/document follow-ups. Edit-intent
+// detection is a separate concern handled by IMAGE_EDIT_INTENT_PATTERN
+// + AND'd against hasInputImage by the chat-router fast-path.
+export const IMAGE_FOLLOW_UP_PATTERN = /(?:\b(?:image|photo|picture|screenshot|screen shot|zoom in|look at (?:the )?(?:image|photo|picture|screenshot)|what(?:'s| is)? in(?:side)? (?:the )?(?:image|photo|picture|screenshot)|this (?:image|photo|picture|screenshot)|that (?:image|photo|picture|screenshot)|what about this (?:image|photo|picture|screenshot)|what about that (?:image|photo|picture|screenshot)|recolor(?:ed|ing)?|retouch(?:ed|ing)?|crop(?:ped|ping)?|edit (?:the |this |that )?(?:image|photo|picture|screenshot)|change (?:the )?(?:color|background|font|style)|make it (?:more|less|brighter|darker|smaller|larger))\b|图片|照片|截图|看图|图里|这张图|那张图|放大|看清|再看一下|里面有什么|里面写了什么|图里有什么|图里写了什么|上面写了什么|改成|换成|换色|换背景|换一下|换个色|换个背景|换个|去掉|换掉|加上|加个|抠图|抠掉|裁切|抹掉|调亮|调暗|再改|这张图改|那张图改|这张图换|那张图换|这张图加|这张图去掉|让.{0,5}更|让.{0,5}变)/iu;
+
+// Image-edit intent detector. Used by chatExecutionRunner's fast-path to
+// short-circuit the agent loop when (Codex auth + has input image +
+// edit intent + workspace) all hold. Permissive on purpose: the AND with
+// hasInputImage upstream is what protects against false positives, so
+// generic edit verbs ("modify the colors", "swap with X") are fair game
+// here — they would NOT have triggered carry-forward (different gate),
+// but with an image already present they are clearly edit asks.
+export const IMAGE_EDIT_INTENT_PATTERN = /(?:\b(?:edit(?:ed|ing|s)?|change(?:d|s|ing)?|modify|modified|modifies|modifying|replace(?:d|s|ing)?|swap(?:ped|s|ping)?|recolor(?:ed|ing|s)?|retouch(?:ed|ing|es)?|crop(?:ped|s|ping)?|redraw(?:n|s|ing)?|redrew|remove (?:the |this |that )?|add (?:a |the )?|put (?:a |the |some )|make it|turn it into|paint over)\b|改成|改一下|再改|换成|换色|换背景|换一下|换个色|换个|去掉|加上|加个|抠图|抠掉|裁切|裁掉|抹掉|调亮|调暗|调一下|修改|编辑|变成|弄成|做成|搞成|涂掉|擦掉|删掉|换掉|改掉|让.{0,5}更|让.{0,5}变)/iu;
+
+/**
+ * Returns true when the given text reads as an image-edit request. Cheap
+ * regex check — no LLM call. Designed to be combined upstream with a
+ * "does this conversation have an input image?" check via AND, so
+ * false positives are bounded to actual image-bearing turns.
+ */
+export function detectImageEditIntent(text) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  return IMAGE_EDIT_INTENT_PATTERN.test(text);
+}
 export const AUDIO_FOLLOW_UP_PATTERN = /(?:\b(?:audio|voice|recording|recordings|voice note|voicemail|transcript|transcribe|what(?:'s| is) being said|what did (?:he|she|they) say|listen to (?:it|this)|what does the audio say)\b|语音|音频|录音|这段语音|这段音频|这段录音|录音里|语音里|音频里|说了什么|讲了什么|转写|听一下|听听|再听一下)/i;
 export const VIDEO_FOLLOW_UP_PATTERN = /(?:\b(?:video|clip|footage|scene|what(?:'s| is) in the video|what does the video say|what happens in the video|watch (?:it|this))\b|视频|录像|片段|这段视频|这个视频|视频里|画面里|视频说了什么|视频讲了什么|视频里有什么|再看一下视频)/i;
 export const LINK_FOLLOW_UP_PATTERN = /(?:\b(?:link|url|article|page|webpage|website|site|post|post says|summari[sz]e (?:this|that) link|what does this link say|what does the article say|what is on the page)\b|链接|这个链接|那个链接|链接里|文章里|网页里|页面里|这篇文章|这个页面|这个网页|总结一下链接|链接讲了什么|文章讲了什么|页面讲了什么)/i;
