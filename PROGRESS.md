@@ -59,6 +59,7 @@
 - **input_fidelity 不重出现**：所有 edit 路径仍只用裸 `{ type: 'image_generation' }`（Codex 拒任何 variant）。"高保真模拟"靠 (a) 显式 preserve list（buildEditPromptText scaffold）+ (b) stage 1 vision spec 当 reference 实现，不依赖 tool 字段。
 - 测试：`src/**/*.test.js` **1289/1289 全绿**（前 1249 + 8 stage 1+2 + 7 stage 2+3 + 25 fast-path）。
 - 提交：`41d20cf` (step 1) → `94518d0` (step 2) → `2a417b2` (step 3)。
+- Follow-up（Codex D 阻断 → SSRF guard 收紧）：step 3 push 被 Codex 评 D，🟠 真问题：`resolveImageBytes` 对任意 http(s) URL 做服务端 fetch，melo 跑 Telegram/Discord 轮询意味着远程用户可发 `http://127.0.0.1:8080/x.png` / `http://169.254.169.254/aws-metadata/.png` / `http://10.x.y.z/intranet.png`，melo 的 URL 检测器把这升级成 image attachment，URL 到达 image_url 部件，fast-path 服务端 fetch → 字节通过 magic-byte sniff 后给 Codex（数据外泄），或即使 sniff fail 也已发出网络请求作为探测原语。用户批 most conservative 修法：data: URI ONLY，所有 http(s) URL 无条件返 null。Trade-off：Telegram/Discord 上传图（CDN https URL）→ fast-path 不 fire → 走原 chat 流（chat 流 buildCodexResponsesInput 有自己的预存 URL fetch 边界，是另一个 PR 的事）；desktop 拖图（data: URI）→ 仍 work（设计意图就是 desktop-first）。未来扩展可加 signed workspace URL（`verifySignedFileUrl` 验证）支持读已落库图。13 个 SSRF pin 测试覆盖 loopback / RFC1918 / link-local / AWS metadata / 合法 CDN / Telegram CDN / 0.0.0.0 / 127.0.0.1 十进制 / IPv6 link-local——一个 explicit 黑名单 list 防 future "加 allowlist" refactor 误开。提交哈希：`7a871de`。
 - Follow-up 待办：step 4 capability probe（启动时探测 Codex 接受字段 → 持久化 → 自动降级），独立 commit。
 
 ## 2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块
