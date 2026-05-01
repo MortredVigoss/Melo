@@ -84,6 +84,10 @@
   - integration: metadata 改完 round-trip 读回验证（assert PDF.getTitle === ...）/ overlay applied + page count preserved / out-of-bounds page error / PNG embed / CJK reject 在 validator 层（renderer 永远不到）/ rebuild + pdfkit 输出真的是 PDF（"%PDF-" magic）/ explicit engine override / ws-relative path / signed URL
 - 验证：`src/**/*.test.js` **1407/1407 全绿**（前 1362 + 45 新）。
 - 提交：`789fc55`。
+- Follow-up（Codex C round → 4 真 bug 修齐）：上次 push 又被评 C，4 条都是真 bug 我自己 missed：① 🔴 sectionsToHtml 返完整 HTML 文档，但 from_spec rebuild html_playwright 把它喂给 writePdf 又包**第二层** outer HTML——nested doc，外层 style 死代码、fonts/margins 不生效；② 🔵 pdfkit rebuild 分支 schema 接 outputStyle.margins 但没 forward 给 writeStructuredPdf，user-specified margins 静默丢；③ 🔵 sectionsToHtml 第一刀只接 string/number margins，object `{top,right,bottom,left}` 形式 silently fallback 40px；④ ⚪ html_playwright 路径只测 routing，nested-doc bug 不会被 catch。修：抽 `htmlToPdfWithPlaywright(fullHtml, outputPath)` 共享 helper（writePdf 重构走它，from_spec rebuild html_playwright 直接走它不再二次包）；新 `marginsToCss(margins)` helper 三形态归一化（string pass-through / number → `<n>pt` / object → 4-side shorthand 缺角 fallback 40px）；pdfkit 分支 forward outputStyle.margins（pdfkitGenerate.resolveMargins 已支持 object）；用户决策 Codex Q1+Q2: 三 margin 形式都接、html_playwright smoke 用 self-skip 模式跟 pdfRender 一样。
+- 16 个新测试（7 sectionsToHtml contract + 7 marginsToCss matrix + 2 pdfkit margins thread-through + 0 html_playwright smoke 用 self-skip）：sectionsToHtml 产 SINGLE non-nested HTML（DOCTYPE/html/body 各 1 次）+ XSS escape + margin/font 真正 land 进 CSS；marginsToCss 全 input 形态矩阵；pdfkit 分支 margins forward 真正到 writeStructuredPdf；html_playwright 集成 smoke runs when Playwright available else self-skip。
+- 验证：`src/**/*.test.js` **1423/1423 全绿**（前 1407 + 16 新）。
+- 提交：`a4172bc`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
