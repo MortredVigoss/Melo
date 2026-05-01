@@ -17,10 +17,20 @@
  */
 
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
-import { resolve, extname, join, isAbsolute, dirname } from 'node:path';
+import { mkdir, readFile, writeFile, access, stat } from 'node:fs/promises';
+import { resolve, extname, join, isAbsolute, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
+import {
+  mergePdfs,
+  splitPdf,
+  deletePages,
+  addWatermark,
+  addPageNumbers,
+  prependCover,
+  writeBytes,
+} from '../../services/export/pdfLibOps.js';
+import { renderPdfPagesToPngs } from '../../services/export/pdfRender.js';
 
 const MAX_PDF_BYTES = 30 * 1024 * 1024; // 30MB
 const PW_CLI_SESSION = 'melo-search';
@@ -166,10 +176,18 @@ export const pdfTool = {
   id: 'pdf',
   name: 'PDF',
   description:
-    'Read or write PDF files. ' +
-    'Read: extract text content from a local PDF file or PDF URL, returns full text with metadata (pages, title, author). ' +
-    'Write: generate a PDF from text/Markdown/HTML content via Playwright (requires @playwright/cli). ' +
-    'Structured: generate a PDF from a declarative sections[] spec (heading / paragraph / list / table / image / rule / pageBreak) via pdfkit — pure Node, no browser dependency. Prefer `structured` for reports, invoices, and one-pagers.',
+    'PDF tool — read, generate, manipulate, and render PDF files. Actions:\n' +
+    '• read       — extract text from a local PDF file or URL (pdf-parse).\n' +
+    '• write      — generate a PDF from text/Markdown/HTML via Playwright. PREFERRED for content-heavy or CJK output (handles Chinese/Japanese/Korean reliably).\n' +
+    '• structured — declarative sections[] → PDF via pdfkit (no browser dep). Best for invoices, one-pagers, simple reports.\n' +
+    '• merge      — concatenate multiple source PDFs in order.\n' +
+    '• split      — extract a page range from a PDF into a new PDF.\n' +
+    '• delete_pages — remove specified pages, keep the rest.\n' +
+    '• watermark  — stamp a Latin-only text watermark on every page (Helvetica, no CJK).\n' +
+    '• add_page_numbers — stamp Latin-only page numbers (Helvetica, no CJK).\n' +
+    '• prepend_cover — concatenate a cover PDF onto the front of an existing PDF.\n' +
+    '• render     — rasterise pages of a PDF to PNG images (pdftoppm; user must `brew install poppler` once). Use this for visual review of a generated PDF — pass the resulting PNG path back as an image to spot misrendering / overflow / encoding issues.\n' +
+    'CJK caveat: watermark / add_page_numbers use Helvetica StandardFont and reject non-ASCII text. Use write/structured + Playwright for CJK content.',
   category: 'files',
   isConcurrencySafe: true,
   requiresPermission: true,
@@ -178,15 +196,27 @@ export const pdfTool = {
     properties: {
       action: {
         type: 'string',
-        enum: ['read', 'write', 'structured'],
-        description: 'Action to perform: "read" to extract text, "write" for HTML/Markdown → PDF via Playwright, "structured" for declarative sections → PDF via pdfkit.',
+        enum: [
+          'read',
+          'write',
+          'structured',
+          'merge',
+          'split',
+          'delete_pages',
+          'watermark',
+          'add_page_numbers',
+          'prepend_cover',
+          'render',
+        ],
+        description: 'See tool description for the action menu.',
       },
       path: {
         type: 'string',
         description:
           'For read: local file path or URL to a PDF. ' +
-          'For write/structured: optional output file path (must end in .pdf). ' +
-          'If omitted, the PDF is auto-saved into the chat workspace and a displayable URL is returned.',
+          'For write/structured/merge/split/delete_pages/watermark/add_page_numbers/prepend_cover: optional output file path (must end in .pdf). ' +
+          'For split / delete_pages / watermark / add_page_numbers / prepend_cover / render: this is also the SOURCE PDF when source is omitted (the action operates in place into a new file). ' +
+          'If omitted on write/structured, the PDF is auto-saved into the chat workspace and a displayable URL is returned.',
       },
       content: {
         type: 'string',
@@ -211,7 +241,57 @@ export const pdfTool = {
       pageSize: { type: 'string', description: 'For structured: A4 | LETTER | LEGAL. Default A4.' },
       pages: {
         type: 'string',
-        description: 'For read only: page range to extract, e.g. "1-5", "3", "10-20". Default: all pages.',
+        description: 'For read: page range note in output, e.g. "1-5", "3", "10-20". Default: all pages.',
+      },
+      // ─── Action-specific inputs (all optional unless documented) ───────────
+      source: {
+        type: 'string',
+        description:
+          'For split / delete_pages / watermark / add_page_numbers / prepend_cover / render: source PDF path. Required for these actions when `path` is the OUTPUT path. If omitted, `path` is treated as the source AND a new output path is auto-allocated in the workspace.',
+      },
+      sources: {
+        type: 'array',
+        description:
+          'For merge only: list of 2+ source PDF paths to concatenate in order. Required.',
+        items: { type: 'string' },
+      },
+      pageRange: {
+        type: 'string',
+        description:
+          'For split / delete_pages / render: page range to operate on. Examples: "3" (single page), "1-5", "1-3,7,10-12" (multi-range, split/delete only — render takes a single range). 1-indexed.',
+      },
+      watermarkText: {
+        type: 'string',
+        description: 'For watermark: ASCII / Latin-only text to stamp on every page (Helvetica StandardFont; CJK not supported).',
+      },
+      watermarkOpacity: {
+        type: 'number',
+        description: 'For watermark: opacity 0.0–1.0. Default 0.25.',
+      },
+      watermarkAngle: {
+        type: 'number',
+        description: 'For watermark: rotation in degrees. Default -45.',
+      },
+      watermarkFontSize: {
+        type: 'number',
+        description: 'For watermark: font size in points. Default 60.',
+      },
+      pageNumberFormat: {
+        type: 'string',
+        description: 'For add_page_numbers: format with {n} and {total} placeholders. Default "{n} / {total}". ASCII only.',
+      },
+      pageNumberPosition: {
+        type: 'string',
+        enum: ['bottom-center', 'bottom-right', 'bottom-left', 'top-center', 'top-right', 'top-left'],
+        description: 'For add_page_numbers: which margin slot. Default "bottom-center".',
+      },
+      coverPath: {
+        type: 'string',
+        description: 'For prepend_cover: path to the cover PDF that will be inserted before the source.',
+      },
+      renderScale: {
+        type: 'number',
+        description: 'For render: pixel scale (2 → 144dpi default; 1 → 72dpi). Range 1–8.',
       },
     },
     required: ['action'],
@@ -236,10 +316,109 @@ export const pdfTool = {
   ],
 
   async run(args, context = {}) {
-    const { action, path, content, format = 'text', pages } = args || {};
-    const { signal, workspacePath } = context;
+    const {
+      action,
+      path,
+      content,
+      format = 'text',
+      pages,
+      // ── new action-specific args ───────────────────────────────────────────
+      source,
+      sources,
+      pageRange,
+      watermarkText,
+      watermarkOpacity,
+      watermarkAngle,
+      watermarkFontSize,
+      pageNumberFormat,
+      pageNumberPosition,
+      coverPath,
+      renderScale,
+    } = args || {};
+    const { signal: _signal, workspacePath } = context;
     if (!action) {
       return { ok: false, output: 'Missing required parameter: action.', error: 'INVALID_PARAMS' };
+    }
+
+    // Resolve a writable .pdf output path. Same rules as the original
+    // write/structured branches:
+    //   1. explicit absolute path  → use as-is
+    //   2. explicit relative path + workspacePath → relative to workspace
+    //   3. no path + workspacePath → auto-allocate <ws>/generated/pdf-…pdf
+    //   4. otherwise → null (caller returns NO_OUTPUT_PATH)
+    function allocatePdfOutputPath(maybePath) {
+      if (maybePath) {
+        if (!maybePath.toLowerCase().endsWith('.pdf')) {
+          return { error: 'Output path must end in .pdf', errorCode: 'INVALID_PARAMS' };
+        }
+        const abs = isAbsolute(maybePath)
+          ? maybePath
+          : workspacePath
+            ? resolve(workspacePath, maybePath)
+            : resolve(maybePath);
+        return { path: abs };
+      }
+      if (!workspacePath) {
+        return {
+          error: 'No workspace available and no "path" provided.',
+          errorCode: 'NO_OUTPUT_PATH',
+        };
+      }
+      const ts = Date.now().toString(36);
+      const rand = randomBytes(4).toString('hex');
+      return { path: join(workspacePath, 'generated', `pdf-${ts}-${rand}.pdf`) };
+    }
+
+    // Resolve the source PDF for in-place actions
+    // (split / delete_pages / watermark / add_page_numbers / prepend_cover /
+    // render). The user can either:
+    //   a) pass `source` explicitly + `path` as the output target, or
+    //   b) pass only `path` — we treat it as the source AND auto-allocate
+    //      a sibling output path under workspace/generated/.
+    function resolveSourceAndOutput() {
+      if (source) {
+        if (!source.toLowerCase().endsWith('.pdf')) {
+          return { error: '`source` must end in .pdf', errorCode: 'INVALID_PARAMS' };
+        }
+        const srcPath = isAbsolute(source) ? source : resolve(source);
+        const out = allocatePdfOutputPath(path);
+        if (out.error) return { error: out.error, errorCode: out.errorCode };
+        return { srcPath, outPath: out.path };
+      }
+      // No explicit source → `path` is the source. Auto-allocate output.
+      if (!path) {
+        return {
+          error: 'Provide either `source` (with optional `path` output) or `path` (used as source).',
+          errorCode: 'INVALID_PARAMS',
+        };
+      }
+      const srcPath = isAbsolute(path) ? path : resolve(path);
+      if (!srcPath.toLowerCase().endsWith('.pdf')) {
+        return { error: '`path` must end in .pdf when used as source', errorCode: 'INVALID_PARAMS' };
+      }
+      const out = allocatePdfOutputPath(null);
+      if (out.error) return { error: out.error, errorCode: out.errorCode };
+      return { srcPath, outPath: out.path };
+    }
+
+    // Wrap the result of a successful write into the standard
+    // {ok, output, meta} response, including the signed URL when the
+    // output landed inside the chat workspace.
+    function buildWriteResponse(outPath, byteCount, extraMeta = {}, label) {
+      let url = null;
+      if (workspacePath && outPath.startsWith(workspacePath)) {
+        try { url = signWorkspaceFileUrl(outPath); } catch { /* best-effort */ }
+      }
+      const sizeKb = (byteCount / 1024).toFixed(1);
+      const lead = label || 'PDF';
+      const text = url
+        ? `${lead}: ${url}\n(saved to ${outPath}, ${sizeKb} KB)`
+        : `${lead} created: ${outPath} (${sizeKb} KB)`;
+      return {
+        ok: true,
+        output: text,
+        meta: { path: outPath, bytes: byteCount, url, ...extraMeta },
+      };
     }
 
     if (action === 'read') {
@@ -270,87 +449,233 @@ export const pdfTool = {
       if (!content) {
         return { ok: false, output: 'Missing "content" for write action.', error: 'INVALID_PARAMS' };
       }
-
-      // Resolve the target path. Priority:
-      //   1. Explicit absolute path → use as-is.
-      //   2. Explicit relative path + workspacePath → relative to workspace.
-      //   3. No path given + workspacePath → auto-allocate in `generated/`.
-      //   4. Otherwise → INVALID_PARAMS, since we won't silently dump PDFs into cwd.
-      let outPath;
-      if (path) {
-        if (!path.toLowerCase().endsWith('.pdf')) {
-          return { ok: false, output: 'Output path must end in .pdf', error: 'INVALID_PARAMS' };
-        }
-        outPath = isAbsolute(path) ? path : (workspacePath ? resolve(workspacePath, path) : resolve(path));
-      } else if (workspacePath) {
-        const ts = Date.now().toString(36);
-        const rand = randomBytes(4).toString('hex');
-        outPath = join(workspacePath, 'generated', `pdf-${ts}-${rand}.pdf`);
-      } else {
-        return {
-          ok: false,
-          output: 'No workspace available and no "path" provided.',
-          error: 'NO_OUTPUT_PATH',
-        };
+      const outAlloc = allocatePdfOutputPath(path);
+      if (outAlloc.error) {
+        return { ok: false, output: outAlloc.error, error: outAlloc.errorCode || 'INVALID_PARAMS' };
       }
-
+      try { await mkdir(dirname(outAlloc.path), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        await mkdir(dirname(outPath), { recursive: true });
-      } catch { /* non-fatal — writePdf will surface any real write failure */ }
-
-      try {
-        const result = await writePdf(outPath, content, format);
-        let url = null;
-        if (workspacePath && result.path.startsWith(workspacePath)) {
-          try { url = signWorkspaceFileUrl(result.path); } catch { /* best-effort */ }
-        }
-        const label = url
-          ? `PDF: ${url}\n(saved to ${result.path}, ${(result.size / 1024).toFixed(1)} KB)`
-          : `PDF created: ${result.path} (${(result.size / 1024).toFixed(1)} KB)`;
-        return {
-          ok: true,
-          output: label,
-          meta: { ...result, url },
-        };
+        const result = await writePdf(outAlloc.path, content, format);
+        return buildWriteResponse(result.path, result.size);
       } catch (err) {
         return { ok: false, output: `Failed to write PDF: ${err.message}`, error: 'WRITE_FAILED' };
       }
     }
 
     if (action === 'structured') {
-      // Resolve output path (same rules as write).
-      let outPath;
-      if (path) {
-        if (!path.toLowerCase().endsWith('.pdf')) {
-          return { ok: false, output: 'Output path must end in .pdf', error: 'INVALID_PARAMS' };
-        }
-        outPath = isAbsolute(path) ? path : (workspacePath ? resolve(workspacePath, path) : resolve(path));
-      } else if (workspacePath) {
-        const ts = Date.now().toString(36);
-        const rand = randomBytes(4).toString('hex');
-        outPath = join(workspacePath, 'generated', `pdf-${ts}-${rand}.pdf`);
-      } else {
-        return { ok: false, output: 'No workspace available and no "path" provided.', error: 'NO_OUTPUT_PATH' };
+      const outAlloc = allocatePdfOutputPath(path);
+      if (outAlloc.error) {
+        return { ok: false, output: outAlloc.error, error: outAlloc.errorCode || 'INVALID_PARAMS' };
       }
-
-      try { await mkdir(dirname(outPath), { recursive: true }); } catch { /* non-fatal */ }
-
+      try { await mkdir(dirname(outAlloc.path), { recursive: true }); } catch { /* non-fatal */ }
       try {
         const { writeStructuredPdf } = await import('../../services/export/pdfkitGenerate.js');
-        const result = await writeStructuredPdf(outPath, args);
-        let url = null;
-        if (workspacePath && result.path.startsWith(workspacePath)) {
-          try { url = signWorkspaceFileUrl(result.path); } catch { /* best-effort */ }
-        }
-        const label = url
-          ? `PDF: ${url}\n(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.sections} section${result.sections === 1 ? '' : 's'}, engine=pdfkit)`
-          : `PDF created: ${result.path} (${(result.bytes / 1024).toFixed(1)} KB, engine=pdfkit)`;
-        return { ok: true, output: label, meta: { ...result, url } };
+        const result = await writeStructuredPdf(outAlloc.path, args);
+        return buildWriteResponse(result.path, result.bytes, {
+          sections: result.sections,
+          engine: 'pdfkit',
+        });
       } catch (err) {
         return { ok: false, output: `Failed to write structured PDF: ${err.message}`, error: 'WRITE_FAILED' };
       }
     }
 
-    return { ok: false, output: `Unknown action: "${action}". Use "read", "write", or "structured".`, error: 'INVALID_ACTION' };
+    // ─── merge ───────────────────────────────────────────────────────────────
+    if (action === 'merge') {
+      if (!Array.isArray(sources) || sources.length < 2) {
+        return { ok: false, output: 'merge: provide `sources` (array of 2+ PDF paths).', error: 'INVALID_PARAMS' };
+      }
+      const outAlloc = allocatePdfOutputPath(path);
+      if (outAlloc.error) {
+        return { ok: false, output: outAlloc.error, error: outAlloc.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(outAlloc.path), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const absSources = sources.map(s => (isAbsolute(s) ? s : resolve(s)));
+        const result = await mergePdfs(absSources);
+        await writeBytes(outAlloc.path, result.bytes);
+        return buildWriteResponse(outAlloc.path, result.bytes.length, {
+          totalPages: result.totalPages,
+          sourcesCount: result.sources,
+        }, `Merged ${result.sources} PDFs (${result.totalPages} pages)`);
+      } catch (err) {
+        return { ok: false, output: `merge failed: ${err.message}`, error: 'MERGE_FAILED' };
+      }
+    }
+
+    // ─── split ───────────────────────────────────────────────────────────────
+    if (action === 'split') {
+      if (!pageRange) {
+        return { ok: false, output: 'split: missing `pageRange` (e.g. "1-3" or "1-3,5,7-9").', error: 'INVALID_PARAMS' };
+      }
+      const resolved = resolveSourceAndOutput();
+      if (resolved.error) {
+        return { ok: false, output: resolved.error, error: resolved.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const result = await splitPdf(resolved.srcPath, pageRange);
+        await writeBytes(resolved.outPath, result.bytes);
+        return buildWriteResponse(resolved.outPath, result.bytes.length, {
+          extractedPages: result.kept,
+        }, `Split ${result.pages} page${result.pages === 1 ? '' : 's'} (range "${pageRange}")`);
+      } catch (err) {
+        return { ok: false, output: `split failed: ${err.message}`, error: 'SPLIT_FAILED' };
+      }
+    }
+
+    // ─── delete_pages ────────────────────────────────────────────────────────
+    if (action === 'delete_pages') {
+      if (!pageRange) {
+        return { ok: false, output: 'delete_pages: missing `pageRange` (e.g. "2,4-5").', error: 'INVALID_PARAMS' };
+      }
+      const resolved = resolveSourceAndOutput();
+      if (resolved.error) {
+        return { ok: false, output: resolved.error, error: resolved.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const result = await deletePages(resolved.srcPath, pageRange);
+        await writeBytes(resolved.outPath, result.bytes);
+        return buildWriteResponse(resolved.outPath, result.bytes.length, {
+          kept: result.kept,
+          deleted: result.deleted,
+        }, `Removed ${result.deleted} page${result.deleted === 1 ? '' : 's'}, kept ${result.kept}`);
+      } catch (err) {
+        return { ok: false, output: `delete_pages failed: ${err.message}`, error: 'DELETE_FAILED' };
+      }
+    }
+
+    // ─── watermark ───────────────────────────────────────────────────────────
+    if (action === 'watermark') {
+      if (!watermarkText) {
+        return { ok: false, output: 'watermark: missing `watermarkText`.', error: 'INVALID_PARAMS' };
+      }
+      const resolved = resolveSourceAndOutput();
+      if (resolved.error) {
+        return { ok: false, output: resolved.error, error: resolved.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const result = await addWatermark(resolved.srcPath, watermarkText, {
+          opacity: watermarkOpacity,
+          angle: watermarkAngle,
+          fontSize: watermarkFontSize,
+        });
+        await writeBytes(resolved.outPath, result.bytes);
+        return buildWriteResponse(resolved.outPath, result.bytes.length, {
+          watermarkText,
+          pages: result.pages,
+        }, `Watermarked ${result.pages} page${result.pages === 1 ? '' : 's'}`);
+      } catch (err) {
+        return { ok: false, output: `watermark failed: ${err.message}`, error: 'WATERMARK_FAILED' };
+      }
+    }
+
+    // ─── add_page_numbers ────────────────────────────────────────────────────
+    if (action === 'add_page_numbers') {
+      const resolved = resolveSourceAndOutput();
+      if (resolved.error) {
+        return { ok: false, output: resolved.error, error: resolved.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const result = await addPageNumbers(resolved.srcPath, {
+          format: pageNumberFormat,
+          position: pageNumberPosition,
+        });
+        await writeBytes(resolved.outPath, result.bytes);
+        return buildWriteResponse(resolved.outPath, result.bytes.length, {
+          totalPages: result.total,
+        }, `Added page numbers to ${result.total} page${result.total === 1 ? '' : 's'}`);
+      } catch (err) {
+        return { ok: false, output: `add_page_numbers failed: ${err.message}`, error: 'PAGE_NUMBERS_FAILED' };
+      }
+    }
+
+    // ─── prepend_cover ───────────────────────────────────────────────────────
+    if (action === 'prepend_cover') {
+      if (!coverPath) {
+        return { ok: false, output: 'prepend_cover: missing `coverPath`.', error: 'INVALID_PARAMS' };
+      }
+      const resolved = resolveSourceAndOutput();
+      if (resolved.error) {
+        return { ok: false, output: resolved.error, error: resolved.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
+      try {
+        const absCover = isAbsolute(coverPath) ? coverPath : resolve(coverPath);
+        const result = await prependCover(resolved.srcPath, absCover);
+        await writeBytes(resolved.outPath, result.bytes);
+        return buildWriteResponse(resolved.outPath, result.bytes.length, {
+          coverPages: result.coverPages,
+          sourcePages: result.sourcePages,
+          totalPages: result.totalPages,
+        }, `Prepended ${result.coverPages}-page cover to ${result.sourcePages}-page source (total ${result.totalPages})`);
+      } catch (err) {
+        return { ok: false, output: `prepend_cover failed: ${err.message}`, error: 'PREPEND_FAILED' };
+      }
+    }
+
+    // ─── render ──────────────────────────────────────────────────────────────
+    if (action === 'render') {
+      if (!path) {
+        return { ok: false, output: 'render: missing `path` (source PDF).', error: 'INVALID_PARAMS' };
+      }
+      const srcPath = isAbsolute(path) ? path : resolve(path);
+      if (!srcPath.toLowerCase().endsWith('.pdf')) {
+        return { ok: false, output: 'render: source path must end in .pdf', error: 'INVALID_PARAMS' };
+      }
+      // Output PNGs always go into the workspace's generated/ dir under
+      // a per-render subfolder so multiple renders don't fight for the
+      // same `page-1.png` filename.
+      if (!workspacePath) {
+        return { ok: false, output: 'render: no workspace available to save page images.', error: 'NO_OUTPUT_PATH' };
+      }
+      const ts = Date.now().toString(36);
+      const rand = randomBytes(4).toString('hex');
+      const outDir = join(workspacePath, 'generated', `pdf-render-${ts}-${rand}`);
+      try {
+        const result = await renderPdfPagesToPngs({
+          sourcePath: srcPath,
+          outputDir: outDir,
+          scale: renderScale,
+          pageRange,
+        });
+        // Sign every page URL so the chat can render them inline as
+        // images (the assistant can then vision-check the result).
+        const urls = [];
+        for (const p of result.paths) {
+          try { urls.push(signWorkspaceFileUrl(p)); } catch { urls.push(null); }
+        }
+        const linesOut = result.paths.map((p, i) => {
+          const url = urls[i];
+          return url
+            ? `Page ${i + 1}: ${url}`
+            : `Page ${i + 1}: ${p}`;
+        });
+        return {
+          ok: true,
+          output:
+            `Rendered ${result.count} page${result.count === 1 ? '' : 's'} ` +
+            `(${result.dpi} dpi):\n${linesOut.join('\n')}`,
+          meta: {
+            paths: result.paths,
+            urls,
+            dpi: result.dpi,
+            count: result.count,
+            outputDir: outDir,
+          },
+        };
+      } catch (err) {
+        return { ok: false, output: `render failed: ${err.message}`, error: 'RENDER_FAILED' };
+      }
+    }
+
+    return {
+      ok: false,
+      output: `Unknown action: "${action}". See tool description for the menu.`,
+      error: 'INVALID_ACTION',
+    };
   },
 };
