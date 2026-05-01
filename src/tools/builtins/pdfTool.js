@@ -121,6 +121,44 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Normalise outputStyle.margins to a CSS shorthand string.
+//
+// pdfEditSpec.validateEditSpec accepts three shapes for `margins`:
+//   • string  — "1in" / "20px" — passed through verbatim
+//   • number  — interpreted as PDF points → "<n>pt"
+//   • object {top,right,bottom,left} — shorthand
+//                                      "<top> <right> <bottom> <left>"
+//                                      (CSS expects all four for the
+//                                      shorthand to apply per side;
+//                                      missing sides fall back to the
+//                                      40px default for that side)
+//
+// Codex review (2026-05-01 Batch C round) flagged that the html_
+// playwright path silently reverted any object-form margins to the
+// 40px default. Both the pdfkit and html_playwright engines now
+// honour all three shapes.
+//
+// Exported for tests.
+export function marginsToCss(margins) {
+  if (margins == null) return '40px';
+  if (typeof margins === 'string') return margins;
+  if (typeof margins === 'number') {
+    if (!Number.isFinite(margins)) return '40px';
+    return `${margins}pt`;
+  }
+  if (typeof margins === 'object' && !Array.isArray(margins)) {
+    const fmt = side => {
+      const v = margins[side];
+      if (v == null) return '40px';
+      if (typeof v === 'number') return Number.isFinite(v) ? `${v}pt` : '40px';
+      if (typeof v === 'string') return v;
+      return '40px';
+    };
+    return `${fmt('top')} ${fmt('right')} ${fmt('bottom')} ${fmt('left')}`;
+  }
+  return '40px';
+}
+
 // Convert a rebuild spec's sections[] array into a self-contained
 // HTML body. Used by from_spec when the rebuild engine routes to
 // Playwright (CJK content / outputStyle.fontFamily wants browser
@@ -128,16 +166,14 @@ function escapeHtml(s) {
 // pdfkit-based action='structured' path so the model's spec is
 // engine-agnostic — the renderer picks the engine based on
 // language + style needs.
-function sectionsToHtml(sections, outputStyle = {}) {
+//
+// Exported for tests so the document shape (single, non-nested,
+// inline-style block) can be pinned without spinning up Playwright.
+export function sectionsToHtml(sections, outputStyle = {}) {
   const fontFamily =
     outputStyle?.fontFamily ||
     "-apple-system, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', sans-serif";
-  const margin =
-    typeof outputStyle?.margins === 'string'
-      ? outputStyle.margins
-      : typeof outputStyle?.margins === 'number'
-        ? `${outputStyle.margins}pt`
-        : '40px';
+  const margin = marginsToCss(outputStyle?.margins);
 
   const body = sections.map(s => {
     if (!s || typeof s !== 'object' || typeof s.type !== 'string') return '';
@@ -219,9 +255,36 @@ function markdownToHtml(md) {
     .replace(/\n/g, '<br>');
 }
 
-async function writePdf(outputPath, content, format = 'text') {
+// Shared Playwright handoff. Takes a COMPLETE HTML document
+// (`<!DOCTYPE html>` + `<html>` + `<head>` + `<body>`) and renders
+// it to a PDF via the bundled @playwright/cli session.
+//
+// Why this is a separate helper from `writePdf`:
+//   • `writePdf` is for the legacy `write` action which receives
+//     raw user-supplied content (text/markdown/html) and needs to
+//     wrap it in our default scaffold + style.
+//   • `from_spec rebuild html_playwright` already has a complete
+//     HTML document built by sectionsToHtml — wrapping it again
+//     creates a nested document where the outer style block is
+//     dead. Codex review (2026-05-01 round) flagged this.
+//   • Sharing the temp-file + spawn cleanup logic means a future
+//     fix to the Playwright invocation lives in one place.
+async function htmlToPdfWithPlaywright(fullHtml, outputPath) {
   const absPath = resolve(outputPath);
+  const tmpHtml = absPath.replace(/\.pdf$/i, '') + '.tmp.html';
+  await writeFile(tmpHtml, fullHtml, 'utf8');
+  try {
+    await runPlaywrightCli(['open', `file://${tmpHtml}`], 15_000);
+    await runPlaywrightCli(['pdf', absPath], 20_000);
+  } finally {
+    const { unlink } = await import('node:fs/promises');
+    unlink(tmpHtml).catch(() => {});
+  }
+  const st = await stat(absPath);
+  return { path: absPath, size: st.size };
+}
 
+async function writePdf(outputPath, content, format = 'text') {
   let htmlBody;
   if (format === 'html') {
     htmlBody = content;
@@ -250,23 +313,7 @@ async function writePdf(outputPath, content, format = 'text') {
 </style>
 </head><body>${htmlBody}</body></html>`;
 
-  // Write temp HTML, then use Playwright to convert to PDF
-  const tmpHtml = absPath.replace(/\.pdf$/i, '') + '.tmp.html';
-  await writeFile(tmpHtml, fullHtml, 'utf8');
-
-  try {
-    // Navigate to local file and print to PDF
-    await runPlaywrightCli(['open', `file://${tmpHtml}`], 15_000);
-    await runPlaywrightCli(['pdf', absPath], 20_000);
-  } finally {
-    // Clean up temp HTML
-    const { unlink } = await import('node:fs/promises');
-    unlink(tmpHtml).catch(() => {});
-  }
-
-  // Verify output exists
-  const stat = await import('node:fs/promises').then(fs => fs.stat(absPath));
-  return { path: absPath, size: stat.size };
+  return await htmlToPdfWithPlaywright(fullHtml, outputPath);
 }
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
@@ -916,17 +963,20 @@ export const pdfTool = {
         const engine = pickRebuildEngine(spec);
         if (engine === 'pdfkit') {
           const { writeStructuredPdf } = await import('../../services/export/pdfkitGenerate.js');
-          // pdfkit's structured spec accepts sections + title / author /
-          // subject / pageSize. We pass everything from outputStyle that
-          // the structured renderer understands; CSS-only fields like
-          // fontFamily and margins are ignored on this engine (logged
-          // implicitly as "engine=pdfkit" in the meta).
+          // pdfkit's structured spec accepts sections, page-size,
+          // metadata, AND margins (resolveMargins inside
+          // pdfkitGenerate already accepts the {top,right,bottom,
+          // left} object shape — we just forward the value).
+          // fontFamily is the only outputStyle field that doesn't
+          // map onto pdfkit (StandardFonts only); the model is told
+          // about that limitation in the schema description.
           const structuredArgs = {
             sections: spec.sections,
             title: spec.outputStyle?.title,
             author: spec.outputStyle?.author,
             subject: spec.outputStyle?.subject,
             pageSize: spec.outputStyle?.pageSize,
+            margins: spec.outputStyle?.margins,
           };
           const result = await writeStructuredPdf(outAlloc.path, structuredArgs);
           return buildWriteResponse(result.path, result.bytes, {
@@ -936,16 +986,16 @@ export const pdfTool = {
           }, `Rebuilt PDF via pdfkit (${result.sections} section${result.sections === 1 ? '' : 's'})`);
         }
 
-        // engine === 'html_playwright' — convert sections to HTML and
-        // hand off to the existing Playwright path (writePdf with
-        // format='html'). Section-to-HTML is intentionally minimal:
-        // h1/h2/h3 / p / ul / table / pageBreak. Anything more
-        // sophisticated (lists, code, image embeds) needs the model
-        // to emit `write` with raw HTML instead of from_spec.
+        // engine === 'html_playwright' — sectionsToHtml already
+        // produces a COMPLETE HTML document (with <!doctype>, <html>,
+        // <head><style>, <body>). We hand it directly to the shared
+        // Playwright helper rather than going through writePdf,
+        // which would wrap a SECOND complete document around it
+        // (Codex review 2026-05-01 caught the nested-doc bug —
+        // outer styles became dead code).
         const html = sectionsToHtml(spec.sections, spec.outputStyle);
-        await writePdf(outAlloc.path, html, 'html');
-        const sizeBytes = (await stat(outAlloc.path)).size;
-        return buildWriteResponse(outAlloc.path, sizeBytes, {
+        const result = await htmlToPdfWithPlaywright(html, outAlloc.path);
+        return buildWriteResponse(result.path, result.size, {
           mode: 'rebuild',
           engine: 'html_playwright',
           sections: spec.sections.length,
