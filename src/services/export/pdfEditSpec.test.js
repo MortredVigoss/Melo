@@ -485,6 +485,134 @@ test('sectionsContainCjk: object row with CJK in UNDECLARED key → NOT detected
   );
 });
 
+// ─── CJK punctuation + fullwidth forms (Codex round 6 regression) ──────────
+//
+// Codex review round 6 (2026-05-02) caught that the round-4 switch
+// from hand-coded ranges to `\p{Script=...}` silently dropped
+// coverage for CJK Symbols & Punctuation (U+3000–303F) and
+// Halfwidth/Fullwidth Forms (U+FF00–FFEF) — those characters live
+// in Script=Common, not Han/Hiragana/Katakana/Hangul. pdfkit
+// Helvetica still tofus them. Round 6 fix restored coverage with
+// `scx` (Script_Extensions) + explicit ranges. These tests pin
+// the restored behaviour so a future "more Unicode-correct"
+// refactor can't regress it.
+
+test('sectionsContainCjk: detects CJK punctuation alone (Script=Common, scx includes Hani)', () => {
+  // 。 (U+3002) IDEOGRAPHIC FULL STOP — pdfkit Helvetica has no
+  // glyph for this. Must trigger CJK detection even when no
+  // ideographs / kana / hangul are present.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '。' }]),
+    true,
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '，' }]),
+    true,
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '「重要」' }]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects fullwidth digits (U+FF10-FF19)', () => {
+  // １２３ — pdfkit Helvetica only ships glyphs for U+0020-007E
+  // (Basic Latin). Fullwidth digits are tofu in pdfkit.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '１２３ 元' }]),
+    true,
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '１' }]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects fullwidth Latin (U+FF21-FF3A, U+FF41-FF5A)', () => {
+  // ＡＢＣ — fullwidth Latin letters. Script_Extensions=Latin
+  // only (NOT in scx=Han/Hiragana/Katakana/Hangul), so they're
+  // caught by the explicit U+FF00-FFEF block range, not by scx.
+  // This test pins that the block-range layer is in place.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'ＡＢＣ' }]),
+    true,
+    'fullwidth Latin must be detected (block-range layer)',
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'ｈｅｌｌｏ' }]),
+    true,
+    'fullwidth lowercase Latin too',
+  );
+});
+
+test('sectionsContainCjk: detects CJK punctuation in TABLE HEADER', () => {
+  assert.equal(
+    sectionsContainCjk([
+      {
+        type: 'table',
+        columns: [{ header: '价格（元）' }, { header: 'Plain' }],
+        rows: [['100', 'x']],
+      },
+    ]),
+    true,
+    'CJK punctuation in column headers must trigger detection',
+  );
+});
+
+test('sectionsContainCjk: detects fullwidth chars in OBJECT-FORM rows', () => {
+  // Combination of round-4 (object-form mirror) + round-6
+  // (fullwidth forms coverage). Object row, column with key,
+  // value contains fullwidth digits → must detect.
+  assert.equal(
+    sectionsContainCjk([
+      {
+        type: 'table',
+        columns: [{ header: 'Code', key: 'code' }, { header: 'Total', key: 'total' }],
+        rows: [
+          { code: 'A1', total: '１，２３４ 元' }, // fullwidth digits + comma
+        ],
+      },
+    ]),
+    true,
+  );
+});
+
+// ─── pickRebuildEngine routing for CJK punctuation / fullwidth ──────────────
+
+test('pickRebuildEngine: pure CJK punctuation routes to html_playwright', () => {
+  // Document that contains ONLY CJK punctuation (no Han / kana /
+  // Hangul) must still route to the right engine. Common case:
+  // a header line like "===== 章节 =====" with mostly punctuation.
+  assert.equal(
+    pickRebuildEngine({ sections: [{ type: 'paragraph', text: '。、！？' }] }),
+    'html_playwright',
+  );
+});
+
+test('pickRebuildEngine: pure fullwidth Latin routes to html_playwright', () => {
+  // Pure ASCII would route to pdfkit; pure fullwidth Latin must
+  // NOT — Helvetica can't render fullwidth glyphs. The router has
+  // to send it to Playwright.
+  assert.equal(
+    pickRebuildEngine({ sections: [{ type: 'paragraph', text: 'ＨＥＬＬＯ' }] }),
+    'html_playwright',
+  );
+});
+
+test('pickRebuildEngine: explicit pdfkit override still wins for fullwidth content', () => {
+  // The override contract (round-3 Q2 decision) holds even for
+  // the round-6 expanded coverage: a user who explicitly picks
+  // pdfkit gets pdfkit, even with content the auto-router would
+  // have sent to Playwright.
+  assert.equal(
+    pickRebuildEngine({
+      rebuildEngine: 'pdfkit',
+      sections: [{ type: 'paragraph', text: '。、ＡＢＣ１２３' }],
+    }),
+    'pdfkit',
+  );
+});
+
 test('sectionsContainCjk: handles bad input without throwing', () => {
   assert.equal(sectionsContainCjk(null), false);
   assert.equal(sectionsContainCjk(undefined), false);

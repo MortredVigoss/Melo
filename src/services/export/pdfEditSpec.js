@@ -271,29 +271,39 @@ function validateRebuild(spec) {
 
 // ─── engine-routing helper ──────────────────────────────────────────────────
 
-// CJK detection. Codex review round 4 (2026-05-02) flagged that the
-// hand-coded BMP range list missed:
-//   • CJK Extension A (U+3400–4DBF)   — uncommon historical Han
-//   • CJK Extension B–F (U+20000+)    — BMP-outside Han, needs
-//                                       surrogate pair handling
-//   • Compatibility Ideographs (U+F900–FAFF) — duplicate Han chars
-//   • Hangul Jamo (U+1100–11FF) + Jamo Extended (U+A960–A97F /
-//     U+D7B0–D7FF) — Korean syllable building blocks
-// All of those go to pdfkit → tofu under the previous router.
+// CJK detection. The contract: return true for any character that
+// would render as ▢▢ tofu under pdfkit StandardFonts. Since
+// `pdfkit-StandardFont-can-render-this-char` isn't a single Unicode
+// property, the pattern is the union of two layers:
 //
-// Unicode property escapes (\p{Script=...} with /u flag, ES2018+,
-// Node 12+) cover every Han / Hiragana / Katakana / Hangul block
-// including future Unicode revisions automatically. This is the
-// Unicode-spec-correct way to detect CJK script — replaces the
-// hand-coded range list which was guaranteed to drift.
+//   1. Script_Extensions (`scx`) ∈ {Han, Hiragana, Katakana, Hangul}
+//      — covers all Han (including Extension A/B/C/D/E/F via /u-flag
+//      surrogate-pair handling), Hiragana, Katakana, Hangul Syllables
+//      + Jamo + Jamo Extended. Uses `scx` instead of `Script` so a
+//      char like 。 (U+3002, Script=Common but Script_Extensions
+//      includes Hani) gets caught here too.
+//
+//   2. Two explicit Unicode blocks `[　-〿＀-￯]`
+//      — CJK Symbols & Punctuation + Halfwidth and Fullwidth Forms.
+//      Most chars in these blocks have scx=Han, but fullwidth Latin
+//      letters (Ａ U+FF21, Script_Extensions=Latin only) do NOT — yet
+//      pdfkit Helvetica still tofus them because they're in the
+//      Halfwidth/Fullwidth block and Helvetica only ships glyphs
+//      for Basic Latin (U+0020-007E). The explicit range catches
+//      everything in the block regardless of Script_Extensions.
+//
+// Codex review round 6 (2026-05-02) caught the round-4 regression:
+// switching to `\p{Script=...}` had silently dropped CJK punctuation
+// (U+3000-303F) and fullwidth forms (U+FF00-FFEF) coverage that
+// round 3's hand-coded list had. Restored with belt-and-suspenders.
 //
 // Latin-extended (é/ñ/ü), Cyrillic, Arabic, Hebrew etc. are
 // intentionally NOT detected — pdfkit Helvetica renders them
-// adequately (imperfectly but not as tofu). If a future user audit
-// complains about specific scripts, add them here as additional
-// alternations.
+// adequately (imperfectly but not as tofu). The two-layer approach
+// means future Unicode revisions auto-extend the Han / Hiragana /
+// Katakana / Hangul coverage; the explicit blocks stay frozen.
 const CJK_TEXT_PATTERN =
-  /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/u;
+  /\p{scx=Han}|\p{scx=Hiragana}|\p{scx=Katakana}|\p{scx=Hangul}|[　-〿＀-￯]/u;
 
 /**
  * Returns true when ANY string field inside the rebuild spec's
