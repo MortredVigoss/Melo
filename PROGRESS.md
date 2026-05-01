@@ -103,6 +103,10 @@
 - 6 个新边界测试：CJK Extension A (U+3400/34DA/4DBF) / Compatibility (U+F900 + U+FAD9 last assigned，pin block end at real edge 而不是 unassigned U+FAFF) / Hangul Jamo (U+1100, U+D7B0) / BMP-outside Extension B (U+20000 via String.fromCodePoint，pin /u flag) / object-form rows with CJK + columns[].key / **negative**：undeclared key 上 CJK 不 flag（pin contract = mirror renderTable）。
 - 验证：`src/**/*.test.js` **1457/1457 全绿**。
 - 提交：`c6e02b1`。
+- Follow-up（Codex C round 5 → sectionsToHtml table 漏 object-row 渲染）：上次 push 又评 C，🔴 真问题 + 反讽：round 4 修了 sectionsContainCjk 能识别 object-form CJK 路由 html_playwright，但**sectionsToHtml 自己只渲染 array-form rows**，line 340 `Array.isArray(r) ? r : []` 把 object 替换为空数组 → 输出 `<tbody><tr></tr></tbody>` → CJK 内容**完全丢失**。比 pdfkit tofu 更糟（tofu 至少看得见，empty rows 是不可见的 silent data loss）。Codex 用一行 repro 演示给我看。修：sectionsToHtml table 也 mirror renderTable 的 read 路径——array row 原样输出 / object row 按 columns[].key 读 / 缺 key 输出空 `<td></td>`（与 pdfkit 行为一致）。3 个 effect-validating 测试（不是只 assert ok:true，直接 match HTML output 含 `张三`/`北京` 等真实内容；array+object 混合 rows；缺 key 输出空 cell）。
+- 用户拍板 Q1+Q2：object-form rows 是**稳定契约**两 engine 都要支持；缺 key 输出空 cell（engine-agnostic 行为）。
+- 验证：`src/**/*.test.js` **1460/1460 全绿**。
+- 提交：`372b251`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
