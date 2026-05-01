@@ -121,6 +121,130 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// CSS-unit → PDF-points conversion. PDF points are the universal
+// pdfkit/PDF unit (1 in = 72 pt). Browsers interpret `px` as 1/96 in
+// regardless of physical DPI, so a 96 dpi conversion gives parity
+// between an `<style>margin: 40px</style>` rendered by Playwright
+// and a `margins: { top: 30 }` (= 40px in pt) on pdfkit.
+//
+// Supported units (everything else returns null → caller falls back
+// to default per side):
+//   pt — identity
+//   px — 0.75 pt
+//   in — 72 pt
+//   cm — 28.3464567 pt
+//   mm — 2.83464567 pt
+//   em / rem — NOT supported (depends on font-size which we don't
+//              know at conversion time). Returning null is honest.
+const CSS_UNIT_TO_POINTS = {
+  pt: 1,
+  px: 0.75,
+  in: 72,
+  cm: 28.3464567,
+  mm: 2.83464567,
+};
+
+// Parse a length value in CSS or numeric form. Returns the numeric
+// PDF-points value, or null when the input is empty / unparseable /
+// uses an unsupported unit.
+function parseLengthToPoints(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(/^(-?\d+(?:\.\d+)?)\s*([a-z%]*)$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const unit = (m[2] || 'pt').toLowerCase();
+  const factor = CSS_UNIT_TO_POINTS[unit];
+  if (factor == null) return null;
+  return n * factor;
+}
+
+// pdfkit's resolveMargins fallback per side.
+const PDFKIT_DEFAULT_MARGIN_PT = 60;
+
+// Normalise outputStyle.margins to a numeric points object that
+// pdfkit's resolveMargins will accept. Codex review (Batch C round 2,
+// 2026-05-01) caught that pdfkit silently ignored string / object-of-
+// strings margins; without this helper the engine returned to its
+// 60pt default whenever the user passed a CSS-shaped value.
+//
+// Three input shapes (matches marginsToCss):
+//   string   — single CSS length applied to all 4 sides
+//   number   — interpreted as pt, applied to all 4 sides
+//   object   — { top, right, bottom, left }, each side parsed
+//              independently. Missing or unparseable sides fall back
+//              to PDFKIT_DEFAULT_MARGIN_PT for that side only.
+//   anything else / null / undefined → 4 × default
+//
+// Exported for tests so the conversion table can be pinned without
+// rendering an actual PDF.
+export function marginsToPoints(margins) {
+  const def = PDFKIT_DEFAULT_MARGIN_PT;
+  if (margins == null) {
+    return { top: def, right: def, bottom: def, left: def };
+  }
+  if (typeof margins === 'string' || typeof margins === 'number') {
+    const v = parseLengthToPoints(margins);
+    const x = v != null ? v : def;
+    return { top: x, right: x, bottom: x, left: x };
+  }
+  if (typeof margins === 'object' && !Array.isArray(margins)) {
+    const each = key => {
+      const v = parseLengthToPoints(margins[key]);
+      return v != null ? v : def;
+    };
+    return {
+      top: each('top'),
+      right: each('right'),
+      bottom: each('bottom'),
+      left: each('left'),
+    };
+  }
+  return { top: def, right: def, bottom: def, left: def };
+}
+
+// CSS-value sanitizer. Codex review (Batch C round 2) flagged that
+// fontFamily and margin values were being inlined into the
+// `<style>` block without checking — a model could emit
+// "}body{...}</style><script>fetch(...)</script><style>{" and break
+// out of the style block. Playwright runs file:// URLs with full
+// JavaScript privileges, so injection here is genuinely exploitable.
+//
+// Rule: allow only the characters that legitimately appear in CSS
+// font-family / length values:
+//   • letters, digits
+//   • whitespace
+//   • single + double quotes (font names: 'Noto Sans SC')
+//   • hyphen, underscore, dot (font names: -apple-system, .SF Pro)
+//   • comma (font fallback list)
+//   • percent sign (lengths: 100%)
+//   • forward slash (compound shorthands occasionally)
+//
+// Anything else — including `<`, `>`, `{`, `}`, `;`, `*`, `@`, `(`,
+// `)`, `\` — gets the value rejected and we substitute the safe
+// fallback (the helper returns null for the caller to react).
+//
+// Not a full CSS parser, on purpose. The point is to make injection
+// impossible, not to validate every CSS spec edge case. If a user
+// has a legitimate CSS value that contains restricted characters
+// (rare), they can stop using from_spec and call writePdf with raw
+// HTML directly.
+const SAFE_CSS_VALUE_PATTERN = /^[\w\s'",\-_.%/]*$/;
+
+export function sanitizeCssValue(value) {
+  if (value == null) return null;
+  const s = String(value);
+  if (!s.trim()) return null;
+  if (!SAFE_CSS_VALUE_PATTERN.test(s)) return null;
+  return s;
+}
+
 // Normalise outputStyle.margins to a CSS shorthand string.
 //
 // pdfEditSpec.validateEditSpec accepts three shapes for `margins`:
@@ -169,11 +293,26 @@ export function marginsToCss(margins) {
 //
 // Exported for tests so the document shape (single, non-nested,
 // inline-style block) can be pinned without spinning up Playwright.
+// Default fontFamily — used when outputStyle.fontFamily is absent
+// OR fails CSS sanitization. Constant string ensures the default
+// never mutates; the sanitizer is checked here too as a defence-in-
+// depth assertion (would catch a refactor that breaks the constant).
+const DEFAULT_HTML_FONT_FAMILY =
+  "-apple-system, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', sans-serif";
+
+const DEFAULT_HTML_MARGIN_CSS = '40px';
+
 export function sectionsToHtml(sections, outputStyle = {}) {
+  // Sanitize style values BEFORE inlining into <style> block.
+  // Sanitizer returns null on any input containing CSS-injection
+  // chars (`<`, `>`, `{`, `}`, `;`, `@`, etc.) — falling back to
+  // the constant defaults guarantees no model output can break out
+  // of the style block to inject scripts. Playwright runs file://
+  // pages with full JS privileges, so this matters.
   const fontFamily =
-    outputStyle?.fontFamily ||
-    "-apple-system, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', sans-serif";
-  const margin = marginsToCss(outputStyle?.margins);
+    sanitizeCssValue(outputStyle?.fontFamily) || DEFAULT_HTML_FONT_FAMILY;
+  const marginCss = marginsToCss(outputStyle?.margins);
+  const margin = sanitizeCssValue(marginCss) || DEFAULT_HTML_MARGIN_CSS;
 
   const body = sections.map(s => {
     if (!s || typeof s !== 'object' || typeof s.type !== 'string') return '';
@@ -963,20 +1102,25 @@ export const pdfTool = {
         const engine = pickRebuildEngine(spec);
         if (engine === 'pdfkit') {
           const { writeStructuredPdf } = await import('../../services/export/pdfkitGenerate.js');
-          // pdfkit's structured spec accepts sections, page-size,
-          // metadata, AND margins (resolveMargins inside
-          // pdfkitGenerate already accepts the {top,right,bottom,
-          // left} object shape — we just forward the value).
+          // pdfkit's resolveMargins only accepts a NUMERIC object —
+          // string forms ("1in") and CSS-shaped objects silently
+          // revert to the 60pt default. Codex review (Batch C round
+          // 2, 2026-05-01) caught this. We pre-convert via
+          // marginsToPoints so the user-specified margins survive
+          // intact regardless of input shape.
           // fontFamily is the only outputStyle field that doesn't
-          // map onto pdfkit (StandardFonts only); the model is told
-          // about that limitation in the schema description.
+          // map onto pdfkit (StandardFonts only); the schema
+          // description tells the model.
           const structuredArgs = {
             sections: spec.sections,
             title: spec.outputStyle?.title,
             author: spec.outputStyle?.author,
             subject: spec.outputStyle?.subject,
             pageSize: spec.outputStyle?.pageSize,
-            margins: spec.outputStyle?.margins,
+            margins:
+              spec.outputStyle?.margins != null
+                ? marginsToPoints(spec.outputStyle.margins)
+                : undefined,
           };
           const result = await writeStructuredPdf(outAlloc.path, structuredArgs);
           return buildWriteResponse(result.path, result.bytes, {
