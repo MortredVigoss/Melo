@@ -61,6 +61,15 @@
 - Follow-up（Codex C → 路径契约不对称 + render schema/impl 偏离）：上次 push 被 Codex C，🔵 真问题：① 输入相对路径用 `resolve(p)` 解析到 process.cwd()，但输出相对路径用 `resolve(workspacePath, p)` 解析到 workspace——意味着 `{ action: 'split', path: 'mydoc.pdf' }` 实际从 cwd 读，不是 workspace；② schema 说 `source` 可用于 render 但实现只看 path 完全忽略 source。修：抽 `resolveInputPdfPath(p)` helper（绝对 use-as-is / 相对 + workspace → workspace 解析 / 相对无 workspace → cwd fallback），threaded 进 source / path-as-source / merge sources[] / prepend_cover coverPath / render；render 加 source 接受（跟其他 actions 一致），schema 描述同步。8 个新回归测试覆盖 ws-relative input 各种 case、source+path output 组合、render with source、absolute path 仍优先（防 fix 自身误 shadow）、schema/impl 对齐 guard。验证 1351/1351 全绿。提交哈希：`98a1502`。
 - 下一刀：Batch B（视觉验收 system prompt 引导 + 集成）。
 
+## 2026-05-01 16:00 — PDF Batch B：视觉验收 workflow 嵌入 pdfTool description
+
+- Batch A 落了 render 基建，Batch B 教 agent 用它闭环：generate → render → self-check → fix-or-finalize。零新 API 成本（Codex vision 是 Plus 内置免费）。
+- 落在 `pdfTool.description` 里（不动 global system prompt）：当 agent 工具白名单含 `pdf` 时 buildToolsSystemPrompt 自动 inject；不含时不污染。+700 字符的 `VISUAL REVIEW WORKFLOW` block 描述 5 步流程：① 生成 ② 立即 render(pageRange="1-3", renderScale=2) ③ 自检三轴（LAYOUT/FONT/CONTENT FIDELITY，对应用户 audit 的"中文乱码、表格溢出、标题错位、漏内容"）④ 坏了 fix（常见：pdfkit `structured` → Playwright `write` for CJK/复杂排版；widen margins；chunk 长 section）⑤ 只把 FINAL PDF URL 返给用户，PNG render URLs 是模型自检用不要 echo。三种 skip 条件：用户说"别审"/PDF trivial/poppler 未装。
+- 测试 9 个新（pdfTool.workflow.test.js）：每个 review axis 单独 pin keyword（VISUAL REVIEW WORKFLOW header、render back-reference、tofu 检测、layout/content fidelity、Do NOT echo PNG 规则、structured→write 修法、Skip 退出条件、ws-relative buildToolsSystemPrompt 包含/不含 pdfTool 时 workflow 出现/消失）—— future 任何精简/改写 drop 一条都会被独立 assertion 抓住，无 silent drift。
+- 验证：`src/**/*.test.js` **1360/1360 全绿**。
+- 提交：`c2bd16f`。
+- 下一刀：Batch C（edit_spec JSON schema + renderer + pdfTool entry）。
+
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
 
 - 用户做 code review 后给的诊断：chat 流 + 裸 image_generation tool 的编辑路径效果远差于 ChatGPT 图片编辑器，原因是 (1) agent system prompt 太重稀释编辑指令 (2) 没有 explicit "preserve list" 锁定未编辑区域 (3) 不能用 `input_fidelity` (Codex 拒)。用户开方案：抽独立两阶段 pipeline（vision analysis → 短 prompt edit）+ edit intent 判断 + 不混 agent prompt。
