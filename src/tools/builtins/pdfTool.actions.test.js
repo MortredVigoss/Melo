@@ -453,12 +453,13 @@ test('render: `source` wins when both source and path are given', async () => {
 
 // ─── schema sanity ──────────────────────────────────────────────────────────
 
-test('all 10 actions are listed in the parametersSchema enum', () => {
+test('all 11 actions are listed in the parametersSchema enum', () => {
   const expected = [
     'read', 'write', 'structured',
     'merge', 'split', 'delete_pages',
     'watermark', 'add_page_numbers', 'prepend_cover',
     'render',
+    'from_spec',
   ];
   assert.deepEqual(pdfTool.parametersSchema.properties.action.enum, expected);
 });

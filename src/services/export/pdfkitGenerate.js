@@ -54,15 +54,23 @@ export async function writeStructuredPdf(outputPath, spec) {
 
   const { default: PDFDocument } = await import('pdfkit');
 
+  // pdfkit v0.15 PDFSecurity.generateFileID() crashes when info.*
+  // values are undefined (it tries to call .valueOf() on each one).
+  // Build the info object with ONLY defined keys, and always include
+  // CreationDate so pdfkit's metadata serialiser has something to
+  // hash. Pre-existing bug surfaced by Batch C from_spec tests; fix
+  // is local and applies to both `structured` and `from_spec
+  // mode='rebuild' rebuildEngine='pdfkit'`.
+  const info = { CreationDate: new Date() };
+  if (normalized.title) info.Title = normalized.title;
+  if (normalized.author) info.Author = normalized.author;
+  if (normalized.subject) info.Subject = normalized.subject;
+  if (normalized.keywords) info.Keywords = normalized.keywords;
+
   const doc = new PDFDocument({
     size: normalized.pageSize,
     margins: normalized.margins,
-    info: {
-      Title: normalized.title || undefined,
-      Author: normalized.author || undefined,
-      Subject: normalized.subject || undefined,
-      Keywords: normalized.keywords || undefined,
-    },
+    info,
     autoFirstPage: true,
   });
 

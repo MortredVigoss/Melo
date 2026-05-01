@@ -28,9 +28,15 @@ import {
   addWatermark,
   addPageNumbers,
   prependCover,
+  applyInPlaceOverlays,
   writeBytes,
 } from '../../services/export/pdfLibOps.js';
 import { renderPdfPagesToPngs } from '../../services/export/pdfRender.js';
+import {
+  validateEditSpec,
+  pickRebuildEngine,
+  resolveSpecInputPath,
+} from '../../services/export/pdfEditSpec.js';
 
 const MAX_PDF_BYTES = 30 * 1024 * 1024; // 30MB
 const PW_CLI_SESSION = 'melo-search';
@@ -102,6 +108,99 @@ async function readPdfFromUrl(url) {
 }
 
 // ─── Write PDF ──────────────────────────────────────────────────────────────
+
+// HTML escape used by sectionsToHtml below. Escapes the four
+// XML-significant characters so user content can't break out of
+// the HTML structure we generate.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Convert a rebuild spec's sections[] array into a self-contained
+// HTML body. Used by from_spec when the rebuild engine routes to
+// Playwright (CJK content / outputStyle.fontFamily wants browser
+// font fallback). Keeps the same section vocabulary as the
+// pdfkit-based action='structured' path so the model's spec is
+// engine-agnostic — the renderer picks the engine based on
+// language + style needs.
+function sectionsToHtml(sections, outputStyle = {}) {
+  const fontFamily =
+    outputStyle?.fontFamily ||
+    "-apple-system, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', sans-serif";
+  const margin =
+    typeof outputStyle?.margins === 'string'
+      ? outputStyle.margins
+      : typeof outputStyle?.margins === 'number'
+        ? `${outputStyle.margins}pt`
+        : '40px';
+
+  const body = sections.map(s => {
+    if (!s || typeof s !== 'object' || typeof s.type !== 'string') return '';
+    if (s.type === 'heading') {
+      const level = Math.min(Math.max(parseInt(s.level, 10) || 1, 1), 6);
+      return `<h${level}>${escapeHtml(s.text)}</h${level}>`;
+    }
+    if (s.type === 'paragraph') {
+      return `<p>${escapeHtml(s.text)}</p>`;
+    }
+    if (s.type === 'list') {
+      const tag = s.ordered ? 'ol' : 'ul';
+      const items = (Array.isArray(s.items) ? s.items : [])
+        .map(item => `<li>${escapeHtml(item)}</li>`)
+        .join('');
+      return `<${tag}>${items}</${tag}>`;
+    }
+    if (s.type === 'table') {
+      const cols = Array.isArray(s.columns) ? s.columns : [];
+      const rows = Array.isArray(s.rows) ? s.rows : [];
+      const thead = cols
+        .map(c => `<th>${escapeHtml(c?.header || '')}</th>`)
+        .join('');
+      const tbody = rows
+        .map(r => `<tr>${(Array.isArray(r) ? r : []).map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`)
+        .join('');
+      return `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+    }
+    if (s.type === 'image' && s.path) {
+      // file:// gives Playwright direct disk access. Playwright's
+      // default sandbox already restricts to local files, so this
+      // is no extra exposure — same path the existing write+html
+      // path uses.
+      return `<img src="file://${escapeHtml(s.path)}" alt="" />`;
+    }
+    if (s.type === 'code') {
+      return `<pre><code>${escapeHtml(s.text)}</code></pre>`;
+    }
+    if (s.type === 'rule') return '<hr />';
+    if (s.type === 'spacer') return '<div style="height:24px"></div>';
+    if (s.type === 'pageBreak') return '<div style="page-break-after: always;"></div>';
+    return '';
+  }).join('\n');
+
+  return [
+    '<!DOCTYPE html>',
+    '<html><head><meta charset="utf-8">',
+    '<style>',
+    `  body { font-family: ${fontFamily}; margin: ${margin}; line-height: 1.6; color: #222; }`,
+    '  h1 { font-size: 24px; margin-bottom: 8px; }',
+    '  h2 { font-size: 20px; margin-bottom: 6px; }',
+    '  h3 { font-size: 16px; margin-bottom: 4px; }',
+    '  table { border-collapse: collapse; width: 100%; margin: 12px 0; }',
+    '  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }',
+    '  th { background: #f5f5f5; }',
+    '  pre code { display: block; padding: 12px; background: #f4f4f4; }',
+    '  img { max-width: 100%; height: auto; }',
+    '</style>',
+    '</head><body>',
+    body,
+    '</body></html>',
+  ].join('\n');
+}
 
 function markdownToHtml(md) {
   // Lightweight markdown → HTML for PDF generation
@@ -186,7 +285,8 @@ export const pdfTool = {
     '• watermark  — stamp a Latin-only text watermark on every page (Helvetica, no CJK).\n' +
     '• add_page_numbers — stamp Latin-only page numbers (Helvetica, no CJK).\n' +
     '• prepend_cover — concatenate a cover PDF onto the front of an existing PDF.\n' +
-    '• render     — rasterise pages of a PDF to PNG images (pdftoppm; user must `brew install poppler` once). Returns signed image URLs you can read back as visual references.\n' +
+'• render     — rasterise pages of a PDF to PNG images (pdftoppm; user must `brew install poppler` once). Returns signed image URLs you can read back as visual references.\n' +
+    '• from_spec  — execute a structured PDF edit-spec (JSON) describing either an in-place overlay (text/image/metadata/form fields on top of an existing PDF) OR a full rebuild (sections[] → new PDF, engine auto-picked by language hint). Use this when the model wants to plan the edit in JSON first instead of stringing together multiple tool calls. See the schema notes on the `editSpec` parameter below.\n' +
     'CJK caveat: watermark / add_page_numbers use Helvetica StandardFont and reject non-ASCII text. Use write/structured + Playwright for CJK content.\n\n' +
     'VISUAL REVIEW WORKFLOW — apply this whenever you generate a non-trivial PDF (write / structured / merge / multi-step pipeline):\n' +
     '1. Generate the PDF as usual. Save the output URL — that\'s what the user gets in the end.\n' +
@@ -214,6 +314,7 @@ export const pdfTool = {
           'add_page_numbers',
           'prepend_cover',
           'render',
+          'from_spec',
         ],
         description: 'See tool description for the action menu.',
       },
@@ -302,6 +403,32 @@ export const pdfTool = {
         type: 'number',
         description: 'For render: pixel scale (2 → 144dpi default; 1 → 72dpi). Range 1–8.',
       },
+      editSpec: {
+        type: 'object',
+        description:
+          'For from_spec only: structured PDF edit specification.\n' +
+          'Shape:\n' +
+          '  { mode: "in_place_overlay" | "rebuild",\n' +
+          '    // mode="in_place_overlay" — pdf-lib operations on an existing PDF.\n' +
+          '    // Cannot do textual replacement (pdf-lib doesn\'t reflow); use rebuild for that.\n' +
+          '    sourcePdf: string,            // required for in_place_overlay\n' +
+          '    overlays?: [\n' +
+          '      { type: "text", page: 1+, x, y, text, fontSize?, color?: [r,g,b in 0..1] },\n' +
+          '      { type: "image", page: 1+, x, y, imagePath, width?, height? },\n' +
+          '    ],\n' +
+          '    metadata?: { title?, author?, subject? },\n' +
+          '    formFields?: [{ name, value }],\n' +
+          '\n' +
+          '    // mode="rebuild" — generate a fresh PDF from sections[].\n' +
+          '    sections: [...],              // required, same shape as action="structured" sections[]\n' +
+          '    sourcePdf?: string,           // optional reference (e.g. for the model\'s own context)\n' +
+          '    outputStyle?: { language?: "zh-CN" | "en-US" | ..., fontFamily?: CSS string,\n' +
+          '                    pageSize?: "A4" | "LETTER" | "LEGAL", margins?: string | {top,right,bottom,left} },\n' +
+          '    rebuildEngine?: "auto" | "pdfkit" | "html_playwright"  // auto routes by language\n' +
+          '  }\n' +
+          'CJK in overlays is rejected (Helvetica StandardFont has no CJK). Use mode="rebuild" for CJK content.\n' +
+          'in_place_overlay caveat: PDF format does NOT support reliable text REPLACEMENT — overlays add new content on top, they do not modify existing text. To swap "5.5" for "gpt", use mode="rebuild".',
+      },
     },
     required: ['action'],
   },
@@ -343,6 +470,7 @@ export const pdfTool = {
       pageNumberPosition,
       coverPath,
       renderScale,
+      editSpec,
     } = args || {};
     const { signal: _signal, workspacePath } = context;
     if (!action) {
@@ -734,6 +862,96 @@ export const pdfTool = {
         };
       } catch (err) {
         return { ok: false, output: `render failed: ${err.message}`, error: 'RENDER_FAILED' };
+      }
+    }
+
+    // ─── from_spec ───────────────────────────────────────────────────────────
+    if (action === 'from_spec') {
+      // 1. Validate the spec object up front so the model gets a
+      //    structured error pointing at the offending field, not a
+      //    deep stack trace from inside pdf-lib / Playwright.
+      const validation = validateEditSpec(editSpec);
+      if (!validation.ok) {
+        return { ok: false, output: `from_spec: ${validation.error}`, error: 'INVALID_SPEC' };
+      }
+      const spec = validation.spec;
+      const outAlloc = allocatePdfOutputPath(path);
+      if (outAlloc.error) {
+        return { ok: false, output: outAlloc.error, error: outAlloc.errorCode || 'INVALID_PARAMS' };
+      }
+      try { await mkdir(dirname(outAlloc.path), { recursive: true }); } catch { /* non-fatal */ }
+
+      // ── Branch by mode ────────────────────────────────────────────────
+      try {
+        if (spec.mode === 'in_place_overlay') {
+          // Resolve sourcePdf + overlay imagePaths against workspace
+          // (matches the rest of pdfTool's path contract).
+          const srcPath = resolveSpecInputPath(spec.sourcePdf, workspacePath);
+          if (!srcPath) {
+            return { ok: false, output: 'from_spec.sourcePdf could not be resolved', error: 'INVALID_PARAMS' };
+          }
+          const sourceBytes = await readFile(srcPath);
+          // Resolve imagePaths in overlays + apply.
+          const resolvedSpec = {
+            ...spec,
+            overlays: Array.isArray(spec.overlays)
+              ? spec.overlays.map(ov =>
+                  ov.type === 'image'
+                    ? { ...ov, imagePath: resolveSpecInputPath(ov.imagePath, workspacePath) }
+                    : ov,
+                )
+              : undefined,
+          };
+          const result = await applyInPlaceOverlays(sourceBytes, resolvedSpec);
+          await writeBytes(outAlloc.path, result.bytes);
+          return buildWriteResponse(outAlloc.path, result.bytes.length, {
+            mode: 'in_place_overlay',
+            overlaysApplied: result.overlaysApplied,
+            metadataKeys: result.metadataKeys,
+            formFieldsApplied: result.formFieldsApplied,
+          }, `In-place edit (${result.overlaysApplied} overlay${result.overlaysApplied === 1 ? '' : 's'}, ${result.metadataKeys.length} metadata field${result.metadataKeys.length === 1 ? '' : 's'}, ${result.formFieldsApplied} form field${result.formFieldsApplied === 1 ? '' : 's'})`);
+        }
+
+        // mode === 'rebuild'
+        const engine = pickRebuildEngine(spec);
+        if (engine === 'pdfkit') {
+          const { writeStructuredPdf } = await import('../../services/export/pdfkitGenerate.js');
+          // pdfkit's structured spec accepts sections + title / author /
+          // subject / pageSize. We pass everything from outputStyle that
+          // the structured renderer understands; CSS-only fields like
+          // fontFamily and margins are ignored on this engine (logged
+          // implicitly as "engine=pdfkit" in the meta).
+          const structuredArgs = {
+            sections: spec.sections,
+            title: spec.outputStyle?.title,
+            author: spec.outputStyle?.author,
+            subject: spec.outputStyle?.subject,
+            pageSize: spec.outputStyle?.pageSize,
+          };
+          const result = await writeStructuredPdf(outAlloc.path, structuredArgs);
+          return buildWriteResponse(result.path, result.bytes, {
+            mode: 'rebuild',
+            engine: 'pdfkit',
+            sections: result.sections,
+          }, `Rebuilt PDF via pdfkit (${result.sections} section${result.sections === 1 ? '' : 's'})`);
+        }
+
+        // engine === 'html_playwright' — convert sections to HTML and
+        // hand off to the existing Playwright path (writePdf with
+        // format='html'). Section-to-HTML is intentionally minimal:
+        // h1/h2/h3 / p / ul / table / pageBreak. Anything more
+        // sophisticated (lists, code, image embeds) needs the model
+        // to emit `write` with raw HTML instead of from_spec.
+        const html = sectionsToHtml(spec.sections, spec.outputStyle);
+        await writePdf(outAlloc.path, html, 'html');
+        const sizeBytes = (await stat(outAlloc.path)).size;
+        return buildWriteResponse(outAlloc.path, sizeBytes, {
+          mode: 'rebuild',
+          engine: 'html_playwright',
+          sections: spec.sections.length,
+        }, `Rebuilt PDF via Playwright (${spec.sections.length} section${spec.sections.length === 1 ? '' : 's'})`);
+      } catch (err) {
+        return { ok: false, output: `from_spec failed: ${err.message}`, error: 'FROM_SPEC_FAILED' };
       }
     }
 

@@ -304,6 +304,122 @@ export async function prependCover(sourcePath, coverPath) {
   };
 }
 
+// ─── in-place overlay (Batch C — edit_spec mode='in_place_overlay') ─────────
+//
+// Apply a sequence of overlays + metadata + form-field updates to an
+// existing PDF, return the modified bytes. Inputs are pre-validated by
+// pdfEditSpec.validateEditSpec so this function trusts its arguments
+// — no extra defensive checks here, just the actual pdf-lib calls.
+//
+// All overlay text uses Helvetica StandardFont (Latin only). pdfEdit
+// Spec rejects CJK overlays at validation time, so the model gets a
+// clear error instead of tofu output.
+//
+// @param {Buffer|Uint8Array} sourceBytes  bytes of the source PDF
+// @param {object} spec  validated edit-spec (mode='in_place_overlay')
+// @returns {Promise<{ bytes: Uint8Array, overlaysApplied: number,
+//                     metadataKeys: string[], formFieldsApplied: number }>}
+export async function applyInPlaceOverlays(sourceBytes, spec) {
+  const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
+  const doc = await PDFDocument.load(sourceBytes);
+
+  let overlaysApplied = 0;
+  let formFieldsApplied = 0;
+  const metadataKeys = [];
+
+  // ── metadata ──────────────────────────────────────────────────────────
+  if (spec.metadata) {
+    if (typeof spec.metadata.title === 'string') {
+      doc.setTitle(spec.metadata.title);
+      metadataKeys.push('title');
+    }
+    if (typeof spec.metadata.author === 'string') {
+      doc.setAuthor(spec.metadata.author);
+      metadataKeys.push('author');
+    }
+    if (typeof spec.metadata.subject === 'string') {
+      doc.setSubject(spec.metadata.subject);
+      metadataKeys.push('subject');
+    }
+  }
+
+  // ── overlays ──────────────────────────────────────────────────────────
+  if (Array.isArray(spec.overlays) && spec.overlays.length > 0) {
+    const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+    const pages = doc.getPages();
+    for (const ov of spec.overlays) {
+      const idx = ov.page - 1;
+      const page = pages[idx];
+      if (!page) {
+        throw new Error(
+          `applyInPlaceOverlays: overlay targets page ${ov.page} but PDF has only ${pages.length} page${pages.length === 1 ? '' : 's'}`,
+        );
+      }
+      if (ov.type === 'text') {
+        const color = Array.isArray(ov.color) ? ov.color : [0, 0, 0];
+        page.drawText(ov.text, {
+          x: ov.x,
+          y: ov.y,
+          size: ov.fontSize || 12,
+          font: helvetica,
+          color: rgb(color[0], color[1], color[2]),
+        });
+        overlaysApplied += 1;
+      } else if (ov.type === 'image') {
+        // We expect a resolved absolute path here (caller resolves
+        // via pdfEditSpec.resolveSpecInputPath). Read + embed.
+        const bytes = await readFile(ov.imagePath);
+        let img;
+        // Magic-byte sniff so an image labelled .jpg but containing
+        // PNG bytes still works (and vice versa).
+        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+          img = await doc.embedPng(bytes);
+        } else if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+          img = await doc.embedJpg(bytes);
+        } else {
+          throw new Error(
+            `applyInPlaceOverlays: image at ${ov.imagePath} is not a valid PNG or JPG (pdf-lib only embeds those two formats)`,
+          );
+        }
+        page.drawImage(img, {
+          x: ov.x,
+          y: ov.y,
+          width: typeof ov.width === 'number' ? ov.width : img.width,
+          height: typeof ov.height === 'number' ? ov.height : img.height,
+        });
+        overlaysApplied += 1;
+      }
+    }
+  }
+
+  // ── form fields ───────────────────────────────────────────────────────
+  if (Array.isArray(spec.formFields) && spec.formFields.length > 0) {
+    let form;
+    try {
+      form = doc.getForm();
+    } catch {
+      throw new Error(
+        'applyInPlaceOverlays: PDF has no form layer (formFields can only be set on fillable PDF forms)',
+      );
+    }
+    for (const f of spec.formFields) {
+      let field;
+      try {
+        field = form.getTextField(f.name);
+      } catch {
+        throw new Error(
+          `applyInPlaceOverlays: form field "${f.name}" not found or is not a text field. Available fields can be inspected externally with form-aware PDF tools.`,
+        );
+      }
+      field.setText(String(f.value));
+      formFieldsApplied += 1;
+    }
+  }
+
+  const bytes = await doc.save();
+  return { bytes, overlaysApplied, metadataKeys, formFieldsApplied };
+}
+
 // ─── write helper (used by pdfTool wrapper) ─────────────────────────────────
 
 /** Convenience: persist a `bytes` Buffer/Uint8Array to disk. */
