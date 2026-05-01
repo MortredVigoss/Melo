@@ -307,6 +307,150 @@ test('render: non-pdf source path → INVALID_PARAMS', async () => {
   });
 });
 
+// ─── path contract regressions (Codex review 2026-05-01) ────────────────────
+//
+// The first cut of batch A had inputs resolving to process.cwd() while
+// outputs resolved to <workspace>/, which broke any call site that
+// passed a workspace-relative input path (the canonical melo
+// convention). It also documented `source` as a render input but the
+// implementation only honoured `path`. These tests pin the corrected
+// contract:
+//
+//   • Inputs (sources / source / path-as-source / coverPath)
+//     resolve to <workspace>/<p> when relative, identity when
+//     absolute. Same as outputs. Same as every other melo tool.
+//   • render accepts BOTH `source` and `path` for symmetry with the
+//     other in-place actions. `source` wins when both are passed
+//     (matches resolveSourceAndOutput).
+
+test('path contract: workspace-relative `path` (used as source) for split → reads from workspace, not cwd', async () => {
+  await withWorkspace(async ws => {
+    // Create the PDF inside the workspace, NOT inside cwd. With the
+    // pre-fix behaviour the resolver would look in process.cwd() and
+    // get ENOENT.
+    const filename = 'doc.pdf';
+    await writeFile(join(ws, filename), await makeFakePdf(5));
+    const result = await pdfTool.run(
+      { action: 'split', path: filename, pageRange: '1-2' },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, true, `expected split to read ws-relative input; got ${result.output}`);
+    assert.equal(result.meta.path.startsWith(ws), true);
+  });
+});
+
+test('path contract: `source` + `path` combo writes output to ws-relative path', async () => {
+  await withWorkspace(async ws => {
+    await writeFile(join(ws, 'src.pdf'), await makeFakePdf(3));
+    const result = await pdfTool.run(
+      {
+        action: 'split',
+        source: 'src.pdf',          // workspace-relative input
+        path: 'out/extracted.pdf',  // workspace-relative explicit output
+        pageRange: '1',
+      },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.meta.path, join(ws, 'out', 'extracted.pdf'));
+    // File actually exists at the expected workspace-relative path.
+    const s = await stat(result.meta.path);
+    assert.ok(s.size > 0);
+  });
+});
+
+test('path contract: merge sources with workspace-relative entries', async () => {
+  await withWorkspace(async ws => {
+    const { mkdir: makeDir } = await import('node:fs/promises');
+    await writeFile(join(ws, 'a.pdf'), await makeFakePdf(2));
+    await makeDir(join(ws, 'sub'), { recursive: true });
+    await writeFile(join(ws, 'sub', 'b.pdf'), await makeFakePdf(3));
+    const result = await pdfTool.run(
+      { action: 'merge', sources: ['a.pdf', 'sub/b.pdf'] },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.meta.totalPages, 5);
+  });
+});
+
+test('path contract: prepend_cover with workspace-relative coverPath', async () => {
+  await withWorkspace(async ws => {
+    await writeFile(join(ws, 'main.pdf'), await makeFakePdf(3));
+    await writeFile(join(ws, 'cover.pdf'), await makeFakePdf(1));
+    const result = await pdfTool.run(
+      { action: 'prepend_cover', path: 'main.pdf', coverPath: 'cover.pdf' },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.meta.totalPages, 4);
+  });
+});
+
+test('path contract: absolute paths still take precedence over workspace resolution', async () => {
+  // Regression on the fix itself: an absolute path to somewhere
+  // outside the workspace must NOT be silently re-rooted under it.
+  await withWorkspace(async ws => {
+    const outside = await mkdtemp(join(tmpdir(), 'melo-pdftool-outside-'));
+    try {
+      const absSrc = join(outside, 'src.pdf');
+      await writeFile(absSrc, await makeFakePdf(2));
+      const result = await pdfTool.run(
+        { action: 'split', path: absSrc, pageRange: '1' },
+        { workspacePath: ws },
+      );
+      assert.equal(result.ok, true);
+      // Output still lands in the workspace (auto-allocated).
+      assert.equal(result.meta.path.startsWith(ws), true);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test('render: contract accepts `source` (matches schema docs) — Codex 2026-05-01 schema/impl alignment', async () => {
+  // The schema describes `source` as valid for render; the original
+  // impl ignored `source` and required `path`. Fixed: render now
+  // accepts either, with `source` winning. We force pdftoppm
+  // missing here so we hit the install hint quickly without
+  // depending on the binary being present in the test env — what
+  // matters is that we get past the missing-path gate to the
+  // RENDER_FAILED branch.
+  _setPdftoppmAvailable(false);
+  await withWorkspace(async ws => {
+    await writeFile(join(ws, 'src.pdf'), await makeFakePdf(1));
+    const result = await pdfTool.run(
+      { action: 'render', source: 'src.pdf' },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.error,
+      'RENDER_FAILED',
+      `expected render to PROCEED past path validation when only source is given; got ${result.error}: ${result.output}`,
+    );
+    // Specifically the install hint, not "missing path" — confirms
+    // path validation passed and we got into the renderer itself.
+    assert.match(result.output, /brew install poppler/);
+  });
+});
+
+test('render: `source` wins when both source and path are given', async () => {
+  _setPdftoppmAvailable(false);
+  await withWorkspace(async ws => {
+    await writeFile(join(ws, 'a.pdf'), await makeFakePdf(1));
+    const result = await pdfTool.run(
+      { action: 'render', source: 'a.pdf', path: 'a.pdf' },
+      { workspacePath: ws },
+    );
+    // Either way it goes into the renderer (then bails on install
+    // hint). The point is we don't get an INVALID_PARAMS from a
+    // contract conflict.
+    assert.equal(result.error, 'RENDER_FAILED');
+    assert.match(result.output, /brew install poppler/);
+  });
+});
+
 // ─── schema sanity ──────────────────────────────────────────────────────────
 
 test('all 10 actions are listed in the parametersSchema enum', () => {
@@ -317,4 +461,16 @@ test('all 10 actions are listed in the parametersSchema enum', () => {
     'render',
   ];
   assert.deepEqual(pdfTool.parametersSchema.properties.action.enum, expected);
+});
+
+test('schema: source description mentions render in its applicability list', () => {
+  // Schema/impl alignment guard: if a future refactor drops `render`
+  // from the source description but keeps it in the impl (or vice
+  // versa), this test catches the drift.
+  const desc = pdfTool.parametersSchema.properties.source.description;
+  assert.match(desc, /render/, 'source description must list render among the supported actions');
+  // And the legacy six are still listed (no accidental drop).
+  for (const a of ['split', 'delete_pages', 'watermark', 'add_page_numbers', 'prepend_cover']) {
+    assert.match(desc, new RegExp(a), `source description must list ${a}`);
+  }
 });

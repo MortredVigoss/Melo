@@ -247,7 +247,9 @@ export const pdfTool = {
       source: {
         type: 'string',
         description:
-          'For split / delete_pages / watermark / add_page_numbers / prepend_cover / render: source PDF path. Required for these actions when `path` is the OUTPUT path. If omitted, `path` is treated as the source AND a new output path is auto-allocated in the workspace.',
+          'For split / delete_pages / watermark / add_page_numbers / prepend_cover / render: source PDF path. ' +
+          'Either `source` or `path` is required. When both are provided, `source` is the input and `path` is the output (must end in .pdf). When only `path` is provided, it is treated as the input and a new output path is auto-allocated. ' +
+          'Relative paths resolve against the chat workspace (matches the rest of melo) — pass an absolute path to escape that.',
       },
       sources: {
         type: 'array',
@@ -375,12 +377,26 @@ export const pdfTool = {
     //   a) pass `source` explicitly + `path` as the output target, or
     //   b) pass only `path` — we treat it as the source AND auto-allocate
     //      a sibling output path under workspace/generated/.
+    // Codex review (2026-05-01) caught the path-asymmetry bug: outputs
+    // resolved relative to `workspacePath`, but inputs (source / path-
+    // as-source / coverPath) resolved relative to process.cwd(). The
+    // user mental model is "everything in the workspace unless absolute"
+    // — same as every other melo tool — so input paths now use this
+    // helper. Returns null on bad input (caller produces the user-
+    // facing error so it can mention which field).
+    function resolveInputPdfPath(p) {
+      if (typeof p !== 'string' || !p.trim()) return null;
+      if (isAbsolute(p)) return p;
+      if (workspacePath) return resolve(workspacePath, p);
+      return resolve(p);
+    }
+
     function resolveSourceAndOutput() {
       if (source) {
         if (!source.toLowerCase().endsWith('.pdf')) {
           return { error: '`source` must end in .pdf', errorCode: 'INVALID_PARAMS' };
         }
-        const srcPath = isAbsolute(source) ? source : resolve(source);
+        const srcPath = resolveInputPdfPath(source);
         const out = allocatePdfOutputPath(path);
         if (out.error) return { error: out.error, errorCode: out.errorCode };
         return { srcPath, outPath: out.path };
@@ -392,10 +408,10 @@ export const pdfTool = {
           errorCode: 'INVALID_PARAMS',
         };
       }
-      const srcPath = isAbsolute(path) ? path : resolve(path);
-      if (!srcPath.toLowerCase().endsWith('.pdf')) {
+      if (!path.toLowerCase().endsWith('.pdf')) {
         return { error: '`path` must end in .pdf when used as source', errorCode: 'INVALID_PARAMS' };
       }
+      const srcPath = resolveInputPdfPath(path);
       const out = allocatePdfOutputPath(null);
       if (out.error) return { error: out.error, errorCode: out.errorCode };
       return { srcPath, outPath: out.path };
@@ -491,7 +507,13 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(outAlloc.path), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const absSources = sources.map(s => (isAbsolute(s) ? s : resolve(s)));
+        // Workspace-relative inputs resolve to <workspace>/foo.pdf,
+        // matching the contract every other melo tool follows. Codex
+        // review 2026-05-01 caught the previous cwd-relative behaviour.
+        const absSources = sources.map(s => resolveInputPdfPath(s));
+        if (absSources.some(p => !p)) {
+          return { ok: false, output: 'merge: every entry in `sources` must be a non-empty path string.', error: 'INVALID_PARAMS' };
+        }
         const result = await mergePdfs(absSources);
         await writeBytes(outAlloc.path, result.bytes);
         return buildWriteResponse(outAlloc.path, result.bytes.length, {
@@ -604,7 +626,10 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const absCover = isAbsolute(coverPath) ? coverPath : resolve(coverPath);
+        const absCover = resolveInputPdfPath(coverPath);
+        if (!absCover) {
+          return { ok: false, output: 'prepend_cover: `coverPath` is required.', error: 'INVALID_PARAMS' };
+        }
         const result = await prependCover(resolved.srcPath, absCover);
         await writeBytes(resolved.outPath, result.bytes);
         return buildWriteResponse(resolved.outPath, result.bytes.length, {
@@ -619,12 +644,21 @@ export const pdfTool = {
 
     // ─── render ──────────────────────────────────────────────────────────────
     if (action === 'render') {
-      if (!path) {
-        return { ok: false, output: 'render: missing `path` (source PDF).', error: 'INVALID_PARAMS' };
+      // Schema documents both `source` and `path` for symmetry with the
+      // other in-place actions. Codex review 2026-05-01 flagged that the
+      // earlier draft only honoured `path` while the schema advertised
+      // `source` — fixed: either is accepted, `source` wins when both
+      // are passed (matches resolveSourceAndOutput's ordering).
+      const renderSource = source || path;
+      if (!renderSource) {
+        return { ok: false, output: 'render: missing `source` (or `path`) — pass the PDF you want rasterised.', error: 'INVALID_PARAMS' };
       }
-      const srcPath = isAbsolute(path) ? path : resolve(path);
-      if (!srcPath.toLowerCase().endsWith('.pdf')) {
+      if (!renderSource.toLowerCase().endsWith('.pdf')) {
         return { ok: false, output: 'render: source path must end in .pdf', error: 'INVALID_PARAMS' };
+      }
+      const srcPath = resolveInputPdfPath(renderSource);
+      if (!srcPath) {
+        return { ok: false, output: 'render: source path is required.', error: 'INVALID_PARAMS' };
       }
       // Output PNGs always go into the workspace's generated/ dir under
       // a per-render subfolder so multiple renders don't fight for the
