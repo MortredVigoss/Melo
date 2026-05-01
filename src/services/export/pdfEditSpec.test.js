@@ -10,6 +10,7 @@ import {
   validateEditSpec,
   pickRebuildEngine,
   resolveSpecInputPath,
+  sectionsContainCjk,
 } from './pdfEditSpec.js';
 
 // ─── validateEditSpec — top-level + mode dispatch ───────────────────────────
@@ -280,6 +281,163 @@ test('pickRebuildEngine: explicit "auto" routes the same as no engine', () => {
   assert.equal(
     pickRebuildEngine({ rebuildEngine: 'auto', outputStyle: { language: 'en-US' } }),
     'pdfkit',
+  );
+});
+
+// ─── sectionsContainCjk content scanner ─────────────────────────────────────
+//
+// Codex review (Batch C round 3, 2026-05-01) caught: models often
+// emit CJK content in `sections` without setting outputStyle.language,
+// and the previous router put them on pdfkit → tofu output. The
+// content-scan fallback in pickRebuildEngine relies on this helper.
+// Tests pin the Unicode block coverage so a future tightening or
+// regex-style refactor can't silently miss a script.
+
+test('sectionsContainCjk: returns false for ASCII-only sections', () => {
+  assert.equal(
+    sectionsContainCjk([
+      { type: 'heading', level: 1, text: 'Q1 Sales' },
+      { type: 'paragraph', text: 'Summary of performance.' },
+    ]),
+    false,
+  );
+});
+
+test('sectionsContainCjk: detects Chinese (CJK Unified Ideographs)', () => {
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '这是中文内容' }]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects Japanese (Hiragana + Katakana)', () => {
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'これはひらがな' }]),
+    true,
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'カタカナです' }]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects Korean (Hangul Syllables)', () => {
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '한국어 내용' }]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects CJK in list items', () => {
+  assert.equal(
+    sectionsContainCjk([
+      { type: 'list', items: ['Apples', '橘子', 'Pears'] },
+    ]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects CJK in table headers + cells', () => {
+  assert.equal(
+    sectionsContainCjk([
+      {
+        type: 'table',
+        columns: [{ header: 'Region' }, { header: '地区' }],
+        rows: [
+          ['North', '北京'],
+          ['South', 'Shanghai'],
+        ],
+      },
+    ]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: latin-extended (é, ñ, ü) does NOT trigger CJK detection', () => {
+  // Codex Q1 decision: only CJK ranges, not "any non-ASCII".
+  // pdfkit Helvetica handles Latin-extended adequately, so a
+  // French / Spanish / German document should still route to
+  // pdfkit when no language hint is given.
+  assert.equal(
+    sectionsContainCjk([
+      { type: 'paragraph', text: 'Café résumé naïveté' },
+      { type: 'paragraph', text: 'mañana señor' },
+    ]),
+    false,
+  );
+});
+
+test('sectionsContainCjk: handles bad input without throwing', () => {
+  assert.equal(sectionsContainCjk(null), false);
+  assert.equal(sectionsContainCjk(undefined), false);
+  assert.equal(sectionsContainCjk('not an array'), false);
+  assert.equal(sectionsContainCjk([]), false);
+  assert.equal(sectionsContainCjk([null, undefined, {}]), false);
+});
+
+// ─── pickRebuildEngine content-routing ──────────────────────────────────────
+
+test('pickRebuildEngine: ASCII content + no language → pdfkit (default)', () => {
+  assert.equal(
+    pickRebuildEngine({ sections: [{ type: 'paragraph', text: 'hello' }] }),
+    'pdfkit',
+  );
+});
+
+test('pickRebuildEngine: CJK content + NO language → html_playwright (content scan)', () => {
+  // The exact scenario Codex called out: model emits Chinese
+  // without setting language, previous router silently sent it to
+  // pdfkit → tofu. Pin the fix so a future "simplify" doesn't
+  // re-introduce the regression.
+  assert.equal(
+    pickRebuildEngine({ sections: [{ type: 'paragraph', text: '这是一段中文。' }] }),
+    'html_playwright',
+  );
+});
+
+test('pickRebuildEngine: ASCII content + zh-CN language → html_playwright (language wins)', () => {
+  assert.equal(
+    pickRebuildEngine({
+      outputStyle: { language: 'zh-CN' },
+      sections: [{ type: 'paragraph', text: 'hello' }],
+    }),
+    'html_playwright',
+  );
+});
+
+test('pickRebuildEngine: CJK content + en-US language → html_playwright (content scan still triggers)', () => {
+  // Even if the model lies about language, content-side detection
+  // makes sure CJK still gets the right engine.
+  assert.equal(
+    pickRebuildEngine({
+      outputStyle: { language: 'en-US' },
+      sections: [{ type: 'paragraph', text: '中文内容' }],
+    }),
+    'html_playwright',
+  );
+});
+
+test('pickRebuildEngine: CJK content + explicit pdfkit override → pdfkit (respects user)', () => {
+  // Q2 decision (2026-05-01): explicit override wins even with CJK
+  // content. Schema description warns pdfkit can't render CJK; an
+  // explicit override is the user knowingly accepting tofu (e.g.
+  // for debug / font-fallback testing).
+  assert.equal(
+    pickRebuildEngine({
+      rebuildEngine: 'pdfkit',
+      sections: [{ type: 'paragraph', text: '中文测试' }],
+    }),
+    'pdfkit',
+  );
+});
+
+test('pickRebuildEngine: CJK content + explicit html_playwright → html_playwright (matches intent)', () => {
+  assert.equal(
+    pickRebuildEngine({
+      rebuildEngine: 'html_playwright',
+      sections: [{ type: 'paragraph', text: '中文测试' }],
+    }),
+    'html_playwright',
   );
 });
 

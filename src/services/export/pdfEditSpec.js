@@ -271,15 +271,80 @@ function validateRebuild(spec) {
 
 // ─── engine-routing helper ──────────────────────────────────────────────────
 
+// Unicode ranges that pdfkit's Helvetica StandardFont CANNOT render
+// (would emit tofu glyphs). We pick the engine for these explicitly:
+//   U+3000–303F  CJK Symbols & Punctuation
+//   U+3040–309F  Hiragana
+//   U+30A0–30FF  Katakana
+//   U+4E00–9FFF  CJK Unified Ideographs (the bulk: Chinese / kanji / hanja)
+//   U+AC00–D7AF  Hangul Syllables
+//   U+FF00–FFEF  Halfwidth and Fullwidth Forms (full-width digits/Latin)
+//
+// Latin-extended (accents, é/ñ/ü), Cyrillic, Arabic, Hebrew etc. are
+// intentionally NOT in this list — pdfkit Helvetica handles
+// Latin-extended adequately, and the others render imperfectly but
+// not as tofu. Codex review (Batch C round 3, 2026-05-01) called
+// out CJK as the specific failure shape that needs explicit
+// detection; we keep this list narrow to that. If a future user
+// audit complains about Arabic / Cyrillic, expand the regex.
+const CJK_TEXT_PATTERN =
+  /[　-〿぀-ゟ゠-ヿ一-鿿가-힯＀-￯]/;
+
 /**
- * Pick a rendering engine for a rebuild spec. Strategy:
- *   • Explicit `rebuildEngine: 'pdfkit' | 'html_playwright'` wins.
- *   • `'auto'` (default) routes by language hint:
- *       - CJK languages (zh-*, ja-*, ko-*) → html_playwright (CJK
- *         font fallback is reliable in browsers, broken in pdfkit
- *         StandardFonts).
- *       - everything else → pdfkit (no browser dependency).
- *   • No language hint + auto → pdfkit (smallest footprint).
+ * Returns true when ANY string field inside the rebuild spec's
+ * sections[] contains a CJK character. Walks the same shapes that
+ * pdfkitGenerate's renderSection actually reads from:
+ *   heading.text       paragraph.text     code.text
+ *   list.items[]       table.columns[].header   table.rows[][]
+ * Other section shapes (rule / spacer / pageBreak / image-by-path)
+ * carry no inline text and are skipped.
+ *
+ * Exported so the routing decision is testable without round-
+ * tripping through pickRebuildEngine.
+ */
+export function sectionsContainCjk(sections) {
+  if (!Array.isArray(sections)) return false;
+  for (const s of sections) {
+    if (!s || typeof s !== 'object') continue;
+    if (typeof s.text === 'string' && CJK_TEXT_PATTERN.test(s.text)) return true;
+    if (Array.isArray(s.items)) {
+      for (const item of s.items) {
+        if (typeof item === 'string' && CJK_TEXT_PATTERN.test(item)) return true;
+      }
+    }
+    if (Array.isArray(s.columns)) {
+      for (const col of s.columns) {
+        if (col && typeof col.header === 'string' && CJK_TEXT_PATTERN.test(col.header)) {
+          return true;
+        }
+      }
+    }
+    if (Array.isArray(s.rows)) {
+      for (const row of s.rows) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          if (typeof cell === 'string' && CJK_TEXT_PATTERN.test(cell)) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Pick a rendering engine for a rebuild spec. Decision order:
+ *   1. Explicit `rebuildEngine: 'pdfkit' | 'html_playwright'` wins.
+ *      User decision (2026-05-01): we honour explicit pdfkit even
+ *      when content is CJK — schema description warns pdfkit can't
+ *      render CJK, so an explicit override is the user accepting
+ *      that limitation (e.g. for debug / font-fallback testing).
+ *   2. `outputStyle.language` hint matches CJK pattern (zh-* /
+ *      ja-* / ko-*) → html_playwright.
+ *   3. sections[] CONTENT contains CJK characters → html_playwright.
+ *      (Codex review Batch C round 3 caught this gap: models often
+ *      emit Chinese/Japanese/Korean text without setting `language`,
+ *      and the previous router put them on pdfkit → tofu output.)
+ *   4. Otherwise → pdfkit (no browser dependency, smaller footprint).
  *
  * Exported so tests + callers can pin the routing without round-
  * tripping through the actual renderer.
@@ -289,9 +354,12 @@ export function pickRebuildEngine(spec) {
   if (explicit === 'pdfkit' || explicit === 'html_playwright') {
     return explicit;
   }
-  // 'auto' or undefined → infer from language
+  // 'auto' or undefined → first by language hint, then by content.
   const lang = String(spec?.outputStyle?.language || '').trim().toLowerCase();
   if (/^(zh|ja|ko)(?:[-_].*)?$/.test(lang)) {
+    return 'html_playwright';
+  }
+  if (sectionsContainCjk(spec?.sections)) {
     return 'html_playwright';
   }
   return 'pdfkit';

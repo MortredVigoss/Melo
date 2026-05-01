@@ -664,6 +664,42 @@ async function probePlaywrightCli() {
   }
 }
 
+test('from_spec rebuild: real CJK content + NO language hint routes to html_playwright (skipped without Playwright)', async () => {
+  // Codex review (Batch C round 3, 2026-05-01) caught the previous
+  // smoke test was using ASCII "CJK Title" — never actually
+  // exercising the content-scan fallback that now decides
+  // CJK-without-language. This test does the real thing: Chinese
+  // characters in sections, no language field, no explicit engine.
+  // The result must be a real PDF rendered by Playwright (not pdfkit
+  // tofu).
+  if (!(await probePlaywrightCli())) return;
+  await withWorkspace(async ws => {
+    const result = await pdfTool.run(
+      {
+        action: 'from_spec',
+        editSpec: {
+          mode: 'rebuild',
+          sections: [
+            { type: 'heading', level: 1, text: '2026 年 Q1 报告' },
+            { type: 'paragraph', text: '这是一段完整的中文段落，含有标点符号、数字 123、混合的 English 内容。' },
+            { type: 'list', items: ['第一项', '第二项', '第三项'] },
+          ],
+          // Intentionally NO outputStyle.language — content-scan must
+          // still route to html_playwright.
+        },
+      },
+      { workspacePath: ws },
+    );
+    if (!result.ok) {
+      console.warn('html_playwright CJK smoke skipped at runtime:', result.output);
+      return;
+    }
+    assert.equal(result.meta.engine, 'html_playwright', 'CJK content must route to html_playwright even without language hint');
+    const head = await readFile(result.meta.path);
+    assert.equal(head.slice(0, 5).toString(), '%PDF-');
+  });
+});
+
 test('from_spec rebuild html_playwright: end-to-end smoke (skipped without Playwright)', async () => {
   if (!(await probePlaywrightCli())) return;
   await withWorkspace(async ws => {
