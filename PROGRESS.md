@@ -71,6 +71,21 @@
 - Follow-up（Codex C → 全局 URL rule vs 视觉验收 workflow 冲突）：上次 push 被 Codex C，🔵 真问题：[systemPrompt.js:51](src/tools/systemPrompt.js#L51) 的全局规则要求"every generated-file URL 原样 copy 到 reply"，但 pdfTool 视觉验收 workflow 要求"render PNG URLs 不要 echo 给用户"——两条 system-level 指令直接冲突，模型随机选一个，Batch B 契约不可靠。三层 defence-in-depth 修法（用户 OK Codex Q1+Q2）：① render output 每行 URL 后缀 `(QA only — do NOT include in final reply)`，prefix 加"visual-review artifacts for your own QA, do NOT echo"——in-context marker 紧贴 URL，最强优先级（最近 context 的相邻文本压住远端 system header）；② render meta 加 `artifactRole: 'review'`——程序化 marker 给 future framework 代码用；③ 全局 URL rule 加 EXCEPTION clause 显式说"QA / review / artifactRole='review' 标记的 URL 不 echo"——全局规则自己 disclaim override 条件。2 个新 wiring 测试 pin：global prompt 含 EXCEPTION + 正向 rule 都在；render output 含 QA-only 后缀、QA prefix、artifactRole='review'。验证 1362/1362 全绿。提交哈希：`96753e0`。
 - 下一刀：Batch C（edit_spec JSON schema + renderer + pdfTool entry）。
 
+## 2026-05-01 17:30 — PDF Batch C：edit_spec 中间层（in_place_overlay + rebuild）
+
+- 用户拍板 Q1 两 mode 都做、Q2 rebuild 用语义 sections[]（不用坐标 deltas）。Codex OAuth 输出 spec JSON，本地 dispatch 到 pdf-lib（in_place_overlay）或 pdfkit/Playwright（rebuild）。
+- 新 module [src/services/export/pdfEditSpec.js](src/services/export/pdfEditSpec.js)：strict validator (`validateEditSpec`)、引擎路由 helper (`pickRebuildEngine`：explicit overrides → CJK lang 选 html_playwright，否则 pdfkit)、workspace-relative input 路径 resolver。validator 给的错误是字段级精确指向（"overlays[2].y must be a finite number"），不让 pdf-lib stack trace 直接暴露给模型。
+- pdfLibOps 扩 `applyInPlaceOverlays`：text/image overlays + metadata + form fields 三类操作（pdf-lib drawText / embedPng-or-Jpg / setTitle/Author/Subject / form.getTextField.setText）。CJK 在 validator 层被拒（pointed to rebuild）。
+- pdfTool 加 `from_spec` action（11th action）：validate → mode dispatch → 渲染 → 写盘 + 签 URL。in_place_overlay 走 applyInPlaceOverlays，rebuild + pdfkit 走 writeStructuredPdf（已 reuse），rebuild + html_playwright 走 sectionsToHtml + writePdf（reuse 现有 Playwright 路径）。
+- **顺手 fix 一个 pre-existing pdfkit bug**：pdfkit v0.15 `PDFSecurity.generateFileID()` 在 `info.* values are undefined` 时崩 "Cannot read properties of undefined (reading 'valueOf')"。原 writeStructuredPdf 总是传 `info: { Title: undefined, Author: undefined, ...}` —— 也就是说**existing `structured` action 在没有显式传 metadata 时一直在崩**，但**没有测试 actually 写过 PDF** 所以没 caught。修：build info 时只 include defined keys + 总是带 CreationDate。
+- 设计决策（用户 audit 同款）：诚实声明 in_place_overlay 不能做文字替换（PDF 没有"段落"概念，pdf-lib 没原 PDF 字体也没 bounding box）；要替换文字走 rebuild；CJK 走 rebuild。in-place 主要是 watermark 类叠加 / form fill / metadata 改。
+- 测试 45 个新（32 spec validator + 13 from_spec integration）：
+  - validator: top-level mode / overlay 各字段 / CJK reroute message / RGB [0,1] 而不是 [0,255] / page 1-indexed positive int / metadata key whitelist / form field shape / pickRebuildEngine 对 zh-* / ja-* / ko-* 各 case+region 形态、Latin、no-lang 全覆盖
+  - integration: metadata 改完 round-trip 读回验证（assert PDF.getTitle === ...）/ overlay applied + page count preserved / out-of-bounds page error / PNG embed / CJK reject 在 validator 层（renderer 永远不到）/ rebuild + pdfkit 输出真的是 PDF（"%PDF-" magic）/ explicit engine override / ws-relative path / signed URL
+- 验证：`src/**/*.test.js` **1407/1407 全绿**（前 1362 + 45 新）。
+- 提交：`789fc55`。
+- Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
+
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
 
 - 用户做 code review 后给的诊断：chat 流 + 裸 image_generation tool 的编辑路径效果远差于 ChatGPT 图片编辑器，原因是 (1) agent system prompt 太重稀释编辑指令 (2) 没有 explicit "preserve list" 锁定未编辑区域 (3) 不能用 `input_fidelity` (Codex 拒)。用户开方案：抽独立两阶段 pipeline（vision analysis → 短 prompt edit）+ edit intent 判断 + 不混 agent prompt。
