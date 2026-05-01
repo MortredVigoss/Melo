@@ -58,6 +58,7 @@
 - 测试 53 个新（25 pdfLibOps + 8 pdfRender + 20 pdfTool actions）：1290 → **1343 全绿**。pdfRender 端到端测试 self-skip on no-pdftoppm 环境。
 - Trade-off：watermark 和 add_page_numbers 中文要 fall back 走 write/structured + Playwright（已嵌 Noto Sans CJK）。pdfRender 多 range（"1-3,5,7"）单次 call 不支持，clear error message。
 - 提交：`cd13148`。
+- Follow-up（Codex C → 路径契约不对称 + render schema/impl 偏离）：上次 push 被 Codex C，🔵 真问题：① 输入相对路径用 `resolve(p)` 解析到 process.cwd()，但输出相对路径用 `resolve(workspacePath, p)` 解析到 workspace——意味着 `{ action: 'split', path: 'mydoc.pdf' }` 实际从 cwd 读，不是 workspace；② schema 说 `source` 可用于 render 但实现只看 path 完全忽略 source。修：抽 `resolveInputPdfPath(p)` helper（绝对 use-as-is / 相对 + workspace → workspace 解析 / 相对无 workspace → cwd fallback），threaded 进 source / path-as-source / merge sources[] / prepend_cover coverPath / render；render 加 source 接受（跟其他 actions 一致），schema 描述同步。8 个新回归测试覆盖 ws-relative input 各种 case、source+path output 组合、render with source、absolute path 仍优先（防 fix 自身误 shadow）、schema/impl 对齐 guard。验证 1351/1351 全绿。提交哈希：`98a1502`。
 - 下一刀：Batch B（视觉验收 system prompt 引导 + 集成）。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
