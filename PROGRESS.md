@@ -93,6 +93,11 @@
 - 13 个新测试：marginsToPoints 6 case（default/number/各 unit string/unsupported unit/object mixed/object missing sides——全部 assert 数值正确而非 ok:true）；sanitizeCssValue 3 case（legitimate pass-through / 10 种已知 injection vector 全 reject / null/empty）；pdfkit thread-through 2 case（source pin via regex 抓 wire-up + string margin smoke）；sectionsToHtml CSS injection 3 case（恶意 fontFamily/margin 替换为 safe default + legitimate CSS 不被 eat）。
 - 验证：`src/**/*.test.js` **1436/1436 全绿**。
 - 提交：`fc0262b`。
+- Follow-up（Codex C round 3 → CJK 内容无 language 误路由 pdfkit）：上次 push 又评 C，🔴 真问题：`pickRebuildEngine` 的 `auto` 只看 `outputStyle.language`，模型经常给中文/日文/韩文 sections 但没传 language → 走 pdfkit → Helvetica 没 CJK glyph → tofu，且 `result.ok=true` 假成功。修：新 `sectionsContainCjk(sections)` helper 扫描 sections 里每个 text 字段（heading/paragraph/code .text + list.items[] + table.columns[].header + table.rows[][]），命中 CJK Unicode 区段（U+4E00-9FFF / 3000-303F / 3040-30FF / AC00-D7AF / FF00-FFEF）就返 true。pickRebuildEngine 决策序列扩到 4 级：①explicit > ②language hint > ③content CJK 扫描 > ④pdfkit。
+- 用户拍板 Codex Q1+Q2：Q1 只 CJK 区段（不是任意非 ASCII，因为 Latin-extended/法语/阿拉伯语 pdfkit 仍能勉强渲染）；Q2 explicit `rebuildEngine='pdfkit'` 即使 CJK 内容也尊重 override（schema 已警告，不强制拒绝）。
+- 15 个新测试：sectionsContainCjk 8 case（ASCII 不触发 / 中日韩各自检测 / list items / table headers + cells / Latin-extended 不触发——Codex Q1 决策的 explicit pin / 各种 bad input 不抛错）；pickRebuildEngine 路由矩阵 6 case（ASCII+无 lang → pdfkit / CJK+无 lang → html_playwright **关键回归** / ASCII+zh-CN → html_playwright / CJK+en-US → html_playwright / CJK+explicit pdfkit → pdfkit / CJK+explicit html_playwright → html_playwright）；集成 smoke 1 case（真中文 + 无 language → engine='html_playwright'，self-skip if Playwright 不可用）。
+- 验证：`src/**/*.test.js` **1451/1451 全绿**。
+- 提交：`1b07201`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
