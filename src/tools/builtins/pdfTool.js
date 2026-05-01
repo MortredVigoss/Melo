@@ -336,8 +336,31 @@ export function sectionsToHtml(sections, outputStyle = {}) {
       const thead = cols
         .map(c => `<th>${escapeHtml(c?.header || '')}</th>`)
         .join('');
+      // Mirror pdfkitGenerate.renderTable's read path:
+      //   Array.isArray(row) ? row[i] : row?.[columns[i].key]
+      // Codex review (Batch C round 5, 2026-05-02) caught that the
+      // previous cut only handled array-form rows, swapping object-
+      // form rows for an empty array. The result was `<tr></tr>` —
+      // CJK row content silently lost. Now both row shapes render
+      // correctly, and a column without a `key` declaration on an
+      // object-form row outputs an empty `<td></td>` (same behaviour
+      // as pdfkit, where an undeclared key yields an empty cell).
       const tbody = rows
-        .map(r => `<tr>${(Array.isArray(r) ? r : []).map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`)
+        .map(row => {
+          if (Array.isArray(row)) {
+            return `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`;
+          }
+          if (row && typeof row === 'object') {
+            const cells = cols
+              .map(col => {
+                if (!col || typeof col.key !== 'string') return '<td></td>';
+                return `<td>${escapeHtml(row[col.key])}</td>`;
+              })
+              .join('');
+            return `<tr>${cells}</tr>`;
+          }
+          return '<tr></tr>';
+        })
         .join('');
       return `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
     }

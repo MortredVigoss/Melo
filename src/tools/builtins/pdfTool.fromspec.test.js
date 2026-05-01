@@ -317,6 +317,77 @@ test('sectionsToHtml: outputStyle.margins object rendered as 4-side CSS shorthan
   assert.match(html, /margin:\s*1in 0\.5in 1in 0\.5in/);
 });
 
+test('sectionsToHtml: object-form table rows render their CJK content (mirrors renderTable read path)', () => {
+  // The exact bug Codex review (Batch C round 5, 2026-05-02) caught:
+  // sectionsContainCjk now correctly routes object-form CJK rows to
+  // html_playwright, but the previous sectionsToHtml only handled
+  // array-form rows, swapping objects for an empty array → empty
+  // <tr></tr> → CJK content silently lost. This pins the assert-
+  // real-effect contract: the generated HTML must actually contain
+  // the CJK strings the user supplied.
+  const html = sectionsToHtml([
+    {
+      type: 'table',
+      columns: [
+        { header: 'Name', key: 'name' },
+        { header: 'City', key: 'city' },
+      ],
+      rows: [
+        { name: '张三', city: '北京' },
+        { name: '李四', city: '上海' },
+      ],
+    },
+  ]);
+  // tbody must contain the actual cell values, not a sea of empty <tr>.
+  assert.match(html, /<td>张三<\/td>/);
+  assert.match(html, /<td>北京<\/td>/);
+  assert.match(html, /<td>李四<\/td>/);
+  assert.match(html, /<td>上海<\/td>/);
+  assert.doesNotMatch(html, /<tr><\/tr>/, 'no row should render as empty <tr></tr>');
+});
+
+test('sectionsToHtml: array + object rows can be mixed in the same table', () => {
+  // Both row shapes are equally valid per the from_spec contract;
+  // mixing them in one rows[] must work — neither shape silently
+  // loses data.
+  const html = sectionsToHtml([
+    {
+      type: 'table',
+      columns: [
+        { header: 'A', key: 'a' },
+        { header: 'B', key: 'b' },
+      ],
+      rows: [
+        ['x1', 'x2'],            // array form
+        { a: 'y1', b: 'y2' },    // object form
+      ],
+    },
+  ]);
+  assert.match(html, /<td>x1<\/td>/);
+  assert.match(html, /<td>x2<\/td>/);
+  assert.match(html, /<td>y1<\/td>/);
+  assert.match(html, /<td>y2<\/td>/);
+});
+
+test('sectionsToHtml: object row + column without `key` → empty <td></td> (matches pdfkit behaviour)', () => {
+  // Codex Q2 decision: when an object row has no value for a
+  // declared column (because that column has no `key`, or the
+  // row simply doesn't carry that key), emit an empty <td></td>.
+  // pdfkit produces an empty cell in the same situation; HTML
+  // engine matches that for engine-agnostic spec behaviour.
+  const html = sectionsToHtml([
+    {
+      type: 'table',
+      // First column has no `key` declaration — by contract, no
+      // value is read from the row.
+      columns: [{ header: 'NoKey' }, { header: 'Has', key: 'has' }],
+      rows: [{ has: 'present' }],
+    },
+  ]);
+  // First cell empty, second cell carries the value.
+  assert.match(html, /<tr><td><\/td><td>present<\/td><\/tr>/);
+});
+
 test('sectionsToHtml: HTML-escapes user content (no XSS via section text)', () => {
   const html = sectionsToHtml([
     { type: 'heading', level: 1, text: '<script>alert(1)</script>' },
