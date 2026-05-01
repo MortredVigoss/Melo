@@ -107,6 +107,11 @@
 - 用户拍板 Q1+Q2：object-form rows 是**稳定契约**两 engine 都要支持；缺 key 输出空 cell（engine-agnostic 行为）。
 - 验证：`src/**/*.test.js` **1460/1460 全绿**。
 - 提交：`372b251`。
+- Follow-up（Codex C round 6 → round-4 refactor 的回归 bug）：上次 push 又评 C，🔴 真问题：round 4 我把 CJK_TEXT_PATTERN 从手写 ranges 改用 `\\p{Script=Han|Hiragana|Katakana|Hangul}` 时，**意外把 round 3 已经覆盖的 CJK Symbols & Punctuation (U+3000-303F) 和 Halfwidth/Fullwidth Forms (U+FF00-FFEF) drop 掉了**——这两个 block 的字符 Script=Common 而不是 Han/Hiragana/Katakana/Hangul。Codex 用一行 repro 演示：`'。'/'，'/'１２３'/'ＡＢＣ'` 全 false，但 pdfkit Helvetica 全部 tofu。修：改 `\\p{scx=Han}|\\p{scx=Hiragana}|\\p{scx=Katakana}|\\p{scx=Hangul}|[\\u3000-\\u303F\\uFF00-\\uFFEF]`——两层覆盖：scx (Script_Extensions) 抓 Script=Common 但 Han 在 extension 里的（如 。 U+3002），显式 range 抓 fullwidth Latin (Ａ Script_Extensions=Latin only，必须显式 block range)。
+- 用户拍板 Codex Q1+Q2：Q1 范围限定"实际会 pdfkit tofu"——包括 CJK 标点 + fullwidth forms，不扩 Cyrillic/Arabic/Hebrew (pdfkit 实际能渲染那些 imperfectly but not tofu)；Q2 纯 fullwidth Latin (ＡＢＣ) 也走 html_playwright (Helvetica 只有 U+0020-007E Basic Latin，fullwidth glyphs 没有 → tofu)。
+- 8 个新测试：sectionsContainCjk 5 case（CJK 标点单独/fullwidth digits + 元/fullwidth Latin both case + ｈｅｌｌｏ/CJK 标点在 table header/fullwidth 在 object-form row）+ pickRebuildEngine 3 case（纯 CJK 标点 → html_playwright/纯 fullwidth Latin → html_playwright/explicit pdfkit + fullwidth → pdfkit override 仍生效）。
+- 验证：`src/**/*.test.js` **1468/1468 全绿**。
+- 提交：`cd5b2bd`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
