@@ -98,6 +98,11 @@
 - 15 个新测试：sectionsContainCjk 8 case（ASCII 不触发 / 中日韩各自检测 / list items / table headers + cells / Latin-extended 不触发——Codex Q1 决策的 explicit pin / 各种 bad input 不抛错）；pickRebuildEngine 路由矩阵 6 case（ASCII+无 lang → pdfkit / CJK+无 lang → html_playwright **关键回归** / ASCII+zh-CN → html_playwright / CJK+en-US → html_playwright / CJK+explicit pdfkit → pdfkit / CJK+explicit html_playwright → html_playwright）；集成 smoke 1 case（真中文 + 无 language → engine='html_playwright'，self-skip if Playwright 不可用）。
 - 验证：`src/**/*.test.js` **1451/1451 全绿**。
 - 提交：`1b07201`。
+- Follow-up（Codex C round 4 → CJK 检测仍漏 object-form rows + 区段不全）：上次 push 又评 C，🟡 真问题：① `sectionsContainCjk` 只扫 array-form table rows，pdfkitGenerate.renderTable 实际同时支持 `rows: [{name: '张三'}]`（columns[].key 引用），object-form 漏扫 → CJK 走 pdfkit 假成功；② hand-coded BMP range list 漏 CJK Extension A (U+3400-4DBF) / Compatibility Ideographs (U+F900-FAD9) / Hangul Jamo (U+1100-11FF / A960-A97F / D7B0-D7FF) / CJK Extension B-F (U+20000+，BMP 外需 surrogate pair)。用户拍板 Codex Q1+Q2：Q1 mirror renderTable 读路径 exactly（no more no less，避免 false positive）；Q2 改用 Unicode property regex `/\\p{Script=Han}|\\p{Script=Hiragana}|\\p{Script=Katakana}|\\p{Script=Hangul}/u`——Unicode-spec-correct，自动覆盖未来 Unicode 修订，/u flag 自带 surrogate pair 处理。
+- 修：① CJK_TEXT_PATTERN 改 Unicode property regex；② sectionsContainCjk row scanner 加 object-form 分支按 columns[].key 扫；undeclared key 上的 CJK 不扫（renderTable 不会渲染所以不会 tofu，避免误路由）。
+- 6 个新边界测试：CJK Extension A (U+3400/34DA/4DBF) / Compatibility (U+F900 + U+FAD9 last assigned，pin block end at real edge 而不是 unassigned U+FAFF) / Hangul Jamo (U+1100, U+D7B0) / BMP-outside Extension B (U+20000 via String.fromCodePoint，pin /u flag) / object-form rows with CJK + columns[].key / **negative**：undeclared key 上 CJK 不 flag（pin contract = mirror renderTable）。
+- 验证：`src/**/*.test.js` **1457/1457 全绿**。
+- 提交：`c6e02b1`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
