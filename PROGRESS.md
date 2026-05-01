@@ -48,6 +48,18 @@
 - 验证：`src/**/*.test.js` **1249/1249 全绿**。
 - 提交哈希：`3ab34b5`。
 
+## 2026-05-01 14:00 — PDF 能力 Batch A：simple ops + render（用户 PDF audit 落实第一刀）
+
+- 用户给的产品方向：Codex OAuth 当脑子（理解、规划、视觉验收），本地工具当工人（解析、生成、操作、渲染）。零 API 费用。Batch A 落工人侧。
+- 加 `pdf-lib` 依赖（pure JS）；render backend 用 `pdftoppm`（poppler-utils CLI，brew install 一次性，免费 OSS）。**拒绝**了 pdfjs-dist + Playwright（+5MB / +2s 冷启动）和 pdfjs-dist + node-canvas（native compile 不稳）。
+- 新 module [src/services/export/pdfLibOps.js](src/services/export/pdfLibOps.js)：6 个 pdf-lib 纯 helper（mergePdfs / splitPdf / deletePages / addWatermark / addPageNumbers / prependCover）+ parsePageRange（"1-3,7,10-12" 多 range 解析）+ writeBytes 写盘。CJK 在 watermark / add_page_numbers 显式 reject（Helvetica StandardFont 无 CJK glyph，silent tofu 比 clear error 更糟）。
+- 新 module [src/services/export/pdfRender.js](src/services/export/pdfRender.js)：spawn `pdftoppm`，缺包时给 explicit 安装 hint（"brew install poppler" / Linux 用 apt-get），强调 "no API cost / free OSS"。`_setPdftoppmAvailable` 是测试 seam。
+- pdfTool 加 7 个 actions（原 3 → 10）：merge / split / delete_pages / watermark / add_page_numbers / prepend_cover / render。原 3 action 重构走同一对 helper（allocatePdfOutputPath + resolveSourceAndOutput）避免 9 处重复。`render` 输出 PNG 自动 sign URL，给 Batch B 视觉验收用。
+- 测试 53 个新（25 pdfLibOps + 8 pdfRender + 20 pdfTool actions）：1290 → **1343 全绿**。pdfRender 端到端测试 self-skip on no-pdftoppm 环境。
+- Trade-off：watermark 和 add_page_numbers 中文要 fall back 走 write/structured + Playwright（已嵌 Noto Sans CJK）。pdfRender 多 range（"1-3,5,7"）单次 call 不支持，clear error message。
+- 提交：`cd13148`。
+- 下一刀：Batch B（视觉验收 system prompt 引导 + 集成）。
+
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
 
 - 用户做 code review 后给的诊断：chat 流 + 裸 image_generation tool 的编辑路径效果远差于 ChatGPT 图片编辑器，原因是 (1) agent system prompt 太重稀释编辑指令 (2) 没有 explicit "preserve list" 锁定未编辑区域 (3) 不能用 `input_fidelity` (Codex 拒)。用户开方案：抽独立两阶段 pipeline（vision analysis → 短 prompt edit）+ edit intent 判断 + 不混 agent prompt。
