@@ -88,6 +88,11 @@
 - 16 个新测试（7 sectionsToHtml contract + 7 marginsToCss matrix + 2 pdfkit margins thread-through + 0 html_playwright smoke 用 self-skip）：sectionsToHtml 产 SINGLE non-nested HTML（DOCTYPE/html/body 各 1 次）+ XSS escape + margin/font 真正 land 进 CSS；marginsToCss 全 input 形态矩阵；pdfkit 分支 margins forward 真正到 writeStructuredPdf；html_playwright 集成 smoke runs when Playwright available else self-skip。
 - 验证：`src/**/*.test.js` **1423/1423 全绿**（前 1407 + 16 新）。
 - 提交：`a4172bc`。
+- Follow-up（Codex C round 2 → pdfkit margins 仍未真生效 + CSS injection 漏洞）：上次 push 又评 C，3 条都是真问题：① 🔵 pdfkit 分支 forward outputStyle.margins 但 `pdfkitGenerate.resolveMargins` 只接**数值 object**，string `'1in'` 和 CSS object `{top:'1in'}` 都 silently fallback 60pt 默认——只 html_playwright 真生效；② 🟠 真安全 issue：`fontFamily` 和 `margin` 直接拼进 `<style>`，模型可输出 `</style><script>fetch('http://evil')</script>` 突破，Playwright 在 file:// 下跑会执行；③ ⚪ 上一刀的 string-margins 测试只 assert `ok:true` 不验证生效，是 false-green。修：① 新 `marginsToPoints(margins)` helper 做 CSS unit → pt 转换 (`pt`/`px`/`in`/`cm`/`mm`，`em`/`rem`/`vh`/`vw` fallback 默认)，pdfkit 分支用它而不是 raw forward——这样 string/number/object 三形态都真生效；② 新 `sanitizeCssValue(s)` whitelist charset（字母/数字/空白/`'\"`/`-`/`_`/`.`/`,`/`%`/`/`），sectionsToHtml 把 fontFamily 和 marginsToCss 输出都过 sanitizer，injection 字符（`<>{}@;*\\`）触发 null → fallback 到 hardcoded constant default；③ 13 个新 effect-validating 测试。
+- 用户拍板 Codex Q1+Q2：两 engine 都接 string/number/object（marginsToPoints + marginsToCss 共享 input contract，输出按 engine 分）；fontFamily 用 charset whitelist 不限定 fixed font allowlist。
+- 13 个新测试：marginsToPoints 6 case（default/number/各 unit string/unsupported unit/object mixed/object missing sides——全部 assert 数值正确而非 ok:true）；sanitizeCssValue 3 case（legitimate pass-through / 10 种已知 injection vector 全 reject / null/empty）；pdfkit thread-through 2 case（source pin via regex 抓 wire-up + string margin smoke）；sectionsToHtml CSS injection 3 case（恶意 fontFamily/margin 替换为 safe default + legitimate CSS 不被 eat）。
+- 验证：`src/**/*.test.js` **1436/1436 全绿**。
+- 提交：`fc0262b`。
 - Batch A + B + C 全部 done。下一步：等用户实测反馈或开始 image-edit step 4 capability probe。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
