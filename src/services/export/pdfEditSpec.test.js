@@ -367,6 +367,124 @@ test('sectionsContainCjk: latin-extended (é, ñ, ü) does NOT trigger CJK detec
   );
 });
 
+// ─── CJK Unicode block coverage — pin every block we promised ───────────────
+//
+// Codex review round 4 (2026-05-02) caught the hand-coded BMP range
+// list missing CJK Extension A, Compatibility Ideographs, Hangul
+// Jamo, and BMP-outside Han. Unicode property regex
+// (\p{Script=Han|Hiragana|Katakana|Hangul} /u) covers all of those
+// automatically. These tests pin specific boundary characters from
+// each block so a future refactor that downgrades to manual ranges
+// regresses noisily.
+
+test('sectionsContainCjk: detects CJK Extension A (U+3400–4DBF, e.g. U+34DA)', () => {
+  // 鼕 (U+9B95) is BMP standard Han; 㓚 (U+34DA) is Extension A.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '㓚' }]),
+    true,
+    'must detect CJK Extension A character',
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '㐀' }]),
+    true,
+    'must detect U+3400 (Extension A start boundary)',
+  );
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '䶿' }]),
+    true,
+    'must detect U+4DBF (Extension A end boundary)',
+  );
+});
+
+test('sectionsContainCjk: detects CJK Compatibility Ideographs (U+F900-FAD9)', () => {
+  // 豈 (U+F900) — first character of the Compatibility block.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: '豈' }]),
+    true,
+  );
+  // U+FAD9 — last ASSIGNED codepoint in the block (U+FADA-FAFF
+  // are unassigned, so they wouldn't match Unicode property
+  // regex anyway). Pins the upper boundary at the real edge.
+  assert.equal(
+    sectionsContainCjk([
+      { type: 'paragraph', text: String.fromCodePoint(0xFAD9) },
+    ]),
+    true,
+  );
+});
+
+test('sectionsContainCjk: detects Hangul Jamo (U+1100–11FF)', () => {
+  // ᄀ (U+1100) — first Jamo character. Distinct from the Hangul
+  // Syllables block at U+AC00 — Codex round 3's range list missed
+  // it and round 4 caught the gap.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'ᄀ' }]),
+    true,
+  );
+  // ퟿ (U+D7FF) is Hangul Jamo Extended-B end.
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: 'ힰ' }]),
+    true,
+    'must detect Hangul Jamo Extended-B start',
+  );
+});
+
+test('sectionsContainCjk: detects BMP-outside Extension B (U+20000+, surrogate pair)', () => {
+  // 𠀀 (U+20000) — first Extension B character, encoded as
+  // surrogate pair in UTF-16. The /u flag is what makes the regex
+  // see this as ONE codepoint instead of two unpaired surrogates.
+  // If a future refactor drops the /u flag this test trips.
+  const bmpOutside = String.fromCodePoint(0x20000);
+  assert.equal(
+    sectionsContainCjk([{ type: 'paragraph', text: bmpOutside }]),
+    true,
+    'must detect BMP-outside CJK (Extension B+) via /u flag + Unicode property',
+  );
+});
+
+test('sectionsContainCjk: detects CJK in OBJECT-form table rows (renderTable read path)', () => {
+  // pdfkitGenerate.renderTable reads cells via
+  //   Array.isArray(row) ? row[i] : row?.[columns[i].key]
+  // The scanner has to follow the same path. Codex round 4 caught
+  // the omission: object-form rows with CJK string values went
+  // straight to pdfkit and rendered as tofu.
+  assert.equal(
+    sectionsContainCjk([
+      {
+        type: 'table',
+        columns: [{ header: 'Name', key: 'name' }, { header: 'City', key: 'city' }],
+        rows: [
+          { name: 'Alice', city: 'New York' }, // ASCII
+          { name: '张三', city: '北京' },        // CJK in object-form row
+        ],
+      },
+    ]),
+    true,
+    'must detect CJK string values in object-form rows by columns[].key',
+  );
+});
+
+test('sectionsContainCjk: object row with CJK in UNDECLARED key → NOT detected (mirrors renderTable read path)', () => {
+  // Contract: sectionsContainCjk only flags content that
+  // pdfkitGenerate.renderTable would actually render. If a column
+  // has no `key` (or the row uses a key that isn't in columns[]),
+  // renderTable doesn't render that field → no tofu → no flag.
+  // This avoids false positives that would needlessly route ASCII
+  // tables to Playwright. Codex review's hint was about object-
+  // form ROWS in DECLARED columns, not stray fields.
+  assert.equal(
+    sectionsContainCjk([
+      {
+        type: 'table',
+        columns: [{ header: 'X', key: 'x' }], // key 'x' not on the row
+        rows: [{ name: '王五' }],            // 'name' not declared
+      },
+    ]),
+    false,
+    'undeclared CJK fields are not rendered → not flagged',
+  );
+});
+
 test('sectionsContainCjk: handles bad input without throwing', () => {
   assert.equal(sectionsContainCjk(null), false);
   assert.equal(sectionsContainCjk(undefined), false);

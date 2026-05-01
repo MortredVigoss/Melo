@@ -271,24 +271,29 @@ function validateRebuild(spec) {
 
 // ─── engine-routing helper ──────────────────────────────────────────────────
 
-// Unicode ranges that pdfkit's Helvetica StandardFont CANNOT render
-// (would emit tofu glyphs). We pick the engine for these explicitly:
-//   U+3000–303F  CJK Symbols & Punctuation
-//   U+3040–309F  Hiragana
-//   U+30A0–30FF  Katakana
-//   U+4E00–9FFF  CJK Unified Ideographs (the bulk: Chinese / kanji / hanja)
-//   U+AC00–D7AF  Hangul Syllables
-//   U+FF00–FFEF  Halfwidth and Fullwidth Forms (full-width digits/Latin)
+// CJK detection. Codex review round 4 (2026-05-02) flagged that the
+// hand-coded BMP range list missed:
+//   • CJK Extension A (U+3400–4DBF)   — uncommon historical Han
+//   • CJK Extension B–F (U+20000+)    — BMP-outside Han, needs
+//                                       surrogate pair handling
+//   • Compatibility Ideographs (U+F900–FAFF) — duplicate Han chars
+//   • Hangul Jamo (U+1100–11FF) + Jamo Extended (U+A960–A97F /
+//     U+D7B0–D7FF) — Korean syllable building blocks
+// All of those go to pdfkit → tofu under the previous router.
 //
-// Latin-extended (accents, é/ñ/ü), Cyrillic, Arabic, Hebrew etc. are
-// intentionally NOT in this list — pdfkit Helvetica handles
-// Latin-extended adequately, and the others render imperfectly but
-// not as tofu. Codex review (Batch C round 3, 2026-05-01) called
-// out CJK as the specific failure shape that needs explicit
-// detection; we keep this list narrow to that. If a future user
-// audit complains about Arabic / Cyrillic, expand the regex.
+// Unicode property escapes (\p{Script=...} with /u flag, ES2018+,
+// Node 12+) cover every Han / Hiragana / Katakana / Hangul block
+// including future Unicode revisions automatically. This is the
+// Unicode-spec-correct way to detect CJK script — replaces the
+// hand-coded range list which was guaranteed to drift.
+//
+// Latin-extended (é/ñ/ü), Cyrillic, Arabic, Hebrew etc. are
+// intentionally NOT detected — pdfkit Helvetica renders them
+// adequately (imperfectly but not as tofu). If a future user audit
+// complains about specific scripts, add them here as additional
+// alternations.
 const CJK_TEXT_PATTERN =
-  /[　-〿぀-ゟ゠-ヿ一-鿿가-힯＀-￯]/;
+  /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/u;
 
 /**
  * Returns true when ANY string field inside the rebuild spec's
@@ -320,10 +325,32 @@ export function sectionsContainCjk(sections) {
       }
     }
     if (Array.isArray(s.rows)) {
+      // pdfkitGenerate.renderTable reads cells via:
+      //   Array.isArray(row) ? row[i] : row?.[columns[i].key]
+      // The scan mirrors EXACTLY the same read paths so it sees
+      // every cell that would actually render — no more, no less.
+      // Codex review round 4 (2026-05-02) flagged the array-only
+      // scan that missed object-form rows (CJK in
+      // `{ name: '张三' }` was silently misrouted to pdfkit).
+      // The mirror also avoids false positives: a row with CJK in
+      // an UNDECLARED column wouldn't be rendered by renderTable,
+      // so we don't flag it either — pdfkit would just emit an
+      // empty cell, no tofu.
+      const cols = Array.isArray(s.columns) ? s.columns : [];
       for (const row of s.rows) {
-        if (!Array.isArray(row)) continue;
-        for (const cell of row) {
-          if (typeof cell === 'string' && CJK_TEXT_PATTERN.test(cell)) return true;
+        if (Array.isArray(row)) {
+          for (const cell of row) {
+            if (typeof cell === 'string' && CJK_TEXT_PATTERN.test(cell)) return true;
+          }
+          continue;
+        }
+        if (row && typeof row === 'object') {
+          for (const col of cols) {
+            if (col && typeof col.key === 'string') {
+              const cell = row[col.key];
+              if (typeof cell === 'string' && CJK_TEXT_PATTERN.test(cell)) return true;
+            }
+          }
         }
       }
     }
