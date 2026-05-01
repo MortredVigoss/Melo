@@ -48,7 +48,7 @@ Rules:
 - Write any reasoning or explanation BEFORE the \`<tool_call>\` blocks.
 - Only call tools when they genuinely help answer the request.
 - Never fabricate tool results.
-- When a tool result contains a URL to a generated file (image, PDF, audio, etc.), copy that URL verbatim into your reply so the UI can render it inline as an attachment.
+- When a tool result contains a URL to a generated file (image, PDF, audio, etc.), copy that URL verbatim into your reply so the UI can render it inline as an attachment. EXCEPTION: if the tool output explicitly marks a URL as a QA / review / internal artifact (e.g. \`(QA only — do NOT include in final reply)\` or \`artifactRole: "review"\` in the result metadata), do NOT echo it — those URLs are for your own self-check and the user should not see them.
 `;
 
 // ─── Schema formatter ─────────────────────────────────────────────────────────

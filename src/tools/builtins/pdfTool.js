@@ -689,23 +689,47 @@ export const pdfTool = {
         for (const p of result.paths) {
           try { urls.push(signWorkspaceFileUrl(p)); } catch { urls.push(null); }
         }
+        // Codex review 2026-05-01 caught a system-prompt conflict:
+        // the global tool-prompt rule says "echo every generated-file
+        // URL to the user", but render output is QA-only and must
+        // NOT be echoed to the user (those PNGs are intermediate
+        // artifacts; the user wants the FINAL PDF). The fix is two
+        // layered signals so the model can't miss the distinction:
+        //
+        //   (a) every URL line is suffixed `(QA only — do NOT
+        //       include in final reply)` — an in-context marker
+        //       attached to each URL itself, the strongest
+        //       priority signal because it sits in the most-recent
+        //       tool result the model is reasoning about;
+        //   (b) `meta.artifactRole = 'review'` — programmatic
+        //       marker for any framework code that wants to filter
+        //       review URLs out of attachment promotion;
+        //   (c) the global URL rule in systemPrompt.js now carries
+        //       an explicit EXCEPTION for review/QA artifacts.
+        //
+        // Pinned by the workflow tests (no-echo regression + the
+        // global-rule-has-exception assertions).
+        const QA_ONLY_SUFFIX = ' (QA only — do NOT include in final reply)';
         const linesOut = result.paths.map((p, i) => {
           const url = urls[i];
           return url
-            ? `Page ${i + 1}: ${url}`
-            : `Page ${i + 1}: ${p}`;
+            ? `Page ${i + 1}: ${url}${QA_ONLY_SUFFIX}`
+            : `Page ${i + 1}: ${p}${QA_ONLY_SUFFIX}`;
         });
         return {
           ok: true,
           output:
             `Rendered ${result.count} page${result.count === 1 ? '' : 's'} ` +
-            `(${result.dpi} dpi):\n${linesOut.join('\n')}`,
+            `(${result.dpi} dpi). These are visual-review artifacts for your own QA — ` +
+            `do NOT echo them to the user; reply with the FINAL PDF URL only.\n` +
+            `${linesOut.join('\n')}`,
           meta: {
             paths: result.paths,
             urls,
             dpi: result.dpi,
             count: result.count,
             outputDir: outDir,
+            artifactRole: 'review',
           },
         };
       } catch (err) {

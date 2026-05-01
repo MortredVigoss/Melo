@@ -92,6 +92,94 @@ test('buildToolsSystemPrompt: workflow appears verbatim when pdfTool is in the t
   assert.match(prompt, /pdf/);
 });
 
+// ─── render output / global URL rule conflict resolution ──────────────────
+//
+// Codex review 2026-05-01 caught a real conflict: the GLOBAL tool-prompt
+// header (systemPrompt.js TOOL_INSTRUCTION_HEADER) tells the model to
+// "copy any generated-file URL verbatim into your reply", but the
+// PDF visual-review workflow tells it NOT to echo render PNG URLs.
+// Two contradictory system-level rules → unreliable behaviour.
+//
+// The fix uses three layered signals (see the long comment in
+// pdfTool.js render branch):
+//   (a) every render URL line in the tool output carries a
+//       `(QA only — do NOT include in final reply)` suffix
+//   (b) render meta carries `artifactRole: 'review'`
+//   (c) the GLOBAL URL rule now has an explicit "EXCEPTION:
+//       …QA / review / internal artifact…" clause
+//
+// These tests pin all three so a future refactor on either side
+// of the conflict gets caught.
+
+test('global tool prompt: URL-echo rule carries the QA/review exception clause', () => {
+  // The global rule must itself disclaim that QA/review markers
+  // override the "copy verbatim" instruction. Without this the
+  // model gets two contradictory rules.
+  const prompt = buildToolsSystemPrompt([pdfTool]);
+  // Both the original positive rule AND the new exception are present.
+  assert.match(prompt, /copy that URL verbatim into your reply/);
+  assert.match(prompt, /EXCEPTION/);
+  assert.match(prompt, /QA \/ review|QA only|artifactRole/);
+  assert.match(prompt, /do NOT echo/);
+});
+
+test('render: tool output suffixes every page URL with the QA-only marker', async () => {
+  // The in-context marker sits next to each URL so the model can't
+  // miss the distinction even when the global rule is far up in the
+  // prompt. Force pdftoppm-missing so we hit the install-hint path
+  // would short-circuit; instead use the success path via
+  // mock-but-real flow: run actual render with a tiny PDF when
+  // pdftoppm IS installed, otherwise self-skip.
+  const { _setPdftoppmAvailable } = await import('../../services/export/pdfRender.js');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  let installed = false;
+  try {
+    await promisify(execFile)('pdftoppm', ['-v'], { timeout: 3000 });
+    installed = true;
+  } catch { /* not installed in env */ }
+  if (!installed) return; // self-skip on machines without poppler
+
+  _setPdftoppmAvailable(null); // reset cache so real probe runs
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const ws = await mkdtemp(join(tmpdir(), 'melo-pdfworkflow-'));
+  try {
+    const { PDFDocument, rgb } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    const p = doc.addPage([400, 300]);
+    p.drawText('Page 1', { x: 50, y: 250, size: 24, color: rgb(0, 0, 0) });
+    await writeFile(join(ws, 'src.pdf'), Buffer.from(await doc.save()));
+
+    const result = await pdfTool.run(
+      { action: 'render', source: 'src.pdf', renderScale: 1 },
+      { workspacePath: ws },
+    );
+    assert.equal(result.ok, true);
+    assert.match(
+      result.output,
+      /\(QA only — do NOT include in final reply\)/,
+      'every page URL line must carry the QA-only suffix',
+    );
+    assert.match(
+      result.output,
+      /visual-review artifacts for your own QA/,
+      'output prefix must explicitly explain these are review artifacts',
+    );
+    assert.match(
+      result.output,
+      /FINAL PDF URL only/,
+      'output must remind the model to reply with the FINAL PDF URL only',
+    );
+    // Programmatic marker on meta so framework code can filter
+    // review artifacts from attachment promotion if needed.
+    assert.equal(result.meta.artifactRole, 'review');
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+  }
+});
+
 test('buildToolsSystemPrompt: workflow does NOT appear when pdfTool is filtered out', () => {
   // An agent profile that disables `pdf` shouldn't have its prompt
   // cluttered with PDF-specific guidance. Negative test pins this.
