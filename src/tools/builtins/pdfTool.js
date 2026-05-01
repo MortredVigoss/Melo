@@ -186,8 +186,15 @@ export const pdfTool = {
     '• watermark  — stamp a Latin-only text watermark on every page (Helvetica, no CJK).\n' +
     '• add_page_numbers — stamp Latin-only page numbers (Helvetica, no CJK).\n' +
     '• prepend_cover — concatenate a cover PDF onto the front of an existing PDF.\n' +
-    '• render     — rasterise pages of a PDF to PNG images (pdftoppm; user must `brew install poppler` once). Use this for visual review of a generated PDF — pass the resulting PNG path back as an image to spot misrendering / overflow / encoding issues.\n' +
-    'CJK caveat: watermark / add_page_numbers use Helvetica StandardFont and reject non-ASCII text. Use write/structured + Playwright for CJK content.',
+    '• render     — rasterise pages of a PDF to PNG images (pdftoppm; user must `brew install poppler` once). Returns signed image URLs you can read back as visual references.\n' +
+    'CJK caveat: watermark / add_page_numbers use Helvetica StandardFont and reject non-ASCII text. Use write/structured + Playwright for CJK content.\n\n' +
+    'VISUAL REVIEW WORKFLOW — apply this whenever you generate a non-trivial PDF (write / structured / merge / multi-step pipeline):\n' +
+    '1. Generate the PDF as usual. Save the output URL — that\'s what the user gets in the end.\n' +
+    '2. Immediately call `render` on the same PDF (pageRange: "1-3" is enough for sanity, full doc for reports), then read the returned page-image URLs as visual references.\n' +
+    '3. Self-check the rendered pages for: layout (titles centred? table cells aligned? content overflowing the margin?), font (CJK rendering or showing as ▢▢ tofu? characters cut off? bold/italic preserved?), content fidelity (every section the user asked for present? page order correct? page numbers / footers right?).\n' +
+    '4. If something is broken, FIX and re-render — common fixes: switch from `structured` (pdfkit) to `write` (HTML+Playwright) for CJK / complex layout; widen margins; chunk long sections across pages; embed images via base64 in the HTML.\n' +
+    '5. Once visually verified, return the FINAL PDF URL to the user. Do NOT echo the rendered page-PNG URLs to the user — those were just for your own QA. The user wants the document, not its screenshots.\n' +
+    'Skip the loop only when: (a) the user explicitly says "don\'t bother reviewing" / "just generate it", (b) the PDF is trivial (single short page), or (c) `render` errors with the poppler-not-installed hint — then surface the install hint to the user and skip self-review.',
   category: 'files',
   isConcurrencySafe: true,
   requiresPermission: true,
