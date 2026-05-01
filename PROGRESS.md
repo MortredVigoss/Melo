@@ -68,6 +68,7 @@
 - 测试 9 个新（pdfTool.workflow.test.js）：每个 review axis 单独 pin keyword（VISUAL REVIEW WORKFLOW header、render back-reference、tofu 检测、layout/content fidelity、Do NOT echo PNG 规则、structured→write 修法、Skip 退出条件、ws-relative buildToolsSystemPrompt 包含/不含 pdfTool 时 workflow 出现/消失）—— future 任何精简/改写 drop 一条都会被独立 assertion 抓住，无 silent drift。
 - 验证：`src/**/*.test.js` **1360/1360 全绿**。
 - 提交：`c2bd16f`。
+- Follow-up（Codex C → 全局 URL rule vs 视觉验收 workflow 冲突）：上次 push 被 Codex C，🔵 真问题：[systemPrompt.js:51](src/tools/systemPrompt.js#L51) 的全局规则要求"every generated-file URL 原样 copy 到 reply"，但 pdfTool 视觉验收 workflow 要求"render PNG URLs 不要 echo 给用户"——两条 system-level 指令直接冲突，模型随机选一个，Batch B 契约不可靠。三层 defence-in-depth 修法（用户 OK Codex Q1+Q2）：① render output 每行 URL 后缀 `(QA only — do NOT include in final reply)`，prefix 加"visual-review artifacts for your own QA, do NOT echo"——in-context marker 紧贴 URL，最强优先级（最近 context 的相邻文本压住远端 system header）；② render meta 加 `artifactRole: 'review'`——程序化 marker 给 future framework 代码用；③ 全局 URL rule 加 EXCEPTION clause 显式说"QA / review / artifactRole='review' 标记的 URL 不 echo"——全局规则自己 disclaim override 条件。2 个新 wiring 测试 pin：global prompt 含 EXCEPTION + 正向 rule 都在；render output 含 QA-only 后缀、QA prefix、artifactRole='review'。验证 1362/1362 全绿。提交哈希：`96753e0`。
 - 下一刀：Batch C（edit_spec JSON schema + renderer + pdfTool entry）。
 
 ## 2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）
