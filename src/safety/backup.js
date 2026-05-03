@@ -34,8 +34,12 @@ import {
   realpath,
   stat,
   readdir,
+  open,
 } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { basename, join, sep } from 'node:path';
+
+const { O_RDONLY, O_NOFOLLOW } = fsConstants;
 
 import { getMeloHome } from '../config.js';
 import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
@@ -195,8 +199,28 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
       throw new Error('snapshotBeforeWrite does not support directories.');
     }
     beforePath = join(beforeDir, basename(absPath));
-    await copyFile(absPath, beforePath);
-    sha = await fileSha256(absPath);
+    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW. If absPath
+    // becomes a symlink between the stat() above and this open()
+    // (post-commit attacker race), the kernel returns ELOOP and we
+    // surface the failure rather than silently reading the symlink's
+    // target into the backup folder. copyFile() would have followed.
+    let fh;
+    try {
+      fh = await open(absPath, O_RDONLY | O_NOFOLLOW);
+    } catch (err) {
+      await rm(opDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error(
+        `snapshotBeforeWrite refusing to read ${absPath}: ${err.message}` +
+        (err.code === 'ELOOP' ? ' (target became a symlink — O_NOFOLLOW)' : ''),
+      );
+    }
+    try {
+      const buf = await fh.readFile();
+      await writeFile(beforePath, buf);
+      sha = createHash('sha256').update(buf).digest('hex');
+    } finally {
+      await fh.close().catch(() => {});
+    }
   }
 
   const now = new Date();

@@ -12,9 +12,22 @@
  *   - The new content is entirely different from the original
  */
 
-import { writeFile, mkdir, readFile, stat } from 'node:fs/promises';
+import { writeFile, mkdir, readFile, stat, open } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve, dirname } from 'node:path';
+
+const { O_WRONLY, O_CREAT, O_TRUNC, O_EXCL, O_NOFOLLOW } = fsConstants;
+
+// Test-only seam (Codex D Phase 2A round 5): post-commit hook fired
+// AFTER commitOperation but BEFORE the actual fs write. Tests use
+// it to inject a symlink swap or competing create to prove the
+// O_NOFOLLOW + O_EXCL kernel-level defences fire. No-op in
+// production. Never call from production code.
+let _postCommitHookForTests = null;
+export function _setPostCommitHookForTests(hook) {
+  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
+}
 
 import {
   requestWrite,
@@ -249,10 +262,55 @@ export const fileWriteTool = {
       return { ok: false, output: `Cannot create directory: ${err.message}`, error: err.message };
     }
 
+    // Test-only injection point (post-commit, pre-write).
+    if (_postCommitHookForTests) {
+      try { await _postCommitHookForTests({ resolvedTarget, isCreate, lexicalPath: absPath }); } catch {}
+    }
+
+    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW + O_EXCL.
+    //   - O_NOFOLLOW: if the target was swapped to a symlink between
+    //     commit and now (kernel-level race), open() returns ELOOP
+    //     and we surface COMMIT_FAILED rather than writing through
+    //     the new symlink to /etc/hosts / etc.
+    //   - O_EXCL on the create flow: if the target appeared between
+    //     approval and now (someone else created the file), open()
+    //     returns EEXIST and we surface STALE_CONTENT rather than
+    //     overwriting their content.
+    const flags = isCreate
+      ? O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW
+      : O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW;
+    let fh;
     try {
-      await writeFile(resolvedTarget, content, 'utf8');
+      fh = await open(resolvedTarget, flags, 0o644);
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
+        return {
+          ok: false,
+          output:
+            `Target ${resolvedTarget} appeared between approval and write — ` +
+            `re-run as overwrite or pick a different path.`,
+          error: 'STALE_CONTENT',
+          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'create-eexist' },
+        };
+      }
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output:
+            `Target ${resolvedTarget} became a symlink between approval and write — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+        };
+      }
+      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
+    }
+    try {
+      await fh.writeFile(content, 'utf8');
     } catch (err) {
       return { ok: false, output: `Write error: ${err.message}`, error: err.message };
+    } finally {
+      await fh.close().catch(() => {});
     }
 
     // ── Record the diff for the backup so a future restore can

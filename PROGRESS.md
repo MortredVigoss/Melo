@@ -41,6 +41,15 @@
 - **fileDeleteTool description 纠正**：把 "bash 删除会 route 到 fileDeleteTool" 改成 "Phase 2D (TBD) will route…"，避免文档与实现不符。
 - 测试加 5 case：① move workspace/link → workspace/newlink → 新 link 指向同 external target，external 文件未动；② move dst 是现存 symlink → DST_IS_SYMLINK + 三方未动；③ write stale (sse 里 writeFile 改外部内容然后 resolveFileSafety) → STALE_CONTENT + 外部 edit 保留；④ edit stale 同款；⑤ create 不受 stale 影响（race write 被 final 覆盖，wasCreate=true）。SSE callback 内 `writeFile(...).then(() => gate.resolveFileSafety(...))` 是注入 race window 的关键技巧。
 - 验证：`src/**/*.test.js` **1693/1693 全绿**（前 1688 + 5 新；零既有回归）。
+- 提交哈希：`b7762f3`。
+- Follow-up（Codex D Phase 2A round 5 → kernel 级 O_NOFOLLOW + O_EXCL 防 post-commit race）：上一刀 push 又被评 D，3 条都是 commit 之后、最终 fs op 之前的 race window：① 🔴 fileWriteTool snapshot+write 走 path 级 stat/copyFile/writeFile 都 follow symlink；② 🔴 fileMoveTool 用 lexical 后父目录 race 仍可改真目的地；③ ⚪ 缺 post-commit race 测试。这是 Phase 2A 第 5 轮，整体安全 13 轮。Codex 不停找更深窗口。用户拍方向 A 务实版（O_NOFOLLOW + O_EXCL kernel 级硬保证 + Q1=C 接受 move 父目录 race 文档化 + Q2=A O_EXCL 防 create race appearance）+ 全做。
+- **`backup.snapshotBeforeWrite` 走 fd-based no-follow read**：原 `copyFile(absPath, beforePath)` 改 `open(absPath, O_RDONLY|O_NOFOLLOW)` → `fh.readFile()` → `writeFile(beforePath, buf)`。snapshot 期间源被换成 symlink → 内核返 ELOOP → `snapshotBeforeWrite` throw "refusing to read...ELOOP" → tool 报 SNAPSHOT_FAILED 不读敏感目标。
+- **`fileWriteTool` 最终 write 走 fd**：`open(resolvedTarget, flags, 0o644)` 用 `O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW`（overwrite）或 `O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW`（create）。`writeFile()` 改成 `fh.writeFile()`。errors: `EEXIST → STALE_CONTENT` (race-create) + `ELOOP → COMMIT_FAILED` (race-symlink-swap) + meta.raceKind 标 race 类型。create 路径用 O_EXCL 实现 Q2=A "race appearance → STALE_CONTENT 不覆盖"。
+- **`fileEditTool` 最终 write 走 fd**：`open(resolvedTarget, O_WRONLY|O_TRUNC|O_NOFOLLOW)` + `fh.writeFile()`。ELOOP → COMMIT_FAILED 同款。
+- **`_setPostCommitHookForTests` DI seam**：fileWriteTool + fileEditTool 各加 export，hook 在 commit 之后、最终 fs op 之前调用一次；测试用它注入 symlink swap 模拟 attacker race。production 默认 null = no-op。
+- **fileMoveTool 文档化 known limitation**：模块 header 加注释明确 "no Node.js exposure of renameat2 → 父目录 race 是 microsecond-scale kernel-level window，需 attacker 已有 parent dir 写权限，超出 melo desktop threat model"。leaf symlink swap 通过 commit + lstat dst 已防。
+- 测试加 3 case + 修 1 case：① fileWrite post-commit hook swap target → /etc/hosts symlink → COMMIT_FAILED + raceKind=symlink-eloop + lstat/readlink 验证 link 留着没被 follow；② fileEdit 同款；③ snapshotBeforeWrite source 是 /etc/hosts 的 symlink → throw "ELOOP"；④ 既有 "create not subject to stale" 测试**重写**为 "create with O_EXCL race-appearance → STALE_CONTENT，race-injected content 保留"（Q2=A 新契约）。
+- 验证：`src/**/*.test.js` **1696/1696 全绿**（前 1693 + 3 新 + 1 改；零既有回归）。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 

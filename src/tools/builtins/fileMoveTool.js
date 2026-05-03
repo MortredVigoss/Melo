@@ -5,9 +5,29 @@
  * the FileSafetyGate. Both the source and destination are vetted for
  * sensitivity (system / credential / $MELO_HOME) and the user sees a
  * confirmation dialog showing the lexical paths plus their realpaths.
- * The actual rename uses the commit-resolved real paths so a symlink
- * swap between approval and rename can't redirect the move at a
- * sensitive target.
+ *
+ * No-follow semantics (Codex C round 4): fs.rename operates on the
+ * leaf directory entry, not the file the entry points to. We pass
+ * the LEXICAL paths to fs.rename so that:
+ *   - moving a workspace symlink moves the link entry itself, not
+ *     the external file the link aliases
+ *   - moving a regular file works as expected
+ * resolvedSrc/resolvedDst from commit are kept only for return meta
+ * (the gate's commit step already verified the lexical→real
+ * mapping); no further fs op references them.
+ *
+ * Known limitation (Codex D Phase 2A round 5): there is no Node.js
+ * exposure of `renameat2` with `AT_NO_AUTOMOUNT` / `RENAME_NOREPLACE`
+ * style atomicity guards. If a parent directory of src or dst is
+ * swapped to a symlink between commit and the actual rename
+ * syscall, the rename will land at the new resolution. Mitigations
+ * in place:
+ *   - commit re-resolves both endpoints right before this fn runs
+ *   - lstat dst rejects existing-symlink-dst before rename
+ *   - the residual race is a microsecond-scale kernel-level window
+ *     that requires an attacker already with write access to a
+ *     parent directory — outside melo's threat model for desktop
+ *     use, but worth surfacing.
  */
 
 import { rename, mkdir, lstat } from 'node:fs/promises';

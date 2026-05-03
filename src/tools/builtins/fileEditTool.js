@@ -8,8 +8,20 @@
  * and the post-write diff recorded for restore-with-context.
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, open } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+
+const { O_WRONLY, O_TRUNC, O_NOFOLLOW } = fsConstants;
+
+// Test-only seam (Codex D Phase 2A round 5): post-commit hook
+// fired AFTER commitOperation but BEFORE the actual fs write. Tests
+// use it to inject a symlink swap to prove the O_NOFOLLOW kernel
+// defence fires. No-op in production.
+let _postCommitHookForTests = null;
+export function _setPostCommitHookForTests(hook) {
+  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
+}
 
 import {
   requestEdit,
@@ -230,10 +242,37 @@ export const fileEditTool = {
       };
     }
 
+    // Test-only injection point (post-commit, pre-write).
+    if (_postCommitHookForTests) {
+      try { await _postCommitHookForTests({ resolvedTarget, lexicalPath: absPath }); } catch {}
+    }
+
+    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW. If the
+    // target was swapped to a symlink between commit and now,
+    // open() returns ELOOP and we surface COMMIT_FAILED rather
+    // than writing through the new symlink.
+    let fh;
     try {
-      await writeFile(resolvedTarget, updated, 'utf8');
+      fh = await open(resolvedTarget, O_WRONLY | O_TRUNC | O_NOFOLLOW);
+    } catch (err) {
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output:
+            `Target ${resolvedTarget} became a symlink between approval and write — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+        };
+      }
+      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
+    }
+    try {
+      await fh.writeFile(updated, 'utf8');
     } catch (err) {
       return { ok: false, output: `Write error: ${err.message}`, error: err.message };
+    } finally {
+      await fh.close().catch(() => {});
     }
 
     try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}

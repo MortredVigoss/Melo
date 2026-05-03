@@ -28,8 +28,14 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
-import { fileWriteTool } from './fileWriteTool.js';
-import { fileEditTool } from './fileEditTool.js';
+import {
+  fileWriteTool,
+  _setPostCommitHookForTests as _setWritePostCommitHook,
+} from './fileWriteTool.js';
+import {
+  fileEditTool,
+  _setPostCommitHookForTests as _setEditPostCommitHook,
+} from './fileEditTool.js';
 import { fileDeleteTool } from './fileDeleteTool.js';
 import { fileMoveTool } from './fileMoveTool.js';
 
@@ -603,6 +609,76 @@ test('fileEditTool: broken symlink → sensitive target rejected without read at
   });
 });
 
+// ─── Codex D Phase 2A round 5: O_NOFOLLOW post-commit race ────────────
+
+test('fileWriteTool: post-commit symlink swap → ELOOP via O_NOFOLLOW → COMMIT_FAILED', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'OLD', 'utf8');
+
+    // Use the post-commit hook to simulate an attacker swapping the
+    // target file out for a symlink to /etc/hosts AFTER commit but
+    // BEFORE the write. The kernel's O_NOFOLLOW must catch this.
+    _setWritePostCommitHook(async ({ resolvedTarget }) => {
+      await rm(resolvedTarget, { force: true });
+      await symlink('/etc/hosts', resolvedTarget);
+    });
+    try {
+      const result = await fileWriteTool.run(
+        { path: target, content: 'NEW' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'COMMIT_FAILED');
+      assert.equal(result.meta.raceKind, 'symlink-eloop');
+      // The target is now a symlink → /etc/hosts; we must NOT have
+      // written 'NEW' through it.
+      const lst = await lstat(target);
+      assert.equal(lst.isSymbolicLink(), true);
+      assert.equal(await readlink(target), '/etc/hosts');
+    } finally {
+      _setWritePostCommitHook(null);
+    }
+  });
+});
+
+test('fileEditTool: post-commit symlink swap → ELOOP via O_NOFOLLOW → COMMIT_FAILED', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'foo', 'utf8');
+
+    _setEditPostCommitHook(async ({ resolvedTarget }) => {
+      await rm(resolvedTarget, { force: true });
+      await symlink('/etc/hosts', resolvedTarget);
+    });
+    try {
+      const result = await fileEditTool.run(
+        { path: target, old_string: 'foo', new_string: 'bar' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'COMMIT_FAILED');
+      assert.equal(result.meta.raceKind, 'symlink-eloop');
+    } finally {
+      _setEditPostCommitHook(null);
+    }
+  });
+});
+
+test('snapshotBeforeWrite: source becomes a symlink → O_NOFOLLOW returns ELOOP, snapshot fails', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const linkSrc = join(ws, 'link');
+    await symlink('/etc/hosts', linkSrc);
+    const { snapshotBeforeWrite } = await import('../../safety/backup.js');
+    await assert.rejects(
+      snapshotBeforeWrite(linkSrc, {}),
+      /refusing to read.*ELOOP|target became a symlink/i,
+    );
+  });
+});
+
 // ─── fileMoveTool ──────────────────────────────────────────────────────
 
 test('fileMoveTool: rename within workspace, gate-approved', async () => {
@@ -742,30 +818,28 @@ test('fileEditTool: file modified between approval and commit → STALE_CONTENT 
   });
 });
 
-test('fileWriteTool: create (no oldHash) is NOT subject to stale-content check', async () => {
+test('fileWriteTool: create with O_EXCL — race-create during approval window → STALE_CONTENT abort, race file preserved', async () => {
+  // Codex D Phase 2A round 5 (Q2=A): the create flow opens with
+  // O_EXCL so a target that appeared between approval and write
+  // returns EEXIST → STALE_CONTENT. The race-injected content is
+  // preserved (we did NOT clobber it).
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const target = join(ws, 'fresh.txt');
-    // Even if something writes to the path between approval and
-    // commit, a CREATE flow has no oldHash to compare against, so
-    // it should succeed (the user explicitly approved creating
-    // fresh content at this path).
     const sse = (event, payload) => {
-      // Inject a write — but since this is a "create" call (target
-      // didn't exist), the tool's isCreate=true and stale check is
-      // skipped. The new content overwrites whatever is there.
       writeFile(target, 'race-write', 'utf8').then(() => {
         gate.resolveFileSafety(payload.requestId, 'once');
       });
     };
-
     const result = await fileWriteTool.run(
       { path: target, content: 'final' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
-    assert.equal(result.ok, true);
-    assert.equal(result.meta.wasCreate, true);
-    assert.equal(await readFile(target, 'utf8'), 'final');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'STALE_CONTENT');
+    assert.equal(result.meta.raceKind, 'create-eexist');
+    // Race-injected content preserved.
+    assert.equal(await readFile(target, 'utf8'), 'race-write');
   });
 });
 
