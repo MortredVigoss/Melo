@@ -57,6 +57,23 @@ export function _setRestoreSwapHookForTests(hook) {
   _restoreSwapHookForTests = typeof hook === 'function' ? hook : null;
 }
 
+// Codex C round 5 (2026-05-03): module-private commit helper for the
+// no-UI restore path — mirrors backup.js. Re-resolves originalPath
+// and verifies it still maps to the expectedReal captured at
+// layer (b). Throws FILE_SAFETY_DENIED on mismatch.
+async function _commitRestore(originalPath, expectedReal) {
+  const fresh = await safeResolvePath(originalPath);
+  if (fresh.realPath !== expectedReal) {
+    const err = new Error(
+      `Path mapping changed between safety check and restore: ` +
+      `lexical=${originalPath} approvedReal=${expectedReal} nowReal=${fresh.realPath}`,
+    );
+    err.code = 'FILE_SAFETY_DENIED';
+    throw err;
+  }
+  return fresh.realPath;
+}
+
 // Whitelist for operationId values supplied by the API / UI. Mirrors
 // backup.js — Codex C round 1 (2026-05-03) flagged the same path-
 // traversal class on the backup side; harden trash for symmetry.
@@ -129,7 +146,7 @@ async function fileSha256(absPath) {
 // Phase 2 contract: tools that delete go
 //   gate.requestDelete(...) → safeDeleteToTrash({ operationTokens, ctx })
 // Tests / setup helpers that don't go through the gate may call
-// _unsafeSafeDeleteToTrashRaw() directly — see its JSDoc warning.
+// _unsafeRawDelete() directly is no longer possible (module-private).
 //
 // Returns the same shape as the legacy raw call:
 //   { operationId, folderName, opDir, manifestPath, removed[], failed[] }.
@@ -164,31 +181,65 @@ export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
     resolvedTargets.push(...committed.resolvedTargets);
   }
 
-  return _unsafeSafeDeleteToTrashRaw(resolvedTargets, ctx);
+  return _unsafeRawDelete(resolvedTargets, ctx);
 }
 
-// ── _unsafeSafeDeleteToTrashRaw (test-only) ──────────────────────────
+// ── _unsafeRawDelete (module-private) ────────────────────────────────
 //
-// @internal — for tests + internal recursion only. Production code
-// MUST go through the token-bound safeDeleteToTrash() above.
+// Codex C round 5 (2026-05-03) made this a non-exported helper.
+// Production code reaches the trash exclusively through the
+// token-bound safeDeleteToTrash() above. This worker is invoked
+// only after every commit has already been verified.
+//
+// Defence-in-depth: the worker itself runs isHardBlockedDelete on
+// BOTH the lexical input AND the realpath of every input. Even if
+// future refactoring accidentally calls this from inside the same
+// module without going through the wrapper, sensitive paths still
+// can't reach copyFile + rm.
 //
 // Move the given paths into the trash quarantine. Files are copied
 // first; only after the manifest is written and copies are flushed
 // do we unlink the originals. A copy failure aborts the whole op
 // before any original is touched.
 //
-// Even this raw entrypoint refuses sensitive paths via
-// isHardBlockedDelete — the safety policy is not bypassable at any
-// layer. The reason this fn isn't the public API is solely the
-// TOCTOU contract: callers in production MUST hold a fresh commit
-// token to prove they vetted the lexical→real mapping atomically.
-//
 // ctx: { reason?, requestedBy?, chatId?, operationId?, workspacePath? }
 // Returns { operationId, folderName, opDir, manifestPath, removed[], failed[] }.
-export async function _unsafeSafeDeleteToTrashRaw(paths, ctx = {}) {
+async function _unsafeRawDelete(paths, ctx = {}) {
   const inputs = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
   if (!inputs.length) {
     throw new Error('safeDeleteToTrash called with no paths.');
+  }
+
+  // Codex C round 5 (2026-05-03) defence-in-depth: even though
+  // safeDeleteToTrash already vetted these via gate.commitOperation +
+  // double-check, the raw worker re-classifies every input on its own.
+  // This pins the safety policy to the layer that actually does the
+  // rm — any future code path that accidentally reaches _unsafeRawDelete
+  // without the wrapper still cannot delete a sensitive target.
+  for (const absPath of inputs) {
+    if (isHardBlockedDelete(absPath)) {
+      throw new Error(
+        `_unsafeRawDelete refuses to delete ${absPath} ` +
+        `(category: ${classifyPath(absPath)}).`,
+      );
+    }
+    // Also resolve and re-check — catches a symlink whose target is
+    // sensitive even though the lexical path looks benign.
+    try {
+      const resolved = await safeResolvePath(absPath);
+      if (isHardBlockedDelete(resolved.realPath)) {
+        throw new Error(
+          `_unsafeRawDelete refuses to delete ${absPath} ` +
+          `(real target ${resolved.realPath} is ${classifyPath(resolved.realPath)}).`,
+        );
+      }
+    } catch (err) {
+      // safeResolvePath only throws on unexpected fs errors (not
+      // ENOENT/ENOTDIR). Re-throw — caller can't safely proceed.
+      if (err && /^_unsafeRawDelete refuses/.test(err.message)) throw err;
+      // Don't propagate ENOENT here — let the stat() loop below
+      // emit the canonical "source not found" error.
+    }
   }
 
   const meloHome = getMeloHome();
@@ -384,14 +435,14 @@ export async function restoreFromTrash(operationId, opts = {}) {
     expectedRealByLexical.set(entry.originalPath, realPath);
   }
 
-  // Layer (c)+(d): optional UI approval through the gate, then atomic
-  // commit-and-fs-op using the gate's resolvedTarget. Codex D round 3
-  // (2026-05-03): every restored entry's actual copyFile/cp/rm now
-  // operates on the commit-issued resolvedTarget, never on
-  // entry.originalPath. A symlink swap between (b)'s check and the
-  // fs op fails commitOperation and aborts.
-  const gate = await import('./fileSafetyGate.js');
+  // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
+  // round 5 (2026-05-03): no-UI path now uses module-private
+  // _commitRestore (no gate token mint exposure). UI path still
+  // uses gate.requestWrite + gate.commitOperation. Both paths
+  // operate on the commit-issued resolvedTarget, never on the
+  // lexical entry.originalPath.
   const wantsUi = Boolean(opts.sseEmitter && opts.chatId);
+  const gate = wantsUi ? await import('./fileSafetyGate.js') : null;
 
   const restored = [];
   const skipped = [];
@@ -414,7 +465,7 @@ export async function restoreFromTrash(operationId, opts = {}) {
       });
     }
 
-    let approvalToken;
+    let resolvedTarget;
     if (wantsUi) {
       const ui = await gate.requestWrite({
         path: entry.originalPath,
@@ -426,18 +477,15 @@ export async function restoreFromTrash(operationId, opts = {}) {
         contentSize: entry.size ?? null,
         newHash: entry.sha256 || null,
       });
-      approvalToken = ui.operationToken;
+      const committed = await gate.commitOperation(ui.operationToken);
+      resolvedTarget = committed.resolvedTarget;
     } else {
-      approvalToken = gate._issueOperationToken({
-        kind: 'restore_internal',
-        chatId: null,
-        targets: [{
-          lexical: entry.originalPath,
-          expectedReal: expectedRealByLexical.get(entry.originalPath),
-        }],
-      });
+      // No-UI path: module-private atomic re-resolve, no gate token mint.
+      resolvedTarget = await _commitRestore(
+        entry.originalPath,
+        expectedRealByLexical.get(entry.originalPath),
+      );
     }
-    const { resolvedTarget } = await gate.commitOperation(approvalToken);
 
     const src = join(filesDir, entry.trashedAs);
     await mkdir(dirname(resolvedTarget), { recursive: true });

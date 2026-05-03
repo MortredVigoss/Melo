@@ -10,26 +10,42 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { deleteToTrash } from './_testHelpers.js';
 import { join } from 'node:path';
 
+// Codex C round 5 (2026-05-03): split MELO_HOME and the test
+// workspace. Files inside MELO_HOME classify as melo_internal and
+// are hard-blocked at requestDelete time, so tests that need to
+// trash a real file must put it in the workspace dir, not in home.
 async function withTempMeloHome(fn) {
-  const dir = await mkdtemp(join(tmpdir(), 'melo-traversal-'));
+  const home = await mkdtemp(join(tmpdir(), 'melo-traversal-home-'));
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'melo-traversal-ws-')));
   const prev = process.env.MELO_HOME;
-  process.env.MELO_HOME = dir;
+  process.env.MELO_HOME = home;
   try {
-    await mkdir(dir, { recursive: true });
-    await fn(dir);
+    await mkdir(home, { recursive: true });
+    await mkdir(ws, { recursive: true });
+    await fn(ws, home);
   } finally {
     if (prev === undefined) delete process.env.MELO_HOME;
     else process.env.MELO_HOME = prev;
-    await rm(dir, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true });
   }
 }
 
 async function freshTrash() {
   return import(`./trash.js?tc=${Date.now()}-${Math.random()}`);
+}
+
+async function freshGate() {
+  const grants = await import('./chatScopedGrants.js');
+  grants.clearChat();
+  const gate = await import('./fileSafetyGate.js');
+  gate._clearPendingForTests();
+  return gate;
 }
 async function freshBackup() {
   return import(`./backup.js?tc=${Date.now()}-${Math.random()}`);
@@ -83,10 +99,12 @@ test('restoreFromTrash rejects every traversal-shaped operationId', async () => 
 
 test('purgeTrashEntry accepts a legitimate operationId (positive case)', async () => {
   await withTempMeloHome(async (home) => {
-    const { _unsafeSafeDeleteToTrashRaw, purgeTrashEntry, listTrash } = await freshTrash();
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const { purgeTrashEntry, listTrash } = trash;
     const target = join(home, 'a.txt');
     await writeFile(target, 'x', 'utf8');
-    const del = await _unsafeSafeDeleteToTrashRaw([target]);
+    const del = await deleteToTrash(gate, trash, [target]);
     // _unsafeSafeDeleteToTrashRaw uses randomUUID() which fits the whitelist
     // (UUID v4 = 36 chars of [0-9a-f-]).
     await purgeTrashEntry(del.operationId);
@@ -209,13 +227,14 @@ test('recordAfterDiff rejects every traversal-shaped operationId', async () => {
 
 test('_unsafeSafeDeleteToTrashRaw rejects traversal-shaped ctx.operationId', async () => {
   await withTempMeloHome(async (home) => {
-    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
+    const trash = await freshTrash();
+    const gate = await freshGate();
     const target = join(home, 'a.txt');
     await writeFile(target, 'x', 'utf8');
     for (const input of TRAVERSAL_INPUTS) {
       if (input === null || input === undefined) continue;
       await assert.rejects(
-        _unsafeSafeDeleteToTrashRaw([target], { operationId: input }),
+        deleteToTrash(gate, trash, [target], { operationId: input }),
         /Invalid operationId/i,
         `expected ctx.operationId=${JSON.stringify(input)} to be rejected`,
       );

@@ -23,6 +23,7 @@ import {
   realpath,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { deleteToTrash } from './_testHelpers.js';
 
 async function freshTrash() {
   return import(`./trash.js?tc=${Date.now()}-${Math.random()}`);
@@ -132,10 +133,12 @@ test('restoreFromBackup with a manifest pointing at a symlink → /etc/hosts is 
 
 test('restoreFromTrash with a tampered manifest entry pointing at /etc rejects (no copyFile)', async () => {
   await withSplitHomeAndWorkspace(async (ws, home) => {
-    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const { restoreFromTrash } = trash;
     const target = join(ws, 'foo.txt');
     await writeFile(target, 'x', 'utf8');
-    const del = await _unsafeSafeDeleteToTrashRaw([target]);
+    const del = await deleteToTrash(gate, trash, [target]);
 
     // Tamper the manifest's first file entry's originalPath.
     const manifestPath = del.manifestPath;
@@ -190,14 +193,15 @@ test('restoreFromBackup with sseEmitter+chatId routes through gate.requestWrite 
 
 test('restoreFromTrash with sseEmitter+chatId fires one approval per file', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
-    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
+    const trash = await freshTrash();
     const gate = await freshGate();
+    const { restoreFromTrash } = trash;
 
     const a = join(ws, 'a.txt');
     const b = join(ws, 'b.txt');
     await writeFile(a, 'A', 'utf8');
     await writeFile(b, 'B', 'utf8');
-    const del = await _unsafeSafeDeleteToTrashRaw([a, b]);
+    const del = await deleteToTrash(gate, trash, [a, b]);
 
     const events = [];
     const sse = (event, payload) => {
@@ -334,9 +338,10 @@ test('restoreFromBackup: post-(b) symlink swap caught by commit (integration TOC
 test('restoreFromTrash: post-(b) symlink swap caught by commit (integration TOCTOU)', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
     const trash = await freshTrash();
+    const gate = await freshGate();
     const realFile = join(ws, 'foo.txt');
     await writeFile(realFile, 'A', 'utf8');
-    const del = await trash._unsafeSafeDeleteToTrashRaw([realFile]);
+    const del = await deleteToTrash(gate, trash, [realFile]);
 
     trash._setRestoreSwapHookForTests(async ({ originalPath }) => {
       // Re-create the path as a symlink to /etc/hosts before commit.
@@ -445,12 +450,14 @@ test('safeDeleteToTrash refuses if any token commit fails (whole batch atomic)',
 
 test('restoreFromTrash uses commit-issued resolvedTarget per file (returned restored[] holds real paths)', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
-    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const { restoreFromTrash } = trash;
     const realA = join(ws, 'a.txt');
     const realB = join(ws, 'b.txt');
     await writeFile(realA, 'A', 'utf8');
     await writeFile(realB, 'B', 'utf8');
-    const del = await _unsafeSafeDeleteToTrashRaw([realA, realB]);
+    const del = await deleteToTrash(gate, trash, [realA, realB]);
 
     const result = await restoreFromTrash(del.operationId);
     // restored[] now contains the commit-resolved (= real) paths.

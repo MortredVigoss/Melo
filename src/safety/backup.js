@@ -47,12 +47,34 @@ export const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // Codex ⚪ round 4 (2026-05-03): test-only DI seam to inject a state
 // change between layer (b)'s sensitivity check and the commit-on-write
 // step. Tests use this to swap a symlink target during the gap a real
-// attacker would race for, then assert that gate.commitOperation
-// catches the swap and aborts the restore. Default null = no-op in
-// production. Never call this from production code.
+// attacker would race for, then assert that the commit step catches
+// the swap and aborts the restore. Default null = no-op in production.
+// Never call this from production code.
 let _restoreSwapHookForTests = null;
 export function _setRestoreSwapHookForTests(hook) {
   _restoreSwapHookForTests = typeof hook === 'function' ? hook : null;
+}
+
+// Codex C round 5 (2026-05-03): module-private commit helper for the
+// no-UI restore path. Re-resolves the originalPath and verifies it
+// still maps to the realPath captured at layer (b). Returns the
+// fresh resolved target on success; throws FILE_SAFETY_DENIED on
+// mismatch — restore must abort rather than write to a swapped target.
+//
+// Replaces the prior reach-into-gate `_issueOperationToken` design.
+// We deliberately do NOT mint or hand out a token here: this is a
+// purely local atomic check, no caller-facing API surface.
+async function _commitRestore(originalPath, expectedReal) {
+  const fresh = await safeResolvePath(originalPath);
+  if (fresh.realPath !== expectedReal) {
+    const err = new Error(
+      `Path mapping changed between safety check and restore: ` +
+      `lexical=${originalPath} approvedReal=${expectedReal} nowReal=${fresh.realPath}`,
+    );
+    err.code = 'FILE_SAFETY_DENIED';
+    throw err;
+  }
+  return fresh.realPath;
 }
 
 // Whitelist for operationId values supplied by the API / UI. Codex C
@@ -326,16 +348,16 @@ export async function restoreFromBackup(operationId, opts = {}) {
     });
   }
 
-  // Layer (c) + (d): atomic approval-and-commit. Codex D round 3
-  // (2026-05-03): we use the gate's commit token for BOTH the UI
-  // path and the no-UI path so the actual fs op below operates on
-  // a freshly verified resolvedTarget — never on the lexical
-  // originalPath. A symlink swap between layer (b)'s sensitivity
-  // check and the copyFile/rm below now fails the commit and
-  // aborts the restore.
-  const gate = await import('./fileSafetyGate.js');
-  let approvalToken;
+  // Layer (c) + (d): atomic approval-and-commit. Codex C round 5
+  // (2026-05-03): the no-UI path now uses a module-private
+  // _commitRestore helper instead of reaching into gate internals
+  // — keeps gate's token-mint API closed to all production code.
+  // Both paths still verify the lexical→real mapping atomically
+  // before the actual fs op; a symlink swap between layer (b) and
+  // copyFile/rm aborts via FILE_SAFETY_DENIED.
+  let resolvedTarget;
   if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
+    const gate = await import('./fileSafetyGate.js');
     const ui = await gate.requestWrite({
       path: target.originalPath,
       chatId: opts.chatId,
@@ -346,19 +368,13 @@ export async function restoreFromBackup(operationId, opts = {}) {
       contentSize: target.size ?? null,
       newHash: target.sha256 || null,
     });
-    approvalToken = ui.operationToken;
+    const committed = await gate.commitOperation(ui.operationToken);
+    resolvedTarget = committed.resolvedTarget;
   } else {
-    // No-UI path (programmatic / wasMissing undo-create): we don't
-    // need user approval but we DO need atomic re-resolve before
-    // the fs op. Issue an internal token bound to the layer-(b)
-    // expected realPath; commitOperation re-resolves and verifies.
-    approvalToken = gate._issueOperationToken({
-      kind: 'restore_internal',
-      chatId: null,
-      targets: [{ lexical: target.originalPath, expectedReal: realOriginal }],
-    });
+    // No-UI path (programmatic / wasMissing undo-create): no user
+    // approval, but mandatory atomic re-resolve before fs.
+    resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
   }
-  const { resolvedTarget } = await gate.commitOperation(approvalToken);
 
   if (target.wasMissing) {
     // Undo of a "create" snapshot — remove the resolved target.

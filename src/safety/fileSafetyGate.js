@@ -255,12 +255,14 @@ export function _clearPendingForTests() {
 // (Codex D round 3 — Q2A move-token: src AND dst must both verify;
 // either being symlink-swapped after approval invalidates the move).
 // Single-target callers pass a one-element array.
-// Exported (with underscore prefix) so backup.js / trash.js can issue
-// internal commit tokens for their no-UI restore paths — they need
-// the same atomic re-resolve guarantee as Phase 2 tools that go
-// through the public request* entrypoints. Not part of the Phase 2
-// tool contract; do NOT call this directly from a builtin tool.
-export function _issueOperationToken({ kind, chatId, targets }) {
+// Module-private — Codex C round 5 (2026-05-03) flagged the prior
+// `export` as a hole: any production caller could mint a token and
+// hand it to safeDeleteToTrash, bypassing requestDelete's two-stage
+// approval. Tokens may now only be created via the public request*
+// flow. backup.js + trash.js do their own no-UI atomic re-resolve
+// via a small local helper instead of reaching into this module's
+// internals.
+function _issueOperationToken({ kind, chatId, targets }) {
   if (!Array.isArray(targets) || !targets.length) {
     throw new Error('_issueOperationToken requires a non-empty targets[] array.');
   }
