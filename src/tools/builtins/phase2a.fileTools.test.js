@@ -640,6 +640,135 @@ test('fileMoveTool: destination /etc/hosts hard-rejected', async () => {
   });
 });
 
+// ─── Codex C round 4 (Phase 2A): no-follow move + stale-content ──────
+
+test('fileMoveTool: workspace symlink → outside file moves the LINK itself, NEVER the target file', async () => {
+  // Codex Q1=B no-follow move: rename uses lexical paths so a
+  // symlink leaf is moved as a directory entry, not followed.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'precious.txt');
+    const linkSrc = join(ws, 'oldlink');
+    const linkDst = join(ws, 'newlink');
+    await writeFile(externalFile, 'untouched', 'utf8');
+    await symlink(externalFile, linkSrc);
+
+    const result = await fileMoveTool.run(
+      { src: linkSrc, dst: linkDst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    // Original link gone, new link exists pointing at same target,
+    // external file completely untouched.
+    assert.equal(await pathExists(linkSrc), false);
+    assert.equal(await pathExists(linkDst), true);
+    assert.equal(await readlink(linkDst), externalFile);
+    assert.equal(await readFile(externalFile, 'utf8'), 'untouched');
+  });
+});
+
+test('fileMoveTool: refuses to overwrite an existing symlink at destination', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'tgt.txt');
+    const src = join(ws, 'src.txt');
+    const dstLink = join(ws, 'dst-link');
+    await writeFile(externalFile, 'kept', 'utf8');
+    await writeFile(src, 'src content', 'utf8');
+    await symlink(externalFile, dstLink);
+
+    const result = await fileMoveTool.run(
+      { src, dst: dstLink },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DST_IS_SYMLINK');
+    // src untouched, dst link untouched, external file untouched.
+    assert.equal(await readFile(src, 'utf8'), 'src content');
+    assert.equal(await readlink(dstLink), externalFile);
+    assert.equal(await readFile(externalFile, 'utf8'), 'kept');
+  });
+});
+
+test('fileWriteTool: file modified between approval and commit → STALE_CONTENT abort, no overwrite', async () => {
+  // Codex Q2=A stale-content: if external edit happens during the
+  // approval window, the tool aborts rather than silently
+  // clobbering the new bytes.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'ORIG', 'utf8');
+
+    // SSE callback: modify the file BEFORE resolving the gate, so
+    // by the time the tool's stale-content check runs, current
+    // content != oldHash captured pre-approval.
+    const sse = (event, payload) => {
+      writeFile(target, 'MODIFIED-EXTERNALLY', 'utf8').then(() => {
+        gate.resolveFileSafety(payload.requestId, 'once');
+      });
+    };
+
+    const result = await fileWriteTool.run(
+      { path: target, content: 'NEW' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'STALE_CONTENT');
+    // The external edit MUST be preserved (we did not write NEW).
+    assert.equal(await readFile(target, 'utf8'), 'MODIFIED-EXTERNALLY');
+  });
+});
+
+test('fileEditTool: file modified between approval and commit → STALE_CONTENT abort', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'foo', 'utf8');
+
+    const sse = (event, payload) => {
+      writeFile(target, 'foo MODIFIED', 'utf8').then(() => {
+        gate.resolveFileSafety(payload.requestId, 'once');
+      });
+    };
+
+    const result = await fileEditTool.run(
+      { path: target, old_string: 'foo', new_string: 'bar' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'STALE_CONTENT');
+    // External edit preserved.
+    assert.equal(await readFile(target, 'utf8'), 'foo MODIFIED');
+  });
+});
+
+test('fileWriteTool: create (no oldHash) is NOT subject to stale-content check', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'fresh.txt');
+    // Even if something writes to the path between approval and
+    // commit, a CREATE flow has no oldHash to compare against, so
+    // it should succeed (the user explicitly approved creating
+    // fresh content at this path).
+    const sse = (event, payload) => {
+      // Inject a write — but since this is a "create" call (target
+      // didn't exist), the tool's isCreate=true and stale check is
+      // skipped. The new content overwrites whatever is there.
+      writeFile(target, 'race-write', 'utf8').then(() => {
+        gate.resolveFileSafety(payload.requestId, 'once');
+      });
+    };
+
+    const result = await fileWriteTool.run(
+      { path: target, content: 'final' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.meta.wasCreate, true);
+    assert.equal(await readFile(target, 'utf8'), 'final');
+  });
+});
+
 test('fileMoveTool: deny → returns DENIED, src untouched', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();

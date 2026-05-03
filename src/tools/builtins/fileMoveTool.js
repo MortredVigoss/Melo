@@ -10,7 +10,7 @@
  * sensitive target.
  */
 
-import { rename, mkdir } from 'node:fs/promises';
+import { rename, mkdir, lstat } from 'node:fs/promises';
 import { isAbsolute, resolve, dirname } from 'node:path';
 
 import {
@@ -108,27 +108,56 @@ export const fileMoveTool = {
       };
     }
 
+    // Codex C Phase 2A round 4 (2026-05-03): no-follow rename. The
+    // earlier cut passed the commit-resolved real paths to fs.rename;
+    // when src was a symlink (e.g. workspace/link → outside/file),
+    // that meant fs.rename moved the EXTERNAL FILE the link pointed
+    // to, leaving a broken link behind. fs.rename actually does NOT
+    // follow leaf symlinks (it operates on the directory entry), so
+    // by passing the LEXICAL paths we get the right "move the link
+    // itself" behaviour for symlink leafs and the same-as-resolved
+    // behaviour for non-symlink leafs (the gate's commit step
+    // already verified that the lexical→real mapping is what we
+    // want). resolvedSrc/resolvedDst are kept only for return meta
+    // / sensitivity classification.
+    //
+    // Defence: if dst already exists as a symlink, refuse to
+    // overwrite it. fs.rename would silently replace the symlink
+    // entry; the safer behaviour is to surface the conflict so the
+    // user explicitly chooses to delete the old link first.
+    let dstLst = null;
+    try { dstLst = await lstat(absDst); } catch {}
+    if (dstLst && dstLst.isSymbolicLink()) {
+      return {
+        ok: false,
+        output:
+          `Refusing to overwrite an existing symlink at destination ${absDst}. ` +
+          `Delete the symlink first via file_delete and retry.`,
+        error: 'DST_IS_SYMLINK',
+      };
+    }
+
     // Ensure destination parent exists.
     try {
-      await mkdir(dirname(resolvedDst), { recursive: true });
+      await mkdir(dirname(absDst), { recursive: true });
     } catch (err) {
       return { ok: false, output: `Cannot create directory: ${err.message}`, error: err.message };
     }
 
     try {
-      await rename(resolvedSrc, resolvedDst);
+      await rename(absSrc, absDst);
     } catch (err) {
       return { ok: false, output: `Move error: ${err.message}`, error: err.message };
     }
 
     return {
       ok: true,
-      output: `Moved ${resolvedSrc} → ${resolvedDst}.`,
+      output: `Moved ${absSrc} → ${absDst}.`,
       meta: {
-        src: resolvedSrc,
-        dst: resolvedDst,
-        lexicalSrc: absSrc,
-        lexicalDst: absDst,
+        src: absSrc,
+        dst: absDst,
+        resolvedSrc,
+        resolvedDst,
       },
     };
   },

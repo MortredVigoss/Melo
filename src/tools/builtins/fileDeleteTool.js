@@ -12,9 +12,10 @@
  * disappears, the file the link points to is never touched). See
  * src/safety/trash.js for the full lstat-based unlink contract.
  *
- * For destructive bash commands (rm / git clean / find -delete),
- * bashTool routes the agent here so every delete still goes through
- * the same two-stage approval.
+ * Phase 2D (TBD) will route destructive bash commands (rm / git
+ * clean / find -delete) through this tool so every delete still
+ * goes through the same two-stage approval. Until then, bashTool
+ * has not been wired to bashRiskParser/requestBashOp.
  */
 
 import { isAbsolute, resolve } from 'node:path';

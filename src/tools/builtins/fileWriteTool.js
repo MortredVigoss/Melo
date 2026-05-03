@@ -185,6 +185,36 @@ export const fileWriteTool = {
       };
     }
 
+    // Codex C Phase 2A round 4 (2026-05-03): stale-content check.
+    // Between the moment we read oldContent (pre-approval) and now
+    // (post-approval, post-commit), the user could have edited the
+    // file in another window — silently overwriting their edit
+    // would be data loss. For overwrite, re-read at the resolved
+    // target and compare sha256(current) === oldHash; mismatch →
+    // abort with STALE_CONTENT and let the agent re-prompt.
+    if (!isCreate && oldHash) {
+      let currentContent;
+      try {
+        currentContent = await readFile(resolvedTarget, 'utf8');
+      } catch (err) {
+        return {
+          ok: false,
+          output: `Cannot re-read target for stale-content check: ${err.message}`,
+          error: 'COMMIT_FAILED',
+        };
+      }
+      if (sha256(currentContent) !== oldHash) {
+        return {
+          ok: false,
+          output:
+            `File at ${resolvedTarget} changed between approval and write — ` +
+            `stale-content check failed. Re-run file_write with the latest content.`,
+          error: 'STALE_CONTENT',
+          meta: { lexicalPath: absPath, resolvedTarget },
+        };
+      }
+    }
+
     // ── Backup AFTER approval (Codex D round 1 fix), BEFORE write ──────
     // A user deny earlier short-circuited above with zero fs touch; we
     // only get here once the user has actively approved. We snapshot

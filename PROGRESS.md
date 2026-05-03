@@ -33,6 +33,14 @@
 - **pathResolver.js 加 `resolveLeafSymlink`**：full-path realpath 失败后、walk-up 之前，先 `lstat(lexical)` 检测 leaf 是否 symlink；是 → `readlink` 拿 target → 递归 `safeResolvePath(target, depth+1)`（绝对路径直接用，相对路径 join dirname）。返回 target 的 realPath 作 leaf 的 realPath，hasSymlinkInChain=true。`MAX_LINK_RECURSION=32` 防 link 循环。precheckHardBlockedWrite + requestWrite/Edit 自动受益（已经走 isAnySensitive 双边）。
 - 测试加 4 case：① fileWrite broken → ~/.ssh/missing-key → DENIED + 无 UI + 目标未创建 + 无 backup；② fileWrite broken → /etc/missing → 同款；③ fileWrite broken → outside benign missing → 走正常审批 + readFile 跟随 link 拿到新内容 + readlink 不变；④ fileEdit broken → ~/.ssh missing → DENIED 不返 NOT_FOUND（防 read 探测）。
 - 验证：`src/**/*.test.js` **1688/1688 全绿**（前 1684 + 4 新；零既有回归）。
+- 提交哈希：`714d15c`。
+- Follow-up（Codex C Phase 2A round 4 → no-follow move + stale content + 描述纠正）：上一刀 push 又被评 C，4 条 finding：① 🔴 fileMoveTool 走 commit 后 realpath rename → src/dst symlink 时**移动外部 target 不是 link 本身**；② 🟡 fileEditTool 审批期间原文件被改 → 写入仍按"审批时 original"算 → 静默覆盖外部 edit；③ 🟡 fileWriteTool overwrite 同款 stale，oldHash 只展示无校验；④ 🔵 fileDeleteTool 注释承诺 "bash 删除会 route 这里" 但 bashTool 没接（Phase 2D 才做）。用户拍 Q1=B (move 实现 no-follow 一次到位) + Q2=A (stale → abort + STALE_CONTENT) + 全做。
+- **fileMoveTool no-follow rename**：fs.rename 实际不 follow leaf symlink（操作 dir entry），所以 **passing lexical paths 即得 no-follow 语义**。改 absSrc/absDst 给 rename，resolvedSrc/resolvedDst 仅留 meta。+ lstat(absDst) 如果 dst 已是 symlink → DENIED 返 `DST_IS_SYMLINK` 防 silent overwrite，提示 user 先 file_delete 再 move。
+- **fileWriteTool overwrite stale-content check**：commit 后、snapshot 前重读 resolvedTarget，sha256(current) === oldHash 校验；不等 → STALE_CONTENT abort + meta 含 lexical/resolved 让 agent 重试。Create 路径无 oldHash 自然跳过。
+- **fileEditTool 同款**：commit 后重读 currentOriginal，与审批前读的 original 比对；不等 → STALE_CONTENT abort。
+- **fileDeleteTool description 纠正**：把 "bash 删除会 route 到 fileDeleteTool" 改成 "Phase 2D (TBD) will route…"，避免文档与实现不符。
+- 测试加 5 case：① move workspace/link → workspace/newlink → 新 link 指向同 external target，external 文件未动；② move dst 是现存 symlink → DST_IS_SYMLINK + 三方未动；③ write stale (sse 里 writeFile 改外部内容然后 resolveFileSafety) → STALE_CONTENT + 外部 edit 保留；④ edit stale 同款；⑤ create 不受 stale 影响（race write 被 final 覆盖，wasCreate=true）。SSE callback 内 `writeFile(...).then(() => gate.resolveFileSafety(...))` 是注入 race window 的关键技巧。
+- 验证：`src/**/*.test.js` **1693/1693 全绿**（前 1688 + 5 新；零既有回归）。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 

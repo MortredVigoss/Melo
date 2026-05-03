@@ -183,6 +183,33 @@ export const fileEditTool = {
       };
     }
 
+    // Codex C Phase 2A round 4 (2026-05-03): stale-content check.
+    // Between the moment we read `original` (pre-approval) and now
+    // (post-approval, post-commit), the file could have been edited
+    // externally. Writing `updated` (computed from the OLD original)
+    // would silently clobber that edit. Re-read the resolved target
+    // and abort if it diverged.
+    let currentOriginal;
+    try {
+      currentOriginal = await readFile(resolvedTarget, 'utf8');
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Cannot re-read target for stale-content check: ${err.message}`,
+        error: 'COMMIT_FAILED',
+      };
+    }
+    if (currentOriginal !== original) {
+      return {
+        ok: false,
+        output:
+          `File at ${resolvedTarget} changed between approval and edit — ` +
+          `stale-content check failed. Re-run file_edit with the latest content.`,
+        error: 'STALE_CONTENT',
+        meta: { lexicalPath: absPath, resolvedTarget },
+      };
+    }
+
     // Backup AFTER approval, BEFORE write — so deny leaves no entry.
     // Codex D round 2 (2026-05-03): snapshot uses the COMMIT-RESOLVED
     // realpath, not the lexical input. Closes commit→snapshot race
