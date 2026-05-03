@@ -369,10 +369,30 @@ test('fileWriteTool: deny on a missing target leaves NO empty placeholder file',
   });
 });
 
-test('fileWriteTool: nested parent dirs are auto-created after approval', async () => {
+test('fileWriteTool: missing parent dir → PARENT_NOT_FOUND (no auto-mkdir)', async () => {
+  // Codex Phase 2A round 8: auto-mkdir was removed because Node
+  // has no openat for safe component-by-component creation. The
+  // tool now requires the parent dir to already exist.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
-    const target = join(ws, 'a', 'b', 'c.txt');
+    const target = join(ws, 'no-such-dir', 'c.txt');
+    const result = await fileWriteTool.run(
+      { path: target, content: 'nested' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'PARENT_NOT_FOUND');
+    let exists = true;
+    try { await lstat(join(ws, 'no-such-dir')); } catch (err) { if (err.code === 'ENOENT') exists = false; }
+    assert.equal(exists, false, 'parent dir must NOT be created');
+  });
+});
+
+test('fileWriteTool: existing parent dir works for nested create', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'sub'), { recursive: true });
+    const target = join(ws, 'sub', 'c.txt');
     const result = await fileWriteTool.run(
       { path: target, content: 'nested' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
@@ -382,19 +402,37 @@ test('fileWriteTool: nested parent dirs are auto-created after approval', async 
   });
 });
 
-test('fileWriteTool: nested parent dirs are NOT created if approval is denied', async () => {
-  await withTempEnv(async ({ ws }) => {
+test('fileWriteTool: parent symlink → COMMIT_FAILED (post-commit race detected)', async () => {
+  // After commit, an attacker swaps the parent dir to a symlink
+  // pointing at another (writable) dir. The post-commit parent
+  // inode re-check must detect this and abort. Without this
+  // defense, the open(O_NOFOLLOW) on the leaf would land in the
+  // attacker's chosen target dir.
+  await withTempEnv(async ({ ws, outside }) => {
     const gate = await freshGate();
-    const target = join(ws, 'a-not-created', 'c.txt');
-    const result = await fileWriteTool.run(
-      { path: target, content: 'nested' },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
-    );
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'DENIED');
-    let exists = true;
-    try { await lstat(join(ws, 'a-not-created')); } catch (err) { if (err.code === 'ENOENT') exists = false; }
-    assert.equal(exists, false, 'parent dir must not be created when deny');
+    await mkdir(join(ws, 'sub'), { recursive: true });
+    const target = join(ws, 'sub', 'c.txt');
+
+    _setWritePostCommitHook(async () => {
+      // Replace the parent dir with a symlink to outside.
+      await rm(join(ws, 'sub'), { recursive: true, force: true });
+      await symlink(outside, join(ws, 'sub'));
+    });
+    try {
+      const result = await fileWriteTool.run(
+        { path: target, content: 'evil' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'COMMIT_FAILED');
+      assert.equal(result.meta.raceKind, 'parent-swap');
+      // The outside dir was NOT written into.
+      let outsideContent = null;
+      try { outsideContent = await readFile(join(outside, 'c.txt'), 'utf8'); } catch {}
+      assert.equal(outsideContent, null, 'outside dir must not have c.txt');
+    } finally {
+      _setWritePostCommitHook(null);
+    }
   });
 });
 

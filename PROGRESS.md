@@ -89,6 +89,12 @@
 - fileEditTool 同款两阶段 (always overwrite，更简单)。
 - 测试加 4 case：① pending 期间 lstat target → ENOENT (从 SSE callback 内部断言)；② deny 后 target 仍不存在 (无 placeholder)；③ nested `ws/a/b/c.txt` create 自动建父目录；④ deny 时 nested 父目录**不**被创建。
 - 验证：`src/**/*.test.js` **1702/1702 全绿**（前 1698 + 4 新）。
+- 提交哈希：`2ddbe72`。
+- Follow-up（Codex D Phase 2A round 8 → 父目录 race）：上一刀又被评 D，🔴 父目录 race：`O_NOFOLLOW` 只保 leaf，不保 parent；commit→open 之间 attacker swap 父目录到 symlink → 写到敏感 dir。Node 没 openat() 暴露，无完美 component-by-component 安全 walk。
+- 用户拍 "找出问题就重构"（推论默认）：取消 auto-mkdir 契约 (代价是 agent 必须显式建父目录) + 加双 lstat parent inode anchor。
+- 改动：① fileWriteTool/fileEditTool 在 precheck 后立刻 lstat(parentDir) 拿 ino + 验非 symlink + 验是 dir，缺失返 `PARENT_NOT_FOUND` (字符串错误码 agent 可识别)；② 审批后 commit 后再次 lstat(parentDir) 比对 ino — 不等 / 是 symlink → COMMIT_FAILED + raceKind='parent-swap'；③ tool description 改成 "Parent directory must already exist"，明记不再 auto-create；④ removed mkdir() call entirely。
+- 测试加 3 case + 改 2 case：① missing parent → PARENT_NOT_FOUND + 父 dir 不创建；② existing parent works for nested create；③ post-commit hook 把 parent swap 到 outside symlink → COMMIT_FAILED + raceKind='parent-swap' + outside dir 没被写入。
+- 验证：`src/**/*.test.js` **1703/1703 全绿**（前 1702 + 1 新；3 改）。
 - **架构 invariant 终极版**：fh 锁 inode → 任何 post-open path swap 不影响 fh 读写。所有 read/write 走同一 fh，唯一 race window 是 precheck→pre-read-open + 审批后 commit→write-open；前者影响只是读到旧内容（diff 显示对了），后者由 O_NOFOLLOW + O_EXCL + 双 fh inode anchor 关闭。**审批前 zero disk side-effect 契约**：pending 不创、deny 不留 placeholder、nested 父目录在 deny 后也不创。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。

@@ -11,7 +11,7 @@
 import { lstat } from 'node:fs/promises';
 import { open } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, dirname } from 'node:path';
 
 import {
   requestEdit,
@@ -136,6 +136,28 @@ export const fileEditTool = {
 
     const realPath = precheck.realPath;
 
+    // Parent dir inode anchor (Codex Phase 2A round 8).
+    const parentDir = dirname(realPath);
+    let parentInoAtPrecheck;
+    try {
+      const pst = await lstat(parentDir);
+      if (!pst.isDirectory() || pst.isSymbolicLink()) {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} is not a regular directory.`,
+          error: 'PARENT_NOT_DIR',
+        };
+      }
+      parentInoAtPrecheck = pst.ino;
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Cannot stat parent directory: ${err.message}`,
+        error: err.message,
+      };
+    }
+
     // ── 2. Pre-approval read (read-only fh, closed before UI prompt) ──
     let oldBuffer;
     let oldFhStat;
@@ -239,6 +261,31 @@ export const fileEditTool = {
 
     if (_postCommitHookForTests) {
       try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
+    }
+
+    // Parent dir inode re-check after commit (race detection).
+    try {
+      const pstNow = await lstat(parentDir);
+      if (
+        !pstNow.isDirectory() ||
+        pstNow.isSymbolicLink() ||
+        pstNow.ino !== parentInoAtPrecheck
+      ) {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} was replaced (inode changed or now ` +
+            `a symlink) between approval and edit — kernel-level race detected.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+        };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Cannot re-stat parent directory: ${err.message}`,
+        error: err.message,
+      };
     }
 
     // ── 5. Post-approval write fh + inode anchor ─────────────────────

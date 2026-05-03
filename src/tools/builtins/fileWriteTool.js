@@ -107,7 +107,9 @@ export const fileWriteTool = {
   name: 'FileWrite',
   description:
     'Create a new file or overwrite an existing file with the given content. ' +
-    'Parent directories are created automatically (after the user approves the write). ' +
+    'The parent directory must already exist and must be a regular directory (not a symlink) — ' +
+    'this tool does NOT create parent directories. To make a nested path, call file_write or ' +
+    'a future file_mkdir tool one component at a time so each parent dir creation is approved separately. ' +
     'The user sees a confirmation dialog with a content/diff preview; nothing is written to disk before approval. ' +
     'A backup of the previous file (if any) is taken so the change can be rolled back.',
   category: 'filesystem',
@@ -159,6 +161,45 @@ export const fileWriteTool = {
 
     const isCreate = !precheck.exists;
     const realPath = precheck.realPath;
+
+    // ── 1b. Parent dir must exist + be a regular directory ───────────
+    // Codex Phase 2A round 8 (2026-05-03): Node has no openat-style
+    // primitive, so a recursive auto-mkdir would let an attacker
+    // swap an intermediate dir to a symlink between mkdir and the
+    // open-leaf step (mkdir + open's O_NOFOLLOW only protects the
+    // leaf component). We require the parent to already exist as
+    // a real directory; agents that need a nested path must create
+    // each intermediate directory through its own approved write.
+    const parentDir = dirname(realPath);
+    let parentInoAtPrecheck;
+    try {
+      const pst = await lstat(parentDir);
+      if (!pst.isDirectory() || pst.isSymbolicLink()) {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} is not a regular directory ` +
+            `(symlink or other type) — refusing to write ${realPath}.`,
+          error: 'PARENT_NOT_DIR',
+        };
+      }
+      parentInoAtPrecheck = pst.ino;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} does not exist. ` +
+            `Create the parent directory first; file_write does not auto-create parents.`,
+          error: 'PARENT_NOT_FOUND',
+        };
+      }
+      return {
+        ok: false,
+        output: `Cannot stat parent directory: ${err.message}`,
+        error: err.message,
+      };
+    }
 
     // ── 2. Pre-approval read (overwrite only — no fs side-effect) ─────
     // For overwrite, we briefly open O_RDONLY|O_NOFOLLOW just to
@@ -254,19 +295,34 @@ export const fileWriteTool = {
       try { await _postCommitHookForTests({ realPath, isCreate, lexicalPath: absPath }); } catch {}
     }
 
-    // ── 5. Post-approval mkdir parents + open the write fh ────────────
-    // Auto-create parent dirs as documented in the tool's
-    // description. mkdir(recursive:true) with normal kernel
-    // resolution; if a parent in the chain is a symlink that
-    // somehow resolves to a sensitive path, the precheck ran
-    // safeResolvePath earlier and already classified the leaf;
-    // for sensitive-parent edge cases the gate's commit re-resolve
-    // would have caught the path-mapping change. mkdir failure
-    // surfaces as a clean error rather than a silent ENOENT later.
+    // ── 5. Post-approval parent-inode anchor + open the write fh ──────
+    // Verify the parent directory's inode is unchanged since
+    // precheck. A swap-to-symlink at the parent during the
+    // approval window would otherwise let our open(realPath,
+    // O_NOFOLLOW) land in the wrong place — O_NOFOLLOW only
+    // protects the leaf component.
     try {
-      await mkdir(dirname(realPath), { recursive: true });
+      const pstNow = await lstat(parentDir);
+      if (
+        !pstNow.isDirectory() ||
+        pstNow.isSymbolicLink() ||
+        pstNow.ino !== parentInoAtPrecheck
+      ) {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} was replaced (inode changed or ` +
+            `now a symlink) between approval and write — kernel-level race detected.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+        };
+      }
     } catch (err) {
-      return { ok: false, output: `Cannot create parent directory: ${err.message}`, error: err.message };
+      return {
+        ok: false,
+        output: `Cannot re-stat parent directory: ${err.message}`,
+        error: err.message,
+      };
     }
 
     let fh;
