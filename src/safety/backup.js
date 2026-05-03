@@ -66,8 +66,21 @@ function backupRoot(meloHome) {
 // the candidate dir via realpath and assert it sits inside backupRoot.
 // Catches the case where backupRoot itself is a symlink whose target
 // changed mid-session, or any other path-confusion vector.
+//
+// When the root itself doesn't exist (no backups have ever been
+// taken on this MELO_HOME), the candidate dir definitely doesn't
+// exist either — surface the same "No backup with operationId"
+// shape so callers see a uniform error.
 async function assertWithinRoot(candidateDir, root) {
-  const resolvedRoot = await realpath(root);
+  let resolvedRoot;
+  try {
+    resolvedRoot = await realpath(root);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error(`No backup with operationId at ${candidateDir}.`);
+    }
+    throw err;
+  }
   let resolvedCandidate;
   try {
     resolvedCandidate = await realpath(candidateDir);
@@ -103,6 +116,11 @@ async function fileSha256(absPath) {
 // manifest records `wasMissing: true` and no copy is made — restore
 // will then re-delete the file rather than reanimate empty content.
 //
+// Codex D round 3 (2026-05-03): if ctx.operationId is supplied, it
+// MUST pass OPERATION_ID_PATTERN. The whitelist already forbids `/`
+// and `..`, so the resulting opDir cannot escape backupRoot — but we
+// still defend in depth so a malformed value never reaches disk.
+//
 // Returns { operationId, opDir, beforePath, manifestPath, wasMissing }.
 export async function snapshotBeforeWrite(absPath, ctx = {}) {
   if (typeof absPath !== 'string' || !absPath) {
@@ -110,7 +128,13 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
   }
 
   const meloHome = getMeloHome();
-  const operationId = ctx.operationId || randomUUID();
+  let operationId;
+  if (ctx.operationId !== undefined && ctx.operationId !== null) {
+    assertValidOperationId(ctx.operationId);
+    operationId = ctx.operationId;
+  } else {
+    operationId = randomUUID();
+  }
   const opDir = join(backupRoot(meloHome), operationId);
   const beforeDir = join(opDir, 'before');
 
@@ -169,12 +193,16 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
 // backup. Called by the gate's write path after the write succeeds.
 // Updates the manifest's `afterDiffRecorded` flag so listBackups()
 // can flag entries that have a recorded diff vs. those that don't.
+//
+// Codex D round 3 (2026-05-03): operationId now goes through the same
+// whitelist + assertWithinRoot defence as purgeBackup/restoreFromBackup
+// so a malformed value cannot direct writes outside .melo-backups.
 export async function recordAfterDiff(operationId, diffText) {
-  if (!operationId || typeof operationId !== 'string') {
-    throw new Error('recordAfterDiff requires an operationId.');
-  }
+  assertValidOperationId(operationId);
   const meloHome = getMeloHome();
-  const opDir = join(backupRoot(meloHome), operationId);
+  const root = backupRoot(meloHome);
+  const opDir = join(root, operationId);
+  await assertWithinRoot(opDir, root);
   const manifestPath = join(opDir, 'manifest.json');
 
   let manifest;
@@ -275,12 +303,17 @@ export async function restoreFromBackup(operationId, opts = {}) {
     );
   }
 
-  // Layer (c): optional UI approval through the gate. Skipped for
-  // wasMissing (undo-create) — the original create itself was already
-  // approved, and the inverse op is the user's explicit restore click.
+  // Layer (c) + (d): atomic approval-and-commit. Codex D round 3
+  // (2026-05-03): we use the gate's commit token for BOTH the UI
+  // path and the no-UI path so the actual fs op below operates on
+  // a freshly verified resolvedTarget — never on the lexical
+  // originalPath. A symlink swap between layer (b)'s sensitivity
+  // check and the copyFile/rm below now fails the commit and
+  // aborts the restore.
+  const gate = await import('./fileSafetyGate.js');
+  let approvalToken;
   if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
-    const gate = await import('./fileSafetyGate.js');
-    await gate.requestWrite({
+    const ui = await gate.requestWrite({
       path: target.originalPath,
       chatId: opts.chatId,
       sseEmitter: opts.sseEmitter,
@@ -290,17 +323,29 @@ export async function restoreFromBackup(operationId, opts = {}) {
       contentSize: target.size ?? null,
       newHash: target.sha256 || null,
     });
+    approvalToken = ui.operationToken;
+  } else {
+    // No-UI path (programmatic / wasMissing undo-create): we don't
+    // need user approval but we DO need atomic re-resolve before
+    // the fs op. Issue an internal token bound to the layer-(b)
+    // expected realPath; commitOperation re-resolves and verifies.
+    approvalToken = gate._issueOperationToken({
+      kind: 'restore_internal',
+      chatId: null,
+      targets: [{ lexical: target.originalPath, expectedReal: realOriginal }],
+    });
   }
+  const { resolvedTarget } = await gate.commitOperation(approvalToken);
 
   if (target.wasMissing) {
-    // The original file did not exist at snapshot time. The "before"
-    // state is "no file", so restoring means removing whatever's
-    // there now. Use force:true so a missing file isn't an error.
-    await rm(target.originalPath, { force: true });
+    // Undo of a "create" snapshot — remove the resolved target.
+    // Using resolvedTarget (not originalPath) means a symlink swap
+    // between approval and rm cannot redirect us at a sensitive file.
+    await rm(resolvedTarget, { force: true });
   } else {
     const beforePath = join(target.opDir, 'before', basename(target.originalPath));
-    await mkdir(join(target.originalPath, '..'), { recursive: true }).catch(() => {});
-    await copyFile(beforePath, target.originalPath);
+    await mkdir(join(resolvedTarget, '..'), { recursive: true }).catch(() => {});
+    await copyFile(beforePath, resolvedTarget);
   }
 
   if (opts.purgeAfterRestore !== false) {

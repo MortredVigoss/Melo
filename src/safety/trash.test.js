@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, mkdir, stat, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, stat, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,9 +17,15 @@ async function freshTrash() {
 // MELO_HOME and the user workspace must be distinct — files inside
 // MELO_HOME classify as melo_internal and are hard-blocked on restore.
 // Tests mirror the production separation.
+//
+// Codex D round 3 (2026-05-03): the workspace dir is realpath()'d so
+// macOS's /tmp → /private/tmp (and /var → /private/var) symlink chain
+// doesn't make the gate's commit-time re-resolve mismatch the
+// approval-time path. Production callers must do the same — workspace
+// roots are stored canonical in melo's config.
 async function withTempMeloHome(fn) {
   const home = await mkdtemp(join(tmpdir(), 'melo-trash-home-'));
-  const ws = await mkdtemp(join(tmpdir(), 'melo-trash-ws-'));
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'melo-trash-ws-')));
   const prev = process.env.MELO_HOME;
   process.env.MELO_HOME = home;
   try {

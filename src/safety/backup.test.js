@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, mkdir, stat, readFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,14 +22,14 @@ async function freshBackup() {
 // that separation.
 async function withTempMeloHome(fn) {
   const home = await mkdtemp(join(tmpdir(), 'melo-backup-home-'));
-  const ws = await mkdtemp(join(tmpdir(), 'melo-backup-ws-'));
+  // Codex D round 3: realpath() the workspace so the gate's commit-time
+  // re-resolve doesn't mismatch on macOS /var → /private/var.
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'melo-backup-ws-')));
   const prev = process.env.MELO_HOME;
   process.env.MELO_HOME = home;
   try {
     await mkdir(home, { recursive: true });
     await mkdir(ws, { recursive: true });
-    // The fn signature stays single-arg for back-compat with tests
-    // that only need a workspace; pass the workspace dir.
     await fn(ws, home);
   } finally {
     if (prev === undefined) delete process.env.MELO_HOME;
@@ -142,7 +142,14 @@ test('recordAfterDiff persists a diff and flips manifest.afterDiffRecorded', asy
 test('recordAfterDiff on unknown operationId throws', async () => {
   await withTempMeloHome(async () => {
     const { recordAfterDiff } = await freshBackup();
-    await assert.rejects(recordAfterDiff('not-real', 'x'), /No backup manifest/);
+    // Codex D round 3: assertWithinRoot now uniformizes the "no
+    // entry" shape across purge/restore/recordAfterDiff. Either
+    // the in-root check (root missing → no entry) or the readFile
+    // (root present but manifest missing → no manifest) can fire.
+    await assert.rejects(
+      recordAfterDiff('not-realll', 'x'),
+      /No backup (manifest|with operationId)/,
+    );
   });
 });
 

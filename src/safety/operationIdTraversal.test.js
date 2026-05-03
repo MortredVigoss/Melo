@@ -161,3 +161,64 @@ test('purgeBackup never deletes anything outside the backup root, even if MELO_H
     assert.equal((await listBackups()).length, 0);
   });
 });
+
+// ─── snapshotBeforeWrite + recordAfterDiff (Codex D round 3) ──────────
+
+test('snapshotBeforeWrite rejects every traversal-shaped ctx.operationId', async () => {
+  await withTempMeloHome(async (home) => {
+    const { snapshotBeforeWrite } = await freshBackup();
+    const target = join(home, 'a.txt');
+    await writeFile(target, 'x', 'utf8');
+    for (const input of TRAVERSAL_INPUTS) {
+      // null/undefined are intentionally allowed (means "auto-generate"),
+      // so skip those two specific values from the shared list.
+      if (input === null || input === undefined) continue;
+      await assert.rejects(
+        snapshotBeforeWrite(target, { operationId: input }),
+        /Invalid operationId/i,
+        `expected ctx.operationId=${JSON.stringify(input)} to be rejected`,
+      );
+    }
+  });
+});
+
+test('snapshotBeforeWrite still accepts a legitimate caller-supplied operationId', async () => {
+  await withTempMeloHome(async (home) => {
+    const { snapshotBeforeWrite, listBackups } = await freshBackup();
+    const target = join(home, 'a.txt');
+    await writeFile(target, 'x', 'utf8');
+    const result = await snapshotBeforeWrite(target, { operationId: 'caller-fixed-id-42' });
+    assert.equal(result.operationId, 'caller-fixed-id-42');
+    const list = await listBackups();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].operationId, 'caller-fixed-id-42');
+  });
+});
+
+test('recordAfterDiff rejects every traversal-shaped operationId', async () => {
+  await withTempMeloHome(async () => {
+    const { recordAfterDiff } = await freshBackup();
+    for (const input of TRAVERSAL_INPUTS) {
+      await assert.rejects(
+        recordAfterDiff(input, 'x'),
+        /Invalid operationId/i,
+      );
+    }
+  });
+});
+
+test('safeDeleteToTrash rejects traversal-shaped ctx.operationId', async () => {
+  await withTempMeloHome(async (home) => {
+    const { safeDeleteToTrash } = await freshTrash();
+    const target = join(home, 'a.txt');
+    await writeFile(target, 'x', 'utf8');
+    for (const input of TRAVERSAL_INPUTS) {
+      if (input === null || input === undefined) continue;
+      await assert.rejects(
+        safeDeleteToTrash([target], { operationId: input }),
+        /Invalid operationId/i,
+        `expected ctx.operationId=${JSON.stringify(input)} to be rejected`,
+      );
+    }
+  });
+});

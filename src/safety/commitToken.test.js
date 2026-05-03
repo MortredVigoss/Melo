@@ -79,6 +79,109 @@ test('commitOperation returns same resolvedTarget when nothing changed', async (
 
 // ─── symlink swap between approval and commit ──────────────────────────
 
+// ─── move: src/dst compound token (Codex D round 3 — Q2A) ─────────────
+
+test('requestMove issues a token bound to BOTH src AND dst; commit re-resolves both', async () => {
+  const gate = await freshGate();
+  const ws = await tempDir('fsg-token-mv-');
+  try {
+    const a = join(ws, 'a.txt');
+    const b = join(ws, 'b.txt');
+    await writeFile(a, 'A', 'utf8');
+    const sse = makeAutoResolver(gate, [{ scope: 'once' }]);
+    const r = await gate.requestMove({
+      src: a,
+      dst: b,
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
+    assert.equal(r.resolvedSrc, a);
+    assert.equal(r.resolvedDst, b);
+    const committed = await gate.commitOperation(r.operationToken);
+    assert.deepEqual(committed.resolvedTargets, [a, b]);
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+  }
+});
+
+test('move commit fails when the SOURCE got symlink-swapped after approval', async () => {
+  const gate = await freshGate();
+  const ws = await tempDir('fsg-token-mv-');
+  const out1 = await tempDir('fsg-token-mv-out1-');
+  const out2 = await tempDir('fsg-token-mv-out2-');
+  try {
+    const fileA = join(out1, 'a.txt');
+    const fileC = join(out2, 'c.txt');
+    await writeFile(fileA, 'A', 'utf8');
+    await writeFile(fileC, 'C', 'utf8');
+    const link = join(ws, 'link');
+    await symlink(fileA, link);
+    const dst = join(ws, 'dst.txt');
+
+    const sse = makeAutoResolver(gate, [{ scope: 'once' }]);
+    const approved = await gate.requestMove({
+      src: link,
+      dst,
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
+    // Attacker re-points src.
+    await unlink(link);
+    await symlink(fileC, link);
+    await assert.rejects(
+      gate.commitOperation(approved.operationToken),
+      (err) =>
+        err.code === 'FILE_SAFETY_DENIED' &&
+        /Path mapping changed.*lexical=.*link/.test(err.message),
+    );
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+    await rm(out1, { recursive: true, force: true });
+    await rm(out2, { recursive: true, force: true });
+  }
+});
+
+test('move commit fails when the DESTINATION got symlink-swapped after approval', async () => {
+  const gate = await freshGate();
+  const ws = await tempDir('fsg-token-mv-');
+  const out1 = await tempDir('fsg-token-mv-out1-');
+  const out2 = await tempDir('fsg-token-mv-out2-');
+  try {
+    const dstA = join(out1, 'dstA.txt');
+    const dstB = join(out2, 'dstB.txt');
+    await writeFile(dstA, 'A', 'utf8');
+    await writeFile(dstB, 'B', 'utf8');
+    const dstLink = join(ws, 'dstlink');
+    await symlink(dstA, dstLink);
+    const src = join(ws, 'src.txt');
+    await writeFile(src, 'src', 'utf8');
+
+    const sse = makeAutoResolver(gate, [{ scope: 'once' }]);
+    const approved = await gate.requestMove({
+      src,
+      dst: dstLink,
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
+    // Attacker re-points dst.
+    await unlink(dstLink);
+    await symlink(dstB, dstLink);
+    await assert.rejects(
+      gate.commitOperation(approved.operationToken),
+      (err) =>
+        err.code === 'FILE_SAFETY_DENIED' &&
+        /Path mapping changed.*lexical=.*dstlink/.test(err.message),
+    );
+  } finally {
+    await rm(ws, { recursive: true, force: true });
+    await rm(out1, { recursive: true, force: true });
+    await rm(out2, { recursive: true, force: true });
+  }
+});
+
 test('commitOperation throws when the symlink got re-pointed after approval', async () => {
   const gate = await freshGate();
   const ws = await tempDir('fsg-token-');

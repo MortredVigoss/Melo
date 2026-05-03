@@ -250,13 +250,28 @@ export function _clearPendingForTests() {
 // Issue an operation token after a successful approval. Phase 2
 // tools may pass it to commitOperation() right before performing the
 // fs op to atomically re-verify nothing was swapped underneath.
-function _issueOperationToken({ kind, chatId, lexicalPath, expectedRealPath }) {
+//
+// `targets` is an array so a single op can bind multiple paths
+// (Codex D round 3 — Q2A move-token: src AND dst must both verify;
+// either being symlink-swapped after approval invalidates the move).
+// Single-target callers pass a one-element array.
+// Exported (with underscore prefix) so backup.js / trash.js can issue
+// internal commit tokens for their no-UI restore paths — they need
+// the same atomic re-resolve guarantee as Phase 2 tools that go
+// through the public request* entrypoints. Not part of the Phase 2
+// tool contract; do NOT call this directly from a builtin tool.
+export function _issueOperationToken({ kind, chatId, targets }) {
+  if (!Array.isArray(targets) || !targets.length) {
+    throw new Error('_issueOperationToken requires a non-empty targets[] array.');
+  }
   const token = randomUUID();
   _committedOps.set(token, {
     kind,
     chatId,
-    lexicalPath,
-    expectedRealPath,
+    targets: targets.map(t => ({
+      lexical: t.lexical,
+      expectedReal: t.expectedReal,
+    })),
     issuedAt: Date.now(),
   });
   // Auto-purge expired tokens. unref() keeps the timer from holding
@@ -267,16 +282,22 @@ function _issueOperationToken({ kind, chatId, lexicalPath, expectedRealPath }) {
 }
 
 // Re-verify the lexical→real mapping captured at approval time.
-// Returns { resolvedTarget, kind } on success; throws on expired,
-// unknown, or symlink-swapped operations.
+// Returns { resolvedTarget, resolvedTargets, kind } on success;
+// throws on expired, unknown, or symlink-swapped operations.
+//
+// `resolvedTarget` is shorthand for `resolvedTargets[0]` so single-
+// target callers don't have to unpack the array. Multi-target callers
+// (move with both src + dst, restore* with originalPath) read the
+// full array. ANY single target mismatch fails the entire commit —
+// partial commits are not allowed.
 //
 // Phase 2 contract: tools that perform their fs op more than a few
 // hundred ms after approval, or that read external state in between,
-// SHOULD call this right before the actual write/edit/move/delete.
-// Tools that execute synchronously may use the resolvedTarget from
-// the original request* return value directly — the TOCTOU window is
-// then bounded by node's microtask queue, which is acceptable for
-// most cases.
+// MUST call this right before the actual write/edit/move/delete and
+// use the returned resolvedTarget(s) for the fs call (NOT the
+// caller's original input). Tools that execute synchronously may use
+// the resolvedTarget from the request* return value directly — the
+// TOCTOU window is then bounded by node's microtask queue.
 export async function commitOperation(token) {
   const entry = _committedOps.get(token);
   if (!entry) {
@@ -286,17 +307,25 @@ export async function commitOperation(token) {
     _committedOps.delete(token);
     throw denyError('Operation token expired; re-approval required.');
   }
-  const fresh = await safeResolvePath(entry.lexicalPath);
-  if (fresh.realPath !== entry.expectedRealPath) {
-    _committedOps.delete(token);
-    throw denyError(
-      `Path mapping changed between approval and execution: ` +
-      `lexical=${entry.lexicalPath} approvedReal=${entry.expectedRealPath} nowReal=${fresh.realPath}`,
-    );
+  const resolved = [];
+  for (const target of entry.targets) {
+    const fresh = await safeResolvePath(target.lexical);
+    if (fresh.realPath !== target.expectedReal) {
+      _committedOps.delete(token);
+      throw denyError(
+        `Path mapping changed between approval and execution: ` +
+        `lexical=${target.lexical} approvedReal=${target.expectedReal} nowReal=${fresh.realPath}`,
+      );
+    }
+    resolved.push(fresh.realPath);
   }
   // Single-use: consume on success so a token can never be replayed.
   _committedOps.delete(token);
-  return { resolvedTarget: fresh.realPath, kind: entry.kind };
+  return {
+    resolvedTarget: resolved[0],
+    resolvedTargets: resolved,
+    kind: entry.kind,
+  };
 }
 
 // ── Per-operation entrypoints ─────────────────────────────────────────
@@ -528,9 +557,8 @@ export async function requestWrite({
     const operationToken = _issueOperationToken({
       kind: OP_KIND.WRITE_OVERWRITE,
       chatId,
-      lexicalPath: abs,
-      expectedRealPath: realPath,
-    });
+      targets: [{ lexical: abs, expectedReal: realPath }],
+      });
     return { resolvedTarget: realPath, operationToken };
   }
 
@@ -561,9 +589,8 @@ export async function requestWrite({
   const operationToken = _issueOperationToken({
     kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
     chatId,
-    lexicalPath: abs,
-    expectedRealPath: realPath,
-  });
+    targets: [{ lexical: abs, expectedReal: realPath }],
+    });
   return { resolvedTarget: realPath, operationToken };
 }
 
@@ -600,9 +627,8 @@ export async function requestEdit({
     const operationToken = _issueOperationToken({
       kind: OP_KIND.EDIT,
       chatId,
-      lexicalPath: abs,
-      expectedRealPath: realPath,
-    });
+      targets: [{ lexical: abs, expectedReal: realPath }],
+      });
     return { resolvedTarget: realPath, operationToken };
   }
 
@@ -630,9 +656,8 @@ export async function requestEdit({
   const operationToken = _issueOperationToken({
     kind: OP_KIND.EDIT,
     chatId,
-    lexicalPath: abs,
-    expectedRealPath: realPath,
-  });
+    targets: [{ lexical: abs, expectedReal: realPath }],
+    });
   return { resolvedTarget: realPath, operationToken };
 }
 
@@ -699,14 +724,17 @@ export async function requestMove({
         isWithinWorkspace(dstResolved.realPath, workspacePath),
     },
   });
-  // No session grants for move — see header. Token is keyed off the
-  // SOURCE path; commit-time verification ensures the source hasn't
-  // been swapped to a sensitive target between approval and rename.
+  // No session grants for move — see header. Codex D round 3 (2026-05-03)
+  // Q2A: token binds BOTH src and dst. commit-time re-resolves both;
+  // if EITHER end gets symlink-swapped between approval and rename,
+  // commitOperation throws. resolvedTargets[0] = src, [1] = dst.
   const operationToken = _issueOperationToken({
     kind: OP_KIND.MOVE,
     chatId,
-    lexicalPath: absSrc,
-    expectedRealPath: srcResolved.realPath,
+    targets: [
+      { lexical: absSrc, expectedReal: srcResolved.realPath },
+      { lexical: absDst, expectedReal: dstResolved.realPath },
+    ],
   });
   return {
     resolvedSrc: srcResolved.realPath,
@@ -799,9 +827,8 @@ export async function requestDelete({
     _issueOperationToken({
       kind: OP_KIND.DELETE,
       chatId,
-      lexicalPath: absPaths[i],
-      expectedRealPath: r.realPath,
-    }),
+      targets: [{ lexical: absPaths[i], expectedReal: r.realPath }],
+      }),
   );
 
   return {

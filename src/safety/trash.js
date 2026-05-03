@@ -122,7 +122,18 @@ export async function safeDeleteToTrash(paths, ctx = {}) {
   const meloHome = getMeloHome();
   const root = trashRoot(meloHome);
 
-  const operationId = ctx.operationId || randomUUID();
+  // Codex D round 3 (2026-05-03): operationId stored in manifest must
+  // pass the same whitelist as restore/purge accept; folder name uses
+  // shortHash() so traversal is impossible by construction, but we
+  // still defend at write-time so manifests on disk only ever carry
+  // well-formed IDs.
+  let operationId;
+  if (ctx.operationId !== undefined && ctx.operationId !== null) {
+    assertValidOperationId(ctx.operationId);
+    operationId = ctx.operationId;
+  } else {
+    operationId = randomUUID();
+  }
   const folderName = `${todayStamp()}_${shortHash(operationId)}`;
   const opDir = join(root, folderName);
   const filesDir = join(opDir, 'files');
@@ -278,6 +289,12 @@ export async function restoreFromTrash(operationId, opts = {}) {
   // entry's originalPath at restore time. A tampered manifest with
   // originalPath pointing at /etc/foo cannot punch through; the
   // whole batch aborts before any copyFile fires.
+  //
+  // We also stash the realPath captured here per entry so layer
+  // (c)+(d) below can issue commit tokens bound to the same
+  // expectedReal — a swap between (b) and the actual fs op fails
+  // commitOperation and aborts the restore (Codex D round 3).
+  const expectedRealByLexical = new Map();
   for (const entry of target.files) {
     const { realPath, hasSymlinkInChain } = await safeResolvePath(entry.originalPath);
     if (
@@ -292,16 +309,17 @@ export async function restoreFromTrash(operationId, opts = {}) {
         `— manifest target classified as ${lexCat}/${realC}.`,
       );
     }
+    expectedRealByLexical.set(entry.originalPath, realPath);
   }
 
-  // Layer (c): optional UI approval through the gate. When the
-  // caller hands us sseEmitter + chatId, every restored file goes
-  // through requestWrite so the user sees a normal write approval
-  // (with symlink warning if applicable). Approvals run sequentially.
-  let gate = null;
-  if (opts.sseEmitter && opts.chatId) {
-    gate = await import('./fileSafetyGate.js');
-  }
+  // Layer (c)+(d): optional UI approval through the gate, then atomic
+  // commit-and-fs-op using the gate's resolvedTarget. Codex D round 3
+  // (2026-05-03): every restored entry's actual copyFile/cp/rm now
+  // operates on the commit-issued resolvedTarget, never on
+  // entry.originalPath. A symlink swap between (b)'s check and the
+  // fs op fails commitOperation and aborts.
+  const gate = await import('./fileSafetyGate.js');
+  const wantsUi = Boolean(opts.sseEmitter && opts.chatId);
 
   const restored = [];
   const skipped = [];
@@ -312,8 +330,10 @@ export async function restoreFromTrash(operationId, opts = {}) {
       skipped.push({ path: entry.originalPath, reason: 'already exists' });
       continue;
     }
-    if (gate) {
-      await gate.requestWrite({
+
+    let approvalToken;
+    if (wantsUi) {
+      const ui = await gate.requestWrite({
         path: entry.originalPath,
         chatId: opts.chatId,
         sseEmitter: opts.sseEmitter,
@@ -323,20 +343,32 @@ export async function restoreFromTrash(operationId, opts = {}) {
         contentSize: entry.size ?? null,
         newHash: entry.sha256 || null,
       });
+      approvalToken = ui.operationToken;
+    } else {
+      approvalToken = gate._issueOperationToken({
+        kind: 'restore_internal',
+        chatId: null,
+        targets: [{
+          lexical: entry.originalPath,
+          expectedReal: expectedRealByLexical.get(entry.originalPath),
+        }],
+      });
     }
+    const { resolvedTarget } = await gate.commitOperation(approvalToken);
+
     const src = join(filesDir, entry.trashedAs);
-    await mkdir(dirname(entry.originalPath), { recursive: true });
+    await mkdir(dirname(resolvedTarget), { recursive: true });
     if (entry.wasDirectory) {
       // node:fs cp() refuses to overwrite a non-empty dir; remove
       // first when overwrite is requested.
       if (exists && opts.overwrite) {
-        await rm(entry.originalPath, { recursive: true, force: true });
+        await rm(resolvedTarget, { recursive: true, force: true });
       }
-      await cp(src, entry.originalPath, { recursive: true });
+      await cp(src, resolvedTarget, { recursive: true });
     } else {
-      await copyFile(src, entry.originalPath);
+      await copyFile(src, resolvedTarget);
     }
-    restored.push(entry.originalPath);
+    restored.push(resolvedTarget);
   }
 
   const fullyRestored = skipped.length === 0;
