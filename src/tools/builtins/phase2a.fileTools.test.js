@@ -323,6 +323,81 @@ test('fileDeleteTool: invalid args (empty paths array) → INVALID_PATHS', async
   });
 });
 
+// ─── Codex C Phase 2A round 8 (holistic): zero-side-effect during approval ─
+
+test('fileWriteTool: pending approval does NOT create the target file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'fresh.txt');
+    let lstatErrCode = null;
+    const sse = (event, payload) => {
+      // While the UI prompt is pending, the target MUST NOT exist
+      // on disk. Check before resolving the gate.
+      lstat(target).then(
+        () => { lstatErrCode = 'EXISTS'; },
+        (err) => { lstatErrCode = err.code; },
+      ).then(() => {
+        gate.resolveFileSafety(payload.requestId, 'once');
+      });
+    };
+    const result = await fileWriteTool.run(
+      { path: target, content: 'final' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      lstatErrCode, 'ENOENT',
+      'target must not exist while UI prompt is pending',
+    );
+    assert.equal(await readFile(target, 'utf8'), 'final');
+  });
+});
+
+test('fileWriteTool: deny on a missing target leaves NO empty placeholder file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'fresh.txt');
+    const result = await fileWriteTool.run(
+      { path: target, content: 'final' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    let exists = true;
+    try { await lstat(target); } catch (err) { if (err.code === 'ENOENT') exists = false; }
+    assert.equal(exists, false, 'no placeholder file after deny');
+  });
+});
+
+test('fileWriteTool: nested parent dirs are auto-created after approval', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'a', 'b', 'c.txt');
+    const result = await fileWriteTool.run(
+      { path: target, content: 'nested' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(await readFile(target, 'utf8'), 'nested');
+  });
+});
+
+test('fileWriteTool: nested parent dirs are NOT created if approval is denied', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'a-not-created', 'c.txt');
+    const result = await fileWriteTool.run(
+      { path: target, content: 'nested' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    let exists = true;
+    try { await lstat(join(ws, 'a-not-created')); } catch (err) { if (err.code === 'ENOENT') exists = false; }
+    assert.equal(exists, false, 'parent dir must not be created when deny');
+  });
+});
+
 // ─── Codex D round 1 (Phase 2A): sensitive zero-side-effect contract ──
 
 test('fileWriteTool sensitive: NO .melo-backups entry created on hard-rejection', async () => {

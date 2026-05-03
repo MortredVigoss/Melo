@@ -1,13 +1,14 @@
 /**
  * Built-in tool: file_edit
  *
- * Phase 2A holistic refactor (2026-05-03): every fs read/write
- * happens through a SINGLE FileHandle (fh) opened with O_NOFOLLOW
- * right after the safety pre-check. See fileWriteTool.js for the
- * full flow rationale.
+ * Phase 2A holistic refactor (2026-05-03, post-Codex round 7+):
+ * Two-phase fh — pre-approval read-only fh closed before the UI
+ * prompt; post-approval read-write fh with inode anchor + stale
+ * check. Zero target side-effect during the approval window.
+ * See fileWriteTool.js for the full architectural rationale.
  */
 
-import { unlink, lstat } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { open } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
@@ -23,15 +24,13 @@ import {
   recordAfterDiff,
 } from '../../safety/backup.js';
 
-const { O_RDWR, O_NOFOLLOW } = fsConstants;
+const { O_RDONLY, O_RDWR, O_NOFOLLOW } = fsConstants;
 
 let _postCommitHookForTests = null;
 export function _setPostCommitHookForTests(hook) {
   _postCommitHookForTests = typeof hook === 'function' ? hook : null;
 }
 
-// Always read from offset 0 — fh.readFile() advances position so
-// repeated calls would return empty. See fileWriteTool for rationale.
 async function readFromStart(fh) {
   const st = await fh.stat();
   if (st.size === 0) return Buffer.alloc(0);
@@ -67,8 +66,8 @@ export const fileEditTool = {
   description:
     'Replace an exact string in a file with new content. ' +
     'The old_string must match exactly (including whitespace/indentation). ' +
-    'The user sees a confirmation dialog with the old/new diff preview before any disk write happens; ' +
-    'a backup of the previous file is taken so the change can be rolled back. ' +
+    'The user sees a confirmation dialog with the old/new diff preview; nothing is written before approval. ' +
+    'A backup of the previous file is taken so the change can be rolled back. ' +
     'Use file_read first to confirm the exact text to replace.',
   category: 'filesystem',
   requiresPermission: true,
@@ -127,7 +126,6 @@ export const fileEditTool = {
         meta: { denied: true, category: precheck.category },
       };
     }
-
     if (!precheck.exists) {
       return {
         ok: false,
@@ -138,16 +136,18 @@ export const fileEditTool = {
 
     const realPath = precheck.realPath;
 
-    // ── 2. Open fh — sole gateway to the fs from here on ───────────────
-    let fh;
+    // ── 2. Pre-approval read (read-only fh, closed before UI prompt) ──
+    let oldBuffer;
+    let oldFhStat;
+    let preFh;
     try {
-      fh = await open(realPath, O_RDWR | O_NOFOLLOW);
+      preFh = await open(realPath, O_RDONLY | O_NOFOLLOW);
     } catch (err) {
       if (err && err.code === 'ELOOP') {
         return {
           ok: false,
           output:
-            `Target ${realPath} became a symlink between precheck and open — ` +
+            `Target ${realPath} became a symlink between precheck and read — ` +
             `kernel refused via O_NOFOLLOW.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
@@ -156,8 +156,110 @@ export const fileEditTool = {
       if (err && err.code === 'ENOENT') {
         return {
           ok: false,
+          output: `Target ${realPath} disappeared between precheck and read.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+        };
+      }
+      if (err && err.code === 'EISDIR') {
+        return {
+          ok: false,
+          output: `${realPath} is a directory, not a file.`,
+          error: 'TARGET_IS_DIR',
+        };
+      }
+      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
+    }
+    try {
+      oldBuffer = await readFromStart(preFh);
+      oldFhStat = await preFh.stat();
+    } finally {
+      await preFh.close().catch(() => {});
+    }
+
+    const original = oldBuffer.toString('utf8');
+
+    const count = original.split(old_string).length - 1;
+    if (count === 0) {
+      return {
+        ok: false,
+        output: `old_string not found in ${realPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
+        error: 'NOT_FOUND',
+      };
+    }
+    if (count > 1 && !replace_all) {
+      return {
+        ok: false,
+        output: `old_string appears ${count} times in ${realPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
+        error: 'AMBIGUOUS',
+      };
+    }
+
+    const updated = replace_all
+      ? original.split(old_string).join(new_string)
+      : original.replace(old_string, new_string);
+
+    const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
+
+    // ── 3. UI approval — until this returns, ZERO disk side-effect ────
+    let approved;
+    try {
+      approved = await requestEdit({
+        path: absPath,
+        chatId,
+        sseEmitter,
+        signal,
+        workspacePath,
+        baseDir: workspacePath,
+        oldString: old_string,
+        newString: new_string,
+        diffPreview,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: err.message,
+        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+      };
+    }
+
+    // ── 4. Commit ────────────────────────────────────────────────────
+    try {
+      await commitOperation(approved.operationToken, {
+        expectedKinds: [OP_KIND.EDIT],
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Atomic commit failed: ${err.message}`,
+        error: 'COMMIT_FAILED',
+      };
+    }
+
+    if (_postCommitHookForTests) {
+      try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
+    }
+
+    // ── 5. Post-approval write fh + inode anchor ─────────────────────
+    let fh;
+    try {
+      fh = await open(realPath, O_RDWR | O_NOFOLLOW);
+    } catch (err) {
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
           output:
-            `Target ${realPath} disappeared between precheck and open.`,
+            `Target ${realPath} became a symlink between approval and edit — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+        };
+      }
+      if (err && err.code === 'ENOENT') {
+        return {
+          ok: false,
+          output: `Target ${realPath} disappeared between approval and edit.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
         };
@@ -173,61 +275,18 @@ export const fileEditTool = {
     }
 
     try {
-      // ── 3. Read old via fh ───────────────────────────────────────────
-      const oldBuffer = await readFromStart(fh);
-      const original = oldBuffer.toString('utf8');
-
-      const count = original.split(old_string).length - 1;
-      if (count === 0) {
-        return {
-          ok: false,
-          output: `old_string not found in ${realPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
-          error: 'NOT_FOUND',
-        };
-      }
-      if (count > 1 && !replace_all) {
-        return {
-          ok: false,
-          output: `old_string appears ${count} times in ${realPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
-          error: 'AMBIGUOUS',
-        };
-      }
-
-      const updated = replace_all
-        ? original.split(old_string).join(new_string)
-        : original.replace(old_string, new_string);
-
-      const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
-
-      // ── 4. UI approval ───────────────────────────────────────────────
-      const approved = await requestEdit({
-        path: absPath,
-        chatId,
-        sseEmitter,
-        signal,
-        workspacePath,
-        baseDir: workspacePath,
-        oldString: old_string,
-        newString: new_string,
-        diffPreview,
-      });
-
-      // ── 5. Commit ────────────────────────────────────────────────────
-      await commitOperation(approved.operationToken, {
-        expectedKinds: [OP_KIND.EDIT],
-      });
-
-      if (_postCommitHookForTests) {
-        try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
-      }
-
-      // ── 5b. Inode anchor check ───────────────────────────────────────
+      // Inode anchor: confirm path STILL points at the inode we
+      // just opened AND that it's the same one we read pre-approval.
+      // Two-fh anchor catches both attacker-swap (path now points
+      // at a symlink or different inode) and rm+create-new during
+      // the approval window.
       const fhStat = await fh.stat();
       const pathStat = await lstat(realPath).catch(() => null);
       if (
         !pathStat ||
         pathStat.isSymbolicLink() ||
-        pathStat.ino !== fhStat.ino
+        pathStat.ino !== fhStat.ino ||
+        fhStat.ino !== oldFhStat.ino
       ) {
         return {
           ok: false,
@@ -243,7 +302,14 @@ export const fileEditTool = {
       const currentBuffer = await readFromStart(fh);
       const currentOriginal = currentBuffer.toString('utf8');
       if (currentOriginal !== original) {
-        throw Object.assign(new Error('stale-content'), { __staleContent: true });
+        return {
+          ok: false,
+          output:
+            `File at ${realPath} changed between approval and edit — ` +
+            `stale-content check failed. Re-run file_edit with the latest content.`,
+          error: 'STALE_CONTENT',
+          meta: { lexicalPath: absPath, realPath },
+        };
       }
 
       // ── 7. Snapshot from the oldBuffer we already have ───────────────
@@ -280,24 +346,6 @@ export const fileEditTool = {
         },
       };
     } catch (err) {
-      if (err && err.__staleContent) {
-        return {
-          ok: false,
-          output:
-            `File at ${realPath} changed between approval and edit — ` +
-            `stale-content check failed. Re-run file_edit with the latest content.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, realPath },
-        };
-      }
-      if (err && err.code === 'FILE_SAFETY_DENIED') {
-        return {
-          ok: false,
-          output: err.message,
-          error: 'DENIED',
-          meta: { denied: true },
-        };
-      }
       return {
         ok: false,
         output: `Edit error: ${err.message}`,

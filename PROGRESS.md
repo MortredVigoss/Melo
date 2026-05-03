@@ -78,7 +78,18 @@
 - **precheckHardBlockedWrite return 加 exists**：caller 用此判断 isCreate 不必再 stat。
 - 测试加 2 case 扩 [restoreSafety.test.js](src/safety/restoreSafety.test.js)：① restoreFromBackup post-(b) hook swap dest → /etc/hosts → 拒；② restoreFromTrash 同款。
 - 验证：`src/**/*.test.js` **1698/1698 全绿**（前 1696 + 2 新；零既有回归）。
-- **架构 invariant 新文档**：fh 锁 inode → 任何 post-open path swap 不影响 fh 读写。所有 read/write 走同一 fh，唯一 race window 是 precheck→open，由 O_NOFOLLOW（symlink swap）+ O_EXCL（create race）+ inode anchor (post-commit replace) 三层关闭。
+- 提交哈希：`0539806`。
+- Follow-up（Codex C 复审又抓 3 条 — 但用户拍 "找出问题就重构不要 stop"）：① 🔴 create 路径在 requestWrite **审批前**就 O_CREAT|O_EXCL 创了文件 — 审批前不应有 disk 副作用；② 🔴 父目录 auto-create 契约破了 — fileWrite contract 说自动建，但实际去掉了 mkdir；③ ⚪ 测试缺 nested + pending-no-side-effect。
+- 二次重构 **两阶段 fh**：
+  ① pre-approval 仅打开 read-only fh 读旧内容 + 立即关闭（zero side-effect）；
+  ② requestWrite UI 期间 disk 完全不动（pending 不创、deny 不留）；
+  ③ approval 后才 mkdir parent (recursive) + open(O_RDWR\|...flags...) write fh；
+  ④ inode anchor 双重比对 (post-open fh.stat ↔ pre-read oldFhStat ↔ lstat(realPath))，三方一致才放行；
+  ⑤ stale check via fh + snapshot via preReadContent + truncate + write + close。
+- fileEditTool 同款两阶段 (always overwrite，更简单)。
+- 测试加 4 case：① pending 期间 lstat target → ENOENT (从 SSE callback 内部断言)；② deny 后 target 仍不存在 (无 placeholder)；③ nested `ws/a/b/c.txt` create 自动建父目录；④ deny 时 nested 父目录**不**被创建。
+- 验证：`src/**/*.test.js` **1702/1702 全绿**（前 1698 + 4 新）。
+- **架构 invariant 终极版**：fh 锁 inode → 任何 post-open path swap 不影响 fh 读写。所有 read/write 走同一 fh，唯一 race window 是 precheck→pre-read-open + 审批后 commit→write-open；前者影响只是读到旧内容（diff 显示对了），后者由 O_NOFOLLOW + O_EXCL + 双 fh inode anchor 关闭。**审批前 zero disk side-effect 契约**：pending 不创、deny 不留 placeholder、nested 父目录在 deny 后也不创。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 
