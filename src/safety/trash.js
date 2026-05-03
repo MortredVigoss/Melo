@@ -495,6 +495,56 @@ export async function restoreFromTrash(operationId, opts = {}) {
       );
     }
     expectedRealByLexical.set(entry.originalPath, realPath);
+
+    // Codex C round 8 (2026-05-03): wasSymlink entries need an extra
+    // sensitivity check on the symlinkTarget itself — otherwise a
+    // tampered manifest could redirect us to recreate a symlink
+    // pointing at /etc/hosts / ~/.ssh / etc. The originalPath check
+    // above protects the LINK location; this protects the LINK's
+    // TARGET. Both must be safe before we rebuild.
+    if (entry.wasSymlink) {
+      if (typeof entry.symlinkTarget !== 'string' || !entry.symlinkTarget) {
+        throw new Error(
+          `Refusing to restore symlink ${entry.originalPath}: ` +
+          `manifest is missing a symlinkTarget field.`,
+        );
+      }
+      const targetResolved = await safeResolvePath(
+        entry.symlinkTarget.startsWith('/')
+          ? entry.symlinkTarget
+          // Relative symlink — resolve relative to the link's parent
+          // directory (mirrors how the kernel would interpret it).
+          : join(dirname(entry.originalPath), entry.symlinkTarget),
+      );
+      if (
+        isHardBlockedWrite(entry.symlinkTarget) ||
+        isHardBlockedWrite(targetResolved.realPath)
+      ) {
+        const targetCat = classifyPath(entry.symlinkTarget);
+        const realC = classifyPath(targetResolved.realPath);
+        throw new Error(
+          `Refusing to restore symlink ${entry.originalPath} → ` +
+          `${entry.symlinkTarget} (real target: ${targetResolved.realPath}) ` +
+          `— symlink target classified as ${targetCat}/${realC}.`,
+        );
+      }
+      // Manifest-tamper detection: resolvedPathAtDelete must still
+      // match the freshly-resolved target. A mismatch means either
+      // the symlinkTarget field was modified (attack) OR the
+      // outside-world filesystem moved (legit, but require explicit
+      // user confirmation rather than silent restore).
+      if (
+        typeof entry.resolvedPathAtDelete === 'string' &&
+        entry.resolvedPathAtDelete !== targetResolved.realPath
+      ) {
+        throw new Error(
+          `Refusing to restore symlink ${entry.originalPath}: ` +
+          `manifest resolvedPathAtDelete=${entry.resolvedPathAtDelete} ` +
+          `does not match current resolution ${targetResolved.realPath} ` +
+          `of symlinkTarget=${entry.symlinkTarget}.`,
+        );
+      }
+    }
   }
 
   // Layer (c)+(d): optional UI approval, then atomic commit. Codex C

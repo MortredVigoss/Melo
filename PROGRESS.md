@@ -71,7 +71,14 @@
 - **`restoreFromTrash` 按 entry 类型恢复**：(a) symlink → `mkdir(dirname) + (overwrite时 rm 现存) + symlink(symlinkTarget, originalPath)` 重建 link，restored[] 是 originalPath（不是 resolvedTarget，因为 symlink 是 leaf node 没"实际目标"概念）；(b) dir → 走 commit 拿 resolvedTarget + cp -r 同前；(c) file → 走 commit 拿 resolvedTarget + copyFile 同前。
 - **新模块 [src/safety/symlinkDelete.test.js](src/safety/symlinkDelete.test.js) 7 case 完整覆盖**：① benign 外部文件 — 删 link 留 target（核心 round-7 fix 回归）；② sensitive 硬拒（`/etc/hosts`）；③ 审批后 swap → commit detect "Path mapping changed" + 两端文件全 untouched + 无 trash；④ 目录 symlink — 删 link 留外部 dir + 内容；⑤ round-trip：trash symlink → restore → readlink 拿到原 target string + readFile 跟随 link 仍能读到原文件；⑥ manifest 字段 (wasSymlink/symlinkTarget/resolvedPathAtDelete) 正确；⑦ 普通文件回归 wasSymlink:false 防 false-positive。
 - 验证：`src/safety/*.test.js` **187/187 全绿**（前 180 + 7 新）；`src/**/*.test.js` **1655/1655 全绿**（前 1648 + 7 新；零既有回归）。
-- 待 push（git pp 第八轮复审）。Phase 2（接管现有工具）和 Phase 3（UI）仍未动。
+- 提交哈希：`45e3d16`。
+- Follow-up（Codex C 第八轮 → restore 链 symlinkTarget 漏 sensitivity）：上一刀 push 又被评 C，1 条真问题：🟠 `restoreFromTrash` 的 layer (b) sensitivity 检查只看 `entry.originalPath`，**对 wasSymlink 条目没校验 manifest 里的 `symlinkTarget`** → 攻击者篡改 manifest 把 symlinkTarget 改成 `/etc/hosts`，restore 在 workspace 里恢复出指向 `/etc/hosts` 的 symlink，绕过 round-7 明确的 "workspace/link → sensitive 继续硬拒" 语义（等于通过 trash channel 把 round-7 防的 attack vector 又开了）。用户拍 Q1=A (allow dangling symlink) + Q2=A (legacy manifest 缺字段按 file/dir 兼容) + 1+2+3+4 全做。
+- **wasSymlink 分支独立 sensitivity 校验**：在 layer (b) 循环里，wasSymlink 条目额外校验 manifest 的 `symlinkTarget`：① 必须是非空 string，否则 throw "missing a symlinkTarget field"；② 走 `safeResolvePath(symlinkTarget)`（绝对路径直接用，相对路径相对 originalPath 的 dirname 解，mirror kernel 行为）拿 realPath；③ `isHardBlockedWrite(symlinkTarget) || isHardBlockedWrite(realPath)` 任一命中 throw "symlink target classified as system/credential/melo_internal"。这层与 originalPath 检查并行：originalPath 守 LINK 位置安全，symlinkTarget 守 LINK 指向的 target 安全。
+- **manifest tamper detection**：校验 `entry.resolvedPathAtDelete === targetResolved.realPath`，不一致 throw "resolvedPathAtDelete...does not match current resolution..."。攻击者要绕过 sensitivity，必须同时改 symlinkTarget + resolvedPathAtDelete 两字段配对一致才能通过这道检查（攻击成本翻倍 + 仍受 sensitivity 拦截）。
+- **legacy manifest 向后兼容**（隐式）：`entry.wasSymlink === undefined` 时 falsy → 跳过新加 sensitivity block，按 file/dir 处理。无需新代码路径。
+- 测试加 5 case 到 [src/safety/symlinkDelete.test.js](src/safety/symlinkDelete.test.js)：① 篡改 symlinkTarget=/etc/hosts → 拒 + link 不创建；② 篡改 symlinkTarget=~/.ssh/X → 拒 + classified as credential；③ 篡改 resolvedPathAtDelete 与现 symlinkTarget 解析不一致（即使两者都 benign）→ 拒 "tamper detection"；④ legacy manifest（删 wasSymlink/symlinkTarget/resolvedPathAtDelete 三字段后）→ 仍能恢复（pin back-compat）；⑤ wasSymlink:true 但 symlinkTarget 字段空字符串 → 拒 "missing a symlinkTarget field"（pin manifest 完整性契约）。
+- 验证：`src/safety/*.test.js` **192/192 全绿**（前 187 + 5 新）；`src/**/*.test.js` **1660/1660 全绿**（前 1655 + 5 新；零既有回归）。
+- 待 push（git pp 第九轮复审）。Phase 2（接管现有工具）和 Phase 3（UI）仍未动。
 
 ## 2026-05-01 14:00 — PDF 能力 Batch A：simple ops + render（用户 PDF audit 落实第一刀）
 

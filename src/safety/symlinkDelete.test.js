@@ -242,6 +242,130 @@ test('trash manifest records wasSymlink + symlinkTarget + resolvedPathAtDelete f
 
 // ─── 7. regular file delete still records wasSymlink: false ──────────
 
+// ─── Codex C round 8 (2026-05-03): restore-side manifest tamper ──────
+
+test('restoreFromTrash REJECTS a manifest with symlinkTarget tampered to /etc/hosts', async () => {
+  await withSplitMeloHome(async (ws, outside) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    // Legitimate flow: trash a benign symlink.
+    const externalFile = join(outside, 'tgt.txt');
+    const link = join(ws, 'lnk');
+    await writeFile(externalFile, 'x', 'utf8');
+    await symlink(externalFile, link);
+    const del = await deleteToTrash(gate, trash, [link], { workspacePath: ws });
+
+    // Attacker tampers the trashed manifest's symlinkTarget.
+    const manifest = JSON.parse(await readFile(del.manifestPath, 'utf8'));
+    manifest.files[0].symlinkTarget = '/etc/hosts';
+    // Also bump resolvedPathAtDelete to match so the tamper-mismatch
+    // check doesn't preempt the sensitivity check.
+    manifest.files[0].resolvedPathAtDelete = '/etc/hosts';
+    await writeFile(del.manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    await assert.rejects(
+      trash.restoreFromTrash(del.operationId),
+      /Refusing to restore symlink.*symlink target classified as system/i,
+    );
+    // Verify nothing was created at the link path.
+    assert.equal(await pathExists(link), false);
+  });
+});
+
+test('restoreFromTrash REJECTS a manifest with symlinkTarget tampered to ~/.ssh', async () => {
+  await withSplitMeloHome(async (ws, outside) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const externalFile = join(outside, 'tgt.txt');
+    const link = join(ws, 'lnk2');
+    await writeFile(externalFile, 'x', 'utf8');
+    await symlink(externalFile, link);
+    const del = await deleteToTrash(gate, trash, [link], { workspacePath: ws });
+
+    const manifest = JSON.parse(await readFile(del.manifestPath, 'utf8'));
+    const sshTarget = join(HOME, '.ssh', 'evil_added_key');
+    manifest.files[0].symlinkTarget = sshTarget;
+    manifest.files[0].resolvedPathAtDelete = sshTarget;
+    await writeFile(del.manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    await assert.rejects(
+      trash.restoreFromTrash(del.operationId),
+      /Refusing to restore symlink.*credential/i,
+    );
+  });
+});
+
+test('restoreFromTrash REJECTS when resolvedPathAtDelete disagrees with current symlinkTarget resolution (tamper detection)', async () => {
+  await withSplitMeloHome(async (ws, outside) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const externalFile = join(outside, 'tgt.txt');
+    const link = join(ws, 'lnk3');
+    await writeFile(externalFile, 'x', 'utf8');
+    await symlink(externalFile, link);
+    const del = await deleteToTrash(gate, trash, [link], { workspacePath: ws });
+
+    // Lie about where the link USED to point at delete time.
+    // symlinkTarget still points at the benign external file (so the
+    // sensitivity check passes), but resolvedPathAtDelete is tampered
+    // to a different (still-benign) path. The mismatch must abort.
+    const manifest = JSON.parse(await readFile(del.manifestPath, 'utf8'));
+    const fakeOldTarget = join(outside, 'something-else.txt');
+    manifest.files[0].resolvedPathAtDelete = fakeOldTarget;
+    await writeFile(del.manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    await assert.rejects(
+      trash.restoreFromTrash(del.operationId),
+      /resolvedPathAtDelete.*does not match current resolution/i,
+    );
+  });
+});
+
+test('restoreFromTrash legacy manifest (no wasSymlink/symlinkTarget) is treated as a file/dir entry (back-compat)', async () => {
+  await withSplitMeloHome(async (ws) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const f = join(ws, 'plain.txt');
+    await writeFile(f, 'orig', 'utf8');
+    const del = await deleteToTrash(gate, trash, [f], { workspacePath: ws });
+
+    // Strip the new fields from the manifest as if it were written by
+    // a previous Phase 1 build.
+    const manifest = JSON.parse(await readFile(del.manifestPath, 'utf8'));
+    delete manifest.files[0].wasSymlink;
+    delete manifest.files[0].symlinkTarget;
+    delete manifest.files[0].resolvedPathAtDelete;
+    await writeFile(del.manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    const restored = await trash.restoreFromTrash(del.operationId);
+    assert.equal(restored.fullyRestored, true);
+    assert.equal(await readFile(f, 'utf8'), 'orig');
+  });
+});
+
+test('restoreFromTrash REJECTS a wasSymlink entry whose symlinkTarget field is missing entirely', async () => {
+  await withSplitMeloHome(async (ws, outside) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const externalFile = join(outside, 'tgt.txt');
+    const link = join(ws, 'lnk4');
+    await writeFile(externalFile, 'x', 'utf8');
+    await symlink(externalFile, link);
+    const del = await deleteToTrash(gate, trash, [link], { workspacePath: ws });
+
+    const manifest = JSON.parse(await readFile(del.manifestPath, 'utf8'));
+    // wasSymlink stays true but symlinkTarget is wiped — manifest is
+    // now incoherent and must be rejected.
+    manifest.files[0].symlinkTarget = '';
+    await writeFile(del.manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    await assert.rejects(
+      trash.restoreFromTrash(del.operationId),
+      /missing a symlinkTarget field/i,
+    );
+  });
+});
+
 test('regular-file delete still records wasSymlink:false (back-compat sanity)', async () => {
   await withSplitMeloHome(async (ws) => {
     const trash = await freshTrash();
