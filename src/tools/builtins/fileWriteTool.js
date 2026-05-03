@@ -172,6 +172,7 @@ export const fileWriteTool = {
     // each intermediate directory through its own approved write.
     const parentDir = dirname(realPath);
     let parentInoAtPrecheck;
+    let parentDevAtPrecheck;
     try {
       const pst = await lstat(parentDir);
       if (!pst.isDirectory() || pst.isSymbolicLink()) {
@@ -184,6 +185,7 @@ export const fileWriteTool = {
         };
       }
       parentInoAtPrecheck = pst.ino;
+      parentDevAtPrecheck = pst.dev;
     } catch (err) {
       if (err && err.code === 'ENOENT') {
         return {
@@ -306,13 +308,14 @@ export const fileWriteTool = {
       if (
         !pstNow.isDirectory() ||
         pstNow.isSymbolicLink() ||
-        pstNow.ino !== parentInoAtPrecheck
+        pstNow.ino !== parentInoAtPrecheck ||
+        pstNow.dev !== parentDevAtPrecheck
       ) {
         return {
           ok: false,
           output:
-            `Parent directory ${parentDir} was replaced (inode changed or ` +
-            `now a symlink) between approval and write — kernel-level race detected.`,
+            `Parent directory ${parentDir} was replaced (inode/device changed ` +
+            `or now a symlink) between approval and write — kernel-level race detected.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
         };

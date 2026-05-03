@@ -113,6 +113,10 @@ export const fileMkdirTool = {
         oldHash: null,
         newHash: null,
         diffPreview: null,
+        // Every mkdir is independently approved: a prior dir-grant
+        // for a sibling write must NOT auto-approve creating new
+        // directories. Each level gets its own UI prompt.
+        bypassGrants: true,
       });
     } catch (err) {
       return {
@@ -137,7 +141,7 @@ export const fileMkdirTool = {
     }
 
     try {
-      await assertParentDirUnchanged(absPath, parentPrecheck.ino);
+      await assertParentDirUnchanged(absPath, parentPrecheck.ino, parentPrecheck.dev);
     } catch (err) {
       return {
         ok: false,

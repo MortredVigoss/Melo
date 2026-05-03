@@ -30,12 +30,14 @@
  *     use, but worth surfacing.
  */
 
-import { rename, mkdir, lstat } from 'node:fs/promises';
+import { rename, lstat } from 'node:fs/promises';
 import { isAbsolute, resolve, dirname } from 'node:path';
 
 import {
   requestMove,
   commitOperation,
+  precheckParentDir,
+  assertParentDirUnchanged,
   OP_KIND,
 } from '../../safety/fileSafetyGate.js';
 
@@ -95,6 +97,9 @@ export const fileMoveTool = {
     const absDst = isAbsolute(dst) ? dst : resolve(workspacePath || process.cwd(), dst);
 
     // ── FileSafetyGate approval + atomic commit ────────────────────────
+    // (Sensitivity check happens INSIDE requestMove — must run
+    // before the parent-dir checks below so /etc/hosts / ~/.ssh
+    // are reported as DENIED, not "PARENT_NOT_DIR".)
     let approved;
     try {
       approved = await requestMove({
@@ -131,6 +136,32 @@ export const fileMoveTool = {
       };
     }
 
+    // Codex Phase 2A round 10: parent-dir precheck happens after
+    // sensitivity has been cleared. Source parent + destination
+    // parent must both already exist (no auto-mkdir, no recursive
+    // walk — Node has no openat to make recursive create safe).
+    const srcParentPrecheck = await precheckParentDir(absSrc);
+    if (!srcParentPrecheck.ok) {
+      return {
+        ok: false,
+        output:
+          `Cannot move from ${absSrc}: source parent directory ` +
+          `${srcParentPrecheck.parent} ${srcParentPrecheck.error}.`,
+        error: srcParentPrecheck.error,
+      };
+    }
+    const dstParentPrecheck = await precheckParentDir(absDst);
+    if (!dstParentPrecheck.ok) {
+      return {
+        ok: false,
+        output:
+          `Cannot move to ${absDst}: destination parent directory ` +
+          `${dstParentPrecheck.parent} ${dstParentPrecheck.error}. ` +
+          `Use file_mkdir to create the destination's parent first.`,
+        error: dstParentPrecheck.error,
+      };
+    }
+
     // Codex C Phase 2A round 4 (2026-05-03): no-follow rename. The
     // earlier cut passed the commit-resolved real paths to fs.rename;
     // when src was a symlink (e.g. workspace/link → outside/file),
@@ -160,11 +191,18 @@ export const fileMoveTool = {
       };
     }
 
-    // Ensure destination parent exists.
+    // Re-verify both parent dirs right before the rename — race
+    // detection per Phase 2A round 10.
     try {
-      await mkdir(dirname(absDst), { recursive: true });
+      await assertParentDirUnchanged(absSrc, srcParentPrecheck.ino, srcParentPrecheck.dev);
+      await assertParentDirUnchanged(absDst, dstParentPrecheck.ino, dstParentPrecheck.dev);
     } catch (err) {
-      return { ok: false, output: `Cannot create directory: ${err.message}`, error: err.message };
+      return {
+        ok: false,
+        output: err.message,
+        error: 'COMMIT_FAILED',
+        meta: { raceKind: 'parent-swap' },
+      };
     }
 
     try {

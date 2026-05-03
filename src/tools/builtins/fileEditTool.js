@@ -139,6 +139,7 @@ export const fileEditTool = {
     // Parent dir inode anchor (Codex Phase 2A round 8).
     const parentDir = dirname(realPath);
     let parentInoAtPrecheck;
+    let parentDevAtPrecheck;
     try {
       const pst = await lstat(parentDir);
       if (!pst.isDirectory() || pst.isSymbolicLink()) {
@@ -150,6 +151,7 @@ export const fileEditTool = {
         };
       }
       parentInoAtPrecheck = pst.ino;
+      parentDevAtPrecheck = pst.dev;
     } catch (err) {
       return {
         ok: false,
@@ -269,13 +271,14 @@ export const fileEditTool = {
       if (
         !pstNow.isDirectory() ||
         pstNow.isSymbolicLink() ||
-        pstNow.ino !== parentInoAtPrecheck
+        pstNow.ino !== parentInoAtPrecheck ||
+        pstNow.dev !== parentDevAtPrecheck
       ) {
         return {
           ok: false,
           output:
-            `Parent directory ${parentDir} was replaced (inode changed or now ` +
-            `a symlink) between approval and edit — kernel-level race detected.`,
+            `Parent directory ${parentDir} was replaced (inode/device changed ` +
+            `or now a symlink) between approval and edit — kernel-level race detected.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
         };

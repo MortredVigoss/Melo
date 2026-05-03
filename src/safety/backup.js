@@ -458,8 +458,12 @@ export async function restoreFromBackup(operationId, opts = {}) {
     resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
   }
 
-  // Parent-dir re-anchor right before the actual fs op (Codex round 9).
-  await assertParentDirUnchanged(target.originalPath, parentPrecheck.ino);
+  // Parent-dir re-anchor right before the actual fs op (Codex round 9 + 10).
+  await assertParentDirUnchanged(
+    target.originalPath,
+    parentPrecheck.ino,
+    parentPrecheck.dev,
+  );
 
   if (target.wasMissing) {
     // Undo of a "create" snapshot — remove the resolved target.

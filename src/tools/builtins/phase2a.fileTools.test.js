@@ -852,6 +852,63 @@ test('fileMkdirTool: deny does not create the directory', async () => {
   });
 });
 
+test('fileMkdirTool: existing WRITE grant on parent dir does NOT skip the mkdir prompt (bypassGrants)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Grant WRITE on the parent dir for chat-A.
+    const grants = await import('../../safety/chatScopedGrants.js');
+    grants.grantDir('chat-A', ws, ['write']);
+
+    const target = join(ws, 'newdir-grant');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'once'));
+    };
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1, 'mkdir must prompt every time even with prior dir grant');
+  });
+});
+
+test('fileMkdirTool: parent dir swapped to symlink between approval and mkdir → COMMIT_FAILED', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'parent'));
+    const target = join(ws, 'parent', 'child');
+
+    // Inject parent swap before the post-commit anchor check.
+    let stage = 0;
+    const sse = (event, payload) => {
+      const decision = stage++ === 0
+        ? { scope: 'once' }
+        : { scope: 'once' };
+      // Replace parent with a symlink AFTER the gate resolves.
+      Promise.resolve()
+        .then(() => rm(join(ws, 'parent'), { recursive: true, force: true }))
+        .then(() => symlink(outside, join(ws, 'parent')))
+        .then(() => gate.resolveFileSafety(payload.requestId, decision.scope, {
+          confirmInput: decision.confirmInput,
+        }));
+    };
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, false);
+    // Either commit re-resolve catches it (Path mapping changed)
+    // or the post-commit parent-anchor catches it (parent-swap).
+    // Either way: COMMIT_FAILED, no fs side-effect outside.
+    assert.equal(result.error, 'COMMIT_FAILED');
+    let exists = true;
+    try { await lstat(join(outside, 'child')); } catch (err) { if (err.code === 'ENOENT') exists = false; }
+    assert.equal(exists, false);
+  });
+});
+
 test('fileMkdirTool: sensitive path /etc/foo → DENIED, no UI', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
@@ -1027,6 +1084,22 @@ test('fileWriteTool: create with O_EXCL — race-create during approval window �
     assert.equal(result.meta.raceKind, 'create-eexist');
     // Race-injected content preserved.
     assert.equal(await readFile(target, 'utf8'), 'race-write');
+  });
+});
+
+test('fileMoveTool: missing dst parent → PARENT_NOT_FOUND (no auto-mkdir)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const src = join(ws, 'a.txt');
+    const dst = join(ws, 'no-such-dir', 'b.txt');
+    await writeFile(src, 'x', 'utf8');
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'PARENT_NOT_FOUND');
+    assert.equal(await readFile(src, 'utf8'), 'x');
   });
 });
 

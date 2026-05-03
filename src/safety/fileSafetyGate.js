@@ -256,20 +256,25 @@ export async function precheckParentDir(absPath) {
     st = await _lstat(parent);
   } catch (err) {
     if (err && err.code === 'ENOENT') {
-      return { ok: false, ino: null, error: 'PARENT_NOT_FOUND', parent };
+      return { ok: false, ino: null, dev: null, error: 'PARENT_NOT_FOUND', parent };
     }
-    return { ok: false, ino: null, error: err.message, parent };
+    return { ok: false, ino: null, dev: null, error: err.message, parent };
   }
   if (st.isSymbolicLink() || !st.isDirectory()) {
-    return { ok: false, ino: null, error: 'PARENT_NOT_DIR', parent };
+    return { ok: false, ino: null, dev: null, error: 'PARENT_NOT_DIR', parent };
   }
-  return { ok: true, ino: st.ino, error: null, parent };
+  // Codex Phase 2A round 10 (2026-05-03): capture BOTH dev and ino.
+  // ino is unique only within a device — cross-mount replacement
+  // could collide on ino alone. {dev, ino} is the actual fs-level
+  // unique identity.
+  return { ok: true, ino: st.ino, dev: st.dev, error: null, parent };
 }
 
 // Verify the parent dir hasn't been swapped since precheckParentDir
-// returned `expectedIno`. Throws denyError on mismatch (so callers
-// inside Phase 1 modules surface a uniform FILE_SAFETY_DENIED).
-export async function assertParentDirUnchanged(absPath, expectedIno) {
+// returned `expectedIno` / `expectedDev`. Throws denyError on
+// mismatch (so callers inside Phase 1 modules surface a uniform
+// FILE_SAFETY_DENIED).
+export async function assertParentDirUnchanged(absPath, expectedIno, expectedDev) {
   const parent = _dirname(absPath);
   let st;
   try {
@@ -280,10 +285,15 @@ export async function assertParentDirUnchanged(absPath, expectedIno) {
       `commit (race detected): ${err.message}`,
     );
   }
-  if (st.isSymbolicLink() || !st.isDirectory() || st.ino !== expectedIno) {
+  if (
+    st.isSymbolicLink() ||
+    !st.isDirectory() ||
+    st.ino !== expectedIno ||
+    (expectedDev != null && st.dev !== expectedDev)
+  ) {
     throw denyError(
-      `Parent directory ${parent} was replaced (inode changed or now ` +
-      `a symlink) between precheck and commit — kernel-level race detected.`,
+      `Parent directory ${parent} was replaced (inode/device changed or ` +
+      `now a symlink) between precheck and commit — kernel-level race detected.`,
     );
   }
 }
@@ -686,6 +696,7 @@ export async function requestWrite({
   oldHash = null,
   newHash = null,
   diffPreview = null,
+  bypassGrants = false,
 }) {
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Write requested with empty path.');
@@ -702,7 +713,10 @@ export async function requestWrite({
 
   // Grants are keyed on realPath so re-pointing a symlink invalidates
   // prior approvals (defence against TOCTOU within a long chat).
-  if (hasGrant(chatId, realPath, GRANT_KIND.WRITE)) {
+  // Codex Phase 2A round 10 (2026-05-03): callers that must always
+  // prompt (file_mkdir's "every dir level approved separately"
+  // contract) pass bypassGrants:true.
+  if (!bypassGrants && hasGrant(chatId, realPath, GRANT_KIND.WRITE)) {
     const operationToken = _issueOperationToken({
       kind: OP_KIND.WRITE_OVERWRITE,
       chatId,

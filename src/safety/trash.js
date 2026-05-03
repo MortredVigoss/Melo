@@ -563,7 +563,10 @@ export async function restoreFromTrash(operationId, opts = {}) {
         `${parentPrecheck.parent} ${parentPrecheck.error}.`,
       );
     }
-    parentInoByLexical.set(entry.originalPath, parentPrecheck.ino);
+    parentInoByLexical.set(entry.originalPath, {
+      ino: parentPrecheck.ino,
+      dev: parentPrecheck.dev,
+    });
   }
 
   // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
@@ -622,10 +625,12 @@ export async function restoreFromTrash(operationId, opts = {}) {
     }
 
     const src = join(filesDir, entry.trashedAs);
-    // Re-verify parent-dir inode right before the fs op.
+    // Re-verify parent-dir inode + dev right before the fs op.
+    const parentSnapshot = parentInoByLexical.get(entry.originalPath);
     await assertParentDirUnchanged(
       entry.originalPath,
-      parentInoByLexical.get(entry.originalPath),
+      parentSnapshot.ino,
+      parentSnapshot.dev,
     );
 
     if (entry.wasSymlink) {
