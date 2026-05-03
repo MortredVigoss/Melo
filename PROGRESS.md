@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-05-03 — File Safety Gate Phase 1：四模块地基（无接入，纯独立）
+
+- 用户产品方向：所有读写改删命令 / MCP 文件访问统一过一个安全门，"最高的安全性为第一原则"。按方案 B（分层 gate，read 默认 workspace 内放行，write/edit/delete 必审 + 自动备份 + 删除入隔离区）落地。本刀只做 Phase 1 地基模块，零工具接入。
+- 新模块 [src/safety/sensitivePaths.js](src/safety/sensitivePaths.js)：四类硬黑名单 `system` (/etc, /System, /usr, /bin, /sbin, /Library)、`credential` (~/.ssh, ~/.aws, ~/.gnupg, ~/.netrc, ~/.npmrc, ~/.docker, ~/.kube, gh/gcloud config, macOS Keychains/Cookies)、`melo_internal` ($MELO_HOME)、`safe`。`isHardBlockedWrite/Delete` 三类拒，`readRequiresApproval` 仅 system+credential。dir-prefix 匹配（不是 string startsWith），`~/.sshconfig` 不会误中 `~/.ssh`。
+- 新模块 [src/safety/chatScopedGrants.js](src/safety/chatScopedGrants.js)：per-chat、per-(file|dir)、per-kind (read/write/edit) 的内存授权表，进程退出全清；非持久化是 by design（与"不默认提供长期授权"对齐）。grant 矩阵正交：read 授权不蒙混 write，write 授权不蒙混 read，chat-A 授权不漏到 chat-B。
+- 新模块 [src/safety/fileSafetyGate.js](src/safety/fileSafetyGate.js)：8 个操作入口 (`requestRead/ReadBatch/Write/Edit/Move/Delete/BashOp`)，复用 src/tools/permissions.js 的 SSE `tool_permission` 事件名 + pendingRequests 状态机模式（UI 端零基建），加 `kind: 'file_safety'` 鉴别符走新 layout。三段决策：(1) 硬黑名单立刻拒（无 UI）→ (2) workspace 内 read 静默放行 / per-chat grant 静默放行 → (3) 否则弹 prompt。Delete 走两阶段，stage 2 由 gate 内部校验 confirmInput（单文件=basename，多文件=`DELETE`），UI 无法绕过。Bash delete-class 风险硬拒并提示走 fileDeleteTool。SCOPE 四档：`once / file / dir / deny`。WRITE grant 自动覆盖 EDIT（窄于 write）。
+- 新模块 [src/safety/trash.js](src/safety/trash.js)：`safeDeleteToTrash(paths, ctx)` 实现"copy-then-unlink"：所有副本到 `$MELO_HOME/.melo-trash/<YYYY-MM-DD>_<12hash>/files/<contentHash>`、写 manifest.json (deletedAt/expiresAfter/originalPaths/sha256/wasDirectory/restorable…)、再 unlink 原始；任一 source 不存在 → 整批回滚不动 unlink。`restoreFromTrash` 默认拒覆盖现有文件（防 race），`overwrite:true` 显式开。`pruneTrashHint(now)` 报告超 7 天条目但**永不自动删**——UI 显示"可清理 N 项" + 手动 `purgeTrashEntry()`，对齐用户原话"7 天后也不自动永久删除"。
+- 新模块 [src/safety/backup.js](src/safety/backup.js)：`snapshotBeforeWrite(absPath, ctx)` 写 → `$MELO_HOME/.melo-backups/<operationId>/before/<basename>` + manifest（含 originalPath/sha256/size/wasMissing/expiresAfter）。`recordAfterDiff` 后置写 `after.diff` + 翻 `afterDiffRecorded` flag。`restoreFromBackup` 镜像 trash 语义；wasMissing 的 backup 还原 = unlink（撤销创建）。同 7 天 hint，永不自动清。
+- 新模块 [src/safety/bashRiskParser.js](src/safety/bashRiskParser.js)：quote-aware tokenizer + 8 种 risk kind 检测：`delete` (rm/rmdir/unlink/find -delete/find -exec rm/git clean/python -c "...os.remove..."/node -e "...unlinkSync..."/ruby -e "...File.delete..."/perl -e "...unlink...")、`reset_repo` (git reset --hard / checkout -- / restore --source)、`truncate`、`overwrite` (`>` / `&>` / tee / dd of=)、`append` (`>>`/`&>>`)、`in_place_edit` (sed -i / perl -i / awk -i inplace)、`move` (mv)、`unknown`（unparseable 兜底）。`splitCommands` 拆 `&&`/`||`/`;`/`|` 但 quote 内不拆，`hasUnbalancedQuotes` 检测 unparseable → 兜底 unknown 风险（CLAUDE.md "无法判断 → 默认高风险"）。
+- 关键 trap 修：`fileSafetyGate.test.js` 第一轮 2 fail，根因 ESM 单例 cache —— cache-bust 父模块（`?tc=...`）没有传递到子模块 import (`./chatScopedGrants.js`)；上轮 test grant 漏到下轮，导致 deny/abort 测试因 hasGrant 短路成 silent allow。修：`freshGate()` 改用单例 + reset (`grantsMod.clearChat()` + `gateMod._clearPendingForTests()`)，`_clearPendingForTests` 是新加 export。
+- 测试：4 个 test 文件 **126/126 全绿**：sensitivePaths 11、chatScopedGrants 16、fileSafetyGate 32、trash 16、backup 18、bashRiskParser 39。
+- 全量回归：`node --test src/**/*.test.js` **1594/1594 全绿**（前 1468 + 126 新；零既有测试回归）。
+- CLAUDE.md §6 合规：trash/backup 所有公共函数都在 entry 同步读 `getMeloHome()` 捕获到 local，await 后只用 captured 值，不在 microtask 里再读 env。Gate 同款。
+- CLAUDE.md §1 合规：四模块独立，零横切改动，零 byte-for-byte 移植场景。
+- 待 push（Codex review 后定推）。Phase 2（接管现有工具）和 Phase 3（UI）尚未动。
+
 ## 2026-04-29 00:30 — Codex chat 流内联图：image_generation tool 真正打通
 
 - 用户怒转向：上一刀 (`647383f`) 我把"chat 流不带 image_generation tool 是 by design"写进文档；用户实际想让这条路打通——OAuth 用户在普通聊天里说"画一只猫"就能拿到内联图，不用绕到 image builtin 工具+独立 sub-request。
