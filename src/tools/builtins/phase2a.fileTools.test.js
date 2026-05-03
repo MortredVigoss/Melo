@@ -1520,6 +1520,93 @@ test('round 13 followup #2: trash final-unlink — parent rmdir+mkdir between ba
   });
 });
 
+test('round 13 followup #3: fileMove — refuses moves whose lexical src parent is a symlink (PARENT_HAS_SYMLINK)', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    // Real source dir lives outside the workspace; create a symlink
+    // inside the workspace pointing at it. Moving from
+    // ws/srclink/file.txt would have a symlinked ancestor (srclink).
+    await mkdir(join(outside, 'realdir'));
+    await writeFile(join(outside, 'realdir', 'file.txt'), 'src', 'utf8');
+    await symlink(join(outside, 'realdir'), join(ws, 'srclink'));
+    const src = join(ws, 'srclink', 'file.txt');
+    const dst = join(ws, 'file.txt'); // same workspace dir, plain
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'PARENT_HAS_SYMLINK');
+    assert.match(result.output, /Retry with the resolved path/);
+    // Three-way: src untouched, link intact, real file untouched.
+    assert.equal(await readFile(join(outside, 'realdir', 'file.txt'), 'utf8'), 'src');
+    assert.equal(await fileExists(dst), false);
+  });
+});
+
+test('round 13 followup #3: fileMove — refuses moves whose lexical dst parent is a symlink', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(outside, 'realdst'));
+    await symlink(join(outside, 'realdst'), join(ws, 'dstlink'));
+    const src = join(ws, 'a.txt');
+    const dst = join(ws, 'dstlink', 'a.txt');
+    await writeFile(src, 'payload', 'utf8');
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'PARENT_HAS_SYMLINK');
+    // src untouched, real dst dir untouched.
+    assert.equal(await readFile(src, 'utf8'), 'payload');
+    assert.equal(await fileExists(join(outside, 'realdst', 'a.txt')), false);
+  });
+});
+
+test('round 13 followup #3: trash symlink restore uses dirfd-bound symlinkat (atomic round-trip)', async () => {
+  // Round-trip: delete a symlink to trash, restore, verify the
+  // restored link is a real symlink with the original target string.
+  // This exercises the new atomicSymlink code path.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'tgt.txt');
+    const linkPath = join(ws, 'mylink');
+    await writeFile(externalFile, 'external', 'utf8');
+    await symlink(externalFile, linkPath);
+
+    let stage = 0;
+    const sse = (event, payload) => {
+      const requestId = payload.requestId;
+      if (stage === 0) {
+        stage++;
+        gate.resolveFileSafety(requestId, 'once');
+      } else {
+        gate.resolveFileSafety(requestId, 'once', { confirmInput: 'mylink' });
+      }
+    };
+    const delResult = await fileDeleteTool.run(
+      { paths: [linkPath], reason: 'roundtrip' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(delResult.ok, true);
+    assert.equal(await pathExists(linkPath), false);
+    // External target is intact (no-follow delete).
+    assert.equal(await readFile(externalFile, 'utf8'), 'external');
+
+    // Restore via the trash module directly.
+    const trash = await import('../../safety/trash.js');
+    const restored = await trash.restoreFromTrash(delResult.meta.operationId);
+    assert.equal(restored.fullyRestored, true);
+    // Link rebuilt at the original spot, target string preserved.
+    const lst = await lstat(linkPath);
+    assert.equal(lst.isSymbolicLink(), true);
+    assert.equal(await readlink(linkPath), externalFile);
+    // External file content unchanged.
+    assert.equal(await readFile(externalFile, 'utf8'), 'external');
+  });
+});
+
 test('round 13 followup: fileMove — dst symlink check uses SAME dstFd as renameat (structural)', async () => {
   // Structural test: a pre-existing symlink at dst is detected via
   // _raw.fstatat on the same dstFd that renameat will use. The check

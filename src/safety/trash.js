@@ -54,6 +54,7 @@ import { safeResolvePath } from './pathResolver.js';
 import {
   atomicOpenLeaf,
   atomicUnlink,
+  atomicSymlink,
   openParentDirFd,
   splitParentLeaf,
   _raw,
@@ -739,15 +740,14 @@ export async function restoreFromTrash(operationId, opts = {}) {
     const parentSnapshot = parentInoByLexical.get(entry.originalPath);
 
     if (entry.wasSymlink) {
-      // Symlink restore: rebuild the link at the lexical originalPath.
-      // For atomicity we'd want symlinkat(parentdirfd, target, name),
-      // but our addon doesn't expose symlinkat yet. Fall back to a
-      // probe-then-symlink with parent {dev, ino} cross-check.
-      // Residual race: between cross-check and symlink() the parent
-      // could swap. Acceptable for symlink-rebuild (we're not writing
-      // arbitrary file content; worst case the link is created in a
-      // wrong dir and the user notices).
+      // Round 13 follow-up #3 (2026-05-03): symlink restore is now
+      // dirfd-bound via the new symlinkat addon binding. Probe parent
+      // {dev, ino} for cross-check (catches "parent path swapped to
+      // a different real dir during approval"), then atomicSymlink
+      // resolves the new link's parent through a dirfd opened with
+      // O_DIRECTORY|O_NOFOLLOW. No more path-based symlink() race.
       const parentDir = dirname(entry.originalPath);
+      const leaf = entry.originalPath.slice(parentDir.length + 1);
       let probefd;
       try {
         probefd = openParentDirFd(parentDir);
@@ -762,9 +762,20 @@ export async function restoreFromTrash(operationId, opts = {}) {
         if (probefd != null) try { closeFdSync(probefd); } catch {}
       }
       if (exists && opts.overwrite) {
-        await rm(entry.originalPath, { recursive: true, force: true });
+        // Use atomicUnlink (unlinkat through the parent dirfd) instead
+        // of rm — recursive rm could follow into a dir at this slot.
+        try {
+          await atomicUnlink(parentDir, leaf);
+        } catch (err) {
+          // If it's a directory at the slot, atomicUnlink with no
+          // removeDir flag fails — surface so the user can decide.
+          throw new Error(
+            `Cannot remove existing entry at ${entry.originalPath} before ` +
+            `symlink restore: ${err.message}`,
+          );
+        }
       }
-      await symlink(entry.symlinkTarget, entry.originalPath);
+      await atomicSymlink(parentDir, leaf, entry.symlinkTarget);
       restored.push(entry.originalPath);
     } else if (entry.wasDirectory) {
       // Round 13 follow-up #2 (2026-05-03): directory restore is

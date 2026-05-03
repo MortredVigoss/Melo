@@ -181,6 +181,28 @@ Napi::Value ReadLinkAt(const Napi::CallbackInfo& info) {
   return Napi::String::New(env, std::string(buf, (size_t)n));
 }
 
+// symlinkat(target, dirfd, name) → void
+// Atomic symlink creation: kernel resolves the new link's parent
+// directory through `dirfd` (no path re-walk), `target` becomes the
+// link's contents (not interpreted at creation time).
+Napi::Value SymlinkAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 3 || !info[0].IsString() || !info[1].IsNumber() || !info[2].IsString()) {
+    Napi::TypeError::New(env, "symlinkat(target, dirfd, name) — bad args").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  std::string target = info[0].As<Napi::String>().Utf8Value();
+  int dirfd = info[1].As<Napi::Number>().Int32Value();
+  std::string name = info[2].As<Napi::String>().Utf8Value();
+  int rc = symlinkat(target.c_str(), dirfd, name.c_str());
+  if (rc < 0) {
+    int e = errno;
+    MakeErrnoError(env, e, "symlinkat").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  return env.Undefined();
+}
+
 // closeFd(fd) → void
 Napi::Value CloseFd(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -205,6 +227,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("renameat", Napi::Function::New(env, RenameAt));
   exports.Set("fstatat", Napi::Function::New(env, FstatAt));
   exports.Set("readlinkat", Napi::Function::New(env, ReadLinkAt));
+  exports.Set("symlinkat", Napi::Function::New(env, SymlinkAt));
   exports.Set("closeFd", Napi::Function::New(env, CloseFd));
 
   // Constants the JS layer needs

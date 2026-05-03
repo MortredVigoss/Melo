@@ -81,6 +81,7 @@ export const _raw = {
   renameat: addon.renameat,
   fstatat: addon.fstatat,
   readlinkat: addon.readlinkat,
+  symlinkat: addon.symlinkat,
   closeFd: addon.closeFd,
 };
 
@@ -278,6 +279,26 @@ export async function atomicUnlink(parentPath, leafName, { removeDir = false } =
     addon.unlinkat(dirfd, leafName, removeDir ? C.AT_REMOVEDIR : 0);
   } catch (err) {
     throw wrapErr(err, `unlinkat ${parentPath}/${leafName}${removeDir ? ' (rmdir)' : ''}`);
+  } finally {
+    safeCloseFd(dirfd);
+  }
+}
+
+/**
+ * Atomic symlink creation through a parent dirfd. The new link's
+ * parent is bound by the dirfd; `target` is the link's contents
+ * (kernel does not interpret it at creation time).
+ *
+ * @param {string} parentPath
+ * @param {string} leafName  the link's own name (basename of new symlink)
+ * @param {string} target    what the link points at (string contents)
+ */
+export async function atomicSymlink(parentPath, leafName, target) {
+  const dirfd = openParentDirFd(parentPath);
+  try {
+    addon.symlinkat(target, dirfd, leafName);
+  } catch (err) {
+    throw wrapErr(err, `symlinkat ${parentPath}/${leafName} → ${target}`);
   } finally {
     safeCloseFd(dirfd);
   }

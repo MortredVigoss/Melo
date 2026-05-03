@@ -23,7 +23,8 @@
  * symlink moves the link, not the target file.
  */
 
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, dirname } from 'node:path';
+import { realpath } from 'node:fs/promises';
 
 import {
   requestMove,
@@ -37,6 +38,25 @@ import {
   C as DC,
 } from '../../safety/dirfdOps.js';
 import { closeSync as closeFdSync, fstatSync } from 'node:fs';
+
+// Round 13 follow-up #3 (Codex 🔴): refuse moves where any ancestor
+// of the lexical path is a symlink. Otherwise approval/commit binds
+// the resolved leaf, but our parent dirfd open uses the lexical
+// parent — an attacker could swap a parent-symlink between commit
+// and our dirfd open to redirect renameat. Detection is cheap:
+// realpath() on the parent must equal its lexical form (no symlink
+// in any ancestor). When refused we suggest the resolved path so
+// the agent retries with a non-symlinked equivalent.
+async function parentHasSymlinkAncestor(parentPath) {
+  let real;
+  try { real = await realpath(parentPath); }
+  catch (err) {
+    // ENOENT/ENOTDIR/ELOOP propagate to caller for a clear error.
+    return { error: err };
+  }
+  if (real !== parentPath) return { hasSymlink: true, resolved: real };
+  return { hasSymlink: false, resolved: real };
+}
 
 // Test-only seam: fires AFTER the post-commit probe captures
 // {dev, ino} but BEFORE the dirfd is reopened for renameat.
@@ -64,12 +84,14 @@ export const fileMoveTool = {
   id: 'file_move',
   name: 'FileMove',
   description:
-    'Rename or move a file (or directory) atomically. Both src and dst parent directories ' +
-    'must already exist. Cross-directory moves are supported (renameat binds both parents ' +
-    'through dirfd handles, race-free). The user sees a confirmation dialog showing both ' +
-    'paths and their realpaths; sensitive sources or destinations are hard-rejected. ' +
-    'Leaf no-follow rename: a symlink at src moves the link itself, never the file the link ' +
-    'points to. Existing symlink at dst is refused (use file_delete first).',
+    'Rename or move a file (or symlink) atomically. Both src and dst parent directories ' +
+    'must already exist AND must NOT contain any symlinked ancestor (a parent symlink is ' +
+    'refused with PARENT_HAS_SYMLINK and a hint pointing at the resolved path — retry with ' +
+    'that). Cross-directory moves are supported (renameat binds both parents through dirfd ' +
+    'handles, race-free). The user sees a confirmation dialog showing both paths and their ' +
+    'realpaths; sensitive sources or destinations are hard-rejected. Leaf no-follow rename: ' +
+    'a symlink at src moves the link itself, never the file the link points to. Existing ' +
+    'symlink at dst is refused (use file_delete first).',
   category: 'filesystem',
   requiresPermission: true,
   isConcurrencySafe: false,
@@ -143,6 +165,68 @@ export const fileMoveTool = {
         ok: false,
         output: `Atomic commit failed: ${err.message}`,
         error: 'COMMIT_FAILED',
+      };
+    }
+
+    // ── Refuse moves whose lexical parent contains a symlink ─────────
+    // Round 13 follow-up #3 (Codex 🔴): without this guard, an attacker
+    // could swap a parent-symlink between commit and dirfd open to
+    // redirect renameat — bypassing the resolvedSrc/resolvedDst that
+    // the gate's commit verified. Run AFTER sensitivity check so
+    // sensitive paths (e.g. /etc/hosts whose parent /etc resolves
+    // through /private/etc on macOS) hard-reject as DENIED first.
+    const srcParentResolve = await parentHasSymlinkAncestor(srcParent);
+    if (srcParentResolve.error) {
+      const e = srcParentResolve.error;
+      if (e.code === 'ENOENT') {
+        return { ok: false, output: `Source parent ${srcParent} does not exist.`, error: 'PARENT_NOT_FOUND' };
+      }
+      if (e.code === 'ELOOP') {
+        return { ok: false, output: `Source parent ${srcParent} is a symlink loop.`, error: 'PARENT_NOT_DIR' };
+      }
+      if (e.code === 'ENOTDIR') {
+        return { ok: false, output: `Source parent ${srcParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
+      }
+      return { ok: false, output: `Cannot resolve source parent ${srcParent}: ${e.message}`, error: e.message };
+    }
+    if (srcParentResolve.hasSymlink) {
+      return {
+        ok: false,
+        output:
+          `Source path contains a symlinked ancestor (${srcParent} → ${srcParentResolve.resolved}). ` +
+          `file_move refuses these to avoid post-approval ancestor-swap races. ` +
+          `Retry with the resolved path: ${srcParentResolve.resolved}/${srcLeaf}`,
+        error: 'PARENT_HAS_SYMLINK',
+        meta: { lexicalPath: absSrc, resolvedParent: srcParentResolve.resolved, leaf: srcLeaf },
+      };
+    }
+    const dstParentResolve = await parentHasSymlinkAncestor(dstParent);
+    if (dstParentResolve.error) {
+      const e = dstParentResolve.error;
+      if (e.code === 'ENOENT') {
+        return {
+          ok: false,
+          output: `Destination parent ${dstParent} does not exist. Use file_mkdir to create it first.`,
+          error: 'PARENT_NOT_FOUND',
+        };
+      }
+      if (e.code === 'ELOOP') {
+        return { ok: false, output: `Destination parent ${dstParent} is a symlink loop.`, error: 'PARENT_NOT_DIR' };
+      }
+      if (e.code === 'ENOTDIR') {
+        return { ok: false, output: `Destination parent ${dstParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
+      }
+      return { ok: false, output: `Cannot resolve destination parent ${dstParent}: ${e.message}`, error: e.message };
+    }
+    if (dstParentResolve.hasSymlink) {
+      return {
+        ok: false,
+        output:
+          `Destination path contains a symlinked ancestor (${dstParent} → ${dstParentResolve.resolved}). ` +
+          `file_move refuses these to avoid post-approval ancestor-swap races. ` +
+          `Retry with the resolved path: ${dstParentResolve.resolved}/${dstLeaf}`,
+        error: 'PARENT_HAS_SYMLINK',
+        meta: { lexicalPath: absDst, resolvedParent: dstParentResolve.resolved, leaf: dstLeaf },
       };
     }
 

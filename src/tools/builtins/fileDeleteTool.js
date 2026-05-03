@@ -29,7 +29,10 @@ export const fileDeleteTool = {
   id: 'file_delete',
   name: 'FileDelete',
   description:
-    'Move one or more files (or directories, or symlinks) into the trash quarantine. ' +
+    'Move one or more FILES OR SYMLINKS into the trash quarantine. ' +
+    'Directories are NOT supported — recursive directory delete needs an atomic dirfd-walk ' +
+    'primitive that melo does not yet implement. To remove a directory, file_delete each entry ' +
+    'one at a time, or fall back to bash (Phase 2D will gate it through bashRiskParser). ' +
     'The user sees TWO confirmation dialogs: an intent prompt followed by a filename / "DELETE" string check. ' +
     'Files land in $MELO_HOME/.melo-trash/ and can be restored for at least 7 days. ' +
     'Sensitive paths (system, credential, $MELO_HOME) are hard-rejected. ' +
@@ -43,7 +46,7 @@ export const fileDeleteTool = {
       paths: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Absolute or workspace-relative paths to delete. All paths must pass safety checks; any rejection aborts the entire batch.',
+        description: 'Absolute or workspace-relative paths to delete. Each path must point to a regular file or symlink — directory paths are refused upfront with a clear error. All paths must pass safety checks; any rejection aborts the entire batch.',
       },
       reason: {
         type: 'string',
