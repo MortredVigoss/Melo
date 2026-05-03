@@ -40,7 +40,9 @@ import {
   symlink,
   cp,
   readdir,
+  open,
 } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
@@ -619,16 +621,55 @@ export async function restoreFromTrash(operationId, opts = {}) {
       restored.push(entry.originalPath);
     } else if (entry.wasDirectory) {
       await mkdir(dirname(resolvedTarget), { recursive: true });
-      // node:fs cp() refuses to overwrite a non-empty dir; remove
-      // first when overwrite is requested.
-      if (exists && opts.overwrite) {
-        await rm(resolvedTarget, { recursive: true, force: true });
+      // Codex Phase 2A holistic refactor (2026-05-03): defensive
+      // lstat the leaf — if it's now a symlink, refuse rather
+      // than letting cp follow it. Best-effort against post-commit
+      // dest swap; deeper race windows inside cp's recursion are
+      // a known limitation (no atomic dir-restore primitive).
+      try {
+        const dstLst = await lstat(resolvedTarget);
+        if (dstLst.isSymbolicLink()) {
+          throw new Error(
+            `Refusing to restore directory over symlink at ${resolvedTarget}.`,
+          );
+        }
+        if (opts.overwrite) {
+          await rm(resolvedTarget, { recursive: true, force: true });
+        }
+      } catch (err) {
+        if (err && err.code !== 'ENOENT') throw err;
+        // ENOENT = leaf doesn't exist, that's fine for restore.
       }
       await cp(src, resolvedTarget, { recursive: true });
       restored.push(resolvedTarget);
     } else {
       await mkdir(dirname(resolvedTarget), { recursive: true });
-      await copyFile(src, resolvedTarget);
+      // File restore: write via fd with O_NOFOLLOW so a destination
+      // swapped to a symlink between sensitivity check and now
+      // can't redirect us at /etc/hosts. ELOOP at open surfaces
+      // as a clean restore failure.
+      let dstFh;
+      try {
+        dstFh = await open(
+          resolvedTarget,
+          fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
+          0o644,
+        );
+      } catch (err) {
+        if (err && err.code === 'ELOOP') {
+          throw new Error(
+            `Refusing to restore over symlink at ${resolvedTarget} ` +
+            `(kernel ELOOP via O_NOFOLLOW).`,
+          );
+        }
+        throw err;
+      }
+      try {
+        const buf = await readFile(src);
+        await dstFh.write(buf, 0);
+      } finally {
+        await dstFh.close().catch(() => {});
+      }
       restored.push(resolvedTarget);
     }
   }

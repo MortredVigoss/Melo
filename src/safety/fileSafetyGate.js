@@ -252,7 +252,7 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
 //     category: string,                // most-restrictive PATH_CATEGORY
 //   }
 export async function precheckHardBlockedWrite(absPath) {
-  const { realPath, hasSymlinkInChain } = await safeResolvePath(absPath);
+  const { realPath, hasSymlinkInChain, exists } = await safeResolvePath(absPath);
   if (isAnySensitive(absPath, realPath, isHardBlockedWrite)) {
     const category = moreRestrictiveCategory(
       classifyPath(absPath),
@@ -266,6 +266,7 @@ export async function precheckHardBlockedWrite(absPath) {
         `— blocked by safety policy (category: ${category}).`,
       realPath,
       hasSymlinkInChain,
+      exists,
       category,
     };
   }
@@ -274,6 +275,7 @@ export async function precheckHardBlockedWrite(absPath) {
     denyReason: null,
     realPath,
     hasSymlinkInChain,
+    exists,
     category: moreRestrictiveCategory(
       classifyPath(absPath),
       classifyPath(realPath),

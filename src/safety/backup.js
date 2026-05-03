@@ -189,9 +189,40 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
 
   await mkdir(beforeDir, { recursive: true });
 
+  // Codex Phase 2A holistic refactor (2026-05-03): caller may pass
+  // a pre-read buffer via ctx.preReadContent so we don't need to
+  // open() the source again — the tool already holds an O_NOFOLLOW
+  // fd on the inode and has read the old content into memory.
+  // This eliminates the snapshot-time open() race window entirely.
+  //
+  //   ctx.preReadContent === undefined  → fall through to the
+  //                                       legacy path-based read
+  //                                       (still uses O_NOFOLLOW)
+  //   ctx.preReadContent === null       → caller asserts wasMissing
+  //                                       (e.g. a create flow that
+  //                                       just opened with O_EXCL —
+  //                                       the file is empty by
+  //                                       construction; restoring =
+  //                                       unlinking)
+  //   ctx.preReadContent instanceof Buffer → use this content
   let beforePath = null;
   let sha = null;
-  if (!wasMissing) {
+  if (ctx.preReadContent !== undefined) {
+    if (ctx.preReadContent === null) {
+      wasMissing = true;
+      st = null;
+    } else if (Buffer.isBuffer(ctx.preReadContent)) {
+      wasMissing = false;
+      beforePath = join(beforeDir, basename(absPath));
+      await writeFile(beforePath, ctx.preReadContent);
+      sha = createHash('sha256').update(ctx.preReadContent).digest('hex');
+      st = { size: ctx.preReadContent.length, isDirectory: () => false };
+    } else {
+      throw new Error(
+        'snapshotBeforeWrite: ctx.preReadContent must be Buffer or null.',
+      );
+    }
+  } else if (!wasMissing) {
     if (st.isDirectory()) {
       // Backup of an entire directory write is an unusual op — refuse
       // for now. The gate's write/edit paths are file-level.
@@ -199,11 +230,11 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
       throw new Error('snapshotBeforeWrite does not support directories.');
     }
     beforePath = join(beforeDir, basename(absPath));
-    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW. If absPath
-    // becomes a symlink between the stat() above and this open()
-    // (post-commit attacker race), the kernel returns ELOOP and we
-    // surface the failure rather than silently reading the symlink's
-    // target into the backup folder. copyFile() would have followed.
+    // Legacy path: O_NOFOLLOW. If absPath becomes a symlink between
+    // the stat() above and this open() (post-commit attacker race),
+    // the kernel returns ELOOP and we surface the failure rather
+    // than silently reading the symlink's target into the backup
+    // folder. copyFile() would have followed.
     let fh;
     try {
       fh = await open(absPath, O_RDONLY | O_NOFOLLOW);
@@ -414,13 +445,39 @@ export async function restoreFromBackup(operationId, opts = {}) {
 
   if (target.wasMissing) {
     // Undo of a "create" snapshot — remove the resolved target.
-    // Using resolvedTarget (not originalPath) means a symlink swap
-    // between approval and rm cannot redirect us at a sensitive file.
+    // fs.rm operates on the directory entry (no leaf symlink follow),
+    // so this is safe even if dest was swapped post-commit.
     await rm(resolvedTarget, { force: true });
   } else {
     const beforePath = join(target.opDir, 'before', basename(target.originalPath));
     await mkdir(join(resolvedTarget, '..'), { recursive: true }).catch(() => {});
-    await copyFile(beforePath, resolvedTarget);
+    // Codex Phase 2A holistic refactor (2026-05-03): write via fd
+    // with O_NOFOLLOW. copyFile() would have followed a symlink at
+    // the destination, potentially writing the snapshot bytes to
+    // /etc/hosts if dest was swapped post-commit. ELOOP at this
+    // open surfaces as a clean restore failure.
+    let dstFh;
+    try {
+      dstFh = await open(
+        resolvedTarget,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW,
+        0o644,
+      );
+    } catch (err) {
+      if (err && err.code === 'ELOOP') {
+        throw new Error(
+          `Refusing to restore over symlink at ${resolvedTarget} ` +
+          `(kernel ELOOP via O_NOFOLLOW).`,
+        );
+      }
+      throw err;
+    }
+    try {
+      const buf = await readFile(beforePath);
+      await dstFh.write(buf, 0);
+    } finally {
+      await dstFh.close().catch(() => {});
+    }
   }
 
   if (opts.purgeAfterRestore !== false) {

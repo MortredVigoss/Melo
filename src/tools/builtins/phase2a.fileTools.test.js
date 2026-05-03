@@ -620,9 +620,9 @@ test('fileWriteTool: post-commit symlink swap → ELOOP via O_NOFOLLOW → COMMI
     // Use the post-commit hook to simulate an attacker swapping the
     // target file out for a symlink to /etc/hosts AFTER commit but
     // BEFORE the write. The kernel's O_NOFOLLOW must catch this.
-    _setWritePostCommitHook(async ({ resolvedTarget }) => {
-      await rm(resolvedTarget, { force: true });
-      await symlink('/etc/hosts', resolvedTarget);
+    _setWritePostCommitHook(async ({ realPath }) => {
+      await rm(realPath, { force: true });
+      await symlink('/etc/hosts', realPath);
     });
     try {
       const result = await fileWriteTool.run(
@@ -649,9 +649,9 @@ test('fileEditTool: post-commit symlink swap → ELOOP via O_NOFOLLOW → COMMIT
     const target = join(ws, 'foo.txt');
     await writeFile(target, 'foo', 'utf8');
 
-    _setEditPostCommitHook(async ({ resolvedTarget }) => {
-      await rm(resolvedTarget, { force: true });
-      await symlink('/etc/hosts', resolvedTarget);
+    _setEditPostCommitHook(async ({ realPath }) => {
+      await rm(realPath, { force: true });
+      await symlink('/etc/hosts', realPath);
     });
     try {
       const result = await fileEditTool.run(

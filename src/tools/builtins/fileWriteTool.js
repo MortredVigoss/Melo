@@ -1,33 +1,43 @@
 /**
  * Built-in tool: file_write
  *
- * Creates a new file or completely overwrites an existing one.
- * Phase 2A (2026-05-03): every write goes through the FileSafetyGate
- * — sensitivity rejected, symlink chain shown to the user, automatic
- * snapshot to `.melo-backups/<opId>/` before the actual writeFile,
- * and the post-write diff recorded for restore-with-context.
+ * Phase 2A holistic refactor (2026-05-03): every fs read/write
+ * happens through a SINGLE FileHandle (fh) opened with O_NOFOLLOW
+ * right after the safety pre-check. Once we hold the fh the kernel
+ * guarantees we are operating on the inode that was there at open
+ * time — any later symlink swap, rename, or replace at the path
+ * does not redirect our reads/writes.
  *
- * Use file_edit for targeted in-place edits; use file_write when:
- *   - Creating a file from scratch
- *   - The new content is entirely different from the original
+ * Flow:
+ *   1. precheckHardBlockedWrite (no fs touch beyond lstat)
+ *   2. open(realPath, O_NOFOLLOW + flags) — sole gateway to the fs
+ *      • create:   O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW
+ *      • overwrite:O_RDWR             | O_NOFOLLOW
+ *   3. fh.readFile() to capture old content (overwrite path)
+ *   4. gate.requestWrite (UI prompt with diff)
+ *   5. gate.commitOperation (lexical→real mapping unchanged)
+ *   6. fh.readFile() again for stale check (still on the same inode)
+ *   7. snapshotBeforeWrite with preReadContent buffer (no second open)
+ *   8. fh.truncate(0) + fh.write(content)
+ *   9. recordAfterDiff
+ *   10. fh.close() in finally; on deny+create, unlink the empty file
+ *      we just created
+ *
+ * The single-fh lifecycle closes every TOCTOU window between
+ * approval and write that earlier patch-by-patch rounds kept
+ * uncovering. Race classifications:
+ *   • precheck → open: caught by O_NOFOLLOW (ELOOP) and O_EXCL
+ *     (EEXIST on create)
+ *   • open → close: kernel locks the inode under fh; path swaps
+ *     don't affect us
+ *   • commit lexical→real mismatch: caught by gate.commitOperation
  */
 
-import { writeFile, mkdir, readFile, stat, open } from 'node:fs/promises';
+import { unlink, lstat } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { isAbsolute, resolve, dirname } from 'node:path';
-
-const { O_WRONLY, O_CREAT, O_TRUNC, O_EXCL, O_NOFOLLOW } = fsConstants;
-
-// Test-only seam (Codex D Phase 2A round 5): post-commit hook fired
-// AFTER commitOperation but BEFORE the actual fs write. Tests use
-// it to inject a symlink swap or competing create to prove the
-// O_NOFOLLOW + O_EXCL kernel-level defences fire. No-op in
-// production. Never call from production code.
-let _postCommitHookForTests = null;
-export function _setPostCommitHookForTests(hook) {
-  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
-}
+import { isAbsolute, resolve } from 'node:path';
 
 import {
   requestWrite,
@@ -40,22 +50,44 @@ import {
   recordAfterDiff,
 } from '../../safety/backup.js';
 
+const { O_RDWR, O_CREAT, O_EXCL, O_NOFOLLOW } = fsConstants;
+
+// Test-only seam: hook fired after the fh is opened and after the
+// gate's commit returns, BEFORE the stale-check / snapshot / write
+// steps. Tests use it to verify the fh anchor really protects
+// against post-open path swaps.
+let _postCommitHookForTests = null;
+export function _setPostCommitHookForTests(hook) {
+  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
+}
+
 function sha256(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-// Compact unified-diff-ish preview of the change. Not a real diff;
-// the goal is to give the UI enough to render a side-by-side view
-// without shipping a full diff library. Truncated to keep prompt
-// payload small.
+// Always read the entire file from offset 0 — fh.readFile() advances
+// the internal position, so re-reading would return empty. Using
+// explicit position=0 means we get a fresh full read for both the
+// pre-approval old-content read and the post-commit stale check.
+async function readFromStart(fh) {
+  const st = await fh.stat();
+  if (st.size === 0) return Buffer.alloc(0);
+  const buf = Buffer.allocUnsafe(st.size);
+  let total = 0;
+  while (total < st.size) {
+    const { bytesRead } = await fh.read(buf, total, st.size - total, total);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+  }
+  return buf.subarray(0, total);
+}
+
 function buildDiffPreview(oldText, newText) {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   const out = [];
   out.push(`--- old (${oldLines.length} lines, ${oldText.length} bytes)`);
   out.push(`+++ new (${newLines.length} lines, ${newText.length} bytes)`);
-  // Show first 40 lines of each side so the UI has something concrete
-  // for visual comparison; UI may render a real diff client-side.
   out.push('--- BEGIN OLD ---');
   out.push(...oldLines.slice(0, 40));
   if (oldLines.length > 40) out.push(`... (${oldLines.length - 40} more lines)`);
@@ -115,10 +147,7 @@ export const fileWriteTool = {
       ? filePath
       : resolve(workspacePath || process.cwd(), filePath);
 
-    // ── Sensitivity pre-check — Codex D Phase 2A round 1 (2026-05-03) ─
-    // MUST run before any stat / readFile / snapshot. A sensitive
-    // path returns DENIED with zero fs touch — no content read into
-    // memory, no backup folder created, no UI prompt.
+    // ── 1. Sensitivity pre-check (no fs read of target) ────────────────
     const precheck = await precheckHardBlockedWrite(absPath);
     if (precheck.blocked) {
       return {
@@ -129,39 +158,74 @@ export const fileWriteTool = {
       };
     }
 
-    // ── Read old content (if any) for diff + backup ────────────────────
-    // Safe to fs-touch now: precheck confirmed the path is non-sensitive.
-    let oldContent = '';
-    let isCreate = true;
+    const isCreate = !precheck.exists;
+    const realPath = precheck.realPath;
+
+    // ── 2. Open the fh — sole gateway to the fs from here on ───────────
+    let fh;
+    let createdEmptyFile = false; // for cleanup on deny if create succeeded
     try {
-      const st = await stat(absPath);
-      if (st.isFile()) {
-        oldContent = await readFile(absPath, 'utf8');
-        isCreate = false;
-      } else if (st.isDirectory()) {
+      if (isCreate) {
+        // O_RDWR (not O_WRONLY) so we can read for stale-content check.
+        fh = await open(realPath, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0o644);
+        createdEmptyFile = true;
+      } else {
+        fh = await open(realPath, O_RDWR | O_NOFOLLOW);
+      }
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
         return {
           ok: false,
-          output: `Refusing to overwrite directory ${absPath} with file content.`,
+          output:
+            `Target ${realPath} appeared between approval and write — ` +
+            `re-run as overwrite or pick a different path.`,
+          error: 'STALE_CONTENT',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'create-eexist' },
+        };
+      }
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} became a symlink between precheck and open — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+        };
+      }
+      if (err && err.code === 'EISDIR') {
+        return {
+          ok: false,
+          output: `Refusing to overwrite directory ${realPath} with file content.`,
           error: 'TARGET_IS_DIR',
         };
       }
-    } catch (err) {
-      if (err && err.code !== 'ENOENT') {
-        return { ok: false, output: `Cannot stat target: ${err.message}`, error: err.message };
+      if (err && err.code === 'ENOENT') {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} disappeared between precheck and open ` +
+            `(deleted by a concurrent process).`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+        };
       }
-      // ENOENT → it's a create; oldContent stays ''.
+      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
     }
 
-    const oldHash = isCreate ? null : sha256(oldContent);
-    const newHash = sha256(content);
-    const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
-
-    // ── FileSafetyGate approval + atomic commit ────────────────────────
-    // Note: snapshotBeforeWrite is now AFTER approval (was pre-approval
-    // before round 1 — that left .melo-backups entries on deny).
-    let approved;
     try {
-      approved = await requestWrite({
+      // ── 3. Read old content via fh (overwrite path only) ─────────────
+      let oldBuffer = Buffer.alloc(0);
+      if (!isCreate) {
+        oldBuffer = await readFromStart(fh);
+      }
+      const oldContent = oldBuffer.toString('utf8');
+      const oldHash = isCreate ? null : sha256(oldContent);
+      const newHash = sha256(content);
+      const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
+
+      // ── 4. UI approval ───────────────────────────────────────────────
+      const approved = await requestWrite({
         path: absPath,
         chatId,
         sseEmitter,
@@ -175,182 +239,135 @@ export const fileWriteTool = {
         newHash,
         diffPreview,
       });
-    } catch (err) {
-      return {
-        ok: false,
-        output: err.message,
-        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
-      };
-    }
 
-    let resolvedTarget;
-    try {
-      const committed = await commitOperation(approved.operationToken, {
+      // ── 5. Commit verifies lexical→real mapping unchanged ────────────
+      await commitOperation(approved.operationToken, {
         expectedKinds: [OP_KIND.WRITE_NEW, OP_KIND.WRITE_OVERWRITE],
       });
-      resolvedTarget = committed.resolvedTarget;
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Atomic commit failed: ${err.message}`,
-        error: 'COMMIT_FAILED',
-      };
-    }
 
-    // Test-only injection point: fired RIGHT AFTER commit, BEFORE
-    // any post-commit fs read/write. Lets tests inject a symlink
-    // swap so the stale check (and downstream snapshot/write) all
-    // hit the kernel-level O_NOFOLLOW guard.
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ resolvedTarget, isCreate, lexicalPath: absPath, phase: 'post-commit' }); } catch {}
-    }
+      // Test-only seam after commit, before stale/snapshot/write.
+      if (_postCommitHookForTests) {
+        try { await _postCommitHookForTests({ realPath, isCreate, lexicalPath: absPath }); } catch {}
+      }
 
-    // Codex D Phase 2A round 6 (2026-05-03): stale-content check is
-    // now fd-based with O_NOFOLLOW. The earlier readFile(path)
-    // implementation followed symlinks — a target swapped to
-    // /etc/hosts in the post-commit window would have been read
-    // into memory before the later O_NOFOLLOW write caught it.
-    // Now an ELOOP at this stage short-circuits to COMMIT_FAILED
-    // and the file we shouldn't read is never opened.
-    if (!isCreate && oldHash) {
-      let currentContent;
-      let stalefh;
-      try {
-        stalefh = await open(resolvedTarget, fsConstants.O_RDONLY | O_NOFOLLOW);
-      } catch (err) {
-        if (err && err.code === 'ELOOP') {
-          return {
-            ok: false,
-            output:
-              `Target ${resolvedTarget} became a symlink between approval and stale-check — ` +
-              `kernel refused via O_NOFOLLOW.`,
-            error: 'COMMIT_FAILED',
-            meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
-          };
-        }
-        return {
-          ok: false,
-          output: `Cannot re-read target for stale-content check: ${err.message}`,
-          error: 'COMMIT_FAILED',
-        };
-      }
-      try {
-        const buf = await stalefh.readFile();
-        currentContent = buf.toString('utf8');
-      } finally {
-        await stalefh.close().catch(() => {});
-      }
-      if (sha256(currentContent) !== oldHash) {
+      // ── 5b. Inode anchor check ───────────────────────────────────────
+      // The fh is locked to the inode at open time. If an attacker
+      // swapped the path entry to a symlink (or to a different file)
+      // between commit and now, our fh would silently write to an
+      // orphaned inode while the path points elsewhere — secure but
+      // surprising. Verify the path STILL points at our anchored
+      // inode; otherwise abort.
+      const fhStat = await fh.stat();
+      const pathStat = await lstat(realPath).catch(() => null);
+      if (
+        !pathStat ||
+        pathStat.isSymbolicLink() ||
+        pathStat.ino !== fhStat.ino
+      ) {
         return {
           ok: false,
           output:
-            `File at ${resolvedTarget} changed between approval and write — ` +
-            `stale-content check failed. Re-run file_write with the latest content.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, resolvedTarget },
+            `Target ${realPath} was replaced (inode changed or now a symlink) ` +
+            `between approval and write — kernel-level race detected.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-    }
 
-    // ── Backup AFTER approval (Codex D round 1 fix), BEFORE write ──────
-    // A user deny earlier short-circuited above with zero fs touch; we
-    // only get here once the user has actively approved. We snapshot
-    // here so a crash between the snapshot and the actual writeFile
-    // still leaves a recoverable backup.
-    //
-    // Codex D round 2 (2026-05-03): snapshot uses the COMMIT-RESOLVED
-    // realpath, not the lexical input. This closes the commit→snapshot
-    // race window where a symlink swap could cause snapshot to copy a
-    // sensitive file (e.g. /etc/hosts) into .melo-backups/. The
-    // user-facing lexical path is recorded separately for UI display.
-    let snap;
-    try {
-      snap = await snapshotBeforeWrite(resolvedTarget, {
+      // ── 6. Stale check via fh (sees the inode's current content) ─────
+      // For overwrite: compare current vs the oldHash captured pre-approval.
+      // For create: the baseline is the empty file we just opened with
+      // O_CREAT|O_EXCL; any non-empty content means another process
+      // wrote to our inode during the approval window — abort so we
+      // don't silently clobber the racer's bytes.
+      const baselineHash = isCreate ? sha256('') : oldHash;
+      const currentBuffer = await readFromStart(fh);
+      if (sha256(currentBuffer.toString('utf8')) !== baselineHash) {
+        throw Object.assign(new Error('stale-content'), { __staleContent: true });
+      }
+
+      // ── 7. Snapshot from the buffer we already have ──────────────────
+      const snap = await snapshotBeforeWrite(realPath, {
         chatId,
         requestedBy: 'file_write',
         reason: isCreate ? 'create' : 'overwrite',
         lexicalPath: absPath,
+        // null: caller asserts wasMissing (create flow); Buffer: use this content.
+        preReadContent: isCreate ? null : oldBuffer,
       });
+
+      // ── 8. Truncate + write via fh ───────────────────────────────────
+      const writeBuf = Buffer.from(content, 'utf8');
+      if (!isCreate) {
+        await fh.truncate(0);
+      }
+      await fh.write(writeBuf, 0, writeBuf.length, 0);
+
+      // ── 9. Record diff for restore-with-context ──────────────────────
+      if (!isCreate && diffPreview) {
+        try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
+      }
+
+      createdEmptyFile = false; // success — keep the file we wrote
+
+      const lineCount = content.split('\n').length;
+      return {
+        ok: true,
+        output: `Written ${realPath} — ${lineCount} line(s), ${content.length} bytes.`,
+        meta: {
+          path: realPath,
+          lexicalPath: absPath,
+          lines: lineCount,
+          bytes: content.length,
+          backupOperationId: snap.operationId,
+          wasCreate: isCreate,
+        },
+      };
     } catch (err) {
+      if (err && err.__staleContent) {
+        // For create flow that race-detected, the file was modified
+        // by another process during the approval window. We don't
+        // unlink — the racer's bytes belong to them, and removing
+        // the file would silently destroy their content even though
+        // they wrote it independently of us. createdEmptyFile is
+        // cleared so the finally block leaves the file alone.
+        if (isCreate) {
+          createdEmptyFile = false;
+        }
+        return {
+          ok: false,
+          output:
+            `File at ${realPath} changed between approval and write — ` +
+            `stale-content check failed. Re-run file_write with the latest content.`,
+          error: 'STALE_CONTENT',
+          meta: {
+            lexicalPath: absPath,
+            realPath,
+            raceKind: isCreate ? 'create-eexist' : undefined,
+          },
+        };
+      }
+      if (err && err.code === 'FILE_SAFETY_DENIED') {
+        return {
+          ok: false,
+          output: err.message,
+          error: 'DENIED',
+          meta: { denied: true },
+        };
+      }
       return {
         ok: false,
-        output: `Backup snapshot failed: ${err.message}`,
-        error: 'SNAPSHOT_FAILED',
+        output: `Write error: ${err.message}`,
+        error: err.message,
       };
-    }
-
-    // ── Actual write — to the commit-resolved real target ──────────────
-    try {
-      await mkdir(dirname(resolvedTarget), { recursive: true });
-    } catch (err) {
-      return { ok: false, output: `Cannot create directory: ${err.message}`, error: err.message };
-    }
-
-    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW + O_EXCL.
-    //   - O_NOFOLLOW: if the target was swapped to a symlink between
-    //     commit and now (kernel-level race), open() returns ELOOP
-    //     and we surface COMMIT_FAILED rather than writing through
-    //     the new symlink to /etc/hosts / etc.
-    //   - O_EXCL on the create flow: if the target appeared between
-    //     approval and now (someone else created the file), open()
-    //     returns EEXIST and we surface STALE_CONTENT rather than
-    //     overwriting their content.
-    const flags = isCreate
-      ? O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW
-      : O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW;
-    let fh;
-    try {
-      fh = await open(resolvedTarget, flags, 0o644);
-    } catch (err) {
-      if (err && err.code === 'EEXIST') {
-        return {
-          ok: false,
-          output:
-            `Target ${resolvedTarget} appeared between approval and write — ` +
-            `re-run as overwrite or pick a different path.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'create-eexist' },
-        };
-      }
-      if (err && err.code === 'ELOOP') {
-        return {
-          ok: false,
-          output:
-            `Target ${resolvedTarget} became a symlink between approval and write — ` +
-            `kernel refused via O_NOFOLLOW.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
-        };
-      }
-      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-    }
-    try {
-      await fh.writeFile(content, 'utf8');
-    } catch (err) {
-      return { ok: false, output: `Write error: ${err.message}`, error: err.message };
     } finally {
       await fh.close().catch(() => {});
+      if (createdEmptyFile) {
+        // We created the file via O_CREAT|O_EXCL but failed to write
+        // the user's content (deny / stale / commit failure). Unlink
+        // the empty placeholder so we don't leave litter behind.
+        try { await unlink(realPath); } catch {}
+      }
     }
-
-    // ── Record the diff for the backup so a future restore can
-    // show "what this write changed" without re-reading the live file.
-    if (!isCreate && diffPreview) {
-      try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
-    }
-
-    const lineCount = content.split('\n').length;
-    return {
-      ok: true,
-      output: `Written ${resolvedTarget} — ${lineCount} line(s), ${content.length} bytes.`,
-      meta: {
-        path: resolvedTarget,
-        lexicalPath: absPath,
-        lines: lineCount,
-        bytes: content.length,
-        backupOperationId: snap.operationId,
-        wasCreate: isCreate,
-      },
-    };
   },
 };

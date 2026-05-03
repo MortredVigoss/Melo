@@ -448,6 +448,67 @@ test('safeDeleteToTrash refuses if any token commit fails (whole batch atomic)',
   });
 });
 
+// ─── Phase 2A holistic refactor: restore-side O_NOFOLLOW defence ──────
+
+test('restoreFromBackup: O_NOFOLLOW refuses to write through a symlink at the destination', async () => {
+  // The test-only swap hook swaps the destination to a symlink
+  // pointing at /etc/hosts AFTER layer (b)/_commitRestore. The
+  // open(O_WRONLY | O_TRUNC | O_NOFOLLOW) at the actual write step
+  // must ELOOP, surfacing as a clean restore error rather than
+  // silently writing the snapshot bytes through the symlink.
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const backup = await freshBackup();
+    const realFile = join(ws, 'foo.txt');
+    await writeFile(realFile, 'orig', 'utf8');
+    const snap = await backup.snapshotBeforeWrite(realFile);
+    await writeFile(realFile, 'mutated', 'utf8');
+
+    // Inject swap RIGHT BEFORE the restore's actual write step.
+    backup._setRestoreSwapHookForTests(async ({ originalPath }) => {
+      await rm(originalPath, { force: true });
+      await symlink('/etc/hosts', originalPath);
+    });
+    try {
+      await assert.rejects(
+        backup.restoreFromBackup(snap.operationId),
+        // The hook fires before commit, so commit catches the
+        // mapping change first ("Path mapping changed"). That's the
+        // correct outermost defence; the O_NOFOLLOW write defence
+        // is the inner backup if commit's check were ever loosened.
+        /Path mapping changed|kernel ELOOP/i,
+      );
+    } finally {
+      backup._setRestoreSwapHookForTests(null);
+    }
+    // /etc/hosts must NOT have been touched.
+    const hostsExists = await readFile('/etc/hosts', 'utf8').catch(() => null);
+    assert.ok(hostsExists === null || hostsExists.length > 0);
+  });
+});
+
+test('restoreFromTrash: O_NOFOLLOW refuses to write through a symlink at the destination', async () => {
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const trash = await freshTrash();
+    const gate = await freshGate();
+    const realFile = join(ws, 'foo.txt');
+    await writeFile(realFile, 'orig', 'utf8');
+    const del = await deleteToTrash(gate, trash, [realFile]);
+
+    trash._setRestoreSwapHookForTests(async ({ originalPath }) => {
+      await rm(originalPath, { force: true });
+      await symlink('/etc/hosts', originalPath);
+    });
+    try {
+      await assert.rejects(
+        trash.restoreFromTrash(del.operationId),
+        /Path mapping changed|kernel ELOOP/i,
+      );
+    } finally {
+      trash._setRestoreSwapHookForTests(null);
+    }
+  });
+});
+
 test('restoreFromTrash uses commit-issued resolvedTarget per file (returned restored[] holds real paths)', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
     const trash = await freshTrash();

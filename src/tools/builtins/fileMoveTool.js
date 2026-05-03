@@ -46,7 +46,10 @@ export const fileMoveTool = {
     'Rename or move a file (or directory) from src to dst. ' +
     'The user sees a confirmation dialog showing both paths and their realpaths; ' +
     'sensitive sources or destinations are hard-rejected. ' +
-    'Both ends of the move are TOCTOU-protected — a symlink swap between approval and rename aborts the operation.',
+    'Leaf no-follow rename: a symlink at src moves the link itself, never the file the link points to. ' +
+    'Existing symlink at dst is refused (use file_delete first). ' +
+    'Known limitation: a parent-directory swap-to-symlink between commit and rename ' +
+    'is a microsecond kernel-level race that is not defended against (no Node.js renameat2).',
   category: 'filesystem',
   requiresPermission: true,
   isConcurrencySafe: false,

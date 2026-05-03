@@ -1,27 +1,16 @@
 /**
  * Built-in tool: file_edit
  *
- * Replaces an exact string occurrence in a file.
- * Phase 2A (2026-05-03): every edit goes through the FileSafetyGate
- * — sensitivity rejected, symlink chain shown to the user, automatic
- * snapshot to `.melo-backups/<opId>/` before the actual writeFile,
- * and the post-write diff recorded for restore-with-context.
+ * Phase 2A holistic refactor (2026-05-03): every fs read/write
+ * happens through a SINGLE FileHandle (fh) opened with O_NOFOLLOW
+ * right after the safety pre-check. See fileWriteTool.js for the
+ * full flow rationale.
  */
 
-import { readFile, writeFile, open } from 'node:fs/promises';
+import { unlink, lstat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-
-const { O_WRONLY, O_TRUNC, O_NOFOLLOW } = fsConstants;
-
-// Test-only seam (Codex D Phase 2A round 5): post-commit hook
-// fired AFTER commitOperation but BEFORE the actual fs write. Tests
-// use it to inject a symlink swap to prove the O_NOFOLLOW kernel
-// defence fires. No-op in production.
-let _postCommitHookForTests = null;
-export function _setPostCommitHookForTests(hook) {
-  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
-}
 
 import {
   requestEdit,
@@ -33,6 +22,28 @@ import {
   snapshotBeforeWrite,
   recordAfterDiff,
 } from '../../safety/backup.js';
+
+const { O_RDWR, O_NOFOLLOW } = fsConstants;
+
+let _postCommitHookForTests = null;
+export function _setPostCommitHookForTests(hook) {
+  _postCommitHookForTests = typeof hook === 'function' ? hook : null;
+}
+
+// Always read from offset 0 — fh.readFile() advances position so
+// repeated calls would return empty. See fileWriteTool for rationale.
+async function readFromStart(fh) {
+  const st = await fh.stat();
+  if (st.size === 0) return Buffer.alloc(0);
+  const buf = Buffer.allocUnsafe(st.size);
+  let total = 0;
+  while (total < st.size) {
+    const { bytesRead } = await fh.read(buf, total, st.size - total, total);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+  }
+  return buf.subarray(0, total);
+}
 
 function buildEditDiffPreview(oldString, newString, count, replaceAll) {
   const oldLines = oldString.split('\n');
@@ -98,11 +109,6 @@ export const fileEditTool = {
     },
   ],
 
-  /**
-   * @param {{ path: string, old_string: string, new_string: string, replace_all?: boolean }} args
-   * @param {import('../tool.js').ToolRunContext} context
-   * @returns {Promise<import('../tool.js').ToolResult>}
-   */
   async run(args, context = {}) {
     const { path: filePath, old_string, new_string, replace_all = false } = args;
     const { workspacePath, sseEmitter, signal, chatId } = context;
@@ -111,12 +117,7 @@ export const fileEditTool = {
       ? filePath
       : resolve(workspacePath || process.cwd(), filePath);
 
-    // ── Sensitivity pre-check — Codex D Phase 2A round 1 (2026-05-03) ─
-    // MUST run before any readFile / occurrence count / snapshot. A
-    // sensitive path returns DENIED immediately so a probing edit
-    // attempt against /etc/hosts or ~/.ssh/* never reads the file
-    // and never leaks "old_string not found" / "ambiguous" signals
-    // about the file's contents.
+    // ── 1. Sensitivity pre-check ───────────────────────────────────────
     const precheck = await precheckHardBlockedWrite(absPath);
     if (precheck.blocked) {
       return {
@@ -127,41 +128,79 @@ export const fileEditTool = {
       };
     }
 
-    let original;
-    try {
-      original = await readFile(absPath, 'utf8');
-    } catch (err) {
-      return { ok: false, output: `Cannot read file: ${err.message}`, error: err.message };
-    }
-
-    const count = original.split(old_string).length - 1;
-    if (count === 0) {
+    if (!precheck.exists) {
       return {
         ok: false,
-        output: `old_string not found in ${absPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
+        output: `Cannot read file: ${absPath} does not exist.`,
         error: 'NOT_FOUND',
       };
     }
-    if (count > 1 && !replace_all) {
-      return {
-        ok: false,
-        output: `old_string appears ${count} times in ${absPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
-        error: 'AMBIGUOUS',
-      };
+
+    const realPath = precheck.realPath;
+
+    // ── 2. Open fh — sole gateway to the fs from here on ───────────────
+    let fh;
+    try {
+      fh = await open(realPath, O_RDWR | O_NOFOLLOW);
+    } catch (err) {
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} became a symlink between precheck and open — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+        };
+      }
+      if (err && err.code === 'ENOENT') {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} disappeared between precheck and open.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+        };
+      }
+      if (err && err.code === 'EISDIR') {
+        return {
+          ok: false,
+          output: `${realPath} is a directory, not a file.`,
+          error: 'TARGET_IS_DIR',
+        };
+      }
+      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
     }
 
-    const updated = replace_all
-      ? original.split(old_string).join(new_string)
-      : original.replace(old_string, new_string);
-
-    const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
-
-    // ── FileSafetyGate approval + atomic commit ────────────────────────
-    // snapshotBeforeWrite is intentionally AFTER approval (Codex D
-    // round 1 fix) so a deny path leaves zero .melo-backups residue.
-    let approved;
     try {
-      approved = await requestEdit({
+      // ── 3. Read old via fh ───────────────────────────────────────────
+      const oldBuffer = await readFromStart(fh);
+      const original = oldBuffer.toString('utf8');
+
+      const count = original.split(old_string).length - 1;
+      if (count === 0) {
+        return {
+          ok: false,
+          output: `old_string not found in ${realPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
+          error: 'NOT_FOUND',
+        };
+      }
+      if (count > 1 && !replace_all) {
+        return {
+          ok: false,
+          output: `old_string appears ${count} times in ${realPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
+          error: 'AMBIGUOUS',
+        };
+      }
+
+      const updated = replace_all
+        ? original.split(old_string).join(new_string)
+        : original.replace(old_string, new_string);
+
+      const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
+
+      // ── 4. UI approval ───────────────────────────────────────────────
+      const approved = await requestEdit({
         path: absPath,
         chatId,
         sseEmitter,
@@ -172,144 +211,100 @@ export const fileEditTool = {
         newString: new_string,
         diffPreview,
       });
-    } catch (err) {
-      return {
-        ok: false,
-        output: err.message,
-        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
-      };
-    }
 
-    let resolvedTarget;
-    try {
-      const committed = await commitOperation(approved.operationToken, {
+      // ── 5. Commit ────────────────────────────────────────────────────
+      await commitOperation(approved.operationToken, {
         expectedKinds: [OP_KIND.EDIT],
       });
-      resolvedTarget = committed.resolvedTarget;
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Atomic commit failed: ${err.message}`,
-        error: 'COMMIT_FAILED',
-      };
-    }
 
-    // Test-only injection point: fired RIGHT AFTER commit, BEFORE
-    // any post-commit fs read/write. Lets tests inject a symlink
-    // swap so the stale check (and downstream snapshot/write) all
-    // hit the kernel-level O_NOFOLLOW guard.
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ resolvedTarget, lexicalPath: absPath, phase: 'post-commit' }); } catch {}
-    }
+      if (_postCommitHookForTests) {
+        try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
+      }
 
-    // Codex D Phase 2A round 6 (2026-05-03): stale-content check is
-    // fd-based with O_NOFOLLOW. Path-level readFile would have
-    // followed a post-commit symlink swap and read the sensitive
-    // target into memory before the later O_NOFOLLOW write caught it.
-    let currentOriginal;
-    let stalefh;
-    try {
-      stalefh = await open(resolvedTarget, fsConstants.O_RDONLY | O_NOFOLLOW);
-    } catch (err) {
-      if (err && err.code === 'ELOOP') {
+      // ── 5b. Inode anchor check ───────────────────────────────────────
+      const fhStat = await fh.stat();
+      const pathStat = await lstat(realPath).catch(() => null);
+      if (
+        !pathStat ||
+        pathStat.isSymbolicLink() ||
+        pathStat.ino !== fhStat.ino
+      ) {
         return {
           ok: false,
           output:
-            `Target ${resolvedTarget} became a symlink between approval and stale-check — ` +
-            `kernel refused via O_NOFOLLOW.`,
+            `Target ${realPath} was replaced (inode changed or now a symlink) ` +
+            `between approval and edit — kernel-level race detected.`,
           error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-      return {
-        ok: false,
-        output: `Cannot re-read target for stale-content check: ${err.message}`,
-        error: 'COMMIT_FAILED',
-      };
-    }
-    try {
-      const buf = await stalefh.readFile();
-      currentOriginal = buf.toString('utf8');
-    } finally {
-      await stalefh.close().catch(() => {});
-    }
-    if (currentOriginal !== original) {
-      return {
-        ok: false,
-        output:
-          `File at ${resolvedTarget} changed between approval and edit — ` +
-          `stale-content check failed. Re-run file_edit with the latest content.`,
-        error: 'STALE_CONTENT',
-        meta: { lexicalPath: absPath, resolvedTarget },
-      };
-    }
 
-    // Backup AFTER approval, BEFORE write — so deny leaves no entry.
-    // Codex D round 2 (2026-05-03): snapshot uses the COMMIT-RESOLVED
-    // realpath, not the lexical input. Closes commit→snapshot race
-    // (see fileWriteTool for the full rationale).
-    let snap;
-    try {
-      snap = await snapshotBeforeWrite(resolvedTarget, {
+      // ── 6. Stale check via fh ────────────────────────────────────────
+      const currentBuffer = await readFromStart(fh);
+      const currentOriginal = currentBuffer.toString('utf8');
+      if (currentOriginal !== original) {
+        throw Object.assign(new Error('stale-content'), { __staleContent: true });
+      }
+
+      // ── 7. Snapshot from the oldBuffer we already have ───────────────
+      const snap = await snapshotBeforeWrite(realPath, {
         chatId,
         requestedBy: 'file_edit',
         reason: replace_all ? `edit ${count}×` : 'edit 1×',
         lexicalPath: absPath,
+        preReadContent: oldBuffer,
       });
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Backup snapshot failed: ${err.message}`,
-        error: 'SNAPSHOT_FAILED',
-      };
-    }
 
-    // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW. If the
-    // target was swapped to a symlink between commit and now,
-    // open() returns ELOOP and we surface COMMIT_FAILED rather
-    // than writing through the new symlink.
-    let fh;
-    try {
-      fh = await open(resolvedTarget, O_WRONLY | O_TRUNC | O_NOFOLLOW);
+      // ── 8. Truncate + write via fh ───────────────────────────────────
+      const writeBuf = Buffer.from(updated, 'utf8');
+      await fh.truncate(0);
+      await fh.write(writeBuf, 0, writeBuf.length, 0);
+
+      // ── 9. recordAfterDiff ───────────────────────────────────────────
+      try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
+
+      const oldLines = old_string.split('\n').length;
+      const newLines = new_string.split('\n').length;
+      const replaced = replace_all ? count : 1;
+
+      return {
+        ok: true,
+        output: `Edited ${realPath} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
+        meta: {
+          path: realPath,
+          lexicalPath: absPath,
+          oldLines,
+          newLines,
+          occurrencesReplaced: replaced,
+          backupOperationId: snap.operationId,
+        },
+      };
     } catch (err) {
-      if (err && err.code === 'ELOOP') {
+      if (err && err.__staleContent) {
         return {
           ok: false,
           output:
-            `Target ${resolvedTarget} became a symlink between approval and write — ` +
-            `kernel refused via O_NOFOLLOW.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+            `File at ${realPath} changed between approval and edit — ` +
+            `stale-content check failed. Re-run file_edit with the latest content.`,
+          error: 'STALE_CONTENT',
+          meta: { lexicalPath: absPath, realPath },
         };
       }
-      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-    }
-    try {
-      await fh.writeFile(updated, 'utf8');
-    } catch (err) {
-      return { ok: false, output: `Write error: ${err.message}`, error: err.message };
+      if (err && err.code === 'FILE_SAFETY_DENIED') {
+        return {
+          ok: false,
+          output: err.message,
+          error: 'DENIED',
+          meta: { denied: true },
+        };
+      }
+      return {
+        ok: false,
+        output: `Edit error: ${err.message}`,
+        error: err.message,
+      };
     } finally {
       await fh.close().catch(() => {});
     }
-
-    try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
-
-    const oldLines = old_string.split('\n').length;
-    const newLines = new_string.split('\n').length;
-    const replaced = replace_all ? count : 1;
-
-    return {
-      ok: true,
-      output: `Edited ${resolvedTarget} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
-      meta: {
-        path: resolvedTarget,
-        lexicalPath: absPath,
-        oldLines,
-        newLines,
-        occurrencesReplaced: replaced,
-        backupOperationId: snap.operationId,
-      },
-    };
   },
 };

@@ -56,6 +56,29 @@
 - **fileEditTool 同款**。
 - **_postCommitHookForTests 注入点前移到 commit 之后、stale 之前**（之前在 snapshot 之后、write 之前）。原 swap-to-symlink 测试仍 pass — 现在 stale check 那一步的 open(O_NOFOLLOW) 抓 ELOOP，error code/raceKind 与之前 final write 抓时完全一样（COMMIT_FAILED + symlink-eloop）。证明 race window 在更早一步就被关。删掉重复的旧 hook 调用（write 前那个），免一个 op 多次 fire。
 - 验证：`src/**/*.test.js` **1696/1696 全绿**（无新增测试 — hook 前移让既有 race 测试自然覆盖更早的 race window；零既有回归）。
+- 提交哈希：`125c619`。
+- Holistic refactor (用户拍 "不接受 c，找出问题你重构" — Phase 2A 第 7 轮 + 整体 15 轮后停止 patch loop，做架构级重构)：之前每轮 Codex 都找出更深 race window，因为底层架构是错的——每个 fs op 各自走 path-level call (stat/readFile/copyFile/writeFile)，每步独立有 race window。**根本修法：单 fd lifecycle**——open 一次锁住 inode，所有 read/write/snapshot 通过同一 fh，关闭 commit→write 之间所有 race window。
+- **新原语 `readFromStart(fh)`**：fh.readFile() 推进 position，第二次调用返空。helper 用 explicit position=0 + offset/length 配对调 fh.read，每次都是从头读完整 buffer。
+- **fileWriteTool 重构**：
+  ① precheck → realPath, exists；
+  ② open(realPath, O_RDWR \| O_CREAT? \| O_EXCL? \| O_NOFOLLOW)——overwrite 用 O_RDWR；create 用 O_RDWR\|O_CREAT\|O_EXCL（O_RDWR 让后续 stale check 能 read）；ELOOP→COMMIT_FAILED, EEXIST→STALE_CONTENT, EISDIR/ENOENT→对应错误；
+  ③ readFromStart(fh) 拿 oldBuffer + 算 hash + diff；
+  ④ requestWrite UI；
+  ⑤ commit（kind 校验 + lexical→real verify）；
+  ⑥ **inode anchor check**：lstat(realPath) 比对 fh.stat() ino——不等 / 是 symlink → COMMIT_FAILED + raceKind=symlink-eloop（catch attacker swap 让我们的 fh 写到 orphan 的情况）；
+  ⑦ stale check via readFromStart(fh) (create 路径的 baseline 是 sha256('')，race-write 让 inode 非空就抓)；
+  ⑧ snapshot 走 `preReadContent` 用已读 oldBuffer 不重 open；
+  ⑨ fh.truncate(0) + fh.write(content)；
+  ⑩ recordAfterDiff；finally fh.close + (createdEmptyFile && !staleContent) 时 unlink empty placeholder（race 命中创 empty 时把 racer 的 content 留着）。
+- **fileEditTool 重构**：同款单 fh lifecycle + inode anchor + readFromStart-based stale check。
+- **backup.snapshotBeforeWrite 加 ctx.preReadContent**：null=标 wasMissing 不 copy；Buffer=用提供的内容写 .melo-backups（不另开 fd）；undefined=fall through 旧 path-based+O_NOFOLLOW 行为。
+- **backup.restoreFromBackup write fd-based**：`open(resolvedTarget, O_WRONLY\|O_CREAT\|O_TRUNC\|O_NOFOLLOW)` + readFile(beforePath) + fh.write — copyFile 跟随 dest symlink 的 race 关闭。ELOOP → 抛 "Refusing to restore over symlink"。
+- **trash.restoreFromTrash write fd-based**：file restore 同款 open(O_NOFOLLOW)+fh.write；dir restore 加 lstat(dst) 拒 symlink overwrite + cp 内嵌 race 是 known limit；symlink restore 仍走 symlink() 重建。
+- **fileMoveTool description 诚实化**：去 "TOCTOU-protected" 笼统语，明记 leaf no-follow rename 已防 + dst-existing-symlink 拒 + parent-dir swap-to-symlink 是 known limit (无 Node renameat2)。
+- **precheckHardBlockedWrite return 加 exists**：caller 用此判断 isCreate 不必再 stat。
+- 测试加 2 case 扩 [restoreSafety.test.js](src/safety/restoreSafety.test.js)：① restoreFromBackup post-(b) hook swap dest → /etc/hosts → 拒；② restoreFromTrash 同款。
+- 验证：`src/**/*.test.js` **1698/1698 全绿**（前 1696 + 2 新；零既有回归）。
+- **架构 invariant 新文档**：fh 锁 inode → 任何 post-open path swap 不影响 fh 读写。所有 read/write 走同一 fh，唯一 race window 是 precheck→open，由 O_NOFOLLOW（symlink swap）+ O_EXCL（create race）+ inode anchor (post-commit replace) 三层关闭。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 
