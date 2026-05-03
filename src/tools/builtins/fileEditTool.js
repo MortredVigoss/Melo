@@ -184,12 +184,16 @@ export const fileEditTool = {
     }
 
     // Backup AFTER approval, BEFORE write — so deny leaves no entry.
+    // Codex D round 2 (2026-05-03): snapshot uses the COMMIT-RESOLVED
+    // realpath, not the lexical input. Closes commit→snapshot race
+    // (see fileWriteTool for the full rationale).
     let snap;
     try {
-      snap = await snapshotBeforeWrite(absPath, {
+      snap = await snapshotBeforeWrite(resolvedTarget, {
         chatId,
         requestedBy: 'file_edit',
         reason: replace_all ? `edit ${count}×` : 'edit 1×',
+        lexicalPath: absPath,
       });
     } catch (err) {
       return {

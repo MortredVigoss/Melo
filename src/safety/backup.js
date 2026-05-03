@@ -203,7 +203,15 @@ export async function snapshotBeforeWrite(absPath, ctx = {}) {
   const manifest = {
     operationId,
     snapshotAt: now.toISOString(),
+    // Codex D Phase 2A round 2 (2026-05-03): callers MUST pass the
+    // commit-resolved real path here so this snapshot doesn't follow
+    // a symlink that was swapped between commit and snapshot. Phase
+    // 2 tools record the user-supplied lexical path separately under
+    // `lexicalPath` for UI display.
     originalPath: absPath,
+    lexicalPath: typeof ctx.lexicalPath === 'string' && ctx.lexicalPath
+      ? ctx.lexicalPath
+      : null,
     wasMissing,
     size: st && !st.isDirectory() ? st.size : null,
     sha256: sha,

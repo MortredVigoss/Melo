@@ -22,6 +22,12 @@
 - **fileWriteTool / fileEditTool 重排**：① 解 absPath → ② precheck（敏感 → DENIED 零 fs，零 UI）→ ③ stat/read 旧内容（safe path 才到这）→ ④ 算 diff preview → ⑤ `requestWrite/Edit` UI 审批 → ⑥ commit → ⑦ **snapshotBeforeWrite 移到这里**（审批通过后、写盘前）→ ⑧ writeFile resolvedTarget → ⑨ recordAfterDiff。deny 路径在 ⑤ 短路 → 无 snapshot 无 manifest 无 backup folder。
 - 测试加 6 case zero-side-effect 契约：① write `/etc/hosts` → DENIED + `listBackups().length === 0`；② edit `/etc/hosts` → DENIED 不返 NOT_FOUND/AMBIGUOUS（防内容结构泄漏）+ 无 backup；③ write deny → 无 backup（pin snapshot 后置）；④ edit deny → 无 backup；⑤ workspace symlink → /etc/hosts write → DENIED + 无 prompt + readlink 不变 + 无 backup；⑥ workspace symlink → /etc/hosts edit → DENIED + 无 prompt + readlink 不变。
 - 验证：`src/**/*.test.js` **1681/1681 全绿**（前 1675 + 6 新；零既有回归）。
+- 提交哈希：`75193db`。
+- Follow-up（Codex D Phase 2A round 2 → commit-to-snapshot race）：上一刀 push 又被评 D，Codex 抓 race window：commit 后 `snapshotBeforeWrite(absPath)` **仍跟 lexical** → commit 与 snapshot 之间 symlink 被换到 `/etc/hosts`，snapshot 把敏感内容复制到 `.melo-backups/`；写盘走 resolvedTarget 但 backup 走 lexical → 不一致。用户拍 Q1=C (manifest 都记 originalPath=resolved + lexicalPath=user input) + Q2=A (沿用 COMMIT_FAILED 错误码 — race 消除后不需新 code) + 全做。
+- **`backup.snapshotBeforeWrite` 接 `ctx.lexicalPath`**：写进 manifest 给 UI 显示；旧 manifest legacy 兼容（`undefined → null`）。
+- **fileWriteTool / fileEditTool 改用 resolvedTarget 做 snapshot 入参**：`snapshotBeforeWrite(resolvedTarget, { ..., lexicalPath: absPath })`。snapshot 与 writeFile 都对齐 commit 时记录的真实路径，commit→snapshot 之间 symlink swap 完全不影响 — backup 永远绑定 commit 已验证的真目标。
+- 测试加 3 case：① fileWrite via workspace/link → outside/file：assert 写后 link 指向不变 + external 内容更新 + manifest.originalPath = external + manifest.lexicalPath = link + backup before/ 是原 ORIG（不是 NEW）；② fileEdit via 同款 symlink：同断言；③ 非 symlink 写：assert lexicalPath === originalPath（pin back-compat）。
+- 验证：`src/**/*.test.js` **1684/1684 全绿**（前 1681 + 3 新；零既有回归）。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 

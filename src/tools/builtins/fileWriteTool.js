@@ -190,12 +190,19 @@ export const fileWriteTool = {
     // only get here once the user has actively approved. We snapshot
     // here so a crash between the snapshot and the actual writeFile
     // still leaves a recoverable backup.
+    //
+    // Codex D round 2 (2026-05-03): snapshot uses the COMMIT-RESOLVED
+    // realpath, not the lexical input. This closes the commit→snapshot
+    // race window where a symlink swap could cause snapshot to copy a
+    // sensitive file (e.g. /etc/hosts) into .melo-backups/. The
+    // user-facing lexical path is recorded separately for UI display.
     let snap;
     try {
-      snap = await snapshotBeforeWrite(absPath, {
+      snap = await snapshotBeforeWrite(resolvedTarget, {
         chatId,
         requestedBy: 'file_write',
         reason: isCreate ? 'create' : 'overwrite',
+        lexicalPath: absPath,
       });
     } catch (err) {
       return {

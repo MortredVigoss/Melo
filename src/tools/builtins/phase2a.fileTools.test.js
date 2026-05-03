@@ -432,6 +432,88 @@ test('fileEditTool: workspace symlink → /etc/hosts hard-rejected, no probe of 
   });
 });
 
+// ─── Codex D round 2 (Phase 2A): resolved-target-bound snapshot ───────
+
+test('fileWriteTool via workspace symlink → outside benign file: backup binds to RESOLVED target, not lexical link', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'real.txt');
+    const link = join(ws, 'mylink');
+    await writeFile(externalFile, 'ORIG', 'utf8');
+    await symlink(externalFile, link);
+
+    const result = await fileWriteTool.run(
+      { path: link, content: 'NEW' },
+      { workspacePath: ws, sseEmitter: autoApprove(gate), chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, true);
+    // Following the link reaches the (now-changed) external file:
+    assert.equal(await readFile(link, 'utf8'), 'NEW');
+    assert.equal(await readFile(externalFile, 'utf8'), 'NEW');
+    // Link itself untouched:
+    assert.equal(await readlink(link), externalFile);
+
+    // The backup MUST have been bound to the resolved external file,
+    // not the lexical link, so a post-commit symlink swap could not
+    // have poisoned the snapshot.
+    const { listBackups } = await import('../../safety/backup.js');
+    const list = await listBackups();
+    assert.equal(list.length, 1);
+    const manifest = list[0];
+    assert.equal(
+      manifest.originalPath, externalFile,
+      'manifest.originalPath = commit-resolved real path (defence against commit→snapshot race)',
+    );
+    assert.equal(
+      manifest.lexicalPath, link,
+      'manifest.lexicalPath = user-supplied input (UI display)',
+    );
+    // The actual backed-up bytes match what was at the resolved target
+    // BEFORE the write (i.e. ORIG, not NEW).
+    const beforePath = join(manifest.opDir, 'before', basename(externalFile));
+    assert.equal(await readFile(beforePath, 'utf8'), 'ORIG');
+  });
+});
+
+test('fileEditTool via workspace symlink → outside benign file: backup binds to RESOLVED target', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'real.txt');
+    const link = join(ws, 'mylink');
+    await writeFile(externalFile, 'foo bar', 'utf8');
+    await symlink(externalFile, link);
+
+    const result = await fileEditTool.run(
+      { path: link, old_string: 'foo', new_string: 'baz' },
+      { workspacePath: ws, sseEmitter: autoApprove(gate), chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(await readFile(externalFile, 'utf8'), 'baz bar');
+    assert.equal(await readlink(link), externalFile);
+
+    const { listBackups } = await import('../../safety/backup.js');
+    const list = await listBackups();
+    assert.equal(list[0].originalPath, externalFile);
+    assert.equal(list[0].lexicalPath, link);
+  });
+});
+
+test('non-symlink write: lexicalPath === originalPath in the manifest (back-compat sanity)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'plain.txt');
+    await writeFile(target, 'OLD', 'utf8');
+    await fileWriteTool.run(
+      { path: target, content: 'NEW' },
+      { workspacePath: ws, sseEmitter: autoApprove(gate), chatId: 'chat-A' },
+    );
+    const { listBackups } = await import('../../safety/backup.js');
+    const list = await listBackups();
+    assert.equal(list[0].originalPath, target);
+    assert.equal(list[0].lexicalPath, target);
+  });
+});
+
 // ─── fileMoveTool ──────────────────────────────────────────────────────
 
 test('fileMoveTool: rename within workspace, gate-approved', async () => {
