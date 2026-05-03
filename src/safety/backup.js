@@ -38,6 +38,8 @@ import {
 import { basename, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
+import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
+import { safeResolvePath } from './pathResolver.js';
 
 const BACKUP_DIR_NAME = '.melo-backups';
 export const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -229,17 +231,65 @@ export async function listBackups() {
 // snapshot recorded `wasMissing: true`, the restore will DELETE the
 // current file at originalPath — that's how we undo a "create" write.
 //
+// Codex C round 2 (2026-05-03) — Q2C double-layer defence:
+//   (a) operationId is whitelisted via assertValidOperationId and the
+//       resolved opDir is asserted within backup root (mirrors purge*)
+//   (b) target.originalPath is safeResolvePath'd at restore time AND
+//       classified against BOTH lexical + real; any hard-blocked
+//       category throws — a tampered manifest with originalPath
+//       pointing at /etc/passwd cannot punch through
+//   (c) when opts.sseEmitter + opts.chatId are provided, the actual
+//       restore runs through gate.requestWrite for benign paths so
+//       the user sees a normal write approval (with symlink warning
+//       if applicable). When omitted (programmatic / CLI), only
+//       layers (a) + (b) apply.
+//
 // By default removes the backup folder after a successful restore;
 // pass { purgeAfterRestore: false } to keep it for repeat restores.
 export async function restoreFromBackup(operationId, opts = {}) {
-  if (!operationId || typeof operationId !== 'string') {
-    throw new Error('restoreFromBackup requires an operationId.');
-  }
+  assertValidOperationId(operationId);
 
   const list = await listBackups();
   const target = list.find(b => b.operationId === operationId);
   if (!target) {
     throw new Error(`No backup with operationId=${operationId}.`);
+  }
+
+  const meloHome = getMeloHome();
+  const root = backupRoot(meloHome);
+  await assertWithinRoot(target.opDir || join(root, operationId), root);
+
+  // Layer (b): reject a tampered manifest pointing at a sensitive path.
+  const { realPath: realOriginal, hasSymlinkInChain: originalHasSymlink } =
+    await safeResolvePath(target.originalPath);
+  if (
+    isHardBlockedWrite(target.originalPath) ||
+    isHardBlockedWrite(realOriginal)
+  ) {
+    const lexCat = classifyPath(target.originalPath);
+    const realC = classifyPath(realOriginal);
+    throw new Error(
+      `Refusing to restore to ${target.originalPath} ` +
+      (originalHasSymlink ? `(real target: ${realOriginal}) ` : '') +
+      `— manifest target classified as ${lexCat}/${realC}.`,
+    );
+  }
+
+  // Layer (c): optional UI approval through the gate. Skipped for
+  // wasMissing (undo-create) — the original create itself was already
+  // approved, and the inverse op is the user's explicit restore click.
+  if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
+    const gate = await import('./fileSafetyGate.js');
+    await gate.requestWrite({
+      path: target.originalPath,
+      chatId: opts.chatId,
+      sseEmitter: opts.sseEmitter,
+      signal: opts.signal,
+      workspacePath: opts.workspacePath,
+      isCreate: false,
+      contentSize: target.size ?? null,
+      newHash: target.sha256 || null,
+    });
   }
 
   if (target.wasMissing) {

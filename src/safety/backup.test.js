@@ -14,17 +14,28 @@ async function freshBackup() {
   return mod;
 }
 
+// Helper sets MELO_HOME to one tempdir (where .melo-backups/ lives)
+// AND creates a SEPARATE workspace tempdir for the user's files.
+// In production, MELO_HOME and the user's workspace are always
+// distinct — backing up files inside MELO_HOME would conflict with
+// the melo_internal hard-block at restore time. Tests must mirror
+// that separation.
 async function withTempMeloHome(fn) {
-  const dir = await mkdtemp(join(tmpdir(), 'melo-backup-'));
+  const home = await mkdtemp(join(tmpdir(), 'melo-backup-home-'));
+  const ws = await mkdtemp(join(tmpdir(), 'melo-backup-ws-'));
   const prev = process.env.MELO_HOME;
-  process.env.MELO_HOME = dir;
+  process.env.MELO_HOME = home;
   try {
-    await mkdir(dir, { recursive: true });
-    await fn(dir);
+    await mkdir(home, { recursive: true });
+    await mkdir(ws, { recursive: true });
+    // The fn signature stays single-arg for back-compat with tests
+    // that only need a workspace; pass the workspace dir.
+    await fn(ws, home);
   } finally {
     if (prev === undefined) delete process.env.MELO_HOME;
     else process.env.MELO_HOME = prev;
-    await rm(dir, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true });
   }
 }
 

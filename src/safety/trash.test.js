@@ -14,17 +14,25 @@ async function freshTrash() {
   return mod;
 }
 
+// MELO_HOME and the user workspace must be distinct — files inside
+// MELO_HOME classify as melo_internal and are hard-blocked on restore.
+// Tests mirror the production separation.
 async function withTempMeloHome(fn) {
-  const dir = await mkdtemp(join(tmpdir(), 'melo-trash-'));
+  const home = await mkdtemp(join(tmpdir(), 'melo-trash-home-'));
+  const ws = await mkdtemp(join(tmpdir(), 'melo-trash-ws-'));
   const prev = process.env.MELO_HOME;
-  process.env.MELO_HOME = dir;
+  process.env.MELO_HOME = home;
   try {
-    await mkdir(dir, { recursive: true });
-    await fn(dir);
+    await mkdir(home, { recursive: true });
+    await mkdir(ws, { recursive: true });
+    // Pass the workspace dir; tests that touch MELO_HOME directly
+    // can read process.env.MELO_HOME or accept a 2nd arg.
+    await fn(ws, home);
   } finally {
     if (prev === undefined) delete process.env.MELO_HOME;
     else process.env.MELO_HOME = prev;
-    await rm(dir, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true });
   }
 }
 

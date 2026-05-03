@@ -40,6 +40,8 @@ import {
 import { dirname, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
+import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
+import { safeResolvePath } from './pathResolver.js';
 
 const TRASH_DIR_NAME = '.melo-trash';
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -272,6 +274,35 @@ export async function restoreFromTrash(operationId, opts = {}) {
   await assertWithinRoot(opDir, root);
   const filesDir = join(opDir, 'files');
 
+  // Codex C round 2 (2026-05-03) — Q2C layer (b): re-classify every
+  // entry's originalPath at restore time. A tampered manifest with
+  // originalPath pointing at /etc/foo cannot punch through; the
+  // whole batch aborts before any copyFile fires.
+  for (const entry of target.files) {
+    const { realPath, hasSymlinkInChain } = await safeResolvePath(entry.originalPath);
+    if (
+      isHardBlockedWrite(entry.originalPath) ||
+      isHardBlockedWrite(realPath)
+    ) {
+      const lexCat = classifyPath(entry.originalPath);
+      const realC = classifyPath(realPath);
+      throw new Error(
+        `Refusing to restore to ${entry.originalPath} ` +
+        (hasSymlinkInChain ? `(real target: ${realPath}) ` : '') +
+        `— manifest target classified as ${lexCat}/${realC}.`,
+      );
+    }
+  }
+
+  // Layer (c): optional UI approval through the gate. When the
+  // caller hands us sseEmitter + chatId, every restored file goes
+  // through requestWrite so the user sees a normal write approval
+  // (with symlink warning if applicable). Approvals run sequentially.
+  let gate = null;
+  if (opts.sseEmitter && opts.chatId) {
+    gate = await import('./fileSafetyGate.js');
+  }
+
   const restored = [];
   const skipped = [];
   for (const entry of target.files) {
@@ -280,6 +311,18 @@ export async function restoreFromTrash(operationId, opts = {}) {
     if (exists && !opts.overwrite) {
       skipped.push({ path: entry.originalPath, reason: 'already exists' });
       continue;
+    }
+    if (gate) {
+      await gate.requestWrite({
+        path: entry.originalPath,
+        chatId: opts.chatId,
+        sseEmitter: opts.sseEmitter,
+        signal: opts.signal,
+        workspacePath: opts.workspacePath,
+        isCreate: !exists,
+        contentSize: entry.size ?? null,
+        newHash: entry.sha256 || null,
+      });
     }
     const src = join(filesDir, entry.trashedAs);
     await mkdir(dirname(entry.originalPath), { recursive: true });
