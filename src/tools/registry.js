@@ -15,6 +15,8 @@ import { bashTool } from './builtins/bashTool.js';
 import { fileReadTool } from './builtins/fileReadTool.js';
 import { fileEditTool } from './builtins/fileEditTool.js';
 import { fileWriteTool } from './builtins/fileWriteTool.js';
+import { fileDeleteTool } from './builtins/fileDeleteTool.js';
+import { fileMoveTool } from './builtins/fileMoveTool.js';
 import { globTool } from './builtins/globTool.js';
 import { grepTool } from './builtins/grepTool.js';
 import { agentTool } from '../agents/subAgent.js';
@@ -118,5 +120,5 @@ let _bootstrapped = false;
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool]);
+  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool]);
 }

@@ -2,11 +2,40 @@
  * Built-in tool: file_edit
  *
  * Replaces an exact string occurrence in a file.
- * Requires user permission — mutates disk.
+ * Phase 2A (2026-05-03): every edit goes through the FileSafetyGate
+ * — sensitivity rejected, symlink chain shown to the user, automatic
+ * snapshot to `.melo-backups/<opId>/` before the actual writeFile,
+ * and the post-write diff recorded for restore-with-context.
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
+
+import {
+  requestEdit,
+  commitOperation,
+  OP_KIND,
+} from '../../safety/fileSafetyGate.js';
+import {
+  snapshotBeforeWrite,
+  recordAfterDiff,
+} from '../../safety/backup.js';
+
+function buildEditDiffPreview(oldString, newString, count, replaceAll) {
+  const oldLines = oldString.split('\n');
+  const newLines = newString.split('\n');
+  const head = replaceAll
+    ? `replace_all: ${count} occurrence(s)`
+    : `replace: 1 occurrence (file contains ${count})`;
+  const out = [`# ${head}`];
+  out.push('--- old_string');
+  out.push(...oldLines.slice(0, 40));
+  if (oldLines.length > 40) out.push(`... (${oldLines.length - 40} more lines)`);
+  out.push('+++ new_string');
+  out.push(...newLines.slice(0, 40));
+  if (newLines.length > 40) out.push(`... (${newLines.length - 40} more lines)`);
+  return out.join('\n');
+}
 
 export const fileEditTool = {
   id: 'file_edit',
@@ -14,6 +43,8 @@ export const fileEditTool = {
   description:
     'Replace an exact string in a file with new content. ' +
     'The old_string must match exactly (including whitespace/indentation). ' +
+    'The user sees a confirmation dialog with the old/new diff preview before any disk write happens; ' +
+    'a backup of the previous file is taken so the change can be rolled back. ' +
     'Use file_read first to confirm the exact text to replace.',
   category: 'filesystem',
   requiresPermission: true,
@@ -61,7 +92,7 @@ export const fileEditTool = {
    */
   async run(args, context = {}) {
     const { path: filePath, old_string, new_string, replace_all = false } = args;
-    const { workspacePath } = context;
+    const { workspacePath, sseEmitter, signal, chatId } = context;
 
     const absPath = isAbsolute(filePath)
       ? filePath
@@ -90,19 +121,72 @@ export const fileEditTool = {
       };
     }
 
-    // Replace one or all occurrences
-    let updated;
-    if (replace_all) {
-      updated = original.split(old_string).join(new_string);
-    } else {
-      updated = original.replace(old_string, new_string);
+    const updated = replace_all
+      ? original.split(old_string).join(new_string)
+      : original.replace(old_string, new_string);
+
+    const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
+
+    // ── Phase 1 backup BEFORE asking for approval ──────────────────────
+    let snap;
+    try {
+      snap = await snapshotBeforeWrite(absPath, {
+        chatId,
+        requestedBy: 'file_edit',
+        reason: replace_all ? `edit ${count}×` : 'edit 1×',
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Backup snapshot failed: ${err.message}`,
+        error: 'SNAPSHOT_FAILED',
+      };
+    }
+
+    // ── FileSafetyGate approval + atomic commit ────────────────────────
+    let approved;
+    try {
+      approved = await requestEdit({
+        path: absPath,
+        chatId,
+        sseEmitter,
+        signal,
+        workspacePath,
+        baseDir: workspacePath,
+        oldString: old_string,
+        newString: new_string,
+        diffPreview,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: err.message,
+        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+      };
+    }
+
+    let resolvedTarget;
+    try {
+      const committed = await commitOperation(approved.operationToken, {
+        expectedKinds: [OP_KIND.EDIT],
+      });
+      resolvedTarget = committed.resolvedTarget;
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Atomic commit failed: ${err.message}`,
+        error: 'COMMIT_FAILED',
+      };
     }
 
     try {
-      await writeFile(absPath, updated, 'utf8');
+      await writeFile(resolvedTarget, updated, 'utf8');
     } catch (err) {
       return { ok: false, output: `Write error: ${err.message}`, error: err.message };
     }
+
+    try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
 
     const oldLines = old_string.split('\n').length;
     const newLines = new_string.split('\n').length;
@@ -110,8 +194,15 @@ export const fileEditTool = {
 
     return {
       ok: true,
-      output: `Edited ${absPath} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
-      meta: { path: absPath, oldLines, newLines, occurrencesReplaced: replaced },
+      output: `Edited ${resolvedTarget} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
+      meta: {
+        path: resolvedTarget,
+        lexicalPath: absPath,
+        oldLines,
+        newLines,
+        occurrencesReplaced: replaced,
+        backupOperationId: snap.operationId,
+      },
     };
   },
 };

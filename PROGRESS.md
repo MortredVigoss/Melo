@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-05-03 — File Safety Gate Phase 2A：write/edit/delete/move 接管 (Phase 1 真正进生产路径)
+
+- Phase 1 9 轮 Codex review 终于 A 级 push 后，进 Phase 2A：让 fileWriteTool / fileEditTool / fileDeleteTool / fileMoveTool 全部走新 gate。这是 Phase 1 真正"生效"的一刀——Phase 1 模块独立时只在测试里跑，不接生产路径就等于装饰品。Phase 2A 让 agent 真正受 gate 约束。
+- 改造 [fileWriteTool](src/tools/builtins/fileWriteTool.js)：run() 内串：① stat 旧文件区分 create/overwrite + 算 oldHash/newHash + buildDiffPreview（前后各 40 行 + truncate）；② `snapshotBeforeWrite` 提前快照（即便 user click Allow 后 crash 也能恢复）；③ `requestWrite({path, isCreate, contentSize, oldHash, newHash, diffPreview})` 拿 token + 用户审批；④ `commitOperation(token, {expectedKinds: [WRITE_NEW, WRITE_OVERWRITE]})` 拿 resolvedTarget + atomic verify；⑤ 实际写盘走 resolvedTarget（不是 lexical）；⑥ overwrite 场景 `recordAfterDiff` 写 backup; ⑦ return meta 含 backupOperationId + lexicalPath + resolvedTarget。
+- 改造 [fileEditTool](src/tools/builtins/fileEditTool.js)：先 readFile + 计 occurrence count + replace_all 校验，确认变更可行后跑 snapshot + `requestEdit({oldString, newString, diffPreview})` + commit (`expectedKinds: [EDIT]`) + writeFile(resolvedTarget) + recordAfterDiff。
+- 新建 [fileDeleteTool](src/tools/builtins/fileDeleteTool.js)：`requestDelete({paths, reason})` 触发两阶段审批（intent + 输文件名/'DELETE' 串）→ 拿 operationTokens → `safeDeleteToTrash({operationTokens, ctx})`（Phase 1 round-7 的 lstat-no-follow 语义保证 symlink 删 link 不删 target）。返回 manifest path 给 UI 显示恢复入口。
+- 新建 [fileMoveTool](src/tools/builtins/fileMoveTool.js)：`requestMove({src, dst})` → 复合 token bind src+dst → commit (`expectedKinds: [MOVE]`) 拿 [resolvedSrc, resolvedDst] → mkdir(dirname(dst)) + rename。两端 TOCTOU 防御。
+- registry.js 加 `fileDeleteTool, fileMoveTool` 注册，与 fileReadTool/fileEditTool/fileWriteTool 并列。
+- 设计决策：保留 `requiresPermission: true` 让 executor.js 的 toolId-level gate 也跑——双层防御。用户首次会看到 toolId 弹窗（一次性"allow file_write"），之后每次写文件再看 path/diff 弹窗（per-op）。toolId gate 是粗粒度"这个 tool 能不能用"，path gate 是细粒度"这个文件、这次内容能不能写"，互补不冲突。
+- 测试 [phase2a.fileTools.test.js](src/tools/builtins/phase2a.fileTools.test.js) **15 case**：fileWriteTool 4 (happy create / overwrite + backup 验 OLD content 在 .melo-backups/before/ / deny 不动文件 / 敏感无 UI 拒) + fileEditTool 3 (single replace / replace_all / deny 不改) + fileDeleteTool 5 (happy + manifest / 错文件名拒+不动 / symlink → outside 删 link 留 target / 敏感 symlink 无 UI 拒 / empty paths) + fileMoveTool 3 (workspace rename / dst=/etc/hosts 拒 / deny 不动)。每条测试用 mock SSE auto-resolve 走完 gate flow。
+- 验证：`src/**/*.test.js` **1675/1675 全绿**（前 1660 + 15 新；零既有回归）。
+- UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
+- Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
+
 ## 2026-05-03 — File Safety Gate Phase 1：四模块地基（无接入，纯独立）
 
 - 用户产品方向：所有读写改删命令 / MCP 文件访问统一过一个安全门，"最高的安全性为第一原则"。按方案 B（分层 gate，read 默认 workspace 内放行，write/edit/delete 必审 + 自动备份 + 删除入隔离区）落地。本刀只做 Phase 1 地基模块，零工具接入。
