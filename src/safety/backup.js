@@ -31,18 +31,58 @@ import {
   rm,
   writeFile,
   readFile,
+  realpath,
   stat,
   readdir,
 } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
 
 const BACKUP_DIR_NAME = '.melo-backups';
 export const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Whitelist for operationId values supplied by the API / UI. Codex C
+// round 1 (2026-05-03): `purgeBackup(operationId)` joined the value
+// directly under `.melo-backups/` and rm -r'd it, so a `../` form
+// could escape and delete arbitrary directories. Restrict to opaque
+// IDs only.
+const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+function assertValidOperationId(operationId) {
+  if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) {
+    throw new Error(
+      `Invalid operationId: must match ${OPERATION_ID_PATTERN}.`,
+    );
+  }
+}
+
 function backupRoot(meloHome) {
   return join(meloHome, BACKUP_DIR_NAME);
+}
+
+// Defence-in-depth: even after the operationId pattern check, resolve
+// the candidate dir via realpath and assert it sits inside backupRoot.
+// Catches the case where backupRoot itself is a symlink whose target
+// changed mid-session, or any other path-confusion vector.
+async function assertWithinRoot(candidateDir, root) {
+  const resolvedRoot = await realpath(root);
+  let resolvedCandidate;
+  try {
+    resolvedCandidate = await realpath(candidateDir);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error(`No backup with operationId at ${candidateDir}.`);
+    }
+    throw err;
+  }
+  if (
+    resolvedCandidate !== resolvedRoot &&
+    !resolvedCandidate.startsWith(resolvedRoot + sep)
+  ) {
+    throw new Error(
+      `Resolved backup path ${resolvedCandidate} is outside backup root ${resolvedRoot}.`,
+    );
+  }
 }
 
 async function fileSha256(absPath) {
@@ -222,16 +262,21 @@ export async function restoreFromBackup(operationId, opts = {}) {
 // ── purgeBackup ──────────────────────────────────────────────────────
 //
 // Manual eviction. UI's "delete this backup" button.
+//
+// Codex C round 1 (2026-05-03): operationId is now whitelisted to
+// `[A-Za-z0-9_-]{8,64}` and the resolved opDir is asserted to sit
+// inside the backup root before any rm. A caller that fakes
+// `../../../etc` or pre-shapes a malicious operationId can no longer
+// cause this function to remove anything outside `.melo-backups/`.
 export async function purgeBackup(operationId) {
-  if (!operationId || typeof operationId !== 'string') {
-    throw new Error('purgeBackup requires an operationId.');
-  }
+  assertValidOperationId(operationId);
   const meloHome = getMeloHome();
-  const opDir = join(backupRoot(meloHome), operationId);
-  // stat first so we can return a clean error vs a silent no-op.
+  const root = backupRoot(meloHome);
+  const opDir = join(root, operationId);
   try { await stat(opDir); } catch {
     throw new Error(`No backup with operationId=${operationId}.`);
   }
+  await assertWithinRoot(opDir, root);
   await rm(opDir, { recursive: true, force: true });
   return { purged: operationId };
 }

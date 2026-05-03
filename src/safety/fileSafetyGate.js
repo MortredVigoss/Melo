@@ -51,6 +51,25 @@ import {
   parentDir,
   GRANT_KIND,
 } from './chatScopedGrants.js';
+import { safeResolvePath } from './pathResolver.js';
+
+// Pick the more restrictive of two PATH_CATEGORY values. Used to
+// decide sensitivity from BOTH the lexical input AND the realpath
+// target — an attacker who creates `/etc/foo` as a symlink to
+// `/tmp/bar` shouldn't get a benign classification just because the
+// real target is /tmp; nor should a workspace symlink to ~/.ssh.
+const _CAT_RANK = {
+  [PATH_CATEGORY.SYSTEM]: 4,
+  [PATH_CATEGORY.CREDENTIAL]: 3,
+  [PATH_CATEGORY.MELO_INTERNAL]: 2,
+  [PATH_CATEGORY.SAFE]: 1,
+};
+function moreRestrictiveCategory(a, b) {
+  return (_CAT_RANK[a] || 0) >= (_CAT_RANK[b] || 0) ? a : b;
+}
+function isAnySensitive(lexicalPath, realPath, predicate) {
+  return predicate(lexicalPath) || predicate(realPath);
+}
 
 export const OP_KIND = Object.freeze({
   READ: 'read',
@@ -213,9 +232,19 @@ export function _clearPendingForTests() {
 
 // Single-file read.
 //   - sensitive (~/.ssh, /etc, …) → always interactive, never auto-allowed
-//   - workspace-internal → silent allow
-//   - per-chat grant covers it → silent allow
+//   - workspace-internal AND no symlink chain → silent allow
+//   - per-chat grant covers the realPath → silent allow
 //   - otherwise → interactive prompt
+//
+// Codex C round 1 (2026-05-03) safety contract:
+//   • sensitivity is decided on BOTH lexical AND realpath (most
+//     restrictive wins); a workspace symlink to ~/.ssh classifies as
+//     CREDENTIAL even though the lexical path is benign
+//   • workspace silent-allow requires lexical AND real both inside
+//     workspace (Q1A). A workspace symlink pointing OUTSIDE workspace
+//     forces a prompt
+//   • grants are keyed on realPath, not lexical, so re-pointing a
+//     symlink invalidates the grant
 export async function requestRead({
   path,
   chatId,
@@ -227,16 +256,28 @@ export async function requestRead({
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Read requested with empty path.');
 
-  const sensitive = readRequiresApproval(abs);
+  const { realPath, hasSymlinkInChain, exists } = await safeResolvePath(abs);
+
+  // Sensitivity: most restrictive of lexical + real.
+  const sensitive = isAnySensitive(abs, realPath, readRequiresApproval);
+  const category = moreRestrictiveCategory(
+    classifyPath(abs),
+    classifyPath(realPath),
+  );
 
   if (!sensitive) {
-    if (isWithinWorkspace(abs, workspacePath)) return;
-    if (hasGrant(chatId, abs, GRANT_KIND.READ)) return;
+    const lexicalInWs = isWithinWorkspace(abs, workspacePath);
+    const realInWs = isWithinWorkspace(realPath, workspacePath);
+    // Q1A: silent allow only when BOTH lexical and real sit inside
+    // workspace. A workspace symlink to /tmp/foo (real outside ws)
+    // forces a prompt.
+    if (lexicalInWs && realInWs) return;
+    if (hasGrant(chatId, realPath, GRANT_KIND.READ)) return;
   }
 
   let size = null;
   try {
-    const s = await stat(abs);
+    const s = await stat(realPath || abs);
     size = s.size;
   } catch {
     // Missing file — let the actual read raise the proper ENOENT.
@@ -246,52 +287,118 @@ export async function requestRead({
     sseEmitter, signal, chatId,
     kind: OP_KIND.READ,
     payload: {
-      path: abs,
+      path: abs,                      // what caller asked for
+      realPath,                       // what'll actually be read
+      hasSymlinkInChain,              // UI shows symlink warning
+      exists,
       size,
       sensitive,
-      category: classifyPath(abs),
-      withinWorkspace: isWithinWorkspace(abs, workspacePath),
+      category,
+      withinWorkspace:
+        isWithinWorkspace(abs, workspacePath) &&
+        isWithinWorkspace(realPath, workspacePath),
     },
   });
 
-  // Sensitive paths: refuse to grant session-wide approval. Each
-  // sensitive read must re-prompt — explicit by design.
+  // Sensitive paths: refuse to grant session-wide approval.
   if (sensitive) return;
 
   if (decision.scope === SCOPE.FILE) {
-    grantFile(chatId, abs, [GRANT_KIND.READ]);
+    grantFile(chatId, realPath, [GRANT_KIND.READ]);
   } else if (decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(abs), [GRANT_KIND.READ]);
+    grantDir(chatId, parentDir(realPath), [GRANT_KIND.READ]);
   }
 }
 
-// Batch read (glob, grep, knowledge index, PDF page sweep, …). The
-// caller summarizes what's about to be read; the gate shows the user
-// "you're about to scan N files in this dir; extensions x/y/z; size
-// range a..b". One approval covers the batch.
+// Batch read (glob, grep, knowledge index, PDF page sweep, …).
+//
+// Codex C round 1 (2026-05-03) flagged the previous "trust the
+// caller's summary" contract as unsafe — a glob hit list could
+// quietly include `~/.ssh/id_rsa` and get a single coarse approval.
+//
+// New contract: caller MUST pass `paths: [absPath...]`. The gate
+// resolves each one, partitions into sensitive vs. benign by
+// realpath, and:
+//   • benign batch → one summary prompt covering all benign paths
+//   • each sensitive path → its own single-file prompt via the
+//     normal requestRead() path (with sensitive=true)
+//
+// `summary` is still accepted as an optional caller-provided overlay
+// (so tools can offer human-friendly counts / extensions / byte
+// totals), but the authoritative paths array is what the gate
+// audits.
 export async function requestReadBatch({
+  paths,
   summary,
   chatId,
   sseEmitter,
   signal,
   workspacePath,
+  baseDir,
 }) {
-  if (!summary || typeof summary !== 'object') {
-    throw denyError('requestReadBatch requires a summary object.');
+  if (!Array.isArray(paths) || !paths.length) {
+    throw denyError('requestReadBatch requires a non-empty paths[] array.');
   }
+
+  // Resolve every path safely. We collect both lexical + real so the
+  // UI can show the user what's actually being touched.
+  const resolved = [];
+  for (const p of paths) {
+    const abs = toAbsolute(p, baseDir);
+    if (!abs) continue;
+    const r = await safeResolvePath(abs);
+    resolved.push({
+      lexicalPath: abs,
+      realPath: r.realPath,
+      hasSymlinkInChain: r.hasSymlinkInChain,
+      sensitive: isAnySensitive(abs, r.realPath, readRequiresApproval),
+      category: moreRestrictiveCategory(
+        classifyPath(abs),
+        classifyPath(r.realPath),
+      ),
+    });
+  }
+
+  const sensitive = resolved.filter(r => r.sensitive);
+  const benign = resolved.filter(r => !r.sensitive);
+
+  // Sensitive paths: each goes through a single-file approval. We
+  // sequentially invoke requestRead so the user sees N modal prompts
+  // (one per sensitive hit) — never bundled into one coarse decision.
+  for (const entry of sensitive) {
+    await requestRead({
+      path: entry.lexicalPath,
+      chatId,
+      sseEmitter,
+      signal,
+      workspacePath,
+    });
+  }
+
+  // Benign batch (or zero, if all hits were sensitive and approved):
+  // one summary prompt. Skip if the partition leaves nothing benign.
+  if (benign.length === 0) return;
 
   await _prompt({
     sseEmitter, signal, chatId,
     kind: OP_KIND.READ_BATCH,
     payload: {
-      dir: summary.dir || null,
-      fileCount: typeof summary.fileCount === 'number' ? summary.fileCount : null,
-      extensions: Array.isArray(summary.extensions) ? summary.extensions.slice(0, 32) : [],
-      byteRange: summary.byteRange || null,
-      sample: Array.isArray(summary.sample) ? summary.sample.slice(0, 12) : [],
-      withinWorkspace: isWithinWorkspace(
-        toAbsolute(summary.dir || '', null),
-        workspacePath,
+      dir: summary?.dir || null,
+      fileCount: benign.length,
+      extensions: Array.isArray(summary?.extensions)
+        ? summary.extensions.slice(0, 32)
+        : [],
+      byteRange: summary?.byteRange || null,
+      sample: benign.slice(0, 12).map(b => ({
+        lexicalPath: b.lexicalPath,
+        realPath: b.realPath,
+        hasSymlinkInChain: b.hasSymlinkInChain,
+      })),
+      sensitiveCount: sensitive.length,
+      hasSymlinks: benign.some(b => b.hasSymlinkInChain),
+      withinWorkspace: benign.every(b =>
+        isWithinWorkspace(b.lexicalPath, workspacePath) &&
+        isWithinWorkspace(b.realPath, workspacePath),
       ),
     },
   });
@@ -302,6 +409,14 @@ export async function requestReadBatch({
 // Write — both new-file create and overwrite. The caller passes hashes
 // + a diff preview when overwriting so the user can see what's about
 // to change.
+//
+// Codex C round 1 (2026-05-03): hard-block check now uses the most
+// restrictive of (lexical, real). A workspace symlink to /etc/hosts
+// would write through to /etc/hosts at the kernel — must hard-reject
+// even though the lexical path is benign. Q2B: when a symlink exists
+// anywhere in the chain, the prompt payload sets `hasSymlinkInChain`
+// + reveals `realPath` so the UI can display "WARNING: target is a
+// symlink to X".
 export async function requestWrite({
   path,
   chatId,
@@ -319,33 +434,43 @@ export async function requestWrite({
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Write requested with empty path.');
 
-  if (isHardBlockedWrite(abs)) {
+  const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
+
+  if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
+    const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
     throw denyError(
-      `Write to ${abs} is blocked by safety policy (category: ${classifyPath(abs)}).`,
+      `Write to ${abs} is blocked by safety policy (category: ${cat}` +
+      (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
     );
   }
 
-  if (hasGrant(chatId, abs, GRANT_KIND.WRITE)) return;
+  // Grants are keyed on realPath so re-pointing a symlink invalidates
+  // prior approvals (defence against TOCTOU within a long chat).
+  if (hasGrant(chatId, realPath, GRANT_KIND.WRITE)) return;
 
   const decision = await _prompt({
     sseEmitter, signal, chatId,
     kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
     payload: {
       path: abs,
+      realPath,
+      hasSymlinkInChain,
       isCreate: !!isCreate,
       contentSize,
       contentPreview: clipText(contentPreview, 4000),
       oldHash,
       newHash,
       diffPreview: clipText(diffPreview, 8000),
-      withinWorkspace: isWithinWorkspace(abs, workspacePath),
+      withinWorkspace:
+        isWithinWorkspace(abs, workspacePath) &&
+        isWithinWorkspace(realPath, workspacePath),
     },
   });
 
   if (decision.scope === SCOPE.FILE) {
-    grantFile(chatId, abs, [GRANT_KIND.WRITE]);
+    grantFile(chatId, realPath, [GRANT_KIND.WRITE]);
   } else if (decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(abs), [GRANT_KIND.WRITE]);
+    grantDir(chatId, parentDir(realPath), [GRANT_KIND.WRITE]);
   }
 }
 
@@ -364,32 +489,40 @@ export async function requestEdit({
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Edit requested with empty path.');
 
-  if (isHardBlockedWrite(abs)) {
+  const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
+
+  if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
+    const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
     throw denyError(
-      `Edit of ${abs} is blocked by safety policy (category: ${classifyPath(abs)}).`,
+      `Edit of ${abs} is blocked by safety policy (category: ${cat}` +
+      (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
     );
   }
 
-  if (hasGrant(chatId, abs, GRANT_KIND.EDIT)) return;
+  if (hasGrant(chatId, realPath, GRANT_KIND.EDIT)) return;
   // A WRITE grant also covers EDIT — same blast radius, narrower op.
-  if (hasGrant(chatId, abs, GRANT_KIND.WRITE)) return;
+  if (hasGrant(chatId, realPath, GRANT_KIND.WRITE)) return;
 
   const decision = await _prompt({
     sseEmitter, signal, chatId,
     kind: OP_KIND.EDIT,
     payload: {
       path: abs,
+      realPath,
+      hasSymlinkInChain,
       oldExcerpt: clipText(oldString, 4000),
       newExcerpt: clipText(newString, 4000),
       diffPreview: clipText(diffPreview, 8000),
-      withinWorkspace: isWithinWorkspace(abs, workspacePath),
+      withinWorkspace:
+        isWithinWorkspace(abs, workspacePath) &&
+        isWithinWorkspace(realPath, workspacePath),
     },
   });
 
   if (decision.scope === SCOPE.FILE) {
-    grantFile(chatId, abs, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
+    grantFile(chatId, realPath, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
   } else if (decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(abs), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
+    grantDir(chatId, parentDir(realPath), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
   }
 }
 
@@ -409,14 +542,25 @@ export async function requestMove({
   const absDst = toAbsolute(dst, baseDir);
   if (!absSrc || !absDst) throw denyError('Move requested with empty src or dst.');
 
-  if (isHardBlockedWrite(absSrc)) {
+  const srcResolved = await safeResolvePath(absSrc);
+  const dstResolved = await safeResolvePath(absDst);
+
+  if (isAnySensitive(absSrc, srcResolved.realPath, isHardBlockedWrite)) {
+    const cat = moreRestrictiveCategory(
+      classifyPath(absSrc),
+      classifyPath(srcResolved.realPath),
+    );
     throw denyError(
-      `Move source ${absSrc} is blocked by safety policy (category: ${classifyPath(absSrc)}).`,
+      `Move source ${absSrc} is blocked by safety policy (category: ${cat}).`,
     );
   }
-  if (isHardBlockedWrite(absDst)) {
+  if (isAnySensitive(absDst, dstResolved.realPath, isHardBlockedWrite)) {
+    const cat = moreRestrictiveCategory(
+      classifyPath(absDst),
+      classifyPath(dstResolved.realPath),
+    );
     throw denyError(
-      `Move destination ${absDst} is blocked by safety policy (category: ${classifyPath(absDst)}).`,
+      `Move destination ${absDst} is blocked by safety policy (category: ${cat}).`,
     );
   }
 
@@ -426,11 +570,23 @@ export async function requestMove({
     payload: {
       src: absSrc,
       dst: absDst,
-      srcCategory: classifyPath(absSrc),
-      dstCategory: classifyPath(absDst),
+      srcRealPath: srcResolved.realPath,
+      dstRealPath: dstResolved.realPath,
+      srcHasSymlinkInChain: srcResolved.hasSymlinkInChain,
+      dstHasSymlinkInChain: dstResolved.hasSymlinkInChain,
+      srcCategory: moreRestrictiveCategory(
+        classifyPath(absSrc),
+        classifyPath(srcResolved.realPath),
+      ),
+      dstCategory: moreRestrictiveCategory(
+        classifyPath(absDst),
+        classifyPath(dstResolved.realPath),
+      ),
       withinWorkspace:
         isWithinWorkspace(absSrc, workspacePath) &&
-        isWithinWorkspace(absDst, workspacePath),
+        isWithinWorkspace(absDst, workspacePath) &&
+        isWithinWorkspace(srcResolved.realPath, workspacePath) &&
+        isWithinWorkspace(dstResolved.realPath, workspacePath),
     },
   });
   // No session grants for move — see header.
@@ -459,12 +615,22 @@ export async function requestDelete({
     .filter(Boolean);
   if (!absPaths.length) throw denyError('Delete requested with no paths.');
 
+  // Resolve every path. Hard-block check runs against BOTH lexical
+  // and real (Codex C 2026-05-03 — symlink to /etc/hosts must reject).
+  const resolved = [];
   for (const p of absPaths) {
-    if (isHardBlockedDelete(p)) {
+    const r = await safeResolvePath(p);
+    if (isAnySensitive(p, r.realPath, isHardBlockedDelete)) {
+      const cat = moreRestrictiveCategory(
+        classifyPath(p),
+        classifyPath(r.realPath),
+      );
       throw denyError(
-        `Delete of ${p} is blocked by safety policy (category: ${classifyPath(p)}).`,
+        `Delete of ${p} is blocked by safety policy (category: ${cat}` +
+        (r.hasSymlinkInChain ? `, real target: ${r.realPath}` : '') + ').',
       );
     }
+    resolved.push({ lexicalPath: p, realPath: r.realPath, hasSymlinkInChain: r.hasSymlinkInChain });
   }
 
   const expectedConfirmation =
@@ -477,9 +643,14 @@ export async function requestDelete({
     payload: {
       stage: 'intent',
       paths: absPaths,
+      realPaths: resolved.map(r => r.realPath),
+      hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
       reason,
       expectedConfirmation,
-      withinWorkspace: absPaths.every(p => isWithinWorkspace(p, workspacePath)),
+      withinWorkspace: resolved.every(r =>
+        isWithinWorkspace(r.lexicalPath, workspacePath) &&
+        isWithinWorkspace(r.realPath, workspacePath),
+      ),
     },
   });
 
@@ -492,11 +663,17 @@ export async function requestDelete({
     payload: {
       stage: 'confirm',
       paths: absPaths,
+      realPaths: resolved.map(r => r.realPath),
+      hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
       expectedConfirmation,
     },
   });
 
-  return { confirmedPaths: absPaths, expectedConfirmation };
+  return {
+    confirmedPaths: absPaths,
+    confirmedRealPaths: resolved.map(r => r.realPath),
+    expectedConfirmation,
+  };
 }
 
 // Bash command containing risky file ops. The caller (bashTool, Phase

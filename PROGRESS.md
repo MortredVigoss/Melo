@@ -19,7 +19,15 @@
 - 全量回归：`node --test src/**/*.test.js` **1594/1594 全绿**（前 1468 + 126 新；零既有测试回归）。
 - CLAUDE.md §6 合规：trash/backup 所有公共函数都在 entry 同步读 `getMeloHome()` 捕获到 local，await 后只用 captured 值，不在 microtask 里再读 env。Gate 同款。
 - CLAUDE.md §1 合规：四模块独立，零横切改动，零 byte-for-byte 移植场景。
-- 待 push（Codex review 后定推）。Phase 2（接管现有工具）和 Phase 3（UI）尚未动。
+- 提交哈希：`5ebf668`。
+- Follow-up（Codex C 第一轮 → symlink 绕过 + path traversal 4 条全修）：上一刀 `git pp` 被 Codex pre-pp evaluation 评 C 阻断 push，4 条都是真问题：① 🟠 `requestRead` 用 lexical `isWithinWorkspace()` silent allow → workspace 内 symlink 指向 `~/.ssh`/`/etc` 绕过 sensitive read；② 🟠 `requestWrite/Edit/Delete` 同款，写跟随 symlink 破坏敏感目标；③ 🟡 `purgeBackup(operationId)` 直接 join + rm，`../` 形态可越出 `.melo-backups`；④ 🔵 `requestReadBatch` 只信 caller summary，敏感路径混进一次粗粒度审批。用户拍板 Q1=A（workspace symlink 指向 workspace 外**一律审批**，敏感目标走原硬规则）+ Q2=B（write/edit/create 遇 symlink chain **弹窗 + 显式告知 realPath**）。修法路径 (a) 一刀全修。
+- 新模块 [src/safety/pathResolver.js](src/safety/pathResolver.js) `safeResolvePath(absPath)`：返回 `{lexicalPath, realPath, hasSymlinkInChain, exists}`；missing 路径走 deepest existing ancestor 再 reconstruct（catch "create 在 symlinked dir 下" case：`~/badlink/foo` where `~/badlink → /etc` 解到 `/etc/foo` 仍 hard-block）；非 ENOENT/ENOTDIR 错误抛给 caller。
+- gate 三段重做：① **sensitivity 取最严格**：`moreRestrictiveCategory(classify(lexical), classify(real))` + `isAnySensitive(lex, real, predicate)` —— 攻击者把 `/etc/foo` 做成 symlink 指向 `/tmp/bar` 也不会 silently 降级；② **workspace silent allow 要 lexical AND real 双在**（Q1A）—— 只 lexical 在 workspace 内但 real 在外 → 强制 prompt；③ **grants keyed on realPath**（防 TOCTOU + alias）—— `linkA → /tmp/foo`、`linkB → /tmp/foo` 同 realPath，linkA 的 file-grant 自动覆盖 linkB。Q2B 实现：write/edit/move/delete 弹窗 payload 必带 `realPath` + `hasSymlinkInChain`，UI 据此显 "WARNING: 真实写入路径=X"。
+- `requestReadBatch` 合同重设：从 `{summary}` 改为强制 `{paths: [absPath...], summary?}`；gate 内部 resolve + partition：sensitive 路径**逐一**走 `requestRead`（一次一个 modal），benign 走单 batch prompt 带 `sensitiveCount` + `hasSymlinks` 标记。彻底干掉"敏感路径混在 batch summary 里被一刀过"。
+- trash + backup `purge*` / `restoreFromTrash` 加双层防护：① `OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/` 入参白名单（拒 `../`、绝对路径、空格、NUL、过长过短、非字符串等 14 种 traversal 形态）；② `assertWithinRoot(opDir, root)` 用 `realpath()` 解析后断言候选 dir 在 root sep 边界内（即使 root 自身是 symlink 也防 confusion vector）。
+- 测试加 17 条新安全回归：[symlinkSafety.test.js](src/safety/symlinkSafety.test.js) **7 case**（READ：workspace symlink → ~/.ssh sensitive prompt；Q1A workspace symlink → 外部 benign 仍 prompt；WRITE：symlink → /etc/hosts 硬拒；Q2B：symlink → benign 外部 prompt with hasSymlinkInChain=true + realPath；CREATE under symlinked dir：parent realpath 解析后 hard-reject；DELETE：symlink → ~/.ssh 硬拒；grant via lexical-A 覆盖 lexical-B 同 realPath）+ [operationIdTraversal.test.js](src/safety/operationIdTraversal.test.js) **8 case**（trash/backup `purge*` × 14 种 traversal 输入全拒 + 合法 UUID 通过 + 未知合法 ID 走 "No entry" 不走 rm + symlink-MELO_HOME 防御）。fileSafetyGate.test.js 内的 2 个 macOS-affected 测试（`/tmp -> /private/tmp` 引发 realpath 错位）改用 `realpath(mkdtemp(...))` canonical workspace 修。requestReadBatch 测试改用新 paths[] API + 加 mixed-sensitive 拆分回归。
+- 验证：`src/safety/*.test.js` **143/143 全绿**（前 126 + 17 新）；`src/**/*.test.js` **1611/1611 全绿**（前 1594 + 17 新；零既有回归）。
+- 待 push（git pp 复审）。Phase 2（接管现有工具）和 Phase 3（UI）尚未动。
 
 ## 2026-05-01 14:00 — PDF 能力 Batch A：simple ops + render（用户 PDF audit 落实第一刀）
 

@@ -16,7 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 const HOME = homedir();
@@ -120,15 +120,26 @@ test('requestWrite to MELO_HOME hard-rejects', async () => {
 
 test('requestRead inside workspace silently allows (no SSE event)', async () => {
   const { gate } = await freshGate();
-  const events = [];
-  const sse = (e, p) => events.push({ e, p });
-  await gate.requestRead({
-    path: '/tmp/ws/foo.txt',
-    chatId: 'chat-A',
-    sseEmitter: sse,
-    workspacePath: '/tmp/ws',
-  });
-  assert.equal(events.length, 0);
+  // Use a real tempdir + realpath() so the workspace path is already
+  // canonical. macOS's /tmp is a symlink to /private/tmp, which would
+  // otherwise trip our (correct) "lexical inside ws but real outside"
+  // gate behavior and force a prompt for legitimate workspace files.
+  const wsDir = await realpath(await mkdtemp(join(tmpdir(), 'fsg-ws-')));
+  await mkdir(join(wsDir, 'sub'), { recursive: true });
+  await writeFile(join(wsDir, 'sub', 'foo.txt'), 'x', 'utf8');
+  try {
+    const events = [];
+    const sse = (e, p) => events.push({ e, p });
+    await gate.requestRead({
+      path: join(wsDir, 'sub', 'foo.txt'),
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: wsDir,
+    });
+    assert.equal(events.length, 0);
+  } finally {
+    await rm(wsDir, { recursive: true, force: true });
+  }
 });
 
 test('requestRead OUTSIDE workspace prompts the user', async () => {
@@ -435,13 +446,15 @@ test('requestBashOp with overwrite-class risk → prompts for approval', async (
 
 // ─── Batch read ────────────────────────────────────────────────────────
 
-test('requestReadBatch prompts with summary metadata, never auto-allowed', async () => {
+test('requestReadBatch requires concrete paths[] and prompts once for benign batch', async () => {
+  // Codex C round 1 (2026-05-03): batch reads must pass a concrete
+  // paths array; the gate audits each path individually.
   const { gate } = await freshGate();
   const { sse, events } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestReadBatch({
+    paths: ['/tmp/proj/a.js', '/tmp/proj/b.js', '/tmp/proj/c.ts'],
     summary: {
       dir: '/tmp/proj',
-      fileCount: 42,
       extensions: ['.js', '.ts'],
       byteRange: { min: 100, max: 50_000, total: 1_000_000 },
     },
@@ -451,8 +464,50 @@ test('requestReadBatch prompts with summary metadata, never auto-allowed', async
   });
   assert.equal(events.length, 1);
   assert.equal(events[0].payload.operation, 'read_batch');
-  assert.equal(events[0].payload.fileCount, 42);
+  assert.equal(events[0].payload.fileCount, 3);
   assert.deepEqual(events[0].payload.extensions, ['.js', '.ts']);
+  assert.equal(events[0].payload.sensitiveCount, 0);
+});
+
+test('requestReadBatch rejects when paths[] is missing or empty', async () => {
+  const { gate } = await freshGate();
+  await assert.rejects(
+    gate.requestReadBatch({
+      summary: { dir: '/tmp/proj' },
+      chatId: 'chat-A',
+      sseEmitter: () => {},
+    }),
+    /requires a non-empty paths/i,
+  );
+  await assert.rejects(
+    gate.requestReadBatch({
+      paths: [],
+      chatId: 'chat-A',
+      sseEmitter: () => {},
+    }),
+    /requires a non-empty paths/i,
+  );
+});
+
+test('requestReadBatch with a sensitive path: each sensitive hit gets its own approval, benign get one batch', async () => {
+  const { gate } = await freshGate();
+  const { sse, events } = makeAutoResolver(gate, [
+    { scope: 'once' }, // sensitive single (~/.ssh/id_rsa)
+    { scope: 'once' }, // benign batch
+  ]);
+  await gate.requestReadBatch({
+    paths: ['/tmp/proj/a.js', join(HOME, '.ssh/id_rsa'), '/tmp/proj/b.js'],
+    chatId: 'chat-A',
+    sseEmitter: sse,
+    workspacePath: '/tmp/ws',
+  });
+  assert.equal(events.length, 2, 'one sensitive prompt + one benign batch prompt');
+  // First event = sensitive single read (kind=read), second = batch.
+  assert.equal(events[0].payload.operation, 'read');
+  assert.equal(events[0].payload.sensitive, true);
+  assert.equal(events[1].payload.operation, 'read_batch');
+  assert.equal(events[1].payload.fileCount, 2, 'sensitive removed from benign count');
+  assert.equal(events[1].payload.sensitiveCount, 1);
 });
 
 // ─── resolveFileSafety direct API ──────────────────────────────────────

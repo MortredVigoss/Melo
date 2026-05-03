@@ -32,16 +32,54 @@ import {
   rm,
   writeFile,
   readFile,
+  realpath,
   stat,
   cp,
   readdir,
 } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
 
 const TRASH_DIR_NAME = '.melo-trash';
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Whitelist for operationId values supplied by the API / UI. Mirrors
+// backup.js — Codex C round 1 (2026-05-03) flagged the same path-
+// traversal class on the backup side; harden trash for symmetry.
+const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+function assertValidOperationId(operationId) {
+  if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) {
+    throw new Error(
+      `Invalid operationId: must match ${OPERATION_ID_PATTERN}.`,
+    );
+  }
+}
+
+// Defence-in-depth: even after listTrash() finds a manifest with a
+// matching operationId, resolve the candidate dir via realpath and
+// assert it sits inside trashRoot before any rm. Catches the case
+// where trashRoot itself is a symlink, etc.
+async function assertWithinRoot(candidateDir, root) {
+  const resolvedRoot = await realpath(root);
+  let resolvedCandidate;
+  try {
+    resolvedCandidate = await realpath(candidateDir);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error(`No trash entry at ${candidateDir}.`);
+    }
+    throw err;
+  }
+  if (
+    resolvedCandidate !== resolvedRoot &&
+    !resolvedCandidate.startsWith(resolvedRoot + sep)
+  ) {
+    throw new Error(
+      `Resolved trash path ${resolvedCandidate} is outside trash root ${resolvedRoot}.`,
+    );
+  }
+}
 
 function trashRoot(meloHome) {
   return join(meloHome, TRASH_DIR_NAME);
@@ -217,9 +255,7 @@ export async function listTrash() {
 // folder is removed. If anything was skipped, the folder stays so a
 // retry is possible.
 export async function restoreFromTrash(operationId, opts = {}) {
-  if (!operationId || typeof operationId !== 'string') {
-    throw new Error('restoreFromTrash requires an operationId.');
-  }
+  assertValidOperationId(operationId);
 
   const all = await listTrash();
   const target = all.find(x => x.operationId === operationId);
@@ -231,7 +267,9 @@ export async function restoreFromTrash(operationId, opts = {}) {
   }
 
   const meloHome = getMeloHome();
-  const opDir = join(trashRoot(meloHome), target.folderName);
+  const root = trashRoot(meloHome);
+  const opDir = join(root, target.folderName);
+  await assertWithinRoot(opDir, root);
   const filesDir = join(opDir, 'files');
 
   const restored = [];
@@ -270,19 +308,17 @@ export async function restoreFromTrash(operationId, opts = {}) {
 // Manual eviction. Called by the UI's "delete forever" button on a
 // trash row. The user spec is explicit that this never auto-fires.
 export async function purgeTrashEntry(operationId) {
-  if (!operationId || typeof operationId !== 'string') {
-    throw new Error('purgeTrashEntry requires an operationId.');
-  }
+  assertValidOperationId(operationId);
   const all = await listTrash();
   const target = all.find(x => x.operationId === operationId);
   if (!target) {
     throw new Error(`No trash entry with operationId=${operationId}.`);
   }
   const meloHome = getMeloHome();
-  await rm(join(trashRoot(meloHome), target.folderName), {
-    recursive: true,
-    force: true,
-  });
+  const root = trashRoot(meloHome);
+  const opDir = join(root, target.folderName);
+  await assertWithinRoot(opDir, root);
+  await rm(opDir, { recursive: true, force: true });
   return { purged: target.folderName };
 }
 
