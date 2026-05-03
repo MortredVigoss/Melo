@@ -28,7 +28,10 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
-import { fileReadTool } from './fileReadTool.js';
+import {
+  fileReadTool,
+  _setPostApprovalHookForTests as _setReadPostApprovalHook,
+} from './fileReadTool.js';
 import { globTool } from './globTool.js';
 import { grepTool } from './grepTool.js';
 
@@ -460,18 +463,49 @@ test('grepTool: include glob restricts file types', async () => {
   });
 });
 
-test('fileReadTool: leaf swapped to symlink between approval and open → COMMIT_FAILED via O_NOFOLLOW', async () => {
-  // Hard to inject reliably without a hook seam in the read path
-  // (read tool has no commit phase). The closest we can do without
-  // a new seam: approve a workspace symlink → outside file, then
-  // verify atomicOpenLeaf sees the link itself was resolved during
-  // the gate phase (no ELOOP because the path resolved through the
-  // link cleanly). Real "leaf swap mid-call" is exercised in
-  // dirfdOps tests; this test pins the integration path that
-  // atomicOpenLeaf is what's used (not fs.readFile path-level).
+test('fileReadTool: leaf swapped to symlink between approval and open → COMMIT_FAILED via O_NOFOLLOW (race injection)', async () => {
+  // Round 13 Phase 2B follow-up #1 (Codex ⚪): use the new
+  // _setPostApprovalHookForTests seam to inject a real leaf swap
+  // AFTER gate approval. atomicOpenLeaf must reject via O_NOFOLLOW
+  // (ELOOP) and we get COMMIT_FAILED, not the file's content.
   await withTempEnv(async ({ ws, outside }) => {
     const gate = await freshGate();
-    // Create a benign symlink target outside, read through link.
+    const benignFile = join(ws, 'doc.txt');
+    const sensitive = join(outside, 'leak.txt');
+    await writeFile(benignFile, 'safe content', 'utf8');
+    await writeFile(sensitive, 'PRIVATE-DATA', 'utf8');
+
+    let hookFired = false;
+    _setReadPostApprovalHook(async ({ realPath }) => {
+      // After approval but before the read fd opens, swap the
+      // approved benign file for a symlink to a sensitive file.
+      await rm(realPath, { force: true });
+      await symlink(sensitive, realPath);
+      hookFired = true;
+    });
+    try {
+      const result = await fileReadTool.run(
+        { path: benignFile },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(hookFired, true);
+      assert.equal(result.ok, false);
+      // Either ELOOP (atomicOpenLeaf saw the symlink) or ENOENT
+      // (rare scheduler ordering — symlink not yet visible). The
+      // critical guarantee: the sensitive content does NOT leak.
+      assert.ok(result.error === 'COMMIT_FAILED' || result.error === 'ENOENT',
+        `unexpected error: ${result.error}`);
+      assert.doesNotMatch(result.output || '', /PRIVATE-DATA/,
+        'sensitive content must NOT appear in result');
+    } finally {
+      _setReadPostApprovalHook(null);
+    }
+  });
+});
+
+test('fileReadTool: meta exposes resolved + lexical paths for a workspace→outside symlink (back-compat pin)', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
     const externalFile = join(outside, 'src.txt');
     const linkPath = join(ws, 'link');
     await writeFile(externalFile, 'via link', 'utf8');
@@ -482,8 +516,17 @@ test('fileReadTool: leaf swapped to symlink between approval and open → COMMIT
     );
     assert.equal(result.ok, true);
     assert.match(result.output, /via link/);
-    // meta.path is the resolved target (gate's resolvedTarget).
     assert.equal(result.meta.path, externalFile);
     assert.equal(result.meta.lexicalPath, linkPath);
   });
+});
+
+test('Phase 2B contract: read tools have requiresPermission:false (FileSafetyGate owns approval)', () => {
+  // Round 13 Phase 2B follow-up #1 (Codex 🟡): if requiresPermission
+  // were true, executor.js would fire its toolId-level prompt BEFORE
+  // FileSafetyGate's path classification, breaking the "workspace
+  // silent" contract. Pin the contract.
+  assert.equal(fileReadTool.requiresPermission, false);
+  assert.equal(globTool.requiresPermission, false);
+  assert.equal(grepTool.requiresPermission, false);
 });

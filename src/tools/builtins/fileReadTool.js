@@ -34,6 +34,15 @@ import {
 
 const MAX_READ_BYTES = 200_000; // ~200 KB safety cap
 
+// Round 13 Phase 2B follow-up #1 (Codex ⚪): test-only seam fired
+// AFTER gate approval but BEFORE atomicOpenLeaf. Tests use this to
+// inject a leaf-swap-to-symlink race and assert atomicOpenLeaf
+// rejects via O_NOFOLLOW (ELOOP). Default null = no-op.
+let _postApprovalHookForTests = null;
+export function _setPostApprovalHookForTests(hook) {
+  _postApprovalHookForTests = typeof hook === 'function' ? hook : null;
+}
+
 function readFromStartFd(fd) {
   const st = fstatSync(fd);
   if (st.size === 0) return { buf: Buffer.alloc(0), size: 0 };
@@ -60,7 +69,13 @@ export const fileReadTool = {
     'always require user approval per call (no session-wide grant). ' +
     'External-but-benign files prompt once with optional file/dir grant.',
   category: 'filesystem',
-  requiresPermission: true,
+  // Round 13 Phase 2B follow-up #1 (Codex 🟡): FileSafetyGate owns
+  // path-level approval (workspace silent / external prompt /
+  // sensitive per-call). Setting requiresPermission:true would make
+  // executor.js fire its toolId-level prompt FIRST, breaking the
+  // "workspace read silent" contract (user gets a generic "allow
+  // file_read?" prompt before any path classification runs).
+  requiresPermission: false,
   isConcurrencySafe: true,
   parametersSchema: {
     type: 'object',
@@ -124,6 +139,10 @@ export const fileReadTool = {
 
     const realPath = approved.resolvedTarget;
     const [parent, leaf] = splitParentLeaf(realPath);
+
+    if (_postApprovalHookForTests) {
+      try { await _postApprovalHookForTests({ realPath, parent, leaf, lexicalPath: absPath }); } catch {}
+    }
 
     // ── 2. Dirfd-bound open + read ────────────────────────────────────
     let openLeaf;

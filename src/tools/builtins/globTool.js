@@ -137,7 +137,11 @@ export const globTool = {
     'paths never leak into the result; meta.skippedSensitive reports how many. ' +
     'Returns matching paths relative to the base directory. Supports *, **, ?, and {a,b} patterns.',
   category: 'filesystem',
-  requiresPermission: true,
+  // Round 13 Phase 2B follow-up #1 (Codex 🟡): FileSafetyGate owns
+  // path-level approval; toolId-level requiresPermission would
+  // double-prompt (executor's generic "allow glob?" before our
+  // base-dir classification fires).
+  requiresPermission: false,
   isConcurrencySafe: true,
   parametersSchema: {
     type: 'object',

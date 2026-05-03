@@ -1,25 +1,31 @@
 /**
  * Built-in tool: grep
  *
- * Phase 2B (2026-05-04): wired through the FileSafetyGate.
+ * Phase 2B (2026-05-04) + follow-up #1 (Codex 🔴, 2026-05-04):
  *
  *   - requestRead({path: targetPath}) — gate classifies the search
  *     base. Workspace-internal silent; outside-benign prompts once;
  *     sensitive (system / credential / $MELO_HOME) prompts per call.
- *   - During the walk, sensitive subtrees are silently skipped
- *     UNLESS the base itself was sensitive (the user explicitly
- *     opted in by approving a sensitive base).
- *   - JS fallback per-file content reads use atomicOpenLeaf with
- *     O_NOFOLLOW (added auto). A leaf that becomes a symlink mid-
- *     walk is silently skipped (treated as if it doesn't exist for
- *     grep purposes — we won't follow into /etc via a swapped link).
- *   - Native ripgrep (`rg`) path: invoke with --no-follow so rg
- *     doesn't follow symlinks; results are post-filtered to drop
- *     anything classifying as sensitive (defence-in-depth).
+ *   - File enumeration is ALWAYS done by the JS walker so we have a
+ *     pre-classified safe-file list before any content read.
+ *     Sensitive subtrees are silently skipped (unless the base itself
+ *     is sensitive — user explicitly opted in).
+ *   - Two execution paths share that enumeration:
+ *       (a) JS fallback: per-file `atomicOpenLeaf` with O_NOFOLLOW,
+ *           regex-match each line in JS.
+ *       (b) Native `rg`: invoked with `--files-from -` reading the
+ *           pre-classified file list from stdin. rg never walks the
+ *           directory tree on its own → it cannot read sensitive
+ *           subtrees by accident. Combined with `--no-follow`, rg
+ *           also doesn't follow leaf symlinks.
+ *   - Codex round 13 Phase 2B #1 closed the prior race window where
+ *     rg fast-path walked the whole base (including sensitive
+ *     subtrees) and we only filtered stdout — sensitive content
+ *     reached our process memory before the filter fired. Now rg
+ *     never sees sensitive paths.
  *
  * Approval model: a single base-dir approval covers the whole
- * walk. The user does NOT see one prompt per file — that would
- * be unusable for any real grep against thousands of files.
+ * walk. The user does NOT see one prompt per file.
  */
 
 import { readdir } from 'node:fs/promises';
@@ -67,18 +73,38 @@ async function isRgAvailable() {
   return _rgAvailable;
 }
 
-async function searchViaRg(pattern, targetPath, baseDir, opts) {
-  const { include, contextLines, caseInsensitive, maxResults, signal, filterSensitive } = opts;
+/**
+ * Run rg against an EXPLICIT list of pre-classified safe files.
+ * The list is passed as positional argv (rg reads from those file
+ * paths only and does NOT walk the directory tree). This is the
+ * round 13 Phase 2B follow-up #1 fix — Codex flagged the prior
+ * fast path for letting rg recursively read sensitive subtrees
+ * inside an approved benign base, with sensitive content reaching
+ * our process memory before the post-filter dropped it.
+ *
+ * Argv-length safety: macOS ARG_MAX is ~1MB, Linux is typically
+ * 2MB. With ~100-byte average path, that's 10k+ files per invoke.
+ * Beyond that we batch into RG_BATCH_SIZE chunks. For workspaces
+ * larger than 50k files the wall-clock difference between rg and
+ * the JS fallback shrinks anyway because match work dominates.
+ *
+ * @param {string[]} fileList absolute paths that the JS walker
+ *   already classified as safe to read.
+ */
+const RG_BATCH_SIZE = 8000;
+
+async function runRgBatch(pattern, files, baseDir, opts) {
+  const { contextLines, caseInsensitive, maxResults, signal } = opts;
   const args = [
     '--json',
     '--max-count', '1',
     '--max-filesize', '500K',
-    '--no-follow',  // do NOT follow symlinks during walk
+    '--no-follow',
   ];
   if (caseInsensitive) args.push('--ignore-case');
   if (contextLines > 0) args.push('--context', String(contextLines));
-  if (include) args.push('--glob', include);
-  args.push('--', pattern, targetPath);
+  // Use `--` to terminate options before the pattern + file paths.
+  args.push('--', pattern, ...files);
 
   let raw;
   try {
@@ -89,30 +115,18 @@ async function searchViaRg(pattern, targetPath, baseDir, opts) {
     });
     raw = stdout;
   } catch (err) {
-    if (err.code === 1) return { matches: [], skippedSensitive: 0 };
+    if (err.code === 1) return [];  // rg exit 1 = no matches
     throw err;
   }
 
   const matches = [];
-  let skippedSensitive = 0;
   const lines = raw.split('\n');
-
   for (const line of lines) {
     if (!line.trim()) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
     if (msg.type !== 'match') continue;
-
     const absFile = msg.data?.path?.text || '';
-
-    // Defence-in-depth: drop sensitive matches if the base wasn't
-    // explicitly sensitive. rg shouldn't have walked into /etc but
-    // verify per-result anyway.
-    if (filterSensitive && isSensitiveSubtree(absFile)) {
-      skippedSensitive++;
-      continue;
-    }
-
     const relFile = relative(baseDir, absFile).replace(/\\/g, '/');
     const lineNo = msg.data?.line_number ?? 0;
     const matchText = msg.data?.lines?.text?.trimEnd() ?? '';
@@ -123,7 +137,20 @@ async function searchViaRg(pattern, targetPath, baseDir, opts) {
     matches.push({ file: relFile, line: lineNo, text: matchText, context });
     if (matches.length >= maxResults) break;
   }
-  return { matches, skippedSensitive };
+  return matches;
+}
+
+async function searchViaRg(pattern, fileList, baseDir, opts) {
+  if (!fileList.length) return { matches: [] };
+  const allMatches = [];
+  for (let i = 0; i < fileList.length; i += RG_BATCH_SIZE) {
+    if (allMatches.length >= opts.maxResults) break;
+    const batch = fileList.slice(i, i + RG_BATCH_SIZE);
+    const remaining = opts.maxResults - allMatches.length;
+    const batchMatches = await runRgBatch(pattern, batch, baseDir, { ...opts, maxResults: remaining });
+    allMatches.push(...batchMatches);
+  }
+  return { matches: allMatches };
 }
 
 // ─── Glob → regex ──────────────────────────────────────────────────────
@@ -203,37 +230,57 @@ async function searchFileAtomic(absPath, relPath, searchRe, contextLines, maxMat
   }
 }
 
-async function walk(dir, baseDir, fileRe, searchRe, results, contextLines, maxMatches, signal, skipped, filterSensitive) {
-  if (results.length >= maxMatches) return;
-  if (signal?.aborted) return;
-
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
+/**
+ * Pre-classified safe-file enumeration. Walks `dir`, skipping
+ * IGNORED vendor dirs and sensitive subtrees. Returns absolute
+ * paths of regular files matching `fileRe` (or all files if
+ * `fileRe` is null). Used by BOTH the JS fallback and the rg
+ * fast path so the safety semantics are identical regardless
+ * of which engine actually reads the content.
+ *
+ * - readdir(withFileTypes:true) does NOT follow symlinks for
+ *   the directory entries themselves; symlinked dirs surface as
+ *   non-directory entries and aren't recursed into.
+ * - sensitive-subtree skip is bypassed when `filterSensitive` is
+ *   false (user explicitly approved a sensitive base).
+ */
+async function enumerateSafeFiles(dir, baseDir, fileRe, signal, skipped, filterSensitive, maxFiles) {
+  const out = [];
+  async function recurse(d) {
+    if (out.length >= maxFiles) return;
+    if (signal?.aborted) return;
+    let entries;
+    try { entries = await readdir(d, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      if (out.length >= maxFiles) break;
+      if (IGNORED.has(entry.name)) continue;
+      const fullPath = join(d, entry.name);
+      if (filterSensitive && isSensitiveSubtree(fullPath)) {
+        skipped.sensitive++;
+        continue;
+      }
+      const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
+      if (entry.isDirectory()) {
+        await recurse(fullPath);
+      } else if (entry.isFile() && (!fileRe || fileRe.test(relPath))) {
+        out.push(fullPath);
+      }
+    }
   }
+  await recurse(dir);
+  return out;
+}
 
-  for (const entry of entries) {
+async function searchFileListAtomic(fileList, baseDir, searchRe, contextLines, maxMatches) {
+  const results = [];
+  for (const absPath of fileList) {
     if (results.length >= maxMatches) break;
-    if (IGNORED.has(entry.name)) continue;
-
-    const fullPath = join(dir, entry.name);
-
-    if (filterSensitive && isSensitiveSubtree(fullPath)) {
-      skipped.sensitive++;
-      continue;
-    }
-
-    const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
-
-    if (entry.isDirectory()) {
-      await walk(fullPath, baseDir, fileRe, searchRe, results, contextLines, maxMatches, signal, skipped, filterSensitive);
-    } else if (entry.isFile() && (!fileRe || fileRe.test(relPath))) {
-      const fileMatches = await searchFileAtomic(fullPath, relPath, searchRe, contextLines, 20);
-      results.push(...fileMatches.slice(0, maxMatches - results.length));
-    }
+    const relPath = relative(baseDir, absPath).replace(/\\/g, '/');
+    const fileMatches = await searchFileAtomic(absPath, relPath, searchRe, contextLines, 20);
+    results.push(...fileMatches.slice(0, maxMatches - results.length));
   }
+  return results;
 }
 
 // ─── Tool ──────────────────────────────────────────────────────────────
@@ -250,7 +297,11 @@ export const grepTool = {
     'Per-file reads use dirfd-bound O_NOFOLLOW open (a leaf that becomes a symlink mid-walk is skipped, never followed). ' +
     'Returns matching lines with optional surrounding context. Use include to restrict to certain file types (e.g. "*.js").',
   category: 'filesystem',
-  requiresPermission: true,
+  // Round 13 Phase 2B follow-up #1 (Codex 🟡): FileSafetyGate owns
+  // path-level approval; toolId-level requiresPermission would
+  // double-prompt (executor's generic "allow grep?" before our
+  // base-dir classification fires).
+  requiresPermission: false,
   isConcurrencySafe: true,
   parametersSchema: {
     type: 'object',
@@ -343,33 +394,42 @@ export const grepTool = {
     const allMatches = [];
     const skipped = { sensitive: 0 };
 
+    let fileRe = null;
+    if (include) {
+      try { fileRe = globToRegex(include); } catch { /* ignore */ }
+    }
+
     try {
-      if (await isRgAvailable()) {
-        const { matches: rgMatches, skippedSensitive } = await searchViaRg(pattern, realBase, baseDir, {
-          include,
-          contextLines: ctxLines,
-          caseInsensitive: case_insensitive,
-          maxResults,
-          signal,
-          filterSensitive,
-        });
-        allMatches.push(...rgMatches);
-        skipped.sensitive += skippedSensitive;
+      const { stat } = await import('node:fs/promises');
+      const s = await stat(realBase).catch(() => null);
+
+      // Single-file base: just search that one file.
+      if (s?.isFile()) {
+        const relPath = relative(baseDir, realBase).replace(/\\/g, '/');
+        const fileMatches = await searchFileAtomic(realBase, relPath, searchRe, ctxLines, maxResults);
+        allMatches.push(...fileMatches);
       } else {
-        let fileRe = null;
-        if (include) {
-          try { fileRe = globToRegex(include); } catch { /* ignore */ }
-        }
+        // Directory base: enumerate safe files via JS walker (the
+        // same enumeration is used whether rg is available or not),
+        // then dispatch to rg or to the JS searcher. rg never walks
+        // — it receives the pre-classified file list via stdin.
+        const safeFiles = await enumerateSafeFiles(
+          realBase, baseDir, fileRe, signal, skipped, filterSensitive, 5000,
+        );
 
-        const { stat } = await import('node:fs/promises');
-        const s = await stat(realBase).catch(() => null);
-
-        if (s?.isFile()) {
-          const relPath = relative(baseDir, realBase).replace(/\\/g, '/');
-          const fileMatches = await searchFileAtomic(realBase, relPath, searchRe, ctxLines, maxResults);
-          allMatches.push(...fileMatches);
+        if (safeFiles.length === 0) {
+          // nothing to search — fall through, allMatches stays empty
+        } else if (await isRgAvailable()) {
+          const { matches: rgMatches } = await searchViaRg(pattern, safeFiles, baseDir, {
+            contextLines: ctxLines,
+            caseInsensitive: case_insensitive,
+            maxResults,
+            signal,
+          });
+          allMatches.push(...rgMatches);
         } else {
-          await walk(realBase, baseDir, fileRe, searchRe, allMatches, ctxLines, maxResults, signal, skipped, filterSensitive);
+          const jsMatches = await searchFileListAtomic(safeFiles, baseDir, searchRe, ctxLines, maxResults);
+          allMatches.push(...jsMatches);
         }
       }
     } catch (err) {
