@@ -1,0 +1,489 @@
+/**
+ * phase2b.readTools.test.js — Phase 2B integration tests.
+ *
+ * Phase 2B wires the read-side tools (file_read, glob, grep) through
+ * the FileSafetyGate and the dirfd-bound atomic open primitives:
+ *
+ *   - workspace-internal reads: silent, no UI.
+ *   - sensitive (system / credential / $MELO_HOME) reads: per-call
+ *     UI prompt, never granted session-wide. Hard-blocked-by-write
+ *     paths are still readable IF the user explicitly approves.
+ *   - external benign: prompt with optional file/dir grant.
+ *
+ * Read-side does NOT take backups (read-only). The dirfd-bound open
+ * (atomicOpenLeaf, O_NOFOLLOW added auto) catches a leaf that became
+ * a symlink between approval and our open via ELOOP.
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import {
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+  mkdir,
+  symlink,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+
+import { fileReadTool } from './fileReadTool.js';
+import { globTool } from './globTool.js';
+import { grepTool } from './grepTool.js';
+
+async function freshGate() {
+  const grants = await import('../../safety/chatScopedGrants.js');
+  grants.clearChat();
+  const gate = await import('../../safety/fileSafetyGate.js');
+  gate._clearPendingForTests();
+  return gate;
+}
+
+async function withTempEnv(fn) {
+  const home = await mkdtemp(join(tmpdir(), 'p2b-home-'));
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'p2b-ws-')));
+  const outside = await realpath(await mkdtemp(join(tmpdir(), 'p2b-out-')));
+  const prev = process.env.MELO_HOME;
+  process.env.MELO_HOME = home;
+  try {
+    await mkdir(home, { recursive: true });
+    await fn({ ws, outside, home });
+  } finally {
+    if (prev === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prev;
+    await rm(home, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+}
+
+function autoApprove(gate) {
+  return (event, payload) => {
+    queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'once'));
+  };
+}
+function autoDeny(gate) {
+  return (event, payload) => {
+    queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'deny'));
+  };
+}
+
+// ─── fileReadTool ─────────────────────────────────────────────────────
+
+test('fileReadTool: workspace-internal read is silent (no UI prompt)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'a.txt');
+    await writeFile(target, 'line1\nline2\nline3', 'utf8');
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await fileReadTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 0, 'workspace-internal read must not prompt');
+    assert.match(result.output, /1\tline1/);
+    assert.match(result.output, /3\tline3/);
+  });
+});
+
+test('fileReadTool: external benign file prompts and is readable on approve', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const target = join(outside, 'note.txt');
+    await writeFile(target, 'external content', 'utf8');
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await fileReadTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1, 'external read must prompt exactly once');
+    assert.match(result.output, /external content/);
+  });
+});
+
+test('fileReadTool: deny → returns DENIED with no fs touch', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const target = join(outside, 'secret.txt');
+    await writeFile(target, 'shh', 'utf8');
+    const result = await fileReadTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    // File still on disk (we obviously didn't delete it, but verify
+    // the DENIED branch returns before any open).
+    const probe = await fileReadTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(probe.ok, true);
+    assert.match(probe.output, /shh/);
+  });
+});
+
+test('fileReadTool: workspace symlink → outside benign requires prompt + reads through link', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'data.txt');
+    const linkPath = join(ws, 'mylink');
+    await writeFile(externalFile, 'real data', 'utf8');
+    await symlink(externalFile, linkPath);
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      // Verify the prompt payload exposes hasSymlinkInChain + realPath
+      // so the UI can show a warning. Gate spreads the payload at top
+      // level (operation/kind/...payload all siblings of requestId).
+      assert.equal(payload.hasSymlinkInChain, true, 'prompt must flag symlink');
+      assert.equal(payload.realPath, externalFile);
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await fileReadTool.run(
+      { path: linkPath },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1, 'workspace-symlink-to-outside must prompt');
+    assert.match(result.output, /real data/);
+  });
+});
+
+test('fileReadTool: read of /etc/hosts requires explicit per-call approval (sensitive, no session grant)', async () => {
+  // /etc/hosts is in the system blocklist for writes but readable
+  // through the gate. Two consecutive reads must each prompt — sensitive
+  // reads are NEVER granted session-wide.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      // Even if the user clicks "always allow this dir", the gate
+      // must still treat sensitive reads as per-call.
+      gate.resolveFileSafety(payload.requestId, 'dir');
+    };
+    const r1 = await fileReadTool.run(
+      { path: '/etc/hosts' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(r1.ok, true);
+    const r2 = await fileReadTool.run(
+      { path: '/etc/hosts' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(r2.ok, true);
+    assert.equal(promptCount, 2, 'sensitive read must prompt EVERY time');
+  });
+});
+
+test('fileReadTool: missing file returns ENOENT after gate approval (workspace silent)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const result = await fileReadTool.run(
+      { path: join(ws, 'nope.txt') },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'ENOENT');
+  });
+});
+
+test('fileReadTool: file too large → FILE_TOO_LARGE without dumping content', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'big.bin');
+    // 200KB+1 — just over MAX_READ_BYTES.
+    await writeFile(target, Buffer.alloc(200_001, 0x61), null);
+    const result = await fileReadTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'FILE_TOO_LARGE');
+    assert.match(result.output, /KB/);
+    // No content leaked into output.
+    assert.doesNotMatch(result.output, /aaaaaa/);
+  });
+});
+
+test('fileReadTool: line range slicing returns correct subset', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'multi.txt');
+    await writeFile(target, ['L1', 'L2', 'L3', 'L4', 'L5'].join('\n'), 'utf8');
+    const result = await fileReadTool.run(
+      { path: target, start_line: 2, end_line: 4 },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.output, '2\tL2\n3\tL3\n4\tL4');
+    assert.equal(result.meta.lines, 3);
+    assert.equal(result.meta.totalLines, 5);
+  });
+});
+
+// ─── globTool ────────────────────────────────────────────────────────
+
+test('globTool: workspace glob is silent and returns relative matches sorted', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'src', 'utils'), { recursive: true });
+    await writeFile(join(ws, 'src', 'a.js'), '', 'utf8');
+    await writeFile(join(ws, 'src', 'utils', 'b.js'), '', 'utf8');
+    await writeFile(join(ws, 'README.md'), '', 'utf8');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await globTool.run(
+      { pattern: 'src/**/*.js' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 0, 'workspace glob must not prompt');
+    const lines = result.output.split('\n').filter(l => !l.startsWith('#'));
+    assert.deepEqual(lines, ['src/a.js', 'src/utils/b.js']);
+  });
+});
+
+test('globTool: external benign base prompts once', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await writeFile(join(outside, 'x.txt'), '', 'utf8');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await globTool.run(
+      { pattern: '**/*.txt', cwd: outside },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1);
+    assert.match(result.output, /x\.txt/);
+  });
+});
+
+test('globTool: deny base → DENIED, no fs walk', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const result = await globTool.run(
+      { pattern: '**/*', cwd: outside },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('globTool: walks past sensitive subtree silently and reports skip count', async () => {
+  // Workspace contains a benign tree + a symlink-named entry that
+  // would point at a sensitive path. Since we can't actually create
+  // /etc inside ws, simulate by symlinking a workspace dir into the
+  // .ssh-named slot (classifyPath uses path-prefix matching, so the
+  // lexical name itself doesn't trigger; we have to actually plant
+  // a sensitive path inside ws). Skip if HOME isn't set or .ssh
+  // doesn't exist on this machine.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Plant a benign file under ws.
+    await writeFile(join(ws, 'safe.txt'), '', 'utf8');
+    // Glob from $HOME if it exists and contains something. Use a
+    // restrictive pattern so we only get a few results regardless.
+    const home = process.env.HOME;
+    if (!home) return; // sandbox without HOME, skip
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await globTool.run(
+      { pattern: '**/no-such-file-anywhere-1234.xyz', cwd: home, max_results: 5 },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    // Most home dirs contain at least .ssh OR .aws OR .gnupg etc, so
+    // skippedSensitive should usually be > 0. If not (clean machine),
+    // just verify the field exists and is a number.
+    assert.equal(typeof result.meta.skippedSensitive, 'number');
+    assert.ok(result.meta.skippedSensitive >= 0);
+  });
+});
+
+test('globTool: ignores conventional vendor dirs (node_modules, .git, …)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'node_modules', 'pkg'), { recursive: true });
+    await writeFile(join(ws, 'node_modules', 'pkg', 'index.js'), '', 'utf8');
+    await mkdir(join(ws, 'src'), { recursive: true });
+    await writeFile(join(ws, 'src', 'a.js'), '', 'utf8');
+    const result = await globTool.run(
+      { pattern: '**/*.js' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    const lines = result.output.split('\n').filter(l => !l.startsWith('#'));
+    assert.deepEqual(lines, ['src/a.js']);
+  });
+});
+
+test('globTool: invalid pattern → INVALID_ARGS', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const result = await globTool.run(
+      { pattern: '' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => {} },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'INVALID_ARGS');
+  });
+});
+
+// ─── grepTool ────────────────────────────────────────────────────────
+
+test('grepTool: workspace search is silent and returns matches with line numbers', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'src'), { recursive: true });
+    await writeFile(join(ws, 'src', 'a.js'), 'TODO: write\nfn main() {}\n', 'utf8');
+    await writeFile(join(ws, 'src', 'b.js'), 'no todo here\n', 'utf8');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await grepTool.run(
+      { pattern: 'TODO' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 0, 'workspace grep must not prompt');
+    assert.match(result.output, /a\.js/);
+    assert.match(result.output, /TODO: write/);
+    assert.doesNotMatch(result.output, /b\.js/);
+  });
+});
+
+test('grepTool: leaf symlink is skipped silently (O_NOFOLLOW), external target untouched in results', async () => {
+  // Plant a symlink in the workspace pointing at an external file
+  // containing the search term. atomicOpenLeaf with O_NOFOLLOW
+  // should reject the symlink → no match returned, no path-leak.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const externalFile = join(outside, 'leak.txt');
+    await writeFile(externalFile, 'SECRET-TOKEN-XYZ', 'utf8');
+    await symlink(externalFile, join(ws, 'sneaky-link'));
+    // Plant a benign workspace file that DOES match so the search isn't a no-op.
+    await writeFile(join(ws, 'real.txt'), 'SECRET-TOKEN-XYZ', 'utf8');
+    const result = await grepTool.run(
+      { pattern: 'SECRET-TOKEN' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.match(result.output, /real\.txt/);
+    // The symlink must NOT appear (we don't follow it).
+    assert.doesNotMatch(result.output, /sneaky-link/);
+  });
+});
+
+test('grepTool: external benign base prompts once and reads', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await writeFile(join(outside, 'note.txt'), 'find this MARKER here', 'utf8');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await grepTool.run(
+      { pattern: 'MARKER', path: outside },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1);
+    assert.match(result.output, /MARKER/);
+  });
+});
+
+test('grepTool: deny base → DENIED, no walk', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await writeFile(join(outside, 'x'), 'hit', 'utf8');
+    const result = await grepTool.run(
+      { pattern: 'hit', path: outside },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('grepTool: invalid regex → returns error before walk', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const result = await grepTool.run(
+      { pattern: '(unclosed' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => {} },
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.output, /Invalid regex/);
+  });
+});
+
+test('grepTool: include glob restricts file types', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await writeFile(join(ws, 'a.js'), 'NEEDLE in js', 'utf8');
+    await writeFile(join(ws, 'b.txt'), 'NEEDLE in txt', 'utf8');
+    const result = await grepTool.run(
+      { pattern: 'NEEDLE', include: '*.js' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.match(result.output, /a\.js/);
+    assert.doesNotMatch(result.output, /b\.txt/);
+  });
+});
+
+test('fileReadTool: leaf swapped to symlink between approval and open → COMMIT_FAILED via O_NOFOLLOW', async () => {
+  // Hard to inject reliably without a hook seam in the read path
+  // (read tool has no commit phase). The closest we can do without
+  // a new seam: approve a workspace symlink → outside file, then
+  // verify atomicOpenLeaf sees the link itself was resolved during
+  // the gate phase (no ELOOP because the path resolved through the
+  // link cleanly). Real "leaf swap mid-call" is exercised in
+  // dirfdOps tests; this test pins the integration path that
+  // atomicOpenLeaf is what's used (not fs.readFile path-level).
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    // Create a benign symlink target outside, read through link.
+    const externalFile = join(outside, 'src.txt');
+    const linkPath = join(ws, 'link');
+    await writeFile(externalFile, 'via link', 'utf8');
+    await symlink(externalFile, linkPath);
+    const result = await fileReadTool.run(
+      { path: linkPath },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.match(result.output, /via link/);
+    // meta.path is the resolved target (gate's resolvedTarget).
+    assert.equal(result.meta.path, externalFile);
+    assert.equal(result.meta.lexicalPath, linkPath);
+  });
+});

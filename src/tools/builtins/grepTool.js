@@ -1,33 +1,60 @@
 /**
  * Built-in tool: grep
  *
- * Search file contents for a regex or literal pattern.
- * Delegates to native ripgrep (rg) when available for 10-100x speed on large repos.
- * Falls back to pure-JS recursive walk otherwise.
- * No permission required — read-only, safe.
+ * Phase 2B (2026-05-04): wired through the FileSafetyGate.
+ *
+ *   - requestRead({path: targetPath}) — gate classifies the search
+ *     base. Workspace-internal silent; outside-benign prompts once;
+ *     sensitive (system / credential / $MELO_HOME) prompts per call.
+ *   - During the walk, sensitive subtrees are silently skipped
+ *     UNLESS the base itself was sensitive (the user explicitly
+ *     opted in by approving a sensitive base).
+ *   - JS fallback per-file content reads use atomicOpenLeaf with
+ *     O_NOFOLLOW (added auto). A leaf that becomes a symlink mid-
+ *     walk is silently skipped (treated as if it doesn't exist for
+ *     grep purposes — we won't follow into /etc via a swapped link).
+ *   - Native ripgrep (`rg`) path: invoke with --no-follow so rg
+ *     doesn't follow symlinks; results are post-filtered to drop
+ *     anything classifying as sensitive (defence-in-depth).
+ *
+ * Approval model: a single base-dir approval covers the whole
+ * walk. The user does NOT see one prompt per file — that would
+ * be unusable for any real grep against thousands of files.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { join, relative, resolve, isAbsolute } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fstatSync, readSync } from 'node:fs';
+
+import { requestRead } from '../../safety/fileSafetyGate.js';
+import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
+import {
+  atomicOpenLeaf,
+  splitParentLeaf,
+  C as DC,
+} from '../../safety/dirfdOps.js';
 
 const execFileAsync = promisify(execFile);
 
-// Directories to skip in the JS fallback walker
 const IGNORED = new Set([
   '.git', 'node_modules', '.next', 'dist', 'build', '.turbo',
   '__pycache__', '.venv', 'venv', '.env', 'target', 'vendor',
   '.cache', '.parcel-cache', 'coverage', '.nyc_output', 'out',
   '.svelte-kit', '.nuxt', '.output', 'elm-stuff', '.dart_tool',
 ]);
-const MAX_FILE_SIZE = 500_000; // 500 KB
+const MAX_FILE_SIZE = 500_000;
 
-// ─── Native ripgrep delegation ────────────────────────────────────────────────
+function isSensitiveSubtree(absPath) {
+  const cat = classifyPath(absPath);
+  return cat === PATH_CATEGORY.SYSTEM
+      || cat === PATH_CATEGORY.CREDENTIAL
+      || cat === PATH_CATEGORY.MELO_INTERNAL;
+}
 
-/**
- * Check if rg (ripgrep) is available. Cached after first check.
- */
+// ─── ripgrep ───────────────────────────────────────────────────────────
+
 let _rgAvailable = null;
 async function isRgAvailable() {
   if (_rgAvailable !== null) return _rgAvailable;
@@ -40,16 +67,14 @@ async function isRgAvailable() {
   return _rgAvailable;
 }
 
-/**
- * Run ripgrep and return structured match objects compatible with the JS fallback.
- */
-async function searchViaRg(pattern, targetPath, baseDir, { include, contextLines, caseInsensitive, maxResults, signal }) {
+async function searchViaRg(pattern, targetPath, baseDir, opts) {
+  const { include, contextLines, caseInsensitive, maxResults, signal, filterSensitive } = opts;
   const args = [
     '--json',
-    '--max-count', '1',         // per-file match cap handled by maxResults total
+    '--max-count', '1',
     '--max-filesize', '500K',
+    '--no-follow',  // do NOT follow symlinks during walk
   ];
-
   if (caseInsensitive) args.push('--ignore-case');
   if (contextLines > 0) args.push('--context', String(contextLines));
   if (include) args.push('--glob', include);
@@ -58,18 +83,18 @@ async function searchViaRg(pattern, targetPath, baseDir, { include, contextLines
   let raw;
   try {
     const { stdout } = await execFileAsync('rg', args, {
-      maxBuffer: 10 * 1024 * 1024,  // 10 MB
+      maxBuffer: 10 * 1024 * 1024,
       timeout: 20_000,
       signal,
     });
     raw = stdout;
   } catch (err) {
-    // rg exits 1 when no matches — not an error
-    if (err.code === 1) return [];
+    if (err.code === 1) return { matches: [], skippedSensitive: 0 };
     throw err;
   }
 
   const matches = [];
+  let skippedSensitive = 0;
   const lines = raw.split('\n');
 
   for (const line of lines) {
@@ -79,24 +104,29 @@ async function searchViaRg(pattern, targetPath, baseDir, { include, contextLines
     if (msg.type !== 'match') continue;
 
     const absFile = msg.data?.path?.text || '';
+
+    // Defence-in-depth: drop sensitive matches if the base wasn't
+    // explicitly sensitive. rg shouldn't have walked into /etc but
+    // verify per-result anyway.
+    if (filterSensitive && isSensitiveSubtree(absFile)) {
+      skippedSensitive++;
+      continue;
+    }
+
     const relFile = relative(baseDir, absFile).replace(/\\/g, '/');
     const lineNo = msg.data?.line_number ?? 0;
     const matchText = msg.data?.lines?.text?.trimEnd() ?? '';
-
-    // Build context from submatches or surrounding lines
     const context = [];
     if (msg.data?.lines) {
       context.push({ lineNo, text: matchText, isMatch: true });
     }
-
     matches.push({ file: relFile, line: lineNo, text: matchText, context });
     if (matches.length >= maxResults) break;
   }
-
-  return matches;
+  return { matches, skippedSensitive };
 }
 
-// ─── Glob pattern → regex (lightweight, mirrors globTool) ─────────────────────
+// ─── Glob → regex ──────────────────────────────────────────────────────
 
 function globToRegex(pattern) {
   let re = '^';
@@ -104,18 +134,10 @@ function globToRegex(pattern) {
   while (i < pattern.length) {
     const ch = pattern[i];
     if (ch === '*') {
-      if (pattern[i + 1] === '*') {
-        re += '.*';
-        i += 2;
-        if (pattern[i] === '/') i++;
-      } else {
-        re += '[^/]*';
-        i++;
-      }
-    } else if (ch === '?') {
-      re += '[^/]';
-      i++;
-    } else if (ch === '{') {
+      if (pattern[i + 1] === '*') { re += '.*'; i += 2; if (pattern[i] === '/') i++; }
+      else { re += '[^/]*'; i++; }
+    } else if (ch === '?') { re += '[^/]'; i++; }
+    else if (ch === '{') {
       const end = pattern.indexOf('}', i);
       if (end === -1) { re += '\\{'; i++; }
       else {
@@ -123,52 +145,65 @@ function globToRegex(pattern) {
         re += `(?:${alts.join('|')})`;
         i = end + 1;
       }
-    } else {
-      re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-      i++;
-    }
+    } else { re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&'); i++; }
   }
   re += '$';
   return new RegExp(re);
 }
 
-// ─── File-level search ────────────────────────────────────────────────────────
+// ─── File-level search via dirfd-bound open ────────────────────────────
 
-/**
- * Search a single file for lines matching `searchRe`.
- * Returns up to `maxMatchesPerFile` match objects.
- */
-async function searchFile(absPath, relPath, searchRe, contextLines, maxMatchesPerFile) {
-  let text;
+function readFileContentViaFd(fd, maxSize) {
+  const st = fstatSync(fd);
+  if (st.size === 0 || st.size > maxSize) return null;
+  const buf = Buffer.allocUnsafe(st.size);
+  let total = 0;
+  while (total < st.size) {
+    const n = readSync(fd, buf, total, st.size - total, total);
+    if (n === 0) break;
+    total += n;
+  }
+  return buf.subarray(0, total);
+}
+
+async function searchFileAtomic(absPath, relPath, searchRe, contextLines, maxMatchesPerFile) {
+  // atomicOpenLeaf adds O_NOFOLLOW automatically. If the leaf is now
+  // a symlink (race or pre-existing in the walk), this throws ELOOP
+  // and we silently skip — grep should never silently follow into
+  // an unexpected target.
+  const [parent, leaf] = splitParentLeaf(absPath);
+  let openLeaf;
   try {
-    text = await readFile(absPath, 'utf8');
+    openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY);
   } catch {
     return [];
   }
-
-  const lines = text.split('\n');
-  const matches = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    if (matches.length >= maxMatchesPerFile) break;
-    if (searchRe.test(lines[i])) {
-      const start = Math.max(0, i - contextLines);
-      const end = Math.min(lines.length - 1, i + contextLines);
-      const ctx = lines.slice(start, end + 1).map((l, off) => ({
-        lineNo: start + off + 1,
-        text: l,
-        isMatch: start + off === i,
-      }));
-      matches.push({ file: relPath, line: i + 1, text: lines[i], context: ctx });
+  try {
+    const buf = readFileContentViaFd(openLeaf.leafFd, MAX_FILE_SIZE);
+    if (!buf) return [];
+    const text = buf.toString('utf8');
+    const lines = text.split('\n');
+    const matches = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (matches.length >= maxMatchesPerFile) break;
+      if (searchRe.test(lines[i])) {
+        const start = Math.max(0, i - contextLines);
+        const end = Math.min(lines.length - 1, i + contextLines);
+        const ctx = lines.slice(start, end + 1).map((l, off) => ({
+          lineNo: start + off + 1,
+          text: l,
+          isMatch: start + off === i,
+        }));
+        matches.push({ file: relPath, line: i + 1, text: lines[i], context: ctx });
+      }
     }
+    return matches;
+  } finally {
+    openLeaf.closeLeaf();
   }
-
-  return matches;
 }
 
-// ─── Recursive directory walk ─────────────────────────────────────────────────
-
-async function walk(dir, baseDir, fileRe, searchRe, results, contextLines, maxMatches, maxFiles, signal) {
+async function walk(dir, baseDir, fileRe, searchRe, results, contextLines, maxMatches, signal, skipped, filterSensitive) {
   if (results.length >= maxMatches) return;
   if (signal?.aborted) return;
 
@@ -184,28 +219,38 @@ async function walk(dir, baseDir, fileRe, searchRe, results, contextLines, maxMa
     if (IGNORED.has(entry.name)) continue;
 
     const fullPath = join(dir, entry.name);
+
+    if (filterSensitive && isSensitiveSubtree(fullPath)) {
+      skipped.sensitive++;
+      continue;
+    }
+
     const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
 
     if (entry.isDirectory()) {
-      await walk(fullPath, baseDir, fileRe, searchRe, results, contextLines, maxMatches, maxFiles, signal);
+      await walk(fullPath, baseDir, fileRe, searchRe, results, contextLines, maxMatches, signal, skipped, filterSensitive);
     } else if (entry.isFile() && (!fileRe || fileRe.test(relPath))) {
-      const fileMatches = await searchFile(fullPath, relPath, searchRe, contextLines, 20);
+      const fileMatches = await searchFileAtomic(fullPath, relPath, searchRe, contextLines, 20);
       results.push(...fileMatches.slice(0, maxMatches - results.length));
     }
   }
 }
 
-// ─── Tool definition ──────────────────────────────────────────────────────────
+// ─── Tool ──────────────────────────────────────────────────────────────
 
 export const grepTool = {
   id: 'grep',
   name: 'Grep',
   description:
     'Search file contents for a pattern using regex or literal text. ' +
-    'Returns matching lines with optional surrounding context. ' +
-    'Use include to restrict to certain file types (e.g. "*.js").',
+    'The base directory is gated by FileSafetyGate (workspace-internal silent; outside-benign prompts once; ' +
+    'sensitive — system / credential / $MELO_HOME — prompts per call). ' +
+    'During the walk, sensitive subtrees are silently skipped unless the base itself is sensitive ' +
+    '(meta.skippedSensitive reports how many). ' +
+    'Per-file reads use dirfd-bound O_NOFOLLOW open (a leaf that becomes a symlink mid-walk is skipped, never followed). ' +
+    'Returns matching lines with optional surrounding context. Use include to restrict to certain file types (e.g. "*.js").',
   category: 'filesystem',
-  requiresPermission: false,
+  requiresPermission: true,
   isConcurrencySafe: true,
   parametersSchema: {
     type: 'object',
@@ -243,11 +288,6 @@ export const grepTool = {
     { pattern: 'import.*from', case_insensitive: true },
   ],
 
-  /**
-   * @param {{ pattern: string, path?: string, include?: string, context_lines?: number, case_insensitive?: boolean, max_results?: number }} args
-   * @param {import('../tool.js').ToolRunContext} context
-   * @returns {Promise<import('../tool.js').ToolResult>}
-   */
   async run(args, context = {}) {
     const {
       pattern,
@@ -257,62 +297,97 @@ export const grepTool = {
       case_insensitive = false,
       max_results = 100,
     } = args;
-    const { workspacePath, signal } = context;
+    const { workspacePath, signal, sseEmitter, chatId } = context;
+
+    if (typeof pattern !== 'string' || !pattern) {
+      return { ok: false, output: 'pattern must be a non-empty string.', error: 'INVALID_ARGS' };
+    }
 
     const workspaceRoot = resolve(workspacePath || process.cwd());
-    const targetPath = searchPath ? resolve(workspaceRoot, searchPath) : workspaceRoot;
-    const baseDir = targetPath;
+    const targetPath = isAbsolute(searchPath || '')
+      ? searchPath
+      : resolve(workspaceRoot, searchPath || '.');
     const maxResults = Math.min(Math.max(1, max_results), 500);
     const ctxLines = Math.min(Math.max(0, context_lines), 10);
 
-    // Validate the pattern early (needed for both paths)
+    let searchRe;
     try {
-      new RegExp(pattern, case_insensitive ? 'i' : '');
+      searchRe = new RegExp(pattern, case_insensitive ? 'i' : '');
     } catch (err) {
       return { ok: false, output: `Invalid regex pattern: ${err.message}`, error: err.message };
     }
 
+    // ── Gate the base ────────────────────────────────────────────────
+    let approved;
+    try {
+      approved = await requestRead({
+        path: targetPath,
+        chatId,
+        sseEmitter,
+        signal,
+        workspacePath,
+        baseDir: workspacePath,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: err.message,
+        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+      };
+    }
+    const realBase = approved.resolvedTarget;
+    const baseDir = realBase;
+    const filterSensitive = !isSensitiveSubtree(realBase);
+
     const allMatches = [];
+    const skipped = { sensitive: 0 };
 
     try {
-      // ── Native rg path ─────────────────────────────────────────────────────
       if (await isRgAvailable()) {
-        const rgMatches = await searchViaRg(pattern, targetPath, baseDir, {
+        const { matches: rgMatches, skippedSensitive } = await searchViaRg(pattern, realBase, baseDir, {
           include,
           contextLines: ctxLines,
           caseInsensitive: case_insensitive,
           maxResults,
           signal,
+          filterSensitive,
         });
         allMatches.push(...rgMatches);
+        skipped.sensitive += skippedSensitive;
       } else {
-        // ── JS fallback ──────────────────────────────────────────────────────
-        const searchRe = new RegExp(pattern, case_insensitive ? 'i' : '');
         let fileRe = null;
         if (include) {
           try { fileRe = globToRegex(include); } catch { /* ignore */ }
         }
 
         const { stat } = await import('node:fs/promises');
-        const s = await stat(targetPath).catch(() => null);
+        const s = await stat(realBase).catch(() => null);
 
         if (s?.isFile()) {
-          const relPath = relative(baseDir, targetPath).replace(/\\/g, '/');
-          const fileMatches = await searchFile(targetPath, relPath, searchRe, ctxLines, maxResults);
+          const relPath = relative(baseDir, realBase).replace(/\\/g, '/');
+          const fileMatches = await searchFileAtomic(realBase, relPath, searchRe, ctxLines, maxResults);
           allMatches.push(...fileMatches);
         } else {
-          await walk(targetPath, baseDir, fileRe, searchRe, allMatches, ctxLines, maxResults, 1000, signal);
+          await walk(realBase, baseDir, fileRe, searchRe, allMatches, ctxLines, maxResults, signal, skipped, filterSensitive);
         }
       }
     } catch (err) {
       return { ok: false, output: `Search error: ${err.message}`, error: err.message };
     }
 
+    const skipNote = skipped.sensitive > 0
+      ? ` (${skipped.sensitive} sensitive entries skipped)`
+      : '';
+
     if (!allMatches.length) {
-      return { ok: true, output: `No matches found for: ${pattern}`, meta: { count: 0 } };
+      return {
+        ok: true,
+        output: `No matches found for: ${pattern}${skipNote}`,
+        meta: { count: 0, skippedSensitive: skipped.sensitive, baseDir: realBase },
+      };
     }
 
-    // Format output
     const lines = [];
     let lastFile = null;
     for (const m of allMatches) {
@@ -331,11 +406,17 @@ export const grepTool = {
         lines.push(`  ${m.line}:\t${m.text}`);
       }
     }
+    if (skipNote) lines.push(`# ${skipNote}`);
 
     return {
       ok: true,
       output: lines.join('\n'),
-      meta: { count: allMatches.length, truncated: allMatches.length >= maxResults },
+      meta: {
+        count: allMatches.length,
+        truncated: allMatches.length >= maxResults,
+        skippedSensitive: skipped.sensitive,
+        baseDir: realBase,
+      },
     };
   },
 };
