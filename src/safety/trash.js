@@ -30,10 +30,14 @@ import {
   mkdir,
   copyFile,
   rm,
+  unlink,
   writeFile,
   readFile,
+  readlink,
   realpath,
   stat,
+  lstat,
+  symlink,
   cp,
   readdir,
 } from 'node:fs/promises';
@@ -166,15 +170,22 @@ export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
   // token. Without this enforcement, a write/edit/move token from
   // the same chat could be replayed here to skip requestDelete's
   // two-stage filename confirmation.
-  const resolvedTargets = [];
+  //
+  // Codex D round 7 (2026-05-03): the actual fs op uses the LEXICAL
+  // path the user requested, NOT the realpath. realPath is used
+  // only for sensitivity classification and TOCTOU verification.
+  // Using the resolvedTarget here was a data-loss bug — for a
+  // workspace symlink → outside/file, rm'ing the resolvedTarget
+  // deleted the external file the link pointed to and left the
+  // symlink behind.
+  const lexicalPaths = [];
   for (const token of operationTokens) {
     const committed = await gate.commitOperation(token, {
       expectedKind: gate.OP_KIND.DELETE,
     });
-    // Defence-in-depth: even though the gate already vetted these
-    // at requestDelete time, re-check both sides RIGHT BEFORE the
-    // actual rm. A future refactor that loosens the gate must not
-    // be able to weaken this layer.
+    // Defence-in-depth: re-check sensitivity on BOTH lexical and
+    // resolvedReal RIGHT BEFORE the actual fs op. A future refactor
+    // that loosens the gate must not be able to weaken this layer.
     for (const pair of committed.targets) {
       if (
         isHardBlockedDelete(pair.lexical) ||
@@ -185,11 +196,11 @@ export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
           `(lexical=${pair.lexical}, real=${pair.resolvedReal}).`,
         );
       }
+      lexicalPaths.push(pair.lexical);
     }
-    resolvedTargets.push(...committed.resolvedTargets);
   }
 
-  return _unsafeRawDelete(resolvedTargets, ctx);
+  return _unsafeRawDelete(lexicalPaths, ctx);
 }
 
 // ── _unsafeRawDelete (module-private) ────────────────────────────────
@@ -271,26 +282,59 @@ async function _unsafeRawDelete(paths, ctx = {}) {
 
   await mkdir(filesDir, { recursive: true });
 
+  // Codex D round 7 (2026-05-03): use lstat (not stat) so a symlink
+  // is treated as a leaf node, not as the file/dir it points to.
+  // Three entry shapes:
+  //   - symlink: backed up as a symlink to the same target string;
+  //     unlink() removes the LINK, never the target the link points
+  //     to (this was the round-7 data-loss bug — using rm on the
+  //     resolvedTarget deleted the external file the link aliased)
+  //   - directory: cp -r + rm -r as before
+  //   - regular file: copyFile + unlink
   const fileEntries = [];
   for (const absPath of inputs) {
-    let st;
+    let lst;
     try {
-      st = await stat(absPath);
+      lst = await lstat(absPath);
     } catch {
-      // Source vanished — back out: remove the empty trash dir we
-      // just created so we don't leave an orphan + matching manifest.
       await rm(opDir, { recursive: true, force: true }).catch(() => {});
       throw new Error(`safeDeleteToTrash: source not found: ${absPath}`);
     }
 
     const trashedAs = shortHash(`${absPath}:${Date.now()}:${Math.random()}`);
     const dest = join(filesDir, trashedAs);
-    if (st.isDirectory()) {
+
+    if (lst.isSymbolicLink()) {
+      const targetString = await readlink(absPath);
+      // Recreate the symlink in trash so restore can rebuild it
+      // exactly. We do NOT copy the file the symlink points to.
+      await symlink(targetString, dest);
+      // resolvedPathAtDelete = where the link pointed at delete time;
+      // recorded for UI display + restore-side sensitivity revalidation.
+      let resolvedAtDelete = absPath;
+      try {
+        const r = await safeResolvePath(absPath);
+        resolvedAtDelete = r.realPath;
+      } catch {}
+      fileEntries.push({
+        originalPath: absPath,
+        trashedAs,
+        wasSymlink: true,
+        wasDirectory: false,
+        symlinkTarget: targetString,
+        resolvedPathAtDelete: resolvedAtDelete,
+        size: null,
+        sha256: null,
+      });
+    } else if (lst.isDirectory()) {
       await cp(absPath, dest, { recursive: true });
       fileEntries.push({
         originalPath: absPath,
         trashedAs,
+        wasSymlink: false,
         wasDirectory: true,
+        symlinkTarget: null,
+        resolvedPathAtDelete: absPath,
         size: null,
         sha256: null,
       });
@@ -299,8 +343,11 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       fileEntries.push({
         originalPath: absPath,
         trashedAs,
+        wasSymlink: false,
         wasDirectory: false,
-        size: st.size,
+        symlinkTarget: null,
+        resolvedPathAtDelete: absPath,
+        size: lst.size,
         sha256: await fileSha256(absPath),
       });
     }
@@ -334,7 +381,14 @@ async function _unsafeRawDelete(paths, ctx = {}) {
   const failed = [];
   for (const entry of fileEntries) {
     try {
-      await rm(entry.originalPath, { recursive: true, force: false });
+      if (entry.wasSymlink) {
+        // unlink() does NOT follow symlinks — removes the link itself.
+        // This is the round-7 fix: under no circumstances should the
+        // file the symlink points to be touched here.
+        await unlink(entry.originalPath);
+      } else {
+        await rm(entry.originalPath, { recursive: true, force: false });
+      }
       removed.push(entry.originalPath);
     } catch (err) {
       failed.push({
@@ -499,18 +553,34 @@ export async function restoreFromTrash(operationId, opts = {}) {
     }
 
     const src = join(filesDir, entry.trashedAs);
-    await mkdir(dirname(resolvedTarget), { recursive: true });
-    if (entry.wasDirectory) {
+    if (entry.wasSymlink) {
+      // Codex D round 7 (2026-05-03): rebuild the symlink AT the
+      // lexical originalPath (not resolvedTarget — for a symlink,
+      // resolvedTarget would be the file the link points to, but
+      // we want to recreate the LINK itself). symlinkTarget is
+      // the original target string captured at delete time.
+      await mkdir(dirname(entry.originalPath), { recursive: true });
+      if (exists && opts.overwrite) {
+        // Replace whatever sits there now (could be a fresh file or
+        // a re-pointed symlink) before recreating.
+        await rm(entry.originalPath, { recursive: true, force: true });
+      }
+      await symlink(entry.symlinkTarget, entry.originalPath);
+      restored.push(entry.originalPath);
+    } else if (entry.wasDirectory) {
+      await mkdir(dirname(resolvedTarget), { recursive: true });
       // node:fs cp() refuses to overwrite a non-empty dir; remove
       // first when overwrite is requested.
       if (exists && opts.overwrite) {
         await rm(resolvedTarget, { recursive: true, force: true });
       }
       await cp(src, resolvedTarget, { recursive: true });
+      restored.push(resolvedTarget);
     } else {
+      await mkdir(dirname(resolvedTarget), { recursive: true });
       await copyFile(src, resolvedTarget);
+      restored.push(resolvedTarget);
     }
-    restored.push(resolvedTarget);
   }
 
   const fullyRestored = skipped.length === 0;

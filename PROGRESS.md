@@ -63,7 +63,15 @@
 - **修 apiSurface.test.js 那条错误测试**：从"assert 删除成功"改成"assert FILE_SAFETY_DENIED + 原文件未动 + 无 trash manifest"，pin 住正确契约防回归。
 - **加 kind-mismatch 矩阵回归**：iterates write/edit/move 三种 token 喂 safeDeleteToTrash → 全部 throw `/expected one of \[delete\]/i`，且原文件 byte-for-byte 不变 + listTrash().length === 0；同时 pin requestRead 不发 operationToken（read 幂等）；pin DELETE token happy path 不破。
 - 验证：`src/safety/*.test.js` **180/180 全绿**（前 178 + 2 新：cross-op 修 + kind-mismatch 矩阵）；`src/**/*.test.js` **1648/1648 全绿**（前 1646 + 2 新；零既有回归）。
-- 待 push（git pp 第七轮复审）。Phase 2（接管现有工具）和 Phase 3（UI）仍未动。
+- 提交哈希：`ad0260c`。
+- Follow-up（Codex D 第七轮 → symlink delete 数据丢失级 bug 修）：上一刀 push 又被评 D，Codex 自己写 repro 证明：删 `workspace/link → outside/file` 实际删的是 `outside/file`，**symlink 本身留着，外部真实文件被删掉**。这是 round-4 设计错误：把"删除"也用 resolvedTarget 当 fs op 目标，违反 unix unlink 语义。realPath 应只用于 sensitivity 检查 + UI 显示 + TOCTOU 校验，**fs op 必须用 lexical path + no-follow 语义**。用户拍 Q1=A (删 link 本身永不删 outside/file) + Q2=A (workspace/link → ~/.ssh 继续硬拒) + 1+2+3+4+5 全做。
+- **`_unsafeRawDelete` 改 lstat-based no-follow**：三类入口：(a) **symlink** — `readlink` 拿 target 字符串存 manifest，trash 里用 `symlink(target, dest)` 重建 link 不复制目标文件，最后 `unlink(originalPath)` 删 link 本身（永不 follow）；(b) **directory** — `cp -r` + `rm -r` 同前；(c) **regular file** — `copyFile` + `rm` 同前。
+- **`safeDeleteToTrash` 传 lexical paths**（不是 resolvedTargets）给 `_unsafeRawDelete`：commit 仍跑（kind 校验 + sensitivity 双边复检 + TOCTOU re-resolve），但 fs op 走 lexical。`pair.lexical` 收进 lexicalPaths 数组传下去。
+- **manifest schema 扩**：每个 entry 加 `wasSymlink: bool` / `symlinkTarget: string|null` / `resolvedPathAtDelete: string`。前 2 个是 restore 时按类型重建必须的；后者给 UI 显示真实指向。
+- **`restoreFromTrash` 按 entry 类型恢复**：(a) symlink → `mkdir(dirname) + (overwrite时 rm 现存) + symlink(symlinkTarget, originalPath)` 重建 link，restored[] 是 originalPath（不是 resolvedTarget，因为 symlink 是 leaf node 没"实际目标"概念）；(b) dir → 走 commit 拿 resolvedTarget + cp -r 同前；(c) file → 走 commit 拿 resolvedTarget + copyFile 同前。
+- **新模块 [src/safety/symlinkDelete.test.js](src/safety/symlinkDelete.test.js) 7 case 完整覆盖**：① benign 外部文件 — 删 link 留 target（核心 round-7 fix 回归）；② sensitive 硬拒（`/etc/hosts`）；③ 审批后 swap → commit detect "Path mapping changed" + 两端文件全 untouched + 无 trash；④ 目录 symlink — 删 link 留外部 dir + 内容；⑤ round-trip：trash symlink → restore → readlink 拿到原 target string + readFile 跟随 link 仍能读到原文件；⑥ manifest 字段 (wasSymlink/symlinkTarget/resolvedPathAtDelete) 正确；⑦ 普通文件回归 wasSymlink:false 防 false-positive。
+- 验证：`src/safety/*.test.js` **187/187 全绿**（前 180 + 7 新）；`src/**/*.test.js` **1655/1655 全绿**（前 1648 + 7 新；零既有回归）。
+- 待 push（git pp 第八轮复审）。Phase 2（接管现有工具）和 Phase 3（UI）仍未动。
 
 ## 2026-05-01 14:00 — PDF 能力 Batch A：simple ops + render（用户 PDF audit 落实第一刀）
 
