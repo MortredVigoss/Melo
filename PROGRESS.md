@@ -28,6 +28,11 @@
 - **fileWriteTool / fileEditTool 改用 resolvedTarget 做 snapshot 入参**：`snapshotBeforeWrite(resolvedTarget, { ..., lexicalPath: absPath })`。snapshot 与 writeFile 都对齐 commit 时记录的真实路径，commit→snapshot 之间 symlink swap 完全不影响 — backup 永远绑定 commit 已验证的真目标。
 - 测试加 3 case：① fileWrite via workspace/link → outside/file：assert 写后 link 指向不变 + external 内容更新 + manifest.originalPath = external + manifest.lexicalPath = link + backup before/ 是原 ORIG（不是 NEW）；② fileEdit via 同款 symlink：同断言；③ 非 symlink 写：assert lexicalPath === originalPath（pin back-compat）。
 - 验证：`src/**/*.test.js` **1684/1684 全绿**（前 1681 + 3 新；零既有回归）。
+- 提交哈希：`e961e91`。
+- Follow-up（Codex D Phase 2A round 3 → broken-symlink resolver 漏洞）：上一刀 push 又被评 D。`safeResolvePath` 在 leaf 是 broken symlink (link 存在但 target 不存在) 时走 walk-up → reconstruct → realPath ≈ lexical → 不 readlink 拿真实 target → `writeFile(resolvedTarget)` 跟随 symlink → workspace/link → ~/.ssh/newfile **绕过 isHardBlockedWrite 创建敏感文件**。用户拍 Q1=A (按 link target 真实分类，敏感拒/benign 审批) + Q2=A (workspace/link → 外部 benign missing 允许审批后 create) + 全做。
+- **pathResolver.js 加 `resolveLeafSymlink`**：full-path realpath 失败后、walk-up 之前，先 `lstat(lexical)` 检测 leaf 是否 symlink；是 → `readlink` 拿 target → 递归 `safeResolvePath(target, depth+1)`（绝对路径直接用，相对路径 join dirname）。返回 target 的 realPath 作 leaf 的 realPath，hasSymlinkInChain=true。`MAX_LINK_RECURSION=32` 防 link 循环。precheckHardBlockedWrite + requestWrite/Edit 自动受益（已经走 isAnySensitive 双边）。
+- 测试加 4 case：① fileWrite broken → ~/.ssh/missing-key → DENIED + 无 UI + 目标未创建 + 无 backup；② fileWrite broken → /etc/missing → 同款；③ fileWrite broken → outside benign missing → 走正常审批 + readFile 跟随 link 拿到新内容 + readlink 不变；④ fileEdit broken → ~/.ssh missing → DENIED 不返 NOT_FOUND（防 read 探测）。
+- 验证：`src/**/*.test.js` **1688/1688 全绿**（前 1684 + 4 新；零既有回归）。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 

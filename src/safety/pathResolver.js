@@ -30,17 +30,65 @@
  * than silently treating them as "no symlink".
  */
 
-import { realpath } from 'node:fs/promises';
+import { realpath, lstat, readlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path';
 
 const MAX_WALK_DEPTH = 4096;
+const MAX_LINK_RECURSION = 32;
 
 function isExpectedMissError(err) {
   if (!err || typeof err !== 'object') return false;
   return err.code === 'ENOENT' || err.code === 'ENOTDIR';
 }
 
-export async function safeResolvePath(absPath) {
+// Codex D Phase 2A round 3 (2026-05-03): when realpath() fails on the
+// full lexical path it could be either:
+//   (a) the leaf doesn't exist AND its parent's resolution is normal
+//       — the legitimate "create new file" case, walk up handles it
+//   (b) the leaf is a symlink whose TARGET doesn't exist (broken
+//       symlink) — walk-up alone misses this because dirname's
+//       realpath returns a benign workspace dir, and the leaf path
+//       reconstructed under it looks benign too. But writeFile on
+//       the leaf STILL follows the symlink to its missing target
+//       (creating a file at the link's target). If the target is
+//       /etc/hosts or ~/.ssh/*, that's a hard-block bypass.
+//
+// This helper catches case (b) by lstat'ing the leaf — if it IS a
+// symlink (broken or otherwise), we readlink to get the target and
+// recursively resolve THAT. The returned realPath is the target's
+// resolution, so isHardBlockedWrite(real) sees the right path.
+async function resolveLeafSymlink(absPath, depth = 0) {
+  if (depth > MAX_LINK_RECURSION) {
+    // Symlink loop or pathological depth — safe default: report
+    // lexical and let downstream sensitivity / TOCTOU checks decide.
+    return null;
+  }
+  let lst;
+  try {
+    lst = await lstat(absPath);
+  } catch (err) {
+    if (isExpectedMissError(err)) return null;
+    throw err;
+  }
+  if (!lst.isSymbolicLink()) return null;
+
+  const target = await readlink(absPath);
+  const absTarget = isAbsolute(target)
+    ? normalize(target)
+    : normalize(join(dirname(absPath), target));
+
+  // Recurse safeResolvePath on the target — it might itself be a
+  // chain of broken symlinks, or eventually point at a real file.
+  const inner = await safeResolvePath(absTarget, depth + 1);
+  return {
+    realPath: inner.realPath,
+    // We are unconditionally a symlink chain — depth >= 1.
+    hasSymlinkInChain: true,
+    exists: inner.exists,
+  };
+}
+
+export async function safeResolvePath(absPath, _depth = 0) {
   if (typeof absPath !== 'string' || !absPath) {
     return {
       lexicalPath: '',
@@ -51,6 +99,14 @@ export async function safeResolvePath(absPath) {
   }
   if (!isAbsolute(absPath)) {
     throw new Error(`safeResolvePath requires an absolute path; got: ${absPath}`);
+  }
+  if (_depth > MAX_LINK_RECURSION) {
+    return {
+      lexicalPath: normalize(absPath),
+      realPath: normalize(absPath),
+      hasSymlinkInChain: false,
+      exists: false,
+    };
   }
 
   const lexical = normalize(absPath);
@@ -66,6 +122,21 @@ export async function safeResolvePath(absPath) {
     };
   } catch (err) {
     if (!isExpectedMissError(err)) throw err;
+  }
+
+  // Codex D Phase 2A round 3: BEFORE walking up, check if the leaf
+  // itself is a (possibly broken) symlink. If so, resolve through
+  // its target — the kernel will follow the link on writeFile, so
+  // the gate must classify by where the link POINTS, not by the
+  // benign reconstructed path.
+  const leafResolved = await resolveLeafSymlink(lexical, _depth);
+  if (leafResolved) {
+    return {
+      lexicalPath: lexical,
+      realPath: leafResolved.realPath,
+      hasSymlinkInChain: true,
+      exists: leafResolved.exists,
+    };
   }
 
   // Walk up to the deepest existing ancestor, then reconstruct.

@@ -514,6 +514,95 @@ test('non-symlink write: lexicalPath === originalPath in the manifest (back-comp
   });
 });
 
+// ─── Codex D round 3 (Phase 2A): broken symlink → sensitive target ──
+
+test('fileWriteTool: broken symlink → ~/.ssh/missing-key hard-rejected, target NOT created', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Use a known-credential-class missing target.
+    const HOME = (await import('node:os')).homedir();
+    const sensitiveMissing = join(HOME, '.ssh', `melo-test-broken-${Date.now()}`);
+    const link = join(ws, 'broken');
+    // The target file deliberately does not exist (broken symlink).
+    await symlink(sensitiveMissing, link);
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+
+    const result = await fileWriteTool.run(
+      { path: link, content: 'evil-key' },
+      { workspacePath: ws, sseEmitter: sse, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(promptCount, 0, 'no UI prompt for broken-symlink → credential target');
+    // The target MUST not have been created.
+    let targetExists = true;
+    try { await stat(sensitiveMissing); } catch { targetExists = false; }
+    assert.equal(targetExists, false, 'sensitive target file must not have been created');
+    // No backup either.
+    const { listBackups } = await import('../../safety/backup.js');
+    assert.equal((await listBackups()).length, 0);
+  });
+});
+
+test('fileWriteTool: broken symlink → /etc/missing-file hard-rejected', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const sensitiveMissing = `/etc/melo-test-broken-${Date.now()}`;
+    const link = join(ws, 'broken');
+    await symlink(sensitiveMissing, link);
+    let promptCount = 0;
+
+    const result = await fileWriteTool.run(
+      { path: link, content: 'X' },
+      { workspacePath: ws, sseEmitter: () => promptCount++, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(promptCount, 0);
+    let targetExists = true;
+    try { await stat(sensitiveMissing); } catch { targetExists = false; }
+    assert.equal(targetExists, false);
+  });
+});
+
+test('fileWriteTool: broken symlink → outside benign missing target IS allowed (after approval) and creates the target', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const benignMissing = join(outside, 'will-be-created.txt');
+    const link = join(ws, 'mylink');
+    await symlink(benignMissing, link);
+
+    const result = await fileWriteTool.run(
+      { path: link, content: 'fresh content' },
+      { workspacePath: ws, sseEmitter: autoApprove(gate), chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, true);
+    // Following the link: target file now exists with the content.
+    assert.equal(await readFile(benignMissing, 'utf8'), 'fresh content');
+    // The link itself unchanged:
+    assert.equal(await readlink(link), benignMissing);
+  });
+});
+
+test('fileEditTool: broken symlink → sensitive target rejected without read attempt', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const HOME = (await import('node:os')).homedir();
+    const sensitiveMissing = join(HOME, '.ssh', `melo-test-broken-edit-${Date.now()}`);
+    const link = join(ws, 'broken');
+    await symlink(sensitiveMissing, link);
+
+    const result = await fileEditTool.run(
+      { path: link, old_string: 'X', new_string: 'Y' },
+      { workspacePath: ws, sseEmitter: () => {}, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.notEqual(result.error, 'NOT_FOUND');
+  });
+});
+
 // ─── fileMoveTool ──────────────────────────────────────────────────────
 
 test('fileMoveTool: rename within workspace, gate-approved', async () => {
