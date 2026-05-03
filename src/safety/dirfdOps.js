@@ -82,6 +82,7 @@ export const _raw = {
   fstatat: addon.fstatat,
   readlinkat: addon.readlinkat,
   symlinkat: addon.symlinkat,
+  readdirAt: addon.readdirAt,
   closeFd: addon.closeFd,
 };
 

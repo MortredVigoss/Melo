@@ -27,7 +27,6 @@
  * Approval model: single base-dir approval covers the whole walk.
  */
 
-import { readdir } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { fstatSync, readSync } from 'node:fs';
 
@@ -35,7 +34,9 @@ import { requestRead } from '../../safety/fileSafetyGate.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
 import {
   atomicOpenLeaf,
+  openParentDirFd,
   splitParentLeaf,
+  _raw as dirfdRaw,
   C as DC,
 } from '../../safety/dirfdOps.js';
 
@@ -136,44 +137,60 @@ async function searchFileAtomic(absPath, relPath, searchRe, contextLines, maxMat
 }
 
 /**
- * Pre-classified safe-file enumeration. Walks `dir`, skipping
- * IGNORED vendor dirs and sensitive subtrees. Returns absolute
- * paths of regular files matching `fileRe` (or all files if
- * `fileRe` is null). Used by BOTH the JS fallback and the rg
- * fast path so the safety semantics are identical regardless
- * of which engine actually reads the content.
+ * TOCTOU-safe pre-classified safe-file enumeration (Phase 2B
+ * follow-up #3). Each recursion step opens the child dir through
+ * `openat(parentFd, name, O_DIRECTORY|O_NOFOLLOW)` so a dir entry
+ * swapped to a symlink between readdirAt and our openat returns
+ * ELOOP and is silently skipped. The resulting child fd binds the
+ * inode; readdirAt only sees that inode's entries.
  *
- * - readdir(withFileTypes:true) does NOT follow symlinks for
- *   the directory entries themselves; symlinked dirs surface as
- *   non-directory entries and aren't recursed into.
- * - sensitive-subtree skip is bypassed when `filterSensitive` is
- *   false (user explicitly approved a sensitive base).
+ * Sensitive-subtree skip is bypassed when `filterSensitive` is
+ * false (user explicitly approved a sensitive base).
  */
-async function enumerateSafeFiles(dir, baseDir, fileRe, signal, skipped, filterSensitive, maxFiles) {
+async function enumerateSafeFiles(baseDir, fileRe, signal, skipped, filterSensitive, maxFiles) {
   const out = [];
-  async function recurse(d) {
+  let baseFd;
+  try { baseFd = openParentDirFd(baseDir); }
+  catch { return out; }
+
+  async function recurse(parentFd, parentRelDir) {
     if (out.length >= maxFiles) return;
     if (signal?.aborted) return;
     let entries;
-    try { entries = await readdir(d, { withFileTypes: true }); }
+    try { entries = dirfdRaw.readdirAt(parentFd); }
     catch { return; }
     for (const entry of entries) {
       if (out.length >= maxFiles) break;
       if (IGNORED.has(entry.name)) continue;
-      const fullPath = join(d, entry.name);
+      const fullPath = parentRelDir
+        ? join(baseDir, parentRelDir, entry.name)
+        : join(baseDir, entry.name);
       if (filterSensitive && isSensitiveSubtree(fullPath)) {
         skipped.sensitive++;
         continue;
       }
-      const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
-      if (entry.isDirectory()) {
-        await recurse(fullPath);
-      } else if (entry.isFile() && (!fileRe || fileRe.test(relPath))) {
+      const relPath = parentRelDir ? `${parentRelDir}/${entry.name}` : entry.name;
+      if (entry.kind === 'dir') {
+        let childFd = -1;
+        try {
+          childFd = dirfdRaw.openat(
+            parentFd,
+            entry.name,
+            DC.O_RDONLY | DC.O_DIRECTORY | DC.O_NOFOLLOW,
+          );
+        } catch {
+          continue;  // ELOOP / ENOENT — skip swapped/missing entry
+        }
+        try { await recurse(childFd, relPath); }
+        finally { try { dirfdRaw.closeFd(childFd); } catch {} }
+      } else if (entry.kind === 'file' && (!fileRe || fileRe.test(relPath))) {
         out.push(fullPath);
       }
     }
   }
-  await recurse(dir);
+
+  try { await recurse(baseFd, ''); }
+  finally { try { dirfdRaw.closeFd(baseFd); } catch {} }
   return out;
 }
 
@@ -321,7 +338,7 @@ export const grepTool = {
         // bypassing our O_NOFOLLOW + O_NONBLOCK + S_ISREG checks
         // and reintroducing leaf-swap TOCTOU. JS walker only.
         const safeFiles = await enumerateSafeFiles(
-          realBase, baseDir, fileRe, signal, skipped, filterSensitive, 5000,
+          realBase, fileRe, signal, skipped, filterSensitive, 5000,
         );
         const jsMatches = await searchFileListAtomic(safeFiles, baseDir, searchRe, ctxLines, maxResults);
         allMatches.push(...jsMatches);

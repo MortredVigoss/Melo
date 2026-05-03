@@ -32,7 +32,10 @@ import {
   fileReadTool,
   _setPostApprovalHookForTests as _setReadPostApprovalHook,
 } from './fileReadTool.js';
-import { globTool } from './globTool.js';
+import {
+  globTool,
+  _setPostReaddirHookForTests as _setGlobPostReaddirHook,
+} from './globTool.js';
 import { grepTool } from './grepTool.js';
 
 async function freshGate() {
@@ -598,6 +601,83 @@ test('round 13 Phase 2B followup #2: grep no longer uses rg fast path (JS walker
   const src = await rf(new URL('./grepTool.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /from 'node:child_process'/, 'grepTool must not spawn external processes');
   assert.doesNotMatch(src, /execFile|spawn\(/, 'no execFile/spawn calls allowed in grepTool');
+});
+
+// ─── Round 13 Phase 2B follow-up #3: dirfd-bound walk + MELO_INTERNAL ──
+
+test('round 13 Phase 2B followup #3: glob — dir entry swapped to symlink between readdir and recurse → openat ELOOP, sensitive contents NOT in result', async () => {
+  // Set up: workspace contains a benign subdir `benignsub` with one
+  // file inside. Inject a hook that fires AFTER readdirAt sees
+  // benignsub but BEFORE the walk recurses into it. The hook
+  // rmdir's benignsub and replaces it with a symlink to outside/.
+  // The new dirfd open of "benignsub" through openat with
+  // O_DIRECTORY|O_NOFOLLOW must throw ELOOP, the recursion is
+  // skipped, and outside/* is NOT in the glob result.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'benignsub'));
+    await writeFile(join(ws, 'benignsub', 'inside.txt'), '', 'utf8');
+    // outside/* contains a file with a name that WOULD match the
+    // glob pattern if the walk followed the symlink.
+    await writeFile(join(outside, 'leak.txt'), '', 'utf8');
+
+    let hookFired = false;
+    _setGlobPostReaddirHook(async ({ entries }) => {
+      // Only swap on the readdir of the workspace ROOT (where
+      // benignsub appears). Subsequent readdirs would be on the
+      // already-opened child fd and don't help the attacker.
+      if (entries.some(e => e.name === 'benignsub') && !hookFired) {
+        hookFired = true;
+        await rm(join(ws, 'benignsub'), { recursive: true, force: true });
+        await symlink(outside, join(ws, 'benignsub'));
+      }
+    });
+    try {
+      const result = await globTool.run(
+        { pattern: '**/*.txt' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(hookFired, true);
+      assert.equal(result.ok, true);
+      // The swapped-in symlink to outside/ must not have been
+      // followed — leak.txt MUST NOT appear in results.
+      assert.doesNotMatch(result.output, /leak\.txt/);
+      // benignsub/inside.txt also can't appear because the swap
+      // happened before recurse — that's fine, the contract is
+      // "no leak", not "no false negatives during attack".
+    } finally {
+      _setGlobPostReaddirHook(null);
+    }
+  });
+});
+
+test('round 13 Phase 2B followup #3: $MELO_HOME read requires per-call prompt, never granted dir scope', async () => {
+  // Phase 2B follow-up #3 (Codex 🟠): readRequiresApproval now
+  // includes MELO_INTERNAL. Reading a file under $MELO_HOME must
+  // prompt every call even if user clicked "always allow this dir".
+  await withTempEnv(async ({ home }) => {
+    const gate = await freshGate();
+    const target = join(home, 'meloconfig.json');
+    await writeFile(target, '{"k":"v"}', 'utf8');
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      // Even if user picks "dir" scope, gate's sensitive branch
+      // must NOT register a session grant — next call still prompts.
+      gate.resolveFileSafety(payload.requestId, 'dir');
+    };
+    const r1 = await fileReadTool.run(
+      { path: target },
+      { workspacePath: home, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(r1.ok, true);
+    const r2 = await fileReadTool.run(
+      { path: target },
+      { workspacePath: home, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(r2.ok, true);
+    assert.equal(promptCount, 2, '$MELO_HOME reads must prompt EVERY call');
+  });
 });
 
 test('Phase 2B contract: read tools have requiresPermission:false (FileSafetyGate owns approval)', () => {

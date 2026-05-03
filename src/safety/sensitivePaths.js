@@ -132,11 +132,21 @@ export function isHardBlockedDelete(absPath) {
   return isHardBlockedWrite(absPath);
 }
 
-// Reads of credential / system files are not hard-blocked (the user
-// might legitimately want "show me my known_hosts" or "read /etc/hosts"),
-// but they MUST go through the interactive approval path. Workspace-
-// internal silent-allow does not apply here.
+// Reads of credential / system / $MELO_HOME files are not hard-blocked
+// (the user might legitimately want "show me my known_hosts" or "read
+// /etc/hosts"), but they MUST go through the interactive approval path.
+// Workspace-internal silent-allow does not apply here.
+//
+// Phase 2B follow-up #3 (Codex 🟠, 2026-05-04): added MELO_INTERNAL.
+// Reading from $MELO_HOME (.melo-trash, .melo-backups, grants table)
+// would otherwise be classified as benign external and become eligible
+// for silent allow or persistent file/dir grants — neither acceptable
+// for what is effectively the user's own private data store for this
+// app. The gate's sensitive branch (`!_grant_after_prompt`) already
+// ensures sensitive reads get a fresh prompt every call.
 export function readRequiresApproval(absPath) {
   const cat = classifyPath(absPath);
-  return cat === PATH_CATEGORY.SYSTEM || cat === PATH_CATEGORY.CREDENTIAL;
+  return cat === PATH_CATEGORY.SYSTEM
+      || cat === PATH_CATEGORY.CREDENTIAL
+      || cat === PATH_CATEGORY.MELO_INTERNAL;
 }

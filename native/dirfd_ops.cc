@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <errno.h>
 #include <string.h>
 #include <string>
@@ -258,6 +259,76 @@ Napi::Value SymlinkAt(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
+// readdirAt(dirfd) → array of {name, kind}
+//
+// Reads all entries of an open directory fd. The dirfd is consumed
+// (fdopendir takes ownership; closedir closes the underlying fd),
+// so the caller MUST NOT close it themselves. Filters out "." and
+// "..". `kind` is one of: "file", "dir", "symlink", "other".
+//
+// We hand back the entry kind from d_type (no extra fstatat per
+// entry), so a caller that needs full stat for each entry should
+// invoke fstatat separately. d_type is 'unknown' on some
+// filesystems — when that happens, the JS caller can fall back to
+// fstatat for that one entry.
+Napi::Value ReadDirAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsNumber()) {
+    Napi::TypeError::New(env, "readdirAt(dirfd) — bad args").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  int dirfd = info[0].As<Napi::Number>().Int32Value();
+
+  // fdopendir takes ownership of the fd. We dup() first so the
+  // caller can still close their original fd if they want, and so
+  // a closedir failure doesn't leak.
+  int duped = dup(dirfd);
+  if (duped < 0) {
+    int e = errno;
+    MakeErrnoError(env, e, "dup").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  DIR* dir = fdopendir(duped);
+  if (!dir) {
+    int e = errno;
+    close(duped);
+    MakeErrnoError(env, e, "fdopendir").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  Napi::Array out = Napi::Array::New(env);
+  uint32_t idx = 0;
+  errno = 0;
+  struct dirent* entry;
+  while ((entry = readdir(dir)) != nullptr) {
+    if (entry->d_name[0] == '.' &&
+        (entry->d_name[1] == '\0' ||
+         (entry->d_name[1] == '.' && entry->d_name[2] == '\0'))) {
+      continue;
+    }
+    Napi::Object o = Napi::Object::New(env);
+    o.Set("name", Napi::String::New(env, entry->d_name));
+    const char* kind = "other";
+    switch (entry->d_type) {
+      case DT_REG: kind = "file"; break;
+      case DT_DIR: kind = "dir"; break;
+      case DT_LNK: kind = "symlink"; break;
+      case DT_UNKNOWN: kind = "unknown"; break;
+      default: kind = "other"; break;
+    }
+    o.Set("kind", Napi::String::New(env, kind));
+    out.Set(idx++, o);
+    errno = 0;
+  }
+  int saved = errno;
+  closedir(dir);  // also closes duped fd
+  if (saved != 0) {
+    MakeErrnoError(env, saved, "readdir").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  return out;
+}
+
 // closeFd(fd) → void
 Napi::Value CloseFd(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -283,6 +354,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("fstatat", Napi::Function::New(env, FstatAt));
   exports.Set("readlinkat", Napi::Function::New(env, ReadLinkAt));
   exports.Set("symlinkat", Napi::Function::New(env, SymlinkAt));
+  exports.Set("readdirAt", Napi::Function::New(env, ReadDirAt));
   exports.Set("closeFd", Napi::Function::New(env, CloseFd));
 
   // Constants the JS layer needs

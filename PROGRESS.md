@@ -29,8 +29,17 @@
 - **grepTool searchFileAtomic 同款加 O_NONBLOCK + S_ISREG**：防 enumerator-after race（walker 看到的是 file，open 时已变 FIFO）让 atomicOpenLeaf 不 block + post-open 立刻拒非 regular。
 - 测试加 3 case：① fileRead FIFO → NOT_FILE + watchdog 3s 内不 block（mkfifo unavailable 时 self-skip）；② grep walk 中遇到 FIFO 静默跳过（real file 命中正常返、FIFO 不进 result）；③ contract test：grepTool.js 源码不能含 `from 'node:child_process'` / `execFile|spawn(`（防 future regression 重新引入 rg）。
 - 验证：`src/tools/builtins/phase2b.readTools.test.js` **26/26 全绿**（前 23 + 3 新）；`src/**/*.test.js` **1762/1762 全绿**（前 1759 + 3 新；零既有回归）。
-- 安全终态：read 链路全 dirfd-bound + O_NOFOLLOW + O_NONBLOCK + S_ISREG，无外部进程，无 TOCTOU 窗口；workspace 内 silent + 外部 benign 一次 prompt + sensitive per-call。
-- Phase 2C (pdf/image/xlsx/knowledge — 富媒体读) / 2D (bash through bashRiskParser) / 2E (MCP file ops) / 3 (UI redesign) 仍未动。**目录 delete/restore 留独立 design**（dirfd-walk 工作量），**Linux CI 留独立 phase**（melo macOS-only Swift desktop app），**rg fd-bound 集成留独立 phase**（如果实测 grep 慢得难受再上）。
+- Follow-up #3（Codex Phase 2B D 第三轮 → glob/grep walk path-based + $MELO_HOME 读漏 sensitive 契约）：上一刀 push 又 D，3 条：① 🔴 glob/grep walker 用 path-based `readdir(fullPath)` 递归 — entry 在 readdir 后到下一层 readdir 之间被换 symlink，readdir 跟随 → 敏感目录文件名作 relative path 进 result；② 🟠 readRequiresApproval 漏 MELO_INTERNAL，$MELO_HOME 读被当 benign external 走 silent / dir grant，违反 round 13 的 "sensitive per-call" 契约；③ ⚪ 测试缺真 dir-swap race 注入。用户拍 "好"——加 native readdirat + JS walker 全 dirfd-bound + MELO_INTERNAL 修一行。
+- **addon 加 `readdirAt(dirfd)`**：N-API 包装 `dup(dirfd) + fdopendir + readdir + closedir`（dup 让 caller 能继续持有/关原 fd 不冲突）。返 `[{name, kind}]`，kind 由 `d_type` 直接给 'file'/'dir'/'symlink'/'unknown'/'other'，过滤 `.` 和 `..`。
+- **dirfdOps 加 `_raw.readdirAt`** 暴露给上层 walker。
+- **globTool 重构 `walkDirfd(parentFd, parentRelDir, baseDir, ...)`**：(a) `dirfdRaw.readdirAt(parentFd)` 列当前 dir 内容；(b) 每个 dir entry 用 `dirfdRaw.openat(parentFd, name, O_RDONLY|O_DIRECTORY|O_NOFOLLOW)` 拿子 dirfd——entry 已被换 symlink → ELOOP，silently skip；entry 是 ENOENT/ENOTDIR → 同样 skip；(c) 拿到子 dirfd 后递归调 walkDirfd 用子 dirfd 列内容；(d) finally close 子 fd。整 walk 链每层都是 dirfd 锁 inode，path-swap-after-readdir 物理上不可能影响后续 readdir。base dir 用 openParentDirFd 拿初始 dirfd。
+- **新 test seam `_setPostReaddirHookForTests` (globTool)**：readdirAt 之后、recurse 之前 fire hook，让测试注入 dir-swap race。
+- **grepTool enumerator 同款重构**：enumerateSafeFiles 改 dirfd-bound（openParentDirFd → recurse(parentFd, parentRelDir) 用 readdirAt + openat）。整 grep 文件枚举链 TOCTOU-safe。
+- **`readRequiresApproval` 加 MELO_INTERNAL**：sensitivePaths.js 一行加，$MELO_HOME 读现在归 sensitive → gate sensitive branch 自动不发 grant → 每次必 prompt。配套改 sensitivePaths.test.js 旧测试断言（pin 新契约）。
+- 测试加 2 case：① glob dir-entry-swap race：workspace 有 benignsub/inside.txt + outside/leak.txt；hook 在 root readdir 后把 benignsub rmdir+symlink 到 outside；assert hookFired + result 不含 leak.txt（openat O_NOFOLLOW 拒 swapped symlink）；② $MELO_HOME 读 per-call 契约：连续 2 次 read $MELO_HOME 文件，sse 每次都 dir scope grant，promptCount 必须 == 2（dir grant 不应跨 sensitive 调用）。
+- 验证：`src/tools/builtins/phase2b.readTools.test.js` **28/28 全绿**（前 26 + 2 新）；`src/**/*.test.js` **1764/1764 全绿**（前 1762 + 2 新；零既有回归）。
+- 安全终态升级：read 链 walk 也是 dirfd-bound（readdirAt + openat O_DIRECTORY|O_NOFOLLOW），整链路全 atomic；$MELO_HOME 读纳入 sensitive 契约。read 工具 7 阶段全闭环（base gate + dirfd walk + leaf openat O_NOFOLLOW + O_NONBLOCK + S_ISREG + read via fd）。
+- Phase 2C (pdf/image/xlsx/knowledge — 富媒体读) / 2D (bash through bashRiskParser) / 2E (MCP file ops) / 3 (UI redesign) 仍未动。**目录 delete/restore 留独立 design**（dirfd-walk recursive **delete** 不同于 walk-for-read，需要每层 unlinkat；现 readdirAt 是 prereq 之一，rmdir-walk 真要做时已有原语），**Linux CI 留独立 phase**（melo macOS-only Swift desktop app），**rg fd-bound 集成留独立 phase**。
 
 
 ## 2026-05-03 — File Safety Gate Phase 2A round 13：N-API dirfd-bound atomic ops（终结 12 轮 path-race patch loop）

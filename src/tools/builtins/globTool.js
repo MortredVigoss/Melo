@@ -21,11 +21,25 @@
  * recursed into).
  */
 
-import { readdir } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 
 import { requestRead } from '../../safety/fileSafetyGate.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
+import {
+  openParentDirFd,
+  _raw as dirfdRaw,
+  C as DC,
+} from '../../safety/dirfdOps.js';
+
+// Round 13 Phase 2B follow-up #3 (Codex 🔴): test-only seam fired
+// AFTER readdirAt returns the entries of a directory but BEFORE we
+// recurse into any subdir. Tests inject a dir-swap-to-symlink race
+// here and assert openat with O_DIRECTORY|O_NOFOLLOW catches it
+// (ELOOP), so the swapped target's contents never enter results.
+let _postReaddirHookForTests = null;
+export function _setPostReaddirHookForTests(hook) {
+  _postReaddirHookForTests = typeof hook === 'function' ? hook : null;
+}
 
 // ─── Minimal glob implementation ──────────────────────────────────────────────
 
@@ -91,38 +105,75 @@ function isSensitiveSubtree(absPath) {
       || cat === PATH_CATEGORY.MELO_INTERNAL;
 }
 
-async function walk(dir, baseDir, regex, results, signal, maxResults, skipped, filterSensitive) {
+/**
+ * TOCTOU-safe directory walk (Phase 2B follow-up #3, post-Codex 🔴):
+ *
+ * Each recursion step opens the child directory through `openat(parentFd,
+ * name, O_DIRECTORY|O_NOFOLLOW)` so:
+ *   - if the entry was swapped to a symlink between readdirAt and our
+ *     openat, the kernel returns ELOOP and we skip silently;
+ *   - the resulting child fd binds the inode, so subsequent readdirAt
+ *     reads only that inode's directory entries even if the path was
+ *     swapped after open.
+ *
+ * Caller passes `parentFd` for the directory currently being walked
+ * (initially the dirfd of the base directory). The function closes
+ * any child fds it opens; it does NOT close `parentFd` (the caller
+ * owns that).
+ */
+async function walkDirfd(parentFd, parentRelDir, baseDir, regex, results, signal, maxResults, skipped, filterSensitive) {
   if (results.length >= maxResults) return;
   if (signal?.aborted) return;
 
   let entries;
   try {
-    entries = await readdir(dir, { withFileTypes: true });
+    entries = dirfdRaw.readdirAt(parentFd);
   } catch {
     return;
+  }
+
+  if (_postReaddirHookForTests) {
+    try { await _postReaddirHookForTests({ parentRelDir, baseDir, entries }); } catch {}
   }
 
   for (const entry of entries) {
     if (results.length >= maxResults) break;
     if (IGNORED.has(entry.name)) continue;
 
-    const fullPath = join(dir, entry.name);
+    const fullPath = parentRelDir ? join(baseDir, parentRelDir, entry.name) : join(baseDir, entry.name);
+    const relPath = parentRelDir ? `${parentRelDir}/${entry.name}` : entry.name;
 
-    // Skip sensitive subtrees only when the BASE was benign — if the
-    // user explicitly approved a sensitive base (e.g. they're
-    // globbing /etc), don't filter entries inside it.
+    // Skip sensitive subtrees only when the BASE was benign.
     if (filterSensitive && isSensitiveSubtree(fullPath)) {
       skipped.sensitive++;
       continue;
     }
 
-    const relPath = relative(baseDir, fullPath).replace(/\\/g, '/');
-
-    if (entry.isDirectory()) {
-      await walk(fullPath, baseDir, regex, results, signal, maxResults, skipped, filterSensitive);
-    } else if (entry.isFile() && regex.test(relPath)) {
+    if (entry.kind === 'dir') {
+      // Open the child dir through the parent dirfd with
+      // O_DIRECTORY|O_NOFOLLOW. ELOOP if the entry was swapped to a
+      // symlink between readdirAt and now.
+      let childFd = -1;
+      try {
+        childFd = dirfdRaw.openat(
+          parentFd,
+          entry.name,
+          DC.O_RDONLY | DC.O_DIRECTORY | DC.O_NOFOLLOW,
+        );
+      } catch {
+        // ELOOP / ENOENT / ENOTDIR — silently skip the swapped entry.
+        continue;
+      }
+      try {
+        await walkDirfd(childFd, relPath, baseDir, regex, results, signal, maxResults, skipped, filterSensitive);
+      } finally {
+        try { dirfdRaw.closeFd(childFd); } catch {}
+      }
+    } else if (entry.kind === 'file' && regex.test(relPath)) {
       results.push(relPath);
     }
+    // entry.kind === 'symlink' / 'other' / 'unknown' → never recursed
+    // and never returned (glob is for regular files).
   }
 }
 
@@ -209,15 +260,22 @@ export const globTool = {
     }
 
     const realBase = approved.resolvedTarget;
-    // Filter sensitive subtrees only if the BASE itself is benign.
     const filterSensitive = !isSensitiveSubtree(realBase);
 
     const results = [];
     const skipped = { sensitive: 0 };
+    let baseFd;
     try {
-      await walk(realBase, realBase, regex, results, signal, maxResults, skipped, filterSensitive);
+      baseFd = openParentDirFd(realBase);
+    } catch (err) {
+      return { ok: false, output: `Cannot open base ${realBase}: ${err.message}`, error: err.code || err.message };
+    }
+    try {
+      await walkDirfd(baseFd, '', realBase, regex, results, signal, maxResults, skipped, filterSensitive);
     } catch (err) {
       return { ok: false, output: `Walk error: ${err.message}`, error: err.message };
+    } finally {
+      try { dirfdRaw.closeFd(baseFd); } catch {}
     }
 
     results.sort();

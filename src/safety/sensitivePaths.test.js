@@ -111,14 +111,18 @@ test('isHardBlockedDelete: same set as write (deletes are higher risk)', async (
   });
 });
 
-test('readRequiresApproval: true for system + credential, false for melo_internal + safe', async () => {
+test('readRequiresApproval: true for system + credential + melo_internal, false for safe', async () => {
+  // Phase 2B follow-up #3 (Codex 🟠, 2026-05-04): MELO_INTERNAL is
+  // now treated as sensitive for reads. The .melo-trash quarantine,
+  // .melo-backups snapshots, and grants table are all under
+  // $MELO_HOME — none should silently flow back into model context
+  // without an explicit per-call OK.
   await withTempMeloHome(async (dir) => {
     const { readRequiresApproval } = await freshModule();
     assert.equal(readRequiresApproval('/etc/hosts'), true);
     assert.equal(readRequiresApproval(join(HOME, '.ssh/id_rsa')), true);
-    // melo_internal reads are OK (we DO want agents to read their own
-    // workspace, history, generated files).
-    assert.equal(readRequiresApproval(join(dir, 'config.json')), false);
+    assert.equal(readRequiresApproval(join(dir, 'config.json')), true,
+      '$MELO_HOME reads must require per-call approval');
     assert.equal(readRequiresApproval(join(HOME, 'Documents/notes.txt')), false);
   });
 });
