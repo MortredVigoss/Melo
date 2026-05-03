@@ -516,7 +516,7 @@ export async function restoreFromBackup(operationId, opts = {}) {
         0o644,
       );
     } catch (err) {
-      if (err.code === 'ELOOP' || err.errno === 62) {
+      if (err.code === 'ELOOP') {
         throw new Error(
           `Refusing to restore over symlink at ${resolvedTarget} ` +
           `(kernel ELOOP via O_NOFOLLOW).`,

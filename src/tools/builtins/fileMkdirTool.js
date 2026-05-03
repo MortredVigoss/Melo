@@ -204,7 +204,7 @@ export const fileMkdirTool = {
       try {
         _raw.mkdirat(parentFd, leafName, 0o755);
       } catch (err) {
-        if (err.code === 'EEXIST' || err.errno === 17) {
+        if (err.code === 'EEXIST') {
           return {
             ok: false,
             output: `Target ${absPath} appeared between approval and mkdir.`,

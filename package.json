@@ -34,6 +34,7 @@
     "ffmpeg-static": "^5.2.0",
     "jsdom": "^25.0.1",
     "node-addon-api": "^8.3.0",
+    "node-gyp": "^11.0.0",
     "opusscript": "^0.0.8",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
@@ -44,8 +45,5 @@
     "tesseract.js": "^5.1.1",
     "three": "^0.184.0",
     "tweetnacl": "^1.0.3"
-  },
-  "devDependencies": {
-    "node-gyp": "^11.0.0"
   }
 }

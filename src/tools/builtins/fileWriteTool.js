@@ -263,7 +263,7 @@ export const fileWriteTool = {
             meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };
         }
-        if (err.code === 'ENOENT' || err.errno === 2) {
+        if (err.code === 'ENOENT') {
           return {
             ok: false,
             output: `Target ${realPath} disappeared between precheck and read.`,
@@ -271,7 +271,7 @@ export const fileWriteTool = {
             meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
           };
         }
-        if (err.code === 'EISDIR' || err.errno === 21) {
+        if (err.code === 'EISDIR') {
           return {
             ok: false,
             output: `Refusing to overwrite directory ${realPath} with file content.`,
@@ -348,7 +348,7 @@ export const fileWriteTool = {
         : DC.O_RDWR;
       openLeaf = await atomicOpenLeaf(parentDir, leafName, flags, 0o644);
     } catch (err) {
-      if (err.code === 'EEXIST' || err.errno === 17) {
+      if (err.code === 'EEXIST') {
         return {
           ok: false,
           output: `Target ${realPath} appeared between approval and write — re-run as overwrite or pick a different path.`,
@@ -356,7 +356,7 @@ export const fileWriteTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'create-eexist' },
         };
       }
-      if (err.code === 'ELOOP' || err.errno === 62) {
+      if (err.code === 'ELOOP') {
         return {
           ok: false,
           output: `Parent or leaf became a symlink between approval and write — kernel refused via O_NOFOLLOW.`,
@@ -364,14 +364,14 @@ export const fileWriteTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-      if (err.code === 'EISDIR' || err.errno === 21) {
+      if (err.code === 'EISDIR') {
         return {
           ok: false,
           output: `Refusing to overwrite directory ${realPath} with file content.`,
           error: 'TARGET_IS_DIR',
         };
       }
-      if (err.code === 'ENOENT' || err.errno === 2) {
+      if (err.code === 'ENOENT') {
         return {
           ok: false,
           output: `Target ${realPath} disappeared between approval and write.`,
@@ -379,7 +379,7 @@ export const fileWriteTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
         };
       }
-      if (err.code === 'ENOTDIR' || err.errno === 20) {
+      if (err.code === 'ENOTDIR') {
         return {
           ok: false,
           output: `Parent ${parentDir} stopped being a directory between approval and write.`,

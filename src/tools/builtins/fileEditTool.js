@@ -194,7 +194,7 @@ export const fileEditTool = {
       try {
         preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY);
       } catch (err) {
-        if (err.code === 'ELOOP' || err.errno === 62) {
+        if (err.code === 'ELOOP') {
           return {
             ok: false,
             output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
@@ -202,7 +202,7 @@ export const fileEditTool = {
             meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };
         }
-        if (err.code === 'ENOENT' || err.errno === 2) {
+        if (err.code === 'ENOENT') {
           return {
             ok: false,
             output: `Target ${realPath} disappeared between precheck and read.`,
@@ -210,7 +210,7 @@ export const fileEditTool = {
             meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
           };
         }
-        if (err.code === 'EISDIR' || err.errno === 21) {
+        if (err.code === 'EISDIR') {
           return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
         }
         return { ok: false, output: `Open error: ${err.message}`, error: err.message };
@@ -288,7 +288,7 @@ export const fileEditTool = {
     try {
       openLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDWR);
     } catch (err) {
-      if (err.code === 'ELOOP' || err.errno === 62) {
+      if (err.code === 'ELOOP') {
         return {
           ok: false,
           output: `Parent or leaf became a symlink between approval and edit — kernel refused via O_NOFOLLOW.`,
@@ -296,7 +296,7 @@ export const fileEditTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-      if (err.code === 'ENOENT' || err.errno === 2) {
+      if (err.code === 'ENOENT') {
         return {
           ok: false,
           output: `Target ${realPath} disappeared between approval and edit.`,
@@ -304,10 +304,10 @@ export const fileEditTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
         };
       }
-      if (err.code === 'EISDIR' || err.errno === 21) {
+      if (err.code === 'EISDIR') {
         return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
       }
-      if (err.code === 'ENOTDIR' || err.errno === 20) {
+      if (err.code === 'ENOTDIR') {
         return {
           ok: false,
           output: `Parent ${parentDir} stopped being a directory between approval and edit.`,

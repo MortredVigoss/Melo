@@ -28,11 +28,66 @@
 
 namespace {
 
+// Map a POSIX errno number to its stable symbolic name (matches Node's
+// fs error .code values). JS callers check `err.code === 'ELOOP'` etc;
+// using a portable name avoids platform errno-number drift (e.g. ELOOP
+// is 62 on macOS but 40 on Linux).
+const char* ErrnoToName(int e) {
+  switch (e) {
+    case EPERM: return "EPERM";
+    case ENOENT: return "ENOENT";
+    case ESRCH: return "ESRCH";
+    case EINTR: return "EINTR";
+    case EIO: return "EIO";
+    case ENXIO: return "ENXIO";
+    case E2BIG: return "E2BIG";
+    case ENOEXEC: return "ENOEXEC";
+    case EBADF: return "EBADF";
+    case ECHILD: return "ECHILD";
+    case EAGAIN: return "EAGAIN";
+    case ENOMEM: return "ENOMEM";
+    case EACCES: return "EACCES";
+    case EFAULT: return "EFAULT";
+    case EBUSY: return "EBUSY";
+    case EEXIST: return "EEXIST";
+    case EXDEV: return "EXDEV";
+    case ENODEV: return "ENODEV";
+    case ENOTDIR: return "ENOTDIR";
+    case EISDIR: return "EISDIR";
+    case EINVAL: return "EINVAL";
+    case ENFILE: return "ENFILE";
+    case EMFILE: return "EMFILE";
+    case ENOTTY: return "ENOTTY";
+    case EFBIG: return "EFBIG";
+    case ENOSPC: return "ENOSPC";
+    case ESPIPE: return "ESPIPE";
+    case EROFS: return "EROFS";
+    case EMLINK: return "EMLINK";
+    case EPIPE: return "EPIPE";
+    case ELOOP: return "ELOOP";
+    case ENAMETOOLONG: return "ENAMETOOLONG";
+    case ENOTEMPTY: return "ENOTEMPTY";
+#ifdef ENOTSUP
+    case ENOTSUP: return "ENOTSUP";
+#endif
+#ifdef EOPNOTSUPP
+#if EOPNOTSUPP != ENOTSUP
+    case EOPNOTSUPP: return "EOPNOTSUPP";
+#endif
+#endif
+    default: return nullptr;
+  }
+}
+
 Napi::Error MakeErrnoError(Napi::Env env, int errnum, const char* syscall) {
-  std::string message = std::string(syscall) + ": " + std::string(strerror(errnum));
+  const char* name = ErrnoToName(errnum);
+  std::string codeStr = name ? std::string(name)
+                             : std::string("E") + std::to_string(errnum);
+  std::string message = std::string(syscall) + ": " + codeStr +
+                        ": " + std::string(strerror(errnum));
   Napi::Error err = Napi::Error::New(env, message);
   err.Set("errno", Napi::Number::New(env, errnum));
-  err.Set("code", Napi::String::New(env, strerror(errnum)));
+  err.Set("code", Napi::String::New(env, codeStr));
   err.Set("syscall", Napi::String::New(env, syscall));
   return err;
 }

@@ -405,7 +405,7 @@ async function _unsafeRawDelete(paths, ctx = {}) {
         await rm(opDir, { recursive: true, force: true }).catch(() => {});
         throw new Error(
           `safeDeleteToTrash: atomicOpenLeaf failed for ${absPath}: ${err.message}` +
-          (err.code === 'ELOOP' || err.errno === 62
+          (err.code === 'ELOOP'
             ? ' (target became a symlink — O_NOFOLLOW)'
             : ''),
         );
@@ -803,7 +803,7 @@ export async function restoreFromTrash(operationId, opts = {}) {
           0o644,
         );
       } catch (err) {
-        if (err.code === 'ELOOP' || err.errno === 62) {
+        if (err.code === 'ELOOP') {
           throw new Error(
             `Refusing to restore over symlink at ${resolvedTarget} ` +
             `(kernel ELOOP via O_NOFOLLOW).`,

@@ -320,7 +320,7 @@ export async function atomicLstat(parentPath, leafName) {
   try {
     return addon.fstatat(dirfd, leafName, C.AT_SYMLINK_NOFOLLOW);
   } catch (err) {
-    if (err.errno === 2 /* ENOENT */) return null;
+    if (err.code === 'ENOENT') return null;
     throw wrapErr(err, `fstatat ${parentPath}/${leafName}`);
   } finally {
     safeCloseFd(dirfd);
