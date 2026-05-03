@@ -44,6 +44,17 @@ import { safeResolvePath } from './pathResolver.js';
 const BACKUP_DIR_NAME = '.melo-backups';
 export const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Codex ⚪ round 4 (2026-05-03): test-only DI seam to inject a state
+// change between layer (b)'s sensitivity check and the commit-on-write
+// step. Tests use this to swap a symlink target during the gap a real
+// attacker would race for, then assert that gate.commitOperation
+// catches the swap and aborts the restore. Default null = no-op in
+// production. Never call this from production code.
+let _restoreSwapHookForTests = null;
+export function _setRestoreSwapHookForTests(hook) {
+  _restoreSwapHookForTests = typeof hook === 'function' ? hook : null;
+}
+
 // Whitelist for operationId values supplied by the API / UI. Codex C
 // round 1 (2026-05-03): `purgeBackup(operationId)` joined the value
 // directly under `.melo-backups/` and rm -r'd it, so a `../` form
@@ -303,6 +314,18 @@ export async function restoreFromBackup(operationId, opts = {}) {
     );
   }
 
+  // Codex ⚪ round 4 (2026-05-03): test-only seam — fired AFTER the
+  // sensitivity check but BEFORE the commit. Lets integration tests
+  // simulate an attacker racing the gap by re-pointing a symlink
+  // here; the commit step below MUST then detect the mismatch and
+  // abort. No-op in production.
+  if (_restoreSwapHookForTests) {
+    await _restoreSwapHookForTests({
+      originalPath: target.originalPath,
+      expectedReal: realOriginal,
+    });
+  }
+
   // Layer (c) + (d): atomic approval-and-commit. Codex D round 3
   // (2026-05-03): we use the gate's commit token for BOTH the UI
   // path and the no-UI path so the actual fs op below operates on
@@ -351,7 +374,15 @@ export async function restoreFromBackup(operationId, opts = {}) {
   if (opts.purgeAfterRestore !== false) {
     await rm(target.opDir, { recursive: true, force: true });
   }
-  return { restored: target.originalPath };
+  // Codex C round 4 (2026-05-03): unify return shape with trash —
+  // `restored` is the commit-resolved real path actually written;
+  // `originalPath` is the lexical path the manifest captured at
+  // backup time; `hasSymlinkInChain` lets the UI flag the alias.
+  return {
+    restored: resolvedTarget,
+    originalPath: target.originalPath,
+    hasSymlinkInChain: originalHasSymlink,
+  };
 }
 
 // ── purgeBackup ──────────────────────────────────────────────────────

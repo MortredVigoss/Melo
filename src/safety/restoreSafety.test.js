@@ -132,10 +132,10 @@ test('restoreFromBackup with a manifest pointing at a symlink → /etc/hosts is 
 
 test('restoreFromTrash with a tampered manifest entry pointing at /etc rejects (no copyFile)', async () => {
   await withSplitHomeAndWorkspace(async (ws, home) => {
-    const { safeDeleteToTrash, restoreFromTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
     const target = join(ws, 'foo.txt');
     await writeFile(target, 'x', 'utf8');
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
 
     // Tamper the manifest's first file entry's originalPath.
     const manifestPath = del.manifestPath;
@@ -190,14 +190,14 @@ test('restoreFromBackup with sseEmitter+chatId routes through gate.requestWrite 
 
 test('restoreFromTrash with sseEmitter+chatId fires one approval per file', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
-    const { safeDeleteToTrash, restoreFromTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
     const gate = await freshGate();
 
     const a = join(ws, 'a.txt');
     const b = join(ws, 'b.txt');
     await writeFile(a, 'A', 'utf8');
     await writeFile(b, 'B', 'utf8');
-    const del = await safeDeleteToTrash([a, b]);
+    const del = await _unsafeSafeDeleteToTrashRaw([a, b]);
 
     const events = [];
     const sse = (event, payload) => {
@@ -298,14 +298,159 @@ test('restoreFromBackup return shape: result.restored carries the commit-resolve
   });
 });
 
+// ─── Codex C round 4: integration TOCTOU via _setRestoreSwapHookForTests ─
+
+test('restoreFromBackup: post-(b) symlink swap caught by commit (integration TOCTOU)', async () => {
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const backup = await freshBackup();
+    const realFile = join(ws, 'foo.txt');
+    await writeFile(realFile, 'orig', 'utf8');
+    const snap = await backup.snapshotBeforeWrite(realFile);
+
+    // Inject a swap between layer (b) and commit. realFile starts as
+    // a regular file; in the hook, replace it with a symlink → /etc/hosts.
+    backup._setRestoreSwapHookForTests(async ({ originalPath }) => {
+      await rm(originalPath, { force: true });
+      await symlink('/etc/hosts', originalPath);
+    });
+    try {
+      await assert.rejects(
+        backup.restoreFromBackup(snap.operationId),
+        (err) =>
+          err.code === 'FILE_SAFETY_DENIED' &&
+          /Path mapping changed/i.test(err.message),
+      );
+    } finally {
+      backup._setRestoreSwapHookForTests(null);
+    }
+
+    // /etc/hosts must NOT have been touched (we never permission-checked
+    // /etc anyway, but proves the abort point fired upstream of fs).
+    const hostsExists = await readFile('/etc/hosts', 'utf8').catch(() => null);
+    assert.ok(hostsExists === null || hostsExists.length > 0);
+  });
+});
+
+test('restoreFromTrash: post-(b) symlink swap caught by commit (integration TOCTOU)', async () => {
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const trash = await freshTrash();
+    const realFile = join(ws, 'foo.txt');
+    await writeFile(realFile, 'A', 'utf8');
+    const del = await trash._unsafeSafeDeleteToTrashRaw([realFile]);
+
+    trash._setRestoreSwapHookForTests(async ({ originalPath }) => {
+      // Re-create the path as a symlink to /etc/hosts before commit.
+      await rm(originalPath, { force: true });
+      await symlink('/etc/hosts', originalPath);
+    });
+    try {
+      await assert.rejects(
+        trash.restoreFromTrash(del.operationId),
+        (err) =>
+          err.code === 'FILE_SAFETY_DENIED' &&
+          /Path mapping changed/i.test(err.message),
+      );
+    } finally {
+      trash._setRestoreSwapHookForTests(null);
+    }
+  });
+});
+
+// ─── Codex C round 4: token-bound public safeDeleteToTrash ────────────
+
+test('safeDeleteToTrash (public token-bound API) requires operationTokens; bare paths rejected', async () => {
+  await withSplitHomeAndWorkspace(async () => {
+    const { safeDeleteToTrash } = await freshTrash();
+    await assert.rejects(
+      safeDeleteToTrash({ paths: ['/tmp/foo'] }),
+      /requires a non-empty operationTokens/i,
+    );
+    await assert.rejects(
+      safeDeleteToTrash(),
+      /requires a non-empty operationTokens/i,
+    );
+    await assert.rejects(
+      safeDeleteToTrash({ operationTokens: [] }),
+      /requires a non-empty operationTokens/i,
+    );
+  });
+});
+
+test('safeDeleteToTrash (public token-bound API) end-to-end with requestDelete tokens', async () => {
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const { safeDeleteToTrash, listTrash } = await freshTrash();
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'x', 'utf8');
+
+    // Caller flow: requestDelete → safeDeleteToTrash with tokens.
+    const sse = makeAutoResolver(gate, [
+      { scope: 'once' },
+      { scope: 'once', confirmInput: 'foo.txt' },
+    ]);
+    const approved = await gate.requestDelete({
+      paths: [target],
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
+    assert.equal(approved.operationTokens.length, 1);
+
+    const result = await safeDeleteToTrash({
+      operationTokens: approved.operationTokens,
+      ctx: { chatId: 'chat-A' },
+    });
+    assert.equal(result.removed.length, 1);
+    assert.equal(result.removed[0], target);
+    assert.equal((await listTrash()).length, 1);
+  });
+});
+
+test('safeDeleteToTrash refuses if any token commit fails (whole batch atomic)', async () => {
+  await withSplitHomeAndWorkspace(async (ws) => {
+    const { safeDeleteToTrash, listTrash } = await freshTrash();
+    const gate = await freshGate();
+    const a = join(ws, 'a.txt');
+    await writeFile(a, 'A', 'utf8');
+
+    const sse = makeAutoResolver(gate, [
+      { scope: 'once' },
+      { scope: 'once', confirmInput: 'a.txt' },
+    ]);
+    const approved = await gate.requestDelete({
+      paths: [a],
+      chatId: 'chat-A',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
+
+    // Consume the legit token, then call safeDeleteToTrash with the
+    // (now invalidated) token — single-use should reject.
+    await gate.commitOperation(approved.operationTokens[0]);
+
+    await assert.rejects(
+      safeDeleteToTrash({
+        operationTokens: approved.operationTokens,
+        ctx: {},
+      }),
+      (err) =>
+        err.code === 'FILE_SAFETY_DENIED' &&
+        /unknown or already consumed/i.test(err.message),
+    );
+    // Original file untouched, no trash entry created.
+    assert.equal(await readFile(a, 'utf8'), 'A');
+    assert.equal((await listTrash()).length, 0);
+  });
+});
+
 test('restoreFromTrash uses commit-issued resolvedTarget per file (returned restored[] holds real paths)', async () => {
   await withSplitHomeAndWorkspace(async (ws) => {
-    const { safeDeleteToTrash, restoreFromTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
     const realA = join(ws, 'a.txt');
     const realB = join(ws, 'b.txt');
     await writeFile(realA, 'A', 'utf8');
     await writeFile(realB, 'B', 'utf8');
-    const del = await safeDeleteToTrash([realA, realB]);
+    const del = await _unsafeSafeDeleteToTrashRaw([realA, realB]);
 
     const result = await restoreFromTrash(del.operationId);
     // restored[] now contains the commit-resolved (= real) paths.

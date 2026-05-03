@@ -83,11 +83,11 @@ test('restoreFromTrash rejects every traversal-shaped operationId', async () => 
 
 test('purgeTrashEntry accepts a legitimate operationId (positive case)', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, purgeTrashEntry, listTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, purgeTrashEntry, listTrash } = await freshTrash();
     const target = join(home, 'a.txt');
     await writeFile(target, 'x', 'utf8');
-    const del = await safeDeleteToTrash([target]);
-    // safeDeleteToTrash uses randomUUID() which fits the whitelist
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
+    // _unsafeSafeDeleteToTrashRaw uses randomUUID() which fits the whitelist
     // (UUID v4 = 36 chars of [0-9a-f-]).
     await purgeTrashEntry(del.operationId);
     assert.equal((await listTrash()).length, 0);
@@ -207,15 +207,15 @@ test('recordAfterDiff rejects every traversal-shaped operationId', async () => {
   });
 });
 
-test('safeDeleteToTrash rejects traversal-shaped ctx.operationId', async () => {
+test('_unsafeSafeDeleteToTrashRaw rejects traversal-shaped ctx.operationId', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     const target = join(home, 'a.txt');
     await writeFile(target, 'x', 'utf8');
     for (const input of TRAVERSAL_INPUTS) {
       if (input === null || input === undefined) continue;
       await assert.rejects(
-        safeDeleteToTrash([target], { operationId: input }),
+        _unsafeSafeDeleteToTrashRaw([target], { operationId: input }),
         /Invalid operationId/i,
         `expected ctx.operationId=${JSON.stringify(input)} to be rejected`,
       );

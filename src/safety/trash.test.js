@@ -46,16 +46,16 @@ async function fileExists(p) {
   try { await stat(p); return true; } catch { return false; }
 }
 
-// ─── safeDeleteToTrash ─────────────────────────────────────────────────
+// ─── _unsafeSafeDeleteToTrashRaw ─────────────────────────────────────────────────
 
-test('safeDeleteToTrash moves a single file to trash and unlinks original', async () => {
+test('_unsafeSafeDeleteToTrashRaw moves a single file to trash and unlinks original', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     const target = join(home, 'work', 'a.txt');
     await mkdir(join(home, 'work'), { recursive: true });
     await writeFile(target, 'hello', 'utf8');
 
-    const result = await safeDeleteToTrash([target], {
+    const result = await _unsafeSafeDeleteToTrashRaw([target], {
       reason: 'test',
       requestedBy: 'agent',
       chatId: 'chat-A',
@@ -79,11 +79,11 @@ test('safeDeleteToTrash moves a single file to trash and unlinks original', asyn
   });
 });
 
-test('safeDeleteToTrash fails cleanly when source does not exist', async () => {
+test('_unsafeSafeDeleteToTrashRaw fails cleanly when source does not exist', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     await assert.rejects(
-      safeDeleteToTrash([join(home, 'nope.txt')]),
+      _unsafeSafeDeleteToTrashRaw([join(home, 'nope.txt')]),
       /source not found/i,
     );
     // No orphan trash dir left behind
@@ -94,15 +94,15 @@ test('safeDeleteToTrash fails cleanly when source does not exist', async () => {
   });
 });
 
-test('safeDeleteToTrash handles a directory recursively', async () => {
+test('_unsafeSafeDeleteToTrashRaw handles a directory recursively', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     const dir = join(home, 'work', 'mydir');
     await mkdir(join(dir, 'sub'), { recursive: true });
     await writeFile(join(dir, 'a.txt'), 'a', 'utf8');
     await writeFile(join(dir, 'sub', 'b.txt'), 'b', 'utf8');
 
-    const result = await safeDeleteToTrash([dir]);
+    const result = await _unsafeSafeDeleteToTrashRaw([dir]);
     assert.equal(result.removed[0], dir);
     assert.equal(await fileExists(dir), false);
 
@@ -115,16 +115,16 @@ test('safeDeleteToTrash handles a directory recursively', async () => {
   });
 });
 
-test('safeDeleteToTrash batch: multiple files in one operation = one folder', async () => {
+test('_unsafeSafeDeleteToTrashRaw batch: multiple files in one operation = one folder', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     await mkdir(join(home, 'w'), { recursive: true });
     const a = join(home, 'w', 'a.txt');
     const b = join(home, 'w', 'b.txt');
     await writeFile(a, 'A', 'utf8');
     await writeFile(b, 'B', 'utf8');
 
-    const result = await safeDeleteToTrash([a, b]);
+    const result = await _unsafeSafeDeleteToTrashRaw([a, b]);
     assert.equal(result.removed.length, 2);
 
     const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
@@ -136,15 +136,15 @@ test('safeDeleteToTrash batch: multiple files in one operation = one folder', as
   });
 });
 
-test('safeDeleteToTrash: one missing source aborts ALL deletes (no partial damage)', async () => {
+test('_unsafeSafeDeleteToTrashRaw: one missing source aborts ALL deletes (no partial damage)', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     await mkdir(join(home, 'w'), { recursive: true });
     const a = join(home, 'w', 'a.txt');
     const ghost = join(home, 'w', 'ghost.txt');
     await writeFile(a, 'A', 'utf8');
 
-    await assert.rejects(safeDeleteToTrash([a, ghost]), /source not found/i);
+    await assert.rejects(_unsafeSafeDeleteToTrashRaw([a, ghost]), /source not found/i);
     // a must still exist — we backed out before any unlink
     assert.equal(await fileExists(a), true, 'real file should not be unlinked when batch fails');
   });
@@ -154,16 +154,16 @@ test('safeDeleteToTrash: one missing source aborts ALL deletes (no partial damag
 
 test('listTrash returns all entries newest-first', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, listTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, listTrash } = await freshTrash();
     await mkdir(join(home, 'w'), { recursive: true });
     const a = join(home, 'w', 'a.txt');
     const b = join(home, 'w', 'b.txt');
     await writeFile(a, '1', 'utf8');
     await writeFile(b, '2', 'utf8');
-    await safeDeleteToTrash([a]);
+    await _unsafeSafeDeleteToTrashRaw([a]);
     // Sleep 5ms so deletedAt timestamps differ
     await new Promise(r => setTimeout(r, 5));
-    await safeDeleteToTrash([b]);
+    await _unsafeSafeDeleteToTrashRaw([b]);
     const list = await listTrash();
     assert.equal(list.length, 2);
     assert.ok(
@@ -183,12 +183,12 @@ test('listTrash returns [] when no trash dir exists', async () => {
 
 test('restoreFromTrash brings files back and (default) cleans the entry', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, restoreFromTrash, listTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash, listTrash } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'original', 'utf8');
 
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
     assert.equal(await fileExists(target), false);
 
     const result = await restoreFromTrash(del.operationId);
@@ -205,11 +205,11 @@ test('restoreFromTrash brings files back and (default) cleans the entry', async 
 
 test('restoreFromTrash refuses to clobber an existing file (default)', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, restoreFromTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'original', 'utf8');
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
 
     // User writes a new file at the same spot before restoring.
     await writeFile(target, 'new content', 'utf8');
@@ -225,11 +225,11 @@ test('restoreFromTrash refuses to clobber an existing file (default)', async () 
 
 test('restoreFromTrash with overwrite:true clobbers existing files', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, restoreFromTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, restoreFromTrash } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'original', 'utf8');
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
     await writeFile(target, 'collision', 'utf8');
 
     const result = await restoreFromTrash(del.operationId, { overwrite: true });
@@ -247,11 +247,11 @@ test('restoreFromTrash on unknown operationId throws', async () => {
 
 test('purgeTrashEntry removes the entry permanently', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, purgeTrashEntry, listTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, purgeTrashEntry, listTrash } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'x', 'utf8');
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
 
     const result = await purgeTrashEntry(del.operationId);
     assert.equal(result.purged, del.folderName);
@@ -270,11 +270,11 @@ test('purgeTrashEntry on unknown operationId throws', async () => {
 
 test('pruneTrashHint reports nothing for fresh entries', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, pruneTrashHint } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, pruneTrashHint } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'x', 'utf8');
-    await safeDeleteToTrash([target]);
+    await _unsafeSafeDeleteToTrashRaw([target]);
 
     const { expired } = await pruneTrashHint();
     assert.deepEqual(expired, []);
@@ -283,11 +283,11 @@ test('pruneTrashHint reports nothing for fresh entries', async () => {
 
 test('pruneTrashHint flags entries past the 7-day retention but does NOT delete them', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash, pruneTrashHint, listTrash, TRASH_RETENTION_MS } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw, pruneTrashHint, listTrash, TRASH_RETENTION_MS } = await freshTrash();
     const target = join(home, 'w', 'a.txt');
     await mkdir(join(home, 'w'), { recursive: true });
     await writeFile(target, 'x', 'utf8');
-    const del = await safeDeleteToTrash([target]);
+    const del = await _unsafeSafeDeleteToTrashRaw([target]);
 
     // Simulate "now" being 8 days later.
     const future = new Date(Date.now() + TRASH_RETENTION_MS + 24 * 60 * 60 * 1000);
@@ -303,12 +303,12 @@ test('pruneTrashHint flags entries past the 7-day retention but does NOT delete 
 
 // ─── Folder-name shape ─────────────────────────────────────────────────
 
-test('safeDeleteToTrash folder name has shape YYYY-MM-DD_<12-char-hash>', async () => {
+test('_unsafeSafeDeleteToTrashRaw folder name has shape YYYY-MM-DD_<12-char-hash>', async () => {
   await withTempMeloHome(async (home) => {
-    const { safeDeleteToTrash } = await freshTrash();
+    const { _unsafeSafeDeleteToTrashRaw } = await freshTrash();
     const target = join(home, 'a.txt');
     await writeFile(target, 'x', 'utf8');
-    const result = await safeDeleteToTrash([target]);
+    const result = await _unsafeSafeDeleteToTrashRaw([target]);
     assert.match(result.folderName, /^\d{4}-\d{2}-\d{2}_[0-9a-f]{12}$/);
   });
 });

@@ -40,11 +40,22 @@ import {
 import { dirname, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
-import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
+import {
+  isHardBlockedWrite,
+  isHardBlockedDelete,
+  classifyPath,
+} from './sensitivePaths.js';
 import { safeResolvePath } from './pathResolver.js';
 
 const TRASH_DIR_NAME = '.melo-trash';
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Codex ⚪ round 4 (2026-05-03): test-only DI seam — see backup.js
+// for the full rationale. Default null = no-op in production.
+let _restoreSwapHookForTests = null;
+export function _setRestoreSwapHookForTests(hook) {
+  _restoreSwapHookForTests = typeof hook === 'function' ? hook : null;
+}
 
 // Whitelist for operationId values supplied by the API / UI. Mirrors
 // backup.js — Codex C round 1 (2026-05-03) flagged the same path-
@@ -104,16 +115,77 @@ async function fileSha256(absPath) {
   }
 }
 
-// ── safeDeleteToTrash ────────────────────────────────────────────────
+// ── safeDeleteToTrash (token-bound, public) ──────────────────────────
+//
+// Codex C round 4 (2026-05-03): the public delete entrypoint now
+// REQUIRES a list of operationTokens issued by gate.requestDelete().
+// Each token is committed before any fs op fires; any commit failure
+// (TTL expired, symlink swap, replay) aborts the entire batch
+// without touching disk. We also re-check isHardBlockedDelete on
+// BOTH the lexical input and the commit-resolved real path before
+// delegating to the raw worker — defence-in-depth even if a future
+// refactor drops a layer.
+//
+// Phase 2 contract: tools that delete go
+//   gate.requestDelete(...) → safeDeleteToTrash({ operationTokens, ctx })
+// Tests / setup helpers that don't go through the gate may call
+// _unsafeSafeDeleteToTrashRaw() directly — see its JSDoc warning.
+//
+// Returns the same shape as the legacy raw call:
+//   { operationId, folderName, opDir, manifestPath, removed[], failed[] }.
+export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
+  if (!Array.isArray(operationTokens) || !operationTokens.length) {
+    throw new Error('safeDeleteToTrash requires a non-empty operationTokens[] array.');
+  }
+
+  const gate = await import('./fileSafetyGate.js');
+
+  // Atomic commit phase: all-or-nothing. If any token commit throws
+  // (mismatch / expired / unknown), we rethrow before _unsafeRaw
+  // touches disk — no partial trash entry is ever produced.
+  const resolvedTargets = [];
+  for (const token of operationTokens) {
+    const committed = await gate.commitOperation(token);
+    // Defence-in-depth: even though the gate already vetted these
+    // at requestDelete time, re-check both sides RIGHT BEFORE the
+    // actual rm. A future refactor that loosens the gate must not
+    // be able to weaken this layer.
+    for (const pair of committed.targets) {
+      if (
+        isHardBlockedDelete(pair.lexical) ||
+        isHardBlockedDelete(pair.resolvedReal)
+      ) {
+        throw new Error(
+          `safeDeleteToTrash refuses to delete sensitive path ` +
+          `(lexical=${pair.lexical}, real=${pair.resolvedReal}).`,
+        );
+      }
+    }
+    resolvedTargets.push(...committed.resolvedTargets);
+  }
+
+  return _unsafeSafeDeleteToTrashRaw(resolvedTargets, ctx);
+}
+
+// ── _unsafeSafeDeleteToTrashRaw (test-only) ──────────────────────────
+//
+// @internal — for tests + internal recursion only. Production code
+// MUST go through the token-bound safeDeleteToTrash() above.
 //
 // Move the given paths into the trash quarantine. Files are copied
 // first; only after the manifest is written and copies are flushed
 // do we unlink the originals. A copy failure aborts the whole op
 // before any original is touched.
 //
+// Even this raw entrypoint refuses sensitive paths via
+// isHardBlockedDelete — the safety policy is not bypassable at any
+// layer. The reason this fn isn't the public API is solely the
+// TOCTOU contract: callers in production MUST hold a fresh commit
+// token to prove they vetted the lexical→real mapping atomically.
+//
 // ctx: { reason?, requestedBy?, chatId?, operationId?, workspacePath? }
 // Returns { operationId, folderName, opDir, manifestPath, removed[], failed[] }.
-export async function safeDeleteToTrash(paths, ctx = {}) {
+export async function _unsafeSafeDeleteToTrashRaw(paths, ctx = {}) {
   const inputs = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
   if (!inputs.length) {
     throw new Error('safeDeleteToTrash called with no paths.');
@@ -331,6 +403,17 @@ export async function restoreFromTrash(operationId, opts = {}) {
       continue;
     }
 
+    // Codex ⚪ round 4 (2026-05-03): test-only swap seam, fired
+    // per-entry between the layer-(b) sensitivity check and this
+    // entry's commit. Lets integration tests prove the commit
+    // catches an inserted swap. No-op in production.
+    if (_restoreSwapHookForTests) {
+      await _restoreSwapHookForTests({
+        originalPath: entry.originalPath,
+        expectedReal: expectedRealByLexical.get(entry.originalPath),
+      });
+    }
+
     let approvalToken;
     if (wantsUi) {
       const ui = await gate.requestWrite({
@@ -375,7 +458,18 @@ export async function restoreFromTrash(operationId, opts = {}) {
   if (fullyRestored && opts.purgeAfterRestore !== false) {
     await rm(opDir, { recursive: true, force: true });
   }
-  return { restored, skipped, fullyRestored };
+  // Codex C round 4 (2026-05-03): expose both lexical and resolved
+  // paths per restored entry so the UI / Phase 2 caller can reason
+  // about symlink aliases. `restored` (resolved real paths) stays
+  // first-class for back-compat.
+  return {
+    restored,
+    skipped,
+    fullyRestored,
+    originalPaths: target.files.map(f => f.originalPath),
+    hasSymlinks: target.files
+      .map(f => expectedRealByLexical.get(f.originalPath) !== f.originalPath),
+  };
 }
 
 // ── purgeTrashEntry ──────────────────────────────────────────────────

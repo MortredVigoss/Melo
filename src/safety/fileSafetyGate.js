@@ -308,6 +308,7 @@ export async function commitOperation(token) {
     throw denyError('Operation token expired; re-approval required.');
   }
   const resolved = [];
+  const targetPairs = [];
   for (const target of entry.targets) {
     const fresh = await safeResolvePath(target.lexical);
     if (fresh.realPath !== target.expectedReal) {
@@ -318,12 +319,18 @@ export async function commitOperation(token) {
       );
     }
     resolved.push(fresh.realPath);
+    targetPairs.push({ lexical: target.lexical, resolvedReal: fresh.realPath });
   }
   // Single-use: consume on success so a token can never be replayed.
   _committedOps.delete(token);
   return {
     resolvedTarget: resolved[0],
     resolvedTargets: resolved,
+    // Codex C round 4 (2026-05-03): expose the lexical→real pair so
+    // downstream consumers (safeDeleteToTrash) can run defence-in-depth
+    // hard-block checks against BOTH ends, not just the resolved
+    // target the gate originally vetted.
+    targets: targetPairs,
     kind: entry.kind,
   };
 }
