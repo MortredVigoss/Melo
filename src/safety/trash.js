@@ -55,6 +55,8 @@ import {
   atomicOpenLeaf,
   atomicUnlink,
   atomicSymlink,
+  unlinkatChecked,
+  symlinkatChecked,
   openParentDirFd,
   splitParentLeaf,
   _raw,
@@ -481,27 +483,6 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       const [parent, leaf] = splitParentLeaf(entry.originalPath);
       const parentSnapshot = parentInoByPath.get(entry.originalPath);
 
-      // Cross-check parent {dev, ino} via probe before unlinkat. If
-      // the parent was rmdir'd + mkdir'd at the same path between
-      // backup and now, atomicUnlink would silently delete the leaf
-      // in the NEW (different inode) parent — that's the wrong file.
-      let probefd;
-      try {
-        probefd = openParentDirFd(parent);
-        const st = fstatSync(probefd);
-        if (
-          parentSnapshot &&
-          (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino)
-        ) {
-          throw new Error(
-            `parent ${parent} was replaced (inode/device changed) ` +
-            `between backup and final unlink`,
-          );
-        }
-      } finally {
-        if (probefd != null) try { closeFdSync(probefd); } catch {}
-      }
-
       if (entry.wasDirectory) {
         // Legacy manifest path — refuse.
         throw new Error(
@@ -509,9 +490,14 @@ async function _unsafeRawDelete(paths, ctx = {}) {
           `(directory delete is refused upstream as of round 13 follow-up #2)`,
         );
       }
-      // Files + symlinks: unlinkat through the parent dirfd that
-      // matches our backup-time snapshot.
-      await atomicUnlink(parent, leaf);
+
+      // Round 13 follow-up #5 (Codex 🔴): use unlinkatChecked so the
+      // {dev, ino} check and the unlinkat syscall happen on the SAME
+      // dirfd. Bare atomicUnlink would re-open the parent — a
+      // rmdir+mkdir between our prior probe and that re-open could
+      // bind unlinkat to the new (different-inode) parent and delete
+      // the wrong file at the same leaf name.
+      await unlinkatChecked(parent, leaf, parentSnapshot.dev, parentSnapshot.ino);
       removed.push(entry.originalPath);
     } catch (err) {
       failed.push({
@@ -740,42 +726,25 @@ export async function restoreFromTrash(operationId, opts = {}) {
     const parentSnapshot = parentInoByLexical.get(entry.originalPath);
 
     if (entry.wasSymlink) {
-      // Round 13 follow-up #3 (2026-05-03): symlink restore is now
-      // dirfd-bound via the new symlinkat addon binding. Probe parent
-      // {dev, ino} for cross-check (catches "parent path swapped to
-      // a different real dir during approval"), then atomicSymlink
-      // resolves the new link's parent through a dirfd opened with
-      // O_DIRECTORY|O_NOFOLLOW. No more path-based symlink() race.
+      // Round 13 follow-up #5 (Codex 🟠): symlink restore uses
+      // symlinkatChecked so the parent {dev, ino} verification and
+      // the symlinkat syscall both go through the same dirfd. Same
+      // for the overwrite-slot unlink (unlinkatChecked). Bare
+      // atomicSymlink/atomicUnlink would re-open the parent and
+      // leave a probe→reopen race window.
       const parentDir = dirname(entry.originalPath);
       const leaf = entry.originalPath.slice(parentDir.length + 1);
-      let probefd;
-      try {
-        probefd = openParentDirFd(parentDir);
-        const st = fstatSync(probefd);
-        if (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino) {
-          throw new Error(
-            `Parent ${parentDir} was replaced (inode/device changed) between ` +
-            `safety check and symlink restore.`,
-          );
-        }
-      } finally {
-        if (probefd != null) try { closeFdSync(probefd); } catch {}
-      }
       if (exists && opts.overwrite) {
-        // Use atomicUnlink (unlinkat through the parent dirfd) instead
-        // of rm — recursive rm could follow into a dir at this slot.
         try {
-          await atomicUnlink(parentDir, leaf);
+          await unlinkatChecked(parentDir, leaf, parentSnapshot.dev, parentSnapshot.ino);
         } catch (err) {
-          // If it's a directory at the slot, atomicUnlink with no
-          // removeDir flag fails — surface so the user can decide.
           throw new Error(
             `Cannot remove existing entry at ${entry.originalPath} before ` +
             `symlink restore: ${err.message}`,
           );
         }
       }
-      await atomicSymlink(parentDir, leaf, entry.symlinkTarget);
+      await symlinkatChecked(parentDir, leaf, entry.symlinkTarget, parentSnapshot.dev, parentSnapshot.ino);
       restored.push(entry.originalPath);
     } else if (entry.wasDirectory) {
       // Round 13 follow-up #2 (2026-05-03): directory restore is

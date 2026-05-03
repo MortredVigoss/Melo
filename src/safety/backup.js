@@ -46,7 +46,7 @@ import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
 import { safeResolvePath } from './pathResolver.js';
 import {
   atomicOpenLeaf,
-  atomicUnlink,
+  unlinkatChecked,
   openParentDirFd,
   splitParentLeaf,
   C as DC,
@@ -476,25 +476,14 @@ export async function restoreFromBackup(operationId, opts = {}) {
   const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
 
   if (target.wasMissing) {
-    // Undo of a "create" snapshot — atomicUnlink removes the leaf
-    // entry through the parent dirfd. unlinkat does NOT follow
-    // symlinks; if the leaf is a symlink, only the link is removed.
+    // Round 13 follow-up #5 (Codex 🔴): undo-create unlink uses
+    // unlinkatChecked so the {dev, ino} probe and the unlinkat
+    // syscall happen on the SAME dirfd. Bare atomicUnlink would
+    // re-open the parent and leave a probe→reopen race window where
+    // a parent rmdir+mkdir could redirect the unlink to the wrong
+    // dir's same-named leaf.
     try {
-      // Cross-check parent {dev, ino} via a probe-open before unlink.
-      let probefd;
-      try {
-        probefd = openParentDirFd(resolvedParent);
-        const st = fstatSync(probefd);
-        if (st.dev !== parentDevAtPrecheck || st.ino !== parentInoAtPrecheck) {
-          throw Object.assign(
-            new Error(`Parent ${resolvedParent} was replaced (inode/device changed) between approval and restore.`),
-            { code: 'FILE_SAFETY_DENIED' },
-          );
-        }
-      } finally {
-        if (probefd != null) try { closeFdSync(probefd); } catch {}
-      }
-      await atomicUnlink(resolvedParent, resolvedLeaf);
+      await unlinkatChecked(resolvedParent, resolvedLeaf, parentDevAtPrecheck, parentInoAtPrecheck);
     } catch (err) {
       if (err && err.code === 'ENOENT') {
         // Already gone — undo-create is idempotent in this case.

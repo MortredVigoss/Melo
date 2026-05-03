@@ -357,7 +357,7 @@ export const fileMoveTool = {
           };
         }
       } catch (err) {
-        if (err.errno !== 2 /* ENOENT */ && err.code !== 'ENOENT') {
+        if (err.code !== 'ENOENT') {
           return { ok: false, output: `Cannot check destination: ${err.message}`, error: err.message };
         }
         // ENOENT: dst doesn't exist — fine, that's the normal case.

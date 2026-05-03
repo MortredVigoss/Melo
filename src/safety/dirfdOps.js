@@ -305,6 +305,68 @@ export async function atomicSymlink(parentPath, leafName, target) {
 }
 
 /**
+ * Round 13 follow-up #5 (Codex 🔴): same-dirfd "checked" variants
+ * of atomicUnlink / atomicSymlink. The caller passes the parent
+ * {dev, ino} captured during a prior approval / backup phase; the
+ * helper opens the parent dirfd ONCE, fstat's it, compares against
+ * the expected snapshot, and then runs the destructive/create
+ * syscall on the SAME dirfd. The bare atomicUnlink / atomicSymlink
+ * helpers re-open the parent each call — that's safe for fresh
+ * approval flows but unsafe when the caller has already validated
+ * the parent inode in an earlier phase, because rmdir+mkdir between
+ * the validation and the bare call would silently rebind to the
+ * new (different-inode) parent.
+ *
+ * Throws FILE_SAFETY_DENIED with a parent-swap message on
+ * {dev, ino} mismatch — the syscall does NOT run.
+ */
+export async function unlinkatChecked(parentPath, leafName, expectedDev, expectedIno, { removeDir = false } = {}) {
+  const fs = requireCjs('node:fs');
+  const dirfd = openParentDirFd(parentPath);
+  try {
+    const st = fs.fstatSync(dirfd);
+    if (st.dev !== expectedDev || st.ino !== expectedIno) {
+      const err = new Error(
+        `Parent ${parentPath} was replaced (inode/device changed) ` +
+        `between approval and unlink — refusing to unlinkat through ` +
+        `a different parent.`,
+      );
+      err.code = 'FILE_SAFETY_DENIED';
+      throw err;
+    }
+    addon.unlinkat(dirfd, leafName, removeDir ? C.AT_REMOVEDIR : 0);
+  } catch (err) {
+    if (err.code === 'FILE_SAFETY_DENIED') throw err;
+    throw wrapErr(err, `unlinkatChecked ${parentPath}/${leafName}${removeDir ? ' (rmdir)' : ''}`);
+  } finally {
+    safeCloseFd(dirfd);
+  }
+}
+
+export async function symlinkatChecked(parentPath, leafName, target, expectedDev, expectedIno) {
+  const fs = requireCjs('node:fs');
+  const dirfd = openParentDirFd(parentPath);
+  try {
+    const st = fs.fstatSync(dirfd);
+    if (st.dev !== expectedDev || st.ino !== expectedIno) {
+      const err = new Error(
+        `Parent ${parentPath} was replaced (inode/device changed) ` +
+        `between approval and symlink restore — refusing to symlinkat ` +
+        `through a different parent.`,
+      );
+      err.code = 'FILE_SAFETY_DENIED';
+      throw err;
+    }
+    addon.symlinkat(target, dirfd, leafName);
+  } catch (err) {
+    if (err.code === 'FILE_SAFETY_DENIED') throw err;
+    throw wrapErr(err, `symlinkatChecked ${parentPath}/${leafName} → ${target}`);
+  } finally {
+    safeCloseFd(dirfd);
+  }
+}
+
+/**
  * Atomic lstat of a leaf under a parent dirfd. Always uses
  * AT_SYMLINK_NOFOLLOW (lstat semantics, not stat).
  *
