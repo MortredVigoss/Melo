@@ -50,6 +50,12 @@
 - **fileMoveTool 文档化 known limitation**：模块 header 加注释明确 "no Node.js exposure of renameat2 → 父目录 race 是 microsecond-scale kernel-level window，需 attacker 已有 parent dir 写权限，超出 melo desktop threat model"。leaf symlink swap 通过 commit + lstat dst 已防。
 - 测试加 3 case + 修 1 case：① fileWrite post-commit hook swap target → /etc/hosts symlink → COMMIT_FAILED + raceKind=symlink-eloop + lstat/readlink 验证 link 留着没被 follow；② fileEdit 同款；③ snapshotBeforeWrite source 是 /etc/hosts 的 symlink → throw "ELOOP"；④ 既有 "create not subject to stale" 测试**重写**为 "create with O_EXCL race-appearance → STALE_CONTENT，race-injected content 保留"（Q2=A 新契约）。
 - 验证：`src/**/*.test.js` **1696/1696 全绿**（前 1693 + 3 新 + 1 改；零既有回归）。
+- 提交哈希：`a96fea9`。
+- Follow-up（Codex D Phase 2A round 6 → stale check 仍 path-based 跟随 symlink）：上一刀 push 又被评 D，2 条同根因：① 🟠 fileWriteTool stale check 用 `readFile(resolvedTarget)` path-level → 攻击者 commit 后换 symlink 到 /etc/hosts → 读敏感内容到内存 (后续 O_NOFOLLOW 太晚)；② 🟠 fileEditTool 同款。这是 Phase 2A 第 6 轮 D，整体 14 轮。用户拍 Q1=B (每步独立 open/close 不合并 fd lifecycle) + Q2=A (沿用 COMMIT_FAILED+raceKind 不引入新错误码) + 全做。
+- **fileWriteTool stale check 走 fd-based no-follow**：`open(resolvedTarget, O_RDONLY | O_NOFOLLOW)` → `fh.readFile()` → toString('utf8') → close。ELOOP → COMMIT_FAILED + raceKind=symlink-eloop。
+- **fileEditTool 同款**。
+- **_postCommitHookForTests 注入点前移到 commit 之后、stale 之前**（之前在 snapshot 之后、write 之前）。原 swap-to-symlink 测试仍 pass — 现在 stale check 那一步的 open(O_NOFOLLOW) 抓 ELOOP，error code/raceKind 与之前 final write 抓时完全一样（COMMIT_FAILED + symlink-eloop）。证明 race window 在更早一步就被关。删掉重复的旧 hook 调用（write 前那个），免一个 op 多次 fire。
+- 验证：`src/**/*.test.js` **1696/1696 全绿**（无新增测试 — hook 前移让既有 race 测试自然覆盖更早的 race window；零既有回归）。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 

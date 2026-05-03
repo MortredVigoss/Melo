@@ -195,21 +195,44 @@ export const fileEditTool = {
       };
     }
 
-    // Codex C Phase 2A round 4 (2026-05-03): stale-content check.
-    // Between the moment we read `original` (pre-approval) and now
-    // (post-approval, post-commit), the file could have been edited
-    // externally. Writing `updated` (computed from the OLD original)
-    // would silently clobber that edit. Re-read the resolved target
-    // and abort if it diverged.
+    // Test-only injection point: fired RIGHT AFTER commit, BEFORE
+    // any post-commit fs read/write. Lets tests inject a symlink
+    // swap so the stale check (and downstream snapshot/write) all
+    // hit the kernel-level O_NOFOLLOW guard.
+    if (_postCommitHookForTests) {
+      try { await _postCommitHookForTests({ resolvedTarget, lexicalPath: absPath, phase: 'post-commit' }); } catch {}
+    }
+
+    // Codex D Phase 2A round 6 (2026-05-03): stale-content check is
+    // fd-based with O_NOFOLLOW. Path-level readFile would have
+    // followed a post-commit symlink swap and read the sensitive
+    // target into memory before the later O_NOFOLLOW write caught it.
     let currentOriginal;
+    let stalefh;
     try {
-      currentOriginal = await readFile(resolvedTarget, 'utf8');
+      stalefh = await open(resolvedTarget, fsConstants.O_RDONLY | O_NOFOLLOW);
     } catch (err) {
+      if (err && err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output:
+            `Target ${resolvedTarget} became a symlink between approval and stale-check — ` +
+            `kernel refused via O_NOFOLLOW.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+        };
+      }
       return {
         ok: false,
         output: `Cannot re-read target for stale-content check: ${err.message}`,
         error: 'COMMIT_FAILED',
       };
+    }
+    try {
+      const buf = await stalefh.readFile();
+      currentOriginal = buf.toString('utf8');
+    } finally {
+      await stalefh.close().catch(() => {});
     }
     if (currentOriginal !== original) {
       return {
@@ -240,11 +263,6 @@ export const fileEditTool = {
         output: `Backup snapshot failed: ${err.message}`,
         error: 'SNAPSHOT_FAILED',
       };
-    }
-
-    // Test-only injection point (post-commit, pre-write).
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ resolvedTarget, lexicalPath: absPath }); } catch {}
     }
 
     // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW. If the

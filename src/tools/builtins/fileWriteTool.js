@@ -198,23 +198,48 @@ export const fileWriteTool = {
       };
     }
 
-    // Codex C Phase 2A round 4 (2026-05-03): stale-content check.
-    // Between the moment we read oldContent (pre-approval) and now
-    // (post-approval, post-commit), the user could have edited the
-    // file in another window — silently overwriting their edit
-    // would be data loss. For overwrite, re-read at the resolved
-    // target and compare sha256(current) === oldHash; mismatch →
-    // abort with STALE_CONTENT and let the agent re-prompt.
+    // Test-only injection point: fired RIGHT AFTER commit, BEFORE
+    // any post-commit fs read/write. Lets tests inject a symlink
+    // swap so the stale check (and downstream snapshot/write) all
+    // hit the kernel-level O_NOFOLLOW guard.
+    if (_postCommitHookForTests) {
+      try { await _postCommitHookForTests({ resolvedTarget, isCreate, lexicalPath: absPath, phase: 'post-commit' }); } catch {}
+    }
+
+    // Codex D Phase 2A round 6 (2026-05-03): stale-content check is
+    // now fd-based with O_NOFOLLOW. The earlier readFile(path)
+    // implementation followed symlinks — a target swapped to
+    // /etc/hosts in the post-commit window would have been read
+    // into memory before the later O_NOFOLLOW write caught it.
+    // Now an ELOOP at this stage short-circuits to COMMIT_FAILED
+    // and the file we shouldn't read is never opened.
     if (!isCreate && oldHash) {
       let currentContent;
+      let stalefh;
       try {
-        currentContent = await readFile(resolvedTarget, 'utf8');
+        stalefh = await open(resolvedTarget, fsConstants.O_RDONLY | O_NOFOLLOW);
       } catch (err) {
+        if (err && err.code === 'ELOOP') {
+          return {
+            ok: false,
+            output:
+              `Target ${resolvedTarget} became a symlink between approval and stale-check — ` +
+              `kernel refused via O_NOFOLLOW.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, resolvedTarget, raceKind: 'symlink-eloop' },
+          };
+        }
         return {
           ok: false,
           output: `Cannot re-read target for stale-content check: ${err.message}`,
           error: 'COMMIT_FAILED',
         };
+      }
+      try {
+        const buf = await stalefh.readFile();
+        currentContent = buf.toString('utf8');
+      } finally {
+        await stalefh.close().catch(() => {});
       }
       if (sha256(currentContent) !== oldHash) {
         return {
@@ -260,11 +285,6 @@ export const fileWriteTool = {
       await mkdir(dirname(resolvedTarget), { recursive: true });
     } catch (err) {
       return { ok: false, output: `Cannot create directory: ${err.message}`, error: err.message };
-    }
-
-    // Test-only injection point (post-commit, pre-write).
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ resolvedTarget, isCreate, lexicalPath: absPath }); } catch {}
     }
 
     // Codex D Phase 2A round 5 (2026-05-03): O_NOFOLLOW + O_EXCL.
