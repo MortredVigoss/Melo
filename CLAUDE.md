@@ -45,10 +45,10 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 - 每次更新 `PROGRESS.md` 后运行 `npm run progress:codex`，自动刷新仓库根目录的 `codex.md`。`codex.md` 是给 Claude / Codex 快速接续用的完整进度快照，包含 git 状态、最近提交和完整 `PROGRESS.md` 时间线。
 - **`codex.md` 是本地派生产物，已加入 `.gitignore` 不入版本管理**——任何提交进 git 的快照都至少落后一个 commit（它无法引用自己所在的 commit hash），曾被 review 工具误判为"快照陈旧"。新会话开局先跑一次 `npm run progress:codex` 即可拿到最新视图。
 
-## 3. 2 页阈值 = 自动摘要压缩
+## 3. 自动摘要压缩阈值
 
 - 每次要往 `PROGRESS.md` 追加条目前，先检查当前文件长度：
-  - **> 2 页**（近似 = 超过 160 行，或超过 8000 字符）触发自动压缩。
+  - **超过 300 行**触发自动压缩。
 - 压缩步骤：
   1. 把最旧的 70% 条目合并写成一节「## 归档摘要（YYYY-MM-DD 之前）」，每条保留：标题 + 1 句话结论 + commit hash。
   2. 删掉被归档的原始条目。
