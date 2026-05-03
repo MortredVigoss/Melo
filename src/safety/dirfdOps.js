@@ -80,6 +80,7 @@ export const _raw = {
   unlinkat: addon.unlinkat,
   renameat: addon.renameat,
   fstatat: addon.fstatat,
+  readlinkat: addon.readlinkat,
   closeFd: addon.closeFd,
 };
 

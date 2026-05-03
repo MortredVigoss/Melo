@@ -477,6 +477,11 @@ export const fileWriteTool = {
       // points elsewhere, the user-visible file no longer reflects
       // our write. Tell the caller. Keep the backup so the agent /
       // user can decide what to do.
+      //
+      // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing
+      // (parent gone, parent now non-dir, etc.) is ALSO an orphan
+      // signal — silently swallowing it would falsely report success.
+      let orphanReason = null;
       try {
         const postLst = await atomicLstat(parentDir, leafName);
         const postFhStat = fstatSync(leafFd);
@@ -486,22 +491,30 @@ export const fileWriteTool = {
           postLst.ino !== postFhStat.ino ||
           postLst.dev !== postFhStat.dev
         ) {
-          return {
-            ok: false,
-            output:
-              `Target ${realPath} was unlinked or replaced after write completed; ` +
-              `our content is at the inode you reviewed but the user-visible path ` +
-              `now points elsewhere. Backup retained at operationId=${snap.operationId}.`,
-            error: 'COMMIT_FAILED',
-            meta: {
-              lexicalPath: absPath, realPath,
-              raceKind: 'post-write-orphaned',
-              backupOperationId: snap.operationId,
-            },
-          };
+          orphanReason = !postLst
+            ? 'leaf no longer present at parent'
+            : postLst.isSymlink
+              ? 'leaf now a symlink'
+              : 'leaf inode/device changed';
         }
-      } catch {
-        // atomicLstat throws on parent-gone; treat same as orphan.
+      } catch (err) {
+        orphanReason = `parent stat failed: ${err.message}`;
+      }
+      if (orphanReason !== null) {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} was unlinked or replaced after write completed ` +
+            `(${orphanReason}); our content is at the inode you reviewed but the ` +
+            `user-visible path now points elsewhere or is gone. ` +
+            `Backup retained at operationId=${snap.operationId}.`,
+          error: 'COMMIT_FAILED',
+          meta: {
+            lexicalPath: absPath, realPath,
+            raceKind: 'post-write-orphaned',
+            backupOperationId: snap.operationId,
+          },
+        };
       }
 
       // ── 11. Record diff for restore-with-context ─────────────────────

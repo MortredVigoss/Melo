@@ -377,6 +377,9 @@ export const fileEditTool = {
       writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
 
       // ── 10b. Post-write semantic check ──────────────────────────────
+      // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing is
+      // ALSO an orphan signal — don't silently report success.
+      let orphanReason = null;
       try {
         const postLst = await atomicLstat(parentDir, leafName);
         const postFhStat = fstatSync(leafFd);
@@ -386,21 +389,31 @@ export const fileEditTool = {
           postLst.ino !== postFhStat.ino ||
           postLst.dev !== postFhStat.dev
         ) {
-          return {
-            ok: false,
-            output:
-              `Target ${realPath} was unlinked or replaced after edit completed; ` +
-              `our content is at the inode you reviewed but the user-visible path ` +
-              `now points elsewhere. Backup retained at operationId=${snap.operationId}.`,
-            error: 'COMMIT_FAILED',
-            meta: {
-              lexicalPath: absPath, realPath,
-              raceKind: 'post-write-orphaned',
-              backupOperationId: snap.operationId,
-            },
-          };
+          orphanReason = !postLst
+            ? 'leaf no longer present at parent'
+            : postLst.isSymlink
+              ? 'leaf now a symlink'
+              : 'leaf inode/device changed';
         }
-      } catch { /* parent gone — caller can detect via no-success-return */ }
+      } catch (err) {
+        orphanReason = `parent stat failed: ${err.message}`;
+      }
+      if (orphanReason !== null) {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} was unlinked or replaced after edit completed ` +
+            `(${orphanReason}); our content is at the inode you reviewed but the ` +
+            `user-visible path now points elsewhere or is gone. ` +
+            `Backup retained at operationId=${snap.operationId}.`,
+          error: 'COMMIT_FAILED',
+          meta: {
+            lexicalPath: absPath, realPath,
+            raceKind: 'post-write-orphaned',
+            backupOperationId: snap.operationId,
+          },
+        };
+      }
 
       // ── 11. recordAfterDiff ─────────────────────────────────────────
       try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}

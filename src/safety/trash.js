@@ -40,7 +40,7 @@ import {
   cp,
   readdir,
 } from 'node:fs/promises';
-import { writeSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
+import { writeSync, readSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
 import { constants as fsConstants } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
@@ -56,6 +56,7 @@ import {
   atomicUnlink,
   openParentDirFd,
   splitParentLeaf,
+  _raw,
   C as DC,
 } from './dirfdOps.js';
 
@@ -67,6 +68,16 @@ export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let _restoreSwapHookForTests = null;
 export function _setRestoreSwapHookForTests(hook) {
   _restoreSwapHookForTests = typeof hook === 'function' ? hook : null;
+}
+
+// Round 13 follow-up #2 (2026-05-03): test-only seam fired AFTER
+// the backup phase captures parent {dev, ino} but BEFORE the final
+// unlink loop. Tests inject a parent rmdir+mkdir-different-inode
+// here and assert atomicUnlink is refused via the parent {dev, ino}
+// cross-check. Default null = no-op in production.
+let _postBackupHookForTests = null;
+export function _setPostBackupHookForTests(hook) {
+  _postBackupHookForTests = typeof hook === 'function' ? hook : null;
 }
 
 // Codex C round 5 (2026-05-03): module-private commit helper for the
@@ -290,16 +301,24 @@ async function _unsafeRawDelete(paths, ctx = {}) {
 
   await mkdir(filesDir, { recursive: true });
 
-  // Codex D round 7 (2026-05-03): use lstat (not stat) so a symlink
-  // is treated as a leaf node, not as the file/dir it points to.
-  // Three entry shapes:
-  //   - symlink: backed up as a symlink to the same target string;
-  //     unlink() removes the LINK, never the target the link points
-  //     to (this was the round-7 data-loss bug — using rm on the
-  //     resolvedTarget deleted the external file the link aliased)
-  //   - directory: cp -r + rm -r as before
-  //   - regular file: copyFile + unlink
+  // Round 13 follow-up #2 (2026-05-03): backup phase is now dirfd-bound.
+  //   - symlink: read target via _raw.readlinkat(parentdirfd, leaf) —
+  //     atomic, no path re-walk; recreate in trash via symlink().
+  //   - regular file: atomicOpenLeaf(parent, leaf, O_RDONLY) → read
+  //     via fd → write to trash dest. O_NOFOLLOW catches leaf swap
+  //     to symlink between sensitivity check and our open.
+  //   - directory: REFUSED. Recursive directory delete needs dirfd-
+  //     walk to be race-free (no atomic primitive for it), and the
+  //     UX/blast radius of "delete this whole tree" warrants a
+  //     separate design cycle. Users who need to delete a tree must
+  //     either (a) file_delete each entry one at a time, or (b)
+  //     use bash (Phase 2D will gate it through bashRiskParser).
+  //
+  // Capture parent {dev, ino} per entry so the final unlink phase
+  // below can cross-check that the parent we're about to unlinkat
+  // through is the same parent we backed up from.
   const fileEntries = [];
+  const parentInoByPath = new Map();
   for (const absPath of inputs) {
     let lst;
     try {
@@ -309,16 +328,55 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       throw new Error(`safeDeleteToTrash: source not found: ${absPath}`);
     }
 
+    if (lst.isDirectory() && !lst.isSymbolicLink()) {
+      await rm(opDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error(
+        `safeDeleteToTrash refuses to delete directory ${absPath}: ` +
+        `recursive directory delete is not yet supported in the round-13 ` +
+        `dirfd model (no atomic dirfd-walk primitive). Delete entries ` +
+        `one at a time via file_delete, or use bash (Phase 2D gate).`,
+      );
+    }
+
     const trashedAs = shortHash(`${absPath}:${Date.now()}:${Math.random()}`);
     const dest = join(filesDir, trashedAs);
+    const [parent, leaf] = splitParentLeaf(absPath);
+
+    // Capture parent {dev, ino} via dirfd probe for cross-check at unlink.
+    let probefd;
+    let parentDev, parentIno;
+    try {
+      probefd = openParentDirFd(parent);
+      const pst = fstatSync(probefd);
+      parentDev = pst.dev;
+      parentIno = pst.ino;
+    } catch (err) {
+      await rm(opDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error(
+        `safeDeleteToTrash: cannot open parent ${parent} of ${absPath}: ${err.message}`,
+      );
+    } finally {
+      if (probefd != null) try { closeFdSync(probefd); } catch {}
+    }
+    parentInoByPath.set(absPath, { dev: parentDev, ino: parentIno });
 
     if (lst.isSymbolicLink()) {
-      const targetString = await readlink(absPath);
-      // Recreate the symlink in trash so restore can rebuild it
-      // exactly. We do NOT copy the file the symlink points to.
+      // Read the symlink target atomically through the parent dirfd.
+      // _raw.readlinkat does not follow the link (it returns the link's
+      // contents as bytes), so the parent dir lookup is the only
+      // syscall step we need to defend.
+      let pdfd;
+      let targetString;
+      try {
+        pdfd = openParentDirFd(parent);
+        targetString = _raw.readlinkat(pdfd, leaf);
+      } catch (err) {
+        await rm(opDir, { recursive: true, force: true }).catch(() => {});
+        throw new Error(`safeDeleteToTrash: readlinkat failed for ${absPath}: ${err.message}`);
+      } finally {
+        if (pdfd != null) try { closeFdSync(pdfd); } catch {}
+      }
       await symlink(targetString, dest);
-      // resolvedPathAtDelete = where the link pointed at delete time;
-      // recorded for UI display + restore-side sensitivity revalidation.
       let resolvedAtDelete = absPath;
       try {
         const r = await safeResolvePath(absPath);
@@ -334,30 +392,49 @@ async function _unsafeRawDelete(paths, ctx = {}) {
         size: null,
         sha256: null,
       });
-    } else if (lst.isDirectory()) {
-      await cp(absPath, dest, { recursive: true });
-      fileEntries.push({
-        originalPath: absPath,
-        trashedAs,
-        wasSymlink: false,
-        wasDirectory: true,
-        symlinkTarget: null,
-        resolvedPathAtDelete: absPath,
-        size: null,
-        sha256: null,
-      });
     } else {
-      await copyFile(absPath, dest);
-      fileEntries.push({
-        originalPath: absPath,
-        trashedAs,
-        wasSymlink: false,
-        wasDirectory: false,
-        symlinkTarget: null,
-        resolvedPathAtDelete: absPath,
-        size: lst.size,
-        sha256: await fileSha256(absPath),
-      });
+      // Regular file: atomicOpenLeaf with O_RDONLY (O_NOFOLLOW added
+      // automatically) so a leaf swapped to symlink during the gap
+      // between sensitivity check and now is rejected (ELOOP). Read
+      // via fd, sha256 the buffer in-memory, then writeFile to trash.
+      let openLeaf;
+      try {
+        openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY);
+      } catch (err) {
+        await rm(opDir, { recursive: true, force: true }).catch(() => {});
+        throw new Error(
+          `safeDeleteToTrash: atomicOpenLeaf failed for ${absPath}: ${err.message}` +
+          (err.code === 'ELOOP' || err.errno === 62
+            ? ' (target became a symlink — O_NOFOLLOW)'
+            : ''),
+        );
+      }
+      try {
+        const fileStat = fstatSync(openLeaf.leafFd);
+        // Read full content via the fd we just opened.
+        const buf = Buffer.allocUnsafe(fileStat.size);
+        let total = 0;
+        while (total < fileStat.size) {
+          const n = readSync(openLeaf.leafFd, buf, total, fileStat.size - total, total);
+          if (n === 0) break;
+          total += n;
+        }
+        const finalBuf = buf.subarray(0, total);
+        await writeFile(dest, finalBuf);
+        const sha = createHash('sha256').update(finalBuf).digest('hex');
+        fileEntries.push({
+          originalPath: absPath,
+          trashedAs,
+          wasSymlink: false,
+          wasDirectory: false,
+          symlinkTarget: null,
+          resolvedPathAtDelete: absPath,
+          size: fileStat.size,
+          sha256: sha,
+        });
+      } finally {
+        openLeaf.closeLeaf();
+      }
     }
   }
 
@@ -381,35 +458,59 @@ async function _unsafeRawDelete(paths, ctx = {}) {
     'utf8',
   );
 
-  // Unlink originals one by one. A partial failure leaves the trash
-  // copy + the failed-to-remove original intact — strictly safer than
-  // rolling back the whole op (which would re-restore files we already
-  // unlinked). Caller sees what failed via `failed[]`.
+  if (_postBackupHookForTests) {
+    try { await _postBackupHookForTests({ inputs, fileEntries, parentInoByPath }); } catch {}
+  }
+
+  // Round 13 follow-up #2 (2026-05-03): final unlink phase opens the
+  // parent dirfd, cross-checks {dev, ino} matches the snapshot taken
+  // during backup, then unlinkat through that dirfd. Catches
+  // parent-rmdir+mkdir-different-inode race during the backup→unlink
+  // gap. unlinkat with flags=0 doesn't follow symlinks — symlink
+  // entries delete the link, never the target.
   //
-  // Round 13 (2026-05-03): use atomicUnlink (unlinkat via parent
-  // dirfd) for files and symlinks. Recursive directory removal still
-  // uses path-based fs.rm — a true atomic recursive remove would
-  // require dirfd-walk + per-entry unlinkat, which is significantly
-  // more code. Documented residual race: a trusted-process attacker
-  // could swap a sub-directory inside the deletion tree to a symlink
-  // mid-rm. For desktop melo's threat model, this is acceptable:
-  // the user explicitly chose to delete the entire tree.
+  // Directory entries are no longer reachable here (the backup phase
+  // refuses them above). The wasDirectory branch is kept for legacy
+  // manifests that may have been written before round 13 follow-up #2;
+  // they're treated as failures.
   const removed = [];
   const failed = [];
   for (const entry of fileEntries) {
     try {
       const [parent, leaf] = splitParentLeaf(entry.originalPath);
-      if (entry.wasSymlink) {
-        // unlinkat with flags=0 removes a file or symlink entry; it
-        // never follows the symlink. This is the round-7 fix's
-        // round-13 equivalent.
-        await atomicUnlink(parent, leaf);
-      } else if (entry.wasDirectory) {
-        // Path-based recursive remove. See note above.
-        await rm(entry.originalPath, { recursive: true, force: false });
-      } else {
-        await atomicUnlink(parent, leaf);
+      const parentSnapshot = parentInoByPath.get(entry.originalPath);
+
+      // Cross-check parent {dev, ino} via probe before unlinkat. If
+      // the parent was rmdir'd + mkdir'd at the same path between
+      // backup and now, atomicUnlink would silently delete the leaf
+      // in the NEW (different inode) parent — that's the wrong file.
+      let probefd;
+      try {
+        probefd = openParentDirFd(parent);
+        const st = fstatSync(probefd);
+        if (
+          parentSnapshot &&
+          (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino)
+        ) {
+          throw new Error(
+            `parent ${parent} was replaced (inode/device changed) ` +
+            `between backup and final unlink`,
+          );
+        }
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
       }
+
+      if (entry.wasDirectory) {
+        // Legacy manifest path — refuse.
+        throw new Error(
+          `wasDirectory entry no longer supported in final unlink phase ` +
+          `(directory delete is refused upstream as of round 13 follow-up #2)`,
+        );
+      }
+      // Files + symlinks: unlinkat through the parent dirfd that
+      // matches our backup-time snapshot.
+      await atomicUnlink(parent, leaf);
       removed.push(entry.originalPath);
     } catch (err) {
       failed.push({
@@ -666,36 +767,17 @@ export async function restoreFromTrash(operationId, opts = {}) {
       await symlink(entry.symlinkTarget, entry.originalPath);
       restored.push(entry.originalPath);
     } else if (entry.wasDirectory) {
-      // Directory restore: same as before. Recursive cp doesn't have
-      // an atomic dirfd-bound primitive in our addon. Probe-check
-      // parent inode + lstat leaf for symlink defence. Residual
-      // race inside cp's recursion is a known limitation.
-      const parentDir = dirname(resolvedTarget);
-      let probefd;
-      try {
-        probefd = openParentDirFd(parentDir);
-        const st = fstatSync(probefd);
-        if (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino) {
-          throw new Error(
-            `Parent ${parentDir} was replaced between safety check and dir restore.`,
-          );
-        }
-      } finally {
-        if (probefd != null) try { closeFdSync(probefd); } catch {}
-      }
-      try {
-        const dstLst = await lstat(resolvedTarget);
-        if (dstLst.isSymbolicLink()) {
-          throw new Error(`Refusing to restore directory over symlink at ${resolvedTarget}.`);
-        }
-        if (opts.overwrite) {
-          await rm(resolvedTarget, { recursive: true, force: true });
-        }
-      } catch (err) {
-        if (err && err.code !== 'ENOENT') throw err;
-      }
-      await cp(src, resolvedTarget, { recursive: true });
-      restored.push(resolvedTarget);
+      // Round 13 follow-up #2 (2026-05-03): directory restore is
+      // refused along with directory delete. Legacy manifests
+      // (pre-round-13-followup-2) may contain wasDirectory entries;
+      // they're surfaced as DIR_RESTORE_DISABLED so the user knows
+      // to recreate manually (or via bash + Phase 2D gate).
+      throw new Error(
+        `DIR_RESTORE_DISABLED: directory restore at ${entry.originalPath} ` +
+        `is refused — recursive directory ops need dirfd-walk semantics ` +
+        `not yet implemented in melo's atomic ops layer. Use file_mkdir + ` +
+        `file_write per-entry, or bash (with Phase 2D safety gate).`,
+      );
     } else {
       // File restore: atomicOpenLeaf binds parent through dirfd and
       // openat-creates the leaf. Cross-check parent {dev, ino}

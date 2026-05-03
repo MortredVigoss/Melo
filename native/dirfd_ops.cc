@@ -153,6 +153,34 @@ Napi::Value FstatAt(const Napi::CallbackInfo& info) {
   return out;
 }
 
+// readlinkat(dirfd, name) → string (the symlink target)
+// Atomic read of a symlink target through a parent dirfd. Errors:
+// EINVAL if `name` is not a symlink.
+Napi::Value ReadLinkAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
+    Napi::TypeError::New(env, "readlinkat(dirfd, name) — bad args").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  int dirfd = info[0].As<Napi::Number>().Int32Value();
+  std::string name = info[1].As<Napi::String>().Utf8Value();
+  // PATH_MAX on darwin is 1024, on linux 4096 — pick a safe ceiling.
+  // readlinkat returns the byte count (NOT NUL-terminated); -1 on error.
+  char buf[8192];
+  ssize_t n = readlinkat(dirfd, name.c_str(), buf, sizeof(buf) - 1);
+  if (n < 0) {
+    int e = errno;
+    MakeErrnoError(env, e, "readlinkat").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  if (n >= (ssize_t)(sizeof(buf) - 1)) {
+    // Truncation — refuse rather than silently return a partial target.
+    MakeErrnoError(env, ENAMETOOLONG, "readlinkat").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  return Napi::String::New(env, std::string(buf, (size_t)n));
+}
+
 // closeFd(fd) → void
 Napi::Value CloseFd(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -176,6 +204,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("unlinkat", Napi::Function::New(env, UnlinkAt));
   exports.Set("renameat", Napi::Function::New(env, RenameAt));
   exports.Set("fstatat", Napi::Function::New(env, FstatAt));
+  exports.Set("readlinkat", Napi::Function::New(env, ReadLinkAt));
   exports.Set("closeFd", Napi::Function::New(env, CloseFd));
 
   // Constants the JS layer needs

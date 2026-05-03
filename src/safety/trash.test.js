@@ -107,7 +107,11 @@ test('_unsafeSafeDeleteToTrashRaw fails cleanly when source does not exist', asy
   });
 });
 
-test('_unsafeSafeDeleteToTrashRaw handles a directory recursively', async () => {
+test('_unsafeSafeDeleteToTrashRaw refuses directories (round 13 followup #2: no atomic dirfd-walk)', async () => {
+  // Round 13 follow-up #2 (2026-05-03): recursive directory delete
+  // is refused entirely until a dirfd-walk implementation lands.
+  // The user-facing path is to delete entries one at a time via
+  // file_delete, or use bash (Phase 2D gate).
   await withTempMeloHome(async (home) => {
     const trash = await freshTrash();
     const gate = await freshGate();
@@ -116,16 +120,13 @@ test('_unsafeSafeDeleteToTrashRaw handles a directory recursively', async () => 
     await writeFile(join(dir, 'a.txt'), 'a', 'utf8');
     await writeFile(join(dir, 'sub', 'b.txt'), 'b', 'utf8');
 
-    const result = await deleteToTrash(gate, trash, [dir]);
-    assert.equal(result.removed[0], dir);
-    assert.equal(await fileExists(dir), false);
-
-    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
-    assert.equal(manifest.files[0].wasDirectory, true);
-    // The recursive copy should have stashed both files under files/<hash>/
-    const trashed = join(result.opDir, 'files', manifest.files[0].trashedAs);
-    assert.equal(await fileExists(join(trashed, 'a.txt')), true);
-    assert.equal(await fileExists(join(trashed, 'sub', 'b.txt')), true);
+    await assert.rejects(
+      deleteToTrash(gate, trash, [dir]),
+      /refuses to delete directory|recursive directory delete is not yet supported/i,
+    );
+    // Original tree untouched.
+    assert.equal(await fileExists(join(dir, 'a.txt')), true);
+    assert.equal(await fileExists(join(dir, 'sub', 'b.txt')), true);
   });
 });
 

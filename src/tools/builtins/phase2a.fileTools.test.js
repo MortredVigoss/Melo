@@ -1384,6 +1384,142 @@ test('round 13 followup: fileMove — post-commit dst parent rmdir+mkdir → COM
   });
 });
 
+test('round 13 followup #2: fileDelete refuses directories (no atomic dirfd-walk yet)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const dir = join(ws, 'mydir');
+    await mkdir(join(dir, 'sub'), { recursive: true });
+    await writeFile(join(dir, 'a.txt'), 'a', 'utf8');
+    await writeFile(join(dir, 'sub', 'b.txt'), 'b', 'utf8');
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      // Auto-approve both stages of the two-stage delete.
+      if (event === 'tool_permission') {
+        const lastInputForId = (id, tries = 5) => {
+          // best-effort: find the latest pending request to fill confirmInput
+          return null;
+        };
+        // Stage 1 has no confirmInput; stage 2 needs basename or 'DELETE'.
+        const requestId = payload.requestId;
+        const meta = payload?.payload || payload;
+        if (meta && meta.kind === 'file_safety' && meta.stage === 'confirm-delete') {
+          gate.resolveFileSafety(requestId, 'once', { confirmInput: 'DELETE' });
+        } else {
+          gate.resolveFileSafety(requestId, 'once');
+        }
+      }
+    };
+    const result = await fileDeleteTool.run(
+      { paths: [dir], reason: 'cleanup' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    // Expect failure: trash backup phase rejects the directory.
+    assert.equal(result.ok, false);
+    // Tree intact.
+    assert.equal(await fileExists(join(dir, 'a.txt')), true);
+    assert.equal(await fileExists(join(dir, 'sub', 'b.txt')), true);
+  });
+});
+
+test('round 13 followup #2: trash backup phase — leaf swapped to symlink during backup is caught (ELOOP via O_NOFOLLOW)', async () => {
+  // Inject the leaf swap right when the gate's per-file approval
+  // resolves — before atomicOpenLeaf in the backup phase. The
+  // O_NOFOLLOW added inside atomicOpenLeaf must reject the now-symlink.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'doomed.txt');
+    const sensitive = join(outside, 'precious.txt');
+    await writeFile(target, 'safe content', 'utf8');
+    await writeFile(sensitive, 'PRECIOUS', 'utf8');
+
+    // Two-stage approval: stage 1 once, stage 2 once with 'DELETE'.
+    // Between the two stages, swap the leaf into a symlink to
+    // outside. The backup-phase atomicOpenLeaf call must throw ELOOP
+    // (or similar safety rejection) rather than read 'PRECIOUS' into
+    // the trash.
+    let stage = 0;
+    const sse = (event, payload) => {
+      const requestId = payload.requestId;
+      const meta = payload?.payload || payload;
+      if (stage === 0) {
+        stage++;
+        gate.resolveFileSafety(requestId, 'once');
+      } else if (stage === 1) {
+        // Mid-approval window: rm + symlink to sensitive file.
+        rm(target, { force: true })
+          .then(() => symlink(sensitive, target))
+          .then(() => gate.resolveFileSafety(requestId, 'once', { confirmInput: 'doomed.txt' }));
+        stage++;
+      }
+    };
+    const result = await fileDeleteTool.run(
+      { paths: [target], reason: 'race-test' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    // Either the gate's commit caught the swap (resolvedReal changed),
+    // OR the atomicOpenLeaf inside _unsafeRawDelete threw ELOOP.
+    // What MUST NOT happen: precious.txt content lands in trash.
+    assert.equal(result.ok, false);
+    assert.equal(await readFile(sensitive, 'utf8'), 'PRECIOUS');
+  });
+});
+
+test('round 13 followup #2: trash final-unlink — parent rmdir+mkdir between backup and unlink → catches via parent {dev,ino}', async () => {
+  // Use the _setPostBackupHookForTests seam: after the backup phase
+  // captures parent {dev, ino} but before the unlink loop, swap the
+  // parent for a fresh dir at the same path. atomicUnlink's parent
+  // dirfd will fstat to a different inode → cross-check trips → the
+  // entry shows up in `failed[]` instead of being silently unlinked
+  // in the new (wrong) parent.
+  const trash = await import('../../safety/trash.js');
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'subdir'));
+    const target = join(ws, 'subdir', 'a.txt');
+    await writeFile(target, 'original', 'utf8');
+
+    let swapped = false;
+    trash._setPostBackupHookForTests(async () => {
+      // Swap the parent dir for a fresh dir at the same path.
+      // (Move the original content somewhere else first so rmdir
+      // can succeed on an empty dir.)
+      await rm(join(ws, 'subdir'), { recursive: true, force: true });
+      await mkdir(join(ws, 'subdir'));
+      // Place an attacker file at the same leaf name in the new dir.
+      await writeFile(join(ws, 'subdir', 'a.txt'), 'attacker-file', 'utf8');
+      swapped = true;
+    });
+    try {
+      let stage = 0;
+      const sse = (event, payload) => {
+        const requestId = payload.requestId;
+        if (stage === 0) {
+          stage++;
+          gate.resolveFileSafety(requestId, 'once');
+        } else {
+          gate.resolveFileSafety(requestId, 'once', { confirmInput: 'a.txt' });
+        }
+      };
+      const result = await fileDeleteTool.run(
+        { paths: [target], reason: 'race-test' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+      );
+      assert.equal(swapped, true);
+      // The attacker's file at the same leaf name in the SWAPPED parent
+      // must be intact (we did NOT unlink it via the wrong parent dirfd).
+      assert.equal(await readFile(join(ws, 'subdir', 'a.txt'), 'utf8'), 'attacker-file');
+      // The delete tool reports failure when failed[] is non-empty.
+      assert.equal(result.ok, false);
+      assert.equal(result.meta.failed?.length ?? 0, 1, 'expected one failed entry');
+      assert.match(result.meta.failed[0].error, /inode\/device changed|parent .* was replaced/i);
+    } finally {
+      trash._setPostBackupHookForTests(null);
+    }
+  });
+});
+
 test('round 13 followup: fileMove — dst symlink check uses SAME dstFd as renameat (structural)', async () => {
   // Structural test: a pre-existing symlink at dst is detected via
   // _raw.fstatat on the same dstFd that renameat will use. The check
