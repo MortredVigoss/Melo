@@ -411,6 +411,21 @@ export async function restoreFromBackup(operationId, opts = {}) {
     });
   }
 
+  // Codex Phase 2A round 9 (2026-05-03): parent-dir inode anchor
+  // captured AFTER layer (b) (so sensitivity reasons surface first
+  // for tampered manifests pointing at /etc/hosts), re-verified
+  // right before the actual fs op so a parent swap during the
+  // approval window aborts the restore.
+  const { precheckParentDir, assertParentDirUnchanged } =
+    await import('./fileSafetyGate.js');
+  const parentPrecheck = await precheckParentDir(target.originalPath);
+  if (!parentPrecheck.ok) {
+    throw new Error(
+      `Refusing to restore to ${target.originalPath}: parent directory ` +
+      `${parentPrecheck.parent} ${parentPrecheck.error}.`,
+    );
+  }
+
   // Layer (c) + (d): atomic approval-and-commit. Codex C round 5
   // (2026-05-03): the no-UI path now uses a module-private
   // _commitRestore helper instead of reaching into gate internals
@@ -442,6 +457,9 @@ export async function restoreFromBackup(operationId, opts = {}) {
     // approval, but mandatory atomic re-resolve before fs.
     resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
   }
+
+  // Parent-dir re-anchor right before the actual fs op (Codex round 9).
+  await assertParentDirUnchanged(target.originalPath, parentPrecheck.ino);
 
   if (target.wasMissing) {
     // Undo of a "create" snapshot — remove the resolved target.

@@ -38,6 +38,7 @@ import {
 } from './fileEditTool.js';
 import { fileDeleteTool } from './fileDeleteTool.js';
 import { fileMoveTool } from './fileMoveTool.js';
+import { fileMkdirTool } from './fileMkdirTool.js';
 
 async function freshGate() {
   const grants = await import('../../safety/chatScopedGrants.js');
@@ -789,6 +790,79 @@ test('snapshotBeforeWrite: source becomes a symlink → O_NOFOLLOW returns ELOOP
       snapshotBeforeWrite(linkSrc, {}),
       /refusing to read.*ELOOP|target became a symlink/i,
     );
+  });
+});
+
+// ─── fileMkdirTool (Phase 2A round 9) ─────────────────────────────────
+
+test('fileMkdirTool: happy path creates a single directory', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'newdir');
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    const st = await stat(target);
+    assert.equal(st.isDirectory(), true);
+  });
+});
+
+test('fileMkdirTool: existing path → TARGET_EXISTS', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'existing');
+    await mkdir(target);
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'TARGET_EXISTS');
+  });
+});
+
+test('fileMkdirTool: missing parent → PARENT_NOT_FOUND (no recursive)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'missing-mid', 'leaf');
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'PARENT_NOT_FOUND');
+  });
+});
+
+test('fileMkdirTool: deny does not create the directory', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'denied-dir');
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    let exists = true;
+    try { await lstat(target); } catch (err) { if (err.code === 'ENOENT') exists = false; }
+    assert.equal(exists, false);
+  });
+});
+
+test('fileMkdirTool: sensitive path /etc/foo → DENIED, no UI', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await fileMkdirTool.run(
+      { path: '/etc/melo-test-evil-' + Date.now() },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => promptCount++ },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(promptCount, 0);
   });
 });
 

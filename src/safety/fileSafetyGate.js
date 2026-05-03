@@ -229,6 +229,65 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
   return { ok: true };
 }
 
+// ── precheckParentDir ────────────────────────────────────────────────
+//
+// Codex Phase 2A round 9 (2026-05-03): Node has no openat(), so we
+// can't safely walk a path component-by-component with O_NOFOLLOW
+// on each segment. The next best defence against parent-dir
+// symlink swaps is to anchor on the parent's inode at precheck
+// time and re-verify it right before the actual fs op. Any
+// invariant-mismatch (parent now a symlink, parent ino changed,
+// parent disappeared) means a swap happened during the approval
+// window and the operation must abort.
+//
+// Used by fileWriteTool / fileEditTool / backup.restoreFromBackup /
+// trash.restoreFromTrash to keep one shared definition of "parent
+// dir is the same safe directory it was at precheck time".
+//
+// Returns:
+//   { ok: bool, ino: number | null, error: string | null }
+import { lstat as _lstat } from 'node:fs/promises';
+import { dirname as _dirname } from 'node:path';
+
+export async function precheckParentDir(absPath) {
+  const parent = _dirname(absPath);
+  let st;
+  try {
+    st = await _lstat(parent);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return { ok: false, ino: null, error: 'PARENT_NOT_FOUND', parent };
+    }
+    return { ok: false, ino: null, error: err.message, parent };
+  }
+  if (st.isSymbolicLink() || !st.isDirectory()) {
+    return { ok: false, ino: null, error: 'PARENT_NOT_DIR', parent };
+  }
+  return { ok: true, ino: st.ino, error: null, parent };
+}
+
+// Verify the parent dir hasn't been swapped since precheckParentDir
+// returned `expectedIno`. Throws denyError on mismatch (so callers
+// inside Phase 1 modules surface a uniform FILE_SAFETY_DENIED).
+export async function assertParentDirUnchanged(absPath, expectedIno) {
+  const parent = _dirname(absPath);
+  let st;
+  try {
+    st = await _lstat(parent);
+  } catch (err) {
+    throw denyError(
+      `Parent directory ${parent} disappeared between precheck and ` +
+      `commit (race detected): ${err.message}`,
+    );
+  }
+  if (st.isSymbolicLink() || !st.isDirectory() || st.ino !== expectedIno) {
+    throw denyError(
+      `Parent directory ${parent} was replaced (inode changed or now ` +
+      `a symlink) between precheck and commit — kernel-level race detected.`,
+    );
+  }
+}
+
 // ── precheckHardBlockedWrite ─────────────────────────────────────────
 //
 // Codex D round 1 of Phase 2A (2026-05-03): Phase 2 tools used to

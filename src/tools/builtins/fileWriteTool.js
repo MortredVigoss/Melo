@@ -108,8 +108,8 @@ export const fileWriteTool = {
   description:
     'Create a new file or overwrite an existing file with the given content. ' +
     'The parent directory must already exist and must be a regular directory (not a symlink) — ' +
-    'this tool does NOT create parent directories. To make a nested path, call file_write or ' +
-    'a future file_mkdir tool one component at a time so each parent dir creation is approved separately. ' +
+    'this tool does NOT create parent directories. Use file_mkdir to create each missing parent dir ' +
+    'one component at a time (each gets its own approval). ' +
     'The user sees a confirmation dialog with a content/diff preview; nothing is written to disk before approval. ' +
     'A backup of the previous file (if any) is taken so the change can be rolled back.',
   category: 'filesystem',

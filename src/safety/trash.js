@@ -481,7 +481,14 @@ export async function restoreFromTrash(operationId, opts = {}) {
   // (c)+(d) below can issue commit tokens bound to the same
   // expectedReal — a swap between (b) and the actual fs op fails
   // commitOperation and aborts the restore (Codex D round 3).
+  // Codex Phase 2A round 9 (2026-05-03): parent-dir inode anchor
+  // captured per-entry AFTER sensitivity check (so sensitive
+  // surface first); re-verified right before each fs op.
+  const { precheckParentDir, assertParentDirUnchanged } =
+    await import('./fileSafetyGate.js');
+
   const expectedRealByLexical = new Map();
+  const parentInoByLexical = new Map();
   for (const entry of target.files) {
     const { realPath, hasSymlinkInChain } = await safeResolvePath(entry.originalPath);
     if (
@@ -547,6 +554,16 @@ export async function restoreFromTrash(operationId, opts = {}) {
         );
       }
     }
+
+    // After sensitivity passes, capture parent inode for race detection.
+    const parentPrecheck = await precheckParentDir(entry.originalPath);
+    if (!parentPrecheck.ok) {
+      throw new Error(
+        `Refusing to restore ${entry.originalPath}: parent directory ` +
+        `${parentPrecheck.parent} ${parentPrecheck.error}.`,
+      );
+    }
+    parentInoByLexical.set(entry.originalPath, parentPrecheck.ino);
   }
 
   // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
@@ -605,6 +622,12 @@ export async function restoreFromTrash(operationId, opts = {}) {
     }
 
     const src = join(filesDir, entry.trashedAs);
+    // Re-verify parent-dir inode right before the fs op.
+    await assertParentDirUnchanged(
+      entry.originalPath,
+      parentInoByLexical.get(entry.originalPath),
+    );
+
     if (entry.wasSymlink) {
       // Codex D round 7 (2026-05-03): rebuild the symlink AT the
       // lexical originalPath (not resolvedTarget — for a symlink,
