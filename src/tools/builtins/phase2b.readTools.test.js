@@ -521,6 +521,85 @@ test('fileReadTool: meta exposes resolved + lexical paths for a workspace→outs
   });
 });
 
+// ─── Round 13 Phase 2B follow-up #2: FIFO / special-file safety ──
+
+test('round 13 Phase 2B followup #2: fileRead rejects a FIFO with NOT_FILE (O_NONBLOCK + S_ISREG)', async (t) => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const fifoPath = join(ws, 'pipe');
+    // mkfifo via execFile — Node has no built-in mkfifo. Skip on
+    // platforms where mkfifo isn't available.
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+    try {
+      await execFileAsync('mkfifo', [fifoPath]);
+    } catch {
+      t.skip('mkfifo unavailable on this platform');
+      return;
+    }
+
+    // Without O_NONBLOCK, opening a FIFO with no writer would block
+    // forever. With O_NONBLOCK + the S_ISREG check, we open instantly
+    // and reject before any read.
+    let timedOut = false;
+    const watchdog = setTimeout(() => { timedOut = true; }, 3000);
+
+    const result = await fileReadTool.run(
+      { path: fifoPath },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    clearTimeout(watchdog);
+
+    assert.equal(timedOut, false, 'fileRead must not block on FIFO');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'NOT_FILE');
+  });
+});
+
+test('round 13 Phase 2B followup #2: grep skips a FIFO encountered during walk (no hang, no result leak)', async (t) => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await writeFile(join(ws, 'real.txt'), 'NEEDLE in real file', 'utf8');
+    const fifoPath = join(ws, 'mid-walk-fifo');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+    try {
+      await execFileAsync('mkfifo', [fifoPath]);
+    } catch {
+      t.skip('mkfifo unavailable on this platform');
+      return;
+    }
+
+    let timedOut = false;
+    const watchdog = setTimeout(() => { timedOut = true; }, 3000);
+
+    const result = await grepTool.run(
+      { pattern: 'NEEDLE' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    clearTimeout(watchdog);
+
+    assert.equal(timedOut, false, 'grep walk must not block on FIFO');
+    assert.equal(result.ok, true);
+    // Real file matches; FIFO never produces a "result" entry.
+    assert.match(result.output, /real\.txt/);
+    assert.doesNotMatch(result.output, /mid-walk-fifo/);
+  });
+});
+
+test('round 13 Phase 2B followup #2: grep no longer uses rg fast path (JS walker only)', async () => {
+  // Codex round 13 Phase 2B #2 removed the rg fast path entirely
+  // because handing safe-file paths to an external rg process let
+  // it re-open by path, bypassing our O_NOFOLLOW + O_NONBLOCK
+  // guards. Pin: grep module no longer imports child_process.
+  const { readFile: rf } = await import('node:fs/promises');
+  const src = await rf(new URL('./grepTool.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /from 'node:child_process'/, 'grepTool must not spawn external processes');
+  assert.doesNotMatch(src, /execFile|spawn\(/, 'no execFile/spawn calls allowed in grepTool');
+});
+
 test('Phase 2B contract: read tools have requiresPermission:false (FileSafetyGate owns approval)', () => {
   // Round 13 Phase 2B follow-up #1 (Codex 🟡): if requiresPermission
   // were true, executor.js would fire its toolId-level prompt BEFORE

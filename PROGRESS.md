@@ -22,8 +22,15 @@
 - **fileReadTool 加 `_setPostApprovalHookForTests` seam**：approval 完成、atomicOpenLeaf 之前 fire hook，让测试注入真 race。
 - 测试加 3 case + 重写 1：① **leaf-swap race injection**：approve benign workspace 文件 → hook 内 unlink+symlink 到 outside sensitive → atomicOpenLeaf 必须 ELOOP/ENOENT 拒，sensitive 内容**不**进 result.output；② back-compat pin：workspace→outside symlink 走 atomicOpenLeaf 路径 + meta.path/lexicalPath 正确；③ contract test：3 个 read tools 的 `requiresPermission` 必须 false（防 future regression 误开 → 双 prompt）。原 leaf-swap 测试改成纯 back-compat pin（race injection 走新 #1）。
 - 验证：`src/tools/builtins/phase2b.readTools.test.js` **23/23 全绿**（前 21 + 3 新 - 1 改）；`src/**/*.test.js` **1759/1759 全绿**（前 1757 + 2 新；零既有回归）。
-- 安全语义闭环：rg 永远只读 JS walker pre-classify 过的文件，不会自己进 sensitive 子树；executor 不再 double-prompt；read 的真实 race window（approval 后 leaf swap）有实测覆盖。
-- Phase 2C (pdf/image/xlsx/knowledge — 富媒体读) / 2D (bash through bashRiskParser) / 2E (MCP file ops) / 3 (UI redesign) 仍未动。**目录 delete/restore 留独立 design**（dirfd-walk 工作量），**Linux CI 留独立 phase**（melo macOS-only Swift desktop app）。
+- Follow-up #2（Codex Phase 2B D 第二轮 → rg post-enum TOCTOU + FIFO 阻塞）：上一刀 push 又 D，2 条：① 🔴 grep 把安全文件清单交给 rg 外部进程，rg 按路径 re-open → 枚举到 rg open 之间 attacker 可换 leaf 成 symlink，rg 仍读到敏感目标；② 🟡 fileRead 用 `atomicOpenLeaf O_RDONLY` 在 FIFO/special 文件上 open 阻塞，NOT_FILE 检查来不及。用户拍 ok：杀 rg fast path + 加 O_NONBLOCK + S_ISREG 检。
+- **杀掉 grep rg fast path**：删 `searchViaRg` / `runRgBatch` / `isRgAvailable` / `RG_BATCH_SIZE` 共 ~80 行 + child_process import + execFileAsync。grepTool 现在永远走 JS walker（enumerateSafeFiles → searchFileListAtomic → searchFileAtomic 通过 atomicOpenLeaf 读）。代价：大 repo 性能 ↓（实测 melo workspace 一般 < 10k 文件可接受），优化留独立 phase 等真有 fd-bound rg 集成方案。**简化收益**：grepTool 整个外部进程依赖消失，TOCTOU 攻击面归零。
+- **addon 加 `O_NONBLOCK` 常量**：N-API exports 加一行 + 重 build。POSIX `O_NONBLOCK` flag 让 open 在 FIFO 没 writer 时立即返而非 block。
+- **fileReadTool atomicOpenLeaf 加 O_NONBLOCK**：`atomicOpenLeaf(parent, leaf, DC.O_RDONLY | DC.O_NONBLOCK)`。S_ISREG 检查从 read 后**前移到 read 前**——open 后立即用 leafStat.mode `& 0o170000 === 0o100000` 检 regular file，非 regular → NOT_FILE 立返、零 read。
+- **grepTool searchFileAtomic 同款加 O_NONBLOCK + S_ISREG**：防 enumerator-after race（walker 看到的是 file，open 时已变 FIFO）让 atomicOpenLeaf 不 block + post-open 立刻拒非 regular。
+- 测试加 3 case：① fileRead FIFO → NOT_FILE + watchdog 3s 内不 block（mkfifo unavailable 时 self-skip）；② grep walk 中遇到 FIFO 静默跳过（real file 命中正常返、FIFO 不进 result）；③ contract test：grepTool.js 源码不能含 `from 'node:child_process'` / `execFile|spawn(`（防 future regression 重新引入 rg）。
+- 验证：`src/tools/builtins/phase2b.readTools.test.js` **26/26 全绿**（前 23 + 3 新）；`src/**/*.test.js` **1762/1762 全绿**（前 1759 + 3 新；零既有回归）。
+- 安全终态：read 链路全 dirfd-bound + O_NOFOLLOW + O_NONBLOCK + S_ISREG，无外部进程，无 TOCTOU 窗口；workspace 内 silent + 外部 benign 一次 prompt + sensitive per-call。
+- Phase 2C (pdf/image/xlsx/knowledge — 富媒体读) / 2D (bash through bashRiskParser) / 2E (MCP file ops) / 3 (UI redesign) 仍未动。**目录 delete/restore 留独立 design**（dirfd-walk 工作量），**Linux CI 留独立 phase**（melo macOS-only Swift desktop app），**rg fd-bound 集成留独立 phase**（如果实测 grep 慢得难受再上）。
 
 
 ## 2026-05-03 — File Safety Gate Phase 2A round 13：N-API dirfd-bound atomic ops（终结 12 轮 path-race patch loop）

@@ -1,37 +1,34 @@
 /**
  * Built-in tool: grep
  *
- * Phase 2B (2026-05-04) + follow-up #1 (Codex 🔴, 2026-05-04):
+ * Phase 2B (2026-05-04) + follow-up #2 (Codex 🔴, 2026-05-04):
  *
  *   - requestRead({path: targetPath}) — gate classifies the search
  *     base. Workspace-internal silent; outside-benign prompts once;
  *     sensitive (system / credential / $MELO_HOME) prompts per call.
- *   - File enumeration is ALWAYS done by the JS walker so we have a
- *     pre-classified safe-file list before any content read.
- *     Sensitive subtrees are silently skipped (unless the base itself
- *     is sensitive — user explicitly opted in).
- *   - Two execution paths share that enumeration:
- *       (a) JS fallback: per-file `atomicOpenLeaf` with O_NOFOLLOW,
- *           regex-match each line in JS.
- *       (b) Native `rg`: invoked with `--files-from -` reading the
- *           pre-classified file list from stdin. rg never walks the
- *           directory tree on its own → it cannot read sensitive
- *           subtrees by accident. Combined with `--no-follow`, rg
- *           also doesn't follow leaf symlinks.
- *   - Codex round 13 Phase 2B #1 closed the prior race window where
- *     rg fast-path walked the whole base (including sensitive
- *     subtrees) and we only filtered stdout — sensitive content
- *     reached our process memory before the filter fired. Now rg
- *     never sees sensitive paths.
+ *   - JS walker enumerates safe files (sensitive subtrees skipped
+ *     unless the base itself is sensitive). Per-file content read
+ *     uses dirfd-bound atomicOpenLeaf with O_NOFOLLOW + O_NONBLOCK,
+ *     and post-open S_ISREG check rejects FIFOs / device files.
  *
- * Approval model: a single base-dir approval covers the whole
- * walk. The user does NOT see one prompt per file.
+ *   - **rg fast path was REMOVED** in Phase 2B follow-up #2 (Codex
+ *     🔴): even with pre-enumerated safe paths, handing the list
+ *     to an external `rg` process meant rg re-opened each file by
+ *     PATH (not by our dirfd-bound fd). Between our enumeration's
+ *     atomicLstat and rg's open, an attacker could swap the leaf
+ *     for a symlink and rg would happily read the swapped target.
+ *     The only TOCTOU-safe rg integration would spawn rg per-file
+ *     with the fd as stdin, completely losing rg's batch perf
+ *     advantage. So: kill the fast path, ship the JS walker, and
+ *     leave perf optimization to a future phase that proves
+ *     fd-bound semantics. melo workspaces are typically < 10k
+ *     files, where JS grep is acceptable.
+ *
+ * Approval model: single base-dir approval covers the whole walk.
  */
 
 import { readdir } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { fstatSync, readSync } from 'node:fs';
 
 import { requestRead } from '../../safety/fileSafetyGate.js';
@@ -41,8 +38,6 @@ import {
   splitParentLeaf,
   C as DC,
 } from '../../safety/dirfdOps.js';
-
-const execFileAsync = promisify(execFile);
 
 const IGNORED = new Set([
   '.git', 'node_modules', '.next', 'dist', 'build', '.turbo',
@@ -57,100 +52,6 @@ function isSensitiveSubtree(absPath) {
   return cat === PATH_CATEGORY.SYSTEM
       || cat === PATH_CATEGORY.CREDENTIAL
       || cat === PATH_CATEGORY.MELO_INTERNAL;
-}
-
-// ─── ripgrep ───────────────────────────────────────────────────────────
-
-let _rgAvailable = null;
-async function isRgAvailable() {
-  if (_rgAvailable !== null) return _rgAvailable;
-  try {
-    await execFileAsync('rg', ['--version'], { timeout: 3000 });
-    _rgAvailable = true;
-  } catch {
-    _rgAvailable = false;
-  }
-  return _rgAvailable;
-}
-
-/**
- * Run rg against an EXPLICIT list of pre-classified safe files.
- * The list is passed as positional argv (rg reads from those file
- * paths only and does NOT walk the directory tree). This is the
- * round 13 Phase 2B follow-up #1 fix — Codex flagged the prior
- * fast path for letting rg recursively read sensitive subtrees
- * inside an approved benign base, with sensitive content reaching
- * our process memory before the post-filter dropped it.
- *
- * Argv-length safety: macOS ARG_MAX is ~1MB, Linux is typically
- * 2MB. With ~100-byte average path, that's 10k+ files per invoke.
- * Beyond that we batch into RG_BATCH_SIZE chunks. For workspaces
- * larger than 50k files the wall-clock difference between rg and
- * the JS fallback shrinks anyway because match work dominates.
- *
- * @param {string[]} fileList absolute paths that the JS walker
- *   already classified as safe to read.
- */
-const RG_BATCH_SIZE = 8000;
-
-async function runRgBatch(pattern, files, baseDir, opts) {
-  const { contextLines, caseInsensitive, maxResults, signal } = opts;
-  const args = [
-    '--json',
-    '--max-count', '1',
-    '--max-filesize', '500K',
-    '--no-follow',
-  ];
-  if (caseInsensitive) args.push('--ignore-case');
-  if (contextLines > 0) args.push('--context', String(contextLines));
-  // Use `--` to terminate options before the pattern + file paths.
-  args.push('--', pattern, ...files);
-
-  let raw;
-  try {
-    const { stdout } = await execFileAsync('rg', args, {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 20_000,
-      signal,
-    });
-    raw = stdout;
-  } catch (err) {
-    if (err.code === 1) return [];  // rg exit 1 = no matches
-    throw err;
-  }
-
-  const matches = [];
-  const lines = raw.split('\n');
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
-    if (msg.type !== 'match') continue;
-    const absFile = msg.data?.path?.text || '';
-    const relFile = relative(baseDir, absFile).replace(/\\/g, '/');
-    const lineNo = msg.data?.line_number ?? 0;
-    const matchText = msg.data?.lines?.text?.trimEnd() ?? '';
-    const context = [];
-    if (msg.data?.lines) {
-      context.push({ lineNo, text: matchText, isMatch: true });
-    }
-    matches.push({ file: relFile, line: lineNo, text: matchText, context });
-    if (matches.length >= maxResults) break;
-  }
-  return matches;
-}
-
-async function searchViaRg(pattern, fileList, baseDir, opts) {
-  if (!fileList.length) return { matches: [] };
-  const allMatches = [];
-  for (let i = 0; i < fileList.length; i += RG_BATCH_SIZE) {
-    if (allMatches.length >= opts.maxResults) break;
-    const batch = fileList.slice(i, i + RG_BATCH_SIZE);
-    const remaining = opts.maxResults - allMatches.length;
-    const batchMatches = await runRgBatch(pattern, batch, baseDir, { ...opts, maxResults: remaining });
-    allMatches.push(...batchMatches);
-  }
-  return { matches: allMatches };
 }
 
 // ─── Glob → regex ──────────────────────────────────────────────────────
@@ -194,18 +95,22 @@ function readFileContentViaFd(fd, maxSize) {
 }
 
 async function searchFileAtomic(absPath, relPath, searchRe, contextLines, maxMatchesPerFile) {
-  // atomicOpenLeaf adds O_NOFOLLOW automatically. If the leaf is now
-  // a symlink (race or pre-existing in the walk), this throws ELOOP
-  // and we silently skip — grep should never silently follow into
-  // an unexpected target.
+  // atomicOpenLeaf adds O_NOFOLLOW automatically. O_NONBLOCK avoids
+  // hangs on FIFOs / device files (the open returns immediately
+  // even if the FIFO has no writer). The post-open S_ISREG check
+  // then rejects non-regular files before we read.
   const [parent, leaf] = splitParentLeaf(absPath);
   let openLeaf;
   try {
-    openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY);
+    openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY | DC.O_NONBLOCK);
   } catch {
     return [];
   }
   try {
+    // S_IFMT mask 0o170000, S_IFREG = 0o100000. Skip silently if not
+    // a regular file (FIFO / dev / socket would otherwise read garbage
+    // or block, and shouldn't be in a grep result anyway).
+    if ((openLeaf.leafStat.mode & 0o170000) !== 0o100000) return [];
     const buf = readFileContentViaFd(openLeaf.leafFd, MAX_FILE_SIZE);
     if (!buf) return [];
     const text = buf.toString('utf8');
@@ -409,28 +314,17 @@ export const grepTool = {
         const fileMatches = await searchFileAtomic(realBase, relPath, searchRe, ctxLines, maxResults);
         allMatches.push(...fileMatches);
       } else {
-        // Directory base: enumerate safe files via JS walker (the
-        // same enumeration is used whether rg is available or not),
-        // then dispatch to rg or to the JS searcher. rg never walks
-        // — it receives the pre-classified file list via stdin.
+        // Directory base: enumerate safe files via JS walker, then
+        // search each via dirfd-bound atomicOpenLeaf. rg fast path
+        // was removed in Phase 2B follow-up #2 — passing paths to
+        // an external rg process let it re-open files by path,
+        // bypassing our O_NOFOLLOW + O_NONBLOCK + S_ISREG checks
+        // and reintroducing leaf-swap TOCTOU. JS walker only.
         const safeFiles = await enumerateSafeFiles(
           realBase, baseDir, fileRe, signal, skipped, filterSensitive, 5000,
         );
-
-        if (safeFiles.length === 0) {
-          // nothing to search — fall through, allMatches stays empty
-        } else if (await isRgAvailable()) {
-          const { matches: rgMatches } = await searchViaRg(pattern, safeFiles, baseDir, {
-            contextLines: ctxLines,
-            caseInsensitive: case_insensitive,
-            maxResults,
-            signal,
-          });
-          allMatches.push(...rgMatches);
-        } else {
-          const jsMatches = await searchFileListAtomic(safeFiles, baseDir, searchRe, ctxLines, maxResults);
-          allMatches.push(...jsMatches);
-        }
+        const jsMatches = await searchFileListAtomic(safeFiles, baseDir, searchRe, ctxLines, maxResults);
+        allMatches.push(...jsMatches);
       }
     } catch (err) {
       return { ok: false, output: `Search error: ${err.message}`, error: err.message };

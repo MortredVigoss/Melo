@@ -145,9 +145,12 @@ export const fileReadTool = {
     }
 
     // ── 2. Dirfd-bound open + read ────────────────────────────────────
+    // O_NONBLOCK avoids hangs on FIFOs / device files (the open
+    // returns immediately even with no writer attached). The post-
+    // open S_ISREG check rejects non-regular leaves before any read.
     let openLeaf;
     try {
-      openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY);
+      openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY | DC.O_NONBLOCK);
     } catch (err) {
       if (err.code === 'ENOENT') {
         return { ok: false, output: `File not found: ${absPath}`, error: 'ENOENT' };
@@ -170,6 +173,16 @@ export const fileReadTool = {
     }
 
     try {
+      // Round 13 Phase 2B follow-up #2 (Codex 🟡): S_ISREG check
+      // happens BEFORE any read. atomicOpenLeaf returns the leaf
+      // stat post-open; a FIFO / device / socket / dir leaf is
+      // rejected with NOT_FILE without touching read(). O_NONBLOCK
+      // on the open ensures FIFOs don't block at open time.
+      // S_IFMT mask 0o170000, S_IFREG = 0o100000.
+      if ((openLeaf.leafStat.mode & 0o170000) !== 0o100000) {
+        return { ok: false, output: `Not a file: ${absPath}`, error: 'NOT_FILE' };
+      }
+
       const { buf, size, tooLarge } = readFromStartFd(openLeaf.leafFd);
       if (tooLarge) {
         return {
@@ -177,12 +190,6 @@ export const fileReadTool = {
           output: `File too large (${(size / 1024).toFixed(0)} KB). Use start_line/end_line to read a portion.`,
           error: 'FILE_TOO_LARGE',
         };
-      }
-
-      // Verify the leaf we opened is a regular file (not a dir, etc).
-      // S_IFMT mask 0o170000, S_IFREG = 0o100000.
-      if ((openLeaf.leafStat.mode & 0o170000) !== 0o100000) {
-        return { ok: false, output: `Not a file: ${absPath}`, error: 'NOT_FILE' };
       }
 
       const text = buf.toString('utf8');

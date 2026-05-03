@@ -294,6 +294,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   constants.Set("O_EXCL", Napi::Number::New(env, O_EXCL));
   constants.Set("O_TRUNC", Napi::Number::New(env, O_TRUNC));
   constants.Set("O_NOFOLLOW", Napi::Number::New(env, O_NOFOLLOW));
+  constants.Set("O_NONBLOCK", Napi::Number::New(env, O_NONBLOCK));
   constants.Set("O_DIRECTORY", Napi::Number::New(env, O_DIRECTORY));
   constants.Set("AT_REMOVEDIR", Napi::Number::New(env, AT_REMOVEDIR));
   constants.Set("AT_SYMLINK_NOFOLLOW", Napi::Number::New(env, AT_SYMLINK_NOFOLLOW));
