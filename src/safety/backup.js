@@ -27,7 +27,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import {
   mkdir,
-  copyFile,
   rm,
   writeFile,
   readFile,
@@ -36,14 +35,22 @@ import {
   readdir,
   open,
 } from 'node:fs/promises';
+import { writeSync, ftruncateSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
 import { constants as fsConstants } from 'node:fs';
-import { basename, join, sep } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 
 const { O_RDONLY, O_NOFOLLOW } = fsConstants;
 
 import { getMeloHome } from '../config.js';
 import { isHardBlockedWrite, classifyPath } from './sensitivePaths.js';
 import { safeResolvePath } from './pathResolver.js';
+import {
+  atomicOpenLeaf,
+  atomicUnlink,
+  openParentDirFd,
+  splitParentLeaf,
+  C as DC,
+} from './dirfdOps.js';
 
 const BACKUP_DIR_NAME = '.melo-backups';
 export const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -411,28 +418,35 @@ export async function restoreFromBackup(operationId, opts = {}) {
     });
   }
 
-  // Codex Phase 2A round 9 (2026-05-03): parent-dir inode anchor
-  // captured AFTER layer (b) (so sensitivity reasons surface first
-  // for tampered manifests pointing at /etc/hosts), re-verified
-  // right before the actual fs op so a parent swap during the
-  // approval window aborts the restore.
-  const { precheckParentDir, assertParentDirUnchanged } =
-    await import('./fileSafetyGate.js');
-  const parentPrecheck = await precheckParentDir(target.originalPath);
-  if (!parentPrecheck.ok) {
-    throw new Error(
-      `Refusing to restore to ${target.originalPath}: parent directory ` +
-      `${parentPrecheck.parent} ${parentPrecheck.error}.`,
-    );
+  // Round 13 (2026-05-03): parent-dir is bound through a dirfd via
+  // dirfdOps. We capture parent {dev, ino} once, then reopen the
+  // dirfd right before the fs op and cross-check {dev, ino} match.
+  // Combined with the fact that the fs op uses *at() syscalls bound
+  // to that dirfd, no parent-dir swap during the approval window
+  // can redirect us.
+  const parentDir = dirname(target.originalPath);
+  let parentDevAtPrecheck;
+  let parentInoAtPrecheck;
+  {
+    let probefd;
+    try {
+      probefd = openParentDirFd(parentDir);
+      const st = fstatSync(probefd);
+      parentDevAtPrecheck = st.dev;
+      parentInoAtPrecheck = st.ino;
+    } catch (err) {
+      throw new Error(
+        `Refusing to restore to ${target.originalPath}: cannot open parent ` +
+        `${parentDir}: ${err.message}.`,
+      );
+    } finally {
+      if (probefd != null) try { closeFdSync(probefd); } catch {}
+    }
   }
 
   // Layer (c) + (d): atomic approval-and-commit. Codex C round 5
-  // (2026-05-03): the no-UI path now uses a module-private
-  // _commitRestore helper instead of reaching into gate internals
-  // — keeps gate's token-mint API closed to all production code.
-  // Both paths still verify the lexical→real mapping atomically
-  // before the actual fs op; a symlink swap between layer (b) and
-  // copyFile/rm aborts via FILE_SAFETY_DENIED.
+  // (2026-05-03): the no-UI path uses a module-private _commitRestore
+  // helper instead of reaching into gate internals.
   let resolvedTarget;
   if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
     const gate = await import('./fileSafetyGate.js');
@@ -446,47 +460,63 @@ export async function restoreFromBackup(operationId, opts = {}) {
       contentSize: target.size ?? null,
       newHash: target.sha256 || null,
     });
-    // Codex D round 6 (2026-05-03): enforce kind so a stray
-    // edit/delete/move token can't be passed in here.
     const committed = await gate.commitOperation(ui.operationToken, {
       expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
     });
     resolvedTarget = committed.resolvedTarget;
   } else {
-    // No-UI path (programmatic / wasMissing undo-create): no user
-    // approval, but mandatory atomic re-resolve before fs.
     resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
   }
 
-  // Parent-dir re-anchor right before the actual fs op (Codex round 9 + 10).
-  await assertParentDirUnchanged(
-    target.originalPath,
-    parentPrecheck.ino,
-    parentPrecheck.dev,
-  );
+  // Final fs op: atomicOpenLeaf opens parent + openat leaf — kernel
+  // resolves the leaf relative to the dirfd's INODE, not its path.
+  // Cross-check parent dirfd {dev, ino} against precheck snapshot
+  // (catches "parent dir was rmdir'd + new dir mkdir'd at same path",
+  // which would have a different inode).
+  const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
 
   if (target.wasMissing) {
-    // Undo of a "create" snapshot — remove the resolved target.
-    // fs.rm operates on the directory entry (no leaf symlink follow),
-    // so this is safe even if dest was swapped post-commit.
-    await rm(resolvedTarget, { force: true });
+    // Undo of a "create" snapshot — atomicUnlink removes the leaf
+    // entry through the parent dirfd. unlinkat does NOT follow
+    // symlinks; if the leaf is a symlink, only the link is removed.
+    try {
+      // Cross-check parent {dev, ino} via a probe-open before unlink.
+      let probefd;
+      try {
+        probefd = openParentDirFd(resolvedParent);
+        const st = fstatSync(probefd);
+        if (st.dev !== parentDevAtPrecheck || st.ino !== parentInoAtPrecheck) {
+          throw Object.assign(
+            new Error(`Parent ${resolvedParent} was replaced (inode/device changed) between approval and restore.`),
+            { code: 'FILE_SAFETY_DENIED' },
+          );
+        }
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
+      }
+      await atomicUnlink(resolvedParent, resolvedLeaf);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        // Already gone — undo-create is idempotent in this case.
+      } else {
+        throw err;
+      }
+    }
   } else {
     const beforePath = join(target.opDir, 'before', basename(target.originalPath));
-    await mkdir(join(resolvedTarget, '..'), { recursive: true }).catch(() => {});
-    // Codex Phase 2A holistic refactor (2026-05-03): write via fd
-    // with O_NOFOLLOW. copyFile() would have followed a symlink at
-    // the destination, potentially writing the snapshot bytes to
-    // /etc/hosts if dest was swapped post-commit. ELOOP at this
-    // open surfaces as a clean restore failure.
-    let dstFh;
+    // atomicOpenLeaf with O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW (added
+    // automatically). Parent dirfd is opened atomically inside; cross-
+    // check parent {dev, ino} against precheck.
+    let openLeaf;
     try {
-      dstFh = await open(
-        resolvedTarget,
-        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW,
+      openLeaf = await atomicOpenLeaf(
+        resolvedParent,
+        resolvedLeaf,
+        DC.O_WRONLY | DC.O_CREAT | DC.O_TRUNC,
         0o644,
       );
     } catch (err) {
-      if (err && err.code === 'ELOOP') {
+      if (err.code === 'ELOOP' || err.errno === 62) {
         throw new Error(
           `Refusing to restore over symlink at ${resolvedTarget} ` +
           `(kernel ELOOP via O_NOFOLLOW).`,
@@ -495,10 +525,19 @@ export async function restoreFromBackup(operationId, opts = {}) {
       throw err;
     }
     try {
+      if (
+        openLeaf.parentDev !== parentDevAtPrecheck ||
+        openLeaf.parentIno !== parentInoAtPrecheck
+      ) {
+        throw new Error(
+          `Parent ${resolvedParent} was replaced (inode/device changed) ` +
+          `between approval and restore — kernel-level race detected.`,
+        );
+      }
       const buf = await readFile(beforePath);
-      await dstFh.write(buf, 0);
+      writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
     } finally {
-      await dstFh.close().catch(() => {});
+      openLeaf.closeLeaf();
     }
   }
 

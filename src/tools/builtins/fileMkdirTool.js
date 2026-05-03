@@ -1,28 +1,31 @@
 /**
  * Built-in tool: file_mkdir
  *
- * Phase 2A round 9 (2026-05-03): create a single directory through
- * the FileSafetyGate. file_write no longer auto-creates parent
- * dirs (kernel-level race risk without openat()), so this tool
- * fills the gap. Single-level only — to make /a/b/c, the agent
- * must call file_mkdir for /a, then /a/b, then /a/b/c.
+ * Round 13 (2026-05-03): use `mkdirat` syscall through a parent
+ * dirfd. The parent dir is opened as O_DIRECTORY|O_NOFOLLOW (catches
+ * symlinked-parent attack) then mkdirat creates the leaf relative to
+ * the dirfd's inode — atomic with the dir-binding, no parent-swap
+ * race window.
  *
- * Each mkdir is a separate user-approved operation; the parent
- * directory must already exist and pass the same safety checks
- * as file_write (sensitivity, parent-inode anchor).
+ * Single-level only: to make /a/b/c, the agent must call file_mkdir
+ * for /a, then /a/b, then /a/b/c. Each level is a separate
+ * user-approved op (bypassGrants: true on the gate prompt).
  */
 
-import { mkdir, lstat } from 'node:fs/promises';
-import { isAbsolute, resolve, dirname } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 
 import {
   requestWrite,
   commitOperation,
   precheckHardBlockedWrite,
-  precheckParentDir,
-  assertParentDirUnchanged,
   OP_KIND,
 } from '../../safety/fileSafetyGate.js';
+import {
+  openParentDirFd,
+  splitParentLeaf,
+  _raw,
+} from '../../safety/dirfdOps.js';
+import { closeSync as closeFdSync, fstatSync } from 'node:fs';
 
 export const fileMkdirTool = {
   id: 'file_mkdir',
@@ -74,28 +77,59 @@ export const fileMkdirTool = {
       };
     }
 
-    // Refuse if path already exists (whatever it is — file, dir, or symlink).
     if (precheck.exists) {
       return {
         ok: false,
-        output:
-          `${absPath} already exists; file_mkdir refuses to create over an ` +
-          `existing entry.`,
+        output: `${absPath} already exists; file_mkdir refuses to create over an existing entry.`,
         error: 'TARGET_EXISTS',
       };
     }
 
-    // ── 1b. Parent dir must exist + be a regular directory ────────────
-    const parentPrecheck = await precheckParentDir(absPath);
-    if (!parentPrecheck.ok) {
+    const [parentDir, leafName] = splitParentLeaf(absPath);
+
+    // ── 1b. Open parent dirfd (probe: must exist, real dir, not symlink) ──
+    let parentFd = -1;
+    let parentDevAtPrecheck;
+    let parentInoAtPrecheck;
+    try {
+      parentFd = openParentDirFd(parentDir);
+      const st = fstatSync(parentFd);
+      parentDevAtPrecheck = st.dev;
+      parentInoAtPrecheck = st.ino;
+    } catch (err) {
+      if (parentFd !== -1) { try { closeFdSync(parentFd); } catch {} }
+      if (err.code === 'ENOENT') {
+        return {
+          ok: false,
+          output: `Cannot create ${absPath}: parent directory ${parentDir} does not exist. Create the parent directory first.`,
+          error: 'PARENT_NOT_FOUND',
+        };
+      }
+      if (err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output: `Cannot create ${absPath}: parent ${parentDir} is a symlink.`,
+          error: 'PARENT_NOT_DIR',
+        };
+      }
+      if (err.code === 'ENOTDIR') {
+        return {
+          ok: false,
+          output: `Cannot create ${absPath}: parent ${parentDir} is not a directory.`,
+          error: 'PARENT_NOT_DIR',
+        };
+      }
       return {
         ok: false,
-        output:
-          `Cannot create ${absPath}: parent directory ${parentPrecheck.parent} ` +
-          `${parentPrecheck.error}. Create the parent directory first.`,
-        error: parentPrecheck.error,
+        output: `Cannot open parent ${parentDir}: ${err.message}`,
+        error: err.message,
       };
     }
+    // Close the precheck dirfd — we'll reopen for the real op so the
+    // approval window can't hold a stale fd open. The fd lifecycle
+    // here is just to capture {dev, ino} for cross-check.
+    try { closeFdSync(parentFd); } catch {}
+    parentFd = -1;
 
     // ── 2. UI approval ────────────────────────────────────────────────
     let approved;
@@ -113,9 +147,6 @@ export const fileMkdirTool = {
         oldHash: null,
         newHash: null,
         diffPreview: null,
-        // Every mkdir is independently approved: a prior dir-grant
-        // for a sibling write must NOT auto-approve creating new
-        // directories. Each level gets its own UI prompt.
         bypassGrants: true,
       });
     } catch (err) {
@@ -127,7 +158,7 @@ export const fileMkdirTool = {
       };
     }
 
-    // ── 3. Commit + parent re-anchor ──────────────────────────────────
+    // ── 3. Commit ─────────────────────────────────────────────────────
     try {
       await commitOperation(approved.operationToken, {
         expectedKinds: [OP_KIND.WRITE_NEW, OP_KIND.WRITE_OVERWRITE],
@@ -140,39 +171,57 @@ export const fileMkdirTool = {
       };
     }
 
+    // ── 4. Reopen parent dirfd + cross-check + mkdirat ────────────────
     try {
-      await assertParentDirUnchanged(absPath, parentPrecheck.ino, parentPrecheck.dev);
+      parentFd = openParentDirFd(parentDir);
     } catch (err) {
+      if (err.code === 'ELOOP') {
+        return {
+          ok: false,
+          output: `Parent ${parentDir} became a symlink between approval and mkdir.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, raceKind: 'parent-swap' },
+        };
+      }
       return {
         ok: false,
-        output: err.message,
-        error: 'COMMIT_FAILED',
-        meta: { lexicalPath: absPath, raceKind: 'parent-swap' },
+        output: `Cannot reopen parent ${parentDir}: ${err.message}`,
+        error: err.message,
       };
     }
 
-    // ── 4. mkdir (single-level, no recursive) ─────────────────────────
-    // No recursive flag — if intermediate parents are missing the
-    // call will fail with ENOENT, which surfaces a clear error
-    // rather than silently creating un-approved scaffold dirs.
     try {
-      await mkdir(absPath, { recursive: false });
-    } catch (err) {
-      if (err && err.code === 'EEXIST') {
+      const st = fstatSync(parentFd);
+      if (st.dev !== parentDevAtPrecheck || st.ino !== parentInoAtPrecheck) {
         return {
           ok: false,
-          output: `Target ${absPath} appeared between approval and mkdir.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, raceKind: 'create-eexist' },
+          output: `Parent ${parentDir} was replaced (inode/device changed) between approval and mkdir.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, raceKind: 'parent-swap' },
         };
       }
-      return { ok: false, output: `Mkdir error: ${err.message}`, error: err.message };
-    }
 
-    return {
-      ok: true,
-      output: `Created directory ${absPath}.`,
-      meta: { path: absPath, lexicalPath: absPath },
-    };
+      try {
+        _raw.mkdirat(parentFd, leafName, 0o755);
+      } catch (err) {
+        if (err.code === 'EEXIST' || err.errno === 17) {
+          return {
+            ok: false,
+            output: `Target ${absPath} appeared between approval and mkdir.`,
+            error: 'STALE_CONTENT',
+            meta: { lexicalPath: absPath, raceKind: 'create-eexist' },
+          };
+        }
+        return { ok: false, output: `Mkdir error: ${err.message}`, error: err.message };
+      }
+
+      return {
+        ok: true,
+        output: `Created directory ${absPath}.`,
+        meta: { path: absPath, lexicalPath: absPath },
+      };
+    } finally {
+      try { closeFdSync(parentFd); } catch {}
+    }
   },
 };

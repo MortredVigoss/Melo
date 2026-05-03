@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-05-03 — File Safety Gate Phase 2A round 13：N-API dirfd-bound atomic ops（终结 12 轮 path-race patch loop）
+
+- Phase 2A round 12 push 又被 Codex 评 D，4 条同根因（write/edit/move/restore）：path-based `lstat → open/rename` 之间的 microsecond 窗口在 JS 层不可能消除——`O_NOFOLLOW` 只保 leaf，parent path lookup 由 kernel 在每个 syscall 重新走一遍。Codex 给的 directive：要么引入 native `openat`/`renameat` 等价物，要么禁掉无法原子保护的 op。用户拍 A：上 native addon。
+- **新建 native N-API addon** [native/dirfd_ops.cc](native/dirfd_ops.cc) (~200 LoC) 暴露 6 个 POSIX `*at()` syscall：openat / mkdirat / unlinkat / renameat / fstatat / closeFd + 常量 (O_*, AT_REMOVEDIR, AT_SYMLINK_NOFOLLOW)。`binding.gyp` 用 `node-addon-api` + `node-gyp`，`postinstall` 自动编译（macOS Xcode CLT），失败时 fallback 到 echo-warn 不阻断 npm install。
+- **新建 wrapper** [src/safety/dirfdOps.js](src/safety/dirfdOps.js)：高层原语 `atomicOpenLeaf(parent, leaf, flags, mode?)` / `atomicRename(srcParent, srcName, dstParent, dstName)` / `atomicMkdir(parent, leaf, mode?)` / `atomicUnlink(parent, leaf, {removeDir?})` / `atomicLstat(parent, leaf)` + raw escape `_raw.{openat,...}` 给测试注入 race 用。所有 wrapper 都自动加 `O_NOFOLLOW` 到 leaf flags + 自动 close 出错时的 fd（finally pattern）。
+- **架构 invariant 终极版**：`openParentDirFd(parentPath)` 用 `O_DIRECTORY|O_NOFOLLOW` 拿 dirfd → kernel 把 dirfd 绑到 parent 的 INODE（不是 path）→ 后续 `openat(dirfd, leaf, ...)` 把 leaf 解析相对到那个 inode → **parent path swap 在 dirfd 打开后完全无效**。配合 leaf O_NOFOLLOW (拒 leaf-symlink)、O_EXCL (拒 race-create)、leaf inode anchor (拒 rm+recreate)、parent {dev,ino} cross-check (拒 parent-rmdir+mkdir-different-inode) → write/edit/move/mkdir/restore 全链 race-free。
+- **重写 [fileWriteTool.js](src/tools/builtins/fileWriteTool.js)**：① precheck → ② 探测 parent dirfd 拿 {dev,ino} → ③ atomicOpenLeaf(parent, leaf, O_RDONLY) 读旧内容 + 拿 preReadInoIdent → ④ UI approval → ⑤ commit → ⑥ atomicOpenLeaf(parent, leaf, O_RDWR | O_CREAT|O_EXCL?) 拿 leafFd + 比 parent {dev,ino} matches precheck → ⑦ leaf inode anchor (overwrite only) → ⑧ stale check via `readSync` on leafFd → ⑨ snapshot via preReadContent buffer → ⑩ `ftruncateSync` + `writeSync` via leafFd（kernel 锁 inode）→ ⑪ post-write semantic check via atomicLstat (检测 user-visible path 是否还指向 fh inode；若不是 → raceKind='post-write-orphaned'，告知 caller 写到 orphan 但不算 safety 漏)。
+- **重写 [fileEditTool.js](src/tools/builtins/fileEditTool.js)**：同款 dirfd lifecycle，always overwrite 简化分支。raceKind 'inode-mismatch' / 'parent-swap' / 'symlink-eloop' / 'post-write-orphaned' 分类清晰。
+- **重写 [fileMoveTool.js](src/tools/builtins/fileMoveTool.js)**：renameat 接受双 dirfd → **跨目录 rename 重新启用**（round 12 的 CROSS_DIR_MOVE_REFUSED 撤回）；srcParent === dstParent 时复用 dirfd。leaf no-follow 自动（rename 操作 dir entry 不 follow leaf）。dst 已存在 symlink → atomicLstat 拒 (DST_IS_SYMLINK)。
+- **重写 [fileMkdirTool.js](src/tools/builtins/fileMkdirTool.js)**：mkdirat 通过 parent dirfd。bypassGrants 行为保留（每层独立审批）。
+- **重写 [src/safety/backup.js](src/safety/backup.js) restoreFromBackup**：probe parent dirfd 拿 {dev,ino} → commit → atomicOpenLeaf(parent, leaf, O_WRONLY|O_CREAT|O_TRUNC) + parent cross-check + writeSync。wasMissing undo-create 用 atomicUnlink。删 `assertParentDirUnchanged`/`precheckParentDir` 引用（path-based 不再用）。
+- **重写 [src/safety/trash.js](src/safety/trash.js)**：(a) `_unsafeRawDelete` 文件/symlink 用 atomicUnlink (unlinkat 不 follow link)，directory 仍走 `rm -r`（递归删除没 atomic dirfd 原语，文档化 known limit：受信用户进程级 attacker 可在子目录中途换 symlink，desktop melo 威胁模型可接受）；(b) `restoreFromTrash` 文件 entry 走 atomicOpenLeaf；symlink/directory entry 走 probe-parent + path-based 重建（symlinkat 未实现 + cp -r 没 atomic 原语）。
+- **测试加 5 case 到 [phase2a.fileTools.test.js](src/tools/builtins/phase2a.fileTools.test.js)**：① fileWrite post-commit parent swap → 写到 outside dir 的 safe.txt 必须**不存在**（dirfd 锁住原 parent inode）；② fileEdit 同款；③ fileMove 跨 dir 走 renameat 成功（round 12 撤回的能力回归）；④ fileMove 同 dir rename 仍工作；⑤ fileMkdir 走 mkdirat。改 2 个 round 12 cross-dir 拒绝测试为 sensitive-dst-DENIED + cross-dir-success。
+- **依赖**：dependencies + `node-addon-api: ^8.3.0`，devDependencies + `node-gyp: ^11.0.0`；`scripts.build:native: 'node-gyp rebuild'` + `scripts.postinstall` 自动编 + warn-on-fail。
+- 验证：`src/safety/*.test.js` + `src/tools/builtins/phase2a.fileTools.test.js` **245/245 全绿**；`src/**/*.test.js` **1718/1718 全绿**（前 1712 + 6 新；零既有回归）。
+- Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
+
 ## 2026-05-03 — File Safety Gate Phase 2A：write/edit/delete/move 接管 (Phase 1 真正进生产路径)
 
 - Phase 1 9 轮 Codex review 终于 A 级 push 后，进 Phase 2A：让 fileWriteTool / fileEditTool / fileDeleteTool / fileMoveTool 全部走新 gate。这是 Phase 1 真正"生效"的一刀——Phase 1 模块独立时只在测试里跑，不接生产路径就等于装饰品。Phase 2A 让 agent 真正受 gate 约束。

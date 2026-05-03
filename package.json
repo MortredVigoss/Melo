@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "node scripts/check-syntax.js",
+    "build:native": "node-gyp rebuild",
     "build:desktop": "zsh scripts/build-desktop-app.sh",
     "install:desktop": "zsh scripts/install-desktop-app.sh",
     "test": "node scripts/verify-red-green.js",
@@ -21,7 +22,8 @@
     "chat": "node src/index.js chat",
     "rebuild:voice": "npm rebuild @discordjs/opus",
     "bench:memory": "node scripts/bench-memory.js",
-    "test:ui": "node --test 'desktop-ui/**/*.test.js'"
+    "test:ui": "node --test 'desktop-ui/**/*.test.js'",
+    "postinstall": "node-gyp rebuild || echo '[melo] native dirfd_ops addon failed to build — file safety atomic ops will be unavailable. Install Xcode CLT (xcode-select --install) and run: npm run build:native'"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",
@@ -31,6 +33,7 @@
     "exceljs": "^4.4.0",
     "ffmpeg-static": "^5.2.0",
     "jsdom": "^25.0.1",
+    "node-addon-api": "^8.3.0",
     "opusscript": "^0.0.8",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
@@ -41,5 +44,8 @@
     "tesseract.js": "^5.1.1",
     "three": "^0.184.0",
     "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "node-gyp": "^11.0.0"
   }
 }

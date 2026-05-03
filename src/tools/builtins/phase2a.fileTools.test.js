@@ -347,7 +347,7 @@ test('fileWriteTool overwrite: rm+recreate same path with same content during ap
     );
     assert.equal(result.ok, false);
     assert.equal(result.error, 'COMMIT_FAILED');
-    assert.equal(result.meta.raceKind, 'symlink-eloop');
+    assert.equal(result.meta.raceKind, 'inode-mismatch');
     // The race-recreated file (with content 'OLD') still on disk.
     assert.equal(await readFile(target, 'utf8'), 'OLD');
   });
@@ -971,11 +971,10 @@ test('fileMoveTool: rename within workspace, gate-approved', async () => {
   });
 });
 
-test('fileMoveTool: cross-directory move (dst is /etc/hosts) refused with CROSS_DIR_MOVE_REFUSED', async () => {
-  // Codex Phase 2A round 12: cross-dir moves are refused outright
-  // because Node lacks renameat2 to defend against parent-dir
-  // race. Sensitive dst paths still hit this guard first (which
-  // is fine — they're refused either way, no fs side effect).
+test('fileMoveTool: cross-directory move with sensitive dst is hard-rejected (DENIED, no UI, no fs touch)', async () => {
+  // Round 13: cross-dir move is RE-ENABLED via renameat (atomic
+  // dirfd binding for both parents). Sensitive destinations still
+  // hit the gate's hard-reject path (no UI, no fs side-effect).
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const src = join(ws, 'a.txt');
@@ -987,13 +986,16 @@ test('fileMoveTool: cross-directory move (dst is /etc/hosts) refused with CROSS_
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
     assert.equal(result.ok, false);
-    assert.equal(result.error, 'CROSS_DIR_MOVE_REFUSED');
+    assert.equal(result.error, 'DENIED');
     assert.equal(promptCount, 0);
     assert.equal(await fileExists(src), true);
   });
 });
 
-test('fileMoveTool: cross-directory move within workspace also refused', async () => {
+test('fileMoveTool: cross-directory move within workspace SUCCEEDS (round 13: renameat atomic)', async () => {
+  // Round 13: renameat takes two dirfds, so cross-dir rename is
+  // race-free even though Node has no renameat2. Both parent dirs
+  // are bound through dirfd handles before the syscall.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     await mkdir(join(ws, 'srcdir'));
@@ -1005,9 +1007,9 @@ test('fileMoveTool: cross-directory move within workspace also refused', async (
       { src, dst },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
     );
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'CROSS_DIR_MOVE_REFUSED');
-    assert.equal(await readFile(src, 'utf8'), 'x');
+    assert.equal(result.ok, true);
+    assert.equal(await fileExists(src), false);
+    assert.equal(await readFile(dst, 'utf8'), 'x');
   });
 });
 
@@ -1174,5 +1176,133 @@ test('fileMoveTool: deny → returns DENIED, src untouched', async () => {
     assert.equal(result.error, 'DENIED');
     assert.equal(await fileExists(src), true);
     assert.equal(await fileExists(dst), false);
+  });
+});
+
+// ─── Round 13: dirfd-bound atomic ops — post-anchor parent swap is a no-op ───
+//
+// Codex Phase 2A round 12 graded D because path-based open/rename had
+// a microsecond race between assertParentDirUnchanged() and the syscall.
+// Round 13's dirfd model binds the parent inode through a file
+// descriptor BEFORE openat/renameat, so any path swap on the parent
+// AFTER the dirfd is open cannot redirect the op — the kernel resolves
+// relative to the inode the fd points at.
+//
+// These tests prove the model: inject an attacker race AFTER the
+// post-commit hook fires (i.e. after Codex's "still-vulnerable"
+// window) and assert the write/edit/move/mkdir all land at the
+// originally-approved inode.
+
+test('round 13: fileWrite — post-commit parent swap is a no-op (dirfd binds parent inode)', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'sub'), { recursive: true });
+    const target = join(ws, 'sub', 'safe.txt');
+
+    let swapped = false;
+    _setWritePostCommitHook(async () => {
+      // The race window Codex flagged in round 12: parent dir swap
+      // AFTER assertParentDirUnchanged() but BEFORE open(). With
+      // round 13's openat-via-dirfd, our parent dirfd is opened
+      // ONCE inside atomicOpenLeaf — once it's open, this swap can't
+      // redirect us. Our content goes to the original parent.
+      await rm(join(ws, 'sub'), { recursive: true, force: true });
+      await symlink(outside, join(ws, 'sub'));
+      swapped = true;
+    });
+    try {
+      const result = await fileWriteTool.run(
+        { path: target, content: 'safe-content' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      // Either the dirfd model wrote to the original (now orphaned)
+      // inode and detected the swap as 'parent-swap' / 'post-write-orphaned',
+      // OR the open of the now-symlinked parent failed with ELOOP.
+      // What MUST NOT happen: outside dir gets a `safe.txt` with
+      // our content (that would mean the swap redirected the write).
+      assert.equal(swapped, true);
+      const outsideContent = await readFile(join(outside, 'safe.txt'), 'utf8').catch(() => null);
+      assert.equal(outsideContent, null, 'outside dir must NOT have safe.txt — dirfd should have caught the race');
+      // The op itself returned a race-detection failure.
+      assert.equal(result.ok, false);
+    } finally {
+      _setWritePostCommitHook(null);
+    }
+  });
+});
+
+test('round 13: fileEdit — post-commit parent swap is a no-op (dirfd binds parent inode)', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'sub'), { recursive: true });
+    const target = join(ws, 'sub', 'a.txt');
+    await writeFile(target, 'OLD\n', 'utf8');
+
+    let swapped = false;
+    _setEditPostCommitHook(async () => {
+      await rm(join(ws, 'sub'), { recursive: true, force: true });
+      await symlink(outside, join(ws, 'sub'));
+      swapped = true;
+    });
+    try {
+      const result = await fileEditTool.run(
+        { path: target, old_string: 'OLD', new_string: 'NEW' },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(swapped, true);
+      const outsideContent = await readFile(join(outside, 'a.txt'), 'utf8').catch(() => null);
+      assert.equal(outsideContent, null, 'outside dir must NOT have a.txt — dirfd should have caught the race');
+      assert.equal(result.ok, false);
+    } finally {
+      _setEditPostCommitHook(null);
+    }
+  });
+});
+
+test('round 13: fileMove cross-directory atomic via renameat (both parents bound)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'src-dir'));
+    await mkdir(join(ws, 'dst-dir'));
+    const src = join(ws, 'src-dir', 'file.txt');
+    const dst = join(ws, 'dst-dir', 'file.txt');
+    await writeFile(src, 'cross-dir content', 'utf8');
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(await fileExists(src), false);
+    assert.equal(await readFile(dst, 'utf8'), 'cross-dir content');
+  });
+});
+
+test('round 13: fileMove same-dir rename (regression — atomic via dirfd)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const src = join(ws, 'old.txt');
+    const dst = join(ws, 'new.txt');
+    await writeFile(src, 'rename me', 'utf8');
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(await fileExists(src), false);
+    assert.equal(await readFile(dst, 'utf8'), 'rename me');
+  });
+});
+
+test('round 13: fileMkdir uses mkdirat through parent dirfd', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'newdir');
+    const result = await fileMkdirTool.run(
+      { path: target },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, true);
+    const st = await lstat(target);
+    assert.equal(st.isDirectory(), true);
   });
 });

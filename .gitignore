@@ -11,6 +11,12 @@ npm-debug.log*
 # Build artefacts and bundled .app
 Melo.app/
 
+# node-gyp build outputs for native dirfd_ops addon — regenerated on
+# every `npm install` via the postinstall script, must NOT be committed
+# (per-platform binaries).
+/build/
+*.node
+
 # Playwright CLI cache
 .playwright-cli/
 

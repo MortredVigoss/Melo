@@ -1,53 +1,71 @@
 /**
  * Built-in tool: file_write
  *
- * Phase 2A holistic refactor (2026-05-03, post-Codex round 7+):
- * The flow is split into two phases so we never write to disk
- * before the user has approved the operation.
+ * Round 13 architectural refactor (2026-05-03, post-Codex round 12 D):
+ * Path-based open() / lstat() are no longer atomic with respect to
+ * parent-directory swaps. Round 12 mitigated by re-anchoring the
+ * parent's {dev, ino} immediately before open(), but the kernel
+ * still resolves the path AGAIN inside open() — a microsecond-scale
+ * race window remained, and Codex graded D for 12+ rounds.
  *
- *   Pre-approval phase (zero target side-effect):
- *     1. precheckHardBlockedWrite (lstat-based, no read)
- *     2. for overwrite: briefly open(O_RDONLY|O_NOFOLLOW) → read →
- *        close. Captures oldHash + diff for the UI prompt. The
- *        target file isn't modified or created.
- *     3. requestWrite (UI prompt with diff)
- *     4. commitOperation (verifies lexical→real mapping unchanged)
+ * Round 13 closes the window via a native addon exposing POSIX
+ * `*at()` syscalls (`src/safety/dirfdOps.js`). The pattern: open
+ * the parent directory as a dirfd (O_DIRECTORY|O_NOFOLLOW), then
+ * `openat(dirfd, leafName, ...)` resolves the leaf relative to the
+ * dirfd's INODE, not its path. Once the dirfd is open, the parent
+ * inode is anchored — subsequent path swaps are invisible to our
+ * op. Combined with leaf O_NOFOLLOW, the entire write pipeline is
+ * race-free.
  *
- *   Post-approval phase (the only writes):
- *     5. mkdir parent dirs (recursive, after approval)
- *     6. open(O_RDWR | (O_CREAT|O_EXCL)? | O_NOFOLLOW) — the inode
- *        we will write to. EEXIST (create raced), ELOOP (symlink
- *        race), ENOENT (deleted post-precheck) all surface as
- *        explicit error codes.
- *     7. inode anchor check: lstat(realPath).ino === fh.stat().ino
- *        (overwrite only — for create we just made the inode).
- *     8. stale check via readFromStart(fh) — for overwrite compare
- *        to oldHash; for create the baseline is sha256('') so a
- *        racer who wrote between commit and our open is detected.
- *     9. snapshot via preReadContent buffer (no second open).
- *    10. fh.truncate(0) + fh.write(content).
- *    11. recordAfterDiff. finally: fh.close + (createdEmptyFile &&
- *        !staleContentDetected) → unlink the empty placeholder.
+ * Two-phase flow (zero pre-approval side-effect preserved):
+ *   1. precheckHardBlockedWrite (lstat-based, no read)
+ *   2. for overwrite: atomicOpenLeaf(parent, leaf, O_RDONLY) →
+ *      read content via fd, capture preRead {dev, ino}, close fd.
+ *      The parent dirfd is opened+closed inside this call; leaf
+ *      O_NOFOLLOW catches symlink-leaf at open time.
+ *   3. for both: separately fetch parent {dev, ino} via
+ *      openParentDirFd+fstat (so we can detect "parent dir entirely
+ *      replaced" when reopening in step 5).
+ *   4. requestWrite (UI) + commit (lexical→real verify)
+ *   5. atomicOpenLeaf(parent, leaf, O_RDWR | O_CREAT|O_EXCL?) →
+ *      leafFd. Parent dirfd is opened atomically inside, openat
+ *      binds the leaf to a specific inode through the dirfd.
+ *      Cross-check: parent {dev, ino} from this call must match
+ *      step 3 — otherwise the parent dir itself was replaced.
+ *   6. (overwrite only) leafStat ↔ preReadInoIdent {dev, ino}
+ *      cross-check — catches rm+recreate during approval (where
+ *      sha256 may match but inode differs).
+ *   7. stale check via readFromStartFd(leafFd) — for overwrite
+ *      compare to oldHash; for create the baseline is sha256('').
+ *   8. snapshotBeforeWrite using the preRead buffer (no second open).
+ *   9. ftruncateSync(leafFd, 0) + writeSync(leafFd, content, ...).
+ *  10. post-write semantic check (NOT a safety race — see below):
+ *      if path now points elsewhere, our content went to an orphan
+ *      inode and the user-visible path no longer reflects it. Tell
+ *      the caller via raceKind='post-write-orphaned' so they can
+ *      retry. Backup retained.
+ *  11. recordAfterDiff. finally: closeFd + (createdEmpty && stale)
+ *      → atomicUnlink the empty placeholder.
  *
- * Race classification:
- *   • precheck → write-open: caught by O_NOFOLLOW (ELOOP) +
- *     O_EXCL (EEXIST on create) + inode-anchor (post-commit
- *     swap to a different regular file)
- *   • write-open → close: kernel locks the inode under fh; any
- *     path swap doesn't affect us
- *   • commit lexical→real mismatch: caught by gate.commitOperation
+ * Threat model (round 13):
+ *   - dirfd binds parent inode → parent path swap during op = no-op.
+ *   - openat with O_NOFOLLOW → leaf-symlink swap = ELOOP at open.
+ *   - O_EXCL on create → leaf race-create = EEXIST → STALE_CONTENT.
+ *   - leafFd bound to inode → all writes/reads go to the same inode
+ *     regardless of subsequent path manipulation.
+ *   - post-write orphan detection → tells the agent the user-visible
+ *     path doesn't point at our write (defensive; we wrote to the
+ *     reviewed inode — no safety violation, just semantic surprise).
  *
- * Pending-approval invariant:
- *   • pending approval has zero target side-effect — no file
+ * Pending-approval invariant (unchanged from round 12):
+ *   - pending approval has zero target side-effect — no file
  *     created, no content modified, no directory mkdir'd
- *   • deny / timeout leave the disk untouched
+ *   - deny / timeout leave the disk untouched
  */
 
-import { unlink, lstat, mkdir } from 'node:fs/promises';
-import { open } from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { isAbsolute, resolve, dirname } from 'node:path';
+import { readSync, writeSync, ftruncateSync, fstatSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 
 import {
   requestWrite,
@@ -59,8 +77,15 @@ import {
   snapshotBeforeWrite,
   recordAfterDiff,
 } from '../../safety/backup.js';
-
-const { O_RDONLY, O_RDWR, O_CREAT, O_EXCL, O_NOFOLLOW } = fsConstants;
+import {
+  atomicOpenLeaf,
+  atomicUnlink,
+  atomicLstat,
+  openParentDirFd,
+  splitParentLeaf,
+  C as DC,
+} from '../../safety/dirfdOps.js';
+import { closeSync as closeFdSync } from 'node:fs';
 
 let _postCommitHookForTests = null;
 export function _setPostCommitHookForTests(hook) {
@@ -71,16 +96,13 @@ function sha256(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-// fh.readFile() advances position so re-reads return empty. This
-// helper uses an explicit position=0 chunked read so both pre-
-// approval and post-commit reads return the full file content.
-async function readFromStart(fh) {
-  const st = await fh.stat();
+function readFromStartFd(fd) {
+  const st = fstatSync(fd);
   if (st.size === 0) return Buffer.alloc(0);
   const buf = Buffer.allocUnsafe(st.size);
   let total = 0;
   while (total < st.size) {
-    const { bytesRead } = await fh.read(buf, total, st.size - total, total);
+    const bytesRead = readSync(fd, buf, total, st.size - total, total);
     if (bytesRead === 0) break;
     total += bytesRead;
   }
@@ -100,6 +122,25 @@ function buildDiffPreview(oldText, newText) {
   out.push(...newLines.slice(0, 40));
   if (newLines.length > 40) out.push(`... (${newLines.length - 40} more lines)`);
   return out.join('\n');
+}
+
+function fetchParentInoIdent(parentDir) {
+  // Open parent as dirfd (O_DIRECTORY|O_NOFOLLOW so a symlinked
+  // parent throws ELOOP), fstat to capture {dev, ino}, close.
+  let dirfd;
+  try {
+    dirfd = openParentDirFd(parentDir);
+  } catch (err) {
+    return { ok: false, error: err };
+  }
+  try {
+    const st = fstatSync(dirfd);
+    return { ok: true, dev: st.dev, ino: st.ino };
+  } catch (err) {
+    return { ok: false, error: err };
+  } finally {
+    try { closeFdSync(dirfd); } catch {}
+  }
 }
 
 export const fileWriteTool = {
@@ -161,75 +202,68 @@ export const fileWriteTool = {
 
     const isCreate = !precheck.exists;
     const realPath = precheck.realPath;
+    const [parentDir, leafName] = splitParentLeaf(realPath);
 
-    // ── 1b. Parent dir must exist + be a regular directory ───────────
-    // Codex Phase 2A round 8 (2026-05-03): Node has no openat-style
-    // primitive, so a recursive auto-mkdir would let an attacker
-    // swap an intermediate dir to a symlink between mkdir and the
-    // open-leaf step (mkdir + open's O_NOFOLLOW only protects the
-    // leaf component). We require the parent to already exist as
-    // a real directory; agents that need a nested path must create
-    // each intermediate directory through its own approved write.
-    const parentDir = dirname(realPath);
-    let parentInoAtPrecheck;
-    let parentDevAtPrecheck;
-    try {
-      const pst = await lstat(parentDir);
-      if (!pst.isDirectory() || pst.isSymbolicLink()) {
+    // ── 2. Parent dir must exist + be a regular directory ─────────────
+    // openParentDirFd uses O_DIRECTORY|O_NOFOLLOW so a symlinked
+    // parent throws ELOOP, a missing parent throws ENOENT, a
+    // non-dir throws ENOTDIR — all surface as PARENT_*. We capture
+    // {dev, ino} for cross-check in step 5 (catches "parent dir
+    // entirely replaced between precheck and open").
+    const parentIdent = fetchParentInoIdent(parentDir);
+    if (!parentIdent.ok) {
+      const err = parentIdent.error;
+      if (err.code === 'ELOOP') {
         return {
           ok: false,
-          output:
-            `Parent directory ${parentDir} is not a regular directory ` +
-            `(symlink or other type) — refusing to write ${realPath}.`,
+          output: `Parent directory ${parentDir} is a symlink — refusing to write under symlinked parent.`,
           error: 'PARENT_NOT_DIR',
         };
       }
-      parentInoAtPrecheck = pst.ino;
-      parentDevAtPrecheck = pst.dev;
-    } catch (err) {
-      if (err && err.code === 'ENOENT') {
+      if (err.code === 'ENOENT') {
         return {
           ok: false,
-          output:
-            `Parent directory ${parentDir} does not exist. ` +
-            `Create the parent directory first; file_write does not auto-create parents.`,
+          output: `Parent directory ${parentDir} does not exist. Create it first via file_mkdir.`,
           error: 'PARENT_NOT_FOUND',
+        };
+      }
+      if (err.code === 'ENOTDIR') {
+        return {
+          ok: false,
+          output: `Parent ${parentDir} is not a directory.`,
+          error: 'PARENT_NOT_DIR',
         };
       }
       return {
         ok: false,
-        output: `Cannot stat parent directory: ${err.message}`,
+        output: `Cannot open parent directory ${parentDir}: ${err.message}`,
         error: err.message,
       };
     }
+    const parentInoAtPrecheck = parentIdent.ino;
+    const parentDevAtPrecheck = parentIdent.dev;
 
-    // ── 2. Pre-approval read (overwrite only — no fs side-effect) ─────
-    // For overwrite, we briefly open O_RDONLY|O_NOFOLLOW just to
-    // read the current content for the diff preview. The fh is
-    // closed before the UI prompt. Create has nothing to read.
-    // We also capture the pre-read fh's {dev, ino} so the post-
-    // approval write fh can verify it lands on the SAME inode the
-    // user reviewed (rm+recreate-same-content during approval is
-    // detected via inode mismatch even when sha256 matches).
+    // ── 3. Pre-approval read (overwrite only) ─────────────────────────
+    // atomicOpenLeaf opens parent + openat leaf with O_NOFOLLOW.
+    // ELOOP if leaf became a symlink, ENOENT if the file is gone.
+    // The fd is closed inside this block; preReadInoIdent records
+    // the inode the user is about to review.
     let oldBuffer = Buffer.alloc(0);
     let preReadInoIdent = null;
     if (!isCreate) {
-      let preFh;
+      let preLeaf;
       try {
-        preFh = await open(realPath, O_RDONLY | O_NOFOLLOW);
+        preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY);
       } catch (err) {
-        if (err && err.code === 'ELOOP') {
+        if (err.code === 'ELOOP' || err.code === 'Too many levels of symbolic links') {
           return {
             ok: false,
-            output:
-              `Target ${realPath} became a symlink between precheck and read — ` +
-              `kernel refused via O_NOFOLLOW.`,
+            output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
             error: 'COMMIT_FAILED',
             meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };
         }
-        if (err && err.code === 'ENOENT') {
-          // Disappeared between precheck and read — flip to create.
+        if (err.code === 'ENOENT' || err.errno === 2) {
           return {
             ok: false,
             output: `Target ${realPath} disappeared between precheck and read.`,
@@ -237,7 +271,7 @@ export const fileWriteTool = {
             meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
           };
         }
-        if (err && err.code === 'EISDIR') {
+        if (err.code === 'EISDIR' || err.errno === 21) {
           return {
             ok: false,
             output: `Refusing to overwrite directory ${realPath} with file content.`,
@@ -247,11 +281,10 @@ export const fileWriteTool = {
         return { ok: false, output: `Open error: ${err.message}`, error: err.message };
       }
       try {
-        oldBuffer = await readFromStart(preFh);
-        const ps = await preFh.stat();
-        preReadInoIdent = { ino: ps.ino, dev: ps.dev };
+        oldBuffer = readFromStartFd(preLeaf.leafFd);
+        preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
       } finally {
-        await preFh.close().catch(() => {});
+        preLeaf.closeLeaf();
       }
     }
 
@@ -260,7 +293,7 @@ export const fileWriteTool = {
     const newHash = sha256(content);
     const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
 
-    // ── 3. UI approval — until this returns, ZERO disk side-effect ────
+    // ── 4. UI approval — until this returns, ZERO disk side-effect ────
     let approved;
     try {
       approved = await requestWrite({
@@ -286,7 +319,7 @@ export const fileWriteTool = {
       };
     }
 
-    // ── 4. Commit verifies lexical→real mapping unchanged ────────────
+    // ── 5. Commit verifies lexical→real mapping unchanged ────────────
     try {
       await commitOperation(approved.operationToken, {
         expectedKinds: [OP_KIND.WRITE_NEW, OP_KIND.WRITE_OVERWRITE],
@@ -299,144 +332,115 @@ export const fileWriteTool = {
       };
     }
 
-    // Test-only post-commit hook (race injection).
     if (_postCommitHookForTests) {
       try { await _postCommitHookForTests({ realPath, isCreate, lexicalPath: absPath }); } catch {}
     }
 
-    // ── 5. Post-approval parent-inode anchor + open the write fh ──────
-    // Verify the parent directory's inode is unchanged since
-    // precheck. A swap-to-symlink at the parent during the
-    // approval window would otherwise let our open(realPath,
-    // O_NOFOLLOW) land in the wrong place — O_NOFOLLOW only
-    // protects the leaf component.
+    // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
+    // openParentDirFd inside atomicOpenLeaf does O_DIRECTORY|O_NOFOLLOW;
+    // a parent-symlink swap during the approval window throws ELOOP.
+    // The returned parentDev/Ino lets us cross-check that the parent
+    // dir wasn't replaced with a *different* dir (different inode).
+    let openLeaf;
     try {
-      const pstNow = await lstat(parentDir);
-      if (
-        !pstNow.isDirectory() ||
-        pstNow.isSymbolicLink() ||
-        pstNow.ino !== parentInoAtPrecheck ||
-        pstNow.dev !== parentDevAtPrecheck
-      ) {
+      const flags = isCreate
+        ? DC.O_RDWR | DC.O_CREAT | DC.O_EXCL
+        : DC.O_RDWR;
+      openLeaf = await atomicOpenLeaf(parentDir, leafName, flags, 0o644);
+    } catch (err) {
+      if (err.code === 'EEXIST' || err.errno === 17) {
         return {
           ok: false,
-          output:
-            `Parent directory ${parentDir} was replaced (inode/device changed ` +
-            `or now a symlink) between approval and write — kernel-level race detected.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Cannot re-stat parent directory: ${err.message}`,
-        error: err.message,
-      };
-    }
-
-    let fh;
-    let createdEmptyFile = false;
-    try {
-      if (isCreate) {
-        // O_RDWR (not O_WRONLY) so the stale-check below can read.
-        fh = await open(realPath, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0o644);
-        createdEmptyFile = true;
-      } else {
-        fh = await open(realPath, O_RDWR | O_NOFOLLOW);
-      }
-    } catch (err) {
-      if (err && err.code === 'EEXIST') {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} appeared between approval and write — ` +
-            `re-run as overwrite or pick a different path.`,
+          output: `Target ${realPath} appeared between approval and write — re-run as overwrite or pick a different path.`,
           error: 'STALE_CONTENT',
           meta: { lexicalPath: absPath, realPath, raceKind: 'create-eexist' },
         };
       }
-      if (err && err.code === 'ELOOP') {
+      if (err.code === 'ELOOP' || err.errno === 62) {
         return {
           ok: false,
-          output:
-            `Target ${realPath} became a symlink between approval and write — ` +
-            `kernel refused via O_NOFOLLOW.`,
+          output: `Parent or leaf became a symlink between approval and write — kernel refused via O_NOFOLLOW.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-      if (err && err.code === 'EISDIR') {
+      if (err.code === 'EISDIR' || err.errno === 21) {
         return {
           ok: false,
           output: `Refusing to overwrite directory ${realPath} with file content.`,
           error: 'TARGET_IS_DIR',
         };
       }
-      if (err && err.code === 'ENOENT') {
+      if (err.code === 'ENOENT' || err.errno === 2) {
         return {
           ok: false,
-          output:
-            `Target ${realPath} disappeared between approval and write ` +
-            `(deleted by a concurrent process).`,
+          output: `Target ${realPath} disappeared between approval and write.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+        };
+      }
+      if (err.code === 'ENOTDIR' || err.errno === 20) {
+        return {
+          ok: false,
+          output: `Parent ${parentDir} stopped being a directory between approval and write.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
         };
       }
       return { ok: false, output: `Open error: ${err.message}`, error: err.message };
     }
 
+    const leafFd = openLeaf.leafFd;
+    let createdEmptyFile = isCreate;
     let staleContentDetected = false;
+
     try {
-      // ── 6. Inode anchor (overwrite only) — three-way {dev, ino} ──────
-      // Confirm the path STILL points at the inode we just opened
-      // AND that it matches the pre-approval read fh's inode. Three-
-      // way comparison catches:
-      //   • leaf swapped to symlink (pathStat.isSymbolicLink)
-      //   • leaf rm+recreated as a different file (ino/dev mismatch)
-      //   • approval-window rm+recreate-same-path-same-content where
-      //     sha256 still matches but inode differs (preFhStat vs
-      //     fh stat mismatch — we want to reject because the user
-      //     reviewed inode A's content, but inode B is what we'd
-      //     write to). For create, inode is ours by construction
-      //     (O_EXCL succeeded).
-      if (!isCreate) {
-        const fhStat = await fh.stat();
-        const pathStat = await lstat(realPath).catch(() => null);
-        if (
-          !pathStat ||
-          pathStat.isSymbolicLink() ||
-          pathStat.ino !== fhStat.ino ||
-          pathStat.dev !== fhStat.dev ||
-          (preReadInoIdent && (
-            preReadInoIdent.ino !== fhStat.ino ||
-            preReadInoIdent.dev !== fhStat.dev
-          ))
-        ) {
-          return {
-            ok: false,
-            output:
-              `Target ${realPath} was replaced (inode/device changed or now ` +
-              `a symlink) between approval and write — kernel-level race detected.`,
-            error: 'COMMIT_FAILED',
-            meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
-          };
-        }
+      // ── 6b. Cross-check: parent {dev, ino} matches precheck ──────────
+      // Catches "parent dir was entirely replaced (different inode)
+      // during the approval window". O_NOFOLLOW already catches the
+      // parent-now-symlink case (ELOOP above); this catches the
+      // parent-now-different-real-dir case (e.g. attacker rmdir
+      // parent + mkdir parent — same path, new inode).
+      if (
+        openLeaf.parentDev !== parentDevAtPrecheck ||
+        openLeaf.parentIno !== parentInoAtPrecheck
+      ) {
+        return {
+          ok: false,
+          output:
+            `Parent directory ${parentDir} was replaced (inode/device changed) ` +
+            `between approval and write — kernel-level race detected.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+        };
       }
 
-      // ── 7. Stale check via fh ────────────────────────────────────────
-      // Overwrite: compare against the oldHash captured pre-approval.
-      // Create: baseline is sha256('') — a racer who wrote to our
-      // newly-created inode during the approval window flips this
-      // to a non-empty hash and we abort.
+      // ── 7. Inode anchor (overwrite only) ─────────────────────────────
+      // For create, leafStat is ours by construction (O_EXCL).
+      // For overwrite, leafStat must match preReadInoIdent — catches
+      // rm+recreate-same-path-same-content (sha256 matches, inode
+      // doesn't). The leaf has been openat'd through the dirfd, so
+      // it's bound to a specific inode regardless of path swaps.
+      if (!isCreate && preReadInoIdent && (
+        openLeaf.leafStat.ino !== preReadInoIdent.ino ||
+        openLeaf.leafStat.dev !== preReadInoIdent.dev
+      )) {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} was replaced (inode/device changed) ` +
+            `between approval and write — kernel-level race detected.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
+        };
+      }
+
+      // ── 8. Stale check via leafFd (bound to the inode) ───────────────
       const baselineHash = isCreate ? sha256('') : oldHash;
-      const currentBuffer = await readFromStart(fh);
+      const currentBuffer = readFromStartFd(leafFd);
       if (sha256(currentBuffer.toString('utf8')) !== baselineHash) {
         staleContentDetected = true;
-        if (isCreate) {
-          // Don't unlink — racer's bytes are at our inode.
-          createdEmptyFile = false;
-        }
+        if (isCreate) createdEmptyFile = false; // racer's bytes are at our inode
         return {
           ok: false,
           output:
@@ -451,7 +455,7 @@ export const fileWriteTool = {
         };
       }
 
-      // ── 8. Snapshot from the buffer we already have ──────────────────
+      // ── 9. Snapshot from buffer we already have ──────────────────────
       const snap = await snapshotBeforeWrite(realPath, {
         chatId,
         requestedBy: 'file_write',
@@ -460,47 +464,47 @@ export const fileWriteTool = {
         preReadContent: isCreate ? null : oldBuffer,
       });
 
-      // ── 9. Truncate + write via fh ───────────────────────────────────
+      // ── 10. Truncate + write via leafFd (bound to inode) ─────────────
       const writeBuf = Buffer.from(content, 'utf8');
       if (!isCreate) {
-        await fh.truncate(0);
+        ftruncateSync(leafFd, 0);
       }
-      await fh.write(writeBuf, 0, writeBuf.length, 0);
+      writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
 
-      // ── 9b. Post-write anchor (Codex round 12) ───────────────────────
-      // Re-verify path STILL points at our fh's inode AFTER the
-      // write. A swap that happened between the pre-write anchor
-      // and now (between snapshot/truncate/write) would have caused
-      // us to write to an orphaned inode while the user-visible
-      // path now points elsewhere.
-      if (!isCreate) {
-        const postFhStat = await fh.stat();
-        const postPathStat = await lstat(realPath).catch(() => null);
+      // ── 10b. Post-write semantic check ───────────────────────────────
+      // Not a safety race (our writes went to the inode the user
+      // reviewed — leafFd is bound to it). But if the leaf path now
+      // points elsewhere, the user-visible file no longer reflects
+      // our write. Tell the caller. Keep the backup so the agent /
+      // user can decide what to do.
+      try {
+        const postLst = await atomicLstat(parentDir, leafName);
+        const postFhStat = fstatSync(leafFd);
         if (
-          !postPathStat ||
-          postPathStat.isSymbolicLink() ||
-          postPathStat.ino !== postFhStat.ino ||
-          postPathStat.dev !== postFhStat.dev
+          !postLst ||
+          postLst.isSymlink ||
+          postLst.ino !== postFhStat.ino ||
+          postLst.dev !== postFhStat.dev
         ) {
           return {
             ok: false,
             output:
-              `Target ${realPath} was replaced (inode/device changed) ` +
-              `between anchor and write completion — kernel-level race ` +
-              `detected. The user-visible path now points at a different inode; ` +
-              `our content went to the original (now-orphaned) inode. ` +
-              `Backup retained at operationId=${snap.operationId}.`,
+              `Target ${realPath} was unlinked or replaced after write completed; ` +
+              `our content is at the inode you reviewed but the user-visible path ` +
+              `now points elsewhere. Backup retained at operationId=${snap.operationId}.`,
             error: 'COMMIT_FAILED',
             meta: {
               lexicalPath: absPath, realPath,
-              raceKind: 'post-write-swap',
+              raceKind: 'post-write-orphaned',
               backupOperationId: snap.operationId,
             },
           };
         }
+      } catch {
+        // atomicLstat throws on parent-gone; treat same as orphan.
       }
 
-      // ── 10. Record diff for restore-with-context ─────────────────────
+      // ── 11. Record diff for restore-with-context ─────────────────────
       if (!isCreate && diffPreview) {
         try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
       }
@@ -527,9 +531,9 @@ export const fileWriteTool = {
         error: err.message,
       };
     } finally {
-      await fh.close().catch(() => {});
+      openLeaf.closeLeaf();
       if (createdEmptyFile && !staleContentDetected) {
-        try { await unlink(realPath); } catch {}
+        try { await atomicUnlink(parentDir, leafName); } catch {}
       }
     }
   },

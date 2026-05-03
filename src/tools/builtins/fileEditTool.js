@@ -1,17 +1,32 @@
 /**
  * Built-in tool: file_edit
  *
- * Phase 2A holistic refactor (2026-05-03, post-Codex round 7+):
- * Two-phase fh — pre-approval read-only fh closed before the UI
- * prompt; post-approval read-write fh with inode anchor + stale
- * check. Zero target side-effect during the approval window.
- * See fileWriteTool.js for the full architectural rationale.
+ * Round 13 architectural refactor (2026-05-03, post-Codex round 12 D):
+ * Same dirfd-bound pattern as fileWriteTool — see that file's
+ * header for the threat-model rationale. file_edit is always an
+ * overwrite (no create branch), so the flow is simpler:
+ *
+ *   1. precheck (sensitivity)
+ *   2. open parent dirfd briefly → record parent {dev, ino} for
+ *      cross-check (catches "parent dir replaced" later)
+ *   3. atomicOpenLeaf(parent, leaf, O_RDONLY) → read content +
+ *      capture preReadInoIdent → close. Pre-approval; zero target
+ *      mutation.
+ *   4. compute diff, occurrence count, validate replacement
+ *   5. requestEdit (UI) + commit (lexical→real verify)
+ *   6. atomicOpenLeaf(parent, leaf, O_RDWR) → leafFd. Parent dirfd
+ *      bound through the same call; cross-check parent {dev, ino}.
+ *   7. inode anchor: leafStat ↔ preReadInoIdent
+ *   8. stale check via readFromStartFd(leafFd) — content must
+ *      match what we read pre-approval
+ *   9. snapshot via preReadContent
+ *  10. ftruncate + write via leafFd (bound to inode)
+ *  11. post-write semantic check — same as write tool
+ *  12. recordAfterDiff. closeFd in finally.
  */
 
-import { lstat } from 'node:fs/promises';
-import { open } from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
-import { isAbsolute, resolve, dirname } from 'node:path';
+import { readSync, writeSync, ftruncateSync, fstatSync, closeSync as closeFdSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 
 import {
   requestEdit,
@@ -23,25 +38,44 @@ import {
   snapshotBeforeWrite,
   recordAfterDiff,
 } from '../../safety/backup.js';
-
-const { O_RDONLY, O_RDWR, O_NOFOLLOW } = fsConstants;
+import {
+  atomicOpenLeaf,
+  atomicLstat,
+  openParentDirFd,
+  splitParentLeaf,
+  C as DC,
+} from '../../safety/dirfdOps.js';
 
 let _postCommitHookForTests = null;
 export function _setPostCommitHookForTests(hook) {
   _postCommitHookForTests = typeof hook === 'function' ? hook : null;
 }
 
-async function readFromStart(fh) {
-  const st = await fh.stat();
+function readFromStartFd(fd) {
+  const st = fstatSync(fd);
   if (st.size === 0) return Buffer.alloc(0);
   const buf = Buffer.allocUnsafe(st.size);
   let total = 0;
   while (total < st.size) {
-    const { bytesRead } = await fh.read(buf, total, st.size - total, total);
+    const bytesRead = readSync(fd, buf, total, st.size - total, total);
     if (bytesRead === 0) break;
     total += bytesRead;
   }
   return buf.subarray(0, total);
+}
+
+function fetchParentInoIdent(parentDir) {
+  let dirfd;
+  try { dirfd = openParentDirFd(parentDir); }
+  catch (err) { return { ok: false, error: err }; }
+  try {
+    const st = fstatSync(dirfd);
+    return { ok: true, dev: st.dev, ino: st.ino };
+  } catch (err) {
+    return { ok: false, error: err };
+  } finally {
+    try { closeFdSync(dirfd); } catch {}
+  }
 }
 
 function buildEditDiffPreview(oldString, newString, count, replaceAll) {
@@ -135,70 +169,58 @@ export const fileEditTool = {
     }
 
     const realPath = precheck.realPath;
+    const [parentDir, leafName] = splitParentLeaf(realPath);
 
-    // Parent dir inode anchor (Codex Phase 2A round 8).
-    const parentDir = dirname(realPath);
-    let parentInoAtPrecheck;
-    let parentDevAtPrecheck;
-    try {
-      const pst = await lstat(parentDir);
-      if (!pst.isDirectory() || pst.isSymbolicLink()) {
-        return {
-          ok: false,
-          output:
-            `Parent directory ${parentDir} is not a regular directory.`,
-          error: 'PARENT_NOT_DIR',
-        };
+    // ── 2. Parent dirfd open (sanity + capture {dev,ino}) ────────────
+    const parentIdent = fetchParentInoIdent(parentDir);
+    if (!parentIdent.ok) {
+      const err = parentIdent.error;
+      if (err.code === 'ELOOP') {
+        return { ok: false, output: `Parent ${parentDir} is a symlink.`, error: 'PARENT_NOT_DIR' };
       }
-      parentInoAtPrecheck = pst.ino;
-      parentDevAtPrecheck = pst.dev;
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Cannot stat parent directory: ${err.message}`,
-        error: err.message,
-      };
+      if (err.code === 'ENOENT') {
+        return { ok: false, output: `Parent ${parentDir} does not exist.`, error: 'PARENT_NOT_FOUND' };
+      }
+      return { ok: false, output: `Cannot open parent ${parentDir}: ${err.message}`, error: err.message };
     }
+    const parentInoAtPrecheck = parentIdent.ino;
+    const parentDevAtPrecheck = parentIdent.dev;
 
-    // ── 2. Pre-approval read (read-only fh, closed before UI prompt) ──
+    // ── 3. Pre-approval read ──────────────────────────────────────────
     let oldBuffer;
-    let oldFhStat;
-    let preFh;
-    try {
-      preFh = await open(realPath, O_RDONLY | O_NOFOLLOW);
-    } catch (err) {
-      if (err && err.code === 'ELOOP') {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} became a symlink between precheck and read — ` +
-            `kernel refused via O_NOFOLLOW.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
-        };
+    let preReadInoIdent;
+    {
+      let preLeaf;
+      try {
+        preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY);
+      } catch (err) {
+        if (err.code === 'ELOOP' || err.errno === 62) {
+          return {
+            ok: false,
+            output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+          };
+        }
+        if (err.code === 'ENOENT' || err.errno === 2) {
+          return {
+            ok: false,
+            output: `Target ${realPath} disappeared between precheck and read.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+          };
+        }
+        if (err.code === 'EISDIR' || err.errno === 21) {
+          return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
+        }
+        return { ok: false, output: `Open error: ${err.message}`, error: err.message };
       }
-      if (err && err.code === 'ENOENT') {
-        return {
-          ok: false,
-          output: `Target ${realPath} disappeared between precheck and read.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
-        };
+      try {
+        oldBuffer = readFromStartFd(preLeaf.leafFd);
+        preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
+      } finally {
+        preLeaf.closeLeaf();
       }
-      if (err && err.code === 'EISDIR') {
-        return {
-          ok: false,
-          output: `${realPath} is a directory, not a file.`,
-          error: 'TARGET_IS_DIR',
-        };
-      }
-      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-    }
-    try {
-      oldBuffer = await readFromStart(preFh);
-      oldFhStat = await preFh.stat();
-    } finally {
-      await preFh.close().catch(() => {});
     }
 
     const original = oldBuffer.toString('utf8');
@@ -225,7 +247,7 @@ export const fileEditTool = {
 
     const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
 
-    // ── 3. UI approval — until this returns, ZERO disk side-effect ────
+    // ── 4. UI approval — until this returns, ZERO disk side-effect ────
     let approved;
     try {
       approved = await requestEdit({
@@ -248,65 +270,33 @@ export const fileEditTool = {
       };
     }
 
-    // ── 4. Commit ────────────────────────────────────────────────────
+    // ── 5. Commit ────────────────────────────────────────────────────
     try {
       await commitOperation(approved.operationToken, {
         expectedKinds: [OP_KIND.EDIT],
       });
     } catch (err) {
-      return {
-        ok: false,
-        output: `Atomic commit failed: ${err.message}`,
-        error: 'COMMIT_FAILED',
-      };
+      return { ok: false, output: `Atomic commit failed: ${err.message}`, error: 'COMMIT_FAILED' };
     }
 
     if (_postCommitHookForTests) {
       try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
     }
 
-    // Parent dir inode re-check after commit (race detection).
+    // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
+    let openLeaf;
     try {
-      const pstNow = await lstat(parentDir);
-      if (
-        !pstNow.isDirectory() ||
-        pstNow.isSymbolicLink() ||
-        pstNow.ino !== parentInoAtPrecheck ||
-        pstNow.dev !== parentDevAtPrecheck
-      ) {
+      openLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDWR);
+    } catch (err) {
+      if (err.code === 'ELOOP' || err.errno === 62) {
         return {
           ok: false,
-          output:
-            `Parent directory ${parentDir} was replaced (inode/device changed ` +
-            `or now a symlink) between approval and edit — kernel-level race detected.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Cannot re-stat parent directory: ${err.message}`,
-        error: err.message,
-      };
-    }
-
-    // ── 5. Post-approval write fh + inode anchor ─────────────────────
-    let fh;
-    try {
-      fh = await open(realPath, O_RDWR | O_NOFOLLOW);
-    } catch (err) {
-      if (err && err.code === 'ELOOP') {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} became a symlink between approval and edit — ` +
-            `kernel refused via O_NOFOLLOW.`,
+          output: `Parent or leaf became a symlink between approval and edit — kernel refused via O_NOFOLLOW.`,
           error: 'COMMIT_FAILED',
           meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
         };
       }
-      if (err && err.code === 'ENOENT') {
+      if (err.code === 'ENOENT' || err.errno === 2) {
         return {
           ok: false,
           output: `Target ${realPath} disappeared between approval and edit.`,
@@ -314,44 +304,52 @@ export const fileEditTool = {
           meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
         };
       }
-      if (err && err.code === 'EISDIR') {
+      if (err.code === 'EISDIR' || err.errno === 21) {
+        return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
+      }
+      if (err.code === 'ENOTDIR' || err.errno === 20) {
         return {
           ok: false,
-          output: `${realPath} is a directory, not a file.`,
-          error: 'TARGET_IS_DIR',
+          output: `Parent ${parentDir} stopped being a directory between approval and edit.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
         };
       }
       return { ok: false, output: `Open error: ${err.message}`, error: err.message };
     }
 
+    const leafFd = openLeaf.leafFd;
     try {
-      // Inode anchor: confirm path STILL points at the inode we
-      // just opened AND that it's the same one we read pre-approval.
-      // Two-fh anchor catches both attacker-swap (path now points
-      // at a symlink or different inode) and rm+create-new during
-      // the approval window.
-      const fhStat = await fh.stat();
-      const pathStat = await lstat(realPath).catch(() => null);
+      // ── 6b. Cross-check parent {dev, ino} matches precheck ──────────
       if (
-        !pathStat ||
-        pathStat.isSymbolicLink() ||
-        pathStat.ino !== fhStat.ino ||
-        pathStat.dev !== fhStat.dev ||
-        fhStat.ino !== oldFhStat.ino ||
-        fhStat.dev !== oldFhStat.dev
+        openLeaf.parentDev !== parentDevAtPrecheck ||
+        openLeaf.parentIno !== parentInoAtPrecheck
+      ) {
+        return {
+          ok: false,
+          output: `Parent ${parentDir} was replaced (inode/device changed) between approval and edit.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+        };
+      }
+
+      // ── 7. Inode anchor: leafStat ↔ preReadInoIdent ─────────────────
+      if (
+        openLeaf.leafStat.ino !== preReadInoIdent.ino ||
+        openLeaf.leafStat.dev !== preReadInoIdent.dev
       ) {
         return {
           ok: false,
           output:
-            `Target ${realPath} was replaced (inode changed or now a symlink) ` +
+            `Target ${realPath} was replaced (inode/device changed) ` +
             `between approval and edit — kernel-level race detected.`,
           error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+          meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
         };
       }
 
-      // ── 6. Stale check via fh ────────────────────────────────────────
-      const currentBuffer = await readFromStart(fh);
+      // ── 8. Stale check via leafFd ───────────────────────────────────
+      const currentBuffer = readFromStartFd(leafFd);
       const currentOriginal = currentBuffer.toString('utf8');
       if (currentOriginal !== original) {
         return {
@@ -364,7 +362,7 @@ export const fileEditTool = {
         };
       }
 
-      // ── 7. Snapshot from the oldBuffer we already have ───────────────
+      // ── 9. Snapshot from oldBuffer ──────────────────────────────────
       const snap = await snapshotBeforeWrite(realPath, {
         chatId,
         requestedBy: 'file_edit',
@@ -373,36 +371,38 @@ export const fileEditTool = {
         preReadContent: oldBuffer,
       });
 
-      // ── 8. Truncate + write via fh ───────────────────────────────────
+      // ── 10. Truncate + write via leafFd ─────────────────────────────
       const writeBuf = Buffer.from(updated, 'utf8');
-      await fh.truncate(0);
-      await fh.write(writeBuf, 0, writeBuf.length, 0);
+      ftruncateSync(leafFd, 0);
+      writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
 
-      // ── 8b. Post-write anchor (Codex round 12) ──────────────────────
-      const postFhStat = await fh.stat();
-      const postPathStat = await lstat(realPath).catch(() => null);
-      if (
-        !postPathStat ||
-        postPathStat.isSymbolicLink() ||
-        postPathStat.ino !== postFhStat.ino ||
-        postPathStat.dev !== postFhStat.dev
-      ) {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} was replaced (inode/device changed) ` +
-            `between anchor and write completion — kernel-level race ` +
-            `detected. Backup retained at operationId=${snap.operationId}.`,
-          error: 'COMMIT_FAILED',
-          meta: {
-            lexicalPath: absPath, realPath,
-            raceKind: 'post-write-swap',
-            backupOperationId: snap.operationId,
-          },
-        };
-      }
+      // ── 10b. Post-write semantic check ──────────────────────────────
+      try {
+        const postLst = await atomicLstat(parentDir, leafName);
+        const postFhStat = fstatSync(leafFd);
+        if (
+          !postLst ||
+          postLst.isSymlink ||
+          postLst.ino !== postFhStat.ino ||
+          postLst.dev !== postFhStat.dev
+        ) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was unlinked or replaced after edit completed; ` +
+              `our content is at the inode you reviewed but the user-visible path ` +
+              `now points elsewhere. Backup retained at operationId=${snap.operationId}.`,
+            error: 'COMMIT_FAILED',
+            meta: {
+              lexicalPath: absPath, realPath,
+              raceKind: 'post-write-orphaned',
+              backupOperationId: snap.operationId,
+            },
+          };
+        }
+      } catch { /* parent gone — caller can detect via no-success-return */ }
 
-      // ── 9. recordAfterDiff ───────────────────────────────────────────
+      // ── 11. recordAfterDiff ─────────────────────────────────────────
       try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
 
       const oldLines = old_string.split('\n').length;
@@ -422,13 +422,9 @@ export const fileEditTool = {
         },
       };
     } catch (err) {
-      return {
-        ok: false,
-        output: `Edit error: ${err.message}`,
-        error: err.message,
-      };
+      return { ok: false, output: `Edit error: ${err.message}`, error: err.message };
     } finally {
-      await fh.close().catch(() => {});
+      openLeaf.closeLeaf();
     }
   },
 };

@@ -30,7 +30,6 @@ import {
   mkdir,
   copyFile,
   rm,
-  unlink,
   writeFile,
   readFile,
   readlink,
@@ -40,8 +39,8 @@ import {
   symlink,
   cp,
   readdir,
-  open,
 } from 'node:fs/promises';
+import { writeSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
 import { constants as fsConstants } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
@@ -52,6 +51,13 @@ import {
   classifyPath,
 } from './sensitivePaths.js';
 import { safeResolvePath } from './pathResolver.js';
+import {
+  atomicOpenLeaf,
+  atomicUnlink,
+  openParentDirFd,
+  splitParentLeaf,
+  C as DC,
+} from './dirfdOps.js';
 
 const TRASH_DIR_NAME = '.melo-trash';
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -379,17 +385,30 @@ async function _unsafeRawDelete(paths, ctx = {}) {
   // copy + the failed-to-remove original intact — strictly safer than
   // rolling back the whole op (which would re-restore files we already
   // unlinked). Caller sees what failed via `failed[]`.
+  //
+  // Round 13 (2026-05-03): use atomicUnlink (unlinkat via parent
+  // dirfd) for files and symlinks. Recursive directory removal still
+  // uses path-based fs.rm — a true atomic recursive remove would
+  // require dirfd-walk + per-entry unlinkat, which is significantly
+  // more code. Documented residual race: a trusted-process attacker
+  // could swap a sub-directory inside the deletion tree to a symlink
+  // mid-rm. For desktop melo's threat model, this is acceptable:
+  // the user explicitly chose to delete the entire tree.
   const removed = [];
   const failed = [];
   for (const entry of fileEntries) {
     try {
+      const [parent, leaf] = splitParentLeaf(entry.originalPath);
       if (entry.wasSymlink) {
-        // unlink() does NOT follow symlinks — removes the link itself.
-        // This is the round-7 fix: under no circumstances should the
-        // file the symlink points to be touched here.
-        await unlink(entry.originalPath);
-      } else {
+        // unlinkat with flags=0 removes a file or symlink entry; it
+        // never follows the symlink. This is the round-7 fix's
+        // round-13 equivalent.
+        await atomicUnlink(parent, leaf);
+      } else if (entry.wasDirectory) {
+        // Path-based recursive remove. See note above.
         await rm(entry.originalPath, { recursive: true, force: false });
+      } else {
+        await atomicUnlink(parent, leaf);
       }
       removed.push(entry.originalPath);
     } catch (err) {
@@ -472,21 +491,8 @@ export async function restoreFromTrash(operationId, opts = {}) {
   await assertWithinRoot(opDir, root);
   const filesDir = join(opDir, 'files');
 
-  // Codex C round 2 (2026-05-03) — Q2C layer (b): re-classify every
-  // entry's originalPath at restore time. A tampered manifest with
-  // originalPath pointing at /etc/foo cannot punch through; the
-  // whole batch aborts before any copyFile fires.
-  //
-  // We also stash the realPath captured here per entry so layer
-  // (c)+(d) below can issue commit tokens bound to the same
-  // expectedReal — a swap between (b) and the actual fs op fails
-  // commitOperation and aborts the restore (Codex D round 3).
-  // Codex Phase 2A round 9 (2026-05-03): parent-dir inode anchor
-  // captured per-entry AFTER sensitivity check (so sensitive
-  // surface first); re-verified right before each fs op.
-  const { precheckParentDir, assertParentDirUnchanged } =
-    await import('./fileSafetyGate.js');
-
+  // Round 13 (2026-05-03): parent inode anchor captured via dirfd
+  // probe; final fs op binds parent through openat/unlinkat.
   const expectedRealByLexical = new Map();
   const parentInoByLexical = new Map();
   for (const entry of target.files) {
@@ -555,18 +561,22 @@ export async function restoreFromTrash(operationId, opts = {}) {
       }
     }
 
-    // After sensitivity passes, capture parent inode for race detection.
-    const parentPrecheck = await precheckParentDir(entry.originalPath);
-    if (!parentPrecheck.ok) {
+    // After sensitivity passes, capture parent inode via a dirfd
+    // probe (race detection at the final fs op).
+    const parentDir = dirname(entry.originalPath);
+    let probefd;
+    try {
+      probefd = openParentDirFd(parentDir);
+      const st = fstatSync(probefd);
+      parentInoByLexical.set(entry.originalPath, { ino: st.ino, dev: st.dev });
+    } catch (err) {
       throw new Error(
-        `Refusing to restore ${entry.originalPath}: parent directory ` +
-        `${parentPrecheck.parent} ${parentPrecheck.error}.`,
+        `Refusing to restore ${entry.originalPath}: cannot open parent ` +
+        `${parentDir}: ${err.message}.`,
       );
+    } finally {
+      if (probefd != null) try { closeFdSync(probefd); } catch {}
     }
-    parentInoByLexical.set(entry.originalPath, {
-      ino: parentPrecheck.ino,
-      dev: parentPrecheck.dev,
-    });
   }
 
   // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
@@ -625,66 +635,82 @@ export async function restoreFromTrash(operationId, opts = {}) {
     }
 
     const src = join(filesDir, entry.trashedAs);
-    // Re-verify parent-dir inode + dev right before the fs op.
     const parentSnapshot = parentInoByLexical.get(entry.originalPath);
-    await assertParentDirUnchanged(
-      entry.originalPath,
-      parentSnapshot.ino,
-      parentSnapshot.dev,
-    );
 
     if (entry.wasSymlink) {
-      // Codex D round 7 (2026-05-03): rebuild the symlink AT the
-      // lexical originalPath (not resolvedTarget — for a symlink,
-      // resolvedTarget would be the file the link points to, but
-      // we want to recreate the LINK itself). symlinkTarget is
-      // the original target string captured at delete time.
-      await mkdir(dirname(entry.originalPath), { recursive: true });
+      // Symlink restore: rebuild the link at the lexical originalPath.
+      // For atomicity we'd want symlinkat(parentdirfd, target, name),
+      // but our addon doesn't expose symlinkat yet. Fall back to a
+      // probe-then-symlink with parent {dev, ino} cross-check.
+      // Residual race: between cross-check and symlink() the parent
+      // could swap. Acceptable for symlink-rebuild (we're not writing
+      // arbitrary file content; worst case the link is created in a
+      // wrong dir and the user notices).
+      const parentDir = dirname(entry.originalPath);
+      let probefd;
+      try {
+        probefd = openParentDirFd(parentDir);
+        const st = fstatSync(probefd);
+        if (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino) {
+          throw new Error(
+            `Parent ${parentDir} was replaced (inode/device changed) between ` +
+            `safety check and symlink restore.`,
+          );
+        }
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
+      }
       if (exists && opts.overwrite) {
-        // Replace whatever sits there now (could be a fresh file or
-        // a re-pointed symlink) before recreating.
         await rm(entry.originalPath, { recursive: true, force: true });
       }
       await symlink(entry.symlinkTarget, entry.originalPath);
       restored.push(entry.originalPath);
     } else if (entry.wasDirectory) {
-      await mkdir(dirname(resolvedTarget), { recursive: true });
-      // Codex Phase 2A holistic refactor (2026-05-03): defensive
-      // lstat the leaf — if it's now a symlink, refuse rather
-      // than letting cp follow it. Best-effort against post-commit
-      // dest swap; deeper race windows inside cp's recursion are
-      // a known limitation (no atomic dir-restore primitive).
+      // Directory restore: same as before. Recursive cp doesn't have
+      // an atomic dirfd-bound primitive in our addon. Probe-check
+      // parent inode + lstat leaf for symlink defence. Residual
+      // race inside cp's recursion is a known limitation.
+      const parentDir = dirname(resolvedTarget);
+      let probefd;
+      try {
+        probefd = openParentDirFd(parentDir);
+        const st = fstatSync(probefd);
+        if (st.dev !== parentSnapshot.dev || st.ino !== parentSnapshot.ino) {
+          throw new Error(
+            `Parent ${parentDir} was replaced between safety check and dir restore.`,
+          );
+        }
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
+      }
       try {
         const dstLst = await lstat(resolvedTarget);
         if (dstLst.isSymbolicLink()) {
-          throw new Error(
-            `Refusing to restore directory over symlink at ${resolvedTarget}.`,
-          );
+          throw new Error(`Refusing to restore directory over symlink at ${resolvedTarget}.`);
         }
         if (opts.overwrite) {
           await rm(resolvedTarget, { recursive: true, force: true });
         }
       } catch (err) {
         if (err && err.code !== 'ENOENT') throw err;
-        // ENOENT = leaf doesn't exist, that's fine for restore.
       }
       await cp(src, resolvedTarget, { recursive: true });
       restored.push(resolvedTarget);
     } else {
-      await mkdir(dirname(resolvedTarget), { recursive: true });
-      // File restore: write via fd with O_NOFOLLOW so a destination
-      // swapped to a symlink between sensitivity check and now
-      // can't redirect us at /etc/hosts. ELOOP at open surfaces
-      // as a clean restore failure.
-      let dstFh;
+      // File restore: atomicOpenLeaf binds parent through dirfd and
+      // openat-creates the leaf. Cross-check parent {dev, ino}
+      // matches precheck. Then writeSync via fd.
+      const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
+      let openLeaf;
       try {
-        dstFh = await open(
-          resolvedTarget,
-          fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
+        openLeaf = await atomicOpenLeaf(
+          resolvedParent,
+          resolvedLeaf,
+          DC.O_WRONLY | DC.O_CREAT | DC.O_TRUNC,
           0o644,
         );
       } catch (err) {
-        if (err && err.code === 'ELOOP') {
+        if (err.code === 'ELOOP' || err.errno === 62) {
           throw new Error(
             `Refusing to restore over symlink at ${resolvedTarget} ` +
             `(kernel ELOOP via O_NOFOLLOW).`,
@@ -693,10 +719,18 @@ export async function restoreFromTrash(operationId, opts = {}) {
         throw err;
       }
       try {
+        if (
+          openLeaf.parentDev !== parentSnapshot.dev ||
+          openLeaf.parentIno !== parentSnapshot.ino
+        ) {
+          throw new Error(
+            `Parent ${resolvedParent} was replaced (inode/device changed) between approval and restore.`,
+          );
+        }
         const buf = await readFile(src);
-        await dstFh.write(buf, 0);
+        writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
       } finally {
-        await dstFh.close().catch(() => {});
+        openLeaf.closeLeaf();
       }
       restored.push(resolvedTarget);
     }
