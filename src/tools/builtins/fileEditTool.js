@@ -14,6 +14,7 @@ import { isAbsolute, resolve } from 'node:path';
 import {
   requestEdit,
   commitOperation,
+  precheckHardBlockedWrite,
   OP_KIND,
 } from '../../safety/fileSafetyGate.js';
 import {
@@ -98,6 +99,22 @@ export const fileEditTool = {
       ? filePath
       : resolve(workspacePath || process.cwd(), filePath);
 
+    // ── Sensitivity pre-check — Codex D Phase 2A round 1 (2026-05-03) ─
+    // MUST run before any readFile / occurrence count / snapshot. A
+    // sensitive path returns DENIED immediately so a probing edit
+    // attempt against /etc/hosts or ~/.ssh/* never reads the file
+    // and never leaks "old_string not found" / "ambiguous" signals
+    // about the file's contents.
+    const precheck = await precheckHardBlockedWrite(absPath);
+    if (precheck.blocked) {
+      return {
+        ok: false,
+        output: precheck.denyReason,
+        error: 'DENIED',
+        meta: { denied: true, category: precheck.category },
+      };
+    }
+
     let original;
     try {
       original = await readFile(absPath, 'utf8');
@@ -127,23 +144,9 @@ export const fileEditTool = {
 
     const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
 
-    // ── Phase 1 backup BEFORE asking for approval ──────────────────────
-    let snap;
-    try {
-      snap = await snapshotBeforeWrite(absPath, {
-        chatId,
-        requestedBy: 'file_edit',
-        reason: replace_all ? `edit ${count}×` : 'edit 1×',
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Backup snapshot failed: ${err.message}`,
-        error: 'SNAPSHOT_FAILED',
-      };
-    }
-
     // ── FileSafetyGate approval + atomic commit ────────────────────────
+    // snapshotBeforeWrite is intentionally AFTER approval (Codex D
+    // round 1 fix) so a deny path leaves zero .melo-backups residue.
     let approved;
     try {
       approved = await requestEdit({
@@ -177,6 +180,22 @@ export const fileEditTool = {
         ok: false,
         output: `Atomic commit failed: ${err.message}`,
         error: 'COMMIT_FAILED',
+      };
+    }
+
+    // Backup AFTER approval, BEFORE write — so deny leaves no entry.
+    let snap;
+    try {
+      snap = await snapshotBeforeWrite(absPath, {
+        chatId,
+        requestedBy: 'file_edit',
+        reason: replace_all ? `edit ${count}×` : 'edit 1×',
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Backup snapshot failed: ${err.message}`,
+        error: 'SNAPSHOT_FAILED',
       };
     }
 

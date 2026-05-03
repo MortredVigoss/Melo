@@ -317,6 +317,121 @@ test('fileDeleteTool: invalid args (empty paths array) → INVALID_PATHS', async
   });
 });
 
+// ─── Codex D round 1 (Phase 2A): sensitive zero-side-effect contract ──
+
+test('fileWriteTool sensitive: NO .melo-backups entry created on hard-rejection', async () => {
+  await withTempEnv(async ({ ws, home }) => {
+    const gate = await freshGate();
+    const result = await fileWriteTool.run(
+      { path: '/etc/hosts', content: 'evil' },
+      { workspacePath: ws, sseEmitter: () => {}, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    // .melo-backups must be empty — the snapshot was correctly
+    // deferred to after the (rejected) approval.
+    const { listBackups } = await import('../../safety/backup.js');
+    const list = await listBackups();
+    assert.equal(list.length, 0, '.melo-backups must be empty after sensitive rejection');
+  });
+});
+
+test('fileEditTool sensitive: NO read happens, returns DENIED (not NOT_FOUND/AMBIGUOUS)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Try to probe /etc/hosts for whether it contains "127.0.0.1".
+    // If the tool reads first, the error tells the attacker whether
+    // the string is present (NOT_FOUND vs success/AMBIGUOUS). Pre-
+    // check must short-circuit so the error is uniformly DENIED.
+    const result = await fileEditTool.run(
+      { path: '/etc/hosts', old_string: '127.0.0.1', new_string: 'X' },
+      { workspacePath: ws, sseEmitter: () => {}, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.notEqual(result.error, 'NOT_FOUND');
+    assert.notEqual(result.error, 'AMBIGUOUS');
+    // No backups either.
+    const { listBackups } = await import('../../safety/backup.js');
+    assert.equal((await listBackups()).length, 0);
+  });
+});
+
+test('fileWriteTool deny: NO .melo-backups entry left over (snapshot is post-approval)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'OLD', 'utf8');
+    const result = await fileWriteTool.run(
+      { path: target, content: 'NEW' },
+      { workspacePath: ws, sseEmitter: autoDeny(gate), chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(await readFile(target, 'utf8'), 'OLD');
+    // Codex D round 1: snapshot is NOW after approval — deny path
+    // must leave .melo-backups untouched.
+    const { listBackups } = await import('../../safety/backup.js');
+    const list = await listBackups();
+    assert.equal(list.length, 0, 'no backup must be created on deny');
+  });
+});
+
+test('fileEditTool deny: NO .melo-backups entry left over', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'foo', 'utf8');
+    const result = await fileEditTool.run(
+      { path: target, old_string: 'foo', new_string: 'bar' },
+      { workspacePath: ws, sseEmitter: autoDeny(gate), chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    const { listBackups } = await import('../../safety/backup.js');
+    assert.equal((await listBackups()).length, 0);
+  });
+});
+
+test('fileWriteTool: workspace symlink → /etc/hosts hard-rejected with zero side effect', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const link = join(ws, 'sneaky');
+    await symlink('/etc/hosts', link);
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+    const result = await fileWriteTool.run(
+      { path: link, content: 'evil' },
+      { workspacePath: ws, sseEmitter: sse, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(promptCount, 0);
+    // Link itself untouched — no rewrite via symlink-follow.
+    assert.equal(await readlink(link), '/etc/hosts');
+    const { listBackups } = await import('../../safety/backup.js');
+    assert.equal((await listBackups()).length, 0);
+  });
+});
+
+test('fileEditTool: workspace symlink → /etc/hosts hard-rejected, no probe of /etc/hosts content', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const link = join(ws, 'sneaky');
+    await symlink('/etc/hosts', link);
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+    const result = await fileEditTool.run(
+      { path: link, old_string: '127.0.0.1', new_string: 'X' },
+      { workspacePath: ws, sseEmitter: sse, chatId: 'chat-A' },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    assert.equal(promptCount, 0);
+    assert.equal(await readlink(link), '/etc/hosts');
+  });
+});
+
 // ─── fileMoveTool ──────────────────────────────────────────────────────
 
 test('fileMoveTool: rename within workspace, gate-approved', async () => {

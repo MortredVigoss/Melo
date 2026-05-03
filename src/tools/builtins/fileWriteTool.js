@@ -19,6 +19,7 @@ import { isAbsolute, resolve, dirname } from 'node:path';
 import {
   requestWrite,
   commitOperation,
+  precheckHardBlockedWrite,
   OP_KIND,
 } from '../../safety/fileSafetyGate.js';
 import {
@@ -101,7 +102,22 @@ export const fileWriteTool = {
       ? filePath
       : resolve(workspacePath || process.cwd(), filePath);
 
+    // ── Sensitivity pre-check — Codex D Phase 2A round 1 (2026-05-03) ─
+    // MUST run before any stat / readFile / snapshot. A sensitive
+    // path returns DENIED with zero fs touch — no content read into
+    // memory, no backup folder created, no UI prompt.
+    const precheck = await precheckHardBlockedWrite(absPath);
+    if (precheck.blocked) {
+      return {
+        ok: false,
+        output: precheck.denyReason,
+        error: 'DENIED',
+        meta: { denied: true, category: precheck.category },
+      };
+    }
+
     // ── Read old content (if any) for diff + backup ────────────────────
+    // Safe to fs-touch now: precheck confirmed the path is non-sensitive.
     let oldContent = '';
     let isCreate = true;
     try {
@@ -127,27 +143,9 @@ export const fileWriteTool = {
     const newHash = sha256(content);
     const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
 
-    // ── Phase 1 backup BEFORE asking for approval ──────────────────────
-    // We snapshot first so even if the user clicks Allow and then we
-    // crash mid-write, the previous content is recoverable. The
-    // snapshot is independent of the gate and can be purged on
-    // restore success.
-    let snap;
-    try {
-      snap = await snapshotBeforeWrite(absPath, {
-        chatId,
-        requestedBy: 'file_write',
-        reason: isCreate ? 'create' : 'overwrite',
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Backup snapshot failed: ${err.message}`,
-        error: 'SNAPSHOT_FAILED',
-      };
-    }
-
     // ── FileSafetyGate approval + atomic commit ────────────────────────
+    // Note: snapshotBeforeWrite is now AFTER approval (was pre-approval
+    // before round 1 — that left .melo-backups entries on deny).
     let approved;
     try {
       approved = await requestWrite({
@@ -184,6 +182,26 @@ export const fileWriteTool = {
         ok: false,
         output: `Atomic commit failed: ${err.message}`,
         error: 'COMMIT_FAILED',
+      };
+    }
+
+    // ── Backup AFTER approval (Codex D round 1 fix), BEFORE write ──────
+    // A user deny earlier short-circuited above with zero fs touch; we
+    // only get here once the user has actively approved. We snapshot
+    // here so a crash between the snapshot and the actual writeFile
+    // still leaves a recoverable backup.
+    let snap;
+    try {
+      snap = await snapshotBeforeWrite(absPath, {
+        chatId,
+        requestedBy: 'file_write',
+        reason: isCreate ? 'create' : 'overwrite',
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        output: `Backup snapshot failed: ${err.message}`,
+        error: 'SNAPSHOT_FAILED',
       };
     }
 

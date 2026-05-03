@@ -229,6 +229,58 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
   return { ok: true };
 }
 
+// ── precheckHardBlockedWrite ─────────────────────────────────────────
+//
+// Codex D round 1 of Phase 2A (2026-05-03): Phase 2 tools used to
+// stat() / readFile() / snapshotBeforeWrite() the target BEFORE
+// asking the gate, so a write attempt against /etc/hosts or
+// ~/.ssh/* would leak the file's contents into memory + into a
+// .melo-backups/ entry before the gate had a chance to deny.
+//
+// This pre-check is the contract every write/edit/move/delete tool
+// MUST run as its first fs-touching step. If it returns blocked:true,
+// the tool surfaces a DENIED result without reading, stat'ing, or
+// backing up anything. No UI dialog fires (sensitivity is
+// deterministic from the path; nothing to ask the user about).
+//
+// Returns:
+//   {
+//     blocked: bool,                   // hard-rejected — caller returns DENIED
+//     denyReason: string | null,       // human-readable reason for the rejection
+//     realPath: string,                // resolved real path (for caller logging)
+//     hasSymlinkInChain: bool,         // ditto, for diagnostics
+//     category: string,                // most-restrictive PATH_CATEGORY
+//   }
+export async function precheckHardBlockedWrite(absPath) {
+  const { realPath, hasSymlinkInChain } = await safeResolvePath(absPath);
+  if (isAnySensitive(absPath, realPath, isHardBlockedWrite)) {
+    const category = moreRestrictiveCategory(
+      classifyPath(absPath),
+      classifyPath(realPath),
+    );
+    return {
+      blocked: true,
+      denyReason:
+        `Refusing to operate on ${absPath} ` +
+        (hasSymlinkInChain ? `(real target: ${realPath}) ` : '') +
+        `— blocked by safety policy (category: ${category}).`,
+      realPath,
+      hasSymlinkInChain,
+      category,
+    };
+  }
+  return {
+    blocked: false,
+    denyReason: null,
+    realPath,
+    hasSymlinkInChain,
+    category: moreRestrictiveCategory(
+      classifyPath(absPath),
+      classifyPath(realPath),
+    ),
+  };
+}
+
 export function listPendingFileSafetyRequests() {
   return Array.from(_pending.entries()).map(([id, entry]) => ({
     requestId: id,
