@@ -64,7 +64,7 @@ export const fileMoveTool = {
       },
       dst: {
         type: 'string',
-        description: 'Absolute or workspace-relative destination path. Parent directories are created as needed.',
+        description: 'Absolute or workspace-relative destination path. The destination parent directory MUST already exist (use file_mkdir to create missing parents one component at a time).',
       },
     },
     required: ['src', 'dst'],

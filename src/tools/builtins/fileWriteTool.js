@@ -207,7 +207,12 @@ export const fileWriteTool = {
     // For overwrite, we briefly open O_RDONLY|O_NOFOLLOW just to
     // read the current content for the diff preview. The fh is
     // closed before the UI prompt. Create has nothing to read.
+    // We also capture the pre-read fh's {dev, ino} so the post-
+    // approval write fh can verify it lands on the SAME inode the
+    // user reviewed (rm+recreate-same-content during approval is
+    // detected via inode mismatch even when sha256 matches).
     let oldBuffer = Buffer.alloc(0);
+    let preReadInoIdent = null;
     if (!isCreate) {
       let preFh;
       try {
@@ -243,6 +248,8 @@ export const fileWriteTool = {
       }
       try {
         oldBuffer = await readFromStart(preFh);
+        const ps = await preFh.stat();
+        preReadInoIdent = { ino: ps.ino, dev: ps.dev };
       } finally {
         await preFh.close().catch(() => {});
       }
@@ -381,26 +388,36 @@ export const fileWriteTool = {
 
     let staleContentDetected = false;
     try {
-      // ── 6. Inode anchor (overwrite only) ─────────────────────────────
-      // Confirm the path STILL points at the inode we just opened.
-      // Mismatch (or symlink at the path) means an attacker rm+
-      // recreated the entry between commit and open; our fh now
-      // refers to the OLD inode (orphaned) and writing through it
-      // would silently lose the user's bytes. For create, the
-      // inode is ours by construction (O_EXCL succeeded).
+      // ── 6. Inode anchor (overwrite only) — three-way {dev, ino} ──────
+      // Confirm the path STILL points at the inode we just opened
+      // AND that it matches the pre-approval read fh's inode. Three-
+      // way comparison catches:
+      //   • leaf swapped to symlink (pathStat.isSymbolicLink)
+      //   • leaf rm+recreated as a different file (ino/dev mismatch)
+      //   • approval-window rm+recreate-same-path-same-content where
+      //     sha256 still matches but inode differs (preFhStat vs
+      //     fh stat mismatch — we want to reject because the user
+      //     reviewed inode A's content, but inode B is what we'd
+      //     write to). For create, inode is ours by construction
+      //     (O_EXCL succeeded).
       if (!isCreate) {
         const fhStat = await fh.stat();
         const pathStat = await lstat(realPath).catch(() => null);
         if (
           !pathStat ||
           pathStat.isSymbolicLink() ||
-          pathStat.ino !== fhStat.ino
+          pathStat.ino !== fhStat.ino ||
+          pathStat.dev !== fhStat.dev ||
+          (preReadInoIdent && (
+            preReadInoIdent.ino !== fhStat.ino ||
+            preReadInoIdent.dev !== fhStat.dev
+          ))
         ) {
           return {
             ok: false,
             output:
-              `Target ${realPath} was replaced (inode changed or now a symlink) ` +
-              `between approval and write — kernel-level race detected.`,
+              `Target ${realPath} was replaced (inode/device changed or now ` +
+              `a symlink) between approval and write — kernel-level race detected.`,
             error: 'COMMIT_FAILED',
             meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };

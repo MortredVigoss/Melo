@@ -336,7 +336,9 @@ export const fileEditTool = {
         !pathStat ||
         pathStat.isSymbolicLink() ||
         pathStat.ino !== fhStat.ino ||
-        fhStat.ino !== oldFhStat.ino
+        pathStat.dev !== fhStat.dev ||
+        fhStat.ino !== oldFhStat.ino ||
+        fhStat.dev !== oldFhStat.dev
       ) {
         return {
           ok: false,

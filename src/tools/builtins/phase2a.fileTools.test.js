@@ -324,6 +324,35 @@ test('fileDeleteTool: invalid args (empty paths array) → INVALID_PATHS', async
   });
 });
 
+// ─── Codex C Phase 2A round 11: leaf {dev, ino} three-way anchor ─────
+
+test('fileWriteTool overwrite: rm+recreate same path with same content during approval is rejected (inode mismatch)', async () => {
+  // Hash matches but inode differs — a sha256-only stale check
+  // would let this through. The pre-read fh's {dev, ino} anchor
+  // catches the inode swap.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'OLD', 'utf8');
+
+    const sse = (event, payload) => {
+      // rm + create new file with the same content during approval.
+      rm(target, { force: true })
+        .then(() => writeFile(target, 'OLD', 'utf8'))
+        .then(() => gate.resolveFileSafety(payload.requestId, 'once'));
+    };
+    const result = await fileWriteTool.run(
+      { path: target, content: 'NEW' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'COMMIT_FAILED');
+    assert.equal(result.meta.raceKind, 'symlink-eloop');
+    // The race-recreated file (with content 'OLD') still on disk.
+    assert.equal(await readFile(target, 'utf8'), 'OLD');
+  });
+});
+
 // ─── Codex C Phase 2A round 8 (holistic): zero-side-effect during approval ─
 
 test('fileWriteTool: pending approval does NOT create the target file', async () => {

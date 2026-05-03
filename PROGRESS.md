@@ -109,6 +109,13 @@
 - **fileMoveTool 取消 auto-mkdir**：删 `mkdir(dirname(absDst), {recursive:true})`；commit 后跑 srcParentPrecheck + dstParentPrecheck（在 sensitivity check 之后，让 /etc/hosts 仍报 DENIED 不报 PARENT_NOT_DIR）；缺 dst 父 → PARENT_NOT_FOUND with hint "Use file_mkdir"；double parent anchor before rename。
 - 测试加 3 case：① fileMkdir grant-bypass：父 dir 有 WRITE grant 仍 promptCount=1；② fileMkdir parent swap → COMMIT_FAILED + outside 不 polluted；③ fileMove missing dst parent → PARENT_NOT_FOUND + src 不动。
 - 验证：`src/**/*.test.js` **1711/1711 全绿**（前 1708 + 3 新）。
+- 提交哈希：`2061473`。
+- Follow-up（Codex C Phase 2A round 11 → leaf {dev,ino} 三方锚定）：3 条同款：① 🔴 fileWrite overwrite 没把 pre-read fh's {dev,ino} 纳入 anchor → 审批期间 rm+recreate-same-content 绕过 stale hash；② 🟠 fileEdit pre/post inode anchor 缺 dev；③ 🔵 fileMove dst schema 仍说 "Parent directories created as needed" 但实现不再 auto-create。
+- **fileWrite leaf 三方 dev+ino 锚定**：preFh.stat() 时记 preReadInoIdent={ino, dev}；post-open inode anchor 比 fh ↔ pathStat ↔ preReadInoIdent 三方 dev+ino 全等才放行。任一不等 → COMMIT_FAILED + raceKind=symlink-eloop。
+- **fileEdit leaf 锚定加 dev**：oldFhStat ↔ fhStat ↔ pathStat 三方 dev+ino 比对（之前只比 ino）。
+- **fileMove dst schema 文案修**：从 "Parent directories are created as needed" 改成 "destination parent directory MUST already exist (use file_mkdir to create missing parents)"。
+- 测试加 1 case：fileWrite overwrite race-rm+recreate-same-content → COMMIT_FAILED + race-recreated 文件留在 disk（证明 inode 锚定抓而不是 sha256）。
+- 验证：`src/**/*.test.js` **1712/1712 全绿**（前 1711 + 1 新）。
 - **架构 invariant 终极版**：fh 锁 inode → 任何 post-open path swap 不影响 fh 读写。所有 read/write 走同一 fh，唯一 race window 是 precheck→pre-read-open + 审批后 commit→write-open；前者影响只是读到旧内容（diff 显示对了），后者由 O_NOFOLLOW + O_EXCL + 双 fh inode anchor 关闭。**审批前 zero disk side-effect 契约**：pending 不创、deny 不留 placeholder、nested 父目录在 deny 后也不创。
 - UI 缺口：gate 发的 `tool_permission` 事件 `kind: 'file_safety'` UI 端还没写新 layout，现有 `pendingToolPermissions` 渲染只认 toolId 旧层。Phase 2A push 后用户能看到弹窗但**显示的是 raw JSON args + 旧按钮**——能 Allow/Deny 但不显 diff/symlink 警告/批量摘要。Phase 3 UI 紧跟。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
