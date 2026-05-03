@@ -105,33 +105,80 @@ function safeCloseFd(fd) {
 }
 
 /**
- * Open a parent directory as O_DIRECTORY|O_NOFOLLOW dirfd. The
- * O_NOFOLLOW guards against the parent path itself being a symlink
- * (e.g. workspace/badlink -> /etc) — refuse to open that as a dir.
+ * Open an absolute directory path component-by-component, applying
+ * `O_DIRECTORY | O_NOFOLLOW` at every segment. Round 13 Phase 2B
+ * follow-up #4 (Codex 🔴): a single `open(absPath, O_NOFOLLOW)`
+ * only protects the trailing component (POSIX trait of O_NOFOLLOW).
+ * If any ancestor of `absPath` is swapped to a symlink between our
+ * checks and this open, the kernel still follows it. Result: an
+ * attacker who can swap a workspace parent for a symlink to
+ * `$HOME` makes `/tmp/ws/.ssh/id_rsa` resolve to `~/.ssh/id_rsa`
+ * — bypassing every sensitivity check that ran on the lexical path.
+ *
+ * Chain walk fix: open `/` (or root) first — there's no ancestor
+ * for root, so an absolute open of "/" is intrinsically safe. Then
+ * for each subsequent path component, `openat(curFd, segment,
+ * O_DIRECTORY|O_NOFOLLOW)` and close the previous fd. ELOOP at any
+ * segment throws ELOOP and we clean up.
+ *
+ * Throws:
+ *   - ENOENT: missing component
+ *   - ENOTDIR: a non-final component isn't a directory
+ *   - ELOOP: any component is a symlink
+ *   - EACCES: traversal permission denied
+ *
+ * @param {string} absPath absolute path to a directory
+ * @returns {number} dirfd of the final directory
+ */
+function openDirNoFollowChain(absPath) {
+  if (typeof absPath !== 'string' || !absPath.startsWith('/')) {
+    throw new Error(`openDirNoFollowChain requires an absolute path, got ${JSON.stringify(absPath)}`);
+  }
+  const fs = requireCjs('node:fs');
+  // Step 1: root open. There's no ancestor; this is intrinsically
+  // safe. We use fs.openSync because '/' is a single-component
+  // absolute path and openat with AT_FDCWD-style relative paths
+  // isn't easier here. The root inode for the running process is
+  // fixed by the kernel.
+  let curFd;
+  try {
+    curFd = fs.openSync('/', fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+  } catch (err) {
+    throw wrapErr(err, `openDirNoFollowChain root open`);
+  }
+
+  // Step 2: walk each non-empty component.
+  const segments = absPath.split('/').filter(s => s.length > 0);
+  for (const segment of segments) {
+    let nextFd;
+    try {
+      nextFd = addon.openat(
+        curFd,
+        segment,
+        C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW,
+      );
+    } catch (err) {
+      safeCloseFd(curFd);
+      throw wrapErr(err, `openDirNoFollowChain segment "${segment}" of ${absPath}`);
+    }
+    safeCloseFd(curFd);
+    curFd = nextFd;
+  }
+  return curFd;
+}
+
+/**
+ * Open a parent directory as O_DIRECTORY|O_NOFOLLOW dirfd, walking
+ * the ENTIRE path component-by-component so no ancestor symlink
+ * can redirect us. See openDirNoFollowChain for full rationale.
  *
  * @param {string} parentPath absolute path to parent directory
  * @returns {number} dirfd
  * @throws errno error: ENOENT (missing), ENOTDIR (not a dir), ELOOP
- *   (path is symlink), EACCES (no perms)
+ *   (any path component is a symlink), EACCES (no perms)
  */
 export function openParentDirFd(parentPath) {
-  // Use native openat with AT_FDCWD as the dirfd to do an absolute open.
-  // Equivalent to open(parentPath, O_RDONLY|O_DIRECTORY|O_NOFOLLOW).
-  // We use openat instead of fs.openSync to keep the fd lifecycle in
-  // the same module + avoid the Node cleanup queue surprises.
-  // AT_FDCWD = -100 on macOS/Linux; we encode as a special constant.
-  // Rather than hardcode -100 we just use Node's fs.openSync for the
-  // initial dirfd open — it's path-based but that's fine: the parent's
-  // PARENT is not what we're protecting, the PARENT is. We just need
-  // *some* fd referring to the parent inode.
-  const fs = requireCjs('node:fs');
-  let dirfd;
-  try {
-    dirfd = fs.openSync(parentPath, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
-  } catch (err) {
-    throw wrapErr(err, `openParentDirFd(${parentPath})`);
-  }
-  return dirfd;
+  return openDirNoFollowChain(parentPath);
 }
 
 /**

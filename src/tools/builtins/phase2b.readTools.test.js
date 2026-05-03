@@ -603,6 +603,48 @@ test('round 13 Phase 2B followup #2: grep no longer uses rg fast path (JS walker
   assert.doesNotMatch(src, /execFile|spawn\(/, 'no execFile/spawn calls allowed in grepTool');
 });
 
+// ─── Round 13 Phase 2B follow-up #4: ancestor-swap defense ──────
+
+test('round 13 Phase 2B followup #4: fileRead — ancestor swapped to symlink between approval and open → ELOOP, sensitive content NOT leaked', async () => {
+  // The new chain walker (openDirNoFollowChain) walks every
+  // ancestor with O_DIRECTORY|O_NOFOLLOW. Swapping a parent dir
+  // for a symlink to outside-with-sensitive-data must be caught.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'sub'), { recursive: true });
+    const benignFile = join(ws, 'sub', 'doc.txt');
+    await writeFile(benignFile, 'safe content', 'utf8');
+    // Plant a sensitive file in outside that, IF the ancestor swap
+    // succeeded, would be the realpath of /tmp/ws/sub/doc.txt →
+    // /tmp/outside/doc.txt. Make it look like a secret.
+    await writeFile(join(outside, 'doc.txt'), 'PRIVATE-EXFIL-DATA', 'utf8');
+
+    let hookFired = false;
+    _setReadPostApprovalHook(async ({ realPath }) => {
+      // After approval but before atomicOpenLeaf opens the leaf,
+      // swap the ANCESTOR ("sub") for a symlink to outside.
+      // openParentDirFd's chain walker must catch the swapped
+      // "sub" segment and throw ELOOP.
+      const subDir = join(ws, 'sub');
+      await rm(subDir, { recursive: true, force: true });
+      await symlink(outside, subDir);
+      hookFired = true;
+    });
+    try {
+      const result = await fileReadTool.run(
+        { path: benignFile },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(hookFired, true);
+      assert.equal(result.ok, false, 'must reject after ancestor swap');
+      // Sensitive content MUST NOT appear.
+      assert.doesNotMatch(result.output || '', /PRIVATE-EXFIL-DATA/);
+    } finally {
+      _setReadPostApprovalHook(null);
+    }
+  });
+});
+
 // ─── Round 13 Phase 2B follow-up #3: dirfd-bound walk + MELO_INTERNAL ──
 
 test('round 13 Phase 2B followup #3: glob — dir entry swapped to symlink between readdir and recurse → openat ELOOP, sensitive contents NOT in result', async () => {

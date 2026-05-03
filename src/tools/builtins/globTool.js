@@ -149,7 +149,25 @@ async function walkDirfd(parentFd, parentRelDir, baseDir, regex, results, signal
       continue;
     }
 
-    if (entry.kind === 'dir') {
+    // Round 13 Phase 2B follow-up #4 (Codex 🔵): some filesystems
+    // (e.g. older XFS, certain network mounts) return DT_UNKNOWN for
+    // every entry's d_type. If we treated 'unknown' as "skip", we'd
+    // silently miss every file/dir on those filesystems. Resolve via
+    // fstatat through the SAME parent dirfd (atomic — no path walk).
+    let kind = entry.kind;
+    if (kind === 'unknown') {
+      try {
+        const st = dirfdRaw.fstatat(parentFd, entry.name, DC.AT_SYMLINK_NOFOLLOW);
+        if (st.isDir) kind = 'dir';
+        else if (st.isFile) kind = 'file';
+        else if (st.isSymlink) kind = 'symlink';
+        else kind = 'other';
+      } catch {
+        continue;  // entry vanished mid-walk
+      }
+    }
+
+    if (kind === 'dir') {
       // Open the child dir through the parent dirfd with
       // O_DIRECTORY|O_NOFOLLOW. ELOOP if the entry was swapped to a
       // symlink between readdirAt and now.
@@ -161,19 +179,18 @@ async function walkDirfd(parentFd, parentRelDir, baseDir, regex, results, signal
           DC.O_RDONLY | DC.O_DIRECTORY | DC.O_NOFOLLOW,
         );
       } catch {
-        // ELOOP / ENOENT / ENOTDIR — silently skip the swapped entry.
-        continue;
+        continue;  // ELOOP / ENOENT / ENOTDIR — skip swapped entry
       }
       try {
         await walkDirfd(childFd, relPath, baseDir, regex, results, signal, maxResults, skipped, filterSensitive);
       } finally {
         try { dirfdRaw.closeFd(childFd); } catch {}
       }
-    } else if (entry.kind === 'file' && regex.test(relPath)) {
+    } else if (kind === 'file' && regex.test(relPath)) {
       results.push(relPath);
     }
-    // entry.kind === 'symlink' / 'other' / 'unknown' → never recursed
-    // and never returned (glob is for regular files).
+    // kind === 'symlink' / 'other' → never recursed and never returned
+    // (glob is for regular files only).
   }
 }
 

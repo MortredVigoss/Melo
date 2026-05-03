@@ -170,7 +170,24 @@ async function enumerateSafeFiles(baseDir, fileRe, signal, skipped, filterSensit
         continue;
       }
       const relPath = parentRelDir ? `${parentRelDir}/${entry.name}` : entry.name;
-      if (entry.kind === 'dir') {
+
+      // Phase 2B follow-up #4 (Codex 🔵): DT_UNKNOWN fallback via
+      // fstatat through the SAME parent dirfd. Without this, FS that
+      // return DT_UNKNOWN for everything would yield empty grep.
+      let kind = entry.kind;
+      if (kind === 'unknown') {
+        try {
+          const st = dirfdRaw.fstatat(parentFd, entry.name, DC.AT_SYMLINK_NOFOLLOW);
+          if (st.isDir) kind = 'dir';
+          else if (st.isFile) kind = 'file';
+          else if (st.isSymlink) kind = 'symlink';
+          else kind = 'other';
+        } catch {
+          continue;
+        }
+      }
+
+      if (kind === 'dir') {
         let childFd = -1;
         try {
           childFd = dirfdRaw.openat(
@@ -183,7 +200,7 @@ async function enumerateSafeFiles(baseDir, fileRe, signal, skipped, filterSensit
         }
         try { await recurse(childFd, relPath); }
         finally { try { dirfdRaw.closeFd(childFd); } catch {} }
-      } else if (entry.kind === 'file' && (!fileRe || fileRe.test(relPath))) {
+      } else if (kind === 'file' && (!fileRe || fileRe.test(relPath))) {
         out.push(fullPath);
       }
     }

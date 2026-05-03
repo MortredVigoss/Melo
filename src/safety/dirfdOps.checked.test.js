@@ -31,14 +31,22 @@ import {
   statSync,
   existsSync,
   readlinkSync,
+  realpathSync,
+  symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { unlinkatChecked, symlinkatChecked } from './dirfdOps.js';
+import { unlinkatChecked, symlinkatChecked, openParentDirFd, _raw, C } from './dirfdOps.js';
 
 async function withTmpParent(fn) {
-  const root = mkdtempSync(join(tmpdir(), 'dirfd-checked-'));
+  // realpathSync canonicalizes ancestor symlinks (e.g. macOS /tmp →
+  // /private/tmp). openDirNoFollowChain (Phase 2B follow-up #4) walks
+  // every component with O_NOFOLLOW, so non-canonical paths whose
+  // ancestors traverse symlinks would ELOOP. Production callers pass
+  // gate.resolvedTarget which is already realpath-canonical; tests
+  // mirror that.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dirfd-checked-')));
   const parent = join(root, 'parent');
   mkdirSync(parent);
   try { await fn({ root, parent }); }
@@ -107,5 +115,69 @@ test('symlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, no link creat
     assert.equal(caught.code, 'FILE_SAFETY_DENIED');
     // No link was created in the new parent.
     assert.equal(existsSync(join(parent, leaf)), false);
+  });
+});
+
+// ─── Round 13 Phase 2B follow-up #4: openDirNoFollowChain ──────────
+
+test('openParentDirFd: refuses path whose ancestor is a symlink (chain walk catches O_NOFOLLOW)', async () => {
+  // Round 13 Phase 2B follow-up #4 (Codex 🔴): openParentDirFd now
+  // walks every component of the path with O_DIRECTORY|O_NOFOLLOW.
+  // If any ANCESTOR is a symlink (not just the leaf), the walk
+  // throws ELOOP — closing the long-standing "single open() with
+  // O_NOFOLLOW only protects the trailing component" hole.
+  await withTmpParent(async ({ root }) => {
+    // Plant a real dir + a symlink to it INSIDE the canonical root.
+    // Using the canonical root sidesteps macOS's /tmp → /private/tmp
+    // ancestor symlink (which we'd legitimately ELOOP on too).
+    mkdirSync(join(root, 'realdir'));
+    mkdirSync(join(root, 'realdir', 'subdir'));
+    const linkParent = join(root, 'linkparent');
+    symlinkSync(join(root, 'realdir'), linkParent);
+
+    // Direct open of the canonical path works.
+    const fd = openParentDirFd(join(root, 'realdir', 'subdir'));
+    assert.ok(fd > 0, 'canonical chain opens');
+    _raw.closeFd(fd);
+
+    // But going through the symlinked ancestor must throw at the
+    // "linkparent" segment — even though "subdir" is a real dir.
+    // The exact error is platform-dependent: Linux throws ELOOP,
+    // macOS throws ENOTDIR for openat(O_DIRECTORY|O_NOFOLLOW) on a
+    // symlink. Both are valid rejection signals — what matters is
+    // that we DO NOT silently traverse the symlink.
+    let caught = null;
+    try {
+      openParentDirFd(join(linkParent, 'subdir'));
+    } catch (err) { caught = err; }
+    assert.ok(caught, 'expected throw');
+    assert.ok(
+      caught.code === 'ELOOP' || caught.code === 'ENOTDIR',
+      `expected ELOOP or ENOTDIR, got ${caught.code}`,
+    );
+  });
+});
+
+test('openParentDirFd: ancestor swapped to symlink mid-walk → still throws ELOOP (no race window)', async () => {
+  // Even though the symlink wasn't there when caller computed the
+  // path, openDirNoFollowChain catches it at the segment that's
+  // now a symlink. The chain is safe at every step.
+  await withTmpParent(async ({ root }) => {
+    mkdirSync(join(root, 'a'));
+    mkdirSync(join(root, 'a', 'b'));
+
+    // Now externally swap "a" to a symlink (race injection BEFORE
+    // openParentDirFd runs — equivalent to attacker winning the race).
+    rmSync(join(root, 'a'), { recursive: true });
+    symlinkSync('/etc', join(root, 'a'));
+
+    let caught = null;
+    try { openParentDirFd(join(root, 'a', 'b')); }
+    catch (err) { caught = err; }
+    assert.ok(caught, 'expected throw at swapped ancestor');
+    assert.ok(
+      caught.code === 'ELOOP' || caught.code === 'ENOTDIR',
+      `expected ELOOP or ENOTDIR, got ${caught.code}`,
+    );
   });
 });
