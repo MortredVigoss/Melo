@@ -284,14 +284,25 @@ function _issueOperationToken({ kind, chatId, targets }) {
 }
 
 // Re-verify the lexical→real mapping captured at approval time.
-// Returns { resolvedTarget, resolvedTargets, kind } on success;
-// throws on expired, unknown, or symlink-swapped operations.
+// Returns { resolvedTarget, resolvedTargets, targets, kind } on
+// success; throws on expired, unknown, kind-mismatched, or
+// symlink-swapped operations.
 //
 // `resolvedTarget` is shorthand for `resolvedTargets[0]` so single-
 // target callers don't have to unpack the array. Multi-target callers
 // (move with both src + dst, restore* with originalPath) read the
 // full array. ANY single target mismatch fails the entire commit —
 // partial commits are not allowed.
+//
+// Codex D round 6 (2026-05-03): the optional `opts.expectedKind`
+// (single OP_KIND value) or `opts.expectedKinds` (array of OP_KIND
+// values) lets the consumer enforce that the token was issued for
+// the operation it's about to perform. A delete entrypoint MUST
+// pass expectedKind: OP_KIND.DELETE so a write/edit/move token
+// can never be replayed as a delete (and vice-versa). Tokens are
+// still single-use; the kind check happens BEFORE the lexical→real
+// re-verify so a kind-mismatch consumes the token without leaving
+// it valid for a different consumer to misuse later.
 //
 // Phase 2 contract: tools that perform their fs op more than a few
 // hundred ms after approval, or that read external state in between,
@@ -300,7 +311,7 @@ function _issueOperationToken({ kind, chatId, targets }) {
 // caller's original input). Tools that execute synchronously may use
 // the resolvedTarget from the request* return value directly — the
 // TOCTOU window is then bounded by node's microtask queue.
-export async function commitOperation(token) {
+export async function commitOperation(token, opts = {}) {
   const entry = _committedOps.get(token);
   if (!entry) {
     throw denyError('Operation token unknown or already consumed.');
@@ -308,6 +319,22 @@ export async function commitOperation(token) {
   if (Date.now() - entry.issuedAt > COMMIT_TTL_MS) {
     _committedOps.delete(token);
     throw denyError('Operation token expired; re-approval required.');
+  }
+  // Kind enforcement (Codex D round 6). Done BEFORE re-resolve so a
+  // mismatched token is consumed without giving a future caller a
+  // window to misuse it.
+  const expected = Array.isArray(opts.expectedKinds)
+    ? opts.expectedKinds
+    : opts.expectedKind != null
+      ? [opts.expectedKind]
+      : null;
+  if (expected && !expected.includes(entry.kind)) {
+    _committedOps.delete(token);
+    throw denyError(
+      `Operation kind mismatch: token is for "${entry.kind}", ` +
+      `consumer expected one of [${expected.join(', ')}]. ` +
+      `A token issued for one operation cannot be replayed as another.`,
+    );
   }
   const resolved = [];
   const targetPairs = [];

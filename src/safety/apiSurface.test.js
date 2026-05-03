@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { mkdtemp, realpath, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 async function withSplitMeloHome(fn) {
@@ -73,7 +73,14 @@ test('safeDeleteToTrash refuses a forged (random-uuid-shaped) token', async () =
   });
 });
 
-test('safeDeleteToTrash refuses a token from a non-DELETE op (e.g. write token replay)', async () => {
+test('safeDeleteToTrash REJECTS a non-DELETE token (Codex D round 6 — kind enforcement)', async () => {
+  // Earlier rounds left this as a documented "we don't enforce kind
+  // matching" trade-off. Codex round 6 flagged that as a real hole:
+  // a write/edit/move token from the same chat would skip
+  // requestDelete's two-stage filename confirmation. The gate now
+  // enforces expectedKind at commit time, and safeDeleteToTrash
+  // passes expectedKind: OP_KIND.DELETE — so any other token shape
+  // is rejected with FILE_SAFETY_DENIED before any disk touch.
   await withSplitMeloHome(async (ws) => {
     const trash = await import('./trash.js');
     const grants = await import('./chatScopedGrants.js');
@@ -84,8 +91,6 @@ test('safeDeleteToTrash refuses a token from a non-DELETE op (e.g. write token r
     const target = join(ws, 'foo.txt');
     await writeFile(target, 'x', 'utf8');
 
-    // Mint a WRITE token (not a delete token) by going through requestWrite.
-    let writeToken;
     const sse = (event, payload) => {
       queueMicrotask(() =>
         gate.resolveFileSafety(payload.requestId, 'once'),
@@ -97,26 +102,118 @@ test('safeDeleteToTrash refuses a token from a non-DELETE op (e.g. write token r
       sseEmitter: sse,
       workspacePath: ws,
     });
-    writeToken = writeRes.operationToken;
-    assert.ok(writeToken);
+    assert.ok(writeRes.operationToken);
 
-    // Hand the WRITE token to safeDeleteToTrash. The token commits
-    // (kind = WRITE_OVERWRITE) but the resolved target is the workspace
-    // file — and the underlying _unsafeRawDelete still runs
-    // isHardBlockedDelete (which is fine here since it's benign), so
-    // the delete WILL succeed in this case. The defence here is the
-    // BARRIER itself — Phase 2 tools must call requestDelete, not
-    // requestWrite, before invoking safeDeleteToTrash. We pin a
-    // related invariant: the underlying _unsafeRawDelete refuses
-    // sensitive resolved paths even when given a benign-looking token.
-    //
-    // (Direct cross-op token misuse is documented as a Phase 2
-    // contract; the gate intentionally does not encode kind matching
-    // because the token's purpose is realPath verification, not
-    // approval-kind authorisation. The safety policy below catches
-    // sensitive-target misuse regardless.)
+    await assert.rejects(
+      trash.safeDeleteToTrash({ operationTokens: [writeRes.operationToken] }),
+      (err) =>
+        err.code === 'FILE_SAFETY_DENIED' &&
+        /kind mismatch.*token is for "write_overwrite".*expected one of \[delete\]/i.test(err.message),
+    );
+
+    // Crucially, the original file MUST NOT have been moved to trash
+    // — the kind check fires before any fs op.
+    const stillThere = await readFile(target, 'utf8');
+    assert.equal(stillThere, 'x', 'target file must be untouched after kind-mismatch rejection');
+    const list = await trash.listTrash();
+    assert.equal(list.length, 0, 'no trash manifest must be created');
+  });
+});
+
+test('kind-mismatch matrix: read / write / edit / move tokens are ALL rejected by safeDeleteToTrash', async () => {
+  await withSplitMeloHome(async (ws) => {
+    const trash = await import('./trash.js');
+    const grants = await import('./chatScopedGrants.js');
+    grants.clearChat();
+    const gate = await import('./fileSafetyGate.js');
+    gate._clearPendingForTests();
+
+    const a = join(ws, 'a.txt');
+    const b = join(ws, 'b.txt');
+    await writeFile(a, 'A', 'utf8');
+    await writeFile(b, 'B', 'utf8');
+
+    const auto = (event, payload) =>
+      queueMicrotask(() =>
+        gate.resolveFileSafety(payload.requestId, 'once'),
+      );
+
+    // requestRead returns NO operationToken (read is idempotent — gate
+    // does not mint delete-class tokens for it). Verify that.
+    const readRes = await gate.requestRead({
+      path: a,
+      chatId: 'chat-X',
+      sseEmitter: auto,
+      workspacePath: ws,
+    });
+    assert.equal(readRes.operationToken, undefined, 'read does not mint a token');
+
+    const writeRes = await gate.requestWrite({
+      path: a,
+      chatId: 'chat-X',
+      sseEmitter: auto,
+      workspacePath: ws,
+    });
+    const editRes = await gate.requestEdit({
+      path: a,
+      chatId: 'chat-X',
+      sseEmitter: auto,
+      workspacePath: ws,
+    });
+    const moveRes = await gate.requestMove({
+      src: a,
+      dst: b,
+      chatId: 'chat-X',
+      sseEmitter: auto,
+      workspacePath: ws,
+    });
+
+    for (const tok of [writeRes.operationToken, editRes.operationToken, moveRes.operationToken]) {
+      await assert.rejects(
+        trash.safeDeleteToTrash({ operationTokens: [tok] }),
+        (err) =>
+          err.code === 'FILE_SAFETY_DENIED' &&
+          /kind mismatch.*expected one of \[delete\]/i.test(err.message),
+      );
+    }
+    // Files unchanged across the whole matrix.
+    assert.equal(await readFile(a, 'utf8'), 'A');
+    assert.equal(await readFile(b, 'utf8'), 'B');
+    assert.equal((await trash.listTrash()).length, 0);
+  });
+});
+
+test('positive: legitimate DELETE token is accepted (kind enforcement does not break the happy path)', async () => {
+  await withSplitMeloHome(async (ws) => {
+    const trash = await import('./trash.js');
+    const grants = await import('./chatScopedGrants.js');
+    grants.clearChat();
+    const gate = await import('./fileSafetyGate.js');
+    gate._clearPendingForTests();
+
+    const target = join(ws, 'foo.txt');
+    await writeFile(target, 'x', 'utf8');
+
+    let stage = 0;
+    const sse = (event, payload) => {
+      const decision = stage === 0
+        ? { scope: 'once' }
+        : { scope: 'once', confirmInput: 'foo.txt' };
+      stage++;
+      queueMicrotask(() =>
+        gate.resolveFileSafety(payload.requestId, decision.scope, {
+          confirmInput: decision.confirmInput,
+        }),
+      );
+    };
+    const approved = await gate.requestDelete({
+      paths: [target],
+      chatId: 'chat-X',
+      sseEmitter: sse,
+      workspacePath: ws,
+    });
     const result = await trash.safeDeleteToTrash({
-      operationTokens: [writeToken],
+      operationTokens: approved.operationTokens,
     });
     assert.equal(result.removed[0], target);
   });

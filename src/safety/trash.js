@@ -158,11 +158,19 @@ export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
   const gate = await import('./fileSafetyGate.js');
 
   // Atomic commit phase: all-or-nothing. If any token commit throws
-  // (mismatch / expired / unknown), we rethrow before _unsafeRaw
-  // touches disk — no partial trash entry is ever produced.
+  // (mismatch / expired / unknown / wrong-kind), we rethrow before
+  // _unsafeRaw touches disk — no partial trash entry is ever
+  // produced.
+  //
+  // Codex D round 6 (2026-05-03): every token MUST be a DELETE
+  // token. Without this enforcement, a write/edit/move token from
+  // the same chat could be replayed here to skip requestDelete's
+  // two-stage filename confirmation.
   const resolvedTargets = [];
   for (const token of operationTokens) {
-    const committed = await gate.commitOperation(token);
+    const committed = await gate.commitOperation(token, {
+      expectedKind: gate.OP_KIND.DELETE,
+    });
     // Defence-in-depth: even though the gate already vetted these
     // at requestDelete time, re-check both sides RIGHT BEFORE the
     // actual rm. A future refactor that loosens the gate must not
@@ -477,7 +485,10 @@ export async function restoreFromTrash(operationId, opts = {}) {
         contentSize: entry.size ?? null,
         newHash: entry.sha256 || null,
       });
-      const committed = await gate.commitOperation(ui.operationToken);
+      // Codex D round 6 (2026-05-03): enforce kind.
+      const committed = await gate.commitOperation(ui.operationToken, {
+        expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
+      });
       resolvedTarget = committed.resolvedTarget;
     } else {
       // No-UI path: module-private atomic re-resolve, no gate token mint.

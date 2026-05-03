@@ -368,7 +368,11 @@ export async function restoreFromBackup(operationId, opts = {}) {
       contentSize: target.size ?? null,
       newHash: target.sha256 || null,
     });
-    const committed = await gate.commitOperation(ui.operationToken);
+    // Codex D round 6 (2026-05-03): enforce kind so a stray
+    // edit/delete/move token can't be passed in here.
+    const committed = await gate.commitOperation(ui.operationToken, {
+      expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
+    });
     resolvedTarget = committed.resolvedTarget;
   } else {
     // No-UI path (programmatic / wasMissing undo-create): no user
