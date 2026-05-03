@@ -20,6 +20,13 @@
 - **测试加 5 case 到 [phase2a.fileTools.test.js](src/tools/builtins/phase2a.fileTools.test.js)**：① fileWrite post-commit parent swap → 写到 outside dir 的 safe.txt 必须**不存在**（dirfd 锁住原 parent inode）；② fileEdit 同款；③ fileMove 跨 dir 走 renameat 成功（round 12 撤回的能力回归）；④ fileMove 同 dir rename 仍工作；⑤ fileMkdir 走 mkdirat。改 2 个 round 12 cross-dir 拒绝测试为 sensitive-dst-DENIED + cross-dir-success。
 - **依赖**：dependencies + `node-addon-api: ^8.3.0`，devDependencies + `node-gyp: ^11.0.0`；`scripts.build:native: 'node-gyp rebuild'` + `scripts.postinstall` 自动编 + warn-on-fail。
 - 验证：`src/safety/*.test.js` + `src/tools/builtins/phase2a.fileTools.test.js` **245/245 全绿**；`src/**/*.test.js` **1718/1718 全绿**（前 1712 + 6 新；零既有回归）。
+- Follow-up（Codex round 13 D #2 → 3 个 implementation gap）：上一刀 push 又被评 D。三条都在 round 13 dirfd 模型框架内（架构 Codex 不质疑），但 move tool 实现没完全接好 + install 有 robustness 漏洞：① 🔴 fileMoveTool commit 后开 dirfd 没和 precheck 时的 parent {dev,ino} cross-check（write/edit/mkdir 都做了，唯独 move 漏）→ parent rmdir+mkdir-different-inode 不被检测；② 🔴 dst-symlink 检查用 atomicLstat 重新开了一个独立 dstFd，不是 renameat 实际用的那个 dstFd → 两次 open 之间 dst parent 被换可让 lstat 看到的 leaf 跟 rename 操作的 leaf 不一致；③ 🔴 postinstall `node-gyp rebuild || echo` 吞构建失败 → npm install "成功" 但 dirfdOps.js import 时 throw + registry.js 静态 import 文件工具 → 启动直接崩。用户拍 ok 全做。
+- **fileMoveTool 加 precheck phase**：commit 后 `probeParentInoIdent(srcParent)` + `probeParentInoIdent(dstParent)` 拿 {dev,ino}（同 parent 时 dstProbe = srcProbe 复用）→ open 真 dirfd → fstat 比对 probe 的 {dev,ino} → mismatch → COMMIT_FAILED + raceKind='parent-swap' + meta.lexicalPath 标 src 还是 dst。
+- **dst-symlink check 改用同 dstFd**：删 atomicLstat 调用，改 `_raw.fstatat(dstFd, dstLeaf, AT_SYMLINK_NOFOLLOW)` 在已开的 dstFd 上做。fstatat 和 renameat 共用同一 dirfd → 它们看到的 parent 状态一定一致（不需 cross-check 那一段，因为 dirfd inode 不变）。ENOENT 当正常情况（dst 不存在）。
+- **postinstall 改 hard-fail**：去掉 `|| echo` fallback。`node-gyp rebuild` 失败 = npm install 失败。dirfdOps.js 的 throw 信息扩成 actionable 的"装 Xcode CLT / build-essential 然后 npm run build:native"。设计原则：把 robustness 不确定性挡在 install 时比挡在运行时正确。
+- **新 test seam `_setPostProbeHookForTests`**：在 probe 完成后、reopen dirfd 前 fire hook，让测试注入 parent rmdir+mkdir 模拟 attacker race。
+- 测试加 3 case：① fileMove src parent rmdir+mkdir → COMMIT_FAILED + parent-swap + dst 未创建；② fileMove dst parent rmdir+mkdir → COMMIT_FAILED + parent-swap + src 未动；③ structural test：dst 是已有 symlink → DST_IS_SYMLINK + src/link/external 三方未动（证明 fstatat 与 renameat 同 dirfd 一致）。
+- 验证：`src/tools/builtins/phase2a.fileTools.test.js` **59/59 全绿**（前 56 + 3 新）；`src/**/*.test.js` **1721/1721 全绿**（前 1718 + 3 新；零既有回归）。
 - Phase 2B (read/glob/grep) / 2C (pdf/image/xlsx/knowledge) / 2D (bash) / 2E (MCP) / 3 (UI) 仍未动。
 
 ## 2026-05-03 — File Safety Gate Phase 2A：write/edit/delete/move 接管 (Phase 1 真正进生产路径)

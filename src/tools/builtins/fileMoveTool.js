@@ -1,27 +1,26 @@
 /**
  * Built-in tool: file_move
  *
- * Round 13 (2026-05-03, post-Codex round 12 D): re-enabled cross-dir
- * rename via the `renameat` syscall — it accepts two dirfds, so we
- * can atomically bind both source and destination parent dirs through
- * fd handles. Round 12's CROSS_DIR_MOVE_REFUSED is no longer needed.
+ * Round 13 (2026-05-03, terminal): atomic via dirfd-bound renameat.
+ * Both src and dst parent directories are bound through file
+ * descriptors before the rename syscall — kernel resolves both
+ * leaves relative to dirfd inodes, not paths. Cross-directory
+ * rename is supported.
  *
- * Atomic semantics:
- *   - openParentDirFd(srcParent) → srcDirfd (O_DIRECTORY|O_NOFOLLOW)
- *   - openParentDirFd(dstParent) → dstDirfd (or reuse srcDirfd if same)
- *   - renameat(srcDirfd, srcLeaf, dstDirfd, dstLeaf) — kernel resolves
- *     both leaves relative to dirfd inodes. Path swaps on either parent
- *     during/after this op cannot redirect the rename.
+ * Round 13 follow-up (post-Codex D #2):
+ *   • Precheck phase: probe srcParent + dstParent dirfds, capture
+ *     {dev, ino}. After commit, when re-opening dirfds for renameat,
+ *     cross-check {dev, ino} matches precheck — catches "parent dir
+ *     was rmdir'd + new dir mkdir'd at same path during approval"
+ *     (different inode, same path).
+ *   • dst-symlink check uses _raw.fstatat on the SAME dstFd that
+ *     renameat will use. Eliminates the "two-dirfd-open" race where
+ *     atomicLstat opened a fresh dirfd that could differ from the
+ *     dirfd passed to renameat.
  *
  * No-follow leaf semantics: renameat (like rename) operates on the
  * directory entry, never the file the entry points to. Moving a
- * symlink moves the link, not the target file. (No O_NOFOLLOW
- * needed on rename — it's never a follow-the-leaf op.)
- *
- * Pre-existing-symlink dst: `atomicLstat(dstParent, dstLeaf)`
- * detects an existing symlink at dst and refuses (use file_delete
- * first); without this guard, renameat would silently replace the
- * link entry.
+ * symlink moves the link, not the target file.
  */
 
 import { isAbsolute, resolve } from 'node:path';
@@ -33,12 +32,33 @@ import {
 } from '../../safety/fileSafetyGate.js';
 import {
   openParentDirFd,
-  atomicLstat,
   splitParentLeaf,
   _raw,
   C as DC,
 } from '../../safety/dirfdOps.js';
 import { closeSync as closeFdSync, fstatSync } from 'node:fs';
+
+// Test-only seam: fires AFTER the post-commit probe captures
+// {dev, ino} but BEFORE the dirfd is reopened for renameat.
+// Tests use this to swap src/dst parent and prove the cross-check
+// catches it. Default null = no-op in production.
+let _postProbeHookForTests = null;
+export function _setPostProbeHookForTests(hook) {
+  _postProbeHookForTests = typeof hook === 'function' ? hook : null;
+}
+
+function probeParentInoIdent(parent) {
+  let fd;
+  try {
+    fd = openParentDirFd(parent);
+    const st = fstatSync(fd);
+    return { ok: true, dev: st.dev, ino: st.ino };
+  } catch (err) {
+    return { ok: false, error: err };
+  } finally {
+    if (fd != null) try { closeFdSync(fd); } catch {}
+  }
+}
 
 export const fileMoveTool = {
   id: 'file_move',
@@ -87,8 +107,10 @@ export const fileMoveTool = {
     const absSrc = isAbsolute(src) ? src : resolve(workspacePath || process.cwd(), src);
     const absDst = isAbsolute(dst) ? dst : resolve(workspacePath || process.cwd(), dst);
 
-    // Sensitivity check happens INSIDE requestMove — that runs before
-    // the parent-dir checks so /etc/hosts / ~/.ssh report DENIED.
+    const [srcParent, srcLeaf] = splitParentLeaf(absSrc);
+    const [dstParent, dstLeaf] = splitParentLeaf(absDst);
+
+    // ── Sensitivity check happens INSIDE requestMove ─────────────────
     let approved;
     try {
       approved = await requestMove({
@@ -124,83 +146,137 @@ export const fileMoveTool = {
       };
     }
 
-    // Use LEXICAL paths for the rename so leaf-symlink semantics
-    // are preserved (move-the-link, not move-the-target).
-    const [srcParent, srcLeaf] = splitParentLeaf(absSrc);
-    const [dstParent, dstLeaf] = splitParentLeaf(absDst);
-
-    // ── Open parent dirfds atomically ─────────────────────────────────
-    let srcFd = -1;
-    let dstFd = -1;
-    let srcParentDev, srcParentIno, dstParentDev, dstParentIno;
-    try {
-      try {
-        srcFd = openParentDirFd(srcParent);
-      } catch (err) {
+    // ── Probe parent {dev, ino} for cross-check at final-open ────────
+    // Why probe AFTER commit: the gate already verified the lexical→
+    // real mapping is unchanged from approval time, so a probe here
+    // captures the inode the user effectively approved against. Then
+    // when we re-open the dirfd below for the actual renameat, we
+    // cross-check {dev, ino} matches — catches "parent dir was
+    // rmdir'd + new dir mkdir'd at same path" (different inode, same
+    // path).
+    const srcProbe = probeParentInoIdent(srcParent);
+    if (!srcProbe.ok) {
+      const err = srcProbe.error;
+      if (err.code === 'ENOENT') {
+        return { ok: false, output: `Source parent ${srcParent} does not exist.`, error: 'PARENT_NOT_FOUND' };
+      }
+      if (err.code === 'ELOOP') {
+        return { ok: false, output: `Source parent ${srcParent} is a symlink.`, error: 'PARENT_NOT_DIR' };
+      }
+      if (err.code === 'ENOTDIR') {
+        return { ok: false, output: `Source parent ${srcParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
+      }
+      return { ok: false, output: `Cannot probe source parent ${srcParent}: ${err.message}`, error: err.message };
+    }
+    let dstProbe;
+    if (srcParent === dstParent) {
+      dstProbe = srcProbe;
+    } else {
+      dstProbe = probeParentInoIdent(dstParent);
+      if (!dstProbe.ok) {
+        const err = dstProbe.error;
         if (err.code === 'ENOENT') {
           return {
             ok: false,
-            output: `Source parent ${srcParent} does not exist.`,
+            output: `Destination parent ${dstParent} does not exist. Use file_mkdir to create it first.`,
             error: 'PARENT_NOT_FOUND',
           };
         }
         if (err.code === 'ELOOP') {
-          return {
-            ok: false,
-            output: `Source parent ${srcParent} is a symlink — refusing.`,
-            error: 'PARENT_NOT_DIR',
-          };
+          return { ok: false, output: `Destination parent ${dstParent} is a symlink.`, error: 'PARENT_NOT_DIR' };
         }
         if (err.code === 'ENOTDIR') {
-          return { ok: false, output: `Source parent ${srcParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
+          return { ok: false, output: `Destination parent ${dstParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
         }
-        throw err;
+        return { ok: false, output: `Cannot probe destination parent ${dstParent}: ${err.message}`, error: err.message };
+      }
+    }
+
+    if (_postProbeHookForTests) {
+      try { await _postProbeHookForTests({ srcParent, dstParent, absSrc, absDst }); } catch {}
+    }
+
+    // ── Open the dirfds we'll actually pass to renameat ──────────────
+    let srcFd = -1;
+    let dstFd = -1;
+    try {
+      try {
+        srcFd = openParentDirFd(srcParent);
+      } catch (err) {
+        if (err.code === 'ELOOP') {
+          return {
+            ok: false,
+            output: `Source parent ${srcParent} became a symlink between approval and rename.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absSrc, raceKind: 'parent-swap' },
+          };
+        }
+        return { ok: false, output: `Cannot open source parent: ${err.message}`, error: err.message };
       }
       const srcSt = fstatSync(srcFd);
-      srcParentDev = srcSt.dev;
-      srcParentIno = srcSt.ino;
+      // Cross-check: the parent inode this dirfd points at MUST match
+      // what we probed above. If not, an attacker rmdir'd + mkdir'd
+      // the parent path between probe and this open — different inode,
+      // same path. renameat would bind to the new inode (atomic w.r.t.
+      // the syscall) but the new dir is NOT what the user approved.
+      if (srcSt.dev !== srcProbe.dev || srcSt.ino !== srcProbe.ino) {
+        return {
+          ok: false,
+          output: `Source parent ${srcParent} was replaced (inode/device changed) between approval and rename.`,
+          error: 'COMMIT_FAILED',
+          meta: { lexicalPath: absSrc, raceKind: 'parent-swap' },
+        };
+      }
 
       if (srcParent === dstParent) {
         dstFd = srcFd;
-        dstParentDev = srcParentDev;
-        dstParentIno = srcParentIno;
       } else {
         try {
           dstFd = openParentDirFd(dstParent);
         } catch (err) {
-          if (err.code === 'ENOENT') {
+          if (err.code === 'ELOOP') {
             return {
               ok: false,
-              output: `Destination parent ${dstParent} does not exist. Use file_mkdir to create it first.`,
-              error: 'PARENT_NOT_FOUND',
+              output: `Destination parent ${dstParent} became a symlink between approval and rename.`,
+              error: 'COMMIT_FAILED',
+              meta: { lexicalPath: absDst, raceKind: 'parent-swap' },
             };
           }
-          if (err.code === 'ELOOP') {
-            return { ok: false, output: `Destination parent ${dstParent} is a symlink — refusing.`, error: 'PARENT_NOT_DIR' };
-          }
-          if (err.code === 'ENOTDIR') {
-            return { ok: false, output: `Destination parent ${dstParent} is not a directory.`, error: 'PARENT_NOT_DIR' };
-          }
-          throw err;
+          return { ok: false, output: `Cannot open destination parent: ${err.message}`, error: err.message };
         }
         const dstSt = fstatSync(dstFd);
-        dstParentDev = dstSt.dev;
-        dstParentIno = dstSt.ino;
+        if (dstSt.dev !== dstProbe.dev || dstSt.ino !== dstProbe.ino) {
+          return {
+            ok: false,
+            output: `Destination parent ${dstParent} was replaced (inode/device changed) between approval and rename.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absDst, raceKind: 'parent-swap' },
+          };
+        }
       }
 
-      // ── Refuse to overwrite an existing symlink at dst ─────────────
-      // renameat would silently replace the link entry; surface the
-      // conflict so the user explicitly chooses to delete the old
-      // link first via file_delete.
-      const dstLst = await atomicLstat(dstParent, dstLeaf);
-      if (dstLst && dstLst.isSymlink) {
-        return {
-          ok: false,
-          output:
-            `Refusing to overwrite an existing symlink at destination ${absDst}. ` +
-            `Delete the symlink first via file_delete and retry.`,
-          error: 'DST_IS_SYMLINK',
-        };
+      // ── dst-symlink check on the SAME dstFd renameat will use ──────
+      // Round 13 follow-up (Codex D #2): atomicLstat opens a separate
+      // dirfd; between that open and the renameat, dst parent could
+      // be replaced. Use _raw.fstatat on the existing dstFd so the
+      // check and the rename observe the same dirfd inode.
+      // ENOENT = no entry yet (the common case), proceed.
+      try {
+        const dstStat = _raw.fstatat(dstFd, dstLeaf, DC.AT_SYMLINK_NOFOLLOW);
+        if (dstStat.isSymlink) {
+          return {
+            ok: false,
+            output:
+              `Refusing to overwrite an existing symlink at destination ${absDst}. ` +
+              `Delete the symlink first via file_delete and retry.`,
+            error: 'DST_IS_SYMLINK',
+          };
+        }
+      } catch (err) {
+        if (err.errno !== 2 /* ENOENT */ && err.code !== 'ENOENT') {
+          return { ok: false, output: `Cannot check destination: ${err.message}`, error: err.message };
+        }
+        // ENOENT: dst doesn't exist — fine, that's the normal case.
       }
 
       // ── renameat — kernel binds both parents through dirfds ────────

@@ -57,9 +57,17 @@ try {
   // From src/safety/ that's two levels up.
   addon = requireCjs(join(__dirname, '..', '..', 'build', 'Release', 'dirfd_ops.node'));
 } catch (err) {
+  // npm install runs `node-gyp rebuild` via postinstall (no fallback —
+  // we deliberately fail npm install if the addon can't compile, so
+  // the runtime can rely on it being present). If we get here, either
+  // the user is mid-checkout before `npm install`, or postinstall
+  // somehow ran in an environment without Xcode CLT / build-essential.
   throw new Error(
     `[dirfdOps] failed to load native addon at build/Release/dirfd_ops.node: ${err.message}\n` +
-    `Run \`npm run build:native\` to compile (requires Xcode CLT on macOS / build-essential on Linux).`
+    `melo's file-safety gate requires the dirfd_ops addon to provide atomic *at() syscalls.\n` +
+    `Fix: install your platform's C++ toolchain and run \`npm run build:native\`:\n` +
+    `  • macOS: xcode-select --install\n` +
+    `  • Linux (Debian/Ubuntu): sudo apt-get install build-essential python3`
   );
 }
 

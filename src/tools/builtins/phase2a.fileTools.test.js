@@ -37,7 +37,10 @@ import {
   _setPostCommitHookForTests as _setEditPostCommitHook,
 } from './fileEditTool.js';
 import { fileDeleteTool } from './fileDeleteTool.js';
-import { fileMoveTool } from './fileMoveTool.js';
+import {
+  fileMoveTool,
+  _setPostProbeHookForTests as _setMovePostProbeHook,
+} from './fileMoveTool.js';
 import { fileMkdirTool } from './fileMkdirTool.js';
 
 async function freshGate() {
@@ -1304,5 +1307,104 @@ test('round 13: fileMkdir uses mkdirat through parent dirfd', async () => {
     assert.equal(result.ok, true);
     const st = await lstat(target);
     assert.equal(st.isDirectory(), true);
+  });
+});
+
+// ─── Round 13 follow-up (post-Codex D #2): move parent-swap detection ─
+
+test('round 13 followup: fileMove — post-commit src parent rmdir+mkdir → COMMIT_FAILED (parent-swap)', async () => {
+  // Codex D #2 fix: move tool now probes src/dst parent {dev, ino}
+  // after commit, then re-opens dirfd for renameat and cross-checks.
+  // A rmdir+mkdir-different-inode at the same path between the two
+  // events MUST be caught.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'srcdir'));
+    await mkdir(join(ws, 'dstdir'));
+    const src = join(ws, 'srcdir', 'a.txt');
+    const dst = join(ws, 'dstdir', 'a.txt');
+    await writeFile(src, 'x', 'utf8');
+
+    let swapped = false;
+    _setMovePostProbeHook(async ({ srcParent }) => {
+      // Replace srcdir with a fresh dir at the same path (different inode).
+      // Move the file out first so rmdir doesn't fail.
+      await rm(join(ws, 'srcdir'), { recursive: true, force: true });
+      await mkdir(join(ws, 'srcdir'));
+      await writeFile(join(ws, 'srcdir', 'a.txt'), 'attacker-replaced', 'utf8');
+      swapped = true;
+    });
+    try {
+      const result = await fileMoveTool.run(
+        { src, dst },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(swapped, true);
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'COMMIT_FAILED');
+      assert.equal(result.meta.raceKind, 'parent-swap');
+      // Attacker's file stayed put; nothing got moved to dst.
+      assert.equal(await fileExists(dst), false);
+    } finally {
+      _setMovePostProbeHook(null);
+    }
+  });
+});
+
+test('round 13 followup: fileMove — post-commit dst parent rmdir+mkdir → COMMIT_FAILED (parent-swap)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'srcdir'));
+    await mkdir(join(ws, 'dstdir'));
+    const src = join(ws, 'srcdir', 'a.txt');
+    const dst = join(ws, 'dstdir', 'a.txt');
+    await writeFile(src, 'x', 'utf8');
+
+    let swapped = false;
+    _setMovePostProbeHook(async () => {
+      await rm(join(ws, 'dstdir'), { recursive: true, force: true });
+      await mkdir(join(ws, 'dstdir'));
+      swapped = true;
+    });
+    try {
+      const result = await fileMoveTool.run(
+        { src, dst },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(swapped, true);
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'COMMIT_FAILED');
+      assert.equal(result.meta.raceKind, 'parent-swap');
+      // Source file unchanged, no copy at the new dst dir.
+      assert.equal(await readFile(src, 'utf8'), 'x');
+      assert.equal(await fileExists(dst), false);
+    } finally {
+      _setMovePostProbeHook(null);
+    }
+  });
+});
+
+test('round 13 followup: fileMove — dst symlink check uses SAME dstFd as renameat (structural)', async () => {
+  // Structural test: a pre-existing symlink at dst is detected via
+  // _raw.fstatat on the same dstFd that renameat will use. The check
+  // and the rename observe the same dirfd inode — there's no
+  // separate atomicLstat dirfd open that could see a different view.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const src = join(ws, 'a.txt');
+    const dst = join(ws, 'b.txt');
+    await writeFile(src, 'src-content', 'utf8');
+    await writeFile(join(outside, 'tgt'), 'external', 'utf8');
+    await symlink(join(outside, 'tgt'), dst);
+    const result = await fileMoveTool.run(
+      { src, dst },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DST_IS_SYMLINK');
+    // Three-way: src untouched, symlink intact, external file untouched.
+    assert.equal(await readFile(src, 'utf8'), 'src-content');
+    assert.equal(await readlink(dst), join(outside, 'tgt'));
+    assert.equal(await readFile(join(outside, 'tgt'), 'utf8'), 'external');
   });
 });

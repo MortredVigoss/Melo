@@ -23,7 +23,7 @@
     "rebuild:voice": "npm rebuild @discordjs/opus",
     "bench:memory": "node scripts/bench-memory.js",
     "test:ui": "node --test 'desktop-ui/**/*.test.js'",
-    "postinstall": "node-gyp rebuild || echo '[melo] native dirfd_ops addon failed to build — file safety atomic ops will be unavailable. Install Xcode CLT (xcode-select --install) and run: npm run build:native'"
+    "postinstall": "node-gyp rebuild"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",
