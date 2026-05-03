@@ -467,6 +467,39 @@ export const fileWriteTool = {
       }
       await fh.write(writeBuf, 0, writeBuf.length, 0);
 
+      // ── 9b. Post-write anchor (Codex round 12) ───────────────────────
+      // Re-verify path STILL points at our fh's inode AFTER the
+      // write. A swap that happened between the pre-write anchor
+      // and now (between snapshot/truncate/write) would have caused
+      // us to write to an orphaned inode while the user-visible
+      // path now points elsewhere.
+      if (!isCreate) {
+        const postFhStat = await fh.stat();
+        const postPathStat = await lstat(realPath).catch(() => null);
+        if (
+          !postPathStat ||
+          postPathStat.isSymbolicLink() ||
+          postPathStat.ino !== postFhStat.ino ||
+          postPathStat.dev !== postFhStat.dev
+        ) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was replaced (inode/device changed) ` +
+              `between anchor and write completion — kernel-level race ` +
+              `detected. The user-visible path now points at a different inode; ` +
+              `our content went to the original (now-orphaned) inode. ` +
+              `Backup retained at operationId=${snap.operationId}.`,
+            error: 'COMMIT_FAILED',
+            meta: {
+              lexicalPath: absPath, realPath,
+              raceKind: 'post-write-swap',
+              backupOperationId: snap.operationId,
+            },
+          };
+        }
+      }
+
       // ── 10. Record diff for restore-with-context ─────────────────────
       if (!isCreate && diffPreview) {
         try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}

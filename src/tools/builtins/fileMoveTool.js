@@ -45,13 +45,13 @@ export const fileMoveTool = {
   id: 'file_move',
   name: 'FileMove',
   description:
-    'Rename or move a file (or directory) from src to dst. ' +
+    'Rename a file (or directory) within the SAME parent directory. ' +
+    'src and dst MUST share the same dirname; cross-directory moves are refused — ' +
+    'use file_write at the destination + file_delete at the source for cross-dir moves. ' +
     'The user sees a confirmation dialog showing both paths and their realpaths; ' +
     'sensitive sources or destinations are hard-rejected. ' +
     'Leaf no-follow rename: a symlink at src moves the link itself, never the file the link points to. ' +
-    'Existing symlink at dst is refused (use file_delete first). ' +
-    'Known limitation: a parent-directory swap-to-symlink between commit and rename ' +
-    'is a microsecond kernel-level race that is not defended against (no Node.js renameat2).',
+    'Existing symlink at dst is refused (use file_delete first).',
   category: 'filesystem',
   requiresPermission: true,
   isConcurrencySafe: false,
@@ -95,6 +95,24 @@ export const fileMoveTool = {
 
     const absSrc = isAbsolute(src) ? src : resolve(workspacePath || process.cwd(), src);
     const absDst = isAbsolute(dst) ? dst : resolve(workspacePath || process.cwd(), dst);
+
+    // Codex Phase 2A round 12 (2026-05-03): restrict to same-parent
+    // renames. Cross-parent moves can't be safely defended without
+    // renameat2's RENAME_NOREPLACE / dir-fd binding (not exposed by
+    // Node), so we refuse them outright. Agents that need a true
+    // cross-dir move can file_write at the destination + file_delete
+    // the source — both go through individual safety prompts.
+    if (dirname(absSrc) !== dirname(absDst)) {
+      return {
+        ok: false,
+        output:
+          `file_move only supports same-directory renames. ` +
+          `src parent (${dirname(absSrc)}) and dst parent ` +
+          `(${dirname(absDst)}) differ; use file_write+file_delete ` +
+          `for cross-directory moves.`,
+        error: 'CROSS_DIR_MOVE_REFUSED',
+      };
+    }
 
     // ── FileSafetyGate approval + atomic commit ────────────────────────
     // (Sensitivity check happens INSIDE requestMove — must run

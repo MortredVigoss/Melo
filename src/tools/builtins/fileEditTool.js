@@ -378,6 +378,30 @@ export const fileEditTool = {
       await fh.truncate(0);
       await fh.write(writeBuf, 0, writeBuf.length, 0);
 
+      // ── 8b. Post-write anchor (Codex round 12) ──────────────────────
+      const postFhStat = await fh.stat();
+      const postPathStat = await lstat(realPath).catch(() => null);
+      if (
+        !postPathStat ||
+        postPathStat.isSymbolicLink() ||
+        postPathStat.ino !== postFhStat.ino ||
+        postPathStat.dev !== postFhStat.dev
+      ) {
+        return {
+          ok: false,
+          output:
+            `Target ${realPath} was replaced (inode/device changed) ` +
+            `between anchor and write completion — kernel-level race ` +
+            `detected. Backup retained at operationId=${snap.operationId}.`,
+          error: 'COMMIT_FAILED',
+          meta: {
+            lexicalPath: absPath, realPath,
+            raceKind: 'post-write-swap',
+            backupOperationId: snap.operationId,
+          },
+        };
+      }
+
       // ── 9. recordAfterDiff ───────────────────────────────────────────
       try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
 
