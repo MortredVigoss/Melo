@@ -1064,6 +1064,22 @@ export async function requestBashOp({
         `$(...) / <(...) / >(...) / backticks, or invoke the dedicated tool directly.`,
       );
     }
+    // Phase 2D follow-up #13 (Codex 🔴, 2026-05-04): argv-rewriter
+    // hard-reject. GNU `env -S` / `env --split-string` parses its
+    // single string argument as a shebang-style argv list at exec
+    // time, e.g. `env -S "bash -c 'rm x'"` actually runs
+    // `bash -c 'rm x'`. The parser cannot classify the string
+    // without re-running a full shell tokenizer; same risk profile
+    // as nested_shell — refuse the entire pattern.
+    if (r && r.kind === 'argv_rewrite') {
+      throw denyError(
+        `Bash command uses an argv-rewriting wrapper (${r.pattern || r.kind}). ` +
+        `\`env -S\` / \`env --split-string\` re-tokenize their string argument ` +
+        `into argv at exec time, hiding the actual program from static analysis. ` +
+        `Rewrite the command without -S / --split-string and invoke the underlying ` +
+        `program directly.`,
+      );
+    }
     // Phase 2D follow-up #10 (Codex 🔴, 2026-05-04): interpreter
     // inline-code execution (`python -c '...'`, `node -e '...'`,
     // `ruby -e '...'`, `perl -e '...'`, `php -r '...'`, heredoc-fed

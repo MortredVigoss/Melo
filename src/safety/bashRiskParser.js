@@ -424,6 +424,42 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
+  // Phase 2D follow-up #13 (Codex 🔴, 2026-05-04): argv-rewriter
+  // detection. GNU `env -S "bash -c 'rm x'"` (and the long form
+  // `env --split-string="..."` / `env --split-string=...`) parses
+  // its single string argument as a shebang-style argv list at
+  // exec time. After our wrapper-skip helper steps over `env -S`,
+  // the next token is a single quoted string the parser cannot
+  // classify — so it falls through to `unknown` prompt and one
+  // approve click runs whatever the string says. There is no safe
+  // way to inspect the string short of a real shell tokenizer
+  // applied recursively, so the entire `env -S` family is hard-
+  // rejected as `argv_rewrite`. Same hard-reject contract as
+  // nested_shell / code_execution.
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    if (tokenBasename(t.text) !== 'env') continue;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.kind !== 'word') continue;
+      // env -S / -S<value> (POSIX glued) / --split-string /
+      // --split-string=value
+      if (u.text === '-S' || /^-S./.test(u.text) ||
+          u.text === '--split-string' || u.text.startsWith('--split-string=')) {
+        risks.push({
+          kind: 'argv_rewrite',
+          pattern: 'env -S',
+          confidence: 'high',
+        });
+        break;
+      }
+      // First non-flag positional after env wrappers — stop scanning
+      // (the env's own flags are over).
+      if (!u.text.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(u.text)) break;
+    }
+  }
+
   // Phase 2D follow-up #10 + #11: heredoc-fed interpreter
   // (`python <<EOF\n<code>\nEOF`) and input-redirect-fed interpreter
   // (`python < script.py`) — the heredoc body / file content runs as

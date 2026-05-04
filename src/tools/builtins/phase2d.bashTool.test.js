@@ -1607,6 +1607,76 @@ test('round 19 Phase 2D followup #12: regression — |& + non-interpreter NOT ha
   });
 });
 
+// ─── Phase 2D follow-up #13: argv_rewrite (env -S / --split-string) ──
+// Codex 🔴 round 13: GNU env -S (long: --split-string) re-tokenizes
+// its single string argument into argv at exec time, so
+// `env -S "bash -c 'rm x'"` actually runs bash -c. The wrapper-skip
+// helper steps over `env -S` and sees an opaque string token —
+// classified as `unknown`, one approve click executes the inner
+// command. Hard-reject the entire env -S family.
+
+test('round 20 Phase 2D followup #13: env -S "bash -c rm" — autoApprove cannot delete file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'env-s-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `env -S "bash -c \\"rm -f ${target}\\""` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(promptCount, 0, 'env -S must hard-reject pre-prompt');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected');
+  });
+});
+
+test('round 20 Phase 2D followup #13: env -S "python -c" / --split-string variants — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `env -S "python -c print(1)"`,
+      `env --split-string "python -c x"`,
+      `env --split-string="bash -c x"`,
+      `/usr/bin/env -S "bash -c x"`,
+      `env -i FOO=1 -S "bash -c x"`,    // -S after other env flags
+      `env -SFOO`,                       // POSIX glued -S<value>
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should be denied`);
+    }
+    assert.equal(promptCount, 0, 'all env -S forms must hard-reject pre-prompt');
+  });
+});
+
+test('round 20 Phase 2D followup #13: regression — env -i / env -u / env --version NOT hard-rejected by argv_rewrite', async () => {
+  // env's other flags (-i clear env, -u unset var, --version) are
+  // not argv-rewriters. They should pass through to the existing
+  // detectors (e.g. env -i FOO=1 python script.py reaches prompt
+  // as unknown; env -i FOO=1 python -c '...' is code_execution).
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'env -i FOO=1 python script.py',  // unknown prompt (no -c, no pipe)
+      'env -u VAR python script.py',    // same
+      'env --version',                   // unknown prompt
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, 3, 'each non-argv-rewrite env form must reach the prompt');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {
