@@ -427,6 +427,169 @@ test('round 14 Phase 2D followup #7: <(...) and >(...) process substitution — 
   });
 });
 
+// Phase 2D follow-up #8 (Codex 🔴, 2026-05-04): wrapper-form
+// nested_shell — token-scan now matches every wrapper Codex
+// enumerated. Each test pins a different wrapper + autoApprove:
+// even if the user clicks "approve", the prompt never fires
+// because the gate hard-rejects before _prompt is called.
+
+test('round 15 Phase 2D followup #8: /bin/bash -c "rm" (absolute path) — HARD REJECT + file untouched', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'absolute-path.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `/bin/bash -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0, '/bin/bash wrapper must be caught by basename token scan');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 15 Phase 2D followup #8: env bash -c "rm" — HARD REJECT + file untouched', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'env-wrapper.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `env bash -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0, 'env wrapper must not bypass nested_shell');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 15 Phase 2D followup #8: command bash -c "rm" — HARD REJECT + file untouched', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'command-wrapper.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `command bash -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 15 Phase 2D followup #8: sudo / nohup / time / nice + bash -c — all HARD REJECT', async () => {
+  // Multiple process-wrapper forms: sudo (privilege), nohup (detach),
+  // time (timing), nice (priority). All must hit the same token-scan
+  // path. We don't actually invoke sudo (would prompt for password);
+  // the gate must reject before spawn.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const wrapperForms = [
+      'sudo bash -c "echo x"',
+      'nohup bash -c "echo x"',
+      'time bash -c "echo x"',
+      'nice -n 10 bash -c "echo x"',
+    ];
+    for (const cmd of wrapperForms) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.ok, false, `${cmd} should be denied`);
+      assert.equal(r.error, 'DENIED');
+    }
+    assert.equal(promptCount, 0, 'no wrapper form should reach the prompt');
+  });
+});
+
+test('round 15 Phase 2D followup #8: xargs -I{} bash -c — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'xargs-attack.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `echo a | xargs -I{} bash -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 15 Phase 2D followup #8: FOO=1 bash -c — env-assignment wrapper HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: 'FOO=1 BAR=2 bash -c "echo $FOO"' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 15 Phase 2D followup #8: bash -cfoo (POSIX glued -c form) — HARD REJECT', async () => {
+  // POSIX bash accepts `-c<command>` glued. If parser only matched
+  // the literal token "-c" exactly, this form would slip through.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: 'bash -cecho' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 15 Phase 2D followup #8: env eval "rm" — eval in wrapper position HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'env-eval.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `env eval 'rm ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 15 Phase 2D followup #8: zsh / dash / ksh / fish + -c — all HARD REJECT', async () => {
+  // Other POSIX-ish shells in the SHELL_INTERPRETERS set.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const shell of ['zsh', 'dash', 'ksh', 'fish']) {
+      const r = await bashTool.run(
+        { command: `${shell} -c "echo hi"` },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.ok, false, `${shell} -c should be denied`);
+      assert.equal(r.error, 'DENIED');
+    }
+    assert.equal(promptCount, 0);
+  });
+});
+
 // ─── Allowlist hits — silent ──────────────────────────────────────────
 
 test('round 13 Phase 2D followup #1: pwd / whoami — allowlisted, silent', async () => {

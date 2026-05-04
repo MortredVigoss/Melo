@@ -301,32 +301,66 @@ function riskifyTokens(tokens) {
     }
   }
 
-  // ── Phase 2D follow-up #1 (Codex 🔴): nested shell detection ──────
-  // `bash -c '...'` / `sh -c '...'` / `eval '...'` can run ANY inner
-  // command; we don't recursively re-parse the inner string (would
-  // need a full bash grammar). Surface them as `nested_shell` so the
-  // gate prompts. `xargs ... sh -c` (or bash -c) is the same pattern
-  // — xargs followed by a -c-using interpreter. Without this guard,
-  // `bash -c 'rm -rf x'` would slip past the delete-class hard-reject.
-  if (head === 'eval') {
-    risks.push({ kind: 'nested_shell', pattern: 'eval', confidence: 'high' });
-  }
-  if (head === 'bash' || head === 'sh' || head === 'zsh' || head === 'dash' || head === 'ksh') {
-    if (args.includes('-c')) {
-      risks.push({ kind: 'nested_shell', pattern: `${head} -c`, confidence: 'high' });
+  // ── Phase 2D follow-up #8 (Codex 🔴, 2026-05-04): nested-shell
+  // wrapper detection by token scan ───────────────────────────────────
+  // Earlier rounds checked only `head === 'bash'/'sh'/...` + eval/
+  // xargs at head. That missed every wrapper form Codex enumerated:
+  //   /bin/bash -c '...'              (absolute path)
+  //   env bash -c '...'               (env wrapper)
+  //   command bash -c '...'           (shell builtin wrapper)
+  //   sudo bash -c '...'              (privilege wrapper)
+  //   nohup / time / nice / exec bash -c '...'   (process wrappers)
+  //   xargs -I{} bash -c '...'        (argument wrapper)
+  //   FOO=1 bash -c '...'             (env-assignment wrapper, head still picks bash but defensive)
+  // Maintaining a wrapper allow/deny list is a Phase 2D round-5-style
+  // dead end. Token-scan ALL words: any token whose basename is a
+  // shell interpreter AND a later token is `-c` (or POSIX glued
+  // `-c<command>`) → nested_shell. Also any token whose basename is
+  // `eval` → nested_shell. Subsumes the previous head-based checks.
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    const base = tokenBasename(t.text);
+    if (base === 'eval') {
+      risks.push({ kind: 'nested_shell', pattern: 'eval', confidence: 'high' });
+      continue;
     }
-  }
-  if (head === 'xargs') {
-    // xargs followed by a -c-using shell
-    const interp = args.find(a => a === 'bash' || a === 'sh' || a === 'zsh' || a === 'dash' || a === 'ksh');
-    if (interp && args.includes('-c')) {
-      risks.push({ kind: 'nested_shell', pattern: `xargs ${interp} -c`, confidence: 'high' });
+    if (!SHELL_INTERPRETERS.has(base)) continue;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.kind !== 'word') continue;
+      if (isShellCmdFlag(u.text)) {
+        risks.push({ kind: 'nested_shell', pattern: `${base} -c`, confidence: 'high' });
+        break;
+      }
     }
-    // xargs -I {} <cmd> with a shell-using replacement is harder to
-    // detect, but the most common form (`xargs sh -c '...'`) is caught above.
   }
 
   return risks;
+}
+
+// Phase 2D follow-up #8: which interpreter names trigger the nested-
+// shell hard-reject when paired with `-c`. Includes POSIX-ish shells
+// + zsh/fish. Does NOT include `busybox` (it is an applet multiplexer
+// — its sh/ash applets are caught by basename of the inner argument
+// in nested forms like `busybox sh -c '...'`).
+const SHELL_INTERPRETERS = new Set([
+  'bash', 'sh', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'fish',
+]);
+
+function tokenBasename(text) {
+  if (typeof text !== 'string' || !text) return '';
+  const idx = text.lastIndexOf('/');
+  return idx >= 0 ? text.slice(idx + 1) : text;
+}
+
+// `-c` (separate arg) or POSIX bash glued form `-c<command>`. Glued
+// `-cfoo` runs "foo" as the inner command — equally dangerous. Long
+// options like `-config` would also match, but no shell takes them
+// (false-positive cost is acceptable; the safe failure mode is hard
+// reject of an exotic form).
+function isShellCmdFlag(text) {
+  return text === '-c' || /^-c./.test(text);
 }
 
 // Phase 2D follow-up #1 (Codex 🔴): scan a raw command string for
