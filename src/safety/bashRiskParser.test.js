@@ -201,9 +201,14 @@ test('ruby -e "...File.delete..." flagged as delete', () => {
   assert.ok(findRisk(cmd, 'delete'));
 });
 
-test('benign python -c (no delete primitive) NOT flagged', () => {
+test('Phase 2D follow-up #10: ANY python -c is flagged code_execution (even benign)', () => {
+  // Pre-followup: benign `python -c "print(1)"` was unflagged
+  // because the delete-API regex didn't match. Post-followup: any
+  // interpreter inline-code form is hard-rejected as code_execution
+  // — the user can't reliably classify "is this Python dangerous?".
   const risks = parseBashRiskyOps('python -c "print(1)"').risks;
-  assert.equal(risks.length, 0);
+  assert.equal(risks.length, 1);
+  assert.equal(risks[0].kind, 'code_execution');
 });
 
 // ── mv ────────────────────────────────────────────────────────────────

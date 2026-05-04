@@ -1064,6 +1064,26 @@ export async function requestBashOp({
         `$(...) / <(...) / >(...) / backticks, or invoke the dedicated tool directly.`,
       );
     }
+    // Phase 2D follow-up #10 (Codex 🔴, 2026-05-04): interpreter
+    // inline-code execution (`python -c '...'`, `node -e '...'`,
+    // `ruby -e '...'`, `perl -e '...'`, `php -r '...'`, heredoc-fed
+    // `python <<EOF`, stdin-redirect `python < x.py`, pipe-fed
+    // `cat x | python`). The carried code can call os.system /
+    // os.unlink / fs.rm / equivalent, bypassing every file gate. As
+    // with nested_shell, the user cannot reliably classify "is this
+    // inline Python dangerous?" from a glance. Same hard-reject
+    // contract — agent must write the code to a workspace file via
+    // fileWrite (which IS gated) and then run `python script.py`
+    // (no inline flag, allowed).
+    if (r && r.kind === 'code_execution') {
+      throw denyError(
+        `Bash command runs inline code through a script interpreter (${r.pattern || r.kind}). ` +
+        `This is hard-rejected because the carried code can perform any file / network / ` +
+        `process operation, bypassing fileDelete / fileWrite / fileEdit gates. Write the ` +
+        `code to a workspace file with fileWrite first (which IS gated), then invoke ` +
+        `\`python script.py\` / \`node app.js\` etc. without -c / -e / heredoc / stdin pipe.`,
+      );
+    }
   }
 
   // Phase 2D follow-up #6 (Codex 🟠, 2026-05-04): payload now

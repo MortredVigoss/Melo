@@ -94,7 +94,11 @@ const SILENT_ALLOWLIST = [
 
 function isVersionProbe(args) {
   if (!Array.isArray(args)) return false;
-  if (args.length === 0) return true;
+  // Phase 2D follow-up #10 (Codex 🔴, 2026-05-04): bare interpreter
+  // (`python` / `node` with no args) is NOT a version probe — it
+  // drops into a REPL or reads stdin. The latter is a generic code-
+  // execution attack vector when stdin can be supplied. Only the
+  // explicit `-v` / `-V` / `--version` flags are version probes.
   if (args.length === 1 && (args[0] === '-v' || args[0] === '-V' || args[0] === '--version')) return true;
   return false;
 }
