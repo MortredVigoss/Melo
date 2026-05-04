@@ -715,6 +715,71 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
+test('Codex D fix #6: expansion-head + positional → code_execution (covers $AWK / ${a}wk / ${cmd[@]})', () => {
+  // Codex re-review of D fix #5 (cf21ff5) found expansion-form awk
+  // basenames: token literal `$AWK` / `${a}wk` / `${cmd[@]}` doesn't
+  // match isAwkBasename's regex, but resolves to awk at runtime →
+  // autoApprove ran system(). Round 9 expansion-before-c only covers
+  // FLAG forms (-c/-e/...), not positional. D fix #6 adds: expansion
+  // at sub-command head + ANY non-flag positional → flag.
+  for (const cmd of [
+    `$AWK 'BEGIN{system("rm")}'`,            // variable expansion
+    `${'${a}'}wk 'BEGIN{system("rm")}'`,     // parameter substitution
+    `${'${cmd[@]}'} 'BEGIN{system("rm")}'`,  // array expansion
+    `"$AWK" 'BEGIN{system("rm")}'`,          // quoted variable (still expands)
+    `${'${SHELL}'} 'BEGIN{print "x"}'`,      // any expansion + positional
+    `$EDITOR file.txt`,                       // intentional over-flag (envvar invocation)
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (expansion-head + positional)`,
+    );
+  }
+});
+
+test('Codex D fix #6: regression — expansion-head WITHOUT positional NOT flagged', () => {
+  // Pin the boundary: head expansion alone (no positional after) is
+  // common in legit shell usage. `mkdir $DIR` / `cat $FILE` /
+  // `ls $HOME` etc. must not flag.
+  for (const cmd of [
+    `mkdir $DIR`,
+    `cat $FILE`,
+    `ls $HOME`,
+    `cd $WORKSPACE`,
+    `echo $VAR`,
+    `printf $TEMPLATE`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (expansion-head, no extra positional)`,
+    );
+  }
+});
+
+test('Codex D fix #6: regression — non-expansion head NOT flagged by D fix #6 path', () => {
+  // The D fix #6 check requires the HEAD token to be an expansion.
+  // Commands with literal heads (echo/cat/grep/...) followed by
+  // expansion-shaped args don't trigger D fix #6 (other detectors
+  // may flag for different reasons; pin only D fix #6 path here).
+  for (const cmd of [
+    `cat $FILE program.txt`,                 // head=cat (literal), not expansion
+    `git commit -m "$MSG"`,                  // head=git
+    `echo "$AWK is the awk binary"`,         // head=echo
+    `printf "%s\\n" "$VAR"`,                 // head=printf
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    const dFix6 = risks.filter(r => r.pattern === 'expansion-head + positional program');
+    assert.equal(
+      dFix6.length,
+      0,
+      `${cmd} should not trigger D fix #6 path (head is literal)`,
+    );
+  }
+});
+
 test('Codex D fix #5 (nuclear): awk-as-data with bare `awk` token IS flagged (over-flag accepted)', () => {
   // 5 rounds of D evaluation proved enumerated wrapper-flag chains
   // never get fully covered. D fix #5 dropped awkIsInvocationContext

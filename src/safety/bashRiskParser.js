@@ -632,6 +632,49 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
+  // D fix #6 (Codex 🔴 round 6, 2026-05-04): expansion-form awk
+  // basename. The token-scan above only matches LITERAL `awk` /
+  // `gawk` / etc. tokens. Shell expansion at the head can resolve
+  // to awk at runtime:
+  //   `$AWK 'BEGIN{system("rm")}'`
+  //   `${a}wk 'BEGIN{system("rm")}'`
+  //   `${cmd[@]} 'BEGIN{system("rm")}'`
+  //   `$EDITOR file.txt` (any expansion-head + positional)
+  // Round 9 already covers `$SHELL -c PROG` via expansion-before-c
+  // (extended in round 10 to inline-code-flag), but those checks
+  // require a specific FLAG (`-c`/`-e`/`-r`/`-p`/`--eval`) right
+  // after expansion. awk's primary inline form is a positional
+  // program (no flag), so the existing check misses it.
+  //
+  // Detection: head position (after preamble) is an expansion AND
+  // any later token is a non-flag positional → hard-reject.
+  // Trade-off (continued nuclear over-flag): `$EDITOR file.txt` /
+  // `$BROWSER url` / `$TERM args` etc. all flag. Agent mitigation:
+  // use literal command name instead of envvar shorthand. Safe
+  // direction (over-flag) preferred per 5-round D pattern.
+  {
+    const headIdx2 = skipPreamble(tokens);
+    const headTok = tokens[headIdx2];
+    if (headTok && headTok.kind === 'word' && hasExpansionMetachar(headTok.text)) {
+      for (let j = headIdx2 + 1; j < tokens.length; j++) {
+        const u = tokens[j];
+        if (u.kind !== 'word') continue;
+        const a = u.text;
+        if (a === '--') continue;
+        if (a.startsWith('-')) continue;
+        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
+        // First non-flag positional after expansion-head → potential
+        // inline program (head could expand to awk/python/sed/etc.).
+        risks.push({
+          kind: 'code_execution',
+          pattern: 'expansion-head + positional program',
+          confidence: 'medium',
+        });
+        break;
+      }
+    }
+  }
+
   // gsed = GNU sed on BSD systems via homebrew; same e-cmd surface.
   const sedToken = findWrappedCommand(tokens, text => /^g?sed$/.test(tokenBasename(text)));
   if (sedToken) {

@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-05-04 — Codex D #6 + 方案 W：head-expansion + positional 闭环
+
+- D fix #5 nuclear (`cf21ff5`) push 后跑第六轮 codex review，Codex 评 **D**：Y nuclear 闭环了 wrapper-flag chain 7/7（**P2 通过**），但暴露 expansion 形态新攻击：
+  - `$AWK 'BEGIN{system("rm")}'`（variable expansion）
+  - `${a}wk 'BEGIN{system("rm")}'`（parameter substitution）
+  - `${cmd[@]} 'BEGIN{system("rm")}'`（array expansion）
+- token literal 是 `$AWK`/`${a}wk`/`${cmd[@]}` 不命中 `isAwkBasename` regex → token-scan miss → autoApprove 一键执行。Codex 同时 P1 注：`gnuplot -e 'system "rm"'` / `sqlite3 .shell` / `vim -c '!rm'` / `ed` 也有同款 inline-shell-out 表面，但属预存盲区不是本轮引入，**留独立 round 评估**。
+- 用户拍 **方案 W**：扩展 expansion-before rule 到 "head 位置 expansion + 任何 non-flag positional"。round 9 已经处理 `$SHELL -c PROG`（expansion + inline-code-flag），W 加 positional 形态。
+- 实现：[src/safety/bashRiskParser.js](src/safety/bashRiskParser.js) awk 检测块尾追加 expansion-head + positional 检查：
+  ```js
+  const headIdx2 = skipPreamble(tokens);
+  const headTok = tokens[headIdx2];
+  if (headTok && headTok.kind === 'word' && hasExpansionMetachar(headTok.text)) {
+    for (let j = headIdx2 + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.kind !== 'word') continue;
+      if (u.text === '--' || u.text.startsWith('-')) continue;
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(u.text)) continue;
+      risks.push({ kind: 'code_execution', pattern: 'expansion-head + positional program', confidence: 'medium' });
+      break;
+    }
+  }
+  ```
+- 闭环（手动 15 case 验证 / 全 6 D 累积 attack vector 全过）：
+  - ✅ D #6 attacks: `$AWK 'PROG'` / `${a}wk 'PROG'` / `${cmd[@]} 'PROG'` / `"$AWK" PROG` / `${SHELL} 'PROG'` / `$EDITOR file.txt` 全 catch
+  - ✅ D #5/#4/#3/#2/#1 attack 全 regression catch
+  - ✅ Round 9 expansion-before-c 仍工作（`$AWK -e PROG` 同时被 nested_shell + code_execution 双标）
+- false positive boundary（pin 未误报）：
+  - `mkdir $DIR` / `cat $FILE` / `ls $HOME` / `cd $WORKSPACE` / `echo $VAR` / `printf $TEMPLATE`（expansion-head 但 no positional after → no flag）
+  - `cat $FILE program.txt`（head=cat literal，不是 expansion）
+  - `git commit -m "$MSG"` / `echo "$AWK is awk"`（head literal）
+  - `awk -f script.awk` / `awk --version`（probe / file-source）
+- accepted over-flag (D fix #6 trade-off)：
+  - `$EDITOR file.txt` / `$BROWSER url` / `$TERM args` 等 envvar invocation
+  - agent mitigation：直接用具体命令名（`vim file.txt` / `firefox url`），不用 envvar shorthand
+- 测试加 4 case：parser 3 case（① 6 形态 expansion-head attack；② 6 形态 expansion-head 无 positional 不误标；③ 4 形态 head-literal-with-expansion-arg 不误触发 D fix #6）；e2e 1 case（3 形态 `$AWK`/`${a}wk`/`${cmd[@]}` autoApprove + 文件保留 attack vector）。
+- 验证：`src/safety/bashRiskParser.test.js` **80/80 全绿**（前 77 + 3 新）；`src/tools/builtins/phase2d.bashTool.test.js` **109/109 全绿**（前 108 + 1 新）；`src/**/*.test.js` **1946/1946 全绿**（前 1942 + 4 新；零既有回归）。
+- **Codex P1 留下次**：`gnuplot -e` / `sqlite3 .shell` / `vim/ex -c '!cmd'` / `ed` 等非 awk inline-shell-out 工具不在当前 SCRIPT_INTERPRETERS 也不在 awk 范畴，预存盲区。Codex 自己说"不是本次 nuclear awk 改动引入" — 应另起 round 处理（可能扩 SCRIPT_INTERPRETERS 加这些工具 + inline-flag 集合）。
+- **总结 6 轮 D**：① wrapper enumerate 是无底洞 → D fix #5 nuclear ✓；② basename literal match 漏 expansion → D fix #6 head-expansion check ✓；③ 还有 inline-shell-out 工具维度（gnuplot/sqlite/vim/ed）— 下轮独立处理；④ 每轮 D 都 expose 新维度盲区，nuclear option + 接受 over-flag 是 trim 不是 pivot 的最稳路径；⑤ Codex review 是结构性必需 — 6 轮各自找到 6 个不同维度盲区，手动 self-review 抓不到这些。
+
+---
+
 ## 2026-05-04 — Codex D #5 + 用户拍 nuclear option Y：删 invocation-context guard
 
 - D fix #4 (`0035e86`) push 后跑第五轮 codex review，Codex 又评 **D**：walkback 永远漏 wrapper-flag chain。Codex 实测 8 个 attack vector 全部 risks=[]：
