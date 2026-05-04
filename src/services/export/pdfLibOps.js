@@ -379,9 +379,16 @@ export async function applyInPlaceOverlays(sourceBytes, spec) {
         });
         overlaysApplied += 1;
       } else if (ov.type === 'image') {
-        // We expect a resolved absolute path here (caller resolves
-        // via pdfEditSpec.resolveSpecInputPath). Read + embed.
-        const bytes = await loadBytes(ov.imagePath);
+        // Phase 2C follow-up #1 (Codex 🟠, 2026-05-04): prefer
+        // `ov.imageBytes` (a Buffer the tool layer pre-read through
+        // gatedReadIntoBuffer). Falls back to `ov.imagePath` for
+        // legacy/internal callers and unit tests; production tools
+        // (pdfTool.from_spec) MUST pre-gate and inject imageBytes
+        // so the gate's sensitivity check fires for every overlay
+        // image.
+        const bytes = Buffer.isBuffer(ov.imageBytes)
+          ? ov.imageBytes
+          : await loadBytes(ov.imagePath);
         let img;
         // Magic-byte sniff so an image labelled .jpg but containing
         // PNG bytes still works (and vice versa).
@@ -391,7 +398,7 @@ export async function applyInPlaceOverlays(sourceBytes, spec) {
           img = await doc.embedJpg(bytes);
         } else {
           throw new Error(
-            `applyInPlaceOverlays: image at ${ov.imagePath} is not a valid PNG or JPG (pdf-lib only embeds those two formats)`,
+            `applyInPlaceOverlays: image at ${ov.imagePath || '(buffer)'} is not a valid PNG or JPG (pdf-lib only embeds those two formats)`,
           );
         }
         page.drawImage(img, {

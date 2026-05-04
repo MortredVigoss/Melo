@@ -309,6 +309,105 @@ test('knowledgeTool.index: search action does NOT need gate (in-memory)', async 
   });
 });
 
+// ─── Phase 2C follow-up #1: from_spec image overlay reads gated ───
+
+test('round 13 Phase 2C followup #1: pdfTool.from_spec image overlay external imagePath PROMPTS once', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const sourcePdf = join(ws, 'src.pdf');
+    await writeFile(sourcePdf, await makeFakePdf(1));
+    // External image overlay — must trigger a gate prompt.
+    const sharp = (await import('sharp')).default;
+    const overlayImg = join(outside, 'logo.png');
+    await sharp({
+      create: { width: 10, height: 10, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    }).png().toFile(overlayImg);
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await pdfTool.run(
+      {
+        action: 'from_spec',
+        editSpec: {
+          mode: 'in_place_overlay',
+          sourcePdf,
+          overlays: [{ type: 'image', page: 1, x: 50, y: 50, imagePath: overlayImg }],
+        },
+      },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    // sourcePdf is workspace-internal (silent), overlay imagePath is
+    // external benign → 1 prompt for the overlay only.
+    assert.equal(promptCount, 1, 'external overlay imagePath must prompt once');
+  });
+});
+
+test('round 13 Phase 2C followup #1: from_spec — DENY external image overlay → no PDF generated', async () => {
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    const sourcePdf = join(ws, 'src.pdf');
+    await writeFile(sourcePdf, await makeFakePdf(1));
+    const sharp = (await import('sharp')).default;
+    const overlayImg = join(outside, 'sensitive-logo.png');
+    await sharp({
+      create: { width: 10, height: 10, channels: 3, background: { r: 0, g: 255, b: 0 } },
+    }).png().toFile(overlayImg);
+
+    const result = await pdfTool.run(
+      {
+        action: 'from_spec',
+        editSpec: {
+          mode: 'in_place_overlay',
+          sourcePdf,
+          overlays: [{ type: 'image', page: 1, x: 50, y: 50, imagePath: overlayImg }],
+        },
+      },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    // The from_spec output PDF must NOT exist — meta.path is set
+    // only on success, so we just assert no success.
+    assert.equal(result.meta?.path, undefined);
+  });
+});
+
+test('round 13 Phase 2C followup #1: from_spec — workspace overlay is silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const sourcePdf = join(ws, 'src.pdf');
+    await writeFile(sourcePdf, await makeFakePdf(1));
+    const sharp = (await import('sharp')).default;
+    const overlayImg = join(ws, 'inside-logo.png');
+    await sharp({
+      create: { width: 10, height: 10, channels: 3, background: { r: 0, g: 0, b: 255 } },
+    }).png().toFile(overlayImg);
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await pdfTool.run(
+      {
+        action: 'from_spec',
+        editSpec: {
+          mode: 'in_place_overlay',
+          sourcePdf,
+          overlays: [{ type: 'image', page: 1, x: 50, y: 50, imagePath: overlayImg }],
+        },
+      },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 0, 'workspace-internal overlay must not prompt');
+  });
+});
+
 // ─── Phase 2C contract: gatedReadIntoBuffer is the path ───────────────
 
 test('Phase 2C contract: rich-media tools route through gatedReadIntoBuffer', async () => {

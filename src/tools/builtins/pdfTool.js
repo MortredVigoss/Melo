@@ -1174,24 +1174,35 @@ export const pdfTool = {
             return { ok: false, output: 'from_spec.sourcePdf could not be resolved', error: 'INVALID_PARAMS' };
           }
           // Phase 2C: gate the source PDF read; pass Buffer to overlay
-          // engine so pdf-lib never re-opens the path. Image overlays
-          // still pass paths — applyInPlaceOverlays via loadBytes
-          // accepts either, but those are NOT yet gated. Phase 2C
-          // round 2 will gate per-overlay image reads as well.
+          // engine so pdf-lib never re-opens the path.
           const srcR = await gateAndRead(srcPath);
           if (!srcR.ok) return srcR;
           const sourceBytes = srcR.buffer;
-          // Resolve imagePaths in overlays + apply.
-          const resolvedSpec = {
-            ...spec,
-            overlays: Array.isArray(spec.overlays)
-              ? spec.overlays.map(ov =>
-                  ov.type === 'image'
-                    ? { ...ov, imagePath: resolveSpecInputPath(ov.imagePath, workspacePath) }
-                    : ov,
-                )
-              : undefined,
-          };
+          // Phase 2C follow-up #1 (Codex 🟠): every image-overlay
+          // imagePath ALSO goes through gateAndRead so sensitive PNG/
+          // JPG can't be silently embedded into the output PDF.
+          // applyInPlaceOverlays prefers `imageBytes` (Buffer)
+          // over `imagePath`; tool layer sets imageBytes here.
+          const overlays = Array.isArray(spec.overlays) ? spec.overlays : [];
+          const resolvedOverlays = [];
+          for (const ov of overlays) {
+            if (ov.type !== 'image') {
+              resolvedOverlays.push(ov);
+              continue;
+            }
+            const absImg = resolveSpecInputPath(ov.imagePath, workspacePath);
+            if (!absImg) {
+              return {
+                ok: false,
+                output: `from_spec: image overlay imagePath could not be resolved (${ov.imagePath})`,
+                error: 'INVALID_PARAMS',
+              };
+            }
+            const imgR = await gateAndRead(absImg);
+            if (!imgR.ok) return imgR;
+            resolvedOverlays.push({ ...ov, imagePath: absImg, imageBytes: imgR.buffer });
+          }
+          const resolvedSpec = { ...spec, overlays: resolvedOverlays };
           const result = await applyInPlaceOverlays(sourceBytes, resolvedSpec);
           await writeBytes(outAlloc.path, result.bytes);
           return buildWriteResponse(outAlloc.path, result.bytes.length, {
