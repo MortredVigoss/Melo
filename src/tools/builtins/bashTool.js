@@ -65,23 +65,18 @@ const SILENT_ALLOWLIST = [
   { match: (h, a) => h === 'date' && allOptionsOnly(a, ['-', '+']) },
   { match: (h, a) => h === 'ls' && allOptionsOnly(a) },
   { match: (h, a) => h === 'echo' && a.every(arg => !/[`$<>|&;(){}\\]/.test(arg)) },
-  // git read-only subcommands. Position 0 IS the subcommand (allowed
-  // even though it's not option-prefixed); positions 1+ must all
-  // start with `-`. This refuses `git diff path/...`, `git log --
-  // path`, `git diff --no-index a b`, etc — anything where a path
-  // could leak content.
-  { match: (h, a) => h === 'git' && (
-      a[0] === 'status' || a[0] === 'log' || a[0] === 'diff' ||
-      a[0] === 'branch' || a[0] === 'show' || a[0] === 'rev-parse' ||
-      a[0] === 'remote' || a[0] === 'describe'
-    ) && allOptionsOnly(a.slice(1))
-       // explicit deny-list of options that load remote config or
-       // arbitrary external paths
-       && !a.includes('--no-index')
-       && !a.some(x => x === '--exec' || x.startsWith('--exec='))
-       && !a.some(x => x === '--upload-pack' || x.startsWith('--upload-pack='))
-       && !a.some(x => x.startsWith('--textconv'))
-  },
+  // Phase 2D follow-up #5 (Codex 🔴, 2026-05-04): `git` is REMOVED
+  // from the silent allowlist entirely. Each previous round added
+  // a deny-list option (`--no-index`, `--exec`, `--upload-pack`,
+  // `--textconv`) but new options keep surfacing — `git diff
+  // --output=/tmp/x` writes arbitrarily, `git log --output=` same,
+  // `--pager=`/`--editor=`/`--external-diff=` all execute external
+  // commands. Maintaining a complete deny-list of every git option
+  // that loads externals or writes files is unrealistic. Cleanest
+  // safe answer: every `git <anything>` command goes through
+  // requestBashOp prompt. UX cost: one prompt for `git status` etc.
+  // Phase 3 UI's "always allow this exact command" can soften the
+  // friction once it ships.
   // Phase 2D follow-up #4 (Codex 🔴, 2026-05-04): version probes
   // must be EXACTLY `<bin>` / `<bin> -v` / `<bin> --version`.
   // Any extra arg loads attacker-controlled side effects:

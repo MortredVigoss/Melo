@@ -65,18 +65,23 @@ test('bashTool: ls runs silent (no gate prompt)', async () => {
   });
 });
 
-test('bashTool: git status runs silent', async () => {
+test('bashTool: git status NO LONGER silent (Phase 2D #5: git removed from allowlist)', async () => {
+  // Phase 2D follow-up #5 (Codex 🔴): git removed from silent
+  // allowlist entirely — too many escape options (`--output=`,
+  // `--exec`, `--upload-pack`, `--textconv`, `--pager`, etc) to
+  // safely enumerate. Every git command now prompts.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let promptCount = 0;
-    const sse = () => { promptCount++; };
-    // git status may exit non-zero in a non-git dir; we only care
-    // about prompt behaviour.
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
     await bashTool.run(
       { command: 'git status' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
-    assert.equal(promptCount, 0);
+    assert.equal(promptCount, 1, 'git status now prompts (no longer in silent allowlist)');
   });
 });
 
@@ -399,16 +404,20 @@ test('round 13 Phase 2D followup #1: pwd / whoami / date — allowlisted, silent
   });
 });
 
-test('round 13 Phase 2D followup #1: git diff / git log / git branch — allowlisted, silent', async () => {
+test('round 13 Phase 2D followup #5: git diff / git log / git branch ALL prompt now (git out of allowlist)', async () => {
+  // Phase 2D follow-up #5: git entry removed from SILENT_ALLOWLIST
+  // entirely — every git invocation prompts.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let promptCount = 0;
-    const sse = () => { promptCount++; };
-    // git may exit non-zero in non-git dir; we only care about prompts.
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
     for (const cmd of ['git diff', 'git log', 'git branch']) {
       await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
     }
-    assert.equal(promptCount, 0);
+    assert.equal(promptCount, 3, 'every git invocation now prompts');
   });
 });
 
@@ -566,15 +575,33 @@ test('round 13 Phase 2D followup #3: git log -- some/path — positional path ar
   });
 });
 
-test('round 13 Phase 2D followup #3: git diff (no args) and git log --oneline still silent', async () => {
+test('round 13 Phase 2D followup #5: git diff --output=/path BLOCKED — write-bypass via git option closed by removing git from allowlist', async () => {
+  // The exact bypass that prompted follow-up #5: `git diff --output=`
+  // writes the diff to an arbitrary path. Pre-#5 silent allowlist
+  // saw `--output=...` as an option-prefixed arg and let it run
+  // unprompted → silent file write outside the workspace gate.
+  // Now git is fully out of allowlist → prompt + deny → no file
+  // ever created.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
+    const leaked = join(ws, 'leaked-via-git-output.txt');
     let promptCount = 0;
-    const sse = () => { promptCount++; };
-    for (const cmd of ['git diff', 'git log --oneline', 'git status', 'git branch']) {
-      await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
-    }
-    assert.equal(promptCount, 0, 'option-only git invocations stay silent');
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: `git diff --output=${leaked}` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'git diff --output=... must prompt');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    // The output file must NOT exist — git diff never spawned.
+    const fs = await import('node:fs/promises');
+    let exists = false;
+    try { await fs.stat(leaked); exists = true; } catch {}
+    assert.equal(exists, false, 'denied --output write must not create the file');
   });
 });
 
