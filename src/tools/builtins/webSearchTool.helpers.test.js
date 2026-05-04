@@ -425,23 +425,51 @@ test('hygiene contract #2: stale-daemon cleanup runs at module load', async () =
   );
 });
 
-test('hygiene contract #2: process exit hooks for graceful daemon shutdown', async () => {
-  // Pin: SIGINT / SIGTERM / beforeExit handlers must exist so a clean
-  // melo exit (Ctrl-C / kill TERM / event loop drain) doesn't leave
-  // daemons running. SIGKILL / hard crash still need #1 (cleanup at
-  // next start) — those are the orthogonal coverages.
+test('hygiene contract #2: cleanupStalePlaywrightDaemons is named export', async () => {
+  // Codex C fix (review #11, 2026-05-04): playwrightFetcher must NOT
+  // own process.exit / signal handlers — that pre-empted server.js's
+  // shutdown chain (lock release / telegram/discord / voice / server.
+  // close()). Cleanup is now a named export called BY server.js's
+  // shutdown(). Pin: function is exported + server.js imports it.
+  const { cleanupStalePlaywrightDaemons } = await import('../../web/playwrightFetcher.js');
+  assert.equal(typeof cleanupStalePlaywrightDaemons, 'function');
+  // server.js must import + call cleanup in shutdown.
+  const { readFile } = await import('node:fs/promises');
+  const serverSrc = await readFile(
+    new URL('../../server.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    serverSrc,
+    /import\s*\{\s*cleanupStalePlaywrightDaemons\s*\}\s*from\s*['"]\.\/web\/playwrightFetcher\.js['"]/,
+    'server.js must import cleanupStalePlaywrightDaemons',
+  );
+  assert.match(
+    serverSrc,
+    /function\s+shutdown\s*\(\s*\)\s*\{[\s\S]+?cleanupStalePlaywrightDaemons\s*\(\)/,
+    'server.js shutdown() must call cleanupStalePlaywrightDaemons',
+  );
+});
+
+test('hygiene contract #2: playwrightFetcher does NOT register signal handlers', async () => {
+  // Codex C fix regression guard: playwrightFetcher used to register
+  // SIGINT / SIGTERM / beforeExit listeners that called process.exit(),
+  // pre-empting server.js shutdown via Node's listener-order. Pin
+  // these are GONE — cleanup is now driven by server.js's existing
+  // shutdown() function. Future refactors that re-add signal
+  // listeners here would re-introduce the regression.
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(
     new URL('../../web/playwrightFetcher.js', import.meta.url),
     'utf8',
   );
-  assert.match(src, /process\.once\(\s*'SIGINT'/, 'SIGINT handler must be installed');
-  assert.match(src, /process\.once\(\s*'SIGTERM'/, 'SIGTERM handler must be installed');
-  assert.match(src, /process\.once\(\s*'beforeExit'/, 'beforeExit handler must be installed');
-  // Pin standard exit codes (130 for SIGINT, 143 for SIGTERM) — common
-  // POSIX convention; deviating would surprise process supervisors.
-  assert.match(src, /process\.exit\(130\)/, 'SIGINT must exit 130');
-  assert.match(src, /process\.exit\(143\)/, 'SIGTERM must exit 143');
+  assert.doesNotMatch(src, /process\.(?:once|on)\(\s*'SIGINT'/, 'must NOT register SIGINT in low-level module');
+  assert.doesNotMatch(src, /process\.(?:once|on)\(\s*'SIGTERM'/, 'must NOT register SIGTERM in low-level module');
+  assert.doesNotMatch(src, /process\.(?:once|on)\(\s*'beforeExit'/, 'must NOT register beforeExit in low-level module');
+  // Real exit invocations carry a numeric exit code (130/143/etc.);
+  // empty `process.exit()` strings only appear inside comments
+  // explaining why we DON'T call exit. Match the call form with arg.
+  assert.doesNotMatch(src, /process\.exit\(\d/, 'must NOT call process.exit(<n>) — that belongs to server.js shutdown');
 });
 
 test('hygiene contract: closeSoon is a no-op when nothing is open', async () => {

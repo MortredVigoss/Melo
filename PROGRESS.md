@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-05-04 — Codex C #11：playwrightFetcher 抢占 server shutdown + vim +CMD 过宽
+
+- P1 X (`778afcf`) push 后跑 codex review #11 评 6 个 commit (hygiene fix #2 + P1 X 共 2 commits + 之前 awk 系列)。Codex 评 **C**（不是 D，但属 stop and replan gate per CLAUDE.md §4），3 个发现：
+  - **🔴 P0**: Hygiene fix #2 在 module-load 注册 SIGINT/SIGTERM + `process.exit()` 抢占 server.js 主 shutdown。Import chain `server.js → desktopStore → tools/registry → webSearchTool → playwrightFetcher` 让 playwrightFetcher signal listener 先注册，Node listener-order 让 playwright 先 exit → 跳过 server lock release / Telegram/Discord lock release / Discord voice shutdown / `server.close()`。这是我自己引入的 regression。
+  - **🟠 P1**: P1 X 的 vim `+CMD` 过宽。原 regex `^\+./` 匹配所有 `+` 起头 token：`vim +5 file` (line 跳转) / `vim +/pattern file` (搜索) / `vim ++enc=utf-8 file` (encoding) / `vim +:set syntax=js` (set option) 全 false-positive flag。
+  - **🟡 P2**: hygiene cleanup 不覆盖直接 `process.exit()` / uncaughtException 路径（次要）。
+- 用户拍 X 修法：低层模块不 own 进程退出，server.js 主 shutdown 调 cleanup；vim +CMD 收窄到 `+!`/`+:!` 含 shell escape `!` 的形态。
+- **P0 修法**：
+  - 删 [src/web/playwrightFetcher.js](src/web/playwrightFetcher.js) 的 `process.once('SIGINT'/'SIGTERM'/'beforeExit')` listeners（`installExitHooks` 整段删）。**保留** module-load `cleanupStalePlaywrightDaemons()` 启动 cleanup（root cause fix 仍在）。
+  - `cleanupStalePlaywrightDaemons` 改 named export。
+  - [src/server.js](src/server.js) top import 加 `cleanupStalePlaywrightDaemons` + `shutdown()` 函数 try/catch sync 调用。位置在 `_memoryRuntime?.stop?.()` 和 `voiceShutdown` 之间（顺序无强依赖，sync 优先跑保 daemon 释放）。
+  - 不需要 CLI mode 单独 hook — melo CLI 是短期任务，cleanup 在 module-load 跑就够；server mode 走 server.js shutdown。
+- **P1 修法**：`isInlineCodeFlag` regex 改：
+  - `^\+!/` (literal `+!CMD` 直接 shell escape)
+  - `^\+:!/` (literal `+:!CMD` ex command 后 shell escape)
+  - `^\+:[a-zA-Z]+\s*!/` (`+:silent !CMD` 等 ex 副词后 shell escape)
+  - 替代旧 `^\+./` 任意 `+` 前缀。`+5`/`+/pattern`/`++enc=utf-8`/`+:set` 全不 flag。
+- **P2 acknowledged**: process.exit() / uncaughtException 路径靠 module-load startup cleanup 兜底（next melo start 清理）。Codex 同意"低层模块不该 own uncaughtException"。
+- 测试调整 + 加：
+  - 移除 hygiene contract #2 的 SIGINT/SIGTERM/beforeExit 断言（这些 hooks 已删）
+  - 新加 hygiene contract #2 检查 `cleanupStalePlaywrightDaemons` named export + server.js 含 import + `shutdown()` 调用
+  - 新加 hygiene contract #2 regression guard：playwrightFetcher 必须**不**含 `process.once('SIGINT'/'SIGTERM'/'beforeExit')` + 不含 `process.exit(<digit>)` 真实调用形态（注释里的 `process.exit()` 空 paren 不命中）
+  - 更新 vim +CMD 测试：原 `+"!rm"` / `+'!rm'` 测试加上 `+":!rm"` / `+":silent !rm"` 形态
+  - 新加 vim +CMD regression：`vim +5` / `+/pattern` / `++enc=utf-8` / `+:set syntax` / `+:syntax on` / `+:source ~/.vimrc` 全不 flag（9 case）
+- 验证：`webSearchTool.helpers.test.js` **41/41 全绿**（前 40 + 1 净改：移除 SIGINT/SIGTERM/beforeExit 断言变 export+regression guard 两 case）；`bashRiskParser.test.js` **97/97 全绿**（前 96 + 1 vim regression）；`src/**/*.test.js` **1969/1969 全绿**（前 1967 + 2 净增；零既有回归）。
+- **教训**（Codex C #11）：① 低层 module 不该 own 进程级 lifecycle (signal handlers / process.exit) — 应该 export cleanup, top-level shutdown 调用；② import chain order 决定 listener 注册顺序，难预测 — 越早 import 的越先 register，越容易抢占 — 应集中管理；③ vim `+CMD` 不是简单 inline-cmd flag，有多种语义（line/search/encoding/ex command）— 启发式 detection 必须按 shell-out 信号 (`!`) 而不是 `+` 前缀。
+
+---
+
 ## 2026-05-04 — Codex D #10 + P1 X：findWrappedCommand POSITIONAL_VALUE_WRAPPERS + sqlite3 ANSI-C + vim 扩展
 
 - P1 round (commit `7968b67`) push 后跑第十轮 codex review，Codex 评 **D**：3 个问题。

@@ -5,6 +5,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
 import { isOriginAllowed } from './web/originCheck.js';
+import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 import { defaultSkillProposalStore } from './agents/skillProposals.js';
 import { collectMemoryStatus, withLiveProviderModelId } from './memory/status.js';
 import { wipeEmbeddingsForDimChange } from './memory/store.js';
@@ -2292,6 +2293,17 @@ function shutdown() {
     discordPollTimer = null;
   }
   try { _memoryRuntime?.stop?.(); } catch {}
+  // Hygiene fix #2 revision (Codex C fix, review #11): pkill any
+  // playwright daemons spawned by web_search / fetch_url. cleanup
+  // is sync (execSync pkill); fast (timeout 5s). Doing it here means
+  // playwrightFetcher doesn't need its own SIGINT/SIGTERM handler
+  // (which would pre-empt this shutdown function in the listener
+  // chain). Imported eagerly at top of server.js — playwrightFetcher
+  // is already in the import chain via desktopStore → tools/registry,
+  // so adding an explicit import here doesn't change cold-start cost.
+  try {
+    cleanupStalePlaywrightDaemons();
+  } catch {}
   // Tear down Discord voice runtime — destroys Gateway websockets + voice
   // connections so the bot disappears from voice channels cleanly on quit.
   // Lazy-import so we don't pull discord.js into cold-start when voice is

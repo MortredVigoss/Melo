@@ -1276,10 +1276,20 @@ function isInlineCodeFlag(text) {
   if (/^-[ceErp]./.test(text)) return true;
   // Long-glued form: `--cmd=CMD` (P1 X).
   if (text.startsWith('--cmd=')) return true;
-  // P1 X: vim's `+CMD` old-style inline command — no `-` prefix.
-  // Same shell-out surface as `--cmd` / `-c` via `:!CMD` escape.
-  // Bare `+` token alone is not a command, only `+<non-empty>`.
-  if (/^\+./.test(text)) return true;
+  // P1 X round 11 (Codex C, 2026-05-04): vim's `+CMD` old-style
+  // inline command. Original P1 X regex `^\+./` was too wide —
+  // flagged `vim +5 file` (line jump), `vim +/pattern file` (search),
+  // `vim ++enc=utf-8 file` (encoding option), `vim +:set file` (set
+  // option, doesn't shell-out). Narrow to forms that explicitly
+  // contain shell escape: `+!CMD` (direct shell escape) or `+:!CMD`
+  // (ex command then shell escape). Pure ex commands like `+:set
+  // syntax=js` don't shell out. Trade-off: the agent could in
+  // principle write `+:silent !rm` (silent + shell escape) which has
+  // `:!`-substring after the silent prefix; covered by the `:!`
+  // anywhere-after-`+` form below.
+  if (/^\+!/.test(text)) return true;          // `+!CMD` direct shell escape
+  if (/^\+:!/.test(text)) return true;          // `+:!CMD` ex-then-shell
+  if (/^\+:[a-zA-Z]+\s*!/.test(text)) return true; // `+:silent !CMD` etc.
   return false;
 }
 

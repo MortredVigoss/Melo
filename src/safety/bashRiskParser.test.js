@@ -760,27 +760,52 @@ test('Codex P1 X (D #10): sqlite3 ANSI-C quote $\'.shell rm\' → code_execution
   }
 });
 
-test('Codex P1 X (D #10): vim --cmd / +CMD inline → code_execution', () => {
+test('Codex P1 X (D #10): vim --cmd / +!CMD inline → code_execution', () => {
   // P1 round 9 caught `vim -c '!rm'` via SCRIPT_INTERPRETERS +
   // INLINE_CODE_FLAGS. Codex round 10 found 2 missed inline-command
-  // forms:
-  //   vim --cmd CMD       (vim's "run before .vimrc" command flag)
-  //   vim +CMD            (vim's old-style command flag, no `-` prefix)
-  // Fix: add --cmd and --cmd= to INLINE_CODE_FLAG_LITERAL; add
-  // `+<non-empty>` regex match to isInlineCodeFlag.
+  // forms (--cmd / +CMD), but round 11 narrowed +CMD to require
+  // shell-escape `!` (avoid false positives on +5 line jump etc.).
   for (const cmd of [
     `vim --cmd '!rm' file`,
     `nvim --cmd '!rm' file`,
     `vim --cmd='!rm' file`,
-    `vim +"!rm" file`,
+    `vim +"!rm" file`,                            // +!CMD direct shell escape
     `vim +'!rm /tmp/x' file`,
-    `xargs vim --cmd '!rm' file`,                 // wrapper-aware
+    `vim +":!rm" file`,                            // +:!CMD ex-then-shell
+    `vim +":silent !rm" file`,                     // +:silent !CMD
+    `xargs vim --cmd '!rm' file`,                  // wrapper-aware
     `env vim +"!rm" file`,
   ]) {
     const risks = parseBashRiskyOps(cmd).risks;
     assert.ok(
       risks.some(r => r.kind === 'code_execution'),
-      `${cmd} must be code_execution (vim --cmd / +CMD inline)`,
+      `${cmd} must be code_execution (vim --cmd / +!CMD inline)`,
+    );
+  }
+});
+
+test('Codex C fix (review #11): vim non-shell-escape +CMD forms NOT flagged', () => {
+  // Codex review #11 graded C; one finding was the `+CMD` regex was
+  // too wide: `^\+./` matched `+5` (line jump), `+/pattern` (search),
+  // `++enc=utf-8` (encoding option), `+:set` (set vim option). Fix:
+  // narrow to forms with shell-escape marker `!` somewhere (`+!cmd`
+  // or `+:!cmd` or `+:silent !cmd`).
+  for (const cmd of [
+    `vim +5 file.txt`,                             // line number jump
+    `vim +10 src/main.js`,
+    `vim +/pattern file.txt`,                      // search jump
+    `vim +/foo\\sbar file.txt`,
+    `vim ++enc=utf-8 file.txt`,                    // encoding option (++ prefix)
+    `vim +":set syntax=js" file.txt`,              // ex command, no shell out
+    `vim +":syntax on" file.txt`,
+    `vim +":source ~/.vimrc" file.txt`,
+    `nvim +/pattern file`,                         // nvim same
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (no shell escape ! in +CMD)`,
     );
   }
 });

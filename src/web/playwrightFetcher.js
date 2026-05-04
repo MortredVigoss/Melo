@@ -28,43 +28,57 @@ import { execFile, execSync } from 'node:child_process';
 import { debugWarn } from '../debug.js';
 
 // Hygiene fix #2 (system-freeze regression, 2026-05-04 second
-// occurrence): Codex's first hygiene fix (idle-close + isConcurrencySafe
-// + SWR dedup at commit 506814d) only addressed WITHIN-session
-// accumulation. The system froze a second time; ps showed 144+
-// `playwright_chromiumdev_profile-*` Chrome helpers + 20+ detached
-// `cliDaemon.js melo-(shared|search)` daemons spanning multiple
-// hours — each prior melo run / crash / SIGKILL left orphan daemons
-// that kept spawning Chrome instances.
+// occurrence) + revision (Codex C fix, 2026-05-04 review #11):
+//
+// Original problem: Codex's first hygiene fix (idle-close +
+// isConcurrencySafe + SWR dedup at commit 506814d) only addressed
+// WITHIN-session accumulation. The system froze a second time; ps
+// showed 144+ `playwright_chromiumdev_profile-*` Chrome helpers +
+// 20+ detached `cliDaemon.js melo-(shared|search)` daemons spanning
+// multiple hours — each prior melo run / crash / SIGKILL left
+// orphan daemons that kept spawning Chrome instances.
 //
 // Root cause: `npx -y @playwright/cli` spawns a detached daemon
-// (PPID=1 after parent exits). The daemon owns its own Chrome
-// process. Without an explicit `playwright-cli close`, the daemon
-// runs forever — and even our close path only fires on graceful
-// idle-close, not on crash / SIGKILL / unhandled exception.
+// (PPID=1 after parent exits). Daemon owns its own Chrome. Without
+// explicit `playwright-cli close`, daemon runs forever.
 //
-// Fix: two complementary cleanups:
+// First revision of the fix added module-level SIGINT/SIGTERM/
+// beforeExit listeners that called process.exit() — Codex review
+// #11 graded C: those listeners were registered before server.js's
+// own shutdown (via the import chain server.js → desktopStore →
+// tools/registry → webSearchTool → playwrightFetcher), and Node
+// runs signal listeners in registration order. The early exit
+// pre-empted server.js's lock release / telegram/discord cleanup /
+// voice shutdown / server.close().
 //
-//   1. cleanupStalePlaywrightDaemons() at module load
-//      pkills any melo-shared/melo-search daemon left from prior
-//      runs. Idempotent. Covers the cross-process / crash recovery
-//      path. This is the ROOT cause fix — every fresh melo start
-//      cleans up whatever previous runs left behind.
+// Final structure:
 //
-//   2. installExitHooks() process-level signal handlers
-//      Best-effort graceful shutdown when the current melo process
-//      receives SIGINT/SIGTERM or runs to natural completion. Sync
-//      pkill so it actually executes before the process dies.
-//      Doesn't help on SIGKILL (no signal delivery) or hard crash —
-//      that's why #1 exists.
+//   1. cleanupStalePlaywrightDaemons() at module load (kept).
+//      pkills melo-shared/melo-search daemons left from prior runs.
+//      Idempotent. ROOT cause fix — every fresh melo start reaps
+//      whatever previous runs left behind. Covers crash / SIGKILL /
+//      multi-instance / hard exit paths because the NEXT start
+//      cleans them up.
 //
-// Trade-off: we pkill ALL `melo-(shared|search)` daemons across
-// ALL melo instances. Two melo instances running concurrently can
-// kill each other's daemons → the other instance's next web_search
-// call respawns, paying a ~1s cold-start hit. Compared to the
-// system-freeze cost of leaving daemons forever, this is the right
-// trade-off.
-
-function cleanupStalePlaywrightDaemons() {
+//   2. cleanupStalePlaywrightDaemons EXPORTED (new).
+//      Called by server.js's existing shutdown() handler so the
+//      signal-handler chain stays under server.js's control.
+//      Low-level modules don't own process exit anymore.
+//
+// Trade-off: pkill matches across all melo instances. Two concurrent
+// melos kill each other's daemons → the other pays a ~1s cold-start
+// hit on next web_search. Acceptable vs the system-freeze cost.
+//
+// Coverage gaps (acknowledged):
+//   - process.exit() called directly by some other module — won't
+//     trigger server.js shutdown(). startup cleanup at NEXT start
+//     reaps the daemons.
+//   - uncaughtException — same. Could add an uncaughtException hook
+//     here, but Codex review flagged module-level signal handlers
+//     as the root cause of the C grade; uncaughtException + exit
+//     hooks are a server.js / top-level concern, not playwright-
+//     Fetcher's.
+export function cleanupStalePlaywrightDaemons() {
   // macOS uses pkill from procps; Linux ditto. Skip on Windows
   // (we don't support it as a melo target anyway).
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
@@ -85,23 +99,6 @@ function cleanupStalePlaywrightDaemons() {
 // Run cleanup at module load — idempotent. Every melo cold-start
 // reaps whatever the previous run left orphaned.
 cleanupStalePlaywrightDaemons();
-
-let _exitHooksInstalled = false;
-function installExitHooks() {
-  if (_exitHooksInstalled) return;
-  _exitHooksInstalled = true;
-  const cleanup = () => {
-    try { cleanupStalePlaywrightDaemons(); } catch { /* never throw from exit hook */ }
-  };
-  // Common shutdown signals — clean up before re-exiting with the
-  // standard signal exit codes.
-  process.once('SIGINT', () => { cleanup(); process.exit(130); });
-  process.once('SIGTERM', () => { cleanup(); process.exit(143); });
-  // Natural process exit (event loop drain) — best-effort sync
-  // cleanup. Node fires beforeExit only when no more work is queued.
-  process.once('beforeExit', cleanup);
-}
-installExitHooks();
 
 const DEFAULT_TIMEOUT_MS = 14_000;
 const DEFAULT_MAX_CHARS = 20_000;
