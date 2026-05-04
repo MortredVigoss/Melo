@@ -1071,16 +1071,21 @@ export const pdfTool = {
       const outDir = join(workspacePath, 'generated', `pdf-render-${ts}-${rand}`);
       // Phase 2C: gate the source read into a buffer; pdftoppm is
       // an external binary that re-opens by path, so we materialize
-      // the gate-approved buffer into a workspace tmp file (workspace-
-      // internal — silent under the gate) and point pdftoppm at THAT.
-      // The original srcPath could be racy after gate approval; the
-      // tmp file we write is fresh and not subject to the same race.
+      // the gate-approved buffer into a SYSTEM PRIVATE tmp dir (NOT
+      // workspace) so any agent / symlink in workspace can't reach
+      // it. mkdtempSync on os.tmpdir() with mode 0o700 gives us a
+      // dir only the current process user can list; the file inside
+      // is written 0o600. Phase 2C follow-up #2 (Codex 🔴) — the
+      // earlier workspace `.melo-tmp` location moved the original
+      // path-race into the workspace itself.
       const srcR = await gateAndRead(srcPath);
       if (!srcR.ok) return srcR;
-      const tmpDir = join(workspacePath, '.melo-tmp');
-      try { await mkdir(tmpDir, { recursive: true }); } catch { /* non-fatal */ }
+      const { mkdtempSync, writeFileSync, chmodSync } = await import('node:fs');
+      const { tmpdir: osTmpdir } = await import('node:os');
+      const tmpDir = mkdtempSync(join(osTmpdir(), 'melo-pdfrender-'));
+      try { chmodSync(tmpDir, 0o700); } catch { /* best-effort */ }
       const tmpPdfPath = join(tmpDir, `render-src-${ts}-${rand}.pdf`);
-      await writeBytes(tmpPdfPath, srcR.buffer);
+      writeFileSync(tmpPdfPath, srcR.buffer, { mode: 0o600 });
       try {
         const result = await renderPdfPagesToPngs({
           sourcePath: tmpPdfPath,
@@ -1140,10 +1145,10 @@ export const pdfTool = {
       } catch (err) {
         return { ok: false, output: `render failed: ${err.message}`, error: 'RENDER_FAILED' };
       } finally {
-        // Clean up the gate-materialized tmp source PDF.
+        // Clean up the entire private tmp dir (file + dir).
         try {
-          const { unlink } = await import('node:fs/promises');
-          await unlink(tmpPdfPath);
+          const { rm: rmAsync } = await import('node:fs/promises');
+          await rmAsync(tmpDir, { recursive: true, force: true });
         } catch { /* best-effort */ }
       }
     }

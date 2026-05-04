@@ -408,6 +408,68 @@ test('round 13 Phase 2C followup #1: from_spec — workspace overlay is silent',
   });
 });
 
+// ─── Phase 2C follow-up #2: render tmp out of workspace + knowledge subtree silent ──
+
+test('round 13 Phase 2C followup #2: pdf.render — gate-materialized tmp lives in system tmpdir, NOT workspace', async () => {
+  // pdftoppm is an external binary that re-opens by path. Phase 2C
+  // initially put the gate-approved tmp PDF in <workspace>/.melo-tmp,
+  // but Codex 🔴 noted that's still inside the workspace where
+  // anything in workspace can race-swap it. Round 2 moved tmp into
+  // os.tmpdir() with mode 0o700 (dir) + 0o600 (file). Pin that
+  // location AND that .melo-tmp is no longer created in workspace.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const sourcePdf = join(ws, 'input.pdf');
+    await writeFile(sourcePdf, await makeFakePdf(1));
+    // pdftoppm may not be installed in CI / sandbox — when it isn't,
+    // render fails with INSTALL_HINT. Either way, the contract under
+    // test is "tmp file location" — we just need to observe that no
+    // .melo-tmp directory was created in the workspace.
+    await pdfTool.run(
+      { action: 'render', source: sourcePdf, pageRange: '1' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    const fs = await import('node:fs/promises');
+    let dirEntries;
+    try { dirEntries = await fs.readdir(ws); }
+    catch { dirEntries = []; }
+    assert.equal(
+      dirEntries.includes('.melo-tmp'),
+      false,
+      'workspace must NOT contain .melo-tmp after render (tmp now in system tmpdir)',
+    );
+  });
+});
+
+test('round 13 Phase 2C followup #2: knowledge.index — external base prompts ONCE then walks subtree silently', async () => {
+  // Codex 🟡: previous impl per-file gatedReadIntoBuffer'd, leading
+  // to N prompts for an external dir. Round 2 mirrors grep — base
+  // requestRead is the entire approval, subtree files use atomic
+  // dirfd reads (no per-file prompt).
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    // Plant a few text files in an external dir.
+    await writeFile(join(outside, 'a.txt'), 'first document content for index', 'utf8');
+    await writeFile(join(outside, 'b.md'), '# second doc\nmore text here', 'utf8');
+    await mkdir(join(outside, 'sub'));
+    await writeFile(join(outside, 'sub', 'c.txt'), 'nested content also indexable', 'utf8');
+
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'once');
+    };
+    const result = await knowledgeTool.run(
+      { action: 'index', path: outside },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(promptCount, 1, 'external base index must prompt EXACTLY once');
+    // All three files indexed.
+    assert.equal(result.meta.files >= 3, true, `expected >= 3 files, got ${result.meta.files}`);
+  });
+});
+
 // ─── Phase 2C contract: gatedReadIntoBuffer is the path ───────────────
 
 test('Phase 2C contract: rich-media tools route through gatedReadIntoBuffer', async () => {

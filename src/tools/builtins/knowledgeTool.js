@@ -6,12 +6,18 @@
  * No external APIs — pure local text matching with relevance scoring.
  */
 
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { resolve, extname, basename, relative } from 'node:path';
+import { resolve, extname, basename, relative, join } from 'node:path';
+import { fstatSync, readSync } from 'node:fs';
 
 import { requestRead } from '../../safety/fileSafetyGate.js';
-import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
+import {
+  openParentDirFd,
+  atomicOpenLeaf,
+  splitParentLeaf,
+  _raw as dirfdRaw,
+  C as DC,
+} from '../../safety/dirfdOps.js';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB per file
 const MAX_FILES = 500;
@@ -85,34 +91,77 @@ function isSensitiveSubtree(absPath) {
       || cat === PATH_CATEGORY.MELO_INTERNAL;
 }
 
-// Phase 2C (2026-05-04): walker also skips sensitive subtrees so
-// indexing a benign base never silently slurps ~/.ssh into the
-// in-memory index. We don't have a context here for filterSensitive
-// tunneling, so the policy is "always skip" — if the user explicitly
-// indexed a sensitive base they'd hit a sensitive-prompt loop anyway.
-async function walkDir(dir, files = [], depth = 0, skipped = { sensitive: 0 }) {
-  if (depth > 5 || files.length >= MAX_FILES) return files;
-  try {
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (files.length >= MAX_FILES) break;
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const full = resolve(dir, entry.name);
-      if (isSensitiveSubtree(full)) {
-        skipped.sensitive++;
-        continue;
-      }
-      if (entry.isDirectory()) {
-        await walkDir(full, files, depth + 1, skipped);
-      } else if (entry.isFile()) {
-        try {
-          const s = await stat(full);
-          if (s.size <= MAX_FILE_SIZE) files.push(full);
-        } catch {}
-      }
+// Phase 2C follow-up #2 (2026-05-04): dirfd-bound walker. Mirrors
+// glob/grep — base requestRead is the single approval gate; subtree
+// walk uses readdirAt + openat-children so no path-swap can escape
+// the approved subtree. Per-file reads use atomicOpenLeaf directly
+// (no per-file prompt — would be 500x unusable for index).
+async function walkDirfdCollect(parentFd, parentRelDir, baseDir, files, depth, maxFiles, skipped) {
+  if (depth > 5 || files.length >= maxFiles) return;
+  let entries;
+  try { entries = dirfdRaw.readdirAt(parentFd); }
+  catch { return; }
+  for (const entry of entries) {
+    if (files.length >= maxFiles) break;
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const full = parentRelDir
+      ? join(baseDir, parentRelDir, entry.name)
+      : join(baseDir, entry.name);
+    if (isSensitiveSubtree(full)) {
+      skipped.sensitive++;
+      continue;
     }
-  } catch {}
-  return files;
+    let kind = entry.kind;
+    if (kind === 'unknown') {
+      try {
+        const st = dirfdRaw.fstatat(parentFd, entry.name, DC.AT_SYMLINK_NOFOLLOW);
+        if (st.isDir) kind = 'dir';
+        else if (st.isFile) kind = 'file';
+        else kind = 'other';
+      } catch { continue; }
+    }
+    const relPath = parentRelDir ? `${parentRelDir}/${entry.name}` : entry.name;
+    if (kind === 'dir') {
+      let childFd = -1;
+      try {
+        childFd = dirfdRaw.openat(parentFd, entry.name, DC.O_RDONLY | DC.O_DIRECTORY | DC.O_NOFOLLOW);
+      } catch { continue; }
+      try { await walkDirfdCollect(childFd, relPath, baseDir, files, depth + 1, maxFiles, skipped); }
+      finally { try { dirfdRaw.closeFd(childFd); } catch {} }
+    } else if (kind === 'file') {
+      // Defer size check to the per-file open — the walker stays
+      // dirfd-only.
+      files.push(full);
+    }
+  }
+}
+
+function readBufferFromFd(fd, maxBytes) {
+  const st = fstatSync(fd);
+  if (st.size > maxBytes) return null;
+  if (st.size === 0) return Buffer.alloc(0);
+  const buf = Buffer.allocUnsafe(st.size);
+  let total = 0;
+  while (total < st.size) {
+    const n = readSync(fd, buf, total, st.size - total, total);
+    if (n === 0) break;
+    total += n;
+  }
+  return buf.subarray(0, total);
+}
+
+async function readFileSafe(absPath, maxBytes) {
+  // atomicOpenLeaf with O_NONBLOCK guards against FIFO/special leaves.
+  // The walker already filtered sensitive subtrees + dir entries, so
+  // this only sees regular-file paths the user's base approval covers.
+  const [parent, leaf] = splitParentLeaf(absPath);
+  let openLeaf;
+  try { openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY | DC.O_NONBLOCK); }
+  catch { return null; }
+  try {
+    if ((openLeaf.leafStat.mode & 0o170000) !== 0o100000) return null;
+    return readBufferFromFd(openLeaf.leafFd, maxBytes);
+  } finally { openLeaf.closeLeaf(); }
 }
 
 // ─── Indexing ────────────────────────────────────────────────────────────────
@@ -120,14 +169,22 @@ async function walkDir(dir, files = [], depth = 0, skipped = { sensitive: 0 }) {
 async function indexDirectory(dir, ctx = {}) {
   const absDir = resolve(dir);
 
-  // Phase 2C (2026-05-04): gate the base directory read. Workspace-
-  // internal silent; outside-benign prompts once + grants dir scope
-  // for the subtree (so per-file gatedReadIntoBuffer below stays
-  // silent). Sensitive base prompts per-call (which is unusable for
-  // a 500-file index, but that's the right behavior — user shouldn't
-  // index ~/.ssh).
+  // Phase 2C follow-up #2 (2026-05-04, post-Codex 🟡): a single
+  // base-dir requestRead is the entire approval gate for an index
+  // op. Workspace-internal silent; outside-benign prompts once;
+  // sensitive prompts per-call (and would loop — by design: user
+  // shouldn't index ~/.ssh / $MELO_HOME).
+  //
+  // Subtree files DO NOT prompt individually — that would be 500
+  // prompts for one index call, matching grep/glob's "single base
+  // approval covers the walk" model. The walker is dirfd-bound
+  // (readdirAt + openat children with O_DIRECTORY|O_NOFOLLOW), so
+  // no path-swap can escape the approved subtree, and per-file
+  // open uses atomicOpenLeaf with O_NOFOLLOW + O_NONBLOCK +
+  // S_ISREG so a leaf swapped to symlink/FIFO is silently skipped.
+  let approvedReal;
   try {
-    await requestRead({
+    const r = await requestRead({
       path: absDir,
       chatId: ctx.chatId,
       sseEmitter: ctx.sseEmitter,
@@ -135,6 +192,7 @@ async function indexDirectory(dir, ctx = {}) {
       workspacePath: ctx.workspacePath,
       baseDir: ctx.workspacePath,
     });
+    approvedReal = r.resolvedTarget;
   } catch (err) {
     const denied = err?.code === 'FILE_SAFETY_DENIED';
     const e = new Error(err?.message || 'gate denied');
@@ -142,29 +200,34 @@ async function indexDirectory(dir, ctx = {}) {
     throw e;
   }
 
+  // Open the approved real base as a dirfd and walk via readdirAt.
+  let baseFd;
+  try { baseFd = openParentDirFd(approvedReal); }
+  catch (err) {
+    const e = new Error(`Cannot open approved base ${approvedReal}: ${err.message}`);
+    e.code = err.code || 'INDEX_FAILED';
+    throw e;
+  }
+
   const skipped = { sensitive: 0 };
-  const files = await walkDir(absDir, [], 0, skipped);
+  const files = [];
+  try {
+    await walkDirfdCollect(baseFd, '', approvedReal, files, 0, MAX_FILES, skipped);
+  } finally { try { dirfdRaw.closeFd(baseFd); } catch {} }
+
   const chunks = [];
-
   for (const filePath of files) {
-    // Phase 2C: each file read goes through the gate. The dir-grant
-    // from the base approval makes this silent for the typical case
-    // (workspace base or user-granted external dir).
-    const gated = await gatedReadIntoBuffer(filePath, ctx, {
-      maxBytes: MAX_FILE_SIZE,
-      toolName: 'knowledge:index',
-    });
-    if (!gated.ok) continue;  // skip files that the gate denied / can't read
-
+    const buffer = await readFileSafe(filePath, MAX_FILE_SIZE);
+    if (!buffer) continue;  // skip oversize / non-regular / open-failed
     const ext = extname(filePath).toLowerCase();
-    const text = await readTextFromBuffer(gated.buffer, ext);
+    const text = await readTextFromBuffer(buffer, ext);
     if (!text || text.length < 20) continue;
     const textChunks = chunkText(text);
     for (const chunk of textChunks) {
       const tokens = tokenize(chunk);
       if (tokens.length < 3) continue;
       chunks.push({
-        file: relative(absDir, filePath) || basename(filePath),
+        file: relative(approvedReal, filePath) || basename(filePath),
         absPath: filePath,
         text: chunk,
         tokens,
@@ -185,7 +248,7 @@ async function indexDirectory(dir, ctx = {}) {
     idf.set(term, Math.log(N / df));
   }
 
-  _index = { chunks, idf, indexed: files.length, dirs: [absDir] };
+  _index = { chunks, idf, indexed: files.length, dirs: [approvedReal] };
   return { files: files.length, chunks: chunks.length, skippedSensitive: skipped.sensitive };
 }
 
