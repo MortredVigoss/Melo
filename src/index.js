@@ -68,6 +68,8 @@ function printHelp() {
       '  melo search --cache stats   Show search-cache stats (rows, freshness, size)',
       '  melo search --cache clear   Clear all caches (also: clear-search | clear-url | clear-stale)',
       '  melo history "<query>"      Search past conversation history (flags: --json, --limit N)',
+      '  melo memory status          Show memory store snapshot (counts, tiers, dreams, drift)',
+      '  melo memory consolidate     Run dreaming sweep now (flags: --full, --json)',
       '  melo doctor                 Show local runtime + search subsystem status',
       '  melo config show            Show resolved config',
       `  melo config set <k> <v>     Set authMode (${VALID_AUTH_MODES.join(' | ')}) | apiKey | model | baseUrl | systemPrompt`,
@@ -272,6 +274,173 @@ function printConfig(config) {
       '',
     ].join('\n'),
   );
+}
+
+// ─── memory CLI ─────────────────────────────────────────────────────────────
+//
+// `melo memory status` — read-only snapshot: store path / counts / kind +
+// attic distribution / dreams diary / embedding drift / tuning. Does not
+// boot the embedding provider. Add `--json` for machine-readable output.
+//
+// `melo memory consolidate` — fire one dreaming sweep on the current
+// store. `--full` overrides the incremental window; `--json` prints the
+// sweep result. The same triggerDreamingNow path the Desktop UI's
+// "Consolidate now" button (Phase 5) will eventually use.
+
+function fmtBytes(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return '?';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+async function runMemoryCommand(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') {
+    output.write(
+      [
+        'melo memory <subcommand>',
+        '',
+        'Subcommands:',
+        '  status              Print memory-store snapshot + tier distribution',
+        '  consolidate         Run a dreaming sweep now',
+        '',
+        'Flags:',
+        '  --json              Emit raw JSON instead of formatted text',
+        '  --full              (consolidate only) Run a full sweep, not incremental',
+        '',
+      ].join('\n'),
+    );
+    return;
+  }
+  const flags = new Set(args.slice(1));
+  if (sub === 'status') {
+    await runMemoryStatusCommand({ json: flags.has('--json') });
+    return;
+  }
+  if (sub === 'consolidate') {
+    await runMemoryConsolidateCommand({
+      full: flags.has('--full'),
+      json: flags.has('--json'),
+    });
+    return;
+  }
+  throw new Error(
+    `Unknown memory subcommand: "${sub}". Run \`melo memory help\` for a list.`,
+  );
+}
+
+async function runMemoryStatusCommand({ json = false } = {}) {
+  const { collectMemoryStatus } = await import('./memory/status.js');
+  const snapshot = collectMemoryStatus();
+  // memoryStats() needs a writable DB connection — only call when the
+  // store actually exists, otherwise the import-time getDb() open would
+  // create an empty db at the resolved path with side effects.
+  let stats = null;
+  if (snapshot.store.exists) {
+    try {
+      const { memoryStats } = await import('./memory/store.js');
+      stats = memoryStats();
+    } catch (err) {
+      // Best-effort — fall through with stats=null. The snapshot itself
+      // already covers the bulk of useful info even without it.
+      // eslint-disable-next-line no-console
+      console.warn(`memoryStats() failed: ${err?.message || err}`);
+    }
+  }
+
+  if (json) {
+    output.write(JSON.stringify({ snapshot, stats }, null, 2) + '\n');
+    return;
+  }
+
+  output.write('Melo memory status\n\n');
+  output.write(`MELO_HOME       ${snapshot.meloHome}\n`);
+  output.write(`store path      ${snapshot.store.path}\n`);
+  output.write(`store exists    ${snapshot.store.exists ? 'yes' : 'no'}\n`);
+  if (snapshot.store.exists) {
+    output.write(`store size      ${fmtBytes(snapshot.store.sizeBytes)}\n`);
+  }
+  if (snapshot.store.openError) {
+    output.write(`open error      ${snapshot.store.openError}\n`);
+  }
+  output.write('\n');
+  output.write('Counts:\n');
+  output.write(`  memories       ${snapshot.counts.memories ?? '—'}\n`);
+  output.write(`  memories_fts   ${snapshot.counts.memoriesFts ?? '—'}\n`);
+  output.write(`  vec_memories   ${snapshot.counts.vecMemories ?? '—'}\n`);
+  output.write(`  embed_cache    ${snapshot.counts.embeddingCache ?? '—'}\n`);
+
+  if (stats) {
+    output.write('\nBy kind:\n');
+    const byKind = stats.byKind || {};
+    if (!Object.keys(byKind).length) {
+      output.write('  (no rows yet)\n');
+    } else {
+      for (const [kind, n] of Object.entries(byKind)) {
+        output.write(`  ${kind.padEnd(14)} ${n}\n`);
+      }
+    }
+    output.write('\nBy attic level (Hot / Warm / Cold):\n');
+    const byAttic = stats.byAttic || {};
+    if (!Object.keys(byAttic).length) {
+      output.write('  (no rows yet)\n');
+    } else {
+      for (const [level, n] of Object.entries(byAttic)) {
+        output.write(`  ${String(level).padEnd(14)} ${n}\n`);
+      }
+    }
+    output.write(`\nVector index    ${stats.vecAvailable ? `${stats.vecIndexedCount} rows (vec0 loaded)` : 'not loaded'}\n`);
+  }
+
+  output.write(`\nDreams dir      ${snapshot.dreams.dir}\n`);
+  output.write(`Dream files     ${snapshot.dreams.count}\n`);
+  if (snapshot.dreams.latest) {
+    output.write(`Latest dream    ${snapshot.dreams.latest.name}\n`);
+  }
+
+  output.write('\nEmbedding:\n');
+  output.write(`  provider       ${snapshot.embedding.provider}\n`);
+  output.write(`  dims (config)  ${snapshot.embedding.dimsConfigured}\n`);
+  output.write(`  stored model   ${snapshot.embedding.storedModelId || '—'}\n`);
+  if (snapshot.embedding.drift?.hasDrift) {
+    output.write(`  drift          stored=${snapshot.embedding.drift.stored} live=${snapshot.embedding.drift.inferredProvider}\n`);
+  }
+
+  output.write('\nRecall tuning (env-overridable):\n');
+  output.write(`  MELO_MMR_LAMBDA              ${snapshot.tuning.mmrLambda}\n`);
+  output.write(`  MELO_RECENCY_HALF_LIFE_DAYS  ${snapshot.tuning.recencyHalfLifeDays}\n`);
+}
+
+async function runMemoryConsolidateCommand({ full = false, json = false } = {}) {
+  // triggerDreamingNow is the same entry the Desktop "Consolidate now"
+  // button uses. Returns either { skipped: true, reason } when dreaming
+  // is disabled (MELO_DREAMING_ENABLED=0), or the sweep summary
+  // (examined / promoted / demoted / hits-pruned counts).
+  const { triggerDreamingNow } = await import('./memory/dreaming/scheduler.js');
+  const start = Date.now();
+  const result = await triggerDreamingNow({ full });
+  const elapsedMs = Date.now() - start;
+
+  if (json) {
+    output.write(JSON.stringify({ ...result, elapsedMs }, null, 2) + '\n');
+    return;
+  }
+
+  if (result?.skipped) {
+    output.write(`Dreaming skipped (${result.reason || 'unknown'}).\n`);
+    if (result.reason === 'disabled') {
+      output.write('Set MELO_DREAMING_ENABLED=1 (or unset MELO_DREAMING_ENABLED) to enable.\n');
+    }
+    return;
+  }
+  output.write(`Dreaming sweep finished in ${elapsedMs}ms (${full ? 'full' : 'incremental'}).\n`);
+  if (result && typeof result === 'object') {
+    if ('examined' in result)        output.write(`  examined         ${result.examined}\n`);
+    if ('promotedToHot' in result)   output.write(`  promoted to Hot  ${result.promotedToHot}\n`);
+    if ('demoted' in result)         output.write(`  demoted          ${result.demoted}\n`);
+    if ('hitRowsPruned' in result)   output.write(`  hit rows pruned  ${result.hitRowsPruned}\n`);
+  }
 }
 
 async function runDoctor() {
@@ -599,6 +768,9 @@ async function main() {
       return;
     case 'history':
       await runHistoryCommand(args);
+      return;
+    case 'memory':
+      await runMemoryCommand(args);
       return;
     default:
       throw new Error(

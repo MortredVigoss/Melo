@@ -17,7 +17,7 @@
 // All other upstream deps live in dedicated leaf modules already.
 
 import { buildSpeakerMemoryNamespace } from '../../state/memorySnapshot.js';
-import { recallMemories, markMemoriesUsed } from '../../memory/store.js';
+import { recallMemories, recallMemoriesTiered, markMemoriesUsed } from '../../memory/store.js';
 import { atticEnabled, injectHotAttic } from '../../memory/attic.js';
 import {
   buildIdentityLine,
@@ -127,15 +127,75 @@ export function buildAgentMemoryNodeContext({
       })
     : [];
 
-  const promptHistory = recallMemories({
-    namespaces,
-    kinds: ['prompt'],
-    query: latestUserMessage,
-    queryEmbedding,
-    limit: 12,
-  }).filter(entry =>
-    !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
-  );
+  // Phase E (2026-05-05): tiered recall gate. When MELO_MEMORY_TIERS_RECALL=1
+  // we drive promptHistory through recallMemoriesTiered, which returns a
+  // hierarchical {scenes, frames, contents} bundle anchored on the same
+  // namespaces. Scene + frame layers are summarised separately so the
+  // model gets long-horizon context (yesterday's conversation arc, last
+  // week's themes) without re-reading every individual prompt. The
+  // contents tier replaces the flat prompt list.
+  //
+  // Other recall calls in this function (speakerFacts, otherParticipantFacts,
+  // pastCorrections, relatedApprovals, relatedTasks) intentionally stay on
+  // the flat recallMemories API — recallMemoriesTiered is hardcoded to
+  // kinds {'scene','frame','prompt','fact'}, so it cannot serve approval /
+  // task / verification-correction / session-fact queries.
+  //
+  // Gate is OFF by default during rollout. When the user verifies the new
+  // block helps (via dreams diary + chat quality observation), flip the
+  // default to '1' and remove the legacy branch.
+  const tieredRecallEnabled = process.env.MELO_MEMORY_TIERS_RECALL === '1';
+  let tieredScenes = [];
+  let tieredFrames = [];
+  let promptHistory = [];
+  if (tieredRecallEnabled) {
+    try {
+      const tiered = recallMemoriesTiered({
+        namespaces,
+        query: latestUserMessage,
+        queryEmbedding,
+        limits: { scenes: 3, frames: 8, contents: 12 },
+      });
+      tieredScenes = (tiered?.scenes || []).filter(entry =>
+        !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
+      );
+      tieredFrames = (tiered?.frames || []).filter(entry =>
+        !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
+      );
+      // Tiered contents replace the flat prompt query. Filter on chat id
+      // identically to preserve the legacy contract for downstream blocks.
+      promptHistory = (tiered?.contents || []).filter(entry =>
+        !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
+      );
+    } catch (err) {
+      // Fall back to flat recall on any tiered-path failure — never let
+      // the new code path break the prompt block when something edge-case
+      // happens in the tier scoring / validation. Best-effort observability
+      // via stderr; production error path stays the same as the legacy
+      // flat call below.
+      // eslint-disable-next-line no-console
+      console.warn(`[memory.recall.tiered] fallback to flat recall: ${err?.message || err}`);
+      promptHistory = recallMemories({
+        namespaces,
+        kinds: ['prompt'],
+        query: latestUserMessage,
+        queryEmbedding,
+        limit: 12,
+      }).filter(entry =>
+        !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
+      );
+    }
+  } else {
+    promptHistory = recallMemories({
+      namespaces,
+      kinds: ['prompt'],
+      query: latestUserMessage,
+      queryEmbedding,
+      limit: 12,
+    }).filter(entry =>
+      !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
+    );
+  }
   const relatedApprovals = recallMemories({
     namespaces,
     kinds: ['approval'],
@@ -258,6 +318,28 @@ export function buildAgentMemoryNodeContext({
     markUsed(pastCorrections);
     blocks.push(
       `Past self-corrections (facts I previously got wrong and corrected):\n${pastCorrections
+        .map(entry => `- ${normalizeConversationSnippet(entry.text, 200)}`)
+        .join('\n')}`,
+    );
+  }
+
+  // Phase E tiered recall: emit scene + frame summaries above the
+  // detailed prompt nodes so the model reads long-horizon context first.
+  // Empty arrays when MELO_MEMORY_TIERS_RECALL is off — same blocks
+  // omitted under the legacy path.
+  if (tieredScenes.length) {
+    markUsed(tieredScenes);
+    blocks.push(
+      `Conversation scene summaries:\n${tieredScenes
+        .map(entry => `- ${normalizeConversationSnippet(entry.text, 220)}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (tieredFrames.length) {
+    markUsed(tieredFrames);
+    blocks.push(
+      `Frame summaries:\n${tieredFrames
         .map(entry => `- ${normalizeConversationSnippet(entry.text, 200)}`)
         .join('\n')}`,
     );

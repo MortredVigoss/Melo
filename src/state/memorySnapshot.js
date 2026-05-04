@@ -480,10 +480,41 @@ export function buildMemoryStoreEntries(state) {
  *   `process.env.MELO_HOME` currently resolves to). CLAUDE.md §6 fix-7:
  *   closes the last home-leak vector in readStateSnapshot's repair-save
  *   path. Omitted = legacy lazy resolution via the cached production db.
+ *
+ * Diagnostics: setting `MELO_DEBUG_MEMORY=1` prints a one-line summary
+ * per call (chat count, entry count by kind, target storePath, enabled
+ * tiers). Phase E follow-up (2026-05-05): the Phase 7d-5α-A1 wiring is
+ * complete on paper, but production stores have shown 0 frame/scene
+ * rows even after weeks of use — this log is the cheapest way to
+ * tell whether (a) state.chats is empty, (b) the chat-length-≥3 gate
+ * filters everything, (c) MELO_MEMORY_TIERS turned tiers off, or (d)
+ * writes succeed but go to a different storePath than the one the
+ * user is inspecting.
  */
 export function syncMemoryStoreSnapshot(state, { ctx } = {}) {
   try {
-    replaceMemories(buildMemoryStoreEntries(state), { storePath: ctx?.storePath });
+    const entries = buildMemoryStoreEntries(state);
+    if (process.env.MELO_DEBUG_MEMORY === '1') {
+      const byKind = entries.reduce((acc, e) => {
+        const k = e?.kind || 'unknown';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {});
+      const tiers = Array.isArray(state?.chats) && state.chats.length
+        ? `tiers=${[...enabledTiers()].join(',')}`
+        : 'tiers=N/A(no chats)';
+      const chats = Array.isArray(state?.chats) ? state.chats.length : 0;
+      const eligibleChats = Array.isArray(state?.chats)
+        ? state.chats.filter(c => Array.isArray(c?.messages) && c.messages.length >= 3).length
+        : 0;
+      const storePath = ctx?.storePath || '(default MELO_HOME)';
+      const summary = Object.entries(byKind).map(([k, n]) => `${k}=${n}`).join(' ') || '(empty)';
+      // eslint-disable-next-line no-console
+      console.log(
+        `[memory.snapshot] chats=${chats} eligibleChats=${eligibleChats} entries=${entries.length} ${summary} ${tiers} storePath=${storePath}`,
+      );
+    }
+    replaceMemories(entries, { storePath: ctx?.storePath });
   } catch (error) {
     console.warn(`Failed to sync Melo memory store: ${error.message}`);
   }

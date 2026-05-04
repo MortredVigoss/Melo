@@ -4,6 +4,34 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
+
+用户来一份长期记忆架构 audit，称 Phase A-D（attic/scene-frame-content/dreaming/provider 抽象）已经全部落地但 **Phase E 没接线**——「dreaming 在跑空气」。按用户硬规则「方案评分先行」+「红绿灯检测」做了一轮事实核实，**审计的 Gap 1 论断被推翻**：
+
+- ❌ 「frame/scene 没人在 message 写入时调它们」——错。`saveState()` 在 [src/state/stateStore.js:191](src/state/stateStore.js#L191) 已经调 `syncMemoryStoreSnapshot(state)`，后者按 `enabledTiers()` (默认 `{scene,frame,content}` 全开) 调 `buildFrameEntry/buildSceneEntry` 并 push 进 entries 写库——Phase 7d-5α-A1 commit 5/9 时就完成。
+- ❌ 「scheduler 6h timer hygiene 要确认 unref/clear」——已做。[src/memory/dreaming/scheduler.js:63-70](src/memory/dreaming/scheduler.js#L63-L70) 的 `stop()` clearInterval 全部 `_timers`；[src/memory/runtime.js:173-176](src/memory/runtime.js#L173-L176) 包成 `_runtimeHandle.stop()`；[src/server.js:2443](src/server.js#L2443) shutdown 调它。三层接全。
+- ✅ Gap 2 (recall 没接 prompt) / Gap 3 (无 UI) / Bonus (无手动触发) 是真的。
+
+但生产 store `~/.melo/desktop/store.sqlite` 只有 1 条 fact、零 frame/scene。**真问题不是「没写连线」，是「连线接了但没数据流过」**——`state.chats` 是空（`state.json` chats:0 + `~/.melo/desktop/threads/` 空目录）。
+
+修订三个 Gap：
+
+- **Gap 1' — saveState 数据流诊断**：[src/state/memorySnapshot.js](src/state/memorySnapshot.js) syncMemoryStoreSnapshot 加 `MELO_DEBUG_MEMORY=1` gated 单行日志：`chats=N eligibleChats=N entries=N kind1=n1 kind2=n2 tiers=... storePath=...`。一行就能看清是 (a) chats 空 / (b) <3 message 全过滤 / (c) tiers 关 / (d) storePath 不对。新加 [src/state/memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 4 个 case。**额外抓出生产坑**：消息无 `createdAt` 时只有 frame 没 scene（`groupIntoScenes` 按时间窗口聚合，frame.startAt 空就被 filter 掉）。
+
+- **Gap 2 — promptHistory 切到 tiered recall（仅这一项，非整个换）**：审计原话「换成 recallMemoriesTiered」不准确——tiered 只覆盖 `kind ∈ {scene,frame,prompt,fact}`，agentMemoryContext 的 7 处 recall 里有 `approval/task/verification-correction/session-fact` 4 种 kind tiered 不接。正确 scope：只把 `promptHistory` 那 1 处切到 tiered，其余 6 处不动。[src/services/agent/agentMemoryContext.js](src/services/agent/agentMemoryContext.js) 加 `MELO_MEMORY_TIERS_RECALL` 灰度开关（默认 off）：on 时用 `recallMemoriesTiered({namespaces, query, limits:{scenes:3,frames:8,contents:12}})`，scenes/frames 各 render 成「Conversation scene summaries:」「Frame summaries:」独立 block 排在 prompt nodes 上面（long → short horizon），contents 替换原 promptHistory；off 时走旧 flat recall；tiered 抛错时 fallback 到 flat。新加 [src/services/agent/agentMemoryContext.tieredGate.test.js](src/services/agent/agentMemoryContext.tieredGate.test.js) 3 个 case（off / on / on+empty store）。**测试踩坑**：Node ESM 模块缓存跨 test 不重置，`getDb()` 单例握 stale fd 指向已 rm 的 MELO_HOME 目录（SQLite keeps inode open），用 `_resetStoreForTests()` 在 setUp/tearDown 强制关掉。
+
+- **Gap 3 + Bonus — CLI 命令**：[src/index.js](src/index.js) 加 `melo memory status`（人读 + `--json`：store path / counts / by-kind / by-attic / vec / dreams / embedding drift / tuning）+ `melo memory consolidate` 调 `triggerDreamingNow`（`--full` 切 incremental→full，`--json` 输出 sweep summary）。subprocess-style 测试 [src/index.memoryCli.test.js](src/index.memoryCli.test.js) 6 个 case 跑真 child process（fresh MELO_HOME / json shape / disabled 提示 / 未知 subcommand 错误等）。
+
+**核心发现**：跑 `melo memory status` 在用户实际 MELO_HOME 上：`memories=1, by kind=fact:1, by attic=none:1, dreams=12 files`。也就是说 dreaming 12 天来对着只有 1 条 fact 的 store 在跑空气。`MELO_DEBUG_MEMORY=1` 重新启动时就能即时看到 saveState 触发 vs entries 数量，定位为啥 chats 不入 state。
+
+**验证**：safety + memory + chat + agent 完整 604 个测试全绿无回归（含 4 diagnostic + 3 tiered gate + 6 memory CLI 共 13 个新加 case）。
+
+**Known-limit / 下一步候选**：
+- 切到生产用之前需先 chat 数据流投产——`MELO_DEBUG_MEMORY=1` 跑一两次 saveState 看 chats 数；如果 0，说明持久化路径自身坏；如果 ≥1 但 entries=0，说明 `<3 message` 或 `createdAt 缺失` 卡住
+- `MELO_MEMORY_TIERS_RECALL=1` 默认关，等 chat 数据流确认后开启灰度灰度 1-2 天观察 prompt 质量再考虑改默认
+- Desktop UI 仪表盘（差距 3 方案 B）排到数据流跑稳之后，用户原 audit 也是这个顺序
+
+---
 ## 2026-05-04 — Phase 4：image_generation 意图门控 + domain cookies 管理 UI（小红书/抖音误路由根治）
 
 用户报告：粘贴小红书/抖音分享链接（带预览图缩略图 + 文字 prompt），模型生成了**两张图**作为回复，自己解释"卡在工具路由异常"。日志查清根因：
@@ -40,65 +68,14 @@
 - 抽取失败时给模型 explicit placeholder（D 方案）没做 — E 方案已经堵住"用 image_generation fallback"的路径，D 方案现在更像 polish 不是必需
 
 ---
-## 2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI
-
-13 轮 Codex review 把 fileSafetyGate.js backend 锤到 A 之后，发现 production 接线**整条没接**：`resolveFileSafety` 只在 13 个 test 文件里被调用，server.js / desktop-ui 零命中；前端 SSE handler 拿到 `kind: 'file_safety'` payload 因为没有 `toolId` 字段，直接被 `if (requestId && toolId)` 过滤丢掉。也就是说 Phase 2A/2B/2C/2D 全部基于 mock sseEmitter 的 backend 单测验证，**生产里任意工具触发 fileSafetyGate prompt 路径都会 60s 超时 reject**。一次性补完三阶段：
-
-- **Phase 3a — production 接线**：
-  - server.js 加 `resolveFileSafety` 导入；`/api/tools/permission-response` 路由按 `kind: 'file_safety'` 鉴别符分流，granted=false 强制 scope='deny'，其余走 ONCE/FILE/DIR
-  - desktop-ui SSE handler 区分 `{ requestId, kind: 'file_safety', operation, payload }` 与 `{ requestId, toolId, args }` 两种 payload；状态条目带 `kind` 区分
-  - `renderFileSafetyDialog` 按 operation 分布局（read / read_batch / write / edit / move / delete-intent / delete-confirm / bash），symlink-chain warning + 敏感路径 warning + diff/content 折叠 details + 类型 confirm input
-  - sensitive read / read_batch / move / bash / delete-intent 只给 once + deny；read benign / write / edit 给 once + file (chat) + dir (chat) + deny；delete-confirm 用 confirm-delete 按钮 + 类型校验输入框
-
-- **Phase 3b — 持久化 allowlist**：
-  - 新建 `src/safety/fileSafetyAllowlist.js`：rule shape `{ id, operation: read/write/edit, scope: file/dir, realPath, label, createdAt }`，存 `config.fileSafetyAllowlist`，全部 mutate 走 `withConfigLock` + saveConfig spread current（防 wipe apiKey/whisperApiKey 等）
-  - `findMatchingFileSafetyRule(operation, realPath)` — exact 或 prefix-with-sep 匹配（防 `/tmp/workspace2` 误中 `/tmp/workspace`），write 规则覆盖 edit lookup（同 chatScopedGrants 语义）
-  - fileSafetyGate.js requestRead/requestWrite/requestEdit 在 prompt 前查 allowlist 静默放行；`resolveFileSafety` 增 `persistent` flag；通过后写入对应 rule（write/edit **故意不允许 dir-persistent** — agent 永久写整 tree 是 gate 存在的原因）
-  - dialog 加「Always allow this file」按钮（read 还多一个 parent dir 版本）；persistent 标记从 dataset 透传到 endpoint 再到 gate
-  - 新建 `fileSafetyAllowlist.test.js` 10 个测试覆盖 add/remove/dedupe/dir-prefix 边界/write-covers-edit/persistent flag end-to-end
-  - 测试踩坑：macOS `realpath` 把 `/var/folders/...` 解到 `/private/var/folders/...`，allowlist 用 realPath 当 key 所以测试 setup 必须先 realpath workDir，否则规则永远 miss → prompt timeout 120s
-
-- **Phase 3c — 管理 UI**：
-  - server.js 加 `/api/safety/file-allowlist` (GET) + `/api/safety/file-allowlist/remove` (POST id-keyed)
-  - Customize 加第六个 section「Safety」，`renderSafetyPane` 列出每条规则的 operation/scope/realPath/createdAt + Revoke 按钮；空态 hint 用户去 dialog 点 Always allow
-  - 加 styles `.safety-rule-list/.safety-rule-row/.safety-rule-op/.safety-rule-path`
-
-**为什么**：用户原本以为 Phase 3 只是加「Always allow」按钮，实际 grep 后发现 production 接线整条空白 — Phase 2A/2B/2C/2D 13 轮 review 全部测的是 mock sseEmitter，所以 `resolveFileSafety` 没人调；前端事件 handler 也没认 `kind: 'file_safety'`。Phase 3a 不补，Phase 3b 没意义（dialog 都不显示）；Phase 3c 不补，user 没法撤销永久授权。三阶段必须连做。
-
-**验证**：fileSafetyGate.test.js **28/28 全绿**（前 28，零回归）；fileSafetyAllowlist.test.js **10/10 全绿**（新）；server.js / app.js / fileSafetyGate.js / fileSafetyAllowlist.js syntax check 全过。
-
-**Known-limit / Phase 4 候选**：
-- bash 永久 allowlist 没做（gate header 1057 行预留过 "always allow this exact command"）— 需要 bash command canonicalization（quote/whitespace/var-expansion 归一化），单独 phase 处理
-- read_batch / move / delete 永久 allowlist 故意不开（batch 隐藏单文件 / move src+dst 组合多到永久授权太危险 / delete 是设计上的 friction），Phase 4 如有真用例再讨论
-- delete stage-2 confirmInput 输错时 server 返回 `{ ok: true }` 但 gate 内部 reject，dialog 已乐观从 queue 移除 — 用户只能从 chat 失败结果观察。MVP 后续 polish
-
-**Codex review 待跑**：本批次跨 backend + frontend + 新模块 + 测试，建议 git pp 走 evaluation；若评 C/D 重新对齐方案再动。
-
----
-## 2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)
-
-- Selected file context entry (commit `e81fb12`) 当时 known-limit：`scoreLineForQuery` 的 code keyword regex 是 JS/TS-only — 含 `function|class|const|let|var|export|import|async|test|describe|it(`, 漏 Python `def` / Rust `fn` / Go `func` / Java `public static` / Swift `func` / Kotlin `fun` / Ruby `def` 等其他语言。后果：非 JS/TS 文件大文件 review 时 query-relevance scoring 没 +2 keyword bonus，code line 跟 comment line 同分，excerpt 选择质量下降。
-- 修法：rewrite `_CODE_KEYWORD_REGEX` for multi-language coverage + `\b` word boundary（防 `asynchronization` substring-match 误中 `async`）。覆盖 7 语言家族：
-  - **JS/TS**: function/class/const/let/var/export/import/async/await/yield/type/interface/enum/namespace/extends/implements/declare/test/describe/spec/it(
-  - **Python**: def/class/import/from/lambda/async/await/yield
-  - **Rust**: fn/struct/impl/trait/enum/use/mod/pub/let/match
-  - **Go**: func/type/struct/interface/import/package/var/const
-  - **Java/C#**: class/interface/enum/extends/implements/public/private/protected/static/abstract/import/package
-  - **Ruby**: def/class/module/require/include
-  - **Swift**: func/class/struct/enum/protocol/extension/import/var/let
-  - **Kotlin**: fun/class/object/interface/import/val/var
-- 保守原则：不加 `if`/`for`/`while`/`return`/`void`/`int` 等通用 keyword（代码和 prose 都常见，false positive 高）。`it` 仍要求紧跟 `(` (区分测试 framework 和英文 prose "it is").
-- 测试加 2 case：① Python `def needleHandler(...)` line 在 240 行 file 中胜过早 comment line（pin keyword bonus 让 def line 排第一）；② spot-check 4 语言（Rust `fn` / Go `func` / Java `public static` / Swift `func`）— 每种 hot line 都被选作 top seed.
-- 验证：`dynamicContext.test.js` **11/11 全绿**（前 9 + 2 新）；全 src **1975/1975 全绿**（前 1973 + 2 新；零既有回归）。
-- **现在 selected file context 在 7+ 语言下一致表现**。`it(` lookahead 保留区分 mocha/jest 测试 vs 英文 prose. 之前 known-limit 兑现.
-
----
 ---
 
 ## 归档摘要（2026-05-04 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI** —— 13 轮 Codex review 把 backend 锤到 A 后发现 production 接线整条没接（resolveFileSafety 仅 13 个 test 文件调用、前端 SSE 因 toolId 缺失被过滤丢掉），一次性补完三阶段：3a 接 server.js permission-response 路由按 kind:'file_safety' 分流 + desktop-ui 双 payload 形态 + renderFileSafetyDialog 按 operation 分布局；3b 新建 fileSafetyAllowlist.js 持久化 rule（file/dir + write 覆盖 edit + 不允许 dir-persistent）+ dialog "Always allow" 按钮；3c Customize 加 Safety section 列规则/Revoke。后续 Codex follow-up 修了 confirm-input recoverable + production-wiring contract test。`f5b5646` / `270d04c` / `28f1346`
+- **2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)** —— 重写 `_CODE_KEYWORD_REGEX` 覆盖 7 语言家族（JS/TS/Python/Rust/Go/Java/C#/Ruby/Swift/Kotlin）+ `\b` word boundary 防 `asynchronization` 误中 `async`；保留 `it(` lookahead 区分测试 framework 与英文 prose；dynamicContext.test 11/11 + 全 src 1975/1975 全绿。`5ffca5c` / `170eb30`
 - **2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)** —— 加 src/server.js + src/index.js 的 sync emergency-exit (log → cleanupStalePlaywrightDaemons → process.exit(1))，cleanup 完整覆盖 module-load + SIGINT/SIGTERM + uncaughtException + unhandledRejection 四层；webSearchTool.helpers 43/43 + 全 src 1973/1973 全绿。`fb99ccf`
 - **2026-05-04 — Phase 2D round 14 + hygiene fix #2 + P1 inline-shell-out 工具：13 轮 Codex review 收敛到 A** —— 整 1 天 13 轮 D/C/A review 闭 12 个独立 bypass 维度（awk/expansion/wrapper enum/inline-shell-out/sed exotic delim/跨进程 daemon hygiene），最后 review #13 评 A "修复闭环充分"；nuclear option Y + 16-iter cap fail-closed + cross-process daemon hygiene 三件大头修法定型。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
 - **2026-05-04 — Phase 2D round 14 awk + hygiene fix #2 + P1 inline-shell-out 完整 13 轮 review 系列** —— 见上方 summary。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
