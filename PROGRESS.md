@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-05-04 — Web search / Playwright resource hygiene fix（系统卡死 root cause）
+
+- Round 14 之间会话期间系统卡死重启。复现链：用户 search 面板长开 → web_search SWR 后台刷新 + tool runner 并发 web_search 调用 → Playwright 单浏览器队列无界增长 → Chrome helper 子进程堆积（每个 SERP 任务可能 spawn 新浏览器实例）→ 系统 OOM → 卡死强制重启。三个 root cause 联合作恶，必须一刀全修才闭环（否则任意一条还会再触发）。
+- **三个 root cause 各自的 fix**：
+  - 🔴 **(a) `webSearchTool.isConcurrencySafe: true → false`**（最关键的一刀）：之前 tool runner 看 `isConcurrencySafe=true` 就允许并发跑 web_search，但 Playwright SERP/session 是**故意单浏览器**的（每个 named session 独占一个浏览器窗口）。让并发的 web_search 全去抢同一个 melo-search session 队列就会无界堆积任务（Playwright 内部的 mutex chain 不限长），并且每个失败的任务可能留 Chrome helper 残留进程。flip 到 false 后 tool runner 串行 web_search 调用，队列顶多 1 个待处理任务。
+  - 🟠 **(b) Idle close machinery (closeSoon / close + 15s timer)**：Playwright session 一旦 open 就在整个 chat session 期间常驻，多 chat 累积下浏览器进程不释放。新加 `closeSoon(delayMs)` debounce idle close 到 15s 后；`runCli` 任意命令完成（callback 时 `_browserOpen=true`）自动 schedule；timeout / killed / signal error 立即 `closeSoon(0)` 强关；`fetchPage` catch 分支也 `closeSoon(0)`；`navigate` 的 first-open 和 fallback-open 后 explicit closeSoon（runCli callback 时 `_browserOpen` 还 false 看不到）；goto 分支不重复 schedule（runCli callback 已经处理）。`_chain` 串行化 close 操作避免与 in-flight withLock 命令竞争。
+  - 🟡 **(c) SWR 后台刷新 dedup**：search 面板每次 poll cache 命中 stale row 都 `queueMicrotask(_refreshInBackground)` 一发，长开面板等于持续往 Playwright 队列塞任务。新加 module-level `_backgroundRefreshInFlight` Set 按 `buildCacheKey(q, intent)` 去重；schedule 前 `.has` 检查；schedule 时 `.add`；`.finally(() => .delete)` 清理（用 `.finally` 不是 `.then` 让失败的 refresh 也能释放槽位，否则卡 flaky 一次后该 cache key 永远 refresh 不动）。
+- **`PLAYWRIGHT_CLI_PACKAGE` pin**：之前 `'@playwright/cli@latest'`，npx -y 每次冷启动 revalidate 注册表 → 网络抖动可触发偶发延迟 + 不可重现（不同 ops 机器解析到不同版本）。pin 到当前最新稳定 `@0.1.11`。`MELO_PLAYWRIGHT_CLI_PACKAGE` env var 是 escape hatch，ops 想试新版可以 override。bump pin 时改这个常量。
+- **去掉冗余 closeSoon 调用**：原 navigate 三处 closeSoon 里 goto 分支那次是冗余的（`_browserOpen` 已经是 true，runCli callback 已经 schedule）。删掉，注释解释为什么 first-open / fallback-open 仍需要保留。
+- **5 个 hygiene 契约测试** [src/tools/builtins/webSearchTool.helpers.test.js](src/tools/builtins/webSearchTool.helpers.test.js)（playwrightFetcher 真测试 timer 行为需 DI 重构 execFile 注入，工程量大不在本刀）：① `webSearchTool.isConcurrencySafe === false`（pin 最重要的一刀，防 silent regression 把 root cause 重新打开）；② SWR dedup 源码模式 — `_backgroundRefreshInFlight.has` / `.add` / `.delete` + 关键 `.finally` 子句必须存在（pin "失败也释放槽位"语义）；③ playwrightFetcher CLI version pin 必须是 semver 不是 `@latest`（双向 assert：必有 semver + 必无 latest fallback）；④ `createPlaywrightSession` 返回的 session 必须 expose `close` + `closeSoon` 方法 + module 必须 export `closePlaywrightSession`/`closePlaywrightSessionSoon`（pin idle-close surface 不被精简）；⑤ `closeSoon` 在 nothing-open 状态下 must be no-op（pin 不会冷启动 schedule storm，10 次连调 + 负 delay opt-out + close 也安全）。
+- 验证：`src/tools/builtins/webSearchTool.helpers.test.js` **38/38 全绿**（前 33 + 5 新）；`src/**/*.test.js` **1912/1912 全绿**（前 1907 + 5 新；零既有回归）。
+- **已知 limit**：① playwrightFetcher 的 idle-close timer 行为（runCli 后自动 schedule、超时强关、open vs goto 分支）没真正 unit test，需要 DI 重构 execFile 注入或 t.mock.module（experimental）才能跑；现在 5 个测试是契约 pin + surface assert，依赖未来 codex review 抓真行为 bug；② `MELO_PLAYWRIGHT_CLI_PACKAGE` env var 没有强校验（任意字符串），生产被设错可能拉到不存在的包，但属于 ops 配置错误不在 parser 范畴；③ idle-close 时间 15s 是常量没 expose，长 chat 下可能反复 open/close 浪费冷启动 ~1s（trade-off：vs 浏览器常驻消耗内存）。
+
+---
+
 ## 2026-05-04 — File Safety Gate Phase 2D：bash 工具走 bashRiskParser → requestBashOp
 
 - Phase 2C（pdf/image/knowledge）4 轮 follow-up A 评级 push 后，进 Phase 2D：把 bashTool 接入 Phase 1 早就建好的 `bashRiskParser` + `requestBashOp` gate。Phase 1 的 parser 已经能把命令行 tokenize 成 8 类 risk（delete / reset_repo / truncate / overwrite / append / in_place_edit / move / unknown），gate 也已经会硬拒 delete-class + 提示用 file_delete + 其他 risk 弹 prompt — 这一刀只是把 bashTool.run() 入口接上去。

@@ -30,6 +30,15 @@ import { debugWarn } from '../debug.js';
 const DEFAULT_TIMEOUT_MS = 14_000;
 const DEFAULT_MAX_CHARS = 20_000;
 const DEFAULT_SESSION_NAME = 'melo-shared';
+const DEFAULT_IDLE_CLOSE_MS = 15_000;
+const DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
+// Pin to a known-good version: `@latest` makes npx revalidate
+// against the registry on every cold start (network-dependent +
+// non-reproducible — different ops boxes can resolve to different
+// versions on the same day). The MELO_PLAYWRIGHT_CLI_PACKAGE env
+// var is the escape hatch for ops who need to test against a newer
+// version. Bump this constant when the pin needs upgrading.
+const PLAYWRIGHT_CLI_PACKAGE = process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11';
 
 // ─── Pure helper (shared across sessions) ────────────────────────────────────
 
@@ -53,13 +62,15 @@ export function cleanPageText(text) {
  *   - availability cache
  *   - mutex chain (navigate→eval serialization)
  *
- * @param {{ sessionName: string, defaultTimeoutMs?: number, defaultMaxChars?: number, debugScope?: string }} opts
+ * @param {{ sessionName: string, defaultTimeoutMs?: number, defaultMaxChars?: number, debugScope?: string, idleCloseMs?: number }} opts
  * @returns {{
  *   sessionName: string,
  *   runCli: (args: string[], timeoutMs?: number) => Promise<string>,
  *   withLock: <T>(fn: () => Promise<T>) => Promise<T>,
  *   isAvailable: () => Promise<boolean>,
  *   navigate: (url: string, timeoutMs?: number) => Promise<void>,
+ *   close: (timeoutMs?: number) => Promise<void>,
+ *   closeSoon: (delayMs?: number) => void,
  *   fetchPage: (url: string, opts?: { timeoutMs?: number, maxChars?: number }) => Promise<{ url: string, content: string | null }>,
  * }}
  */
@@ -68,6 +79,7 @@ export function createPlaywrightSession({
   defaultTimeoutMs = DEFAULT_TIMEOUT_MS,
   defaultMaxChars = DEFAULT_MAX_CHARS,
   debugScope = 'playwright',
+  idleCloseMs = DEFAULT_IDLE_CLOSE_MS,
 } = {}) {
   if (!sessionName) {
     throw new Error('createPlaywrightSession requires a sessionName');
@@ -75,16 +87,53 @@ export function createPlaywrightSession({
 
   let _cliAvailable = null;
   let _browserOpen = false;
+  let _closeRequested = false;
+  let _idleTimer = null;
   let _chain = Promise.resolve();
 
+  function clearIdleTimer() {
+    if (_idleTimer) {
+      clearTimeout(_idleTimer);
+      _idleTimer = null;
+    }
+  }
+
+  function closeSoon(delayMs = idleCloseMs) {
+    clearIdleTimer();
+    if (delayMs == null || delayMs < 0) return;
+    if (!_browserOpen && !_closeRequested) return;
+    _closeRequested = true;
+    _idleTimer = setTimeout(() => {
+      _idleTimer = null;
+      close().catch(error => {
+        debugWarn(debugScope, `[${sessionName}] idle close failed:`, error?.message || error);
+      });
+    }, delayMs);
+    _idleTimer.unref?.();
+  }
+
   function runCli(args, timeoutMs = defaultTimeoutMs) {
+    clearIdleTimer();
+    const command = args?.[0];
     return new Promise((resolve, reject) => {
       const child = execFile(
         'npx',
-        ['-y', '@playwright/cli@latest', `-s=${sessionName}`, '--raw', ...args],
+        ['-y', PLAYWRIGHT_CLI_PACKAGE, `-s=${sessionName}`, '--raw', ...args],
         { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, NODE_NO_WARNINGS: '1' } },
         (err, stdout) => {
-          if (err) return reject(err);
+          if (command === 'close') {
+            _browserOpen = false;
+            _closeRequested = false;
+          } else if (_browserOpen) {
+            closeSoon();
+          }
+          if (err) {
+            if (err.killed || err.signal || /timed out|timeout/i.test(String(err.message || ''))) {
+              _closeRequested = true;
+              closeSoon(0);
+            }
+            return reject(err);
+          }
           resolve(stdout || '');
         },
       );
@@ -113,17 +162,49 @@ export function createPlaywrightSession({
 
   async function navigate(url, timeoutMs = defaultTimeoutMs) {
     if (!_browserOpen) {
+      // First open: runCli's callback fires while _browserOpen is
+      // still false, so its auto-closeSoon branch is skipped. Need
+      // explicit closeSoon here AFTER flipping _browserOpen.
       await runCli(['open', url], timeoutMs);
       _browserOpen = true;
+      _closeRequested = false;
+      closeSoon();
     } else {
       try {
+        // goto: _browserOpen is already true when runCli's callback
+        // fires, so its auto-closeSoon already scheduled the timer.
+        // No explicit call here (was redundant, removed in self-
+        // review of round 14 hygiene fix).
         await runCli(['goto', url], timeoutMs);
       } catch (error) {
         debugWarn(debugScope, `[${sessionName}] goto failed, retrying with open for ${url}:`, error?.message || error);
+        // Fallback open: same logic as first open above —
+        // _browserOpen was already true going in but runCli error
+        // path ran first, leaving it ambiguous; re-flip + re-
+        // schedule explicitly.
         await runCli(['open', url], timeoutMs);
         _browserOpen = true;
+        _closeRequested = false;
+        closeSoon();
       }
     }
+  }
+
+  async function close(timeoutMs = DEFAULT_CLOSE_TIMEOUT_MS) {
+    const result = _chain.then(async () => {
+      clearIdleTimer();
+      if (!_browserOpen && !_closeRequested) return;
+      try {
+        await runCli(['close'], timeoutMs);
+      } catch (error) {
+        debugWarn(debugScope, `[${sessionName}] close failed:`, error?.message || error);
+      } finally {
+        _browserOpen = false;
+        _closeRequested = false;
+      }
+    });
+    _chain = result.catch(() => {});
+    return result;
   }
 
   async function fetchPage(url, opts = {}) {
@@ -158,12 +239,13 @@ export function createPlaywrightSession({
         return { url, content: clean.slice(0, maxChars) };
       } catch (error) {
         debugWarn(debugScope, `[${sessionName}] page fetch failed for ${url}:`, error?.message || error);
+        closeSoon(0);
         return { url, content: null };
       }
     });
   }
 
-  return { sessionName, runCli, withLock, isAvailable, navigate, fetchPage };
+  return { sessionName, runCli, withLock, isAvailable, navigate, close, closeSoon, fetchPage };
 }
 
 // ─── Default (melo-shared) session — back-compat exports ─────────────────────
@@ -181,4 +263,6 @@ export const runPlaywrightCli = _defaultSession.runCli;
 export const withPwLock = _defaultSession.withLock;
 export const isPlaywrightCliAvailable = _defaultSession.isAvailable;
 export const pwNavigate = _defaultSession.navigate;
+export const closePlaywrightSession = _defaultSession.close;
+export const closePlaywrightSessionSoon = _defaultSession.closeSoon;
 export const fetchPageViaPlaywright = _defaultSession.fetchPage;

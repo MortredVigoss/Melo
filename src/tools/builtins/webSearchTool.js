@@ -121,6 +121,7 @@ function classifyQueryIntent(rawQuery) {
 const WEB_SEARCH_DEBUG_LOG_PATH = join(getMeloHome(), 'desktop', 'web-search-debug.log');
 const WEB_SEARCH_DEBUG_LOG_MAX_BYTES = 256 * 1024;
 let _webSearchDebugDirReady = false;
+const _backgroundRefreshInFlight = new Set();
 
 async function _ensureWebSearchDebugDir() {
   if (_webSearchDebugDirReady) return;
@@ -1360,7 +1361,11 @@ export const webSearchTool = {
     'from the top results. Use this when you need up-to-date information, current events, facts, ' +
     'technical documentation, or anything not in your training data.',
   category: 'web',
-  isConcurrencySafe: true,
+  // The HTTP/Jina legs are concurrent-safe, but the Playwright SERP/session is
+  // intentionally single-browser. Letting the tool runner overlap web_search
+  // calls can build an unbounded Playwright queue and leave many Chrome helpers
+  // around if callers keep refreshing the search view.
+  isConcurrencySafe: false,
   requiresPermission: false,
   parametersSchema: {
     type: 'object',
@@ -1505,12 +1510,20 @@ export const webSearchTool = {
         writeWebSearchDebugLine(
           `[cache] span=${spanId} hit=stale age=${Date.now() - stale.createdAt}ms — refreshing in bg`,
         );
-        // Background refresh — fire-and-forget.  Any failure is harmless
-        // because the stale row stays valid until SWR window expires.
-        queueMicrotask(() => {
-          _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config)
-            .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err));
-        });
+        // Background refresh — fire-and-forget, but deduped per cache key.
+        // Search bootstrap can poll while the search page is open; without
+        // this guard each poll queues another Playwright SERP task.
+        const refreshKey = buildCacheKey(q, intent);
+        if (!_backgroundRefreshInFlight.has(refreshKey)) {
+          _backgroundRefreshInFlight.add(refreshKey);
+          queueMicrotask(() => {
+            _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config)
+              .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err))
+              .finally(() => _backgroundRefreshInFlight.delete(refreshKey));
+          });
+        } else {
+          writeWebSearchDebugLine(`[cache] span=${spanId} hit=stale refresh=already-in-flight`);
+        }
         return {
           ok: true,
           output,

@@ -309,3 +309,99 @@ test('queryBiasedSnippet falls back to head when no tokens match', () => {
 test('queryBiasedSnippet returns empty for empty content', () => {
   assert.equal(queryBiasedSnippet('', ['x']), '');
 });
+
+// ─── Phase 2D follow-up #14 hygiene fix contracts ──────────────────────────
+// Background: a system freeze/reboot happened during round 14 because
+// concurrent web_search calls overlapped the Playwright SERP queue without
+// bound. Three root causes addressed in this hygiene fix:
+//   (a) isConcurrencySafe was true → tool runner overlapped calls → unbounded
+//       Playwright queue → many Chrome helpers → OOM.
+//   (b) No idle close on the browser session → idle browser kept alive
+//       across the entire chat session.
+//   (c) SWR background refresh fire-and-forgot per cache hit → polling the
+//       search panel queued one Playwright SERP task per poll.
+// These tests pin the static contract so a future refactor can't regress
+// the root fix silently.
+
+test('hygiene contract: webSearchTool.isConcurrencySafe is false', () => {
+  // Single most important pin — root fix for the unbounded queue. If this
+  // ever flips back to true the system-freeze regression returns.
+  assert.equal(
+    webSearchTool.isConcurrencySafe,
+    false,
+    'isConcurrencySafe must remain false to prevent unbounded Playwright queueing',
+  );
+});
+
+test('hygiene contract: SWR background refresh deduplicates by cache key', async () => {
+  // Source-level pin: the dedup machinery must exist in webSearchTool.js.
+  // We grep the source rather than instrumenting the cache because the
+  // refresh path is fire-and-forget through queueMicrotask — observability
+  // would require module mocks. The static pattern is robust enough.
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('./webSearchTool.js', import.meta.url), 'utf8');
+  assert.match(src, /_backgroundRefreshInFlight/, 'in-flight Set must exist');
+  assert.match(src, /_backgroundRefreshInFlight\.has\(/, 'must check before scheduling');
+  assert.match(src, /_backgroundRefreshInFlight\.add\(/, 'must register on schedule');
+  assert.match(src, /_backgroundRefreshInFlight\.delete\(/, 'must clean up after refresh');
+  // Pin the cleanup is in `.finally` (not just `.then`) so failed refreshes
+  // also release the slot — otherwise a flaky refresh would block all
+  // future refreshes for that key forever.
+  assert.match(
+    src,
+    /\.finally\(\(\) => _backgroundRefreshInFlight\.delete/,
+    'cleanup must live in .finally so failures release the slot too',
+  );
+});
+
+test('hygiene contract: playwrightFetcher pins CLI version (not @latest)', async () => {
+  // `@latest` makes `npx -y` revalidate against the registry on every cold
+  // start — non-reproducible across ops machines + occasional fresh
+  // installs. Pin to a specific version; ops escape hatch is the
+  // MELO_PLAYWRIGHT_CLI_PACKAGE env var.
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(
+    new URL('../../web/playwrightFetcher.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(src, /PLAYWRIGHT_CLI_PACKAGE/, 'package constant must exist');
+  assert.match(
+    src,
+    /'@playwright\/cli@\d+\.\d+\.\d+'/,
+    'default must be a pinned semver, not @latest',
+  );
+  assert.doesNotMatch(
+    src,
+    /\|\|\s*'@playwright\/cli@latest'/,
+    'default must NOT fall back to @latest (regression guard)',
+  );
+});
+
+test('hygiene contract: playwrightFetcher exposes idle-close machinery', async () => {
+  // Pins the surface that prevents idle browsers from accumulating across
+  // a long chat session. closeSoon = debounced timer; close = explicit.
+  // Both must remain on the session shape.
+  const { createPlaywrightSession } = await import('../../web/playwrightFetcher.js');
+  const session = createPlaywrightSession({ sessionName: 'hygiene-test' });
+  assert.equal(typeof session.close, 'function', 'session.close must exist');
+  assert.equal(typeof session.closeSoon, 'function', 'session.closeSoon must exist');
+  // Default-session back-compat exports (used by fetchUrlTool):
+  const mod = await import('../../web/playwrightFetcher.js');
+  assert.equal(typeof mod.closePlaywrightSession, 'function');
+  assert.equal(typeof mod.closePlaywrightSessionSoon, 'function');
+});
+
+test('hygiene contract: closeSoon is a no-op when nothing is open', async () => {
+  // Prevents schedule storm on cold sessions. Without this guard,
+  // calling closeSoon() before any navigate would still arm a timer.
+  const { createPlaywrightSession } = await import('../../web/playwrightFetcher.js');
+  const session = createPlaywrightSession({ sessionName: 'hygiene-noop', idleCloseMs: 100 });
+  // Should return synchronously without arming a timer or throwing.
+  // We can't directly inspect the timer, but we can call it many times
+  // and verify nothing blows up + the session methods remain usable.
+  for (let i = 0; i < 10; i++) session.closeSoon();
+  // Negative delay opts out (per the implementation).
+  session.closeSoon(-1);
+  // close() with browser never opened is a no-op too — must not throw.
+  await session.close();
+});
