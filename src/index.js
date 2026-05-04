@@ -41,6 +41,21 @@ function _cliCleanup(exitCode) {
 process.once('SIGINT', () => _cliCleanup(130));
 process.once('SIGTERM', () => _cliCleanup(143));
 
+// Codex P2 (review #11/#12, 2026-05-04): uncaughtException /
+// unhandledRejection emergency-exit. Same rationale as server.js:
+// state is untrusted, do SYNC cleanup only (execSync pkill) + exit
+// immediately. Without this, Node 19+ default behavior is exit on
+// unhandled rejection — and our cleanupStalePlaywrightDaemons
+// startup hook on the NEXT melo run reaps any leaked daemons.
+// Adding the hook here moves cleanup to THIS run, no waiting.
+function _cliEmergencyExit(label, errorObj) {
+  try { process.stderr.write(`[melo-cli] ${label}: ${errorObj?.stack || errorObj}\n`); } catch {}
+  try { cleanupStalePlaywrightDaemons(); } catch {}
+  process.exit(1);
+}
+process.on('uncaughtException', err => _cliEmergencyExit('uncaughtException', err));
+process.on('unhandledRejection', reason => _cliEmergencyExit('unhandledRejection', reason));
+
 function printHelp() {
   output.write(
     [

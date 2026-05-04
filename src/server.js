@@ -2337,3 +2337,19 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// uncaughtException / unhandledRejection — emergency-exit path.
+// (Codex P2 from review #11/#12, 2026-05-04: hygiene cleanup
+// previously didn't cover these paths. Top-level shutdown now does.)
+//
+// process state is untrusted after uncaught exception → don't try
+// shutdown()'s async lock-release Promise chain (locks recover via
+// next-start stale-lock detection). Sync execSync pkill fires
+// reliably even from a corrupt event loop.
+function _emergencyExit(label, errorObj) {
+  try { process.stderr.write(`[melo-server] ${label}: ${errorObj?.stack || errorObj}\n`); } catch {}
+  try { cleanupStalePlaywrightDaemons(); } catch {}
+  process.exit(1);
+}
+process.on('uncaughtException', err => _emergencyExit('uncaughtException', err));
+process.on('unhandledRejection', reason => _emergencyExit('unhandledRejection', reason));

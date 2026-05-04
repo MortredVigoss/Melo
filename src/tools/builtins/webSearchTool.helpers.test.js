@@ -497,6 +497,36 @@ test('hygiene contract #2: server.js has SINGLE SIGINT/SIGTERM handler going thr
   );
 });
 
+test('hygiene contract #2: server.js + CLI register uncaughtException / unhandledRejection emergency-exit', async () => {
+  // Codex P2 from reviews #11/#12 (2026-05-04): both server and CLI
+  // entry points must register handlers for uncaughtException and
+  // unhandledRejection that:
+  //   1. log the error (to stderr, never throw inside the handler)
+  //   2. sync cleanup playwright daemons (process state untrusted —
+  //      no async / no shutdown())
+  //   3. process.exit(1)
+  // Pin the contract so future refactors don't silently remove these
+  // (which would leave daemons leaked on every uncaught error and
+  // re-introduce the system-freeze regression).
+  const { readFile } = await import('node:fs/promises');
+  for (const [path, label] of [
+    ['../../server.js', 'server'],
+    ['../../index.js', 'CLI'],
+  ]) {
+    const src = await readFile(new URL(path, import.meta.url), 'utf8');
+    assert.match(src, /process\.on\(\s*'uncaughtException'/, `${label} must register uncaughtException`);
+    assert.match(src, /process\.on\(\s*'unhandledRejection'/, `${label} must register unhandledRejection`);
+    // Each emergency handler must invoke cleanup BEFORE process.exit.
+    // Approximate via "cleanupStalePlaywrightDaemons within emergency
+    // exit function".
+    assert.match(
+      src,
+      /function\s+_(?:cli)?[Ee]mergencyExit[\s\S]+?cleanupStalePlaywrightDaemons[\s\S]+?process\.exit\(1\)/,
+      `${label} emergency-exit must call cleanup then process.exit(1)`,
+    );
+  }
+});
+
 test('hygiene contract #2: src/index.js (CLI) registers cleanup on SIGINT/SIGTERM', async () => {
   // Codex D #12 (review #12, 2026-05-04): CLI mode (`melo search`)
   // didn't have signal cleanup — daemons spawned during the CLI run

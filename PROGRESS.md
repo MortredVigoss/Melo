@@ -4,6 +4,17 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)
+
+- Codex review #11 + #12 反复提到的 P2: hygiene cleanup 不覆盖 `process.exit()` 直接调用 / `uncaughtException` / `unhandledRejection` 路径。当时留独立 round 处理。本 commit 兑现。
+- 设计：uncaughtException 后 process state 不可信（Node 文档明确）— 不能等 `shutdown()` 的 async lock-release Promise chain（可能 hang）。改 sync emergency-exit：log → sync `cleanupStalePlaywrightDaemons()` (execSync pkill) → `process.exit(1)`。Lock 文件靠 next-start stale-lock detection 兜底（lock 协议本身就是这么设计）.
+- 加 [src/server.js](src/server.js) 末尾 `_emergencyExit(label, errorObj)` + `process.on('uncaughtException', ...)` + `process.on('unhandledRejection', ...)`。
+- 加 [src/index.js](src/index.js) 同款 `_cliEmergencyExit` + handlers (CLI mode 也覆盖).
+- 加 contract test pin 双 entry 都注册 + emergency handler 必须 cleanup → exit 1 顺序。防 silent removal — 没这两个 handler，uncaughtException 时 daemon 会再次 leak (复现 system-freeze 场景)。
+- 验证：webSearchTool.helpers **43/43 全绿**（前 42 + 1 contract pin）；全 src **1973/1973 全绿**（前 1972 + 1 新；零既有回归）。
+- **现在 cleanup machinery 完整覆盖**：① module-load startup cleanup（next melo run 兜底 SIGKILL/crash/multi-instance）；② SIGINT/SIGTERM via `shutdown()` (graceful)；③ uncaughtException + unhandledRejection emergency exit (sync cleanup)；④ CLI mode 同款三层。无任何 process exit path 留 daemon 悬挂。
+
+---
 ## 2026-05-04 — Phase 2D round 14 + hygiene fix #2 + P1 inline-shell-out 工具：13 轮 Codex review 收敛到 A
 
 整 1 天 13 轮 Codex D/C/A review 闭环 awk 维度 + 跨进程 daemon hygiene + inline-shell-out 工具家族扩展。覆盖 12 个独立 bypass 维度（D #1 flag-form / D #2 wrapper basename / D #3 positional-after-wrapper / D #4 wrapper enum / D #5 wrapper-flag chain → nuclear / D #6 expansion-form basename / D #7 wrapped-position expansion / D #8 16-iter cap fail-closed / D #10 POSITIONAL_VALUE_WRAPPERS shared / C #11 playwrightFetcher 抢占 server shutdown / D #12 server.js 自抢占 + CLI cleanup），最后 Codex review #13 评 **A** "修复闭环充分 / 风险等级低"。
