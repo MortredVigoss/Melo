@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-05-04 — Codex D #10 + P1 X：findWrappedCommand POSITIONAL_VALUE_WRAPPERS + sqlite3 ANSI-C + vim 扩展
+
+- P1 round (commit `7968b67`) push 后跑第十轮 codex review，Codex 评 **D**：3 个问题。
+  - **P0.1 🔴** `effectiveInterpreterHead` 漏 POSITIONAL_VALUE_WRAPPERS：6 个 attack 实测 `risks=[]`：
+    - `echo '.shell rm' | timeout 5 sqlite3 db`
+    - `timeout 5 sqlite3 db < script.sql`
+    - `echo 'system "rm"' | timeout 5 gnuplot`
+    - `timeout 5 gnuplot < script.gp`
+    - `printf '!rm\n' | timeout 5 ed file`
+    - `timeout 5 ed file <<EOF...`
+    `findWrappedCommand`（被 effectiveInterpreterHead 用）只跳 wrapper + flags 不跳 positional value，timeout/flock 后 first positional 是 wrapper 自己的 value（5 / /tmp/f）→ findWrappedCommand 错把它当 wrapped command 候选 → return null → pipe-fed/heredoc/stdin-redirect detection 全漏。
+  - **P0.2 🔴** sqlite3 ANSI-C quote bypass：`sqlite3 db $'.shell rm'` → `risks=[]`. tokenize 不剥 `$'...'` 形态，token text 保留 `$` prefix → regex `^\.shell` 失配。
+  - **P1 🟠** vim shell escape 入口扩展：`vim --cmd '!rm' file` / `vim +"!rm" file` 漏（`--cmd` 不在 INLINE_CODE_FLAGS，`+CMD` 不是 `-` 前缀）。`-S/-s` (file source) 留 known limit（同 awk -f 同款 fileRead-gated）。
+- 用户拍方案 **X**：必修 P0.1/P0.2 + vim --cmd/+cmd，file-source 留 fileRead gate 处理。
+- **P0.1 修法**：把 `findWrappedCommand` 跟 `findCommandPositionIdx` 共享 `POSITIONAL_VALUE_WRAPPERS` 处理。inner while first positional 时如果 wrapper 在 POSITIONAL_VALUE_WRAPPERS → 跳 1 个 positional value 然后 break。同时新加 `PER_WRAPPER_VALUE_FLAGS` Map per-wrapper value-taker flags：
+  - `timeout`: `-s/--signal` (signal name) / `-k/--kill-after` (seconds)
+  - `flock`: `-w/--timeout/--wait` / `-E/--conflict-exit-code` / `-c/--command`
+  per-wrapper 因为同一 flag 在不同 wrapper 不同语义（`-E` 在 sudo 是 boolean preserve-env，flock 是 conflict-exit-code value-taker）。global VALUE_TAKING_WRAPPER_FLAGS 加 -E 会破 sudo。inner while 双查 global + per-wrapper.
+- **P0.2 修法**：sqlite3 dot-command regex 加 optional `\$?` prefix 接 ANSI-C quoted form `$'.shell rm'` → tokenize 保留的 `$.shell rm`.
+- **P1 修法**：
+  - `--cmd` / `--cmd=<glued>` 加进 `INLINE_CODE_FLAG_LITERAL` set（自动覆盖 vim/nvim 的 --cmd 通过 round 10 token-scan）
+  - isInlineCodeFlag 加 `^\+./` 正则匹配 vim `+CMD` 形式（非 `-` 前缀的 inline command flag）
+  - bare `+` 单 token 不命中（要 `+<non-empty>`）
+  - `-S/-s` (file source) NOT 加 — 跟 awk -f / gnuplot script.gp 同款 fileRead-gated，default 接受 file-source
+- 闭环（手动 16 case 验证）：
+  - ✅ P0.1: 6 attack 全 catch（pipe-fed/heredoc/stdin-redirect via timeout/flock POSITIONAL_VALUE_WRAPPERS chain）
+  - ✅ P0.2: 4 形态 sqlite3 ANSI-C quote 全 catch
+  - ✅ P1: 7 形态 vim --cmd / nvim --cmd / vim --cmd= / vim +"!rm" / vim +'!rm' / xargs vim --cmd / env vim +"!rm" 全 catch
+  - ✅ regression: vim file.txt / sqlite3 db "SELECT 1" / gnuplot script.gp / sudo -E python <<EOF (D #11) 不误标
+- 测试加 4 case：parser 3 case（① 9 形态 POSITIONAL_VALUE_WRAPPERS pipe/heredoc/stdin-fed 全 catch；② 4 形态 sqlite3 ANSI-C quote；③ 7 形态 vim --cmd / +CMD）；e2e 1 case（5 形态 timeout sqlite3 / timeout ed / sqlite3 ANSI-C / vim --cmd / vim +CMD autoApprove + 文件保留）。
+- 验证：`src/safety/bashRiskParser.test.js` **96/96 全绿**（前 92 + 3 新 + 1 D fix #8 sentinel pin）；`src/tools/builtins/phase2d.bashTool.test.js` **113/113 全绿**（前 112 + 1 新）；`src/**/*.test.js` **1967/1967 全绿**（前 1963 + 4 新；零既有回归）。
+- **Codex review #10 推荐路径**："把 wrapper 定位逻辑合并成一个支持 COMMAND_WRAPPERS + POSITIONAL_VALUE_WRAPPERS + xargs 的共享 helper" — 当前 commit 部分实现（共享 POSITIONAL_VALUE_WRAPPERS Set + PER_WRAPPER_VALUE_FLAGS Map），完全合并 helper 留独立 commit（findWrappedCommand 和 findCommandPositionIdx 仍是两个函数）。
+- **Codex 提的 known-limit acknowledged**：① `vim -S/-s file.vim` 文件源 — 接受 file-source default-pass（同 awk -f 同款）；② `gnuplot -c script.gp` 文件源 — 同款；③ `sqlite3 < file.sql` stdin redirect — 已经 catch via SCRIPT_INTERPRETERS pipe-fed/stdin-redirect detection。
+
+---
+
 ## 2026-05-04 — Hygiene fix #2：Playwright daemon 第二次爆系统（root cause + cross-process cleanup）
 
 - 用户系统**第二次**被 Chrome helper 进程爆掉。Activity Monitor 截图：~20 个 Google Chrome Helper (GPU) 各占 38-40MB，物理 16GB 已使用 14.05GB + Swap 1.12GB。`ps aux | grep playwright` 显示 144 个 playwright 进程 + 10+ 不同 `playwright_chromiumdev_profile-*` user-data-dir + 20+ 个 `cliDaemon.js melo-(search|shared)` daemon process（PPID=1，从 5:58PM 累积到 8:57PM 都没死）。

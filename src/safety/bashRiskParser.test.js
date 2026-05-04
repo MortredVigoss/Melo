@@ -715,6 +715,76 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
+test('Codex P1 X (D #10): pipe/heredoc/stdin-fed via POSITIONAL_VALUE_WRAPPERS now caught', () => {
+  // Codex round 10 review found findWrappedCommand didn't handle
+  // POSITIONAL_VALUE_WRAPPERS (timeout/flock/tsp/ts), so
+  // effectiveInterpreterHead returned `5` for `timeout 5 sqlite3 db`,
+  // missing pipe-fed/heredoc/stdin-redirect detection. Fix: share
+  // POSITIONAL_VALUE_WRAPPERS between findWrappedCommand and
+  // findCommandPositionIdx (both now skip 1 positional value when
+  // wrapper is timeout/flock/tsp/ts).
+  for (const cmd of [
+    `echo '.shell rm' | timeout 5 sqlite3 db`,
+    `timeout 5 sqlite3 db < script.sql`,
+    `echo 'system "rm"' | timeout 5 gnuplot`,
+    `timeout 5 gnuplot < script.gp`,
+    `printf '!rm\\n' | timeout 5 ed file`,
+    `timeout 5 ed file <<EOF\n!rm\nEOF`,
+    `flock /tmp/lock sqlite3 db < script.sql`,    // POSITIONAL_VALUE_WRAPPERS via stdin
+    `flock --shared /tmp/lock sqlite3 db < x`,
+    `timeout -s KILL 5 sqlite3 db < script.sql`, // wrapper-flag chain + value + interpreter
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (POSITIONAL_VALUE_WRAPPERS-aware effectiveInterpreterHead)`,
+    );
+  }
+});
+
+test('Codex P1 X (D #10): sqlite3 ANSI-C quote $\'.shell rm\' → code_execution', () => {
+  // tokenize doesn't strip ANSI-C `$'...'` syntax, so token text
+  // retains `$` prefix. Pre-fix regex anchored `\.shell` at start
+  // missed `$.shell rm`. Fix: add optional `\$?` to regex.
+  for (const cmd of [
+    `sqlite3 db $'.shell rm'`,
+    `sqlite3 db $'.system rm'`,
+    `sqlite3 db $'.exec rm'`,
+    `xargs sqlite3 db $'.shell rm'`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (ANSI-C quoted dot-command)`,
+    );
+  }
+});
+
+test('Codex P1 X (D #10): vim --cmd / +CMD inline → code_execution', () => {
+  // P1 round 9 caught `vim -c '!rm'` via SCRIPT_INTERPRETERS +
+  // INLINE_CODE_FLAGS. Codex round 10 found 2 missed inline-command
+  // forms:
+  //   vim --cmd CMD       (vim's "run before .vimrc" command flag)
+  //   vim +CMD            (vim's old-style command flag, no `-` prefix)
+  // Fix: add --cmd and --cmd= to INLINE_CODE_FLAG_LITERAL; add
+  // `+<non-empty>` regex match to isInlineCodeFlag.
+  for (const cmd of [
+    `vim --cmd '!rm' file`,
+    `nvim --cmd '!rm' file`,
+    `vim --cmd='!rm' file`,
+    `vim +"!rm" file`,
+    `vim +'!rm /tmp/x' file`,
+    `xargs vim --cmd '!rm' file`,                 // wrapper-aware
+    `env vim +"!rm" file`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (vim --cmd / +CMD inline)`,
+    );
+  }
+});
+
 test('Codex P1: gnuplot -e inline → code_execution', () => {
   // P1 round (Codex 🟠 round 9): gnuplot has -e for inline command
   // including system() shell-out. Added to SCRIPT_INTERPRETERS so

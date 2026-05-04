@@ -2176,6 +2176,39 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex P1 X (D #10): timeout + interpreter + autoApprove cannot delete file', async () => {
+  // P1 X attack vectors: pipe/heredoc/stdin-fed interpreter via
+  // POSITIONAL_VALUE_WRAPPERS chain, and ANSI-C quoted sqlite3.
+  // findWrappedCommand previously didn't skip wrapper's positional
+  // value, breaking effectiveInterpreterHead.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `printf '.shell rm -f ${target}\\n' | timeout 5 sqlite3 :memory:`,
+      target => `printf '!rm -f ${target}\\n' | timeout 5 ed /tmp/dummy`,
+      target => `sqlite3 :memory: $'.shell rm -f ${target}'`,
+      target => `vim --cmd '!rm -f ${target}' /tmp/dummy`,
+      target => `vim +"!rm -f ${target}" /tmp/dummy`,
+    ]) {
+      const target = join(ws, `p1x-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 5 P1 X attack forms must hard-reject pre-prompt');
+  });
+});
+
 test('Codex P1: gnuplot/vim/sqlite3 inline + autoApprove cannot delete file', async () => {
   // P1 round attack vectors: each tool's inline-shell-out form +
   // autoApprove + file preserved. Pin all 3 tool families.

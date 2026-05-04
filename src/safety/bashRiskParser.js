@@ -705,9 +705,12 @@ function riskifyTokens(tokens, sepBefore = null) {
       a === '-cmd' || /^-cmd./.test(a) || a.startsWith('--cmd=')
     );
     // .shell / .system / .exec dot-command at start of arg or after
-    // sqlite3 statement separator (newline / semicolon).
+    // sqlite3 statement separator (newline / semicolon). P1 X
+    // (Codex 🔴 round 10): also accept ANSI-C quoted form `$'.shell rm'`
+    // which tokenize doesn't strip (token text retains `$` prefix
+    // because `$'...'` syntax isn't quote-handled).
     const hasShellDotCmd = sqliteArgs.some(a =>
-      /(?:^|[\n;])\s*\.(?:shell|system|exec)\b/i.test(a)
+      /(?:^|[\n;])\s*\$?\.(?:shell|system|exec)\b/i.test(a)
     );
     if (hasCmdFlag || hasShellDotCmd) {
       risks.push({
@@ -828,6 +831,23 @@ const COMMAND_WRAPPERS = new Set([
   'tsp', 'ts',
 ]);
 
+// D fix #7 + P1 X (Codex 🔴 rounds 7+10, 2026-05-04): wrappers
+// whose first non-flag positional is the wrapper's OWN value, not
+// the wrapped command. For these, the wrapped command sits at
+// position N+2 (`timeout 5 awk` / `flock /tmp/f awk`).
+//
+// Used by:
+//   - findCommandPositionIdx (D fix #7) — for D fix #6 expansion-
+//     at-wrapper-position detection
+//   - findWrappedCommand (P1 X) — Codex review #10 found
+//     `effectiveInterpreterHead` (which uses findWrappedCommand)
+//     missed `timeout 5 sqlite3 db < script.sql` etc. because the
+//     wrapper-skip didn't know to skip `5`. Both walkers now share
+//     this set.
+const POSITIONAL_VALUE_WRAPPERS = new Set([
+  'timeout', 'flock', 'tsp', 'ts',
+]);
+
 // Most wrappers either take no flags, take only short bool flags
 // (sudo -i / sudo -E / nohup), or take a flag with a value (sudo -u
 // USER / env -u VAR / nice -n N / chrt -p PRIO / unshare --pid).
@@ -847,6 +867,28 @@ const VALUE_TAKING_WRAPPER_FLAGS = new Set([
   '-D', '--chdir',
   '-r', '--role',
   '-t', '--type',
+]);
+
+// P1 X (Codex 🔴 round 10, 2026-05-04): per-wrapper value-taking
+// flags. Same flag letter has different semantics across wrappers
+// (e.g. `-E` is boolean for sudo "preserve-environment" but value-
+// taker for flock "conflict-exit-code"). Global VALUE_TAKING_WRAPPER_
+// FLAGS can't unify them — adding `-E` globally breaks `sudo -E`.
+//
+// Per-wrapper set queried by base name in findWrappedCommand /
+// findCommandPositionIdx inner-while. Bounded — we add when Codex
+// finds a real wrapper-flag bypass (like `timeout -s KILL 5 sqlite3
+// db < script.sql` returning empty risks).
+const PER_WRAPPER_VALUE_FLAGS = new Map([
+  ['timeout', new Set([
+    '-s', '--signal',                   // signal name (KILL / TERM / etc.)
+    '-k', '--kill-after',                // seconds
+  ])],
+  ['flock', new Set([
+    '-w', '--timeout', '--wait',        // wait timeout in seconds
+    '-E', '--conflict-exit-code',        // exit code on conflict
+    '-c', '--command',                   // command to run within lock
+  ])],
 ]);
 
 // Phase 2D follow-up #11: skip env-assignments and command wrappers
@@ -891,9 +933,23 @@ function findWrappedCommand(tokens, isMatch) {
         // Heuristic: if the flag is in the value-taking set, also
         // skip the next word as its value.
         if (VALUE_TAKING_WRAPPER_FLAGS.has(a)) { i += 2; continue; }
+        // P1 X (Codex 🔴 round 10): per-wrapper value-taker (flag
+        // letter has different semantics in different wrappers, so
+        // can't go in global set without breaking other wrappers).
+        const perWrapperFlags = PER_WRAPPER_VALUE_FLAGS.get(base);
+        if (perWrapperFlags && perWrapperFlags.has(a)) { i += 2; continue; }
         i++; continue;
       }
-      // First positional — that's the wrapped command
+      // First positional. P1 X (Codex 🔴 round 10, 2026-05-04):
+      // for POSITIONAL_VALUE_WRAPPERS the wrapper's first positional
+      // is its OWN value (`timeout SECS`, `flock LOCKFILE`), not the
+      // wrapped command — skip one extra and let outer iter pick up
+      // the actual wrapped command at i+1. Without this,
+      // effectiveInterpreterHead returned `5` for `timeout 5 sqlite3`
+      // and pipe-fed/heredoc/stdin-redirect detection missed sqlite3.
+      if (POSITIONAL_VALUE_WRAPPERS.has(base)) {
+        i++;
+      }
       break;
     }
   }
@@ -993,15 +1049,6 @@ function analyzeAwkArgv(argTokens) {
 // See the unified token-scan loop in riskifyTokens for rationale +
 // agent-side mitigation (single-quote the awk literal).
 //
-// D fix #7 (Codex 🔴 round 7, 2026-05-04): `POSITIONAL_VALUE_WRAPPERS`
-// restored — but used ONLY in `findExpansionAtCommandPosition` to
-// correctly walk past `timeout SECS` / `flock LOCKFILE` before
-// reaching the wrapped-command position. NOT used for awk detection
-// (which stays nuclear).
-const POSITIONAL_VALUE_WRAPPERS = new Set([
-  'timeout', 'flock', 'tsp', 'ts',
-]);
-
 // D fix #7 (Codex 🔴 round 7, 2026-05-04): walk past leading wrapper
 // chain (env / xargs / sudo / nohup / nice / timeout / flock / etc.)
 // and return the index of the first "command position" token. Returns
@@ -1038,6 +1085,10 @@ function findCommandPositionIdx(tokens) {
       if (a.startsWith('-')) {
         if (a.includes('=')) { i++; continue; }
         if (VALUE_TAKING_WRAPPER_FLAGS.has(a)) { i += 2; continue; }
+        // P1 X (Codex 🔴 round 10): per-wrapper value-takers shared
+        // with findWrappedCommand for consistent wrapper-skip.
+        const perWrapperFlags = PER_WRAPPER_VALUE_FLAGS.get(base);
+        if (perWrapperFlags && perWrapperFlags.has(a)) { i += 2; continue; }
         i++; continue;
       }
       // First non-flag positional. For POSITIONAL_VALUE_WRAPPERS,
@@ -1210,12 +1261,25 @@ function isScriptInterpreter(text) {
 const INLINE_CODE_FLAG_LITERAL = new Set([
   '-c', '-e', '-E', '-r', '-p',
   '--eval', '--execute', '--command', '--print',
+  // P1 X (Codex 🔴 round 10, 2026-05-04): vim/nvim's `--cmd CMD` is
+  // an inline command flag (different from `-c` — runs BEFORE
+  // .vimrc), but same shell-out surface via `:!CMD` escape. Add to
+  // the unified inline-code-flag set so token-scan auto-covers
+  // `vim --cmd '!rm' file` for any awk-family/script-interpreter
+  // (works for vim because vim is in SCRIPT_INTERPRETERS as of P1).
+  '--cmd',
 ]);
 function isInlineCodeFlag(text) {
   if (INLINE_CODE_FLAG_LITERAL.has(text)) return true;
   // POSIX-glued single-letter: `-c<code>` / `-e<code>` / `-E<code>`
   // / `-r<code>` / `-p<code>`.
   if (/^-[ceErp]./.test(text)) return true;
+  // Long-glued form: `--cmd=CMD` (P1 X).
+  if (text.startsWith('--cmd=')) return true;
+  // P1 X: vim's `+CMD` old-style inline command — no `-` prefix.
+  // Same shell-out surface as `--cmd` / `-c` via `:!CMD` escape.
+  // Bare `+` token alone is not a command, only `+<non-empty>`.
+  if (/^\+./.test(text)) return true;
   return false;
 }
 
