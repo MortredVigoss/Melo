@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-05-04 — Codex 又抓 D #3：positional inline after wrapper + 误报扩大 → 统一 awk 检测重构
+
+- D fix #2 (`29273fd`) push 后跑第三轮 codex review，Codex 评 **D**：① D #3 attack — `xargs gawk 'BEGIN{system("rm")}'` / `find . -exec gawk 'PROG' {} \;` / `xargs -I{} gawk 'PROG' {}` / `env xargs gawk 'PROG'` 全部不被 flag — D fix #2 token-scan 只看 inline-flag (`-e`/`--source`) 不看**positional inline program**；② 🟡 误报扩大 — `git commit -m awk -e hello` 也会被 D fix #2 token-scan 标 code_execution（dev 真常用 commit message 形态）。两个问题暴露结构性盲区：head-aware findWrappedCommand + 半 token-scan 双层设计永远漏一个 wrapper 形态；每修一刀都要再来一刀。
+- **方案（用户拍板，Codex 推荐）**：unified awk detection — **删除整个 head-aware + inline-flag-only token-scan 两层设计**，替换为**单一 token-scan + 两个 helper**：
+  - `analyzeAwkArgv(argTokens)` — 完整 awk argv 语义解析。返回 `{hasFileFlag, hasInlineFlag, hasPositional}`。处理：① `-f`/`-fX`/`--file`/`--file=X` (file source)；② `-e`/`-eX`/`--source`/`--source=X` (inline source)；③ `-F`/`-v`/`-W`/`-i` value-takers + POSIX 粘连；④ `--` end-of-options（其后第一 word 视作 positional）；⑤ 首个非 flag positional → hasPositional。
+  - `awkIsInvocationContext(tokens, awkIdx)` — 向前 walk back，跳 flag/env-assignment，跳 redirect+target 对（preposed redirect 透明）。命中 `xargs` / `-exec`/`-execdir` / `COMMAND_WRAPPERS` 成员 → invocation context = true。命中其他 word → false（awk 是数据 token）。走到 token start → head 位置 → true。
+  - 主循环：扫整 tokens 找 awk-family token；filter by `awkIsInvocationContext`；对幸存 token 跑 `analyzeAwkArgv`；判定 `hasInlineFlag || (!hasFileFlag && hasPositional)` → flag；若三者皆 false 但 sepBefore='|' 或有 stdin redirect → flag pipe-fed/stdin redirect。break on first flag。
+- **代码净减少**：原 3 层（head-aware ~70 行 + token-scan ~17 行 = 87 行）→ 新 1 层（主循环 ~35 行 + 2 helper ~75 行 = 110 行）。略增 23 行但语义统一 + 复用性强（helper 可独立测）。
+- **闭环矩阵**（手动 + 16 case 全过）：
+  - ✅ D #3 attack: `xargs gawk 'PROG'` / `xargs -I{} gawk` / `find -exec gawk` / `env xargs gawk` (positional after wrapper) 全 catch
+  - ✅ D #1/#2 attack: `gawk -e<glued>` / `--source=<glued>` / wrapper + `-e` / wrapper + `--source` 全 catch
+  - ✅ Round 14 attack: `awk 'PROG'` / `awk 'x=system(...)'` head 形态 catch
+  - ✅ False positive 缩小：`echo awk -e hello` / `git commit -m awk -e hello` / `cat docs/awk-tutorial.md` / `grep awk -e file` / `find -name 'awk*'` 全不误标
+  - ✅ Regression: `awk -f script.awk` 在直接/xargs/find-exec/wrapper 下全不误标
+  - ✅ Probe: `awk --version` / `gawk -V` / `xargs awk --version` 走 prompt
+  - ✅ P1 self-review: `< /tmp/script.awk awk` preposed redirect (redirect target 透明 walkback) 仍 catch
+- 测试加 7 case：parser 5 case（① 8 形态 positional-after-wrapper attack；② 8 形态 false-positive guard (echo/git/cat/grep/find-name/printf single-quoted/etc)；③ 10 形态 -f wrapper regression；④ 4 形态 probe regression；⑤ preposed redirect regression）；e2e 2 case（① 4 形态 xargs/find-exec attack autoApprove + 文件保留；② git commit -m 'awk -e hello' guard，pin reaches prompt 不被预拒）。
+- 验证：`src/safety/bashRiskParser.test.js` **72/72 全绿**（前 67 + 5 新）；`src/tools/builtins/phase2d.bashTool.test.js` **107/107 全绿**（前 105 + 2 新）；`src/**/*.test.js` **1936/1936 全绿**（前 1929 + 7 新；零既有回归）。
+- **教训**（third D 之后）：① 多层 detection 设计是反模式 — 每层只盖一面，新 wrapper 形态出来就需要新层；② 应该一开始就抽出"argv 语义解析" + "调用上下文判别" 两个 helper，让单一 token-scan 走完整逻辑；③ Codex 三轮 D 总共"找到 6 个 wrapper bypass 形态" — 没有 Codex 兜底自审 100% 漏；④ 之后写新检测必须先列**所有 inline-program 来源** + **所有可能调用上下文**，不能边写边凑。
+
+---
+
 ## 2026-05-04 — Codex 又抓 D #2：`xargs gawk -e ...` token-scan 闭环
 
 - D-fix #1 (`dba8ea3`) push 后用户拍板再跑 codex review，Codex 又评 **D**：`xargs gawk -e'BEGIN{system("rm")}'` / `printf data | xargs gawk --source=...` 不经过 `findWrappedCommand`（xargs 不在 COMMAND_WRAPPERS — 它的 `-I/-n/-0/-P` 复杂 flag 不适配 sudo/env 同款的"skip flag + value"逻辑），awk 检测整段不进入 → 漏 → autoApprove 一键执行。Codex 还指 `find . -exec awk -e PROG {} ;` / `xargs -I{} awk -e ...` 同款 wrapper 形态。这是结构性盲区：head-aware findWrappedCommand 永远漏 wrapper-of-wrapper 形态。

@@ -2176,6 +2176,63 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix #3: xargs/find-exec + positional inline + autoApprove cannot delete file', async () => {
+  // Codex D #3 attack vector: positional inline program after wrapper.
+  // `xargs gawk 'PROG'` / `find -exec gawk 'PROG' {} ;` returned []
+  // before D fix #3. Pin all 4 attack forms via autoApprove + file
+  // preserved.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `printf 'a\\n' | xargs gawk 'BEGIN{system("rm -f ${target}")}'`,
+      target => `printf 'a\\n' | xargs -I{} gawk 'BEGIN{system("rm -f ${target}")}' {}`,
+      target => `find /tmp -name 'nope-${Date.now()}-*' -exec gawk 'BEGIN{system("rm -f ${target}")}' {} \\;`,
+      target => `env xargs gawk 'BEGIN{system("rm -f ${target}")}'`,
+    ]) {
+      const target = join(ws, `dfix3-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 4 positional-inline-after-wrapper forms must hard-reject pre-prompt');
+  });
+});
+
+test('Codex D fix #3: invocation-context guard — git commit message with `awk -e ...` reaches prompt', async () => {
+  // Pin the false-positive reduction: previous D fix #2 token-scan
+  // would flag `git commit -m awk -e hello` because of awk + -e<glued>.
+  // After D fix #3's awkIsInvocationContext guard, prev token `-m`
+  // is a flag, walk back to `commit` which is not xargs/wrapper →
+  // not invocation context → not flagged. Reaches prompt instead.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r = await bashTool.run(
+      { command: `git commit -m 'awk -e hello'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+      },
+    );
+    // Single-quoted message is 1 token after tokenize, not awk-family
+    // basename. So this case is unflagged regardless. Still: must
+    // reach prompt (not be hard-rejected pre-prompt).
+    assert.equal(promptCount, 1, 'git commit with awk in message must reach prompt');
+    assert.equal(r.error, 'DENIED');
+  });
+});
+
 test('Codex D fix #2: xargs gawk -e<glued> + autoApprove cannot delete file (token-scan covers wrappers)', async () => {
   // Codex re-review of D-fix #1 found xargs bypass: D-fix added
   // hasInlineFlag for direct -e/--source but xargs gawk -e was

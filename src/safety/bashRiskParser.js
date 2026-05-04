@@ -540,160 +540,69 @@ function riskifyTokens(tokens, sepBefore = null) {
     });
   }
 
-  // Phase 2D follow-up #14 (Codex 🔴, 2026-05-04): awk inline
-  // program + sed e-cmd shell-out. Round 13's known-limit list
-  // explicitly punted these two:
-  //   - awk's program is the first non-flag positional, NOT a `-c`
-  //     flag, so round 10's inline-code-flag scan misses
-  //     `awk 'BEGIN{system("rm x")}'`.
-  //   - sed's `e` command + `s/.../e` substitute flag both shell-
-  //     out, but they're inside the program-string arg so neither
-  //     wrapper-aware token-scan nor inline-code-flag scan sees
-  //     them.
-  // Codex pointed at both. Treatment: hard-reject (same `code_
-  // execution` kind already wired through requestBashOp at
-  // fileSafetyGate.js:1094). Both checks are wrapper-aware via
-  // `findWrappedCommand`, so `env awk` / `sudo gawk` / `command
-  // sed` / `nohup gsed` etc. all hit the same path.
-  const awkToken = findWrappedCommand(tokens, isAwkBasename);
-  if (awkToken) {
-    const awkIdx = tokens.indexOf(awkToken);
-    const argTokens = tokens.slice(awkIdx + 1);
-    const wordArgs = argTokens.filter(t => t.kind === 'word').map(t => t.text);
-    // `-f script.awk` / `-fscript.awk` (POSIX-glued) / `--file
-    // script.awk` / `--file=script.awk` — program from file, gated
-    // separately by fileRead. Don't treat as inline code.
-    const hasFileFlag = wordArgs.some(a =>
-      a === '-f' || /^-f.+/.test(a) || a === '--file' || a.startsWith('--file=')
-    );
-    // Codex pre-pp review of round 14 (D-graded, 2026-05-04): GNU
-    // awk also has inline-program flags `-e PROGRAM` / `-eXXX`
-    // (POSIX-glued) / `--source PROGRAM` / `--source=XXX`. Original
-    // round-14 code only caught the SEPARATE `-e PROGRAM` form
-    // (next token reached the positional-scan loop), but glued
-    // forms `-e<glued>` / `--source=<glued>` matched the generic
-    // `if (a.startsWith('-')) continue;` flag-skip and the program
-    // payload was lost — `gawk -e'BEGIN{system("rm /tmp/x")}'`
-    // returned ZERO risks → autoApprove + one click executed
-    // system().
-    //
-    // Same risk profile as the positional inline form: the program
-    // is right there in argv, just under a different flag name.
-    // Hard-reject as code_execution. Note the long-form `--source`
-    // is GNU-specific; `-e` is also GNU but we apply uniformly to
-    // any awk-family head since false-positive cost is just "agent
-    // rewrites with -f" (acceptable).
-    const hasInlineFlag = wordArgs.some(a =>
-      a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')
-    );
-    if (hasInlineFlag) {
-      risks.push({
-        kind: 'code_execution',
-        pattern: `${tokenBasename(awkToken.text)} -e/--source inline`,
-        confidence: 'high',
-      });
-    } else if (!hasFileFlag) {
-      // Find first non-flag positional. awk flags that take a
-      // value: `-F sep`, `-v var=val`, `-W gawk-extension`, `-i
-      // inplace` (already handled separately as in_place_edit).
-      // Glued forms `-Fsep` / `-vvar=val` / `-Wext` are also
-      // accepted and need single-token skip.
-      //
-      // Round-14 self-review (2026-05-04): originally skipped
-      // tokens matching `/^[A-Za-z_][A-Za-z0-9_]*=/` thinking they
-      // were post-program var=val positionals (which awk DOES treat
-      // as "set var before processing files"). But awk's first
-      // non-flag positional is ALWAYS the program when no -f is
-      // given — even if it looks like `x=system("rm")`, awk parses
-      // it as inline code and runs `system()`. The skip introduced
-      // a bypass: `awk 'x=system("rm /tmp/x")'` falls through to
-      // unknown prompt → autoApprove → file gone. Removed the skip
-      // entirely; var=val positionals AFTER the program are never
-      // reached because we break on the first positional anyway.
-      let hasPositional = false;
-      for (let i = 0; i < wordArgs.length; i++) {
-        const a = wordArgs[i];
-        if (a === '-F' || a === '-v' || a === '-W' || a === '-i') { i++; continue; }
-        if (/^-[FvWi]./.test(a)) continue; // glued
-        if (a.startsWith('-')) continue;   // any other flag
-        hasPositional = true;
-        break;
-      }
-      // Stdin-fed forms (heredoc / `<` redirect / pipe) make stdin
-      // the program when there is no `-f`. Pipe-fed awk is not in
-      // SCRIPT_INTERPRETERS, so the existing pipe-fed interpreter
-      // path doesn't cover it — handle here. Scan the FULL tokens
-      // array (not just post-awk argTokens) because bash allows
-      // preposed redirects: `< /tmp/script.awk awk` is equivalent
-      // to `awk < /tmp/script.awk`. Round 14 self-review fix.
-      const hasStdinRedirect = tokens.some(t =>
-        t.kind === 'redirect' && (t.text === '<<' || t.text === '<')
-      );
-      const isPipeFed = sepBefore === '|';
-      if (hasPositional || isPipeFed || hasStdinRedirect) {
-        const subPattern =
-          hasPositional ? 'inline program' :
-          isPipeFed ? 'pipe-fed' :
-          'stdin redirect';
-        risks.push({
-          kind: 'code_execution',
-          pattern: `${tokenBasename(awkToken.text)} ${subPattern}`,
-          confidence: 'high',
-        });
-      }
-      // Bare `awk --version` / `gawk -V` (no positional, no pipe,
-      // no redirect) falls through unflagged → goes to default-deny
-      // unknown prompt. UX: 1 prompt to approve a probe rather than
-      // a blanket DENIED. Same trade-off pattern as round 4's
-      // strict-version-probe carve-out for node/python.
-    }
-  }
-
-  // Codex pre-pp review of the round-14 D-fix (D-graded, 2026-05-04):
-  // findWrappedCommand only recognizes COMMAND_WRAPPERS (sudo / env /
-  // nohup / nice / etc.) — `xargs` is NOT a member because xargs's
-  // arg semantics (`-I` / `-n` / `-0` / `-P`) don't fit the simple
-  // "skip flag + value" wrapper-skip model used by sudo/env. Result:
-  // `xargs gawk -e PROG` makes findWrappedCommand return null and
-  // the entire awk-detection block above is skipped → the inline
-  // program gets neither hard-rejected nor positional-flagged.
-  // Same structural blind-spot round 8 closed for nested_shell and
-  // round 10 closed for SCRIPT_INTERPRETERS: head-aware detection
-  // misses wrapper variants, fix is a TOKEN-SCAN that finds the
-  // interpreter at ANY position.
+  // Phase 2D follow-up #14 D-fix #3 (Codex 🔴, 2026-05-04 third
+  // re-review): unified awk-family detection. Replaces the previous
+  // head-aware + inline-flag-token-scan two-layer design that took
+  // three rounds of Codex D before all wrapper bypass classes were
+  // closed. Each iteration plugged one bypass and left others open:
   //
-  // Apply the same pattern to awk: scan ALL word tokens for an
-  // awk-family basename, then check downstream for an inline-flag
-  // form. This subsumes:
-  //   - `xargs awk -e PROG`
-  //   - `xargs -I{} gawk --source=PROG {}`
-  //   - `xargs -0 awk --source PROG`
-  //   - `find . -exec awk -e PROG {} \;` (in same sub-command)
-  //   - any wrapper-of-wrapper that doesn't go through findWrapped-
-  //     Command (busybox awk, `time xargs awk -e`, etc.)
-  //   - direct `gawk -e PROG` invocation (overlaps with the head-
-  //     aware block above; double push is harmless — gate hard-
-  //     rejects on first code_execution)
-  // Trade-off (same as round 8 nested_shell token-scan): `echo "awk
-  // -e foo"` (3 echo args including 'awk' and '-e<glued>') would
-  // flag. Agent uses single-quoted `'awk -e foo'` (1 token) to
-  // avoid; rare false positive, accepted.
+  //   round 14   — head-aware findWrappedCommand only (sudo/env/...)
+  //                missed `xargs awk -e` because xargs ∉ COMMAND_
+  //                WRAPPERS.
+  //   D fix #1   — added hasInlineFlag for `-e<glued>` / `--source`,
+  //                missed `xargs awk` (still only via findWrappedCommand).
+  //   D fix #2   — added inline-flag token-scan, missed `xargs awk
+  //                'PROG'` (positional inline program after wrapper).
+  //   D fix #3   — this commit: ONE token-scan over the whole sub-
+  //                command, with two helpers
+  //                (awkIsInvocationContext + analyzeAwkArgv) that
+  //                cover all three program-source classes:
+  //                  · positional inline (`awk 'PROG'`)
+  //                  · -e/--source inline (GNU)
+  //                  · stdin/pipe/heredoc-fed (no -f)
+  //                Plus an invocation-context guard to avoid flagging
+  //                awk-as-data tokens (`echo awk`, `git commit -m awk`).
+  //
+  // analyzeAwkArgv: full awk argv semantics — handles `--` end-of-
+  // options, file-source flags (-f/--file/-fX/--file=X), inline-source
+  // flags (-e/--source/-eX/--source=X), value-takers (-F/-v/-W/-i)
+  // including POSIX-glued forms, then finds the first non-flag
+  // positional. Returns {hasFileFlag, hasInlineFlag, hasPositional}.
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.kind !== 'word') continue;
     if (!isAwkBasename(t.text)) continue;
-    for (let j = i + 1; j < tokens.length; j++) {
-      const u = tokens[j];
-      if (u.kind !== 'word') continue;
-      const a = u.text;
-      if (a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')) {
+    if (!awkIsInvocationContext(tokens, i)) continue;
+    const argTokens = tokens.slice(i + 1);
+    const analysis = analyzeAwkArgv(argTokens);
+    // Inline program in argv → hard-reject.
+    if (analysis.hasInlineFlag || (!analysis.hasFileFlag && analysis.hasPositional)) {
+      risks.push({
+        kind: 'code_execution',
+        pattern: `${tokenBasename(t.text)} inline program`,
+        confidence: 'high',
+      });
+      break;
+    }
+    // No inline/positional/file but stdin-fed (heredoc / `<` redirect
+    // / pipe) — stdin becomes the program. Scan the FULL tokens array
+    // because bash allows preposed redirects: `< /tmp/x.awk awk` is
+    // equivalent to `awk < /tmp/x.awk` (round-14 self-review fix).
+    if (!analysis.hasFileFlag && !analysis.hasInlineFlag && !analysis.hasPositional) {
+      const hasStdinRedirect = tokens.some(tk =>
+        tk.kind === 'redirect' && (tk.text === '<<' || tk.text === '<')
+      );
+      const isPipeFed = sepBefore === '|';
+      if (isPipeFed || hasStdinRedirect) {
         risks.push({
           kind: 'code_execution',
-          pattern: `${tokenBasename(t.text)} -e/--source inline (token-scan)`,
+          pattern: `${tokenBasename(t.text)} ${isPipeFed ? 'pipe-fed' : 'stdin redirect'}`,
           confidence: 'high',
         });
         break;
       }
+      // Bare `awk --version` / `gawk -V` falls through to default-deny
+      // prompt — UX carve-out for probes.
     }
   }
 
@@ -858,6 +767,108 @@ function effectiveInterpreterHead(tokens) {
 // `awk -f script.awk` (file content is gated separately via fileWrite).
 function isAwkBasename(text) {
   return /^(g|m|n)?awk$/.test(tokenBasename(text));
+}
+
+// D-fix #3 (2026-05-04): full awk argv semantics in one pass. Returns
+// {hasFileFlag, hasInlineFlag, hasPositional} so the caller can decide:
+//   - hasInlineFlag → hard-reject (program is in argv via -e / --source)
+//   - !hasFileFlag && hasPositional → hard-reject (positional inline program)
+//   - else → fall through (file-source / probe / pipe-fed handled separately)
+//
+// awk's flag set is small but irregular:
+//   -F sep / -Fsep                          field separator
+//   -v var=val / -vvar=val                  pre-set variable
+//   -W ext / -Wext                          gawk extension (e.g. -W exec=PATH)
+//   -i inplace / -iinplace                  gawk in-place edit (also handled
+//                                           separately as in_place_edit)
+//   -f FILE / -fFILE / --file FILE / --file=FILE   program from file
+//   -e PROG / -ePROG / --source PROG / --source=PROG   inline program
+//   --                                      end of options
+//   <positional>                            first non-flag positional is the
+//                                           program when no -f/-e seen
+function analyzeAwkArgv(argTokens) {
+  let hasFileFlag = false;
+  let hasInlineFlag = false;
+  let hasPositional = false;
+  let pastDoubleDash = false;
+  for (let i = 0; i < argTokens.length; i++) {
+    const t = argTokens[i];
+    if (t.kind !== 'word') continue;
+    const a = t.text;
+    if (pastDoubleDash) {
+      // First word after `--` is the program (if no -f/-e seen).
+      hasPositional = true;
+      break;
+    }
+    if (a === '--') {
+      pastDoubleDash = true;
+      continue;
+    }
+    // File-source flags — program comes from a file (gated by fileRead).
+    if (a === '-f' || /^-f.+/.test(a) || a === '--file' || a.startsWith('--file=')) {
+      hasFileFlag = true;
+      if (a === '-f' || a === '--file') i++; // separate-arg form: skip value
+      continue;
+    }
+    // Inline-source flags — program is in argv (GNU awk -e / --source).
+    if (a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')) {
+      hasInlineFlag = true;
+      if (a === '-e' || a === '--source') i++; // separate-arg form: skip value
+      continue;
+    }
+    // Value-taking flags: skip flag + value.
+    if (a === '-F' || a === '-v' || a === '-W' || a === '-i') {
+      i++;
+      continue;
+    }
+    // POSIX-glued value flags.
+    if (/^-[FvWi]./.test(a)) continue;
+    // Other flags (e.g. `--version`, `-V`, `--profile`).
+    if (a.startsWith('-')) continue;
+    // First non-flag positional = inline program when no -f/-e seen yet.
+    hasPositional = true;
+    break;
+  }
+  return { hasFileFlag, hasInlineFlag, hasPositional };
+}
+
+// D-fix #3 (2026-05-04): determine if an awk-family token at index
+// `awkIdx` is being INVOKED (not just appearing as data inside another
+// command's args). Walk back from `awkIdx`:
+//   - Skip flags (start with `-`) except `-exec` / `-execdir` which are
+//     find's command-introducer markers.
+//   - Skip env-assignments (FOO=val).
+//   - The first "data" word we hit decides:
+//       · `xargs` / COMMAND_WRAPPERS member / `-exec` / `-execdir`
+//         → invocation context (true)
+//       · anything else (`echo` / `git` / `cat` / etc.) → awk is data (false)
+//   - Hitting token-start = head position → invocation context (true)
+//
+// Without this guard the unified token-scan would flag `git commit -m
+// awk -e hello` (commit message containing literal `awk` and `-e<glued>`),
+// `echo awk -e hello`, `cat awk-tutorial.md`, etc. — Codex specifically
+// pointed this out as too wide a false-positive surface.
+function awkIsInvocationContext(tokens, awkIdx) {
+  for (let i = awkIdx - 1; i >= 0; i--) {
+    const t = tokens[i];
+    if (t.kind === 'redirect') continue;
+    if (t.kind !== 'word') continue;
+    // If preceded by a redirect, this word is the redirect's target
+    // (e.g. `< /tmp/script.awk awk`). Targets are transparent — they
+    // belong to the surrounding command, not part of the invocation
+    // context decision. Pin: P1 preposed-redirect regression.
+    if (i > 0 && tokens[i - 1].kind === 'redirect') continue;
+    const a = t.text;
+    // find's `-exec` / `-execdir` introduce the command despite starting
+    // with `-`. Same for the very-rare `-execdir{}` that some manpages list.
+    if (a === '-exec' || a === '-execdir') return true;
+    if (a.startsWith('-')) continue;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
+    const base = tokenBasename(a);
+    if (base === 'xargs' || COMMAND_WRAPPERS.has(base)) return true;
+    return false;
+  }
+  return true; // head position
 }
 
 // Phase 2D follow-up #14 (Codex 🔴): GNU sed `e` command and the

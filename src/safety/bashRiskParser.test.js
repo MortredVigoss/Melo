@@ -595,6 +595,109 @@ test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text w
   }
 });
 
+test('Codex D fix #3: positional inline program after wrapper → code_execution', () => {
+  // D fix #3 (2026-05-04 third re-review): D fix #2 token-scan only
+  // checked for inline FLAGS (-e/--source). awk's first non-flag
+  // POSITIONAL is also inline program — `xargs gawk 'PROG'` /
+  // `find -exec gawk 'PROG' {} ;` returned [] and autoApprove ran
+  // system(). Fix: unified token-scan with full argv analysis
+  // (analyzeAwkArgv) + invocation-context guard (awkIsInvocationContext).
+  for (const cmd of [
+    `printf x | xargs gawk 'BEGIN{system("rm")}'`,
+    `xargs -I{} gawk 'BEGIN{system("rm")}' {}`,
+    `xargs -0 awk 'BEGIN{system("rm")}'`,
+    `find . -exec gawk 'BEGIN{system("rm")}' {} \\;`,
+    `find . -name '*.txt' -exec awk 'BEGIN{system("rm")}' {} +`,
+    `env xargs gawk 'BEGIN{system("rm")}'`,
+    `time xargs gawk 'BEGIN{system("rm")}'`,
+    `nice -n 10 xargs awk 'BEGIN{system("rm")}'`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (positional inline after wrapper)`,
+    );
+  }
+});
+
+test('Codex D fix #3: invocation-context guard — awk-as-data tokens NOT flagged', () => {
+  // Guard requirement (Codex 🟡 D #3): the unified token-scan must
+  // not flag every command containing literal `awk` + a flag-shaped
+  // arg. `awkIsInvocationContext` walks back from the awk token
+  // and only accepts xargs / `-exec` / COMMAND_WRAPPERS / head as
+  // invocation prefix. Common dev/agent flows must stay unflagged.
+  for (const cmd of [
+    `echo awk -e hello`,                    // 3 echo args (would have falsed in D fix #2)
+    `git commit -m awk -e hello`,           // commit message
+    `git commit -m awk hello`,              // commit message no flag
+    `echo awk hello`,                       // bare echo of "awk hello"
+    `cat docs/awk-tutorial.md`,             // 'awk' in path
+    `grep awk -e file`,                      // grep, awk is grep's pattern
+    `printf 'awk -e is GNU only'`,          // single-quoted = 1 token
+    `find . -name 'awk*'`,                  // 'awk*' is find's name pattern, no -exec
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (awk is data, not invocation)`,
+    );
+  }
+});
+
+test('Codex D fix #3: regression — `awk -f` exempt under all wrapper forms', () => {
+  // analyzeAwkArgv must correctly detect hasFileFlag and skip the
+  // hard-reject path. Pin under direct/xargs/find/wrapper forms.
+  for (const cmd of [
+    `awk -f script.awk file.txt`,
+    `awk -fscript.awk file.txt`,
+    `awk --file=script.awk file.txt`,
+    `awk --file script.awk file.txt`,
+    `xargs awk -f script.awk`,
+    `xargs gawk --file=/tmp/x.awk`,
+    `find . -exec awk -f script.awk {} \\;`,
+    `find . -exec awk --file=script.awk {} +`,
+    `env xargs gawk -f script.awk`,
+    `cat data.txt | xargs awk -f script.awk`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (-f only, no inline)`,
+    );
+  }
+});
+
+test('Codex D fix #3: regression — bare `awk --version` / `gawk -V` falls through', () => {
+  for (const cmd of [
+    `awk --version`,
+    `gawk -V`,
+    `mawk --version`,
+    `xargs awk --version`,                  // wrapper + version probe
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (probe form)`,
+    );
+  }
+});
+
+test('Codex D fix #3: regression — preposed `< /tmp/x awk` still detected', () => {
+  // P1 self-review case (round 14) must keep working with the new
+  // unified token-scan: `< /tmp/script.awk awk` — redirect target
+  // is transparent in invocation-context walkback. Token-scan finds
+  // awk at head position (after preamble) → analyze argv → no
+  // positional/inline/file → check stdin redirect → flag.
+  const risks = parseBashRiskyOps(`< /tmp/script.awk awk`).risks;
+  assert.ok(
+    risks.some(r => r.kind === 'code_execution'),
+    'preposed redirect + awk must detect stdin-fed code_execution',
+  );
+});
+
 test('Codex D fix #2: xargs / find -exec / wrapper-of-wrapper awk inline → code_execution (token-scan)', () => {
   // Codex pre-pp re-review of the round 14 D-fix (D-graded again,
   // 2026-05-04): D-fix #1 added hasInlineFlag for direct `gawk -e`,
