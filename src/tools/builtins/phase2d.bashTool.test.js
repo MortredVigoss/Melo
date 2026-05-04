@@ -1409,6 +1409,143 @@ test('round 17 Phase 2D followup #10: regression — version probes still silent
   });
 });
 
+// ─── Phase 2D follow-up #11: wrapper-aware code_execution ────────────
+// Codex 🔴 round 11: pipe-fed / heredoc / stdin-redirect detectors
+// previously checked literal `head`, missing wrapper forms
+// (`cat x | env python`, `env python <<EOF`, `/usr/bin/env python <
+// /tmp/x`, `sudo -E python <<EOF`). All four detection paths
+// (inline-code / heredoc / stdin-redirect / pipe-fed) now share a
+// wrapper-aware effectiveInterpreterHead helper.
+
+test('round 18 Phase 2D followup #11: pipe-fed env python — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'cat /tmp/x | env python',
+      'cat /tmp/x | command python',
+      'cat /tmp/x | sudo python',
+      'cat /tmp/x | sudo -u user python',
+      'cat /tmp/x | nice -n 10 python',
+      'cat /tmp/x | nohup python',
+      'cat /tmp/x | /usr/bin/env python',
+      'cat /tmp/x | env -i FOO=1 python',
+      'cat /tmp/x | exec python',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should be denied`);
+    }
+    assert.equal(promptCount, 0, 'all wrapper-form pipe-fed must hard-reject pre-prompt');
+  });
+});
+
+test('round 18 Phase 2D followup #11: env python < script.py — HARD REJECT (autoApprove cannot bypass)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'wrapped-stdin.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `env python < /tmp/script.py` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 18 Phase 2D followup #11: /usr/bin/env python <<EOF — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'wrapped-heredoc.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `/usr/bin/env python <<EOF\nimport os\nos.unlink('${target}')\nEOF` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 18 Phase 2D followup #11: sudo -E python <<EOF / nice + python <<EOF / multi-wrapper chains — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'sudo -E python <<EOF\nimport os\nEOF',
+      'nice -n 10 python <<EOF\nx\nEOF',
+      'env -i PYTHONPATH=. python <<EOF\nx\nEOF',
+      'env sudo python <<EOF\nx\nEOF',
+      'nohup env python < /tmp/x',
+      'command python <<EOF\nx\nEOF',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should be denied`);
+    }
+    assert.equal(promptCount, 0);
+  });
+});
+
+test('round 18 Phase 2D followup #11: regression — pipe to non-interpreter (cat | grep python / cat | sed) NOT hard-rejected', async () => {
+  // Critical false-positive guard. Pipe-fed detector must use
+  // wrapper-aware "is the head an interpreter?" — not "does the sub
+  // contain the literal token python anywhere?". `grep python` /
+  // `sed 's/python//'` / `echo python` / `wc -l` are everyday agent
+  // commands that have python as a search/data argument.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'cat /tmp/x | grep python',
+      'cat /tmp/x | sed "s/python//"',
+      'cat /tmp/x | wc -l',
+      'cat /tmp/x | head',
+      'ls | grep -i node',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, 5, 'each non-interpreter pipe-fed command must reach the prompt');
+  });
+});
+
+test('round 18 Phase 2D followup #11: regression — wrapper + script file (env python script.py) NOT hard-rejected', async () => {
+  // Wrapped invocation of an existing script file should still go
+  // through prompt as `unknown` for user judgment, not hard-reject.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'env python script.py',
+      'sudo python script.py',
+      'nohup python long-running.py',
+      '/usr/bin/env python3 main.py arg',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, 4);
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {

