@@ -683,6 +683,42 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
+  // P1 (Codex 🟠 round 9, 2026-05-04): sqlite3 single-out detection.
+  // sqlite3 doesn't fit SCRIPT_INTERPRETERS' `-c`/`-e` model — its
+  // inline-shell-out comes via:
+  //   - `.shell CMD` / `.system CMD` / `.exec CMD` dot-commands
+  //     (positional in any arg, including SQL text)
+  //   - `-cmd CMD` flag (sqlite3-specific)
+  // `sqlite3 db "SELECT * FROM users"` is super common — can't
+  // nuclear-flag any positional. Instead: scan args for shell-out
+  // markers. Use token-scan instead of findWrappedCommand because
+  // findWrappedCommand doesn't handle POSITIONAL_VALUE_WRAPPERS
+  // like `timeout 5 sqlite3 db ...`.
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    if (tokenBasename(t.text) !== 'sqlite3') continue;
+    const sqliteArgs = tokens.slice(i + 1).filter(tk => tk.kind === 'word').map(tk => tk.text);
+    // -cmd flag carries inline command. Treat ANY -cmd as code_
+    // execution since the flag value can include `.shell`/`.system`.
+    const hasCmdFlag = sqliteArgs.some(a =>
+      a === '-cmd' || /^-cmd./.test(a) || a.startsWith('--cmd=')
+    );
+    // .shell / .system / .exec dot-command at start of arg or after
+    // sqlite3 statement separator (newline / semicolon).
+    const hasShellDotCmd = sqliteArgs.some(a =>
+      /(?:^|[\n;])\s*\.(?:shell|system|exec)\b/i.test(a)
+    );
+    if (hasCmdFlag || hasShellDotCmd) {
+      risks.push({
+        kind: 'code_execution',
+        pattern: `sqlite3 ${hasCmdFlag ? '-cmd' : '.shell/.system'} inline`,
+        confidence: 'high',
+      });
+      break; // one flag per sub-command is enough
+    }
+  }
+
   // gsed = GNU sed on BSD systems via homebrew; same e-cmd surface.
   const sedToken = findWrappedCommand(tokens, text => /^g?sed$/.test(tokenBasename(text)));
   if (sedToken) {
@@ -1121,6 +1157,30 @@ const SCRIPT_INTERPRETERS = new Set([
   'julia',
   'sbcl', 'clisp',
   'iex', 'elixir',
+  // P1 (Codex 🟠 round 9, 2026-05-04): inline-shell-out tools that
+  // carry executable code via `-e` / `-c` flags or stdin/heredoc.
+  // Each accepts inline programs that can shell-out to system():
+  //   gnuplot -e 'system "rm /tmp/x"'              (gnuplot system())
+  //   vim -es -c '!rm' file                         (vim ! shell escape)
+  //   ex -c '!rm' file                              (ex same)
+  //   ed file <<< $'!rm\n'                          (ed shell escape)
+  // Trade-off (continued nuclear): adding vim/ex/ed/etc. flags any
+  // `vim -c 'set syntax=js'` etc. as code_execution. Agent should
+  // use fileEdit (gated) for file editing instead. Acceptable per
+  // 9-round nuclear over-flag pattern — agent UX cost minimal since
+  // direct vim/ex/ed invocation is rare in agent flows.
+  'gnuplot',
+  'vim', 'vi', 'view', 'nvim', 'rvim', 'rview',
+  'ex',
+  'ed',
+  // sqlite3 is added here so round 10's pipe-fed / heredoc / stdin-
+  // redirect detection covers `echo '.shell rm' | sqlite3 db` /
+  // `sqlite3 db <<EOF\n.shell rm\nEOF`. sqlite3-specific args
+  // (.shell / .system / -cmd) are detected separately (its inline
+  // syntax doesn't fit -c/-e). Note: token-scan for INLINE_CODE_FLAG
+  // (-c/-e) doesn't trigger here because sqlite3 doesn't accept those
+  // flags; -cmd is handled by the dedicated sqlite3 block above.
+  'sqlite3',
 ]);
 function isScriptInterpreter(text) {
   const base = tokenBasename(text);

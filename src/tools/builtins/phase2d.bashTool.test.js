@@ -2176,6 +2176,36 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex P1: gnuplot/vim/sqlite3 inline + autoApprove cannot delete file', async () => {
+  // P1 round attack vectors: each tool's inline-shell-out form +
+  // autoApprove + file preserved. Pin all 3 tool families.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `gnuplot -e 'system "rm -f ${target}"'`,
+      target => `vim -es -c '!rm -f ${target}' /tmp/dummy`,
+      target => `sqlite3 :memory: ".shell rm -f ${target}"`,
+      target => `sqlite3 -cmd ".shell rm -f ${target}" :memory:`,
+    ]) {
+      const target = join(ws, `p1-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 4 P1 tool inline forms must hard-reject pre-prompt');
+  });
+});
+
 test('Codex D fix #8: deep wrapper chain (16+ env layers) + autoApprove cannot delete file', async () => {
   // Codex round 8 found `env env ... env $AWK 'PROG'` 16+ deep
   // bypassed because the iter cap fail-opened. Pin attack vector

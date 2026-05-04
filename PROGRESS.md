@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-05-04 — P1 round：扩展 inline-shell-out 工具检测（gnuplot/vim/ex/ed/sqlite3）
+
+- Codex round 9 review (D #8 → A 收敛) 同时 P1 acknowledged 但 scope 之外的 inline-shell-out 工具维度盲区：`gnuplot -e 'system "rm"'` / `sqlite3 ":memory:" '.shell rm'` / `vim -es -c '!rm'` / `ex -c '!rm'` / `ed file <<< $'!rm\\n'` 全部 `risks=[]`。这一轮专门处理。
+- 方案 P1-A：扩 SCRIPT_INTERPRETERS + sqlite3 单独 detection（最稳，复用现有 round 10 token-scan + heredoc/pipe-fed/stdin-redirect 框架）。
+- **扩 `SCRIPT_INTERPRETERS` 加 8 个工具**：
+  - `gnuplot`（`-e 'system "..."'` 直接 shell-out）
+  - `vim` / `vi` / `nvim` / `view` / `rvim` / `rview`（`-c '!CMD'` shell escape）
+  - `ex`（vim 兼容 ex 模式，同款 `-c '!CMD'`）
+  - `ed`（`!CMD` shell escape via stdin/heredoc）
+  - **trade-off**：`vim -c 'set syntax=js'` 等合法 vim option 也 flag — 接受 over-flag，agent 用 fileEdit (gated tool) 替代 vim/ex 编辑文件。
+- **sqlite3 单独 detection**（不能 piggyback round 10 token-scan，sqlite3 用 `-cmd` 不是 `-c/-e`，且 dot-commands 在 positional 内）：
+  - 用 token-scan 风格扫所有 sqlite3 basename token（不依赖 findWrappedCommand，避免 D fix #4 的 `timeout 5 sqlite3` POSITIONAL_VALUE_WRAPPERS 漏洞）
+  - 任何 arg 含 `-cmd` / `-cmd<glued>` / `--cmd=<glued>` flag → flag
+  - 任何 arg 含 `(?:^|[\n;])\s*\.(?:shell|system|exec)\b` regex 命中（dot-command at start of arg or after sqlite3 statement separator）→ flag
+  - 同时 `sqlite3` 加进 SCRIPT_INTERPRETERS 让 round 10 pipe-fed/heredoc/stdin-redirect 自动 cover stdin 形态
+- 闭环（手动 25 case 验证）：
+  - ✅ gnuplot: `-e 'PROG'` / wrapper + `-e` / pipe-fed / heredoc 全 catch
+  - ✅ vim/ex/ed: `-c '!CMD'` / `-c 'option'` / `nvim`/`view` / wrapper-aware / ed heredoc / ed pipe-fed 全 catch
+  - ✅ sqlite3: `.shell`/`.system`/`.exec` / `-cmd` / `--cmd=` / pipe-fed / heredoc / wrapper / POSITIONAL_VALUE_WRAPPERS 全 catch
+  - ✅ Regression: 全 awk/python/D #1-#8 attack 仍 catch
+- false positive boundary：
+  - `gnuplot script.gp` / `gnuplot --version` 不 flag（file source / probe）
+  - `vim file.txt` / `nvim file.txt` 不 flag（bare interactive editor）
+  - `sqlite3 db "SELECT * FROM users"` 不 flag（normal SQL）
+  - `sqlite3 db ".tables"` / `".schema"` / `".dump"` 不 flag（non-shell-out dot-commands）
+- accepted over-flag：
+  - `vim -c 'set syntax=js' file` / `nvim -c 'colorscheme'` 等 vim option 设置（agent 用 fileEdit 替代）
+  - `gnuplot -e 'plot sin(x)'` 任何 gnuplot inline（即使无 system() — 安全方向）
+- 测试加 7 case：parser 6 case（① gnuplot `-e` 8 形态 catch；② gnuplot file/probe 3 形态 NOT；③ vim/ex/ed `-c`/heredoc/pipe-fed 10 形态 catch；④ vim/ex/ed bare 5 形态 NOT；⑤ sqlite3 inline 10 形态 catch（含 `.shell`/`.system`/`.exec`/`-cmd`/`-cmd<glued>`/`--cmd=`/pipe-fed/heredoc/wrapper/POSITIONAL_VALUE_WRAPPERS）；⑥ sqlite3 normal SQL 7 形态 NOT）；e2e 1 case（gnuplot/vim/sqlite3 4 形态 autoApprove + 文件保留）。
+- 验证：`src/safety/bashRiskParser.test.js` **92/92 全绿**（前 86 + 6 新）；`src/tools/builtins/phase2d.bashTool.test.js` **112/112 全绿**（前 111 + 1 新）；`src/**/*.test.js` **1961/1961 全绿**（前 1954 + 7 新；零既有回归）。
+- **Phase 2D round 14 awk + P1 inline-shell-out 工具系列总结**：① 9 轮 awk 维度 D fix 收敛到 A；② P1 圆 4 个新工具（gnuplot/vim/ex/ed/sqlite3）扩展。inline-code-execution detection 现覆盖 awk/python/node/ruby/perl/php/lua/expect/tclsh/groovy/R/julia/sbcl/clisp/iex/elixir/gnuplot/vim/ex/ed/sqlite3 共 21+ 工具。剩 known limit 待 codex review #10 确认。
+
+---
+
 ## 2026-05-04 — Codex D #8：findCommandPositionIdx 16-iter cap fail-closed
 
 - D fix #7 (`9fa5789`) push 后跑第八轮 codex review，Codex 评 **D**：`findCommandPositionIdx()` 用 `iter < 16` 防 wrapper-of-wrapper 病态，cap 到了**fail-open**（return -1，不 flag）。Codex 实测：`env env ... env $AWK 'PROG'` 15 层 catch、16+ 层全空，但 shell 仍逐层 exec 到 `$AWK 'PROG'`。深层 wrapper chain bypass。

@@ -715,6 +715,133 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
+test('Codex P1: gnuplot -e inline → code_execution', () => {
+  // P1 round (Codex 🟠 round 9): gnuplot has -e for inline command
+  // including system() shell-out. Added to SCRIPT_INTERPRETERS so
+  // round 10 token-scan + heredoc/pipe-fed/stdin-redirect all cover.
+  for (const cmd of [
+    `gnuplot -e 'system "rm /tmp/x"'`,
+    `gnuplot -e 'plot sin(x)'`,                // any -e is over-flag
+    `gnuplot -e 'load "evil.gp"'`,             // load evil.gp via inline
+    `xargs gnuplot -e 'PROG'`,                  // wrapper-aware
+    `env gnuplot -e 'PROG'`,
+    `timeout 5 gnuplot -e 'PROG'`,
+    `cat | gnuplot`,                            // pipe-fed
+    `gnuplot <<EOF\nsystem "rm"\nEOF`,           // heredoc-fed
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (gnuplot inline)`,
+    );
+  }
+});
+
+test('Codex P1: gnuplot file source NOT flagged', () => {
+  // Bare `gnuplot script.gp` is file-source — gated separately by
+  // fileRead. Bare `gnuplot --version` is probe.
+  for (const cmd of [
+    `gnuplot script.gp`,
+    `gnuplot --version`,
+    `gnuplot -V`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (gnuplot file/probe form)`,
+    );
+  }
+});
+
+test('Codex P1: vim/ex/ed -c inline → code_execution', () => {
+  // vim/ex have -c flag for command (`:!CMD` shell escape inside).
+  // ed has shell escape via `!CMD`. All added to SCRIPT_INTERPRETERS.
+  // Over-flag accepted: `vim -c 'set syntax=js'` also flags. Agent
+  // should use fileEdit (gated tool) instead.
+  for (const cmd of [
+    `vim -es -c '!rm /tmp/x' file`,
+    `vim -c 'set syntax=js' file`,             // over-flag
+    `ex -c '!rm' file`,
+    `nvim -c '!rm' file`,
+    `vi -c '!rm' file`,
+    `view -c '!rm' file`,
+    `xargs vim -c '!rm' file`,                  // wrapper-aware
+    `env nvim -c '!rm' file`,
+    `ed file <<EOF\n!rm /tmp/x\nEOF`,            // ed heredoc-fed
+    `printf '!rm\\n' | ed file`,                 // ed pipe-fed
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (vim/ex/ed inline)`,
+    );
+  }
+});
+
+test('Codex P1: vim/ex/ed without -c or stdin NOT flagged', () => {
+  // Bare `vim file.txt` (no -c, no stdin redirect) — interactive
+  // editor invocation. Falls through to default-deny prompt.
+  for (const cmd of [
+    `vim file.txt`,
+    `nvim file.txt`,
+    `ex file.txt`,
+    `ed file.txt`,
+    `vim --version`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (vim/ex/ed no inline source)`,
+    );
+  }
+});
+
+test('Codex P1: sqlite3 .shell/.system/-cmd → code_execution', () => {
+  // sqlite3 single-out: dot-commands (.shell/.system/.exec) shell-out
+  // when sqlite3 evaluates them. Detection scans args for these
+  // markers. -cmd flag carries inline command — also flag.
+  for (const cmd of [
+    `sqlite3 db ".shell rm /tmp/x"`,
+    `sqlite3 db ".system rm"`,
+    `sqlite3 db ".exec rm"`,
+    `sqlite3 -cmd ".shell rm" db`,
+    `sqlite3 --cmd=".shell rm" db`,
+    `echo ".shell rm" | sqlite3 db`,            // pipe-fed (via SCRIPT_INTERPRETERS)
+    `sqlite3 db <<EOF\n.shell rm\nEOF`,         // heredoc-fed
+    `xargs sqlite3 db ".shell rm"`,              // wrapper-aware
+    `timeout 5 sqlite3 db ".shell rm"`,          // POSITIONAL_VALUE_WRAPPERS
+    `sqlite3 db "SELECT 1; .shell rm"`,         // multi-statement with .shell
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (sqlite3 shell-out)`,
+    );
+  }
+});
+
+test('Codex P1: regression — sqlite3 normal SQL NOT flagged', () => {
+  // Common sqlite3 usage with SQL queries (no .shell/.system/.exec/-cmd):
+  for (const cmd of [
+    `sqlite3 db "SELECT * FROM users"`,
+    `sqlite3 db "INSERT INTO t VALUES (1)"`,
+    `sqlite3 db ".tables"`,                      // .tables (not shell-out)
+    `sqlite3 db ".schema"`,                      // .schema (not shell-out)
+    `sqlite3 db ".dump"`,                        // .dump (not shell-out)
+    `sqlite3 -version`,
+    `sqlite3`,                                   // bare invocation
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (normal sqlite3 SQL/dot-commands)`,
+    );
+  }
+});
+
 test('Codex D fix #8: deep wrapper chain (16+ layers) → fail-closed code_execution', () => {
   // Codex round 8 found `env env ... env $AWK 'PROG'` 16+ layers of
   // wrapper bypassed because findCommandPositionIdx had `iter < 16`
