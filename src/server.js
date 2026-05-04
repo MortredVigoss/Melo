@@ -74,6 +74,7 @@ import {
   clearSessionPermissions,
   checkPermissionRule,
 } from './tools/permissions.js';
+import { resolveFileSafety } from './safety/fileSafetyGate.js';
 import { connectMcpServer, disconnectMcpServer, getActiveMcpServers } from './mcp/manager.js';
 import { backgroundRunner } from './tasks/backgroundRunner.js';
 import { registerPlugin, unregisterPlugin, getRegisteredPlugins, getPluginHooks } from './plugins/hooks.js';
@@ -1061,9 +1062,31 @@ const server = createServer(async (request, response) => {
     // ── Tool permission endpoints ────────────────────────────────────────────
     if (url.pathname === '/api/tools/permission-response' && request.method === 'POST') {
       const body = await readJsonBody(request);
-      const { requestId, granted, scope = 'once', toolId = '' } = body;
+      const {
+        requestId,
+        granted,
+        scope = 'once',
+        toolId = '',
+        kind = '',
+        confirmInput = '',
+        persistent = false,
+      } = body;
       if (!requestId) {
         sendJson(response, 400, { ok: false, error: 'requestId is required.' });
+        return;
+      }
+      // file_safety prompts (fileSafetyGate.js) and tool-runner prompts
+      // (permissions.js) share the same SSE event but have completely
+      // different resolver APIs. The discriminator on the response is
+      // `kind: 'file_safety'`; everything else falls through to the
+      // legacy tool-runner resolver.
+      if (kind === 'file_safety') {
+        const fileScope = granted ? scope : 'deny';
+        const result = resolveFileSafety(requestId, fileScope, {
+          confirmInput,
+          persistent: Boolean(persistent),
+        });
+        sendJson(response, result.ok ? 200 : 404, result);
         return;
       }
       const result = await resolvePermission(requestId, Boolean(granted), scope, toolId);
@@ -1122,6 +1145,28 @@ const server = createServer(async (request, response) => {
         return next;
       });
       sendJson(response, 200, { ok: true, rules: updated });
+      return;
+    }
+
+    // ── File-safety persistent allowlist (Phase 3b/3c) ──────────────────────
+    if (url.pathname === '/api/safety/file-allowlist' && request.method === 'GET') {
+      const { listFileSafetyRules } = await import('./safety/fileSafetyAllowlist.js');
+      const rules = await listFileSafetyRules();
+      sendJson(response, 200, { rules });
+      return;
+    }
+
+    if (url.pathname === '/api/safety/file-allowlist/remove' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const { id } = body;
+      if (!id) {
+        sendJson(response, 400, { ok: false, error: 'id is required.' });
+        return;
+      }
+      const { removeFileSafetyRule, listFileSafetyRules } = await import('./safety/fileSafetyAllowlist.js');
+      const removed = await removeFileSafetyRule(id);
+      const rules = await listFileSafetyRules();
+      sendJson(response, 200, { ok: true, removed, rules });
       return;
     }
 

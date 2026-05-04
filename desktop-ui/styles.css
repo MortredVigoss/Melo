@@ -4466,6 +4466,128 @@ select option {
   border-top: 1px solid var(--border);
 }
 
+/* ─── File-safety dialog (kind: 'file_safety') ─────────────────────────────── */
+
+.file-safety-shell {
+  width: min(620px, calc(100vw - 48px));
+}
+
+.file-safety-row {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.file-safety-row code {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--text);
+}
+
+.file-safety-warn {
+  font-size: 13px;
+  color: #f6a96b;
+  background: rgba(246, 169, 107, 0.08);
+  border: 1px solid rgba(246, 169, 107, 0.28);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
+.file-safety-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.file-safety-badge.is-ok {
+  background: rgba(73, 200, 162, 0.14);
+  color: #49c8a2;
+}
+
+.file-safety-badge.is-warn {
+  background: rgba(246, 169, 107, 0.18);
+  color: #f6a96b;
+}
+
+.file-safety-details {
+  margin-top: 10px;
+}
+
+.file-safety-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  user-select: none;
+}
+
+.file-safety-confirm-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.file-safety-confirm-input:focus {
+  border-color: var(--teal);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Safety pane (Customize → Safety) ────────────────────────────────────── */
+
+.safety-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.safety-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.safety-rule-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.safety-rule-op {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.safety-rule-path {
+  word-break: break-all;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
 /* ─── Tool calls status strip ─────────────────────────────────────────────── */
 
 .tool-calls-strip {

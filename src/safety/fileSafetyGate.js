@@ -52,6 +52,10 @@ import {
   GRANT_KIND,
 } from './chatScopedGrants.js';
 import { safeResolvePath } from './pathResolver.js';
+import {
+  findMatchingFileSafetyRule,
+  addFileSafetyRule,
+} from './fileSafetyAllowlist.js';
 
 // Pick the more restrictive of two PATH_CATEGORY values. Used to
 // decide sensitivity from BOTH the lexical input AND the realpath
@@ -195,12 +199,17 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
 
 // ── UI response router ────────────────────────────────────────────────
 //
-// Wired through a sibling of /api/tools/permission-response. The route
-// validates, then calls resolveFileSafety(requestId, scope, extras).
+// Wired through /api/tools/permission-response. The route validates,
+// then calls resolveFileSafety(requestId, scope, extras).
 //
 // extras.confirmInput — for delete stage 2, the user-typed string. The
-// gate validates it against the expectedConfirmation captured at prompt
-// time, so the UI can't accidentally bypass the check.
+//   gate validates it against the expectedConfirmation captured at
+//   prompt time, so the UI can't accidentally bypass the check.
+// extras.persistent — Phase 3b "Always allow" flag. Forwarded to the
+//   awaiting request* function so it can mirror the per-chat grant
+//   into a config-persisted allowlist rule. Has no effect for
+//   read_batch / move / delete / bash — those operations don't write
+//   persistent rules per gate policy.
 export function resolveFileSafety(requestId, scope, extras = {}) {
   const entry = _pending.get(requestId);
   if (!entry) {
@@ -225,7 +234,7 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
     return { ok: false, reason: `Unknown scope "${scope}".` };
   }
 
-  entry.resolve({ scope });
+  entry.resolve({ scope, persistent: !!extras.persistent });
   return { ok: true };
 }
 
@@ -543,6 +552,16 @@ export async function requestRead({
     if (!bypassGrants && hasGrant(chatId, realPath, GRANT_KIND.READ)) {
       return { resolvedTarget: realPath };
     }
+    // Phase 3b: persistent allowlist. Same suppression rules as the
+    // per-chat grant — sensitive paths never silent-allow, bypassGrants
+    // skips the lookup. The allowlist is keyed on realPath, so a
+    // re-pointed symlink invalidates the rule.
+    if (!bypassGrants) {
+      const persistentRule = await findMatchingFileSafetyRule('read', realPath);
+      if (persistentRule) {
+        return { resolvedTarget: realPath };
+      }
+    }
   }
 
   let size = null;
@@ -584,6 +603,17 @@ export async function requestRead({
       grantFile(chatId, realPath, [GRANT_KIND.READ]);
     } else if (decision.scope === SCOPE.DIR) {
       grantDir(chatId, parentDir(realPath), [GRANT_KIND.READ]);
+    }
+    // Phase 3b: persistent="yes" attaches a forever rule on top of
+    // (not in place of) the per-chat grant. SCOPE.FILE → exact-path
+    // rule, SCOPE.DIR → parent-dir prefix rule. Sensitive paths fall
+    // through `if (sensitive)` above and never reach here.
+    if (decision.persistent && decision.scope === SCOPE.FILE) {
+      try { await addFileSafetyRule({ operation: 'read', scope: 'file', realPath }); }
+      catch { /* allowlist write is best-effort; UI surfaces failures via load errors */ }
+    } else if (decision.persistent && decision.scope === SCOPE.DIR) {
+      try { await addFileSafetyRule({ operation: 'read', scope: 'dir', realPath: parentDir(realPath) }); }
+      catch { /* see above */ }
     }
   }
   return { resolvedTarget: realPath };
@@ -737,6 +767,20 @@ export async function requestWrite({
       });
     return { resolvedTarget: realPath, operationToken };
   }
+  // Phase 3b: persistent allowlist hit also bypasses the prompt, with
+  // the same bypassGrants suppression and the same realPath-keyed
+  // invalidation guarantee.
+  if (!bypassGrants) {
+    const persistentRule = await findMatchingFileSafetyRule('write', realPath);
+    if (persistentRule) {
+      const operationToken = _issueOperationToken({
+        kind: OP_KIND.WRITE_OVERWRITE,
+        chatId,
+        targets: [{ lexical: abs, expectedReal: realPath }],
+      });
+      return { resolvedTarget: realPath, operationToken };
+    }
+  }
 
   const decision = await _prompt({
     sseEmitter, signal, chatId,
@@ -761,6 +805,14 @@ export async function requestWrite({
     grantFile(chatId, realPath, [GRANT_KIND.WRITE]);
   } else if (decision.scope === SCOPE.DIR) {
     grantDir(chatId, parentDir(realPath), [GRANT_KIND.WRITE]);
+  }
+  // Phase 3b: persistent flag stacks an exact-file rule on top of the
+  // per-chat grant. We deliberately do NOT support a persistent dir
+  // rule for write/edit — granting "agent may write anywhere under X
+  // forever" is the exact blast-radius the gate exists to prevent.
+  if (decision.persistent && decision.scope === SCOPE.FILE) {
+    try { await addFileSafetyRule({ operation: 'write', scope: 'file', realPath }); }
+    catch { /* best-effort */ }
   }
   const operationToken = _issueOperationToken({
     kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
@@ -807,6 +859,20 @@ export async function requestEdit({
       });
     return { resolvedTarget: realPath, operationToken };
   }
+  // Phase 3b: persistent allowlist. findMatchingFileSafetyRule treats
+  // a 'write' rule as covering 'edit' (same write-grant-covers-edit
+  // semantics as chatScopedGrants).
+  {
+    const persistentRule = await findMatchingFileSafetyRule('edit', realPath);
+    if (persistentRule) {
+      const operationToken = _issueOperationToken({
+        kind: OP_KIND.EDIT,
+        chatId,
+        targets: [{ lexical: abs, expectedReal: realPath }],
+      });
+      return { resolvedTarget: realPath, operationToken };
+    }
+  }
 
   const decision = await _prompt({
     sseEmitter, signal, chatId,
@@ -828,6 +894,13 @@ export async function requestEdit({
     grantFile(chatId, realPath, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
   } else if (decision.scope === SCOPE.DIR) {
     grantDir(chatId, parentDir(realPath), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
+  }
+  // Phase 3b: persistent rule for edit is stored under operation:'edit'
+  // (write-rules already cover edit at lookup time). Same no-dir-persistent
+  // policy as the write path.
+  if (decision.persistent && decision.scope === SCOPE.FILE) {
+    try { await addFileSafetyRule({ operation: 'edit', scope: 'file', realPath }); }
+    catch { /* best-effort */ }
   }
   const operationToken = _issueOperationToken({
     kind: OP_KIND.EDIT,

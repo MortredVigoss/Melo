@@ -91,6 +91,15 @@ const uiState = {
     wipeInFlight: false,
     wipeResult: null,
   },
+  // File-safety persistent allowlist (Phase 3b/3c). Lazy-loaded on first
+  // navigation to the Safety section; refresh-on-demand otherwise.
+  safetyAllowlist: {
+    loading: false,
+    loaded: false,
+    rules: [],
+    error: null,
+    pendingRemoveId: null,
+  },
   // Advanced page (developer / experimental ops). Caches CLI MCP server
   // names, plugin registry, and background-task list — none of these
   // ride on bootstrap, so we lazy-fetch on first navigation and keep the
@@ -193,7 +202,10 @@ const uiState = {
   composerVoiceTranscript: null,
   error: '',
   // Tool execution UI state
-  // pendingToolPermissions: array of { requestId, toolId, args } — one dialog per item
+  // pendingToolPermissions: array of one dialog descriptor per pending request.
+  // Two shapes share this queue, distinguished by `kind`:
+  //   - tool-runner   { kind: 'tool',         requestId, toolId, args }
+  //   - file-safety   { kind: 'file_safety',  requestId, operation, payload }
   pendingToolPermissions: [],
   // activeToolCalls: array of { id, name, arguments, status:'running'|'ok'|'error', output? }
   activeToolCalls: [],
@@ -3808,14 +3820,39 @@ async function handleSendMessage() {
           // found. This is what kills the 闪屏 the user reported.
           if (!renderStreamingFast()) render();
         } else if (message.event === 'tool_permission') {
-          // Tool permission request: show dialog
-          const { requestId, toolId, args } = message.payload || {};
-          if (requestId && toolId) {
+          // Tool permission request: show dialog. Two payload shapes:
+          //   tool-runner  → { requestId, toolId, args }
+          //   file-safety  → { requestId, kind: 'file_safety', operation, ...payload }
+          const payload = message.payload || {};
+          const { requestId } = payload;
+          if (!requestId) {
+            // Malformed event — ignore.
+          } else if (payload.kind === 'file_safety') {
+            const { operation, ...rest } = payload;
+            // De-dupe by requestId only — multiple distinct file ops can be
+            // pending in parallel (e.g. delete stage 1 + a separate write).
+            uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
+              p => p.requestId !== requestId,
+            );
+            uiState.pendingToolPermissions.push({
+              kind: 'file_safety',
+              requestId,
+              operation,
+              payload: rest,
+            });
+            render();
+          } else if (payload.toolId) {
+            const { toolId, args } = payload;
             // Replace any existing request for same toolId (avoid stacking)
             uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
               p => p.toolId !== toolId,
             );
-            uiState.pendingToolPermissions.push({ requestId, toolId, args: args || {} });
+            uiState.pendingToolPermissions.push({
+              kind: 'tool',
+              requestId,
+              toolId,
+              args: args || {},
+            });
             render();
           }
         } else if (message.event === 'reply_text') {
@@ -9748,6 +9785,49 @@ async function refreshMemoryStatus() {
   }
 }
 
+// ── Safety allowlist (Phase 3b/3c) ─────────────────────────────────────
+//
+// Backed by the persistent fileSafetyAllowlist (config-stored).
+// pendingRemoveId is set while the DELETE is in flight so the row can
+// disable its button without flashing on optimistic re-render.
+
+async function refreshSafetyAllowlist() {
+  if (uiState.safetyAllowlist.loading) return;
+  uiState.safetyAllowlist.loading = true;
+  uiState.safetyAllowlist.error = null;
+  render();
+  try {
+    const response = await api('/api/safety/file-allowlist');
+    uiState.safetyAllowlist.rules = Array.isArray(response.rules) ? response.rules : [];
+    uiState.safetyAllowlist.loaded = true;
+  } catch (err) {
+    uiState.safetyAllowlist.error = err?.message || 'Failed to load safety rules';
+  } finally {
+    uiState.safetyAllowlist.loading = false;
+    render();
+  }
+}
+
+async function removeSafetyAllowlistRule(id) {
+  if (!id || uiState.safetyAllowlist.pendingRemoveId === id) return;
+  uiState.safetyAllowlist.pendingRemoveId = id;
+  render();
+  try {
+    const response = await api('/api/safety/file-allowlist/remove', {
+      method: 'POST',
+      body: { id },
+    });
+    if (Array.isArray(response.rules)) {
+      uiState.safetyAllowlist.rules = response.rules;
+    }
+  } catch (err) {
+    uiState.safetyAllowlist.error = err?.message || 'Failed to revoke rule';
+  } finally {
+    uiState.safetyAllowlist.pendingRemoveId = null;
+    render();
+  }
+}
+
 async function doWipeEmbeddings() {
   if (uiState.memoryStatus.wipeInFlight) return;
   uiState.memoryStatus.wipeInFlight = true;
@@ -9788,6 +9868,88 @@ function fmtMemoryRelTime(ms) {
   const h = Math.floor(m / 60);
   if (h < 48) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function renderSafetyPane() {
+  const { loading, loaded, rules, error, pendingRemoveId } = uiState.safetyAllowlist;
+  if (!loaded && !loading && !error) {
+    Promise.resolve().then(refreshSafetyAllowlist);
+  }
+
+  const opLabel = (op, scope) => {
+    const opPart = op === 'read' ? 'Read' : op === 'write' ? 'Write' : op === 'edit' ? 'Edit' : op;
+    const scopePart = scope === 'dir' ? 'directory tree' : 'exact file';
+    return `${opPart} — ${scopePart}`;
+  };
+
+  const fmtTimestamp = (ms) => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
+    try {
+      return new Date(ms).toLocaleString();
+    } catch {
+      return '';
+    }
+  };
+
+  const body = (() => {
+    if (loading && !loaded) {
+      return `<div class="empty-state compact">Loading safety rules…</div>`;
+    }
+    if (error) {
+      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+    }
+    if (!rules.length) {
+      return `
+        <div class="empty-state compact">
+          No persistent file-access rules yet.
+          When you click <strong>Always allow this file</strong> or <strong>Always allow parent dir</strong>
+          on a file-safety prompt, the rule lands here.
+        </div>
+      `;
+    }
+    return `
+      <div class="safety-rule-list">
+        ${rules.map(rule => `
+          <div class="safety-rule-row">
+            <div class="safety-rule-main">
+              <div class="safety-rule-op">${escapeHtml(opLabel(rule.operation, rule.scope))}</div>
+              <div class="safety-rule-path mono small">${escapeHtml(rule.realPath)}</div>
+              <div class="list-row-meta">Added ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
+            </div>
+            <button class="small-button is-danger"
+              data-action="safety-allowlist-remove"
+              data-rule-id="${escapeHtml(rule.id)}"
+              ${pendingRemoveId === rule.id ? 'disabled' : ''}>
+              ${pendingRemoveId === rule.id ? 'Revoking…' : 'Revoke'}
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  })();
+
+  return `
+    <div class="detail-card">
+      <div class="header-row">
+        <div>
+          <h2 class="pane-title">Safety</h2>
+          <p class="page-kicker">
+            File-access rules added via the file-safety dialog's "Always allow" buttons.
+            Rules persist across restarts. Per-chat grants live elsewhere — they clear on chat end.
+          </p>
+        </div>
+        <div class="inline-actions">
+          <button class="small-button" data-action="refresh-safety-allowlist">Refresh</button>
+        </div>
+      </div>
+      ${body}
+      <p class="list-row-meta" style="margin-top: 16px;">
+        Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
+        — the dialog only offers Allow once / Deny for them. Move and delete operations are
+        also excluded from "Always allow" by design.
+      </p>
+    </div>
+  `;
 }
 
 function renderMemoryPane() {
@@ -10169,6 +10331,14 @@ function renderCustomizePage() {
               <div class="list-row-title">Memory</div>
               <div class="list-row-meta">Inspect the memory store, embedding model, and dreaming activity.</div>
             </button>
+            <button
+              class="section-button ${section === 'safety' ? 'is-active' : ''}"
+              data-action="open-customize-section"
+              data-section="safety"
+            >
+              <div class="list-row-title">Safety</div>
+              <div class="list-row-meta">Persistent file-access rules — review and revoke "Always allow" grants.</div>
+            </button>
           </div>
         </div>
 
@@ -10183,6 +10353,8 @@ function renderCustomizePage() {
               })
             : section === 'memory'
               ? renderMemoryPane()
+            : section === 'safety'
+              ? renderSafetyPane()
               : `
         <div class="customize-pane">
           <div class="customize-pane-header">
@@ -10797,8 +10969,13 @@ function renderCommandPalette() {
 function renderToolPermissionDialog() {
   const pending = uiState.pendingToolPermissions;
   if (!pending.length) return '';
-  const { requestId, toolId, args } = pending[0];
+  const entry = pending[0];
 
+  if (entry.kind === 'file_safety') {
+    return renderFileSafetyDialog(entry);
+  }
+
+  const { requestId, toolId, args } = entry;
   const argsText = args && Object.keys(args).length
     ? JSON.stringify(args, null, 2)
     : '(no arguments)';
@@ -10837,6 +11014,232 @@ function renderToolPermissionDialog() {
               data-tool-id="${escapeHtml(toolId)}">
               Deny
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── File-safety dialog ───────────────────────────────────────────────────────
+//
+// fileSafetyGate.js emits SSE events with `kind: 'file_safety'` and an
+// operation discriminator (read / write_overwrite / edit / move /
+// delete / bash / read_batch). Each operation has a different payload
+// and a different set of valid scope choices, so the renderer dispatches
+// per operation. Scopes routed back to the server:
+//   'once' / 'file' / 'dir'  → granted=true, scope=<choice>
+//   (deny button)            → granted=false  (server sets scope='deny')
+//
+// Sensitivity caveats (from gate header line 491-507):
+//   - Reads of sensitive paths (~/.ssh, /etc, …) accept ONLY 'once'.
+//   - Batch reads, moves, and bash are always one-shot per gate API.
+//   - Delete is two-stage; stage 'confirm' renders an input field that
+//     must match expectedConfirmation (the gate validates server-side).
+function _fileSafetyTitle(operation, payload) {
+  const stage = payload?.stage;
+  switch (operation) {
+    case 'read':         return 'Read file';
+    case 'read_batch':   return 'Read multiple files';
+    case 'write_new':    return 'Create new file';
+    case 'write_overwrite': return 'Overwrite file';
+    case 'edit':         return 'Edit file';
+    case 'move':         return 'Move / rename file';
+    case 'delete':       return stage === 'confirm' ? 'Confirm delete' : 'Delete file(s)';
+    case 'bash':         return 'Run shell command';
+    default:             return 'File operation';
+  }
+}
+
+function _fileSafetyBody(operation, payload) {
+  const wsBadge = payload?.withinWorkspace
+    ? `<span class="file-safety-badge is-ok">workspace</span>`
+    : `<span class="file-safety-badge is-warn">outside workspace</span>`;
+  const symlinkWarn = (flag, real) => flag
+    ? `<div class="file-safety-warn">⚠ symlink chain — real target: <code>${escapeHtml(real || '?')}</code></div>`
+    : '';
+  const sensitiveWarn = payload?.sensitive
+    ? `<div class="file-safety-warn">⚠ sensitive path (category: ${escapeHtml(payload?.category || 'unknown')}). Approval is one-shot — no session-wide grant.</div>`
+    : '';
+
+  switch (operation) {
+    case 'read':
+      return `
+        <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
+        ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
+        ${sensitiveWarn}
+        ${payload.size != null ? `<div class="file-safety-row"><strong>Size:</strong> ${payload.size} bytes</div>` : ''}
+        ${payload.exists === false ? `<div class="file-safety-warn">File does not exist yet — read will fail.</div>` : ''}
+      `;
+    case 'read_batch':
+      return `
+        <div class="file-safety-row"><strong>Files:</strong> ${payload.fileCount || 0} ${wsBadge}</div>
+        ${payload.dir ? `<div class="file-safety-row"><strong>Dir:</strong> <code>${escapeHtml(payload.dir)}</code></div>` : ''}
+        ${payload.byteRange ? `<div class="file-safety-row"><strong>Bytes:</strong> ${escapeHtml(JSON.stringify(payload.byteRange))}</div>` : ''}
+        ${Array.isArray(payload.extensions) && payload.extensions.length ? `<div class="file-safety-row"><strong>Extensions:</strong> ${escapeHtml(payload.extensions.join(', '))}</div>` : ''}
+        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ batch contains symlink-traversed paths.</div>` : ''}
+        ${Array.isArray(payload.sample) && payload.sample.length ? `<details class="file-safety-details"><summary>Sample (${payload.sample.length})</summary><pre class="tool-permission-args">${escapeHtml(payload.sample.map(s => s.lexicalPath + (s.realPath !== s.lexicalPath ? ` → ${s.realPath}` : '')).join('\n'))}</pre></details>` : ''}
+      `;
+    case 'write_new':
+    case 'write_overwrite':
+      return `
+        <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
+        ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
+        ${payload.contentSize != null ? `<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
+        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? `<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
+      `;
+    case 'edit':
+      return `
+        <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
+        ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
+        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
+        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? `<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
+      `;
+    case 'move':
+      return `
+        <div class="file-safety-row"><strong>From:</strong> <code>${escapeHtml(payload.src || '')}</code></div>
+        <div class="file-safety-row"><strong>To:</strong> <code>${escapeHtml(payload.dst || '')}</code> ${wsBadge}</div>
+        ${symlinkWarn(payload.srcHasSymlinkInChain, payload.srcRealPath)}
+        ${symlinkWarn(payload.dstHasSymlinkInChain, payload.dstRealPath)}
+      `;
+    case 'delete': {
+      const intent = payload.stage !== 'confirm';
+      const paths = Array.isArray(payload.paths) ? payload.paths : [];
+      return `
+        <div class="file-safety-row"><strong>Targets:</strong> ${paths.length} ${wsBadge}</div>
+        <pre class="tool-permission-args">${escapeHtml(paths.join('\n'))}</pre>
+        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ at least one path traverses a symlink.</div>` : ''}
+        ${payload.reason ? `<div class="file-safety-row"><strong>Reason:</strong> ${escapeHtml(payload.reason)}</div>` : ''}
+        ${intent
+          ? `<div class="file-safety-row">Files will be moved to <code>.melo-trash/</code> (recoverable). Confirm to proceed to type-to-confirm step.</div>`
+          : `<div class="file-safety-row">Type <code>${escapeHtml(payload.expectedConfirmation || '')}</code> to confirm:</div>
+             <input type="text" class="file-safety-confirm-input" data-file-safety-confirm-input placeholder="${escapeHtml(payload.expectedConfirmation || '')}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />`}
+      `;
+    }
+    case 'bash': {
+      const risks = Array.isArray(payload.risks) ? payload.risks : [];
+      return `
+        <div class="file-safety-row"><strong>Command:</strong></div>
+        <pre class="tool-permission-args">${escapeHtml(payload.command || '')}</pre>
+        ${risks.length ? `<div class="file-safety-warn">⚠ ${risks.length} risk${risks.length > 1 ? 's' : ''} detected: ${escapeHtml(risks.map(r => r.kind).join(', '))}</div>` : ''}
+        ${payload.workspacePath ? `<div class="file-safety-row"><strong>Workspace:</strong> <code>${escapeHtml(payload.workspacePath)}</code></div>` : ''}
+        ${payload.effectiveCwd ? `<div class="file-safety-row"><strong>Cwd:</strong> <code>${escapeHtml(payload.effectiveCwd)}</code> ${payload.cwdInsideWorkspace === false ? '<span class="file-safety-badge is-warn">outside workspace</span>' : ''}</div>` : ''}
+      `;
+    }
+    default:
+      return `<pre class="tool-permission-args">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
+  }
+}
+
+function _fileSafetyButtons(operation, payload, requestId) {
+  // Button set varies per operation:
+  //   - sensitive read / read_batch / move / bash / delete-intent → once + deny
+  //   - delete-confirm → confirm + cancel (sends scope='once' with confirmInput)
+  //   - read (benign) / write / edit → once + file + dir + always-file + deny
+  //     (read also offers always-dir; write/edit deliberately skip dir-persistent
+  //      to keep blast radius bounded — see fileSafetyGate.js requestWrite path.)
+  const sensitive = !!payload?.sensitive;
+  const stage = payload?.stage;
+  const deny = `
+    <button class="small-button"
+      data-action="file-safety-deny"
+      data-request-id="${escapeHtml(requestId)}">
+      Deny
+    </button>
+  `;
+  const once = (label = 'Allow once') => `
+    <button class="small-button is-primary"
+      data-action="file-safety-allow"
+      data-scope="once"
+      data-request-id="${escapeHtml(requestId)}">
+      ${label}
+    </button>
+  `;
+  const file = `
+    <button class="small-button"
+      data-action="file-safety-allow"
+      data-scope="file"
+      data-request-id="${escapeHtml(requestId)}">
+      Allow this file (chat)
+    </button>
+  `;
+  const dir = `
+    <button class="small-button"
+      data-action="file-safety-allow"
+      data-scope="dir"
+      data-request-id="${escapeHtml(requestId)}">
+      Allow parent dir (chat)
+    </button>
+  `;
+  const alwaysFile = `
+    <button class="small-button"
+      data-action="file-safety-allow"
+      data-scope="file"
+      data-persistent="1"
+      data-request-id="${escapeHtml(requestId)}">
+      Always allow this file
+    </button>
+  `;
+  const alwaysDir = `
+    <button class="small-button"
+      data-action="file-safety-allow"
+      data-scope="dir"
+      data-persistent="1"
+      data-request-id="${escapeHtml(requestId)}">
+      Always allow parent dir
+    </button>
+  `;
+
+  switch (operation) {
+    case 'read_batch':
+    case 'move':
+    case 'bash':
+      return once() + deny;
+    case 'read':
+      return sensitive
+        ? once() + deny
+        : once() + file + dir + alwaysFile + alwaysDir + deny;
+    case 'write_new':
+    case 'write_overwrite':
+    case 'edit':
+      return once() + file + dir + alwaysFile + deny;
+    case 'delete':
+      if (stage === 'confirm') {
+        return `
+          <button class="small-button is-primary"
+            data-action="file-safety-confirm-delete"
+            data-request-id="${escapeHtml(requestId)}">
+            Confirm delete
+          </button>
+        ` + deny;
+      }
+      return once('Continue') + deny;
+    default:
+      return once() + deny;
+  }
+}
+
+function renderFileSafetyDialog(entry) {
+  const { requestId, operation, payload = {} } = entry;
+  const title = _fileSafetyTitle(operation, payload);
+  const body = _fileSafetyBody(operation, payload);
+  const buttons = _fileSafetyButtons(operation, payload, requestId);
+  return `
+    <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="File operation approval">
+      <div class="tool-permission-shell file-safety-shell">
+        <div class="tool-permission-header">
+          <span class="tool-permission-icon">${icon.chip}</span>
+          <div>
+            <div class="tool-permission-title">${escapeHtml(title)}</div>
+            <div class="tool-permission-subtitle">File-safety approval required</div>
+          </div>
+        </div>
+        <div class="tool-permission-body">
+          ${body}
+        </div>
+        <div class="tool-permission-footer">
+          <div class="inline-actions">
+            ${buttons}
           </div>
         </div>
       </div>
@@ -10949,6 +11352,37 @@ async function handleToolPermissionResponse(requestId, toolId, granted, scope) {
     if (process?.env?.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.warn('permission-response failed:', err.message);
+    }
+  }
+}
+
+// File-safety responses use the same endpoint but a different resolver
+// (resolveFileSafety in fileSafetyGate.js). The discriminator on the
+// POST body is `kind: 'file_safety'`. For delete stage 2, confirmInput
+// carries the user-typed string the gate validates against the captured
+// expectedConfirmation.
+async function handleFileSafetyResponse(requestId, granted, scope, confirmInput = '', persistent = false) {
+  uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
+    p => p.requestId !== requestId,
+  );
+  render();
+
+  try {
+    await api('/api/tools/permission-response', {
+      method: 'POST',
+      body: {
+        requestId,
+        granted,
+        scope,
+        kind: 'file_safety',
+        confirmInput,
+        persistent,
+      },
+    });
+  } catch (err) {
+    if (process?.env?.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn('file-safety response failed:', err.message);
     }
   }
 }
@@ -11874,6 +12308,13 @@ document.addEventListener('click', async event => {
         uiState.memoryStatus.loaded = false;
         await refreshMemoryStatus();
         break;
+      case 'refresh-safety-allowlist':
+        uiState.safetyAllowlist.loaded = false;
+        await refreshSafetyAllowlist();
+        break;
+      case 'safety-allowlist-remove':
+        await removeSafetyAllowlistRule(trigger.dataset.ruleId);
+        break;
       case 'memory-wipe-open':
         uiState.memoryStatus.wipeConfirmOpen = true;
         uiState.memoryStatus.wipeResult = null;
@@ -12485,6 +12926,33 @@ document.addEventListener('click', async event => {
           'once',
         );
         break;
+      case 'file-safety-allow':
+        await handleFileSafetyResponse(
+          trigger.dataset.requestId,
+          true,
+          trigger.dataset.scope || 'once',
+          '',
+          trigger.dataset.persistent === '1',
+        );
+        break;
+      case 'file-safety-deny':
+        await handleFileSafetyResponse(
+          trigger.dataset.requestId,
+          false,
+          'deny',
+        );
+        break;
+      case 'file-safety-confirm-delete': {
+        const input = document.querySelector('[data-file-safety-confirm-input]');
+        const confirmInput = input ? String(input.value || '') : '';
+        await handleFileSafetyResponse(
+          trigger.dataset.requestId,
+          true,
+          'once',
+          confirmInput,
+        );
+        break;
+      }
       case 'set-task-status':
         await handleUpdateTaskStatus(trigger.dataset.taskId, trigger.dataset.status);
         break;

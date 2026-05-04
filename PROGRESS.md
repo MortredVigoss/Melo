@@ -4,6 +4,41 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI
+
+13 轮 Codex review 把 fileSafetyGate.js backend 锤到 A 之后，发现 production 接线**整条没接**：`resolveFileSafety` 只在 13 个 test 文件里被调用，server.js / desktop-ui 零命中；前端 SSE handler 拿到 `kind: 'file_safety'` payload 因为没有 `toolId` 字段，直接被 `if (requestId && toolId)` 过滤丢掉。也就是说 Phase 2A/2B/2C/2D 全部基于 mock sseEmitter 的 backend 单测验证，**生产里任意工具触发 fileSafetyGate prompt 路径都会 60s 超时 reject**。一次性补完三阶段：
+
+- **Phase 3a — production 接线**：
+  - server.js 加 `resolveFileSafety` 导入；`/api/tools/permission-response` 路由按 `kind: 'file_safety'` 鉴别符分流，granted=false 强制 scope='deny'，其余走 ONCE/FILE/DIR
+  - desktop-ui SSE handler 区分 `{ requestId, kind: 'file_safety', operation, payload }` 与 `{ requestId, toolId, args }` 两种 payload；状态条目带 `kind` 区分
+  - `renderFileSafetyDialog` 按 operation 分布局（read / read_batch / write / edit / move / delete-intent / delete-confirm / bash），symlink-chain warning + 敏感路径 warning + diff/content 折叠 details + 类型 confirm input
+  - sensitive read / read_batch / move / bash / delete-intent 只给 once + deny；read benign / write / edit 给 once + file (chat) + dir (chat) + deny；delete-confirm 用 confirm-delete 按钮 + 类型校验输入框
+
+- **Phase 3b — 持久化 allowlist**：
+  - 新建 `src/safety/fileSafetyAllowlist.js`：rule shape `{ id, operation: read/write/edit, scope: file/dir, realPath, label, createdAt }`，存 `config.fileSafetyAllowlist`，全部 mutate 走 `withConfigLock` + saveConfig spread current（防 wipe apiKey/whisperApiKey 等）
+  - `findMatchingFileSafetyRule(operation, realPath)` — exact 或 prefix-with-sep 匹配（防 `/tmp/workspace2` 误中 `/tmp/workspace`），write 规则覆盖 edit lookup（同 chatScopedGrants 语义）
+  - fileSafetyGate.js requestRead/requestWrite/requestEdit 在 prompt 前查 allowlist 静默放行；`resolveFileSafety` 增 `persistent` flag；通过后写入对应 rule（write/edit **故意不允许 dir-persistent** — agent 永久写整 tree 是 gate 存在的原因）
+  - dialog 加「Always allow this file」按钮（read 还多一个 parent dir 版本）；persistent 标记从 dataset 透传到 endpoint 再到 gate
+  - 新建 `fileSafetyAllowlist.test.js` 10 个测试覆盖 add/remove/dedupe/dir-prefix 边界/write-covers-edit/persistent flag end-to-end
+  - 测试踩坑：macOS `realpath` 把 `/var/folders/...` 解到 `/private/var/folders/...`，allowlist 用 realPath 当 key 所以测试 setup 必须先 realpath workDir，否则规则永远 miss → prompt timeout 120s
+
+- **Phase 3c — 管理 UI**：
+  - server.js 加 `/api/safety/file-allowlist` (GET) + `/api/safety/file-allowlist/remove` (POST id-keyed)
+  - Customize 加第六个 section「Safety」，`renderSafetyPane` 列出每条规则的 operation/scope/realPath/createdAt + Revoke 按钮；空态 hint 用户去 dialog 点 Always allow
+  - 加 styles `.safety-rule-list/.safety-rule-row/.safety-rule-op/.safety-rule-path`
+
+**为什么**：用户原本以为 Phase 3 只是加「Always allow」按钮，实际 grep 后发现 production 接线整条空白 — Phase 2A/2B/2C/2D 13 轮 review 全部测的是 mock sseEmitter，所以 `resolveFileSafety` 没人调；前端事件 handler 也没认 `kind: 'file_safety'`。Phase 3a 不补，Phase 3b 没意义（dialog 都不显示）；Phase 3c 不补，user 没法撤销永久授权。三阶段必须连做。
+
+**验证**：fileSafetyGate.test.js **28/28 全绿**（前 28，零回归）；fileSafetyAllowlist.test.js **10/10 全绿**（新）；server.js / app.js / fileSafetyGate.js / fileSafetyAllowlist.js syntax check 全过。
+
+**Known-limit / Phase 4 候选**：
+- bash 永久 allowlist 没做（gate header 1057 行预留过 "always allow this exact command"）— 需要 bash command canonicalization（quote/whitespace/var-expansion 归一化），单独 phase 处理
+- read_batch / move / delete 永久 allowlist 故意不开（batch 隐藏单文件 / move src+dst 组合多到永久授权太危险 / delete 是设计上的 friction），Phase 4 如有真用例再讨论
+- delete stage-2 confirmInput 输错时 server 返回 `{ ok: true }` 但 gate 内部 reject，dialog 已乐观从 queue 移除 — 用户只能从 chat 失败结果观察。MVP 后续 polish
+
+**Codex review 待跑**：本批次跨 backend + frontend + 新模块 + 测试，建议 git pp 走 evaluation；若评 C/D 重新对齐方案再动。
+
+---
 ## 2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)
 
 - Selected file context entry (commit `e81fb12`) 当时 known-limit：`scoreLineForQuery` 的 code keyword regex 是 JS/TS-only — 含 `function|class|const|let|var|export|import|async|test|describe|it(`, 漏 Python `def` / Rust `fn` / Go `func` / Java `public static` / Swift `func` / Kotlin `fun` / Ruby `def` 等其他语言。后果：非 JS/TS 文件大文件 review 时 query-relevance scoring 没 +2 keyword bonus，code line 跟 comment line 同分，excerpt 选择质量下降。
