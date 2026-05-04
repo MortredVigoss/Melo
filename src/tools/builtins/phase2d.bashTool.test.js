@@ -2239,12 +2239,14 @@ test('Codex D fix #3: xargs/find-exec + positional inline + autoApprove cannot d
   });
 });
 
-test('Codex D fix #3: invocation-context guard — git commit message with `awk -e ...` reaches prompt', async () => {
-  // Pin the false-positive reduction: previous D fix #2 token-scan
-  // would flag `git commit -m awk -e hello` because of awk + -e<glued>.
-  // After D fix #3's awkIsInvocationContext guard, prev token `-m`
-  // is a flag, walk back to `commit` which is not xargs/wrapper →
-  // not invocation context → not flagged. Reaches prompt instead.
+test('Codex D fix #5: single-quoted awk message still reaches prompt (1 token after tokenize)', async () => {
+  // After D fix #5 (Y nuclear: dropped awkIsInvocationContext), the
+  // false-positive reduction comes from a different mechanism:
+  // single-quoted `'awk -e hello'` is 1 token after tokenize, and
+  // its tokenBasename `awk -e hello` doesn't match isAwkBasename's
+  // regex `/^(g|m|n)?awk$/` (extra chars after awk). So no awk-
+  // family scan triggers. Pin the unquoted case in bashRiskParser
+  // tests; here pin the quoted case still reaches prompt.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let promptCount = 0;

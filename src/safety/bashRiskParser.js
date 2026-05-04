@@ -568,14 +568,42 @@ function riskifyTokens(tokens, sepBefore = null) {
   // flags (-e/--source/-eX/--source=X), value-takers (-F/-v/-W/-i)
   // including POSIX-glued forms, then finds the first non-flag
   // positional. Returns {hasFileFlag, hasInlineFlag, hasPositional}.
+  // D fix #5 (Codex 🔴 round 5, 2026-05-04): nuclear option. Five
+  // rounds of D evaluation proved that wrapper-aware context guards
+  // (head-aware findWrappedCommand → token-scan + walkback → 2-step
+  // walkback with COMMAND_WRAPPERS / POSITIONAL_VALUE_WRAPPERS) all
+  // share the same structural defect: enumerated wrapper / wrapper-
+  // flag chains never get fully covered because every wrapper has its
+  // own value-taking flags (`timeout -s`, `flock -w`, `stdbuf -o`,
+  // `ionice -c`, ...). Each round Codex finds another flag chain or
+  // wrapper not in the list.
+  //
+  // Exit the enumerate game: drop awkIsInvocationContext entirely.
+  // Any token whose basename matches awk-family + has any inline-form
+  // (positional / -e / --source / pipe-fed / heredoc / stdin-redirect)
+  // → hard-reject. No invocation-context filter.
+  //
+  // Trade-off: false-positive surface widens from "awk-as-data with
+  // wrapper-shaped prev token" to "ANY command containing literal
+  // 'awk'/'gawk'/etc. as a word + inline-form arg":
+  //   - `echo awk -e foo`  → flagged (literal awk + -e<glued>)
+  //   - `git commit -m awk -e hello` → flagged
+  //   - `grep awk -e file` → flagged
+  //   - `cat docs/awk-tutorial.md` → NOT flagged (filename has '/' so
+  //     basename is 'awk-tutorial.md', not in the awk-family regex)
+  //   - `find -name 'awk*'` → NOT flagged ('awk*' not awk basename)
+  //   - `printf 'awk -e foo'` (single-quoted) → NOT flagged (1 token
+  //     after tokenize)
+  // Agent mitigation: quote the awk literal as part of a string
+  // (`echo 'awk -e hello'`) — single-quoted = 1 token, no awk-family
+  // basename match, not flagged. Same trade-off as round 8 nested_
+  // shell token-scan accepting `echo bash -c hello` false positive.
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.kind !== 'word') continue;
     if (!isAwkBasename(t.text)) continue;
-    if (!awkIsInvocationContext(tokens, i)) continue;
     const argTokens = tokens.slice(i + 1);
     const analysis = analyzeAwkArgv(argTokens);
-    // Inline program in argv → hard-reject.
     if (analysis.hasInlineFlag || (!analysis.hasFileFlag && analysis.hasPositional)) {
       risks.push({
         kind: 'code_execution',
@@ -584,11 +612,11 @@ function riskifyTokens(tokens, sepBefore = null) {
       });
       break;
     }
-    // No inline/positional/file but stdin-fed (heredoc / `<` redirect
-    // / pipe) — stdin becomes the program. Scan the FULL tokens array
-    // because bash allows preposed redirects: `< /tmp/x.awk awk` is
-    // equivalent to `awk < /tmp/x.awk` (round-14 self-review fix).
     if (!analysis.hasFileFlag && !analysis.hasInlineFlag && !analysis.hasPositional) {
+      // Stdin-fed: heredoc / `<` redirect (anywhere in sub-command,
+      // including preposed `< /tmp/x.awk awk`) / pipe-fed. Bare `awk
+      // --version` / `gawk -V` (no inline, no file, no stdin) falls
+      // through to default-deny prompt.
       const hasStdinRedirect = tokens.some(tk =>
         tk.kind === 'redirect' && (tk.text === '<<' || tk.text === '<')
       );
@@ -601,8 +629,6 @@ function riskifyTokens(tokens, sepBefore = null) {
         });
         break;
       }
-      // Bare `awk --version` / `gawk -V` falls through to default-deny
-      // prompt — UX carve-out for probes.
     }
   }
 
@@ -872,72 +898,13 @@ function analyzeAwkArgv(argTokens) {
   return { hasFileFlag, hasInlineFlag, hasPositional };
 }
 
-// D-fix #3 (2026-05-04): determine if an awk-family token at index
-// `awkIdx` is being INVOKED (not just appearing as data inside another
-// command's args). Walk back from `awkIdx`:
-//   - Skip flags (start with `-`) except `-exec` / `-execdir` which are
-//     find's command-introducer markers.
-//   - Skip env-assignments (FOO=val).
-//   - The first "data" word we hit decides:
-//       · `xargs` / COMMAND_WRAPPERS member / `-exec` / `-execdir`
-//         → invocation context (true)
-//       · anything else (`echo` / `git` / `cat` / etc.) → awk is data (false)
-//   - Hitting token-start = head position → invocation context (true)
-//
-// Without this guard the unified token-scan would flag `git commit -m
-// awk -e hello` (commit message containing literal `awk` and `-e<glued>`),
-// `echo awk -e hello`, `cat awk-tutorial.md`, etc. — Codex specifically
-// pointed this out as too wide a false-positive surface.
-function awkIsInvocationContext(tokens, awkIdx) {
-  // Two-pass walkback. Step 1 finds the first "data" word skipping
-  // flags / env-assignments / redirect+target pairs. Step 2 (only if
-  // step 1 didn't already match xargs/wrapper) checks one more step
-  // back: handles `timeout SECS awk` / `flock LOCKFILE awk` where the
-  // wrapper's first positional is its OWN value and the wrapped
-  // command sits at position N+2. Pure walk back the way bash sees it.
-  function walkToDataWord(start) {
-    for (let i = start; i >= 0; i--) {
-      const t = tokens[i];
-      if (t.kind === 'redirect') continue;
-      if (t.kind !== 'word') continue;
-      if (i > 0 && tokens[i - 1].kind === 'redirect') continue;
-      const a = t.text;
-      if (a === '-exec' || a === '-execdir') return { kind: 'exec' };
-      if (a.startsWith('-')) continue;
-      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
-      return { kind: 'word', i, text: a };
-    }
-    return { kind: 'start' };
-  }
-  const first = walkToDataWord(awkIdx - 1);
-  if (first.kind === 'exec') return true;
-  if (first.kind === 'start') return true; // head position
-  const base1 = tokenBasename(first.text);
-  if (base1 === 'xargs' || COMMAND_WRAPPERS.has(base1)) return true;
-  // D fix #4 (Codex 🔴, 2026-05-04 round 4): `timeout 5 awk` and
-  // `flock /tmp/f awk` had `5` / `/tmp/f` between wrapper and awk —
-  // wrapper's first positional is its OWN value. Step 2 walkback
-  // checks if the data word two steps back is a value-taking wrapper
-  // OR a regular wrapper-with-subcommand (like `direnv exec . awk`
-  // where exec is direnv's subcommand and `.` is its arg, or
-  // `perf stat awk` where stat is perf's subcommand).
-  const second = walkToDataWord(first.i - 1);
-  if (second.kind === 'exec') return true;
-  if (second.kind === 'start') return false; // first.text was the only word
-  const base2 = tokenBasename(second.text);
-  return POSITIONAL_VALUE_WRAPPERS.has(base2)
-    || base2 === 'xargs'
-    || COMMAND_WRAPPERS.has(base2);
-}
-
-// D fix #4 (Codex 🔴, 2026-05-04 round 4): wrappers whose first non-
-// flag positional is their OWN value, not the wrapped command. For
-// these, the wrapped command sits at position N+2 (`timeout 5 awk` /
-// `flock /tmp/f awk`). awkIsInvocationContext does a 2-step walkback
-// to handle them. Bounded list — POSIX-ish standard wrappers.
-const POSITIONAL_VALUE_WRAPPERS = new Set([
-  'timeout', 'flock', 'tsp', 'ts',
-]);
+// D fix #5 (Codex 🔴 round 5, 2026-05-04): both `awkIsInvocationContext`
+// (head-aware + walkback) and `POSITIONAL_VALUE_WRAPPERS` were removed
+// after 5 rounds of Codex D proved enumerated wrapper-flag chains never
+// get fully covered. The invocation-context filter is gone — any
+// awk-family token + inline-form is hard-rejected, regardless of what
+// precedes it. See the unified token-scan loop in riskifyTokens for
+// rationale + agent-side mitigation (single-quote the awk literal).
 
 // Phase 2D follow-up #14 (Codex 🔴): GNU sed `e` command and the
 // `s/.../e` substitute flag both shell-out to execute the result.

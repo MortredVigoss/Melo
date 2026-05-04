@@ -715,27 +715,44 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
-test('Codex D fix #3: invocation-context guard — awk-as-data tokens NOT flagged', () => {
-  // Guard requirement (Codex 🟡 D #3): the unified token-scan must
-  // not flag every command containing literal `awk` + a flag-shaped
-  // arg. `awkIsInvocationContext` walks back from the awk token
-  // and only accepts xargs / `-exec` / COMMAND_WRAPPERS / head as
-  // invocation prefix. Common dev/agent flows must stay unflagged.
+test('Codex D fix #5 (nuclear): awk-as-data with bare `awk` token IS flagged (over-flag accepted)', () => {
+  // 5 rounds of D evaluation proved enumerated wrapper-flag chains
+  // never get fully covered. D fix #5 dropped awkIsInvocationContext
+  // entirely — any awk-family token + inline-form flags. Pin the
+  // accepted over-flag surface (this is INTENTIONAL — agent uses
+  // single-quote 1-token form to avoid).
   for (const cmd of [
-    `echo awk -e hello`,                    // 3 echo args (would have falsed in D fix #2)
-    `git commit -m awk -e hello`,           // commit message
-    `git commit -m awk hello`,              // commit message no flag
-    `echo awk hello`,                       // bare echo of "awk hello"
-    `cat docs/awk-tutorial.md`,             // 'awk' in path
-    `grep awk -e file`,                      // grep, awk is grep's pattern
-    `printf 'awk -e is GNU only'`,          // single-quoted = 1 token
-    `find . -name 'awk*'`,                  // 'awk*' is find's name pattern, no -exec
+    `echo awk -e hello`,                    // literal 'awk' word + -e<glued>
+    `git commit -m awk -e hello`,            // commit message
+    `git commit -m awk hello`,               // commit message no flag (positional after awk)
+    `echo awk hello`,                        // bare echo with awk + arg
+    `grep awk -e file`,                      // grep with awk + -e
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} IS over-flagged after D fix #5 nuclear (intentional trade-off)`,
+    );
+  }
+});
+
+test('Codex D fix #5: awk-as-data still NOT flagged when basename is not awk-family or token is single quoted', () => {
+  // Even after dropping context guard, these stay unflagged because:
+  //   - 'awk' is part of a longer basename (path / filename)
+  //   - whole arg is quoted as 1 token, no awk-basename word
+  for (const cmd of [
+    `cat docs/awk-tutorial.md`,             // basename 'awk-tutorial.md'
+    `cat awk-script.sh`,                    // basename 'awk-script.sh'
+    `find . -name 'awk*'`,                  // 'awk*' not awk-family regex
+    `find . -name awk-script.sh`,           // 'awk-script.sh' not awk-family
+    `printf 'awk -e foo'`,                  // 1 token after tokenize
+    `echo 'awk -e is GNU only'`,            // single-quoted 1 token
   ]) {
     const risks = parseBashRiskyOps(cmd).risks;
     assert.equal(
       risks.filter(r => r.kind === 'code_execution').length,
       0,
-      `${cmd} should NOT be code_execution (awk is data, not invocation)`,
+      `${cmd} should NOT be code_execution (no awk-family basename match)`,
     );
   }
 });

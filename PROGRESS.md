@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-05-04 — Codex D #5 + 用户拍 nuclear option Y：删 invocation-context guard
+
+- D fix #4 (`0035e86`) push 后跑第五轮 codex review，Codex 又评 **D**：walkback 永远漏 wrapper-flag chain。Codex 实测 8 个 attack vector 全部 risks=[]：
+  - `timeout -s KILL 5 awk PROG`（-s 接 SIG，5 接 SECS）
+  - `timeout -k 1 5 awk PROG`（-k 接 SECS，5 接 SECS）
+  - `flock -w 10 /tmp/f awk` / `-E 1 /tmp/f awk` / `--timeout 10 /tmp/f awk`
+  - `stdbuf -o L -e L awk` / `ionice -c 2 -n 7 awk`
+  - `coproc awk PROG`（bash builtin 不在 wrapper 集）
+- 5 轮 D 揭示结构性 anti-pattern：每个 wrapper 有自己的 value-taking flag (`timeout -s/-k`/`flock -w/-E/--timeout`/`stdbuf -o/-e`/`ionice -c/-n`/...)，固定 N-step walkback 永远跟不上 wrapper-flag combination 的爆炸；扩 enumerated COMMAND_WRAPPERS / VALUE_TAKING_WRAPPER_FLAGS 是 round 5 git deny-list 同款无底洞。每轮 Codex 找新 wrapper-flag 组合，每轮 D 加一层都被 D。
+- 用户拍 **nuclear option Y**：删 `awkIsInvocationContext` + `POSITIONAL_VALUE_WRAPPERS` 整段，token-scan 任何 awk-family token + 任何 inline form (`-e`/`-eX`/`--source`/`--source=`/positional/pipe-fed/heredoc/stdin redirect) → hard-reject，**完全不依赖 wrapper 集合**。
+- 实现：删整个 `awkIsInvocationContext` 函数 + `POSITIONAL_VALUE_WRAPPERS` Set，token-scan 主循环移除 `if (!awkIsInvocationContext(...)) continue;` 这一行。代码净减 ~70 行（helper + 调用 + 数据结构）。
+- **闭环属性**（手动 24 case 验证 / Codex 列的所有 8 D #5 attack 全 catch）：
+  - ✅ D #5: timeout -s/-k chain / flock -w/-E/--timeout chain / stdbuf -o -e / ionice -c -n / coproc 全 catch（无 walkback 依赖）
+  - ✅ D #4: parallel/stdbuf/watch/timeout/flock 仍 catch
+  - ✅ D #1-3: 所有 inline-flag/positional-after-wrapper 仍 catch
+  - ✅ Round 14: head 形态仍 catch
+- **接受的 false positive**（trade-off cost）：
+  - `echo awk -e foo` → flagged
+  - `git commit -m awk -e hello` → flagged
+  - `grep awk -e file` → flagged
+  - 任何 `<cmd> [args] awk [args] -e <something>` 形态都 flag
+  - **agent mitigation**：用 single-quote 包整段（`'awk -e hello'` 1 token，不命中 awk-family basename 因为 tokenBasename 含 `-e hello` 后缀），即可绕开。同 round 8 nested_shell `echo bash -c hello` 同款 trade-off。
+- **不会 false positive**（基础边界守住）：
+  - `cat docs/awk-tutorial.md` (basename `awk-tutorial.md` 有后缀)
+  - `find . -name awk-script.sh` (basename 同款)
+  - `find . -name 'awk*'` (`awk*` 不命中 regex)
+  - single-quoted `'awk -e foo'` (1 token after tokenize)
+- 测试调整 +2 case：① "awk-as-data IS over-flagged"（5 case，pin nuclear 接受的 trade-off）；② "awk-as-data still NOT flagged when basename ≠ awk-family or 1-token-quoted"（6 case，pin 边界）；删除 D fix #3 加的"awk-as-data NOT flagged"测试（语义已反转）。e2e 1 case 注释更新（机制从 awkIsInvocationContext guard 改为 isAwkBasename basename match 失败）。
+- 验证：`src/safety/bashRiskParser.test.js` **77/77 全绿**（前 76 + 1 净增 — 删 1 加 2）；`src/tools/builtins/phase2d.bashTool.test.js` **108/108 全绿**（前 108 不变）；`src/**/*.test.js` **1942/1942 全绿**（前 1941 + 1 新；零既有回归）。
+- **总结 5 轮 D 的教训**：① 安全 token-scan 中 over-flag 优于 under-flag — 这是结构性原则不是 case-by-case；② enumerated wrapper / wrapper-flag 集合是 round 5 git deny-list 同款无底洞；③ context guard 看似减小 false positive 但每减一类增加 wrapper 维度的 false negative，net 总是负；④ Codex review 5 轮揭示 5 个不同维度盲区（glued flag / xargs-find-exec / positional / parallel-stdbuf / timeout-flock 内部 flag）— 没有 5 轮 review 100% 漏；⑤ 每次 D 都该考虑"这是不是 enumerate game?"，是 → nuclear；不是 → 加 narrow fix。Y option 应该在 D #2 之后就考虑。
+
+---
+
 ## 2026-05-04 — Codex 又抓 D #4：parallel/stdbuf/timeout/flock wrapper 漏 + `awk -o` 误报
 
 - D fix #3 (`39c1cab`) push 后跑第四轮 codex review，Codex 评 **D**：① 🔴 attack — `parallel awk 'PROG' ::: x` / `stdbuf -oL awk 'PROG' file`（实测 awk 真执行）/ `unbuffer awk` / `watch awk` 4 个 wrapper 都不在 COMMAND_WRAPPERS → awkIsInvocationContext 看到前置 token 不是 wrapper → return false → 漏；② ⚪ false positive — `awk -o out -f script.awk` 被误标 code_execution（`-o` 是 GNU awk pretty-print flag 接 separate value 'out'，`out` 被当 hasPositional → flag）。Codex 同时警告 "枚举式 allowlist 持续形成同类漏 detect"（round 5 git deny-list 同款无底洞）。
