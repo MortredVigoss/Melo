@@ -336,7 +336,53 @@ function riskifyTokens(tokens) {
     }
   }
 
+  // Phase 2D follow-up #9 (Codex 🔴, 2026-05-04): expansion-form
+  // wrapper detection. Token-scan above only catches LITERAL shell
+  // names; runtime shell expansion can substitute a shell at spawn
+  // time without ever writing the literal `bash` token:
+  //   $SHELL -c '...'         (variable expansion)
+  //   ${SHELL} -c '...'       (parameter expansion)
+  //   bash${EMPTY} -c '...'   (concatenation expansion)
+  //   ba* -c '...'            (glob expansion in /bin)
+  //   "$X" -c '...'           (double-quoted variable, expands)
+  // Rule: hard-reject if any word token containing an expansion
+  // metachar ($ / * / ? / [ / {) appears at an INDEX BEFORE an
+  // -c-form token. The "before -c" ordering distinguishes wrapper
+  // expansion (`$SHELL -c x`) from data-arg expansion
+  // (`grep -c $FILE` / `wc -c $FILE` / `cut -c 5 $FILE` /
+  // `tar -c $X`), where -c is a flag of the literal head and the
+  // expansion is downstream data.
+  let firstExpansionIdx = -1;
+  let firstCFlagIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    if (firstExpansionIdx === -1 && hasExpansionMetachar(t.text)) {
+      firstExpansionIdx = i;
+    }
+    if (firstCFlagIdx === -1 && isShellCmdFlag(t.text)) {
+      firstCFlagIdx = i;
+    }
+  }
+  if (firstExpansionIdx >= 0 && firstCFlagIdx >= 0 && firstExpansionIdx < firstCFlagIdx) {
+    risks.push({
+      kind: 'nested_shell',
+      pattern: 'expansion before -c',
+      confidence: 'high',
+    });
+  }
+
   return risks;
+}
+
+// Phase 2D follow-up #9: shell expansion metacharacters that, in
+// command position, can substitute an arbitrary executable at
+// spawn time. `$` covers `$VAR` / `${VAR}` / `$(cmd)` (the latter
+// is also caught by hasShellSubstitution at parse-entry, but
+// belt-and-suspenders). `*` / `?` / `[` are pathname glob;
+// `{` is brace expansion (`{a,b}` / `bash{,sh}`).
+function hasExpansionMetachar(text) {
+  return /[\$\*\?\[\{]/.test(text);
 }
 
 // Phase 2D follow-up #8: which interpreter names trigger the nested-

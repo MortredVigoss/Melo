@@ -573,6 +573,138 @@ test('round 15 Phase 2D followup #8: env eval "rm" — eval in wrapper position 
   });
 });
 
+// Phase 2D follow-up #9 (Codex 🔴, 2026-05-04): expansion-form
+// nested_shell. token-scan only catches literal shell names; the
+// shell does runtime expansion at spawn time, so $SHELL / ${SHELL}
+// / bash${EMPTY} / ba* all resolve to a real shell after the gate
+// has decided. Rule: any expansion metachar BEFORE a -c flag → hard
+// reject. The "before -c" ordering preserves data-expansion forms
+// like `grep -c $FILE` / `wc -c $FILE`.
+
+test('round 16 Phase 2D followup #9: $SHELL -c "rm" — expansion HARD REJECT + file untouched', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'shell-var.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `$SHELL -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0, '$SHELL must be caught by expansion-before-c rule');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 16 Phase 2D followup #9: ${SHELL} -c "rm" — parameter expansion HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'shell-param.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `\${SHELL} -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 16 Phase 2D followup #9: bash${EMPTY} -c "rm" — concatenation expansion HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'shell-concat.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `bash\${EMPTY} -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 16 Phase 2D followup #9: ba* -c "rm" — glob expansion HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'shell-glob.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `ba* -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
+  });
+});
+
+test('round 16 Phase 2D followup #9: env $VAR -c — expansion in wrapper-after-position HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `env $VAR -c 'echo hi'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 16 Phase 2D followup #9: brace expansion bash{,sh} -c HARD REJECT', async () => {
+  // Brace expansion `bash{,sh}` expands to `bash sh`, but the literal
+  // token contains `{` so the expansion-metachar rule catches it
+  // before the shell ever sees it.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `bash{,sh} -c 'echo hi'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 16 Phase 2D followup #9: regression — data expansion after -c is NOT hard-rejected', async () => {
+  // Critical false-positive guard. `grep -c pattern $FILE` /
+  // `wc -c $FILE` / `cut -c 5 $FILE` use -c as a flag of the LITERAL
+  // head; the expansion is data, not a wrapper-replaced executable.
+  // These should still go through requestBashOp as `unknown` and be
+  // gated by user prompt — but NOT hard-rejected with 0 prompt.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'grep -c pattern $FILE',
+      'wc -c $FILE',
+      'cut -c 5 $FILE',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); } },
+      );
+      // These should reach the prompt (and we deny) — proving they
+      // were NOT pre-rejected as nested_shell.
+      assert.equal(r.ok, false);
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, 3, 'each data-expansion command must reach the prompt (1 per cmd)');
+  });
+});
+
 test('round 15 Phase 2D followup #8: zsh / dash / ksh / fish + -c — all HARD REJECT', async () => {
   // Other POSIX-ish shells in the SHELL_INTERPRETERS set.
   await withTempEnv(async ({ ws }) => {
