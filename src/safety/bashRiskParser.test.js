@@ -595,6 +595,24 @@ test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text w
   }
 });
 
+test('Phase 2D #14 follow-up: sed exotic-delim with escaped delim in PATTERN/REPLACEMENT still flags', () => {
+  // The imperative scanner advances by 2 chars on `\\` so an
+  // escaped delim inside PATTERN/REPLACEMENT doesn't terminate the
+  // sub-section prematurely. Self-review pin.
+  for (const cmd of [
+    `sed 's,foo\\,bar,baz,e' file`,    // comma delim + escaped comma in PATTERN
+    `sed 's|foo|bar\\|baz|e' file`,    // pipe delim + escaped pipe in REPLACEMENT
+    `sed 's#foo\\#bar#baz#e' file`,    // hash delim + escaped hash in PATTERN
+    `sed 's:f\\:o:b\\:r:e' file`,      // colon delim + escapes in both
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution despite escaped delim in PATTERN/REPLACEMENT`,
+    );
+  }
+});
+
 test('Phase 2D #14 follow-up: regression — words starting with `s` are not mis-parsed', () => {
   // The imperative scanner requires `s` to be at command position
   // (start-of-string or after a non-alphanumeric). Otherwise words
