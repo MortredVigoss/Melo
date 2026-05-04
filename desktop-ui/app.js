@@ -22,6 +22,10 @@ import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
 import { runProductivityMcpsConsentChoice } from './productivityMcpConsent.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
+import {
+  decideFileSafetyPreflight,
+  decideFileSafetyResponseAction,
+} from './fileSafetyResponse.js';
 
 const app = document.querySelector('#app');
 
@@ -11369,26 +11373,24 @@ async function handleToolPermissionResponse(requestId, toolId, granted, scope) {
 // carries the user-typed string the gate validates against the captured
 // expectedConfirmation.
 async function handleFileSafetyResponse(requestId, granted, scope, confirmInput = '', persistent = false) {
-  // Codex review (Phase 3 follow-up, 2026-05-04 🟡 P1): for delete
-  // stage-2 we can't optimistically remove the dialog — a mismatched
-  // confirmInput is a recoverable error and the user should be able
-  // to retry without the request being torn down. We hold off on the
-  // queue mutation until the response is back, and reinstate an
-  // error banner on the same entry when the gate reports mismatch.
+  // Codex review (Phase 3 follow-up, 2026-05-04 🟡 P1): delete stage-2
+  // mismatch must be recoverable, so the queue mutation depends on
+  // whether this is a confirm-stage entry or a regular allow/deny.
+  // The decision logic lives in fileSafetyResponse.js so it can be
+  // unit-tested without a DOM (P2 follow-up to the same review).
   const entry = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
-  const isConfirmStage = entry?.kind === 'file_safety'
-    && entry.operation === 'delete'
-    && entry.payload?.stage === 'confirm';
-
-  if (!isConfirmStage) {
+  const preflight = decideFileSafetyPreflight(entry);
+  if (preflight.action === 'remove_optimistic') {
     uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
       p => p.requestId !== requestId,
     );
     render();
   }
 
+  let response = null;
+  let error = null;
   try {
-    const response = await api('/api/tools/permission-response', {
+    response = await api('/api/tools/permission-response', {
       method: 'POST',
       body: {
         requestId,
@@ -11399,35 +11401,25 @@ async function handleFileSafetyResponse(requestId, granted, scope, confirmInput 
         persistent,
       },
     });
-
-    if (isConfirmStage) {
-      if (response && response.ok === false && response.reason === 'CONFIRMATION_MISMATCH') {
-        // Mark the entry so the dialog re-renders with an error banner.
-        const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
-        if (live) {
-          live.confirmError = `Typed value did not match "${response.expected || ''}". Try again.`;
-        }
-        render();
-        return;
-      }
-      // Either resolved cleanly or the gate already rejected — either
-      // way the entry is consumed; drop it.
-      uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-        p => p.requestId !== requestId,
-      );
-      render();
-    }
   } catch (err) {
-    if (isConfirmStage) {
-      const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
-      if (live) {
-        live.confirmError = err?.message || 'Request failed; try again.';
-        render();
-      }
-    }
+    error = err;
     if (process?.env?.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.warn('file-safety response failed:', err.message);
+    }
+  }
+
+  const decision = decideFileSafetyResponseAction({ entry, response, error });
+  if (decision.action === 'remove') {
+    uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
+      p => p.requestId !== requestId,
+    );
+    render();
+  } else if (decision.action === 'mark_error') {
+    const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
+    if (live) {
+      live.confirmError = decision.message;
+      render();
     }
   }
 }
