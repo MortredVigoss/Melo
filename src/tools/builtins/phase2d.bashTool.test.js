@@ -2099,6 +2099,83 @@ test('round 22 Phase 2D #14 self-review (P1): preposed redirect + multiple wrapp
   });
 });
 
+test('round 23 Phase 2D #14 follow-up: sed exotic-delim s|x|y|e + autoApprove cannot delete file', async () => {
+  // Round 14 known-limit closure: `s,x,y,e` / `s|x|y|e` / `s:x:y:e` /
+  // `s#x#y#e` / `s@x@y@e` were all uncovered by pattern-2 regex. Now
+  // covered by imperative scanner. Pin the autoApprove attack vector
+  // for the most-likely Codex demo (pipe delim).
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'sed-exotic-delim-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      // Replace `target` with itself + e flag → shell out `<replacement>`
+      // which is `rm -f <target>` — autoApprove must not let this run.
+      // (We use `s|.|.|e` form so the shell expansion in 'replacement'
+      // treats it as a command line. Pin: prompt count 0 + DENIED.)
+      { command: `printf 'a\\n' | sed 's|a|rm -f ${target}|e'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, 'exotic-delim s|...|e must hard-reject pre-prompt');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected');
+  });
+});
+
+test('round 23 Phase 2D #14 follow-up: all 5 exotic-delim sed e-flag forms HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed 's,x,y,e' file`,
+      `sed 's|x|y|e' file`,
+      `sed 's:x:y:e' file`,
+      `sed 's#x#y#e' file`,
+      `sed 's@x@y@e' file`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY pre-prompt`);
+    }
+    assert.equal(promptCount, 0, 'all 5 exotic-delim forms must hard-reject');
+  });
+});
+
+test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e flag reaches prompt', async () => {
+  // `s,x,y,g` and friends (no e flag) must remain prompt-only. They
+  // can hit the prompt and user decides — must not pre-reject.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed 's,x,y,g' file`,
+      `sed 's|x|y|' file`,
+      `sed 's#x#y#i' file`,                  // case-insensitive flag
+      `sed 's,foo,bar e baz,' file`,         // replacement contains 'e<space>'
+      `sed 's|foo|replace e text|' file`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt`);
+    }
+    assert.equal(promptCount, 5, 'each non-e-flag exotic-delim sed must reach prompt');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {

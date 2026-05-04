@@ -791,41 +791,78 @@ function isAwkBasename(text) {
 // `printf x | sed 'e rm -f file'` deletes file with one approve
 // click; `sed 's/x/y/e' file` substitutes then execs the result.
 //
-// Two detection patterns, in order:
-//   - Pattern 2 (precise): `s/PAT/REP/FLAGS` where FLAGS contains
-//     `e`. Tight structural match (escape-aware non-/ inside PAT
-//     and REP) so replacement text can't false-positive. Covers
-//     `/`-delimiter only — sed accepts any first-char delimiter
-//     (`s,x,y,e` / `s|x|y|e` / `s#x#y#e`), JS regex can't negate
-//     a backreference so exotic delims remain a known limit.
-//   - Pattern 1 (bare `e CMD`): the standalone sed `e` command
-//     accepts ANY sed-address prefix: `e CMD` (no address), `2e`,
-//     `1,5e`, `/regex/e`, `$e`, `!e`, `~Ne`. Round-14 self-review:
-//     originally tightened the preceding-char class from
-//     `[^a-zA-Z]` to `[\n;{}]` thinking it was needed to avoid
-//     replacement-text false-positives like `s/foo/bar e baz/` —
-//     but that false-positive was actually a pattern-2 issue (now
-//     fixed by the escape-aware non-/ form), and the tightening
-//     introduced its OWN bypass (`/foo/e CMD`, `$e CMD`, `2e CMD`
-//     all missed). Resolution: strip out `s/PAT/REP/FLAGS` regions
-//     before applying pattern 1, then accept the broader
-//     `[^a-zA-Z]e\s` so all sed boundary chars (start, `;`, `{`,
-//     `}`, `\n`, `/`, `$`, digits, `,`, `!`, `~`) are covered.
+// Two detections, in order:
+//   - Substitute scan (`s<DELIM>PAT<DELIM>REP<DELIM>FLAGS`): walk
+//     the text imperatively to handle ANY delimiter. sed accepts
+//     any non-newline non-backslash char as delim (`s,x,y,e` /
+//     `s|x|y|e` / `s:x:y:e` / `s#x#y#e` / `s@x@y@e` are all valid).
+//     For each substitute found, if FLAGS contains `e` AND ends at
+//     a sed boundary (whitespace / `;` / `{` / `}` / newline / EOS)
+//     → e-flag bypass. Otherwise mark the substitute region for
+//     stripping before pattern 1.
+//     Round-14 self-review: originally just `/`-delim regex; round
+//     14 known-limit listed `s,x,y,e` / `s|x|y|e` / `s#x#y#e` as
+//     uncovered. This commit closes that limit by going imperative
+//     (JS regex can't negate a backreference, but a manual scanner
+//     trivially handles any delim).
+//   - Bare `e CMD`: the standalone sed `e` command accepts ANY
+//     sed-address prefix (no address / `2e` / `1,5e` / `/regex/e` /
+//     `$e` / `!e` / `~Ne`). After stripping the substitute regions
+//     above (so replacement text containing `e<space>` like
+//     `s/foo/bar e baz/` doesn't false-positive), match
+//     `(?:^|[^a-zA-Z])e\s` — the broad non-letter precedes covers
+//     all sed boundary chars uniformly.
 function sedExpressionHasEcmd(text) {
   if (typeof text !== 'string' || !text) return false;
-  // Pattern 2 first — covers `s/.../.../e` precisely.
-  if (/s\/(?:[^\/\\]|\\.)*\/(?:[^\/\\]|\\.)*\/[a-z]*e[a-z]*(?:[\s;{}\n]|$)/i.test(text)) return true;
-  // Strip `s/PAT/REP/FLAGS` regions (replace with single space so
-  // adjacent chars don't fuse). After stripping, replacement text
-  // like `bar e baz` is gone so it can't trigger pattern 1.
-  const stripped = text.replace(
-    /s\/(?:[^\/\\]|\\.)*\/(?:[^\/\\]|\\.)*\/[a-z]*/gi,
-    ' ',
-  );
-  // Pattern 1 — bare `e CMD` preceded by start or any non-letter.
-  // Non-letter covers all sed address terminators uniformly.
-  if (/(?:^|[^a-zA-Z])e\s/.test(stripped)) return true;
-  return false;
+  // Walk substitutes; for each: check e flag, otherwise record the
+  // region for stripping. `s` must be at command position (start
+  // or after non-alphanumeric) to avoid matching `says`/`sass`/etc.
+  const substitutes = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== 's') { i++; continue; }
+    if (i > 0 && /[a-zA-Z0-9]/.test(text[i - 1])) { i++; continue; }
+    const delim = text[i + 1];
+    if (!delim || /[a-zA-Z0-9\s\\\n]/.test(delim)) { i++; continue; }
+    let j = i + 2;
+    // PATTERN — escape-aware
+    while (j < text.length && text[j] !== delim) {
+      j += text[j] === '\\' ? 2 : 1;
+    }
+    if (j >= text.length) { i++; continue; }
+    j++;
+    // REPLACEMENT — escape-aware
+    while (j < text.length && text[j] !== delim) {
+      j += text[j] === '\\' ? 2 : 1;
+    }
+    if (j >= text.length) { i++; continue; }
+    j++;
+    // FLAGS — letters only
+    let flags = '';
+    while (j < text.length && /[a-zA-Z]/.test(text[j])) {
+      flags += text[j];
+      j++;
+    }
+    // Boundary check: end-of-string or sed command separator.
+    const atBoundary = j >= text.length || /[\s;{}\n]/.test(text[j]);
+    if (flags.includes('e') && atBoundary) return true;
+    substitutes.push({ start: i, end: j });
+    i = j;
+  }
+  // Build stripped text (replace substitute regions with single
+  // space so adjacent chars don't fuse).
+  let stripped = '';
+  let cursor = 0;
+  for (const sub of substitutes) {
+    stripped += text.slice(cursor, sub.start) + ' ';
+    cursor = sub.end;
+  }
+  stripped += text.slice(cursor);
+  // Bare `e CMD` after start or any non-letter (covers all sed
+  // address terminators: `;` / `{` / `}` / `\n` / `/` after regex
+  // address / `$` last-line / digit line numbers / `,` range / `!`
+  // negation / `~` step).
+  return /(?:^|[^a-zA-Z])e\s/.test(stripped);
 }
 
 // Phase 2D follow-up #10 (Codex 🔴): script interpreters whose

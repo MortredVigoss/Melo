@@ -550,6 +550,72 @@ test('Phase 2D #14 self-review (P1): preposed redirect — head-based detection 
   }
 });
 
+test('Phase 2D #14 follow-up: sed exotic delimiters (`,` / `|` / `:` / `#` / `@`) + e flag → code_execution', () => {
+  // Round 14's known-limit list flagged exotic-delim sed substitutes
+  // as uncovered (JS regex can't negate a backreference). Replaced
+  // pattern-2 regex with imperative scanner that handles ANY delim.
+  // Codex's likely round-15 attack vectors all close here.
+  for (const cmd of [
+    `sed 's,x,y,e' file`,
+    `sed 's|x|y|e' file`,
+    `sed 's:x:y:e' file`,
+    `sed 's#x#y#e' file`,
+    `sed 's@x@y@e' file`,
+    `sed 's,x,y,eg' file`,         // e + g flags
+    `sed 's,x,y,ge' file`,         // g + e flags
+    `gsed 's,x,y,e' file`,         // BSD homebrew GNU sed
+    `env sed 's,x,y,e' file`,      // wrapper-aware
+    `sudo sed 's|x|y|e' file`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (exotic-delim s///e shell-out)`,
+    );
+  }
+});
+
+test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text with e<space> NOT flagged', () => {
+  // Pattern 2 imperative scanner handles `s,foo,bar e baz,` (no e
+  // flag) without the replacement text triggering the bare-e-cmd
+  // pattern: substitutes are stripped before pattern 1 scan.
+  for (const cmd of [
+    `sed 's,foo,bar e baz,' file`,
+    `sed 's|foo|bar e baz|' file`,
+    `sed 's#foo#bar e baz#' file`,
+    `sed 's,foo,end ,' file`,
+    `sed 's:foo:replace e text:' file`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} replacement-text e<space> with non-/ delim must not flag`,
+    );
+  }
+});
+
+test('Phase 2D #14 follow-up: regression — words starting with `s` are not mis-parsed', () => {
+  // The imperative scanner requires `s` to be at command position
+  // (start-of-string or after a non-alphanumeric). Otherwise words
+  // like `says` / `sass` / `sed` itself / `bash`'s `s` in args
+  // would falsely trigger substitute scanning.
+  for (const cmd of [
+    `echo 'says hello world'`,
+    `echo 'sassafras tree'`,
+    `cat tests/fixtures/some-file.txt`,
+    `awk '{print "s" $1}' file`,    // 'print "s"' looks like s+",
+    `grep 'say.*hello' /tmp/x`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution' && r.pattern && r.pattern.includes('sed')).length,
+      0,
+      `${cmd} should not produce a sed code_execution risk (s is part of a word)`,
+    );
+  }
+});
+
 test('Phase 2D #14 self-review (P1): preposed redirect + awk → code_execution', () => {
   // Same skipPreamble fix benefits findWrappedCommand, so wrapper-
   // aware detections (awk inline / sed e-cmd / interpreter inline)
