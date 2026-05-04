@@ -42,6 +42,19 @@ async function loadPdfLib() {
   return mod;
 }
 
+// Phase 2C (2026-05-04): every source-reading helper accepts EITHER
+// a path (legacy callers) OR a Buffer (new callers that have already
+// gated the read via FileSafetyGate). This lets pdfTool route every
+// fs read through gatedReadIntoBuffer + atomicOpenLeaf so the path-
+// to-pdf-lib re-open TOCTOU window is closed.
+async function loadBytes(pathOrBuffer) {
+  if (Buffer.isBuffer(pathOrBuffer)) return pathOrBuffer;
+  if (typeof pathOrBuffer !== 'string' || !pathOrBuffer) {
+    throw new Error('pdfLibOps: source must be a Buffer or non-empty path string');
+  }
+  return readFile(pathOrBuffer);
+}
+
 // ASCII-only check used by watermark + page-number text. We could
 // actually render the text and let the missing-glyph fallback do its
 // thing, but a silent tofu output is worse UX than a clear error.
@@ -101,7 +114,7 @@ export async function mergePdfs(sourcePaths) {
   const merged = await PDFDocument.create();
   let totalPages = 0;
   for (const path of sourcePaths) {
-    const bytes = await readFile(path);
+    const bytes = await loadBytes(path);
     const doc = await PDFDocument.load(bytes);
     const pages = await merged.copyPages(doc, doc.getPageIndices());
     for (const p of pages) merged.addPage(p);
@@ -120,7 +133,7 @@ export async function mergePdfs(sourcePaths) {
  */
 export async function splitPdf(sourcePath, pageRange) {
   const { PDFDocument } = await loadPdfLib();
-  const bytes = await readFile(sourcePath);
+  const bytes = await loadBytes(sourcePath);
   const src = await PDFDocument.load(bytes);
   const pageNumbers = parsePageRange(pageRange, src.getPageCount());
   const out = await PDFDocument.create();
@@ -139,7 +152,7 @@ export async function splitPdf(sourcePath, pageRange) {
  */
 export async function deletePages(sourcePath, pageRange) {
   const { PDFDocument } = await loadPdfLib();
-  const bytes = await readFile(sourcePath);
+  const bytes = await loadBytes(sourcePath);
   const src = await PDFDocument.load(bytes);
   const total = src.getPageCount();
   const toDelete = new Set(parsePageRange(pageRange, total));
@@ -188,7 +201,7 @@ export async function addWatermark(sourcePath, text, opts = {}) {
     colorB = 128,
   } = opts;
   const { PDFDocument, StandardFonts, rgb, degrees } = await loadPdfLib();
-  const bytes = await readFile(sourcePath);
+  const bytes = await loadBytes(sourcePath);
   const doc = await PDFDocument.load(bytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const textWidth = font.widthOfTextAtSize(text, fontSize);
@@ -245,7 +258,7 @@ export async function addPageNumbers(sourcePath, opts = {}) {
     );
   }
   const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
-  const bytes = await readFile(sourcePath);
+  const bytes = await loadBytes(sourcePath);
   const doc = await PDFDocument.load(bytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const pages = doc.getPages();
@@ -286,8 +299,8 @@ export async function addPageNumbers(sourcePath, opts = {}) {
  */
 export async function prependCover(sourcePath, coverPath) {
   const { PDFDocument } = await loadPdfLib();
-  const srcBytes = await readFile(sourcePath);
-  const coverBytes = await readFile(coverPath);
+  const srcBytes = await loadBytes(sourcePath);
+  const coverBytes = await loadBytes(coverPath);
   const src = await PDFDocument.load(srcBytes);
   const cover = await PDFDocument.load(coverBytes);
   const out = await PDFDocument.create();
@@ -368,7 +381,7 @@ export async function applyInPlaceOverlays(sourceBytes, spec) {
       } else if (ov.type === 'image') {
         // We expect a resolved absolute path here (caller resolves
         // via pdfEditSpec.resolveSpecInputPath). Read + embed.
-        const bytes = await readFile(ov.imagePath);
+        const bytes = await loadBytes(ov.imagePath);
         let img;
         // Magic-byte sniff so an image labelled .jpg but containing
         // PNG bytes still works (and vice versa).

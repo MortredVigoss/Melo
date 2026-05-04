@@ -9,6 +9,10 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, extname, basename, relative } from 'node:path';
 
+import { requestRead } from '../../safety/fileSafetyGate.js';
+import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
+import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
+
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB per file
 const MAX_FILES = 500;
 const MAX_CHUNK_CHARS = 1500;
@@ -52,12 +56,14 @@ function chunkText(text, maxLen = MAX_CHUNK_CHARS, overlap = CHUNK_OVERLAP) {
 
 const SUPPORTED_EXT = new Set(['.txt', '.md', '.json', '.csv', '.log', '.js', '.ts', '.py', '.java', '.go', '.rs', '.html', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.sh', '.bat', '.sql', '.r', '.rb', '.php', '.swift', '.kt']);
 
-async function readTextFile(filePath) {
-  const ext = extname(filePath).toLowerCase();
+// Phase 2C (2026-05-04): readTextFromBuffer dispatches by extension —
+// pdf-parse takes a Buffer directly, text files just utf8-decode the
+// buffer. Caller (indexDirectory) gets each file's bytes via the
+// gate's atomicOpenLeaf path so no library re-opens by path.
+async function readTextFromBuffer(buffer, ext) {
   if (ext === '.pdf') {
     try {
       const { default: pdfParse } = await import('pdf-parse');
-      const buffer = await readFile(filePath);
       const data = await pdfParse(buffer);
       return String(data?.text || '').trim();
     } catch {
@@ -66,13 +72,25 @@ async function readTextFile(filePath) {
   }
   if (!SUPPORTED_EXT.has(ext)) return '';
   try {
-    return await readFile(filePath, 'utf8');
+    return buffer.toString('utf8');
   } catch {
     return '';
   }
 }
 
-async function walkDir(dir, files = [], depth = 0) {
+function isSensitiveSubtree(absPath) {
+  const cat = classifyPath(absPath);
+  return cat === PATH_CATEGORY.SYSTEM
+      || cat === PATH_CATEGORY.CREDENTIAL
+      || cat === PATH_CATEGORY.MELO_INTERNAL;
+}
+
+// Phase 2C (2026-05-04): walker also skips sensitive subtrees so
+// indexing a benign base never silently slurps ~/.ssh into the
+// in-memory index. We don't have a context here for filterSensitive
+// tunneling, so the policy is "always skip" — if the user explicitly
+// indexed a sensitive base they'd hit a sensitive-prompt loop anyway.
+async function walkDir(dir, files = [], depth = 0, skipped = { sensitive: 0 }) {
   if (depth > 5 || files.length >= MAX_FILES) return files;
   try {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -80,8 +98,12 @@ async function walkDir(dir, files = [], depth = 0) {
       if (files.length >= MAX_FILES) break;
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       const full = resolve(dir, entry.name);
+      if (isSensitiveSubtree(full)) {
+        skipped.sensitive++;
+        continue;
+      }
       if (entry.isDirectory()) {
-        await walkDir(full, files, depth + 1);
+        await walkDir(full, files, depth + 1, skipped);
       } else if (entry.isFile()) {
         try {
           const s = await stat(full);
@@ -95,13 +117,47 @@ async function walkDir(dir, files = [], depth = 0) {
 
 // ─── Indexing ────────────────────────────────────────────────────────────────
 
-async function indexDirectory(dir) {
+async function indexDirectory(dir, ctx = {}) {
   const absDir = resolve(dir);
-  const files = await walkDir(absDir);
+
+  // Phase 2C (2026-05-04): gate the base directory read. Workspace-
+  // internal silent; outside-benign prompts once + grants dir scope
+  // for the subtree (so per-file gatedReadIntoBuffer below stays
+  // silent). Sensitive base prompts per-call (which is unusable for
+  // a 500-file index, but that's the right behavior — user shouldn't
+  // index ~/.ssh).
+  try {
+    await requestRead({
+      path: absDir,
+      chatId: ctx.chatId,
+      sseEmitter: ctx.sseEmitter,
+      signal: ctx.signal,
+      workspacePath: ctx.workspacePath,
+      baseDir: ctx.workspacePath,
+    });
+  } catch (err) {
+    const denied = err?.code === 'FILE_SAFETY_DENIED';
+    const e = new Error(err?.message || 'gate denied');
+    e.code = denied ? 'DENIED' : 'GATE_ERROR';
+    throw e;
+  }
+
+  const skipped = { sensitive: 0 };
+  const files = await walkDir(absDir, [], 0, skipped);
   const chunks = [];
 
   for (const filePath of files) {
-    const text = await readTextFile(filePath);
+    // Phase 2C: each file read goes through the gate. The dir-grant
+    // from the base approval makes this silent for the typical case
+    // (workspace base or user-granted external dir).
+    const gated = await gatedReadIntoBuffer(filePath, ctx, {
+      maxBytes: MAX_FILE_SIZE,
+      toolName: 'knowledge:index',
+    });
+    if (!gated.ok) continue;  // skip files that the gate denied / can't read
+
+    const ext = extname(filePath).toLowerCase();
+    const text = await readTextFromBuffer(gated.buffer, ext);
     if (!text || text.length < 20) continue;
     const textChunks = chunkText(text);
     for (const chunk of textChunks) {
@@ -130,7 +186,7 @@ async function indexDirectory(dir) {
   }
 
   _index = { chunks, idf, indexed: files.length, dirs: [absDir] };
-  return { files: files.length, chunks: chunks.length };
+  return { files: files.length, chunks: chunks.length, skippedSensitive: skipped.sensitive };
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -190,18 +246,23 @@ export const knowledgeTool = {
     required: ['action'],
   },
 
-  async run({ action, path, query, top_k = 5 }) {
+  async run(args = {}, context = {}) {
+    const { action, path, query, top_k = 5 } = args;
+    const { workspacePath, sseEmitter, signal, chatId } = context;
     if (action === 'index') {
       if (!path) return { ok: false, output: 'Missing "path" (directory to index).', error: 'INVALID_PARAMS' };
       try {
-        const result = await indexDirectory(path);
+        const result = await indexDirectory(path, { workspacePath, sseEmitter, signal, chatId });
+        const skipNote = result.skippedSensitive > 0
+          ? ` (${result.skippedSensitive} sensitive subtree entries skipped)`
+          : '';
         return {
           ok: true,
-          output: `Indexed ${result.files} files → ${result.chunks} searchable chunks`,
+          output: `Indexed ${result.files} files → ${result.chunks} searchable chunks${skipNote}`,
           meta: result,
         };
       } catch (e) {
-        return { ok: false, output: `Index failed: ${e.message}`, error: 'INDEX_FAILED' };
+        return { ok: false, output: `Index failed: ${e.message}`, error: e.code || 'INDEX_FAILED' };
       }
     }
 

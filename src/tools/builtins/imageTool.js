@@ -18,6 +18,7 @@
  */
 
 import { mkdir, readFile, stat } from 'node:fs/promises';
+import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import { resolve, extname, basename, join, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
@@ -26,13 +27,13 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // 20MB
 
 // ─── OCR via tesseract.js ─────────────────────────────────────────────────────
 
-async function ocrImage(filePath) {
+async function ocrImage(filePathOrBuffer) {
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker(['eng', 'chi_sim', 'chi_tra', 'jpn', 'kor'], 1, {
     logger: () => {},
   });
   try {
-    const { data } = await worker.recognize(filePath);
+    const { data } = await worker.recognize(filePathOrBuffer);
     return {
       text: (data.text || '').trim(),
       confidence: data.confidence || 0,
@@ -45,9 +46,14 @@ async function ocrImage(filePath) {
 
 // ─── Metadata via sharp ──────────────────────────────────────────────────────
 
-async function getImageMeta(filePath) {
+async function getImageMeta(filePathOrBuffer) {
   const sharp = (await import('sharp')).default;
-  const meta = await sharp(filePath).metadata();
+  const meta = await sharp(filePathOrBuffer).metadata();
+  // Phase 2C: when given a Buffer, size is buffer.length; when given
+  // a path, fall back to stat for the on-disk size.
+  const size = Buffer.isBuffer(filePathOrBuffer)
+    ? filePathOrBuffer.length
+    : (await stat(filePathOrBuffer)).size;
   return {
     width: meta.width,
     height: meta.height,
@@ -59,15 +65,15 @@ async function getImageMeta(filePath) {
     hasAlpha: meta.hasAlpha,
     orientation: meta.orientation,
     exif: meta.exif ? '(present)' : '(none)',
-    size: (await stat(filePath)).size,
+    size,
   };
 }
 
 // ─── Resize / Convert ────────────────────────────────────────────────────────
 
-async function processImage(inputPath, outputPath, options = {}) {
+async function processImage(inputPathOrBuffer, outputPath, options = {}) {
   const sharp = (await import('sharp')).default;
-  let pipeline = sharp(inputPath);
+  let pipeline = sharp(inputPathOrBuffer);
 
   if (options.width || options.height) {
     pipeline = pipeline.resize({
@@ -255,7 +261,7 @@ export const imageTool = {
 
   async run(args, context = {}) {
     const { action, path: inputPath, output } = args || {};
-    const { workspacePath, config, signal } = context;
+    const { workspacePath, config, signal, sseEmitter, chatId } = context;
 
     if (!action) {
       return { ok: false, output: 'Missing required: action.', error: 'INVALID_PARAMS' };
@@ -478,22 +484,35 @@ export const imageTool = {
     }
 
     // ── ocr / info / process — all need a valid input path ─────────────────
+    // Phase 2C (2026-05-04): only gate-read for KNOWN actions that
+    // actually consume the file. Otherwise an unknown action would
+    // trigger a UI prompt for nothing — and the original "INVALID_
+    // ACTION" branch below would never be reached.
+    const READING_ACTIONS = new Set(['ocr', 'info', 'process']);
+    if (!READING_ACTIONS.has(action)) {
+      return { ok: false, output: `Unknown action "${action}".`, error: 'INVALID_ACTION' };
+    }
     if (!inputPath) {
       return { ok: false, output: 'Missing required: path.', error: 'INVALID_PARAMS' };
     }
     const absPath = resolve(inputPath);
-    try {
-      const s = await stat(absPath);
-      if (s.size > MAX_IMAGE_BYTES) {
-        return { ok: false, output: `Image too large: ${(s.size / 1024 / 1024).toFixed(1)}MB (max 20MB)`, error: 'TOO_LARGE' };
-      }
-    } catch {
-      return { ok: false, output: `File not found: ${absPath}`, error: 'NOT_FOUND' };
+
+    // Gate the input image read once. atomicOpenLeaf+S_ISREG+size
+    // cap all happen inside gatedReadIntoBuffer; the Buffer is what
+    // sharp / tesseract consume — no library re-opens the path, so
+    // the post-approval TOCTOU window is closed.
+    const gated = await gatedReadIntoBuffer(absPath, { workspacePath, sseEmitter, signal, chatId }, {
+      maxBytes: MAX_IMAGE_BYTES,
+      toolName: `image:${action}`,
+    });
+    if (!gated.ok) {
+      return { ok: false, output: gated.output, error: gated.error, meta: gated.meta };
     }
+    const inputBuffer = gated.buffer;
 
     if (action === 'ocr') {
       try {
-        const result = await ocrImage(absPath);
+        const result = await ocrImage(inputBuffer);
         if (!result.text) return { ok: true, output: '(No text detected in image)', meta: result };
         return {
           ok: true,
@@ -507,7 +526,7 @@ export const imageTool = {
 
     if (action === 'info') {
       try {
-        const meta = await getImageMeta(absPath);
+        const meta = await getImageMeta(inputBuffer);
         const lines = [
           `**File:** ${basename(absPath)}`,
           `**Dimensions:** ${meta.width} × ${meta.height}`,
@@ -546,7 +565,7 @@ export const imageTool = {
       } catch { /* non-fatal */ }
 
       try {
-        const result = await processImage(absPath, outPath, { width, height, quality, rotate, grayscale });
+        const result = await processImage(inputBuffer, outPath, { width, height, quality, rotate, grayscale });
         // Only mint a signed URL when the output lives under the workspace —
         // for explicit external paths the user asked for a file, not a URL.
         let url = null;

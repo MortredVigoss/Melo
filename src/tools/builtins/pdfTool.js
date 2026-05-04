@@ -21,6 +21,7 @@ import { mkdir, readFile, writeFile, access, stat } from 'node:fs/promises';
 import { resolve, extname, join, isAbsolute, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
+import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import {
   mergePdfs,
   splitPdf,
@@ -681,7 +682,7 @@ export const pdfTool = {
       renderScale,
       editSpec,
     } = args || {};
-    const { signal: _signal, workspacePath } = context;
+    const { signal, workspacePath, sseEmitter, chatId } = context;
     if (!action) {
       return { ok: false, output: 'Missing required parameter: action.', error: 'INVALID_PARAMS' };
     }
@@ -733,6 +734,23 @@ export const pdfTool = {
       if (isAbsolute(p)) return p;
       if (workspacePath) return resolve(workspacePath, p);
       return resolve(p);
+    }
+
+    // Phase 2C (2026-05-04): every source PDF read goes through the
+    // FileSafetyGate + dirfd-bound atomicOpenLeaf and returns a
+    // Buffer. Callers pass the buffer to pdfLibOps (which now accepts
+    // either a path or a Buffer via loadBytes). Result: pdf-lib never
+    // re-opens a path, so the post-approval TOCTOU window is closed.
+    //
+    // Returns { ok:true, buffer } or a Tool-shape error result the
+    // caller can early-return.
+    async function gateAndRead(absPath) {
+      const gated = await gatedReadIntoBuffer(absPath, { workspacePath, sseEmitter, signal, chatId }, {
+        maxBytes: MAX_PDF_BYTES,
+        toolName: `pdf:${action}`,
+      });
+      if (!gated.ok) return { ok: false, output: gated.output, error: gated.error, meta: gated.meta };
+      return { ok: true, buffer: gated.buffer, realPath: gated.realPath };
     }
 
     function resolveSourceAndOutput() {
@@ -787,7 +805,25 @@ export const pdfTool = {
       }
       try {
         const isUrl = /^https?:\/\//i.test(path);
-        const result = isUrl ? await readPdfFromUrl(path) : await readPdfFromFile(path);
+        let result;
+        if (isUrl) {
+          // URL fetches don't touch local fs — no gate needed.
+          result = await readPdfFromUrl(path);
+        } else {
+          // Phase 2C (2026-05-04): gate the local read. The buffer
+          // returned by gatedReadIntoBuffer is what pdf-parse consumes,
+          // so the underlying library never re-opens the path (no
+          // post-approval TOCTOU window).
+          const absPath = isAbsolute(path) ? path : resolve(workspacePath || process.cwd(), path);
+          const gated = await gatedReadIntoBuffer(absPath, { workspacePath, sseEmitter, signal, chatId }, {
+            maxBytes: MAX_PDF_BYTES,
+            toolName: 'pdf:read',
+          });
+          if (!gated.ok) {
+            return { ok: false, output: gated.output, error: gated.error, meta: gated.meta };
+          }
+          result = await readPdfFromBuffer(gated.buffer, gated.realPath);
+        }
 
         // Page filtering
         if (pages && result.text) {
@@ -858,7 +894,15 @@ export const pdfTool = {
         if (absSources.some(p => !p)) {
           return { ok: false, output: 'merge: every entry in `sources` must be a non-empty path string.', error: 'INVALID_PARAMS' };
         }
-        const result = await mergePdfs(absSources);
+        // Gate each source individually so sensitive sources are
+        // refused / per-call prompted (round 13 contract).
+        const sourceBuffers = [];
+        for (const absSrc of absSources) {
+          const r = await gateAndRead(absSrc);
+          if (!r.ok) return r;
+          sourceBuffers.push(r.buffer);
+        }
+        const result = await mergePdfs(sourceBuffers);
         await writeBytes(outAlloc.path, result.bytes);
         return buildWriteResponse(outAlloc.path, result.bytes.length, {
           totalPages: result.totalPages,
@@ -880,7 +924,9 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const result = await splitPdf(resolved.srcPath, pageRange);
+        const r = await gateAndRead(resolved.srcPath);
+        if (!r.ok) return r;
+        const result = await splitPdf(r.buffer, pageRange);
         await writeBytes(resolved.outPath, result.bytes);
         return buildWriteResponse(resolved.outPath, result.bytes.length, {
           extractedPages: result.kept,
@@ -901,7 +947,9 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const result = await deletePages(resolved.srcPath, pageRange);
+        const r = await gateAndRead(resolved.srcPath);
+        if (!r.ok) return r;
+        const result = await deletePages(r.buffer, pageRange);
         await writeBytes(resolved.outPath, result.bytes);
         return buildWriteResponse(resolved.outPath, result.bytes.length, {
           kept: result.kept,
@@ -923,7 +971,9 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const result = await addWatermark(resolved.srcPath, watermarkText, {
+        const r = await gateAndRead(resolved.srcPath);
+        if (!r.ok) return r;
+        const result = await addWatermark(r.buffer, watermarkText, {
           opacity: watermarkOpacity,
           angle: watermarkAngle,
           fontSize: watermarkFontSize,
@@ -946,7 +996,9 @@ export const pdfTool = {
       }
       try { await mkdir(dirname(resolved.outPath), { recursive: true }); } catch { /* non-fatal */ }
       try {
-        const result = await addPageNumbers(resolved.srcPath, {
+        const r = await gateAndRead(resolved.srcPath);
+        if (!r.ok) return r;
+        const result = await addPageNumbers(r.buffer, {
           format: pageNumberFormat,
           position: pageNumberPosition,
         });
@@ -974,7 +1026,11 @@ export const pdfTool = {
         if (!absCover) {
           return { ok: false, output: 'prepend_cover: `coverPath` is required.', error: 'INVALID_PARAMS' };
         }
-        const result = await prependCover(resolved.srcPath, absCover);
+        const srcR = await gateAndRead(resolved.srcPath);
+        if (!srcR.ok) return srcR;
+        const coverR = await gateAndRead(absCover);
+        if (!coverR.ok) return coverR;
+        const result = await prependCover(srcR.buffer, coverR.buffer);
         await writeBytes(resolved.outPath, result.bytes);
         return buildWriteResponse(resolved.outPath, result.bytes.length, {
           coverPages: result.coverPages,
@@ -1013,9 +1069,21 @@ export const pdfTool = {
       const ts = Date.now().toString(36);
       const rand = randomBytes(4).toString('hex');
       const outDir = join(workspacePath, 'generated', `pdf-render-${ts}-${rand}`);
+      // Phase 2C: gate the source read into a buffer; pdftoppm is
+      // an external binary that re-opens by path, so we materialize
+      // the gate-approved buffer into a workspace tmp file (workspace-
+      // internal — silent under the gate) and point pdftoppm at THAT.
+      // The original srcPath could be racy after gate approval; the
+      // tmp file we write is fresh and not subject to the same race.
+      const srcR = await gateAndRead(srcPath);
+      if (!srcR.ok) return srcR;
+      const tmpDir = join(workspacePath, '.melo-tmp');
+      try { await mkdir(tmpDir, { recursive: true }); } catch { /* non-fatal */ }
+      const tmpPdfPath = join(tmpDir, `render-src-${ts}-${rand}.pdf`);
+      await writeBytes(tmpPdfPath, srcR.buffer);
       try {
         const result = await renderPdfPagesToPngs({
-          sourcePath: srcPath,
+          sourcePath: tmpPdfPath,
           outputDir: outDir,
           scale: renderScale,
           pageRange,
@@ -1071,6 +1139,12 @@ export const pdfTool = {
         };
       } catch (err) {
         return { ok: false, output: `render failed: ${err.message}`, error: 'RENDER_FAILED' };
+      } finally {
+        // Clean up the gate-materialized tmp source PDF.
+        try {
+          const { unlink } = await import('node:fs/promises');
+          await unlink(tmpPdfPath);
+        } catch { /* best-effort */ }
       }
     }
 
@@ -1099,7 +1173,14 @@ export const pdfTool = {
           if (!srcPath) {
             return { ok: false, output: 'from_spec.sourcePdf could not be resolved', error: 'INVALID_PARAMS' };
           }
-          const sourceBytes = await readFile(srcPath);
+          // Phase 2C: gate the source PDF read; pass Buffer to overlay
+          // engine so pdf-lib never re-opens the path. Image overlays
+          // still pass paths — applyInPlaceOverlays via loadBytes
+          // accepts either, but those are NOT yet gated. Phase 2C
+          // round 2 will gate per-overlay image reads as well.
+          const srcR = await gateAndRead(srcPath);
+          if (!srcR.ok) return srcR;
+          const sourceBytes = srcR.buffer;
           // Resolve imagePaths in overlays + apply.
           const resolvedSpec = {
             ...spec,

@@ -48,7 +48,10 @@ async function makeFakePng() {
 }
 
 async function withWorkspace(callback) {
-  const ws = await mkdtemp(join(tmpdir(), 'melo-fromspec-'));
+  // realpath: see pdfTool.actions.test.js — Phase 2C gate's
+  // workspace-silent allow needs canonical workspacePath.
+  const { realpath } = await import('node:fs/promises');
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'melo-fromspec-')));
   try {
     return await callback(ws);
   } finally {

@@ -24,7 +24,14 @@ async function makeFakePdf(numPages = 3) {
 }
 
 async function withWorkspace(callback) {
-  const ws = await mkdtemp(join(tmpdir(), 'melo-pdftool-test-'));
+  // realpath canonicalizes ancestor symlinks (e.g. macOS /var →
+  // /private/var). Phase 2C wires pdfTool through FileSafetyGate;
+  // the gate's "workspace silent" allow requires both lexical AND
+  // real to sit within workspacePath (Q1A from Phase 1). Without
+  // canonicalization here the silent path misses and gate prompts
+  // — these tests have no SSE handler so a prompt = 120s hang.
+  const { realpath } = await import('node:fs/promises');
+  const ws = await realpath(await mkdtemp(join(tmpdir(), 'melo-pdftool-test-')));
   try {
     return await callback(ws);
   } finally {
@@ -390,14 +397,25 @@ test('path contract: prepend_cover with workspace-relative coverPath', async () 
 test('path contract: absolute paths still take precedence over workspace resolution', async () => {
   // Regression on the fix itself: an absolute path to somewhere
   // outside the workspace must NOT be silently re-rooted under it.
+  // Phase 2C (2026-05-04): outside-workspace paths now require gate
+  // approval, so supply a stub SSE that auto-approves to keep the
+  // test focused on the path-routing assertion (not the gate flow).
   await withWorkspace(async ws => {
-    const outside = await mkdtemp(join(tmpdir(), 'melo-pdftool-outside-'));
+    const { realpath } = await import('node:fs/promises');
+    const outside = await realpath(await mkdtemp(join(tmpdir(), 'melo-pdftool-outside-')));
     try {
+      const grants = await import('../../safety/chatScopedGrants.js');
+      grants.clearChat();
+      const gate = await import('../../safety/fileSafetyGate.js');
+      gate._clearPendingForTests();
+      const sse = (event, payload) => {
+        queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'once'));
+      };
       const absSrc = join(outside, 'src.pdf');
       await writeFile(absSrc, await makeFakePdf(2));
       const result = await pdfTool.run(
         { action: 'split', path: absSrc, pageRange: '1' },
-        { workspacePath: ws },
+        { workspacePath: ws, chatId: 'test', sseEmitter: sse },
       );
       assert.equal(result.ok, true);
       // Output still lands in the workspace (auto-allocated).
