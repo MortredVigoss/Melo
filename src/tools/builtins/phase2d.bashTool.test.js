@@ -16,7 +16,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { mkdtemp, realpath, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { bashTool } from './bashTool.js';
@@ -615,6 +615,112 @@ test('round 13 Phase 2D followup #3: which ./malicious — path-shaped arg → p
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { silentPrompts++; } },
     );
     assert.equal(silentPrompts, 0, 'which <bare-name> → silent');
+  });
+});
+
+// ─── Phase 2D follow-up #4: realpath-based cwd check + version-probe lockdown ──
+
+test('round 13 Phase 2D followup #4: cwdOverride "$WS/../sibling" lexical escape → prompt', async () => {
+  // String prefix would let `$WS/../sibling` slip through if the
+  // sibling string starts with `$WS/`. realpath check rejects it.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Create a sibling dir outside the workspace.
+    const wsParent = await realpath(join(ws, '..'));
+    const siblingName = 'sibling-escape-' + Date.now().toString(36);
+    const sibling = join(wsParent, siblingName);
+    await mkdir(sibling);
+    try {
+      let promptCount = 0;
+      const sse = (event, payload) => {
+        promptCount++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      };
+      // ws/../sibling resolves OUTSIDE ws — must prompt.
+      const result = await bashTool.run(
+        { command: 'ls', cwd: join(ws, '..', siblingName) },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+      );
+      assert.equal(promptCount, 1, 'lexical escape via .. must prompt');
+      assert.equal(result.ok, false);
+    } finally {
+      await rm(sibling, { recursive: true, force: true });
+    }
+  });
+});
+
+test('round 13 Phase 2D followup #4: cwdOverride to workspace symlink → outside dir → prompt (realpath check)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Create an outside dir, then a symlink inside the workspace
+    // pointing at it.
+    const outside = await realpath(await mkdtemp(join(tmpdir(), 'p2d-out-')));
+    const linkPath = join(ws, 'symlink-to-outside');
+    await symlink(outside, linkPath);
+    try {
+      let promptCount = 0;
+      const sse = (event, payload) => {
+        promptCount++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      };
+      // The symlink path is INSIDE ws lexically, but realpath
+      // resolves it to the outside dir → must prompt.
+      const result = await bashTool.run(
+        { command: 'ls', cwd: linkPath },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+      );
+      assert.equal(promptCount, 1, 'symlink escape must be caught by realpath');
+      assert.equal(result.ok, false);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test('round 13 Phase 2D followup #4: node --require attack → prompt (extra args break version exact-match)', async () => {
+  // Codex 🔴: pre-#4 allowlist let `node ... --version ...` through,
+  // so `node --require /tmp/evil.js --version` would load the JS
+  // BEFORE printing version. New rule: args must be exactly
+  // `[]` / ['-v'] / ['--version'] — anything else prompts.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const r1 = await bashTool.run(
+      { command: 'node --require /tmp/evil.js --version' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'node with --require must prompt');
+    assert.equal(r1.ok, false);
+
+    // Reset gate state for next sub-call.
+    gate._clearPendingForTests();
+
+    // Also: node -e '...' which can run arbitrary code.
+    promptCount = 0;
+    await bashTool.run(
+      { command: "node -e console.log('attack')" },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
+        promptCount++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      } },
+    );
+    assert.equal(promptCount, 1, 'node -e <code> must prompt');
+  });
+});
+
+test('round 13 Phase 2D followup #4: node --version (exact) and python3 --version still silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+    for (const cmd of ['node --version', 'node -v', 'python3 --version']) {
+      await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
+    }
+    assert.equal(promptCount, 0, 'pure version probes still silent');
   });
 });
 

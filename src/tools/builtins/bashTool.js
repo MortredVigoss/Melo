@@ -30,6 +30,8 @@
  */
 
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { relative as pathRelative, isAbsolute as pathIsAbsolute } from 'node:path';
 
 import { parseBashRiskyOps } from '../../safety/bashRiskParser.js';
 import { requestBashOp } from '../../safety/fileSafetyGate.js';
@@ -80,11 +82,18 @@ const SILENT_ALLOWLIST = [
        && !a.some(x => x === '--upload-pack' || x.startsWith('--upload-pack='))
        && !a.some(x => x.startsWith('--textconv'))
   },
-  { match: (h, a) => h === 'node' && (a[0] === '-v' || a[0] === '--version' || a.includes('--version')) },
-  // language toolchain version checks — option flags only
-  { match: (h, a) => /^(python3?|ruby|perl|go|cargo|rustc)$/.test(h)
-                     && (a[0] === '-v' || a[0] === '-V' || a[0] === '--version' || a.includes('--version'))
-                     && a.every(arg => arg.startsWith('-')) },
+  // Phase 2D follow-up #4 (Codex 🔴, 2026-05-04): version probes
+  // must be EXACTLY `<bin>` / `<bin> -v` / `<bin> --version`.
+  // Any extra arg loads attacker-controlled side effects:
+  //   node --require /tmp/evil.js --version  → runs /tmp/evil.js
+  //   python -B --version                    → bytecode-disabled but
+  //                                            still benign; we still
+  //                                            refuse to keep the rule
+  //                                            obvious and uniform
+  //   ruby -e '...' --version                → runs the -e payload
+  // So: args.length 0 OR args === ['-v'] OR args === ['--version'].
+  { match: (h, a) => h === 'node' && isVersionProbe(a) },
+  { match: (h, a) => /^(python3?|ruby|perl|go|cargo|rustc)$/.test(h) && isVersionProbe(a) },
   // which / type — lookup utilities. Restrict to bare binary names
   // (no slashes, dots, tildes, leading dash) so `which ./malicious`
   // / `which ~/.ssh/foo` go through the prompt.
@@ -92,13 +101,36 @@ const SILENT_ALLOWLIST = [
   { match: (h, a) => h === 'type' && a.length > 0 && a.every(arg => /^[\w-]+$/.test(arg) && !arg.startsWith('-')) },
 ];
 
+function isVersionProbe(args) {
+  if (!Array.isArray(args)) return false;
+  if (args.length === 0) return true;
+  if (args.length === 1 && (args[0] === '-v' || args[0] === '-V' || args[0] === '--version')) return true;
+  return false;
+}
+
+// Phase 2D follow-up #4 (Codex 🔴, 2026-05-04): cwd safety must
+// realpath BOTH workspacePath and cwd, then use path.relative to
+// detect any `..` (lexical escape) or symlink-resolved escape.
+// String prefix is unsafe — `$WS/../sibling` and a symlink at
+// `$WS/link → /elsewhere` both pass a bare prefix check.
 function cwdInsideWorkspace(cwd, workspacePath) {
   if (!workspacePath || typeof workspacePath !== 'string') return false;
   if (!cwd || typeof cwd !== 'string') return false;
-  if (cwd === workspacePath) return true;
-  // Append separator so `/ws-foo` doesn't match prefix of `/ws/...`.
-  const wsWithSep = workspacePath.endsWith('/') ? workspacePath : workspacePath + '/';
-  return cwd.startsWith(wsWithSep);
+  if (!pathIsAbsolute(workspacePath) || !pathIsAbsolute(cwd)) return false;
+  let realWs;
+  let realCwd;
+  try {
+    realWs = realpathSync(workspacePath);
+    realCwd = realpathSync(cwd);
+  } catch {
+    // realpath fails (missing dir, EACCES) → treat as outside.
+    return false;
+  }
+  if (realWs === realCwd) return true;
+  const rel = pathRelative(realWs, realCwd);
+  // `..` (lexical/real escape) or absolute (different volume) → outside.
+  if (!rel || rel === '' || rel.startsWith('..') || pathIsAbsolute(rel)) return false;
+  return true;
 }
 
 function isInAllowlist(command, cwd, workspacePath) {
