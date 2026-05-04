@@ -58,25 +58,21 @@ function allOptionsOnly(args, allowedPrefixes = ['-']) {
   return args.every(arg => allowedPrefixes.some(p => arg.startsWith(p)));
 }
 
+// Phase 2D follow-up #6 (Codex 🔴, 2026-05-04): the silent
+// allowlist is collapsed to the absolute minimum — only commands
+// whose ENTIRE arg surface is path-free, expansion-free, and
+// option-interpretation-free. Removed in this round:
+//   - `date`: --file=/abs / --reference=/abs / -r /path read
+//     external files via option-embedded paths.
+//   - `echo`: shell glob `echo /etc/*` / tilde `echo ~/.ssh/*`
+//     expand BEFORE our check sees them, listing external dirs.
+//   - `ls`: any arg form risks the same expansion/path-embed.
+// Removed earlier: `git` (write/exec via --output / --exec / etc),
+// `npm/pnpm/yarn` (package.json scripts are arbitrary shell).
 const SILENT_ALLOWLIST = [
-  // Pure status / identity / no-arg utilities
+  // Truly no-arg, no-side-effect identity probes.
   { match: (h, a) => h === 'pwd' && a.length === 0 },
   { match: (h, a) => h === 'whoami' && a.length === 0 },
-  { match: (h, a) => h === 'date' && allOptionsOnly(a, ['-', '+']) },
-  { match: (h, a) => h === 'ls' && allOptionsOnly(a) },
-  { match: (h, a) => h === 'echo' && a.every(arg => !/[`$<>|&;(){}\\]/.test(arg)) },
-  // Phase 2D follow-up #5 (Codex 🔴, 2026-05-04): `git` is REMOVED
-  // from the silent allowlist entirely. Each previous round added
-  // a deny-list option (`--no-index`, `--exec`, `--upload-pack`,
-  // `--textconv`) but new options keep surfacing — `git diff
-  // --output=/tmp/x` writes arbitrarily, `git log --output=` same,
-  // `--pager=`/`--editor=`/`--external-diff=` all execute external
-  // commands. Maintaining a complete deny-list of every git option
-  // that loads externals or writes files is unrealistic. Cleanest
-  // safe answer: every `git <anything>` command goes through
-  // requestBashOp prompt. UX cost: one prompt for `git status` etc.
-  // Phase 3 UI's "always allow this exact command" can soften the
-  // friction once it ships.
   // Phase 2D follow-up #4 (Codex 🔴, 2026-05-04): version probes
   // must be EXACTLY `<bin>` / `<bin> -v` / `<bin> --version`.
   // Any extra arg loads attacker-controlled side effects:
@@ -234,6 +230,11 @@ export const bashTool = {
       const promptRisks = risks.length > 0
         ? risks
         : [{ kind: 'unknown', pattern: '(default-deny — command not on silent allowlist)', confidence: 'low' }];
+      // Phase 2D follow-up #6: pass cwd info to the gate so the UI
+      // can show realpath + workspace-membership state.
+      let realCwd = null;
+      try { realCwd = realpathSync(effectiveCwd); } catch { /* might not exist */ }
+      const cwdInWs = cwdInsideWorkspace(effectiveCwd, workspacePath);
       try {
         await requestBashOp({
           command,
@@ -242,6 +243,9 @@ export const bashTool = {
           sseEmitter,
           signal,
           workspacePath,
+          effectiveCwd,
+          realCwd,
+          cwdInsideWorkspace: cwdInWs,
         });
       } catch (err) {
         return {

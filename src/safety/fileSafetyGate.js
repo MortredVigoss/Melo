@@ -1031,6 +1031,9 @@ export async function requestBashOp({
   sseEmitter,
   signal,
   workspacePath,
+  effectiveCwd = null,
+  cwdInsideWorkspace = null,
+  realCwd = null,
 }) {
   if (!Array.isArray(risks) || !risks.length) return; // nothing risky
 
@@ -1044,6 +1047,11 @@ export async function requestBashOp({
     }
   }
 
+  // Phase 2D follow-up #6 (Codex 🟠, 2026-05-04): payload now
+  // includes the effective cwd info so the UI can show whether
+  // a cwdOverride points outside the workspace. Without this the
+  // user sees only `command` + `workspacePath` and can't tell if
+  // the command is about to run in /etc / a sensitive dir.
   await _prompt({
     sseEmitter, signal, chatId,
     kind: OP_KIND.BASH,
@@ -1051,6 +1059,9 @@ export async function requestBashOp({
       command: clipText(command, 4000),
       risks: risks.slice(0, 32),
       workspacePath: workspacePath || null,
+      effectiveCwd: effectiveCwd || null,
+      realCwd: realCwd || null,
+      cwdInsideWorkspace: cwdInsideWorkspace,
     },
   });
   // Bash approvals are always one-shot. Future commands re-prompt.

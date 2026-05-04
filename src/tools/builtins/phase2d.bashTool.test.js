@@ -48,7 +48,7 @@ function autoDeny(gate) {
 
 // ─── Zero-risk commands run silent ───────────────────────────────────
 
-test('bashTool: ls runs silent (no gate prompt)', async () => {
+test('bashTool: pwd runs silent (no gate prompt)', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let promptCount = 0;
@@ -57,11 +57,11 @@ test('bashTool: ls runs silent (no gate prompt)', async () => {
       gate.resolveFileSafety(payload.requestId, 'once');
     };
     const result = await bashTool.run(
-      { command: 'ls' },
+      { command: 'pwd' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
     assert.equal(result.ok, true);
-    assert.equal(promptCount, 0, 'ls is risk-free; must not prompt');
+    assert.equal(promptCount, 0, 'pwd is allowlisted; must not prompt');
   });
 });
 
@@ -388,19 +388,22 @@ test('round 13 Phase 2D followup #1: xargs sh -c "..." → nested_shell prompts'
 
 // ─── Allowlist hits — silent ──────────────────────────────────────────
 
-test('round 13 Phase 2D followup #1: pwd / whoami / date — allowlisted, silent', async () => {
+test('round 13 Phase 2D followup #1: pwd / whoami — allowlisted, silent', async () => {
+  // Phase 2D follow-up #6: `date` removed from allowlist (option-
+  // embedded paths like `date --file=/abs` / `-r /path`). Only
+  // truly no-arg identity probes stay silent.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let promptCount = 0;
     const sse = () => { promptCount++; };
-    for (const cmd of ['pwd', 'whoami', 'date']) {
+    for (const cmd of ['pwd', 'whoami']) {
       const r = await bashTool.run(
         { command: cmd },
         { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
       );
       assert.equal(r.ok, true, `${cmd} should succeed`);
     }
-    assert.equal(promptCount, 0, 'pwd/whoami/date are allowlisted');
+    assert.equal(promptCount, 0, 'pwd/whoami are allowlisted');
   });
 });
 
@@ -500,7 +503,7 @@ test('round 13 Phase 2D followup #3: cwdOverride OUTSIDE workspace forces prompt
       gate.resolveFileSafety(payload.requestId, 'deny');
     };
     const result = await bashTool.run(
-      { command: 'ls', cwd: '/etc' },
+      { command: 'pwd', cwd: '/etc' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
     assert.equal(promptCount, 1, 'cwdOverride outside workspace must prompt');
@@ -516,7 +519,7 @@ test('round 13 Phase 2D followup #3: cwdOverride INSIDE workspace stays silent',
     let promptCount = 0;
     const sse = () => { promptCount++; };
     const r = await bashTool.run(
-      { command: 'ls', cwd: join(ws, 'sub') },
+      { command: 'pwd', cwd: join(ws, 'sub') },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
     assert.equal(r.ok, true);
@@ -605,22 +608,19 @@ test('round 13 Phase 2D followup #5: git diff --output=/path BLOCKED — write-b
   });
 });
 
-test('round 13 Phase 2D followup #3: ls -la (option-only) silent; ls foo (path arg) prompts', async () => {
+test('round 13 Phase 2D followup #6: ls fully removed from allowlist — both ls -la and ls foo prompt', async () => {
+  // Phase 2D follow-up #6: ls removed entirely (any arg form
+  // risks shell-expansion / glob / tilde leak before our check).
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
-    let silentPrompts = 0;
-    const silentSse = () => { silentPrompts++; };
-    await bashTool.run({ command: 'ls -la' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: silentSse });
-    assert.equal(silentPrompts, 0, 'ls -la is option-only → silent');
-    let pathPrompts = 0;
-    await bashTool.run(
-      { command: 'ls foo/bar' },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
-        pathPrompts++;
-        gate.resolveFileSafety(payload.requestId, 'deny');
-      } },
-    );
-    assert.equal(pathPrompts, 1, 'ls with path arg → prompt');
+    let prompts = 0;
+    const sse = (event, payload) => {
+      prompts++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    await bashTool.run({ command: 'ls -la' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
+    await bashTool.run({ command: 'ls foo/bar' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
+    assert.equal(prompts, 2, 'every ls invocation now prompts');
   });
 });
 
@@ -748,6 +748,74 @@ test('round 13 Phase 2D followup #4: node --version (exact) and python3 --versio
       await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
     }
     assert.equal(promptCount, 0, 'pure version probes still silent');
+  });
+});
+
+// ─── Phase 2D follow-up #6: date/echo/ls removed + cwd payload ───
+
+test('round 13 Phase 2D followup #6: date --file=/etc/hosts BLOCKED (date removed from allowlist)', async () => {
+  // Codex 🔴: `date --file=/abs` reads the file as a list of date
+  // strings, leaking the file's content via timestamps in stderr/
+  // exit-code paths. Pre-#6 was silent (--file= starts with `-`).
+  // Now date is fully out → prompt.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: 'date --file=/etc/hosts' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'date --file= must prompt');
+    assert.equal(result.ok, false);
+  });
+});
+
+test('round 13 Phase 2D followup #6: echo /etc/* BLOCKED (echo removed from allowlist — shell glob expansion)', async () => {
+  // Codex 🔴: `echo /etc/*` expands the glob BEFORE our check
+  // sees it, listing /etc's contents. Removing echo from allowlist
+  // means it always prompts.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: 'echo /etc/*' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    // `*` is a metachar — already triggers metachar-reject in
+    // isInAllowlist. With echo also removed, even plain
+    // `echo hello` prompts. Both paths exit on prompt.
+    assert.equal(promptCount, 1);
+    assert.equal(result.ok, false);
+  });
+});
+
+test('round 13 Phase 2D followup #6: bash gate prompt payload exposes effectiveCwd / realCwd / cwdInsideWorkspace', async () => {
+  // Codex 🟠: prompt UI needs to see whether cwdOverride points
+  // outside the workspace so the user can spot a sensitive
+  // execution context. Round 6 adds the fields to the payload.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let captured = null;
+    const sse = (event, payload) => {
+      captured = payload;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    await bashTool.run(
+      { command: 'pwd', cwd: '/etc' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.ok(captured, 'must have captured a prompt payload');
+    assert.equal(captured.effectiveCwd, '/etc', 'effectiveCwd must reflect cwdOverride');
+    assert.equal(captured.cwdInsideWorkspace, false, 'cwdInsideWorkspace must be false for /etc');
+    assert.equal(typeof captured.realCwd, 'string', 'realCwd should be the realpath of effectiveCwd');
   });
 });
 
