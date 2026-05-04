@@ -658,7 +658,14 @@ function riskifyTokens(tokens, sepBefore = null) {
   // (over-flag) preferred per 7-round D pattern.
   {
     const cmdPosIdx = findCommandPositionIdx(tokens);
-    if (cmdPosIdx >= 0 && tokens[cmdPosIdx].kind === 'word' && hasExpansionMetachar(tokens[cmdPosIdx].text)) {
+    if (cmdPosIdx === CMD_POSITION_CAP_EXHAUSTED) {
+      // D fix #8: wrapper chain too deep — fail-closed.
+      risks.push({
+        kind: 'code_execution',
+        pattern: 'wrapper chain exceeds depth limit',
+        confidence: 'medium',
+      });
+    } else if (cmdPosIdx >= 0 && tokens[cmdPosIdx].kind === 'word' && hasExpansionMetachar(tokens[cmdPosIdx].text)) {
       for (let j = cmdPosIdx + 1; j < tokens.length; j++) {
         const u = tokens[j];
         if (u.kind !== 'word') continue;
@@ -966,9 +973,15 @@ const POSITIONAL_VALUE_WRAPPERS = new Set([
 // already a non-wrapper word). The result is used by D fix #7's
 // expansion-at-wrapped-position detection — if the returned token has
 // expansion metachars + any non-flag positional follows, hard-reject.
+// Sentinel: wrapper chain exceeded the depth limit (still in wrapper
+// chain when we hit the cap). Caller treats this as suspicious and
+// hard-rejects. Distinct from -1 (no command position found at all).
+const CMD_POSITION_CAP_EXHAUSTED = -2;
+
 function findCommandPositionIdx(tokens) {
   let i = skipPreamble(tokens);
-  for (let iter = 0; iter < 16 && i < tokens.length; iter++) {
+  let iter = 0;
+  for (; iter < 16 && i < tokens.length; iter++) {
     const t = tokens[i];
     if (t.kind !== 'word') { i++; continue; }
     const text = t.text;
@@ -999,6 +1012,14 @@ function findCommandPositionIdx(tokens) {
       break;
     }
   }
+  // D fix #8 (Codex 🔴 round 8, 2026-05-04): fail-closed cap. If we
+  // ran out of iterations while still inside a wrapper chain (i.e.
+  // cap reached + tokens not exhausted), `env env ... env $AWK PROG`
+  // 16+ deep would silently return -1 (= no flag) and shell would
+  // execute the chain. Return a sentinel so caller hard-rejects.
+  // Legitimate 16+-layer wrapper chains are extremely rare; over-
+  // flag accepted per nuclear pattern.
+  if (iter >= 16 && i < tokens.length) return CMD_POSITION_CAP_EXHAUSTED;
   return -1;
 }
 

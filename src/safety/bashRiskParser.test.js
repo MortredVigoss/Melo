@@ -715,6 +715,59 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
+test('Codex D fix #8: deep wrapper chain (16+ layers) → fail-closed code_execution', () => {
+  // Codex round 8 found `env env ... env $AWK 'PROG'` 16+ layers of
+  // wrapper bypassed because findCommandPositionIdx had `iter < 16`
+  // cap that returned -1 (fail-open). Fix: fail-closed sentinel —
+  // cap exhausted while still in wrapper chain → hard-reject.
+  function envChain(n, tail) {
+    return Array(n).fill('env').join(' ') + ' ' + tail;
+  }
+  for (const cmd of [
+    envChain(15, `$AWK 'PROG'`),               // 15 layers — walks through
+    envChain(16, `$AWK 'PROG'`),               // 16 layers — cap exhausted
+    envChain(17, `$AWK 'PROG'`),               // over cap
+    envChain(20, `$AWK 'PROG'`),
+    envChain(50, `$AWK 'PROG'`),               // pathological
+    envChain(20, `awk -f script.awk`),         // accepted over-flag: deep wrapper + ANY tail
+    // Mixed deep wrapper chains:
+    Array(20).fill('sudo').join(' ') + ` $CMD 'PROG'`,
+    Array(8).fill('env').join(' ') + ' ' + Array(8).fill('xargs').join(' ') + ` $AWK 'PROG'`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd.length > 60 ? cmd.slice(0, 50) + '...' : cmd} must be code_execution (deep wrapper chain)`,
+    );
+  }
+});
+
+test('Codex D fix #8: regression — wrapper chains under cap still resolve correctly', () => {
+  // Pin: chains within the 16-iter cap return correct command
+  // position (not the fail-closed sentinel). They should produce
+  // expected detection (code_execution if expansion + positional,
+  // nothing otherwise).
+  for (const cmd of [
+    `env env $AWK 'PROG'`,                     // 2 layers, expansion + positional → flag
+    `env env env env env $AWK 'PROG'`,         // 5 layers
+    `env env env $DIR`,                         // 3 layers, expansion no positional → no flag
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    if (cmd.includes(`'PROG'`)) {
+      assert.ok(
+        risks.some(r => r.kind === 'code_execution'),
+        `${cmd} should flag (expansion + positional within cap)`,
+      );
+    } else {
+      assert.equal(
+        risks.filter(r => r.kind === 'code_execution').length,
+        0,
+        `${cmd} should NOT flag (expansion no positional within cap)`,
+      );
+    }
+  }
+});
+
 test('Codex D fix #7: wrapped-position expansion + positional → code_execution', () => {
   // Codex round 7 found D fix #6 only checked DIRECT head expansion;
   // wrapper + expansion at wrapped command position bypassed:

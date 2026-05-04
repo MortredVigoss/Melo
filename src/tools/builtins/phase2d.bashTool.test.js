@@ -2176,6 +2176,33 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix #8: deep wrapper chain (16+ env layers) + autoApprove cannot delete file', async () => {
+  // Codex round 8 found `env env ... env $AWK 'PROG'` 16+ deep
+  // bypassed because the iter cap fail-opened. Pin attack vector
+  // via 17-layer + 25-layer env chains.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const layers of [17, 25]) {
+      const target = join(ws, `dfix8-attack-${layers}-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const envPrefix = Array(layers).fill('env').join(' ');
+      const result = await bashTool.run(
+        { command: `${envPrefix} $AWK 'BEGIN{system("rm -f ${target}")}'` },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${layers}-layer env should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${layers}-layer env file untouched`);
+    }
+    assert.equal(promptCount, 0, 'deep wrapper chains must hard-reject pre-prompt');
+  });
+});
+
 test('Codex D fix #7: wrapped-position expansion + autoApprove cannot delete file', async () => {
   // Codex round 7 found D fix #6 missed wrapper + $AWK forms.
   // findCommandPositionIdx now walks past wrapper chain to reach

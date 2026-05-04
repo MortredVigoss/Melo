@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-05-04 — Codex D #8：findCommandPositionIdx 16-iter cap fail-closed
+
+- D fix #7 (`9fa5789`) push 后跑第八轮 codex review，Codex 评 **D**：`findCommandPositionIdx()` 用 `iter < 16` 防 wrapper-of-wrapper 病态，cap 到了**fail-open**（return -1，不 flag）。Codex 实测：`env env ... env $AWK 'PROG'` 15 层 catch、16+ 层全空，但 shell 仍逐层 exec 到 `$AWK 'PROG'`。深层 wrapper chain bypass。
+- 单方案修：**fail-closed cap**。新加 sentinel `CMD_POSITION_CAP_EXHAUSTED = -2`。`findCommandPositionIdx` 在 cap 到达且 token 未耗尽（`iter >= 16 && i < tokens.length`）时返回 -2。caller 看到 sentinel 直接 push `code_execution: 'wrapper chain exceeds depth limit'`。
+- 闭环（手动 9 case 验证）：
+  - ✅ 15 层 env / 16 层 / 17 层 / 20 层 / 50 层 + `$AWK 'PROG'` 全 catch
+  - ✅ 20 层 sudo + `$CMD 'PROG'` catch
+  - ✅ 8+8 层 env+xargs mixed deep chain catch
+  - ✅ 20 层 env + `awk -f script.awk`（即使是 -f 安全形态，深 wrapper 仍 over-flag — 接受）
+- false positive 边界（pin 未误报）：
+  - 浅 wrapper chain (1-15 层) 仍按现有 D fix #7 逻辑（expansion + positional → flag；无 positional → 不 flag）
+  - `env env env $DIR`（3 层 + 无 positional）→ 不 flag ✓
+  - `env env $AWK 'PROG'`（2 层 + expansion + positional）→ flag ✓ 通过 D fix #7 path
+  - `cat $FILE` head-literal → 不 flag ✓
+- accepted over-flag：16+ 层 wrapper-of-wrapper 命令一律 hard-reject。合法用法极罕见（`env env env...` 是 attack pattern）；过度 wrap 通常意味着混淆。
+- 测试加 3 case：parser 2 case（① 8 形态深链 attack：15/16/17/20/50 层 env + 20 层 sudo + 8+8 mixed env+xargs + 20 层 env + 安全 -f；② 3 形态 cap-内 chain 仍正确解析 (2/5 层 + expansion+positional flag, 3 层无 positional 不 flag)）；e2e 1 case（17 层 + 25 层 env + `$AWK 'PROG'` autoApprove + 文件保留）。
+- 验证：`src/safety/bashRiskParser.test.js` **85/85 全绿**（前 83 + 2 新）；`src/tools/builtins/phase2d.bashTool.test.js` **111/111 全绿**（前 110 + 1 新）；`src/**/*.test.js` **1953/1953 全绿**（前 1950 + 3 新；零既有回归）。
+- **教训**：① fail-open default in safety gate is wrong — always fail-closed when uncertainty hits a hard limit；② iter cap 不是设计完整保证，是 defensive measure，hit cap = 异常 → over-flag；③ Codex 8 轮 D 第一次没找新维度（cap fail-open 是同一 wrapper 维度的 boundary case） — D fix 系列开始 converge；④ 简单 sentinel 模式比 throwing exception 干净 — caller 显式判断 -2 比 try/catch 清楚。
+
+---
+
 ## 2026-05-04 — Codex D #7 + 方案 W'：wrapper-position expansion 闭环
 
 - D fix #6 (`6c8b84c`) push 后跑第七轮 codex review，Codex 评 **D**：D fix #6 只检 `skipPreamble()` 后的**直接 head**，wrapper-后 expansion 漏：
