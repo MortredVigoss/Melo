@@ -595,6 +595,76 @@ test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text w
   }
 });
 
+test('Codex D fix #2: xargs / find -exec / wrapper-of-wrapper awk inline → code_execution (token-scan)', () => {
+  // Codex pre-pp re-review of the round 14 D-fix (D-graded again,
+  // 2026-05-04): D-fix #1 added hasInlineFlag for direct `gawk -e`,
+  // but missed `xargs gawk -e` because xargs isn't a COMMAND_WRAPPER.
+  // findWrappedCommand returned null and the entire awk block was
+  // skipped. Fix: add awk token-scan modeled on round 10's SCRIPT_
+  // INTERPRETERS scan — find awk-family at ANY token position +
+  // downstream inline flag. Pin all wrapper variants here.
+  for (const cmd of [
+    `xargs gawk -e 'BEGIN{system("rm")}'`,
+    `xargs gawk --source='BEGIN{system("rm")}'`,
+    `xargs -I{} gawk -e 'system("rm")' {}`,
+    `xargs -0 awk --source 'system("rm")'`,
+    `find . -exec gawk -e 'BEGIN{system("rm")}' {} \\;`,
+    `find . -name '*.txt' -exec awk --source='BEGIN{system("rm")}' {} +`,
+    `env xargs gawk -e 'BEGIN{system("rm")}'`,            // wrapper-of-wrapper
+    `printf data | xargs awk --source 'BEGIN{system("rm")}'`,
+    `time xargs gawk -e 'system("rm")'`,                   // time + xargs + awk
+    `nice -n 10 xargs awk --source='system("rm")'`,        // nice + xargs + awk
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (token-scan covers wrapper bypass)`,
+    );
+  }
+});
+
+test('Codex D fix #2: regression — token-scan does NOT mis-flag awk-as-data-token', () => {
+  // The token-scan trade-off: `echo "awk -e foo"` (3 echo args
+  // including the literal token 'awk' and '-e<glued>') would flag.
+  // Single-quoted string keeps it as 1 token after tokenize, no
+  // flag. Pin this distinction.
+  // 1-token (single quoted) — should NOT flag:
+  for (const cmd of [
+    `echo 'awk -e foo'`,                  // single-quoted = 1 token after tokenize
+    `echo "use awk -e syntax"`,            // double-quoted = 1 token
+    `cat docs/awk-tutorial.md`,            // 'awk' in path, no -e nearby
+    `grep 'awk -e' docs/`,                 // single-quoted pattern
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (awk is data, not a real invocation)`,
+    );
+  }
+  // Multi-token (3 unquoted args) — known false positive, accept:
+  // `echo awk -e hello` would flag. Documented as known-limit; agent
+  // uses `echo 'awk -e hello'` to avoid.
+});
+
+test('Codex D fix #2: regression — direct awk -f script.awk still NOT flagged after token-scan', () => {
+  // Token-scan looks for awk-family + later inline-flag; -f doesn't
+  // qualify as inline-flag → -f-only commands stay unflagged.
+  for (const cmd of [
+    `awk -f script.awk file.txt`,
+    `gawk -f /tmp/x.awk data.txt`,
+    `xargs awk -f script.awk`,             // wrapper + -f only (no -e)
+    `find . -exec awk -f /tmp/x.awk {} \\;`, // find -exec + -f only
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (-f only, no inline flag)`,
+    );
+  }
+});
+
 test('Codex D fix: gawk -e/--source inline-program flags (all 4 forms) → code_execution', () => {
   // Codex pre-pp review of the round-14 batch (graded D, 2026-05-04):
   // round-14 awk detector caught the SEPARATE `-e PROGRAM` form via

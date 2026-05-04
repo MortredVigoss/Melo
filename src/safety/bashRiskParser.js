@@ -649,6 +649,54 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
+  // Codex pre-pp review of the round-14 D-fix (D-graded, 2026-05-04):
+  // findWrappedCommand only recognizes COMMAND_WRAPPERS (sudo / env /
+  // nohup / nice / etc.) — `xargs` is NOT a member because xargs's
+  // arg semantics (`-I` / `-n` / `-0` / `-P`) don't fit the simple
+  // "skip flag + value" wrapper-skip model used by sudo/env. Result:
+  // `xargs gawk -e PROG` makes findWrappedCommand return null and
+  // the entire awk-detection block above is skipped → the inline
+  // program gets neither hard-rejected nor positional-flagged.
+  // Same structural blind-spot round 8 closed for nested_shell and
+  // round 10 closed for SCRIPT_INTERPRETERS: head-aware detection
+  // misses wrapper variants, fix is a TOKEN-SCAN that finds the
+  // interpreter at ANY position.
+  //
+  // Apply the same pattern to awk: scan ALL word tokens for an
+  // awk-family basename, then check downstream for an inline-flag
+  // form. This subsumes:
+  //   - `xargs awk -e PROG`
+  //   - `xargs -I{} gawk --source=PROG {}`
+  //   - `xargs -0 awk --source PROG`
+  //   - `find . -exec awk -e PROG {} \;` (in same sub-command)
+  //   - any wrapper-of-wrapper that doesn't go through findWrapped-
+  //     Command (busybox awk, `time xargs awk -e`, etc.)
+  //   - direct `gawk -e PROG` invocation (overlaps with the head-
+  //     aware block above; double push is harmless — gate hard-
+  //     rejects on first code_execution)
+  // Trade-off (same as round 8 nested_shell token-scan): `echo "awk
+  // -e foo"` (3 echo args including 'awk' and '-e<glued>') would
+  // flag. Agent uses single-quoted `'awk -e foo'` (1 token) to
+  // avoid; rare false positive, accepted.
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') continue;
+    if (!isAwkBasename(t.text)) continue;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.kind !== 'word') continue;
+      const a = u.text;
+      if (a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')) {
+        risks.push({
+          kind: 'code_execution',
+          pattern: `${tokenBasename(t.text)} -e/--source inline (token-scan)`,
+          confidence: 'high',
+        });
+        break;
+      }
+    }
+  }
+
   // gsed = GNU sed on BSD systems via homebrew; same e-cmd surface.
   const sedToken = findWrappedCommand(tokens, text => /^g?sed$/.test(tokenBasename(text)));
   if (sedToken) {

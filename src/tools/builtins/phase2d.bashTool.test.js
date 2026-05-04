@@ -2176,6 +2176,39 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix #2: xargs gawk -e<glued> + autoApprove cannot delete file (token-scan covers wrappers)', async () => {
+  // Codex re-review of D-fix #1 found xargs bypass: D-fix added
+  // hasInlineFlag for direct -e/--source but xargs gawk -e was
+  // outside findWrappedCommand's COMMAND_WRAPPERS so the entire
+  // awk block didn't run. Token-scan now catches awk-family at any
+  // token position. Pin attack vector via xargs.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `printf 'a\\n' | xargs gawk -e 'BEGIN{system("rm -f ${target}")}'`,
+      target => `printf 'a\\n' | xargs gawk --source='BEGIN{system("rm -f ${target}")}'`,
+      target => `printf 'a\\n' | xargs -I{} gawk -e 'BEGIN{system("rm -f ${target}")}' {}`,
+      target => `find /tmp -name 'nope-${Date.now()}-*' -exec gawk -e 'BEGIN{system("rm -f ${target}")}' {} \\;`,
+    ]) {
+      const target = join(ws, `xargs-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all xargs/find-exec wrapper forms must hard-reject pre-prompt');
+  });
+});
+
 test('Codex D fix: gawk -e<glued> + autoApprove cannot delete file (4 forms)', async () => {
   // Codex pre-pp review of the round-14 batch (graded D, 2026-05-04):
   // POSIX-glued `-e<...>` and long `--source[=]<...>` forms bypassed

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-05-04 — Codex 又抓 D #2：`xargs gawk -e ...` token-scan 闭环
+
+- D-fix #1 (`dba8ea3`) push 后用户拍板再跑 codex review，Codex 又评 **D**：`xargs gawk -e'BEGIN{system("rm")}'` / `printf data | xargs gawk --source=...` 不经过 `findWrappedCommand`（xargs 不在 COMMAND_WRAPPERS — 它的 `-I/-n/-0/-P` 复杂 flag 不适配 sudo/env 同款的"skip flag + value"逻辑），awk 检测整段不进入 → 漏 → autoApprove 一键执行。Codex 还指 `find . -exec awk -e PROG {} ;` / `xargs -I{} awk -e ...` 同款 wrapper 形态。这是结构性盲区：head-aware findWrappedCommand 永远漏 wrapper-of-wrapper 形态。
+- **方案 A（用户拍板，Codex 推荐）**：复用 round 8 / round 10 的 token-scan 模式 — 扫**整 tokens 数组**找 awk-family basename + 后续 inline-flag (`-e` / `-eX` / `--source` / `--source=X`)。head-aware 检测保留（覆盖 `awk 'PROG'` 无 wrapper 的 positional 路径），新加 token-scan 在其后追加。两段可能双 push code_execution，gate 任一即 hard-reject，无副作用。
+- 实现：[src/safety/bashRiskParser.js](src/safety/bashRiskParser.js) awk 检测块尾追加 token-scan 双层循环：外层扫 awk-family (`awk`/`gawk`/`mawk`/`nawk` via `isAwkBasename`)，内层扫后续 token 的 inline flag。命中 → push `${basename} -e/--source inline (token-scan)`。
+- 覆盖矩阵（手动验证）：`xargs gawk -e` / `xargs gawk --source=` / `xargs -I{} gawk -e` / `xargs -0 awk --source` / `find . -exec gawk -e {} \;` / `find -name '*' -exec awk --source= {} +` / `env xargs gawk -e`（wrapper-of-wrapper） / `time xargs gawk -e` / `nice -n 10 xargs awk --source=` / 直接 `awk -e PROG`（双层都 catch）全部命中。`awk -f script.awk` 仍不被误标（token-scan 只看 inline-flag 不看 `-f`）。
+- 测试加 4 case：parser 3 case（① 10 wrapper 形态全标 token-scan code_execution；② token-scan regression — `echo 'awk -e foo'` / `echo "use awk -e syntax"` / `cat docs/awk-tutorial.md` / `grep 'awk -e' docs/` 单 token 不误标，pin 文件名/单引号场景；③ `awk -f script` 在 wrapper 形态下仍不标 — `xargs awk -f` / `find -exec awk -f` / 直接 `gawk -f`）；e2e 1 case（4 形态 xargs + find-exec wrapper autoApprove + 文件保留 attack vector）。
+- 验证：`src/safety/bashRiskParser.test.js` **67/67 全绿**（前 64 + 3 新）；`src/tools/builtins/phase2d.bashTool.test.js` **105/105 全绿**（前 104 + 1 新）；`src/**/*.test.js` **1929/1929 全绿**（前 1925 + 4 新；零既有回归）。
+- **已知 trade-off**：token-scan 同 round 8 nested_shell 同款 — `echo awk -e hello`（3 个 echo 参数 unquoted，同时含 'awk' 和 `-e<glued>`）会假阳。Agent 用单引号包成 1 token (`echo 'awk -e hello'`) 即绕开。可接受。
+- **教训记**：① head-aware 单层检测对每个 wrapper 形态都漏，结构性问题；② token-scan 是 round 8 + round 10 两次 D 之后已经验证的"按最稳的来"模式 — awk 的 round-14 实现没复用是结构疏忽；③ 现在 awk 检测有 head-aware (positional/pipe/redirect) + hasInlineFlag + token-scan 三层并行，长期看应重构为单一 token-scan + flag-detection（删 head-aware）— 留独立刀，本次先收 D fix。
+
+---
+
 ## 2026-05-04 — Codex 抓 D：gawk `-e<glued>` / `--source` inline-program bypass
 
 - 用户拍板手动跑 `codex review` 评 6 个已 push 的 commit (eb9e541..648340d)。Codex 评 **D**，找到一个真 bypass：`gawk -e'BEGIN{system("rm /tmp/x")}'` (POSIX-glued `-e`) 和 `gawk --source='BEGIN{system("rm /tmp/x")}'` 完全不被 round 14 的 awk detector flag — `parseBashRiskyOps` 返回空 risks → autoApprove 一键跑 `system("rm")`。Codex 用 `node -e` 直接验证 reproducible。按 CLAUDE.md §4 D 评级 = 停止后续改写 + 给用户出方案 + 用户拍板后再修。
