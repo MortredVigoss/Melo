@@ -16,7 +16,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { bashTool } from './bashTool.js';
@@ -474,6 +474,147 @@ test('round 13 Phase 2D followup #1: ls with metachars NOT silent (allowlist req
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
     );
     assert.equal(promptCount, 1, 'ls with metachars must prompt');
+  });
+});
+
+// ─── Phase 2D follow-up #3: cwdOverride + path-arg bypasses ─────────
+
+test('round 13 Phase 2D followup #3: cwdOverride OUTSIDE workspace forces prompt even for allowlisted commands', async () => {
+  // Codex 🔴: `ls` is on the silent allowlist, but with
+  // cwdOverride: '/etc' it would silently list /etc. Allowlist
+  // now requires cwd inside workspacePath; otherwise → prompt.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: 'ls', cwd: '/etc' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'cwdOverride outside workspace must prompt');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 13 Phase 2D followup #3: cwdOverride INSIDE workspace stays silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    await mkdir(join(ws, 'sub'));
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+    const r = await bashTool.run(
+      { command: 'ls', cwd: join(ws, 'sub') },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(r.ok, true);
+    assert.equal(promptCount, 0);
+  });
+});
+
+test('round 13 Phase 2D followup #3: ls ~/.ssh — path arg → prompt (not silent)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: 'ls ~/.ssh' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'ls with path arg must prompt');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 13 Phase 2D followup #3: git diff --no-index ~/.ssh /tmp — explicit deny-list option blocks silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    const result = await bashTool.run(
+      { command: 'git diff --no-index ~/.ssh/known_hosts /tmp' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1, 'git diff --no-index must prompt');
+    assert.equal(result.ok, false);
+  });
+});
+
+test('round 13 Phase 2D followup #3: git log -- some/path — positional path arg → prompt', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    await bashTool.run(
+      { command: 'git log -- some/path' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
+    );
+    assert.equal(promptCount, 1);
+  });
+});
+
+test('round 13 Phase 2D followup #3: git diff (no args) and git log --oneline still silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = () => { promptCount++; };
+    for (const cmd of ['git diff', 'git log --oneline', 'git status', 'git branch']) {
+      await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
+    }
+    assert.equal(promptCount, 0, 'option-only git invocations stay silent');
+  });
+});
+
+test('round 13 Phase 2D followup #3: ls -la (option-only) silent; ls foo (path arg) prompts', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let silentPrompts = 0;
+    const silentSse = () => { silentPrompts++; };
+    await bashTool.run({ command: 'ls -la' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: silentSse });
+    assert.equal(silentPrompts, 0, 'ls -la is option-only → silent');
+    let pathPrompts = 0;
+    await bashTool.run(
+      { command: 'ls foo/bar' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
+        pathPrompts++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      } },
+    );
+    assert.equal(pathPrompts, 1, 'ls with path arg → prompt');
+  });
+});
+
+test('round 13 Phase 2D followup #3: which ./malicious — path-shaped arg → prompt; which cat → silent', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let pathPrompts = 0;
+    await bashTool.run(
+      { command: 'which ./malicious' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
+        pathPrompts++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      } },
+    );
+    assert.equal(pathPrompts, 1, 'which with slash → prompt');
+    let silentPrompts = 0;
+    await bashTool.run(
+      { command: 'which cat' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { silentPrompts++; } },
+    );
+    assert.equal(silentPrompts, 0, 'which <bare-name> → silent');
   });
 });
 
