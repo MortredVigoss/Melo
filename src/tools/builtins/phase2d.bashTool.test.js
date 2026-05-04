@@ -2176,6 +2176,39 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix: gawk -e<glued> + autoApprove cannot delete file (4 forms)', async () => {
+  // Codex pre-pp review of the round-14 batch (graded D, 2026-05-04):
+  // POSIX-glued `-e<...>` and long `--source[=]<...>` forms bypassed
+  // round 14's awk detector. autoApprove + one click ran
+  // system("rm <target>"). Pin all 4 attack vectors → 0 prompt +
+  // DENIED + file preserved.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `gawk -e'BEGIN{system("rm -f ${target}")}'`,            // POSIX-glued -e
+      target => `gawk --source 'BEGIN{system("rm -f ${target}")}'`,     // long separate
+      target => `gawk --source='BEGIN{system("rm -f ${target}")}'`,     // long glued
+      target => `gawk -e 'BEGIN{system("rm -f ${target}")}'`,           // separate (already caught in round 14, regression)
+    ]) {
+      const target = join(ws, `gawk-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 4 inline-flag forms must hard-reject pre-prompt');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {

@@ -595,6 +595,69 @@ test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text w
   }
 });
 
+test('Codex D fix: gawk -e/--source inline-program flags (all 4 forms) → code_execution', () => {
+  // Codex pre-pp review of the round-14 batch (graded D, 2026-05-04):
+  // round-14 awk detector caught the SEPARATE `-e PROGRAM` form via
+  // the positional-scan loop, but missed three glued/long variants:
+  //   `gawk -e'BEGIN{system("rm")}'`            (POSIX-glued -e)
+  //   `gawk --source 'BEGIN{system("rm")}'`     (long separate)
+  //   `gawk --source='BEGIN{system("rm")}'`     (long glued)
+  // All three matched `if (a.startsWith('-')) continue;` in the
+  // positional-scan loop, the program payload was lost, and
+  // autoApprove + one click executed system(). Fixed by an explicit
+  // hasInlineFlag check BEFORE the hasFileFlag exemption.
+  for (const cmd of [
+    `gawk -e 'BEGIN{system("rm /tmp/x")}'`,             // separate
+    `gawk -e'BEGIN{system("rm /tmp/x")}'`,              // POSIX-glued -e
+    `gawk --source 'BEGIN{system("rm /tmp/x")}'`,       // long separate
+    `gawk --source='BEGIN{system("rm /tmp/x")}'`,       // long glued
+    `awk -e'foo'`,                                       // bare awk + glued
+    `mawk -e 'foo'`,                                     // mawk + separate (apply uniformly)
+    `nawk --source='foo'`,                               // nawk + glued long
+    `env gawk -e'system("rm")'`,                        // wrapper-aware
+    `sudo -E gawk --source='system("rm")'`,             // wrapper-aware long-glued
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (-e/--source inline program)`,
+    );
+  }
+});
+
+test('Codex D fix: regression — awk -f script.awk still NOT flagged after inline-flag fix', () => {
+  // The new hasInlineFlag branch must not steal cases that have
+  // -f/--file (file-source, fileRead-gated). Pin: -f forms remain
+  // unflagged at the parser level (they reach the prompt for the
+  // user to decide).
+  for (const cmd of [
+    `awk -f script.awk file.txt`,
+    `awk -fscript.awk file.txt`,
+    `awk --file=script.awk file.txt`,
+    `awk --file script.awk file.txt`,
+    `gawk -f /tmp/x.awk data.txt`,
+    `cat data.txt | awk -f script.awk`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (program from file)`,
+    );
+  }
+});
+
+test('Codex D fix: regression — `awk -f script.awk -e "extra inline"` is flagged (inline part wins)', () => {
+  // If a command has BOTH -f and -e, awk runs both: -f script first,
+  // then -e program. The inline part is dangerous → flag. Pin: hasInlineFlag
+  // takes precedence over hasFileFlag exemption.
+  const risks = parseBashRiskyOps(`awk -f script.awk -e 'BEGIN{system("rm")}' data.txt`).risks;
+  assert.ok(
+    risks.some(r => r.kind === 'code_execution'),
+    'awk with both -f and -e must flag (inline part is dangerous)',
+  );
+});
+
 test('Phase 2D #14 follow-up: sed exotic-delim with escaped delim in PATTERN/REPLACEMENT still flags', () => {
   // The imperative scanner advances by 2 chars on `\\` so an
   // escaped delim inside PATTERN/REPLACEMENT doesn't terminate the

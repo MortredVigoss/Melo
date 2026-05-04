@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-05-04 — Codex 抓 D：gawk `-e<glued>` / `--source` inline-program bypass
+
+- 用户拍板手动跑 `codex review` 评 6 个已 push 的 commit (eb9e541..648340d)。Codex 评 **D**，找到一个真 bypass：`gawk -e'BEGIN{system("rm /tmp/x")}'` (POSIX-glued `-e`) 和 `gawk --source='BEGIN{system("rm /tmp/x")}'` 完全不被 round 14 的 awk detector flag — `parseBashRiskyOps` 返回空 risks → autoApprove 一键跑 `system("rm")`。Codex 用 `node -e` 直接验证 reproducible。按 CLAUDE.md §4 D 评级 = 停止后续改写 + 给用户出方案 + 用户拍板后再修。
+- **Bug 来源**：round 14 的 awk 检测块只用 `if (a.startsWith('-')) continue;` 把所有 `-` 起始 token 当 flag skip。结果：① `-e PROG`（separate）下个 token 还在 wordArgs 里，positional 扫描 catch ✓；② `-e<PROG>`（POSIX-glued）整个 token 当 flag skip → 程序 payload 丢失 ❌；③ `--source <PROG>` (long separate) 同款 ❌；④ `--source=<PROG>` (long glued) 同款 ❌。和 round 14 self-review 的 var=val skip bug 同源 — 我对 awk flag 集合理解不全。
+- **修复**：仅改 awk 检测块，加 `hasInlineFlag` 判定置于 `hasFileFlag` 之前：
+  ```js
+  const hasInlineFlag = wordArgs.some(a =>
+    a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')
+  );
+  if (hasInlineFlag) {
+    risks.push({ kind: 'code_execution', pattern: `${tokenBasename(awkToken.text)} -e/--source inline`, ... });
+  } else if (!hasFileFlag) {
+    // 现有 positional / pipe / stdin 检测
+  }
+  ```
+  POSIX awk 没 `-e` / `--source` 但 GNU awk 有 — 我们对所有 awk-family head 统一应用（false-positive cost 是 "agent 用 -f 替代"，可接受）。`-e` / `--source` 优先级高于 `-f` 豁免：`awk -f script -e 'PROG'` 仍标 code_execution（inline 部分危险）。
+- 测试加 4 case：parser 3 case（① 9 形态 `-e<glued>` / `-e separate` / `--source separate` / `--source=glued` / 各 awk-family / wrapper 全标；② 6 形态 `-f` 仍不标 regression；③ `awk -f -e` 双 flag inline 优先标）；e2e 1 case（4 形态 autoApprove + 文件保留 attack vector）。
+- 验证：`src/safety/bashRiskParser.test.js` **64/64 全绿**（前 61 + 3 新）；`src/tools/builtins/phase2d.bashTool.test.js` **104/104 全绿**（前 103 + 1 新）；`src/**/*.test.js` **1925/1925 全绿**（前 1921 + 4 新；零既有回归）。
+- **教训**：① push 前没自审是规则违反 — Codex 评 D 直接证明手动 self-review 抓不出 awk flag 集合的盲区；② 之后所有 commit push 前必走 codex review（如果 Codex 额度允许）或至少 melo-code-review skill；③ awk 这种灵活 flag 的 deny-list 永远写不全 — 应该转向"任何非 -f 的 program-like input 全标"，而不是逐个 flag enumerate（下轮如果再 D，按这个方向重写）。
+
+---
+
 ## 2026-05-04 — sed exotic delimiter coverage (Phase 2D round 14 known-limit closure)
 
 - Round 14 末尾自标 known limit #1：sed substitute 接受任意第一字符作为 delimiter（`s,x,y,e` / `s|x|y|e` / `s:x:y:e` / `s#x#y#e` / `s@x@y@e` 全合法），但 pattern 2 是 `/`-delim only regex。JS regex 不支持 `[^\1]` 反引用，没法用单 regex 通用覆盖。Codex 大概率下一刀就 demo 这个绕过。按"不糊弄 follow-up"规则现在补，不等 Codex 点名。

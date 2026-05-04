@@ -566,7 +566,33 @@ function riskifyTokens(tokens, sepBefore = null) {
     const hasFileFlag = wordArgs.some(a =>
       a === '-f' || /^-f.+/.test(a) || a === '--file' || a.startsWith('--file=')
     );
-    if (!hasFileFlag) {
+    // Codex pre-pp review of round 14 (D-graded, 2026-05-04): GNU
+    // awk also has inline-program flags `-e PROGRAM` / `-eXXX`
+    // (POSIX-glued) / `--source PROGRAM` / `--source=XXX`. Original
+    // round-14 code only caught the SEPARATE `-e PROGRAM` form
+    // (next token reached the positional-scan loop), but glued
+    // forms `-e<glued>` / `--source=<glued>` matched the generic
+    // `if (a.startsWith('-')) continue;` flag-skip and the program
+    // payload was lost — `gawk -e'BEGIN{system("rm /tmp/x")}'`
+    // returned ZERO risks → autoApprove + one click executed
+    // system().
+    //
+    // Same risk profile as the positional inline form: the program
+    // is right there in argv, just under a different flag name.
+    // Hard-reject as code_execution. Note the long-form `--source`
+    // is GNU-specific; `-e` is also GNU but we apply uniformly to
+    // any awk-family head since false-positive cost is just "agent
+    // rewrites with -f" (acceptable).
+    const hasInlineFlag = wordArgs.some(a =>
+      a === '-e' || /^-e.+/.test(a) || a === '--source' || a.startsWith('--source=')
+    );
+    if (hasInlineFlag) {
+      risks.push({
+        kind: 'code_execution',
+        pattern: `${tokenBasename(awkToken.text)} -e/--source inline`,
+        confidence: 'high',
+      });
+    } else if (!hasFileFlag) {
       // Find first non-flag positional. awk flags that take a
       // value: `-F sep`, `-v var=val`, `-W gawk-extension`, `-i
       // inplace` (already handled separately as in_place_edit).
