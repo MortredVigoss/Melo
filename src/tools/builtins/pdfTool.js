@@ -1082,11 +1082,18 @@ export const pdfTool = {
       if (!srcR.ok) return srcR;
       const { mkdtempSync, writeFileSync, chmodSync } = await import('node:fs');
       const { tmpdir: osTmpdir } = await import('node:os');
+      // Phase 2C follow-up #3 (Codex 🟠): tmp lifecycle starts at
+      // mkdtempSync, BEFORE chmod / writeFile / render. Wrap the
+      // entire sequence in try/finally so an exception anywhere
+      // (chmod failure, writeFile failure, renderPdfPagesToPngs
+      // throw) still removes the gate-approved PDF copy from
+      // system tmp. The earlier code had try{} starting after
+      // writeFileSync, so a write failure leaked the dir.
       const tmpDir = mkdtempSync(join(osTmpdir(), 'melo-pdfrender-'));
-      try { chmodSync(tmpDir, 0o700); } catch { /* best-effort */ }
-      const tmpPdfPath = join(tmpDir, `render-src-${ts}-${rand}.pdf`);
-      writeFileSync(tmpPdfPath, srcR.buffer, { mode: 0o600 });
       try {
+        try { chmodSync(tmpDir, 0o700); } catch { /* best-effort */ }
+        const tmpPdfPath = join(tmpDir, `render-src-${ts}-${rand}.pdf`);
+        writeFileSync(tmpPdfPath, srcR.buffer, { mode: 0o600 });
         const result = await renderPdfPagesToPngs({
           sourcePath: tmpPdfPath,
           outputDir: outDir,

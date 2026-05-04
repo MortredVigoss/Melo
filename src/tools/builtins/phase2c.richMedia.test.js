@@ -441,6 +441,42 @@ test('round 13 Phase 2C followup #2: pdf.render — gate-materialized tmp lives 
   });
 });
 
+test('round 13 Phase 2C followup #3: pdf.render — render failure path still cleans system-tmp dir', async () => {
+  // Codex 🟠: tmp dir was created BEFORE try{}, so a writeFile or
+  // render exception leaked the gate-approved PDF copy in system
+  // tmpdir. Round 3 wraps the whole sequence in try/finally.
+  // Test: feed render a workspace-path source that is NOT a valid
+  // PDF (just garbage bytes). Either pdftoppm errors out or it's
+  // not installed → renderPdfPagesToPngs throws. Either way, the
+  // finally must remove the melo-pdfrender-* dir from system tmp.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const garbage = join(ws, 'not-a-pdf.pdf');
+    await writeFile(garbage, Buffer.from('this is plain text, not a PDF'), 'utf8');
+
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const tmpRoot = os.tmpdir();
+    const beforeEntries = (await fs.readdir(tmpRoot)).filter(n => n.startsWith('melo-pdfrender-'));
+
+    const result = await pdfTool.run(
+      { action: 'render', source: garbage, pageRange: '1' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    // Expect failure (RENDER_FAILED or pdftoppm install hint).
+    assert.equal(result.ok, false);
+
+    const afterEntries = (await fs.readdir(tmpRoot)).filter(n => n.startsWith('melo-pdfrender-'));
+    // Net leak count must be ≤ 0 — the finally cleaned anything we
+    // created. Other concurrent runs of the test suite might leave
+    // entries from elsewhere, hence the diff comparison.
+    assert.ok(
+      afterEntries.length <= beforeEntries.length,
+      `tmp leak: before=${beforeEntries.length} after=${afterEntries.length}`,
+    );
+  });
+});
+
 test('round 13 Phase 2C followup #2: knowledge.index — external base prompts ONCE then walks subtree silently', async () => {
   // Codex 🟡: previous impl per-file gatedReadIntoBuffer'd, leading
   // to N prompts for an external dir. Round 2 mirrors grep — base
