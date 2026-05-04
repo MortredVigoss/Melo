@@ -29,6 +29,47 @@ function tokenizeContextQuery(value = '') {
   return [...new Set(tokens.filter(token => !CONTEXT_STOP_WORDS.has(token)))].slice(0, 24);
 }
 
+// Code-structure keywords across major languages. Word-boundary
+// (\b) prevents substring matches (e.g. "asynchronization" must
+// NOT score as "async"). `it` requires `(` to distinguish test-
+// framework style from English prose ("it is"). Conservative —
+// only keywords that strongly signal "this is a code line", not
+// generic statements (`if`/`for`/`while`/`return`/`void`/`int`
+// appear equally in code AND prose).
+//
+// Languages covered:
+//   JS/TS:    function/class/const/let/var/export/import/async/
+//             await/yield/type/interface/enum/namespace/extends/
+//             implements/declare/test/describe/spec/it(
+//   Python:   def/class/import/from/lambda/async/await/yield
+//   Rust:     fn/struct/impl/trait/enum/use/mod/pub/let/match
+//   Go:       func/type/struct/interface/import/package/var/const
+//   Java/C#:  class/interface/enum/extends/implements/public/
+//             private/protected/static/abstract/import/package
+//   Ruby:     def/class/module/require/include
+//   Swift:    func/class/struct/enum/protocol/extension/import/var/let
+//   Kotlin:   fun/class/object/interface/import/val/var
+const _CODE_KEYWORD_REGEX = new RegExp(
+  '\\b(?:' +
+    // function/method declarations
+    'function|fn|func|def|fun|method|sub|' +
+    // type declarations
+    'class|struct|impl|trait|interface|enum|module|namespace|protocol|extension|object|record|' +
+    // module / import system
+    'export|import|from|use|require|include|package|using|' +
+    // variable / value declarations
+    'const|let|var|val|my|local|' +
+    // visibility / modifiers
+    'public|private|protected|static|abstract|final|override|virtual|extends|implements|inherits|pub|mod|' +
+    // async / coroutine / generator
+    'async|await|yield|lambda|coroutine|' +
+    // type system
+    'type|typedef|interface|' +
+    // test framework markers
+    'test|describe|spec|context|when|before|after|beforeEach|afterEach' +
+  ')\\b|\\bit\\s*\\(',
+);
+
 function scoreLineForQuery(line, tokens) {
   if (!tokens.length) return 0;
   const text = String(line || '').toLowerCase();
@@ -38,7 +79,7 @@ function scoreLineForQuery(line, tokens) {
     const first = text.indexOf(token);
     if (first < 0) continue;
     score += 4;
-    if (/function|class|const|let|var|export|import|async|test|describe|it\(/.test(text)) {
+    if (_CODE_KEYWORD_REGEX.test(text)) {
       score += 2;
     }
     if (first < 12) score += 1;

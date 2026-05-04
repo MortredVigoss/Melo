@@ -4,6 +4,24 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)
+
+- Selected file context entry (commit `e81fb12`) 当时 known-limit：`scoreLineForQuery` 的 code keyword regex 是 JS/TS-only — 含 `function|class|const|let|var|export|import|async|test|describe|it(`, 漏 Python `def` / Rust `fn` / Go `func` / Java `public static` / Swift `func` / Kotlin `fun` / Ruby `def` 等其他语言。后果：非 JS/TS 文件大文件 review 时 query-relevance scoring 没 +2 keyword bonus，code line 跟 comment line 同分，excerpt 选择质量下降。
+- 修法：rewrite `_CODE_KEYWORD_REGEX` for multi-language coverage + `\b` word boundary（防 `asynchronization` substring-match 误中 `async`）。覆盖 7 语言家族：
+  - **JS/TS**: function/class/const/let/var/export/import/async/await/yield/type/interface/enum/namespace/extends/implements/declare/test/describe/spec/it(
+  - **Python**: def/class/import/from/lambda/async/await/yield
+  - **Rust**: fn/struct/impl/trait/enum/use/mod/pub/let/match
+  - **Go**: func/type/struct/interface/import/package/var/const
+  - **Java/C#**: class/interface/enum/extends/implements/public/private/protected/static/abstract/import/package
+  - **Ruby**: def/class/module/require/include
+  - **Swift**: func/class/struct/enum/protocol/extension/import/var/let
+  - **Kotlin**: fun/class/object/interface/import/val/var
+- 保守原则：不加 `if`/`for`/`while`/`return`/`void`/`int` 等通用 keyword（代码和 prose 都常见，false positive 高）。`it` 仍要求紧跟 `(` (区分测试 framework 和英文 prose "it is").
+- 测试加 2 case：① Python `def needleHandler(...)` line 在 240 行 file 中胜过早 comment line（pin keyword bonus 让 def line 排第一）；② spot-check 4 语言（Rust `fn` / Go `func` / Java `public static` / Swift `func`）— 每种 hot line 都被选作 top seed.
+- 验证：`dynamicContext.test.js` **11/11 全绿**（前 9 + 2 新）；全 src **1975/1975 全绿**（前 1973 + 2 新；零既有回归）。
+- **现在 selected file context 在 7+ 语言下一致表现**。`it(` lookahead 保留区分 mocha/jest 测试 vs 英文 prose. 之前 known-limit 兑现.
+
+---
 ## 2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)
 
 - Codex review #11 + #12 反复提到的 P2: hygiene cleanup 不覆盖 `process.exit()` 直接调用 / `uncaughtException` / `unhandledRejection` 路径。当时留独立 round 处理。本 commit 兑现。

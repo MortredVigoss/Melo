@@ -174,6 +174,82 @@ test('buildSelectedFileContextBlock: truncated UI preview surfaces a header note
   assert.match(out, /UI preview was already truncated/);
 });
 
+test('buildSelectedFileContextBlock: multi-language keyword scoring prioritizes Python def line', () => {
+  // Codex review #11/#12 P3 known-limit closure: original code-keyword
+  // regex `function|class|const|let|var|export|import|async|test|
+  // describe|it(` was JS/TS-only and missed Python `def` / Rust `fn`
+  // / Go `func` / Java `public static` / etc. Verify the +2 keyword
+  // bonus now applies to Python source (def line should outrank a
+  // plain comment line containing the same query token).
+  const lines = Array.from({ length: 240 }, (_, i) => `# this is a long comment line about query word at position ${i}`);
+  // Plant the def line (with token "needle") deep in the file.
+  // Without the bonus, the comment line containing "needle" near
+  // the file head wins. With the bonus, def line outranks comments.
+  lines[5] = '# early comment containing needle keyword early';
+  lines[180] = 'def needleHandler(self, args):';
+  // Pad to push past 3000 char threshold for snippet mode.
+  const out = buildSelectedFileContextBlock({
+    path: 'src/handler.py',
+    language: 'python',
+    content: lines.join('\n'),
+  }, 'review needleHandler');
+  assert.match(out, /optimized for token budget/);
+  // The def line at line 181 (0-indexed 180) should win the seed
+  // selection because of the +2 keyword bonus + +1 early-position
+  // bonus on `def` (first 12 chars).
+  assert.match(out, /181\tdef needleHandler/);
+});
+
+test('buildSelectedFileContextBlock: multi-language Rust fn / Go func / Java public class also score', () => {
+  // Spot-check several languages — each line that contains the query
+  // token AND a code keyword should score higher than a comment line
+  // with the same token. We verify the def/fn/func line is included
+  // in the rendered excerpt.
+  const langCases = [
+    {
+      path: 'src/parser.rs',
+      lang: 'rust',
+      keyword: 'fn',
+      hot: 'fn parseTokens(input: &str) -> Result<Vec<Token>, Error> {',
+    },
+    {
+      path: 'src/main.go',
+      lang: 'go',
+      keyword: 'func',
+      hot: 'func parseTokens(input string) ([]Token, error) {',
+    },
+    {
+      path: 'src/Parser.java',
+      lang: 'java',
+      keyword: 'public',
+      hot: 'public static List<Token> parseTokens(String input) {',
+    },
+    {
+      path: 'src/Parser.swift',
+      lang: 'swift',
+      keyword: 'func',
+      hot: 'func parseTokens(_ input: String) -> [Token] {',
+    },
+  ];
+  for (const { path, lang, keyword, hot } of langCases) {
+    const lines = Array.from({ length: 240 }, (_, i) => `# comment about parseTokens at ${i}`);
+    lines[5] = `# early comment containing parseTokens word here`;
+    lines[180] = hot;
+    const out = buildSelectedFileContextBlock({
+      path,
+      language: lang,
+      content: lines.join('\n'),
+    }, 'review parseTokens function');
+    // The line with the language keyword should be in the rendered
+    // excerpt (line index 180 = display line 181).
+    assert.match(
+      out,
+      new RegExp(`181\\t${keyword.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`),
+      `${lang}: hot line with ${keyword} must be selected as top seed`,
+    );
+  }
+});
+
 test('buildSelectedFileContextBlock: empty / stop-word-only query falls back to file head', () => {
   // When tokenizeContextQuery returns no useful tokens (empty
   // message, or only stop words like "看看 一下 帮我"), no line
