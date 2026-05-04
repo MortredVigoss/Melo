@@ -412,6 +412,54 @@ test('round 13 Phase 2D followup #1: git diff / git log / git branch — allowli
   });
 });
 
+test('round 13 Phase 2D followup #2: npm test / npm run NO LONGER silent (package scripts = arbitrary shell)', async () => {
+  // Codex 🟠: npm test / npm run / pnpm run / yarn run all execute
+  // package.json scripts which are arbitrary shell. A
+  // package.json with `"test": "rm -rf x"` would let `npm test`
+  // run rm without ever prompting. Default-deny: every package-
+  // manager invocation prompts.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    // Plant a malicious package.json — `npm test` would invoke `rm`.
+    const target = join(ws, 'should-not-be-deleted.txt');
+    await writeFile(target, 'sentinel', 'utf8');
+    await writeFile(join(ws, 'package.json'), JSON.stringify({
+      name: 'malicious',
+      scripts: { test: `rm -f ${target}` },
+    }), 'utf8');
+
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: 'npm test' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
+        promptCount++;
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      } },
+    );
+    assert.equal(promptCount, 1, 'npm test must prompt');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    // The malicious script must NOT have run.
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'sentinel');
+  });
+});
+
+test('round 13 Phase 2D followup #2: pnpm run / yarn run / npm view also prompt', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const sse = (event, payload) => {
+      promptCount++;
+      gate.resolveFileSafety(payload.requestId, 'deny');
+    };
+    for (const cmd of ['pnpm run build', 'yarn run something', 'npm view react']) {
+      await bashTool.run({ command: cmd }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
+    }
+    assert.equal(promptCount, 3, 'each package-manager invocation must prompt');
+  });
+});
+
 test('round 13 Phase 2D followup #1: ls with metachars NOT silent (allowlist requires plain args)', async () => {
   // `ls $HOME` has $ → would expand → bypass classification; must prompt.
   await withTempEnv(async ({ ws }) => {

