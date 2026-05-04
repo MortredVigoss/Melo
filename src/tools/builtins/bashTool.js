@@ -1,12 +1,36 @@
 /**
  * Built-in tool: bash
  *
- * Executes a shell command in the user's workspace.
- * Requires user permission by default.
- * Streams stdout/stderr incrementally via context.onOutput.
+ * Phase 2D (2026-05-04): every bash invocation is now parsed by
+ * `bashRiskParser.parseBashRiskyOps` and routed through
+ * `FileSafetyGate.requestBashOp`. The gate:
+ *   - **hard-rejects** any `delete`-class risk (rm / git clean /
+ *     find -delete / etc) with a hint to use `file_delete` — that
+ *     way deletes always go through the trash quarantine + two-
+ *     stage approval, no exception via bash;
+ *   - **prompts** for everything else risky (write/append/overwrite/
+ *     reset_repo/truncate/in_place_edit/move/unknown);
+ *   - **silently allows** zero-risk commands (ls, cat, git status,
+ *     npm test, etc).
+ *
+ * If the parser flags `unparseable: true` (broken quoting, syntax
+ * we can't tokenize), we add an explicit `unknown`-class risk so
+ * the gate prompts — "can't classify ⇒ user decides" beats silently
+ * running an unanalyzable command.
+ *
+ * `requiresPermission: false` — FileSafetyGate is the only path-
+ * aware gate; the executor's toolId-level prompt would just double-
+ * prompt before our risk-aware classification fires.
+ *
+ * Known limit: nested command shells (eval / bash -c / xargs sh -c)
+ * have their inner commands NOT recursively re-parsed. Phase 2D
+ * round 2 will close this if Codex flags it.
  */
 
 import { spawn } from 'node:child_process';
+
+import { parseBashRiskyOps } from '../../safety/bashRiskParser.js';
+import { requestBashOp } from '../../safety/fileSafetyGate.js';
 
 // Per-stream output cap — prevents a runaway command from flooding context
 const MAX_STREAM_BYTES = 50_000;  // 50 KB each for stdout and stderr
@@ -18,9 +42,17 @@ export const bashTool = {
   description:
     'Execute a shell command in the workspace directory. ' +
     'Returns stdout, stderr, and exit code. ' +
-    'Prefer this for running scripts, compiling, testing, git operations, etc.',
+    'Prefer this for running scripts, compiling, testing, git operations, etc. ' +
+    'Risky commands (write, overwrite, append, in-place edit, move, git reset, ...) ' +
+    'trigger a user prompt; destructive deletes (rm, find -delete, git clean, ...) are ' +
+    'HARD-REJECTED — use the file_delete tool so files go to .melo-trash/ with two-stage approval. ' +
+    'Commands the parser can\'t tokenize (broken quoting, etc) also prompt as "unknown" risk.',
   category: 'system',
-  requiresPermission: true,
+  // FileSafetyGate.requestBashOp owns the path-level approval; toolId
+  // level prompt would double-prompt for any risky bash. Silent for
+  // zero-risk commands (ls / git status / etc) — exactly the contract
+  // Phase 2B read tools follow.
+  requiresPermission: false,
   isConcurrencySafe: false,
   parametersSchema: {
     type: 'object',
@@ -53,7 +85,39 @@ export const bashTool = {
    */
   async run(args, context = {}) {
     const { command, timeout = 30_000, cwd: cwdOverride } = args;
-    const { workspacePath, onOutput, signal } = context;
+    const { workspacePath, onOutput, signal, sseEmitter, chatId } = context;
+
+    if (typeof command !== 'string' || !command.trim()) {
+      return { ok: false, output: 'command must be a non-empty string.', error: 'INVALID_ARGS' };
+    }
+
+    // Phase 2D (2026-05-04): parse the command for risky patterns,
+    // then route through the gate. Risk-free commands skip the
+    // prompt; risky ones get user approval (or hard-reject for
+    // delete-class + the new "unparseable" / "unknown" tier).
+    const parsed = parseBashRiskyOps(command);
+    const risks = parsed.unparseable
+      ? [...parsed.risks, { kind: 'unknown', pattern: '(unparseable command — quotes/syntax)' }]
+      : parsed.risks;
+    if (risks.length > 0) {
+      try {
+        await requestBashOp({
+          command,
+          risks,
+          chatId,
+          sseEmitter,
+          signal,
+          workspacePath,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          output: err.message,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+          meta: { denied: err.code === 'FILE_SAFETY_DENIED', risks },
+        };
+      }
+    }
 
     const clampedTimeout = Math.min(Math.max(timeout, 1000), 120_000);
     const cwd = cwdOverride || workspacePath || process.cwd();
