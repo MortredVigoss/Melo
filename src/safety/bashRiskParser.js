@@ -170,11 +170,53 @@ function skipEnvAssignments(tokens) {
   return i;
 }
 
+// Phase 2D follow-up #14 self-review (Codex 🟡, 2026-05-04): skip
+// the entire pre-command preamble — leading redirect+target pairs
+// AND env-var assignments, in any order. bash accepts redirects
+// anywhere on the line, including BEFORE the command head:
+//   `< /tmp/x rm -rf foo`         → equivalent to `rm -rf foo < /tmp/x`
+//   `> out.log FOO=1 awk '...'`   → equivalent to `FOO=1 awk '...' > out.log`
+// Without this skip, riskifyTokens sees `<` or `>` as the head and
+// every head-based detection (rm/find/git/sed-i/awk/sed/...) misses
+// the real command. findWrappedCommand also gets confused — it
+// treats the redirect TARGET (`/tmp/x`) as the wrapper-or-head
+// candidate.
+//
+// The skip loops because redirects and env-assignments can interleave
+// (`FOO=1 < /tmp/x cmd` / `< /tmp/x FOO=1 cmd` are both valid bash).
+// Most redirect ops (>, >>, <, &>, &>>, 2>, 2>>) take a target word;
+// `<<` heredoc takes a label-word too (treated the same way).
+function skipPreamble(tokens) {
+  let i = 0;
+  let progressed = true;
+  while (progressed && i < tokens.length) {
+    progressed = false;
+    if (tokens[i].kind === 'redirect') {
+      i++;
+      if (i < tokens.length && tokens[i].kind === 'word') i++;
+      progressed = true;
+      continue;
+    }
+    if (
+      tokens[i].kind === 'word' &&
+      /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i].text)
+    ) {
+      i++;
+      progressed = true;
+      continue;
+    }
+  }
+  return i;
+}
+
 function riskifyTokens(tokens, sepBefore = null) {
   const risks = [];
   if (!tokens.length) return risks;
 
-  const headIdx = skipEnvAssignments(tokens);
+  // skipPreamble (round 14 self-review): handles BOTH leading
+  // redirect+target pairs AND env-var assignments, so commands like
+  // `< /tmp/x rm -rf foo` parse as head=rm not head=`<`.
+  const headIdx = skipPreamble(tokens);
   const head = tokens[headIdx]?.text || '';
   const args = tokens
     .slice(headIdx + 1)
@@ -525,26 +567,40 @@ function riskifyTokens(tokens, sepBefore = null) {
       a === '-f' || /^-f.+/.test(a) || a === '--file' || a.startsWith('--file=')
     );
     if (!hasFileFlag) {
-      // Find first non-flag, non-var-assignment positional. awk
-      // flags that take a value: `-F sep`, `-v var=val`, `-W
-      // gawk-extension`, `-i inplace` (already handled separately
-      // as in_place_edit). Glued forms `-Fsep` / `-vvar=val` /
-      // `-Wext` are also accepted and need single-token skip.
+      // Find first non-flag positional. awk flags that take a
+      // value: `-F sep`, `-v var=val`, `-W gawk-extension`, `-i
+      // inplace` (already handled separately as in_place_edit).
+      // Glued forms `-Fsep` / `-vvar=val` / `-Wext` are also
+      // accepted and need single-token skip.
+      //
+      // Round-14 self-review (2026-05-04): originally skipped
+      // tokens matching `/^[A-Za-z_][A-Za-z0-9_]*=/` thinking they
+      // were post-program var=val positionals (which awk DOES treat
+      // as "set var before processing files"). But awk's first
+      // non-flag positional is ALWAYS the program when no -f is
+      // given — even if it looks like `x=system("rm")`, awk parses
+      // it as inline code and runs `system()`. The skip introduced
+      // a bypass: `awk 'x=system("rm /tmp/x")'` falls through to
+      // unknown prompt → autoApprove → file gone. Removed the skip
+      // entirely; var=val positionals AFTER the program are never
+      // reached because we break on the first positional anyway.
       let hasPositional = false;
       for (let i = 0; i < wordArgs.length; i++) {
         const a = wordArgs[i];
         if (a === '-F' || a === '-v' || a === '-W' || a === '-i') { i++; continue; }
         if (/^-[FvWi]./.test(a)) continue; // glued
         if (a.startsWith('-')) continue;   // any other flag
-        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue; // awk var=val passed positionally
         hasPositional = true;
         break;
       }
       // Stdin-fed forms (heredoc / `<` redirect / pipe) make stdin
       // the program when there is no `-f`. Pipe-fed awk is not in
       // SCRIPT_INTERPRETERS, so the existing pipe-fed interpreter
-      // path doesn't cover it — handle here.
-      const hasStdinRedirect = argTokens.some(t =>
+      // path doesn't cover it — handle here. Scan the FULL tokens
+      // array (not just post-awk argTokens) because bash allows
+      // preposed redirects: `< /tmp/script.awk awk` is equivalent
+      // to `awk < /tmp/script.awk`. Round 14 self-review fix.
+      const hasStdinRedirect = tokens.some(t =>
         t.kind === 'redirect' && (t.text === '<<' || t.text === '<')
       );
       const isPipeFed = sepBefore === '|';
@@ -675,7 +731,10 @@ const VALUE_TAKING_WRAPPER_FLAGS = new Set([
 // without bloating SCRIPT_INTERPRETERS (sed in pipelines is too
 // universal to hard-reject).
 function findWrappedCommand(tokens, isMatch) {
-  let i = skipEnvAssignments(tokens);
+  // skipPreamble: leading redirects + env-assignments. Without this,
+  // `< /tmp/script env awk '...'` would treat `/tmp/script` as the
+  // wrapper-or-head candidate and miss the awk inline detection.
+  let i = skipPreamble(tokens);
   // Bounded loop guards against pathological wrapper-of-wrapper
   // chains; 16 iterations covers any sane input.
   for (let iter = 0; iter < 16 && i < tokens.length; iter++) {
@@ -731,30 +790,41 @@ function isAwkBasename(text) {
 // `s/.../e` substitute flag both shell-out to execute the result.
 // `printf x | sed 'e rm -f file'` deletes file with one approve
 // click; `sed 's/x/y/e' file` substitutes then execs the result.
-// Two detection patterns:
-//   1. Bare `e <command>` only at sed command position (start of
-//      expression OR right after a sed command separator: ;, {, },
-//      newline). NOT after arbitrary non-letter (which would false-
-//      positive on `s/foo/end /` where the `e` is inside the
-//      replacement text).
-//   2. s/PATTERN/REPLACEMENT/FLAGS where FLAGS contains `e`. We
-//      detect with `/`-delimiter only — sed accepts any first-char
-//      delimiter (`s,x,y,e` / `s|x|y|e` / `s#x#y#e`), but covering
-//      every delim explicitly hits `[^\1]` which JS regex can't
-//      negate. Trade-off documented as round-14 known-limit.
+//
+// Two detection patterns, in order:
+//   - Pattern 2 (precise): `s/PAT/REP/FLAGS` where FLAGS contains
+//     `e`. Tight structural match (escape-aware non-/ inside PAT
+//     and REP) so replacement text can't false-positive. Covers
+//     `/`-delimiter only — sed accepts any first-char delimiter
+//     (`s,x,y,e` / `s|x|y|e` / `s#x#y#e`), JS regex can't negate
+//     a backreference so exotic delims remain a known limit.
+//   - Pattern 1 (bare `e CMD`): the standalone sed `e` command
+//     accepts ANY sed-address prefix: `e CMD` (no address), `2e`,
+//     `1,5e`, `/regex/e`, `$e`, `!e`, `~Ne`. Round-14 self-review:
+//     originally tightened the preceding-char class from
+//     `[^a-zA-Z]` to `[\n;{}]` thinking it was needed to avoid
+//     replacement-text false-positives like `s/foo/bar e baz/` —
+//     but that false-positive was actually a pattern-2 issue (now
+//     fixed by the escape-aware non-/ form), and the tightening
+//     introduced its OWN bypass (`/foo/e CMD`, `$e CMD`, `2e CMD`
+//     all missed). Resolution: strip out `s/PAT/REP/FLAGS` regions
+//     before applying pattern 1, then accept the broader
+//     `[^a-zA-Z]e\s` so all sed boundary chars (start, `;`, `{`,
+//     `}`, `\n`, `/`, `$`, digits, `,`, `!`, `~`) are covered.
 function sedExpressionHasEcmd(text) {
   if (typeof text !== 'string' || !text) return false;
-  // Pattern 1 — bare `e CMD`: only fire when `e` is at expression
-  // start or immediately after a sed command boundary, then
-  // whitespace, then content (the shell cmd to exec).
-  if (/(?:^|[\n;{}])\s*e\s/.test(text)) return true;
-  // Pattern 2 — `s/.../.../FLAGS` with e flag. Match the substitution
-  // structure tightly so REPLACEMENT text can't false-positive:
-  //   s\/  + (escape-aware non-slash)*  + \/  + (escape-aware
-  //   non-slash)*  + \/  + flags-letters-with-e  + boundary
-  // (The `(?:[^\\/]|\\.)*` form correctly skips escaped slashes
-  // inside the substitution.)
+  // Pattern 2 first — covers `s/.../.../e` precisely.
   if (/s\/(?:[^\/\\]|\\.)*\/(?:[^\/\\]|\\.)*\/[a-z]*e[a-z]*(?:[\s;{}\n]|$)/i.test(text)) return true;
+  // Strip `s/PAT/REP/FLAGS` regions (replace with single space so
+  // adjacent chars don't fuse). After stripping, replacement text
+  // like `bar e baz` is gone so it can't trigger pattern 1.
+  const stripped = text.replace(
+    /s\/(?:[^\/\\]|\\.)*\/(?:[^\/\\]|\\.)*\/[a-z]*/gi,
+    ' ',
+  );
+  // Pattern 1 — bare `e CMD` preceded by start or any non-letter.
+  // Non-letter covers all sed address terminators uniformly.
+  if (/(?:^|[^a-zA-Z])e\s/.test(stripped)) return true;
   return false;
 }
 

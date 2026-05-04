@@ -448,3 +448,120 @@ test('Phase 2D follow-up #14: env / sudo + sed e-cmd → code_execution (wrapper
     );
   }
 });
+
+// ── Phase 2D follow-up #14 self-review fixes ─────────────────────────
+
+test('Phase 2D #14 self-review (Bug 1): awk \'x=system(...)\' is code_execution (var=val skip removed)', () => {
+  // Pre-fix: var=val regex `^[A-Za-z_][A-Za-z0-9_]*=` matched the
+  // program token `x=system("rm /tmp/x")` and skipped it as if
+  // it were a post-program awk var-assignment positional, leaving
+  // hasPositional=false → unflagged. But awk's first non-flag
+  // positional is ALWAYS the program when no -f is given, and
+  // awk parses `x=system("rm")` as inline code that calls system().
+  // Removed the var=val skip; any non-flag positional now flags.
+  const cmds = [
+    'awk \'x=system("rm /tmp/x")\'',
+    'awk \'x=1; system("rm")\'',
+    'awk \'y=length($0); print y\'',  // even benign-looking var=val programs flag
+    'env awk \'x=system("rm")\'',     // wrapper-aware
+  ];
+  for (const cmd of cmds) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (var=val program shape was the bypass)`,
+    );
+  }
+});
+
+test('Phase 2D #14 self-review (Bug 2): sed e-cmd with address prefix is detected', () => {
+  // Pre-fix: pattern 1 `(?:^|[\n;{}])\s*e\s` only matched at start
+  // or after sed command-block separators. Missed every address-
+  // prefixed form: `/regex/e`, `$e`, `2e`, `1,5e`, `!e`, `~Ne`.
+  // Fix: pattern 1 reverted to `(?:^|[^a-zA-Z])e\s` AFTER stripping
+  // out s/.../.../FLAGS regions (so replacement text can't false-
+  // positive). All sed boundary chars now covered uniformly.
+  const cmds = [
+    `sed '/foo/e rm /tmp/x' file`,    // regex address
+    `sed '$e rm /tmp/x' file`,         // last-line address
+    `sed '2e rm /tmp/x' file`,         // numeric address
+    `sed '1,5e rm /tmp/x' file`,       // range address
+    `sed '/foo/!e rm /tmp/x' file`,    // negated address
+    `sed '0~2e rm /tmp/x' file`,       // step address (gawk)
+  ];
+  for (const cmd of cmds) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (address-prefixed sed e-cmd)`,
+    );
+  }
+});
+
+test('Phase 2D #14 self-review (Bug 2): sed s///g + ; e CMD chain is detected (after stripping)', () => {
+  // The strip-substitute approach removes `s/.../.../FLAGS`
+  // regions before scanning for bare `e CMD`, so a chained
+  // `s/x/y/g; e rm` correctly flags via pattern 1 after the
+  // substitute is gone.
+  const risks = parseBashRiskyOps(`sed 's/x/y/g; e rm /tmp/x' file`).risks;
+  assert.ok(
+    risks.some(r => r.kind === 'code_execution'),
+    'chained s///+e CMD must be detected',
+  );
+});
+
+test('Phase 2D #14 self-review (Bug 2): replacement text containing "e<space>" still NOT a false positive', () => {
+  // The replacement-text false-positive guard from the original
+  // refinement must continue to hold under the new strip-substitute
+  // approach. Both replacement forms below contain `e<space>`:
+  for (const cmd of [
+    `sed 's/foo/end /' file`,            // replacement ends with `e<space>`
+    `sed 's/abc/replace e text/' file`,  // replacement contains `e<space>` mid-string
+    `sed 's/x/the end /' file`,          // multiple letter+e+space combos
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} replacement-text e<space> must NOT trigger`,
+    );
+  }
+});
+
+test('Phase 2D #14 self-review (P1): preposed redirect — head-based detection still fires', () => {
+  // Pre-fix: tokens=[redirect '<', word '/tmp/x', word 'rm', ...]
+  // → skipEnvAssignments returned 0 → head was '<' (the redirect
+  // op) → no detection ever matched. Fix: skipPreamble strips
+  // leading redirect+target pairs (any order with env-assignments).
+  // Now `< /tmp/x rm -rf foo` parses as head='rm' and the
+  // delete-class detection fires.
+  for (const cmd of [
+    `< /tmp/x rm -rf /tmp/foo`,             // preposed input redirect + rm
+    `> out.log rm -rf /tmp/foo`,            // preposed output redirect + rm
+    `< /tmp/x FOO=1 rm /tmp/foo`,           // redirect + env-assignment + rm
+    `FOO=1 < /tmp/x rm /tmp/foo`,           // env-assignment + redirect + rm
+    `> /tmp/log 2> /tmp/err rm /tmp/foo`,   // multiple preposed redirects
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'delete'),
+      `${cmd} must detect rm despite preposed redirect`,
+    );
+  }
+});
+
+test('Phase 2D #14 self-review (P1): preposed redirect + awk → code_execution', () => {
+  // Same skipPreamble fix benefits findWrappedCommand, so wrapper-
+  // aware detections (awk inline / sed e-cmd / interpreter inline)
+  // also see past leading redirects.
+  const risks = parseBashRiskyOps(`< /tmp/script.awk awk`).risks;
+  // Either awk stdin-redirect (since `<` is a redirect token) OR
+  // awk pipe/inline detection should trip — at minimum the redirect
+  // token in tokens triggers the stdin-redirect arm because
+  // skipPreamble counts it but tokens still contain it. Pin: code_
+  // execution risk exists.
+  assert.ok(
+    risks.some(r => r.kind === 'code_execution'),
+    'preposed `< /tmp/x awk` must detect awk + stdin redirect',
+  );
+});

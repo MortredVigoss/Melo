@@ -1940,6 +1940,165 @@ test('round 21 Phase 2D followup #14: regression — replacement containing "end
   });
 });
 
+// ─── Phase 2D follow-up #14 self-review fixes ────────────────────────
+// Self-audit of round-14 (commit eb9e541) found two bypasses I'd
+// introduced and one pre-existing parser gap exposed by the new
+// detections:
+//   Bug 1 — `awk 'x=system("rm")'` skipped because awk var=val
+//           positional skip misclassified the program.
+//   Bug 2 — sed pattern 1 over-tightened from `[^a-zA-Z]` to
+//           `[\n;{}]`, missing every address-prefixed e command
+//           (`/foo/e`, `$e`, `2e`, `1,5e`, `!e`, `~Ne`).
+//   P1   — preposed redirects (`< /tmp/x CMD`) made head = `<`,
+//           breaking ALL head-based detections (rm/find/git/
+//           sed-i/awk/...). Pre-existing, exposed by round 14.
+// All three fixed in this commit; tests below pin the attack-
+// vector + autoApprove + file-preserved contract.
+
+test('round 22 Phase 2D #14 self-review (Bug 1): awk \'x=system(...)\' + autoApprove cannot delete file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'awk-varval-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `awk 'x=system("rm -f ${target}")'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, 'awk var=val program must hard-reject (no prompt) post-fix');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected', 'file untouched');
+  });
+});
+
+test('round 22 Phase 2D #14 self-review (Bug 2): sed /foo/e CMD + autoApprove cannot delete file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'sed-addr-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      // /foo/e ADDR-prefix bypass that pattern-1 over-tightening missed.
+      { command: `printf 'foo\\n' | sed '/foo/e rm -f ${target}'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, '/foo/e address-prefixed sed e-cmd must hard-reject');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected');
+  });
+});
+
+test('round 22 Phase 2D #14 self-review (Bug 2): all sed address-prefix forms HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed '$e rm /tmp/x' file`,        // last-line address
+      `sed '2e rm /tmp/x' file`,        // numeric line address
+      `sed '1,5e rm /tmp/x' file`,      // range address
+      `sed '/foo/!e rm /tmp/x' file`,   // negated address
+      `sed '0~2e rm /tmp/x' file`,      // step address (gawk)
+      `sed 's/x/y/g; e rm /tmp/x' file`, // chained s/// + e (after stripping)
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY pre-prompt`);
+    }
+    assert.equal(promptCount, 0, 'all address-prefixed sed e-cmd must hard-reject');
+  });
+});
+
+test('round 22 Phase 2D #14 self-review (Bug 2): regression — sed replacement text containing e<space> reaches prompt', async () => {
+  // The strip-substitute approach removes s/.../.../FLAGS regions
+  // before pattern-1 scan, so replacement text with `e<space>`
+  // (like `s/foo/bar e baz/`) doesn't trigger code_execution.
+  // Pin: this still reaches prompt, not blanket DENIED.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed 's/foo/end /' file`,
+      `sed 's/abc/replace e text/' file`,
+      `sed 's/x/the end /' file`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt`);
+    }
+    assert.equal(promptCount, 3, 'replacement-text e<space> must NOT pre-reject — 3 prompts');
+  });
+});
+
+test('round 22 Phase 2D #14 self-review (P1): preposed redirect + rm + autoApprove cannot delete file', async () => {
+  // Pre-fix: tokens=[<, /tmp/x, rm, -rf, target] → head='<' →
+  // delete-class detection missed → falls to unknown prompt →
+  // autoApprove → file gone. Fix: skipPreamble strips leading
+  // redirect+target so head='rm' and delete fires.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'preposed-redirect-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `< /tmp/foo rm -rf ${target}` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, 'preposed redirect + rm must hard-reject (delete-class)');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected', 'file untouched');
+  });
+});
+
+test('round 22 Phase 2D #14 self-review (P1): preposed redirect + multiple wrappers — all head-based detections fire', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      // preposed input redirect + rm
+      `< /tmp/foo rm -rf /tmp/x`,
+      // preposed output redirect + rm
+      `> /tmp/log rm -rf /tmp/x`,
+      // redirect + env-assignment + rm (any order)
+      `< /tmp/foo FOO=1 rm /tmp/x`,
+      `FOO=1 < /tmp/foo rm /tmp/x`,
+      // multiple preposed redirects + rm
+      `> /tmp/log 2> /tmp/err rm /tmp/x`,
+      // preposed redirect + awk inline (needs findWrappedCommand fix)
+      `< /tmp/x.awk env awk '{system("rm")}'`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY (head-based detection past redirect)`);
+    }
+    assert.equal(promptCount, 0, 'all preposed-redirect commands must hard-reject');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {
