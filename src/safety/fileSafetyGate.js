@@ -511,6 +511,7 @@ export async function requestRead({
   signal,
   workspacePath,
   baseDir,
+  bypassGrants = false,
 }) {
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Read requested with empty path.');
@@ -533,7 +534,13 @@ export async function requestRead({
     if (lexicalInWs && realInWs) {
       return { resolvedTarget: realPath };
     }
-    if (hasGrant(chatId, realPath, GRANT_KIND.READ)) {
+    // Phase 2C follow-up #4 (Codex 🟠, 2026-05-04): bypassGrants
+    // forces a fresh prompt AND skips recording a new grant after
+    // the prompt. Used by knowledge.index for directory targets:
+    // the default 'dir' scope grants parentDir(realPath), which
+    // for an indexed dir would over-grant siblings (index of
+    // /tmp/myproj → silent reads of /tmp/sibling/* in same chat).
+    if (!bypassGrants && hasGrant(chatId, realPath, GRANT_KIND.READ)) {
       return { resolvedTarget: realPath };
     }
   }
@@ -568,10 +575,16 @@ export async function requestRead({
     return { resolvedTarget: realPath };
   }
 
-  if (decision.scope === SCOPE.FILE) {
-    grantFile(chatId, realPath, [GRANT_KIND.READ]);
-  } else if (decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(realPath), [GRANT_KIND.READ]);
+  // Phase 2C follow-up #4: bypassGrants tells us NOT to record
+  // any persistent grant from the user's scope choice. Useful for
+  // tools that approve a directory target where the default
+  // 'dir' scope (= grant parentDir) would over-grant.
+  if (!bypassGrants) {
+    if (decision.scope === SCOPE.FILE) {
+      grantFile(chatId, realPath, [GRANT_KIND.READ]);
+    } else if (decision.scope === SCOPE.DIR) {
+      grantDir(chatId, parentDir(realPath), [GRANT_KIND.READ]);
+    }
   }
   return { resolvedTarget: realPath };
 }

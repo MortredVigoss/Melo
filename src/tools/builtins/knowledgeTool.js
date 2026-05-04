@@ -184,6 +184,13 @@ async function indexDirectory(dir, ctx = {}) {
   // S_ISREG so a leaf swapped to symlink/FIFO is silently skipped.
   let approvedReal;
   try {
+    // Phase 2C follow-up #4 (Codex 🟠): bypassGrants:true so the
+    // gate's default 'dir' scope (which grants parentDir(realPath))
+    // doesn't over-grant — index of /tmp/myproj must NOT silently
+    // authorise reads of /tmp/sibling-dir/*. Every index call
+    // re-prompts for non-workspace bases; workspace bases stay
+    // silent (lexicalInWs && realInWs short-circuit fires before
+    // bypassGrants is consulted).
     const r = await requestRead({
       path: absDir,
       chatId: ctx.chatId,
@@ -191,6 +198,7 @@ async function indexDirectory(dir, ctx = {}) {
       signal: ctx.signal,
       workspacePath: ctx.workspacePath,
       baseDir: ctx.workspacePath,
+      bypassGrants: true,
     });
     approvedReal = r.resolvedTarget;
   } catch (err) {

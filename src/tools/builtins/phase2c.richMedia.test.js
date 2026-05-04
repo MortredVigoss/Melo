@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os';
 import { pdfTool } from './pdfTool.js';
 import { imageTool } from './imageTool.js';
 import { knowledgeTool } from './knowledgeTool.js';
+import { fileReadTool } from './fileReadTool.js';
 
 async function freshGate() {
   const grants = await import('../../safety/chatScopedGrants.js');
@@ -503,6 +504,59 @@ test('round 13 Phase 2C followup #2: knowledge.index — external base prompts O
     assert.equal(promptCount, 1, 'external base index must prompt EXACTLY once');
     // All three files indexed.
     assert.equal(result.meta.files >= 3, true, `expected >= 3 files, got ${result.meta.files}`);
+  });
+});
+
+// ─── Phase 2C follow-up #4: knowledge.index dir scope must NOT leak ──
+
+test('round 13 Phase 2C followup #4: knowledge.index dir-scope grant does NOT silent reads of sibling dirs', async () => {
+  // Codex 🟠: previously, picking 'dir' scope on a knowledge.index
+  // prompt called grantDir(parentDir(realPath)) — for index of
+  // /tmp/A, that granted /tmp itself, so subsequent reads of any
+  // /tmp/B/* in the same chat went silent. bypassGrants:true on the
+  // index call now skips both the silent-allow path AND the
+  // grant-recording path.
+  await withTempEnv(async ({ ws, outside }) => {
+    const gate = await freshGate();
+    // Two sibling dirs under the same outside parent.
+    const baseToIndex = outside;
+    const sibling = await realpath(await mkdtemp(join(tmpdir(), 'p2c-sibling-')));
+    try {
+      await writeFile(join(baseToIndex, 'a.txt'), 'first', 'utf8');
+      await writeFile(join(sibling, 'sneaky.txt'), 'should NOT be silent', 'utf8');
+
+      // User picks 'dir' scope on the knowledge.index prompt — would
+      // previously over-grant /tmp.
+      let indexPrompts = 0;
+      const indexSse = (event, payload) => {
+        indexPrompts++;
+        gate.resolveFileSafety(payload.requestId, 'dir');
+      };
+      const idxResult = await knowledgeTool.run(
+        { action: 'index', path: baseToIndex },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: indexSse },
+      );
+      assert.equal(idxResult.ok, true);
+      assert.equal(indexPrompts, 1);
+
+      // Now try to read from the sibling. With bypassGrants:true on
+      // the index call, no /tmp grant should have been recorded → a
+      // file_read on the sibling MUST prompt fresh.
+      let siblingPrompts = 0;
+      const siblingSse = (event, payload) => {
+        siblingPrompts++;
+        gate.resolveFileSafety(payload.requestId, 'deny');  // deny for safety
+      };
+      const r = await fileReadTool.run(
+        { path: join(sibling, 'sneaky.txt') },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: siblingSse },
+      );
+      assert.equal(siblingPrompts, 1, 'sibling dir read must NOT be silent — index dir-scope MUST NOT leak');
+      assert.equal(r.ok, false);
+      assert.equal(r.error, 'DENIED');
+    } finally {
+      await rm(sibling, { recursive: true, force: true });
+    }
   });
 });
 
