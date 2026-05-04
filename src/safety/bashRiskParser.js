@@ -682,6 +682,37 @@ const COMMAND_WRAPPERS = new Set([
   'ionice', 'taskset', 'chrt',
   // namespace / sandboxing
   'setsid', 'unshare', 'chroot', 'systemd-run', 'capsh',
+  // D fix #4 (Codex 🔴, 2026-05-04 round 4): command-running wrappers
+  // that take a sub-command as their positional payload. Each found by
+  // Codex re-review of D fix #3:
+  //   parallel  — `parallel awk 'PROG' ::: x` (GNU parallel)
+  //   stdbuf    — `stdbuf -oL awk 'PROG'` (output buffering control)
+  //   unbuffer  — `unbuffer awk 'PROG'` (Expect's unbuffer wrapper)
+  //   watch     — `watch awk 'PROG'` (re-run on interval)
+  // Defensive additions in the same family (not Codex-flagged but
+  // structurally identical — all "exec sub-command after own flags"):
+  //   entr      — file-watch executor (`ls *.txt | entr awk 'PROG'`)
+  //   flock     — file-lock executor (`flock /tmp/f awk 'PROG'`)
+  //   pv        — pipeline progress (`pv data | awk` — but as wrapper:
+  //               `pv awk 'PROG'` is unusual; defensive)
+  //   script    — terminal session record (`script -c "awk PROG"`)
+  //   rlwrap    — readline wrapper (`rlwrap awk 'PROG'`)
+  //   direnv    — only as `direnv exec . awk 'PROG'` form; conservative
+  //   busybox   — applet multiplexer (`busybox awk 'PROG'`)
+  //   timeout   — kill after N seconds (`timeout 5 awk 'PROG'`)
+  //   strace    — syscall tracer (`strace awk 'PROG'`)
+  //   ltrace    — library call tracer
+  //   valgrind  — memory checker (`valgrind awk 'PROG'`)
+  //   perf      — `perf stat awk 'PROG'`
+  //   tsp/ts    — task-spooler (`tsp awk 'PROG'`)
+  // Trade-off: this list is enumerated and might miss yet another
+  // wrapper. Round-5 git deny-list went infinite; this list stays
+  // bounded (POSIX/Linux command-running wrappers ~30 known). If a
+  // round-N D finds another, add it.
+  'parallel', 'stdbuf', 'unbuffer', 'watch',
+  'entr', 'flock', 'pv', 'script', 'rlwrap', 'direnv',
+  'busybox', 'timeout', 'strace', 'ltrace', 'valgrind', 'perf',
+  'tsp', 'ts',
 ]);
 
 // Most wrappers either take no flags, take only short bool flags
@@ -816,13 +847,22 @@ function analyzeAwkArgv(argTokens) {
       if (a === '-e' || a === '--source') i++; // separate-arg form: skip value
       continue;
     }
-    // Value-taking flags: skip flag + value.
-    if (a === '-F' || a === '-v' || a === '-W' || a === '-i') {
+    // Value-taking flags: skip flag + value. Includes GNU awk
+    // (gawk) extensions where value is in next token:
+    //   -o[file] pretty-print output  | -d[file] debug output
+    //   -D[file] debug mode           | -l libname load extension
+    //   -L[value] lint mode           | -p[file] profile output
+    // D fix #4 (Codex ⚪, 2026-05-04 round 4): pre-fix `awk -o out -f
+    // script.awk file` flagged because `-o` wasn't a value-taker —
+    // 'out' became hasPositional and shadowed the -f exemption.
+    if (a === '-F' || a === '-v' || a === '-W' || a === '-i' ||
+        a === '-o' || a === '-d' || a === '-D' ||
+        a === '-l' || a === '-L' || a === '-p') {
       i++;
       continue;
     }
     // POSIX-glued value flags.
-    if (/^-[FvWi]./.test(a)) continue;
+    if (/^-[FvWidoDlLp]./.test(a)) continue;
     // Other flags (e.g. `--version`, `-V`, `--profile`).
     if (a.startsWith('-')) continue;
     // First non-flag positional = inline program when no -f/-e seen yet.
@@ -849,27 +889,55 @@ function analyzeAwkArgv(argTokens) {
 // `echo awk -e hello`, `cat awk-tutorial.md`, etc. — Codex specifically
 // pointed this out as too wide a false-positive surface.
 function awkIsInvocationContext(tokens, awkIdx) {
-  for (let i = awkIdx - 1; i >= 0; i--) {
-    const t = tokens[i];
-    if (t.kind === 'redirect') continue;
-    if (t.kind !== 'word') continue;
-    // If preceded by a redirect, this word is the redirect's target
-    // (e.g. `< /tmp/script.awk awk`). Targets are transparent — they
-    // belong to the surrounding command, not part of the invocation
-    // context decision. Pin: P1 preposed-redirect regression.
-    if (i > 0 && tokens[i - 1].kind === 'redirect') continue;
-    const a = t.text;
-    // find's `-exec` / `-execdir` introduce the command despite starting
-    // with `-`. Same for the very-rare `-execdir{}` that some manpages list.
-    if (a === '-exec' || a === '-execdir') return true;
-    if (a.startsWith('-')) continue;
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
-    const base = tokenBasename(a);
-    if (base === 'xargs' || COMMAND_WRAPPERS.has(base)) return true;
-    return false;
+  // Two-pass walkback. Step 1 finds the first "data" word skipping
+  // flags / env-assignments / redirect+target pairs. Step 2 (only if
+  // step 1 didn't already match xargs/wrapper) checks one more step
+  // back: handles `timeout SECS awk` / `flock LOCKFILE awk` where the
+  // wrapper's first positional is its OWN value and the wrapped
+  // command sits at position N+2. Pure walk back the way bash sees it.
+  function walkToDataWord(start) {
+    for (let i = start; i >= 0; i--) {
+      const t = tokens[i];
+      if (t.kind === 'redirect') continue;
+      if (t.kind !== 'word') continue;
+      if (i > 0 && tokens[i - 1].kind === 'redirect') continue;
+      const a = t.text;
+      if (a === '-exec' || a === '-execdir') return { kind: 'exec' };
+      if (a.startsWith('-')) continue;
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
+      return { kind: 'word', i, text: a };
+    }
+    return { kind: 'start' };
   }
-  return true; // head position
+  const first = walkToDataWord(awkIdx - 1);
+  if (first.kind === 'exec') return true;
+  if (first.kind === 'start') return true; // head position
+  const base1 = tokenBasename(first.text);
+  if (base1 === 'xargs' || COMMAND_WRAPPERS.has(base1)) return true;
+  // D fix #4 (Codex 🔴, 2026-05-04 round 4): `timeout 5 awk` and
+  // `flock /tmp/f awk` had `5` / `/tmp/f` between wrapper and awk —
+  // wrapper's first positional is its OWN value. Step 2 walkback
+  // checks if the data word two steps back is a value-taking wrapper
+  // OR a regular wrapper-with-subcommand (like `direnv exec . awk`
+  // where exec is direnv's subcommand and `.` is its arg, or
+  // `perf stat awk` where stat is perf's subcommand).
+  const second = walkToDataWord(first.i - 1);
+  if (second.kind === 'exec') return true;
+  if (second.kind === 'start') return false; // first.text was the only word
+  const base2 = tokenBasename(second.text);
+  return POSITIONAL_VALUE_WRAPPERS.has(base2)
+    || base2 === 'xargs'
+    || COMMAND_WRAPPERS.has(base2);
 }
+
+// D fix #4 (Codex 🔴, 2026-05-04 round 4): wrappers whose first non-
+// flag positional is their OWN value, not the wrapped command. For
+// these, the wrapped command sits at position N+2 (`timeout 5 awk` /
+// `flock /tmp/f awk`). awkIsInvocationContext does a 2-step walkback
+// to handle them. Bounded list — POSIX-ish standard wrappers.
+const POSITIONAL_VALUE_WRAPPERS = new Set([
+  'timeout', 'flock', 'tsp', 'ts',
+]);
 
 // Phase 2D follow-up #14 (Codex 🔴): GNU sed `e` command and the
 // `s/.../e` substitute flag both shell-out to execute the result.

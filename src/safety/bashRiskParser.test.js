@@ -595,6 +595,101 @@ test('Phase 2D #14 follow-up: regression — sed exotic-delim replacement-text w
   }
 });
 
+test('Codex D fix #4: parallel/stdbuf/unbuffer/watch + other wrappers → code_execution', () => {
+  // Codex re-review of D fix #3 (29273fd) found 4 wrappers not in
+  // COMMAND_WRAPPERS: parallel / stdbuf / unbuffer / watch. Codex
+  // verified `stdbuf -oL awk 'BEGIN{print ...}'` actually executes.
+  // Fix: extend COMMAND_WRAPPERS with these + defensive additions
+  // (entr/flock/script/rlwrap/pv/direnv/busybox/strace/ltrace/
+  // valgrind/perf/timeout/tsp/ts).
+  for (const cmd of [
+    `parallel awk 'BEGIN{system("rm")}' ::: x`,
+    `stdbuf -oL awk 'BEGIN{system("rm")}' file`,
+    `unbuffer awk 'BEGIN{system("rm")}'`,
+    `watch awk 'BEGIN{system("rm")}'`,
+    `entr awk 'BEGIN{system("rm")}'`,
+    // NOTE: `script -c '<shell-cmd>'` is NOT covered here — script's -c
+    // arg goes through `/bin/sh -c`, which is round 8 nested_shell
+    // territory not D fix #4 awk-wrapper. Documented as known-limit.
+    `rlwrap awk 'BEGIN{system("rm")}'`,
+    `pv awk 'BEGIN{system("rm")}'`,
+    `direnv exec . awk 'BEGIN{system("rm")}'`,  // direnv exec form
+    `busybox awk 'BEGIN{system("rm")}'`,
+    `strace awk 'BEGIN{system("rm")}'`,
+    `ltrace awk 'BEGIN{system("rm")}'`,
+    `valgrind awk 'BEGIN{system("rm")}'`,
+    `perf stat awk 'BEGIN{system("rm")}'`,    // perf takes subcommand 'stat' first
+    `tsp awk 'BEGIN{system("rm")}'`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (new wrapper class)`,
+    );
+  }
+});
+
+test('Codex D fix #4: positional-value wrappers (timeout/flock/tsp) → code_execution', () => {
+  // `timeout 5 awk PROG` and `flock /tmp/f awk PROG` have a positional
+  // VALUE between wrapper and awk (not a flag). awkIsInvocationContext
+  // does a 2-step walkback to find the wrapper one extra position back.
+  for (const cmd of [
+    `timeout 5 awk 'BEGIN{system("rm")}'`,
+    `timeout --signal=KILL 5 gawk 'BEGIN{system("rm")}'`,
+    `timeout 5s awk 'BEGIN{system("rm")}'`,
+    `flock /tmp/lock awk 'BEGIN{system("rm")}'`,
+    `flock --shared /tmp/lock gawk 'BEGIN{system("rm")}'`,
+    `tsp -L name awk 'BEGIN{system("rm")}'`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (positional-value wrapper)`,
+    );
+  }
+});
+
+test('Codex D fix #4: regression — false-positive in `awk -o out -f script` fixed via value-taker extension', () => {
+  // analyzeAwkArgv pre-fix only had -F/-v/-W/-i as separate-form value
+  // takers. GNU awk also has -o/-d/-D/-l/-L/-p (pretty-print/debug/
+  // load/lint/profile). Pre-fix `awk -o out -f script.awk` flagged
+  // because 'out' became hasPositional and shadowed -f.
+  for (const cmd of [
+    `awk -o out -f script.awk file`,           // -o pretty-print + -f
+    `awk -d debug.txt -f script.awk`,          // -d debug
+    `awk -D debug.txt -f script.awk`,          // -D debug mode
+    `awk -l libname -f script.awk`,            // -l load library
+    `awk -L value -f script.awk`,              // -L lint
+    `awk -p profile.txt -f script.awk`,        // -p profile
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (-o/-d/-D/-l/-L/-p value-takers)`,
+    );
+  }
+});
+
+test('Codex D fix #4: regression — value-taker wrappers + -f only still pass', () => {
+  // `timeout 5 awk -f script.awk` should NOT flag — wrapper has its
+  // value (5), then awk has -f only (no inline). Pin.
+  for (const cmd of [
+    `timeout 5 awk -f script.awk`,
+    `flock /tmp/f awk -f script.awk`,
+    `parallel awk -f script.awk ::: x`,
+    `stdbuf -oL awk -f script.awk`,
+    `watch awk -f script.awk`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (wrapper + -f, no inline)`,
+    );
+  }
+});
+
 test('Codex D fix #3: positional inline program after wrapper → code_execution', () => {
   // D fix #3 (2026-05-04 third re-review): D fix #2 token-scan only
   // checked for inline FLAGS (-e/--source). awk's first non-flag

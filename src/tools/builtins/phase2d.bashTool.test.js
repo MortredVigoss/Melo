@@ -2176,6 +2176,37 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix #4: parallel/stdbuf/timeout + autoApprove cannot delete file', async () => {
+  // Codex re-review found `parallel awk` / `stdbuf -oL awk` /
+  // `timeout 5 awk` / `flock LOCK awk` all returned [] before D fix
+  // #4. Pin all 4 wrapper forms via autoApprove + file preserved.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `parallel awk 'BEGIN{system("rm -f ${target}")}' ::: x`,
+      target => `stdbuf -oL awk 'BEGIN{system("rm -f ${target}")}'`,
+      target => `timeout 5 awk 'BEGIN{system("rm -f ${target}")}'`,
+      target => `flock /tmp/melo-lock-${Date.now()} awk 'BEGIN{system("rm -f ${target}")}'`,
+    ]) {
+      const target = join(ws, `dfix4-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 4 D-fix-#4 wrapper forms must hard-reject pre-prompt');
+  });
+});
+
 test('Codex D fix #3: xargs/find-exec + positional inline + autoApprove cannot delete file', async () => {
   // Codex D #3 attack vector: positional inline program after wrapper.
   // `xargs gawk 'PROG'` / `find -exec gawk 'PROG' {} ;` returned []

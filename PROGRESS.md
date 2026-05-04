@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-05-04 — Codex 又抓 D #4：parallel/stdbuf/timeout/flock wrapper 漏 + `awk -o` 误报
+
+- D fix #3 (`39c1cab`) push 后跑第四轮 codex review，Codex 评 **D**：① 🔴 attack — `parallel awk 'PROG' ::: x` / `stdbuf -oL awk 'PROG' file`（实测 awk 真执行）/ `unbuffer awk` / `watch awk` 4 个 wrapper 都不在 COMMAND_WRAPPERS → awkIsInvocationContext 看到前置 token 不是 wrapper → return false → 漏；② ⚪ false positive — `awk -o out -f script.awk` 被误标 code_execution（`-o` 是 GNU awk pretty-print flag 接 separate value 'out'，`out` 被当 hasPositional → flag）。Codex 同时警告 "枚举式 allowlist 持续形成同类漏 detect"（round 5 git deny-list 同款无底洞）。
+- 用户拍方案 K = 扩 COMMAND_WRAPPERS + 修 false positive：
+- **扩 COMMAND_WRAPPERS 加 18 个新 wrapper**：
+  - Codex 直接列名：`parallel` / `stdbuf` / `unbuffer` / `watch`
+  - 防御性同款 "exec sub-command" 行为：`entr` / `flock` / `pv` / `script` / `rlwrap` / `direnv` / `busybox` / `timeout` / `strace` / `ltrace` / `valgrind` / `perf` / `tsp` / `ts`
+  - 现 COMMAND_WRAPPERS 总数 18+18=36，仍 bounded（POSIX/Linux command-running wrappers 总集 ~30-40，不像 round 5 git 子命令无穷扩张）。
+- **新加 `POSITIONAL_VALUE_WRAPPERS` 处理 timeout/flock 形态**：`timeout SECS awk PROG` / `flock LOCK awk PROG` 的 first positional 是 wrapper 自己的 value（不是 wrapped command），命令在 N+2。awkIsInvocationContext 加 2-step walkback：first walkback 命中 data word（5/`/tmp/f`），如果不是 wrapper 名 → second walkback 看是不是 POSITIONAL_VALUE_WRAPPERS 或 COMMAND_WRAPPERS（cover `direnv exec . awk` / `perf stat awk` 这类 subcommand-style wrapper）。
+- **修 false positive 扩 analyzeAwkArgv value-takers**：原 `-F`/`-v`/`-W`/`-i` 4 个，加 GNU awk separate-form value-takers `-o`/`-d`/`-D`/`-l`/`-L`/`-p`（pretty-print / debug / load lib / lint / profile）+ POSIX-glued regex `^-[FvWidoDlLp]./` 同步覆盖。`awk -o out -f script.awk` 现在 hasFileFlag=true, hasPositional=false → 不标。
+- **手动验证 24 case 全过**（7 attack + 4 false-positive fix + 5 之前 attack regression + 4 false-positive guard regression + 4 -f only regression）。
+- 测试加 5 case：parser 4 case（① 15 形态 wrapper attack，含 parallel/stdbuf/unbuffer/watch + entr/rlwrap/pv/direnv/busybox/strace/ltrace/valgrind/perf/tsp + `script -c` 因属 nested_shell 范畴单独留 known-limit；② 6 形态 timeout/flock/tsp positional-value wrapper attack；③ 6 形态 false-positive fix `awk -o out -f` 等不再误标；④ 5 形态 wrapper + `-f only` 仍不误标）；e2e 1 case（4 形态 parallel/stdbuf/timeout/flock autoApprove + 文件保留 attack vector）。
+- 验证：`src/safety/bashRiskParser.test.js` **76/76 全绿**（前 72 + 4 新）；`src/tools/builtins/phase2d.bashTool.test.js` **108/108 全绿**（前 107 + 1 新）；`src/**/*.test.js` **1941/1941 全绿**（前 1936 + 5 新；零既有回归）。
+- **已知 limit**（D fix #4 后）：① `script -c '<shell-cmd>'` 通过 sh -c 跑命令属 round 8 nested_shell 范畴，不在 awk 检测；现有 nested_shell 检测的 SHELL_INTERPRETERS 不含 `script` — Codex 下轮可能点名再补；② COMMAND_WRAPPERS 仍是 enumerated allowlist，未来新 wrapper 出现需要继续加（但 POSIX/Linux 标准 wrapper 集有界，~30-40 已基本覆盖）。
+- **教训**（4 轮 D 之后）：① enumerated allowlist 在 wrapper detection 维度可接受（有界集）vs round 5 git subcommand 不可接受（无穷扩张）；② Codex 对 wrapper 集合的 audit 比手动想全更可靠 — 4 轮各自找到不同 wrapper 类（基础/value-taking/subcommand）；③ POSITIONAL_VALUE_WRAPPERS 的 2-step walkback 模式可推广到其他 wrapper-with-positional-value 形态（如果将来有）；④ Codex review 已经成为质量保证关键环节 — 没有它 4 个 D 全部漏。
+
+---
+
 ## 2026-05-04 — Codex 又抓 D #3：positional inline after wrapper + 误报扩大 → 统一 awk 检测重构
 
 - D fix #2 (`29273fd`) push 后跑第三轮 codex review，Codex 评 **D**：① D #3 attack — `xargs gawk 'BEGIN{system("rm")}'` / `find . -exec gawk 'PROG' {} \;` / `xargs -I{} gawk 'PROG' {}` / `env xargs gawk 'PROG'` 全部不被 flag — D fix #2 token-scan 只看 inline-flag (`-e`/`--source`) 不看**positional inline program**；② 🟡 误报扩大 — `git commit -m awk -e hello` 也会被 D fix #2 token-scan 标 code_execution（dev 真常用 commit message 形态）。两个问题暴露结构性盲区：head-aware findWrappedCommand + 半 token-scan 双层设计永远漏一个 wrapper 形态；每修一刀都要再来一刀。
