@@ -742,6 +742,27 @@ test('Codex D fix #8: deep wrapper chain (16+ layers) → fail-closed code_execu
   }
 });
 
+test('Codex D fix #8: deep wrapper chain WITHOUT payload also hard-rejects (pin sentinel side-effect)', () => {
+  // Codex review #9 ⚪ non-blocking note: pin the documented over-flag
+  // — 16+ pure wrapper chain with no command/payload still triggers
+  // CMD_POSITION_CAP_EXHAUSTED. This is intentional (cap-exhausted
+  // means parser couldn't reach the command position with confidence,
+  // safest to fail-closed). Pin so future readers understand it's
+  // not a regression but the sentinel's documented side-effect.
+  function envChain(n) { return Array(n).fill('env').join(' '); }
+  for (const cmd of [
+    envChain(17),                              // 17 pure env, no command
+    envChain(20),                              // 20 pure env
+    envChain(20) + ' --',                      // pure env chain ending with --
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution' && r.pattern === 'wrapper chain exceeds depth limit'),
+      `${cmd.length > 60 ? cmd.slice(0, 50) + '...' : cmd} should hard-reject as cap-exhausted`,
+    );
+  }
+});
+
 test('Codex D fix #8: regression — wrapper chains under cap still resolve correctly', () => {
   // Pin: chains within the 16-iter cap return correct command
   // position (not the fail-closed sentinel). They should produce

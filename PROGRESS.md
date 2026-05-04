@@ -21,8 +21,10 @@
   - `cat $FILE` head-literal → 不 flag ✓
 - accepted over-flag：16+ 层 wrapper-of-wrapper 命令一律 hard-reject。合法用法极罕见（`env env env...` 是 attack pattern）；过度 wrap 通常意味着混淆。
 - 测试加 3 case：parser 2 case（① 8 形态深链 attack：15/16/17/20/50 层 env + 20 层 sudo + 8+8 mixed env+xargs + 20 层 env + 安全 -f；② 3 形态 cap-内 chain 仍正确解析 (2/5 层 + expansion+positional flag, 3 层无 positional 不 flag)）；e2e 1 case（17 层 + 25 层 env + `$AWK 'PROG'` autoApprove + 文件保留）。
-- 验证：`src/safety/bashRiskParser.test.js` **85/85 全绿**（前 83 + 2 新）；`src/tools/builtins/phase2d.bashTool.test.js` **111/111 全绿**（前 110 + 1 新）；`src/**/*.test.js` **1953/1953 全绿**（前 1950 + 3 新；零既有回归）。
-- **教训**：① fail-open default in safety gate is wrong — always fail-closed when uncertainty hits a hard limit；② iter cap 不是设计完整保证，是 defensive measure，hit cap = 异常 → over-flag；③ Codex 8 轮 D 第一次没找新维度（cap fail-open 是同一 wrapper 维度的 boundary case） — D fix 系列开始 converge；④ 简单 sentinel 模式比 throwing exception 干净 — caller 显式判断 -2 比 try/catch 清楚。
+- 验证：`src/safety/bashRiskParser.test.js` **86/86 全绿**（前 83 + 3 新含 sentinel side-effect pin）；`src/tools/builtins/phase2d.bashTool.test.js` **111/111 全绿**（前 110 + 1 新）；`src/**/*.test.js` **1954/1954 全绿**（前 1950 + 4 新；零既有回归）。
+- **🎉 Codex 第九轮 review 评 A**（8 轮 D 之后首次过）：质量评级：A —— 方案正确，轻微边界建议；风险等级：低 —— 深链 over-flag 可接受。Codex ⚪ 非阻塞建议：pin "16+ 纯 wrapper 无 payload 也 over-flag" sentinel side-effect，已补 1 个 test。
+- **教训**：① fail-open default in safety gate is wrong — always fail-closed when uncertainty hits a hard limit；② iter cap 不是设计完整保证，是 defensive measure，hit cap = 异常 → over-flag；③ Codex 8 轮 D 第一次没找新维度（cap fail-open 是同一 wrapper 维度的 boundary case） — D fix 系列**收敛**到 A；④ 简单 sentinel 模式比 throwing exception 干净 — caller 显式判断 -2 比 try/catch 清楚。
+- **Phase 2D round 14 awk 维度共 9 轮 review 收敛史**：D #1-7 找到 7 个独立 bypass 维度（flag-form / wrapper-basename / positional-after-wrapper / wrapper-enum / wrapper-flag-chain / expansion-form basename / wrapped-position expansion），D #8 是 D #7 同维度的 boundary fail-open，D #9 (本轮 review) 评 A 收敛。剩 P1 = 其他 inline-shell-out 工具维度 (gnuplot/sqlite3/vim -c/ed)，独立 round 评估。
 
 ---
 
