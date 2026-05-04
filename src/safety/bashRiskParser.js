@@ -301,7 +301,61 @@ function riskifyTokens(tokens) {
     }
   }
 
+  // ── Phase 2D follow-up #1 (Codex 🔴): nested shell detection ──────
+  // `bash -c '...'` / `sh -c '...'` / `eval '...'` can run ANY inner
+  // command; we don't recursively re-parse the inner string (would
+  // need a full bash grammar). Surface them as `nested_shell` so the
+  // gate prompts. `xargs ... sh -c` (or bash -c) is the same pattern
+  // — xargs followed by a -c-using interpreter. Without this guard,
+  // `bash -c 'rm -rf x'` would slip past the delete-class hard-reject.
+  if (head === 'eval') {
+    risks.push({ kind: 'nested_shell', pattern: 'eval', confidence: 'high' });
+  }
+  if (head === 'bash' || head === 'sh' || head === 'zsh' || head === 'dash' || head === 'ksh') {
+    if (args.includes('-c')) {
+      risks.push({ kind: 'nested_shell', pattern: `${head} -c`, confidence: 'high' });
+    }
+  }
+  if (head === 'xargs') {
+    // xargs followed by a -c-using shell
+    const interp = args.find(a => a === 'bash' || a === 'sh' || a === 'zsh' || a === 'dash' || a === 'ksh');
+    if (interp && args.includes('-c')) {
+      risks.push({ kind: 'nested_shell', pattern: `xargs ${interp} -c`, confidence: 'high' });
+    }
+    // xargs -I {} <cmd> with a shell-using replacement is harder to
+    // detect, but the most common form (`xargs sh -c '...'`) is caught above.
+  }
+
   return risks;
+}
+
+// Phase 2D follow-up #1 (Codex 🔴): scan a raw command string for
+// command substitution / process substitution / backtick subshells.
+// These can hide arbitrary commands inside an otherwise-benign top-
+// level command (`echo $(rm -rf x)`), which our token-level parser
+// can't see into. Quote-aware: skip substrings inside single quotes
+// (single-quoted text is literal in bash; $() and `` are NOT
+// expanded). Returns true if any substitution construct exists.
+function hasShellSubstitution(s) {
+  if (typeof s !== 'string' || !s) return false;
+  let inSingle = false;
+  let inDouble = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && !inSingle) { escape = true; continue; }
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+    if (inSingle) continue;  // single quotes suppress substitution
+    // $(...) or $((...)) — both can contain executable commands.
+    if (ch === '$' && s[i + 1] === '(') return true;
+    // <(...) or >(...) process substitution
+    if ((ch === '<' || ch === '>') && s[i + 1] === '(') return true;
+    // `` `...` `` backtick subshell
+    if (ch === '`') return true;
+  }
+  return false;
 }
 
 // Public entry point.
@@ -313,6 +367,14 @@ export function parseBashRiskyOps(command) {
   const subs = splitCommands(command);
   const allRisks = [];
   let unparseable = false;
+
+  // Phase 2D follow-up #1: command substitution / backticks / process
+  // substitution can hide arbitrary commands inside any sub-command.
+  // Detect on the raw command string (quote-aware) since splitCommands
+  // tokenizes around &&/||/;/| but doesn't analyze $() / `` payloads.
+  if (hasShellSubstitution(command)) {
+    allRisks.push({ kind: 'nested_shell', pattern: 'substitution', confidence: 'high' });
+  }
 
   for (const sub of subs) {
     if (hasUnbalancedQuotes(sub)) {
