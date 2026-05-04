@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-05-04 — Codex D #7 + 方案 W'：wrapper-position expansion 闭环
+
+- D fix #6 (`6c8b84c`) push 后跑第七轮 codex review，Codex 评 **D**：D fix #6 只检 `skipPreamble()` 后的**直接 head**，wrapper-后 expansion 漏：
+  - `xargs $AWK 'BEGIN{system("rm")}'`
+  - `env $AWK 'BEGIN{system("rm")}'`
+  - `timeout 5 $AWK 'PROG'`
+  - `env xargs $AWK 'PROG'`（wrapper-of-wrapper）
+- 用户拍方案 **W'** = 扩展 D fix #6 到 wrapped command position。沿用 nuclear over-flag。
+- 实现：
+  - **恢复 `POSITIONAL_VALUE_WRAPPERS`** (D fix #5 删的 set，timeout/flock/tsp/ts) — 但**只用在新 walker 里**，不参与 awk-detection（awk 仍 nuclear）。
+  - **新 helper `findCommandPositionIdx(tokens)`**: forward walk 跳过 leading wrapper chain（COMMAND_WRAPPERS / xargs / POSITIONAL_VALUE_WRAPPERS）+ 它们的 flags + value-takers + (positional value for timeout/flock)，返回第一个非 wrapper word token 的 index（即 wrapped command position）。16-iter cap 防 wrapper-of-wrapper 病态输入。
+  - **D fix #6 check 替换**为：用 `findCommandPositionIdx` 找 command position，如果它是 expansion + 任何 later non-flag positional → flag。同时覆盖直接 head 和 wrapper 后位置。pattern 改名 `'expansion at command position + positional program'`（合并 D fix #6/#7）。
+- 闭环（手动 22 case 验证）：
+  - ✅ D #7: xargs/env/sudo/nohup/time/nice -n 10 + `$AWK 'PROG'` 全 catch
+  - ✅ D #7 POSITIONAL_VALUE_WRAPPERS: `timeout 5 $AWK` / `flock /tmp/f $AWK` 全 catch
+  - ✅ D #7 wrapper-of-wrapper: `env xargs $AWK 'PROG'` catch
+  - ✅ D #7 + value-taker flag: `env -u VAR $AWK 'PROG'` catch（VALUE_TAKING_WRAPPER_FLAGS 跳过 -u VAR）
+  - ✅ D #6 attacks 仍 catch（直接 head expansion）
+  - ✅ D #5 wrapper-flag chain 仍 catch（独立 token-scan path）
+- false positive boundary（pin 未误报）：
+  - `xargs $DIR` / `env $VAR` / `timeout 5 $X` / `sudo $X`（wrapper + expansion，**无** positional after → no flag）
+  - `cat $FILE program.txt` / `git commit -m "$MSG"`（head=literal，不是 wrapper → findCommandPositionIdx 返回 head idx，head not expansion → no flag）
+  - `mkdir $DIR` / `cat $FILE` / `ls $HOME`（无 wrapper 无 positional 后续）
+  - `awk -f script.awk` / `awk --version`（probe / file-source）
+- accepted over-flag（continued nuclear）：
+  - `xargs $EDITOR file.txt` / `env $BROWSER url` / `timeout 5 $TERM args`（wrapper + envvar invocation pattern）
+- 测试加 4 case：parser 3 case（① 12 形态 wrapper-position expansion attack；② 7 形态 wrapper + expansion 无 positional 不误标；③ 5 形态 head-literal-with-expansion-arg 不触发 D fix #7）；e2e 1 case（4 形态 xargs/env/timeout/wrapper-of-wrapper autoApprove + 文件保留）。
+- 验证：`src/safety/bashRiskParser.test.js` **83/83 全绿**（前 80 + 3 新）；`src/tools/builtins/phase2d.bashTool.test.js` **110/110 全绿**（前 109 + 1 新）；`src/**/*.test.js` **1950/1950 全绿**（前 1946 + 4 新；零既有回归）。
+- **Codex 7 轮 D 累积总结**：每轮发现新维度盲区，修透 + 接受 over-flag → 6 个维度全闭环：① flag 形态 (`-e<glued>`/`--source=`)、② wrapper basename (xargs/find-exec)、③ positional-after-wrapper、④ wrapper enumeration (parallel/stdbuf/timeout)、⑤ wrapper-flag chain (timeout -s/-k 等) → nuclear、⑥ expansion-form basename ($AWK/${a}wk)、⑦ wrapped-position expansion (xargs $AWK)。剩 P1 = 其他 inline-shell-out 工具维度 (gnuplot/sqlite3/vim -c/ed)，留独立 round。
+- **教训扩充**：① wrapper detection 7 轮被 D 后才彻底闭环，"按最稳的来" 在每轮都意味着继续扩 over-flag 而不是回退；② Codex review 是结构性必需；③ 同一个维度（expansion）可以横跨多个位置（head / wrapper-after），第一刀漏第二刀；④ POSITIONAL_VALUE_WRAPPERS 删了又恢复证明：删除工具仍可能在不同 detector 派得上用场，删除前考虑 reuse。
+
+---
+
 ## 2026-05-04 — Codex D #6 + 方案 W：head-expansion + positional 闭环
 
 - D fix #5 nuclear (`cf21ff5`) push 后跑第六轮 codex review，Codex 评 **D**：Y nuclear 闭环了 wrapper-flag chain 7/7（**P2 通过**），但暴露 expansion 形态新攻击：

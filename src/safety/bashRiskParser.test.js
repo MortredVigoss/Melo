@@ -715,6 +715,76 @@ test('Codex D fix #3: positional inline program after wrapper → code_execution
   }
 });
 
+test('Codex D fix #7: wrapped-position expansion + positional → code_execution', () => {
+  // Codex round 7 found D fix #6 only checked DIRECT head expansion;
+  // wrapper + expansion at wrapped command position bypassed:
+  //   `xargs $AWK 'PROG'` / `env $AWK 'PROG'` / `timeout 5 $AWK 'PROG'`
+  // Fix: extend the check to walk past wrapper chain (incl.
+  // POSITIONAL_VALUE_WRAPPERS like timeout/flock) and check expansion
+  // at the wrapped command position.
+  for (const cmd of [
+    `xargs $AWK 'PROG'`,                       // basic wrapper
+    `env $AWK 'PROG'`,
+    `sudo $CMD 'BEGIN{system("rm")}'`,
+    `nohup $X 'PROG'`,
+    `time $AWK 'PROG'`,
+    `nice -n 10 $AWK 'PROG'`,
+    `timeout 5 $AWK 'PROG'`,                   // POSITIONAL_VALUE_WRAPPERS
+    `flock /tmp/lock $AWK 'PROG'`,
+    `env xargs $AWK 'PROG'`,                   // wrapper-of-wrapper
+    `env -u VAR $AWK 'PROG'`,                  // wrapper + value-taker flag
+    `xargs ${'${a}'}wk 'PROG'`,                // parameter-substitution + wrapper
+    `env ${'${cmd[@]}'} 'PROG'`,                // array expansion + wrapper
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (wrapped-position expansion + positional)`,
+    );
+  }
+});
+
+test('Codex D fix #7: regression — wrapper + expansion WITHOUT positional NOT flagged', () => {
+  // Pin the boundary: wrapper-skipped expansion alone (no positional
+  // after) is common shell usage. Must not flag.
+  for (const cmd of [
+    `xargs $DIR`,                              // wrapper + expansion, no positional
+    `env $VAR`,
+    `time $X`,
+    `nohup $CMD`,
+    `nice -n 10 $X`,
+    `timeout 5 $X`,                            // POSITIONAL_VALUE_WRAPPERS + expansion, no positional
+    `sudo $X`,
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT flag (wrapped expansion, no extra positional)`,
+    );
+  }
+});
+
+test('Codex D fix #7: regression — non-wrapper head with expansion arg NOT flagged', () => {
+  // findCommandPositionIdx returns -1 (or head idx) when head is NOT
+  // a wrapper. Head=cat/git/grep literal → not expansion → no D-fix-7 flag.
+  for (const cmd of [
+    `cat $FILE program.txt`,                   // head=cat literal
+    `git commit -m "$MSG"`,                    // head=git literal
+    `grep $PATTERN file.txt`,                  // head=grep literal
+    `cp $SRC $DST`,                            // head=cp, expansions in args (data)
+    `ln -s $TARGET $LINK`,                     // head=ln, expansions in args
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    const dFix7 = risks.filter(r => r.pattern === 'expansion at command position + positional program');
+    assert.equal(
+      dFix7.length,
+      0,
+      `${cmd} should not trigger D fix #7 (head is literal non-wrapper)`,
+    );
+  }
+});
+
 test('Codex D fix #6: expansion-head + positional → code_execution (covers $AWK / ${a}wk / ${cmd[@]})', () => {
   // Codex re-review of D fix #5 (cf21ff5) found expansion-form awk
   // basenames: token literal `$AWK` / `${a}wk` / `${cmd[@]}` doesn't

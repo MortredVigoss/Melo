@@ -2176,6 +2176,37 @@ test('round 23 Phase 2D #14 follow-up: regression — sed exotic-delim WITHOUT e
   });
 });
 
+test('Codex D fix #7: wrapped-position expansion + autoApprove cannot delete file', async () => {
+  // Codex round 7 found D fix #6 missed wrapper + $AWK forms.
+  // findCommandPositionIdx now walks past wrapper chain to reach
+  // the command position. Pin xargs/env/timeout + $AWK forms.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmdTemplate of [
+      target => `xargs $AWK 'BEGIN{system("rm -f ${target}")}'`,
+      target => `env $AWK 'BEGIN{system("rm -f ${target}")}'`,
+      target => `timeout 5 $AWK 'BEGIN{system("rm -f ${target}")}'`,
+      target => `env xargs $AWK 'BEGIN{system("rm -f ${target}")}'`,
+    ]) {
+      const target = join(ws, `dfix7-attack-${Math.random().toString(36).slice(2, 8)}.txt`);
+      await writeFile(target, 'protected', 'utf8');
+      const result = await bashTool.run(
+        { command: cmdTemplate(target) },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+        },
+      );
+      assert.equal(result.error, 'DENIED', `${cmdTemplate(target)} should DENY pre-prompt`);
+      const fs = await import('node:fs/promises');
+      assert.equal(await fs.readFile(target, 'utf8'), 'protected', `${cmdTemplate(target)} file untouched`);
+    }
+    assert.equal(promptCount, 0, 'all 4 wrapper-position expansion forms must hard-reject pre-prompt');
+  });
+});
+
 test('Codex D fix #6: $AWK / ${a}wk expansion-head + autoApprove cannot delete file', async () => {
   // Codex round 6 found expansion-form awk basename ($AWK / ${a}wk /
   // ${cmd[@]}) bypassed token-scan. Round 9 expansion-before-c covers

@@ -632,42 +632,43 @@ function riskifyTokens(tokens, sepBefore = null) {
     }
   }
 
-  // D fix #6 (Codex 🔴 round 6, 2026-05-04): expansion-form awk
-  // basename. The token-scan above only matches LITERAL `awk` /
-  // `gawk` / etc. tokens. Shell expansion at the head can resolve
-  // to awk at runtime:
-  //   `$AWK 'BEGIN{system("rm")}'`
-  //   `${a}wk 'BEGIN{system("rm")}'`
-  //   `${cmd[@]} 'BEGIN{system("rm")}'`
-  //   `$EDITOR file.txt` (any expansion-head + positional)
+  // D fix #6 + #7 (Codex 🔴 rounds 6+7, 2026-05-04): expansion at
+  // command position (direct head OR after wrapper chain) + non-flag
+  // positional → hard-reject. Token-scan only matches LITERAL awk /
+  // gawk / etc. basenames; shell expansion can resolve to awk (or
+  // any inline-shell-out tool) at runtime:
+  //   `$AWK 'BEGIN{system("rm")}'`              (D fix #6: direct head)
+  //   `${a}wk 'BEGIN{system("rm")}'`             (D fix #6)
+  //   `xargs $AWK 'BEGIN{system("rm")}'`         (D fix #7: wrapped)
+  //   `env $AWK 'BEGIN{system("rm")}'`           (D fix #7)
+  //   `timeout 5 $AWK 'BEGIN{system("rm")}'`     (D fix #7: positional-value wrapper)
+  //   `$EDITOR file.txt` (intentional over-flag)
+  //
   // Round 9 already covers `$SHELL -c PROG` via expansion-before-c
   // (extended in round 10 to inline-code-flag), but those checks
   // require a specific FLAG (`-c`/`-e`/`-r`/`-p`/`--eval`) right
   // after expansion. awk's primary inline form is a positional
   // program (no flag), so the existing check misses it.
   //
-  // Detection: head position (after preamble) is an expansion AND
-  // any later token is a non-flag positional → hard-reject.
-  // Trade-off (continued nuclear over-flag): `$EDITOR file.txt` /
-  // `$BROWSER url` / `$TERM args` etc. all flag. Agent mitigation:
-  // use literal command name instead of envvar shorthand. Safe
-  // direction (over-flag) preferred per 5-round D pattern.
+  // Detection: walk past leading wrapper chain to the command
+  // position; if it's an expansion + any later token is a non-flag
+  // positional → hard-reject. Trade-off (continued nuclear over-
+  // flag): `$EDITOR file.txt` / `xargs $EDITOR file.txt` / etc. all
+  // flag. Agent mitigation: literal command name. Safe direction
+  // (over-flag) preferred per 7-round D pattern.
   {
-    const headIdx2 = skipPreamble(tokens);
-    const headTok = tokens[headIdx2];
-    if (headTok && headTok.kind === 'word' && hasExpansionMetachar(headTok.text)) {
-      for (let j = headIdx2 + 1; j < tokens.length; j++) {
+    const cmdPosIdx = findCommandPositionIdx(tokens);
+    if (cmdPosIdx >= 0 && tokens[cmdPosIdx].kind === 'word' && hasExpansionMetachar(tokens[cmdPosIdx].text)) {
+      for (let j = cmdPosIdx + 1; j < tokens.length; j++) {
         const u = tokens[j];
         if (u.kind !== 'word') continue;
         const a = u.text;
         if (a === '--') continue;
         if (a.startsWith('-')) continue;
         if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue;
-        // First non-flag positional after expansion-head → potential
-        // inline program (head could expand to awk/python/sed/etc.).
         risks.push({
           kind: 'code_execution',
-          pattern: 'expansion-head + positional program',
+          pattern: 'expansion at command position + positional program',
           confidence: 'medium',
         });
         break;
@@ -941,13 +942,65 @@ function analyzeAwkArgv(argTokens) {
   return { hasFileFlag, hasInlineFlag, hasPositional };
 }
 
-// D fix #5 (Codex 🔴 round 5, 2026-05-04): both `awkIsInvocationContext`
-// (head-aware + walkback) and `POSITIONAL_VALUE_WRAPPERS` were removed
-// after 5 rounds of Codex D proved enumerated wrapper-flag chains never
-// get fully covered. The invocation-context filter is gone — any
-// awk-family token + inline-form is hard-rejected, regardless of what
-// precedes it. See the unified token-scan loop in riskifyTokens for
-// rationale + agent-side mitigation (single-quote the awk literal).
+// D fix #5 (Codex 🔴 round 5, 2026-05-04): `awkIsInvocationContext`
+// (head-aware + walkback) was removed after 5 rounds of Codex D
+// proved enumerated wrapper-flag chains never get fully covered.
+// The invocation-context filter is gone — any awk-family token +
+// inline-form is hard-rejected, regardless of what precedes it.
+// See the unified token-scan loop in riskifyTokens for rationale +
+// agent-side mitigation (single-quote the awk literal).
+//
+// D fix #7 (Codex 🔴 round 7, 2026-05-04): `POSITIONAL_VALUE_WRAPPERS`
+// restored — but used ONLY in `findExpansionAtCommandPosition` to
+// correctly walk past `timeout SECS` / `flock LOCKFILE` before
+// reaching the wrapped-command position. NOT used for awk detection
+// (which stays nuclear).
+const POSITIONAL_VALUE_WRAPPERS = new Set([
+  'timeout', 'flock', 'tsp', 'ts',
+]);
+
+// D fix #7 (Codex 🔴 round 7, 2026-05-04): walk past leading wrapper
+// chain (env / xargs / sudo / nohup / nice / timeout / flock / etc.)
+// and return the index of the first "command position" token. Returns
+// -1 if no wrapper chain leads to a command position (e.g. head is
+// already a non-wrapper word). The result is used by D fix #7's
+// expansion-at-wrapped-position detection — if the returned token has
+// expansion metachars + any non-flag positional follows, hard-reject.
+function findCommandPositionIdx(tokens) {
+  let i = skipPreamble(tokens);
+  for (let iter = 0; iter < 16 && i < tokens.length; iter++) {
+    const t = tokens[i];
+    if (t.kind !== 'word') { i++; continue; }
+    const text = t.text;
+    const base = tokenBasename(text);
+    // Reached a non-wrapper word — this is the command position.
+    if (!COMMAND_WRAPPERS.has(base) && base !== 'xargs' && !POSITIONAL_VALUE_WRAPPERS.has(base)) {
+      return i;
+    }
+    // Skip wrapper + flags + value-takers + (one positional value
+    // for POSITIONAL_VALUE_WRAPPERS).
+    i++;
+    while (i < tokens.length) {
+      const u = tokens[i];
+      if (u.kind !== 'word') { i++; continue; }
+      const a = u.text;
+      if (a === '--') { i++; break; }
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) { i++; continue; }
+      if (a.startsWith('-')) {
+        if (a.includes('=')) { i++; continue; }
+        if (VALUE_TAKING_WRAPPER_FLAGS.has(a)) { i += 2; continue; }
+        i++; continue;
+      }
+      // First non-flag positional. For POSITIONAL_VALUE_WRAPPERS,
+      // this is the wrapper's value (e.g. timeout SECS) — skip one.
+      if (POSITIONAL_VALUE_WRAPPERS.has(base)) {
+        i++;
+      }
+      break;
+    }
+  }
+  return -1;
+}
 
 // Phase 2D follow-up #14 (Codex 🔴): GNU sed `e` command and the
 // `s/.../e` substitute flag both shell-out to execute the result.
