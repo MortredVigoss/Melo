@@ -199,14 +199,32 @@ export function messagesHaveInputImages(messages) {
 }
 
 // Stricter variant: returns true ONLY when the LATEST user-role message
-// carries an image_url. Used by the Phase 4 image-intent gate — if the
-// user uploaded an image 5 turns ago and now types "change the
-// background" (typically CSS / theming, not image edit), the broad
-// messagesHaveInputImages would still report true and let
-// IMAGE_EDIT_INTENT_PATTERN re-enable image_generation incorrectly.
-// Codex review (2026-05-04 Phase 4 follow-up 🔴): mirrors
-// findLatestUserImageUrl in imageEditFastPath.js — only the freshest
-// turn's image matters for routing decisions.
+// carries an image_url. Used by the Phase 4 image-intent gate.
+//
+// Cross-system contract (Codex Phase 4 follow-up H plan, 2026-05-04):
+// this gate consults the SAME post-carry-forward state of the latest
+// user turn that messageBuilder.js produces. messageBuilder runs
+// upstream of createCodexResponsesReply and merges an older turn's
+// image into the latest user turn ONLY when the latest text matches
+// IMAGE_FOLLOW_UP_PATTERN (e.g. "这张图改一下" / "换背景"). Bare edit
+// verbs that don't reference an image-noun ("再改一下头发", "换一下
+// 颜色", "change the background") explicitly do NOT trigger
+// carry-forward — the messageBuilder design (review round 6
+// 2026-04-30) tightened that gate to avoid CSS/theming
+// false-positives where a screenshot from earlier in the chat would
+// be mis-pulled into a code-styling discussion.
+//
+// By consulting only the latest turn we automatically inherit the
+// same decision: carry-forward triggered → image is in latest turn →
+// gate enables image_generation; carry-forward didn't trigger →
+// image stays in old turn → gate keeps image_generation off. The two
+// systems cannot drift because they read the same fact. The
+// integration test src/services/chat/imageIntentGate.integration.test.js
+// pins the alignment so a future expansion on either side that
+// breaks parity lights up red.
+//
+// Closes Codex review Phase 4 🔴 (history-wide image leak), Phase 4 C
+// 评级 (carry-forward / gate semantic drift).
 export function latestUserMessageHasImage(messages) {
   if (!Array.isArray(messages)) return false;
   for (let i = messages.length - 1; i >= 0; i--) {
