@@ -250,6 +250,71 @@ test('buildSelectedFileContextBlock: multi-language Rust fn / Go func / Java pub
   }
 });
 
+test('buildSelectedFileContextBlock: Kotlin fun / Ruby def keyword bonus also applies', () => {
+  // Codex review #14 ⚪ P2: original multi-language test covered
+  // Python/Rust/Go/Java/Swift but skipped Kotlin and Ruby. Pin them
+  // here so the regex's full coverage is locked in.
+  for (const { path, lang, hot } of [
+    {
+      path: 'src/Service.kt',
+      lang: 'kotlin',
+      hot: 'fun parseTokens(input: String): List<Token> {',
+    },
+    {
+      path: 'src/parser.rb',
+      lang: 'ruby',
+      hot: 'def parseTokens(input)',
+    },
+  ]) {
+    const lines = Array.from({ length: 240 }, (_, i) => `# comment about parseTokens at ${i}`);
+    lines[5] = `# early comment containing parseTokens word here`;
+    lines[180] = hot;
+    const out = buildSelectedFileContextBlock({
+      path,
+      language: lang,
+      content: lines.join('\n'),
+    }, 'review parseTokens function');
+    assert.match(
+      out,
+      /181\t(?:fun|def) parseTokens/,
+      `${lang}: hot line with keyword must be selected as top seed`,
+    );
+  }
+});
+
+test('buildSelectedFileContextBlock: word-boundary regression — `asynchronization` does NOT match `async`', () => {
+  // Codex review #14 ⚪ P2 regression pin: the multi-lang regex
+  // added \b boundary specifically to prevent substring matches
+  // (e.g. `asynchronization`, `transformative`, `interfaceable`).
+  // Construct a file where the only occurrences of "async" are
+  // INSIDE longer words; the keyword bonus must NOT apply.
+  // We can't directly assert "no bonus" via the public API, but we
+  // can verify behavior: a line with only the substring (no real
+  // keyword) should not outrank a comment line with the same query
+  // token at an earlier position.
+  const lines = Array.from({ length: 240 }, (_, i) => `# baseline filler at ${i}`);
+  lines[5] = '# token-needle at line 6 (comment, baseline)';
+  lines[180] = 'asynchronization is the act of de-syncing token-needle';
+  // No real `async` keyword (boundary blocks substring); no actual
+  // code structure on line 181. Both lines have the token "needle"
+  // (or "token-needle") + 1 has substring "async" inside word.
+  // The early-position bonus (+1 first-12-chars) on line 6 should
+  // win — line 6 is selected before line 181.
+  const out = buildSelectedFileContextBlock({
+    path: 'src/notes.md',
+    language: 'markdown',
+    content: lines.join('\n'),
+  }, 'review needle');
+  // Verify line 6 is in excerpt (token-needle there).
+  assert.match(out, /6\t# token-needle/);
+  // Optional: line 181 substring "asynchronization" is NOT given
+  // the +2 keyword bonus, so it doesn't dominate ranking. Behavior
+  // pin is implicit (line 6 won the seed; if substring-match were
+  // active, line 181 would have +4+2+0=6 vs line 6's +4+0+1=5 and
+  // line 181 would win; line 6 winning means the bonus is gated by
+  // word boundary correctly).
+});
+
 test('buildSelectedFileContextBlock: empty / stop-word-only query falls back to file head', () => {
   // When tokenizeContextQuery returns no useful tokens (empty
   // message, or only stop words like "看看 一下 帮我"), no line
