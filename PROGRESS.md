@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-05-04 — Selected file context: query-relevant excerpts for large files
+
+- 用户 review 大文件（> 3000 chars）时，`buildDynamicContext` 之前把整个 `selectedFile.content` 原样塞进 prompt → token 成本随文件大小线性涨。优化：抽出新 export `buildSelectedFileContextBlock(selectedFile, latestUserMessage)` 把大文件转成 query-relevant excerpts。小文件（≤ 3000 chars）走原样 path（向后兼容）。
+- **算法**（pure 函数 + 上限严格）：
+  - `tokenizeContextQuery(latestUserMessage + path)` 提 token：`[a-z0-9_]{2,}|[一-鿿]{2,}` 正则匹配，过滤 stop words（中英双语：the/and/for/this/帮我/看看/这个/...），最多 24 个 unique tokens。
+  - `scoreLineForQuery(line, tokens)` 对每行打分：含 token 命中 +4；含代码关键字 (`function|class|const|let|var|export|import|async|test|describe|it(`) +2；token 命中位置在前 12 chars +1。
+  - top-4 高分 line 作为 seed（`SELECTED_FILE_MAX_SNIPPETS=4`），每个 seed 上下 ±10 行 (`SELECTED_FILE_SNIPPET_RADIUS=10`) 作为 candidate range。
+  - `mergeLineRanges` 经典 interval merge（包含相邻一行的合并：`range.start > last.end + 1` 才新建段，否则扩 last.end）→ 重叠 / 相邻 range 自动合一段。
+  - 渲染按 5200 chars 上限 (`SELECTED_FILE_SNIPPET_CONTEXT_CHARS=5200`)：从 high-score 优先的 ranges 顺序渲染，用 `${lineNo}\t${content}` 格式（line number prefix 让模型可定位 + 用 file_read 拿更多）；超阈值停（首段超阈值则截断前 5200 chars 至少给一段）；多段间用 `\n\n...\n\n` 分隔。
+  - 0 score（query 无 token / 全 stop words / 无命中）→ fallback `seedIndexes = [0]` 给文件头（imports + 顶层声明，typically informative）。
+- **header 提示**：始终输出 `Selected workspace file: ${path}`；`selectedFile.truncated=true` 时加 `Note: the UI preview was already truncated` 让模型知道全文还有更多；snippet mode 加 `File context optimized for token budget: showing N excerpt(s) from M lines instead of the full K characters. If more context is needed, call file_read with a specific line range.` 教模型怎么主动拿更多上下文。
+- **`buildDynamicContext` 集成**：原来 `local-files connector + workspace.selectedFile` 分支的 4 行 inline 拼接替换为 `blocks.push(buildSelectedFileContextBlock(workspace.selectedFile, latestUserMessage))` 一行调用。
+- **5 个测试** [src/services/chat/dynamicContext.test.js](src/services/chat/dynamicContext.test.js)：① 小文件（≤ 3000 chars）走原样 path（无 "optimized" 提示）；② 大文件（260 lines）+ query 命中 → excerpt 含命中行 + 远端 line 不出现；③ 集成 `buildDynamicContext` 大文件路径；④ `truncated=true` header 注释展示；⑤ 空 query / 全 stop word query → fallback `seed=[0]` 渲染文件头（line 1 出现，远端 line 不出现）。
+- 验证：`src/services/chat/dynamicContext.test.js` **9/9 全绿**（前 4 + 5 新）；`src/**/*.test.js` **1914/1914 全绿**（前 1912 + 2 新；零既有回归）。
+- **已知 trade-off / limit**：① `scoreLineForQuery` 的代码关键字 regex 只对 JS/TS 友好（function/class/const/let/var/export/import/async/test/describe/it）—— Python/Rust/Go/Java/C++ 等其他语言 review 拿到的 excerpt 排序质量会低（仍能 fallback 到 token-only 评分）；后续如有真实 review 痛点再扩；② query 只用 `latestUserMessage` 单条，不带 conversation history —— 多轮深入 review 场景里上一轮的 context 关键词不参与评分，trade-off 是保持 stateless 接口；③ 5200 / 3000 / ±10 / 4 个 seed 是经验值，没经过实测 token 优化 —— 后续如果实际 prompt 仍偏大可下调 5200，或如果信息量不足上调；④ `selectedFile.content` 强转 string，传错类型（array/object）会出 `[object Object]` 字面量，没显式校验。
+
+---
+
 ## 2026-05-04 — Web search / Playwright resource hygiene fix（系统卡死 root cause）
 
 - Round 14 之间会话期间系统卡死重启。复现链：用户 search 面板长开 → web_search SWR 后台刷新 + tool runner 并发 web_search 调用 → Playwright 单浏览器队列无界增长 → Chrome helper 子进程堆积（每个 SERP 任务可能 spawn 新浏览器实例）→ 系统 OOM → 卡死强制重启。三个 root cause 联合作恶，必须一刀全修才闭环（否则任意一条还会再触发）。
