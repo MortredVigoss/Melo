@@ -1546,6 +1546,67 @@ test('round 18 Phase 2D followup #11: regression — wrapper + script file (env 
   });
 });
 
+// ─── Phase 2D follow-up #12: |& separator ─────────────────────────────
+// Codex 🔴 round 12: bash 4+ `|&` (stderr+stdout pipe, equivalent to
+// `2>&1 |`) was being split into `|` then `&`, so the pipe-fed
+// interpreter detector saw sepBefore='&' and missed the pipe-fed
+// code execution. Parser now matches `|&` as a single 2-char
+// separator (same precedence as `&&` / `||`) and normalizes
+// sepBefore to `|` so all downstream pipe-fed checks cover it.
+
+test('round 19 Phase 2D followup #12: cat x |& python — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: 'cat /tmp/x |& python' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(promptCount, 0, '|& must be parsed as single separator and feed pipe-fed detector');
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 19 Phase 2D followup #12: cat x |& env python (wrapper) — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'cat /tmp/x |& env python',
+      'cat /tmp/x |& sudo python',
+      'cat /tmp/x |& /usr/bin/env python',
+      'cat /tmp/x |& nice -n 10 python',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should be denied`);
+    }
+    assert.equal(promptCount, 0, 'wrapper-aware path must still trigger via |&');
+  });
+});
+
+test('round 19 Phase 2D followup #12: regression — |& + non-interpreter NOT hard-rejected', async () => {
+  // grep / sed / wc / head with |& must still go through prompt.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      'cat /tmp/x |& grep python',
+      'cat /tmp/x |& head',
+      'cmd1 |& wc -l',
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        { workspacePath: ws, chatId: 'chat-A', sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); } },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, 3, 'each non-interpreter |& sub must reach the prompt');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {

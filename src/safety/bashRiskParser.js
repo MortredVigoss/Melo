@@ -74,6 +74,14 @@ function splitWithSeparators(command) {
       const two = command.slice(i, i + 2);
       if (two === '&&') { flush('&&'); i += 2; continue; }
       if (two === '||') { flush('||'); i += 2; continue; }
+      // Phase 2D follow-up #12 (Codex 🔴, 2026-05-04): bash 4+ `|&`
+      // is stderr+stdout pipe (equivalent to `2>&1 |`). Must match
+      // BEFORE single-char `|` / `&` or it splits into two separators
+      // and the downstream pipe-fed code_execution check sees
+      // sepBefore='&' (not '|') and misses `cat x |& python`.
+      // Normalize sepBefore to `|` so all `sepBefore === '|'` checks
+      // (currently just pipe-fed interpreter) cover this form too.
+      if (two === '|&') { flush('|'); i += 2; continue; }
       if (ch === ';' || ch === '|' || ch === '&') { flush(ch); i++; continue; }
     }
     cur += ch;
