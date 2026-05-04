@@ -207,3 +207,29 @@ test('detectImageIntent: Xiaohongshu URL + EXPLICIT image-gen intent → true (d
     );
   }
 });
+
+// ── 5. Stale-history-image regression (Codex Phase 4 🔴 follow-up) ───
+//
+// The detectImageIntent helper itself is correct — it AND-gates
+// edit/follow-up patterns with hasInputImage. The bug Codex flagged is
+// that the CALLER (createCodexResponsesReply) was passing the broad
+// `messagesHaveInputImages` (any history) instead of latest-turn-only.
+// Tests here cover the helper's contract under both inputs so the
+// caller-side fix has an explicit pinned semantic to align with.
+
+test('detectImageIntent: edit copy + hasInputImage:false → false (matches latest-turn-only contract)', () => {
+  // When the caller correctly passes latestUserHasImage:false, generic
+  // edit verbs must NOT fire — even if older history had images.
+  // CSS / theming / arbitrary "change" copy stays out of image_gen.
+  assert.equal(detectImageIntent('change the background', { hasInputImage: false }), false);
+  assert.equal(detectImageIntent('改一下', { hasInputImage: false }), false);
+  assert.equal(detectImageIntent('换一下颜色', { hasInputImage: false }), false);
+  assert.equal(detectImageIntent('modify the function', { hasInputImage: false }), false);
+});
+
+test('detectImageIntent: edit copy + hasInputImage:true → true (latest turn has image)', () => {
+  // When the latest user turn carries an image AND the text reads as
+  // edit intent, image_generation should be available.
+  assert.equal(detectImageIntent('change the background', { hasInputImage: true }), true);
+  assert.equal(detectImageIntent('改一下颜色', { hasInputImage: true }), true);
+});

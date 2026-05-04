@@ -114,14 +114,42 @@ test('server.js GET endpoint omits cookie values from the response shape', () =>
   const endIdx = serverSrc.indexOf("url.pathname === '/api/settings/domain-cookies/upsert'", startIdx);
   assert.ok(startIdx > 0 && endIdx > startIdx, 'GET endpoint block boundaries not found');
   const block = serverSrc.slice(startIdx, endIdx);
-  // The shape uses shorthand property syntax for `host` (no colon),
-  // explicit `length:` and `tail:`. Match either form for `host`.
-  assert.ok(/\bhost[:,]/.test(block), 'GET response shape must include host field');
-  assert.ok(/length:/.test(block), 'GET response shape must include length field');
-  assert.ok(/tail:/.test(block), 'GET response shape must include tail preview');
+  // Identifiers in the response shape can appear as `name:` (explicit
+  // property) or as bare shorthand inside `{ ..., name }` — match by
+  // word boundary either way.
+  assert.ok(/\bhost\b/.test(block), 'GET response shape must include host field');
+  assert.ok(/\blength\b/.test(block), 'GET response shape must include length field');
+  // Codex review follow-up (Phase 4 🟠 2026-05-04): the GET response
+  // must use a NON-REVERSIBLE fingerprint (sha256 prefix), never a
+  // tail / suffix / prefix of the raw cookie value. Pin both the
+  // positive shape AND the absence of the old leaky `tail` field.
+  assert.ok(/\bfingerprint\b/.test(block), 'GET response must include fingerprint field (sha256 prefix)');
+  assert.ok(/createHash\(['"]sha256['"]\)/.test(block),
+    'fingerprint must come from sha256, not a substring of the cookie value');
+  assert.ok(!/\btail[:,]/.test(block),
+    'GET endpoint must NOT include tail field — partial-secret leak');
   assert.ok(
     !/sendJson\(response, 200, \{ cookies:/.test(block),
     'GET endpoint must NOT return raw cookies map',
+  );
+});
+
+test('openai.js Phase 4 gate uses latestUserMessageHasImage (not history-wide)', () => {
+  // Codex review follow-up (Phase 4 🔴 2026-05-04): the broad
+  // messagesHaveInputImages would let an old uploaded image re-enable
+  // image_generation for unrelated CSS/theming follow-ups. Pin that
+  // (a) the latest-turn-only helper exists, (b) it's the one feeding
+  // the intent gate.
+  const openaiSrc = readFileSync(join(repoRoot, 'src', 'openai.js'), 'utf8');
+  assert.ok(
+    /export function latestUserMessageHasImage\(/.test(openaiSrc),
+    'latestUserMessageHasImage helper must exist as a named export',
+  );
+  // The intent gate must NOT use the history-wide flag — it has to
+  // pull from the latest-turn helper.
+  assert.ok(
+    /_detectImageIntentLocal\([^)]*hasInputImage:\s*latestUserHasImage/.test(openaiSrc),
+    'image-intent gate must consume latestUserHasImage, not the history-wide hasInputImage',
   );
 });
 

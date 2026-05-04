@@ -10079,7 +10079,7 @@ function renderDomainCookiesPane() {
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(entry.host)}</div>
               <div class="list-row-meta">
-                Cookie length: ${entry.length}${entry.tail ? ` · ends with <code>${escapeHtml(entry.tail)}</code>` : ''}
+                Cookie length: ${entry.length}${entry.fingerprint ? ` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
               </div>
             </div>
             <button class="small-button is-danger"

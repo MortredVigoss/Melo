@@ -198,6 +198,38 @@ export function messagesHaveInputImages(messages) {
   return false;
 }
 
+// Stricter variant: returns true ONLY when the LATEST user-role message
+// carries an image_url. Used by the Phase 4 image-intent gate — if the
+// user uploaded an image 5 turns ago and now types "change the
+// background" (typically CSS / theming, not image edit), the broad
+// messagesHaveInputImages would still report true and let
+// IMAGE_EDIT_INTENT_PATTERN re-enable image_generation incorrectly.
+// Codex review (2026-05-04 Phase 4 follow-up 🔴): mirrors
+// findLatestUserImageUrl in imageEditFastPath.js — only the freshest
+// turn's image matters for routing decisions.
+export function latestUserMessageHasImage(messages) {
+  if (!Array.isArray(messages)) return false;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== 'user') continue;
+    const content = message.content;
+    if (!Array.isArray(content)) return false;
+    for (const item of content) {
+      if (
+        item?.type === 'image_url' &&
+        typeof item?.image_url?.url === 'string' &&
+        item.image_url.url.trim()
+      ) {
+        return true;
+      }
+    }
+    // Found the latest user turn but no image — do NOT keep walking
+    // backward, since older turns are not the "current" image.
+    return false;
+  }
+  return false;
+}
+
 // Exported for tests: lets the unit suite assert payload-tool gating
 // without faking the whole credential / fetch round trip. Returned in
 // the same insertion order createCodexResponsesReply uses (web_search
@@ -1781,8 +1813,17 @@ export async function createCodexResponsesReply({
   // task. Closes the Xiaohongshu/Douyin share-link mis-routing where the
   // tool was being used as a fallback for failed fetch_url calls. See
   // buildCodexResponsesTools and detectImageIntent for the full rationale.
+  //
+  // Codex review follow-up (Phase 4 🔴 2026-05-04): the image-intent
+  // gate must use the STRICTER `latestUserMessageHasImage` — not the
+  // broad `messagesHaveInputImages` — because IMAGE_EDIT_INTENT_PATTERN
+  // matches generic "change/改一下/换成" copy. With history-wide image
+  // detection, an old uploaded image would re-enable image_generation
+  // for an unrelated CSS/theming follow-up turn. The latest-turn-only
+  // check matches imageEditFastPath's `findLatestUserImageUrl`.
   const latestUserText = extractLatestUserTextForIntent(messages);
-  const hasImageIntent = _detectImageIntentLocal(latestUserText, { hasInputImage });
+  const latestUserHasImage = latestUserMessageHasImage(messages);
+  const hasImageIntent = _detectImageIntentLocal(latestUserText, { hasInputImage: latestUserHasImage });
   const tools = buildCodexResponsesTools({
     enableWebSearch,
     workspacePath,

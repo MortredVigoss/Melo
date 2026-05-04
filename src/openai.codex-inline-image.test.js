@@ -38,6 +38,7 @@ import {
   saveCodexInlineImageItem,
   buildCodexResponsesTools,
   messagesHaveInputImages,
+  latestUserMessageHasImage,
   createCodexResponsesReply,
 } from './openai.js';
 
@@ -483,6 +484,14 @@ test('payload — historical image (older user turn) + new edit ask: edit-mode s
   // must still get edit-mode tool config + edit instructions —
   // otherwise the model would re-paint from scratch and the user's
   // continuation editing UX breaks.
+  //
+  // Carry-forward happens UPSTREAM in messageBuilder.js (the
+  // IMAGE_FOLLOW_UP_PATTERN check sees "换色" and merges the older
+  // turn's image into the latest user turn before this function gets
+  // called). So this fixture mirrors the post-carry-forward shape
+  // that createCodexResponsesReply actually receives in production.
+  // Phase 4 (2026-05-04) Codex review follow-up: the gate now uses
+  // latestUserMessageHasImage so the image must be in the latest turn.
   const captured = await captureCodexRequestPayload({
     workspacePath: '/tmp/some/workspace',
     messages: [
@@ -494,7 +503,17 @@ test('payload — historical image (older user turn) + new edit ask: edit-mode s
         ],
       },
       { role: 'assistant', content: 'Done. Here you go.' },
-      { role: 'user', content: [{ type: 'text', text: '再换个色' }] },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '再换个色' },
+          // Carry-forward injects the older turn's image here. This is
+          // what messageBuilder produces when IMAGE_FOLLOW_UP_PATTERN
+          // matches the latest text — the model sees the image in the
+          // current turn directly.
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+        ],
+      },
     ],
   });
 
@@ -601,6 +620,79 @@ test('messagesHaveInputImages — defensive: bad shapes never throw', () => {
   for (const bad of [null, undefined, 'string', 42, {}, []]) {
     assert.equal(
       messagesHaveInputImages(bad),
+      false,
+      `bad input ${JSON.stringify(bad)} should return false, not throw`,
+    );
+  }
+});
+
+// ─── latestUserMessageHasImage (Phase 4 strict variant) ─────────────────────
+//
+// Codex review follow-up (Phase 4 🔴 2026-05-04) requires a stricter
+// helper that ignores stale images from older turns. Used by the
+// image-intent gate so generic edit copy ("change/改一下/换成") cannot
+// re-enable image_generation just because the user uploaded an image
+// many turns ago.
+
+test('latestUserMessageHasImage — returns true when LATEST user turn has an image', () => {
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: 'first' }] },
+    { role: 'assistant', content: 'ok' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '改一下颜色' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+      ],
+    },
+  ];
+  assert.equal(latestUserMessageHasImage(messages), true);
+});
+
+test('latestUserMessageHasImage — returns FALSE when latest user turn is text-only, even if older turns had images', () => {
+  // The exact scenario Codex flagged: image uploaded earlier, then a
+  // later text-only follow-up that would otherwise mis-route.
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'here is a screenshot' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+      ],
+    },
+    { role: 'assistant', content: 'noted' },
+    { role: 'user', content: [{ type: 'text', text: 'change the background color' }] },
+  ];
+  // Broad helper sees the older image:
+  assert.equal(messagesHaveInputImages(messages), true);
+  // Strict helper looks only at the latest user turn:
+  assert.equal(latestUserMessageHasImage(messages), false);
+});
+
+test('latestUserMessageHasImage — string content (no parts) → false', () => {
+  const messages = [
+    { role: 'user', content: 'just text, no parts' },
+  ];
+  assert.equal(latestUserMessageHasImage(messages), false);
+});
+
+test('latestUserMessageHasImage — empty / blank url skipped', () => {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: '' } },
+        { type: 'image_url', image_url: { url: '   ' } },
+      ],
+    },
+  ];
+  assert.equal(latestUserMessageHasImage(messages), false);
+});
+
+test('latestUserMessageHasImage — defensive: bad shapes never throw', () => {
+  for (const bad of [null, undefined, 'string', 42, {}, []]) {
+    assert.equal(
+      latestUserMessageHasImage(bad),
       false,
       `bad input ${JSON.stringify(bad)} should return false, not throw`,
     );

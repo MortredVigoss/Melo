@@ -1185,19 +1185,29 @@ const server = createServer(async (request, response) => {
     // splattering session tokens across the DOM.
     if (url.pathname === '/api/settings/domain-cookies' && request.method === 'GET') {
       const { getResolvedConfig } = await import('./config.js');
+      const { createHash } = await import('node:crypto');
       const config = await getResolvedConfig();
       const map = (config.domainCookies && typeof config.domainCookies === 'object')
         ? config.domainCookies
         : {};
-      const hosts = Object.keys(map).map(host => ({
-        host,
-        length: typeof map[host] === 'string' ? map[host].length : 0,
-        // Trailing-tail preview only — enough for the user to identify
-        // a stale rule without exposing the secret.
-        tail: typeof map[host] === 'string' && map[host].length > 6
-          ? `…${map[host].slice(-6)}`
-          : '',
-      }));
+      // Codex review follow-up (Phase 4 🟠 2026-05-04): the previous
+      // shape exposed the last 6 chars of the cookie value as a
+      // "tail preview" to help the user identify stale rules. Even
+      // 6 chars of a session token is a partial-secret leak — Codex
+      // review correctly flagged this. Replace with a non-reversible
+      // SHA-256 prefix (8 hex chars = 32 bits, plenty for distinguishing
+      // ~thousands of rules per the birthday bound). The user can still
+      // tell "did I update this cookie?" because the fingerprint
+      // changes when the value changes, but no part of the original
+      // cookie reaches the DOM.
+      const hosts = Object.keys(map).map(host => {
+        const value = typeof map[host] === 'string' ? map[host] : '';
+        const length = value.length;
+        const fingerprint = length
+          ? createHash('sha256').update(value).digest('hex').slice(0, 8)
+          : '';
+        return { host, length, fingerprint };
+      });
       sendJson(response, 200, { hosts });
       return;
     }
