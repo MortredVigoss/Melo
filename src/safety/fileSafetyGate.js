@@ -1045,6 +1045,25 @@ export async function requestBashOp({
         `with two-step confirmation.`,
       );
     }
+    // Phase 2D follow-up #7 (Codex 🔴, 2026-05-04): nested_shell wraps
+    // arbitrary inner commands the parser cannot statically classify
+    // (`bash -c '...'`, `eval '...'`, `xargs sh -c '...'`, `$(...)`,
+    // `<(...)`, `>(...)`, backticks). A single user approval would let
+    // the inner command include `rm -rf` and bypass the file_delete
+    // trash + two-step confirmation pipeline. Reasoning recursively
+    // about inner shell strings is itself an attack surface (quote
+    // depth, glob/var expansion). Hard-reject the entire class — agent
+    // must rewrite without nested shell, or use Phase 3 UI's
+    // "always allow this exact command" once it lands.
+    if (r && r.kind === 'nested_shell') {
+      throw denyError(
+        `Bash command uses a nested shell or shell substitution (${r.pattern || r.kind}). ` +
+        `This is hard-rejected because the inner command cannot be safely classified — ` +
+        `it could contain delete operations that would bypass the file_delete two-step ` +
+        `confirmation. Rewrite the command without bash -c / eval / xargs sh -c / ` +
+        `$(...) / <(...) / >(...) / backticks, or invoke the dedicated tool directly.`,
+      );
+    }
   }
 
   // Phase 2D follow-up #6 (Codex 🟠, 2026-05-04): payload now

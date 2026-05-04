@@ -292,43 +292,62 @@ test('round 13 Phase 2D followup #1: cat ~/.ssh/id_rsa would-be-silent NOW PROMP
   });
 });
 
-test('round 13 Phase 2D followup #1: bash -c "rm -rf x" — nested-shell PROMPTS, not auto-rejected, deny stops it', async () => {
-  // Pre-followup: bashRiskParser only saw `bash` head; the nested
-  // `rm` was invisible → command ran silently (or prompted as
-  // "default" — but the inner rm was never classified). Now
-  // nested_shell is its own risk → prompt fires; user denies.
+// Phase 2D follow-up #7 (Codex 🔴, 2026-05-04): nested_shell is now
+// HARD-REJECTED (no prompt). A single user "approve" click on
+// `bash -c 'rm -rf x'` would have bypassed file_delete's trash +
+// two-step confirmation; recursively re-parsing inner shell strings
+// is itself an attack surface (quote depth + glob/var expansion), so
+// the entire class is refused at the gate.
+
+test('round 14 Phase 2D followup #7: bash -c "rm -rf x" — HARD REJECT (no prompt) + file untouched', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const target = join(ws, 'survives.txt');
     await writeFile(target, 'still here', 'utf8');
     let promptCount = 0;
-    let sawNestedShell = false;
     const result = await bashTool.run(
       { command: `bash -c 'rm -rf ${target}'` },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
-        promptCount++;
-        if ((payload.risks || []).some(r => r.kind === 'nested_shell')) sawNestedShell = true;
-        gate.resolveFileSafety(payload.requestId, 'deny');
-      } },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
     );
-    assert.equal(promptCount, 1);
-    assert.equal(sawNestedShell, true, 'risk payload must include nested_shell kind');
+    assert.equal(promptCount, 0, 'nested_shell must NOT prompt — hard reject before _prompt');
     assert.equal(result.ok, false);
-    // File MUST still exist — denied bash -c never ran.
+    assert.equal(result.error, 'DENIED');
     const fs = await import('node:fs/promises');
     assert.equal(await fs.readFile(target, 'utf8'), 'still here');
   });
 });
 
-test('round 13 Phase 2D followup #1: eval "rm x" — also nested_shell + deny preserves file', async () => {
+test('round 14 Phase 2D followup #7: bash -c "rm" attack vector — even autoApprove cannot run rm', async () => {
+  // Direct attack-vector regression: previously a single approve click
+  // would let `bash -c 'rm <target>'` bypass file_delete entirely.
+  // With hard reject, autoApprove never sees a prompt → file MUST
+  // remain.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    const result = await bashTool.run(
+      { command: `bash -c 'rm -f ${target}'` },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected');
+  });
+});
+
+test('round 14 Phase 2D followup #7: eval "rm x" — HARD REJECT + file untouched', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const target = join(ws, 'eval-target.txt');
     await writeFile(target, 'untouched', 'utf8');
+    let promptCount = 0;
     const result = await bashTool.run(
       { command: `eval 'rm ${target}'` },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoDeny(gate) },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
     );
+    assert.equal(promptCount, 0);
     assert.equal(result.ok, false);
     assert.equal(result.error, 'DENIED');
     const fs = await import('node:fs/promises');
@@ -336,53 +355,75 @@ test('round 13 Phase 2D followup #1: eval "rm x" — also nested_shell + deny pr
   });
 });
 
-test('round 13 Phase 2D followup #1: $(rm x) command substitution → prompts as nested_shell', async () => {
+test('round 14 Phase 2D followup #7: $(rm x) command substitution — HARD REJECT', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const target = join(ws, 'subst.txt');
     await writeFile(target, 'still here', 'utf8');
-    let sawNestedShell = false;
+    let promptCount = 0;
     const result = await bashTool.run(
       { command: `echo $(rm ${target})` },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
-        if ((payload.risks || []).some(r => r.kind === 'nested_shell')) sawNestedShell = true;
-        gate.resolveFileSafety(payload.requestId, 'deny');
-      } },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
     );
-    assert.equal(sawNestedShell, true, 'command substitution $() must be flagged');
+    assert.equal(promptCount, 0);
     assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
     const fs = await import('node:fs/promises');
     assert.equal(await fs.readFile(target, 'utf8'), 'still here');
   });
 });
 
-test('round 13 Phase 2D followup #1: backtick subshell `rm x` → nested_shell prompts', async () => {
+test('round 14 Phase 2D followup #7: backtick subshell `rm x` — HARD REJECT + file untouched', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
-    let sawNestedShell = false;
-    await bashTool.run(
-      { command: 'echo `whoami`' },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
-        if ((payload.risks || []).some(r => r.kind === 'nested_shell')) sawNestedShell = true;
-        gate.resolveFileSafety(payload.requestId, 'deny');
-      } },
+    const target = join(ws, 'backtick.txt');
+    await writeFile(target, 'safe', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: 'echo `rm ' + target + '`' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) },
     );
-    assert.equal(sawNestedShell, true, 'backtick subshell must be flagged');
+    assert.equal(promptCount, 0);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'safe');
   });
 });
 
-test('round 13 Phase 2D followup #1: xargs sh -c "..." → nested_shell prompts', async () => {
+test('round 14 Phase 2D followup #7: xargs sh -c "..." — HARD REJECT', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
-    let sawNestedShell = false;
-    await bashTool.run(
+    let promptCount = 0;
+    const result = await bashTool.run(
       { command: 'echo a | xargs sh -c "echo $0"' },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: (event, payload) => {
-        if ((payload.risks || []).some(r => r.kind === 'nested_shell')) sawNestedShell = true;
-        gate.resolveFileSafety(payload.requestId, 'deny');
-      } },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
     );
-    assert.equal(sawNestedShell, true, 'xargs <shell> -c must be flagged');
+    assert.equal(promptCount, 0);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'DENIED');
+  });
+});
+
+test('round 14 Phase 2D followup #7: <(...) and >(...) process substitution — HARD REJECT', async () => {
+  // Round 1's hasShellSubstitution scanner already flagged these as
+  // nested_shell; round 7 promotes them from prompt → hard reject.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r1 = await bashTool.run(
+      { command: 'diff <(echo a) <(echo b)' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
+    );
+    const r2 = await bashTool.run(
+      { command: 'echo hi > >(cat)' },
+      { workspacePath: ws, chatId: 'chat-A', sseEmitter: () => { promptCount++; } },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(r1.ok, false);
+    assert.equal(r2.ok, false);
+    assert.equal(r1.error, 'DENIED');
+    assert.equal(r2.error, 'DENIED');
   });
 });
 
