@@ -498,6 +498,95 @@ function riskifyTokens(tokens, sepBefore = null) {
     });
   }
 
+  // Phase 2D follow-up #14 (Codex 🔴, 2026-05-04): awk inline
+  // program + sed e-cmd shell-out. Round 13's known-limit list
+  // explicitly punted these two:
+  //   - awk's program is the first non-flag positional, NOT a `-c`
+  //     flag, so round 10's inline-code-flag scan misses
+  //     `awk 'BEGIN{system("rm x")}'`.
+  //   - sed's `e` command + `s/.../e` substitute flag both shell-
+  //     out, but they're inside the program-string arg so neither
+  //     wrapper-aware token-scan nor inline-code-flag scan sees
+  //     them.
+  // Codex pointed at both. Treatment: hard-reject (same `code_
+  // execution` kind already wired through requestBashOp at
+  // fileSafetyGate.js:1094). Both checks are wrapper-aware via
+  // `findWrappedCommand`, so `env awk` / `sudo gawk` / `command
+  // sed` / `nohup gsed` etc. all hit the same path.
+  const awkToken = findWrappedCommand(tokens, isAwkBasename);
+  if (awkToken) {
+    const awkIdx = tokens.indexOf(awkToken);
+    const argTokens = tokens.slice(awkIdx + 1);
+    const wordArgs = argTokens.filter(t => t.kind === 'word').map(t => t.text);
+    // `-f script.awk` / `-fscript.awk` (POSIX-glued) / `--file
+    // script.awk` / `--file=script.awk` — program from file, gated
+    // separately by fileRead. Don't treat as inline code.
+    const hasFileFlag = wordArgs.some(a =>
+      a === '-f' || /^-f.+/.test(a) || a === '--file' || a.startsWith('--file=')
+    );
+    if (!hasFileFlag) {
+      // Find first non-flag, non-var-assignment positional. awk
+      // flags that take a value: `-F sep`, `-v var=val`, `-W
+      // gawk-extension`, `-i inplace` (already handled separately
+      // as in_place_edit). Glued forms `-Fsep` / `-vvar=val` /
+      // `-Wext` are also accepted and need single-token skip.
+      let hasPositional = false;
+      for (let i = 0; i < wordArgs.length; i++) {
+        const a = wordArgs[i];
+        if (a === '-F' || a === '-v' || a === '-W' || a === '-i') { i++; continue; }
+        if (/^-[FvWi]./.test(a)) continue; // glued
+        if (a.startsWith('-')) continue;   // any other flag
+        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) continue; // awk var=val passed positionally
+        hasPositional = true;
+        break;
+      }
+      // Stdin-fed forms (heredoc / `<` redirect / pipe) make stdin
+      // the program when there is no `-f`. Pipe-fed awk is not in
+      // SCRIPT_INTERPRETERS, so the existing pipe-fed interpreter
+      // path doesn't cover it — handle here.
+      const hasStdinRedirect = argTokens.some(t =>
+        t.kind === 'redirect' && (t.text === '<<' || t.text === '<')
+      );
+      const isPipeFed = sepBefore === '|';
+      if (hasPositional || isPipeFed || hasStdinRedirect) {
+        const subPattern =
+          hasPositional ? 'inline program' :
+          isPipeFed ? 'pipe-fed' :
+          'stdin redirect';
+        risks.push({
+          kind: 'code_execution',
+          pattern: `${tokenBasename(awkToken.text)} ${subPattern}`,
+          confidence: 'high',
+        });
+      }
+      // Bare `awk --version` / `gawk -V` (no positional, no pipe,
+      // no redirect) falls through unflagged → goes to default-deny
+      // unknown prompt. UX: 1 prompt to approve a probe rather than
+      // a blanket DENIED. Same trade-off pattern as round 4's
+      // strict-version-probe carve-out for node/python.
+    }
+  }
+
+  // gsed = GNU sed on BSD systems via homebrew; same e-cmd surface.
+  const sedToken = findWrappedCommand(tokens, text => /^g?sed$/.test(tokenBasename(text)));
+  if (sedToken) {
+    const sedIdx = tokens.indexOf(sedToken);
+    const wordArgs = tokens.slice(sedIdx + 1).filter(t => t.kind === 'word').map(t => t.text);
+    // Scan ALL non-flag args (positional script + `-e <expr>`
+    // values + `--expression=<expr>` content). False-positive cost:
+    // an input filename that happens to match the e-cmd regex —
+    // extremely unlikely (filenames rarely contain `s/.../.../e`
+    // syntax or bare-e-then-whitespace).
+    const hasEcmd = wordArgs.some(a => sedExpressionHasEcmd(a));
+    if (hasEcmd) {
+      risks.push({
+        kind: 'code_execution',
+        pattern: `${tokenBasename(sedToken.text)} e-cmd`,
+        confidence: 'high',
+      });
+    }
+  }
+
   return risks;
 }
 
@@ -578,13 +667,14 @@ const VALUE_TAKING_WRAPPER_FLAGS = new Set([
 ]);
 
 // Phase 2D follow-up #11: skip env-assignments and command wrappers
-// to find the *effective* interpreter token. Returns the interpreter
-// token if found, or null. Shared by inline-code (token-scan still
-// uses its any-position scan), heredoc, stdin-redirect, and pipe-fed
-// detectors so wrapper forms (`env python`, `command python`,
-// `sudo -E python`, `/usr/bin/env python`, `FOO=1 sudo nohup python`)
-// are recognized identically.
-function effectiveInterpreterHead(tokens) {
+// to find the *effective* command token, where "effective" is
+// defined by the caller's predicate. Returns the matching token if
+// found, or null. Refactored in #14 from the original
+// effectiveInterpreterHead to be parameterized by predicate so
+// awk/sed/etc. detection can share the same wrapper-skip logic
+// without bloating SCRIPT_INTERPRETERS (sed in pipelines is too
+// universal to hard-reject).
+function findWrappedCommand(tokens, isMatch) {
   let i = skipEnvAssignments(tokens);
   // Bounded loop guards against pathological wrapper-of-wrapper
   // chains; 16 iterations covers any sane input.
@@ -594,8 +684,8 @@ function effectiveInterpreterHead(tokens) {
     const text = t.text;
     const base = tokenBasename(text);
     if (!COMMAND_WRAPPERS.has(base)) {
-      // First non-wrapper word — is it an interpreter?
-      return isScriptInterpreter(text) ? t : null;
+      // First non-wrapper word — apply predicate
+      return isMatch(text) ? t : null;
     }
     // Skip the wrapper token, then its option flags + value-takers
     // + env-style FOO=val (env-specific).
@@ -622,6 +712,50 @@ function effectiveInterpreterHead(tokens) {
     }
   }
   return null;
+}
+
+function effectiveInterpreterHead(tokens) {
+  return findWrappedCommand(tokens, text => isScriptInterpreter(text));
+}
+
+// Phase 2D follow-up #14 (Codex 🔴, 2026-05-04): awk-family detection.
+// `awk 'BEGIN{system("rm x")}'` carries arbitrary code via system() /
+// `... | "cmd"` getline / `print | "cmd"`. Same code-execution risk
+// as python -c. Distinguished from the awk script-file form
+// `awk -f script.awk` (file content is gated separately via fileWrite).
+function isAwkBasename(text) {
+  return /^(g|m|n)?awk$/.test(tokenBasename(text));
+}
+
+// Phase 2D follow-up #14 (Codex 🔴): GNU sed `e` command and the
+// `s/.../e` substitute flag both shell-out to execute the result.
+// `printf x | sed 'e rm -f file'` deletes file with one approve
+// click; `sed 's/x/y/e' file` substitutes then execs the result.
+// Two detection patterns:
+//   1. Bare `e <command>` only at sed command position (start of
+//      expression OR right after a sed command separator: ;, {, },
+//      newline). NOT after arbitrary non-letter (which would false-
+//      positive on `s/foo/end /` where the `e` is inside the
+//      replacement text).
+//   2. s/PATTERN/REPLACEMENT/FLAGS where FLAGS contains `e`. We
+//      detect with `/`-delimiter only — sed accepts any first-char
+//      delimiter (`s,x,y,e` / `s|x|y|e` / `s#x#y#e`), but covering
+//      every delim explicitly hits `[^\1]` which JS regex can't
+//      negate. Trade-off documented as round-14 known-limit.
+function sedExpressionHasEcmd(text) {
+  if (typeof text !== 'string' || !text) return false;
+  // Pattern 1 — bare `e CMD`: only fire when `e` is at expression
+  // start or immediately after a sed command boundary, then
+  // whitespace, then content (the shell cmd to exec).
+  if (/(?:^|[\n;{}])\s*e\s/.test(text)) return true;
+  // Pattern 2 — `s/.../.../FLAGS` with e flag. Match the substitution
+  // structure tightly so REPLACEMENT text can't false-positive:
+  //   s\/  + (escape-aware non-slash)*  + \/  + (escape-aware
+  //   non-slash)*  + \/  + flags-letters-with-e  + boundary
+  // (The `(?:[^\\/]|\\.)*` form correctly skips escaped slashes
+  // inside the substitution.)
+  if (/s\/(?:[^\/\\]|\\.)*\/(?:[^\/\\]|\\.)*\/[a-z]*e[a-z]*(?:[\s;{}\n]|$)/i.test(text)) return true;
+  return false;
 }
 
 // Phase 2D follow-up #10 (Codex 🔴): script interpreters whose

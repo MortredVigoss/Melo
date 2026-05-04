@@ -1677,6 +1677,269 @@ test('round 20 Phase 2D followup #13: regression — env -i / env -u / env --ver
   });
 });
 
+// ─── Phase 2D follow-up #14: awk inline + sed e-cmd ─────────────────
+// Codex 🔴 round 14: round 13's known-limit list flagged two
+// remaining bypass surfaces:
+//   - `awk 'BEGIN{system("rm x")}'` — awk's program is positional,
+//     not a `-c` flag, so round 10's inline-code-flag scan misses
+//     it. One approve click runs system() which shells out.
+//   - `sed 'e CMD'` / `sed 's/x/y/e' file` — the e command and the
+//     s///e substitute flag both shell-out, but they live inside
+//     the program-string arg so wrapper-aware scans don't see them.
+// Treatment: hard-reject as code_execution (same contract as
+// python -c). awk is wrapper-aware; sed e-cmd uses a dedicated
+// regex check on every word arg.
+
+test('round 21 Phase 2D followup #14: awk inline system() + autoApprove cannot delete file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'awk-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `awk 'BEGIN{system("rm -f ${target}")}'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, 'awk inline must hard-reject pre-prompt');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected', 'file must not be deleted');
+  });
+});
+
+test('round 21 Phase 2D followup #14: gawk / mawk / nawk + wrappers (env/sudo/nohup) — all HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const cmds = [
+      `gawk '{print $1}' /etc/passwd`,
+      `mawk 'BEGIN{print "x"}'`,
+      `nawk '/foo/{print}'`,
+      `env awk '{print}'`,
+      `sudo gawk '{print}' file`,
+      `nohup awk '{print}'`,
+      `sudo -E awk -F: '{print $1}' /etc/passwd`,
+      `FOO=1 BAR=2 awk '{print}'`,
+    ];
+    let promptCount = 0;
+    for (const cmd of cmds) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: autoApprove(gate),
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY`);
+    }
+    assert.equal(promptCount, 0, 'all wrapped awk inline must hard-reject pre-prompt');
+  });
+});
+
+test('round 21 Phase 2D followup #14: pipe-fed awk (cat | awk) — HARD REJECT (stdin is the program)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r = await bashTool.run(
+      { command: `cat /tmp/foo | awk` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: autoApprove(gate),
+      },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(r.error, 'DENIED');
+  });
+});
+
+test('round 21 Phase 2D followup #14: awk < script.awk (stdin redirect) — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r = await bashTool.run(
+      { command: `awk < /tmp/script.awk` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: autoApprove(gate),
+      },
+    );
+    assert.equal(promptCount, 0);
+    assert.equal(r.error, 'DENIED');
+  });
+});
+
+test('round 21 Phase 2D followup #14: regression — awk -f script.awk + data pipe NOT hard-rejected', async () => {
+  // `cat data.txt | awk -f script.awk` is a legitimate pattern: -f
+  // sources the program from a file (gated by fileRead), pipe
+  // carries data not code. Must reach prompt, not blanket DENIED.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const cmds = [
+      'awk -f /tmp/x.awk data.txt',
+      'cat data.txt | awk -f /tmp/x.awk',
+      'awk --file=/tmp/x.awk data.txt',
+      'awk -f/tmp/x.awk data.txt',  // POSIX glued
+    ];
+    for (const cmd of cmds) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt, not hard-reject`);
+    }
+    assert.equal(promptCount, cmds.length, 'each -f form must reach prompt (not pre-rejected)');
+  });
+});
+
+test('round 21 Phase 2D followup #14: regression — bare awk --version / -V NOT hard-rejected (probe form)', async () => {
+  // No positional, no -f, no pipe → falls through unflagged. Goes
+  // to default-deny prompt so user can approve probe via 1 click.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of ['awk --version', 'gawk -V', 'mawk -W version']) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt`);
+    }
+    assert.equal(promptCount, 3, 'each version probe must reach prompt');
+  });
+});
+
+test('round 21 Phase 2D followup #14: sed e-cmd + autoApprove cannot delete file', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const target = join(ws, 'sed-e-attack.txt');
+    await writeFile(target, 'protected', 'utf8');
+    let promptCount = 0;
+    const result = await bashTool.run(
+      { command: `printf '' | sed 'e rm -f ${target}'` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'once'); },
+      },
+    );
+    assert.equal(promptCount, 0, 'sed e-cmd must hard-reject pre-prompt');
+    assert.equal(result.error, 'DENIED');
+    const fs = await import('node:fs/promises');
+    assert.equal(await fs.readFile(target, 'utf8'), 'protected');
+  });
+});
+
+test('round 21 Phase 2D followup #14: sed s/.../e flag variants — HARD REJECT', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed 's/x/y/e' file`,
+      `sed 's/x/y/eg' file`,
+      `sed 's/x/y/ge' file`,
+      `sed -e 's/x/y/e' file`,
+      `sed --expression='s/x/y/e' file`,
+      `gsed 's/x/y/e' file`,
+      `env sed 's/x/y/e' file`,
+      `sudo gsed 's/x/y/e' file`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: autoApprove(gate),
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY`);
+    }
+    assert.equal(promptCount, 0, 'all sed e-flag forms must hard-reject pre-prompt');
+  });
+});
+
+test('round 21 Phase 2D followup #14: regression — sed s/// without e flag reaches prompt (not hard-rejected)', async () => {
+  // Plain sed substitutes are pipeline-common (`echo x | sed
+  // 's/x/y/'`). Must not hard-reject — goes to default-deny prompt
+  // so user can approve common patterns case-by-case.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    for (const cmd of [
+      `sed 's/x/y/' file`,
+      `sed 's/x/y/g' file`,
+      `echo hello | sed 's/h/H/'`,
+      `sed '1,5d' file`,
+      `sed '/pattern/d' file`,
+    ]) {
+      const r = await bashTool.run(
+        { command: cmd },
+        {
+          workspacePath: ws,
+          chatId: 'chat-A',
+          sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+        },
+      );
+      assert.equal(r.error, 'DENIED', `${cmd} should DENY via prompt`);
+    }
+    assert.equal(promptCount, 5, 'each plain sed must reach prompt (not pre-rejected)');
+  });
+});
+
+test('round 21 Phase 2D followup #14: regression — sed -i in_place_edit still prompts (not hard-rejected)', async () => {
+  // `sed -i 's/x/y/' file` was prompt-only (in_place_edit) before
+  // round 14; must remain so since the program lacks an e-flag.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r = await bashTool.run(
+      { command: `sed -i 's/x/y/g' /tmp/foo.txt` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+      },
+    );
+    assert.equal(promptCount, 1, 'sed -i without e-flag must prompt (in_place_edit), not hard-reject');
+    assert.equal(r.error, 'DENIED');
+  });
+});
+
+test('round 21 Phase 2D followup #14: regression — replacement containing "end " is NOT a false positive', async () => {
+  // The original sedExpressionHasEcmd matched `/end /` inside
+  // replacement text via greedy backtracking. Refined pattern
+  // requires the e-flag to be AFTER the closing /, not inside
+  // replacement. Pin: `sed 's/foo/end /'` reaches prompt, not DENY.
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    let promptCount = 0;
+    const r = await bashTool.run(
+      { command: `sed 's/foo/end /' file.txt` },
+      {
+        workspacePath: ws,
+        chatId: 'chat-A',
+        sseEmitter: (ev, p) => { promptCount++; gate.resolveFileSafety(p.requestId, 'deny'); },
+      },
+    );
+    assert.equal(promptCount, 1, 'replacement-text "end " must NOT trigger e-flag pattern');
+    assert.equal(r.error, 'DENIED');
+  });
+});
+
 // ─── Phase 2D contract ───────────────────────────────────────────────
 
 test('Phase 2D contract: bashTool has requiresPermission:false (FileSafetyGate owns approval)', () => {

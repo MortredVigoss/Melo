@@ -294,3 +294,157 @@ test('redirect after pipe: subcommands re-tokenized correctly', () => {
   assert.ok(overwrite);
   assert.equal(overwrite.target, '/tmp/sorted');
 });
+
+// ── Phase 2D follow-up #14: awk inline + sed e-cmd ───────────────────
+
+test('Phase 2D follow-up #14: awk inline program flagged as code_execution', () => {
+  // The classic system() shell-out demo Codex highlighted.
+  const r = findRisk('awk \'BEGIN{system("rm /tmp/x")}\'', 'code_execution');
+  assert.ok(r, 'awk inline program must be code_execution');
+});
+
+test('Phase 2D follow-up #14: ALL awk family without -f are code_execution (gawk/mawk/nawk)', () => {
+  for (const head of ['awk', 'gawk', 'mawk', 'nawk']) {
+    const risks = parseBashRiskyOps(`${head} '{print $1}' file.txt`).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${head} '{print $1}' must be code_execution (program is inline)`,
+    );
+  }
+});
+
+test('Phase 2D follow-up #14: awk -f script.awk NOT flagged as code_execution (program from file)', () => {
+  // -f sources the program from a file, gated separately by fileRead.
+  // Tests every -f form documented: separate / glued / --file long.
+  for (const cmd of [
+    'awk -f script.awk data.txt',
+    'awk -fscript.awk data.txt',
+    'awk --file=script.awk data.txt',
+    'awk --file script.awk data.txt',
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should NOT be code_execution (program from file)`,
+    );
+  }
+});
+
+test('Phase 2D follow-up #14: bare awk --version falls through (no positional, no pipe)', () => {
+  // Probe form — neither positional program nor pipe-fed. Falls
+  // through unflagged so user can approve via prompt rather than
+  // hitting blanket DENIED. Same trade-off pattern as round 4's
+  // strict-version-probe carve-out.
+  const risks = parseBashRiskyOps('awk --version').risks;
+  assert.equal(
+    risks.filter(r => r.kind === 'code_execution').length,
+    0,
+    'awk --version (no positional, no pipe) must not be hard-rejected',
+  );
+});
+
+test('Phase 2D follow-up #14: pipe-fed awk → code_execution (stdin = program)', () => {
+  // No -f, no positional, but stdin from pipe becomes the program.
+  const risks = parseBashRiskyOps('cat data.txt | awk').risks;
+  assert.ok(
+    risks.some(r => r.kind === 'code_execution'),
+    'pipe-fed awk without -f must be code_execution (stdin is the program)',
+  );
+});
+
+test('Phase 2D follow-up #14: cat | awk -f script.awk NOT flagged (pipe is data, -f sources program)', () => {
+  // Regression: legitimate `cat data | awk -f script.awk` pattern.
+  const risks = parseBashRiskyOps('cat data.txt | awk -f script.awk').risks;
+  assert.equal(
+    risks.filter(r => r.kind === 'code_execution').length,
+    0,
+    'pipe + awk -f means pipe is data, not program — must not be hard-rejected',
+  );
+});
+
+test('Phase 2D follow-up #14: env / sudo / nohup awk inline → code_execution (wrapper-aware)', () => {
+  for (const cmd of [
+    'env awk \'BEGIN{print 1}\'',
+    'sudo gawk \'{print}\' file',
+    'nohup awk \'{print}\' file',
+    'sudo -E awk -F: \'{print $1}\' /etc/passwd',
+    'FOO=1 awk \'{print}\'',
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution despite wrapper`,
+    );
+  }
+});
+
+test('Phase 2D follow-up #14: sed e-command flagged as code_execution', () => {
+  // Bare `e CMD` at expression start.
+  assert.ok(findRisk('sed \'e rm -f /tmp/x\' file', 'code_execution'));
+  // `e CMD` after sed command separator (semicolon).
+  assert.ok(findRisk('sed \'1,$d; e ls\' file', 'code_execution'));
+});
+
+test('Phase 2D follow-up #14: sed s/.../e flag flagged as code_execution', () => {
+  for (const cmd of [
+    'sed \'s/x/y/e\' file',
+    'sed \'s/x/y/eg\' file',         // e + g (multiple flags)
+    'sed \'s/x/y/ge\' file',         // g + e
+    'sed -e \'s/x/y/e\' file',       // -e flag carrying expression
+    'sed --expression=\'s/x/y/e\' file',
+    'gsed \'s/x/y/e\' file',         // BSD homebrew GNU sed
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (s///e shell-out)`,
+    );
+  }
+});
+
+test('Phase 2D follow-up #14: regression — sed s/// without e flag NOT flagged', () => {
+  // Plain substitutes are pipeline-common; must not hard-reject.
+  for (const cmd of [
+    'sed \'s/x/y/\' file',
+    'sed \'s/x/y/g\' file',
+    'sed \'s/x/y/p\' file',          // print flag, not e
+    'sed \'s/x/y/i\' file',          // case-insensitive flag
+    'sed \'1,5d\' file',
+    'sed \'/pattern/d\' file',
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.equal(
+      risks.filter(r => r.kind === 'code_execution').length,
+      0,
+      `${cmd} should not be flagged code_execution`,
+    );
+  }
+});
+
+test('Phase 2D follow-up #14: regression — replacement text containing "e<space>" NOT a false positive', () => {
+  // The original sedExpressionHasEcmd regex used `\/[a-z]*e[a-z]*\s` which
+  // matched the `/end ` substring inside `s/foo/end /` (replacement
+  // contains "end " followed by closing slash). Refined regex requires
+  // the e-flag to be AFTER the closing /, not inside replacement.
+  const risks = parseBashRiskyOps('sed \'s/foo/end /\' file').risks;
+  assert.equal(
+    risks.filter(r => r.kind === 'code_execution').length,
+    0,
+    'replacement text with "end " must not match e-flag pattern',
+  );
+});
+
+test('Phase 2D follow-up #14: env / sudo + sed e-cmd → code_execution (wrapper-aware)', () => {
+  for (const cmd of [
+    'env sed \'e rm -f x\' file',
+    'sudo gsed \'s/x/y/e\' file',
+    'nohup sed \'e ls\' file',
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution despite wrapper`,
+    );
+  }
+});
