@@ -451,6 +451,79 @@ test('hygiene contract #2: cleanupStalePlaywrightDaemons is named export', async
   );
 });
 
+test('hygiene contract #2: server.js has SINGLE SIGINT/SIGTERM handler going through shutdown()', async () => {
+  // Codex D #12 (review #12, 2026-05-04): server.js had a SECOND
+  // pair of SIGINT/SIGTERM listeners at line 314 (releaseOnExit
+  // wrapper that called process.exit) which pre-empted the
+  // shutdown() listener at line 2326. Codex C fix #11 only addressed
+  // playwrightFetcher's signal handlers, missing server.js's own
+  // pre-empting pair. Fix: removed line 314 SIGINT/SIGTERM —
+  // _releaseServerLock now runs inside shutdown()'s Promise.allSettled.
+  //
+  // Regression guard: server.js must NOT register a SIGINT/SIGTERM
+  // listener that calls process.exit BEFORE shutdown() is registered.
+  // We do this by counting listener registrations: shutdown() call
+  // (`process.on('SIGINT', shutdown)`) is the only allowed one.
+  const { readFile } = await import('node:fs/promises');
+  const serverSrc = await readFile(
+    new URL('../../server.js', import.meta.url),
+    'utf8',
+  );
+  // Count process.on(SIGINT) occurrences. There should be exactly 1
+  // (the one passing `shutdown` directly). Same for SIGTERM.
+  const sigintMatches = serverSrc.match(/process\.on\(\s*'SIGINT'/g) || [];
+  const sigtermMatches = serverSrc.match(/process\.on\(\s*'SIGTERM'/g) || [];
+  assert.equal(
+    sigintMatches.length,
+    1,
+    `server.js must have exactly 1 SIGINT listener; found ${sigintMatches.length}`,
+  );
+  assert.equal(
+    sigtermMatches.length,
+    1,
+    `server.js must have exactly 1 SIGTERM listener; found ${sigtermMatches.length}`,
+  );
+  // The single listener must be `shutdown` (not an inline arrow that
+  // pre-empts via process.exit).
+  assert.match(
+    serverSrc,
+    /process\.on\(\s*'SIGINT'\s*,\s*shutdown\s*\)/,
+    'SIGINT listener must be `shutdown` directly (not inline pre-empting wrapper)',
+  );
+  assert.match(
+    serverSrc,
+    /process\.on\(\s*'SIGTERM'\s*,\s*shutdown\s*\)/,
+    'SIGTERM listener must be `shutdown` directly',
+  );
+});
+
+test('hygiene contract #2: src/index.js (CLI) registers cleanup on SIGINT/SIGTERM', async () => {
+  // Codex D #12 (review #12, 2026-05-04): CLI mode (`melo search`)
+  // didn't have signal cleanup — daemons spawned during the CLI run
+  // survived until next startup-cleanup. Fix: src/index.js registers
+  // process.once('SIGINT'/'SIGTERM') that calls cleanup before exit.
+  const { readFile } = await import('node:fs/promises');
+  const indexSrc = await readFile(
+    new URL('../../index.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    indexSrc,
+    /import\s*\{\s*cleanupStalePlaywrightDaemons\s*\}\s*from\s*['"]\.\/web\/playwrightFetcher\.js['"]/,
+    'src/index.js must import cleanupStalePlaywrightDaemons',
+  );
+  assert.match(
+    indexSrc,
+    /process\.once\(\s*'SIGINT'/,
+    'src/index.js must register SIGINT cleanup',
+  );
+  assert.match(
+    indexSrc,
+    /process\.once\(\s*'SIGTERM'/,
+    'src/index.js must register SIGTERM cleanup',
+  );
+});
+
 test('hygiene contract #2: playwrightFetcher does NOT register signal handlers', async () => {
   // Codex C fix regression guard: playwrightFetcher used to register
   // SIGINT / SIGTERM / beforeExit listeners that called process.exit(),

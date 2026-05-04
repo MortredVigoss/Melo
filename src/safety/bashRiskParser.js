@@ -1276,20 +1276,28 @@ function isInlineCodeFlag(text) {
   if (/^-[ceErp]./.test(text)) return true;
   // Long-glued form: `--cmd=CMD` (P1 X).
   if (text.startsWith('--cmd=')) return true;
-  // P1 X round 11 (Codex C, 2026-05-04): vim's `+CMD` old-style
-  // inline command. Original P1 X regex `^\+./` was too wide —
-  // flagged `vim +5 file` (line jump), `vim +/pattern file` (search),
-  // `vim ++enc=utf-8 file` (encoding option), `vim +:set file` (set
-  // option, doesn't shell-out). Narrow to forms that explicitly
-  // contain shell escape: `+!CMD` (direct shell escape) or `+:!CMD`
-  // (ex command then shell escape). Pure ex commands like `+:set
-  // syntax=js` don't shell out. Trade-off: the agent could in
-  // principle write `+:silent !rm` (silent + shell escape) which has
-  // `:!`-substring after the silent prefix; covered by the `:!`
-  // anywhere-after-`+` form below.
-  if (/^\+!/.test(text)) return true;          // `+!CMD` direct shell escape
-  if (/^\+:!/.test(text)) return true;          // `+:!CMD` ex-then-shell
-  if (/^\+:[a-zA-Z]+\s*!/.test(text)) return true; // `+:silent !CMD` etc.
+  // P1 X round 12 (Codex D #12, 2026-05-04): unified vim `+CMD`
+  // shell-escape detection. Round 11's three-form regex (`+!`,
+  // `+:!`, `+:silent !`) missed range/filter (`+1!cmd`, `+%!cmd`,
+  // `+.!cmd`, `+/pat/!cmd`, `+$!cmd`), indirect (`+:exec "!cmd"`,
+  // `+:read !cmd`, `+:r !cmd`), normal-mode (`+:normal :!rm`), and
+  // false-positively flagged `silent!` modifier (`+:silent! set`).
+  //
+  // Lookbehind unifies all forms: any `+...!` token where `!` is
+  // NOT preceded by an ASCII letter is a shell escape. vim's `!`
+  // shell-out always sits at start, after whitespace, or after a
+  // non-letter sed-style boundary (`:`, digit, `%`, `.`, `$`, `/`).
+  // The `silent!` / `vmap!` / `cmap!` / etc. modifiers always have
+  // `!` directly attached to a letter — those don't match.
+  //
+  // Examples (all match):
+  //   +!cmd / +:!cmd / +:silent !cmd / +1!cmd / +%!cmd / +.!cmd /
+  //   +/pat/!cmd / +$!cmd / +:exec "!cmd" / +:read !cmd /
+  //   +:normal :!cmd
+  // Examples (don't match):
+  //   +5 file / +/pattern file / ++enc=utf-8 / +:set syntax=js /
+  //   +:silent! set / +:vmap!a {rhs} / +:cmap!
+  if (/^\+.*?(?<![a-zA-Z])!/.test(text)) return true;
   return false;
 }
 

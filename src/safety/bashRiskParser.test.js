@@ -788,8 +788,9 @@ test('Codex C fix (review #11): vim non-shell-escape +CMD forms NOT flagged', ()
   // Codex review #11 graded C; one finding was the `+CMD` regex was
   // too wide: `^\+./` matched `+5` (line jump), `+/pattern` (search),
   // `++enc=utf-8` (encoding option), `+:set` (set vim option). Fix:
-  // narrow to forms with shell-escape marker `!` somewhere (`+!cmd`
-  // or `+:!cmd` or `+:silent !cmd`).
+  // narrow to forms with shell-escape marker `!` (lookbehind ensures
+  // `!` is NOT preceded by ASCII letter — distinguishes shell escape
+  // from `silent!` / `vmap!` / `cmap!` modifiers).
   for (const cmd of [
     `vim +5 file.txt`,                             // line number jump
     `vim +10 src/main.js`,
@@ -800,12 +801,47 @@ test('Codex C fix (review #11): vim non-shell-escape +CMD forms NOT flagged', ()
     `vim +":syntax on" file.txt`,
     `vim +":source ~/.vimrc" file.txt`,
     `nvim +/pattern file`,                         // nvim same
+    // Codex review #12 P1 false positives:
+    `vim +":silent! set number" file`,             // silent! modifier (! after letter)
+    `vim +":vmap!a {rhs}" file`,                   // vmap! modifier (! after letter)
+    `vim +":cmap!" file`,                          // cmap! modifier
   ]) {
     const risks = parseBashRiskyOps(cmd).risks;
     assert.equal(
       risks.filter(r => r.kind === 'code_execution').length,
       0,
       `${cmd} should NOT flag (no shell escape ! in +CMD)`,
+    );
+  }
+});
+
+test('Codex D #12 fix: vim +CMD additional shell-out forms (range/filter/indirect/normal)', () => {
+  // Codex review #12 found round-11 narrowing was insufficient — 5
+  // missed forms:
+  //   +1!rm  / +%!rm  / +.!rm    range + filter (line/file/current)
+  //   +/pat/!rm                   regex range + filter
+  //   +$!rm                       last-line + filter
+  //   +"exec \"!rm\""             indirect via :exec
+  //   +":read !cmd"               Ex `:read !cmd` shell-fed read
+  //   +":r !cmd"                  short form of :read
+  //   +":normal :!rm"             normal-mode entering :!cmd
+  // Fix: unified lookbehind regex `^\+.*?(?<![a-zA-Z])!` covers all
+  // these (any `!` preceded by non-letter is shell escape).
+  for (const cmd of [
+    `vim +1!rm file`,                              // line + filter
+    `vim +%!rm file`,                              // whole file + filter
+    `vim +.!rm file`,                              // current line + filter
+    `vim +"/foo/!rm" file`,                        // regex range + filter
+    `vim +"\\$!rm" file`,                          // last line + filter
+    `vim +":exec \"!rm\"" file`,                   // indirect :exec
+    `vim +":read !rm" file`,                       // :read shell-fed
+    `vim +":r !rm" file`,                          // :r short form
+    `vim +":normal :!rm" file`,                    // normal-mode :!
+  ]) {
+    const risks = parseBashRiskyOps(cmd).risks;
+    assert.ok(
+      risks.some(r => r.kind === 'code_execution'),
+      `${cmd} must be code_execution (vim shell-out via lookbehind regex)`,
     );
   }
 });

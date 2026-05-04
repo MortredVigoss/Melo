@@ -306,13 +306,20 @@ async function _releaseServerLock() {
     );
     process.exit(0);
   }
-  const _releaseOnExit = () => {
-    // fire-and-forget; we're shutting down either way
+  // 'exit' event runs synchronously after all listeners fire; the
+  // promise scheduled here is best-effort. SIGINT/SIGTERM are handled
+  // by the bottom-of-file shutdown() function which calls
+  // _releaseServerLock + cleanupStalePlaywrightDaemons + voice/lock
+  // cleanups + server.close in proper order. Codex C fix #11 (review
+  // #12, 2026-05-04): used to register SIGINT/SIGTERM handlers HERE
+  // that called process.exit() — they pre-empted the shutdown()
+  // listener at line 2300+ via Node's listener-order, skipping all
+  // the lock-release / voice / playwright cleanup that shutdown()
+  // does. Removed the SIGINT/SIGTERM registration here; shutdown()
+  // owns the signal-handler lifecycle.
+  process.on('exit', () => {
     _releaseServerLock().catch(() => {});
-  };
-  process.on('exit', _releaseOnExit);
-  process.on('SIGINT', () => { _releaseOnExit(); process.exit(130); });
-  process.on('SIGTERM', () => { _releaseOnExit(); process.exit(143); });
+  });
 }
 
 await prepareDesktopLaunchState();
@@ -2315,6 +2322,12 @@ function shutdown() {
     _releaseTelegramLock(),
     _releaseDiscordLock(),
     voiceShutdown,
+    // Codex C fix #11 (review #12, 2026-05-04): server-lock release
+    // moved here from a separate SIGINT/SIGTERM listener that was
+    // pre-empting this shutdown() via Node's listener-order. Now
+    // shutdown() owns the full release sequence so a single signal
+    // handler reliably tears everything down.
+    _releaseServerLock(),
   ]).finally(() => {
     server.close(() => {
       process.exit(0);

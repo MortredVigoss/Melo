@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-05-04 — Codex D #12：server.js 自己的 SIGINT/SIGTERM 抢占 + vim +CMD 5 形态 bypass + CLI mode 漏
+
+- C #11 fix (`2947473`) push 后跑 codex review #12 评 **D**。3 个发现：
+  - **🔴 P0a**: 我之前只删了 playwrightFetcher 的 SIGINT/SIGTERM listener。但 [server.js line 314-315](src/server.js#L314-L315) 自己**还有**一对 SIGINT/SIGTERM listener（`_releaseOnExit(); process.exit(130/143)`），先于 line 2326 的 `shutdown` listener 注册 → Node listener-order 让这对先跑 + process.exit() 抢占 shutdown(). C #11 fix 没动 server.js 自己的 pre-empting handler.
+  - **🔴 P0b**: CLI mode (`src/index.js`) 没 cleanup hook. `melo search` 用 webSearchTool spawn daemon, CLI 退出时不走 server.js shutdown — 当前进程产生的 daemon 留到 next melo start.
+  - **🟠 P1**: vim `+CMD` 收窄成 `+!CMD` / `+:!CMD` / `+:silent !CMD` 仍漏 5 类 shell-out + 1 个新 false positive：
+    - `+1!cmd` / `+%!cmd` / `+.!cmd` (range + filter)
+    - `+/pat/!cmd` / `+$!cmd` (regex/last-line range + filter)
+    - `+:exec "!cmd"` / `+:execute` (indirect via :exec)
+    - `+:read !cmd` / `+:r !cmd` (Ex shell-fed read)
+    - `+:normal :!cmd` (normal-mode :!)
+    - **新 false positive**: `+:silent! set` (silent! modifier) 误命中 `+:silent !` (silent prefix + shell escape) regex
+- 用户拍方案：3 处全修，**uncaughtException** 留独立 round（属 server-wide 异常处理，影响面更广）。
+- **P0a 修法**：
+  - 删 [src/server.js:309-315](src/server.js#L309) 的 `_releaseOnExit` SIGINT/SIGTERM listener 整段
+  - 保留 `process.on('exit', ...)` （sync release，'exit' event 只跑 sync side-effect）
+  - shutdown() 函数 `Promise.allSettled` 加 `_releaseServerLock()` 调用 — server-lock release 现在走主 shutdown 流，跟 telegram/discord lock + voice + playwright cleanup 同列并行
+- **P0b 修法**：[src/index.js](src/index.js) top import + 加：
+  ```js
+  function _cliCleanup(exitCode) {
+    try { cleanupStalePlaywrightDaemons(); } catch {}
+    process.exit(exitCode);
+  }
+  process.once('SIGINT', () => _cliCleanup(130));
+  process.once('SIGTERM', () => _cliCleanup(143));
+  ```
+  CLI mode 短任务 + signal cleanup 补回。CLI 跟 server 是独立 entry (package.json `bin: melo → src/index.js`)，不冲突。
+- **P1 修法**：vim regex 重写为单一 lookbehind 表达式：
+  ```js
+  if (/^\+.*?(?<![a-zA-Z])!/.test(text)) return true;
+  ```
+  统一覆盖：`+!cmd` / `+:!cmd` / `+:silent !cmd` / `+1!cmd` / `+%!cmd` / `+.!cmd` / `+/pat/!cmd` / `+$!cmd` / `+:exec "!cmd"` / `+:read !cmd` / `+:r !cmd` / `+:normal :!cmd`. 关键：lookbehind `(?<![a-zA-Z])` 排除 `!` 紧贴字母的形态（modifier `silent!` / `vmap!` / `cmap!` 等），不再误标 `+:silent! set`. 1 条 regex 替代之前 3 条。
+- 闭环（手动验证 + 测试矩阵）：
+  - ✅ P0a: server.js 现仅 1 个 SIGINT + 1 个 SIGTERM listener，都直接走 `shutdown` 函数引用
+  - ✅ P0b: src/index.js CLI 加 cleanup hook
+  - ✅ P1: vim `+1!rm` / `+%!rm` / `+.!rm` / `+/foo/!rm` / `+$!rm` / `+:exec "!rm"` / `+:read !rm` / `+:r !rm` / `+:normal :!rm` 全 catch
+  - ✅ regression: `vim +5` / `+/pattern` / `++enc=utf-8` / `+:set syntax=js` / `+:syntax on` / `+:source ~/.vimrc` / `+:silent! set number` / `+:vmap!a {rhs}` / `+:cmap!` 全不 flag
+- 测试 +3 case：① vim D #12 attack 9 形态（range/filter/indirect/normal）；② vim regression +3 形态（silent!/vmap!/cmap! modifier 不误标）；③ server.js single SIGINT/SIGTERM listener contract + src/index.js CLI cleanup contract.
+- 验证：`bashRiskParser.test.js` **99/99 全绿**（前 97 + 2 新 — vim D#12 attack + modifier regression）；`webSearchTool.helpers.test.js` **42/42 全绿**（前 41 + 1 新 — server single-listener + CLI hook contract）；`src/**/*.test.js` **1972/1972 全绿**（前 1969 + 3 新；零既有回归）。
+- **教训（C #11 → D #12）**：① 第一次 review 让我以为只 playwrightFetcher 有问题，没意识到 server.js 自己还有 pre-empting handler — Codex 找一处问题时要顺手 audit 整个 module 里其他同类形态；② vim/sed/复杂 syntax 的 detection 启发式里 lookbehind 比 enumerate forms 更稳 — 1 条 regex 比 3 条枚举更可读 + 更全；③ CLI mode 容易被忘 — server mode 走 shutdown 时 CLI 没 hook，每 hygiene fix 必须 audit CLI entry 和 server entry 两路；④ Codex review 系列从 C → D 不算降级，是更深 audit 暴露 same-dimension problem，是好事不是坏事。
+
+---
+
 ## 2026-05-04 — Codex C #11：playwrightFetcher 抢占 server shutdown + vim +CMD 过宽
 
 - P1 X (`778afcf`) push 后跑 codex review #11 评 6 个 commit (hygiene fix #2 + P1 X 共 2 commits + 之前 awk 系列)。Codex 评 **C**（不是 D，但属 stop and replan gate per CLAUDE.md §4），3 个发现：

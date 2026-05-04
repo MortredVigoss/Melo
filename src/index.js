@@ -19,6 +19,27 @@ import { webSearchTool, checkSearchHealth, getCacheStats, clearCache } from './t
 import { searchHistoryTool } from './tools/builtins/searchHistoryTool.js';
 import { draftSkillFromConversation } from './agents/skillDrafting.js';
 import { createCustomSkill } from './desktopStore.js';
+import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
+
+// Codex C fix #11 (review #12, 2026-05-04): CLI mode cleanup. melo
+// CLI tasks like `melo search` spawn Playwright daemons via
+// webSearchTool. Without a SIGINT/SIGTERM hook the daemons survive
+// CLI exit (Ctrl-C / kill) until the next melo start runs the
+// startup cleanup. Hook here is purely additive — server mode
+// (started via `npm start`) goes through server.js's shutdown()
+// and never reaches CLI's signal handlers.
+//
+// Why both startup-cleanup AND signal-cleanup:
+//   - startup cleanup at module-load reaps daemons from PRIOR runs
+//     (covers crashes / SIGKILL).
+//   - signal cleanup here reaps daemons from THIS run before the
+//     CLI exits (covers Ctrl-C / kill TERM during search).
+function _cliCleanup(exitCode) {
+  try { cleanupStalePlaywrightDaemons(); } catch {}
+  process.exit(exitCode);
+}
+process.once('SIGINT', () => _cliCleanup(130));
+process.once('SIGTERM', () => _cliCleanup(143));
 
 function printHelp() {
   output.write(
