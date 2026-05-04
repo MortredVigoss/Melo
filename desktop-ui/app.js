@@ -11220,10 +11220,16 @@ function _fileSafetyButtons(operation, payload, requestId) {
 }
 
 function renderFileSafetyDialog(entry) {
-  const { requestId, operation, payload = {} } = entry;
+  const { requestId, operation, payload = {}, confirmError = '' } = entry;
   const title = _fileSafetyTitle(operation, payload);
   const body = _fileSafetyBody(operation, payload);
   const buttons = _fileSafetyButtons(operation, payload, requestId);
+  // confirmError is set by handleFileSafetyResponse when the gate reports
+  // a recoverable mismatch on delete stage 2 — the dialog stays open and
+  // surfaces the message instead of disappearing silently.
+  const errorBanner = confirmError
+    ? `<div class="file-safety-warn">${escapeHtml(confirmError)}</div>`
+    : '';
   return `
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="File operation approval">
       <div class="tool-permission-shell file-safety-shell">
@@ -11235,6 +11241,7 @@ function renderFileSafetyDialog(entry) {
           </div>
         </div>
         <div class="tool-permission-body">
+          ${errorBanner}
           ${body}
         </div>
         <div class="tool-permission-footer">
@@ -11362,13 +11369,26 @@ async function handleToolPermissionResponse(requestId, toolId, granted, scope) {
 // carries the user-typed string the gate validates against the captured
 // expectedConfirmation.
 async function handleFileSafetyResponse(requestId, granted, scope, confirmInput = '', persistent = false) {
-  uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-    p => p.requestId !== requestId,
-  );
-  render();
+  // Codex review (Phase 3 follow-up, 2026-05-04 🟡 P1): for delete
+  // stage-2 we can't optimistically remove the dialog — a mismatched
+  // confirmInput is a recoverable error and the user should be able
+  // to retry without the request being torn down. We hold off on the
+  // queue mutation until the response is back, and reinstate an
+  // error banner on the same entry when the gate reports mismatch.
+  const entry = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
+  const isConfirmStage = entry?.kind === 'file_safety'
+    && entry.operation === 'delete'
+    && entry.payload?.stage === 'confirm';
+
+  if (!isConfirmStage) {
+    uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
+      p => p.requestId !== requestId,
+    );
+    render();
+  }
 
   try {
-    await api('/api/tools/permission-response', {
+    const response = await api('/api/tools/permission-response', {
       method: 'POST',
       body: {
         requestId,
@@ -11379,7 +11399,32 @@ async function handleFileSafetyResponse(requestId, granted, scope, confirmInput 
         persistent,
       },
     });
+
+    if (isConfirmStage) {
+      if (response && response.ok === false && response.reason === 'CONFIRMATION_MISMATCH') {
+        // Mark the entry so the dialog re-renders with an error banner.
+        const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
+        if (live) {
+          live.confirmError = `Typed value did not match "${response.expected || ''}". Try again.`;
+        }
+        render();
+        return;
+      }
+      // Either resolved cleanly or the gate already rejected — either
+      // way the entry is consumed; drop it.
+      uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
+        p => p.requestId !== requestId,
+      );
+      render();
+    }
   } catch (err) {
+    if (isConfirmStage) {
+      const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
+      if (live) {
+        live.confirmError = err?.message || 'Request failed; try again.';
+        render();
+      }
+    }
     if (process?.env?.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.warn('file-safety response failed:', err.message);

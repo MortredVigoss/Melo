@@ -333,19 +333,73 @@ test('requestDelete: stage 1 + stage 2 with correct filename → resolves', asyn
   assert.equal(result.expectedConfirmation, 'foo.txt');
 });
 
-test('requestDelete: stage 2 with WRONG confirm string → rejects', async () => {
+test('requestDelete: stage 2 mismatch returns ok:false reason=CONFIRMATION_MISMATCH; entry stays for retry', async () => {
+  // Phase 3 follow-up (Codex 🟡 P1, 2026-05-04): a typo in the
+  // confirmation string used to entry.reject() outright, so the chat
+  // saw a denied operation and the dialog disappeared. The gate now
+  // returns a recoverable error and keeps the pending entry alive
+  // until the user explicitly retries with the correct value, hits
+  // Deny, or the 120s timeout fires.
   const { gate } = await freshGate();
-  const { sse } = makeAutoResolver(gate, [
-    { scope: 'once' },
-    { scope: 'once', confirmInput: 'wrong-name.txt' },
-  ]);
+  let capturedRequestId = null;
+  let stage1Replied = false;
+  const sse = (event, payload) => {
+    if (!stage1Replied) {
+      stage1Replied = true;
+      queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'once'));
+    } else {
+      // Stage 2 — try wrong, observe ok:false, then retry with correct.
+      capturedRequestId = payload.requestId;
+      queueMicrotask(() => {
+        const wrong = gate.resolveFileSafety(payload.requestId, 'once', {
+          confirmInput: 'wrong-name.txt',
+        });
+        assert.equal(wrong.ok, false);
+        assert.equal(wrong.reason, 'CONFIRMATION_MISMATCH');
+        assert.equal(wrong.expected, 'foo.txt');
+        // Now retry with the right value — should resolve normally.
+        queueMicrotask(() => {
+          gate.resolveFileSafety(payload.requestId, 'once', {
+            confirmInput: 'foo.txt',
+          });
+        });
+      });
+    }
+  };
+  const result = await gate.requestDelete({
+    paths: ['/tmp/elsewhere/foo.txt'],
+    chatId: 'chat-A',
+    sseEmitter: sse,
+  });
+  assert.ok(capturedRequestId, 'stage 2 should have fired before retry succeeded');
+  assert.deepEqual(result.confirmedPaths, ['/tmp/elsewhere/foo.txt']);
+});
+
+test('requestDelete: explicit Deny still rejects after a confirmInput mismatch', async () => {
+  const { gate } = await freshGate();
+  let stage1Replied = false;
+  const sse = (event, payload) => {
+    if (!stage1Replied) {
+      stage1Replied = true;
+      queueMicrotask(() => gate.resolveFileSafety(payload.requestId, 'once'));
+      return;
+    }
+    queueMicrotask(() => {
+      // Mismatch — entry must stay alive.
+      gate.resolveFileSafety(payload.requestId, 'once', { confirmInput: 'oops' });
+      // User then clicks Deny.
+      queueMicrotask(() => {
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      });
+    });
+  };
   await assert.rejects(
     gate.requestDelete({
       paths: ['/tmp/elsewhere/foo.txt'],
       chatId: 'chat-A',
       sseEmitter: sse,
     }),
-    /Confirmation string did not match/i,
+    (err) => err.code === 'FILE_SAFETY_DENIED' && /denied/i.test(err.message),
   );
 });
 

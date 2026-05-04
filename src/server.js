@@ -1086,7 +1086,12 @@ const server = createServer(async (request, response) => {
           confirmInput,
           persistent: Boolean(persistent),
         });
-        sendJson(response, result.ok ? 200 : 404, result);
+        // file-safety responses always return 200 with the result body.
+        // ok:false carries a recoverable reason (e.g. CONFIRMATION_MISMATCH)
+        // that the UI inspects to decide whether to keep the dialog open
+        // for retry. Sending a 4xx here would force the api() helper to
+        // throw and lose the structured reason.
+        sendJson(response, 200, result);
         return;
       }
       const result = await resolvePermission(requestId, Boolean(granted), scope, toolId);

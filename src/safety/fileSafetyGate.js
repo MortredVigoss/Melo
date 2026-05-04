@@ -224,8 +224,18 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
   if (entry.expectedConfirmation) {
     const typed = typeof extras.confirmInput === 'string' ? extras.confirmInput : '';
     if (typed !== entry.expectedConfirmation) {
-      entry.reject('Confirmation string did not match.');
-      return { ok: true };
+      // Codex review (Phase 3 follow-up, 2026-05-04 🟡 P1): mismatch
+      // used to entry.reject() outright, which deleted the pending
+      // entry, made the operation fail in chat, and gave the user no
+      // chance to correct a typo. Return a recoverable error instead
+      // — entry stays in _pending until the request times out, and
+      // the UI keeps the dialog open with an error banner so the user
+      // can retry. Deny remains the explicit cancel path.
+      return {
+        ok: false,
+        reason: 'CONFIRMATION_MISMATCH',
+        expected: entry.expectedConfirmation,
+      };
     }
   }
 
