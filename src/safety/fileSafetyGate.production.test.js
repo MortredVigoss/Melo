@@ -90,3 +90,66 @@ test('desktop-ui/app.js exposes the Safety customize section + Refresh/Revoke ac
   assert.ok(/refresh-safety-allowlist/.test(appSrc), 'refresh-safety-allowlist action missing');
   assert.ok(/safety-allowlist-remove/.test(appSrc), 'safety-allowlist-remove action missing');
 });
+
+// ── Phase 4 — domain cookies + image-intent gate ──────────────────────
+
+test('server.js exposes /api/settings/domain-cookies GET / upsert / remove endpoints', () => {
+  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies'"),
+    'GET listing endpoint missing');
+  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies/upsert'"),
+    'upsert endpoint missing');
+  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies/remove'"),
+    'remove endpoint missing');
+});
+
+test('server.js GET endpoint omits cookie values from the response shape', () => {
+  // Defence-in-depth: the listing UI must never receive the secret.
+  // Pin the response uses host / length / tail only and never the
+  // raw cookies map. A refactor that flips back to the full map
+  // should light up red.
+  //
+  // We split on the next route's pathname so we don't accidentally
+  // match the upsert / remove blocks below.
+  const startIdx = serverSrc.indexOf("url.pathname === '/api/settings/domain-cookies' && request.method === 'GET'");
+  const endIdx = serverSrc.indexOf("url.pathname === '/api/settings/domain-cookies/upsert'", startIdx);
+  assert.ok(startIdx > 0 && endIdx > startIdx, 'GET endpoint block boundaries not found');
+  const block = serverSrc.slice(startIdx, endIdx);
+  // The shape uses shorthand property syntax for `host` (no colon),
+  // explicit `length:` and `tail:`. Match either form for `host`.
+  assert.ok(/\bhost[:,]/.test(block), 'GET response shape must include host field');
+  assert.ok(/length:/.test(block), 'GET response shape must include length field');
+  assert.ok(/tail:/.test(block), 'GET response shape must include tail preview');
+  assert.ok(
+    !/sendJson\(response, 200, \{ cookies:/.test(block),
+    'GET endpoint must NOT return raw cookies map',
+  );
+});
+
+test('desktop-ui/app.js wires the domain-cookie form actions + input handlers', () => {
+  assert.ok(/data-action="domain-cookie-save"/.test(appSrc), 'save button missing');
+  assert.ok(/data-action="domain-cookie-remove"/.test(appSrc), 'remove button missing');
+  assert.ok(/data-action="refresh-domain-cookies"/.test(appSrc), 'refresh button missing');
+  assert.ok(/data-domain-cookie-host/.test(appSrc), 'host input data attr missing');
+  assert.ok(/data-domain-cookie-string/.test(appSrc), 'cookie input data attr missing');
+});
+
+test('openai.js wires the image-intent gate into createCodexResponsesReply', () => {
+  // Phase 4 root-cause fix: image_generation is no longer always-on
+  // when workspace exists. This pins (a) the gate gets passed
+  // hasImageIntent and (b) extractLatestUserTextForIntent feeds it.
+  // A refactor that drops the gate would re-introduce the
+  // Xiaohongshu/Douyin mis-routing failure.
+  const openaiSrc = readFileSync(join(repoRoot, 'src', 'openai.js'), 'utf8');
+  assert.ok(/extractLatestUserTextForIntent\s*\(/.test(openaiSrc),
+    'extractLatestUserTextForIntent must be called');
+  assert.ok(/_detectImageIntentLocal\s*\(/.test(openaiSrc),
+    'local image-intent detector must be called');
+  assert.ok(/hasImageIntent\s*[:,]/.test(openaiSrc),
+    'hasImageIntent must be threaded into buildCodexResponsesTools');
+  // Pin the gating condition itself so a future "always-on" reversion
+  // shows up red.
+  assert.ok(
+    /hasImageIntent\s*&&[\s\S]*?workspacePath/.test(openaiSrc),
+    'image_generation must gate on hasImageIntent AND workspacePath',
+  );
+});

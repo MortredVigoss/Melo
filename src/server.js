@@ -1175,6 +1175,87 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // ── Domain cookies (Phase 4: Xiaohongshu/Douyin extraction reliability) ─
+    //
+    // Read-side: list the domains that have a cookie string saved. We
+    // deliberately DO NOT return the cookie value — domain cookies can
+    // contain session secrets and the management UI only needs presence
+    // info to render rows. Add/replace lands the new value, remove
+    // drops it. This keeps the SSE-rendered settings page from
+    // splattering session tokens across the DOM.
+    if (url.pathname === '/api/settings/domain-cookies' && request.method === 'GET') {
+      const { getResolvedConfig } = await import('./config.js');
+      const config = await getResolvedConfig();
+      const map = (config.domainCookies && typeof config.domainCookies === 'object')
+        ? config.domainCookies
+        : {};
+      const hosts = Object.keys(map).map(host => ({
+        host,
+        length: typeof map[host] === 'string' ? map[host].length : 0,
+        // Trailing-tail preview only — enough for the user to identify
+        // a stale rule without exposing the secret.
+        tail: typeof map[host] === 'string' && map[host].length > 6
+          ? `…${map[host].slice(-6)}`
+          : '',
+      }));
+      sendJson(response, 200, { hosts });
+      return;
+    }
+
+    if (url.pathname === '/api/settings/domain-cookies/upsert' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const { host, cookieString } = body;
+      if (typeof host !== 'string' || !host.trim()) {
+        sendJson(response, 400, { ok: false, error: 'host is required.' });
+        return;
+      }
+      if (typeof cookieString !== 'string' || !cookieString.trim()) {
+        sendJson(response, 400, { ok: false, error: 'cookieString is required.' });
+        return;
+      }
+      const normalizedHost = host.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (!normalizedHost) {
+        sendJson(response, 400, { ok: false, error: 'host is required.' });
+        return;
+      }
+      // Same withConfigLock + spread-current pattern as
+      // persistPermissionRule — saveConfig normalizes missing fields
+      // back to DEFAULT_CONFIG, so passing `{ domainCookies: ... }`
+      // alone would wipe apiKey / whisperApiKey / etc.
+      const { loadConfig, saveConfig, withConfigLock } = await import('./config.js');
+      await withConfigLock(async () => {
+        const current = await loadConfig();
+        const next = { ...(current.domainCookies && typeof current.domainCookies === 'object' ? current.domainCookies : {}) };
+        next[normalizedHost] = cookieString;
+        await saveConfig({ ...current, domainCookies: next });
+      });
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === '/api/settings/domain-cookies/remove' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const { host } = body;
+      if (typeof host !== 'string' || !host.trim()) {
+        sendJson(response, 400, { ok: false, error: 'host is required.' });
+        return;
+      }
+      const normalizedHost = host.trim().toLowerCase();
+      const { loadConfig, saveConfig, withConfigLock } = await import('./config.js');
+      const removed = await withConfigLock(async () => {
+        const current = await loadConfig();
+        const map = current.domainCookies && typeof current.domainCookies === 'object'
+          ? { ...current.domainCookies }
+          : {};
+        if (!(normalizedHost in map)) return false;
+        delete map[normalizedHost];
+        await saveConfig({ ...current, domainCookies: map });
+        return true;
+      });
+      sendJson(response, 200, { ok: true, removed });
+      return;
+    }
+
     // ── MCP server management endpoints ─────────────────────────────────────
     if (url.pathname === '/api/mcp/servers' && request.method === 'GET') {
       sendJson(response, 200, { servers: getActiveMcpServers() });

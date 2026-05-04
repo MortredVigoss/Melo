@@ -104,10 +104,26 @@ test('buildCodexResponsesTools — no workspace, no web search → empty tool li
   assert.deepEqual(tools, []);
 });
 
-test('buildCodexResponsesTools — workspacePath alone enables image_generation only', () => {
+test('buildCodexResponsesTools — workspacePath alone (no image intent) → empty tool list (Phase 4 gate)', () => {
+  // Phase 4 (2026-05-04): image_generation now requires explicit image
+  // intent on the latest user turn IN ADDITION to a workspace path.
+  // The pre-Phase-4 "workspace alone is enough" contract leaked the
+  // tool into non-image turns and let the model fabricate images as a
+  // fallback for failed fetch_url calls (Xiaohongshu/Douyin share
+  // links). See buildCodexResponsesTools rationale block.
   const tools = buildCodexResponsesTools({
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
+    hasImageIntent: false,
+  });
+  assert.deepEqual(tools, []);
+});
+
+test('buildCodexResponsesTools — workspacePath + image intent enables image_generation', () => {
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: false,
+    workspacePath: '/tmp/some/workspace',
+    hasImageIntent: true,
   });
   assert.equal(tools.length, 1);
   assert.equal(tools[0].type, 'image_generation');
@@ -122,15 +138,27 @@ test('buildCodexResponsesTools — web search alone enables web_search only', ()
   assert.equal(tools[0].type, 'web_search');
 });
 
-test('buildCodexResponsesTools — both flags emits both tools in stable order (web_search first)', () => {
+test('buildCodexResponsesTools — both flags + image intent emits both tools in stable order (web_search first)', () => {
   const tools = buildCodexResponsesTools({
     enableWebSearch: true,
     workspacePath: '/tmp/melo/chat-workspace',
+    hasImageIntent: true,
   });
   assert.deepEqual(
     tools.map(t => t.type),
     ['web_search', 'image_generation'],
   );
+});
+
+test('buildCodexResponsesTools — both flags WITHOUT image intent → web_search only (Phase 4)', () => {
+  // Web search stays orthogonal to the image gate. Pinned so a future
+  // refactor that accidentally couples them lights up red.
+  const tools = buildCodexResponsesTools({
+    enableWebSearch: true,
+    workspacePath: '/tmp/melo/chat-workspace',
+    hasImageIntent: false,
+  });
+  assert.deepEqual(tools.map(t => t.type), ['web_search']);
 });
 
 test('buildCodexResponsesTools — non-absolute workspacePath does NOT enable image_generation', () => {
@@ -158,15 +186,19 @@ test('buildCodexResponsesTools — hasInputImage variant produces the SAME bare 
   // for edit-mode behaviour moved entirely into the instructions block.
   // Pinned 2026-04-30 after the user reported the request being rejected
   // with "input_fidelity not supported".
+  // (Phase 4 update: hasImageIntent is required to enable the tool at
+  // all; once enabled, the config is identical regardless of input image.)
   const editTools = buildCodexResponsesTools({
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
     hasInputImage: true,
+    hasImageIntent: true,
   });
   const generateTools = buildCodexResponsesTools({
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
     hasInputImage: false,
+    hasImageIntent: true,
   });
   assert.deepEqual(
     editTools,
@@ -188,6 +220,7 @@ test('buildCodexResponsesTools — pure text-to-image keeps the same minimal too
     enableWebSearch: false,
     workspacePath: '/tmp/some/workspace',
     hasInputImage: false,
+    hasImageIntent: true,
   });
   assert.equal(tools.length, 1);
   assert.equal(tools[0].type, 'image_generation');

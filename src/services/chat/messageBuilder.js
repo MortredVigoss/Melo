@@ -136,6 +136,97 @@ export function detectImageEditIntent(text) {
   if (typeof text !== 'string' || !text.trim()) return false;
   return IMAGE_EDIT_INTENT_PATTERN.test(text);
 }
+
+// Image-generation intent: text-to-image asks ("draw a cat" / "画一只猫" /
+// "generate a logo"). Unlike IMAGE_EDIT_INTENT_PATTERN this is the
+// "create from nothing" case — no existing image required.
+//
+// Phase 4 Codex tool-routing fix (2026-05-04): the inline image_generation
+// tool used to be unconditionally added to every Codex chat that had a
+// workspace path (design intent 2026-04-29). In practice this leaked
+// across boundaries — when the agent loop had a tool-call failure
+// (e.g. fetch_url against a Xiaohongshu/Douyin link blocked by anti-bot)
+// the model would pick image_generation as a fallback because (a) it
+// was in the tool list and (b) the share-link thumbnail satisfied the
+// model's "looks like an image task" intuition. Result: user pastes a
+// link expecting a summary, gets a fabricated image instead. The fix
+// is to gate image_generation on actual image intent, so a non-image
+// turn cannot accidentally route into it. See buildCodexResponsesTools.
+//
+// Conservative regex: anchored on explicit verbs (generate / draw /
+// create / make / paint / render / design) immediately followed by an
+// image-specific noun. CJK side keeps "画", "生成图/图片/海报", "做图",
+// "绘制", "设计.{0,3}(图|海报|封面|logo)". Plain "make me a logo" /
+// "design a poster" / "出一张图" qualify.
+// Two-tier matcher:
+//   Tier A — STRONG image verbs (draw / sketch / doodle / paint /
+//            illustrate). Fire on "verb + a/an/the X" even without an
+//            explicit image-noun. Catches "draw a cat" / "paint a
+//            portrait" / "sketch the layout". Rare false positives
+//            ("draw the line", "draw blood") are recoverable — having
+//            the tool listed does not force the model to call it, and
+//            the cost of one wrong-tool turn is low compared to gating
+//            out legitimate "draw X" asks.
+//   Tier B — GENERIC verbs (generate / create / make / render /
+//            design / build / produce) + an image noun within two
+//            modifier words. Never fires on "create a function" /
+//            "generate the report" / "make the request faster".
+// CJK side splits the same way: 画 / 绘制 fire on the verb-stem;
+// 生成 / 做 / 设计 require a CJK image noun ("图", "海报", "logo",
+// "图标", …) with optional whitespace between counter and noun
+// ("做一个 logo" — latin word delimited by space).
+export const IMAGE_GEN_INTENT_PATTERN = new RegExp(
+  // Tier A — English strong verbs (image noun optional).
+  '\\b(?:draw|sketch|doodle|paint|illustrate)\\s+(?:me\\s+)?(?:a|an|the|some|new|another|this|that)\\s+\\w+\\b' +
+  '|' +
+  // Tier B — English generic verbs + image noun within 2 modifier words.
+  '\\b(?:generate|create|make|render|design|build|produce)\\s+(?:me\\s+)?(?:a|an|the|some|new|another)?\\s*(?:\\w+\\s+){0,2}' +
+  '(?:image|picture|photo|illustration|drawing|art(?:work)?|painting|portrait|logo|icon|poster|sketch|render(?:ing)?|gif|meme|wallpaper|banner|diagram|infographic|chart)\\b' +
+  '|' +
+  // CJK strong verbs.
+  '画(?:一(?:个|张|幅|只|条|匹)?|个|张|幅)|画图|帮我画|画.{0,5}(?:图|画)' +
+  '|绘制(?:一)?(?:张|个|幅)?(?:图|图片|海报)?' +
+  '|' +
+  // CJK generic verbs + image noun.
+  '生成(?:一(?:张|个|幅))?\\s*(?:图片|图|照片|海报|插图|插画|图标|logo)' +
+  '|做(?:一)?(?:张|个|幅)?\\s*(?:图|图片|海报|logo|插图|插画|图标)' +
+  '|设计(?:一)?(?:张|个|幅)?\\s*(?:图|海报|封面|logo|图标|banner|插图)' +
+  '|出.{0,3}图|出一张|来一张图|来.{0,3}图',
+  'iu',
+);
+
+/**
+ * Returns true when the given text reads as an image-generation request
+ * (text-to-image). Independent of whether the conversation already has
+ * an image attachment — `画一只猫` should fire even if no prior image.
+ */
+export function detectImageGenIntent(text) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  return IMAGE_GEN_INTENT_PATTERN.test(text);
+}
+
+/**
+ * Top-level image-intent detector used to gate the always-on inline
+ * image_generation tool (src/openai.js buildCodexResponsesTools).
+ * Image_generation belongs in the tool list when ANY of:
+ *   • text reads as image generation ("draw a cat", "画一张")
+ *   • text reads as image edit AND there is an input image
+ *   • text reads as image follow-up (look at / discuss the photo) AND
+ *     there is an input image
+ *
+ * Without an input image, edit/follow-up patterns are NOT enough — they
+ * could trigger on CSS / theming / "change the background" copy that
+ * has nothing to do with images. The hasInputImage AND-gate matches the
+ * pre-existing fast-path logic in chatExecutionRunner.
+ */
+export function detectImageIntent(text, { hasInputImage = false } = {}) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  if (IMAGE_GEN_INTENT_PATTERN.test(text)) return true;
+  if (!hasInputImage) return false;
+  if (IMAGE_EDIT_INTENT_PATTERN.test(text)) return true;
+  if (IMAGE_FOLLOW_UP_PATTERN.test(text)) return true;
+  return false;
+}
 export const AUDIO_FOLLOW_UP_PATTERN = /(?:\b(?:audio|voice|recording|recordings|voice note|voicemail|transcript|transcribe|what(?:'s| is) being said|what did (?:he|she|they) say|listen to (?:it|this)|what does the audio say)\b|语音|音频|录音|这段语音|这段音频|这段录音|录音里|语音里|音频里|说了什么|讲了什么|转写|听一下|听听|再听一下)/i;
 export const VIDEO_FOLLOW_UP_PATTERN = /(?:\b(?:video|clip|footage|scene|what(?:'s| is) in the video|what does the video say|what happens in the video|watch (?:it|this))\b|视频|录像|片段|这段视频|这个视频|视频里|画面里|视频说了什么|视频讲了什么|视频里有什么|再看一下视频)/i;
 export const LINK_FOLLOW_UP_PATTERN = /(?:\b(?:link|url|article|page|webpage|website|site|post|post says|summari[sz]e (?:this|that) link|what does this link say|what does the article say|what is on the page)\b|链接|这个链接|那个链接|链接里|文章里|网页里|页面里|这篇文章|这个页面|这个网页|总结一下链接|链接讲了什么|文章讲了什么|页面讲了什么)/i;

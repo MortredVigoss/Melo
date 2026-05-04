@@ -104,6 +104,22 @@ const uiState = {
     error: null,
     pendingRemoveId: null,
   },
+  // Domain cookies (Phase 4 — Xiaohongshu/Douyin extraction reliability).
+  // Lives in the Safety section alongside the file-safety allowlist
+  // because both are persistent grants the user trades for capability.
+  // The list-side never returns cookie values — only host + length +
+  // tail preview — so the DOM never holds the session secret.
+  domainCookies: {
+    loading: false,
+    loaded: false,
+    hosts: [],
+    error: null,
+    addHost: '',
+    addCookie: '',
+    addInFlight: false,
+    addError: '',
+    pendingRemoveHost: null,
+  },
   // Advanced page (developer / experimental ops). Caches CLI MCP server
   // names, plugin registry, and background-task list — none of these
   // ride on bootstrap, so we lazy-fetch on first navigation and keep the
@@ -9832,6 +9848,83 @@ async function removeSafetyAllowlistRule(id) {
   }
 }
 
+// ── Domain cookies (Phase 4) ──────────────────────────────────────────
+//
+// Same shape as refreshSafetyAllowlist / removeSafetyAllowlistRule but
+// for the domainCookies map. The GET response intentionally omits the
+// cookie string so the listing UI never shows session secrets — add /
+// upsert ships the new value, remove drops it.
+
+async function refreshDomainCookies() {
+  if (uiState.domainCookies.loading) return;
+  uiState.domainCookies.loading = true;
+  uiState.domainCookies.error = null;
+  render();
+  try {
+    const response = await api('/api/settings/domain-cookies');
+    uiState.domainCookies.hosts = Array.isArray(response.hosts) ? response.hosts : [];
+    uiState.domainCookies.loaded = true;
+  } catch (err) {
+    uiState.domainCookies.error = err?.message || 'Failed to load cookies';
+  } finally {
+    uiState.domainCookies.loading = false;
+    render();
+  }
+}
+
+async function upsertDomainCookie() {
+  if (uiState.domainCookies.addInFlight) return;
+  const host = String(uiState.domainCookies.addHost || '').trim();
+  const cookieString = String(uiState.domainCookies.addCookie || '').trim();
+  if (!host) {
+    uiState.domainCookies.addError = 'Host is required.';
+    render();
+    return;
+  }
+  if (!cookieString) {
+    uiState.domainCookies.addError = 'Cookie string is required.';
+    render();
+    return;
+  }
+  uiState.domainCookies.addInFlight = true;
+  uiState.domainCookies.addError = '';
+  render();
+  try {
+    await api('/api/settings/domain-cookies/upsert', {
+      method: 'POST',
+      body: { host, cookieString },
+    });
+    uiState.domainCookies.addHost = '';
+    uiState.domainCookies.addCookie = '';
+    uiState.domainCookies.loaded = false;
+    await refreshDomainCookies();
+  } catch (err) {
+    uiState.domainCookies.addError = err?.message || 'Failed to save cookie';
+  } finally {
+    uiState.domainCookies.addInFlight = false;
+    render();
+  }
+}
+
+async function removeDomainCookie(host) {
+  if (!host || uiState.domainCookies.pendingRemoveHost === host) return;
+  uiState.domainCookies.pendingRemoveHost = host;
+  render();
+  try {
+    await api('/api/settings/domain-cookies/remove', {
+      method: 'POST',
+      body: { host },
+    });
+    uiState.domainCookies.loaded = false;
+    await refreshDomainCookies();
+  } catch (err) {
+    uiState.domainCookies.error = err?.message || 'Failed to remove cookie';
+  } finally {
+    uiState.domainCookies.pendingRemoveHost = null;
+    render();
+  }
+}
+
 async function doWipeEmbeddings() {
   if (uiState.memoryStatus.wipeInFlight) return;
   uiState.memoryStatus.wipeInFlight = true;
@@ -9952,7 +10045,89 @@ function renderSafetyPane() {
         — the dialog only offers Allow once / Deny for them. Move and delete operations are
         also excluded from "Always allow" by design.
       </p>
+
+      ${renderDomainCookiesPane()}
     </div>
+  `;
+}
+
+function renderDomainCookiesPane() {
+  const { loading, loaded, hosts, error, addHost, addCookie, addInFlight, addError, pendingRemoveHost } = uiState.domainCookies;
+  if (!loaded && !loading && !error) {
+    Promise.resolve().then(refreshDomainCookies);
+  }
+
+  const list = (() => {
+    if (loading && !loaded) {
+      return `<div class="empty-state compact">Loading…</div>`;
+    }
+    if (error) {
+      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+    }
+    if (!hosts.length) {
+      return `
+        <div class="empty-state compact">
+          No domain cookies configured. Add one for sites that need an authenticated session
+          (Xiaohongshu, Douyin, Bilibili, …) — yt-dlp / fetch_url will pick it up automatically.
+        </div>
+      `;
+    }
+    return `
+      <div class="safety-rule-list">
+        ${hosts.map(entry => `
+          <div class="safety-rule-row">
+            <div class="safety-rule-main">
+              <div class="safety-rule-op">${escapeHtml(entry.host)}</div>
+              <div class="list-row-meta">
+                Cookie length: ${entry.length}${entry.tail ? ` · ends with <code>${escapeHtml(entry.tail)}</code>` : ''}
+              </div>
+            </div>
+            <button class="small-button is-danger"
+              data-action="domain-cookie-remove"
+              data-host="${escapeHtml(entry.host)}"
+              ${pendingRemoveHost === entry.host ? 'disabled' : ''}>
+              ${pendingRemoveHost === entry.host ? 'Removing…' : 'Remove'}
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  })();
+
+  return `
+    <div class="meta-block-label" style="margin-top: 24px;">Web-fetch cookies</div>
+    <p class="list-row-meta" style="margin-bottom: 12px;">
+      Per-domain Cookie strings sent with web-fetch (fetch_url) and platform extractors
+      (yt-dlp). The list never displays the saved value — only its length + last 6 chars
+      — so session tokens stay out of the rendered DOM. Hostname only (no protocol /
+      no path) — e.g. <code>xiaohongshu.com</code>, <code>douyin.com</code>.
+    </p>
+
+    <div class="domain-cookie-form">
+      <input type="text"
+        class="domain-cookie-host"
+        placeholder="hostname (e.g. xiaohongshu.com)"
+        value="${escapeHtml(addHost)}"
+        data-domain-cookie-host
+        ${addInFlight ? 'disabled' : ''} />
+      <textarea
+        class="domain-cookie-string"
+        placeholder='Cookie header value: "name1=val1; name2=val2; …"'
+        data-domain-cookie-string
+        rows="2"
+        ${addInFlight ? 'disabled' : ''}>${escapeHtml(addCookie)}</textarea>
+      <div class="inline-actions">
+        <button class="small-button is-primary"
+          data-action="domain-cookie-save"
+          ${addInFlight ? 'disabled' : ''}>
+          ${addInFlight ? 'Saving…' : 'Save cookie'}
+        </button>
+        <button class="small-button" data-action="refresh-domain-cookies">Refresh list</button>
+      </div>
+      ${addError ? `<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
+    </div>
+
+    ${list}
   `;
 }
 
@@ -12352,6 +12527,24 @@ document.addEventListener('click', async event => {
       case 'safety-allowlist-remove':
         await removeSafetyAllowlistRule(trigger.dataset.ruleId);
         break;
+      case 'refresh-domain-cookies':
+        uiState.domainCookies.loaded = false;
+        await refreshDomainCookies();
+        break;
+      case 'domain-cookie-save': {
+        // Pull the current input values into state right before save —
+        // input listeners only sync on the next keystroke, so reading
+        // the DOM directly here ensures we don't miss the last char.
+        const hostInput = document.querySelector('[data-domain-cookie-host]');
+        const cookieInput = document.querySelector('[data-domain-cookie-string]');
+        if (hostInput) uiState.domainCookies.addHost = hostInput.value || '';
+        if (cookieInput) uiState.domainCookies.addCookie = cookieInput.value || '';
+        await upsertDomainCookie();
+        break;
+      }
+      case 'domain-cookie-remove':
+        await removeDomainCookie(trigger.dataset.host);
+        break;
       case 'memory-wipe-open':
         uiState.memoryStatus.wipeConfirmOpen = true;
         uiState.memoryStatus.wipeResult = null;
@@ -13296,6 +13489,20 @@ document.addEventListener('input', event => {
 
   if (target.dataset.commandInput) {
     uiState.commandInputs[target.dataset.commandInput] = target.value;
+    return;
+  }
+
+  // Phase 4 — domain cookie form. Sync to state so render() doesn't
+  // wipe user input mid-typing. No render() call here: the typing
+  // guard above defers re-renders, and the form value already lives
+  // in DOM, so the next render-from-elsewhere will reflect the same
+  // value through `${escapeHtml(addHost/addCookie)}`.
+  if (target.dataset.domainCookieHost !== undefined) {
+    uiState.domainCookies.addHost = target.value;
+    return;
+  }
+  if (target.dataset.domainCookieString !== undefined) {
+    uiState.domainCookies.addCookie = target.value;
     return;
   }
 

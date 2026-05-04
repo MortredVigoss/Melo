@@ -4588,6 +4588,38 @@ select option {
   color: var(--text-muted);
 }
 
+/* Domain cookies — Phase 4 */
+.domain-cookie-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.domain-cookie-host,
+.domain-cookie-string {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  outline: none;
+  resize: vertical;
+}
+
+.domain-cookie-host:focus,
+.domain-cookie-string:focus {
+  border-color: var(--teal);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 /* ─── Tool calls status strip ─────────────────────────────────────────────── */
 
 .tool-calls-strip {

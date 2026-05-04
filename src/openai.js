@@ -10,6 +10,19 @@ import {
 } from './codexAuth.js';
 import { signWorkspaceFileUrl } from './web/urlSigning.js';
 import { detectImageMimeFromBytes } from './images/imageGen.js';
+// Pull just the regex constants — NOT the detectImageIntent helper. The
+// helper lives in services/chat/messageBuilder.js, which transitively
+// imports memory/contextCompact.js, which itself imports from openai.js.
+// Pulling the function would create a load-order cycle (openai →
+// messageBuilder → contextCompact → openai) that ES-module late binding
+// usually resolves but that's fragile. Importing the regex constants is
+// safe — they evaluate at module load time and have no further deps —
+// and we re-implement the small AND/OR detector locally below.
+import {
+  IMAGE_GEN_INTENT_PATTERN,
+  IMAGE_EDIT_INTENT_PATTERN,
+  IMAGE_FOLLOW_UP_PATTERN,
+} from './services/chat/messageBuilder.js';
 
 const execFile = promisify(execFileCallback);
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 600000;
@@ -119,6 +132,48 @@ const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   'just answer normally without invoking image_generation at all.',
 ].join(' ');
 
+// Inline copy of detectImageIntent (lives in services/chat/messageBuilder.js
+// alongside the regex constants we import above). See the comment on the
+// patterns import for why we don't pull the original function.
+function _detectImageIntentLocal(text, { hasInputImage = false } = {}) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  if (IMAGE_GEN_INTENT_PATTERN.test(text)) return true;
+  if (!hasInputImage) return false;
+  if (IMAGE_EDIT_INTENT_PATTERN.test(text)) return true;
+  if (IMAGE_FOLLOW_UP_PATTERN.test(text)) return true;
+  return false;
+}
+
+// Pull the latest user-role message's text for image-intent detection.
+// Walks the messages array in reverse and joins all `text` parts of the
+// most recent user turn. String content is returned verbatim; structured
+// content arrays are flattened with single-space joins. Cheap, no LLM —
+// used to drive the buildCodexResponsesTools image-intent gate.
+//
+// Local to openai.js to avoid pulling chat-service helpers into the
+// openai module's import graph (small symmetric helper, single use site).
+export function extractLatestUserTextForIntent(messages) {
+  if (!Array.isArray(messages)) return '';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== 'user') continue;
+    const content = message.content;
+    if (typeof content === 'string') return content.trim();
+    if (Array.isArray(content)) {
+      const parts = [];
+      for (const part of content) {
+        if (typeof part?.text === 'string') {
+          parts.push(part.text);
+        } else if (part?.type === 'text' && typeof part.text === 'string') {
+          parts.push(part.text);
+        }
+      }
+      if (parts.length) return parts.join(' ').trim();
+    }
+  }
+  return '';
+}
+
 // Returns true when any user-role message in the array carries an
 // image_url content part (with a non-empty URL). Used to decide whether
 // to flip the inline image_generation tool into edit mode + append the
@@ -157,23 +212,41 @@ export function messagesHaveInputImages(messages) {
 // gating (whether to append the edit-mode block) and stays plumbed in
 // case a future Codex-side schema change re-opens edit-tool variants.
 //
-// DESIGN INTENT (user 2026-04-29): inline image is gated **only** by
-// the existence of a writable workspace path. It is NOT additionally
-// gated by an agent's allowedTools / sub-agent privilege whitelist —
-// the user's product call is that Codex Plus's native image_generation
-// is a free server-side capability (parallel to web_search) and should
-// be available in every chat / every agent / every sub-agent. When this
-// invariant changes (e.g. a non-Codex provider or a paid-per-image
-// tier shows up), the gate moves into THIS helper rather than into the
-// caller chain.
+// DESIGN INTENT (user 2026-04-29 → revised 2026-05-04 Phase 4):
+// inline image_generation now requires BOTH (a) a writable workspace
+// path AND (b) explicit image intent on the latest user turn. The
+// original 2026-04-29 design ("workspace alone is enough") leaked
+// across tool-routing boundaries: when fetch_url failed against a
+// link the model had image_generation in its tool list and used it
+// as a fabrication fallback (Xiaohongshu/Douyin share links with
+// thumbnail attachments → user got an image instead of a summary).
+//
+// `hasImageIntent` is computed by `detectImageIntent` in
+// services/chat/messageBuilder.js — it fires for text-to-image asks
+// regardless of input image, and for edit / look-at-image asks only
+// when an input image is present. Gating image_generation on this
+// instead of the always-on workspace flag means the model PHYSICALLY
+// cannot pick image_generation as a fallback when the user's intent
+// is unrelated to images. Intentional asks ("draw a cat", "画一张",
+// "edit this photo") still get the tool.
+//
+// `hasInputImage` continues to flow through for INSTRUCTIONS-level
+// gating (whether to append the edit-mode block) — the chatgpt.com
+// /codex/responses proxy still rejects every variant we tried for
+// the tool config itself, so that part of the helper does not change.
 export function buildCodexResponsesTools({
   enableWebSearch = false,
   workspacePath = null,
   hasInputImage: _hasInputImage = false,
+  hasImageIntent = false,
 } = {}) {
   const tools = [];
   if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
-  if (typeof workspacePath === 'string' && workspacePath.startsWith('/')) {
+  if (
+    hasImageIntent &&
+    typeof workspacePath === 'string' &&
+    workspacePath.startsWith('/')
+  ) {
     tools.push(CODEX_NATIVE_IMAGE_GENERATION_TOOL);
   }
   return tools;
@@ -1703,10 +1776,18 @@ export async function createCodexResponsesReply({
   // when the user asks "edit this screenshot" — chronic failure mode
   // observed 2026-04-30 in both desktop and Telegram bot scenarios.
   const hasInputImage = messagesHaveInputImages(messages);
+  // Phase 4 image-intent gate (2026-05-04): image_generation only enters
+  // the tool list when the latest user turn actually reads as an image
+  // task. Closes the Xiaohongshu/Douyin share-link mis-routing where the
+  // tool was being used as a fallback for failed fetch_url calls. See
+  // buildCodexResponsesTools and detectImageIntent for the full rationale.
+  const latestUserText = extractLatestUserTextForIntent(messages);
+  const hasImageIntent = _detectImageIntentLocal(latestUserText, { hasInputImage });
   const tools = buildCodexResponsesTools({
     enableWebSearch,
     workspacePath,
     hasInputImage,
+    hasImageIntent,
   });
   const enableInlineImage = tools.some(t => t?.type === 'image_generation');
   // Append the edit-mode instruction only when both (a) inline image is

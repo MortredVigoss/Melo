@@ -4,6 +4,42 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-04 — Phase 4：image_generation 意图门控 + domain cookies 管理 UI（小红书/抖音误路由根治）
+
+用户报告：粘贴小红书/抖音分享链接（带预览图缩略图 + 文字 prompt），模型生成了**两张图**作为回复，自己解释"卡在工具路由异常"。日志查清根因：
+
+1. URL 抽取失败 — yt-dlp 支持小红书/抖音但**两个平台都重度反爬，必须配 cookie**；用户 `domainCookies` 是空对象 → 抽取返回 null → 模型只看到 URL + 失败工具结果
+2. image_generation 工具**无条件常驻**（[src/openai.js:169-180](src/openai.js#L169-L180) `buildCodexResponsesTools` 设计 2026-04-29 「workspace 存在就开」）→ 模型把它当成 fallback 工具用
+3. 分享链接的预览图（image attachment）让模型脑补"这是个图像任务" → 调 image_generation 生成两张
+
+按用户硬规则「方案评分先行」给 5 个方案打分（A 配 cookie / B prompt 加规则 / C URL paste 时去掉 image_gen / D 抽取失败明确 placeholder / E 按意图门控）→ E 9/10 综合最高，配 A 6/10 治抽取断层。E + A 组合根治。
+
+- **E 方案 — image_generation 意图门控（根治）**：
+  - [src/services/chat/messageBuilder.js](src/services/chat/messageBuilder.js) 加 `IMAGE_GEN_INTENT_PATTERN` 两层 regex：Tier A 强动词（draw/sketch/doodle/paint/illustrate）匹配 verb+a/an/the X 不需 image-noun（"draw a cat" 命中），Tier B 通用动词（generate/create/make/render/design/build/produce）+ 最多 2 修饰词 + 显式 image-noun（"create a function" 不命中，"create a function diagram" 命中）；CJK 同样分层（画/绘制 强 vs 生成/做/设计 + image 名词，允许 counter 与 latin word 间空格 "做一个 logo"）
+  - 加 `detectImageGenIntent` + `detectImageIntent(text, {hasInputImage})` — gen 不需 image，edit/follow-up 需 hasInputImage AND-gate 防 CSS/theming 误命中
+  - [src/openai.js](src/openai.js) `buildCodexResponsesTools` 接受 `hasImageIntent`，从「workspace 存在就开」改成「workspace **AND** hasImageIntent 才开」；`createCodexResponsesReply` 从 messages 提 latest user text → `_detectImageIntentLocal` → 透传 gate
+  - 避免循环依赖（openai → messageBuilder → contextCompact → openai）：只 import regex 常量，detector 在 openai.js 内联 8 行
+  - **效果**：用户原失败场景（贴 Xiaohongshu URL + 缩略图 + "总结一下"）三种意图模式都不命中 → image_generation **物理上不在工具列** → 模型不可能 fallback 到它
+  - 写 [src/services/chat/imageIntent.test.js](src/services/chat/imageIntent.test.js) 55 个 case：22 GEN 正例（en+zh）+ 17 反例（含贴 URL + 总结的真实 bug 重现）+ detectImageIntent AND-gate 4 case + 真 fixture 的 4 个 should-NOT-fire + 3 个 should-still-fire（"画一张类似的图" 等用户合法意图保持）
+  - 老 4 个 inline-image 测试更新为新 contract（hasImageIntent: true 必填）
+
+- **A 方案 — domain cookies 管理 UI（辅修，治抽取断层）**：
+  - [src/server.js](src/server.js) 加 3 个 endpoint: `GET /api/settings/domain-cookies`（**只返 host + length + tail，不返 cookie 值** — 避免 session secret 进 DOM）/ `POST /api/settings/domain-cookies/upsert`（host normalize 去 protocol+path 转小写）/ `POST /api/settings/domain-cookies/remove`；全部走 `withConfigLock` + `saveConfig` spread current 防 wipe apiKey 等 sibling field
+  - [desktop-ui/app.js](desktop-ui/app.js) Customize → Safety section 加 "Web-fetch cookies" 子区域：表单（hostname + cookie textarea）+ 列表（host + length + tail preview + Remove）；input 同步到 state 防 render 中途擦掉用户输入；占位提示用户对小红书/抖音/B站等需 cookie 的站添加
+
+- **production-wiring contract pins**（防回归）：
+  - [src/safety/fileSafetyGate.production.test.js](src/safety/fileSafetyGate.production.test.js) 加 4 个新 assertion：3 个 endpoint 存在 + GET 响应不含 raw cookies map + 前端 form actions 完整 + openai.js 真的 thread 了 hasImageIntent gate
+
+**验证**：safety + intent gate + openai 完整 154 个测试全绿（28 fileSafetyGate + 10 fileSafetyAllowlist + 12 production wiring + 55 imageIntent + 37 codex-inline-image + 11 fileSafetyResponse + 1 retry replacement）；下游 sendChatMessage / chatExecutionRunner / imageEditFastPath 29/29 全绿无回归。
+
+**为什么这是根治**：image_generation **物理上**只能在意图命中时进工具列，模型没法把它当工具失败的 fallback 用。即便 fetch_url 失败、cookies 缺失、抽取返回 null，模型最多回答"我没法读取这个链接，需要你提供更多信息"，**绝不会**生成图片。配 cookie 的 UI 让用户对真正需要 session 的站点（小红书/抖音/Bilibili 等）能直接补，闭环抽取断层。
+
+**Known-limit / Phase 5 候选**：
+- "draw the line" / "paint the room" / "draw blood" 三类 Tier-A 强动词的成语化用法会 false-positive 命中 GEN — pattern 注释明确接受这个 trade-off（误把工具加入列表 ≠ 强制调用，模型仍要自己选）
+- bash 永久 allowlist 仍未做（gate header line 1057 预留），需 bash command canonicalization
+- 抽取失败时给模型 explicit placeholder（D 方案）没做 — E 方案已经堵住"用 image_generation fallback"的路径，D 方案现在更像 polish 不是必需
+
+---
 ## 2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI
 
 13 轮 Codex review 把 fileSafetyGate.js backend 锤到 A 之后，发现 production 接线**整条没接**：`resolveFileSafety` 只在 13 个 test 文件里被调用，server.js / desktop-ui 零命中；前端 SSE handler 拿到 `kind: 'file_safety'` payload 因为没有 `toolId` 字段，直接被 `if (requestId && toolId)` 过滤丢掉。也就是说 Phase 2A/2B/2C/2D 全部基于 mock sseEmitter 的 backend 单测验证，**生产里任意工具触发 fileSafetyGate prompt 路径都会 60s 超时 reject**。一次性补完三阶段：
@@ -57,37 +93,14 @@
 - **现在 selected file context 在 7+ 语言下一致表现**。`it(` lookahead 保留区分 mocha/jest 测试 vs 英文 prose. 之前 known-limit 兑现.
 
 ---
-## 2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)
-
-- Codex review #11 + #12 反复提到的 P2: hygiene cleanup 不覆盖 `process.exit()` 直接调用 / `uncaughtException` / `unhandledRejection` 路径。当时留独立 round 处理。本 commit 兑现。
-- 设计：uncaughtException 后 process state 不可信（Node 文档明确）— 不能等 `shutdown()` 的 async lock-release Promise chain（可能 hang）。改 sync emergency-exit：log → sync `cleanupStalePlaywrightDaemons()` (execSync pkill) → `process.exit(1)`。Lock 文件靠 next-start stale-lock detection 兜底（lock 协议本身就是这么设计）.
-- 加 [src/server.js](src/server.js) 末尾 `_emergencyExit(label, errorObj)` + `process.on('uncaughtException', ...)` + `process.on('unhandledRejection', ...)`。
-- 加 [src/index.js](src/index.js) 同款 `_cliEmergencyExit` + handlers (CLI mode 也覆盖).
-- 加 contract test pin 双 entry 都注册 + emergency handler 必须 cleanup → exit 1 顺序。防 silent removal — 没这两个 handler，uncaughtException 时 daemon 会再次 leak (复现 system-freeze 场景)。
-- 验证：webSearchTool.helpers **43/43 全绿**（前 42 + 1 contract pin）；全 src **1973/1973 全绿**（前 1972 + 1 新；零既有回归）。
-- **现在 cleanup machinery 完整覆盖**：① module-load startup cleanup（next melo run 兜底 SIGKILL/crash/multi-instance）；② SIGINT/SIGTERM via `shutdown()` (graceful)；③ uncaughtException + unhandledRejection emergency exit (sync cleanup)；④ CLI mode 同款三层。无任何 process exit path 留 daemon 悬挂。
-
----
-## 2026-05-04 — Phase 2D round 14 + hygiene fix #2 + P1 inline-shell-out 工具：13 轮 Codex review 收敛到 A
-
-整 1 天 13 轮 Codex D/C/A review 闭环 awk 维度 + 跨进程 daemon hygiene + inline-shell-out 工具家族扩展。覆盖 12 个独立 bypass 维度（D #1 flag-form / D #2 wrapper basename / D #3 positional-after-wrapper / D #4 wrapper enum / D #5 wrapper-flag chain → nuclear / D #6 expansion-form basename / D #7 wrapped-position expansion / D #8 16-iter cap fail-closed / D #10 POSITIONAL_VALUE_WRAPPERS shared / C #11 playwrightFetcher 抢占 server shutdown / D #12 server.js 自抢占 + CLI cleanup），最后 Codex review #13 评 **A** "修复闭环充分 / 风险等级低"。
-
-- **awk 检测维度**（D #1-#8，最后到 nuclear option Y + sentinel fail-closed）：删 awkIsInvocationContext 整段 wrapper-skip walkback 框架，token-scan 任何 awk-family basename + 任何 inline form (positional / -e / --source / pipe-fed / heredoc / stdin redirect) → hard-reject，accept over-flag (`echo awk -e foo` / `git commit -m awk -e hello` 等用 single-quote 1-token 绕开)。`findCommandPositionIdx` 用 16-iter cap + sentinel CMD_POSITION_CAP_EXHAUSTED fail-closed 处理 16+ 层 wrapper bypass。
-- **expansion 维度**（D #6+#7+#9 expansion-before-c）：head-position 或 wrapper-后 expansion + 任何 non-flag positional → flag。`findCommandPositionIdx` 跳过 wrapper chain (含 POSITIONAL_VALUE_WRAPPERS = timeout/flock/tsp/ts) 找 wrapped command position。over-flag `$EDITOR file.txt` / `$BROWSER url` 接受。
-- **wrapper 集合**：COMMAND_WRAPPERS 扩到 36 个（sudo/env/nohup/nice/ionice/taskset/chrt/setsid/unshare/chroot/systemd-run/capsh/parallel/stdbuf/unbuffer/watch/entr/flock/pv/script/rlwrap/direnv/busybox/timeout/strace/ltrace/valgrind/perf/tsp/ts...）。POSITIONAL_VALUE_WRAPPERS Set + PER_WRAPPER_VALUE_FLAGS Map（per-wrapper value-takers — `-E` 在 sudo 是 boolean 但 flock 是 conflict-exit-code value-taker，不能 unify）。`findWrappedCommand` 与 `findCommandPositionIdx` 共享这两个 helper。
-- **inline-shell-out 工具扩展（P1 round + P1 X）**：扩 SCRIPT_INTERPRETERS 加 gnuplot / vim / vi / nvim / view / rvim / rview / ex / ed / sqlite3 = 21+ 工具全 detection。sqlite3 单独 token-scan 检 `.shell`/`.system`/`.exec` dot-command + `-cmd` flag + ANSI-C quote `$'.shell rm'` (regex 加 `\$?` prefix)。vim 用 lookbehind regex `^\+.*?(?<![a-zA-Z])!` 单一形态覆盖 `+!cmd` / `+:!cmd` / `+:silent !cmd` / `+1!cmd` / `+%!cmd` / `+/pat/!cmd` / `+:exec "!cmd"` / `+:read !cmd` / `+:normal :!cmd` 全部 shell-out + 不误标 `silent!`/`vmap!`/`cmap!` modifier 形态。
-- **`sed` 维度**（round 14 已知 limit closure）：`sedExpressionHasEcmd` imperative scanner 处理任意 delimiter (`/`/`,`/`|`/`:`/`#`/`@`)，bare `e CMD` + `s/PAT/REP/<flags-with-e>` 双 pattern。
-- **跨进程 daemon hygiene**（hygiene fix #1 + #2 + Codex C #11 fix）：`isConcurrencySafe: false` + `closeSoon` 15s idle-close + SWR dedup（hygiene fix #1）只关 within-session 累积；用户系统**第二次**爆 OOM 后加 `cleanupStalePlaywrightDaemons()` module-load 时 `pkill -f "cliDaemon\.js melo-(shared|search)$"` 杀历史 orphan daemon (covered crash/SIGKILL/multi-instance)。Codex review #11/#12 后 cleanup 改为 named export，由 [server.js](src/server.js) `shutdown()` 主流调用 + [src/index.js](src/index.js) CLI mode 注册自己 SIGINT/SIGTERM hook。playwrightFetcher 不 own 进程级 lifecycle / 不调 process.exit。
-- **测试矩阵**：bashRiskParser 99 case / phase2d.bashTool 113 case / webSearchTool.helpers 42 case (含 hygiene contract pins) / 全 src **1972/1972 全绿**；零既有回归。13 个 D/C fix commit 全 push。
-- **Final commits**: `eb2e34f` (D #12 fix) → `2947473` (C #11 fix) → `778afcf` (P1 X) → `ea42feb` (hygiene #2) → `0035e86` (D #4) → `c997c0b` (D #8) → `cf21ff5` (D #5 nuclear) → `9fa5789` (D #7) → `7968b67` (P1 round) → `eb9e541` (round 14 base) + 7 个之间 D fix commits.
-- **教训汇总**：① wrapper enumerate 是无底洞 → nuclear over-flag 是终点；② 同一 dimension 可以横跨 head/wrapper-后/expansion-form/POSITIONAL_VALUE/16+深 多个位置——审 1 个找全；③ 低层 module 不 own process lifecycle (signal handlers / process.exit)，应 export cleanup 由 top-level shutdown 调用；④ vim/sed 等多语义 syntax 用 lookbehind 比 enumerate forms 更稳 + 更全；⑤ Codex review 是结构性必需 — 13 轮抓 12 不同维度盲区，没 review 100% 漏；⑥ 任何启 detached subprocess 必须双保险 (startup cleanup + top-level shutdown hook)。
-
 ---
 
 ## 归档摘要（2026-05-04 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
 
+- **2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)** —— 加 src/server.js + src/index.js 的 sync emergency-exit (log → cleanupStalePlaywrightDaemons → process.exit(1))，cleanup 完整覆盖 module-load + SIGINT/SIGTERM + uncaughtException + unhandledRejection 四层；webSearchTool.helpers 43/43 + 全 src 1973/1973 全绿。`fb99ccf`
+- **2026-05-04 — Phase 2D round 14 + hygiene fix #2 + P1 inline-shell-out 工具：13 轮 Codex review 收敛到 A** —— 整 1 天 13 轮 D/C/A review 闭 12 个独立 bypass 维度（awk/expansion/wrapper enum/inline-shell-out/sed exotic delim/跨进程 daemon hygiene），最后 review #13 评 A "修复闭环充分"；nuclear option Y + 16-iter cap fail-closed + cross-process daemon hygiene 三件大头修法定型。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
 - **2026-05-04 — Phase 2D round 14 awk + hygiene fix #2 + P1 inline-shell-out 完整 13 轮 review 系列** —— 见上方 summary。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
 - **2026-05-04 — sed exotic delimiter coverage (Phase 2D round 14 known-limit closure)** —— `sedExpressionHasEcmd` imperative scanner 处理任意 delim (`,`/`|`/`:`/`#`/`@`)，关闭 round 14 末尾 known limit，保 escape-aware + replacement-text false-positive 守卫。`47c08ed`
 - **2026-05-04 — Selected file context: query-relevant excerpts for large files** —— `buildSelectedFileContextBlock` 抽出，大文件 (>3000 chars) tokenize query + score 每行 + top-4 seed + ±10 行 + merge → 5200 chars budget 渲染 (`lineNo\tcontent` 格式)；小文件向后兼容。`e81fb12`
