@@ -44,6 +44,14 @@
   - ✅ regression: `vim +5` / `+/pattern` / `++enc=utf-8` / `+:set syntax=js` / `+:syntax on` / `+:source ~/.vimrc` / `+:silent! set number` / `+:vmap!a {rhs}` / `+:cmap!` 全不 flag
 - 测试 +3 case：① vim D #12 attack 9 形态（range/filter/indirect/normal）；② vim regression +3 形态（silent!/vmap!/cmap! modifier 不误标）；③ server.js single SIGINT/SIGTERM listener contract + src/index.js CLI cleanup contract.
 - 验证：`bashRiskParser.test.js` **99/99 全绿**（前 97 + 2 新 — vim D#12 attack + modifier regression）；`webSearchTool.helpers.test.js` **42/42 全绿**（前 41 + 1 新 — server single-listener + CLI hook contract）；`src/**/*.test.js` **1972/1972 全绿**（前 1969 + 3 新；零既有回归）。
+- **🎉 Codex review #13 评 A**（D #12 fix 之后）："修复闭环充分 / 风险等级低 / 仅环境测试受限"。所有 3 个 D #12 fix 都 ✅：① server.js 仅剩 1 个 SIGINT + 1 个 SIGTERM listener 都走 shutdown，shutdown 调 cleanupStalePlaywrightDaemons + _releaseServerLock；② src/index.js CLI 注册 process.once SIGINT/SIGTERM 退出码 130/143；③ vim 14 attack form 全 catch + 7 false-positive regression 全不 flag。历史 D #1-#11 spot check 全 OK。Phase 2D round 14 + hygiene fix #2 + P1 X 系列**彻底收敛到 A**。
+- **整个 13-round Codex review 系列总结**（始 round 14 awk 起，跨 hygiene fix #2 + P1 inline-shell-out 工具维度）：
+  - Round 1-9 (D #1-#8 → A): awk 检测维度 — 8 轮 D fix 收敛到 nuclear option Y + sentinel fail-closed
+  - Round 10 (D #9): P1 inline-shell-out 工具扩展 (gnuplot/vim/ex/ed/sqlite3) → 1 轮收敛
+  - Round 11 (D #10 → C): P1 X — POSITIONAL_VALUE_WRAPPERS 共享 + sqlite3 ANSI-C + vim --cmd/+CMD
+  - Round 12 (C #11 → C): playwrightFetcher SIGINT/SIGTERM 抢占 + vim +CMD 过宽
+  - Round 13 (D #12 → **A**): server.js 自抢占 + CLI cleanup + vim +CMD lookbehind 统一
+- **总计 13 轮 review + 13 个 D/C fix commit + 12 个不同维度盲区 + 最终 A 收敛**。整 inline-code-execution detection 现稳定覆盖 21+ tools (awk/python/node/ruby/perl/php/lua/expect/tclsh/groovy/R/julia/sbcl/clisp/iex/elixir/gnuplot/vim/ex/ed/sqlite3) + 全 wrapper-of-wrapper / expansion-form / wrapper-flag-chain / cap-overflow / ANSI-C quote / vim multi-form 形态。
 - **教训（C #11 → D #12）**：① 第一次 review 让我以为只 playwrightFetcher 有问题，没意识到 server.js 自己还有 pre-empting handler — Codex 找一处问题时要顺手 audit 整个 module 里其他同类形态；② vim/sed/复杂 syntax 的 detection 启发式里 lookbehind 比 enumerate forms 更稳 — 1 条 regex 比 3 条枚举更可读 + 更全；③ CLI mode 容易被忘 — server mode 走 shutdown 时 CLI 没 hook，每 hygiene fix 必须 audit CLI entry 和 server entry 两路；④ Codex review 系列从 C → D 不算降级，是更深 audit 暴露 same-dimension problem，是好事不是坏事。
 
 ---
