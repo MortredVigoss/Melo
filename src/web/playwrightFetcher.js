@@ -24,8 +24,84 @@
  * don't fight for the same browser window.
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, execSync } from 'node:child_process';
 import { debugWarn } from '../debug.js';
+
+// Hygiene fix #2 (system-freeze regression, 2026-05-04 second
+// occurrence): Codex's first hygiene fix (idle-close + isConcurrencySafe
+// + SWR dedup at commit 506814d) only addressed WITHIN-session
+// accumulation. The system froze a second time; ps showed 144+
+// `playwright_chromiumdev_profile-*` Chrome helpers + 20+ detached
+// `cliDaemon.js melo-(shared|search)` daemons spanning multiple
+// hours — each prior melo run / crash / SIGKILL left orphan daemons
+// that kept spawning Chrome instances.
+//
+// Root cause: `npx -y @playwright/cli` spawns a detached daemon
+// (PPID=1 after parent exits). The daemon owns its own Chrome
+// process. Without an explicit `playwright-cli close`, the daemon
+// runs forever — and even our close path only fires on graceful
+// idle-close, not on crash / SIGKILL / unhandled exception.
+//
+// Fix: two complementary cleanups:
+//
+//   1. cleanupStalePlaywrightDaemons() at module load
+//      pkills any melo-shared/melo-search daemon left from prior
+//      runs. Idempotent. Covers the cross-process / crash recovery
+//      path. This is the ROOT cause fix — every fresh melo start
+//      cleans up whatever previous runs left behind.
+//
+//   2. installExitHooks() process-level signal handlers
+//      Best-effort graceful shutdown when the current melo process
+//      receives SIGINT/SIGTERM or runs to natural completion. Sync
+//      pkill so it actually executes before the process dies.
+//      Doesn't help on SIGKILL (no signal delivery) or hard crash —
+//      that's why #1 exists.
+//
+// Trade-off: we pkill ALL `melo-(shared|search)` daemons across
+// ALL melo instances. Two melo instances running concurrently can
+// kill each other's daemons → the other instance's next web_search
+// call respawns, paying a ~1s cold-start hit. Compared to the
+// system-freeze cost of leaving daemons forever, this is the right
+// trade-off.
+
+function cleanupStalePlaywrightDaemons() {
+  // macOS uses pkill from procps; Linux ditto. Skip on Windows
+  // (we don't support it as a melo target anyway).
+  if (process.platform !== 'darwin' && process.platform !== 'linux') return;
+  try {
+    // Match the daemon arg pattern: `cliDaemon.js melo-shared` /
+    // `cliDaemon.js melo-search`. Anchored at end-of-line to avoid
+    // matching a hypothetical `cliDaemon.js melo-shared-extra`.
+    execSync(
+      'pkill -f "cliDaemon\\.js melo-(shared|search)$"',
+      { timeout: 5000, stdio: 'ignore' },
+    );
+  } catch {
+    // pkill exits 1 when no processes match — perfectly normal on
+    // a clean system. Any other error is also non-fatal.
+  }
+}
+
+// Run cleanup at module load — idempotent. Every melo cold-start
+// reaps whatever the previous run left orphaned.
+cleanupStalePlaywrightDaemons();
+
+let _exitHooksInstalled = false;
+function installExitHooks() {
+  if (_exitHooksInstalled) return;
+  _exitHooksInstalled = true;
+  const cleanup = () => {
+    try { cleanupStalePlaywrightDaemons(); } catch { /* never throw from exit hook */ }
+  };
+  // Common shutdown signals — clean up before re-exiting with the
+  // standard signal exit codes.
+  process.once('SIGINT', () => { cleanup(); process.exit(130); });
+  process.once('SIGTERM', () => { cleanup(); process.exit(143); });
+  // Natural process exit (event loop drain) — best-effort sync
+  // cleanup. Node fires beforeExit only when no more work is queued.
+  process.once('beforeExit', cleanup);
+}
+installExitHooks();
 
 const DEFAULT_TIMEOUT_MS = 14_000;
 const DEFAULT_MAX_CHARS = 20_000;

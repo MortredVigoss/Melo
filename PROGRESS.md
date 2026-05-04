@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-05-04 — Hygiene fix #2：Playwright daemon 第二次爆系统（root cause + cross-process cleanup）
+
+- 用户系统**第二次**被 Chrome helper 进程爆掉。Activity Monitor 截图：~20 个 Google Chrome Helper (GPU) 各占 38-40MB，物理 16GB 已使用 14.05GB + Swap 1.12GB。`ps aux | grep playwright` 显示 144 个 playwright 进程 + 10+ 不同 `playwright_chromiumdev_profile-*` user-data-dir + 20+ 个 `cliDaemon.js melo-(search|shared)` daemon process（PPID=1，从 5:58PM 累积到 8:57PM 都没死）。
+- **Codex 第一次 hygiene fix (`506814d`) 不够**：closeSoon 15s idle-close + isConcurrencySafe=false + SWR dedup 只解决**within-session 累积**。但 Playwright CLI 用 `npx -y @playwright/cli` spawn **detached daemon**（PPID=1），daemon 自己独占一个 Chrome 实例。melo crash / SIGKILL / 多实例同时跑 / 进程被强制退出 → daemon 全部 orphan，永不死，每个还在持续 spawn Chrome → OOM。MEMORY 规则 "Codex 抓后台残留时不接受'用户视角无 bug'做停止理由"明确说要么继续修要么回退。
+- 用户拍 root cause 修，按 "不糊弄 follow-up" 一次到位。两个互补 cleanup：
+  - **#1 `cleanupStalePlaywrightDaemons()` at module load**（root cause fix）：每次 melo 冷启动 `pkill -f "cliDaemon\.js melo-(shared|search)$"` 杀掉**前一次 melo 留下的所有 orphan daemon**。anchored at `$` 避免误伤假设的 `cliDaemon.js melo-shared-extra`。idempotent — 重复跑无副作用。覆盖 crash / SIGKILL / multi-instance 全部历史残留。
+  - **#2 process exit hooks**（graceful shutdown）：`process.once('SIGINT'/'SIGTERM'/'beforeExit')` 都接，Sync execSync pkill。SIGINT 退 130, SIGTERM 退 143（POSIX 标准）。覆盖 Ctrl-C / kill TERM / 自然退出 graceful 路径。SIGKILL / 硬 crash 没 signal delivery → 靠 #1 next start 兜底。
+- **平台守卫**：`process.platform !== 'darwin' && !== 'linux'` skip。Windows 用 PowerShell `Get-Process | Stop-Process` 同款 — 但 melo 不支持 Windows 所以不写。
+- **Trade-off 接受**：两个 melo 同时跑会互相 pkill 对方 daemon → 对方下一次 web_search 重新 spawn (~1s 冷启动)。比起系统爆 OOM，这个 cost 可接受。
+- 测试加 2 contract case：① pin source 含 `function cleanupStalePlaywrightDaemons` + module-load 级调用 + 精确 pkill regex `cliDaemon\\.js melo-(shared|search)$`；② pin SIGINT/SIGTERM/beforeExit handlers + 正确 exit code (130/143)。这俩契约 pin 防 silent removal — review/refactor 时不能误删 cleanup machinery。
+- 验证：`webSearchTool.helpers.test.js` **40/40 全绿**（前 38 + 2 新）；`src/**/*.test.js` **1963/1963 全绿**（前 1961 + 2 新；零既有回归）。`ps aux | grep cliDaemon` 在 cleanup 后从 144 进程降到 0-2 个（只剩当前 melo 进程的活跃 daemon）。
+- **教训**：① 第一次 hygiene fix 只看 in-process 状态机（_browserOpen / _idleTimer / closeSoon），没考虑 cross-process 残留；② 任何启 detached subprocess 的代码必须配 cleanup 双保险（exit hook + startup cleanup）；③ exit hook 单独不够 — SIGKILL/crash 时 signal 不送达，必须靠 startup cleanup 兜底；④ MEMORY 中的"资源 hygiene 标准"不是抽象规则，是真血泪教训 — Codex 第一次 review hygiene fix 时**应该**抓到 cross-process 漏，但当时没单独测；以后写新 detached subprocess 必须 day 1 加 startup cleanup contract test，不等用户系统爆 2 次。
+
+---
+
 ## 2026-05-04 — P1 round：扩展 inline-shell-out 工具检测（gnuplot/vim/ex/ed/sqlite3）
 
 - Codex round 9 review (D #8 → A 收敛) 同时 P1 acknowledged 但 scope 之外的 inline-shell-out 工具维度盲区：`gnuplot -e 'system "rm"'` / `sqlite3 ":memory:" '.shell rm'` / `vim -es -c '!rm'` / `ex -c '!rm'` / `ed file <<< $'!rm\\n'` 全部 `risks=[]`。这一轮专门处理。
