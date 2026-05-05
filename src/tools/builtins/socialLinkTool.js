@@ -47,6 +47,7 @@ const OG_FETCH_TIMEOUT_MS = 8000;
  * fetch is enough because we only parse meta tags out of the head.
  */
 async function fetchHtmlBody(url, { signal, maxBytes = 200_000, timeoutMs = OG_FETCH_TIMEOUT_MS } = {}) {
+  if (signal?.aborted) return null;
   const ac = new AbortController();
   const onAbort = () => ac.abort();
   signal?.addEventListener?.('abort', onAbort, { once: true });
@@ -69,12 +70,22 @@ async function fetchHtmlBody(url, { signal, maxBytes = 200_000, timeoutMs = OG_F
 }
 
 const SHORT_LINK_HOSTS = new Set(['xhslink.com', 'v.douyin.com']);
-const SOCIAL_HOSTS = new Set([
+
+/**
+ * Canonical list of social-platform host suffixes the early-route
+ * covers. Exported so `web_search`'s content-fetch blocklist can use
+ * the SAME matcher — Codex review (Phase 6 🔵 P1 2026-05-05) caught
+ * that web_search was using exact-match against `'douyin.com'` while
+ * isSocialLinkUrl was suffix-matching `m.douyin.com` / `m.xiaohongshu.com`,
+ * leaving search hitting mobile sub-hosts that fetch_url already routes
+ * around. Sharing the matcher closes the gap.
+ */
+export const SOCIAL_HOST_SUFFIXES = Object.freeze([
   'douyin.com', 'v.douyin.com', 'iesdouyin.com',
   'xiaohongshu.com', 'xhslink.com',
 ]);
 
-function hostnameOf(url) {
+export function hostnameOf(url) {
   try {
     const u = new URL(url);
     return u.hostname.replace(/^www\./, '').toLowerCase();
@@ -84,18 +95,24 @@ function hostnameOf(url) {
 }
 
 /**
+ * Returns true when `host` is any of `suffixes` or a sub-host of one.
+ * Exported so callers (web_search blocklist) get the same matching
+ * semantics. Empty / missing host returns false; never throws.
+ */
+export function hostMatchesAnySuffix(host, suffixes) {
+  if (!host || typeof host !== 'string') return false;
+  for (const suffix of suffixes) {
+    if (host === suffix || host.endsWith(`.${suffix}`)) return true;
+  }
+  return false;
+}
+
+/**
  * True for any URL that should bypass jina/direct/Playwright in fetch_url
  * and instead route through this module's social-link reader.
  */
 export function isSocialLinkUrl(url) {
-  const host = hostnameOf(url);
-  if (!host) return false;
-  if (SOCIAL_HOSTS.has(host)) return true;
-  // Also catch sub-hosts like m.douyin.com / www.iesdouyin.com.
-  for (const known of SOCIAL_HOSTS) {
-    if (host === known || host.endsWith(`.${known}`)) return true;
-  }
-  return false;
+  return hostMatchesAnySuffix(hostnameOf(url), SOCIAL_HOST_SUFFIXES);
 }
 
 /**
@@ -106,13 +123,21 @@ export function isSocialLinkUrl(url) {
  * Uses a HEAD request first; some servers reject HEAD with 405, so we
  * fall back to GET with manual redirect tracking. Cap at 5 hops to
  * avoid infinite-redirect tarpits.
+ *
+ * Codex Phase 6 follow-up (🟡 P1 2026-05-05): bail immediately when
+ * signal is already aborted — otherwise we'd start the HEAD/GET
+ * round-trips for a request the host has already given up on (the
+ * outer 14s budget is already spent). The same gate runs at every
+ * stage of readSocialLink below.
  */
 export async function resolveShortLink(url, { signal, timeoutMs = 5000 } = {}) {
+  if (signal?.aborted) return url;
   const host = hostnameOf(url);
   if (!SHORT_LINK_HOSTS.has(host)) return url;
 
   let current = url;
   for (let hop = 0; hop < 5; hop++) {
+    if (signal?.aborted) break; // re-check between hops
     const ac = new AbortController();
     const onAbort = () => ac.abort();
     signal?.addEventListener?.('abort', onAbort, { once: true });
@@ -298,6 +323,10 @@ export async function readSocialLink(url, {
   ytdlpFn = fetchPlatformMetadataViaYtdlp,
 } = {}) {
   if (!isSocialLinkUrl(url)) return null;
+  // Codex Phase 6 follow-up (🟡 P1 2026-05-05): abort gate at entry +
+  // before each strategy. abort is "host gave up, stop now"; we must
+  // not waste more budget on yt-dlp / OG fetch.
+  if (signal?.aborted) return null;
 
   // Step 1 — short-link resolve.
   let canonical = url;
@@ -306,6 +335,7 @@ export async function readSocialLink(url, {
   } catch {
     canonical = url;
   }
+  if (signal?.aborted) return null;
 
   // Build the effective config now that we know the canonical host —
   // explicit cookies bind to the resolved host, not the shortener.
@@ -314,6 +344,7 @@ export async function readSocialLink(url, {
   // Step 2 — yt-dlp metadata. The injected ytdlpFn lets unit tests
   // exercise the rendering / fallback logic without invoking the real
   // yt-dlp binary.
+  let ytdlpAborted = false;
   try {
     const meta = await ytdlpFn(canonical, effectiveConfig, { signal });
     if (meta && (meta.title || meta.description || meta.subtitleText)) {
@@ -323,9 +354,14 @@ export async function readSocialLink(url, {
         canonicalUrl: canonical,
       };
     }
-  } catch {
-    // Fall through to OG.
+  } catch (err) {
+    // If yt-dlp failed BECAUSE the signal aborted, OG is also pointless —
+    // bail. Other error reasons (yt-dlp not installed / unsupported
+    // platform / network blip) → fall through to OG; OG is independent
+    // of yt-dlp's transport and may still succeed.
+    ytdlpAborted = signal?.aborted || err?.name === 'AbortError';
   }
+  if (signal?.aborted || ytdlpAborted) return null;
 
   // Step 3 — OpenGraph / meta-tag fallback. Cheap, cookie-less, often
   // works on Xiaohongshu where yt-dlp can't strip the JS shell.

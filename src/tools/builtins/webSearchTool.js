@@ -18,6 +18,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../../config.js';
 import { debugWarn } from '../../debug.js';
 import { createPlaywrightSession, cleanPageText } from '../../web/playwrightFetcher.js';
+import { hostMatchesAnySuffix, SOCIAL_HOST_SUFFIXES } from './socialLinkTool.js';
 import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
 import { getEmbedding, EMBEDDING_DIMS } from '../../memory/embeddings.js';
 
@@ -899,7 +900,18 @@ function selectContentUrls(results, query, {
     const url = r?.url || '';
     if (!/^https?:\/\//i.test(url)) continue;
     if (/\.(pdf|mp4|mp3|zip|docx?|xlsx?)(\?|$)/i.test(url)) continue;
-    if (!allowBlockedDomains && BLOCKED_CONTENT_DOMAINS.has(extractDomain(url))) continue;
+    if (!allowBlockedDomains) {
+      const domain = extractDomain(url);
+      // Codex Phase 6 follow-up (🔵 P1 2026-05-05): the BLOCKED_CONTENT_DOMAINS
+      // Set is exact-match. The social-link suffix list (xiaohongshu.com /
+      // douyin.com / iesdouyin.com / xhslink.com / v.douyin.com) needs
+      // sub-host coverage too — m.douyin.com / m.xiaohongshu.com are
+      // mobile mirrors of the same anti-bot pages and were slipping through
+      // exact-match. We share `hostMatchesAnySuffix` with socialLinkTool so
+      // the early-route surface and the search blocklist stay in lockstep.
+      if (BLOCKED_CONTENT_DOMAINS.has(domain)) continue;
+      if (hostMatchesAnySuffix(domain, SOCIAL_HOST_SUFFIXES)) continue;
+    }
     const canon = canonicalizeUrl(url);
     if (seenCanon.has(canon)) continue;
     const titleKey = titleFingerprint(r.title || '');

@@ -88,34 +88,35 @@ test('non-social URL passes through early-route (does NOT short-circuit to SOCIA
 import { isSocialLinkUrl as _verifyExportSurface } from './socialLinkTool.js';
 void _verifyExportSurface; // silence unused-import — referenced via dynamic mock below
 
-test('fetch_url social-route success returns shape with `meta` key (matching legacy contract)', async () => {
-  // Hijack readSocialLink via a module-cache-busting import + mock.
-  // The simpler approach: directly invoke fetchUrlTool against a real
-  // social URL with a stub ytdlpFn isn't possible — fetch_url calls
-  // readSocialLink with hard-coded production fetchPlatformMetadataViaYtdlp.
-  // Instead we rely on a contract-shape pin: the success branch must
-  // return an object whose top-level keys are { ok, output, meta }.
-  // Source-level pin already exists below for the literal `meta:`.
-  // Behavioral pin: when the social branch returns a body, the
-  // result must have meta.method === 'social-link'.
-  //
-  // We exercise this by passing a URL that triggers the OG fallback
-  // path against a real but inert host. The og fetch will likely
-  // miss in <500ms (DNS / no og tags on .invalid host), so this test
-  // is timing-bounded; if it does miss, the SOCIAL_LINK_BLOCKED branch
-  // is exercised instead — which also has stable shape.
-  const result = await fetchUrlTool.run(
-    { url: 'https://www.xiaohongshu.com/explore/test-shape-pin' },
-    { signal: AbortSignal.timeout(500), config: {} },
+test('fetch_url social-route success returns shape with `meta` key (legacy contract)', async () => {
+  // Codex Phase 6 follow-up (⚪ P2 2026-05-05): the previous version
+  // used a real social URL + AbortSignal.timeout(500), so the SOCIAL_
+  // LINK_BLOCKED branch usually fired and the success-shape assertion
+  // never actually exercised the success branch. Now we hijack global
+  // fetch so the OG fallback ALWAYS hits a controlled response, then
+  // assert the success branch's exact shape.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    '<meta property="og:title" content="Test Post Title" />' +
+    '<meta property="og:description" content="Stable test desc" />',
+    { status: 200, headers: { 'content-type': 'text/html' } },
   );
-  // Either branch (success or blocked) — the result must NOT carry a
-  // top-level `metadata` key (that was the regressed name pre-fix).
-  assert.equal(result.metadata, undefined,
-    'success/error result must not use the regressed `metadata` key');
-  if (result.ok) {
+  try {
+    const result = await fetchUrlTool.run(
+      { url: 'https://www.xiaohongshu.com/explore/stable-shape-pin' },
+      { signal: AbortSignal.timeout(5000), config: {} },
+    );
+    assert.equal(result.ok, true, 'OG fallback must produce a success result');
+    assert.equal(result.metadata, undefined,
+      'success result must NOT use the regressed `metadata` key');
     assert.ok(result.meta, 'success result must include `meta` (legacy contract)');
     assert.equal(result.meta.method, 'social-link');
-    assert.ok(result.meta.url);
+    assert.equal(result.meta.via, 'opengraph');
+    assert.ok(result.meta.url, 'meta.url must reflect the input URL');
+    assert.ok(result.meta.canonicalUrl, 'meta.canonicalUrl must reflect the resolved URL');
+    assert.match(result.output, /Test Post Title/);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
