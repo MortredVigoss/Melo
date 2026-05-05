@@ -188,49 +188,85 @@ test('recallMemoriesTiered: KNN actually contributes to ranking (probe far from 
   });
 });
 
-test('recallMemoriesTiered: scene+frame tiers also exercised end-to-end', async (t) => {
+test('recallMemoriesTiered: scene+frame tiers ranking actually KNN-driven (multi-row + probe rotation)', async (t) => {
+  // Codex follow-up (Phase F-2 ⚪ P2 2026-05-05): the previous version
+  // of this test seeded ONE scene + ONE frame + ONE prompt and asserted
+  // includes(...). Even if the scene/frame ANN paths silently broke and
+  // recallMemoriesTiered fell back to its keyword branch, the single
+  // candidate per tier would still come back and the assertion would
+  // pass — exactly the "local-coverage假绿" Codex flagged. Mirror the
+  // contents-ranking pattern: seed multiple rows per tier and rotate the
+  // probe across them; only a working KNN can produce the correct top
+  // row for each probe.
   await withSkippableSqliteVec(t, () => {
     writeStoredEmbeddingModelId('test-model');
 
-    // Build a 3-tier hierarchy so the scene/frame KNN paths are also
-    // covered by the production query (not just the contents tier).
-    upsertMemory({
-      id: 'scene-1', namespace: 'chat:t', kind: 'scene', sourceId: 's1',
-      text: 'high level summary',
-      metadata: { sceneId: 's1', chatId: 't', startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-02T00:00:00Z' },
-    });
-    saveMemoryEmbedding('scene-1', 'high level summary', fakeEmbedding(7777), 'test-model');
+    // 3 scenes, 3 frames, 3 prompts — distinct seeds so probes can
+    // discriminate by KNN distance. Each row carries a distinct text
+    // so the keyword fallback would produce a DIFFERENT (incorrect)
+    // ranking under broken-ANN: with the "leaf prompt" / "mid level
+    // frame" / "high level summary" texts, none of the queries we
+    // probe with (fakeEmbedding seeds — pure numeric vectors, no text
+    // we ever stored) can match keyword-search any row.
+    const tiers = [
+      { kind: 'scene',  ids: ['scene-A',  'scene-B',  'scene-C']  },
+      { kind: 'frame',  ids: ['frame-A',  'frame-B',  'frame-C']  },
+      { kind: 'prompt', ids: ['prompt-A', 'prompt-B', 'prompt-C'] },
+    ];
+    // Same seed across letter index (A=10000, B=20000, C=30000) so a
+    // probe pointed at one letter rank-1's all three tiers consistently.
+    const seedFor = letter => ({ A: 10000, B: 20000, C: 30000 }[letter]);
 
-    upsertMemory({
-      id: 'frame-1', namespace: 'chat:t', kind: 'frame', sourceId: 'f1',
-      text: 'mid level frame',
-      metadata: { frameId: 'f1', sceneId: 's1', chatId: 't', startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-01T00:30:00Z' },
-    });
-    saveMemoryEmbedding('frame-1', 'mid level frame', fakeEmbedding(7777), 'test-model');
+    for (const { kind, ids } of tiers) {
+      for (const id of ids) {
+        const letter = id.slice(-1); // A / B / C
+        const seed = seedFor(letter);
+        const baseMeta = { chatId: 't' };
+        const meta = kind === 'scene'
+          ? { ...baseMeta, sceneId: id, startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-02T00:00:00Z' }
+          : kind === 'frame'
+            ? { ...baseMeta, frameId: id, sceneId: 'scene-' + letter, startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-01T00:30:00Z' }
+            : { ...baseMeta, frameId: 'frame-' + letter, sceneId: 'scene-' + letter };
+        upsertMemory({
+          id, namespace: 'chat:t', kind, sourceId: id,
+          text: `${kind}-text-letter-${letter}`,
+          metadata: meta,
+        });
+        saveMemoryEmbedding(id, `${kind}-text-letter-${letter}`, fakeEmbedding(seed), 'test-model');
+      }
+    }
 
-    upsertMemory({
-      id: 'prompt-1', namespace: 'chat:t', kind: 'prompt', sourceId: 'p1',
-      text: 'leaf prompt',
-      metadata: { frameId: 'f1', sceneId: 's1', chatId: 't' },
-    });
-    saveMemoryEmbedding('prompt-1', 'leaf prompt', fakeEmbedding(7777), 'test-model');
+    // Probe with each letter's seed — top row in EACH tier must rotate
+    // to the matching letter. If KNN were a no-op and the keyword
+    // fallback took over, the ranking wouldn't depend on the probe
+    // vector at all → all three probes would produce the same order
+    // and at least 2 of the 3 letter assertions would fail.
+    const probeA = fakeEmbedding(seedFor('A'));
+    const probeB = fakeEmbedding(seedFor('B'));
+    const probeC = fakeEmbedding(seedFor('C'));
 
-    const probe = fakeEmbedding(7777);
-    const result = recallMemoriesTiered({
-      namespaces: ['chat:t'],
-      queryEmbedding: probe,
-      limits: { scenes: 3, frames: 3, contents: 3 },
-    });
+    function call(probe) {
+      return recallMemoriesTiered({
+        namespaces: ['chat:t'],
+        queryEmbedding: probe,
+        limits: { scenes: 3, frames: 3, contents: 3 },
+      });
+    }
+    const rA = call(probeA);
+    const rB = call(probeB);
+    const rC = call(probeC);
 
-    // All three tiers must return their respective rows when the probe
-    // is dead-on. A regression that breaks the scene/frame KNN-clause
-    // restriction (kind = 'scene' / 'frame') would surface as missing
-    // tier rows here.
-    const sceneIds = result.scenes.map(r => r.id);
-    const frameIds = result.frames.map(r => r.id);
-    const contentIds = result.contents.map(r => r.id);
-    assert.ok(sceneIds.includes('scene-1'), `scene tier must include scene-1; got [${sceneIds.join(', ')}]`);
-    assert.ok(frameIds.includes('frame-1'), `frame tier must include frame-1; got [${frameIds.join(', ')}]`);
-    assert.ok(contentIds.includes('prompt-1'), `content tier must include prompt-1; got [${contentIds.join(', ')}]`);
+    // Each tier's top row must follow the probe.
+    assert.equal(rA.scenes[0]?.id,   'scene-A',  `probeA: scenes top must be scene-A;  got ${rA.scenes.map(r=>r.id).join(',')}`);
+    assert.equal(rA.frames[0]?.id,   'frame-A',  `probeA: frames top must be frame-A;  got ${rA.frames.map(r=>r.id).join(',')}`);
+    assert.equal(rA.contents[0]?.id, 'prompt-A', `probeA: contents top must be prompt-A; got ${rA.contents.map(r=>r.id).join(',')}`);
+
+    assert.equal(rB.scenes[0]?.id,   'scene-B',  `probeB: scenes top must be scene-B;  got ${rB.scenes.map(r=>r.id).join(',')}`);
+    assert.equal(rB.frames[0]?.id,   'frame-B',  `probeB: frames top must be frame-B;  got ${rB.frames.map(r=>r.id).join(',')}`);
+    assert.equal(rB.contents[0]?.id, 'prompt-B', `probeB: contents top must be prompt-B; got ${rB.contents.map(r=>r.id).join(',')}`);
+
+    assert.equal(rC.scenes[0]?.id,   'scene-C',  `probeC: scenes top must be scene-C;  got ${rC.scenes.map(r=>r.id).join(',')}`);
+    assert.equal(rC.frames[0]?.id,   'frame-C',  `probeC: frames top must be frame-C;  got ${rC.frames.map(r=>r.id).join(',')}`);
+    assert.equal(rC.contents[0]?.id, 'prompt-C', `probeC: contents top must be prompt-C; got ${rC.contents.map(r=>r.id).join(',')}`);
   });
 });
