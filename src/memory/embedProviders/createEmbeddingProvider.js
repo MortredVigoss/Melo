@@ -31,7 +31,10 @@ function makeCache() {
   };
 }
 
-const REGISTRY = new Map();
+// Exported so probe-only paths (status.js → probeEmbeddingProviderAvailability)
+// can iterate the same factories getEmbeddingProvider would, surfacing
+// per-provider rejection reasons without booting the singleton.
+export const REGISTRY = new Map();
 REGISTRY.set('ollama', () => new OllamaEmbedProvider());
 REGISTRY.set('openai', () => new OpenAIEmbedProvider());
 REGISTRY.set('http', () => new CustomHttpEmbedProvider());

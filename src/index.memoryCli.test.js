@@ -121,6 +121,49 @@ test('memory <unknown subcommand> throws a helpful error', async () => {
   );
 });
 
+// ── fill-embeddings + embedder probe (Phase F-2) ──────────────────────
+
+test('fill-embeddings without an available embedder reports no-embedder, does not throw', async () => {
+  // Default test env has no Ollama / no API key / no HTTP URL —
+  // probeEmbeddingProviderAvailability returns available=null, the CLI
+  // must short-circuit cleanly with reason='no-embedder'.
+  const { stdout } = await runMeloCli(['memory', 'fill-embeddings', '--json'], {
+    env: {
+      // Force all three providers unavailable.
+      MELO_EMBED_PROVIDER: '', // accept default chain ollama→openai→http
+      MELO_OLLAMA_URL: 'http://127.0.0.1:1', // unreachable port
+      OPENAI_API_KEY: '',
+      MELO_API_KEY: '',
+      MELO_EMBED_HTTP_URL: '',
+    },
+  });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.reason, 'no-embedder');
+  // Per-provider reasons must propagate so the user knows what to fix.
+  assert.ok(parsed.probe?.reasons?.ollama);
+  assert.ok(parsed.probe?.reasons?.openai);
+  assert.ok(parsed.probe?.reasons?.http);
+});
+
+test('memory status --json includes embedder probe with per-provider reasons when none available', async () => {
+  const { stdout } = await runMeloCli(['memory', 'status', '--json'], {
+    env: {
+      MELO_OLLAMA_URL: 'http://127.0.0.1:1',
+      OPENAI_API_KEY: '',
+      MELO_API_KEY: '',
+      MELO_EMBED_HTTP_URL: '',
+    },
+  });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.embedder?.available, null,
+    'embedder.available must be null when no provider is reachable');
+  assert.ok(typeof parsed.embedder?.reasons === 'object');
+  assert.ok(parsed.embedder.reasons.ollama, 'ollama reason must be surfaced');
+  // Reason text must be actionable — pin the "ollama serve" hint.
+  assert.match(parsed.embedder.reasons.ollama, /ollama serve/i);
+});
+
 // ── --home flag + auto-warn hint (Phase F home-resolution gap) ──────
 //
 // The desktop app sets MELO_HOME to projectDir/.tmp/melo-home-user,

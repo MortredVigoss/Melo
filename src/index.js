@@ -377,6 +377,7 @@ async function runMemoryCommand(rawArgs) {
         'Subcommands:',
         '  status              Print memory-store snapshot + tier distribution',
         '  consolidate         Run a dreaming sweep now',
+        '  fill-embeddings     Generate embeddings for any memories that lack one',
         '',
         'Flags (any position):',
         '  --json              Emit raw JSON instead of formatted text',
@@ -416,6 +417,10 @@ async function runMemoryCommand(rawArgs) {
       full: flags.has('--full'),
       json: flags.has('--json'),
     });
+    return;
+  }
+  if (sub === 'fill-embeddings') {
+    await runMemoryFillEmbeddingsCommand({ json: flags.has('--json') });
     return;
   }
   throw new Error(
@@ -458,8 +463,19 @@ async function maybeWarnDifferentHome() {
 }
 
 async function runMemoryStatusCommand({ json = false } = {}) {
-  const { collectMemoryStatus } = await import('./memory/status.js');
+  const { collectMemoryStatus, probeEmbeddingProviderAvailability } = await import('./memory/status.js');
   const snapshot = collectMemoryStatus();
+  // Phase F-2 (2026-05-05): probe live embedder so users can see why
+  // vec_memories / embedding_cache are empty without grepping logs.
+  // Bounded — Ollama isAvailable times out at 2s, OpenAI/HTTP are
+  // env-only checks. Wrapped in try/catch so a network glitch never
+  // breaks the status output.
+  let embedderProbe = null;
+  try {
+    embedderProbe = await probeEmbeddingProviderAvailability();
+  } catch (err) {
+    embedderProbe = { available: null, modelId: null, dims: null, reasons: { _probe: String(err?.message || err) } };
+  }
   // Phase E follow-up (Codex 🔴 P0 2026-05-05): byKind / byAttic now
   // come from the snapshot's readOnly DB handle. The previous
   // implementation called store.memoryStats() which goes through the
@@ -470,7 +486,7 @@ async function runMemoryStatusCommand({ json = false } = {}) {
   // writes a PRAGMA.
 
   if (json) {
-    output.write(JSON.stringify({ snapshot }, null, 2) + '\n');
+    output.write(JSON.stringify({ snapshot, embedder: embedderProbe }, null, 2) + '\n');
     return;
   }
 
@@ -525,10 +541,108 @@ async function runMemoryStatusCommand({ json = false } = {}) {
   if (snapshot.embedding.drift?.hasDrift) {
     output.write(`  drift          stored=${snapshot.embedding.drift.stored} live=${snapshot.embedding.drift.inferredProvider}\n`);
   }
+  if (embedderProbe) {
+    if (embedderProbe.available) {
+      output.write(`  live provider  ${embedderProbe.available} (model=${embedderProbe.modelId || '?'}, dims=${embedderProbe.dims ?? '?'})\n`);
+    } else {
+      output.write(`  live provider  none — vec_memories will stay empty until a provider is set up\n`);
+      const reasons = embedderProbe.reasons || {};
+      for (const [name, why] of Object.entries(reasons)) {
+        output.write(`    - ${name.padEnd(8)} ${why}\n`);
+      }
+    }
+  }
 
   output.write('\nRecall tuning (env-overridable):\n');
   output.write(`  MELO_MMR_LAMBDA              ${snapshot.tuning.mmrLambda}\n`);
   output.write(`  MELO_RECENCY_HALF_LIFE_DAYS  ${snapshot.tuning.recencyHalfLifeDays}\n`);
+}
+
+async function runMemoryFillEmbeddingsCommand({ json = false } = {}) {
+  // Phase F-2b (2026-05-05): manual trigger for the same backfill loop
+  // sendChatMessage runs after each chat (scheduleEmbeddingFillIn).
+  // Useful when:
+  //   • user just stood up Ollama / set OPENAI_API_KEY and wants to
+  //     embed the existing 1099 rows without waiting for the next chat
+  //   • diagnosing whether embedder is actually working — runs synchronously
+  //     and reports rows-attempted vs rows-embedded
+  // No-op when the embedder is unavailable; reports zero filled.
+  const { collectMemoryStatus, probeEmbeddingProviderAvailability } = await import('./memory/status.js');
+  const beforeSnap = collectMemoryStatus();
+  const probe = await probeEmbeddingProviderAvailability().catch(() => null);
+  if (!probe?.available) {
+    if (json) {
+      output.write(JSON.stringify({ ok: false, reason: 'no-embedder', probe }, null, 2) + '\n');
+    } else {
+      output.write('No live embedder available; nothing to fill.\n');
+      output.write('Run `melo memory status` for the per-provider rejection reasons.\n');
+    }
+    return;
+  }
+
+  const { getResolvedConfig } = await import('./config.js');
+  const config = await getResolvedConfig();
+  const { scheduleEmbeddingFillIn } = await import('./memory/memoryPromotion.js');
+
+  // getMemoriesWithoutEmbeddings has an internal LIMIT 200, so its
+  // .length wraps the cap and would always show 200/200 on a large
+  // store. Use a direct uncapped COUNT for accurate before/after.
+  // The real backfill loop still walks 200 at a time — multiple CLI
+  // invocations are expected for stores with thousands of NULL rows.
+  async function uncappedNullCount() {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { getMeloHome } = await import('./config.js');
+    const { join: joinPath } = await import('node:path');
+    const { existsSync } = await import('node:fs');
+    const path = joinPath(getMeloHome(), 'desktop', 'store.sqlite');
+    if (!existsSync(path)) return 0;
+    let db = null;
+    try {
+      db = new DatabaseSync(path, { readOnly: true });
+      const r = db.prepare('SELECT COUNT(*) AS n FROM memories WHERE embedding IS NULL').get();
+      return r?.n ?? 0;
+    } catch {
+      return null;
+    } finally {
+      try { db?.close(); } catch {}
+    }
+  }
+
+  const pendingBefore = await uncappedNullCount();
+  const start = Date.now();
+  await scheduleEmbeddingFillIn(config);
+  const elapsedMs = Date.now() - start;
+  const pendingAfter = await uncappedNullCount();
+  const filled = pendingBefore != null && pendingAfter != null
+    ? Math.max(0, pendingBefore - pendingAfter)
+    : 0;
+
+  const afterSnap = collectMemoryStatus();
+  const beforeMemories = beforeSnap.counts.memories ?? 0;
+  const afterMemories = afterSnap.counts.memories ?? 0;
+  // (Memories count shouldn't change during fill — we only embed existing
+  // rows. Still surface it so a regression that ALSO inserts rows shows up.)
+
+  if (json) {
+    output.write(JSON.stringify({
+      ok: true,
+      pendingBefore,
+      pendingAfter,
+      filled,
+      elapsedMs,
+      provider: probe.available,
+      modelId: probe.modelId,
+      memoriesCount: { before: beforeMemories, after: afterMemories },
+    }, null, 2) + '\n');
+    return;
+  }
+  output.write(`Embedding fill-in via ${probe.available} (${probe.modelId || 'unknown model'}) finished in ${elapsedMs}ms.\n`);
+  output.write(`  pending before  ${pendingBefore}\n`);
+  output.write(`  filled          ${filled}\n`);
+  output.write(`  pending after   ${pendingAfter}\n`);
+  if (pendingAfter > 0) {
+    output.write(`Note: ${pendingAfter} rows still pending — provider may be rate-limited; rerun.\n`);
+  }
 }
 
 async function runMemoryConsolidateCommand({ full = false, json = false } = {}) {

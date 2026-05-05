@@ -424,8 +424,19 @@ function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
     ).run(buf, memoryId);
 
     if (_vecLoaded) {
+      // Phase F-2c follow-up (2026-05-05): vec0 virtual tables don't
+      // honour `INSERT OR REPLACE` — re-inserting an existing memory_id
+      // throws "UNIQUE constraint failed on vec_memories primary key"
+      // and silently kills the rest of storeEmbedding's work via the
+      // outer catch. This was leaving 242 production rows in a
+      // partially-embedded state where memories.embedding was set but
+      // vec_memories sometimes held a stale row from a previous write.
+      // The vec0-safe pattern is DELETE-then-INSERT.
       database.prepare(
-        `INSERT OR REPLACE INTO vec_memories (memory_id, embedding) VALUES (?, ?)`,
+        `DELETE FROM vec_memories WHERE memory_id = ?`,
+      ).run(memoryId);
+      database.prepare(
+        `INSERT INTO vec_memories (memory_id, embedding) VALUES (?, ?)`,
       ).run(memoryId, buf);
     }
   } catch (err) {
