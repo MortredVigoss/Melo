@@ -57,6 +57,32 @@ async function vecCountForId(id) {
   }
 }
 
+// Helper: KNN distance from a probe vector to the row at memory_id.
+// Returns null when sqlite-vec isn't available. Distinguishes vec0
+// content-rewrite success from "old stale row + caught exception"
+// — pre-fix the row still holds the FIRST embedding, so a probe equal
+// to the SECOND embedding stays far away.
+async function vecDistance(memoryId, probeVec) {
+  let sqliteVec;
+  try { sqliteVec = await import('sqlite-vec'); } catch { return null; }
+  const path = join(process.env.MELO_HOME, 'desktop', 'store.sqlite');
+  const db = new DatabaseSync(path, { allowExtension: true });
+  try {
+    sqliteVec.load(db);
+    const buf = Buffer.from(probeVec.buffer);
+    const row = db.prepare(`
+      SELECT distance FROM vec_memories
+      WHERE memory_id = ? AND embedding MATCH ?
+      LIMIT 1
+    `).get(memoryId, buf);
+    return row?.distance ?? null;
+  } catch {
+    return null;
+  } finally {
+    try { db.close(); } catch {}
+  }
+}
+
 let _tmpDir = null;
 
 test.beforeEach(() => {
@@ -72,8 +98,19 @@ test.afterEach(async () => {
 });
 
 function fakeEmbedding(seed) {
+  // Mulberry32 PRNG seeded by `seed` so different seeds yield
+  // approximately orthogonal vectors. The earlier sin-based generator
+  // was too smooth — different seeds produced cosine ≈ 1, defeating
+  // the distance-distinguishability assertion in the rewrite test.
+  let s = (seed >>> 0) || 1;
   const arr = new Float32Array(1024);
-  for (let i = 0; i < 1024; i++) arr[i] = Math.sin(seed + i * 0.001);
+  for (let i = 0; i < 1024; i++) {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    arr[i] = (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 - 1;
+  }
   return arr;
 }
 
@@ -123,6 +160,71 @@ test('storeEmbedding re-write of same memoryId does NOT throw UNIQUE constraint'
   assert.equal(
     vecCount, 1,
     'rewrite should leave exactly one vec_memories row (not duplicate, not deleted)',
+  );
+});
+
+test('storeEmbedding rewrite REPLACES the on-disk vector content (not just count)', async () => {
+  // Codex follow-up (Phase F-2 ⚪ P2 2026-05-05): the doesNotThrow +
+  // count=1 pair above passes under the BUGGY implementation too —
+  // storeEmbedding's outer catch swallows the UNIQUE error so
+  // doesNotThrow trivially holds, and the stale row from the first
+  // write satisfies count=1. The only assertion that distinguishes
+  // fixed vs broken is "the on-disk vector content actually changed".
+  // Use vec0 KNN distance as the witness: a probe equal to the SECOND
+  // write's vector should land near distance ≈ 0 IF the row was
+  // really replaced, and stay large under the bug (row still holds
+  // the FIRST vector).
+  writeStoredEmbeddingModelId('test-model');
+  upsertMemory({
+    id: 'mem-D',
+    namespace: 'chat:1',
+    kind: 'prompt',
+    sourceId: 'm1',
+    text: 'replace test',
+    metadata: {},
+  });
+
+  const firstVec = fakeEmbedding(1);
+  const secondVec = fakeEmbedding(500);
+  // Sanity: the two vectors must be distinguishable. fakeEmbedding's
+  // sin-with-frequency seed makes seed=1 vs seed=500 well-separated.
+  const cosine = (() => {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < 1024; i++) {
+      dot += firstVec[i] * secondVec[i];
+      na  += firstVec[i] * firstVec[i];
+      nb  += secondVec[i] * secondVec[i];
+    }
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  })();
+  assert.ok(Math.abs(cosine) < 0.5, 'test fixtures must be distinguishable');
+
+  // First write — establish baseline.
+  saveMemoryEmbedding('mem-D', 'replace test', firstVec, 'test-model');
+
+  // Probe with secondVec NOW (before rewrite). The on-disk row still
+  // holds firstVec, so this distance should be relatively LARGE.
+  const distBeforeRewrite = await vecDistance('mem-D', secondVec);
+  if (distBeforeRewrite === null) return; // vec0 not loaded — skip
+
+  // Rewrite with the very different secondVec.
+  saveMemoryEmbedding('mem-D', 'replace test', secondVec, 'test-model');
+
+  // Probe with secondVec AFTER rewrite. Post-fix the row holds
+  // secondVec → distance ≈ 0. Under the broken vec0 INSERT OR REPLACE
+  // path the rewrite was silently dropped → row still holds firstVec
+  // → distance unchanged from before.
+  const distAfterRewrite = await vecDistance('mem-D', secondVec);
+  assert.ok(
+    distAfterRewrite !== null,
+    'KNN must succeed on a row that was just rewritten',
+  );
+  assert.ok(
+    distAfterRewrite < distBeforeRewrite - 0.01,
+    `rewrite must replace vector content: distance to secondVec should drop after rewrite ` +
+    `(before=${distBeforeRewrite.toFixed(4)}, after=${distAfterRewrite.toFixed(4)}). ` +
+    `If after >= before, the rewrite was silently dropped — the buggy ` +
+    `INSERT OR REPLACE path is the prime suspect.`,
   );
 });
 
