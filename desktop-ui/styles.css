@@ -1486,6 +1486,16 @@ select option {
      to ~400px tall as WebGL initializes a tick or two after the first
      render; anchoring translates that growth into a scroll-up. */
   overflow-anchor: none;
+  /* Stop scroll chaining: when user hits the bottom of the thread and keeps
+     swiping (trackpad two-finger / wheel), the browser's default "scroll
+     chaining" propagates the unconsumed scroll up to .content-scroll (also
+     overflow-y: auto). That makes .page.is-chat slide up under the topbar,
+     visually = "拉到底跳到中间". `contain` keeps elastic overscroll bounce
+     at the boundary but blocks the propagation. User-reported month-long
+     bug, root cause found 2026-05-05 after 4 wrong fixes — the previous
+     scroll-writer / viz-anchor / scroll-guard work was all upstream of
+     the actual symptom: this single CSS line is what was missing. */
+  overscroll-behavior-y: contain;
 }
 
 .thread-scroll-region::-webkit-scrollbar {

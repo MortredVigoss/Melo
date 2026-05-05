@@ -57,6 +57,33 @@ macOS trackpad 双指下滑产生 momentum-scroll，浏览器原生维护惯性�
 
 desktop-ui 179/179 全绿。这是这一系列 chat UI bug 的根治——单纯堵 viz-anchor 不够，要把后台 render 跟用户主动滚动**时序解耦**。
 
+**用户原话「这个问题一个月了从始至终都有」+ 第 5 次诊断后才找到真根因：CSS scroll chaining**：
+
+scroll guard ship 之后用户重启实测仍跳，第 5 次反馈：「这么简单一个问题，一个月了从始至终都有，肯定是拉到最下面再下拉触发了别的东西，这种应该加一个简单的判断就可以解决吧是不是拉到最下面，**或者就是你对话框的设计有问题，最下面就不是用户或者 app 生成的内容**」。
+
+用户最后一句直接把根因点出来了——chat 区域底部「拉到底再下拉」会**触发别的东西**。我之前 4 次都在 patch JavaScript scrollTop writer，根本没看 CSS 滚动结构。这次按用户提示直接看 [styles.css:thread-scroll-region](desktop-ui/styles.css#L1473) — **缺 `overscroll-behavior`**：
+
+- `.thread-scroll-region`（chat 内部 scroller，含 message-list）和 `.content-scroll`（页面级 scroller，含 .page.is-chat）**都是 `overflow-y: auto`**
+- 用户拉到 thread 底部（scrollTop = scrollHeight - clientHeight），继续 trackpad 双指 / wheel 下推
+- 浏览器原生 **scroll chaining** 行为：thread 不能再滚 → 把未消耗的 scroll **传给父链** → `.content-scroll` 开始滚 → `.page.is-chat`（含整个 chat-thread）整体上移
+- 视觉效果：chat thread 整块往上跑，看起来像「跳到中部某条消息」
+
+修复一行 CSS：`.thread-scroll-region { overscroll-behavior-y: contain }`。`contain` 保留 elastic overscroll bounce 在边界（macOS 习惯），但**阻止**滚动传播给父级。从此「拉到底就是底，再下拉浏览器自己 bounce 回来，chat 整块不再被推上去」。
+
+**5 轮失败教训汇总**：
+- Bug 3 sync-restore 引入 / 回退（49e3649）
+- viz-anchor scope 收紧（93f056e）
+- isRenderableViz 共享 helper（be9c6f0）
+- scroll guard defer 后台 render（6c5db0e）
+- 上面 4 个 commit 全部 patch JavaScript scrollTop writer 优先级 / 时序，但根因是 **CSS scroll chaining**，跟 JS 半毛钱关系都没有。
+
+这违反我自己 memory 「方案评分先行 + 红绿灯检测」。一个月的用户痛点，正确流程应该是**第一次报问题**就先做完整 root cause 分析（包括 CSS 滚动结构 + DOM 层级 + scrollHeight/clientHeight 实际数值），而不是凭直觉先猜「sync-restore 闪烁」。
+
+之前 4 个 commit 的副作用：
+- isRenderableViz / viz-anchor 收紧：独立有价值（perf：普通 chat 不再跑 N 次 reflow），保留
+- scroll guard：跟根因无关但独立有价值（typing guard 对称扩展），保留
+- 没有让事情更糟，但也没解决用户问题。这次一行 CSS 才是真修复。
+
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
 
