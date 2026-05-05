@@ -295,7 +295,7 @@ export async function runChatAgentExecutionGraph({
         // pass through filterMcpToolsForAgent untouched.
         let toolsPrompt = '';
         if (shouldInjectToolsPrompt({ mode: chat.mode })) {
-          const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
+          const allowedTools = filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile);
           toolsPrompt = buildToolsSystemPrompt([...allowedTools, ...skillTools]);
         }
 
@@ -457,8 +457,19 @@ export async function runChatAgentExecutionGraph({
           // dispatcher.  filterMcpToolsForAgent(...) returns the
           // allowed tools; we drop any tool call whose target was
           // filtered out.
+          //
+          // Phase 6 follow-up (2026-05-05): use `graphState.activeAgentProfile`
+          // — `activeAgentProfile` was a bare reference to the variable
+          // declared in the `'prepare'` node at line 150, which is a
+          // separate async-method scope. Bare reference threw
+          // ReferenceError "activeAgentProfile is not defined" the
+          // moment the model emitted any tool call (text-only replies
+          // skipped this branch and stayed silent). User-facing surface
+          // was the providerErrors fallback "Melo could not complete
+          // the model request right now. Details: …". Same fact also
+          // accessible at lines 407 / 580 of this file via graphState.
           const allowedDispatchTools = new Set(
-            filterMcpToolsForAgent(getAllTools(), activeAgentProfile).map(t => t.id),
+            filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id),
           );
           const executableCalls = toolCalls.map(tc => {
             let tool = skillToolsById.get(tc.name) || getTool(tc.name);

@@ -34,9 +34,75 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname_test = dirname(fileURLToPath(import.meta.url));
+const RUNNER_SOURCE = readFileSync(join(__dirname_test, 'chatExecutionRunner.js'), 'utf8');
+
+// ─── Phase 6 follow-up (2026-05-05) — scope contract for activeAgentProfile ─
+//
+// Production bug: `'invoke-model'` graph node referenced bare
+// `activeAgentProfile` at the MCP-tool filter line, but that variable
+// is only declared inside the `'prepare'` node — a sibling async
+// method with its own scope. Bare reference threw
+// "ReferenceError: activeAgentProfile is not defined" the moment the
+// model emitted any tool call. Text-only replies dodged the branch and
+// stayed silent, so the bug shipped on 2026-04-29 and only surfaced via
+// the providerErrors fallback "Melo could not complete the model
+// request right now. Details: …".
+//
+// Fix: route through `graphState.activeAgentProfile` (the same fact
+// already used at the model-invoke + verifier-model lines).
+//
+// This test pins the scope contract: outside the prepare node, every
+// reference must use `graphState.activeAgentProfile` — a bare
+// reference is a regression. Cheap source-level scan.
+
+test('activeAgentProfile references outside `prepare` must use graphState (Phase 6 scope contract)', () => {
+  const lines = RUNNER_SOURCE.split('\n');
+  const prepareStart = lines.findIndex(l => /async\s+'prepare'\s*\(/.test(l));
+  // The prepare node's closing brace sits at column 6 (`      },`); we
+  // detect it by finding the first such line at or after prepareStart.
+  let prepareEnd = -1;
+  for (let i = prepareStart + 1; i < lines.length; i++) {
+    if (/^      \},\s*$/.test(lines[i])) { prepareEnd = i; break; }
+  }
+  assert.ok(prepareStart > 0 && prepareEnd > prepareStart, 'prepare node boundaries must be locatable');
+
+  const offences = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= prepareStart && i <= prepareEnd) continue; // prepare owns the local
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
+
+    // Find every `activeAgentProfile` token. Skip:
+    //   • `graphState.activeAgentProfile`  — the safe production form
+    //   • `activeAgentProfile:` (object-literal KEY position; the colon
+    //     IMMEDIATELY follows the token, no whitespace, no value-side use)
+    //   • declaration forms `const|let|var|function activeAgentProfile`
+    // Everything else outside the prepare node is a bare read of a
+    // not-in-scope variable — the exact bug the fix closed.
+    const matches = line.matchAll(/\bactiveAgentProfile\b/g);
+    for (const m of matches) {
+      const idx = m.index;
+      const before = line.slice(0, idx);
+      const after = line.slice(idx + 'activeAgentProfile'.length);
+      if (/graphState\.\s*$/.test(before)) continue;
+      if (/^:/.test(after)) continue; // object-literal key form
+      if (/\b(const|let|var|function)\s+$/.test(before)) continue;
+      offences.push(`L${i + 1}: ${line.trim()}`);
+    }
+  }
+  assert.deepEqual(
+    offences, [],
+    `chatExecutionRunner has bare \`activeAgentProfile\` references outside the prepare node ` +
+    `(must route through \`graphState.activeAgentProfile\`):\n${offences.join('\n')}`,
+  );
+});
 
 // ─── MELO_HOME isolation ────────────────────────────────────────────────────
 //
