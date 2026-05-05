@@ -12,15 +12,13 @@
 
 - **Bug 2 — 自定义滚动条跑到 app 最右下（在 composer 下方）**：`.content-scrollbar` 是 `position: absolute; top:14 right:8 bottom:16` 锚在 `.content-shell` 上，而 `.content-shell` 覆盖整块 workspace（含 composer）；但 chat 页面真正的 scroller 是 `.thread-scroll-region`（不含 composer）。**修**：[desktop-ui/app.js](desktop-ui/app.js) `syncContentScrollbar` 里检测 `scroller.classList.contains('thread-scroll-region')`，是的话读 thread 区相对 shell 的 rect 动态写入 bar 的 `top` / `bottom`；非 chat 页 reset 到 CSS 默认。bar 现在恰好覆盖对话内容区，不再延伸到 composer 下方。
 
-- **Bug 3 — 偶发上跳又回弹**：流式输出每个 chunk 让 `_threadSig` 改变 → render 里 `_savedThreadScroll` 只在 `_threadContentUnchanged` 时还原（line 11912）→ 跳过 → DOM 重建 scrollTop = 0 → `syncThreadViewport` 双 rAF（≈33ms）后才推到 `scrollHeight` → 用户看到「闪一下到顶 → 弹回底」。**修**：render 里**无条件**先把 `_savedThreadScroll` 同步还原（gate 在 `_chat?.id === uiState.lastThreadChatId` 防 chat 切换误用旧 offset）。`syncThreadViewport` 仍有最终决定权（auto-follow 时 2 帧后 scrollHeight 覆盖；非 auto 时 lastKnownScrollTop 等于 _savedThreadScroll 无差）。同时清掉了为旧 gate 服务的 `_threadSig` / `_threadContentUnchanged` 死代码。
+- **Bug 3 — 偶发上跳又回弹**：原版 render 里 `_savedThreadScroll` 只在 signature 不变时还原 → 流式 chunk 每次 signature 都变 → DOM 重建 scrollTop=0 → 双 rAF 后才推到 scrollHeight → 用户偶发看到闪烁。**第一次尝试**：render 里**无条件**同步还原 `_savedThreadScroll`（gate 在同一 chat）。**用户实测立即报回归**——拉滚动条到底会被拉回中间位置，「跟他做成一个循环圈」。**根因**：sync-restore 跟 `restoreThreadAnchor`（5 个时间点重试）+ `syncThreadViewport` 的 `lastKnownScrollTop`（滞后 native scroll events）存在三方时序冲突——用户主动拖滚到 24~56px from bottom 区间时，`captureThreadAnchor` 还会捕获中部 anchor 而 `threadAutoFollow` 也开 → 三个 scrollTop writer 互相覆盖 → 用户体感「跳来跳去」。**回退**：恢复原版「signature 不变才同步还原」逻辑，接受「极偶发闪烁」trade-off。这印证了用户 memory 第三条「不要糊弄 follow-up」的反面教训：本来 Bug 3 是「极为偶尔」，硬要一次到位结果引入立刻可复现的回归，比原 bug 严重得多。
 
-**为什么没写测试**：CSS / scroll 视觉行为难单测，本次靠静态 reasoning + 用户实测验收。后续若回归，加 Playwright DOM-rect 断言（thread 区 rect == bar rect）+ scroll signature 监控。
+**回退之后两条仍生效**：Bug 1（链接卡片不再溢出）+ Bug 2（滚动条对齐 thread 区）确认稳定。
 
-**顺手压缩 PROGRESS.md**：发现 archive 区有一段 113 行（line 210-322）从历史压缩遗留下来的重复 block——同一组条目被粘了两次。trim 掉重复后文件从 322 → 209 行，加上本条目 ≈240 行，回到 300 阈值之下。
+**顺手压缩 PROGRESS.md**：发现 archive 区有一段 113 行（line 210-322）从历史压缩遗留下来的重复 block。trim 后从 322 → 209 行。
 
-**Known-limit / 后续候选**：
-- viz-anchor 系统跟新加的「无条件 sync-restore」时序耦合需要观察一段时间；目前 `restoreThreadAnchor` 在 5 个时间点重试（同步 / microtask / RAF×2 / 600ms timeout），任一时间点恢复成功就短路，理论上 robust
-- Bug 3 若持续偶发，下一刀 candidate 是把 `syncThreadViewport` 的双 rAF 改成单 rAF + 明确 fallthrough 保证 scrollTop 永远不进入「= 0 等异步」状态
+**Known-limit**：原版 streaming 时 scrollTop=0 → 双 rAF 闪烁仍存在但「极偶发」（用户原话），强行修引发更严重回归证明本不该动。如果未来真要修，正确路径是先重构 `lastKnownScrollTop` / `pendingVizAnchor` / `_savedThreadScroll` 三个 scrollTop writer 的优先级，而不是再加第四个 writer。
 
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
