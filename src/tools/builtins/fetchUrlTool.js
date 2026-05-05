@@ -12,6 +12,7 @@ import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import { debugWarn } from '../../debug.js';
 import { fetchPageViaPlaywright, isPlaywrightCliAvailable } from '../../web/playwrightFetcher.js';
+import { isSocialLinkUrl, readSocialLink } from './socialLinkTool.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
 const MAX_CONTENT_LENGTH = 20_000; // chars
@@ -167,6 +168,53 @@ export const fetchUrlTool = {
     const normalized = url.trim();
     if (!/^https?:\/\//i.test(normalized)) {
       return { ok: false, output: `URL must start with http:// or https://: ${normalized}`, error: 'INVALID_URL' };
+    }
+
+    // Phase 6 (2026-05-05) early-route: CN/short-form social platforms
+    // (Xiaohongshu, Douyin, xhslink, iesdouyin, v.douyin) bypass the
+    // jina/direct/playwright chain entirely. Those endpoints serve
+    // login walls, JS shells, anti-bot challenges — every hop in the
+    // generic chain wastes the budget and returns shell-only HTML.
+    // The dedicated socialLinkTool tries short-link resolve → yt-dlp
+    // (with config.domainCookies) → OpenGraph fallback. The user can
+    // still pass extract_mode='playwright' explicitly to override
+    // (escape hatch for diagnosis), but auto / direct / jina all
+    // re-route here when the host matches.
+    if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright') {
+      try {
+        const socialBody = await readSocialLink(normalized, { config, signal });
+        if (socialBody) {
+          const truncated = socialBody.length > MAX_CONTENT_LENGTH
+            ? socialBody.slice(0, MAX_CONTENT_LENGTH) + `\n\n[Content truncated at ${MAX_CONTENT_LENGTH} characters]`
+            : socialBody;
+          return {
+            ok: true,
+            output: truncated,
+            metadata: { url: normalized, method: 'social-link', length: truncated.length },
+          };
+        }
+        // social-link miss — fall through to a clear actionable error
+        // (NOT to jina/direct/playwright, which are guaranteed to also
+        // miss and would just burn the budget).
+        return {
+          ok: false,
+          output:
+            `Could not read this social-link URL: ${normalized}\n\n` +
+            `The dedicated extractor (yt-dlp + OpenGraph) returned no usable content. ` +
+            `Common cause: the post requires a login session. Add the host's cookie ` +
+            `string under Customize → Safety → Web-fetch cookies. Hosts to add for ` +
+            `this URL family: xiaohongshu.com, xhslink.com, douyin.com, ` +
+            `iesdouyin.com, v.douyin.com.`,
+          error: 'SOCIAL_LINK_BLOCKED',
+        };
+      } catch (err) {
+        debugWarn('fetch_url', `social-link extractor threw for ${normalized}:`, err?.message || err);
+        return {
+          ok: false,
+          output: `Social-link extractor failed: ${err?.message || err}`,
+          error: 'SOCIAL_LINK_FAILED',
+        };
+      }
     }
 
     // Resolve cookies: explicit param wins, then config.domainCookies

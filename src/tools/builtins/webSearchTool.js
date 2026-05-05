@@ -217,6 +217,15 @@ const BLOCKED_CONTENT_DOMAINS = new Set([
   'instagram.com',
   'twitter.com', 'x.com',
   'tiktok.com',
+  // CN social platforms — same anti-bot shape as TikTok above. Heavy
+  // login walls, JS-only shells. web_search content fetchers waste
+  // their 14s budget on these and always return empty/garbage. Phase 6
+  // (this commit) routes pasted links through socialLinkTool (yt-dlp
+  // + domain cookies + short-link resolve + OpenGraph fallback) — the
+  // ONLY path that actually returns metadata. Search result CARDS still
+  // appear (link discovery is fine); only the body fetch is skipped.
+  'douyin.com', 'v.douyin.com', 'iesdouyin.com',
+  'xiaohongshu.com', 'xhslink.com',
   'linkedin.com',
   'amazon.com', 'amazon.co.jp', 'amazon.co.uk',
   'ebay.com',

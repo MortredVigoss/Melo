@@ -10096,11 +10096,18 @@ function renderDomainCookiesPane() {
 
   return `
     <div class="meta-block-label" style="margin-top: 24px;">Web-fetch cookies</div>
-    <p class="list-row-meta" style="margin-bottom: 12px;">
+    <p class="list-row-meta" style="margin-bottom: 8px;">
       Per-domain Cookie strings sent with web-fetch (fetch_url) and platform extractors
-      (yt-dlp). The list never displays the saved value — only its length + last 6 chars
-      — so session tokens stay out of the rendered DOM. Hostname only (no protocol /
-      no path) — e.g. <code>xiaohongshu.com</code>, <code>douyin.com</code>.
+      (yt-dlp). The list never displays the saved value — only its length + a sha256
+      fingerprint — so session tokens stay out of the rendered DOM. Hostname only
+      (no protocol / no path).
+    </p>
+    <p class="list-row-meta" style="margin-bottom: 12px;">
+      <strong>Recommended hosts to add</strong> (Phase 6 social-link extractor uses
+      these for authenticated reads — without them, posts behind login walls return
+      OpenGraph preview only):<br>
+      <code>xiaohongshu.com</code> · <code>xhslink.com</code> · <code>douyin.com</code>
+      · <code>v.douyin.com</code> · <code>iesdouyin.com</code> · <code>bilibili.com</code>
     </p>
 
     <div class="domain-cookie-form">

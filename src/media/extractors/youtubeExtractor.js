@@ -260,7 +260,12 @@ async function fetchVimeoOembed(url, { signal } = {}) {
  * login-gated access (e.g. Douyin, TikTok region-locked content). Cookies are
  * injected via --add-header, mirroring mediaInfoTool.js.
  */
-async function fetchPlatformMetadataViaYtdlp(url, config, { signal } = {}) {
+// Exported so social-link callers (socialLinkTool — fetch_url early-route
+// for douyin / xiaohongshu / xhslink) can reuse the yt-dlp metadata path
+// without needing to go through the chat-extraction routeExtraction
+// pipeline. Same contract as before — returns {title, uploader, ...} or
+// null if yt-dlp is unavailable / extraction fails.
+export async function fetchPlatformMetadataViaYtdlp(url, config, { signal } = {}) {
   if (signal?.aborted) return null;
   if (!(await hasYtDlp({ signal }))) return null;
 
