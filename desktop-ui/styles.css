@@ -1510,8 +1510,10 @@ select option {
 
 .message-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-content: start;
+  min-width: 0;
 }
 
 .thinking-banner {
@@ -1553,8 +1555,10 @@ select option {
 
 .message {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   max-width: min(760px, 100%);
+  min-width: 0;
 }
 
 .message.user {
@@ -1642,7 +1646,9 @@ select option {
 
 .message-attachments {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  min-width: 0;
 }
 
 .message-attachment-card {
@@ -1988,6 +1994,17 @@ select option {
   padding: 14px 16px;
   color: inherit;
   text-decoration: none;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The unnamed <span> wrapping label + URL is a flex child; without
+   min-width: 0 it refuses to shrink below the URL's intrinsic width and
+   pushes the whole card past the message bubble's right edge. */
+.link-card > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
 }
 
 .link-card-url {
@@ -1995,6 +2012,7 @@ select option {
   margin-top: 4px;
   color: var(--text-soft);
   word-break: break-all;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 

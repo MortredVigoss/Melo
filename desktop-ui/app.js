@@ -11858,19 +11858,10 @@ function render({ background = false } = {}) {
     : null;
   uiState.pendingVizAnchor = _vizAnchor;
 
-  // Compute whether thread content will change this render — if the signature matches the
-  // last rendered signature it's a UI-only render (voice panel, checkbox, etc.) and we must
-  // restore the thread scroll manually (syncThreadViewport returns early for same-signature).
-  // If the signature differs, syncThreadViewport will scroll the thread; don't interfere.
+  // Captured before innerHTML; used below to gate the sync-restore on
+  // "same chat" so a chat switch doesn't briefly position the new thread
+  // at the previous chat's scroll offset.
   const _chat = activeChat();
-  const _threadSig = _chat
-    ? `${_chat.id}:${_chat.messages.length}:${_chat.updatedAt || ''}:${
-        uiState.highlightedMessageId || ''
-      }:${uiState.streamingChatId === _chat.id ? uiState.streamingAssistantText.length : 0}:${
-        uiState.sending && uiState.streamingChatId === _chat.id ? 1 : 0
-      }`
-    : '';
-  const _threadContentUnchanged = _threadSig === uiState.lastThreadScrollSignature;
 
   app.innerHTML = `
     <div class="shell">
@@ -11907,9 +11898,30 @@ function render({ background = false } = {}) {
     }
   }
 
-  // Restore thread scroll only on UI-only renders (same thread signature).
-  // When thread content changed, syncThreadViewport handles scrolling — don't interfere.
-  if (_savedThreadScroll >= 0 && _threadContentUnchanged) {
+  // Sync-restore thread scroll synchronously after innerHTML — including
+  // when the signature changed (streaming chunk appended, message added).
+  //
+  // Why unconditional: signature changes every streaming chunk → if we gate
+  // on `_threadContentUnchanged` the scroller starts at 0 for ~2 frames
+  // until syncThreadViewport's double-rAF re-scrolls to scrollHeight, which
+  // the user perceives as the bug they reported: "极为偶尔往上跳一下又跳回来"
+  // (sporadic jump up then back). Restoring to the previous scrollTop
+  // synchronously hides the intermediate "scrollTop = 0" frame.
+  //
+  // We gate on _chat?.id === uiState.lastThreadChatId so that switching
+  // chats does NOT briefly position the new thread at the previous chat's
+  // scroll offset — for chat switches we want to start at 0 and let
+  // syncThreadViewport's auto-follow snap to bottom.
+  //
+  // syncThreadViewport still has the final say two frames later: when
+  // auto-follow is true it scrolls to scrollHeight (overriding us), and
+  // when auto-follow is false it restores lastKnownScrollTop (which equals
+  // the value we just wrote).
+  if (
+    _savedThreadScroll > 0 &&
+    _chat?.id &&
+    _chat.id === uiState.lastThreadChatId
+  ) {
     const _newThread = document.querySelector('.thread-scroll-region');
     if (_newThread instanceof HTMLElement) {
       _newThread.scrollTop = _savedThreadScroll;
@@ -12006,6 +12018,25 @@ function syncContentScrollbar({ forceVisible = false } = {}) {
     !(thumb instanceof HTMLElement)
   ) {
     return;
+  }
+
+  // Align the bar's vertical extent to whatever the actual scroller is.
+  // On chat pages the scroller is .thread-scroll-region (NOT the page-level
+  // .content-scroll), and the composer sits BELOW the thread region — without
+  // realignment the bar's CSS-default top/bottom (anchored to .content-shell)
+  // makes it run all the way down past the composer to the very bottom of the
+  // app, while the actual scrollable area ends above the composer. On non-chat
+  // pages the scroller fills the shell, so we reset to the static CSS defaults.
+  const shell = scrollbar.parentElement;
+  const isThreadScroller = scroller.classList.contains('thread-scroll-region');
+  if (shell instanceof HTMLElement && isThreadScroller) {
+    const scrollerRect = scroller.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    scrollbar.style.top = `${Math.max(0, scrollerRect.top - shellRect.top)}px`;
+    scrollbar.style.bottom = `${Math.max(0, shellRect.bottom - scrollerRect.bottom)}px`;
+  } else {
+    scrollbar.style.top = '';
+    scrollbar.style.bottom = '';
   }
 
   const maxScroll = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
