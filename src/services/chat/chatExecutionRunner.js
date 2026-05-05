@@ -295,7 +295,9 @@ export async function runChatAgentExecutionGraph({
         // pass through filterMcpToolsForAgent untouched.
         let toolsPrompt = '';
         if (shouldInjectToolsPrompt({ mode: chat.mode })) {
-          const allowedTools = filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile);
+          // prepare scope owns the local `activeAgentProfile` (line 150);
+          // graphState doesn't exist here (only invoke-model gets that).
+          const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           toolsPrompt = buildToolsSystemPrompt([...allowedTools, ...skillTools]);
         }
 

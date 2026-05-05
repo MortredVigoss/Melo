@@ -61,46 +61,63 @@ const RUNNER_SOURCE = readFileSync(join(__dirname_test, 'chatExecutionRunner.js'
 // reference must use `graphState.activeAgentProfile` — a bare
 // reference is a regression. Cheap source-level scan.
 
-test('activeAgentProfile references outside `prepare` must use graphState (Phase 6 scope contract)', () => {
+test('activeAgentProfile references obey scope contract: bare inside prepare, graphState. outside (Phase 6)', () => {
+  // Bidirectional contract:
+  //   • Inside `prepare` — references are LOCAL (declared at line 150).
+  //     They must be the bare form. A `graphState.activeAgentProfile`
+  //     here would throw at runtime because prepare's signature has no
+  //     graphState parameter — that was the regression Codex caught
+  //     when this test only scanned the outside half.
+  //   • Outside prepare (`invoke-model`, `finalize`) — references must
+  //     route through `graphState.activeAgentProfile`. A bare reference
+  //     is the original 2026-04-29 bug ("activeAgentProfile is not
+  //     defined" → providerErrors fallback message).
+  //
+  // Skip in both halves: comments, declaration forms, object-literal
+  // key form `activeAgentProfile:`.
   const lines = RUNNER_SOURCE.split('\n');
   const prepareStart = lines.findIndex(l => /async\s+'prepare'\s*\(/.test(l));
-  // The prepare node's closing brace sits at column 6 (`      },`); we
-  // detect it by finding the first such line at or after prepareStart.
   let prepareEnd = -1;
   for (let i = prepareStart + 1; i < lines.length; i++) {
     if (/^      \},\s*$/.test(lines[i])) { prepareEnd = i; break; }
   }
   assert.ok(prepareStart > 0 && prepareEnd > prepareStart, 'prepare node boundaries must be locatable');
 
-  const offences = [];
+  const outsideOffences = []; // bare references outside prepare
+  const insideOffences = [];  // graphState. references inside prepare
+
   for (let i = 0; i < lines.length; i++) {
-    if (i >= prepareStart && i <= prepareEnd) continue; // prepare owns the local
     const line = lines[i];
     const trimmed = line.trimStart();
     if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
+    const inPrepare = i >= prepareStart && i <= prepareEnd;
 
-    // Find every `activeAgentProfile` token. Skip:
-    //   • `graphState.activeAgentProfile`  — the safe production form
-    //   • `activeAgentProfile:` (object-literal KEY position; the colon
-    //     IMMEDIATELY follows the token, no whitespace, no value-side use)
-    //   • declaration forms `const|let|var|function activeAgentProfile`
-    // Everything else outside the prepare node is a bare read of a
-    // not-in-scope variable — the exact bug the fix closed.
     const matches = line.matchAll(/\bactiveAgentProfile\b/g);
     for (const m of matches) {
       const idx = m.index;
       const before = line.slice(0, idx);
       const after = line.slice(idx + 'activeAgentProfile'.length);
-      if (/graphState\.\s*$/.test(before)) continue;
-      if (/^:/.test(after)) continue; // object-literal key form
+      const usesGraphStatePrefix = /graphState\.\s*$/.test(before);
+      // skip declarations & object-literal-key forms (both halves)
+      if (/^:/.test(after)) continue;
       if (/\b(const|let|var|function)\s+$/.test(before)) continue;
-      offences.push(`L${i + 1}: ${line.trim()}`);
+
+      if (inPrepare && usesGraphStatePrefix) {
+        // prepare has NO graphState param — would throw at runtime.
+        insideOffences.push(`L${i + 1}: ${line.trim()}`);
+      } else if (!inPrepare && !usesGraphStatePrefix) {
+        outsideOffences.push(`L${i + 1}: ${line.trim()}`);
+      }
     }
   }
+
   assert.deepEqual(
-    offences, [],
-    `chatExecutionRunner has bare \`activeAgentProfile\` references outside the prepare node ` +
-    `(must route through \`graphState.activeAgentProfile\`):\n${offences.join('\n')}`,
+    outsideOffences, [],
+    `Outside prepare, every reference must use graphState.activeAgentProfile:\n${outsideOffences.join('\n')}`,
+  );
+  assert.deepEqual(
+    insideOffences, [],
+    `Inside prepare, references must use the LOCAL bare form (no graphState.) — prepare has no graphState param:\n${insideOffences.join('\n')}`,
   );
 });
 
@@ -307,4 +324,52 @@ test('runChatAgentExecutionGraph approval-exit via planExternalConnectorAction',
   assert.ok(result.normalizedReply, 'approval-exit returns a normalizedReply');
   assert.equal(state.approvals.length, 1);
   assert.equal(state.approvals[0].kind, 'external-tool');
+});
+
+test('runChatAgentExecutionGraph: prepare phase smoke — non-approval message must not throw a scope error', async () => {
+  // Codex follow-up (Phase 6 D 评级 2026-05-05): a non-approval message
+  // bypasses the planCommandAction / planExternalConnectorAction
+  // early-exit, so prepare runs through the agent-resolution +
+  // channel-prompt + tool-routing + project-context assembly steps
+  // BEFORE invoke-model is reached. This test catches any scope error
+  // ("activeAgentProfile is not defined" / "Cannot read properties of
+  // undefined (reading 'activeAgentProfile')") thrown anywhere in
+  // prepare's first 295 lines.
+  //
+  // Coverage caveat (honest): prepare's tools-prompt branch at line
+  // 300 is technically reached in production, but in this fixture
+  // earlier prepare stages throw on the unset auth config before line
+  // 300 runs. The static-source contract test above is the primary
+  // defence for line 300+ — combining the two gives bidirectional
+  // coverage (contract = static, this test = dynamic for early prepare).
+  //
+  // Anything model-call-related thrown from invoke-model is fine here
+  // — the assertion is specifically about scope errors.
+  const state = fixtureState();
+  const chat = fixtureChat({ mode: 'chat' });
+  state.chats = [chat];
+
+  let thrown = null;
+  try {
+    await runChatAgentExecutionGraph({
+      config: fixtureConfig,
+      state,
+      chat,
+      workspace: fixtureWorkspace(),
+      connectors: [],
+      skills: [],
+      latestUserMessage: 'just thinking out loud about today',
+      agentId: 'main',
+    });
+  } catch (err) {
+    thrown = err;
+  }
+
+  if (thrown) {
+    assert.doesNotMatch(
+      String(thrown.message || ''),
+      /activeAgentProfile is not defined|Cannot read properties of undefined \(reading ['"]activeAgentProfile['"]\)/,
+      `prepare must not blow up with a scope error on activeAgentProfile (got: ${thrown.message})`,
+    );
+  }
 });
