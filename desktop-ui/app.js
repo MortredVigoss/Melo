@@ -1,6 +1,7 @@
 import {
   renderVizMountHtml,
   mountVizBlocks,
+  isRenderableViz,
 } from './viz/vizRenderer.js';
 import {
   renderInlineSegmentWithCites,
@@ -11861,11 +11862,16 @@ function render({ background = false } = {}) {
   // getBoundingClientRect scan, fighting the user's own scroll gestures
   // ("拖到底跳回中间") and forcing N layout reflows per render at
   // streaming cadence ("帧数明显不对，有卡顿"). User-reported 2026-05-05.
+  // Use the same `isRenderableViz` predicate that renderVizMountHtml uses,
+  // so a chat carrying ONLY legacy/invalid viz metadata (e.g.
+  // `{ type: 'mermaid', source }` from older threads — preserved by the
+  // hydration layer but never producing a real mount) does NOT erroneously
+  // enable the anchor + 5-retry loop. Codex C-grade gate fix 2026-05-05.
   const _chat = activeChat();
   const _chatHasViz = !!(
     _chat &&
     Array.isArray(_chat.messages) &&
-    _chat.messages.some(m => m && m.viz && typeof m.viz === 'object')
+    _chat.messages.some(m => m && isRenderableViz(m.viz))
   );
   const _vizAnchor = _threadScroller instanceof HTMLElement && _chatHasViz
     ? captureThreadAnchor(_threadScroller)

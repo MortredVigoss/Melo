@@ -31,6 +31,14 @@
 
 desktop-ui 153/153 全绿。两个 commit 一起回退/收紧之后 chat 滚动应该回到「拉到底就是底，没卡顿」的预期行为。
 
+**Codex 评 C：scope 判定不精确，需匹配真实可渲染条件**：
+
+第一次 viz-anchor 收紧（`93f056e`）用 `m.viz && typeof === 'object'` 判断「chat 含 viz card」，被 Codex pre-push gate 抓为 C 评级 — `renderVizMountHtml` 的真实判定是 `viz.renderer && RENDERERS[viz.renderer]`，仅靠 viz 是对象不够（hydration 层会保留 legacy `{ type: 'mermaid', source }` 这类不可渲染的元数据）。两条件不一致 → 含 legacy viz 元数据的 chat 仍会错误启用 anchor，回归未根治。
+
+按 Codex 整改意见 + 用户拍板「方案 B」抽共享 helper：[desktop-ui/viz/vizRenderer.js](desktop-ui/viz/vizRenderer.js) 新增 `isRenderableViz(viz)` export（仅检查 `viz.renderer && RENDERERS[viz.renderer]`），renderVizMountHtml 内部和 app.js 的 `_chatHasViz` gate 共用。3 处条件同源，未来加 renderer 一处改。
+
+新增 5 个 test case 覆盖 contract（[desktop-ui/viz/vizRenderer.test.js](desktop-ui/viz/vizRenderer.test.js)）：null/undefined/非对象拒、legacy mermaid metadata 拒、未知 renderer name 拒、所有 supported renderer 接受、最关键的 cross-check「`isRenderableViz === renderVizMountHtml(...) !== ''`」防未来漂移。desktop-ui 全套 179/179 全绿（本批 +5 case）。
+
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
 

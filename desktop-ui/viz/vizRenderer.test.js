@@ -11,6 +11,7 @@ import {
   computeVizSignature,
   renderVizMountHtml,
   listSupportedRenderers,
+  isRenderableViz,
 } from './vizRenderer.js';
 import { VIZ_RENDERER_KEYS } from '../../src/services/viz/vizSpec.js';
 
@@ -97,4 +98,72 @@ test('renderVizMountHtml tags 2D renderers with the flat family', () => {
     params: [{ id: 'v0', min: 0, max: 50, default: 20 }],
   });
   assert.match(html, /data-renderer-family="flat"/);
+});
+
+// ── isRenderableViz: contract that gates the chat-render anchor scope. ──
+//
+// The render() loop calls captureThreadAnchor for every chat that contains
+// a "renderable" viz. If this predicate disagrees with renderVizMountHtml's
+// real condition, then either:
+//   (a) chats with legacy/invalid metadata enable the anchor + 5-retry
+//       restoreThreadAnchor loop for nothing (Codex C-grade gate flagged
+//       this 2026-05-05 — was the original bug), OR
+//   (b) chats with real viz cards skip the anchor and bounce on hydrate.
+// These tests pin the contract so the three call sites can never drift.
+
+test('isRenderableViz: rejects nullish / non-object / empty input', () => {
+  assert.equal(isRenderableViz(null), false);
+  assert.equal(isRenderableViz(undefined), false);
+  assert.equal(isRenderableViz('string'), false);
+  assert.equal(isRenderableViz(42), false);
+  assert.equal(isRenderableViz({}), false);
+});
+
+test('isRenderableViz: rejects legacy metadata that has no renderer field', () => {
+  // Legacy mermaid-style metadata is preserved by the hydration layer
+  // (older threads carry it on assistant messages) but never renders to a
+  // mount. Must NOT count as renderable — otherwise the anchor scope leaks
+  // back to plain text chats and re-introduces the cursor-jump + jank.
+  assert.equal(isRenderableViz({ type: 'mermaid', source: 'graph TD; A-->B' }), false);
+  assert.equal(isRenderableViz({ source: 'foo' }), false);
+});
+
+test('isRenderableViz: rejects unknown renderer names', () => {
+  assert.equal(isRenderableViz({ renderer: 'not-real' }), false);
+  assert.equal(isRenderableViz({ renderer: '' }), false);
+  assert.equal(isRenderableViz({ renderer: null }), false);
+});
+
+test('isRenderableViz: accepts every supported renderer in the registry', () => {
+  listSupportedRenderers().forEach(renderer => {
+    assert.equal(
+      isRenderableViz({ renderer }),
+      true,
+      `renderer ${renderer} should be renderable`,
+    );
+  });
+});
+
+test('isRenderableViz agrees with renderVizMountHtml on every input shape', () => {
+  // Cross-check: renderable === produces non-empty HTML. If these ever
+  // diverge, the anchor scope gate will lie.
+  const samples = [
+    null,
+    undefined,
+    {},
+    { renderer: 'not-real' },
+    { type: 'mermaid', source: 'foo' },
+    { renderer: 'projectile' },
+    { renderer: 'tree', nodes: [] },
+    { renderer: 'globe-flight', origin: { lat: 0, lng: 0 }, destination: { lat: 1, lng: 1 } },
+  ];
+  for (const viz of samples) {
+    const renderable = isRenderableViz(viz);
+    const html = renderVizMountHtml('m', viz);
+    assert.equal(
+      renderable,
+      html !== '',
+      `disagreement on ${JSON.stringify(viz)}: isRenderableViz=${renderable}, html.empty=${html === ''}`,
+    );
+  }
 });

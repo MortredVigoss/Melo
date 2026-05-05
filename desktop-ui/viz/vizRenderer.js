@@ -239,8 +239,19 @@ function rendererFamily(rendererName) {
   return 'flat';
 }
 
+// Single source of truth for "this viz spec will produce a real mount".
+// Three call sites must agree (or the anchor / hydration / mount logic
+// drifts apart): renderVizMountHtml, mountVizBlocks, and the render-time
+// `_chatHasViz` gate that scopes captureThreadAnchor to chats that
+// actually contain a renderable viz card. `viz.renderer` must name a
+// supported family — legacy metadata like `{ type: 'mermaid', source }`
+// never produces a mount and must NOT count as renderable.
+export function isRenderableViz(viz) {
+  return !!(viz && typeof viz === 'object' && viz.renderer && RENDERERS[viz.renderer]);
+}
+
 export function renderVizMountHtml(messageId, viz) {
-  if (!viz || !viz.renderer || !RENDERERS[viz.renderer]) return '';
+  if (!isRenderableViz(viz)) return '';
   const signature = computeVizSignature(viz);
   const safeId = String(messageId || '').replace(/"/g, '');
   const safeRenderer = String(viz.renderer).replace(/[^a-z0-9-]/gi, '');
