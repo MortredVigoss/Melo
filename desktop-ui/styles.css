@@ -402,6 +402,16 @@ button {
   min-height: 0;
 }
 
+/* Chat view: kill the outer scroller entirely. .thread-scroll-region inside
+   the chat thread is the ONLY scroller — no nested-scroller chaining can
+   propagate a scroll out to the page level (root cause of the month-long
+   "拉到底跳到中部" bug — overscroll-behavior alone wasn't enough in
+   WKWebView edge cases). The hidden custom scrollbar's positioning logic
+   reads from .thread-scroll-region so it still tracks correctly. */
+.content-shell.is-chat-view > .content-scroll {
+  overflow: hidden;
+}
+
 .content-scrollbar {
   position: absolute;
   top: 14px;
@@ -1685,6 +1695,17 @@ select option {
   max-height: 440px;
   object-fit: cover;
   background: rgba(0, 0, 0, 0.2);
+  /* Reserve a baseline slot BEFORE the image/video network fetch resolves.
+     Without this, attachment <img>/<video> tags start with intrinsic size
+     0 → message bubble is short → user scrolls past it → image arrives →
+     layout grows by hundreds of pixels above the viewport → scrollTop
+     jumps. min-height (rather than aspect-ratio: 16/10 which would crop
+     screenshots / portraits / squares) lets each media keep its real
+     proportions on load while still preventing the 0-px → final-px jump.
+     Worst case: a tall portrait grows from 240px → 440px, leaving a
+     ~200px shift instead of the previous ~440px. User-reported
+     month-long "拉到底跳到中间", root cause #3 of 3 (2026-05-05). */
+  min-height: 240px;
 }
 
 .media-caption,

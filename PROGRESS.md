@@ -84,6 +84,26 @@ scroll guard ship 之后用户重启实测仍跳，第 5 次反馈：「这么�
 - scroll guard：跟根因无关但独立有价值（typing guard 对称扩展），保留
 - 没有让事情更糟，但也没解决用户问题。这次一行 CSS 才是真修复。
 
+**用户实测 overscroll-behavior 仍不够稳，给出完整四项修复方案**：
+
+`ff2435f` ship 后用户实测仍报「拉到底跳到中间」+「滑动卡顿」。用户给出精准诊断：
+1. WKWebView 对 overscroll-behavior 在 momentum-scroll 边缘场景仍有问题
+2. render() 整页 innerHTML 重建在滚动期间被后台 trigger（autosave / TTS / poll / streaming fallback）打断
+3. 250ms scroll guard 不够覆盖 macOS trackpad momentum (典型 1-2s)
+4. 图片/视频附件没预留尺寸，加载完成时高度从 0 涨到 N → scrollTop 后内容被顶上去
+
+按用户方案做四件事一次性解决：
+
+- **Item 1 — 单 scroller**：[styles.css:.content-shell.is-chat-view > .content-scroll](desktop-ui/styles.css) 加 `overflow: hidden`，[app.js:render](desktop-ui/app.js) 给 chat 视图的 .content-shell 加 `is-chat-view` class。chat 页面只剩 `.thread-scroll-region` 一个 scroller，没有嵌套 → 没有 scroll chaining 失败模式。
+
+- **Item 2 — 加长 scroll guard**：[app.js:SCROLL_GUARD_WINDOW_MS](desktop-ui/app.js) 250ms → 1500ms 覆盖 macOS trackpad momentum 典型 settle。deferred render 仍在用户 idle 后立即 catch-up。
+
+- **Item 3 — 后台 render 改 background:true**：grep + Python 脚本扫出 41 个明确后台触发的 `render()` 调用点（setTimeout / EventSource onmessage / refreshXxx 函数 / .then(applyBootstrap) / 错误清除）。新加 [app.js:bgRender](desktop-ui/app.js#L11786) helper：`bgRender() { return render({ background: true }) }`，41 个调用点全部替换。从此所有非用户主动 render 都过 typing/scroll guard，不会在用户滚动期间打断 momentum。
+
+- **Item 4 — 附件预留尺寸**：[styles.css:.message-image,.message-video](desktop-ui/styles.css) 加 `aspect-ratio: 16 / 10`。图片/视频加载前 placeholder slot 就有最终高度，加载完只是图片像素填进同一 box，scrollHeight 不再变。
+
+desktop-ui 179/179 全绿。这次是用户精准诊断 + 我按方案执行的成果。教训：**用户给出的根因诊断比我自己摸索 5 轮都准**——下次类似复杂 bug 第一时间该问用户「你能描述操作时 viewport 的具体动作吗」「是否能定位是哪个父级容器在动」，而不是闭门造车。
+
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
 

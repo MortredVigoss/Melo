@@ -300,16 +300,14 @@ let deferredRenderPending = false;
 let deferredRenderTimer = 0;
 const TYPING_GUARD_WINDOW_MS = 500;
 const TYPING_GUARD_DEFER_CHECK_MS = 120;
-// Scroll guard window — shorter than typing because scroll cadence is faster
-// (60 Hz event stream during a trackpad swipe vs ~one keystroke per 100ms).
-// 250 ms covers a typical macOS momentum-scroll's settle time after the user
-// releases their fingers. User-reported 2026-05-05: "下来的时候明显帧数不对，
-// 有卡顿 + 跳到这" — root cause was app.innerHTML rebuild during background
-// renders (4 s agent runtime poll, autosave, TTS state) tearing down the
-// .thread-scroll-region element while the browser's native momentum scroll
-// was mid-flight, killing the scroll velocity and forcing the viewport to
-// snap to the saved scrollTop at that instant.
-const SCROLL_GUARD_WINDOW_MS = 250;
+// Scroll guard window — must cover macOS trackpad momentum scroll, which
+// can decay over 1-2 seconds after the user lifts their fingers. The first
+// version used 250 ms (felt right for keyboard cadence), but user-tested
+// 2026-05-05 still saw cut-off mid-momentum because trackpad inertia ran
+// past the window. 1500 ms covers typical momentum settle time without
+// noticeably delaying eventually-needed background renders (deferred
+// renders fire as soon as the user is idle for one tick interval).
+const SCROLL_GUARD_WINDOW_MS = 1500;
 
 function userIsActivelyTyping() {
   if (!lastUserKeystrokeAt) return false;
@@ -2576,7 +2574,7 @@ async function streamApi(path, options = {}) {
 async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}) {
   if (!quiet && !uiState.bootstrap) {
     uiState.loading = true;
-    render();
+    bgRender();
   }
 
   if (quiet) {
@@ -2687,7 +2685,7 @@ function syncSearchFileStream(query = uiState.searchQuery) {
 
     try {
       mergeStreamedFileGroup(JSON.parse(event.data));
-      render();
+      bgRender();
     } catch {}
   });
 
@@ -2701,7 +2699,7 @@ function syncSearchFileStream(query = uiState.searchQuery) {
       activeSearchFileSource.close();
       activeSearchFileSource = null;
     }
-    render();
+    bgRender();
   };
 
   source.addEventListener('done', finish);
@@ -2756,11 +2754,11 @@ function scheduleSearchRefresh() {
 
 function showError(message) {
   uiState.error = message;
-  render();
+  bgRender();
   window.clearTimeout(showError.timer);
   showError.timer = window.setTimeout(() => {
     uiState.error = '';
-    render();
+    bgRender();
   }, 4800);
 }
 
@@ -3634,7 +3632,7 @@ async function handleTranscribeAudio() {
     }
   } catch (err) {
     uiState.error = String(err?.message || 'Transcription failed.');
-    render();
+    bgRender();
     setTimeout(() => { uiState.error = null; render(); }, 4000);
   }
 }
@@ -3929,9 +3927,9 @@ async function handleSendMessage() {
           // Clear completed calls after a short delay so user sees the checkmarks
           setTimeout(() => {
             uiState.activeToolCalls = uiState.activeToolCalls.filter(t => t.status === 'running');
-            render();
+            bgRender();
           }, 1800);
-          render();
+          bgRender();
         }
       },
     });
@@ -4105,11 +4103,11 @@ async function loadMacosVoices() {
     const voices = Array.isArray(result?.voices) ? result.voices : [];
     uiState.ttsMacosVoices = voices;
     uiState.ttsMacosVoicesLoaded = true;
-    render();
+    bgRender();
   } catch {
     uiState.ttsMacosVoices = [];
     uiState.ttsMacosVoicesLoaded = true;  // mark loaded even on failure so we don't retry every panel open
-    render();
+    bgRender();
   }
 }
 
@@ -4785,7 +4783,7 @@ async function handleDeleteArtifact(artifactId) {
         applyBootstrap(restored);
       } catch (err) {
         uiState.error = `Restore failed: ${err?.message || err}`;
-        render();
+        bgRender();
         setTimeout(() => { uiState.error = null; render(); }, 4000);
       }
     },
@@ -4930,7 +4928,7 @@ async function handleUpdateAgentProfile(form) {
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
 
   uiState.agentSaveStates[saveKey] = true;
-  render();
+  bgRender();
 
   try {
     const payload = await api('/api/agents/update', {
@@ -5791,7 +5789,7 @@ function closeCommandPalette() {
   uiState.commandPalette.open = false;
   uiState.commandPalette.query = '';
   uiState.commandPalette.selectedIndex = 0;
-  render();
+  bgRender();
 }
 
 function paletteCommands() {
@@ -6114,7 +6112,7 @@ async function handleComposerCommand() {
   }
 
   uiState.composer = '';
-  render();
+  bgRender();
   return true;
 }
 
@@ -9699,7 +9697,7 @@ async function refreshSkillRunStats() {
   if (uiState.skillRunStats.loading) return;
   uiState.skillRunStats.loading = true;
   uiState.skillRunStats.error = null;
-  render();
+  bgRender();
   try {
     const response = await api('/api/skills/runs/stats');
     uiState.skillRunStats.skills = Array.isArray(response?.skills) ? response.skills : [];
@@ -9708,7 +9706,7 @@ async function refreshSkillRunStats() {
     uiState.skillRunStats.error = err?.message || 'Failed to load skill runs';
   } finally {
     uiState.skillRunStats.loading = false;
-    render();
+    bgRender();
   }
 }
 
@@ -9741,7 +9739,7 @@ async function refreshAdvancedStatus() {
   if (uiState.advanced.loading) return;
   uiState.advanced.loading = true;
   uiState.advanced.error = null;
-  render();
+  bgRender();
   try {
     // Fan out — three independent endpoints, none of which block the
     // others, so a slow one doesn't gate the rest.
@@ -9809,7 +9807,7 @@ async function refreshMemoryStatus() {
   if (uiState.memoryStatus.loading) return;
   uiState.memoryStatus.loading = true;
   uiState.memoryStatus.error = null;
-  render();
+  bgRender();
   try {
     const response = await api('/api/memory/status');
     uiState.memoryStatus.snapshot = response;
@@ -9818,7 +9816,7 @@ async function refreshMemoryStatus() {
     uiState.memoryStatus.error = err?.message || 'Failed to load memory status';
   } finally {
     uiState.memoryStatus.loading = false;
-    render();
+    bgRender();
   }
 }
 
@@ -9832,7 +9830,7 @@ async function refreshSafetyAllowlist() {
   if (uiState.safetyAllowlist.loading) return;
   uiState.safetyAllowlist.loading = true;
   uiState.safetyAllowlist.error = null;
-  render();
+  bgRender();
   try {
     const response = await api('/api/safety/file-allowlist');
     uiState.safetyAllowlist.rules = Array.isArray(response.rules) ? response.rules : [];
@@ -9841,14 +9839,14 @@ async function refreshSafetyAllowlist() {
     uiState.safetyAllowlist.error = err?.message || 'Failed to load safety rules';
   } finally {
     uiState.safetyAllowlist.loading = false;
-    render();
+    bgRender();
   }
 }
 
 async function removeSafetyAllowlistRule(id) {
   if (!id || uiState.safetyAllowlist.pendingRemoveId === id) return;
   uiState.safetyAllowlist.pendingRemoveId = id;
-  render();
+  bgRender();
   try {
     const response = await api('/api/safety/file-allowlist/remove', {
       method: 'POST',
@@ -9876,7 +9874,7 @@ async function refreshDomainCookies() {
   if (uiState.domainCookies.loading) return;
   uiState.domainCookies.loading = true;
   uiState.domainCookies.error = null;
-  render();
+  bgRender();
   try {
     const response = await api('/api/settings/domain-cookies');
     uiState.domainCookies.hosts = Array.isArray(response.hosts) ? response.hosts : [];
@@ -9885,7 +9883,7 @@ async function refreshDomainCookies() {
     uiState.domainCookies.error = err?.message || 'Failed to load cookies';
   } finally {
     uiState.domainCookies.loading = false;
-    render();
+    bgRender();
   }
 }
 
@@ -9895,12 +9893,12 @@ async function upsertDomainCookie() {
   const cookieString = String(uiState.domainCookies.addCookie || '').trim();
   if (!host) {
     uiState.domainCookies.addError = 'Host is required.';
-    render();
+    bgRender();
     return;
   }
   if (!cookieString) {
     uiState.domainCookies.addError = 'Cookie string is required.';
-    render();
+    bgRender();
     return;
   }
   uiState.domainCookies.addInFlight = true;
@@ -10303,7 +10301,7 @@ async function refreshSkillMarkdown(skillId) {
   const current = uiState.skillMarkdown[skillId] || {};
   if (current.loading) return;
   uiState.skillMarkdown[skillId] = { ...current, loading: true, error: null };
-  render();
+  bgRender();
   try {
     const response = await api(`/api/skills/export?id=${encodeURIComponent(skillId)}`);
     uiState.skillMarkdown[skillId] = {
@@ -10319,7 +10317,7 @@ async function refreshSkillMarkdown(skillId) {
       error: err?.message || 'Failed to load SKILL.md',
     };
   } finally {
-    render();
+    bgRender();
   }
 }
 
@@ -11785,6 +11783,16 @@ function restoreThreadAnchor(anchor) {
   return true;
 }
 
+// Helper for non-user-initiated renders — refresh polls, EventSource pushes,
+// fetch().then() chains, error-toast clearance setTimeouts, etc. Goes through
+// the typing/scroll guards so a backend update can't tear down the scroller
+// while the user has finger inertia in flight. User-initiated paths
+// (click handlers, form submits, keyboard shortcuts) keep calling bare
+// `render()` so they get immediate feedback.
+function bgRender(opts = {}) {
+  return render({ ...opts, background: true });
+}
+
 function render({ background = false } = {}) {
   if (uiState.loading && !uiState.bootstrap) {
     app.innerHTML = '<div class="loading-state">Launching Melo Desktop...</div>';
@@ -11920,12 +11928,20 @@ function render({ background = false } = {}) {
     : '';
   const _threadContentUnchanged = _threadSig === uiState.lastThreadScrollSignature;
 
+  // Single-scroller mode for chat view: when the active page is .is-chat,
+  // the page-level .content-scroll is set to overflow:hidden so the only
+  // scroller is .thread-scroll-region. Two nested scrollers were the root
+  // cause of the month-long "拉到底跳到中间" — even with overscroll-behavior
+  // set on the inner scroller, WKWebView still occasionally chained scroll
+  // to the outer one in some momentum-scroll edge cases. Removing the
+  // outer scroller from the equation eliminates the entire failure mode.
+  const _isChatView = uiState.bootstrap?.settings?.activeView === 'chat';
   app.innerHTML = `
     <div class="shell">
       ${renderSidebar()}
       <div class="workspace">
         ${renderTopbar()}
-        <div class="content-shell">
+        <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           <main class="content-scroll">${renderPage()}</main>
           <div class="content-scrollbar" aria-hidden="true">
             <div class="content-scrollbar-thumb"></div>
@@ -12667,7 +12683,7 @@ document.addEventListener('click', async event => {
             setTimeout(() => {
               if (uiState.skillMarkdown[id]) {
                 uiState.skillMarkdown[id] = { ...uiState.skillMarkdown[id], copyToast: null };
-                render();
+                bgRender();
               }
             }, 1500);
           } catch (err) {
