@@ -100,7 +100,7 @@ scroll guard ship 之后用户重启实测仍跳，第 5 次反馈：「这么�
 
 - **Item 3 — 后台 render 改 background:true**：grep + Python 脚本扫出 41 个明确后台触发的 `render()` 调用点（setTimeout / EventSource onmessage / refreshXxx 函数 / .then(applyBootstrap) / 错误清除）。新加 [app.js:bgRender](desktop-ui/app.js#L11786) helper：`bgRender() { return render({ background: true }) }`，41 个调用点全部替换。从此所有非用户主动 render 都过 typing/scroll guard，不会在用户滚动期间打断 momentum。
 
-- **Item 4 — 附件预留尺寸**：[styles.css:.message-image,.message-video](desktop-ui/styles.css) 加 `aspect-ratio: 16 / 10`。图片/视频加载前 placeholder slot 就有最终高度，加载完只是图片像素填进同一 box，scrollHeight 不再变。
+- **Item 4 — 附件预留尺寸**：[styles.css:.message-image,.message-video](desktop-ui/styles.css) 加 `min-height: 240px`。图片/视频加载前 placeholder slot 就有 240px 基线高度，加载完按真实比例填进 max-height: 440px box（不裁切），scrollHeight 跳变从 ~440px 缩小到最坏 ~200px。第一版尝试 `aspect-ratio: 16/10` 被 Codex P0 抓——会把截图/竖图/方图强制裁切成 16:10——改 min-height 占位保留真实比例。
 
 desktop-ui 179/179 全绿。这次是用户精准诊断 + 我按方案执行的成果。教训：**用户给出的根因诊断比我自己摸索 5 轮都准**——下次类似复杂 bug 第一时间该问用户「你能描述操作时 viewport 的具体动作吗」「是否能定位是哪个父级容器在动」，而不是闭门造车。
 

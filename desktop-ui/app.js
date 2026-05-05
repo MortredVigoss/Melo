@@ -11928,14 +11928,22 @@ function render({ background = false } = {}) {
     : '';
   const _threadContentUnchanged = _threadSig === uiState.lastThreadScrollSignature;
 
-  // Single-scroller mode for chat view: when the active page is .is-chat,
-  // the page-level .content-scroll is set to overflow:hidden so the only
-  // scroller is .thread-scroll-region. Two nested scrollers were the root
-  // cause of the month-long "拉到底跳到中间" — even with overscroll-behavior
-  // set on the inner scroller, WKWebView still occasionally chained scroll
-  // to the outer one in some momentum-scroll edge cases. Removing the
-  // outer scroller from the equation eliminates the entire failure mode.
-  const _isChatView = uiState.bootstrap?.settings?.activeView === 'chat';
+  // Single-scroller mode for chat view: when the active page is .is-chat
+  // AND there's an active chat thread (i.e. .thread-scroll-region is the
+  // inner scroller), the page-level .content-scroll is set to
+  // overflow:hidden so the only scroller is .thread-scroll-region. Two
+  // nested scrollers were the root cause of the month-long "拉到底跳到中间"
+  // — even with overscroll-behavior set on the inner scroller, WKWebView
+  // still occasionally chained scroll to the outer one in some
+  // momentum-scroll edge cases. Removing the outer scroller from the
+  // equation eliminates the entire failure mode.
+  //
+  // The empty chat-home view (greeting + composer, no thread) does NOT get
+  // is-chat-view because there's no inner scroller — disabling the outer
+  // one too would clip the home content on short windows / when composer
+  // grows multi-line. Codex P1 follow-up 2026-05-05.
+  const _isChatView =
+    uiState.bootstrap?.settings?.activeView === 'chat' && !!_chat;
   app.innerHTML = `
     <div class="shell">
       ${renderSidebar()}
