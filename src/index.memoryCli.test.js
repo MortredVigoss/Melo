@@ -130,6 +130,118 @@ test('memory <unknown subcommand> throws a helpful error', async () => {
 // and the auto-warn hint that fires when the resolved home has no
 // store but a sibling .tmp/melo-home-user does.
 
+// ── parseMemoryArgs unit tests (Codex C follow-up: P0 sub ordering) ──
+//
+// Pin the contract that --home is accepted at ANY position. Pre-fix
+// the parser read sub=args[0] before stripping --home, so
+// `melo memory --home /p status` parsed sub='--home'. These tests
+// pin the new normalizer so a regression to "first arg is sub"
+// lights up red.
+
+test('parseMemoryArgs: --home BEFORE subcommand → sub=status, home=path', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  const out = parseMemoryArgs(['--home', '/tmp/x', 'status']);
+  assert.equal(out.sub, 'status');
+  assert.equal(out.home, '/tmp/x');
+  assert.deepEqual([...out.flags], []);
+});
+
+test('parseMemoryArgs: --home AFTER subcommand → also works', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  const out = parseMemoryArgs(['status', '--home', '/tmp/y']);
+  assert.equal(out.sub, 'status');
+  assert.equal(out.home, '/tmp/y');
+});
+
+test('parseMemoryArgs: --home BETWEEN subcommand and flags → also works', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  const out = parseMemoryArgs(['status', '--home', '/tmp/z', '--json']);
+  assert.equal(out.sub, 'status');
+  assert.equal(out.home, '/tmp/z');
+  assert.ok(out.flags.has('--json'));
+});
+
+test('parseMemoryArgs: --home --json → throws because --json looks like a flag, not a path', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  assert.throws(
+    () => parseMemoryArgs(['status', '--home', '--json']),
+    /looks like a flag/,
+  );
+});
+
+test('parseMemoryArgs: --home with no value → throws', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  assert.throws(
+    () => parseMemoryArgs(['status', '--home']),
+    /requires a path argument/,
+  );
+});
+
+test('parseMemoryArgs: --home=/literal/--dash → accepts flag-looking path via = form', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  const out = parseMemoryArgs(['status', '--home=/literal/--dash']);
+  assert.equal(out.sub, 'status');
+  assert.equal(out.home, '/literal/--dash');
+});
+
+test('parseMemoryArgs: duplicate --home throws', async () => {
+  const { parseMemoryArgs } = await import('./index.js');
+  assert.throws(
+    () => parseMemoryArgs(['--home', '/a', 'status', '--home', '/b']),
+    /may only be specified once/,
+  );
+});
+
+// ── auto-warn hint goes to stderr, not stdout (Codex ⚪ P2 follow-up) ──
+
+test('auto-warn hint when project has melo-home-user but resolved home is empty → goes to stderr, --json stdout stays parseable', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const { DatabaseSync } = await import('node:sqlite');
+  // Build a project root with a populated .tmp/melo-home-user store.
+  const projectRoot = await mkdtemp(join(tmpdir(), 'melo-mem-projroot-'));
+  try {
+    const meloHomeUser = join(projectRoot, '.tmp', 'melo-home-user', 'desktop');
+    await mkdir(meloHomeUser, { recursive: true });
+    const seed = new DatabaseSync(join(meloHomeUser, 'store.sqlite'));
+    try {
+      seed.exec(`
+        CREATE TABLE memories (id TEXT PRIMARY KEY, kind TEXT, metadata_json TEXT);
+        CREATE TABLE memories_fts (rowid INTEGER PRIMARY KEY);
+        CREATE TABLE vec_memories (id TEXT);
+        CREATE TABLE embedding_cache (key TEXT);
+        INSERT INTO memories(id, kind, metadata_json) VALUES ('a','frame','{}');
+      `);
+    } finally { seed.close(); }
+
+    // Default MELO_HOME (the override env var) points at an empty dir
+    // so the hint's gate ("resolvedHome has no store") fires.
+    const emptyHome = await mkdtemp(join(tmpdir(), 'melo-mem-empty-'));
+    try {
+      const { stdout, stderr } = await execFileP(
+        process.execPath, [ENTRY, 'memory', 'status', '--json'],
+        {
+          // CWD is the project root — this is what makes the upward walk
+          // find .tmp/melo-home-user. PRE-Phase-F-followup the warning
+          // went to stdout and broke JSON.parse here.
+          cwd: projectRoot,
+          env: { PATH: process.env.PATH, MELO_HOME: emptyHome },
+          timeout: 20_000,
+        },
+      );
+      // Hint must appear on stderr.
+      assert.match(stderr, /\.tmp\/melo-home-user/, 'hint must mention the discovered desktop home');
+      assert.match(stderr, /--home/, 'hint must point user at --home flag');
+      // stdout must still parse as JSON despite the hint.
+      const parsed = JSON.parse(stdout);
+      assert.ok(parsed.snapshot, 'stdout JSON must remain parseable');
+    } finally {
+      await rm(emptyHome, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
 test('--home flag overrides MELO_HOME and queries the override path', async () => {
   const { mkdir } = await import('node:fs/promises');
   const { DatabaseSync } = await import('node:sqlite');

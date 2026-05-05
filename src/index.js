@@ -294,9 +294,82 @@ function fmtBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-async function runMemoryCommand(args) {
-  const sub = args[0];
-  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') {
+// Phase F follow-up (Codex 🔴 C 评级 2026-05-05): single-pass normalizer
+// for `melo memory` args. Pulling --home as a global before the
+// subcommand fixes (a) `melo memory --home <p> status` parsing as
+// subcommand=--home, and (b) `--home --json` silently consuming --json
+// as a path. Returns { sub, flags: Set, home: string|null }.
+//
+// Contract:
+//   - `--home <value>` accepted ANY position (before sub, after sub,
+//     between flags). Only one occurrence; second --home throws.
+//   - The value MUST NOT begin with `--` — that's the "next flag"
+//     guard. Documented as such; users wanting a literal `--something`
+//     path can use `--home=/--literal/path` form, also supported.
+//   - Boolean flags (`--json`, `--full`) collected into the Set.
+//   - First non-flag arg is the subcommand.
+export function parseMemoryArgs(rawArgs) {
+  const flags = new Set();
+  let sub = null;
+  let home = null;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i];
+    if (arg === '--home' || arg === '-H') {
+      if (home !== null) {
+        throw new Error('`--home` may only be specified once.');
+      }
+      const value = rawArgs[i + 1];
+      if (value === undefined) {
+        throw new Error('`--home` requires a path argument.');
+      }
+      if (value.startsWith('--') || value.startsWith('-')) {
+        throw new Error(
+          `\`--home\` requires a path argument, got "${value}" which looks like a flag. ` +
+          `Use --home=<path> if your path actually starts with a dash.`,
+        );
+      }
+      home = value;
+      i += 1;
+      continue;
+    }
+    // Long-form `--home=/path` — works for paths that start with `-`.
+    if (arg.startsWith('--home=')) {
+      if (home !== null) {
+        throw new Error('`--home` may only be specified once.');
+      }
+      const value = arg.slice('--home='.length);
+      if (!value) {
+        throw new Error('`--home=` requires a non-empty path.');
+      }
+      home = value;
+      continue;
+    }
+    if (arg.startsWith('--') || arg.startsWith('-')) {
+      flags.add(arg);
+      continue;
+    }
+    if (sub === null) {
+      sub = arg;
+      continue;
+    }
+    // Extra positional — keep as-is in flags so the subcommand handler
+    // can decide; current subcommands take no positionals so this is
+    // effectively unused, but avoids silently dropping data.
+    flags.add(arg);
+  }
+  return { sub, flags, home };
+}
+
+async function runMemoryCommand(rawArgs) {
+  let parsed;
+  try {
+    parsed = parseMemoryArgs(rawArgs);
+  } catch (err) {
+    throw err;
+  }
+  const { sub, flags, home } = parsed;
+
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h' || flags.has('--help') || flags.has('-h')) {
     output.write(
       [
         'melo memory <subcommand>',
@@ -305,7 +378,7 @@ async function runMemoryCommand(args) {
         '  status              Print memory-store snapshot + tier distribution',
         '  consolidate         Run a dreaming sweep now',
         '',
-        'Flags:',
+        'Flags (any position):',
         '  --json              Emit raw JSON instead of formatted text',
         '  --full              (consolidate only) Run a full sweep, not incremental',
         '  --home <path>       Override MELO_HOME for this invocation. Required when',
@@ -313,36 +386,27 @@ async function runMemoryCommand(args) {
         '                      wrapper sets MELO_HOME to projectDir/.tmp/melo-home-user',
         '                      so a shell-launched `melo memory status` queries the',
         '                      wrong store unless --home is passed.',
+        '                      Use --home=<path> form if your path begins with `-`.',
         '',
       ].join('\n'),
     );
     return;
   }
-  // Pull --home off args so it doesn't get treated as a flag-set member.
-  // Phase F (2026-05-05): closes the diagnostic gap that made the
-  // entire Phase E audit look broken — `melo memory status` from a
-  // shell defaulted to ~/.melo while the desktop app's data lived
-  // under projectDir/.tmp/melo-home-user. Setting MELO_HOME here
-  // re-runs every downstream resolver (getMeloHome, collectMemoryStatus,
-  // memory store path) against the override.
-  const homeIdx = args.indexOf('--home');
-  if (homeIdx >= 0) {
-    const homeArg = args[homeIdx + 1];
-    if (!homeArg) {
-      throw new Error('`--home` requires a path argument.');
-    }
-    process.env.MELO_HOME = homeArg;
-    args = [...args.slice(0, homeIdx), ...args.slice(homeIdx + 2)];
+
+  if (home) {
+    // Setting MELO_HOME here re-runs every downstream resolver
+    // (getMeloHome, collectMemoryStatus, memory store path) against
+    // the override before the subcommand handler imports them.
+    process.env.MELO_HOME = home;
   } else {
-    // Fallback auto-detect: when the user invokes `melo memory ...` from
-    // the project root and the default home looks empty (or doesn't
-    // exist) but `./.tmp/melo-home-user/desktop/store.sqlite` does, hint
-    // that the desktop app is using a different home. Don't auto-switch
-    // — that would mask MELO_HOME mistakes the user actually wants to
-    // see; just print a one-line hint.
+    // Auto-detect hint when the user invokes `melo memory ...` from a
+    // project root whose default home looks empty but
+    // `./.tmp/melo-home-user/desktop/store.sqlite` does exist. Just
+    // prints to stderr — does NOT auto-switch (that would mask
+    // genuine MELO_HOME mistakes). See maybeWarnDifferentHome.
     await maybeWarnDifferentHome();
   }
-  const flags = new Set(args.slice(1));
+
   if (sub === 'status') {
     await runMemoryStatusCommand({ json: flags.has('--json') });
     return;
