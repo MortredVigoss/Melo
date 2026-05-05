@@ -118,7 +118,7 @@ test('readSocialLink: rejects non-social URL with null', async () => {
   assert.equal(out, null);
 });
 
-test('readSocialLink: yt-dlp success → renders title + uploader + description', async () => {
+test('readSocialLink: yt-dlp success → returns {body, via:"yt-dlp", canonicalUrl}', async () => {
   const ytdlpFn = async () => ({
     title: '猫猫的日常',
     uploader: '橘子君',
@@ -132,47 +132,112 @@ test('readSocialLink: yt-dlp success → renders title + uploader + description'
     platform: 'douyin',
   });
   const out = await readSocialLink('https://www.douyin.com/video/123', { ytdlpFn });
-  assert.match(out, /猫猫的日常/);
-  assert.match(out, /by 橘子君/);
-  assert.match(out, /Views 1234/);
-  assert.match(out, /Source: https:\/\/www\.douyin\.com\/video\/123/);
+  assert.equal(out.via, 'yt-dlp');
+  assert.equal(out.canonicalUrl, 'https://www.douyin.com/video/123');
+  assert.match(out.body, /猫猫的日常/);
+  assert.match(out.body, /by 橘子君/);
+  assert.match(out.body, /Views 1234/);
+  assert.match(out.body, /Source: https:\/\/www\.douyin\.com\/video\/123/);
 });
 
-test('readSocialLink: yt-dlp returns null → falls through (will hit OG path or return null)', async () => {
-  // No real network — this should reach the OG step which will fail
-  // (or succeed if the test happens to be online; either way no
-  // exception). Either case, no throw.
+test('readSocialLink: yt-dlp returns null → falls through (no exception, returns null or OG hit)', async () => {
   const out = await readSocialLink(
     'https://www.xiaohongshu.com/explore/this-id-does-not-exist-12345',
     { ytdlpFn: async () => null, signal: AbortSignal.timeout(500) },
   );
-  // Test asserts only that the call doesn't throw and returns either
-  // a string (OG hit, unlikely on a fake URL) or null.
-  assert.ok(out === null || typeof out === 'string');
+  assert.ok(out === null || (typeof out === 'object' && typeof out.body === 'string'));
 });
 
-test('readSocialLink: yt-dlp throws → caught, falls through to OG (no exception bubbles)', async () => {
+test('readSocialLink: yt-dlp throws → caught, no exception bubbles', async () => {
   const ytdlpFn = async () => { throw new Error('yt-dlp not installed in this env'); };
-  // Use a hostname that won't actually resolve so the OG fetch also
-  // fails fast. The only thing under test is "yt-dlp throw doesn't
-  // crash readSocialLink".
   const out = await readSocialLink(
     'https://xiaohongshu.com/explore/test',
     { ytdlpFn, signal: AbortSignal.timeout(500) },
   );
-  assert.ok(out === null || typeof out === 'string');
+  assert.ok(out === null || (typeof out === 'object' && typeof out.body === 'string'));
 });
 
 // ── Render output structure ────────────────────────────────────────────
 
 test('readSocialLink: yt-dlp result without optional fields still renders', async () => {
-  // Bare-minimum metadata: only title. Confirm renderer doesn't crash
-  // on missing uploader / description / counts.
   const ytdlpFn = async () => ({ title: 'Bare Title' });
   const out = await readSocialLink('https://xiaohongshu.com/explore/x', { ytdlpFn });
-  assert.match(out, /Bare Title/);
-  assert.match(out, /Source: https:\/\/xiaohongshu\.com\/explore\/x/);
-  // Should NOT contain stat / uploader markers when those fields absent.
-  assert.equal(out.includes('Views '), false);
-  assert.equal(out.includes('by undefined'), false);
+  assert.equal(out.via, 'yt-dlp');
+  assert.match(out.body, /Bare Title/);
+  assert.match(out.body, /Source: https:\/\/xiaohongshu\.com\/explore\/x/);
+  assert.equal(out.body.includes('Views '), false);
+  assert.equal(out.body.includes('by undefined'), false);
+});
+
+// ── Explicit cookies threading (Codex 🔵 P0 2026-05-05) ───────────────
+
+test('readSocialLink: explicitCookies overrides config.domainCookies for the canonical host', async () => {
+  // Capture what config the ytdlp fn actually receives. Pre-fix the
+  // explicitCookies parameter was silently dropped — this test would
+  // catch the regression.
+  let capturedConfig = null;
+  const ytdlpFn = async (url, cfg) => {
+    capturedConfig = cfg;
+    return { title: 'irrelevant' };
+  };
+  const baseConfig = {
+    domainCookies: {
+      'douyin.com': 'old=stale',  // should be overridden
+      'other.com': 'unrelated=keep',  // should survive
+    },
+  };
+  await readSocialLink('https://www.douyin.com/video/abc', {
+    config: baseConfig,
+    explicitCookies: 'fresh=value',
+    ytdlpFn,
+  });
+  assert.ok(capturedConfig?.domainCookies, 'ytdlp must receive a domainCookies map');
+  assert.equal(
+    capturedConfig.domainCookies['douyin.com'],
+    'fresh=value',
+    'explicit cookies must override the config entry for the canonical host',
+  );
+  assert.equal(
+    capturedConfig.domainCookies['other.com'],
+    'unrelated=keep',
+    'unrelated host entries must survive the merge',
+  );
+});
+
+test('readSocialLink: no explicitCookies → config.domainCookies passes through unchanged', async () => {
+  let capturedConfig = null;
+  const ytdlpFn = async (url, cfg) => {
+    capturedConfig = cfg;
+    return { title: 'irrelevant' };
+  };
+  const baseConfig = { domainCookies: { 'douyin.com': 'session=abc' } };
+  await readSocialLink('https://www.douyin.com/video/abc', {
+    config: baseConfig,
+    ytdlpFn,
+  });
+  assert.equal(capturedConfig.domainCookies['douyin.com'], 'session=abc',
+    'config cookie must reach yt-dlp when no explicit override given');
+});
+
+test('readSocialLink: explicitCookies binds to canonical host, NOT shortener host', async () => {
+  // Since resolveShortLink may not actually follow xhslink in test env
+  // (no live network), we use a non-shortener URL to avoid the
+  // resolution branch and assert the merge keys on the input host
+  // directly. The shortener-canonical case is covered by
+  // resolveShortLink unit tests above — all this test pins is "merge
+  // keys on whatever resolveShortLink returned, not on a separate host
+  // computed from input".
+  let capturedConfig = null;
+  const ytdlpFn = async (url, cfg) => {
+    capturedConfig = cfg;
+    return { title: 't' };
+  };
+  await readSocialLink('https://www.xiaohongshu.com/explore/abc', {
+    config: { domainCookies: {} },
+    explicitCookies: 'sess=z',
+    ytdlpFn,
+  });
+  // Must bind to xiaohongshu.com (the canonical host) — not www.xiaohongshu.com
+  // (hostnameOf strips the www. prefix).
+  assert.equal(capturedConfig.domainCookies['xiaohongshu.com'], 'sess=z');
 });

@@ -250,10 +250,53 @@ function renderOpenGraphBody(og, url) {
 }
 
 /**
- * Top-level read: try each strategy in order and return the first
- * non-empty result. Returns null when all strategies missed.
+ * Build a per-call config that merges the caller's explicit cookie
+ * string into config.domainCookies, keyed under the canonical host
+ * (post-short-link resolve). This honours fetch_url's "explicit cookies
+ * wins, then config.domainCookies" contract — the explicit value
+ * overrides whatever the global config has for that host.
+ *
+ * Codex follow-up (Phase 6 🔵 P0 2026-05-05): the previous version
+ * silently dropped the caller's cookies parameter. fetch_url's other
+ * code paths (direct / jina) honour the explicit cookies; the social
+ * route now matches.
  */
-export async function readSocialLink(url, { config = {}, signal, ytdlpFn = fetchPlatformMetadataViaYtdlp } = {}) {
+function configWithExplicitCookie(config, canonicalUrl, explicitCookies) {
+  if (!explicitCookies || typeof explicitCookies !== 'string') {
+    return config || {};
+  }
+  const host = hostnameOf(canonicalUrl);
+  if (!host) return config || {};
+  const baseCookies = (config?.domainCookies && typeof config.domainCookies === 'object')
+    ? config.domainCookies
+    : {};
+  return {
+    ...(config || {}),
+    domainCookies: { ...baseCookies, [host]: explicitCookies },
+  };
+}
+
+/**
+ * Top-level read: try each strategy in order and return the first
+ * non-empty result.
+ *
+ * Return shape:
+ *   { body: string, via: 'yt-dlp' | 'opengraph', canonicalUrl: string }
+ *   on success; null when every strategy missed. The structured shape
+ *   replaces the prior bare-string return so callers can record which
+ *   sub-strategy succeeded (Phase 6 follow-up — fetch_url uses this in
+ *   meta.via to distinguish a yt-dlp-rich body from an OG-only stub).
+ *
+ * Honours an optional `explicitCookies` string — bound to the
+ * canonical host post-resolveShortLink. Any cookie set under
+ * config.domainCookies for the same host is overridden for this call.
+ */
+export async function readSocialLink(url, {
+  config = {},
+  explicitCookies = '',
+  signal,
+  ytdlpFn = fetchPlatformMetadataViaYtdlp,
+} = {}) {
   if (!isSocialLinkUrl(url)) return null;
 
   // Step 1 — short-link resolve.
@@ -264,13 +307,21 @@ export async function readSocialLink(url, { config = {}, signal, ytdlpFn = fetch
     canonical = url;
   }
 
+  // Build the effective config now that we know the canonical host —
+  // explicit cookies bind to the resolved host, not the shortener.
+  const effectiveConfig = configWithExplicitCookie(config, canonical, explicitCookies);
+
   // Step 2 — yt-dlp metadata. The injected ytdlpFn lets unit tests
   // exercise the rendering / fallback logic without invoking the real
   // yt-dlp binary.
   try {
-    const meta = await ytdlpFn(canonical, config, { signal });
+    const meta = await ytdlpFn(canonical, effectiveConfig, { signal });
     if (meta && (meta.title || meta.description || meta.subtitleText)) {
-      return renderYtdlpBody(meta, canonical);
+      return {
+        body: renderYtdlpBody(meta, canonical),
+        via: 'yt-dlp',
+        canonicalUrl: canonical,
+      };
     }
   } catch {
     // Fall through to OG.
@@ -283,7 +334,11 @@ export async function readSocialLink(url, { config = {}, signal, ytdlpFn = fetch
     if (html) {
       const og = parseOpenGraph(html);
       if (og.title || og.description) {
-        return renderOpenGraphBody(og, canonical);
+        return {
+          body: renderOpenGraphBody(og, canonical),
+          via: 'opengraph',
+          canonicalUrl: canonical,
+        };
       }
     }
   } catch {

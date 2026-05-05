@@ -180,17 +180,43 @@ export const fetchUrlTool = {
     // still pass extract_mode='playwright' explicitly to override
     // (escape hatch for diagnosis), but auto / direct / jina all
     // re-route here when the host matches.
+    //
+    // Phase 6 follow-up (Codex 🔵 P0 2026-05-05):
+    //   • Honour the explicit `cookies` param — fetch_url's existing
+    //     contract is "explicit cookies wins, then config.domainCookies".
+    //     We now thread the explicit cookie string into a per-call config
+    //     overlay so socialLinkTool's yt-dlp branch picks it up. The
+    //     overlay binds to the CANONICAL host (post-short-link resolve),
+    //     so a user-provided xiaohongshu.com cookie hits xhslink.com →
+    //     xiaohongshu.com correctly.
+    //   • Return shape: success uses `meta` (matches the legacy
+    //     fetch_url contract at the bottom of run()), NOT `metadata`.
     if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright') {
       try {
-        const socialBody = await readSocialLink(normalized, { config, signal });
-        if (socialBody) {
-          const truncated = socialBody.length > MAX_CONTENT_LENGTH
-            ? socialBody.slice(0, MAX_CONTENT_LENGTH) + `\n\n[Content truncated at ${MAX_CONTENT_LENGTH} characters]`
-            : socialBody;
+        const explicitCookies = (cookies && String(cookies).trim()) || '';
+        const socialResult = await readSocialLink(normalized, {
+          config,
+          explicitCookies,
+          signal,
+        });
+        if (socialResult?.body) {
+          const body = socialResult.body;
+          const truncated = body.length > MAX_CONTENT_LENGTH
+            ? body.slice(0, MAX_CONTENT_LENGTH) + `\n\n[Content truncated at ${MAX_CONTENT_LENGTH} characters]`
+            : body;
           return {
             ok: true,
             output: truncated,
-            metadata: { url: normalized, method: 'social-link', length: truncated.length },
+            meta: {
+              url: normalized,
+              method: 'social-link',
+              length: truncated.length,
+              // socialResult.via lets the caller see which sub-strategy
+              // succeeded — 'yt-dlp' / 'opengraph' — useful for
+              // debugging extractor health without re-running.
+              via: socialResult.via,
+              canonicalUrl: socialResult.canonicalUrl,
+            },
           };
         }
         // social-link miss — fall through to a clear actionable error
