@@ -160,7 +160,7 @@ export const fetchUrlTool = {
     { url: 'https://docs.python.org/3/library/json.html', extract_mode: 'jina' },
   ],
 
-  async run({ url, extract_mode = 'auto', cookies }, { signal, config } = {}) {
+  async run({ url, extract_mode = 'auto', cookies }, { signal, config, _readSocialLink } = {}) {
     // Basic URL validation
     if (!url || typeof url !== 'string') {
       return { ok: false, output: 'Missing or invalid url parameter.', error: 'INVALID_URL' };
@@ -194,7 +194,12 @@ export const fetchUrlTool = {
     if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright') {
       try {
         const explicitCookies = (cookies && String(cookies).trim()) || '';
-        const socialResult = await readSocialLink(normalized, {
+        // _readSocialLink is a test seam — production callers never set
+        // it. Lets unit tests inject a controlled reader so success-shape
+        // assertions don't have to wrestle with the live yt-dlp binary
+        // or external network. Codex Phase 6 follow-up (⚪ P2 2026-05-05).
+        const reader = typeof _readSocialLink === 'function' ? _readSocialLink : readSocialLink;
+        const socialResult = await reader(normalized, {
           config,
           explicitCookies,
           signal,

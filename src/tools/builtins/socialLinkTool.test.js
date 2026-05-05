@@ -241,31 +241,32 @@ test('readSocialLink: yt-dlp throws AbortError → does NOT continue to OG fallb
   // Codex caught: yt-dlp aborting was treated as a regular error and
   // OG fallback would still run, blowing the budget by another 8s.
   // Post-fix: AbortError-from-yt-dlp short-circuits the whole call.
+  //
+  // Codex round-2 follow-up (⚪ P2 2026-05-05): pre-aborting the
+  // signal short-circuits at the entry gate before yt-dlp is ever
+  // called — the test never exercised the catch branch the fix lives
+  // in. Now we let the signal stay live and have ytdlpFn itself throw
+  // AbortError on first call. The catch branch should classify this
+  // as "abort" and skip OG.
   let ogCalled = false;
   const ytdlpFn = async () => {
     const err = new Error('aborted');
     err.name = 'AbortError';
     throw err;
   };
-  // Hijack global fetch ONLY for the duration of this test so we can
-  // detect whether the OG fallback's fetchHtmlBody fired.
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     ogCalled = true;
     return new Response('<title>should not see</title>', { status: 200 });
   };
   try {
-    const ac = new AbortController();
-    ac.abort();
     const out = await readSocialLink('https://www.douyin.com/video/abc', {
-      signal: ac.signal,
-      ytdlpFn,
+      ytdlpFn, // signal stays live; ytdlpFn itself throws AbortError
     });
-    assert.equal(out, null);
-    // Even more important: the OG fallback's fetchHtmlBody must NOT
-    // have been called. Pre-fix this would have been true.
+    assert.equal(out, null,
+      'AbortError from ytdlp must short-circuit to null (no OG)');
     assert.equal(ogCalled, false,
-      'OG fallback must not run when yt-dlp aborted');
+      'OG fallback must not run when yt-dlp threw AbortError');
   } finally {
     globalThis.fetch = originalFetch;
   }

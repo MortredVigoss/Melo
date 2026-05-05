@@ -89,43 +89,63 @@ import { isSocialLinkUrl as _verifyExportSurface } from './socialLinkTool.js';
 void _verifyExportSurface; // silence unused-import — referenced via dynamic mock below
 
 test('fetch_url social-route success returns shape with `meta` key (legacy contract)', async () => {
-  // Codex Phase 6 follow-up (⚪ P2 2026-05-05): the previous version
-  // used a real social URL + AbortSignal.timeout(500), so the SOCIAL_
-  // LINK_BLOCKED branch usually fired and the success-shape assertion
-  // never actually exercised the success branch. Now we hijack global
-  // fetch so the OG fallback ALWAYS hits a controlled response, then
-  // assert the success branch's exact shape.
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
-    '<meta property="og:title" content="Test Post Title" />' +
-    '<meta property="og:description" content="Stable test desc" />',
-    { status: 200, headers: { 'content-type': 'text/html' } },
+  // Codex Phase 6 follow-up (⚪ P2 round 2 2026-05-05): the previous
+  // version mocked globalThis.fetch but production-path went through
+  // hard-coded yt-dlp first — installed yt-dlp + slow network →
+  // possibly aborted before OG fallback → flaky.
+  // Now use the `_readSocialLink` ctx test seam to inject a controlled
+  // stub reader that returns a known {body, via, canonicalUrl}. No
+  // network, no yt-dlp, no flake.
+  const stubReader = async (url, opts) => ({
+    body: 'Test Post Title\n\nA stable description\n\nSource: https://canonical.example.com/post',
+    via: 'opengraph',
+    canonicalUrl: 'https://canonical.example.com/post',
+  });
+  const result = await fetchUrlTool.run(
+    { url: 'https://www.xiaohongshu.com/explore/stable-shape-pin' },
+    { signal: AbortSignal.timeout(5000), config: {}, _readSocialLink: stubReader },
   );
-  try {
-    const result = await fetchUrlTool.run(
-      { url: 'https://www.xiaohongshu.com/explore/stable-shape-pin' },
-      { signal: AbortSignal.timeout(5000), config: {} },
-    );
-    assert.equal(result.ok, true, 'OG fallback must produce a success result');
-    assert.equal(result.metadata, undefined,
-      'success result must NOT use the regressed `metadata` key');
-    assert.ok(result.meta, 'success result must include `meta` (legacy contract)');
-    assert.equal(result.meta.method, 'social-link');
-    assert.equal(result.meta.via, 'opengraph');
-    assert.ok(result.meta.url, 'meta.url must reflect the input URL');
-    assert.ok(result.meta.canonicalUrl, 'meta.canonicalUrl must reflect the resolved URL');
-    assert.match(result.output, /Test Post Title/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert.equal(result.ok, true, 'success branch must fire when stub returns a body');
+  assert.equal(result.metadata, undefined,
+    'success result must NOT use the regressed `metadata` key');
+  assert.ok(result.meta, 'success result must include `meta` (legacy contract)');
+  assert.equal(result.meta.method, 'social-link');
+  assert.equal(result.meta.via, 'opengraph');
+  assert.equal(result.meta.url, 'https://www.xiaohongshu.com/explore/stable-shape-pin');
+  assert.equal(result.meta.canonicalUrl, 'https://canonical.example.com/post');
+  assert.match(result.output, /Test Post Title/);
+});
+
+test('fetch_url social-route propagates explicit cookies + canonical config to the reader', async () => {
+  // Bonus pin via the same test seam: confirm the cookies parameter
+  // and config object both make it into readSocialLink's opts.
+  let captured = null;
+  const stubReader = async (url, opts) => {
+    captured = { url, opts };
+    return { body: 'Body', via: 'yt-dlp', canonicalUrl: url };
+  };
+  await fetchUrlTool.run(
+    { url: 'https://www.douyin.com/video/abc', cookies: 'session=xyz' },
+    {
+      config: { domainCookies: { 'other.com': 'unrelated=keep' } },
+      _readSocialLink: stubReader,
+    },
+  );
+  assert.equal(captured.opts.explicitCookies, 'session=xyz',
+    'explicit cookies parameter must reach readSocialLink');
+  assert.equal(captured.opts.config?.domainCookies?.['other.com'], 'unrelated=keep',
+    'config.domainCookies must be passed through unmodified to the reader');
 });
 
 test('fetch_url source threads explicit cookies into the social-link reader', () => {
   // Source-level contract pin: the early-route block must pass an
   // `explicitCookies` field built from the `cookies` parameter. A
   // refactor that drops that wiring re-introduces the silent-drop bug.
+  // (After Phase 6 round-2: the call site uses an indirect `reader`
+  // variable so the test seam can swap it; pin the explicitCookies
+  // field shape rather than the literal callee name.)
   assert.match(TOOL_SOURCE, /explicitCookies\s*[:=]\s*\(?cookies/);
-  assert.match(TOOL_SOURCE, /readSocialLink\(\s*normalized\s*,\s*\{[\s\S]*?explicitCookies/);
+  assert.match(TOOL_SOURCE, /reader\(\s*normalized\s*,\s*\{[\s\S]*?explicitCookies/);
 });
 
 test('fetch_url social success metadata shape matches legacy contract (meta.method, not metadata.method)', () => {
