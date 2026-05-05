@@ -121,6 +121,75 @@ test('memory <unknown subcommand> throws a helpful error', async () => {
   );
 });
 
+// ── --home flag + auto-warn hint (Phase F home-resolution gap) ──────
+//
+// The desktop app sets MELO_HOME to projectDir/.tmp/melo-home-user,
+// not ~/.melo. A shell-launched `melo memory status` without --home
+// would query the wrong store and report empty data while the real
+// production store has thousands of rows. Pin both the flag override
+// and the auto-warn hint that fires when the resolved home has no
+// store but a sibling .tmp/melo-home-user does.
+
+test('--home flag overrides MELO_HOME and queries the override path', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const { DatabaseSync } = await import('node:sqlite');
+  const overrideHome = await mkdtemp(join(tmpdir(), 'melo-mem-override-'));
+  await mkdir(join(overrideHome, 'desktop'), { recursive: true });
+  const overrideStorePath = join(overrideHome, 'desktop', 'store.sqlite');
+  const seed = new DatabaseSync(overrideStorePath);
+  try {
+    seed.exec(`
+      CREATE TABLE memories (id TEXT PRIMARY KEY, kind TEXT, metadata_json TEXT);
+      CREATE TABLE memories_fts (rowid INTEGER PRIMARY KEY);
+      CREATE TABLE vec_memories (id TEXT);
+      CREATE TABLE embedding_cache (key TEXT);
+      INSERT INTO memories(id, kind, metadata_json) VALUES
+        ('a','frame','{"attic":"hot"}'),
+        ('b','scene','{"attic":"warm"}');
+    `);
+  } finally {
+    seed.close();
+  }
+
+  // Default MELO_HOME (the per-test fresh dir) has no data; --home
+  // points at the override which does. The CLI must follow --home and
+  // report the override's rows, not the default's empty state.
+  const defaultHome = await mkdtemp(join(tmpdir(), 'melo-mem-default-'));
+  try {
+    const { stdout } = await execFileP(
+      process.execPath,
+      [ENTRY, 'memory', 'status', '--home', overrideHome, '--json'],
+      {
+        env: { PATH: process.env.PATH, MELO_HOME: defaultHome },
+        timeout: 20_000,
+      },
+    );
+    const parsed = JSON.parse(stdout);
+    assert.ok(
+      parsed.snapshot.meloHome === overrideHome,
+      `meloHome must reflect --home override (got: ${parsed.snapshot.meloHome})`,
+    );
+    assert.equal(parsed.snapshot.byKind.frame, 1);
+    assert.equal(parsed.snapshot.byKind.scene, 1);
+  } finally {
+    await rm(overrideHome, { recursive: true, force: true });
+    await rm(defaultHome, { recursive: true, force: true });
+  }
+});
+
+test('--home without value throws helpful error', async () => {
+  await assert.rejects(
+    runMeloCli(['memory', 'status', '--home']),
+    err => /--home.*requires a path/.test(err.stdout || err.stderr || err.message),
+  );
+});
+
+test('memory help banner includes --home flag', async () => {
+  const { stdout } = await runMeloCli(['memory', 'help']);
+  assert.match(stdout, /--home/, 'help text must document --home');
+  assert.match(stdout, /melo-home-user/, 'help text must mention the desktop wrapper home path');
+});
+
 // ── F2 — no-write side-effects on a real store (Codex 🔴 P0) ─────────
 //
 // Spin up a populated store inside a temp MELO_HOME, run `memory status`

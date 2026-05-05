@@ -308,10 +308,39 @@ async function runMemoryCommand(args) {
         'Flags:',
         '  --json              Emit raw JSON instead of formatted text',
         '  --full              (consolidate only) Run a full sweep, not incremental',
+        '  --home <path>       Override MELO_HOME for this invocation. Required when',
+        '                      the desktop app uses a non-default home — the Swift',
+        '                      wrapper sets MELO_HOME to projectDir/.tmp/melo-home-user',
+        '                      so a shell-launched `melo memory status` queries the',
+        '                      wrong store unless --home is passed.',
         '',
       ].join('\n'),
     );
     return;
+  }
+  // Pull --home off args so it doesn't get treated as a flag-set member.
+  // Phase F (2026-05-05): closes the diagnostic gap that made the
+  // entire Phase E audit look broken — `melo memory status` from a
+  // shell defaulted to ~/.melo while the desktop app's data lived
+  // under projectDir/.tmp/melo-home-user. Setting MELO_HOME here
+  // re-runs every downstream resolver (getMeloHome, collectMemoryStatus,
+  // memory store path) against the override.
+  const homeIdx = args.indexOf('--home');
+  if (homeIdx >= 0) {
+    const homeArg = args[homeIdx + 1];
+    if (!homeArg) {
+      throw new Error('`--home` requires a path argument.');
+    }
+    process.env.MELO_HOME = homeArg;
+    args = [...args.slice(0, homeIdx), ...args.slice(homeIdx + 2)];
+  } else {
+    // Fallback auto-detect: when the user invokes `melo memory ...` from
+    // the project root and the default home looks empty (or doesn't
+    // exist) but `./.tmp/melo-home-user/desktop/store.sqlite` does, hint
+    // that the desktop app is using a different home. Don't auto-switch
+    // — that would mask MELO_HOME mistakes the user actually wants to
+    // see; just print a one-line hint.
+    await maybeWarnDifferentHome();
   }
   const flags = new Set(args.slice(1));
   if (sub === 'status') {
@@ -328,6 +357,40 @@ async function runMemoryCommand(args) {
   throw new Error(
     `Unknown memory subcommand: "${sub}". Run \`melo memory help\` for a list.`,
   );
+}
+
+async function maybeWarnDifferentHome() {
+  // Walk up from cwd looking for a project root that ships
+  // `.tmp/melo-home-user/desktop/store.sqlite` (the desktop wrapper's
+  // runtime home — see desktop-app/main.swift). If that path exists AND
+  // the resolved MELO_HOME doesn't have a store.sqlite, surface a hint
+  // pointing the user at --home.
+  //
+  // Hint goes to STDERR, not stdout — `melo memory status --json` must
+  // stay parseable for any pipe consumer (cron / dashboards / tests).
+  const { existsSync } = await import('node:fs');
+  const { dirname, join: pathJoin } = await import('node:path');
+  const { getMeloHome: resolveMeloHome } = await import('./config.js');
+  const resolvedHome = resolveMeloHome();
+  const resolvedStore = pathJoin(resolvedHome, 'desktop', 'store.sqlite');
+  if (existsSync(resolvedStore)) return; // resolved home has data — nothing to warn
+
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) { // walk up at most 6 levels
+    const candidate = pathJoin(dir, '.tmp', 'melo-home-user', 'desktop', 'store.sqlite');
+    if (existsSync(candidate)) {
+      process.stderr.write(
+        `note: resolved MELO_HOME=${resolvedHome} has no store.sqlite, but\n` +
+        `      ${pathJoin(dir, '.tmp/melo-home-user')} does. The Melo desktop\n` +
+        `      app stores data there. Re-run with --home ${pathJoin(dir, '.tmp/melo-home-user')}\n` +
+        `      to inspect that store, or set MELO_HOME explicitly.\n\n`,
+      );
+      return;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
 }
 
 async function runMemoryStatusCommand({ json = false } = {}) {
