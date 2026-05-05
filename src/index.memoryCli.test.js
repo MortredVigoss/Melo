@@ -83,8 +83,11 @@ test('memory status --json on a fresh MELO_HOME emits parseable JSON with expect
   assert.equal(typeof parsed.snapshot.meloHome, 'string');
   assert.equal(parsed.snapshot.store.exists, false);
   assert.equal(parsed.snapshot.counts.memories, null);
-  // stats is null when the store doesn't exist (we skip memoryStats() call).
-  assert.equal(parsed.stats, null);
+  // F2: byKind / byAttic land on the snapshot (readonly path), no
+  // separate `stats` key. Empty when store doesn't exist.
+  assert.deepEqual(parsed.snapshot.byKind, {});
+  assert.deepEqual(parsed.snapshot.byAttic, {});
+  assert.equal(parsed.stats, undefined, 'no separate stats key — readonly path consolidates everything onto snapshot');
 });
 
 test('memory consolidate when MELO_DREAMING_ENABLED=0 → skipped:disabled message', async () => {
@@ -116,4 +119,65 @@ test('memory <unknown subcommand> throws a helpful error', async () => {
     runMeloCli(['memory', 'wat']),
     err => /Unknown memory subcommand/.test(err.stdout || err.stderr || err.message),
   );
+});
+
+// ── F2 — no-write side-effects on a real store (Codex 🔴 P0) ─────────
+//
+// Spin up a populated store inside a temp MELO_HOME, run `memory status`
+// against it twice, and assert no `store.sqlite-wal` / `store.sqlite-shm`
+// files appear. Pre-F2 the CLI went through getDb() which runs PRAGMA
+// journal_mode = WAL on every open — turning a "read-only status check"
+// into a side-effecting open of the user's production memory store.
+
+test('memory status against a real existing store does NOT create WAL/SHM files', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const { existsSync } = await import('node:fs');
+  const meloHome = await mkdtemp(join(tmpdir(), 'melo-mem-cli-real-'));
+  const desktop = join(meloHome, 'desktop');
+  await mkdir(desktop, { recursive: true });
+  const storePath = join(desktop, 'store.sqlite');
+  // Seed a real SQLite file with the minimum schema collectMemoryStatus
+  // touches. We don't need full melo schema — just `memories` /
+  // `memories_fts` / `vec_memories` / `embedding_cache` tables so the
+  // safeCount + by-kind / by-attic queries succeed (or no-op cleanly).
+  // The point of the test is the NO-WAL invariant, not the row counts.
+  const { DatabaseSync } = await import('node:sqlite');
+  const seed = new DatabaseSync(storePath);
+  try {
+    seed.exec(`
+      CREATE TABLE memories (id TEXT PRIMARY KEY, kind TEXT, metadata_json TEXT);
+      CREATE TABLE memories_fts (rowid INTEGER PRIMARY KEY);
+      CREATE TABLE vec_memories (id TEXT);
+      CREATE TABLE embedding_cache (key TEXT);
+      INSERT INTO memories(id, kind, metadata_json) VALUES
+        ('a','fact','{"attic":"hot"}'),
+        ('b','prompt','{"attic":"warm"}'),
+        ('c','prompt','{}');
+    `);
+  } finally {
+    seed.close();
+  }
+  // Run status twice; pre-F2 each open would create WAL/SHM.
+  for (let i = 0; i < 2; i++) {
+    const { stdout } = await execFileP(process.execPath, [ENTRY, 'memory', 'status', '--json'], {
+      env: { PATH: process.env.PATH, MELO_HOME: meloHome },
+      timeout: 20_000,
+    });
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.snapshot.store.exists, true);
+    // F2 invariant: byKind / byAttic populated from readonly handle.
+    assert.equal(parsed.snapshot.byKind.fact, 1);
+    assert.equal(parsed.snapshot.byKind.prompt, 2);
+    assert.equal(parsed.snapshot.byAttic.hot, 1);
+    assert.equal(parsed.snapshot.byAttic.warm, 1);
+    assert.equal(parsed.snapshot.byAttic.none, 1, 'attic-less rows bucket as "none"');
+  }
+
+  // The actual write-side-effect assertion. Pre-F2 these would exist.
+  assert.equal(existsSync(`${storePath}-wal`), false,
+    'memory status MUST NOT create a WAL file on the production store');
+  assert.equal(existsSync(`${storePath}-shm`), false,
+    'memory status MUST NOT create a SHM file on the production store');
+
+  await rm(meloHome, { recursive: true, force: true });
 });

@@ -72,6 +72,8 @@ export const MEMORY_STATUS_SCHEMA_VERSION = 1;
  *   store: { path: string, exists: boolean, sizeBytes: number | null, openError?: string },
  *   meta: Record<string, string> | null,
  *   counts: { memories: number|null, memoriesFts: number|null, vecMemories: number|null, embeddingCache: number|null },
+ *   byKind: Record<string, number>,
+ *   byAttic: Record<string, number>,
  *   dreams: { dir: string, latest: { name: string, mtimeMs: number, path: string } | null, count: number },
  *   embedding: { provider: string, cacheRows: number|null, dimsConfigured: number, storedModelId: string|null, drift: { stored: string|null, inferredProvider: string|null, hasDrift: boolean } },
  *   tuning: { mmrLambda: number, recencyHalfLifeDays: number },
@@ -93,6 +95,17 @@ export function collectMemoryStatus() {
       vecMemories: null,
       embeddingCache: null,
     },
+    // Phase E follow-up (Codex 🔴 P0 2026-05-05): byKind / byAttic used
+    // to come from store.memoryStats(), which goes through the writable
+    // getDb() singleton and runs `PRAGMA journal_mode = WAL` at open
+    // time — turning a "read-only status" command into a write side
+    // effect (creates store.sqlite-wal / -shm files, modifies schema
+    // PRAGMAs). collectMemoryStatus already opens a readOnly handle for
+    // counts; the cheapest fix is to run the by-kind / by-attic queries
+    // on that same handle. Empty objects = "store didn't exist or query
+    // failed", same convention as `counts`.
+    byKind: {},
+    byAttic: {},
     dreams: { dir: dreamsDir, latest: null, count: 0 },
     embedding: {
       provider: process.env.MELO_EMBED_PROVIDER || '(default)',
@@ -126,6 +139,23 @@ export function collectMemoryStatus() {
         vecMemories: safeCount(db, 'SELECT COUNT(*) AS n FROM vec_memories'),
         embeddingCache: safeCount(db, 'SELECT COUNT(*) AS n FROM embedding_cache'),
       };
+      // by-kind / by-attic — same readonly connection, no PRAGMA writes.
+      // json_extract is part of stock SQLite and works in readonly mode.
+      try {
+        const kindRows = db.prepare(
+          `SELECT kind, COUNT(*) AS n FROM memories GROUP BY kind`,
+        ).all();
+        snapshot.byKind = Object.fromEntries(kindRows.map(r => [r.kind, r.n]));
+      } catch { /* noop — leaves {} */ }
+      try {
+        const atticRows = db.prepare(
+          `SELECT json_extract(metadata_json, '$.attic') AS attic, COUNT(*) AS n
+             FROM memories GROUP BY attic`,
+        ).all();
+        snapshot.byAttic = Object.fromEntries(
+          atticRows.map(r => [r.attic || 'none', r.n]),
+        );
+      } catch { /* noop — leaves {} */ }
       snapshot.embedding.cacheRows = snapshot.counts.embeddingCache;
       const storedModelId = snapshot.meta?.embedding_model_id || null;
       snapshot.embedding.storedModelId = storedModelId;

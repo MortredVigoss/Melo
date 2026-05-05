@@ -106,6 +106,45 @@ test('MELO_DEBUG_MEMORY=1 + chat with ≥3 messages → log shows frame/scene co
   });
 });
 
+test('MELO_DEBUG_MEMORY=1 + no ctx.storePath → diagnostic prints resolved path with (default) tag', async () => {
+  // Codex follow-up (Phase E 🟡 P2 2026-05-05): the original placeholder
+  // "(default MELO_HOME)" hid exactly the problem this diagnostic
+  // exists to surface (multiple MELO_HOMEs reading/writing different
+  // store files). Pin the resolved path so a regression to the
+  // placeholder lights up red.
+  await withTempEnv(async (dir) => {
+    process.env.MELO_DEBUG_MEMORY = '1';
+    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-h1`);
+    const lines = captureConsoleLog(() => {
+      syncMemoryStoreSnapshot({ chats: [] });
+    });
+    const log = lines.find(l => l.includes('[memory.snapshot]'));
+    assert.ok(log);
+    // Path must be present + carry the (default) tag so the operator
+    // knows this is the env-resolved path, not a ctx override.
+    assert.match(log, /storePath=.+\/desktop\/store\.sqlite \(default\)/,
+      'diagnostic must show the actual resolved store path with (default) tag');
+    // The path must specifically resolve through the test's MELO_HOME.
+    assert.ok(log.includes(dir),
+      'resolved path must reflect the current MELO_HOME, not a stale value');
+  });
+});
+
+test('MELO_DEBUG_MEMORY=1 + ctx.storePath provided → diagnostic prints (ctx) tag', async () => {
+  await withTempEnv(async (dir) => {
+    process.env.MELO_DEBUG_MEMORY = '1';
+    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-h2`);
+    const explicit = `${dir}/some/other/store.sqlite`;
+    const lines = captureConsoleLog(() => {
+      syncMemoryStoreSnapshot({ chats: [] }, { ctx: { storePath: explicit } });
+    });
+    const log = lines.find(l => l.includes('[memory.snapshot]'));
+    assert.ok(log);
+    assert.ok(log.includes(`storePath=${explicit} (ctx)`),
+      'diagnostic must mark caller-supplied storePath with (ctx) tag');
+  });
+});
+
 test('MELO_DEBUG_MEMORY=1 + chat with <3 messages → eligibleChats=0 and no frame/scene', async () => {
   await withTempEnv(async () => {
     process.env.MELO_DEBUG_MEMORY = '1';

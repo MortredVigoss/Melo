@@ -333,24 +333,17 @@ async function runMemoryCommand(args) {
 async function runMemoryStatusCommand({ json = false } = {}) {
   const { collectMemoryStatus } = await import('./memory/status.js');
   const snapshot = collectMemoryStatus();
-  // memoryStats() needs a writable DB connection — only call when the
-  // store actually exists, otherwise the import-time getDb() open would
-  // create an empty db at the resolved path with side effects.
-  let stats = null;
-  if (snapshot.store.exists) {
-    try {
-      const { memoryStats } = await import('./memory/store.js');
-      stats = memoryStats();
-    } catch (err) {
-      // Best-effort — fall through with stats=null. The snapshot itself
-      // already covers the bulk of useful info even without it.
-      // eslint-disable-next-line no-console
-      console.warn(`memoryStats() failed: ${err?.message || err}`);
-    }
-  }
+  // Phase E follow-up (Codex 🔴 P0 2026-05-05): byKind / byAttic now
+  // come from the snapshot's readOnly DB handle. The previous
+  // implementation called store.memoryStats() which goes through the
+  // writable getDb() singleton — that ran `PRAGMA journal_mode = WAL`
+  // on a "read-only status" command and produced store.sqlite-wal /
+  // -shm files in the user's MELO_HOME on every status check. The
+  // collectMemoryStatus path opens with `{ readOnly: true }` and never
+  // writes a PRAGMA.
 
   if (json) {
-    output.write(JSON.stringify({ snapshot, stats }, null, 2) + '\n');
+    output.write(JSON.stringify({ snapshot }, null, 2) + '\n');
     return;
   }
 
@@ -371,9 +364,9 @@ async function runMemoryStatusCommand({ json = false } = {}) {
   output.write(`  vec_memories   ${snapshot.counts.vecMemories ?? '—'}\n`);
   output.write(`  embed_cache    ${snapshot.counts.embeddingCache ?? '—'}\n`);
 
-  if (stats) {
+  if (snapshot.store.exists) {
     output.write('\nBy kind:\n');
-    const byKind = stats.byKind || {};
+    const byKind = snapshot.byKind || {};
     if (!Object.keys(byKind).length) {
       output.write('  (no rows yet)\n');
     } else {
@@ -382,7 +375,7 @@ async function runMemoryStatusCommand({ json = false } = {}) {
       }
     }
     output.write('\nBy attic level (Hot / Warm / Cold):\n');
-    const byAttic = stats.byAttic || {};
+    const byAttic = snapshot.byAttic || {};
     if (!Object.keys(byAttic).length) {
       output.write('  (no rows yet)\n');
     } else {
@@ -390,7 +383,6 @@ async function runMemoryStatusCommand({ json = false } = {}) {
         output.write(`  ${String(level).padEnd(14)} ${n}\n`);
       }
     }
-    output.write(`\nVector index    ${stats.vecAvailable ? `${stats.vecIndexedCount} rows (vec0 loaded)` : 'not loaded'}\n`);
   }
 
   output.write(`\nDreams dir      ${snapshot.dreams.dir}\n`);

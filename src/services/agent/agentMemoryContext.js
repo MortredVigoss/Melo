@@ -147,6 +147,7 @@ export function buildAgentMemoryNodeContext({
   const tieredRecallEnabled = process.env.MELO_MEMORY_TIERS_RECALL === '1';
   let tieredScenes = [];
   let tieredFrames = [];
+  let tieredFacts = [];
   let promptHistory = [];
   if (tieredRecallEnabled) {
     try {
@@ -162,11 +163,21 @@ export function buildAgentMemoryNodeContext({
       tieredFrames = (tiered?.frames || []).filter(entry =>
         !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
       );
-      // Tiered contents replace the flat prompt query. Filter on chat id
-      // identically to preserve the legacy contract for downstream blocks.
-      promptHistory = (tiered?.contents || []).filter(entry =>
+      // Codex follow-up (Phase E 🔵 P1 2026-05-05): recallMemoriesTiered's
+      // `contents` tier covers BOTH `kind === 'prompt'` and `kind === 'fact'`
+      // (see store.js:1782 `kind IN ('prompt','fact')`). The pre-tier path
+      // in this function fed promptHistory ONLY from a `kinds: ['prompt']`
+      // query, with facts handled separately via speakerFacts. Letting
+      // facts flow into the "Prompt memory nodes" block silently changes
+      // that contract and double-renders facts (once via speakerFacts,
+      // once mislabelled as prompt). Split the tier output here so the
+      // semantics match downstream block names. Facts get their own
+      // "Recalled fact nodes (tiered)" block below.
+      const filteredContents = (tiered?.contents || []).filter(entry =>
         !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
       );
+      promptHistory = filteredContents.filter(entry => entry?.kind === 'prompt');
+      tieredFacts = filteredContents.filter(entry => entry?.kind === 'fact');
     } catch (err) {
       // Fall back to flat recall on any tiered-path failure — never let
       // the new code path break the prompt block when something edge-case
@@ -349,6 +360,19 @@ export function buildAgentMemoryNodeContext({
     markUsed(promptHistory);
     blocks.push(
       `Prompt memory nodes:\n${promptHistory
+        .map(entry => `- ${normalizeConversationSnippet(entry.text, 180)}`)
+        .join('\n')}`,
+    );
+  }
+
+  // Phase E (G2): tiered fact tier. Distinct from speakerFacts (which is
+  // per-speaker namespace) — these are facts surfaced via the chat /
+  // project / agent namespaces by the scene/frame anchored ANN search.
+  // Empty when MELO_MEMORY_TIERS_RECALL is off.
+  if (tieredFacts.length) {
+    markUsed(tieredFacts);
+    blocks.push(
+      `Recalled fact nodes (tiered):\n${tieredFacts
         .map(entry => `- ${normalizeConversationSnippet(entry.text, 180)}`)
         .join('\n')}`,
     );

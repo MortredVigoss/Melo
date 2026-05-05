@@ -22,6 +22,8 @@
 // from desktopStore.js — only the `export` keyword + a file header
 // were added.
 
+import { join } from 'node:path';
+import { getMeloHome } from '../config.js';
 import {
   replaceMemories,
 } from '../memory/store.js';
@@ -507,7 +509,17 @@ export function syncMemoryStoreSnapshot(state, { ctx } = {}) {
       const eligibleChats = Array.isArray(state?.chats)
         ? state.chats.filter(c => Array.isArray(c?.messages) && c.messages.length >= 3).length
         : 0;
-      const storePath = ctx?.storePath || '(default MELO_HOME)';
+      // Codex follow-up (Phase E 🟡 P2 2026-05-05): print the resolved
+      // storePath even when the caller didn't pass ctx.storePath. The
+      // earlier "(default MELO_HOME)" placeholder hid exactly the
+      // problem this diagnostic exists to surface — multiple MELO_HOMEs
+      // pointing at unrelated stores. Resolve via getMeloHome() and
+      // tag the result with `(default)` vs `(ctx)` so the operator
+      // can spot when their interactive `melo memory status` is reading
+      // a different file than saveState is writing.
+      const storePath = ctx?.storePath
+        ? `${ctx.storePath} (ctx)`
+        : `${join(getMeloHome(), 'desktop', 'store.sqlite')} (default)`;
       const summary = Object.entries(byKind).map(([k, n]) => `${k}=${n}`).join(' ') || '(empty)';
       // eslint-disable-next-line no-console
       console.log(

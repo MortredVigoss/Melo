@@ -165,6 +165,111 @@ test('tiered gate ON → scene + frame blocks rendered above prompt block', asyn
   });
 });
 
+test('tiered gate ON with prompt + fact contents → fact rendered as separate "Recalled fact nodes" block, NOT mixed into prompt block', async () => {
+  // Codex follow-up (Phase E G2 🔵 P1 2026-05-05): recallMemoriesTiered
+  // returns `kind IN ('prompt','fact')` in its `contents` tier. The
+  // legacy promptHistory call only queried kind='prompt'. Letting fact
+  // rows flow into "Prompt memory nodes" silently changes that
+  // semantic + double-renders facts (also visible in speakerFacts).
+  // Pin the split: facts get their own block, prompts only carry kind=prompt.
+  await withTempMeloHome(async () => {
+    process.env.MELO_MEMORY_TIERS_RECALL = '1';
+    const { replaceMemories } = await import(`../../memory/store.js?cb=${Date.now()}-d0`);
+    replaceMemories([
+      // Scene + frame anchor so tiered recall has a hierarchy.
+      {
+        id: 'scene:chat-1:s1', namespace: 'chat:chat-1', kind: 'scene',
+        sourceId: 'chat-1', text: 'Project arc summary.',
+        createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+        metadata: { sceneId: 's1', chatId: 'chat-1', startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-02T00:00:00Z' },
+      },
+      {
+        id: 'frame:chat-1:f1', namespace: 'chat:chat-1', kind: 'frame',
+        sourceId: 'chat-1', text: 'Frame about the project.',
+        createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+        metadata: { frameId: 'f1', sceneId: 's1', chatId: 'chat-1', startAt: '2026-05-01T00:00:00Z', endAt: '2026-05-01T00:30:00Z' },
+      },
+      // One prompt + one fact, both anchored to the same chat namespace.
+      // The query "continue the project" hits both via the keyword path.
+      {
+        id: 'prompt:chat-1:p1', namespace: 'chat:chat-1', kind: 'prompt',
+        sourceId: 'm-prev', text: 'continue the project setup',
+        createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+        metadata: { frameId: 'f1', sceneId: 's1', chatId: 'chat-1' },
+      },
+      {
+        id: 'fact:chat-1:f1', namespace: 'chat:chat-1', kind: 'fact',
+        sourceId: 'm-prev', text: 'project uses TypeScript with strict mode',
+        createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+        metadata: { frameId: 'f1', sceneId: 's1', chatId: 'chat-1' },
+      },
+    ]);
+    const { buildAgentMemoryNodeContext } = await import(`./agentMemoryContext.js?cb=${Date.now()}-d`);
+    const out = buildAgentMemoryNodeContext({
+      state: { settings: {}, approvals: [], tasks: [] },
+      chat: basicChat(),
+      latestUserMessage: 'continue the project',
+      activeAgentProfile: basicAgent(),
+      project: null,
+    });
+
+    // Fact block must appear, with the seeded fact text.
+    assert.ok(out.includes('Recalled fact nodes (tiered):'),
+      'gate on with fact contents must emit the fact block');
+    assert.ok(out.includes('TypeScript with strict mode'),
+      'fact text must be rendered into the fact block');
+
+    // Prompt block, if present, must NOT contain fact text.
+    const promptBlockMatch = out.match(/Prompt memory nodes:[\s\S]*?(?:\n\n|$)/);
+    if (promptBlockMatch) {
+      const promptBlock = promptBlockMatch[0];
+      assert.equal(
+        promptBlock.includes('TypeScript with strict mode'),
+        false,
+        'fact text must NOT leak into the Prompt memory nodes block (G2 contract)',
+      );
+      assert.ok(
+        promptBlock.includes('continue the project setup'),
+        'prompt content stays in the prompt block',
+      );
+    }
+
+    // Block ordering: facts come AFTER prompts (prompts → atomic facts).
+    const promptIdx = out.indexOf('Prompt memory nodes:');
+    const factIdx = out.indexOf('Recalled fact nodes (tiered):');
+    if (promptIdx >= 0) {
+      assert.ok(factIdx > promptIdx,
+        'tiered fact block should render after the prompt block, not before');
+    }
+  });
+});
+
+test('tiered gate OFF (default) does NOT emit "Recalled fact nodes (tiered)" block even if facts exist', async () => {
+  // Mirror of the gate-off contract for the new fact block.
+  await withTempMeloHome(async () => {
+    delete process.env.MELO_MEMORY_TIERS_RECALL;
+    const { replaceMemories } = await import(`../../memory/store.js?cb=${Date.now()}-e0`);
+    replaceMemories([
+      {
+        id: 'fact:chat-1:f1', namespace: 'chat:chat-1', kind: 'fact',
+        sourceId: 'm-prev', text: 'project uses TypeScript',
+        createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+        metadata: { chatId: 'chat-1' },
+      },
+    ]);
+    const { buildAgentMemoryNodeContext } = await import(`./agentMemoryContext.js?cb=${Date.now()}-e`);
+    const out = buildAgentMemoryNodeContext({
+      state: { settings: {}, approvals: [], tasks: [] },
+      chat: basicChat(),
+      latestUserMessage: 'continue the project',
+      activeAgentProfile: basicAgent(),
+      project: null,
+    });
+    assert.equal(out.includes('Recalled fact nodes (tiered):'), false,
+      'gate off must not emit the new tiered-fact block');
+  });
+});
+
 test('tiered gate ON with empty store → no scene/frame blocks, no exception', async () => {
   await withTempMeloHome(async () => {
     process.env.MELO_MEMORY_TIERS_RECALL = '1';
