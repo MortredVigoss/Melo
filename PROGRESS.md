@@ -39,6 +39,24 @@ desktop-ui 153/153 全绿。两个 commit 一起回退/收紧之后 chat 滚动�
 
 新增 5 个 test case 覆盖 contract（[desktop-ui/viz/vizRenderer.test.js](desktop-ui/viz/vizRenderer.test.js)）：null/undefined/非对象拒、legacy mermaid metadata 拒、未知 renderer name 拒、所有 supported renderer 接受、最关键的 cross-check「`isRenderableViz === renderVizMountHtml(...) !== ''`」防未来漂移。desktop-ui 全套 179/179 全绿（本批 +5 case）。
 
+**用户实测仍报「拉到底跳回 + 滑动卡顿」——更深根因是 innerHTML 重建打断 momentum-scroll**：
+
+viz-anchor 收紧 + Codex S 评级闭环之后用户重启实测仍报问题，原话：「问题很大，你看看你的机制肯定有问题，改这么多次改不明白」。重新追踪 ALL scrollTop writers (`captureScrollPositions`/`syncThreadViewport`/`_savedThreadScroll` 还原)，单独看每条逻辑都没错——但忽略了一个更基础的事实：**`app.innerHTML` 整块重建会销毁 `.thread-scroll-region` 元素**。
+
+macOS trackpad 双指下滑产生 momentum-scroll，浏览器原生维护惯性状态在元素上。后台 render（4s agent runtime poll / autosave 完成 / TTS 状态变化 / 任意 push）在用户惯性中飞时触发 → innerHTML swap → scroller 元素销毁重建 → 浏览器惯性状态丢失 → viewport 强行 snap 到 `_savedThreadScroll`（render 入口瞬时位置）→ 用户感知「卡顿 + 跳停」。
+
+仿照已有的 `userIsActivelyTyping()` typing guard（render 在用户敲键时 defer，避免 caret 跳）加 [app.js:userIsActivelyScrolling](desktop-ui/app.js#L319) scrolling guard：
+
+- `lastUserScrollAt` 全局时间戳；`SCROLL_GUARD_WINDOW_MS=250`（覆盖 macOS 典型 momentum settle）
+- `bindContentScrollbar` 的 scroll + wheel listener 入口 stamp `Date.now()`（wheel 早于 scroll fire，要双 stamp 防赛跑）
+- render() 入口检查 `if (background && userIsActivelyScrolling()) { scheduleDeferredRender(); return; }`
+- `scheduleDeferredRender` 的 tick 也加 scrolling check（typing OR scrolling 任一在窗口内就继续 defer）
+- `updateThreadAutoFollow` 的 `autoFollowChanged` 触发的 render 改为 `background: true`（jump-to-latest button 显隐允许滞后 250ms，换滚动顺畅）
+
+效果：用户滚动期间所有后台 render 都被 defer，手指离开 trackpad 250ms 后再 catch-up render；浏览器原生 momentum-scroll 不被打断。foreground render（用户点 button、发消息）仍立即生效，反应不打折扣。
+
+desktop-ui 179/179 全绿。这是这一系列 chat UI bug 的根治——单纯堵 viz-anchor 不够，要把后台 render 跟用户主动滚动**时序解耦**。
+
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
 

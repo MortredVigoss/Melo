@@ -295,21 +295,37 @@ const AGENT_MARKDOWN_AUTOSAVE_IDLE_MS = 900;
 // The deferred render is scheduled via `scheduleDeferredRender` below so we
 // don't drop it — it fires as soon as the user goes idle.
 let lastUserKeystrokeAt = 0;
+let lastUserScrollAt = 0;
 let deferredRenderPending = false;
 let deferredRenderTimer = 0;
 const TYPING_GUARD_WINDOW_MS = 500;
 const TYPING_GUARD_DEFER_CHECK_MS = 120;
+// Scroll guard window — shorter than typing because scroll cadence is faster
+// (60 Hz event stream during a trackpad swipe vs ~one keystroke per 100ms).
+// 250 ms covers a typical macOS momentum-scroll's settle time after the user
+// releases their fingers. User-reported 2026-05-05: "下来的时候明显帧数不对，
+// 有卡顿 + 跳到这" — root cause was app.innerHTML rebuild during background
+// renders (4 s agent runtime poll, autosave, TTS state) tearing down the
+// .thread-scroll-region element while the browser's native momentum scroll
+// was mid-flight, killing the scroll velocity and forcing the viewport to
+// snap to the saved scrollTop at that instant.
+const SCROLL_GUARD_WINDOW_MS = 250;
 
 function userIsActivelyTyping() {
   if (!lastUserKeystrokeAt) return false;
   return Date.now() - lastUserKeystrokeAt < TYPING_GUARD_WINDOW_MS;
 }
 
+function userIsActivelyScrolling() {
+  if (!lastUserScrollAt) return false;
+  return Date.now() - lastUserScrollAt < SCROLL_GUARD_WINDOW_MS;
+}
+
 function scheduleDeferredRender() {
   if (deferredRenderPending) return;
   deferredRenderPending = true;
   const tick = () => {
-    if (userIsActivelyTyping()) {
+    if (userIsActivelyTyping() || userIsActivelyScrolling()) {
       deferredRenderTimer = window.setTimeout(tick, TYPING_GUARD_DEFER_CHECK_MS);
       return;
     }
@@ -11806,6 +11822,19 @@ function render({ background = false } = {}) {
     }
   }
 
+  // ── Scroll guard ──────────────────────────────────────────────────────────
+  // Defer background renders while the user is actively scrolling the chat
+  // thread. The full innerHTML swap below tears down the .thread-scroll-region
+  // element — if that happens mid momentum-scroll, the browser's native scroll
+  // velocity is killed and the viewport snaps to whatever scrollTop was saved
+  // at the render entry point. The user perceives this as "卡顿 + 跳"
+  // (User-reported 2026-05-05). Foreground renders (user clicked a button,
+  // sent a message) are NOT deferred — those need immediate feedback.
+  if (background && userIsActivelyScrolling()) {
+    scheduleDeferredRender();
+    return;
+  }
+
   captureAgentScrollState();
   captureAgentEditorState();
 
@@ -12097,8 +12126,13 @@ function updateThreadAutoFollow(scroller) {
   // hides. Skipping this render means the button only appears on the next
   // unrelated render — e.g. not until the next streaming chunk arrives — which
   // feels laggy when the user scrolls up after streaming has finished.
+  //
+  // Marked as `background: true` so the scroll guard above defers it past any
+  // momentum-scroll in flight — jump-to-latest button visibility is allowed
+  // to lag a few hundred ms, but tearing down the scroller mid-momentum kills
+  // the user's swipe and is what they reported as "拉到底跳到这" on 2026-05-05.
   if (autoFollowChanged) {
-    render();
+    render({ background: true });
   }
 }
 
@@ -12113,6 +12147,11 @@ function bindContentScrollbar() {
   scroller.addEventListener(
     'scroll',
     () => {
+      // Stamp the scroll-guard clock — render() reads this to defer
+      // background renders that would tear down the scroller mid momentum
+      // scroll. See SCROLL_GUARD_WINDOW_MS comment for the user-reported
+      // symptom this fixes.
+      lastUserScrollAt = Date.now();
       updateThreadAutoFollow(scroller);
       syncContentScrollbar({ forceVisible: true });
     },
@@ -12122,6 +12161,10 @@ function bindContentScrollbar() {
   scroller.addEventListener(
     'wheel',
     () => {
+      // Stamp guard on wheel too — wheel fires BEFORE the scroll event the
+      // browser dispatches in response to it, so a background render that
+      // races between wheel and scroll would still tear the scroller down.
+      lastUserScrollAt = Date.now();
       syncContentScrollbar({ forceVisible: true });
     },
     { passive: true },
