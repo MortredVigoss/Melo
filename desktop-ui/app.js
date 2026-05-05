@@ -11853,7 +11853,21 @@ function render({ background = false } = {}) {
   // and shift scrollTop by the delta between its old and new top offsets.
   // Also stash the anchor on `uiState` so the async viz hydration path can
   // re-apply it once more after scene3d canvases finish mounting.
-  const _vizAnchor = _threadScroller instanceof HTMLElement
+  //
+  // SCOPE: only enable for chats that ACTUALLY contain a viz card. For plain
+  // text chats the anchor system was a strict net-negative — every render
+  // (streaming chunk, autosave, runtime poll, TTS state) ran a 5-retry
+  // restoreThreadAnchor loop AND captureThreadAnchor's per-message
+  // getBoundingClientRect scan, fighting the user's own scroll gestures
+  // ("拖到底跳回中间") and forcing N layout reflows per render at
+  // streaming cadence ("帧数明显不对，有卡顿"). User-reported 2026-05-05.
+  const _chat = activeChat();
+  const _chatHasViz = !!(
+    _chat &&
+    Array.isArray(_chat.messages) &&
+    _chat.messages.some(m => m && m.viz && typeof m.viz === 'object')
+  );
+  const _vizAnchor = _threadScroller instanceof HTMLElement && _chatHasViz
     ? captureThreadAnchor(_threadScroller)
     : null;
   uiState.pendingVizAnchor = _vizAnchor;
@@ -11862,7 +11876,6 @@ function render({ background = false } = {}) {
   // last rendered signature it's a UI-only render (voice panel, checkbox, etc.) and we must
   // restore the thread scroll manually (syncThreadViewport returns early for same-signature).
   // If the signature differs, syncThreadViewport will scroll the thread; don't interfere.
-  const _chat = activeChat();
   const _threadSig = _chat
     ? `${_chat.id}:${_chat.messages.length}:${_chat.updatedAt || ''}:${
         uiState.highlightedMessageId || ''

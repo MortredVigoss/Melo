@@ -20,6 +20,17 @@
 
 **Known-limit**：原版 streaming 时 scrollTop=0 → 双 rAF 闪烁仍存在但「极偶发」（用户原话），强行修引发更严重回归证明本不该动。如果未来真要修，正确路径是先重构 `lastKnownScrollTop` / `pendingVizAnchor` / `_savedThreadScroll` 三个 scrollTop writer 的优先级，而不是再加第四个 writer。
 
+**回退后用户实测仍报「拖到底跳回中间 + 滑动卡顿明显」——根因 viz-anchor 系统对普通文本 chat 也启用**：
+
+回退之后用户继续报「还是会跳到这」+「下来的时候明显帧数不对 有卡顿」。重新挖：原版 [app.js:captureThreadAnchor](desktop-ui/app.js#L11719) 只检查 `distanceFromBottom > 24` 就抓 anchor，**不区分 chat 里有没有 viz card**。性能 + 体验双杀：
+
+1. **卡顿来源**：每次 render 都跑 `scroller.querySelectorAll('.message')` + 每条 message `getBoundingClientRect()`（强制 layout reflow）。用户在底部时所有 message top 都 < scrollerTop → delta 永远 < 0 → 整个循环遍历完 N 条全跳过，N 次 reflow 白跑。流式时 100+ render/sec → 100×N reflow/sec。
+2. **跳回中间**：5 个时间点 retry restore（同步 / microtask / RAF×2 / 600ms）把上次记录的 anchor message 拉回原位 — 用户主动滚动跟它互相抵消。
+
+但 viz-anchor 系统**本来只是为 Demon viz card 异步 hydrate（高度 0 → N）设计的** — 普通文本对话根本不需要它。修法：在 [app.js:render](desktop-ui/app.js#L11864) 调 captureThreadAnchor 之前先 `_chatHasViz = chat.messages.some(m => m.viz)` 判断，没 viz card 就 `_vizAnchor = null`，自动跳过整套 5-retry restore。普通 chat 的 anchor 系统完全旁路掉，含 viz 的 chat 行为不变。
+
+desktop-ui 153/153 全绿。两个 commit 一起回退/收紧之后 chat 滚动应该回到「拉到底就是底，没卡顿」的预期行为。
+
 ---
 ## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
 
