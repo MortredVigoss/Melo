@@ -46,6 +46,22 @@ export function _setBudgetsForTests({ audioMs, keyframeMs } = {}) {
 
 // Extensions that indicate a direct binary video stream (not a webpage).
 const DIRECT_VIDEO_URL_RE = /\.(mp4|mov|webm|m4v|mkv|avi|flv|ts|m2ts)(\?|$|#)/i;
+// Social platforms often expose playable URLs without a file extension.
+// Douyin's SSR preview, for example, yields aweme.snssdk.com/aweme/v1/playwm.
+// Treat only known media endpoints as direct streams; regular platform
+// pages still go through the social-link/browser readers first.
+const DIRECT_SOCIAL_VIDEO_URL_RE =
+  /^https?:\/\/[^/]*(?:aweme\.snssdk\.com|douyinvod\.com)\/.*(?:\/play(?:wm)?\/|\/tos-|video_id=)/i;
+
+export function isLikelyDirectVideoStreamUrl(url = '') {
+  const normalized = String(url || '').trim();
+  if (!normalized) return false;
+  return (
+    normalized.startsWith('data:video/') ||
+    DIRECT_VIDEO_URL_RE.test(normalized) ||
+    DIRECT_SOCIAL_VIDEO_URL_RE.test(normalized)
+  );
+}
 
 async function hasFfmpeg({ signal } = {}) {
   if (signal?.aborted) return false;
@@ -316,7 +332,7 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
   // Platform page URLs (bilibili.com, youtube.com, etc.) must be handled by the
   // platform extractor first; fetching them here would download HTML and fail ffmpeg.
   const isDataUrl   = url.startsWith('data:');
-  const isDirectUrl = DIRECT_VIDEO_URL_RE.test(url);
+  const isDirectUrl = isLikelyDirectVideoStreamUrl(url);
   if (!isDataUrl && !isDirectUrl) {
     return null;
   }

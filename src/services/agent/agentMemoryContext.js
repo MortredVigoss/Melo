@@ -25,6 +25,7 @@ import {
   shouldCompactSpeakerFacts,
 } from '../../memory/speakerProfile.js';
 import { normalizeConversationSnippet } from '../../memory/heuristics.js';
+import { shouldSuppressMemoryContextText } from '../chat/contextFilters.js';
 import { normalizePromptHistory } from '../activity/activityLog.js';
 import { normalizeApprovals } from '../approval/approvalService.js';
 import { normalizeTasks } from '../task/taskService.js';
@@ -149,6 +150,9 @@ export function buildAgentMemoryNodeContext({
   let tieredFrames = [];
   let tieredFacts = [];
   let promptHistory = [];
+  const filterMemoryContextEntries = entries =>
+    (Array.isArray(entries) ? entries : [])
+      .filter(entry => !shouldSuppressMemoryContextText(entry?.text || entry?.searchText || ''));
   if (tieredRecallEnabled) {
     try {
       const tiered = recallMemoriesTiered({
@@ -176,8 +180,12 @@ export function buildAgentMemoryNodeContext({
       const filteredContents = (tiered?.contents || []).filter(entry =>
         !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
       );
-      promptHistory = filteredContents.filter(entry => entry?.kind === 'prompt');
-      tieredFacts = filteredContents.filter(entry => entry?.kind === 'fact');
+      promptHistory = filterMemoryContextEntries(
+        filteredContents.filter(entry => entry?.kind === 'prompt'),
+      );
+      tieredFacts = filterMemoryContextEntries(
+        filteredContents.filter(entry => entry?.kind === 'fact'),
+      );
     } catch (err) {
       // Fall back to flat recall on any tiered-path failure — never let
       // the new code path break the prompt block when something edge-case
@@ -186,7 +194,7 @@ export function buildAgentMemoryNodeContext({
       // flat call below.
       // eslint-disable-next-line no-console
       console.warn(`[memory.recall.tiered] fallback to flat recall: ${err?.message || err}`);
-      promptHistory = recallMemories({
+      promptHistory = filterMemoryContextEntries(recallMemories({
         namespaces,
         kinds: ['prompt'],
         query: latestUserMessage,
@@ -194,10 +202,10 @@ export function buildAgentMemoryNodeContext({
         limit: 12,
       }).filter(entry =>
         !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
-      );
+      ));
     }
   } else {
-    promptHistory = recallMemories({
+    promptHistory = filterMemoryContextEntries(recallMemories({
       namespaces,
       kinds: ['prompt'],
       query: latestUserMessage,
@@ -205,7 +213,7 @@ export function buildAgentMemoryNodeContext({
       limit: 12,
     }).filter(entry =>
       !entry.metadata?.chatId || entry.metadata?.chatId === chat?.id
-    );
+    ));
   }
   const relatedApprovals = recallMemories({
     namespaces,

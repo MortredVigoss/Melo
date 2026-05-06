@@ -89,6 +89,23 @@ function sseCompleted(response = null) {
   })}`;
 }
 
+test('readCodexSseResponse surfaces nested Codex SSE error messages', async () => {
+  const response = mockResponseFromEvents([
+    `event: error\ndata: ${JSON.stringify({
+      type: 'error',
+      error: {
+        code: 'cyber_policy',
+        message: 'This content was flagged for possible cybersecurity risk.',
+      },
+    })}`,
+  ]);
+
+  await assert.rejects(
+    () => readCodexSseResponse(response),
+    /possible cybersecurity risk/i,
+  );
+});
+
 // ─── buildCodexResponsesTools (payload gating) ──────────────────────────────
 //
 // These pin the rule the user explicitly endorsed on 2026-04-29: Codex

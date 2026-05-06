@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   detectUrlKind,
   extractUrlsFromText,
+  isSocialPreviewUrl,
   promoteTextUrlsToAttachments,
 } from './urlDetector.js';
 
@@ -49,12 +50,19 @@ test('promoteTextUrlsToAttachments upgrades plain text URLs without duplicating 
 // any of these shapes drift the composer's manual-link path silently drifts
 // with them.
 
-test('promoteTextUrlsToAttachments: video-platform URL maps to kind=video', () => {
+test('promoteTextUrlsToAttachments: video-platform URL maps to kind=link', () => {
   const [a] = promoteTextUrlsToAttachments('https://youtu.be/dQw4w9WgXcQ', []);
-  assert.equal(a.kind, 'video');
+  assert.equal(a.kind, 'link');
   assert.equal(a.url, 'https://youtu.be/dQw4w9WgXcQ');
   assert.equal(a.title, 'youtu.be/dQw4w9WgXcQ');
   assert.equal(a.mimeType, '');
+});
+
+test('isSocialPreviewUrl identifies Xiaohongshu / Douyin share pages', () => {
+  assert.equal(isSocialPreviewUrl('https://www.xiaohongshu.com/explore/abc'), true);
+  assert.equal(isSocialPreviewUrl('https://xhslink.com/a/b'), true);
+  assert.equal(isSocialPreviewUrl('https://m.douyin.com/video/123'), true);
+  assert.equal(isSocialPreviewUrl('https://youtu.be/dQw4w9WgXcQ'), false);
 });
 
 test('promoteTextUrlsToAttachments: image extension maps to kind=image', () => {

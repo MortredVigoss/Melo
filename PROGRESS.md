@@ -4,176 +4,36 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
-## 2026-05-05 — Chat UI 三 bug 一次清：user 气泡溢出 / 滚动条错位 / 流式 render 闪烁
+## 2026-05-06 — Codex 实现的 backend 链路一并升级：社媒抓取扩张 / 视频 keyframe 入 prompt / assistant 失败诊断过滤 / cyber_policy 文案
 
-用户截图反馈 chat 页面三个 UI bug，做了一次完整 root-cause + 修复：
+本批改动由 Codex 完成，本会话仅做整理 + commit + push。涉及 23 个 src 文件，按特性归四束：
 
-- **Bug 1 — user 气泡只显示一半（链接卡片溢出）**：`.message-list` / `.message-attachments` 都是 `display: grid` 但都没设 `grid-template-columns`（默认 `auto`，按子内容撑大）；同时 `.link-card` 是 flex 容器，内部 `<span>`（含 label + URL）缺 `min-width: 0`，导致 `word-break: break-all` 不生效——URL 不肯换行。三层叠加：URL 强行撑宽 → flex 父扩 → 网格列扩 → `.message` 的 `max-width: 100%` 跟着扩 → 气泡飘出右边界。**修**：[desktop-ui/styles.css](desktop-ui/styles.css) `.message-list` / `.message` / `.message-attachments` 都加 `grid-template-columns: minmax(0, 1fr)` + `min-width: 0`；`.link-card > span { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere }`；`.link-card-url` 加 `overflow-wrap: anywhere` 兜底。
+- **社媒抓取扩张（社媒/媒体管线）**：[src/tools/builtins/socialLinkTool.js](src/tools/builtins/socialLinkTool.js) +911 行 + [socialLinkTool.test.js](src/tools/builtins/socialLinkTool.test.js) +279；[src/tools/builtins/fetchUrlTool.js](src/tools/builtins/fetchUrlTool.js)、[src/media/index.js](src/media/index.js) +191、[src/media/extractors/videoExtractor.js](src/media/extractors/videoExtractor.js)、[src/media/extractors/videoExtractor.test.js](src/media/extractors/videoExtractor.test.js)、[src/media/urlDetector.js](src/media/urlDetector.js)、[src/media/urlDetector.test.js](src/media/urlDetector.test.js)、[src/media/enrich.test.js](src/media/enrich.test.js) +92。
+- **视频 keyframe 入 prompt（messageBuilder）**：[src/services/chat/messageBuilder.js](src/services/chat/messageBuilder.js) `pushKeyframeParts` helper 抽出，video attachments 与 social-link-only entries 都能 emit `image_url` parts；测试 +45 case。
+- **assistant 失败诊断过滤（新模块 + 集成）**：新增 [src/services/chat/contextFilters.js](src/services/chat/contextFilters.js) 三类 pattern（provider failure / Codex policy / social-link cookie 诊断），暴露 `shouldSuppressAssistantContextText`；[src/memory/threadContext.js](src/memory/threadContext.js) + 新加 [src/memory/threadContext.test.js](src/memory/threadContext.test.js) 接入；[src/services/agent/agentMemoryContext.js](src/services/agent/agentMemoryContext.js)、[src/state/memorySnapshot.js](src/state/memorySnapshot.js) + 新 [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) +39 case；messageBuilder 用 `isProviderFailureAssistantMessage` 在 `buildModelMessagesFromChat` 入口剔掉。**意图**：UI 仍展示完整诊断给用户看，但下一轮 prompt 不携带这些 noise，省 token + 防 Codex 拿失败诊断当后续上下文。
+- **Codex cyber_policy 文案**：[src/services/chat/providerErrors.js](src/services/chat/providerErrors.js) 加 `cyber_policy` / `possible cybersecurity risk` 分支文案；[src/openai.js](src/openai.js) `readCodexSseResponse` 抓嵌套 SSE error；[src/desktopStore.error-messaging.test.js](src/desktopStore.error-messaging.test.js) +1 + [src/openai.codex-inline-image.test.js](src/openai.codex-inline-image.test.js) +1 case 钉合同。
 
-- **Bug 2 — 自定义滚动条跑到 app 最右下（在 composer 下方）**：`.content-scrollbar` 是 `position: absolute; top:14 right:8 bottom:16` 锚在 `.content-shell` 上，而 `.content-shell` 覆盖整块 workspace（含 composer）；但 chat 页面真正的 scroller 是 `.thread-scroll-region`（不含 composer）。**修**：[desktop-ui/app.js](desktop-ui/app.js) `syncContentScrollbar` 里检测 `scroller.classList.contains('thread-scroll-region')`，是的话读 thread 区相对 shell 的 rect 动态写入 bar 的 `top` / `bottom`；非 chat 页 reset 到 CSS 默认。bar 现在恰好覆盖对话内容区，不再延伸到 composer 下方。
-
-- **Bug 3 — 偶发上跳又回弹**：原版 render 里 `_savedThreadScroll` 只在 signature 不变时还原 → 流式 chunk 每次 signature 都变 → DOM 重建 scrollTop=0 → 双 rAF 后才推到 scrollHeight → 用户偶发看到闪烁。**第一次尝试**：render 里**无条件**同步还原 `_savedThreadScroll`（gate 在同一 chat）。**用户实测立即报回归**——拉滚动条到底会被拉回中间位置，「跟他做成一个循环圈」。**根因**：sync-restore 跟 `restoreThreadAnchor`（5 个时间点重试）+ `syncThreadViewport` 的 `lastKnownScrollTop`（滞后 native scroll events）存在三方时序冲突——用户主动拖滚到 24~56px from bottom 区间时，`captureThreadAnchor` 还会捕获中部 anchor 而 `threadAutoFollow` 也开 → 三个 scrollTop writer 互相覆盖 → 用户体感「跳来跳去」。**回退**：恢复原版「signature 不变才同步还原」逻辑，接受「极偶发闪烁」trade-off。这印证了用户 memory 第三条「不要糊弄 follow-up」的反面教训：本来 Bug 3 是「极为偶尔」，硬要一次到位结果引入立刻可复现的回归，比原 bug 严重得多。
-
-**回退之后两条仍生效**：Bug 1（链接卡片不再溢出）+ Bug 2（滚动条对齐 thread 区）确认稳定。
-
-**顺手压缩 PROGRESS.md**：发现 archive 区有一段 113 行（line 210-322）从历史压缩遗留下来的重复 block。trim 后从 322 → 209 行。
-
-**Known-limit**：原版 streaming 时 scrollTop=0 → 双 rAF 闪烁仍存在但「极偶发」（用户原话），强行修引发更严重回归证明本不该动。如果未来真要修，正确路径是先重构 `lastKnownScrollTop` / `pendingVizAnchor` / `_savedThreadScroll` 三个 scrollTop writer 的优先级，而不是再加第四个 writer。
-
-**回退后用户实测仍报「拖到底跳回中间 + 滑动卡顿明显」——根因 viz-anchor 系统对普通文本 chat 也启用**：
-
-回退之后用户继续报「还是会跳到这」+「下来的时候明显帧数不对 有卡顿」。重新挖：原版 [app.js:captureThreadAnchor](desktop-ui/app.js#L11719) 只检查 `distanceFromBottom > 24` 就抓 anchor，**不区分 chat 里有没有 viz card**。性能 + 体验双杀：
-
-1. **卡顿来源**：每次 render 都跑 `scroller.querySelectorAll('.message')` + 每条 message `getBoundingClientRect()`（强制 layout reflow）。用户在底部时所有 message top 都 < scrollerTop → delta 永远 < 0 → 整个循环遍历完 N 条全跳过，N 次 reflow 白跑。流式时 100+ render/sec → 100×N reflow/sec。
-2. **跳回中间**：5 个时间点 retry restore（同步 / microtask / RAF×2 / 600ms）把上次记录的 anchor message 拉回原位 — 用户主动滚动跟它互相抵消。
-
-但 viz-anchor 系统**本来只是为 Demon viz card 异步 hydrate（高度 0 → N）设计的** — 普通文本对话根本不需要它。修法：在 [app.js:render](desktop-ui/app.js#L11864) 调 captureThreadAnchor 之前先 `_chatHasViz = chat.messages.some(m => m.viz)` 判断，没 viz card 就 `_vizAnchor = null`，自动跳过整套 5-retry restore。普通 chat 的 anchor 系统完全旁路掉，含 viz 的 chat 行为不变。
-
-desktop-ui 153/153 全绿。两个 commit 一起回退/收紧之后 chat 滚动应该回到「拉到底就是底，没卡顿」的预期行为。
-
-**Codex 评 C：scope 判定不精确，需匹配真实可渲染条件**：
-
-第一次 viz-anchor 收紧（`93f056e`）用 `m.viz && typeof === 'object'` 判断「chat 含 viz card」，被 Codex pre-push gate 抓为 C 评级 — `renderVizMountHtml` 的真实判定是 `viz.renderer && RENDERERS[viz.renderer]`，仅靠 viz 是对象不够（hydration 层会保留 legacy `{ type: 'mermaid', source }` 这类不可渲染的元数据）。两条件不一致 → 含 legacy viz 元数据的 chat 仍会错误启用 anchor，回归未根治。
-
-按 Codex 整改意见 + 用户拍板「方案 B」抽共享 helper：[desktop-ui/viz/vizRenderer.js](desktop-ui/viz/vizRenderer.js) 新增 `isRenderableViz(viz)` export（仅检查 `viz.renderer && RENDERERS[viz.renderer]`），renderVizMountHtml 内部和 app.js 的 `_chatHasViz` gate 共用。3 处条件同源，未来加 renderer 一处改。
-
-新增 5 个 test case 覆盖 contract（[desktop-ui/viz/vizRenderer.test.js](desktop-ui/viz/vizRenderer.test.js)）：null/undefined/非对象拒、legacy mermaid metadata 拒、未知 renderer name 拒、所有 supported renderer 接受、最关键的 cross-check「`isRenderableViz === renderVizMountHtml(...) !== ''`」防未来漂移。desktop-ui 全套 179/179 全绿（本批 +5 case）。
-
-**用户实测仍报「拉到底跳回 + 滑动卡顿」——更深根因是 innerHTML 重建打断 momentum-scroll**：
-
-viz-anchor 收紧 + Codex S 评级闭环之后用户重启实测仍报问题，原话：「问题很大，你看看你的机制肯定有问题，改这么多次改不明白」。重新追踪 ALL scrollTop writers (`captureScrollPositions`/`syncThreadViewport`/`_savedThreadScroll` 还原)，单独看每条逻辑都没错——但忽略了一个更基础的事实：**`app.innerHTML` 整块重建会销毁 `.thread-scroll-region` 元素**。
-
-macOS trackpad 双指下滑产生 momentum-scroll，浏览器原生维护惯性状态在元素上。后台 render（4s agent runtime poll / autosave 完成 / TTS 状态变化 / 任意 push）在用户惯性中飞时触发 → innerHTML swap → scroller 元素销毁重建 → 浏览器惯性状态丢失 → viewport 强行 snap 到 `_savedThreadScroll`（render 入口瞬时位置）→ 用户感知「卡顿 + 跳停」。
-
-仿照已有的 `userIsActivelyTyping()` typing guard（render 在用户敲键时 defer，避免 caret 跳）加 [app.js:userIsActivelyScrolling](desktop-ui/app.js#L319) scrolling guard：
-
-- `lastUserScrollAt` 全局时间戳；`SCROLL_GUARD_WINDOW_MS=250`（覆盖 macOS 典型 momentum settle）
-- `bindContentScrollbar` 的 scroll + wheel listener 入口 stamp `Date.now()`（wheel 早于 scroll fire，要双 stamp 防赛跑）
-- render() 入口检查 `if (background && userIsActivelyScrolling()) { scheduleDeferredRender(); return; }`
-- `scheduleDeferredRender` 的 tick 也加 scrolling check（typing OR scrolling 任一在窗口内就继续 defer）
-- `updateThreadAutoFollow` 的 `autoFollowChanged` 触发的 render 改为 `background: true`（jump-to-latest button 显隐允许滞后 250ms，换滚动顺畅）
-
-效果：用户滚动期间所有后台 render 都被 defer，手指离开 trackpad 250ms 后再 catch-up render；浏览器原生 momentum-scroll 不被打断。foreground render（用户点 button、发消息）仍立即生效，反应不打折扣。
-
-desktop-ui 179/179 全绿。这是这一系列 chat UI bug 的根治——单纯堵 viz-anchor 不够，要把后台 render 跟用户主动滚动**时序解耦**。
-
-**用户原话「这个问题一个月了从始至终都有」+ 第 5 次诊断后才找到真根因：CSS scroll chaining**：
-
-scroll guard ship 之后用户重启实测仍跳，第 5 次反馈：「这么简单一个问题，一个月了从始至终都有，肯定是拉到最下面再下拉触发了别的东西，这种应该加一个简单的判断就可以解决吧是不是拉到最下面，**或者就是你对话框的设计有问题，最下面就不是用户或者 app 生成的内容**」。
-
-用户最后一句直接把根因点出来了——chat 区域底部「拉到底再下拉」会**触发别的东西**。我之前 4 次都在 patch JavaScript scrollTop writer，根本没看 CSS 滚动结构。这次按用户提示直接看 [styles.css:thread-scroll-region](desktop-ui/styles.css#L1473) — **缺 `overscroll-behavior`**：
-
-- `.thread-scroll-region`（chat 内部 scroller，含 message-list）和 `.content-scroll`（页面级 scroller，含 .page.is-chat）**都是 `overflow-y: auto`**
-- 用户拉到 thread 底部（scrollTop = scrollHeight - clientHeight），继续 trackpad 双指 / wheel 下推
-- 浏览器原生 **scroll chaining** 行为：thread 不能再滚 → 把未消耗的 scroll **传给父链** → `.content-scroll` 开始滚 → `.page.is-chat`（含整个 chat-thread）整体上移
-- 视觉效果：chat thread 整块往上跑，看起来像「跳到中部某条消息」
-
-修复一行 CSS：`.thread-scroll-region { overscroll-behavior-y: contain }`。`contain` 保留 elastic overscroll bounce 在边界（macOS 习惯），但**阻止**滚动传播给父级。从此「拉到底就是底，再下拉浏览器自己 bounce 回来，chat 整块不再被推上去」。
-
-**5 轮失败教训汇总**：
-- Bug 3 sync-restore 引入 / 回退（49e3649）
-- viz-anchor scope 收紧（93f056e）
-- isRenderableViz 共享 helper（be9c6f0）
-- scroll guard defer 后台 render（6c5db0e）
-- 上面 4 个 commit 全部 patch JavaScript scrollTop writer 优先级 / 时序，但根因是 **CSS scroll chaining**，跟 JS 半毛钱关系都没有。
-
-这违反我自己 memory 「方案评分先行 + 红绿灯检测」。一个月的用户痛点，正确流程应该是**第一次报问题**就先做完整 root cause 分析（包括 CSS 滚动结构 + DOM 层级 + scrollHeight/clientHeight 实际数值），而不是凭直觉先猜「sync-restore 闪烁」。
-
-之前 4 个 commit 的副作用：
-- isRenderableViz / viz-anchor 收紧：独立有价值（perf：普通 chat 不再跑 N 次 reflow），保留
-- scroll guard：跟根因无关但独立有价值（typing guard 对称扩展），保留
-- 没有让事情更糟，但也没解决用户问题。这次一行 CSS 才是真修复。
-
-**用户实测 overscroll-behavior 仍不够稳，给出完整四项修复方案**：
-
-`ff2435f` ship 后用户实测仍报「拉到底跳到中间」+「滑动卡顿」。用户给出精准诊断：
-1. WKWebView 对 overscroll-behavior 在 momentum-scroll 边缘场景仍有问题
-2. render() 整页 innerHTML 重建在滚动期间被后台 trigger（autosave / TTS / poll / streaming fallback）打断
-3. 250ms scroll guard 不够覆盖 macOS trackpad momentum (典型 1-2s)
-4. 图片/视频附件没预留尺寸，加载完成时高度从 0 涨到 N → scrollTop 后内容被顶上去
-
-按用户方案做四件事一次性解决：
-
-- **Item 1 — 单 scroller**：[styles.css:.content-shell.is-chat-view > .content-scroll](desktop-ui/styles.css) 加 `overflow: hidden`，[app.js:render](desktop-ui/app.js) 给 chat 视图的 .content-shell 加 `is-chat-view` class。chat 页面只剩 `.thread-scroll-region` 一个 scroller，没有嵌套 → 没有 scroll chaining 失败模式。
-
-- **Item 2 — 加长 scroll guard**：[app.js:SCROLL_GUARD_WINDOW_MS](desktop-ui/app.js) 250ms → 1500ms 覆盖 macOS trackpad momentum 典型 settle。deferred render 仍在用户 idle 后立即 catch-up。
-
-- **Item 3 — 后台 render 改 background:true**：grep + Python 脚本扫出 41 个明确后台触发的 `render()` 调用点（setTimeout / EventSource onmessage / refreshXxx 函数 / .then(applyBootstrap) / 错误清除）。新加 [app.js:bgRender](desktop-ui/app.js#L11786) helper：`bgRender() { return render({ background: true }) }`，41 个调用点全部替换。从此所有非用户主动 render 都过 typing/scroll guard，不会在用户滚动期间打断 momentum。
-
-- **Item 4 — 附件预留尺寸**：[styles.css:.message-image,.message-video](desktop-ui/styles.css) 加 `min-height: 240px`。图片/视频加载前 placeholder slot 就有 240px 基线高度，加载完按真实比例填进 max-height: 440px box（不裁切），scrollHeight 跳变从 ~440px 缩小到最坏 ~200px。第一版尝试 `aspect-ratio: 16/10` 被 Codex P0 抓——会把截图/竖图/方图强制裁切成 16:10——改 min-height 占位保留真实比例。
-
-desktop-ui 179/179 全绿。这次是用户精准诊断 + 我按方案执行的成果。教训：**用户给出的根因诊断比我自己摸索 5 轮都准**——下次类似复杂 bug 第一时间该问用户「你能描述操作时 viewport 的具体动作吗」「是否能定位是哪个父级容器在动」，而不是闭门造车。
+测试：`npm test` 完整 GREEN（含 desktop smoke 4 项 + 全部 src test）。
 
 ---
-## 2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI
+## 2026-05-06 — Codex 实现的 desktop 层：WKWebView 外链路由 / link-card preview / 静态资源 no-cache
 
-用户来一份长期记忆架构 audit，称 Phase A-D（attic/scene-frame-content/dreaming/provider 抽象）已经全部落地但 **Phase E 没接线**——「dreaming 在跑空气」。按用户硬规则「方案评分先行」+「红绿灯检测」做了一轮事实核实，**审计的 Gap 1 论断被推翻**：
+本批同样 Codex 完成。5 个文件：
 
-- ❌ 「frame/scene 没人在 message 写入时调它们」——错。`saveState()` 在 [src/state/stateStore.js:191](src/state/stateStore.js#L191) 已经调 `syncMemoryStoreSnapshot(state)`，后者按 `enabledTiers()` (默认 `{scene,frame,content}` 全开) 调 `buildFrameEntry/buildSceneEntry` 并 push 进 entries 写库——Phase 7d-5α-A1 commit 5/9 时就完成。
-- ❌ 「scheduler 6h timer hygiene 要确认 unref/clear」——已做。[src/memory/dreaming/scheduler.js:63-70](src/memory/dreaming/scheduler.js#L63-L70) 的 `stop()` clearInterval 全部 `_timers`；[src/memory/runtime.js:173-176](src/memory/runtime.js#L173-L176) 包成 `_runtimeHandle.stop()`；[src/server.js:2443](src/server.js#L2443) shutdown 调它。三层接全。
-- ✅ Gap 2 (recall 没接 prompt) / Gap 3 (无 UI) / Bonus (无手动触发) 是真的。
-
-但生产 store `~/.melo/desktop/store.sqlite` 只有 1 条 fact、零 frame/scene。**真问题不是「没写连线」，是「连线接了但没数据流过」**——`state.chats` 是空（`state.json` chats:0 + `~/.melo/desktop/threads/` 空目录）。
-
-修订三个 Gap：
-
-- **Gap 1' — saveState 数据流诊断**：[src/state/memorySnapshot.js](src/state/memorySnapshot.js) syncMemoryStoreSnapshot 加 `MELO_DEBUG_MEMORY=1` gated 单行日志：`chats=N eligibleChats=N entries=N kind1=n1 kind2=n2 tiers=... storePath=...`。一行就能看清是 (a) chats 空 / (b) <3 message 全过滤 / (c) tiers 关 / (d) storePath 不对。新加 [src/state/memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 4 个 case。**额外抓出生产坑**：消息无 `createdAt` 时只有 frame 没 scene（`groupIntoScenes` 按时间窗口聚合，frame.startAt 空就被 filter 掉）。
-
-- **Gap 2 — promptHistory 切到 tiered recall（仅这一项，非整个换）**：审计原话「换成 recallMemoriesTiered」不准确——tiered 只覆盖 `kind ∈ {scene,frame,prompt,fact}`，agentMemoryContext 的 7 处 recall 里有 `approval/task/verification-correction/session-fact` 4 种 kind tiered 不接。正确 scope：只把 `promptHistory` 那 1 处切到 tiered，其余 6 处不动。[src/services/agent/agentMemoryContext.js](src/services/agent/agentMemoryContext.js) 加 `MELO_MEMORY_TIERS_RECALL` 灰度开关（默认 off）：on 时用 `recallMemoriesTiered({namespaces, query, limits:{scenes:3,frames:8,contents:12}})`，scenes/frames 各 render 成「Conversation scene summaries:」「Frame summaries:」独立 block 排在 prompt nodes 上面（long → short horizon），contents 替换原 promptHistory；off 时走旧 flat recall；tiered 抛错时 fallback 到 flat。新加 [src/services/agent/agentMemoryContext.tieredGate.test.js](src/services/agent/agentMemoryContext.tieredGate.test.js) 3 个 case（off / on / on+empty store）。**测试踩坑**：Node ESM 模块缓存跨 test 不重置，`getDb()` 单例握 stale fd 指向已 rm 的 MELO_HOME 目录（SQLite keeps inode open），用 `_resetStoreForTests()` 在 setUp/tearDown 强制关掉。
-
-- **Gap 3 + Bonus — CLI 命令**：[src/index.js](src/index.js) 加 `melo memory status`（人读 + `--json`：store path / counts / by-kind / by-attic / vec / dreams / embedding drift / tuning）+ `melo memory consolidate` 调 `triggerDreamingNow`（`--full` 切 incremental→full，`--json` 输出 sweep summary）。subprocess-style 测试 [src/index.memoryCli.test.js](src/index.memoryCli.test.js) 6 个 case 跑真 child process（fresh MELO_HOME / json shape / disabled 提示 / 未知 subcommand 错误等）。
-
-**核心发现**：跑 `melo memory status` 在用户实际 MELO_HOME 上：`memories=1, by kind=fact:1, by attic=none:1, dreams=12 files`。也就是说 dreaming 12 天来对着只有 1 条 fact 的 store 在跑空气。`MELO_DEBUG_MEMORY=1` 重新启动时就能即时看到 saveState 触发 vs entries 数量，定位为啥 chats 不入 state。
-
-**验证**：safety + memory + chat + agent 完整 604 个测试全绿无回归（含 4 diagnostic + 3 tiered gate + 6 memory CLI 共 13 个新加 case）。
-
-**Known-limit / 下一步候选**：
-- 切到生产用之前需先 chat 数据流投产——`MELO_DEBUG_MEMORY=1` 跑一两次 saveState 看 chats 数；如果 0，说明持久化路径自身坏；如果 ≥1 但 entries=0，说明 `<3 message` 或 `createdAt 缺失` 卡住
-- `MELO_MEMORY_TIERS_RECALL=1` 默认关，等 chat 数据流确认后开启灰度灰度 1-2 天观察 prompt 质量再考虑改默认
-- Desktop UI 仪表盘（差距 3 方案 B）排到数据流跑稳之后，用户原 audit 也是这个顺序
+- **WKWebView 外链路由**：[desktop-app/main.swift](desktop-app/main.swift) +48 行加 `webView decidePolicyFor` 拦截：URL `http(s)` 且 `host:port` 不等于 server URL 的，调 `NSWorkspace.shared.open(url)` → 系统浏览器；同时支持前端 message handler `openExternalUrl`。**意图**：用户点 chat 里的链接卡片或 markdown 链接，跳系统浏览器而非在 WKWebView 内 navigate（之前会替换整个 app shell）。
+- **link-card preview**：[desktop-ui/styles.css](desktop-ui/styles.css) +57 行加 `.link-card-main` flex container + `.link-preview` (image + copy) + `.link-preview-image` 76×76 缩略图样式；[desktop-ui/app.js](desktop-ui/app.js) +140 行配套 render。
+- **静态资源 no-cache**：[src/server.js](src/server.js) `.html/.js/.css` 加 `cache-control: no-cache`，并对 attachment classifier 模块单独标 no-cache（之前 1 天 cache 让 Douyin/Xiaohongshu 链接修复要等用户重启 app）。
+- **smoke 验证**：[scripts/smoke-desktop.js](scripts/smoke-desktop.js) +23 行新断言。
 
 ---
-## 2026-05-04 — Phase 4：image_generation 意图门控 + domain cookies 管理 UI（小红书/抖音误路由根治）
 
-用户报告：粘贴小红书/抖音分享链接（带预览图缩略图 + 文字 prompt），模型生成了**两张图**作为回复，自己解释"卡在工具路由异常"。日志查清根因：
-
-1. URL 抽取失败 — yt-dlp 支持小红书/抖音但**两个平台都重度反爬，必须配 cookie**；用户 `domainCookies` 是空对象 → 抽取返回 null → 模型只看到 URL + 失败工具结果
-2. image_generation 工具**无条件常驻**（[src/openai.js:169-180](src/openai.js#L169-L180) `buildCodexResponsesTools` 设计 2026-04-29 「workspace 存在就开」）→ 模型把它当成 fallback 工具用
-3. 分享链接的预览图（image attachment）让模型脑补"这是个图像任务" → 调 image_generation 生成两张
-
-按用户硬规则「方案评分先行」给 5 个方案打分（A 配 cookie / B prompt 加规则 / C URL paste 时去掉 image_gen / D 抽取失败明确 placeholder / E 按意图门控）→ E 9/10 综合最高，配 A 6/10 治抽取断层。E + A 组合根治。
-
-- **E 方案 — image_generation 意图门控（根治）**：
-  - [src/services/chat/messageBuilder.js](src/services/chat/messageBuilder.js) 加 `IMAGE_GEN_INTENT_PATTERN` 两层 regex：Tier A 强动词（draw/sketch/doodle/paint/illustrate）匹配 verb+a/an/the X 不需 image-noun（"draw a cat" 命中），Tier B 通用动词（generate/create/make/render/design/build/produce）+ 最多 2 修饰词 + 显式 image-noun（"create a function" 不命中，"create a function diagram" 命中）；CJK 同样分层（画/绘制 强 vs 生成/做/设计 + image 名词，允许 counter 与 latin word 间空格 "做一个 logo"）
-  - 加 `detectImageGenIntent` + `detectImageIntent(text, {hasInputImage})` — gen 不需 image，edit/follow-up 需 hasInputImage AND-gate 防 CSS/theming 误命中
-  - [src/openai.js](src/openai.js) `buildCodexResponsesTools` 接受 `hasImageIntent`，从「workspace 存在就开」改成「workspace **AND** hasImageIntent 才开」；`createCodexResponsesReply` 从 messages 提 latest user text → `_detectImageIntentLocal` → 透传 gate
-  - 避免循环依赖（openai → messageBuilder → contextCompact → openai）：只 import regex 常量，detector 在 openai.js 内联 8 行
-  - **效果**：用户原失败场景（贴 Xiaohongshu URL + 缩略图 + "总结一下"）三种意图模式都不命中 → image_generation **物理上不在工具列** → 模型不可能 fallback 到它
-  - 写 [src/services/chat/imageIntent.test.js](src/services/chat/imageIntent.test.js) 55 个 case：22 GEN 正例（en+zh）+ 17 反例（含贴 URL + 总结的真实 bug 重现）+ detectImageIntent AND-gate 4 case + 真 fixture 的 4 个 should-NOT-fire + 3 个 should-still-fire（"画一张类似的图" 等用户合法意图保持）
-  - 老 4 个 inline-image 测试更新为新 contract（hasImageIntent: true 必填）
-
-- **A 方案 — domain cookies 管理 UI（辅修，治抽取断层）**：
-  - [src/server.js](src/server.js) 加 3 个 endpoint: `GET /api/settings/domain-cookies`（**只返 host + length + tail，不返 cookie 值** — 避免 session secret 进 DOM）/ `POST /api/settings/domain-cookies/upsert`（host normalize 去 protocol+path 转小写）/ `POST /api/settings/domain-cookies/remove`；全部走 `withConfigLock` + `saveConfig` spread current 防 wipe apiKey 等 sibling field
-  - [desktop-ui/app.js](desktop-ui/app.js) Customize → Safety section 加 "Web-fetch cookies" 子区域：表单（hostname + cookie textarea）+ 列表（host + length + tail preview + Remove）；input 同步到 state 防 render 中途擦掉用户输入；占位提示用户对小红书/抖音/B站等需 cookie 的站添加
-
-- **production-wiring contract pins**（防回归）：
-  - [src/safety/fileSafetyGate.production.test.js](src/safety/fileSafetyGate.production.test.js) 加 4 个新 assertion：3 个 endpoint 存在 + GET 响应不含 raw cookies map + 前端 form actions 完整 + openai.js 真的 thread 了 hasImageIntent gate
-
-**验证**：safety + intent gate + openai 完整 154 个测试全绿（28 fileSafetyGate + 10 fileSafetyAllowlist + 12 production wiring + 55 imageIntent + 37 codex-inline-image + 11 fileSafetyResponse + 1 retry replacement）；下游 sendChatMessage / chatExecutionRunner / imageEditFastPath 29/29 全绿无回归。
-
-**为什么这是根治**：image_generation **物理上**只能在意图命中时进工具列，模型没法把它当工具失败的 fallback 用。即便 fetch_url 失败、cookies 缺失、抽取返回 null，模型最多回答"我没法读取这个链接，需要你提供更多信息"，**绝不会**生成图片。配 cookie 的 UI 让用户对真正需要 session 的站点（小红书/抖音/Bilibili 等）能直接补，闭环抽取断层。
-
-**Known-limit / Phase 5 候选**：
-- "draw the line" / "paint the room" / "draw blood" 三类 Tier-A 强动词的成语化用法会 false-positive 命中 GEN — pattern 注释明确接受这个 trade-off（误把工具加入列表 ≠ 强制调用，模型仍要自己选）
-- bash 永久 allowlist 仍未做（gate header line 1057 预留），需 bash command canonicalization
-- 抽取失败时给模型 explicit placeholder（D 方案）没做 — E 方案已经堵住"用 image_generation fallback"的路径，D 方案现在更像 polish 不是必需
-
----
----
-
-## 归档摘要（2026-05-04 之前的所有条目）
+## 归档摘要（2026-05-05 之前的所有条目）
 
 > 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
+
+- **2026-05-05 — Chat UI 三 bug 一次清 + 一个月 chat 跳到中部 / 滑动卡顿 root cause 终结** —— Bug 1/2 修了链接卡片溢出 + 滚动条对齐 thread 区；Bug 3 sync-restore 引入立刻可复现回归当场回退。后续 5 轮 JS scrollTop writer patch 全错，真根因是 `.thread-scroll-region` 缺 `overscroll-behavior-y: contain` 触发 CSS scroll chaining；最终 4 项收口 ship：单 scroller (`is-chat-view` gate) / 1500ms scroll guard / 41 处后台 render 走 `bgRender` helper / 附件 min-height 240px 占位。教训写进 user memory `feedback_ui_root_cause_first.md`。`6b3941f` … `7b021ad`
+- **2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI** —— frame/scene 写入实际已接（Phase 7d-5α-A1 commit 5/9），真问题是生产 chat 数据流没产 entries（`memories=1, dreams=12`）；加 `MELO_DEBUG_MEMORY=1` 单行诊断 + tiered recall 灰度开关 (`MELO_MEMORY_TIERS_RECALL`，默认 off) + `melo memory status/consolidate` CLI；604 测试全绿（+13 case）。
+- **2026-05-04 — Phase 4：image_generation 意图门控 + domain cookies 管理 UI（小红书/抖音误路由根治）** —— image_generation 工具改成「workspace AND hasImageIntent」才进列；`detectImageIntent` 两层 regex (英中) + AND-gate 防 CSS/theming 误命中；新加 domain cookies UI 治抽取断层；55 imageIntent + production wiring 全绿。
 
 - **2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI** —— 13 轮 Codex review 把 backend 锤到 A 后发现 production 接线整条没接（resolveFileSafety 仅 13 个 test 文件调用、前端 SSE 因 toolId 缺失被过滤丢掉），一次性补完三阶段：3a 接 server.js permission-response 路由按 kind:'file_safety' 分流 + desktop-ui 双 payload 形态 + renderFileSafetyDialog 按 operation 分布局；3b 新建 fileSafetyAllowlist.js 持久化 rule（file/dir + write 覆盖 edit + 不允许 dir-persistent）+ dialog "Always allow" 按钮；3c Customize 加 Safety section 列规则/Revoke。后续 Codex follow-up 修了 confirm-input recoverable + production-wiring contract test。`f5b5646` / `270d04c` / `28f1346`
 - **2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)** —— 重写 `_CODE_KEYWORD_REGEX` 覆盖 7 语言家族（JS/TS/Python/Rust/Go/Java/C#/Ruby/Swift/Kotlin）+ `\b` word boundary 防 `asynchronization` 误中 `async`；保留 `it(` lookahead 区分测试 framework 与英文 prose；dynamicContext.test 11/11 + 全 src 1975/1975 全绿。`5ffca5c` / `170eb30`

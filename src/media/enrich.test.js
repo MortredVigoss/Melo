@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   enrichMessageWithMediaContext,
   extractedMediaSearchText,
+  mergeSocialPreviewWithDirectVideoExtraction,
   normalizeExtractedMedia,
   renderExtractedMediaContext,
+  shouldBypassCachedExtraction,
 } from './index.js';
 import { extractImageContent } from './extractors/imageExtractor.js';
 import { extractReadableHtml } from './extractors/linkExtractor.js';
@@ -69,6 +71,96 @@ test('enrichMessageWithMediaContext no-ops when media is disabled', async () => 
   await enrichMessageWithMediaContext(message, { modelSupportsVision: true });
   assert.deepEqual(message.extractedMedia, []);
   delete process.env.MELO_DISABLE_MEDIA;
+});
+
+test('shouldBypassCachedExtraction retries shallow social-link cache but keeps deep cache', () => {
+  const attachment = { kind: 'link', url: 'https://v.douyin.com/1ZtdZeuq73U/' };
+
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: { source: 'social-link:share-preview:wechat' },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: { source: 'social-link:opengraph' },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: { source: 'social-link:browser:browser' },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: { source: 'social-link:share-preview:wechat+douyin-ssr' },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: { source: 'social-link:yt-dlp' },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: {
+        source: 'social-link:share-preview:wechat+douyin-ssr',
+        media: [{ src: 'https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc' }],
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(attachment, {
+      metadata: {
+        source: 'social-link:share-preview:wechat+douyin-ssr',
+        media: [{ src: 'https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc' }],
+        directMediaExtractionAttempted: true,
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBypassCachedExtraction(
+      { kind: 'link', url: 'https://example.com/article' },
+      { metadata: { source: 'social-link:share-preview:wechat' } },
+    ),
+    false,
+  );
+});
+
+test('mergeSocialPreviewWithDirectVideoExtraction appends transcript and preserves keyframes', () => {
+  const out = mergeSocialPreviewWithDirectVideoExtraction(
+    {
+      kind: 'article',
+      text: 'Douyin preview body',
+      metadata: {
+        title: 'Douyin title',
+        media: [{ src: 'https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc' }],
+      },
+    },
+    {
+      kind: 'transcript',
+      text: 'spoken words from the video',
+      metadata: {
+        source: 'video-audio-transcript',
+        keyframes: ['data:image/jpeg;base64,/9j/4AAQ'],
+      },
+    },
+    { directUrl: 'https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc' },
+  );
+
+  assert.match(out.text, /Douyin preview body/);
+  assert.match(out.text, /Direct video transcript/);
+  assert.match(out.text, /spoken words from the video/);
+  assert.equal(out.metadata.directMediaExtractionAttempted, true);
+  assert.equal(out.metadata.directMediaExtractionSucceeded, true);
+  assert.deepEqual(out.metadata.keyframes, ['data:image/jpeg;base64,/9j/4AAQ']);
 });
 
 test('extractImageContent does not create placeholder text for vision models', async () => {

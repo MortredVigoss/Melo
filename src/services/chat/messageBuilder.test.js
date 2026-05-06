@@ -13,6 +13,7 @@ import {
   mergeRichMediaContextIntoMessage,
   stripHistoricalRichMediaFromMessage,
   summarizeAttachmentsForPrompt,
+  isProviderFailureAssistantMessage,
   IMAGE_FOLLOW_UP_PATTERN,
   AUDIO_FOLLOW_UP_PATTERN,
   IMAGE_EDIT_INTENT_PATTERN,
@@ -314,6 +315,29 @@ test('messageToModelContent: video attachment + keyframes → image_url parts em
   assert.ok(firstImageIdx >= 0 && videoIdx > firstImageIdx, 'image_url before video_attachment');
 });
 
+test('messageToModelContent: link-extracted social video keyframes → image_url parts emitted', () => {
+  const out = messageToModelContent(
+    msg('user', '分析这个抖音链接', {
+      attachments: [
+        { id: 'link-1', kind: 'link', url: 'https://v.douyin.com/abc/' },
+      ],
+      extractedMedia: [{
+        attachmentId: 'link-1',
+        kind: 'article',
+        text: 'Douyin preview with transcript',
+        metadata: {
+          source: 'social-link:share-preview:wechat+douyin-ssr',
+          keyframes: ['data:image/jpeg;base64,/9j/4AAQ'],
+        },
+      }],
+    }),
+  );
+
+  assert.ok(Array.isArray(out));
+  assert.ok(out.some(p => p.type === 'image_url'));
+  assert.ok(out.some(p => p.type === 'text' && /Douyin preview/.test(p.text)));
+});
+
 test('messageToModelContent: video attachment without keyframes still works (graceful fallback)', () => {
   const videoAttachment = {
     id: 'vid-2',
@@ -415,6 +439,27 @@ test('buildModelMessagesFromChat: carry-forward splices recent media into a foll
   // have spliced the image in.
   assert.ok(Array.isArray(latest));
   assert.ok(latest.some(p => p.type === 'image_url'));
+});
+
+test('buildModelMessagesFromChat: provider failure replies are not sent back to the model', () => {
+  const failure = msg(
+    'assistant',
+    'Melo could not complete the model request right now. Details: Codex OAuth request failed.',
+  );
+  const chat = {
+    messages: [
+      msg('user', 'Read this link'),
+      failure,
+      msg('user', 'Try again'),
+    ],
+  };
+
+  assert.equal(isProviderFailureAssistantMessage(failure), true);
+
+  const out = buildModelMessagesFromChat(chat);
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map(message => message.role), ['user', 'user']);
+  assert.equal(out.some(message => String(message.content).includes('Codex OAuth request failed')), false);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

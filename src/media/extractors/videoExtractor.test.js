@@ -18,6 +18,7 @@ import {
   _setExtractAudioContentForTests,
   extractKeyframes,
   extractVideoContent,
+  isLikelyDirectVideoStreamUrl,
   spawnWithAbort,
   withAudioBudget,
   withKeyframeBudget,
@@ -81,6 +82,21 @@ const skipReason = !ffmpegOk
   : !ffprobeOk
     ? 'ffprobe unavailable on this host'
     : false;
+
+test('isLikelyDirectVideoStreamUrl accepts Douyin playwm URLs without file extensions', () => {
+  assert.equal(
+    isLikelyDirectVideoStreamUrl('https://aweme.snssdk.com/aweme/v1/playwm/?video_id=v0d00fg10000'),
+    true,
+  );
+  assert.equal(
+    isLikelyDirectVideoStreamUrl('https://www.douyin.com/video/7636179780475374884'),
+    false,
+  );
+  assert.equal(
+    isLikelyDirectVideoStreamUrl('https://example.com/video.mp4?x=1'),
+    true,
+  );
+});
 
 test('extractKeyframes pulls evenly-spaced JPEG data URLs from a 6s test video', { skip: skipReason }, async () => {
   const workDir = await mkdtemp(join(tmpdir(), 'melo-video-test-'));

@@ -1246,12 +1246,21 @@ function extractCodexEventError(event) {
   }
 
   if (event.type === 'error') {
-    return event.message || event.code || 'Codex OAuth request failed.';
+    return (
+      event.error?.message ||
+      event.error?.code ||
+      event.message ||
+      event.code ||
+      'Codex OAuth request failed.'
+    );
   }
 
   if (event.type === 'response.failed') {
     return (
+      event.error?.message ||
+      event.error?.code ||
       event.response?.error?.message ||
+      event.response?.error?.code ||
       event.response?.incomplete_details?.reason ||
       'Codex response failed.'
     );

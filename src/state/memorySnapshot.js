@@ -56,6 +56,9 @@ import {
   messageTextForContext,
 } from './chatThreadContext.js';
 import {
+  shouldSuppressAssistantContextText,
+} from '../services/chat/contextFilters.js';
+import {
   normalizePromptHistory,
 } from '../services/activity/activityLog.js';
 import {
@@ -154,6 +157,9 @@ export function buildMemoryStoreEntries(state) {
       // Previously desktop user messages (no senderId) were excluded, and
       // assistant responses were never indexed — both gaps hurt search quality.
       const rawText = messageTextForContext(message);
+      if (isAssistantMessage && shouldSuppressAssistantContextText(rawText)) {
+        continue;
+      }
       // Truncate long AI responses to keep the store manageable; user messages
       // are kept in full since they tend to be much shorter.
       const text = isAssistantMessage ? rawText.slice(0, 2000) : rawText;
@@ -440,9 +446,13 @@ export function buildMemoryStoreEntries(state) {
   if (tiers.has('frame') || tiers.has('scene')) {
     for (const chat of Array.isArray(state.chats) ? state.chats : []) {
       const messages = Array.isArray(chat?.messages) ? chat.messages : [];
-      if (messages.length < 3) continue;
+      const frameSourceMessages = messages.filter(message =>
+        message?.role !== 'assistant' ||
+        !shouldSuppressAssistantContextText(messageTextForContext(message))
+      );
+      if (frameSourceMessages.length < 3) continue;
 
-      const frameWindows = splitFrames(messages);
+      const frameWindows = splitFrames(frameSourceMessages);
       const frameEntries = [];
       if (tiers.has('frame')) {
         for (const frame of frameWindows) {

@@ -176,7 +176,8 @@ export const fetchUrlTool = {
     // login walls, JS shells, anti-bot challenges — every hop in the
     // generic chain wastes the budget and returns shell-only HTML.
     // The dedicated socialLinkTool tries short-link resolve → yt-dlp
-    // (with config.domainCookies) → OpenGraph fallback. The user can
+    // (with config.domainCookies) → rendered browser overlay-close
+    // fallback → OpenGraph fallback. The user can
     // still pass extract_mode='playwright' explicitly to override
     // (escape hatch for diagnosis), but auto / direct / jina all
     // re-route here when the host matches.
@@ -217,7 +218,7 @@ export const fetchUrlTool = {
               method: 'social-link',
               length: truncated.length,
               // socialResult.via lets the caller see which sub-strategy
-              // succeeded — 'yt-dlp' / 'opengraph' — useful for
+              // succeeded — 'yt-dlp' / 'browser:*' / 'share-preview:*' — useful for
               // debugging extractor health without re-running.
               via: socialResult.via,
               canonicalUrl: socialResult.canonicalUrl,
@@ -231,7 +232,7 @@ export const fetchUrlTool = {
           ok: false,
           output:
             `Could not read this social-link URL: ${normalized}\n\n` +
-            `The dedicated extractor (yt-dlp + OpenGraph) returned no usable content. ` +
+            `The dedicated extractor (yt-dlp + browser overlay-close fallback + share preview fallback) returned no usable content. ` +
             `Common cause: the post requires a login session. Add the host's cookie ` +
             `string under Customize → Safety → Web-fetch cookies. Hosts to add for ` +
             `this URL family: xiaohongshu.com, xhslink.com, douyin.com, ` +

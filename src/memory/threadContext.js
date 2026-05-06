@@ -5,6 +5,7 @@ import {
   normalizeComparablePhrase,
   normalizeConversationSnippet,
 } from './heuristics.js';
+import { shouldSuppressAssistantContextText } from '../services/chat/contextFilters.js';
 
 function defaultMessageTextResolver(message) {
   return String(message?.content || '').trim();
@@ -34,6 +35,10 @@ export function uniqueMemoryLines(values = [], limit = 6) {
 function summarizeRecentWindow(messages = [], messageTextResolver, limit = 6) {
   return messages
     .slice(-limit)
+    .filter(message => (
+      message?.role !== 'assistant' ||
+      !shouldSuppressAssistantContextText(messageTextResolver(message))
+    ))
     .map(message => {
       const text = normalizeConversationSnippet(messageTextResolver(message), 220);
       if (!text) {
@@ -52,6 +57,10 @@ function findLatestOpenClarification(messages = [], messageTextResolver) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const candidate = messages[index];
     if (candidate?.role !== 'assistant') {
+      continue;
+    }
+
+    if (shouldSuppressAssistantContextText(messageTextResolver(candidate))) {
       continue;
     }
 
@@ -92,11 +101,17 @@ export function buildThreadContext({
     .find(message => message.role === 'user');
   const latestAssistant = [...messages]
     .reverse()
-    .find(message => message.role === 'assistant');
+    .find(message =>
+      message.role === 'assistant' &&
+      !shouldSuppressAssistantContextText(messageTextResolver(message))
+    );
   const pivotIndex = latestUser ? messages.lastIndexOf(latestUser) : messages.length;
   const previousAssistant = [...messages.slice(0, pivotIndex)]
     .reverse()
-    .find(message => message.role === 'assistant');
+    .find(message =>
+      message.role === 'assistant' &&
+      !shouldSuppressAssistantContextText(messageTextResolver(message))
+    );
   const previousUser = [...messages.slice(0, pivotIndex)]
     .reverse()
     .find(message => message.role === 'user');
@@ -124,7 +139,10 @@ export function buildThreadContext({
     ),
     earlierAssistantContext: uniqueMemoryLines(
       olderMessages
-        .filter(message => message.role === 'assistant')
+        .filter(message =>
+          message.role === 'assistant' &&
+          !shouldSuppressAssistantContextText(messageTextResolver(message))
+        )
         .map(message => messageTextResolver(message)),
       maxMemoryItems,
     ),

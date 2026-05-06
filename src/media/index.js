@@ -4,19 +4,38 @@ import { extractAudioContent } from './extractors/audioExtractor.js';
 import { extractDocumentContent } from './extractors/documentExtractor.js';
 import { extractImageContent } from './extractors/imageExtractor.js';
 import { extractLinkContent } from './extractors/linkExtractor.js';
-import { extractVideoContent } from './extractors/videoExtractor.js';
+import {
+  extractVideoContent,
+  isLikelyDirectVideoStreamUrl,
+} from './extractors/videoExtractor.js';
 import { extractYoutubeContent } from './extractors/youtubeExtractor.js';
 import { detectUrlKind } from './urlDetector.js';
+import { isSocialLinkUrl, readSocialLink } from '../tools/builtins/socialLinkTool.js';
 
 const VALID_EXTRACTED_MEDIA_KINDS = new Set(['transcript', 'caption', 'article', 'summary']);
 let TOTAL_BUDGET_MS = 30000;
 let PER_ATTACHMENT_BUDGET_MS = 15000;
+let SOCIAL_DIRECT_TOTAL_BUDGET_MS = 60000;
+let SOCIAL_DIRECT_PER_ATTACHMENT_BUDGET_MS = 55000;
 
 // Tests inject smaller budgets so abort-path coverage doesn't need to wait
 // the full 15s. Pass `null` to restore production defaults.
-export function _setMediaBudgetsForTests({ totalMs, perAttachmentMs } = {}) {
+export function _setMediaBudgetsForTests({
+  totalMs,
+  perAttachmentMs,
+  socialDirectTotalMs,
+  socialDirectPerAttachmentMs,
+} = {}) {
   TOTAL_BUDGET_MS = (typeof totalMs === 'number' && totalMs > 0) ? totalMs : 30000;
   PER_ATTACHMENT_BUDGET_MS = (typeof perAttachmentMs === 'number' && perAttachmentMs > 0) ? perAttachmentMs : 15000;
+  SOCIAL_DIRECT_TOTAL_BUDGET_MS =
+    (typeof socialDirectTotalMs === 'number' && socialDirectTotalMs > 0)
+      ? socialDirectTotalMs
+      : 60000;
+  SOCIAL_DIRECT_PER_ATTACHMENT_BUDGET_MS =
+    (typeof socialDirectPerAttachmentMs === 'number' && socialDirectPerAttachmentMs > 0)
+      ? socialDirectPerAttachmentMs
+      : 55000;
 }
 
 function isPlaceholderSource(source = '') {
@@ -28,6 +47,36 @@ function isPlaceholderSource(source = '') {
     normalized === 'vision-passthrough' ||
     normalized === 'whisper-unavailable' ||
     normalized.endsWith('-placeholder')
+  );
+}
+
+export function shouldBypassCachedExtraction(attachment = {}, cached = {}) {
+  const source = String(cached?.metadata?.source || '').trim().toLowerCase();
+  if (!source.startsWith('social-link:')) {
+    return false;
+  }
+  if (!isSocialLinkUrl(attachment?.url)) {
+    return false;
+  }
+  const cachedMedia = Array.isArray(cached?.metadata?.media) ? cached.metadata.media : [];
+  const hasDirectMedia = cachedMedia.some(item =>
+    item?.src && isLikelyDirectVideoStreamUrl(item.src)
+  );
+  if (
+    hasDirectMedia &&
+    !cached?.metadata?.directMediaExtractionAttempted
+  ) {
+    return true;
+  }
+
+  // Shallow social previews are useful as a last resort, but they must not
+  // block a later retry from using the deeper browser/yt-dlp paths. This
+  // matters for Douyin short links where the browser redirect chain can mint
+  // a temporary visitor credential.
+  return !(
+    source === 'social-link:yt-dlp' ||
+    source.startsWith('social-link:browser:') ||
+    source.includes('+douyin-ssr')
   );
 }
 
@@ -76,11 +125,139 @@ function extractedMediaLabel(entry = {}) {
   }
 }
 
+async function extractSocialPreviewContent(attachment, context, signal) {
+  const result = await readSocialLink(attachment.url, {
+    config: context?.config || {},
+    signal,
+  });
+  if (!result?.body) return null;
+  const previewEntry = {
+    kind: 'article',
+    text: normalizeMediaText(result.body, 12000),
+    metadata: {
+      title: result.preview?.title || '',
+      author: result.preview?.author || '',
+      siteName: result.preview?.siteName || '',
+      previewImage: result.preview?.image || '',
+      itemId: result.preview?.itemId || '',
+      media: Array.isArray(result.preview?.media) ? result.preview.media : [],
+      source: `social-link:${result.via || 'preview'}`,
+      url: result.canonicalUrl || attachment.url,
+      originalUrl: attachment.url,
+    },
+  };
+
+  return enrichSocialPreviewWithDirectMedia(previewEntry, context, signal);
+}
+
+function firstDirectSocialVideo(media = []) {
+  if (!Array.isArray(media)) return null;
+  return media.find(item =>
+    item?.src && isLikelyDirectVideoStreamUrl(item.src)
+  ) || null;
+}
+
+export function shouldUseLongSocialMediaBudget(attachment = {}) {
+  const url = String(attachment?.url || '');
+  if (!url) return false;
+
+  // Social share pages can first require a browser/SSR preview step and then
+  // a direct video pass (download + ffmpeg + transcript/keyframes). Keeping
+  // the generic 15s budget for those links caused Melo to stop after title
+  // metadata and tell the user it needed cookies, even though the direct
+  // media URL had already been discovered.
+  if (
+    (attachment.kind === 'link' || attachment.kind === 'video') &&
+    isSocialLinkUrl(url)
+  ) {
+    return true;
+  }
+
+  return (
+    attachment.kind === 'video' &&
+    isLikelyDirectVideoStreamUrl(url)
+  );
+}
+
+function totalBudgetForAttachments(attachments = []) {
+  const hasLongSocialMedia = attachments.some(shouldUseLongSocialMediaBudget);
+  return hasLongSocialMedia
+    ? Math.max(TOTAL_BUDGET_MS, SOCIAL_DIRECT_TOTAL_BUDGET_MS)
+    : TOTAL_BUDGET_MS;
+}
+
+function perAttachmentBudgetForAttachment(attachment = {}) {
+  return shouldUseLongSocialMediaBudget(attachment)
+    ? Math.max(PER_ATTACHMENT_BUDGET_MS, SOCIAL_DIRECT_PER_ATTACHMENT_BUDGET_MS)
+    : PER_ATTACHMENT_BUDGET_MS;
+}
+
+export function mergeSocialPreviewWithDirectVideoExtraction(previewEntry, videoEntry, { directUrl = '' } = {}) {
+  const metadata = {
+    ...(previewEntry?.metadata || {}),
+    directMediaExtractionAttempted: true,
+    directMediaExtractionSucceeded: Boolean(videoEntry),
+    directMediaUrl: directUrl,
+    directMediaExtractionSource: videoEntry?.metadata?.source || '',
+  };
+
+  if (Array.isArray(videoEntry?.metadata?.keyframes) && videoEntry.metadata.keyframes.length) {
+    metadata.keyframes = videoEntry.metadata.keyframes;
+  }
+
+  const sections = [previewEntry?.text || ''].filter(Boolean);
+  if (videoEntry?.text) {
+    const source = String(videoEntry?.metadata?.source || '');
+    const label = source === 'video-keyframes-only'
+      ? 'Direct video visual extraction'
+      : 'Direct video transcript';
+    sections.push(`[${label}]\n${normalizeMediaText(videoEntry.text, 8000)}`);
+  } else if (directUrl) {
+    sections.push(
+      '[Direct video extraction]\n' +
+      'The share preview exposed a direct media URL, but Melo could not extract a transcript or keyframes from it within this turn.',
+    );
+  }
+
+  return {
+    ...(previewEntry || {}),
+    kind: 'article',
+    text: normalizeMediaText(sections.join('\n\n'), 12000),
+    metadata,
+  };
+}
+
+async function enrichSocialPreviewWithDirectMedia(previewEntry, context, signal) {
+  const media = Array.isArray(previewEntry?.metadata?.media) ? previewEntry.metadata.media : [];
+  const directVideo = firstDirectSocialVideo(media);
+  if (!directVideo?.src || signal?.aborted) {
+    return previewEntry;
+  }
+
+  const videoEntry = await extractVideoContent({
+    id: 'social-direct-video',
+    kind: 'video',
+    url: directVideo.src,
+    title: previewEntry?.metadata?.title || '',
+    fileName: 'social-video.mp4',
+    mimeType: 'video/mp4',
+  }, context, { signal }).catch(() => null);
+
+  return mergeSocialPreviewWithDirectVideoExtraction(previewEntry, videoEntry, {
+    directUrl: directVideo.src,
+  });
+}
+
 async function routeExtraction(attachment, context, signal) {
   if (!attachment?.url) {
     return null;
   }
   if (signal?.aborted) return null;
+
+  const isSocialPage = isSocialLinkUrl(attachment.url);
+  if ((attachment.kind === 'link' || attachment.kind === 'video') && isSocialPage) {
+    return extractSocialPreviewContent(attachment, context, signal);
+  }
 
   if (attachment.kind === 'image') {
     return extractImageContent(attachment, { ...context, signal });
@@ -97,6 +274,7 @@ async function routeExtraction(attachment, context, signal) {
       if (platformResult) {
         return platformResult;
       }
+      return null;
     }
     return extractVideoContent(attachment, context, { signal });
   }
@@ -229,26 +407,27 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
     return message;
   }
 
-  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  const deadline = Date.now() + totalBudgetForAttachments(attachments);
   const extractionTasks = attachments.map(async attachment => {
     const cacheKey = `${attachment.kind}:${attachment.url}`;
     const cached = await getCachedExtraction(cacheKey);
-    if (cached) {
+    if (cached && !shouldBypassCachedExtraction(attachment, cached)) {
       return {
         attachmentId: attachment.id || null,
         ...cached,
       };
     }
 
+    const perAttachmentBudget = perAttachmentBudgetForAttachment(attachment);
     const remaining = Math.max(
       0,
-      Math.min(PER_ATTACHMENT_BUDGET_MS, deadline - Date.now()),
+      Math.min(perAttachmentBudget, deadline - Date.now()),
     );
     // Skip extraction if there's not enough time left to make meaningful
     // progress. Production threshold stays at 1s; in test mode with a
     // very small per-attachment budget, the threshold scales down so the
     // budget actually gets exercised instead of always-skip.
-    const minRemaining = Math.min(1000, Math.floor(PER_ATTACHMENT_BUDGET_MS / 4));
+    const minRemaining = Math.min(1000, Math.floor(perAttachmentBudget / 4));
     if (remaining < minRemaining) {
       return null;
     }

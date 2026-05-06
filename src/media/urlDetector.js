@@ -45,6 +45,31 @@ const VIDEO_EXT = /\.(mp4|mov|webm|m4v|mkv)(\?|$)/i;
 const AUDIO_EXT = /\.(mp3|wav|m4a|ogg|aac|flac|opus)(\?|$)/i;
 const DOC_EXT = /\.(pdf|docx?|pptx?|xlsx?|txt|md)(\?|$)/i;
 
+const SOCIAL_PREVIEW_HOST_SUFFIXES = [
+  'douyin.com',
+  'v.douyin.com',
+  'iesdouyin.com',
+  'xiaohongshu.com',
+  'xhslink.com',
+];
+
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function hostMatchesAnySuffix(host, suffixes) {
+  if (!host) return false;
+  return suffixes.some(suffix => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+export function isSocialPreviewUrl(url) {
+  return hostMatchesAnySuffix(hostnameOf(url), SOCIAL_PREVIEW_HOST_SUFFIXES);
+}
+
 export function detectUrlKind(url) {
   const normalized = String(url || '').trim();
   if (!normalized) {
@@ -109,12 +134,14 @@ export function promoteTextUrlsToAttachments(content, existingAttachments = []) 
       continue;
     }
 
+    // Platform URLs (YouTube/Douyin/Xiaohongshu/etc.) are pages, not
+    // playable video files. Render them as links and let the media
+    // extractor read their preview/metadata. Direct .mp4/.webm URLs still
+    // classify as `video` via VIDEO_EXT above.
     const mappedKind =
-      kind === 'video-platform'
-        ? 'video'
-        : kind === 'document'
-          ? 'link'
-          : kind;
+      kind === 'video-platform' || kind === 'document'
+        ? 'link'
+        : kind;
 
     newAttachments.push({
       id: undefined,

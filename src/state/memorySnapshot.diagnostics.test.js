@@ -165,3 +165,42 @@ test('MELO_DEBUG_MEMORY=1 + chat with <3 messages → eligibleChats=0 and no fra
     assert.equal(/\bscene=/.test(log), false, 'scene must not be counted when eligible chats = 0');
   });
 });
+
+test('buildMemoryStoreEntries does not index assistant diagnostics as prompt memory', async () => {
+  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-filter`);
+  const entries = buildMemoryStoreEntries({
+    settings: { promptHistory: [] },
+    chats: [
+      {
+        id: 'chat-filter',
+        title: 'Filter diagnostics',
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            content: '重新看这个抖音链接',
+            createdAt: '2026-05-01T00:00:00Z',
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Codex blocked this request because the current thread context looked cybersecurity-sensitive.',
+            createdAt: '2026-05-01T00:00:01Z',
+          },
+          {
+            id: 'a2',
+            role: 'assistant',
+            content: '这个结果提示需要 fresh cookies 和临时访问凭证。',
+            createdAt: '2026-05-01T00:00:02Z',
+          },
+        ],
+      },
+    ],
+  });
+
+  const text = entries.map(entry => entry.text).join('\n');
+  assert.match(text, /重新看这个抖音链接/);
+  assert.doesNotMatch(text, /cybersecurity/i);
+  assert.doesNotMatch(text, /fresh cookies/i);
+  assert.doesNotMatch(text, /临时访问凭证/);
+});

@@ -26,6 +26,14 @@ test('formatProviderFailureMessage recognizes provider-side 5xx failures', () =>
   assert.match(message, /backend did not finish this request/i);
 });
 
+test('formatProviderFailureMessage explains Codex cyber policy failures', () => {
+  const message = formatProviderFailureMessage(
+    new Error('This content was flagged for possible cybersecurity risk. code=cyber_policy'),
+  );
+
+  assert.match(message, /thread context looked cybersecurity-sensitive/i);
+});
+
 test('formatProviderFailureMessage keeps a concise detail summary for unknown failures', () => {
   const message = formatProviderFailureMessage(
     new Error('Codex OAuth request failed (418 I am a teapot): unexpected policy branch'),

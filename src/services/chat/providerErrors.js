@@ -67,6 +67,10 @@ export function formatProviderFailureMessage(error) {
     return 'OpenAI rate-limited this request. Wait a moment and try again.';
   }
 
+  if (normalized.includes('cyber_policy') || normalized.includes('possible cybersecurity risk')) {
+    return 'Codex blocked this request because the current thread context looked cybersecurity-sensitive. This is usually caused by stale technical, cookie, token, or error text in a long chat. Start a fresh chat or prune the old context, then retry.';
+  }
+
   if (
     normalized.includes('codex login has expired') ||
     normalized.includes('reconnect codex oauth') ||

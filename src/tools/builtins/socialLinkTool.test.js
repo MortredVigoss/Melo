@@ -4,15 +4,17 @@
 //   1. isSocialLinkUrl — host classification (positive + negative)
 //   2. parseOpenGraph — meta tag extraction from raw HTML
 //   3. resolveShortLink — only resolves known shortener hosts
-//   4. readSocialLink — strategy ordering (yt-dlp first, OG fallback,
-//      null on total miss). The yt-dlp helper is dependency-injected
-//      via opts.ytdlpFn so tests don't need a live yt-dlp binary.
+//   4. readSocialLink — strategy ordering (yt-dlp first, rendered-browser
+//      fallback, OG fallback, null on total miss). The yt-dlp/browser helpers
+//      are dependency-injected so tests don't need live browsers or binaries.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  extractSocialItemId,
   isSocialLinkUrl,
   parseOpenGraph,
+  parseSocialPreview,
   resolveShortLink,
   readSocialLink,
 } from './socialLinkTool.js';
@@ -97,6 +99,84 @@ test('parseOpenGraph: meta with empty content is skipped', () => {
   assert.equal(og.title, undefined);
 });
 
+test('parseSocialPreview: combines OG, JSON-LD, and SSR fields', () => {
+  const html = `
+    <meta property="og:title" content="OG title" />
+    <meta property="og:description" content="OG description" />
+    <script type="application/ld+json">
+      {"headline":"LD title","articleBody":"Full note body from json ld","author":{"name":"作者A"}}
+    </script>
+    <script>window.__INITIAL_STATE__={"desc":"正文内容比 og 更像用户分享页里的全文内容，足够长，所以应该进入 body 字段。","comments":[{"content":"第一条评论"}]}</script>
+  `;
+  const preview = parseSocialPreview(html);
+  assert.equal(preview.title, 'LD title');
+  assert.equal(preview.author, '作者A');
+  assert.match(preview.body, /正文内容/);
+  assert.deepEqual(preview.comments, ['第一条评论']);
+});
+
+test('parseSocialPreview: extracts Douyin _ROUTER_DATA video metadata and media URL', () => {
+  const html = `
+    <html><head><title>fallback title</title></head><body>
+      <script>
+        window._ROUTER_DATA = {
+          "loaderData": {
+            "video_(id)/page": {
+              "videoInfoRes": {
+                "item_list": [{
+                  "aweme_id": "7636179780475374884",
+                  "desc": "一款能以超音速飞行的客机“协和式飞机”#军事科普 #涨知识",
+                  "create_time": 1777944900,
+                  "author": { "nickname": "犟驴科普" },
+                  "statistics": {
+                    "digg_count": 4231,
+                    "comment_count": 93,
+                    "collect_count": 790,
+                    "share_count": 143
+                  },
+                  "risk_infos": { "content": "作者声明：内容由 AI 生成" },
+                  "text_extra": [{ "hashtag_name": "军事科普" }],
+                  "music": { "duration": 56 },
+                  "video": {
+                    "duration": 56000,
+                    "width": 720,
+                    "height": 1280,
+                    "cover": { "url_list": ["https://example.com/cover.jpeg"] },
+                    "play_addr": {
+                      "url_list": [
+                        "https://aweme.snssdk.com/aweme/v1/playwm/?video_id=v0d00fg10000d7sig8nog65l4h0riov0&ratio=720p"
+                      ]
+                    }
+                  }
+                }]
+              }
+            }
+          }
+        };
+      </script>
+    </body></html>
+  `;
+  const preview = parseSocialPreview(html);
+  assert.equal(preview.itemId, '7636179780475374884');
+  assert.equal(preview.author, '犟驴科普');
+  assert.match(preview.title, /协和式飞机/);
+  assert.match(preview.body, /Likes 4\.2K/);
+  assert.match(preview.body, /作者声明/);
+  assert.equal(preview.media[0].duration, 56);
+  assert.match(preview.media[0].src, /aweme\.snssdk\.com/);
+});
+
+test('extractSocialItemId: reads Douyin canonical ids', () => {
+  assert.equal(
+    extractSocialItemId('https://www.iesdouyin.com/share/video/7636179780475374884/?from_ssr=1'),
+    '7636179780475374884',
+  );
+  assert.equal(
+    extractSocialItemId('https://www.douyin.com/video/7611243785283964170'),
+    '7611243785283964170',
+  );
+});
+
 // ── resolveShortLink ───────────────────────────────────────────────────
 
 test('resolveShortLink: non-shortener URL returns unchanged', async () => {
@@ -114,7 +194,10 @@ test('resolveShortLink: example.com URL returns unchanged (not a known shortener
 // ── readSocialLink ─────────────────────────────────────────────────────
 
 test('readSocialLink: rejects non-social URL with null', async () => {
-  const out = await readSocialLink('https://example.com', { ytdlpFn: async () => null });
+  const out = await readSocialLink('https://example.com', {
+    browserPreviewFn: null,
+    ytdlpFn: async () => null,
+  });
   assert.equal(out, null);
 });
 
@@ -131,7 +214,10 @@ test('readSocialLink: yt-dlp success → returns {body, via:"yt-dlp", canonicalU
     subtitleText: '',
     platform: 'douyin',
   });
-  const out = await readSocialLink('https://www.douyin.com/video/123', { ytdlpFn });
+  const out = await readSocialLink('https://www.douyin.com/video/123', {
+    previewFn: async () => null,
+    ytdlpFn,
+  });
   assert.equal(out.via, 'yt-dlp');
   assert.equal(out.canonicalUrl, 'https://www.douyin.com/video/123');
   assert.match(out.body, /猫猫的日常/);
@@ -140,10 +226,15 @@ test('readSocialLink: yt-dlp success → returns {body, via:"yt-dlp", canonicalU
   assert.match(out.body, /Source: https:\/\/www\.douyin\.com\/video\/123/);
 });
 
-test('readSocialLink: yt-dlp returns null → falls through (no exception, returns null or OG hit)', async () => {
+test('readSocialLink: yt-dlp returns null → falls through without exception', async () => {
   const out = await readSocialLink(
     'https://www.xiaohongshu.com/explore/this-id-does-not-exist-12345',
-    { ytdlpFn: async () => null, signal: AbortSignal.timeout(500) },
+    {
+      previewFn: async () => null,
+      browserPreviewFn: null,
+      ytdlpFn: async () => null,
+      signal: AbortSignal.timeout(500),
+    },
   );
   assert.ok(out === null || (typeof out === 'object' && typeof out.body === 'string'));
 });
@@ -152,7 +243,12 @@ test('readSocialLink: yt-dlp throws → caught, no exception bubbles', async () 
   const ytdlpFn = async () => { throw new Error('yt-dlp not installed in this env'); };
   const out = await readSocialLink(
     'https://xiaohongshu.com/explore/test',
-    { ytdlpFn, signal: AbortSignal.timeout(500) },
+    {
+      previewFn: async () => null,
+      browserPreviewFn: null,
+      ytdlpFn,
+      signal: AbortSignal.timeout(500),
+    },
   );
   assert.ok(out === null || (typeof out === 'object' && typeof out.body === 'string'));
 });
@@ -161,7 +257,10 @@ test('readSocialLink: yt-dlp throws → caught, no exception bubbles', async () 
 
 test('readSocialLink: yt-dlp result without optional fields still renders', async () => {
   const ytdlpFn = async () => ({ title: 'Bare Title' });
-  const out = await readSocialLink('https://xiaohongshu.com/explore/x', { ytdlpFn });
+  const out = await readSocialLink('https://xiaohongshu.com/explore/x', {
+    previewFn: async () => null,
+    ytdlpFn,
+  });
   assert.equal(out.via, 'yt-dlp');
   assert.match(out.body, /Bare Title/);
   assert.match(out.body, /Source: https:\/\/xiaohongshu\.com\/explore\/x/);
@@ -189,6 +288,7 @@ test('readSocialLink: explicitCookies overrides config.domainCookies for the can
   await readSocialLink('https://www.douyin.com/video/abc', {
     config: baseConfig,
     explicitCookies: 'fresh=value',
+    previewFn: async () => null,
     ytdlpFn,
   });
   assert.ok(capturedConfig?.domainCookies, 'ytdlp must receive a domainCookies map');
@@ -213,6 +313,7 @@ test('readSocialLink: no explicitCookies → config.domainCookies passes through
   const baseConfig = { domainCookies: { 'douyin.com': 'session=abc' } };
   await readSocialLink('https://www.douyin.com/video/abc', {
     config: baseConfig,
+    previewFn: async () => null,
     ytdlpFn,
   });
   assert.equal(capturedConfig.domainCookies['douyin.com'], 'session=abc',
@@ -231,6 +332,8 @@ test('readSocialLink: pre-aborted signal returns null without calling yt-dlp', a
   ac.abort();
   const out = await readSocialLink('https://www.douyin.com/video/abc', {
     signal: ac.signal,
+    previewFn: async () => null,
+    browserPreviewFn: null,
     ytdlpFn,
   });
   assert.equal(out, null, 'pre-aborted signal must return null');
@@ -261,6 +364,8 @@ test('readSocialLink: yt-dlp throws AbortError → does NOT continue to OG fallb
   };
   try {
     const out = await readSocialLink('https://www.douyin.com/video/abc', {
+      previewFn: async () => null,
+      browserPreviewFn: null,
       ytdlpFn, // signal stays live; ytdlpFn itself throws AbortError
     });
     assert.equal(out, null,
@@ -272,27 +377,146 @@ test('readSocialLink: yt-dlp throws AbortError → does NOT continue to OG fallb
   }
 });
 
-test('readSocialLink: yt-dlp throws non-abort error → DOES continue to OG fallback', async () => {
-  // Symmetric counterpart: a yt-dlp failure for some other reason
-  // (binary missing, unsupported platform, transient network error)
-  // is NOT a budget signal. OG should still be tried.
-  const ytdlpFn = async () => { throw new Error('yt-dlp not installed'); };
-  let ogCalled = false;
+test('readSocialLink: yt-dlp deep result wins over share preview', async () => {
+  let ytdlpCalled = false;
+  const out = await readSocialLink('https://www.xiaohongshu.com/explore/test', {
+    previewFn: async () => ({
+      title: 'Share preview hit',
+      description: 'This is the public preview body',
+      profile: 'telegram',
+      score: 20,
+    }),
+    ytdlpFn: async () => {
+      ytdlpCalled = true;
+      return {
+        title: 'Deep video title',
+        uploader: 'Creator A',
+        description: 'Deep video description from yt-dlp',
+        subtitleText: 'Actual subtitle line',
+        platform: 'Xiaohongshu',
+      };
+    },
+  });
+  assert.equal(ytdlpCalled, true, 'useful share preview must not mask yt-dlp');
+  assert.equal(out?.via, 'yt-dlp');
+  assert.match(out.body, /Deep video title/);
+  assert.match(out.body, /Actual subtitle line/);
+  assert.doesNotMatch(out.body, /Share preview hit/);
+  assert.equal(out.preview?.title, 'Deep video title');
+  assert.equal(out.preview?.author, 'Creator A');
+});
+
+test('readSocialLink: share preview is fallback when yt-dlp misses', async () => {
+  const out = await readSocialLink('https://www.xiaohongshu.com/explore/test', {
+    browserPreviewFn: null,
+    previewFn: async () => ({
+      title: 'Share preview fallback',
+      description: 'This is the public preview body',
+      profile: 'telegram',
+      score: 20,
+    }),
+    ytdlpFn: async () => null,
+  });
+  assert.match(out?.via || '', /^share-preview:/);
+  assert.match(out.body, /Share preview fallback/);
+  assert.match(out.body, /public preview body/);
+});
+
+test('readSocialLink: rendered browser fallback closes overlay before share preview', async () => {
+  const out = await readSocialLink('https://www.douyin.com/video/test', {
+    ytdlpFn: async () => null,
+    browserPreviewFn: async () => ({
+      title: 'Rendered Douyin title',
+      body: '视频文案：这是一条关闭登录浮层之后才能看到的内容。',
+      siteName: 'douyin.com',
+      media: [{ duration: 12, width: 720, height: 1280, paused: false }],
+      closedOverlays: 1,
+      profile: 'browser',
+      score: 40,
+    }),
+    previewFn: async () => ({
+      title: 'Share preview fallback',
+      description: 'shallow card only',
+      profile: 'telegram',
+      score: 20,
+    }),
+  });
+  assert.equal(out?.via, 'browser:browser');
+  assert.match(out.body, /Rendered Douyin title/);
+  assert.match(out.body, /关闭登录浮层/);
+  assert.match(out.body, /Detected media/);
+  assert.doesNotMatch(out.body, /Share preview fallback/);
+});
+
+test('readSocialLink: browser fallback opens original short link before canonical URL', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    ogCalled = true;
-    return new Response(
-      '<meta property="og:title" content="OG fallback hit" />',
-      { status: 200 },
-    );
-  };
+  const originalUrl = 'https://v.douyin.com/AbCdEf';
+  const canonicalUrl = 'https://www.douyin.com/video/123';
+  const visited = [];
+  globalThis.fetch = async () => new Response('', {
+    status: 302,
+    headers: { location: canonicalUrl },
+  });
   try {
-    const out = await readSocialLink('https://www.xiaohongshu.com/explore/test', {
-      ytdlpFn,
+    const out = await readSocialLink(originalUrl, {
+      ytdlpFn: async () => null,
+      browserPreviewFn: async url => {
+        visited.push(url);
+        if (url !== originalUrl) return null;
+        return {
+          title: 'Short-link browser result',
+          body: '原始分享链接跳转后生成临时凭证，然后关闭登录浮层就能看到的视频文案。',
+          siteName: 'douyin.com',
+          media: [{ duration: 9, width: 720, height: 1280, paused: false }],
+          closedOverlays: 1,
+          url: canonicalUrl,
+          profile: 'browser',
+          score: 40,
+        };
+      },
+      previewFn: async () => null,
     });
-    assert.equal(ogCalled, true, 'non-abort yt-dlp error must let OG run');
-    assert.equal(out?.via, 'opengraph');
-    assert.match(out.body, /OG fallback hit/);
+    assert.deepEqual(visited, [originalUrl]);
+    assert.equal(out?.via, 'browser:browser');
+    assert.equal(out?.canonicalUrl, canonicalUrl);
+    assert.match(out.body, /临时凭证/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('readSocialLink: rejects browser fallback when it lands on a different Douyin item id', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalUrl = 'https://v.douyin.com/AbCdEf';
+  const canonicalUrl = 'https://www.iesdouyin.com/share/video/7636179780475374884/?from_ssr=1';
+  globalThis.fetch = async () => new Response('', {
+    status: 302,
+    headers: { location: canonicalUrl },
+  });
+  try {
+    const out = await readSocialLink(originalUrl, {
+      ytdlpFn: async () => null,
+      browserPreviewFn: async () => ({
+        title: 'Wrong rendered video',
+        body: '浏览器实际落到了另一个推荐视频。',
+        siteName: 'douyin.com',
+        media: [{ duration: 12, width: 720, height: 1280, paused: false }],
+        closedOverlays: 2,
+        url: 'https://www.douyin.com/video/7611243785283964170',
+        profile: 'browser',
+        score: 100,
+      }),
+      previewFn: async () => ({
+        title: 'Correct share preview',
+        description: '一款能以超音速飞行的客机“协和式飞机”',
+        itemId: '7636179780475374884',
+        profile: 'wechat+douyin-ssr',
+        score: 50,
+      }),
+    });
+    assert.match(out?.via || '', /^share-preview:/);
+    assert.match(out.body, /Correct share preview/);
+    assert.doesNotMatch(out.body, /Wrong rendered video/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -348,6 +572,7 @@ test('readSocialLink: explicitCookies binds to canonical host, NOT shortener hos
   await readSocialLink('https://www.xiaohongshu.com/explore/abc', {
     config: { domainCookies: {} },
     explicitCookies: 'sess=z',
+    previewFn: async () => null,
     ytdlpFn,
   });
   // Must bind to xiaohongshu.com (the canonical host) — not www.xiaohongshu.com

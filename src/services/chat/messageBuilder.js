@@ -35,6 +35,7 @@ import {
   renderExtractedMediaContext,
 } from '../../media/index.js';
 import { messageVisibleText } from '../message/messageBlocks.js';
+import { shouldSuppressAssistantContextText } from './contextFilters.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Attachment classification constants
@@ -135,6 +136,13 @@ export const IMAGE_EDIT_INTENT_PATTERN = /(?:\b(?:edit(?:ed|ing|s)?|change(?:d|s
 export function detectImageEditIntent(text) {
   if (typeof text !== 'string' || !text.trim()) return false;
   return IMAGE_EDIT_INTENT_PATTERN.test(text);
+}
+
+export function isProviderFailureAssistantMessage(message) {
+  if (message?.role !== 'assistant') {
+    return false;
+  }
+  return shouldSuppressAssistantContextText(messageVisibleText(message));
 }
 
 // Image-generation intent: text-to-image asks ("draw a cat" / "画一只猫" /
@@ -453,6 +461,22 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
     });
   }
 
+  const emittedKeyframes = new Set();
+  const pushKeyframeParts = (entry) => {
+    const keyframes = Array.isArray(entry?.metadata?.keyframes)
+      ? entry.metadata.keyframes
+      : [];
+    for (const dataUrl of keyframes) {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) continue;
+      if (emittedKeyframes.has(dataUrl)) continue;
+      emittedKeyframes.add(dataUrl);
+      contentParts.push({
+        type: 'image_url',
+        image_url: { url: dataUrl },
+      });
+    }
+  };
+
   for (const attachment of videoAttachments) {
     // Phase 2: if videoExtractor managed to pull keyframes for this attachment,
     // emit them as image_url parts so the model actually sees the picture
@@ -462,16 +486,7 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
     const matchedEntry = extractedMedia.find(
       e => e?.attachmentId && attachment.id && e.attachmentId === attachment.id,
     );
-    const keyframes = Array.isArray(matchedEntry?.metadata?.keyframes)
-      ? matchedEntry.metadata.keyframes
-      : [];
-    for (const dataUrl of keyframes) {
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) continue;
-      contentParts.push({
-        type: 'image_url',
-        image_url: { url: dataUrl },
-      });
-    }
+    pushKeyframeParts(matchedEntry);
 
     contentParts.push({
       type: 'video_attachment',
@@ -481,6 +496,13 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
         fileName: attachment.fileName,
       },
     });
+  }
+
+  // Social links can expose direct video URLs during preview extraction.
+  // Those remain link attachments (not video attachments), so emit any
+  // keyframes captured on extractedMedia directly here.
+  for (const entry of extractedMedia) {
+    pushKeyframeParts(entry);
   }
 
   if (attachmentSummary) {
@@ -531,7 +553,9 @@ export function buildModelMessagesFromChat(chat) {
     }
   }
 
-  const messages = buildRecentWindow(candidateMessages);
+  const messages = buildRecentWindow(
+    candidateMessages.filter(message => !isProviderFailureAssistantMessage(message)),
+  );
 
   const latestIndex = messages.length - 1;
   let carryForwardSourceIndex = -1;
@@ -563,4 +587,3 @@ export function buildModelMessagesFromChat(chat) {
     };
   });
 }
-
