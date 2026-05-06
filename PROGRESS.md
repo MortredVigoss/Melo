@@ -4,6 +4,17 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-06 — Codex C 第三轮闭环：anchorRouting 抽 helper + 卡片分支同步修
+
+`9f29a16` 又被 Codex 评 C：第二轮只修 `<a>` 分支漏了 `[data-external-url]` 卡片分支，两个分支用同一逻辑应该共享。Codex 给的方案干净：抽 `routeHttpUrl(url)` helper + 两个分支都接。
+
+- 新建 [desktop-ui/anchorRouting.js](desktop-ui/anchorRouting.js) 暴露 `routeHttpUrlClick(href, currentOrigin)`，返回 `{kind: 'same-origin'|'external'|'invalid', href}`。
+- 新建 [desktop-ui/anchorRouting.test.js](desktop-ui/anchorRouting.test.js) 8 case：same-origin http/https / external https / 同 host 不同 port → external / 同 host 不同 scheme → external / mailto·javascript·data·#anchor·相对路径 → invalid / 空·null·undefined → invalid / malformed URL → invalid / 默认 port (443/80) 归一化。
+- [desktop-ui/app.js](desktop-ui/app.js) `<a>` 和 `[data-external-url]` 两个 click 分支都换成统一调用 `routeHttpUrlClick`：same-origin → preventDefault + location.assign；external → preventDefault + openExternalUrl；invalid（卡片分支）→ preventDefault + showError，invalid（anchor 分支，如 `href="#anchor"`）→ fall through。
+
+UI 套 187/187（+8 anchorRouting case）+ 完整 npm test GREEN。
+
+---
 ## 2026-05-06 — Codex C 评级第二轮闭环：filter 再收窄 + 同源 URL 强制 location.assign
 
 `12e1358` 再被 Codex 评 C：第一轮收窄不够 + 同源 URL 默认导航也死。第二轮根治：

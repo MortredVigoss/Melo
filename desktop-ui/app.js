@@ -12,6 +12,7 @@ import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
+import { routeHttpUrlClick } from './anchorRouting.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -12482,38 +12483,43 @@ document.addEventListener('click', async event => {
   }
 
   const anchor = event.target.closest('a[href]');
-  if (anchor instanceof HTMLAnchorElement && /^https?:\/\//i.test(anchor.href)) {
-    // Same-origin links (e.g. local artifact URLs served by Melo's own
-    // server) must NOT be sent to native openExternalUrl — main.swift
-    // treats them as in-app and drops them, which would leave the click
-    // dead. They also can't fall through to default behavior because most
-    // of these anchors carry target="_blank"; WKWebView has no
-    // WKUIDelegate.createWebViewWith handler, so window.open is also a
-    // no-op. Force same-window navigation via location.assign instead.
-    let parsed = null;
-    try {
-      parsed = new URL(anchor.href);
-    } catch {
-      parsed = null;
-    }
-    if (parsed && parsed.origin === location.origin) {
+  if (anchor instanceof HTMLAnchorElement) {
+    const route = routeHttpUrlClick(anchor.href, location.origin);
+    if (route.kind === 'same-origin') {
       event.preventDefault();
-      location.assign(parsed.href);
+      location.assign(route.href);
       return;
     }
-    event.preventDefault();
-    if (!openExternalUrl(anchor.href)) {
-      showError('Melo could not open this link.');
+    if (route.kind === 'external') {
+      event.preventDefault();
+      if (!openExternalUrl(route.href)) {
+        showError('Melo could not open this link.');
+      }
+      return;
     }
-    return;
+    // 'invalid' (non-http(s) like #anchor / mailto / javascript:) — fall
+    // through to default browser behavior.
   }
 
   const externalCard = event.target.closest('[data-external-url]');
   if (externalCard instanceof HTMLElement) {
-    event.preventDefault();
-    if (!openExternalUrl(externalCard.dataset.externalUrl || '')) {
-      showError('Melo could not open this link.');
+    const route = routeHttpUrlClick(externalCard.dataset.externalUrl || '', location.origin);
+    if (route.kind === 'same-origin') {
+      event.preventDefault();
+      location.assign(route.href);
+      return;
     }
+    if (route.kind === 'external') {
+      event.preventDefault();
+      if (!openExternalUrl(route.href)) {
+        showError('Melo could not open this link.');
+      }
+      return;
+    }
+    // 'invalid' — data attribute was empty / non-http; surface the error
+    // so the click is not silently dead.
+    event.preventDefault();
+    showError('Melo could not open this link.');
     return;
   }
 
