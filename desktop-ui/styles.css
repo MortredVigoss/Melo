@@ -2019,20 +2019,26 @@ select option {
 }
 
 .link-card {
+  padding: 14px 16px;
+  color: inherit;
+  min-width: 0;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.link-card-main {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 14px 16px;
   color: inherit;
   text-decoration: none;
   min-width: 0;
-  max-width: 100%;
 }
 
 /* The unnamed <span> wrapping label + URL is a flex child; without
    min-width: 0 it refuses to shrink below the URL's intrinsic width and
    pushes the whole card past the message bubble's right edge. */
-.link-card > span {
+.link-card-main > span {
   min-width: 0;
   flex: 1 1 auto;
   overflow-wrap: anywhere;
@@ -2045,6 +2051,51 @@ select option {
   word-break: break-all;
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+
+.link-preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.link-preview.is-empty {
+  opacity: 0.72;
+}
+
+.link-preview-image {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+}
+
+.link-preview-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.link-preview-meta {
+  color: var(--text-soft);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.link-preview-text {
+  color: rgba(255, 247, 232, 0.86);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.link-preview-action {
+  color: rgba(24, 183, 177, 0.85);
+  font-size: 12px;
 }
 
 .page-grid {

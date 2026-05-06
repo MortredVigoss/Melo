@@ -249,8 +249,27 @@ async function main() {
     },
   });
 
-  const initial = homeBootstrap;
-  const projectId = initial.settings.selectedProjectId;
+  let initial = homeBootstrap;
+  let projectId = initial.settings.selectedProjectId;
+  if (!projectId) {
+    initial = await request('/api/projects', {
+      method: 'POST',
+      body: {
+        name: `Smoke project ${Date.now()}`,
+        summary: 'Temporary project created by the desktop smoke test.',
+      },
+    });
+    projectId = initial.settings.selectedProjectId;
+    await request('/api/settings', {
+      method: 'POST',
+      body: {
+        activeView: 'chat',
+        activeMode: 'chat',
+        selectedChatId: null,
+        selectedFilePath: null,
+      },
+    });
+  }
   const homePrompt = 'How large is Singapore?';
   const smokeFilePath = 'melo-smoke-output.md';
   const connectorBaseUrl = process.env.MELO_CONNECTOR_BASE_URL || '';

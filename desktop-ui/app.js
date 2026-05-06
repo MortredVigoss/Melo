@@ -1290,6 +1290,95 @@ function renderMessageAttachments(message) {
     return '';
   }
 
+  const extractedMedia = Array.isArray(message?.extractedMedia) ? message.extractedMedia : [];
+  const compactPreviewText = value =>
+    String(value || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line =>
+        line &&
+        !/^source:\s*/i.test(line) &&
+        !/^\[note:/i.test(line) &&
+        !/^preview image:\s*/i.test(line),
+      )
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const previewForAttachment = attachment => {
+    const url = String(attachment?.url || '').trim();
+    return extractedMedia.find(entry => {
+      if (!entry || typeof entry !== 'object') return false;
+      if (attachment?.id && entry.attachmentId === attachment.id) return true;
+      const meta = entry.metadata || {};
+      return [meta.url, meta.originalUrl].some(candidate => String(candidate || '').trim() === url);
+    }) || null;
+  };
+
+  const renderLinkAttachmentCard = attachment => {
+    const preview = previewForAttachment(attachment);
+    const meta = preview?.metadata || {};
+    const title = meta.title || attachmentLabel(attachment);
+    const body = preview?.text
+      ? compactPreviewText(preview.text)
+      : '';
+    const previewText = body || 'Readable preview extracted. Click to open the original page.';
+    const imageUrl = /^https?:\/\//i.test(String(meta.previewImage || ''))
+      ? String(meta.previewImage)
+      : '';
+
+    return `
+      <div class="message-attachment-card link-card" data-copyable-surface data-external-url="${escapeHtml(attachment.url)}" role="link" tabindex="0">
+        <a class="link-card-main" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">
+          <span class="chip-icon">${icon.link}</span>
+          <span>
+            <strong>${escapeHtml(title)}</strong>
+            <span class="link-card-url">${escapeHtml(attachment.url)}</span>
+          </span>
+        </a>
+        ${preview ? `
+          <div class="link-preview">
+            ${imageUrl ? `<img class="link-preview-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ''}
+            <div class="link-preview-copy">
+              ${meta.author || meta.siteName ? `
+                <div class="link-preview-meta">${escapeHtml(
+                  [meta.author, meta.siteName].filter(Boolean).join(' · '),
+                )}</div>
+              ` : ''}
+              <div class="link-preview-text">${escapeHtml(truncate(previewText, 360))}</div>
+              <div class="link-preview-action">Click to open in browser</div>
+            </div>
+          </div>
+        ` : `
+          <div class="link-preview is-empty">
+            <div class="link-preview-copy">
+              <div class="link-preview-meta">Preview unavailable</div>
+              <div class="link-preview-text">Melo has not extracted readable text for this link yet. Click to open it in your browser.</div>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
+  };
+
+  const isPlayableVideoUrl = url =>
+    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$))/i.test(String(url || ''));
+
+  const isSocialPreviewUrl = url => {
+    try {
+      const host = new URL(String(url || '')).hostname.replace(/^www\./, '').toLowerCase();
+      return [
+        'douyin.com',
+        'v.douyin.com',
+        'iesdouyin.com',
+        'xiaohongshu.com',
+        'xhslink.com',
+      ].some(suffix => host === suffix || host.endsWith(`.${suffix}`));
+    } catch {
+      return false;
+    }
+  };
+
   return `
     <div class="message-attachments">
       ${attachments
@@ -1304,6 +1393,9 @@ function renderMessageAttachments(message) {
           }
 
           if (attachment.kind === 'video') {
+            if (!isPlayableVideoUrl(attachment.url) || isSocialPreviewUrl(attachment.url)) {
+              return renderLinkAttachmentCard(attachment);
+            }
             const status = describeVideoExtractionStatus(message, attachment);
             return `
               <div class="message-attachment-card media-card">
@@ -1328,17 +1420,7 @@ function renderMessageAttachments(message) {
             `;
           }
 
-          return `
-            <a class="message-attachment-card link-card" data-copyable-surface href="${escapeHtml(
-              attachment.url,
-            )}" target="_blank" rel="noreferrer">
-              <span class="chip-icon">${icon.link}</span>
-              <span>
-                <strong>${escapeHtml(attachmentLabel(attachment))}</strong>
-                <span class="link-card-url">${escapeHtml(attachment.url)}</span>
-              </span>
-            </a>
-          `;
+          return renderLinkAttachmentCard(attachment);
         })
         .join('')}
     </div>
@@ -2764,6 +2846,24 @@ function showError(message) {
 
 function voiceBridgeSupported() {
   return Boolean(globalThis.webkit?.messageHandlers?.meloVoice);
+}
+
+function openExternalUrl(url) {
+  const normalized = String(url || '').trim();
+  if (!/^https?:\/\//i.test(normalized)) {
+    return false;
+  }
+
+  if (globalThis.webkit?.messageHandlers?.meloVoice) {
+    globalThis.webkit.messageHandlers.meloVoice.postMessage({
+      action: 'openExternalUrl',
+      url: normalized,
+    });
+    return true;
+  }
+
+  window.open(normalized, '_blank', 'noopener,noreferrer');
+  return true;
 }
 
 function composerHintText({ inline = false } = {}) {
@@ -12379,6 +12479,24 @@ document.addEventListener('click', async event => {
   ) {
     uiState.taskLaneOverflowOpen = false;
     render();
+  }
+
+  const anchor = event.target.closest('a[href]');
+  if (anchor instanceof HTMLAnchorElement && /^https?:\/\//i.test(anchor.href)) {
+    event.preventDefault();
+    if (!openExternalUrl(anchor.href)) {
+      showError('Melo could not open this link.');
+    }
+    return;
+  }
+
+  const externalCard = event.target.closest('[data-external-url]');
+  if (externalCard instanceof HTMLElement) {
+    event.preventDefault();
+    if (!openExternalUrl(externalCard.dataset.externalUrl || '')) {
+      showError('Melo could not open this link.');
+    }
+    return;
   }
 
   const trigger = event.target.closest('[data-action]');

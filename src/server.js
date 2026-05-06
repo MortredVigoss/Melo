@@ -481,7 +481,12 @@ const server = createServer(async (request, response) => {
         response.writeHead(200, {
           'content-type': 'text/javascript; charset=utf-8',
           'content-length': fileStat.size,
-          'cache-control': 'public, max-age=86400',
+          // This module controls attachment classification in the composer.
+          // Keep it fresh so platform-link fixes (e.g. Douyin/Xiaohongshu
+          // pages should render as link previews, not <video>) apply on the
+          // next app reload instead of being stuck behind Chromium's module
+          // cache for a day.
+          'cache-control': 'no-cache',
         });
         createReadStream(absPath).pipe(response);
       } catch {
@@ -1951,8 +1956,19 @@ const server = createServer(async (request, response) => {
 
     const filePath = getStaticPath(url.pathname);
     const content = await readFile(filePath);
+    const ext = extname(filePath).toLowerCase();
+    const headers = {
+      'content-type': MIME_TYPES[ext] || 'application/octet-stream',
+    };
+    // Melo's own browser modules change frequently during local iteration.
+    // WKWebView can otherwise keep a stale app.js module after a patch and
+    // show a blank shell until the cache expires. Keep vendor/assets cacheable
+    // through their dedicated routes, but always revalidate app shell files.
+    if (['.html', '.js', '.css'].includes(ext)) {
+      headers['cache-control'] = 'no-cache';
+    }
     response.writeHead(200, {
-      'content-type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
+      ...headers,
     });
     response.end(content);
   } catch (error) {

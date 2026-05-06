@@ -634,6 +634,14 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
           DispatchQueue.main.async { self.sayProcess = nil }
         }
       }
+    case "openExternalUrl":
+      if
+        let rawUrl = payload["url"] as? String,
+        let url = URL(string: rawUrl),
+        isExternalWebUrl(url)
+      {
+        NSWorkspace.shared.open(url)
+      }
     default:
       break
     }
@@ -1344,6 +1352,46 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     )
 
     captureReadyUIAudit()
+  }
+
+  func webView(
+    _ webView: WKWebView,
+    decidePolicyFor navigationAction: WKNavigationAction,
+    decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+  ) {
+    guard let url = navigationAction.request.url else {
+      decisionHandler(.allow)
+      return
+    }
+
+    if isExternalWebUrl(url) {
+      NSWorkspace.shared.open(url)
+      decisionHandler(.cancel)
+      return
+    }
+
+    decisionHandler(.allow)
+  }
+
+  private func isExternalWebUrl(_ url: URL) -> Bool {
+    let scheme = url.scheme?.lowercased() ?? ""
+    guard scheme == "http" || scheme == "https" else { return false }
+    return !isMeloServerUrl(url)
+  }
+
+  private func isMeloServerUrl(_ url: URL) -> Bool {
+    guard
+      let host = url.host,
+      let serverHost = serverURL.host
+    else {
+      return false
+    }
+
+    let urlPort = url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80)
+    let serverPort = serverURL.port ?? (serverURL.scheme?.lowercased() == "https" ? 443 : 80)
+    return url.scheme?.lowercased() == serverURL.scheme?.lowercased()
+      && host == serverHost
+      && urlPort == serverPort
   }
 }
 
