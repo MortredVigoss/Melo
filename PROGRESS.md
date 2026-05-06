@@ -4,6 +4,17 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-06 — Codex C 评级闭环：context filter 收窄 + WKWebView 同源 URL 放行
+
+`bc823ac` + `9ece26f` 推送时 `git pp` pre-push gate 评 **C** 阻断。Codex 抓两个 P0 + 一个 P2，全部修复：
+
+- **P0-1（[contextFilters.js:15](src/services/chat/contextFilters.js#L15)）** SOCIAL_LINK_DIAGNOSTIC_PATTERN 末尾 `|cookie|cookies` 裸词太宽 → 任何 assistant 谈到 cookie/cookies 都被静默过滤出 prompt + thread context + memory。**修**：删裸词，改用 `SOCIAL_LINK_BLOCKED|SOCIAL_LINK_FAILED|fresh cookies|Web-fetch cookies|xsec_token|需要 fresh cookies|需要登录态|临时访问凭证` 这种多词/特异短语；同时把 `登录态` 收紧到 `需要登录态`（前者太通用）。
+- **P0-2（[desktop-ui/app.js:12484](desktop-ui/app.js#L12484)）** JS click 拦截所有 http(s) anchor → preventDefault → 调 native openExternalUrl，但 main.swift 的 `isExternalWebUrl` 对 Melo server URL 返回 false → 同源 URL 静默死掉无动作。**修**：JS 端先 `new URL(href).origin === location.origin` 判同源，是的话直接 return 让浏览器走默认导航，不 preventDefault。
+- **P2 负例测试**：[messageBuilder.test.js](src/services/chat/messageBuilder.test.js) + [threadContext.test.js](src/memory/threadContext.test.js) + [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 三处各加 1 case，证 "Browser cookies come in two flavors..." / "Session cookies 是浏览器..." / "session 跟 persistent cookies 区别" 这类正常技术解答**保留**进上下文 + 长期记忆。
+
+测试 47/47 + 完整 npm test GREEN。
+
+---
 ## 2026-05-06 — Codex 实现的 backend 链路一并升级：社媒抓取扩张 / 视频 keyframe 入 prompt / assistant 失败诊断过滤 / cyber_policy 文案
 
 本批改动由 Codex 完成，本会话仅做整理 + commit + push。涉及 23 个 src 文件，按特性归四束：

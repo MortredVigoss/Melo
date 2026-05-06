@@ -204,3 +204,47 @@ test('buildMemoryStoreEntries does not index assistant diagnostics as prompt mem
   assert.doesNotMatch(text, /fresh cookies/i);
   assert.doesNotMatch(text, /临时访问凭证/);
 });
+
+test('buildMemoryStoreEntries preserves normal assistant cookie explanations', async () => {
+  // Negative case: technical answers about cookies (the web concept) must
+  // still be indexed into long-term memory; the filter is for social-link
+  // extractor diagnostics only.
+  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-filter-neg`);
+  const entries = buildMemoryStoreEntries({
+    settings: { promptHistory: [] },
+    chats: [
+      {
+        id: 'chat-cookie-edu',
+        title: 'How cookies work',
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            content: '帮我讲一下 session cookies 跟 persistent cookies 的区别',
+            createdAt: '2026-05-01T00:00:00Z',
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content:
+              'Session cookies 在浏览器关闭时被清空，persistent cookies 有 ' +
+              'Expires 或 Max-Age 字段，会保留到指定时间。两者都是通过 Set-Cookie ' +
+              'header 由服务器写入。',
+            createdAt: '2026-05-01T00:00:01Z',
+          },
+          {
+            id: 'u2',
+            role: 'user',
+            content: 'browser cookies 默认会跟着所有请求发送吗',
+            createdAt: '2026-05-01T00:00:02Z',
+          },
+        ],
+      },
+    ],
+  });
+
+  const text = entries.map(entry => entry.text).join('\n');
+  assert.match(text, /Session cookies 在浏览器关闭时被清空/);
+  assert.match(text, /persistent cookies 有/);
+  assert.match(text, /browser cookies 默认会跟着所有请求发送吗/);
+});

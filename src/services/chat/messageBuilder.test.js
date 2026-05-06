@@ -462,6 +462,35 @@ test('buildModelMessagesFromChat: provider failure replies are not sent back to 
   assert.equal(out.some(message => String(message.content).includes('Codex OAuth request failed')), false);
 });
 
+test('buildModelMessagesFromChat: ordinary assistant explanations about cookies are NOT filtered', () => {
+  // Negative case for the assistant-context filter. Bare "cookie" / "cookies"
+  // mentions in a normal technical answer must survive into the next prompt;
+  // the filter is for social-link extractor diagnostics only.
+  const cookieExplainer = msg(
+    'assistant',
+    'Browser cookies come in two flavors: session cookies disappear when the ' +
+    'browser closes, persistent cookies have an explicit Expires/Max-Age. The ' +
+    'Set-Cookie header carries them from server to client.',
+  );
+  const chat = {
+    messages: [
+      msg('user', 'how do session cookies work?'),
+      cookieExplainer,
+      msg('user', 'and persistent ones?'),
+    ],
+  };
+
+  assert.equal(isProviderFailureAssistantMessage(cookieExplainer), false);
+
+  const out = buildModelMessagesFromChat(chat);
+  assert.equal(out.length, 3);
+  const assistantContent = out.find(m => m.role === 'assistant')?.content;
+  const assistantText = Array.isArray(assistantContent)
+    ? assistantContent.map(p => p?.text || '').join('\n')
+    : String(assistantContent || '');
+  assert.match(assistantText, /Browser cookies come in two flavors/);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // RICH_MEDIA_ATTACHMENT_KINDS sanity
 // ═══════════════════════════════════════════════════════════════════════════

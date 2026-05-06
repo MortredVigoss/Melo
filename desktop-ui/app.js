@@ -12483,6 +12483,20 @@ document.addEventListener('click', async event => {
 
   const anchor = event.target.closest('a[href]');
   if (anchor instanceof HTMLAnchorElement && /^https?:\/\//i.test(anchor.href)) {
+    // Same-origin links (e.g. local artifact URLs served by Melo's own
+    // server) must NOT be intercepted: native openExternalUrl drops them
+    // because they are not "external", and preventDefault would otherwise
+    // leave the click silently dead. Let the browser handle default
+    // navigation in that case.
+    let isSameOrigin = false;
+    try {
+      isSameOrigin = new URL(anchor.href).origin === location.origin;
+    } catch {
+      isSameOrigin = false;
+    }
+    if (isSameOrigin) {
+      return;
+    }
     event.preventDefault();
     if (!openExternalUrl(anchor.href)) {
       showError('Melo could not open this link.');
