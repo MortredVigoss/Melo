@@ -12484,17 +12484,21 @@ document.addEventListener('click', async event => {
   const anchor = event.target.closest('a[href]');
   if (anchor instanceof HTMLAnchorElement && /^https?:\/\//i.test(anchor.href)) {
     // Same-origin links (e.g. local artifact URLs served by Melo's own
-    // server) must NOT be intercepted: native openExternalUrl drops them
-    // because they are not "external", and preventDefault would otherwise
-    // leave the click silently dead. Let the browser handle default
-    // navigation in that case.
-    let isSameOrigin = false;
+    // server) must NOT be sent to native openExternalUrl — main.swift
+    // treats them as in-app and drops them, which would leave the click
+    // dead. They also can't fall through to default behavior because most
+    // of these anchors carry target="_blank"; WKWebView has no
+    // WKUIDelegate.createWebViewWith handler, so window.open is also a
+    // no-op. Force same-window navigation via location.assign instead.
+    let parsed = null;
     try {
-      isSameOrigin = new URL(anchor.href).origin === location.origin;
+      parsed = new URL(anchor.href);
     } catch {
-      isSameOrigin = false;
+      parsed = null;
     }
-    if (isSameOrigin) {
+    if (parsed && parsed.origin === location.origin) {
+      event.preventDefault();
+      location.assign(parsed.href);
       return;
     }
     event.preventDefault();

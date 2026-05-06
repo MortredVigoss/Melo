@@ -4,6 +4,19 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-06 — Codex C 评级第二轮闭环：filter 再收窄 + 同源 URL 强制 location.assign
+
+`12e1358` 再被 Codex 评 C：第一轮收窄不够 + 同源 URL 默认导航也死。第二轮根治：
+
+- **🔴 同源 + `target="_blank"`**：Codex grep 出 link-card / 引用 anchor 都带 `target="_blank"`，main.swift 没 `WKUIDelegate.createWebViewWith` 处理新窗口 → `window.open` 也是 no-op。**修**：JS 端同源判定后**仍 preventDefault**，再 `location.assign(parsed.href)` 强制当前 webview 同窗导航，绕过 `_blank` 默认行为陷阱。
+- **🟡 filter 仍按裸短语 `fresh cookies` / `xsec_token` 匹配**：`fresh cookies in browser tests` 这类正常技术解释也被剔。**修**：[contextFilters.js](src/services/chat/contextFilters.js) 把 SOCIAL_LINK_DIAGNOSTIC_PATTERN 收到只匹配 5 个 marker：`SOCIAL_LINK_BLOCKED` / `SOCIAL_LINK_FAILED` / `Could not read this social-link URL`（fetchUrlTool 输出 verbatim）/ `dedicated extractor (yt-dlp`（同上 verbatim）/ `Customize → Safety → Web-fetch cookies`（UI 路径 verbatim）。所有零散英中关键词全删。10 case sanity check 全过：`fresh cookies in browser tests` / `xsec_token` / `登录态过期` / `Session cookies are stored` 都 false。
+- **测试 prose 同步更新**：[threadContext.test.js](src/memory/threadContext.test.js) + [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 把 diagnostic 正例改用 socialLinkTool 真实 verbatim 文案，断言对齐新 marker。
+
+⚪ JS 单测验证同源链接 routing 没补——Codex 标 ⚪（推荐非必需），需要从 app.js 抽 helper 才能干净测，规模超出当前修补范围。
+
+测试 47/47 + 完整 npm test GREEN。
+
+---
 ## 2026-05-06 — Codex C 评级闭环：context filter 收窄 + WKWebView 同源 URL 放行
 
 `bc823ac` + `9ece26f` 推送时 `git pp` pre-push gate 评 **C** 阻断。Codex 抓两个 P0 + 一个 P2，全部修复：

@@ -190,7 +190,9 @@ test('buildMemoryStoreEntries does not index assistant diagnostics as prompt mem
           {
             id: 'a2',
             role: 'assistant',
-            content: '这个结果提示需要 fresh cookies 和临时访问凭证。',
+            content:
+              'Could not read this social-link URL: https://v.douyin.com/abc/. ' +
+              "Add the host's cookie string under Customize → Safety → Web-fetch cookies.",
             createdAt: '2026-05-01T00:00:02Z',
           },
         ],
@@ -201,8 +203,8 @@ test('buildMemoryStoreEntries does not index assistant diagnostics as prompt mem
   const text = entries.map(entry => entry.text).join('\n');
   assert.match(text, /重新看这个抖音链接/);
   assert.doesNotMatch(text, /cybersecurity/i);
-  assert.doesNotMatch(text, /fresh cookies/i);
-  assert.doesNotMatch(text, /临时访问凭证/);
+  assert.doesNotMatch(text, /Could not read this social-link URL/);
+  assert.doesNotMatch(text, /Web-fetch cookies/);
 });
 
 test('buildMemoryStoreEntries preserves normal assistant cookie explanations', async () => {

@@ -11,13 +11,13 @@ const PROVIDER_FAILURE_PATTERN =
 const CODEX_POLICY_FAILURE_PATTERN =
   /(?:cyber_policy|possible cybersecurity risk|current thread context looked cybersecurity-sensitive|Codex blocked this request)/i;
 
-// Markers must be specific enough that a normal assistant reply about
-// cookies (e.g. "session cookies are stored ...") is NOT swept up.
-// Bare "cookie"/"cookies" / "登录态" are too common in legitimate technical
-// answers, so this pattern only matches multi-word phrases or codes that
-// are unique to the social-link extractor's failure path.
+// Match ONLY structured markers and verbatim long phrases from
+// socialLinkTool's failure output (src/tools/builtins/fetchUrlTool.js +
+// socialLinkTool.js). Short keywords like "fresh cookies", "xsec_token",
+// or "登录态" appear in normal technical explanations too, so matching
+// them would silently strip legitimate answers from prompt + memory.
 const SOCIAL_LINK_DIAGNOSTIC_PATTERN =
-  /(?:SOCIAL_LINK_BLOCKED|SOCIAL_LINK_FAILED|fresh cookies|Web-fetch cookies|xsec_token|需要\s*fresh\s*cookies|需要登录态|临时访问凭证)/i;
+  /(?:SOCIAL_LINK_BLOCKED|SOCIAL_LINK_FAILED|Could not read this social-link URL|dedicated extractor \(yt-dlp|Customize → Safety → Web-fetch cookies)/i;
 
 export function isProviderFailureContextText(text = '') {
   return PROVIDER_FAILURE_PATTERN.test(String(text || '').trim());

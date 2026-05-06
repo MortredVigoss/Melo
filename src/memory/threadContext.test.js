@@ -17,7 +17,8 @@ test('thread context suppresses assistant provider and social-link diagnostics',
         msg('user', '重新看这个抖音链接 https://v.douyin.com/abc/', 'u1'),
         msg(
           'assistant',
-          '这个结果很明确。抖音链接需要 fresh cookies，当前抓取环境没有临时访问凭证。',
+          'Could not read this social-link URL: https://v.douyin.com/abc/. ' +
+          "Add the host's cookie string under Customize → Safety → Web-fetch cookies.",
           'a1',
         ),
         msg(
@@ -33,8 +34,8 @@ test('thread context suppresses assistant provider and social-link diagnostics',
 
   const rendered = renderThreadMemorySnapshot(context);
   assert.match(rendered, /重新再看一下说了什么/);
-  assert.doesNotMatch(rendered, /fresh cookies/i);
-  assert.doesNotMatch(rendered, /临时访问凭证/);
+  assert.doesNotMatch(rendered, /Could not read this social-link URL/);
+  assert.doesNotMatch(rendered, /Web-fetch cookies/);
   assert.doesNotMatch(rendered, /cybersecurity/i);
   assert.doesNotMatch(rendered, /Codex blocked/i);
 });
