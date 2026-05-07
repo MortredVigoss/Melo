@@ -4,6 +4,13 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 — Codex pre-push B + 1 P0 follow-up：跨引擎 stale event 竞态
+
+`d1b76cf`+`0db3c1c`+`2a8481a` push 时 Codex 评 B（可合）但抓出 1 个真竞态：
+
+`sayEnded` 跟 `audioEnded` 共用 `_ttsAudio._onAudioEnded()` → 老 `say` 被 `playAudio` 终止后 `waitUntilExit` 才返回 → 延迟发 `sayEnded` → 那时 `_ttsAudio` 已经是新 AVAudio bridgeRef → 错误清掉新 ref 让 AVAudio 继续播但指示器灭。**修**：bridgeRef 加 `source: 'avaudio' | 'say'` tag，分别 `_onAudioEnded` / `_onSayEnded` callback；新加 [desktop-ui/ttsBridgeRouter.js](desktop-ui/ttsBridgeRouter.js) `selectTtsBridgeCallback(detail, ref)` 纯函数，按 action+source 匹配后才返回 callback；[desktop-ui/ttsBridgeRouter.test.js](desktop-ui/ttsBridgeRouter.test.js) 9 case 包括 Codex 描述的"old sayEnded after new playAudio"和对称版"old audioEnded after new say"两条 stale event 路径。UI 196/196（+9）。
+
+---
 ## 2026-05-07 — 语音系统全局审计 + 15 项修复（4 P0 / 7 P1 / 4 P2）
 
 read-only 全局审计派 general-purpose agent 全文读 src/tts.js + src/services + src/server.js + src/media/extractors/audioExtractor.js + desktop-ui/app.js + desktop-app/main.swift + src/config.js + src/shared/minimaxVoiceResolver.js，给出 19 条发现。修了其中 15 条，2 条 P2 跳过待用户确认（F5-TTS 自动恢复疑似死代码 / 全局 mutable TTS state 重构太大）。

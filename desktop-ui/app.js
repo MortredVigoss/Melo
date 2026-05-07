@@ -13,6 +13,7 @@ import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
+import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -4308,19 +4309,23 @@ function _playAudioBuffer(base64, mimeType, messageId) {
       }
       if (_ttsAudio === bridgeRef) _ttsAudio = null;
     }, approxMs + 5000);
-    const bridgeRef = { pause: () => {
-      clearTimeout(safetyTimer);
-      if (window.webkit?.messageHandlers?.meloVoice) {
-        window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' });
-      }
-      uiState.ttsSpeakingMessageId = null;
-    }, _onAudioEnded: () => {
-      clearTimeout(safetyTimer);
-      if (uiState.ttsSpeakingMessageId === messageId) {
-        uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
-      }
-      if (_ttsAudio === bridgeRef) _ttsAudio = null;
-    }};
+    const bridgeRef = {
+      source: 'avaudio',
+      pause: () => {
+        clearTimeout(safetyTimer);
+        if (window.webkit?.messageHandlers?.meloVoice) {
+          window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' });
+        }
+        uiState.ttsSpeakingMessageId = null;
+      },
+      _onAudioEnded: () => {
+        clearTimeout(safetyTimer);
+        if (uiState.ttsSpeakingMessageId === messageId) {
+          uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
+        }
+        if (_ttsAudio === bridgeRef) _ttsAudio = null;
+      },
+    };
     _ttsAudio = bridgeRef;
     return;
   }
@@ -4397,13 +4402,24 @@ function _speakWithNativeBridge(text, messageId) {
       uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
     }
   }, approxMs);
-  _ttsAudio = { pause: () => {
-    clearTimeout(timer);
-    if (window.webkit?.messageHandlers?.meloVoice) {
-      window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' });
-    }
-    uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
-  }};
+  const sayRef = {
+    source: 'say',
+    pause: () => {
+      clearTimeout(timer);
+      if (window.webkit?.messageHandlers?.meloVoice) {
+        window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' });
+      }
+      uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
+    },
+    _onSayEnded: () => {
+      clearTimeout(timer);
+      if (uiState.ttsSpeakingMessageId === messageId) {
+        uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
+      }
+      if (_ttsAudio === sayRef) _ttsAudio = null;
+    },
+  };
+  _ttsAudio = sayRef;
   return true;
 }
 
@@ -14611,19 +14627,12 @@ window.addEventListener('melo-voice', event => {
 });
 
 // TTS playback events from Swift's AVAudioPlayerDelegate / `say` exit.
-// Replaces the old duration-heuristic timer that desynced from real
-// playback for long buffers, leaving the speaking indicator stuck or
-// allowing a second click to race a still-playing audio source.
+// Routing decision delegated to selectTtsBridgeCallback (see
+// ttsBridgeRouter.js + .test.js) so the cross-engine stale-event guard is
+// covered by unit tests instead of inline event-listener logic.
 window.addEventListener('melo-tts', event => {
-  const action = event?.detail?.action || '';
-  if (action === 'audioEnded' || action === 'audioFailed' || action === 'sayEnded') {
-    if (_ttsAudio && typeof _ttsAudio._onAudioEnded === 'function') {
-      _ttsAudio._onAudioEnded();
-    } else if (uiState.ttsSpeakingMessageId) {
-      uiState.ttsSpeakingMessageId = null;
-      _updateTtsSpeakingUI(null);
-    }
-  }
+  const cb = selectTtsBridgeCallback(event?.detail, _ttsAudio);
+  if (cb) cb();
 });
 
 // A viz card finished hydrating (scene3d canvas mounted, globe-flight dynamic
