@@ -19,7 +19,9 @@
 //      app-prompt overlays, then extract visible text and video element
 //      metadata. This catches Douyin/XHS pages where content is present
 //      after clicking the modal X.
-//   4. Share-preview unfurl fallback: fetch the page with chat-app /
+//   4. Optional external readers: Camoufox / Crawl4AI / Scrapling if
+//      installed locally. These are not hard dependencies.
+//   5. Share-preview unfurl fallback: fetch the page with chat-app /
 //      crawler / mobile WebView user agents, then parse OpenGraph,
 //      Twitter Card, JSON-LD, and common SSR JSON string fields. This
 //      mirrors the "I pasted it into Telegram/WeChat and got a useful
@@ -36,6 +38,7 @@
 // when every attempt failed.
 
 import { fetchPlatformMetadataViaYtdlp } from '../../media/extractors/youtubeExtractor.js';
+import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 
 // Browser-shaped UA — Douyin / Xiaohongshu CDNs reject node fetch's
 // default UA with 403. Used for both the short-link resolve and the
@@ -1012,6 +1015,17 @@ function renderBrowserPreviewBody(preview, url) {
   return parts.filter(Boolean).join('\n\n');
 }
 
+function renderExternalReaderBody(result, url) {
+  const method = result?.method || 'external-reader';
+  const content = String(result?.content || '').trim();
+  if (!content) return '';
+  return [
+    content,
+    `\nSource: ${result?.finalUrl || url}`,
+    `\n[Note: this was read through the optional local ${method} fallback. Social-platform captions, comments, or audio may still be incomplete if the page requires a logged-in session.]`,
+  ].filter(Boolean).join('\n\n');
+}
+
 /**
  * Build a per-call config that merges the caller's explicit cookie
  * string into config.domainCookies, keyed under the canonical host
@@ -1060,6 +1074,7 @@ export async function readSocialLink(url, {
   signal,
   previewFn = fetchSocialPreview,
   browserPreviewFn = fetchSocialBrowserPreview,
+  externalReaderFn = readUrlWithExternalReaders,
   ytdlpFn = fetchPlatformMetadataViaYtdlp,
 } = {}) {
   if (!isSocialLinkUrl(url)) return null;
@@ -1176,6 +1191,42 @@ export async function readSocialLink(url, {
     }
   } catch {
     // Browser miss — continue to cheap unfurl fallback.
+  }
+  if (signal?.aborted) return null;
+
+  // Step 4b — optional local extraction CLIs. This keeps the old
+  // Playwright path as the first browser fallback while letting users who
+  // install Camoufox / Crawl4AI / Scrapling get deeper reads on difficult
+  // social pages without paying for a hosted scraping API.
+  try {
+    if (typeof externalReaderFn === 'function') {
+      for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
+        if (signal?.aborted) return null;
+        const external = await externalReaderFn(candidateUrl, {
+          preferred: ['camoufox', 'crawl4ai', 'scrapling'],
+          signal,
+          config: effectiveConfig,
+          maxChars: BROWSER_FETCH_MAX_TEXT,
+          timeoutMs: BROWSER_FETCH_TIMEOUT_MS,
+        });
+        if (external?.content && cleanBrowserExtractedText(external.content).length > 120) {
+          const body = renderExternalReaderBody(external, external.finalUrl || candidateUrl);
+          return {
+            body,
+            via: `external:${external.method || 'reader'}`,
+            canonicalUrl: external.finalUrl || candidateUrl,
+            originalUrl: url,
+            preview: {
+              title: cleanBrowserExtractedText(external.content).split('\n')[0]?.slice(0, 300) || '',
+              body: external.content,
+              profile: external.method || 'external-reader',
+            },
+          };
+        }
+      }
+    }
+  } catch {
+    // External reader miss — keep the existing shallow preview fallback.
   }
   if (signal?.aborted) return null;
 

@@ -579,3 +579,21 @@ test('readSocialLink: explicitCookies binds to canonical host, NOT shortener hos
   // (hostnameOf strips the www. prefix).
   assert.equal(capturedConfig.domainCookies['xiaohongshu.com'], 'sess=z');
 });
+
+test('readSocialLink: optional external readers are used after deep/browser misses', async () => {
+  const out = await readSocialLink('https://www.douyin.com/video/1234567890123456789', {
+    previewFn: async () => null,
+    browserPreviewFn: async () => null,
+    ytdlpFn: async () => null,
+    externalReaderFn: async (url, opts) => ({
+      method: opts.preferred[0],
+      finalUrl: url,
+      content:
+        'External Douyin title\n\nThis externally extracted body is long enough to represent a real social page read after the normal browser fallback misses.',
+    }),
+  });
+
+  assert.equal(out?.via, 'external:camoufox');
+  assert.match(out.body, /External Douyin title/);
+  assert.match(out.body, /optional local camoufox fallback/);
+});

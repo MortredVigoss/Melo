@@ -167,6 +167,23 @@ test('fetch_url social success metadata shape matches legacy contract (meta.meth
     'must NOT use the regressed `metadata:` key');
 });
 
+test('fetch_url forced crawl4ai mode uses optional external reader seam', async () => {
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article', extract_mode: 'crawl4ai' },
+    {
+      _readExternalUrl: async (url, opts) => ({
+        content: 'External article title\n\nThis body is long enough to represent useful content from Crawl4AI after the normal readers miss.',
+        method: opts.preferred[0],
+      }),
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.meta.method, 'crawl4ai');
+  assert.match(result.output, /External article title/);
+  assert.match(result.output, /\[via: crawl4ai\]/);
+});
+
 test('isSocialLinkUrl: webSearchTool blocklist must include every host the early-route covers', () => {
   // Cross-system contract: if a host is recognised by isSocialLinkUrl,
   // web_search MUST also block it from content-fetch. Otherwise

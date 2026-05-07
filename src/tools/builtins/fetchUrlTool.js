@@ -12,6 +12,7 @@ import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import { debugWarn } from '../../debug.js';
 import { fetchPageViaPlaywright, isPlaywrightCliAvailable } from '../../web/playwrightFetcher.js';
+import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 import { isSocialLinkUrl, readSocialLink } from './socialLinkTool.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
@@ -138,12 +139,14 @@ export const fetchUrlTool = {
       },
       extract_mode: {
         type: 'string',
-        enum: ['auto', 'jina', 'direct', 'playwright'],
+        enum: ['auto', 'jina', 'direct', 'playwright', 'crawl4ai', 'scrapling', 'camoufox'],
         description:
           'Extraction mode. "auto" tries Jina first, falls back to direct, then to a ' +
-          'real browser (Playwright) for SPA/JS-heavy pages that return empty shells. ' +
+          'real browser (Playwright), then optional local readers (Crawl4AI, Scrapling, Camoufox) ' +
+          'for SPA/JS-heavy pages that return empty shells. ' +
           '"jina" forces Jina reader. "direct" forces plain fetch + Readability. ' +
-          '"playwright" forces the real-browser path (slower, use only when auto fails).',
+          '"playwright" forces the real-browser path (slower, use only when auto fails). ' +
+          '"crawl4ai", "scrapling", and "camoufox" force optional local CLI readers when installed.',
         default: 'auto',
       },
       cookies: {
@@ -160,7 +163,12 @@ export const fetchUrlTool = {
     { url: 'https://docs.python.org/3/library/json.html', extract_mode: 'jina' },
   ],
 
-  async run({ url, extract_mode = 'auto', cookies }, { signal, config, _readSocialLink } = {}) {
+  async run({ url, extract_mode = 'auto', cookies }, {
+    signal,
+    config,
+    _readSocialLink,
+    _readExternalUrl,
+  } = {}) {
     // Basic URL validation
     if (!url || typeof url !== 'string') {
       return { ok: false, output: 'Missing or invalid url parameter.', error: 'INVALID_URL' };
@@ -276,6 +284,20 @@ export const fetchUrlTool = {
       return pwContent || null;
     };
 
+    const tryExternalReaders = async (preferred = ['crawl4ai', 'scrapling', 'camoufox']) => {
+      const reader = typeof _readExternalUrl === 'function'
+        ? _readExternalUrl
+        : readUrlWithExternalReaders;
+      return reader(normalized, {
+        preferred,
+        signal,
+        config,
+        cookies: cookieStr,
+        maxChars: MAX_CONTENT_LENGTH,
+        timeoutMs: PLAYWRIGHT_TIMEOUT_MS,
+      });
+    };
+
     try {
       if (extract_mode === 'direct') {
         content = await fetchDirect(normalized, signal, cookieStr);
@@ -300,10 +322,23 @@ export const fetchUrlTool = {
         }
         content = pwContent;
         method = 'playwright';
+      } else if (['crawl4ai', 'scrapling', 'camoufox'].includes(extract_mode)) {
+        const external = await tryExternalReaders([extract_mode]);
+        if (!external?.content) {
+          return {
+            ok: false,
+            output: `${extract_mode} extraction returned no content for "${normalized}". Make sure the local CLI/package is installed.`,
+            error: 'NO_CONTENT',
+          };
+        }
+        content = external.content;
+        method = external.method || extract_mode;
       } else {
         // auto: cookies present → direct first; otherwise Jina first.
         // Final escalation tier: Playwright (real browser) for SPA / JS-heavy
-        // pages that return empty shells via both HTTP-level fetchers.
+        // pages that return empty shells via both HTTP-level fetchers. If that
+        // still misses, try optional local extraction CLIs (Crawl4AI,
+        // Scrapling, Camoufox) without making them hard dependencies.
         if (cookieStr) {
           try {
             content = await fetchDirect(normalized, signal, cookieStr);
@@ -341,6 +376,18 @@ export const fetchUrlTool = {
             }
           } catch (err) {
             debugWarn('fetch_url', `Playwright escalation failed for ${normalized}:`, err?.message || err);
+          }
+        }
+
+        if (looksEmpty(content)) {
+          try {
+            const external = await tryExternalReaders();
+            if (external?.content && !looksEmpty(external.content)) {
+              content = external.content;
+              method = method ? `${method}→${external.method}` : external.method;
+            }
+          } catch (err) {
+            debugWarn('fetch_url', `external readers failed for ${normalized}:`, err?.message || err);
           }
         }
       }

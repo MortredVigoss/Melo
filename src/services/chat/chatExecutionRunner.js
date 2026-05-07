@@ -86,6 +86,11 @@ import {
   applyVerificationToReply,
 } from '../../retrieval/selfVerification.js';
 import {
+  buildSearchPlan,
+  buildSearchRoutingPrompt,
+  filterToolsForSearchPlan,
+} from '../../retrieval/searchRouter.js';
+import {
   buildToolsSystemPrompt,
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
@@ -191,6 +196,11 @@ export async function runChatAgentExecutionGraph({
         const connectorPrompts = isRemoteChannel ? '' : summarizeConnectorPrompts(agentConnectors);
         const skillsPrompts = summarizeSkillsPrompts(enabledSkills, { remote: isRemoteChannel });
         const modelMessages = buildModelMessagesFromChat(chat);
+        const searchPlan = buildSearchPlan({
+          latestUserMessage,
+          modelMessages,
+          authMode: config.authMode,
+        });
 
         // ── 2. Async fan-out ───────────────────────────────────────────────
         // classifyIntent and buildDynamicContext are the only two operations
@@ -293,12 +303,19 @@ export async function runChatAgentExecutionGraph({
         // enabledMcpServerIds whitelist; the default is deny-all so a new
         // agent can't call any MCP without explicit opt-in.  Non-MCP tools
         // pass through filterMcpToolsForAgent untouched.
-        let toolsPrompt = '';
+        let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
+        let visibleToolIds = new Set();
         if (shouldInjectToolsPrompt({ mode: chat.mode })) {
           // prepare scope owns the local `activeAgentProfile` (line 150);
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
-          toolsPrompt = buildToolsSystemPrompt([...allowedTools, ...skillTools]);
+          const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
+          const promptTools = [...routedTools, ...skillTools];
+          visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
+          toolsPrompt = [
+            toolsPrompt,
+            buildToolsSystemPrompt(promptTools),
+          ].filter(Boolean).join('\n\n');
         }
 
         // Session memory block — inject top extracted facts
@@ -354,6 +371,8 @@ export async function runChatAgentExecutionGraph({
           projectContext,
           activeAgentProfile,
           skillTools,
+          searchPlan,
+          visibleToolIds: [...visibleToolIds],
           next: 'invoke-model',
         };
       },
@@ -428,6 +447,7 @@ export async function runChatAgentExecutionGraph({
             // privilege bypass; the override is recorded in subAgent.js's
             // matching block.
             workspacePath: workspace?.rootPath || null,
+            nativeWebSearchEnabled: graphState.searchPlan?.nativeWebSearchEnabled === true,
           });
 
           const { thinking, toolCalls } = parseModelResponse(rawReply);
@@ -453,6 +473,7 @@ export async function runChatAgentExecutionGraph({
           const skillToolsById = new Map(
             (graphState.skillTools || []).map(t => [t.id, t]),
           );
+          const visibleToolIds = new Set(graphState.visibleToolIds || []);
           // Defence-in-depth: even though the prompt-level filter
           // already hides non-whitelisted MCP tools, a hallucinated
           // `mcp:<server>:<tool>` call must not slip through to the
@@ -475,6 +496,9 @@ export async function runChatAgentExecutionGraph({
           );
           const executableCalls = toolCalls.map(tc => {
             let tool = skillToolsById.get(tc.name) || getTool(tc.name);
+            if (tool && !visibleToolIds.has(tool.id)) {
+              tool = null;
+            }
             if (tool && tool.id?.startsWith('mcp:') && !allowedDispatchTools.has(tool.id)) {
               tool = null;
             }
@@ -506,7 +530,7 @@ export async function runChatAgentExecutionGraph({
               result: {
                 ok: false,
                 output: `Unknown tool: "${tc.name}". Available tools: ${
-                  executableCalls.map(c => c.callRef.name).filter(Boolean).join(', ') || 'none'
+                  [...visibleToolIds].filter(Boolean).join(', ') || 'none'
                 }`,
                 error: 'UNKNOWN_TOOL',
               },

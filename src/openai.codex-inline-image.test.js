@@ -463,6 +463,44 @@ test('payload — plain text Q&A (workspace + no image, no draw intent): caller 
   );
 });
 
+test('payload — search router override can suppress native web_search on trigger text', async () => {
+  const captured = await captureCodexRequestPayload({
+    workspacePath: '/tmp/some/workspace',
+    nativeWebSearchEnabled: false,
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: '帮我查一下今天墨尔本天气' }],
+      },
+    ],
+  });
+
+  assert.equal(
+    Boolean(captured.body.tools?.some(t => t.type === 'web_search')),
+    false,
+    'router override must prevent duplicate Codex+Melo web routes',
+  );
+});
+
+test('payload — search router override can explicitly enable native web_search', async () => {
+  const captured = await captureCodexRequestPayload({
+    workspacePath: null,
+    nativeWebSearchEnabled: true,
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'hello' }],
+      },
+    ],
+  });
+
+  assert.equal(
+    Boolean(captured.body.tools?.some(t => t.type === 'web_search')),
+    true,
+    'router is the single source of truth for native web_search enablement',
+  );
+});
+
 test('payload — no workspace + input image: no image_generation tool, no edit instructions, caller model preserved', async () => {
   // Edge case: a chat without a workspace (e.g. background polling
   // without bound chat workspace) cannot host inline image generation

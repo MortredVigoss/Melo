@@ -23,6 +23,11 @@ import {
   IMAGE_EDIT_INTENT_PATTERN,
   IMAGE_FOLLOW_UP_PATTERN,
 } from './services/chat/messageBuilder.js';
+import {
+  clearSearchTriggers,
+  registerSearchTriggers,
+  shouldUseNativeWebSearch,
+} from './retrieval/searchRouter.js';
 
 const execFile = promisify(execFileCallback);
 const DEFAULT_CODEX_CLI_TIMEOUT_MS = 600000;
@@ -369,58 +374,12 @@ export async function saveCodexInlineImageItem(item, workspacePath) {
   }
   return { path, url, mimeType, bytes: buffer.length };
 }
-const WEB_SEARCH_TRIGGER_RULES = Object.freeze([
-  { pattern: /\b(latest|current|today's)\s+(news|price|stock|weather|score|update)s?\b/i, weight: 3 },
-  { pattern: /\bwhat'?s\s+(happening|new)\b/i, weight: 3 },
-  { pattern: /\bright\s+now\b/i, weight: 2 },
-  { pattern: /\bstock\s+price\b/i, weight: 3 },
-  { pattern: /\bweather\s+(forecast|in|at|today)\b/i, weight: 3 },
-  { pattern: /\b(search|look up|find|google)\b/i, weight: 2 },
-  { pattern: /最新(新闻|消息|价格|动态|行情|报道)/u, weight: 3 },
-  { pattern: /(今天|现在|明天|这周)的?(天气|股价|新闻|头条|行情|温度|气温)/u, weight: 3 },
-  { pattern: /(股价|股票|汇率|油价|金价)(是|多少|怎么样)/u, weight: 3 },
-  { pattern: /查一?下.+?(的|最新|当前)/u, weight: 2 },
-  { pattern: /(帮我|请)?(查|搜|搜索|搜一下|查一下|找一下)/u, weight: 2 },
-  { pattern: /(天气|几度|多少度|下雨|气温|温度)/u, weight: 3 },
-  { pattern: /(怎么去|在哪|地址|电话|营业时间|开放时间)/u, weight: 2 },
-  { pattern: /(多少钱|价格|票价|费用|报价)/u, weight: 2 },
-]);
-
-// Runtime-extensible trigger list. The frozen defaults above ship with the
-// app; users can add domain-specific triggers via `config.webSearchTriggers`
-// without touching source. These are merged (not replaced) at check time, so
-// extensions are purely additive — a user trigger can only raise the score,
-// never suppress a default one.
-let _extraWebSearchTriggers = [];
-
-function compileTrigger(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const weight = Number.isFinite(Number(entry.weight)) ? Number(entry.weight) : 1;
-  const { pattern, flags } = entry;
-  if (pattern instanceof RegExp) {
-    return { pattern, weight };
-  }
-  if (typeof pattern === 'string' && pattern.trim()) {
-    try {
-      return { pattern: new RegExp(pattern, typeof flags === 'string' ? flags : 'iu'), weight };
-    } catch {
-      // Invalid regex from user config — drop silently; caller can enable
-      // MELO_DEBUG=openai to surface the warning if needed.
-      return null;
-    }
-  }
-  return null;
-}
-
 export function registerWebSearchTriggers(entries = []) {
-  if (!Array.isArray(entries)) return;
-  _extraWebSearchTriggers = entries
-    .map(compileTrigger)
-    .filter(Boolean);
+  registerSearchTriggers(entries);
 }
 
 export function clearExtraWebSearchTriggers() {
-  _extraWebSearchTriggers = [];
+  clearSearchTriggers();
 }
 let keepAliveSetupPromise = null;
 let ffmpegAvailabilityPromise = null;
@@ -609,41 +568,8 @@ function extractProviderErrorMessage(payload, fallback = 'Provider request faile
   );
 }
 
-function latestUserMessageText(messages = []) {
-  const latestUserMessage = [...messages]
-    .reverse()
-    .find(message => String(message?.role || '').toLowerCase() === 'user');
-  return normalizeMessageContent(latestUserMessage?.content || '');
-}
-
 function shouldEnableCodexNativeWebSearch(messages = []) {
-  const latestUserText = latestUserMessageText(messages);
-  if (!latestUserText) {
-    return false;
-  }
-
-  let score = 0;
-  for (const { pattern, weight } of WEB_SEARCH_TRIGGER_RULES) {
-    if (pattern.test(latestUserText)) {
-      score += weight;
-      if (score >= 3) {
-        return true;
-      }
-    }
-  }
-  // User-extensible trigger list — checked after defaults so a misconfigured
-  // user entry cannot block the native web_search path when default triggers
-  // already fired.
-  for (const { pattern, weight } of _extraWebSearchTriggers) {
-    if (pattern.test(latestUserText)) {
-      score += weight;
-      if (score >= 3) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return shouldUseNativeWebSearch(messages, { authMode: 'codex' });
 }
 
 function normalizeCodexReasoningEffort(rawValue) {
@@ -1789,6 +1715,7 @@ export async function createCodexResponsesReply({
   onReasoningDelta,
   providerProfile = 'default',
   workspacePath = null,
+  nativeWebSearchEnabled,
   _credentialProvider = getCodexCredential,
   _fetchImpl,
 } = {}) {
@@ -1815,7 +1742,9 @@ export async function createCodexResponsesReply({
   const effectiveReasoningEffort = isFastProfile
     ? resolveFastCodexReasoningEffort(reasoningEffort)
     : reasoningEffort;
-  const enableWebSearch = shouldEnableCodexNativeWebSearch(messages);
+  const enableWebSearch = typeof nativeWebSearchEnabled === 'boolean'
+    ? nativeWebSearchEnabled
+    : shouldEnableCodexNativeWebSearch(messages);
   // Inline image generation only fires when the chat has a workspace
   // path we can write to. Background jobs that don't bind a workspace
   // (some Telegram polling code paths) skip the tool, falling back to
@@ -1995,6 +1924,7 @@ export async function createOpenAICompatibleReply({
   onReasoningDelta,
   providerProfile = 'default',
   workspacePath = null,
+  nativeWebSearchEnabled,
 }) {
   if (process.env.MELO_MOCK_RESPONSE) {
     const mockReply = process.env.MELO_MOCK_RESPONSE;
@@ -2024,6 +1954,7 @@ export async function createOpenAICompatibleReply({
         onReasoningDelta,
         providerProfile,
         workspacePath,
+        nativeWebSearchEnabled,
       });
     } catch (error) {
       if (isAbortError(error)) {
