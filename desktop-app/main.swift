@@ -5,7 +5,7 @@ import Foundation
 import Speech
 import WebKit
 
-final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler, AVAudioPlayerDelegate {
   private var window: NSWindow!
   private var webView: WKWebView!
   private var serverProcess: Process?
@@ -134,6 +134,14 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
 
   func applicationWillTerminate(_ notification: Notification) {
     stopVoiceRecognition(manual: false)
+    // Without these calls a `say` child or AVAudioPlayer can keep playing for
+    // several seconds after the app window has closed, until the OS reaps the
+    // detached children.
+    ttsAudioPlayer?.stop()
+    ttsAudioPlayer = nil
+    speechSynthesizer.stopSpeaking(at: .immediate)
+    sayProcess?.terminate()
+    sayProcess = nil
     serverProcess?.terminate()
     if transcriptionServerFd >= 0 {
       close(transcriptionServerFd)
@@ -323,6 +331,13 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     process.environment = [
       "HOME": NSHomeDirectory(),
       "MELO_HOME": runtimeMeloHomePath,
+      // The server may bind a rolled-forward port if the configured 43127 is
+      // taken (see prepareLaunchPort). Anything in Node that needs to talk
+      // back to native services on port+N (transcription server at port+1,
+      // signed-URL minting in src/web/urlSigning.js, etc.) reads this env
+      // var. Without it those reads fall back to 43127 and miss the actual
+      // listener on 43128/43129/...
+      "MELO_DESKTOP_PORT": String(port),
       "PATH": [
         "/opt/homebrew/bin",
         "/usr/local/bin",
@@ -586,16 +601,29 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     case "stop":
       stopVoiceRecognition(manual: true)
     case "playAudio":
+      // Cross-engine teardown: stop everything else first so MiniMax / API
+      // audio never overlaps a still-running `say` or speechSynthesizer
+      // utterance from another message in the chat.
       if let base64 = payload["data"] as? String,
          let audioData = Data(base64Encoded: base64) {
         DispatchQueue.main.async {
           self.ttsAudioPlayer?.stop()
           self.ttsAudioPlayer = nil
+          self.speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+          self.sayProcess?.terminate()
+          self.sayProcess = nil
+        }
+        DispatchQueue.main.async {
           do {
-            self.ttsAudioPlayer = try AVAudioPlayer(data: audioData)
-            self.ttsAudioPlayer?.play()
+            let player = try AVAudioPlayer(data: audioData)
+            player.delegate = self
+            self.ttsAudioPlayer = player
+            player.play()
           } catch {
             // playback failed — JS will fall back to browser TTS
+            self.emitTtsEvent(action: "audioFailed")
           }
         }
       }
@@ -610,8 +638,16 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         self.sayProcess = nil
       }
     case "speakText":
-      // Use macOS `say` command — avoids AVAudioEngine session conflicts, supports all system voices
-      if let text = payload["text"] as? String {
+      // Use macOS `say` command — avoids AVAudioEngine session conflicts, supports all system voices.
+      // Cross-engine teardown: stop AVAudioPlayer / speechSynthesizer first
+      // so a queued `say` doesn't overlap an already-playing MiniMax buffer.
+      if let text = payload["text"] as? String,
+         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        DispatchQueue.main.async {
+          self.ttsAudioPlayer?.stop()
+          self.ttsAudioPlayer = nil
+          self.speechSynthesizer.stopSpeaking(at: .immediate)
+        }
         DispatchQueue.global(qos: .userInitiated).async {
           self.sayProcess?.terminate()
           self.sayProcess = nil
@@ -631,7 +667,10 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
           self.sayProcess = task
           try? task.run()
           task.waitUntilExit()
-          DispatchQueue.main.async { self.sayProcess = nil }
+          DispatchQueue.main.async {
+            self.sayProcess = nil
+            self.emitTtsEvent(action: "sayEnded")
+          }
         }
       }
     case "openExternalUrl":
@@ -1004,6 +1043,40 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     }
   }
 
+  // TTS playback events — separate channel from voice-recording events
+  // because JS clears different state on each. Mirrors the existing
+  // melo-voice CustomEvent pattern.
+  private func emitTtsEvent(action: String) {
+    let payload: [String: Any] = ["action": action]
+    guard
+      let data = try? JSONSerialization.data(withJSONObject: payload),
+      let json = String(data: data, encoding: .utf8)
+    else {
+      return
+    }
+    DispatchQueue.main.async {
+      self.webView.evaluateJavaScript(
+        "window.dispatchEvent(new CustomEvent('melo-tts', { detail: \(json) }));",
+        completionHandler: nil
+      )
+    }
+  }
+
+  // AVAudioPlayerDelegate: fires when AVAudioPlayer finishes a buffer. JS
+  // listens on `melo-tts` for `audioEnded` to clear `_ttsAudio` ref + the
+  // speaking indicator. Without this, JS used a duration heuristic
+  // (base64.length × 0.75 / 16000 × 1000) that desyncs from real playback
+  // for long buffers; clicking a second message during the gap would race
+  // a still-playing audio source.
+  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    DispatchQueue.main.async {
+      if self.ttsAudioPlayer === player {
+        self.ttsAudioPlayer = nil
+      }
+      self.emitTtsEvent(action: "audioEnded")
+    }
+  }
+
   private func bindServerOutput(_ pipe: Pipe) {
     pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
       let data = handle.availableData
@@ -1341,6 +1414,16 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     guard hasLoadedServer else { return }
+
+    // If a reload landed while the mic was hot, JS has lost its in-flight
+    // recording state (uiState.voice resets to recording:false at module
+    // load). Tearing down the recognition session here keeps the two sides
+    // in sync — otherwise the icons read "idle" while Swift is still
+    // capturing audio, and a mid-window mic click would tell Swift to stop
+    // and discard the recording.
+    if isVoiceRecording {
+      stopVoiceRecognition(manual: false, emitEvent: false)
+    }
 
     emitVoiceEvent(
       supported: speechRecognizer != nil,
