@@ -3589,6 +3589,16 @@ function toggleVoiceInput() {
     return;
   }
 
+  // When engaging the mic, stop any in-flight TTS first. AVAudioSession is
+  // shared between record and playback in the desktop bridge, so leftover
+  // playback bleeds into the mic input and contaminates the transcript with
+  // the assistant's own words. Skip the stop on the toggle-off path so a
+  // user pressing the button to end recording doesn't also kill an
+  // unrelated speak that just started.
+  if (!uiState.voice.recording) {
+    stopCurrentTts();
+  }
+
   setVoiceState({
     supported: true,
     error: '',
@@ -3867,6 +3877,12 @@ async function handleSendMessage() {
     return;
   }
 
+  // Tracks whether the user clicked Stop mid-stream. Read in the finally
+  // block to decide between flushing the buffered TTS tail (good run) and
+  // dropping it (aborted run — a half-finished sentence would otherwise
+  // play seconds after the Stop click).
+  let sendWasAborted = false;
+
   // Capture and clear the voice transcript before resetting composer state.
   const voiceTranscript = uiState.composerVoiceTranscript || null;
   uiState.composerVoiceTranscript = null;
@@ -4042,6 +4058,7 @@ async function handleSendMessage() {
     }
   } catch (error) {
     if (isAbortError(error)) {
+      sendWasAborted = true;
       try {
         await loadBootstrap(uiState.searchQuery, { quiet: true });
       } catch {}
@@ -4065,8 +4082,16 @@ async function handleSendMessage() {
     uiState.activeToolCalls = [];
     uiState.pendingToolPermissions = [];
 
-    // Flush any remaining buffered text to TTS, then reset streaming state
-    if (_isTtsActive()) {
+    // Stop button behaviour: when the user aborted the stream, the buffered
+    // partial sentence in _streamTts.buffer is half a thought — flushing it
+    // would have the assistant speak garbled fragments seconds after the
+    // click. Discard the buffer AND tell the server to abort any synthesis
+    // already on its way (covers the queue path + speak-text fast paths).
+    if (sendWasAborted) {
+      try { await api('/api/tts/queue-clear', { method: 'POST', body: {} }); } catch {}
+      try { await api('/api/tts/speak-stop', { method: 'POST', body: {} }); } catch {}
+      _streamTtsReset();
+    } else if (_isTtsActive()) {
       await _streamTtsFlush(); // sends accumulated text / remaining tail to TTS
     } else {
       _streamTtsReset();
@@ -4112,6 +4137,110 @@ const EDGE_TTS_VOICES = [
   { id: 'ja-JP-NanamiNeural',     label: '七海 (ja-JP)',  desc: '日本語' },
   { id: 'ko-KR-SunHiNeural',      label: '선히 (ko-KR)',  desc: '한국어' },
 ];
+
+const MINIMAX_TTS_PARAMS = [
+  {
+    key: 'ttsSpeed',
+    label: 'Speed / 语速',
+    defaultValue: 1,
+    min: 0.5,
+    max: 2,
+    step: 0.1,
+    note: '默认 1.0；0.5 最慢，2.0 最快。',
+  },
+  {
+    key: 'ttsPitch',
+    label: 'Pitch / 音高',
+    defaultValue: 0,
+    min: -12,
+    max: 12,
+    step: 1,
+    note: '默认 0；-12 更低沉，12 更明亮。',
+  },
+  {
+    key: 'ttsVol',
+    label: 'Volume / 音量',
+    defaultValue: 1,
+    min: 0.1,
+    max: 10,
+    step: 0.1,
+    note: '默认 1.0；0.1 最小，10 最大。',
+  },
+];
+
+function agentTtsParamInputValue(draft, selected, key, defaultValue) {
+  const hasDraftValue =
+    draft && Object.prototype.hasOwnProperty.call(draft, key);
+  const raw = hasDraftValue ? draft[key] : selected?.[key];
+  if (raw === null || raw === undefined || raw === '') {
+    return String(defaultValue);
+  }
+  return String(raw);
+}
+
+function coerceMiniMaxTtsParam(value, fallback, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, numeric));
+}
+
+function minimaxTtsParamsForAgent(agent) {
+  const params = {};
+  for (const def of MINIMAX_TTS_PARAMS) {
+    params[def.key] = coerceMiniMaxTtsParam(
+      agent?.[def.key],
+      def.defaultValue,
+      def.min,
+      def.max,
+    );
+  }
+  return params;
+}
+
+function minimaxTtsConfigPatchForVoice(voiceId) {
+  const agent = allChatAgentProfiles().find(profile => profile.minimaxVoiceId === voiceId);
+  // Only inherit speed / pitch / vol from the bound agent when that agent
+  // explicitly defines them. Falling back to the def.defaultValue would
+  // overwrite the user's manual connector-level tuning every time they
+  // pick a voice, which is the bug the audit caught: the tts panel's
+  // sliders kept resetting to 1.0 / 0 / 1.0 on each voice change.
+  const patch = { minimaxVoiceId: voiceId };
+  if (agent) {
+    for (const def of MINIMAX_TTS_PARAMS) {
+      const raw = agent[def.key];
+      if (raw === null || raw === undefined || raw === '') continue;
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric)) continue;
+      patch[def.key] = Math.max(def.min, Math.min(def.max, numeric));
+    }
+  }
+  return patch;
+}
+
+function renderMinimaxTtsParameterInputs(draft, selected) {
+  return `
+    <div class="minimax-param-list">
+      ${MINIMAX_TTS_PARAMS.map(def => `
+        <label class="minimax-param-row">
+          <input
+            class="config-input minimax-param-input"
+            type="number"
+            name="${def.key}"
+            value="${escapeHtml(agentTtsParamInputValue(draft, selected, def.key, def.defaultValue))}"
+            min="${def.min}"
+            max="${def.max}"
+            step="${def.step}"
+            inputmode="decimal"
+          />
+          <span class="minimax-param-copy">
+            <span class="minimax-param-name">${escapeHtml(def.label)}</span>
+            <span class="minimax-param-note">${escapeHtml(def.note)}</span>
+          </span>
+        </label>
+      `).join('')}
+    </div>
+  `;
+}
 
 let _ttsAudio = null;
 
@@ -4165,20 +4294,34 @@ function _playAudioBuffer(base64, mimeType, messageId) {
   // Prefer native Swift bridge — bypasses WKWebView autoplay restrictions
   if (window.webkit?.messageHandlers?.meloVoice) {
     window.webkit.messageHandlers.meloVoice.postMessage({ action: 'playAudio', data: base64 });
-    // Approximate duration from file size (128 kbps mp3 ≈ 16KB/s)
+    // Authoritative end-of-playback comes from Swift's
+    // AVAudioPlayerDelegate.audioPlayerDidFinishPlaying which dispatches a
+    // melo-tts CustomEvent (see _installMeloTtsListener below). The duration
+    // heuristic kept here as a safety net for stale frames in case the
+    // delegate event fails to land — long buffers used to desync from real
+    // playback when this was the ONLY signal, leaving the indicator stuck
+    // and letting a second click race a still-playing audio source.
     const approxMs = Math.max(3000, (base64.length * 0.75 / 16000) * 1000);
-    const timer = setTimeout(() => {
+    const safetyTimer = setTimeout(() => {
       if (uiState.ttsSpeakingMessageId === messageId) {
         uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
       }
-    }, approxMs);
-    _ttsAudio = { pause: () => {
-      clearTimeout(timer);
+      if (_ttsAudio === bridgeRef) _ttsAudio = null;
+    }, approxMs + 5000);
+    const bridgeRef = { pause: () => {
+      clearTimeout(safetyTimer);
       if (window.webkit?.messageHandlers?.meloVoice) {
         window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' });
       }
       uiState.ttsSpeakingMessageId = null;
+    }, _onAudioEnded: () => {
+      clearTimeout(safetyTimer);
+      if (uiState.ttsSpeakingMessageId === messageId) {
+        uiState.ttsSpeakingMessageId = null; _updateTtsSpeakingUI(null);
+      }
+      if (_ttsAudio === bridgeRef) _ttsAudio = null;
     }};
+    _ttsAudio = bridgeRef;
     return;
   }
 
@@ -4242,6 +4385,10 @@ function speakWithBrowser(text, messageId = null) {
 
 function _speakWithNativeBridge(text, messageId) {
   if (!window.webkit?.messageHandlers?.meloVoice) return false;
+  // Mirrors Swift's empty-text guard so callers that hand us a stripped
+  // string don't end up spawning `say` with no input. Soft contract today,
+  // but cheap to enforce on both sides so a future caller can't break it.
+  if (typeof text !== 'string' || !text.trim()) return false;
   window.webkit.messageHandlers.meloVoice.postMessage({ action: 'speakText', text });
   if (messageId) { uiState.ttsSpeakingMessageId = messageId; _updateTtsSpeakingUI(messageId); }
   const approxMs = Math.max(2000, text.length * 300);
@@ -5006,25 +5153,96 @@ async function handleUpdateAgentProfile(form) {
   const scope = selectedAgentScope();
   const projectId = scope === 'project' ? project?.id || 'global' : 'global';
   const saveKey = agentSaveKey(form.dataset.agentId, scope, projectId);
-  const tools = String(formData.get('tools') || '')
+  const hasFormField = name =>
+    Boolean(form.elements.namedItem(name)) || formData.has(name);
+  const csvList = value => String(value || '')
     .split(',')
-    .map(value => value.trim())
+    .map(item => item.trim())
     .filter(Boolean);
-  const rawSkillIds = formData.get('enabledSkillIds');
-  const enabledSkillIds = rawSkillIds === '__all__'
-    ? null
-    : String(rawSkillIds || '').split(',').map(v => v.trim()).filter(Boolean);
-  const rawConnectorIds = formData.get('enabledConnectorIds');
-  const enabledConnectorIds = rawConnectorIds === '__all__'
-    ? null
-    : String(rawConnectorIds || '').split(',').map(v => v.trim()).filter(Boolean);
-  // Stdio MCP whitelist — unlike skills/connectors above, MCP defaults
-  // to deny-all (`null` is coerced to `[]` by the backend normalizer),
-  // so we never offer the "all servers" sentinel here.  An empty string
-  // means "no MCP servers for this agent".
-  const rawMcpServerIds = formData.get('enabledMcpServerIds');
-  const enabledMcpServerIds = String(rawMcpServerIds || '')
-    .split(',').map(v => v.trim()).filter(Boolean);
+  const patch = {};
+  const assignString = (key, field = key) => {
+    if (!hasFormField(field)) return;
+    patch[key] = String(formData.get(field) || '').trim();
+  };
+  const assignNumber = (key, field = key) => {
+    if (!hasFormField(field)) return;
+    const raw = String(formData.get(field) ?? '').trim();
+    patch[key] = raw ? Number(raw) : '';
+  };
+
+  assignString('name');
+  assignString('laneLabel');
+  assignString('description');
+  assignString('rolePrompt');
+  assignString('identity');
+  assignString('soul.md');
+  assignString('mood');
+  assignString('model');
+  assignString('systemPrompt');
+  assignString('voiceReplyMode');
+  assignString('voicePersonality');
+  assignString('edgeTtsVoice');
+  assignString('minimaxVoiceId');
+  assignNumber('ttsSpeed');
+  assignNumber('ttsPitch');
+  assignNumber('ttsVol');
+
+  if (hasFormField('tools')) {
+    patch.tools = csvList(formData.get('tools'));
+  }
+  if (hasFormField('enabledSkillIds')) {
+    const rawSkillIds = formData.get('enabledSkillIds');
+    patch.enabledSkillIds = rawSkillIds === '__all__'
+      ? null
+      : csvList(rawSkillIds);
+  }
+  if (hasFormField('enabledConnectorIds')) {
+    const rawConnectorIds = formData.get('enabledConnectorIds');
+    patch.enabledConnectorIds = rawConnectorIds === '__all__'
+      ? null
+      : csvList(rawConnectorIds);
+  }
+  if (hasFormField('enabledMcpServerIds')) {
+    // Stdio MCP whitelist — unlike skills/connectors above, MCP defaults
+    // to deny-all (`null` is coerced to `[]` by the backend normalizer),
+    // so we never offer the "all servers" sentinel here.  An empty string
+    // means "no MCP servers for this agent".
+    patch.enabledMcpServerIds = csvList(formData.get('enabledMcpServerIds'));
+  }
+
+  const channels = {};
+  if (
+    hasFormField('telegramEnabled') ||
+    hasFormField('telegramBotToken') ||
+    hasFormField('telegramChatId') ||
+    hasFormField('telegramVoiceReply')
+  ) {
+    channels.telegram = {
+      enabled: formData.get('telegramEnabled') === 'on',
+      botToken: String(formData.get('telegramBotToken') || '').trim(),
+      chatId: String(formData.get('telegramChatId') || '').trim(),
+      voiceReply: formData.get('telegramVoiceReply') === 'on',
+    };
+  }
+  if (
+    hasFormField('discordEnabled') ||
+    hasFormField('discordBotToken') ||
+    hasFormField('discordGuildId') ||
+    hasFormField('discordChannelId') ||
+    hasFormField('discordVoiceReply')
+  ) {
+    channels.discord = {
+      enabled: formData.get('discordEnabled') === 'on',
+      botToken: String(formData.get('discordBotToken') || '').trim(),
+      guildId: String(formData.get('discordGuildId') || '').trim(),
+      channelId: String(formData.get('discordChannelId') || '').trim(),
+      voiceReply: formData.get('discordVoiceReply') === 'on',
+    };
+  }
+  if (Object.keys(channels).length) {
+    patch.channels = channels;
+  }
+
   const minimumVisibleMs = 100;
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
 
@@ -5039,47 +5257,23 @@ async function handleUpdateAgentProfile(form) {
         scope,
         projectId: scope === 'project' ? project?.id : null,
         activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-        patch: {
-          name: String(formData.get('name') || '').trim(),
-          laneLabel: String(formData.get('laneLabel') || '').trim(),
-          description: String(formData.get('description') || '').trim(),
-          identity: String(formData.get('identity') || '').trim(),
-          'soul.md': String(formData.get('soul.md') || '').trim(),
-          mood: String(formData.get('mood') || '').trim(),
-          tools,
-          enabledSkillIds,
-          enabledConnectorIds,
-          enabledMcpServerIds,
-          model: String(formData.get('model') || '').trim(),
-          systemPrompt: String(formData.get('systemPrompt') || '').trim(),
-          voiceReplyMode: String(formData.get('voiceReplyMode') || 'summary').trim(),
-          voicePersonality: String(formData.get('voicePersonality') || '').trim(),
-          edgeTtsVoice: String(formData.get('edgeTtsVoice') || '').trim(),
-          // MiniMax voice ID — surfaced explicitly in the agent editor so
-          // the "自定义语音" entries in the TTS panel are no longer hidden
-          // metadata. Empty string means "no MiniMax voice for this agent"
-          // (the agent won't appear in the panel's voice list).
-          minimaxVoiceId: String(formData.get('minimaxVoiceId') || '').trim(),
-          channels: {
-            telegram: {
-              enabled: formData.get('telegramEnabled') === 'on',
-              botToken: String(formData.get('telegramBotToken') || '').trim(),
-              chatId: String(formData.get('telegramChatId') || '').trim(),
-              voiceReply: formData.get('telegramVoiceReply') === 'on',
-            },
-            discord: {
-              enabled: formData.get('discordEnabled') === 'on',
-              botToken: String(formData.get('discordBotToken') || '').trim(),
-              guildId: String(formData.get('discordGuildId') || '').trim(),
-              channelId: String(formData.get('discordChannelId') || '').trim(),
-              voiceReply: formData.get('discordVoiceReply') === 'on',
-            },
-          },
-        },
+        patch,
       },
     });
     await waitForMinimumVisibleState;
     applyBootstrap(payload);
+    const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
+    const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
+    if (
+      activeTtsConfig.ttsProvider === 'minimax' &&
+      savedVoiceId &&
+      activeTtsConfig.minimaxVoiceId === savedVoiceId
+    ) {
+      api('/api/settings/model', {
+        method: 'POST',
+        body: minimaxTtsConfigPatchForVoice(savedVoiceId),
+      }).then(nextPayload => applyBootstrapPreservingDrafts(nextPayload)).catch(() => {});
+    }
   } finally {
     await waitForMinimumVisibleState;
     delete uiState.agentSaveStates[saveKey];
@@ -9052,10 +9246,48 @@ function renderAgentDetails(selected) {
         </div>
       </div>
 
-      <div class="detail-meta">
-        <div class="meta-block-label">Role prompt</div>
-        <div>${escapeHtml(selected.rolePrompt)}</div>
-      </div>
+      <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
+        ${
+          selected.isCustom
+            ? `
+              <div class="selected-file-card">
+                <div class="agent-editor-header">
+                  <div class="agent-editor-heading">
+                    <div class="meta-block-label">Agent basics</div>
+                    <div class="list-row-meta">Rename this custom agent and edit the role prompt used at runtime.</div>
+                  </div>
+                </div>
+                <label class="label">
+                  Agent name
+                  <input
+                    class="config-input"
+                    type="text"
+                    name="name"
+                    value="${escapeHtml(draft?.name || selected.name || '')}"
+                    placeholder="Custom agent"
+                  />
+                </label>
+                <label class="label">
+                  Description
+                  <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="What this custom agent is for.">${escapeHtml(
+                    draft?.description || selected.description || '',
+                  )}</textarea>
+                </label>
+                <label class="label">
+                  Role prompt
+                  <textarea class="textarea code-editor agent-control-editor" name="rolePrompt" placeholder="Runtime role instruction for this custom agent.">${escapeHtml(
+                    draft?.rolePrompt || selected.rolePrompt || '',
+                  )}</textarea>
+                </label>
+              </div>
+            `
+            : `
+              <div class="detail-meta">
+                <div class="meta-block-label">Role prompt</div>
+                <div>${escapeHtml(selected.rolePrompt)}</div>
+              </div>
+            `
+        }
 
       <div class="subsection">
         <div class="header-row">
@@ -9088,7 +9320,6 @@ function renderAgentDetails(selected) {
         </div>
       </div>
 
-      <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
         <div class="editor-tab-row">
           <button
             class="chip chip-button ${uiState.agentEditorTab === 'identity' ? 'is-accent' : ''}"
@@ -9194,6 +9425,7 @@ function renderAgentDetails(selected) {
             placeholder="moss_audio_… or any cloned voice id (leave blank to unbind)"
           />
         </label>
+        ${renderMinimaxTtsParameterInputs(draft, selected)}
 
         <div class="inline-actions">
           <button class="small-button is-primary" type="submit">Save agent profile</button>
@@ -13509,8 +13741,15 @@ document.addEventListener('click', async event => {
       case 'set-tts-engine': {
         uiState.ttsEngine = trigger.dataset.engine || 'auto';
         localStorage.setItem('melo-tts-engine', uiState.ttsEngine);
-        // Switching to explicit API voice clears any custom provider (Edge TTS etc.)
-        if (uiState.ttsEngine === 'api') {
+        // Switching to "API voice" clears the Edge-TTS custom provider so
+        // the OpenAI /audio/speech path takes over. We must NOT clear a
+        // 'minimax' provider here — the speak-text MiniMax fast path is
+        // gated on `ttsProvider === 'minimax'`, and dropping it falls back
+        // to the Fish-Speech path which most users have no config for.
+        // 'activate-edge-tts' / 'activate-minimax-voice' own their own
+        // provider transitions; this radio toggle never should.
+        const currentProvider = String(uiState.bootstrap?.settings?.config?.ttsProvider || '').trim();
+        if (uiState.ttsEngine === 'api' && currentProvider === 'edge') {
           api('/api/settings/model', {
             method: 'POST',
             body: { ttsProvider: '' },
@@ -13626,7 +13865,10 @@ document.addEventListener('click', async event => {
         }
         api('/api/settings/model', {
           method: 'POST',
-          body: { ttsProvider: 'minimax', minimaxVoiceId: voiceId },
+          body: {
+            ttsProvider: 'minimax',
+            ...minimaxTtsConfigPatchForVoice(voiceId),
+          },
         }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
         render();
         break;
@@ -13969,7 +14211,7 @@ document.addEventListener('change', async event => {
       localStorage.setItem('melo-tts-custom-voice-id', target.value);
       api('/api/settings/model', {
         method: 'POST',
-        body: { minimaxVoiceId: target.value },
+        body: minimaxTtsConfigPatchForVoice(target.value),
       }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
       return;
     }
@@ -14366,6 +14608,22 @@ document.addEventListener('keydown', async event => {
 
 window.addEventListener('melo-voice', event => {
   handleVoiceBridgeEvent(event.detail || {});
+});
+
+// TTS playback events from Swift's AVAudioPlayerDelegate / `say` exit.
+// Replaces the old duration-heuristic timer that desynced from real
+// playback for long buffers, leaving the speaking indicator stuck or
+// allowing a second click to race a still-playing audio source.
+window.addEventListener('melo-tts', event => {
+  const action = event?.detail?.action || '';
+  if (action === 'audioEnded' || action === 'audioFailed' || action === 'sayEnded') {
+    if (_ttsAudio && typeof _ttsAudio._onAudioEnded === 'function') {
+      _ttsAudio._onAudioEnded();
+    } else if (uiState.ttsSpeakingMessageId) {
+      uiState.ttsSpeakingMessageId = null;
+      _updateTtsSpeakingUI(null);
+    }
+  }
 });
 
 // A viz card finished hydrating (scene3d canvas mounted, globe-flight dynamic
