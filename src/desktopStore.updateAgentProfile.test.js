@@ -188,14 +188,17 @@ test('updateAgentProfile: explicit _clearedFields marker drops description so ag
   );
   const agent = agentFromBootstrap(after, 'custom-agent-clear');
 
-  // name preserved, role prompt preserved, description cleared (no
-  // longer the seeded value).
+  // name preserved, role prompt preserved, description fell back to the
+  // custom-agent definition default — the boilerplate string defined in
+  // agentLibrary.js / agentProfileService.js. Asserting the exact text
+  // (not just "different from seed") prevents future regressions where
+  // a stale fallback string would still satisfy a notEqual check.
   assert.equal(agent?.name, '清空测试');
   assert.equal(agent?.rolePrompt, 'Some role prompt');
-  assert.notEqual(
+  assert.equal(
     agent?.description,
-    'Old description that user wants to remove.',
-    'description should no longer be the seeded value once explicitly cleared',
+    'A user-defined Melo agent lane with its own persona, tools, and channel links.',
+    'description should re-emerge as the custom-agent definition default once explicitly cleared',
   );
 });
 
