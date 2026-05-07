@@ -106,69 +106,12 @@ function resolveTtsConfig(config = {}) {
 }
 
 // ─── Edge TTS (local CLI) ─────────────────────────────────────────────────────
+// Implementation lives in src/services/tts/edgeTts.js so server.js and this
+// module share one source of truth. Drift between two copies surfaced as
+// "edge works for the inline fallback path but not the explicit speak-text
+// path" every time a binary candidate or env override was added to one side.
 
-async function _resolveEdgeTtsBin() {
-  if (process.env.MELO_EDGE_TTS_BIN) return process.env.MELO_EDGE_TTS_BIN;
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const { homedir } = await import('node:os');
-  const execFileAsync = promisify(execFile);
-  const home = homedir();
-  const candidates = [
-    'edge-tts',
-    `${home}/opt/anaconda3/bin/edge-tts`,
-    `${home}/anaconda3/bin/edge-tts`,
-    `${home}/miniconda3/bin/edge-tts`,
-    `${home}/opt/miniconda3/bin/edge-tts`,
-    `${home}/.local/bin/edge-tts`,
-    '/opt/homebrew/bin/edge-tts',
-    '/usr/local/bin/edge-tts',
-  ];
-  for (const bin of candidates) {
-    try { await execFileAsync(bin, ['--version'], { timeout: 3000 }); return bin; } catch {}
-  }
-  return 'edge-tts';
-}
-
-async function _synthesizeWithEdgeTts(input, config = {}) {
-  const { execFile } = await import('node:child_process');
-  const { readFile, unlink } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join: jp } = await import('node:path');
-  const text = String(input || '').trim().slice(0, 4096);
-  if (!text) return null;
-  const hasChinese  = /[\u4E00-\u9FFF\u3400-\u4DBF]/.test(text);
-  const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF]/.test(text);
-  const hasKorean   = /[\uAC00-\uD7AF\u1100-\u11FF]/.test(text);
-  let defaultVoice;
-  if (hasChinese)       defaultVoice = 'zh-CN-XiaoxiaoNeural';
-  else if (hasJapanese) defaultVoice = 'ja-JP-NanamiNeural';
-  else if (hasKorean)   defaultVoice = 'ko-KR-SunHiNeural';
-  else                  defaultVoice = 'en-US-AriaNeural';
-  const voice   = String(config.ttsEdgeVoice || defaultVoice);
-  const tmpFile = jp(tmpdir(), `melo-edge-tts-${Date.now()}.mp3`);
-  const bin     = await _resolveEdgeTtsBin();
-  return new Promise((resolve) => {
-    execFile(bin, ['--voice', voice, '--text', text, '--write-media', tmpFile],
-      { timeout: 30_000 },
-      async (err) => {
-        if (err) {
-          process.stderr.write(`[tts/edge] exec error (bin=${bin}): ${err.message}\n`);
-          resolve(null); return;
-        }
-        try {
-          const buffer = await readFile(tmpFile);
-          resolve({ buffer, mimeType: 'audio/mpeg' });
-        } catch (e) {
-          process.stderr.write(`[tts/edge] read error: ${e.message}\n`);
-          resolve(null);
-        } finally {
-          unlink(tmpFile).catch(() => {});
-        }
-      },
-    );
-  });
-}
+import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from "./services/tts/edgeTts.js";
 
 // ─── MiniMax T2A V2 ───────────────────────────────────────────────────────────
 
@@ -215,13 +158,31 @@ export function stripKoreanForMinimax(text) {
  *
  * Throws on backend error so the route can surface a meaningful message.
  */
-export async function testMinimaxSynthesis(text, { apiKey, groupId, voiceId } = {}) {
+export async function testMinimaxSynthesis(text, { apiKey, groupId, voiceId, speed, pitch, vol } = {}) {
   if (!apiKey)  throw new Error('apiKey is required');
   if (!voiceId) throw new Error('voiceId is required');
   const input = String(text || '').trim().slice(0, TTS_MAX_CHARS);
   if (!input) throw new Error('text is required');
   const signal = AbortSignal.timeout(30_000);
-  return synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId || '', {});
+  return synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId || '', {
+    speed,
+    pitch,
+    vol,
+  });
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, numeric));
+}
+
+export function normalizeMinimaxVoiceSetting({ speed = 1.0, pitch = 0, vol = 1.0 } = {}) {
+  return {
+    speed: clampNumber(speed, 0.5, 2.0, 1.0),
+    vol: clampNumber(vol, 0.1, 10.0, 1.0),
+    pitch: clampNumber(pitch, -12, 12, 0),
+  };
 }
 
 async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { speed = 1.0, pitch = 0, vol = 1.0 } = {}) {
@@ -237,6 +198,7 @@ async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { s
   const url = groupId
     ? `${MINIMAX_TTS_BASE}?GroupId=${encodeURIComponent(groupId)}`
     : MINIMAX_TTS_BASE;
+  const voiceSetting = normalizeMinimaxVoiceSetting({ speed, pitch, vol });
   const res = await fetch(url, {
     method: 'POST',
     signal,
@@ -250,9 +212,7 @@ async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { s
       stream: false,
       voice_setting: {
         voice_id: voiceId,
-        speed: Math.max(0.5, Math.min(2.0, speed)),
-        vol: Math.max(0.1, Math.min(10.0, vol)),
-        pitch: Math.max(-12, Math.min(12, pitch)),
+        ...voiceSetting,
       },
       audio_setting: {
         sample_rate: 32000,
@@ -318,7 +278,7 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
   const minimaxAttempted = !!(minimaxKey && minimaxVoice);
   if (wantEdge || minimaxAttempted) {
     process.stderr.write(`[tts] Falling back to Edge TTS\n`);
-    const edgeResult = await _synthesizeWithEdgeTts(input, config);
+    const edgeResult = await _synthesizeWithEdgeTts(input, config, { signal });
     if (edgeResult) return edgeResult;
     // If edge also fails, continue to OpenAI fallback
   }

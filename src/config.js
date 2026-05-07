@@ -60,7 +60,15 @@ export const DEFAULT_CONFIG = Object.freeze({
   // MiniMax T2A V2 — takes priority over OpenAI TTS when both fields are set
   minimaxApiKey: '',      // MiniMax platform API key
   minimaxGroupId: '',    // MiniMax GroupId (from platform dashboard)
-  minimaxVoiceId: 'moss_audio_692b0bf2-37f0-11f1-8bff-3660266e7ed1',  // cloned voice
+  // Empty by default — was previously a baked-in cloned voice id, which
+  // meant the moment a user added a MiniMax key (even just to test the
+  // connector form), every TTS call routed through MiniMax with this preset
+  // voice. No UX surface warned about it. Users now explicitly pick a
+  // voice from the agent panel before MiniMax becomes the active path.
+  minimaxVoiceId: '',
+  ttsSpeed: 1.0,        // MiniMax voice_setting.speed: 0.5–2.0, 1.0 = normal
+  ttsPitch: 0,          // MiniMax voice_setting.pitch: -12–12, 0 = normal
+  ttsVol: 1.0,          // MiniMax voice_setting.vol: 0.1–10.0, 1.0 = normal
   ttsProvider: '',     // '' = default OpenAI | 'edge' = Edge TTS | 'minimax' = MiniMax
   ttsEdgeVoice: '',    // e.g. 'zh-CN-XiaoxiaoNeural'; empty = auto-detect by language
   ttsAutoPlay: false,  // "Auto-speak replies" — also enables Telegram voice reply

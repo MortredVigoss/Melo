@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
 import { isOriginAllowed } from './web/originCheck.js';
 import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
+import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from './services/tts/edgeTts.js';
 import { defaultSkillProposalStore } from './agents/skillProposals.js';
 import { collectMemoryStatus, withLiveProviderModelId } from './memory/status.js';
 import { wipeEmbeddingsForDimChange } from './memory/store.js';
@@ -506,7 +507,11 @@ const server = createServer(async (request, response) => {
         response.writeHead(200, {
           'content-type': 'text/javascript; charset=utf-8',
           'content-length': fileStat.size,
-          'cache-control': 'public, max-age=86400',
+          // Resolver behaviour drives saved/default voice activation, which
+          // is exactly the kind of fix users want immediately. Match the
+          // urlDetector.js policy (no-cache) so a hot-fix doesn't sit
+          // behind a 24-hour cache.
+          'cache-control': 'no-cache',
         });
         createReadStream(absPath).pipe(response);
       } catch {
@@ -736,11 +741,14 @@ const server = createServer(async (request, response) => {
       const config = await getResolvedConfig();
       const unavailable = getTtsUnavailableReason(config);
       if (unavailable) { sendJson(response, 422, { ok: false, error: unavailable }); return; }
-      // Start synthesis immediately; add its Promise to ordered playback queue
-      // Edge TTS uses CLI synthesis; everything else goes through _synthesizeWithRecovery
-      const audioPromise = config.ttsProvider === 'edge'
-        ? _synthesizeWithEdgeTts(text, config)
-        : _synthesizeWithRecovery(text, config, { voice: body?.voice });
+      // Start synthesis immediately; add its Promise to ordered playback queue.
+      // Each item owns an AbortController so /api/tts/queue-clear can really
+      // halt the in-flight network call instead of only invalidating the id.
+      const ctrl = _trackTtsController();
+      const audioPromise = (config.ttsProvider === 'edge'
+        ? _synthesizeWithEdgeTts(text, config, { signal: ctrl.signal })
+        : _synthesizeWithRecovery(text, config, { voice: body?.voice, signal: ctrl.signal })
+      ).finally(() => _untrackTtsController(ctrl));
       if (!globalThis._ttsQueue) globalThis._ttsQueue = [];
       const sessionId = globalThis._ttsQueueSession || 0;
       globalThis._ttsQueue.push({ audioPromise, sessionId });
@@ -752,6 +760,9 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/tts/queue-clear' && request.method === 'POST') {
       globalThis._ttsQueueSession = ((globalThis._ttsQueueSession || 0) + 1);
       globalThis._ttsQueue = [];
+      // Bumping the session id only stops play-time skipping. Aborting every
+      // tracked controller stops in-flight HTTP fetches + edge-tts subprocess.
+      _abortAllTtsControllers();
       if (globalThis._meloAfplayProcess) {
         try { globalThis._meloAfplayProcess.kill(); } catch {}
         globalThis._meloAfplayProcess = null;
@@ -810,14 +821,17 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, { ok: true, chunks: 1 });
         if (!globalThis._speakTextSession) globalThis._speakTextSession = 0;
         const sessionId = ++globalThis._speakTextSession;
+        const ctrl = _trackTtsController();
         (async () => {
           try {
-            const result = await _synthesizeWithEdgeTts(text, config);
+            const result = await _synthesizeWithEdgeTts(text, config, { signal: ctrl.signal });
             if (!result) { process.stderr.write('[edge-tts] synthesis returned null\n'); return; }
             if (globalThis._speakTextSession !== sessionId) return;
             await _playBufferWithAfplay(result.buffer, result.mimeType);
           } catch (e) {
             process.stderr.write(`[edge-tts] error: ${e?.message || e}\n`);
+          } finally {
+            _untrackTtsController(ctrl);
           }
         })();
         return;
@@ -828,15 +842,18 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, { ok: true, chunks: 1 });
         if (!globalThis._speakTextSession) globalThis._speakTextSession = 0;
         const sessionId = ++globalThis._speakTextSession;
+        const ctrl = _trackTtsController();
         (async () => {
           try {
             const { synthesizeSpeech } = await import('./tts.js');
-            const result = await synthesizeSpeech(text, config);
+            const result = await synthesizeSpeech(text, config, { signal: ctrl.signal });
             if (!result) { process.stderr.write('[minimax-tts] synthesis returned null\n'); return; }
             if (globalThis._speakTextSession !== sessionId) return;
             await _playBufferWithAfplay(result.buffer, result.mimeType);
           } catch (e) {
             process.stderr.write(`[minimax-tts] error: ${e?.message || e}\n`);
+          } finally {
+            _untrackTtsController(ctrl);
           }
         })();
         return;
@@ -855,17 +872,25 @@ const server = createServer(async (request, response) => {
       if (!globalThis._speakTextSession) globalThis._speakTextSession = 0;
       const sessionId = ++globalThis._speakTextSession;
 
+      // One controller for the whole sentence set: aborting cancels every
+      // parallel sentence fetch at once.
+      const sentenceCtrl = _trackTtsController();
+
       (async () => {
         // Synthesise all sentences in parallel, then concatenate into a single
         // WAV and play once — eliminates inter-sentence gaps entirely.
-        const audioPromises = sentences.map(s => _synthesizeWithRecovery(s, config, { voice: body?.voice }));
+        const audioPromises = sentences.map(s =>
+          _synthesizeWithRecovery(s, config, { voice: body?.voice, signal: sentenceCtrl.signal }),
+        );
         let results;
         try {
           results = await Promise.all(audioPromises);
         } catch (e) {
           process.stderr.write(`[tts/speak-text] synthesis error: ${e?.message || e}\n`);
+          _untrackTtsController(sentenceCtrl);
           return;
         }
+        _untrackTtsController(sentenceCtrl);
         if (globalThis._speakTextSession !== sessionId) return; // stopped while synthesising
 
         const wavBuffers = results
@@ -896,6 +921,9 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/api/tts/speak-stop' && request.method === 'POST') {
       // Invalidate speak-text session so in-flight loops stop
       globalThis._speakTextSession = (globalThis._speakTextSession || 0) + 1;
+      // Abort every in-flight synthesis fetch (covers both speak-text fast
+      // paths and the queue path so a single Stop click halts everything).
+      _abortAllTtsControllers();
       if (globalThis._meloAfplayProcess) {
         try { globalThis._meloAfplayProcess.kill(); } catch {}
         globalThis._meloAfplayProcess = null;
@@ -920,6 +948,9 @@ const server = createServer(async (request, response) => {
       const formGroupId = String(body?.groupId || '').trim();
       const formVoiceId = String(body?.voiceId || '').trim();
       const text        = String(body?.text || '你好，这是 MiniMax 测试朗读').slice(0, 200);
+      const formSpeed = Number.isFinite(Number(body?.speed)) ? Number(body.speed) : undefined;
+      const formPitch = Number.isFinite(Number(body?.pitch)) ? Number(body.pitch) : undefined;
+      const formVol = Number.isFinite(Number(body?.vol)) ? Number(body.vol) : undefined;
 
       // Fallback to the persisted config when the form field is blank —
       // lets users click "Test playback" without retyping a key they
@@ -932,6 +963,9 @@ const server = createServer(async (request, response) => {
       const apiKey  = formApiKey  || String(cfg.minimaxApiKey  || '').trim();
       const groupId = formGroupId || String(cfg.minimaxGroupId || '').trim();
       const voiceId = formVoiceId || String(cfg.minimaxVoiceId || '').trim();
+      const speed = formSpeed ?? (Number.isFinite(Number(cfg.ttsSpeed)) ? Number(cfg.ttsSpeed) : undefined);
+      const pitch = formPitch ?? (Number.isFinite(Number(cfg.ttsPitch)) ? Number(cfg.ttsPitch) : undefined);
+      const vol = formVol ?? (Number.isFinite(Number(cfg.ttsVol)) ? Number(cfg.ttsVol) : undefined);
 
       if (!apiKey) {
         sendJson(response, 400, { ok: false, error: 'No MiniMax API key — type one in the form, or save one first.' });
@@ -943,7 +977,7 @@ const server = createServer(async (request, response) => {
       }
       try {
         const { testMinimaxSynthesis } = await import('./tts.js');
-        const result = await testMinimaxSynthesis(text, { apiKey, groupId, voiceId });
+        const result = await testMinimaxSynthesis(text, { apiKey, groupId, voiceId, speed, pitch, vol });
         if (!result) {
           sendJson(response, 502, { ok: false, error: 'MiniMax synthesis returned null — check API key, Group ID, and voice ID.' });
           return;
@@ -1056,7 +1090,26 @@ const server = createServer(async (request, response) => {
           { kind: 'audio', url: audioUrl, name: 'audio' },
           { config },
         );
+        // The chat-extraction soft-fallback returns
+        //   { kind:'transcript', text:<placeholder>, metadata:{ source:'whisper-unavailable' } }
+        // so messages still get a placeholder. The explicit transcribe
+        // endpoint is the user's "give me the transcript" request, not a
+        // background extraction — surface the placeholder as an actionable
+        // error pointing at settings instead of pretending it succeeded.
+        const source = result?.metadata?.source || '';
+        if (source === 'whisper-unavailable' || source === 'whisper-error') {
+          sendJson(response, 422, {
+            ok: false,
+            error: result?.content || result?.text ||
+              'Transcription is not available — set a Whisper-compatible endpoint in Settings → Connector.',
+          });
+          return;
+        }
         const text = result?.content || result?.text || '';
+        if (!text.trim()) {
+          sendJson(response, 502, { ok: false, error: 'Transcription returned empty text.' });
+          return;
+        }
         sendJson(response, 200, { ok: true, text });
       } catch (err) {
         sendJson(response, 500, { ok: false, error: err?.message || 'Transcription failed.' });
@@ -2044,90 +2097,30 @@ function _splitSentences(text, maxLen = 110) {
   return sentences.length ? sentences : [text.slice(0, maxLen)];
 }
 
-// ── Edge TTS synthesis (Microsoft neural voices, ~1-2s, requires internet) ───
-// Requires `edge-tts` CLI: pip install edge-tts
-// Auto-resolves binary from MELO_EDGE_TTS_BIN env, system PATH, and common conda/pip locations.
-async function _resolveEdgeTtsBin() {
-  // 1. Explicit env override
-  if (process.env.MELO_EDGE_TTS_BIN) return process.env.MELO_EDGE_TTS_BIN;
+// ── Edge TTS — implementation in src/services/tts/edgeTts.js (shared with
+// src/tts.js so the inline-fallback path and the explicit speak-text path
+// can never drift). See top-of-file import for _synthesizeWithEdgeTts.
 
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const execFileAsync = promisify(execFile);
-  const { homedir } = await import('node:os');
-
-  // 2. Common install paths (conda, pip user install, pyenv, homebrew python)
-  const home = homedir();
-  const candidates = [
-    // System / PATH — try first
-    'edge-tts',
-    // Anaconda / Miniconda
-    `${home}/opt/anaconda3/bin/edge-tts`,
-    `${home}/anaconda3/bin/edge-tts`,
-    `${home}/miniconda3/bin/edge-tts`,
-    `${home}/opt/miniconda3/bin/edge-tts`,
-    // pip user install
-    `${home}/.local/bin/edge-tts`,
-    // Homebrew Python
-    '/opt/homebrew/bin/edge-tts',
-    '/usr/local/bin/edge-tts',
-  ];
-
-  for (const bin of candidates) {
-    try {
-      await execFileAsync(bin, ['--version'], { timeout: 3000 });
-      return bin;
-    } catch {}
-  }
-  return 'edge-tts'; // last resort — let it fail with a clear error
+// ── TTS abort registry — every in-flight synthesis fetch (MiniMax / Edge /
+// OpenAI / Fish-Speech) registers an AbortController so /api/tts/queue-clear
+// and /api/tts/speak-stop can actually halt the network call instead of
+// only invalidating the session counter. Without this, the synthesis ran
+// to its full TTS_TIMEOUT_MS=180s ignoring the user's stop click.
+function _trackTtsController() {
+  if (!globalThis._ttsActiveControllers) globalThis._ttsActiveControllers = new Set();
+  const ctrl = new AbortController();
+  globalThis._ttsActiveControllers.add(ctrl);
+  return ctrl;
 }
-
-async function _synthesizeWithEdgeTts(text, config = {}) {
-  const { execFile } = await import('node:child_process');
-  const { readFile, unlink } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join: jp } = await import('node:path');
-
-  const input = String(text || '').trim().slice(0, 4096);
-  if (!input) return null;
-
-  // Auto-detect language and pick the best neural voice
-  const hasChinese = /[\u4E00-\u9FFF\u3400-\u4DBF]/.test(input);
-  const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF]/.test(input);
-  const hasKorean = /[\uAC00-\uD7AF\u1100-\u11FF]/.test(input);
-  let defaultVoice;
-  if (hasChinese) defaultVoice = 'zh-CN-XiaoxiaoNeural';
-  else if (hasJapanese) defaultVoice = 'ja-JP-NanamiNeural';
-  else if (hasKorean) defaultVoice = 'ko-KR-SunHiNeural';
-  else defaultVoice = 'en-US-AriaNeural';
-
-  const voice = String(config.ttsEdgeVoice || defaultVoice);
-  const tmpFile = jp(tmpdir(), `melo-edge-tts-${Date.now()}.mp3`);
-  const bin = await _resolveEdgeTtsBin();
-
-  return new Promise((resolve) => {
-    execFile(
-      bin,
-      ['--voice', voice, '--text', input, '--write-media', tmpFile],
-      { timeout: 30_000 },
-      async (err) => {
-        if (err) {
-          process.stderr.write(`[edge-tts] exec error (bin=${bin}): ${err.message}\n`);
-          resolve(null);
-          return;
-        }
-        try {
-          const buffer = await readFile(tmpFile);
-          resolve({ buffer, mimeType: 'audio/mpeg' });
-        } catch (e) {
-          process.stderr.write(`[edge-tts] read error: ${e.message}\n`);
-          resolve(null);
-        } finally {
-          unlink(tmpFile).catch(() => {});
-        }
-      },
-    );
-  });
+function _untrackTtsController(ctrl) {
+  globalThis._ttsActiveControllers?.delete(ctrl);
+}
+function _abortAllTtsControllers() {
+  if (!globalThis._ttsActiveControllers) return;
+  for (const ctrl of globalThis._ttsActiveControllers) {
+    try { ctrl.abort(); } catch {}
+  }
+  globalThis._ttsActiveControllers.clear();
 }
 
 // ── TTS synthesis with F5-TTS auto-recovery ───────────────────────────────────

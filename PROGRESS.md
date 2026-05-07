@@ -4,6 +4,42 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 — 语音系统全局审计 + 15 项修复（4 P0 / 7 P1 / 4 P2）
+
+read-only 全局审计派 general-purpose agent 全文读 src/tts.js + src/services + src/server.js + src/media/extractors/audioExtractor.js + desktop-ui/app.js + desktop-app/main.swift + src/config.js + src/shared/minimaxVoiceResolver.js，给出 19 条发现。修了其中 15 条，2 条 P2 跳过待用户确认（F5-TTS 自动恢复疑似死代码 / 全局 mutable TTS state 重构太大）。
+
+**P0**
+
+- **#1 原生转写端口在 port-rollover 时联系不上**：[main.swift](desktop-app/main.swift) `process.environment` 没传 `MELO_DESKTOP_PORT` → Node 里 `audioExtractor.js:13` 永远探 43128，Swift 实在 43130 → 转写静默失败。**修**：env 加 `"MELO_DESKTOP_PORT": String(port)`，顺手治好 [urlSigning.js](src/web/urlSigning.js) 也用同一 env。
+- **#2 Stop 按钮砍 SSE 后半句话仍被念出**：[app.js:handleSendMessage](desktop-ui/app.js) 的 `try/finally` 在 abort 分支也跑 `_streamTtsFlush()`。**修**：加 `let sendWasAborted = false`，catch 拦 abort 时置 true，finally 据此走 `_streamTtsReset()` + 调 `/api/tts/queue-clear` + `/api/tts/speak-stop` 哑掉服务端已发出的合成。
+- **#3 queue-clear / speak-stop 不取消 in-flight 合成 fetch**：[server.js](src/server.js) 加 `_trackTtsController()` / `_abortAllTtsControllers()` / `_untrackTtsController()` 共享 registry。queue-add / speak-text 三条快路径每个 session 一个 AbortController，`{signal:ctrl.signal}` 透传到 [tts.js:synthesizeSpeech](src/tts.js#L280) (本来就接受 options.signal) 和 edgeTts.js (新加 `{signal}` 参数 → 传入 execFile + 手动 listen 兼容老 Node)。queue-clear / speak-stop 一次 abort 全部，180s timeout 不再持续烧钱。
+- **#4 WKWebView 桥跨引擎抢占不彻底**：[main.swift](desktop-app/main.swift) 的 `playAudio` / `speakText` case 现在都做完整三件套停 (`ttsAudioPlayer.stop()` + `speechSynthesizer.stopSpeaking(.immediate)` + `sayProcess?.terminate()`)，不再叠播。
+
+**P1**
+
+- **#5 applicationWillTerminate 没停 TTS** → [main.swift](desktop-app/main.swift) terminate 时停三件套
+- **#6 录音不停 TTS → mic 录到扬声器** → [app.js:toggleVoiceInput](desktop-ui/app.js) 在 `recording` toggle-on 路径前调 `stopCurrentTts()`
+- **#7 `/api/audio/transcribe` 把"软回退占位"当成功转写** → [server.js](src/server.js) 检查 `result.metadata.source === 'whisper-unavailable'`，命中返 422 + actionable error
+- **#8 select-tts-custom-voice 抹掉用户手调的 ttsSpeed/Pitch/Vol** → [app.js:minimaxTtsConfigPatchForVoice](desktop-ui/app.js) 改成只在 agent 显式定义对应字段时才纳入 patch，否则不动用户连接器层的调参
+- **#9 set-tts-engine 切 API voice 顺手抹掉 `ttsProvider:'minimax'`** → [app.js:set-tts-engine](desktop-ui/app.js) 加 `currentProvider === 'edge'` 守卫，只清 edge，不动 minimax
+- **#11 WKWebView playAudio 没 audioEnded 回调，JS 用 `(base64.length × 0.75 / 16000) × 1000` 估时长** → [main.swift](desktop-app/main.swift) MeloAppDelegate 加 `AVAudioPlayerDelegate` 协议 + `emitTtsEvent(action:)` 派发 `melo-tts` CustomEvent + `audioPlayerDidFinishPlaying` 回调；[app.js](desktop-ui/app.js) `_playAudioBuffer` native 分支改为持有 `bridgeRef._onAudioEnded`，`window.addEventListener('melo-tts')` 收到 `audioEnded`/`audioFailed`/`sayEnded` 时清状态；保留 `setTimeout` 安全网（`approxMs+5000`）防回调丢失
+- **#12 WKWebView reload 时 mic 还在录** → [main.swift:didFinish navigation](desktop-app/main.swift) 检测 `isVoiceRecording` 时调 `stopVoiceRecognition(manual:false, emitEvent:false)`
+
+**P2**
+
+- **#10 Edge TTS 在 tts.js + server.js 各一份** → 抽出 [src/services/tts/edgeTts.js](src/services/tts/edgeTts.js) `synthesizeWithEdgeTts(text, config, {signal})` + `resolveEdgeTtsBin()`，两侧 `import` 共用
+- **#15 minimaxVoiceResolver.js 1 天 cache** → [server.js](src/server.js) 改 `cache-control: no-cache` 跟 urlDetector 一致
+- **#16 baked-in `minimaxVoiceId` 默认 `moss_audio_692b...`** → [config.js](src/config.js) 改成 `''`，避免用户随便填 MiniMax key 时所有 TTS 都用这个 preset 默认 voice
+- **#18 `_speakWithNativeBridge` 没 gate 空文本** → [app.js](desktop-ui/app.js) JS 端加空文本守卫（与 Swift 端的 `text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty` 守卫对称）；Swift 端 `speakText` case 同时加守卫
+
+**跳过**
+
+- **F5-TTS `_synthesizeWithRecovery` 自动恢复**（[server.js](src/server.js)）疑似死代码（只在 `whisperBaseUrl === 127.0.0.1:7860` 命中），audit 标 ⚪ "需用户确认才能删"，不动
+- **#17 全局 mutable TTS state**（`globalThis._ttsQueue` / `_speakTextSession` / `_meloAfplayProcess` 等）单用户 desktop 没事，多 tab/多窗时出问题；架构改动太大，跳过
+
+测试：`npm test` 完整 GREEN（含 Swift build + Melo.app launch + smoke flow）。
+
+---
 ## 2026-05-06 — Codex C 第三轮闭环：anchorRouting 抽 helper + 卡片分支同步修
 
 `9f29a16` 又被 Codex 评 C：第二轮只修 `<a>` 分支漏了 `[data-external-url]` 卡片分支，两个分支用同一逻辑应该共享。Codex 给的方案干净：抽 `routeHttpUrl(url)` helper + 两个分支都接。
