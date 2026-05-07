@@ -160,6 +160,45 @@ test('updateAgentProfile: voice-id save with blank legacy metadata does not rese
   assert.equal(agent?.minimaxVoiceId, 'moss_audio_new');
 });
 
+test('updateAgentProfile: explicit _clearedFields marker drops description so agent falls back to definition default', async () => {
+  // Seed a custom agent with a description set.
+  await updateAgentProfile(
+    'custom-agent-clear',
+    {
+      name: '清空测试',
+      description: 'Old description that user wants to remove.',
+      rolePrompt: 'Some role prompt',
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+
+  // Full-form submission where the user actively cleared `description`.
+  // The UI passes `_clearedFields: ['description']` so the empty string
+  // is honoured: override drops `description`, agent definition default
+  // re-emerges.
+  const after = await updateAgentProfile(
+    'custom-agent-clear',
+    {
+      name: '清空测试',
+      description: '',
+      rolePrompt: 'Some role prompt',
+      _clearedFields: ['description'],
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+  const agent = agentFromBootstrap(after, 'custom-agent-clear');
+
+  // name preserved, role prompt preserved, description cleared (no
+  // longer the seeded value).
+  assert.equal(agent?.name, '清空测试');
+  assert.equal(agent?.rolePrompt, 'Some role prompt');
+  assert.notEqual(
+    agent?.description,
+    'Old description that user wants to remove.',
+    'description should no longer be the seeded value once explicitly cleared',
+  );
+});
+
 test('updateAgentProfile: MiniMax voice tuning parameters are saved with the agent profile', async () => {
   const after = await updateAgentProfile(
     'custom-agent-tts',

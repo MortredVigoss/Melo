@@ -104,14 +104,26 @@ export function normalizeAgentUpdatePatch(patch = {}) {
 
   // Partial forms must not erase custom-agent metadata. The Customize
   // detail panel can submit a narrow patch such as { minimaxVoiceId } while
-  // older UI builds still include absent text fields as empty strings. Treat
-  // blank metadata strings as "not supplied"; callers that need a true clear
-  // can use a dedicated clear action later.
+  // older UI builds still include absent text fields as empty strings.
+  //
+  // Two semantics need to coexist:
+  //   - Narrow patch (no marker): empty strings = "not supplied" → drop
+  //     so previously saved metadata survives the partial save.
+  //   - Full-form intentional clear: UI passes `_clearedFields: [...]`
+  //     listing the protected fields the user actually emptied. We keep
+  //     the empty string in the patch so the downstream override
+  //     normaliser drops the field — the agent then falls back to its
+  //     definition default (per user choice on the Codex C follow-up).
+  const explicitClears = new Set(
+    Array.isArray(nextPatch._clearedFields) ? nextPatch._clearedFields : [],
+  );
+  delete nextPatch._clearedFields;
   for (const key of ['name', 'laneLabel', 'description', 'rolePrompt']) {
     if (
       key in nextPatch &&
       typeof nextPatch[key] === 'string' &&
-      !nextPatch[key].trim()
+      !nextPatch[key].trim() &&
+      !explicitClears.has(key)
     ) {
       delete nextPatch[key];
     }

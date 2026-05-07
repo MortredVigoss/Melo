@@ -98,6 +98,39 @@ test('normalizeAgentUpdatePatch: blank custom-agent metadata is omitted so parti
   assert.equal(nextPatch.minimaxVoiceId, 'moss_audio_123');
 });
 
+test('normalizeAgentUpdatePatch: explicit _clearedFields marker keeps empty strings so override drops to default', () => {
+  const { nextPatch } = normalizeAgentUpdatePatch({
+    name: '',
+    laneLabel: '',
+    description: '',
+    rolePrompt: '',
+    minimaxVoiceId: 'moss_audio_123',
+    _clearedFields: ['name', 'description', 'rolePrompt'],
+  });
+
+  // Marked fields keep the empty string in the patch — the downstream
+  // override normaliser drops the override field, falling back to the
+  // agent definition default.
+  assert.equal(nextPatch.name, '');
+  assert.equal(nextPatch.description, '');
+  assert.equal(nextPatch.rolePrompt, '');
+  // Field not listed in marker → narrow-patch protection still applies.
+  assert.equal('laneLabel' in nextPatch, false);
+  // The marker itself is consumed and never reaches downstream.
+  assert.equal('_clearedFields' in nextPatch, false);
+  // Unrelated fields are unaffected.
+  assert.equal(nextPatch.minimaxVoiceId, 'moss_audio_123');
+});
+
+test('normalizeAgentUpdatePatch: non-array _clearedFields is ignored (no protection bypass)', () => {
+  const { nextPatch } = normalizeAgentUpdatePatch({
+    name: '',
+    _clearedFields: 'name', // bogus shape — must not be honoured
+  });
+  assert.equal('name' in nextPatch, false);
+  assert.equal('_clearedFields' in nextPatch, false);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. mergeChannelsWithStaleDraftGuard
 // ═══════════════════════════════════════════════════════════════════════════

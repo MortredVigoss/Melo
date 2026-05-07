@@ -4,6 +4,23 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 — Codex C 闭环：narrow-patch 保护加 `_clearedFields` sentinel（用户拍板：清空→恢复默认 + 显式标记）
+
+`e54b12b` push 时 Codex 评 C：codex 加的 narrow-patch 保护把 `name/laneLabel/description/rolePrompt` 空字符串一律删掉，导致用户在 Customize 表单**主动清空**这些字段也被静默忽略——之前空值会让 custom agent 回落默认定义，现在保留旧值。
+
+用户决策（C 评级整改方案）：
+1. 主动清空 → 恢复 agent 定义的默认值（之前的语义）
+2. 接受加显式 `_clearedFields` sentinel 区分"窄 patch 没传"和"主动清空"
+
+实现：
+
+- **Backend**（[agentProfileService.js](src/services/agent/agentProfileService.js)）：`normalizeAgentUpdatePatch` 接受 `_clearedFields: string[]`；列表里的字段空字符串 patch 保留进 nextPatch（下游 normalizer 删 override → fall back to definition default），列表外的空字符串照旧丢（narrow patch 保护）。`_clearedFields` 自身从 nextPatch 剥掉，永不写入 store。
+- **UI**（[app.js](desktop-ui/app.js) form submit handler）：完整表单 save 时扫四个 protected 字段，空的就 push 进 `patch._clearedFields`——表单 save 是用户意图，不是窄 patch。其他 narrow patch 调用点（identity/soul.md autosave / preset apply / channel autosave）从来不带这四个字段，不受影响。
+- **测试**：`agentProfileService.test.js` +2 case（marker 保留空串 / 非数组 marker 被忽略），`desktopStore.updateAgentProfile.test.js` +1 case 端到端（seed → 用户带 marker 清 description → 断言新值不再是 seed 旧值）。
+
+`npm test` 完整 GREEN。
+
+---
 ## 2026-05-07 — Codex 实现：per-agent MiniMax TTS 参数（voiceId / speed / pitch / vol）端到端
 
 本批改动由 Codex 完成，本会话仅做整理 + commit + push。涉及 11 个文件，按层归四束：

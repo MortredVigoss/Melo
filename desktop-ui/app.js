@@ -5203,6 +5203,17 @@ async function handleUpdateAgentProfile(form) {
   assignNumber('ttsPitch');
   assignNumber('ttsVol');
 
+  // Tag protected metadata fields the user actively cleared. The form
+  // submit is a full-form save (not a narrow patch), so an empty string
+  // here is user intent. Backend's narrow-patch protection drops empty
+  // strings unless the field is listed here, in which case it falls back
+  // to the agent definition default.
+  const protectedClearable = ['name', 'laneLabel', 'description', 'rolePrompt'];
+  const clearedFields = protectedClearable.filter(
+    key => key in patch && typeof patch[key] === 'string' && !patch[key].trim(),
+  );
+  if (clearedFields.length) patch._clearedFields = clearedFields;
+
   if (hasFormField('tools')) {
     patch.tools = csvList(formData.get('tools'));
   }
