@@ -4,6 +4,18 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 — Codex 实现：抽 searchRouter + 接 crawl4ai/scrapling/camoufox 外读器
+
+让上游 chat runner 单点决策是否启用 native web_search（不再每个 provider 各判一遍 trigger），同时给社媒 / SPA 难抓页加 optional 本地 reader 兜底。Codex 实现，本会话仅做 commit + push。12 个文件、+1066 / −92。
+
+- **检索路由**（[searchRouter.js](src/retrieval/searchRouter.js)）：从 `openai.js` 抽出 `WEB_SEARCH_TRIGGER_RULES` + register/clear API + `shouldUseNativeWebSearch`；新增 `DEEP_RESEARCH_PATTERN` / `EXPLICIT_LOCAL_SEARCH_PATTERN` / `LINK_READ_PATTERN` 三套 pattern 区分用户意图（深度调研 / 强制本地浏览器 / 单纯让我读这条链接）。[openai.js](src/openai.js) 改为 thin wrapper 转调 router；`createCodexResponsesReply` / `createOpenAICompatibleReply` 新增 `nativeWebSearchEnabled` 注入参数，由 [chatExecutionRunner.js:497](src/services/chat/chatExecutionRunner.js) 上游决定后传入。
+- **外部 reader 适配**（[externalReaders.js](src/web/externalReaders.js) + [camoufoxReader.py](src/web/camoufoxReader.py)）：抽 `crawl4ai` / `scrapling` / `camoufox` 三个本地 CLI 适配，按 `READER_ORDER = ['crawl4ai','scrapling','camoufox']` 顺序试，没装就跳过——**不是硬依赖**。Camoufox 走 Python 子进程读 JSON 输出。`MIN_USEFUL_CHARS = 120` gate 决定算不算成功。
+- **fetchUrl 接入**（[fetchUrlTool.js](src/tools/builtins/fetchUrlTool.js)）：`extract_mode` enum 多三个值（`crawl4ai/scrapling/camoufox`）；`auto` 链在 playwright 之后追加 external reader 兜底，方法名拼成 `playwright→camoufox` 这种链式标记。
+- **socialLink 接入**（[socialLinkTool.js](src/tools/builtins/socialLinkTool.js)）：在 share-preview unfurl 之前插 step 4b external reader，给登录态社媒页（小红书/抖音）一次额外机会；命中后返回 `via: 'external:<method>'`。
+
+本地 `npm test` 完整 GREEN（含 desktop smoke）。Codex pre-pp 在沙盒里 `mkdtemp` 撞 EPERM 报 6 fail（macOS TCC，非代码 bug），评级 **B**，留两条 ⚪ 非阻塞建议：runner 级集成测试覆盖 codex-native/melo-web/fetch-url/none 四类路由 + 本条 PROGRESS 同步（已补）。Final commits: `f04248e` + 本条 progress commit。脚本 `git pp` 因 ANSI 颜色码导致 sed 锚点失效误判 unparseable，本次绕开 pp 走 `git push`，ANSI strip 修复另起 follow-up。
+
+---
 ## 2026-05-07 — Codex C 闭环：narrow-patch 保护加 `_clearedFields` sentinel（用户拍板：清空→恢复默认 + 显式标记）
 
 `e54b12b` push 时 Codex 评 C：codex 加的 narrow-patch 保护把 `name/laneLabel/description/rolePrompt` 空字符串一律删掉，导致用户在 Customize 表单**主动清空**这些字段也被静默忽略——之前空值会让 custom agent 回落默认定义，现在保留旧值。
