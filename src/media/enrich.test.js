@@ -7,6 +7,7 @@ import {
   normalizeExtractedMedia,
   renderExtractedMediaContext,
   shouldBypassCachedExtraction,
+  shouldUseLongSocialMediaBudget,
 } from './index.js';
 import { extractImageContent } from './extractors/imageExtractor.js';
 import { extractReadableHtml } from './extractors/linkExtractor.js';
@@ -130,6 +131,25 @@ test('shouldBypassCachedExtraction retries shallow social-link cache but keeps d
       { kind: 'link', url: 'https://example.com/article' },
       { metadata: { source: 'social-link:share-preview:wechat' } },
     ),
+    false,
+  );
+});
+
+test('shouldUseLongSocialMediaBudget only expands budget for social pages and direct social video streams', () => {
+  assert.equal(
+    shouldUseLongSocialMediaBudget({ kind: 'link', url: 'https://v.douyin.com/1ZtdZeuq73U/' }),
+    true,
+  );
+  assert.equal(
+    shouldUseLongSocialMediaBudget({ kind: 'video', url: 'https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc' }),
+    true,
+  );
+  assert.equal(
+    shouldUseLongSocialMediaBudget({ kind: 'link', url: 'https://example.com/article' }),
+    false,
+  );
+  assert.equal(
+    shouldUseLongSocialMediaBudget({ kind: 'audio', url: 'https://example.com/audio.mp3' }),
     false,
   );
 });

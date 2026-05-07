@@ -43,6 +43,12 @@ import {
 } from '../services/agent/agentTools.js';
 import { normalizeAgentChannels } from '../services/agent/agentChannels.js';
 
+function normalizeOptionalNumber(value, { min = -Infinity, max = Infinity } = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(min, Math.min(max, numeric));
+}
+
 export function readAgentIdentityValue(profile, fallback = '') {
   return typeof profile?.identity === 'string' && profile.identity.trim()
     ? profile.identity.trim()
@@ -114,9 +120,9 @@ export function normalizeAgentProfile(agentId, profile) {
   const edgeTtsVoice =
     typeof profile?.edgeTtsVoice === 'string' ? profile.edgeTtsVoice.trim() : '';
   // Per-agent MiniMax TTS speed / pitch / volume
-  const ttsSpeed = Number.isFinite(Number(profile?.ttsSpeed)) ? Number(profile.ttsSpeed) : null;
-  const ttsPitch = Number.isFinite(Number(profile?.ttsPitch)) ? Number(profile.ttsPitch) : null;
-  const ttsVol   = Number.isFinite(Number(profile?.ttsVol))   ? Number(profile.ttsVol)   : null;
+  const ttsSpeed = normalizeOptionalNumber(profile?.ttsSpeed, { min: 0.5, max: 2.0 });
+  const ttsPitch = normalizeOptionalNumber(profile?.ttsPitch, { min: -12, max: 12 });
+  const ttsVol   = normalizeOptionalNumber(profile?.ttsVol,   { min: 0.1, max: 10.0 });
   return withLegacyAgentAliases(
     {
       id: definition.id,
@@ -178,6 +184,11 @@ export function normalizeAgentOverride(agentId, profile) {
   if (MOOD_OPTION_IDS.has(profile.mood)) {
     normalized.mood = profile.mood;
   }
+  for (const key of ['name', 'laneLabel', 'description', 'rolePrompt']) {
+    if (typeof profile?.[key] === 'string' && profile[key].trim()) {
+      normalized[key] = profile[key].trim();
+    }
+  }
   if (profile.tools !== undefined) {
     normalized.tools = normalizeAgentTools(profile.tools);
   }
@@ -198,6 +209,18 @@ export function normalizeAgentOverride(agentId, profile) {
   }
   if (profile.enabledMcpServerIds !== undefined) {
     normalized.enabledMcpServerIds = normalizeMcpServerWhitelist(profile.enabledMcpServerIds);
+  }
+  const ttsSpeed = normalizeOptionalNumber(profile?.ttsSpeed, { min: 0.5, max: 2.0 });
+  const ttsPitch = normalizeOptionalNumber(profile?.ttsPitch, { min: -12, max: 12 });
+  const ttsVol = normalizeOptionalNumber(profile?.ttsVol, { min: 0.1, max: 10.0 });
+  if (ttsSpeed !== null) {
+    normalized.ttsSpeed = ttsSpeed;
+  }
+  if (ttsPitch !== null) {
+    normalized.ttsPitch = ttsPitch;
+  }
+  if (ttsVol !== null) {
+    normalized.ttsVol = ttsVol;
   }
 
   return Object.keys(normalized).length ? normalized : null;

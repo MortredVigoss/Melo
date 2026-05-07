@@ -132,6 +132,72 @@ test('updateAgentProfile: minimal patch does not wipe identity / soul markdown',
   );
 });
 
+test('updateAgentProfile: voice-id save with blank legacy metadata does not reset custom agent name or role prompt', async () => {
+  await updateAgentProfile(
+    'custom-agent-1',
+    {
+      name: '金冬天',
+      rolePrompt: 'You are 金冬天, a custom private-chat agent.',
+      minimaxVoiceId: 'moss_audio_old',
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+
+  const after = await updateAgentProfile(
+    'custom-agent-1',
+    {
+      name: '',
+      description: '',
+      rolePrompt: '',
+      minimaxVoiceId: 'moss_audio_new',
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+  const agent = agentFromBootstrap(after, 'custom-agent-1');
+
+  assert.equal(agent?.name, '金冬天');
+  assert.equal(agent?.rolePrompt, 'You are 金冬天, a custom private-chat agent.');
+  assert.equal(agent?.minimaxVoiceId, 'moss_audio_new');
+});
+
+test('updateAgentProfile: MiniMax voice tuning parameters are saved with the agent profile', async () => {
+  const after = await updateAgentProfile(
+    'custom-agent-tts',
+    {
+      name: 'TTS Agent',
+      minimaxVoiceId: 'moss_audio_tuned',
+      ttsSpeed: 1.35,
+      ttsPitch: -4,
+      ttsVol: 0.75,
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+  const agent = agentFromBootstrap(after, 'custom-agent-tts');
+
+  assert.equal(agent?.minimaxVoiceId, 'moss_audio_tuned');
+  assert.equal(agent?.ttsSpeed, 1.35);
+  assert.equal(agent?.ttsPitch, -4);
+  assert.equal(agent?.ttsVol, 0.75);
+});
+
+test('updateAgentProfile: MiniMax voice tuning parameters are clamped to supported bounds', async () => {
+  const after = await updateAgentProfile(
+    'custom-agent-tts-clamp',
+    {
+      name: 'TTS Clamp Agent',
+      ttsSpeed: 9,
+      ttsPitch: -99,
+      ttsVol: 0,
+    },
+    { scope: 'global', activeView: 'customize' },
+  );
+  const agent = agentFromBootstrap(after, 'custom-agent-tts-clamp');
+
+  assert.equal(agent?.ttsSpeed, 2);
+  assert.equal(agent?.ttsPitch, -12);
+  assert.equal(agent?.ttsVol, 0.1);
+});
+
 test('updateAgentProfile: explicit channels in patch still replace channel config', async () => {
   // Seed.
   await updateAgentProfile(

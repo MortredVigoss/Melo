@@ -82,6 +82,22 @@ test('normalizeAgentUpdatePatch: non-object channels value is not surfaced', () 
   assert.equal(incomingChannelsRaw, null);
 });
 
+test('normalizeAgentUpdatePatch: blank custom-agent metadata is omitted so partial saves do not reset names', () => {
+  const { nextPatch } = normalizeAgentUpdatePatch({
+    name: '',
+    laneLabel: '   ',
+    description: '',
+    rolePrompt: '',
+    minimaxVoiceId: 'moss_audio_123',
+  });
+
+  assert.equal('name' in nextPatch, false);
+  assert.equal('laneLabel' in nextPatch, false);
+  assert.equal('description' in nextPatch, false);
+  assert.equal('rolePrompt' in nextPatch, false);
+  assert.equal(nextPatch.minimaxVoiceId, 'moss_audio_123');
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. mergeChannelsWithStaleDraftGuard
 // ═══════════════════════════════════════════════════════════════════════════

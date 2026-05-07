@@ -133,6 +133,10 @@ test('agentDraftFromProfile carries name / model / systemPrompt / etc.', () => {
     voiceReplyMode: 'full',
     edgeTtsVoice: 'zh-CN',
     voicePersonality: 'pers',
+    minimaxVoiceId: 'moss_audio_x',
+    ttsSpeed: 1.2,
+    ttsPitch: -3,
+    ttsVol: 0.7,
     tools: [{ id: 'projects' }, { id: 'artifacts' }],
   });
   assert.equal(draft.name, 'Researcher');
@@ -146,6 +150,10 @@ test('agentDraftFromProfile carries name / model / systemPrompt / etc.', () => {
   assert.equal(draft.voiceReplyMode, 'full');
   assert.equal(draft.edgeTtsVoice, 'zh-CN');
   assert.equal(draft.voicePersonality, 'pers');
+  assert.equal(draft.minimaxVoiceId, 'moss_audio_x');
+  assert.equal(draft.ttsSpeed, 1.2);
+  assert.equal(draft.ttsPitch, -3);
+  assert.equal(draft.ttsVol, 0.7);
   assert.deepEqual(draft.tools, ['projects', 'artifacts']);
 });
 

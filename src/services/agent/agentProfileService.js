@@ -102,6 +102,21 @@ export function normalizeAgentUpdatePatch(patch = {}) {
     delete nextPatch.soul;
   }
 
+  // Partial forms must not erase custom-agent metadata. The Customize
+  // detail panel can submit a narrow patch such as { minimaxVoiceId } while
+  // older UI builds still include absent text fields as empty strings. Treat
+  // blank metadata strings as "not supplied"; callers that need a true clear
+  // can use a dedicated clear action later.
+  for (const key of ['name', 'laneLabel', 'description', 'rolePrompt']) {
+    if (
+      key in nextPatch &&
+      typeof nextPatch[key] === 'string' &&
+      !nextPatch[key].trim()
+    ) {
+      delete nextPatch[key];
+    }
+  }
+
   // Extract raw channel draft; caller applies the stale-draft guard inside
   // the atomic block. Never leave `channels` on nextPatch — letting a raw
   // draft through would bypass the guard entirely.

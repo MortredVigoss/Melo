@@ -4,6 +4,18 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 — Codex 实现：per-agent MiniMax TTS 参数（voiceId / speed / pitch / vol）端到端
+
+本批改动由 Codex 完成，本会话仅做整理 + commit + push。涉及 11 个文件，按层归四束：
+
+- **Profile normalizer**（[src/state/agentProfiles.js](src/state/agentProfiles.js)）：抽 `normalizeOptionalNumber(value, {min, max})` 给 `ttsSpeed/Pitch/Vol` 做 clamping (`0.5–2.0` / `-12–12` / `0.1–10.0`)；`normalizeAgentOverride` 现在保留 `name/laneLabel/description/rolePrompt` 文本字段 + 新加的三个 tts 数值字段（值非 null 才 stamp 到 normalized）。
+- **Update patch contract**（[src/services/agent/agentProfileService.js](src/services/agent/agentProfileService.js)）：`normalizeAgentUpdatePatch` 把 `name/laneLabel/description/rolePrompt` 这四个空字符串 patch 当作"未提供"删掉，避免老 UI 提交 narrow patch（如 `{minimaxVoiceId}`）时同字段空字符串误擦既有 metadata。
+- **UI draft + bootstrap**：[desktop-ui/agentDraft.js](desktop-ui/agentDraft.js) `agentDraftFromProfile` 把 `rolePrompt / minimaxVoiceId / ttsSpeed/Pitch/Vol` 五个字段 round-trip 进 draft；[src/state/desktopBootstrap.js](src/state/desktopBootstrap.js) 暴露 `ttsSpeed/Pitch/Vol`（fallback 到 `DEFAULT_CONFIG`）；[desktop-ui/styles.css](desktop-ui/styles.css) 配套 +33 行新 panel 样式。
+- **Discord voice path**（[src/services/remote/discordVoiceSession.js](src/services/remote/discordVoiceSession.js)）：合成时 spread agent profile 的 `ttsSpeed/Pitch/Vol` 到 config，让 Discord 语音回复也用 per-agent 调参（之前只 voiceId per-agent，全局 connector-level 调参）。
+
+测试 lock contracts：[desktopStore.updateAgentProfile.test.js](src/desktopStore.updateAgentProfile.test.js) +66、[agentProfileService.test.js](src/services/agent/agentProfileService.test.js) +16、[agentDraft.test.js](desktop-ui/agentDraft.test.js) +8、[tts.test.js](src/tts.test.js) +22、[media/enrich.test.js](src/media/enrich.test.js) +20。`npm test` 完整 GREEN。
+
+---
 ## 2026-05-07 — Codex pre-push B + 1 P0 follow-up：跨引擎 stale event 竞态
 
 `d1b76cf`+`0db3c1c`+`2a8481a` push 时 Codex 评 B（可合）但抓出 1 个真竞态：

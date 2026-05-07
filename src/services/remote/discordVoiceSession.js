@@ -509,11 +509,17 @@ export class DiscordVoiceSession {
     // Kick off TTS. MiniMax is preferred per agent config; the TTS module
     // handles the priority chain + fallbacks internally.
     const voiceId = String(this.profile?.minimaxVoiceId || '').trim();
+    const ttsConfig = {
+      ...config,
+      ...(this.profile?.ttsSpeed != null ? { ttsSpeed: this.profile.ttsSpeed } : {}),
+      ...(this.profile?.ttsPitch != null ? { ttsPitch: this.profile.ttsPitch } : {}),
+      ...(this.profile?.ttsVol != null ? { ttsVol: this.profile.ttsVol } : {}),
+    };
     const abort = new AbortController();
     this.currentTtsAbort = abort;
     let ttsResult;
     try {
-      ttsResult = await synthesizeSpeech(text, config, {
+      ttsResult = await synthesizeSpeech(text, ttsConfig, {
         voiceId,
         signal: abort.signal,
       });

@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSayVoiceList, stripKoreanForMinimax } from './tts.js';
+import { normalizeMinimaxVoiceSetting, parseSayVoiceList, stripKoreanForMinimax } from './tts.js';
 
 test('pure Chinese text is untouched', () => {
   const s = '今天天气真好';
@@ -87,6 +87,26 @@ test('idempotent: running twice produces the same output', () => {
 
 test('digits adjacent to KR are preserved', () => {
   assert.equal(stripKoreanForMinimax('123어456'), '123456');
+});
+
+// ─── MiniMax voice settings ─────────────────────────────────────────────────
+
+test('normalizeMinimaxVoiceSetting keeps valid speed / pitch / volume values', () => {
+  assert.deepEqual(
+    normalizeMinimaxVoiceSetting({ speed: 1.25, pitch: -2, vol: 0.8 }),
+    { speed: 1.25, vol: 0.8, pitch: -2 },
+  );
+});
+
+test('normalizeMinimaxVoiceSetting applies MiniMax defaults and clamps bounds', () => {
+  assert.deepEqual(
+    normalizeMinimaxVoiceSetting({ speed: 9, pitch: -99, vol: 0 }),
+    { speed: 2, vol: 0.1, pitch: -12 },
+  );
+  assert.deepEqual(
+    normalizeMinimaxVoiceSetting({ speed: 'bad', pitch: 'bad', vol: 'bad' }),
+    { speed: 1, vol: 1, pitch: 0 },
+  );
 });
 
 // ─── parseSayVoiceList — covers the new TTS macOS-voice split ─────────────
