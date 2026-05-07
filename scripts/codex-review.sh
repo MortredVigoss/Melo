@@ -240,7 +240,22 @@ if ! run_codex_range_review \
   exit 1
 fi
 
-pre_quality_grade="$(sed -nE 's/^质量评级[[:space:]]*[：:][[:space:]]*([SABCD]).*/\1/p' "$pre_review_output" | head -n 1)"
+# Three compounding pitfalls in the captured codex output forced this to be
+# done in perl rather than sed:
+#   1. Codex CLI wraps the 质量评级 label/grade in ANSI CSI escapes
+#      (e.g. `\e[1m质量评级\e[0m：\e[1mB\e[0m —— …`), so a `^质量评级`
+#      anchor sees `\e[1m` first and never matches.
+#   2. BSD sed (macOS) treats the multi-byte `：` (U+FF1A) inside `[：:]`
+#      as bytes when LC_ALL is unset/C — the class fails to match the
+#      full-width colon that codex actually emits.
+#   3. Codex echoes the prompt itself before answering, so the captured
+#      output contains the literal template line
+#      `质量评级：S / A / B / C / D —— <根据>` BEFORE the real grade.
+#      A naive `head -n 1` would extract `S` from the template every
+#      time and silently let every push through the gate.
+# The dash anchor (`——` / `—` / `--`) follows the prompt's mandated grade
+# format and reliably separates the real grade from the template's `S /`.
+pre_quality_grade="$(perl -CSD -Mutf8 -ne 's/\e\[[0-9;]*[a-zA-Z]//g; if (/^质量评级\s*[：:]\s*([SABCD])\s*(?:——|—|--)/) { print "$1\n"; exit 0 }' < "$pre_review_output")"
 rm -f "$pre_review_output"
 
 if [ -z "$pre_quality_grade" ]; then

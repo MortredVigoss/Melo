@@ -4,6 +4,13 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-07 23:49 — fix(scripts/codex-review): 质量评级 解析三连 bug 修复
+
+- 做了什么：把 `scripts/codex-review.sh` 第 243 行的 `sed` 解析换成单条 `perl -CSD -Mutf8` 一行式：先剥 ANSI CSI 转义，再用 UTF-8 正则 + `——/—/--` dash 锚点抽 `质量评级：X` 里的 X。
+- 为什么：原 `sed` 路径同时撞了三个 bug：(1) codex CLI 在 `质量评级` 标签和评级字母外面包了 ANSI 颜色转义，`^质量评级` 锚点永远被 `\e[1m` 挡住；(2) macOS BSD sed 在 LC_ALL 未设 / C locale 下，`[：:]` 字符类把全角 `：`（U+FF1A）当成 3 字节序列处理，匹配失败；(3) codex 在回答前会把 prompt 原样回显，捕获的输出里在真正评级行之前有一条模板行 `质量评级：S / A / B / C / D —— <根据>`，naive 的 `head -n 1` 会先抓到模板里的 `S` 字符，让 gate 永远静默放行。即使只修 (1)，剩下两个 bug 仍会让 gate 行为错乱（locale 下解析失败，UTF-8 locale 下错抓 S）。perl 路径 locale-independent，UTF-8 正则确认 `[：:]`，dash 锚点把模板行排除掉。
+- 产出 / 提交哈希：本 commit（throwaway 分支 `verify-pp-parse-fix` 上验证用，待用户确认后 cherry-pick 到 master）。
+
+---
 ## 2026-05-07 — Codex 实现：抽 searchRouter + 接 crawl4ai/scrapling/camoufox 外读器
 
 让上游 chat runner 单点决策是否启用 native web_search（不再每个 provider 各判一遍 trigger），同时给社媒 / SPA 难抓页加 optional 本地 reader 兜底。Codex 实现，本会话仅做 commit + push。12 个文件、+1066 / −92。
