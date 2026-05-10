@@ -193,52 +193,105 @@ test('evidenceTrail: forced crawl4ai THROW emits external-reader.fail with real 
   assert.notEqual(failEntry.tier, 'unknown', 'tier must never regress to "unknown"');
 });
 
-test('evidenceTrail: forced playwright THROW emits playwright.fail (not unknown)', async () => {
-  // Similar to above for playwright forced mode.  We can't easily mock
-  // tryPlaywright (it's an inline closure), so this case relies on the
-  // CLI not being installed in the test environment to drive the throw
-  // path indirectly via the playwrightFetcher import — if playwright
-  // CLI IS available, the test naturally exercises the success path
-  // and the assertion still holds because the tier label is correct.
+test('evidenceTrail: forced playwright THROW (via _tryPlaywright seam) emits playwright.fail with classified reason', async () => {
+  // G-1a follow-up #2 (Codex 2026-05-10): pre-seam this test could only
+  // assert "no entry has tier=unknown" because forcing throw required the
+  // host CLI to fail in a specific way.  Now _tryPlaywright override lets
+  // us deterministically force the throw path and pin tier=playwright +
+  // a real reason code (not 'unknown', not generic 'error').
   const result = await fetchUrlTool.run(
     { url: 'https://example.com/article', extract_mode: 'playwright' },
-    {},
+    { _tryPlaywright: async () => { throw new Error('Playwright fetcher CLI exited code 1'); } },
   );
-  // Either ok or fail is acceptable — what we pin is that NO entry
-  // ever gets the bogus `unknown` tier.
-  for (const entry of result.evidenceTrail) {
-    assert.notEqual(entry.tier, 'unknown',
-      `playwright forced mode must never produce tier=unknown; got ${JSON.stringify(entry)}`);
-  }
+  assert.equal(result.ok, false);
+  const failEntry = result.evidenceTrail.find(e => e.outcome === 'fail');
+  assert.ok(failEntry, 'a fail entry must be present');
+  assert.equal(failEntry.tier, 'playwright',
+    `tier must be playwright, got ${failEntry.tier}`);
+  assert.notEqual(failEntry.tier, 'unknown', 'tier must never regress to "unknown"');
+  // reason should come from classifyFetchError; the verbatim message has
+  // none of the known buckets so it's 'error', but it must be classified.
+  assert.ok(typeof failEntry.reason === 'string' && failEntry.reason.length > 0,
+    'fail entry must have a classified reason');
 });
 
-test('evidenceTrail: auto path Jina returning short content records jina.fail parse-empty (not jina.ok)', async () => {
-  // Pre-fix: short content (under CONTENT_OK_THRESHOLD = 120 chars) was
-  // recorded as jina.ok even though the runner immediately escalated to
-  // playwright.  Now it should be jina.fail reason=parse-empty.
-  // We exercise this via a stub that wraps fetchUrlTool — but auto path
-  // really hits the network when reachable.  Use the social-link guard
-  // path inverted: a non-social URL with no cookie + a jina URL that
-  // returns shell-only content.  Since we can't easily mock fetchViaJina
-  // from outside, we rely on the test seam pattern: there ISN'T one for
-  // jina/direct in fetchUrlTool — so this test's job is the source-level
-  // guard: assert the recordTrail call uses `tierOutcome(content)` not
-  // a hardcoded 'ok'.
-  assert.match(
-    TOOL_SOURCE,
-    /tierOutcome\s*=\s*\(c\)\s*=>\s*looksEmpty\(c\)/,
-    'auto path must use tierOutcome() helper to gate ok/fail on content length',
+test('evidenceTrail: forced playwright returning short content emits playwright.fail no-content (still not unknown)', async () => {
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article', extract_mode: 'playwright' },
+    { _tryPlaywright: async () => null },
   );
-  // The three auto-path recordTrail calls (direct+cookie / jina / direct)
-  // must all use r.outcome (computed from tierOutcome), not literal 'ok'.
-  const autoBlockMatch = TOOL_SOURCE.match(/auto:\s*cookies\s+present[\s\S]*?if\s*\(looksEmpty\(content\)\)\s*\{[\s\S]*?Playwright/);
-  assert.ok(autoBlockMatch, 'could not locate auto path block in source');
-  const autoBlock = autoBlockMatch[0];
-  // Count tier-outcome aware records in the auto path: 3 (direct+cookie,
-  // jina-after-direct-fail, jina-first, direct-after-jina-fail).
-  const tierOutcomeRecords = autoBlock.match(/recordTrail\(trail,\s*'(direct\+cookie|jina|direct)',\s*r\.outcome/g) || [];
-  assert.ok(
-    tierOutcomeRecords.length >= 3,
-    `expected >= 3 recordTrail calls using r.outcome in auto path, got ${tierOutcomeRecords.length}`,
+  assert.equal(result.ok, false);
+  const failEntry = result.evidenceTrail.find(e => e.outcome === 'fail');
+  assert.ok(failEntry);
+  assert.equal(failEntry.tier, 'playwright');
+  assert.equal(failEntry.reason, 'no-content');
+});
+
+test('evidenceTrail: auto path Jina returns short content (via _fetchViaJina seam) records jina.fail parse-empty then escalates to playwright', async () => {
+  // G-1a follow-up #2: real behavioral coverage of B-2.  Stub Jina to
+  // return shell-only content (under CONTENT_OK_THRESHOLD=120 chars),
+  // stub playwright to return real content, assert the trail records
+  // jina.fail reason=parse-empty followed by playwright.ok.  Without
+  // the tierOutcome() gating in production code, jina would record as
+  // ok and the trail would mislead operators about which tier "won".
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article' },  // auto mode, no cookies → Jina first
+    {
+      _fetchViaJina: async () => 'too short',  // 9 chars < 120 threshold
+      _tryPlaywright: async () => ('A long enough body of real article content that easily passes the looksEmpty content threshold for this regression test. ' .repeat(3)),
+    },
   );
+  assert.equal(result.ok, true);
+  const jinaEntry = result.evidenceTrail.find(e => e.tier === 'jina');
+  assert.ok(jinaEntry, 'jina entry must exist');
+  assert.equal(jinaEntry.outcome, 'fail',
+    `jina with short content must be fail (not ok); got ${JSON.stringify(jinaEntry)}`);
+  assert.equal(jinaEntry.reason, 'parse-empty');
+  const pwEntry = result.evidenceTrail.find(e => e.tier === 'playwright');
+  assert.ok(pwEntry, 'playwright escalation entry must exist');
+  assert.equal(pwEntry.outcome, 'ok');
+  assert.equal(pwEntry.extra?.escalation, true,
+    'escalation flag must be set on the post-fail playwright entry');
+});
+
+test('evidenceTrail: auto path Jina THROWS (seam) records jina.fail with classified reason then direct fallback recorded', async () => {
+  // Mirror of the parse-empty test for the throw branch — Jina throws,
+  // direct fallback runs, both records present in trail with correct
+  // tier/outcome labels.
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article' },
+    {
+      _fetchViaJina: async () => { throw new Error('Jina returned 503'); },
+      _fetchDirect: async () => ('A long enough body of real direct-fetch content that easily passes the looksEmpty content threshold here as well. ' .repeat(3)),
+    },
+  );
+  assert.equal(result.ok, true);
+  const jinaEntry = result.evidenceTrail.find(e => e.tier === 'jina');
+  assert.ok(jinaEntry);
+  assert.equal(jinaEntry.outcome, 'fail');
+  assert.equal(jinaEntry.reason, '5xx',
+    `Jina 503 must classify as 5xx; got ${jinaEntry.reason}`);
+  const directEntry = result.evidenceTrail.find(e => e.tier === 'direct');
+  assert.ok(directEntry, 'direct fallback entry must exist after jina fail');
+  assert.equal(directEntry.outcome, 'ok');
+});
+
+test('evidenceTrail: auto path direct+cookie returns short → records direct+cookie.fail parse-empty + escalates', async () => {
+  // Same pattern but on the cookies-present branch which prefers direct first.
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article' },
+    {
+      config: { domainCookies: { 'example.com': 'sess=abc' } },
+      _fetchDirect: async () => 'tiny',  // 4 chars
+      _tryPlaywright: async () => ('Long enough escalation content from playwright after direct+cookie returned an empty shell of HTML for this test. ' .repeat(3)),
+    },
+  );
+  assert.equal(result.ok, true);
+  const dcEntry = result.evidenceTrail.find(e => e.tier === 'direct+cookie');
+  assert.ok(dcEntry);
+  assert.equal(dcEntry.outcome, 'fail');
+  assert.equal(dcEntry.reason, 'parse-empty');
+  const pwEntry = result.evidenceTrail.find(e => e.tier === 'playwright');
+  assert.ok(pwEntry);
+  assert.equal(pwEntry.outcome, 'ok');
 });

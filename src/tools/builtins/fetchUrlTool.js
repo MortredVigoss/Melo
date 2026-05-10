@@ -201,9 +201,25 @@ export const fetchUrlTool = {
     config,
     _readSocialLink,
     _readExternalUrl,
+    // Phase G-1a follow-up #2 (Codex 2026-05-10): test seams for the
+    // remaining three internal fetchers — without these, evidenceTrail
+    // regression tests can only assert source shape, not actual runtime
+    // behavior on the parse-empty / throw paths Codex flagged.
+    // Production callers never set these (same convention as
+    // _readSocialLink / _readExternalUrl above).
+    _fetchViaJina,
+    _fetchDirect,
+    _tryPlaywright: _tryPlaywrightOverride,
   } = {}) {
     const trail = [];
     const tStart = Date.now();
+    // Local aliases — when an override is supplied, all call sites in
+    // run() route through the mock; otherwise they hit the real module-
+    // scope implementation.  Keeping the variable name distinct (`call*`)
+    // makes the seam explicit and avoids accidentally shadowing the
+    // imported helper across the file.
+    const callJina = typeof _fetchViaJina === 'function' ? _fetchViaJina : fetchViaJina;
+    const callDirect = typeof _fetchDirect === 'function' ? _fetchDirect : fetchDirect;
     // Basic URL validation
     if (!url || typeof url !== 'string') {
       recordTrail(trail, 'validate', 'fail', { reason: 'invalid-url', latencyMs: 0 });
@@ -335,6 +351,12 @@ export const fetchUrlTool = {
     // (the CLI runs its own Chromium context). We only reach this when Jina and
     // direct-fetch both failed or returned shell-only HTML.
     const tryPlaywright = async () => {
+      // Phase G-1a follow-up #2: test override path — when supplied, the
+      // mock entirely replaces the real CLI probe + fetch (lets tests
+      // force throw or short content without depending on host CLI state).
+      if (typeof _tryPlaywrightOverride === 'function') {
+        return _tryPlaywrightOverride();
+      }
       if (!(await isPlaywrightCliAvailable())) {
         return null;
       }
@@ -369,7 +391,7 @@ export const fetchUrlTool = {
       if (extract_mode === 'direct') {
         pendingTier = cookieStr ? 'direct+cookie' : 'direct';
         pendingTierStart = Date.now();
-        content = await fetchDirect(normalized, signal, cookieStr);
+        content = await callDirect(normalized, signal, cookieStr);
         method = pendingTier;
         recordTrail(trail, method, 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'direct', bytes: content.length } });
         pendingTier = null;
@@ -378,14 +400,14 @@ export const fetchUrlTool = {
         if (cookieStr) {
           pendingTier = 'direct+cookie';
           pendingTierStart = Date.now();
-          content = await fetchDirect(normalized, signal, cookieStr);
+          content = await callDirect(normalized, signal, cookieStr);
           method = 'direct+cookie';
           recordTrail(trail, 'direct+cookie', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'jina-with-cookie', bytes: content.length } });
           pendingTier = null;
         } else {
           pendingTier = 'jina';
           pendingTierStart = Date.now();
-          content = await fetchViaJina(normalized, signal);
+          content = await callJina(normalized, signal);
           method = 'jina';
           recordTrail(trail, 'jina', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'jina', bytes: content.length } });
           pendingTier = null;
@@ -444,7 +466,7 @@ export const fetchUrlTool = {
         if (cookieStr) {
           const tDc = Date.now();
           try {
-            content = await fetchDirect(normalized, signal, cookieStr);
+            content = await callDirect(normalized, signal, cookieStr);
             method = 'direct+cookie';
             const r = tierOutcome(content);
             recordTrail(trail, 'direct+cookie', r.outcome, { latencyMs: Date.now() - tDc, reason: r.reason, extra: { bytes: content.length } });
@@ -452,7 +474,7 @@ export const fetchUrlTool = {
             debugWarn('fetch_url', `direct+cookie failed, falling back to Jina for ${normalized}:`, err?.message || err);
             recordTrail(trail, 'direct+cookie', 'fail', { latencyMs: Date.now() - tDc, reason: classifyFetchError(err) });
             const tJ = Date.now();
-            content = await fetchViaJina(normalized, signal);
+            content = await callJina(normalized, signal);
             method = 'jina';
             const r = tierOutcome(content);
             recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
@@ -460,7 +482,7 @@ export const fetchUrlTool = {
         } else {
           const tJ = Date.now();
           try {
-            content = await fetchViaJina(normalized, signal);
+            content = await callJina(normalized, signal);
             method = 'jina';
             const r = tierOutcome(content);
             recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
@@ -469,7 +491,7 @@ export const fetchUrlTool = {
             recordTrail(trail, 'jina', 'fail', { latencyMs: Date.now() - tJ, reason: classifyFetchError(err) });
             const tD = Date.now();
             try {
-              content = await fetchDirect(normalized, signal, '');
+              content = await callDirect(normalized, signal, '');
               method = 'direct';
               const r = tierOutcome(content);
               recordTrail(trail, 'direct', r.outcome, { latencyMs: Date.now() - tD, reason: r.reason, extra: { bytes: content.length } });
