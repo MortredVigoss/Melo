@@ -155,6 +155,72 @@ test('evidenceTrail: aborted cache phase (real cache hit) bails to aborted inste
   }
 });
 
+// ─── G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): mid-await abort ────
+//
+// Pre-aborted signal tests don't catch the real bad path: signal flips
+// AFTER raceSerpProviders / fetchResultContents start their await.  Now
+// the race carries an abort listener and content-fetch checks signal
+// before each PW fallback target — verify the run finishes promptly
+// after a delayed abort, instead of waiting for PW timeout.
+
+test('evidenceTrail: mid-await abort during SERP race finishes promptly (no waiting for PW timeout)', async () => {
+  // Fire abort 50ms after run() starts.  raceSerpProviders' abort
+  // listener should resolve the race immediately with errors=['aborted'],
+  // and the outer post-await gate in run() should record serp.fail
+  // aborted-mid-loop.  Total run latency must be << SERP_STAGGER_MS +
+  // PW timeout (which is 10+s without the listener).
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 50);
+  const tStart = Date.now();
+  const result = await webSearchTool.run(
+    { query: 'mid await abort race fixture xyz123', noCache: true },
+    { signal: ac.signal },
+  );
+  const elapsed = Date.now() - tStart;
+  assert.equal(result.ok, false);
+  assert.equal(result.aborted, true);
+  // Must finish in well under PW timeout (~10s).  Generous bound to
+  // tolerate slow CI: 4 seconds is far below the 10s+ pre-fix waiting
+  // pattern.
+  assert.ok(elapsed < 4000,
+    `run must abort promptly (mid-await abort listener), got ${elapsed}ms`);
+  const serpEntry = result.evidenceTrail.find(e => e.tier === 'serp');
+  assert.equal(serpEntry?.outcome, 'fail');
+  // synonym/content/rerank skipped per the bailAbortedWebSearch contract.
+  for (const phase of ['synonym-retry', 'content-fetch', 'semantic-rerank']) {
+    const e = result.evidenceTrail.find(e => e.tier === phase);
+    assert.equal(e?.outcome, 'skip', `${phase} must be skip after mid-await SERP abort`);
+  }
+});
+
+test('evidenceTrail: source-level guard — raceSerpProviders carries an abort listener that flips done', () => {
+  // Pin the abort listener wiring in source so a future "simplification"
+  // that drops the listener red-flags here.
+  assert.match(
+    TOOL_SOURCE,
+    /signal\.addEventListener\(\s*['"]abort['"]\s*,\s*abortListener[\s\S]*?{\s*once:\s*true\s*}\s*\)/,
+    'raceSerpProviders must register an abort listener on the caller signal',
+  );
+  // And every late settle must check `done` before recording results.
+  const lateSettleChecks = TOOL_SOURCE.match(/if\s*\(done\)\s*return;\s*\/\/\s*ignore late settle/g) || [];
+  assert.ok(lateSettleChecks.length >= 2,
+    `late-settle abort guards must be present in PW + Jina branches; got ${lateSettleChecks.length}`);
+});
+
+test('evidenceTrail: source-level guard — fetchResultContents has entry + pre-PW-fallback abort gates', () => {
+  assert.match(
+    TOOL_SOURCE,
+    /async function fetchResultContents[\s\S]*?if\s*\(signal\?\.aborted\)\s*return\s*\[\]/,
+    'fetchResultContents must check signal.aborted at the very top',
+  );
+  // PW fallback block must check signal before entering AND in the loop.
+  assert.match(
+    TOOL_SOURCE,
+    /\/\/ Stage 3[\s\S]*?if\s*\(signal\?\.aborted\)\s*\{[\s\S]*?for\s*\(const url of pwTargets\)\s*\{\s*[\s\S]*?if\s*\(signal\?\.aborted\)\s*break/,
+    'fetchResultContents Stage 3 must abort-gate before AND inside the PW fallback loop',
+  );
+});
+
 test('evidenceTrail: source-level guard — cache fresh/stale return blocks must check signal.aborted before recordTrail/return', () => {
   // Pin the abort gate in source so a future edit that "simplifies away"
   // the post-lookup check (covers the rare race between entry-gate and

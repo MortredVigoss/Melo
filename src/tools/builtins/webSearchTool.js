@@ -1108,6 +1108,12 @@ async function fetchViaJina(url, signal, { etag = null, lastModified = null } = 
  *      fallback URL means multi-second p95 degradation.
  */
 async function fetchResultContents(urls, signal, { spanId = null } = {}) {
+  // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): entry abort gate.
+  // Pre-fix, an aborted signal at this point still ran Jina probes + PW
+  // fallback because the function trusted the caller-side check.  Now
+  // we shortcut to empty so the run() outer post-await sees no work
+  // happened and bails immediately.  Real PW CLI subprocess kill is G-5.
+  if (signal?.aborted) return [];
   const targets = urls.filter(url => /^https?:\/\//i.test(url));
   if (!targets.length) return [];
 
@@ -1235,9 +1241,21 @@ async function fetchResultContents(urls, signal, { spanId = null } = {}) {
 
   // Stage 3 — Playwright fallback, capped. Only the first PW_FALLBACK_MAX
   // misses get a second chance, to keep tail latency bounded.
+  // G-1c follow-up #2: abort gate before PW fallback block + before each
+  // PW target.  Without this, signal aborted between Jina end and PW
+  // start still rolls the user through PW_FALLBACK_MAX×fetchViaPlaywrightCli
+  // (each ~5-15s).  Real subprocess kill is G-5 — here we just refuse to
+  // queue the next PW target once the signal flips.
+  if (signal?.aborted) {
+    return [...results.values()].filter(r => r.content);
+  }
   if (failed.size > 0 && PW_FALLBACK_MAX > 0 && await isPlaywrightCliAvailable()) {
     const pwTargets = [...failed].slice(0, PW_FALLBACK_MAX);
     for (const url of pwTargets) {
+      // Re-check at every iteration — between two PW calls the signal
+      // can flip, and the in-flight PW process is what G-5 will kill;
+      // here we only ensure no further PW targets get scheduled.
+      if (signal?.aborted) break;
       const pw = await fetchViaPlaywrightCli(url);
       if (pw.content && pw.content.length >= 100) {
         results.set(url, pw);
@@ -1411,8 +1429,33 @@ async function raceSerpProviders(query, limit, signal) {
       if (done) return;
       done = true;
       clearTimeout(staggerTimer);
+      if (signal && abortListener) {
+        try { signal.removeEventListener('abort', abortListener); } catch {}
+      }
       resolve({ results, provider, errors });
     };
+
+    // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): caller abort
+    // must terminate the race immediately — without this, signal flips
+    // during PW/Jina await and the outer post-await abort gate has to
+    // wait for PW to settle on its own (10+s timeout typical).  We flip
+    // `done` so any late legs that resolve are ignored, and resolve the
+    // race promise with a synthetic "aborted" outcome.  Real PW CLI
+    // subprocess kill is still G-5 (OS-level threading); this fix is the
+    // JS-layer minimum that Codex demanded as not-deferrable.
+    const abortListener = signal ? () => {
+      if (done) return;
+      errors.push('aborted');
+      finish([], '');
+    } : null;
+    if (signal) {
+      if (signal.aborted) {
+        errors.push('aborted');
+        resolve({ results: [], provider: '', errors });
+        return;
+      }
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
 
     const startJina = () => {
       if (jinaStarted || done) return;
@@ -1420,11 +1463,13 @@ async function raceSerpProviders(query, limit, signal) {
       searchViaDdg(query, limit, signal).then(
         r => {
           jinaSettled = true;
+          if (done) return;  // ignore late settle after abort
           if (r.length) finish(r, 'duckduckgo');
           else if (pwSettled) finish([], '');
         },
         err => {
           jinaSettled = true;
+          if (done) return;
           errors.push(`DDG: ${err.message}`);
           if (pwSettled) finish([], '');
         },
@@ -1435,12 +1480,14 @@ async function raceSerpProviders(query, limit, signal) {
     searchViaPlaywright(query, limit).then(
       r => {
         pwSettled = true;
+        if (done) return;  // ignore late settle after abort
         if (r.length) finish(r, 'google (playwright)');
         else if (jinaSettled) finish([], '');
         else startJina(); // PW returned empty — bring Jina forward
       },
       err => {
         pwSettled = true;
+        if (done) return;
         errors.push(`Google/PW: ${err.message}`);
         if (jinaSettled) finish([], '');
         else startJina(); // PW error — bring Jina forward
