@@ -4,6 +4,23 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-10 — memory 长期记忆链路根因连锁修复 + 测试 hygiene + Codex 改动并入
+
+- 做了什么（6 commits 一个收口）：
+  - `570a7c6` `fix(memory)`: `recallMemories` flat 路径 semantic + keyword 两个 return 点对称加 `recordMemoryHitsBatch`，修 `memory_hits` 长期为 0 的根因（**B**, isolated home end-to-end 0→5 验证）。
+  - `0c2be68` `test(memory)`: `store.recallHits.test.js` 4 case 把上面 0→N 验证固化为回归（keyword/empty/markUsed 闭环/semantic 路径），闭 `570a7c6` 的 Codex B 建议（**A/A**）。
+  - `60e828d` `fix(memory/dreaming)`: `diary.js` `DREAMS_DIR` module-load → call-time 求值 + `diary.test.js`/`sweep.concurrency.test.js` 加 `mkdtemp + MELO_HOME` 隔离，修 `npm test` 污染 `~/.melo/desktop/{store.sqlite,dreams/}` 的 §6 违规（**A/A**）。
+  - `83cf5d4` `test(chat)`: `chatExecutionRunner` search-routing → tool dispatch 4 case 回归覆盖 runner 链路 `searchPlan.route / nativeWebSearchEnabled / exposedNetworkTools / visibleToolIds`，闭 `f04248e` 的 Codex B 建议（**B/A**）。
+  - `d7fe057` `fix(memory)`: `storeEmbedding` 三步 SQL（`embedding_cache INSERT` + `memories UPDATE` + `vec_memories DELETE+INSERT`）用 `runInTransaction` 包裹（atomicity proof：wrong-dim 触发 vec0 INSERT 失败 → ROLLBACK 保前一行）。同 commit 并入工作树检出的 Codex memory 系列：`attic.js` `injectHotAttic` 自写 hits + `recallMemories` `sideEffects:false` flag / `memoryPromotion.js` 新 `pruneMemoriesByNamespaceKind` + `listMemoriesNeedingReembed` API / `agentMemoryContext.js` `tieredRecallEnabled` 默认从 env flag → 跟 write 侧 `enabledTiers()`（默认 ON）/ `sendChatMessage.js` 每 turn 后 fire-and-forget `scheduleEmbeddingFillIn` / `ChromaProvider.replaceAll` 加 collection clear（**B/A**）。
+  - `6eef4ae` `fix(memory)`: `saveMemoryEmbedding` 返回 boolean → `memoryPromotion.js:230` `if (wrote && needsReembed) clearNeedsReembed`，修 vec-dim 错 / sqlite-busy 时**永久取消重试 + 保留旧 embedding** 的 silent failure，闭 `d7fe057` 的 Codex pre-pp B 建议（**A/A**）。
+- 为什么：起点是问 melo 长期记忆现状，发现 `~/.melo/desktop/` `state.chats: 0` / `memory_hits: 0` / dreams 是测试 fixture，以为生产 dead。深查 `.tmp/melo-home-user/` 才是真生产（1187 memories / 114 frame / 12 scene / dreams 4-19~5-6 真实）；同时一查代码 `recallMemories` flat 路径 0% 写 hits → dreaming gates `recall = log2(0+1)/log2(11) = 0`、`outcome = good/0 = 0`，promotion 评分 7 个月只剩 diversity 一条腿。修完后审计最近 8 个 Codex memory bug-fix commits，spot-check 出 6861892 引入的 atomic 缺口，再修；Codex pre-pp 又抓 silent-failure 的另一层（saveMemoryEmbedding 返回值），再闭。一条链路上 3 处 silent-failure 同源，全部清。
+- 产出：6 commits push 上线 (`570a7c6` / `0c2be68` / `60e828d` / `83cf5d4` / `d7fe057` / `6eef4ae`)。Codex 评级线：1B/4A/1B（pre-pp）+ 5A（post-push），其中所有 B 建议都在后续 commit 里闭环。
+- P2 留账（不修，记给后续）：
+  1. `src/memory/store.js:1175` `_runReplaceMemoriesOn` 注释 "vec0 doesn't support DELETE ... WHERE" 跟 6861892 实测行为不符（实际能跑），误导后续读者。
+  2. 同函数每次 `saveState` `DELETE FROM vec_memories` 整表 wipe + 逐行 `INSERT OR REPLACE`，1099 行规模性能不佳（snapshot rebuild 模式，正确性 OK）。
+  3. `MELO_MEMORY_TIERS_RECALL` 翻默认 ON 后还要观察 3-5 天 dreams diary 看 promotion 评分有没有真改善（以前 hits=0 + outcome=0 评分死掉，现在 hits 写了，gates 该有真信号），酝酿期内再决定要不要删 legacy flat 分支。
+
+---
 ## 2026-05-07 23:49 — fix(scripts/codex-review): 质量评级 解析三连 bug 修复
 
 - 做了什么：把 `scripts/codex-review.sh` 第 243 行的 `sed` 解析换成单条 `perl -CSD -Mutf8` 一行式：先剥 ANSI CSI 转义，再用 UTF-8 正则 + `——/—/--` dash 锚点抽 `质量评级：X` 里的 X。
@@ -95,61 +112,16 @@ read-only 全局审计派 general-purpose agent 全文读 src/tts.js + src/servi
 测试：`npm test` 完整 GREEN（含 Swift build + Melo.app launch + smoke flow）。
 
 ---
-## 2026-05-06 — Codex C 第三轮闭环：anchorRouting 抽 helper + 卡片分支同步修
 
-`9f29a16` 又被 Codex 评 C：第二轮只修 `<a>` 分支漏了 `[data-external-url]` 卡片分支，两个分支用同一逻辑应该共享。Codex 给的方案干净：抽 `routeHttpUrl(url)` helper + 两个分支都接。
+## 归档摘要（2026-05-08 之前的 5-06 条目）
 
-- 新建 [desktop-ui/anchorRouting.js](desktop-ui/anchorRouting.js) 暴露 `routeHttpUrlClick(href, currentOrigin)`，返回 `{kind: 'same-origin'|'external'|'invalid', href}`。
-- 新建 [desktop-ui/anchorRouting.test.js](desktop-ui/anchorRouting.test.js) 8 case：same-origin http/https / external https / 同 host 不同 port → external / 同 host 不同 scheme → external / mailto·javascript·data·#anchor·相对路径 → invalid / 空·null·undefined → invalid / malformed URL → invalid / 默认 port (443/80) 归一化。
-- [desktop-ui/app.js](desktop-ui/app.js) `<a>` 和 `[data-external-url]` 两个 click 分支都换成统一调用 `routeHttpUrlClick`：same-origin → preventDefault + location.assign；external → preventDefault + openExternalUrl；invalid（卡片分支）→ preventDefault + showError，invalid（anchor 分支，如 `href="#anchor"`）→ fall through。
+按 CLAUDE.md §3 触发：5-10 新条目让总行数破 300，把最旧的 5-06 五条压成单段摘要（详细见 `git log --follow -p PROGRESS.md`）。
 
-UI 套 187/187（+8 anchorRouting case）+ 完整 npm test GREEN。
-
----
-## 2026-05-06 — Codex C 评级第二轮闭环：filter 再收窄 + 同源 URL 强制 location.assign
-
-`12e1358` 再被 Codex 评 C：第一轮收窄不够 + 同源 URL 默认导航也死。第二轮根治：
-
-- **🔴 同源 + `target="_blank"`**：Codex grep 出 link-card / 引用 anchor 都带 `target="_blank"`，main.swift 没 `WKUIDelegate.createWebViewWith` 处理新窗口 → `window.open` 也是 no-op。**修**：JS 端同源判定后**仍 preventDefault**，再 `location.assign(parsed.href)` 强制当前 webview 同窗导航，绕过 `_blank` 默认行为陷阱。
-- **🟡 filter 仍按裸短语 `fresh cookies` / `xsec_token` 匹配**：`fresh cookies in browser tests` 这类正常技术解释也被剔。**修**：[contextFilters.js](src/services/chat/contextFilters.js) 把 SOCIAL_LINK_DIAGNOSTIC_PATTERN 收到只匹配 5 个 marker：`SOCIAL_LINK_BLOCKED` / `SOCIAL_LINK_FAILED` / `Could not read this social-link URL`（fetchUrlTool 输出 verbatim）/ `dedicated extractor (yt-dlp`（同上 verbatim）/ `Customize → Safety → Web-fetch cookies`（UI 路径 verbatim）。所有零散英中关键词全删。10 case sanity check 全过：`fresh cookies in browser tests` / `xsec_token` / `登录态过期` / `Session cookies are stored` 都 false。
-- **测试 prose 同步更新**：[threadContext.test.js](src/memory/threadContext.test.js) + [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 把 diagnostic 正例改用 socialLinkTool 真实 verbatim 文案，断言对齐新 marker。
-
-⚪ JS 单测验证同源链接 routing 没补——Codex 标 ⚪（推荐非必需），需要从 app.js 抽 helper 才能干净测，规模超出当前修补范围。
-
-测试 47/47 + 完整 npm test GREEN。
-
----
-## 2026-05-06 — Codex C 评级闭环：context filter 收窄 + WKWebView 同源 URL 放行
-
-`bc823ac` + `9ece26f` 推送时 `git pp` pre-push gate 评 **C** 阻断。Codex 抓两个 P0 + 一个 P2，全部修复：
-
-- **P0-1（[contextFilters.js:15](src/services/chat/contextFilters.js#L15)）** SOCIAL_LINK_DIAGNOSTIC_PATTERN 末尾 `|cookie|cookies` 裸词太宽 → 任何 assistant 谈到 cookie/cookies 都被静默过滤出 prompt + thread context + memory。**修**：删裸词，改用 `SOCIAL_LINK_BLOCKED|SOCIAL_LINK_FAILED|fresh cookies|Web-fetch cookies|xsec_token|需要 fresh cookies|需要登录态|临时访问凭证` 这种多词/特异短语；同时把 `登录态` 收紧到 `需要登录态`（前者太通用）。
-- **P0-2（[desktop-ui/app.js:12484](desktop-ui/app.js#L12484)）** JS click 拦截所有 http(s) anchor → preventDefault → 调 native openExternalUrl，但 main.swift 的 `isExternalWebUrl` 对 Melo server URL 返回 false → 同源 URL 静默死掉无动作。**修**：JS 端先 `new URL(href).origin === location.origin` 判同源，是的话直接 return 让浏览器走默认导航，不 preventDefault。
-- **P2 负例测试**：[messageBuilder.test.js](src/services/chat/messageBuilder.test.js) + [threadContext.test.js](src/memory/threadContext.test.js) + [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) 三处各加 1 case，证 "Browser cookies come in two flavors..." / "Session cookies 是浏览器..." / "session 跟 persistent cookies 区别" 这类正常技术解答**保留**进上下文 + 长期记忆。
-
-测试 47/47 + 完整 npm test GREEN。
-
----
-## 2026-05-06 — Codex 实现的 backend 链路一并升级：社媒抓取扩张 / 视频 keyframe 入 prompt / assistant 失败诊断过滤 / cyber_policy 文案
-
-本批改动由 Codex 完成，本会话仅做整理 + commit + push。涉及 23 个 src 文件，按特性归四束：
-
-- **社媒抓取扩张（社媒/媒体管线）**：[src/tools/builtins/socialLinkTool.js](src/tools/builtins/socialLinkTool.js) +911 行 + [socialLinkTool.test.js](src/tools/builtins/socialLinkTool.test.js) +279；[src/tools/builtins/fetchUrlTool.js](src/tools/builtins/fetchUrlTool.js)、[src/media/index.js](src/media/index.js) +191、[src/media/extractors/videoExtractor.js](src/media/extractors/videoExtractor.js)、[src/media/extractors/videoExtractor.test.js](src/media/extractors/videoExtractor.test.js)、[src/media/urlDetector.js](src/media/urlDetector.js)、[src/media/urlDetector.test.js](src/media/urlDetector.test.js)、[src/media/enrich.test.js](src/media/enrich.test.js) +92。
-- **视频 keyframe 入 prompt（messageBuilder）**：[src/services/chat/messageBuilder.js](src/services/chat/messageBuilder.js) `pushKeyframeParts` helper 抽出，video attachments 与 social-link-only entries 都能 emit `image_url` parts；测试 +45 case。
-- **assistant 失败诊断过滤（新模块 + 集成）**：新增 [src/services/chat/contextFilters.js](src/services/chat/contextFilters.js) 三类 pattern（provider failure / Codex policy / social-link cookie 诊断），暴露 `shouldSuppressAssistantContextText`；[src/memory/threadContext.js](src/memory/threadContext.js) + 新加 [src/memory/threadContext.test.js](src/memory/threadContext.test.js) 接入；[src/services/agent/agentMemoryContext.js](src/services/agent/agentMemoryContext.js)、[src/state/memorySnapshot.js](src/state/memorySnapshot.js) + 新 [memorySnapshot.diagnostics.test.js](src/state/memorySnapshot.diagnostics.test.js) +39 case；messageBuilder 用 `isProviderFailureAssistantMessage` 在 `buildModelMessagesFromChat` 入口剔掉。**意图**：UI 仍展示完整诊断给用户看，但下一轮 prompt 不携带这些 noise，省 token + 防 Codex 拿失败诊断当后续上下文。
-- **Codex cyber_policy 文案**：[src/services/chat/providerErrors.js](src/services/chat/providerErrors.js) 加 `cyber_policy` / `possible cybersecurity risk` 分支文案；[src/openai.js](src/openai.js) `readCodexSseResponse` 抓嵌套 SSE error；[src/desktopStore.error-messaging.test.js](src/desktopStore.error-messaging.test.js) +1 + [src/openai.codex-inline-image.test.js](src/openai.codex-inline-image.test.js) +1 case 钉合同。
-
-测试：`npm test` 完整 GREEN（含 desktop smoke 4 项 + 全部 src test）。
-
----
-## 2026-05-06 — Codex 实现的 desktop 层：WKWebView 外链路由 / link-card preview / 静态资源 no-cache
-
-本批同样 Codex 完成。5 个文件：
-
-- **WKWebView 外链路由**：[desktop-app/main.swift](desktop-app/main.swift) +48 行加 `webView decidePolicyFor` 拦截：URL `http(s)` 且 `host:port` 不等于 server URL 的，调 `NSWorkspace.shared.open(url)` → 系统浏览器；同时支持前端 message handler `openExternalUrl`。**意图**：用户点 chat 里的链接卡片或 markdown 链接，跳系统浏览器而非在 WKWebView 内 navigate（之前会替换整个 app shell）。
-- **link-card preview**：[desktop-ui/styles.css](desktop-ui/styles.css) +57 行加 `.link-card-main` flex container + `.link-preview` (image + copy) + `.link-preview-image` 76×76 缩略图样式；[desktop-ui/app.js](desktop-ui/app.js) +140 行配套 render。
-- **静态资源 no-cache**：[src/server.js](src/server.js) `.html/.js/.css` 加 `cache-control: no-cache`，并对 attachment classifier 模块单独标 no-cache（之前 1 天 cache 让 Douyin/Xiaohongshu 链接修复要等用户重启 app）。
-- **smoke 验证**：[scripts/smoke-desktop.js](scripts/smoke-desktop.js) +23 行新断言。
+- 2026-05-06 — Codex C 第三轮闭环：抽 `routeHttpUrlClick` helper，`<a>` 和 `[data-external-url]` 卡片分支共用；same-origin → location.assign / external → openExternalUrl / invalid → 分支化处理。UI 套 187/187（`9f29a16` 接续 commit）。
+- 2026-05-06 — Codex C 第二轮闭环：context filter 收到 5 个 verbatim marker 删裸词，同源 URL 强制 `location.assign` 绕 `target="_blank"` 陷阱（`12e1358`）。
+- 2026-05-06 — Codex C 首轮闭环：context filter 删 `|cookie|cookies` 裸词改特异短语，JS 同源 URL 不再 preventDefault（`bc823ac` + `9ece26f`）。
+- 2026-05-06 — Codex 实现 backend 链路升级：`socialLinkTool` +911 行 / 视频 keyframe 入 prompt / 新 `contextFilters` 模块过滤 assistant 失败诊断 / Codex `cyber_policy` 文案分支。23 src 文件（`bc823ac`）。
+- 2026-05-06 — Codex 实现 desktop 层：WKWebView 外链路由 `decidePolicyFor` 跳系统浏览器 / link-card preview / 静态资源 `cache-control: no-cache`（修 1 天 cache 让用户必须重启的 bug）。5 文件（`9ece26f`）。
 
 ---
 
