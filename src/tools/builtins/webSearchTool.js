@@ -1599,8 +1599,19 @@ export const webSearchTool = {
     // pays the SERP latency on repeat queries.
     if (!noCache) {
       const tCache = Date.now();
+      // G-1c follow-up #1 (Codex C 闭环 2026-05-10): cache phase entry
+      // abort gate.  Pre-fix, an aborted signal would still let cache
+      // fresh/stale return a successful result and queue a SWR refresh —
+      // user-decided contract on 2026-05-10: Stop semantics outranks
+      // cache hit.  Without this gate, a user-cancelled search shows
+      // stale rows in the UI and silently spawns a background SERP task.
+      if (signal?.aborted) return bailAbortedWebSearch(trail, 'cache', q, { intent, spanId });
       const fresh = getCachedSearch(q, intent);
       if (fresh) {
+        // Re-check after the (synchronous) lookup — covers the race where
+        // the signal flips between entry and lookup (rare but real on
+        // very-tight Stop bursts).
+        if (signal?.aborted) return bailAbortedWebSearch(trail, 'cache', q, { intent, spanId });
         recordWebSearchTrail(trail, 'cache', 'ok', {
           latencyMs: Date.now() - tCache,
           method: 'fresh',
@@ -1639,6 +1650,10 @@ export const webSearchTool = {
 
       const stale = getStaleCachedSearch(q, intent);
       if (stale) {
+        // Same abort gate as fresh hit above: stale path is even worse on
+        // abort because it queues a background SWR refresh that re-runs
+        // SERP — exactly what Stop is supposed to prevent.
+        if (signal?.aborted) return bailAbortedWebSearch(trail, 'cache', q, { intent, spanId });
         recordWebSearchTrail(trail, 'cache', 'ok', {
           latencyMs: Date.now() - tCache,
           method: 'stale-swr',
@@ -1657,8 +1672,13 @@ export const webSearchTool = {
         // Background refresh — fire-and-forget, but deduped per cache key.
         // Search bootstrap can poll while the search page is open; without
         // this guard each poll queues another Playwright SERP task.
+        // G-1c follow-up #1: don't queue SWR if signal already aborted —
+        // belt-and-braces with the abort gate above (covers the case where
+        // the signal flips during getStaleCachedSearch).
         const refreshKey = buildCacheKey(q, intent);
-        if (!_backgroundRefreshInFlight.has(refreshKey)) {
+        if (signal?.aborted) {
+          writeWebSearchDebugLine(`[cache] span=${spanId} hit=stale refresh=skipped-aborted`);
+        } else if (!_backgroundRefreshInFlight.has(refreshKey)) {
           _backgroundRefreshInFlight.add(refreshKey);
           queueMicrotask(() => {
             _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config)

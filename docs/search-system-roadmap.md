@@ -158,6 +158,20 @@ context，UI search bar 直接读同一存储；agent 回答时引用 `evidenceI
 
 ## #5 Abort 链路 + prompt injection 防御
 
+**G-1c follow-up note (2026-05-10)**: Codex C-闭环时标记 P1 留这里: SERP
+`searchViaPlaywright` + content-fetch `fetchViaPlaywrightCli` 不接 signal,
+abort 期间 PW CLI 子进程要等自己跑完才退出。webSearchTool 已做"abort
+时跳过下一 phase + 不排 SWR 刷新"最小修复(commit X-tbd),但 PW CLI 真
+取消是跨 5+ 文件大改,留这个 milestone 集中做:
+  • `src/web/playwrightFetcher.js`: fetchPageViaPlaywright(signal)
+  • `src/tools/builtins/webSearchTool.js`: searchViaPlaywright(signal)
+  • PW CLI 子进程 spawn 加 `signal.addEventListener('abort', () => proc.kill())`
+  • `externalReaders.js`: 同款 signal threading
+  • 测试: signal abort during PW await → 子进程 kill 验证
+
+---
+
+
 两条都是上线后防回归性的硬伤，独立于 #1-#4。
 
 **Abort**：用户 Stop / 切 chat / 关 desktop 时 Playwright 子进程 / 各

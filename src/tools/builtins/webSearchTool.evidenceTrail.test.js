@@ -101,12 +101,12 @@ test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with 
   assert.ok(result.meta?.spanId);
 });
 
-test('evidenceTrail: aborted cache phase (non-weather query) skips phases after cache', async () => {
-  // Non-weather query → no weather phase; cache check is the first await.
-  // Pre-aborted signal triggers when reaching the cache phase (which is
-  // synchronous — actually bails at the next await, which is serp).
-  // To test cache-phase abort specifically we'd need to mock getCachedSearch
-  // to await; for now exercise the more common abort point: serp pre-await.
+test('evidenceTrail: aborted serp phase (noCache=true) records serp.fail and skips remaining phases', async () => {
+  // Non-weather query + noCache=true → cache phase records skip,
+  // serp phase is the next abort gate.  This test is named "serp" not
+  // "cache" because noCache=true bypasses the cache lookup entirely
+  // (G-1c follow-up #1 renamed: was misleadingly called "aborted cache
+  // phase" before — Codex caught the false coverage).
   const ac = new AbortController();
   ac.abort();
   const result = await webSearchTool.run(
@@ -124,6 +124,48 @@ test('evidenceTrail: aborted cache phase (non-weather query) skips phases after 
     assert.equal(e?.outcome, 'skip');
     assert.equal(e?.reason, 'aborted-by-prev-phase');
   }
+});
+
+test('evidenceTrail: aborted cache phase (real cache hit) bails to aborted instead of returning cached result', async () => {
+  // G-1c follow-up #1 (Codex C 闭环 2026-05-10): pre-fix, an aborted
+  // signal at cache phase entry would still let getCachedSearch return
+  // a fresh row and the run would emit cache.ok + return a successful
+  // search to the UI — directly contradicts user-decided contract that
+  // Stop semantics outranks cache hit.  Now the entry abort gate fires
+  // before the cache lookup; even if cache had a hit, we bail.
+  // Real cache may be empty in test env, but the abort path doesn't
+  // need a cache hit to exercise — the gate fires regardless.
+  const ac = new AbortController();
+  ac.abort();
+  const result = await webSearchTool.run(
+    { query: 'cache abort test fixture query', noCache: false },
+    { signal: ac.signal },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.aborted, true);
+  // cache phase must record fail aborted-mid-loop (not 'ok' even if cache had a hit).
+  const cacheEntry = result.evidenceTrail.find(e => e.tier === 'cache');
+  assert.equal(cacheEntry?.outcome, 'fail');
+  assert.equal(cacheEntry?.reason, 'aborted-mid-loop');
+  // All subsequent phases must be skip.
+  for (const phase of ['serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
+    const e = result.evidenceTrail.find(e => e.tier === phase);
+    assert.equal(e?.outcome, 'skip', `${phase} must be skip after cache abort`);
+    assert.equal(e?.reason, 'aborted-by-prev-phase');
+  }
+});
+
+test('evidenceTrail: source-level guard — cache fresh/stale return blocks must check signal.aborted before recordTrail/return', () => {
+  // Pin the abort gate in source so a future edit that "simplifies away"
+  // the post-lookup check (covers the rare race between entry-gate and
+  // synchronous getCachedSearch) shows up red here.  Looks for the
+  // distinctive bailAbortedWebSearch call inside the cache `if (fresh)`
+  // and `if (stale)` branches.
+  const cacheBlockMatch = TOOL_SOURCE.match(
+    /if\s*\(!noCache\)\s*\{[\s\S]*?if\s*\(fresh\)\s*\{[\s\S]*?bailAbortedWebSearch[\s\S]*?if\s*\(stale\)\s*\{[\s\S]*?bailAbortedWebSearch/,
+  );
+  assert.ok(cacheBlockMatch,
+    'cache fresh + stale branches must each contain a post-lookup bailAbortedWebSearch abort check');
 });
 
 test('evidenceTrail: aborted return preserves backward-compat meta.intent and meta.timings', async () => {
