@@ -19,6 +19,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   runDreamingSweep,
   isSweepRunning,
@@ -28,7 +31,17 @@ import {
   withTransaction,
   upsertMemory,
   recallMemories,
+  _resetStoreForTests,
 } from '../store.js';
+
+// Phase E follow-up (2026-05-08): isolate MELO_HOME per test so upsertMemory
+// + runDreamingSweep don't write into the developer's real ~/.melo/desktop/
+// store.sqlite.  Before this fix every `node --test` run added a few
+// `bugD-concurrency-...` rows to the production memory store and a fixture
+// dream record to ~/.melo/desktop/dreams/.  Pairs with diary.js's
+// call-time DREAMS_DIR fix.
+let _isolatedHome = null;
+let _prevMeloHome;
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
@@ -56,6 +69,18 @@ function makeParkableClassifier() {
 
 test.beforeEach(() => {
   _resetSweepMutexForTests();
+  _prevMeloHome = process.env.MELO_HOME;
+  _isolatedHome = mkdtempSync(join(tmpdir(), 'melo-sweep-test-'));
+  process.env.MELO_HOME = _isolatedHome;
+  _resetStoreForTests();
+});
+
+test.afterEach(() => {
+  _resetStoreForTests();
+  try { rmSync(_isolatedHome, { recursive: true, force: true }); } catch {}
+  if (_prevMeloHome === undefined) delete process.env.MELO_HOME;
+  else process.env.MELO_HOME = _prevMeloHome;
+  _isolatedHome = null;
 });
 
 // ─── mutex ────────────────────────────────────────────────────────────────

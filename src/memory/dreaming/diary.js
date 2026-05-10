@@ -11,14 +11,24 @@ import { mkdirSync, existsSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { getMeloHome } from '../../config.js';
 
-const DREAMS_DIR = join(getMeloHome(), 'desktop', 'dreams');
+// Resolve at call time (synchronous path), not at module load.  Module-load
+// resolution froze DREAMS_DIR to whatever MELO_HOME pointed at when the test
+// process first imported diary.js — so test suites that later set
+// process.env.MELO_HOME = mkdtempSync(...) silently kept writing to the
+// production ~/.melo/desktop/dreams/.  Compatible with CLAUDE.md §6: this is
+// the synchronous write path, not an async-boundary capture, so reading
+// getMeloHome() here is correct (the upstream sweep caller already captured
+// home for the duration of the sweep).
+function dreamsDir() {
+  return join(getMeloHome(), 'desktop', 'dreams');
+}
 
 /**
  * Build the diary file path for the given ISO timestamp.
  */
 export function diaryPathFor(iso = new Date().toISOString()) {
   const day = iso.slice(0, 10); // YYYY-MM-DD
-  return join(DREAMS_DIR, `${day}.md`);
+  return join(dreamsDir(), `${day}.md`);
 }
 
 /**
@@ -112,4 +122,8 @@ export function appendDreamRecord(record) {
   return path;
 }
 
-export const DREAMS_PATHS = { DREAMS_DIR };
+// Public path accessor — kept for any external consumer.  Use a getter so
+// callers always see the current home (mirrors dreamsDir() above).
+export const DREAMS_PATHS = {
+  get DREAMS_DIR() { return dreamsDir(); },
+};

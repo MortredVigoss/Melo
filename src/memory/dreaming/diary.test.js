@@ -1,15 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { appendDreamRecord, diaryPathFor } from './diary.js';
 
-test('diaryPathFor generates YYYY-MM-DD file name', () => {
+// Phase E follow-up (2026-05-08): isolate MELO_HOME so appendDreamRecord
+// does NOT write into the developer's real ~/.melo/desktop/dreams/.  Before
+// this fix, every `node --test` run polluted the production diary with
+// fixture rows ("Examined: 12 / Promoted: 2 / Demoted: 1 / Hit pruned: 5"
+// — see ~/.melo/desktop/dreams/2026-04-22..05-07.md), making it impossible
+// to read real consolidation activity from the diary.  Pairs with the
+// diary.js fix that switched DREAMS_DIR from module-load to call-time
+// resolution, so a per-test MELO_HOME actually takes effect.
+function isolateHome(t) {
+  const before = process.env.MELO_HOME;
+  const home = mkdtempSync(join(tmpdir(), 'melo-diary-test-'));
+  process.env.MELO_HOME = home;
+  t.after(() => {
+    try { rmSync(home, { recursive: true, force: true }); } catch {}
+    if (before === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = before;
+  });
+  return home;
+}
+
+test('diaryPathFor generates YYYY-MM-DD file name', (t) => {
+  isolateHome(t);
   const iso = '2026-04-18T10:00:00.000Z';
   const path = diaryPathFor(iso);
   assert.ok(path.endsWith('2026-04-18.md'));
 });
 
-test('appendDreamRecord writes a fresh file with header + counts', () => {
+test('appendDreamRecord writes a fresh file with header + counts', (t) => {
+  isolateHome(t);
   const iso = new Date().toISOString();
   const record = {
     startedAt: iso,
@@ -33,7 +57,8 @@ test('appendDreamRecord writes a fresh file with header + counts', () => {
   assert.ok(content.includes('hot'));
 });
 
-test('appendDreamRecord is append-only across runs', () => {
+test('appendDreamRecord is append-only across runs', (t) => {
+  isolateHome(t);
   const iso = new Date().toISOString();
   const record = {
     startedAt: iso,
