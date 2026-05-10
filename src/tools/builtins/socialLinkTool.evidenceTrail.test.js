@@ -298,6 +298,76 @@ test('readSocialLink: direct URL external-reader await-after abort still records
   // external-reader is the last tier — nothing to skip after.
 });
 
+// ─── G-1b follow-up #3 (Codex C round-3 闭环 2026-05-10) ─────────────────
+//
+// Catch-path abort: when the awaited sub-fn rejects with AbortError (or
+// the signal flips during the await and the sub-fn throws for unrelated
+// reasons), the catch block must route through bailAbortedSocial too —
+// not classifySocialError.  Otherwise the trail records reason='aborted'
+// (generic) instead of 'aborted-mid-loop' AND remaining tiers don't get
+// skip entries → 5-row schema breaks the same way as the resolve-null
+// path before round-2.
+
+function makeAbortRejector(ac) {
+  return async () => {
+    ac.abort();
+    const err = new Error('aborted via reject');
+    err.name = 'AbortError';
+    throw err;
+  };
+}
+
+test('readSocialLink: share-preview catch-path abort (sub-fn throws AbortError) records aborted-mid-loop + 5-row schema', async () => {
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.xiaohongshu.com/explore/abc', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: makeAbortRejector(ac),
+    browserPreviewFn: async () => ({ title: 'must not see', score: 100 }),
+    externalReaderFn: async () => ({ content: 'must not see' }),
+  });
+  assert.equal(out.aborted, true);
+  const shareEntry = out.evidenceTrail.find(e => e.tier === 'share-preview');
+  assert.equal(shareEntry?.outcome, 'fail');
+  assert.equal(shareEntry?.reason, 'aborted-mid-loop',
+    `catch-path abort must classify as aborted-mid-loop (not generic 'aborted'); got ${shareEntry?.reason}`);
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'browser' && e.outcome === 'skip'),
+    'browser must still get skip entry on catch-path abort');
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'skip'),
+    'external-reader must still get skip entry on catch-path abort');
+});
+
+test('readSocialLink: browser catch-path abort records aborted-mid-loop + external-reader.skip', async () => {
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.douyin.com/video/abc', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: async () => null,
+    browserPreviewFn: makeAbortRejector(ac),
+    externalReaderFn: async () => ({ content: 'must not see' }),
+  });
+  assert.equal(out.aborted, true);
+  const browserEntry = out.evidenceTrail.find(e => e.tier === 'browser');
+  assert.equal(browserEntry?.outcome, 'fail');
+  assert.equal(browserEntry?.reason, 'aborted-mid-loop');
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'skip'));
+});
+
+test('readSocialLink: external-reader catch-path abort records aborted-mid-loop (no remaining tiers)', async () => {
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.xiaohongshu.com/discovery/item/zzz', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: async () => null,
+    browserPreviewFn: async () => null,
+    externalReaderFn: makeAbortRejector(ac),
+  });
+  assert.equal(out.aborted, true);
+  const externalEntry = out.evidenceTrail.find(e => e.tier === 'external-reader');
+  assert.equal(externalEntry?.outcome, 'fail');
+  assert.equal(externalEntry?.reason, 'aborted-mid-loop');
+});
+
 test('readSocialLink: trail entry uses `extra` (not `metadata`) so cross-tool grep stays clean', async () => {
   // Source-level guard mirroring the fetchUrlTool one — trail entries must
   // never use `metadata:` field name to avoid colliding with the legacy

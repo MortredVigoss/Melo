@@ -1259,6 +1259,17 @@ export async function readSocialLink(url, {
       sharePreviewMissReason = 'no-preview-fn';
     }
   } catch (err) {
+    // G-1b follow-up #3 (Codex C round-3 闭环 2026-05-10): if the catch
+    // is firing because the signal was aborted (either signal.aborted
+    // flipped during the await, or sub-fn rejected with AbortError),
+    // route through bailAbortedSocial to keep the same 5-row schema as
+    // the await-resolve / loop-top abort paths.  Without this, AbortError
+    // throws were classified by classifySocialError (returning 'aborted'
+    // generic, not 'aborted-mid-loop') and remaining tiers were never
+    // skipped.
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return bailAbortedSocial(trail, 'share-preview', ['browser', 'external-reader'], canonical);
+    }
     // Preview miss — continue to browser fallback.
     sharePreviewMissReason = classifySocialError(err);
   }
@@ -1331,6 +1342,11 @@ export async function readSocialLink(url, {
       browserMissReason = 'no-browser-fn';
     }
   } catch (err) {
+    // G-1b follow-up #3: catch-path abort routes through bailAbortedSocial
+    // (see share-preview block above for full rationale).
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return bailAbortedSocial(trail, 'browser', ['external-reader'], canonical);
+    }
     // Browser miss — continue to cheap unfurl fallback.
     browserMissReason = classifySocialError(err);
   }
@@ -1389,6 +1405,12 @@ export async function readSocialLink(url, {
       externalMissReason = 'no-reader-fn';
     }
   } catch (err) {
+    // G-1b follow-up #3: catch-path abort routes through bailAbortedSocial
+    // (see share-preview block above).  external-reader has no remaining
+    // tiers, so the helper records just the current tier as fail.
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return bailAbortedSocial(trail, 'external-reader', [], canonical);
+    }
     // External reader miss — keep the existing shallow preview fallback.
     externalMissReason = classifySocialError(err);
   }
