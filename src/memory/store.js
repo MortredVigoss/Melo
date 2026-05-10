@@ -1329,6 +1329,24 @@ export function recallMemories({
 
           if (mmrSorted.length > 0) {
             logRecallScores('recallMemories.semantic', mmrSorted, query);
+            // Phase E follow-up (2026-05-10): mirror the tiered path's
+            // hit-recording.  Without this, flat recall (the default path,
+            // gated by MELO_MEMORY_TIERS_RECALL=0) never writes
+            // memory_hits, so dreaming gates' recall + outcome scoring is
+            // dead.  Production stores have shown 0 memory_hits rows
+            // despite 1k+ memories accumulated over months — this is the
+            // root cause.  See recordMemoryHitsBatch(...) in the tiered
+            // path at the buildRecallQuery branch below for the symmetric
+            // call site.
+            try {
+              const qHash = query
+                ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
+                : null;
+              const hits = mmrSorted.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
+              recordMemoryHitsBatch(hits);
+            } catch (err) {
+              debugWarn('memory.recall.hits', 'recallMemories semantic hit log failed', err?.message || err);
+            }
             return touchRows(mmrSorted);
           }
         }
@@ -1371,6 +1389,22 @@ export function recallMemories({
   }
 
   logRecallScores('recallMemories.keyword', rows, query);
+  // Phase E follow-up (2026-05-10): symmetric hit log to the semantic
+  // branch above.  Keyword fallback path also needs to feed dreaming
+  // gates' recall/outcome scoring; without this the flat path is silent
+  // and memory_hits stays empty.  See the semantic branch comment for
+  // the full root-cause writeup.
+  if (rows.length > 0) {
+    try {
+      const qHash = query
+        ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
+        : null;
+      const hits = rows.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
+      recordMemoryHitsBatch(hits);
+    } catch (err) {
+      debugWarn('memory.recall.hits', 'recallMemories keyword hit log failed', err?.message || err);
+    }
+  }
   return touchRows(rows);
 }
 
