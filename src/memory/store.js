@@ -407,8 +407,15 @@ function getCachedEmbedding(text, modelId = null, database = null) {
  * Bug B fix: keyed by (text_hash, model_id) so two providers sharing the
  * same dims can coexist without poisoning each other's cache rows.
  */
+/**
+ * @returns {boolean} true if all three writes (cache + memories + vec) committed,
+ *   false if `embedding` was missing or any write threw inside the transaction.
+ *   Callers that key off this (e.g. memoryPromotion.js's clearNeedsReembed) must
+ *   only act on `true` — the prior void return silently let them clear the
+ *   reembed flag even when the vec0 write rolled back.
+ */
 function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
-  if (!embedding) return;
+  if (!embedding) return false;
   const database = getDb();
   const buf = Buffer.from(embedding.buffer);
   const hash = textHash(searchText);
@@ -454,11 +461,13 @@ function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
         ).run(memoryId, buf);
       }
     });
+    return true;
   } catch (err) {
     // Best-effort — surface via MELO_DEBUG=memory.store.cache.
     // Transaction rollback is automatic when runInTransaction throws,
     // so partial state never reaches disk on failure.
     debugWarn('memory.store.cache', `storeEmbedding failed for memoryId=${memoryId}`, err?.message || err);
+    return false;
   }
 }
 
@@ -1298,7 +1307,7 @@ function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx) {
  * @param {string|null}  [modelId]    optional — overrides _meta resolution
  */
 export function saveMemoryEmbedding(memoryId, searchText, embedding, modelId = null) {
-  storeEmbedding(memoryId, searchText, embedding, modelId);
+  return storeEmbedding(memoryId, searchText, embedding, modelId);
 }
 
 /**

@@ -227,8 +227,15 @@ export async function scheduleEmbeddingFillIn(config) {
       if (!searchText) continue;
       const embedding = await _getEmbedding(searchText, config).catch(() => null);
       if (embedding) {
-        saveMemoryEmbedding(id, searchText, embedding);
-        if (needsReembed) {
+        // Codex pre-pp B follow-up (2026-05-10): only clear the reembed flag
+        // when the write actually committed.  Pre-fix, saveMemoryEmbedding's
+        // catch swallowed vec-dim / sqlite-busy / disk-full failures while
+        // still returning void, and the unconditional clearNeedsReembed below
+        // permanently cancelled retry — leaving the row stuck on the stale
+        // embedding forever.  saveMemoryEmbedding now returns boolean; gate
+        // clearNeedsReembed on it.
+        const wrote = saveMemoryEmbedding(id, searchText, embedding);
+        if (wrote && needsReembed) {
           clearNeedsReembed([id]);
         }
       }

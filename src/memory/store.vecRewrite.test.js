@@ -343,6 +343,58 @@ test('storeEmbedding nests inside an outer withTransaction without throwing (SAV
   });
 });
 
+test('saveMemoryEmbedding returns true on success and false on swallowed failure (callers gate retry on this)', async (t) => {
+  // Codex pre-pp B follow-up (2026-05-10): memoryPromotion.scheduleEmbeddingFillIn
+  // used to call saveMemoryEmbedding then unconditionally clearNeedsReembed —
+  // a vec-dim failure or sqlite-busy was silently swallowed by the inner
+  // try/catch and the void return left the caller no way to know the row
+  // didn't actually get embedded.  Now boolean; this pins both legs.
+  await withSkippableSqliteVec(t, () => {
+    writeStoredEmbeddingModelId('test-model');
+    upsertMemory({
+      id: 'mem-RC-ok',
+      namespace: 'chat:rc',
+      kind: 'prompt',
+      sourceId: 'm-rc-ok',
+      text: 'rc ok',
+      metadata: {},
+    });
+    upsertMemory({
+      id: 'mem-RC-fail',
+      namespace: 'chat:rc',
+      kind: 'prompt',
+      sourceId: 'm-rc-fail',
+      text: 'rc fail',
+      metadata: {},
+    });
+
+    // Success leg — happy path returns true.
+    assert.equal(
+      saveMemoryEmbedding('mem-RC-ok', 'rc ok', fakeEmbedding(7), 'test-model'),
+      true,
+      'successful write returns true',
+    );
+
+    // Failure leg — wrong-dim embedding triggers vec0 INSERT throw (caught
+    // and surfaced via debugWarn); return value MUST be false so caller
+    // skips clearNeedsReembed.
+    const wrongDim = new Float32Array(512);
+    for (let i = 0; i < wrongDim.length; i++) wrongDim[i] = 0.1;
+    assert.equal(
+      saveMemoryEmbedding('mem-RC-fail', 'rc fail', wrongDim, 'test-model'),
+      false,
+      'swallowed write failure returns false (so callers do not falsely clear retry flags)',
+    );
+
+    // Empty/null embedding leg — also false (was the pre-fix early `return;`).
+    assert.equal(
+      saveMemoryEmbedding('mem-RC-ok', 'rc ok', null, 'test-model'),
+      false,
+      'null embedding returns false',
+    );
+  });
+});
+
 test('storeEmbedding rolls back vec_memories DELETE when the matching INSERT fails (atomicity proof)', async (t) => {
   await withSkippableSqliteVec(t, () => {
     writeStoredEmbeddingModelId('test-model');
