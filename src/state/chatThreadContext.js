@@ -100,6 +100,36 @@ export function ensureChatThreadContext(chat, latestUserMessage = '') {
   return resolved;
 }
 
+function buildChatRuntimeCheckpoint(chat = {}) {
+  return {
+    sessionMemory: Array.isArray(chat.sessionMemory) ? chat.sessionMemory : [],
+    memoryLastExtractedAt: Number.isFinite(Number(chat.memoryLastExtractedAt))
+      ? Number(chat.memoryLastExtractedAt)
+      : 0,
+    memoryLastExtractedAtCount: Number.isFinite(Number(chat.memoryLastExtractedAtCount))
+      ? Number(chat.memoryLastExtractedAtCount)
+      : 0,
+    compactSummary:
+      typeof chat.compactSummary === 'string' ? chat.compactSummary.trim() : '',
+    compactBoundaryMessageId:
+      typeof chat.compactBoundaryMessageId === 'string'
+        ? chat.compactBoundaryMessageId.trim()
+        : '',
+    compactedMessageCount:
+      Number.isFinite(Number(chat.compactedMessageCount)) && Number(chat.compactedMessageCount) >= 0
+        ? Number(chat.compactedMessageCount)
+        : 0,
+    compactedAt:
+      typeof chat.compactedAt === 'string' && chat.compactedAt.trim()
+        ? chat.compactedAt
+        : null,
+    compactFailures:
+      Number.isFinite(Number(chat.compactFailures)) && Number(chat.compactFailures) >= 0
+        ? Number(chat.compactFailures)
+        : 0,
+  };
+}
+
 export function buildThreadCheckpointPayload(chat, threadContext) {
   return {
     version: 1,
@@ -112,6 +142,7 @@ export function buildThreadCheckpointPayload(chat, threadContext) {
       threadContextDerivedFromMessageId: threadContext?.derivedFromMessageId || null,
       memorySummary: renderStructuredThreadMemorySnapshot(threadContext),
       renderedThreadContext: renderStructuredThreadContext(threadContext),
+      chatRuntime: buildChatRuntimeCheckpoint(chat),
     },
   };
 }

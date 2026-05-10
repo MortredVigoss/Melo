@@ -68,8 +68,18 @@ export class ChromaProvider extends MemoryProvider {
   }
 
   async replaceAll(entries = []) {
-    // Chroma doesn't have an atomic "replace all" — we just upsert in bulk.
-    // Collection drop/recreate is intentionally not exposed here.
+    // Best-effort snapshot semantics: clear the collection before replaying
+    // the new snapshot so stale rows do not survive a rebuild. Chroma's HTTP
+    // API has varied across versions; if delete is unavailable we still upsert
+    // the fresh rows rather than failing the memory pipeline.
+    try {
+      await this._fetch(`/api/v1/collections/${this.collection}/delete`, {
+        method: 'POST',
+        body: JSON.stringify({ where: {} }),
+      });
+    } catch {
+      // Older Chroma versions may reject collection-wide delete.
+    }
     for (const e of entries) {
       // eslint-disable-next-line no-await-in-loop
       await this.upsert(e);

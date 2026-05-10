@@ -19,6 +19,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   promoteAndPersistFacts,
   scheduleEmbeddingFillIn,
@@ -30,6 +33,9 @@ import {
   saveMemoryEmbedding,
   recallMemories,
   getMemoriesWithoutEmbeddings,
+  mergeMemoryInto,
+  listMemoriesNeedingReembed,
+  _resetStoreForTests,
 } from './store.js';
 import { EMBEDDING_DIMS } from './embeddings.js';
 
@@ -73,10 +79,28 @@ function makeCountingStub(impl) {
   return fn;
 }
 
-// Teardown resets the hook between tests so a misbehaving test can't leak
-// its stub into a neighbour.
-test.afterEach(() => {
+let tempHome = null;
+let prevHome = null;
+
+test.beforeEach(async () => {
+  tempHome = await mkdtemp(join(tmpdir(), 'melo-promotion-'));
+  prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = tempHome;
+  _resetStoreForTests?.();
+});
+
+// Teardown resets the hook and temp store between tests so a misbehaving test
+// can't leak its stub or promoted rows into a neighbour.
+test.afterEach(async () => {
   _setGetEmbeddingForTests(null);
+  _resetStoreForTests?.();
+  if (prevHome === undefined) delete process.env.MELO_HOME;
+  else process.env.MELO_HOME = prevHome;
+  if (tempHome) {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+  tempHome = null;
+  prevHome = null;
 });
 
 // ─── scenarios ────────────────────────────────────────────────────────────
@@ -266,4 +290,68 @@ test('scheduleEmbeddingFillIn: consumes the DI hook and persists returned embedd
   const target = rows.find(r => r.id === targetId);
   assert.ok(target, 'target row is readable');
   assert.ok(target.embedding, 'target row has an embedding blob');
+});
+
+test('scheduleEmbeddingFillIn: refreshes merge survivors flagged needsReembed', async () => {
+  const agentId = `bugC-reembed-${Date.now()}`;
+  const ns = `agent:${agentId}`;
+  const src = `reembed-src-${agentId}`;
+  const tgt = `reembed-tgt-${agentId}`;
+  upsertMemory({
+    id: src,
+    namespace: ns,
+    kind: PROMOTED_KIND,
+    text: 'source duplicate fact',
+    searchText: 'source duplicate fact',
+  });
+  upsertMemory({
+    id: tgt,
+    namespace: ns,
+    kind: PROMOTED_KIND,
+    text: 'target canonical fact',
+    searchText: 'target canonical fact',
+  });
+
+  mergeMemoryInto({ sourceId: src, targetId: tgt });
+  assert.ok(
+    listMemoriesNeedingReembed({ limit: 50 }).some(row => row.id === tgt),
+    'merged survivor is queued for re-embedding',
+  );
+
+  const stub = makeCountingStub(() => fakeVec(0.42));
+  _setGetEmbeddingForTests(stub);
+  await scheduleEmbeddingFillIn({});
+
+  assert.equal(
+    listMemoriesNeedingReembed({ limit: 50 }).some(row => row.id === tgt),
+    false,
+    'successful fill-in clears needsReembed',
+  );
+});
+
+test('promoteAndPersistFacts prunes promoted session facts beyond per-agent cap', async () => {
+  const agentId = `bugC-cap-${Date.now()}`;
+  const chat = {
+    id: 'chat-cap',
+    title: 'cap',
+    sessionMemory: Array.from({ length: 205 }, (_, index) => ({
+      fact: `cap fact ${index.toString().padStart(3, '0')}`,
+      category: 'cap-test',
+      extractedAt: new Date(Date.now() + index).toISOString(),
+    })),
+  };
+
+  const stub = makeCountingStub(() => null);
+  _setGetEmbeddingForTests(stub);
+
+  const promoted = await promoteAndPersistFacts(chat, agentId, {});
+  assert.equal(promoted, 205);
+
+  const rows = recallMemories({
+    namespaces: [`agent:${agentId}`],
+    kinds: [PROMOTED_KIND],
+    limit: 300,
+    sideEffects: false,
+  });
+  assert.equal(rows.length, 200, 'only the newest 200 promoted facts remain');
 });

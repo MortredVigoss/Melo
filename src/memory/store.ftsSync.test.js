@@ -12,7 +12,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertMemory } from './store.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { upsertMemory, _resetStoreForTests } from './store.js';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -41,6 +43,24 @@ function ftsRowCount(db, memoryId) {
 
 const NS = 'test:bug-a:fts-sync';
 const MEM_ID = `bug-a-fts-${Date.now()}`;
+let tempHome = null;
+let prevHome = null;
+
+test.before(async () => {
+  tempHome = await mkdtemp(join(tmpdir(), 'melo-fts-sync-'));
+  prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = tempHome;
+  _resetStoreForTests?.();
+});
+
+test.after(async () => {
+  _resetStoreForTests?.();
+  if (prevHome === undefined) delete process.env.MELO_HOME;
+  else process.env.MELO_HOME = prevHome;
+  await rm(tempHome, { recursive: true, force: true });
+  tempHome = null;
+  prevHome = null;
+});
 
 test('upsertMemory: initial insert populates memories_fts', () => {
   upsertMemory({

@@ -6,14 +6,21 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAbsolute } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import {
   normalizeProject,
   normalizeChat,
   createDefaultState,
   hydrateState,
+  hydrateChatThreads,
   BUILTIN_CONNECTORS,
 } from './stateHydration.js';
+import {
+  saveThreadCheckpoint,
+  invalidateThreadCheckpointCache,
+} from '../memory/checkpointer.js';
 
 // ─── normalizeProject — relative workspacePath regression ───────────────────
 //
@@ -158,4 +165,72 @@ test('normalizeChat: preserves existing message metadata + viz/citations', () =>
   assert.deepEqual(m.viz, { type: 'mermaid', source: 'graph TD' });
   assert.deepEqual(m.citations, [{ filePath: 'a.md', startLine: 1, endLine: 2 }]);
   assert.deepEqual(m.metadata, { verificationRecord: { verdict: 'CORRECTED' } });
+});
+
+test('hydrateChatThreads: restores runtime session memory and compact state from checkpoint', async () => {
+  const threadsDir = await mkdtemp(join(tmpdir(), 'melo-thread-runtime-'));
+  try {
+    await saveThreadCheckpoint('runtime-chat', {
+      version: 1,
+      threadId: 'runtime-chat',
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:01:00.000Z',
+      messages: [
+        {
+          id: 'msg-runtime-1',
+          role: 'user',
+          content: 'remember I prefer concise notes',
+          createdAt: '2026-05-01T00:01:00.000Z',
+        },
+      ],
+      derived: {
+        chatRuntime: {
+          sessionMemory: [
+            {
+              fact: 'User prefers concise notes',
+              category: 'preference',
+              extractedAt: '2026-05-01T00:01:05.000Z',
+            },
+          ],
+          memoryLastExtractedAt: 1,
+          memoryLastExtractedAtCount: 1,
+          compactSummary: 'Earlier context was compacted.',
+          compactBoundaryMessageId: 'msg-runtime-1',
+          compactedMessageCount: 12,
+          compactedAt: '2026-05-01T00:02:00.000Z',
+          compactFailures: 0,
+        },
+      },
+    }, { threadsDir });
+
+    const state = {
+      chats: [
+        {
+          id: 'runtime-chat',
+          title: 'Runtime chat',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          updatedAt: '2026-05-01T00:01:00.000Z',
+        },
+      ],
+    };
+
+    await hydrateChatThreads(state, { threadsDir });
+    const chat = state.chats[0];
+    assert.deepEqual(chat.sessionMemory, [
+      {
+        fact: 'User prefers concise notes',
+        category: 'preference',
+        extractedAt: '2026-05-01T00:01:05.000Z',
+      },
+    ]);
+    assert.equal(chat.memoryLastExtractedAt, 1);
+    assert.equal(chat.memoryLastExtractedAtCount, 1);
+    assert.equal(chat.compactSummary, 'Earlier context was compacted.');
+    assert.equal(chat.compactBoundaryMessageId, 'msg-runtime-1');
+    assert.equal(chat.compactedMessageCount, 12);
+    assert.equal(chat.compactedAt, '2026-05-01T00:02:00.000Z');
+  } finally {
+    invalidateThreadCheckpointCache(null, { threadsDir });
+    await rm(threadsDir, { recursive: true, force: true });
+  }
 });

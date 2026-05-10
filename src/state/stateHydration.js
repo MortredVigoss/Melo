@@ -218,7 +218,10 @@ export function normalizeChat(chat) {
       Number.isFinite(Number(chat?.compactedMessageCount)) && Number(chat.compactedMessageCount) >= 0
         ? Number(chat.compactedMessageCount)
         : 0,
-    compactedAt: coerceIso(chat?.compactedAt),
+    compactedAt:
+      typeof chat?.compactedAt === 'string' && chat.compactedAt.trim()
+        ? coerceIso(chat.compactedAt)
+        : '',
     compactFailures:
       Number.isFinite(Number(chat?.compactFailures)) && Number(chat.compactFailures) >= 0
         ? Number(chat.compactFailures)
@@ -299,7 +302,36 @@ function threadCheckpointMatches(checkpoint, chat, threadContext) {
     (checkpointMessages[checkpointMessages.length - 1]?.id || null) ===
       (messages[messages.length - 1]?.id || null) &&
     checkpoint.updatedAt === chat?.updatedAt &&
-    checkpoint.derived?.threadContext?.derivedFromMessageId === threadContext?.derivedFromMessageId
+    checkpoint.derived?.threadContext?.derivedFromMessageId === threadContext?.derivedFromMessageId &&
+    chatRuntimeCheckpointMatches(checkpoint.derived?.chatRuntime, chat)
+  );
+}
+
+function chatRuntimeCheckpointMatches(runtime, chat) {
+  if (!runtime || typeof runtime !== 'object') {
+    const hasRuntimeState =
+      (Array.isArray(chat?.sessionMemory) && chat.sessionMemory.length > 0) ||
+      Boolean(chat?.memoryLastExtractedAt) ||
+      Boolean(chat?.memoryLastExtractedAtCount) ||
+      Boolean(chat?.compactSummary) ||
+      Boolean(chat?.compactBoundaryMessageId) ||
+      Boolean(chat?.compactedMessageCount) ||
+      Boolean(chat?.compactedAt) ||
+      Boolean(chat?.compactFailures);
+    return !hasRuntimeState;
+  }
+
+  return (
+    JSON.stringify(Array.isArray(runtime.sessionMemory) ? runtime.sessionMemory : []) ===
+      JSON.stringify(Array.isArray(chat?.sessionMemory) ? chat.sessionMemory : []) &&
+    (Number(runtime.memoryLastExtractedAt) || 0) === (Number(chat?.memoryLastExtractedAt) || 0) &&
+    (Number(runtime.memoryLastExtractedAtCount) || 0) ===
+      (Number(chat?.memoryLastExtractedAtCount) || 0) &&
+    String(runtime.compactSummary || '') === String(chat?.compactSummary || '') &&
+    String(runtime.compactBoundaryMessageId || '') === String(chat?.compactBoundaryMessageId || '') &&
+    (Number(runtime.compactedMessageCount) || 0) === (Number(chat?.compactedMessageCount) || 0) &&
+    String(runtime.compactedAt || '') === String(chat?.compactedAt || '') &&
+    (Number(runtime.compactFailures) || 0) === (Number(chat?.compactFailures) || 0)
   );
 }
 
@@ -324,8 +356,13 @@ export async function hydrateChatThreads(state, { threadsDir } = {}) {
       : Array.isArray(storedChat.messages)
         ? storedChat.messages
         : [];
+    const checkpointRuntime =
+      checkpoint?.derived?.chatRuntime && typeof checkpoint.derived.chatRuntime === 'object'
+        ? checkpoint.derived.chatRuntime
+        : {};
     const hydratedChat = normalizeChat({
       ...storedChat,
+      ...checkpointRuntime,
       messages: sourceMessages,
       memorySummary: '',
     });

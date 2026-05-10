@@ -4,13 +4,36 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   upsertMemory,
   deleteMemoryById,
   getHitStats,
   recordMemoryHit,
   cleanupOrphanHits,
+  _resetStoreForTests,
 } from './store.js';
+
+let tempHome = null;
+let prevHome = null;
+
+test.beforeEach(async () => {
+  tempHome = await mkdtemp(join(tmpdir(), 'melo-fkcascade-'));
+  prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = tempHome;
+  _resetStoreForTests?.();
+});
+
+test.afterEach(async () => {
+  _resetStoreForTests?.();
+  if (prevHome === undefined) delete process.env.MELO_HOME;
+  else process.env.MELO_HOME = prevHome;
+  await rm(tempHome, { recursive: true, force: true });
+  tempHome = null;
+  prevHome = null;
+});
 
 test('deleting a memory cascades to memory_hits', async () => {
   const id = 'fk-cascade-1';

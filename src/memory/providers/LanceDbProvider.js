@@ -75,6 +75,8 @@ export class LanceDbProvider extends MemoryProvider {
         kind: entry.kind,
         metadata: JSON.stringify(entry.metadata || {}),
       };
+      const safeId = String(entry.id).replace(/'/g, "''");
+      await table.delete(`id = '${safeId}'`).catch(() => {});
       await table.add([row]);
     } catch {
       // best-effort

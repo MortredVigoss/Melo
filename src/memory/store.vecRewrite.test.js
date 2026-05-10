@@ -31,6 +31,7 @@ import {
   upsertMemory,
   saveMemoryEmbedding,
   writeStoredEmbeddingModelId,
+  withTransaction,
   _resetStoreForTests,
 } from './store.js';
 
@@ -305,5 +306,79 @@ test('storeEmbedding 10x rewrites of the same id stay clean', async (t) => {
     }
     const vecCount = vecCountForId('mem-C');
     assert.equal(vecCount, 1, '10 rewrites still leave exactly one row');
+  });
+});
+
+// Phase F-2c follow-up #2 (2026-05-10): atomicity coverage for the
+// runInTransaction wrap added to storeEmbedding.  6861892's
+// DELETE-then-INSERT pattern is correct ONLY when both statements run
+// atomically; without a surrounding transaction a process kill, sqlite-busy,
+// or vec0 INSERT validation failure between DELETE and INSERT leaves
+// vec_memories permanently missing the row even though embedding_cache +
+// memories.embedding already committed.
+
+test('storeEmbedding nests inside an outer withTransaction without throwing (SAVEPOINT path)', async (t) => {
+  await withSkippableSqliteVec(t, () => {
+    writeStoredEmbeddingModelId('test-model');
+    upsertMemory({
+      id: 'mem-NEST',
+      namespace: 'chat:nest',
+      kind: 'prompt',
+      sourceId: 'm-nest',
+      text: 'nested write',
+      metadata: {},
+    });
+
+    // Caller wraps storeEmbedding in their own transaction (e.g. a future
+    // batch-fill path).  Without the SAVEPOINT-aware runInTransaction
+    // inside storeEmbedding, this would throw "cannot start a transaction
+    // within a transaction".
+    assert.doesNotThrow(() => {
+      withTransaction(() => {
+        saveMemoryEmbedding('mem-NEST', 'nested write', fakeEmbedding(42), 'test-model');
+      });
+    }, 'nested transaction must use SAVEPOINT, not throw');
+
+    assert.equal(vecCountForId('mem-NEST'), 1, 'nested write commits exactly one row');
+  });
+});
+
+test('storeEmbedding rolls back vec_memories DELETE when the matching INSERT fails (atomicity proof)', async (t) => {
+  await withSkippableSqliteVec(t, () => {
+    writeStoredEmbeddingModelId('test-model');
+    upsertMemory({
+      id: 'mem-ATOMIC',
+      namespace: 'chat:atomic',
+      kind: 'prompt',
+      sourceId: 'm-atomic',
+      text: 'atomic test',
+      metadata: {},
+    });
+
+    // First write — establishes a healthy vec_memories row.
+    saveMemoryEmbedding('mem-ATOMIC', 'atomic test', fakeEmbedding(1), 'test-model');
+    assert.equal(vecCountForId('mem-ATOMIC'), 1, 'baseline row present');
+
+    // Second write with a WRONG-dimension embedding (vec_memories is
+    // declared with EMBEDDING_DIMS=1024; passing a 512-element Float32Array
+    // makes vec0's INSERT validate-and-throw).  Without the transaction
+    // wrap the prior DELETE would have already committed, leaving zero
+    // rows.  With the wrap, ROLLBACK restores the original row.
+    const wrongDim = new Float32Array(512);
+    for (let i = 0; i < wrongDim.length; i++) wrongDim[i] = 0.1;
+    // storeEmbedding catches the throw via debugWarn and returns; the
+    // surrounding transaction has already rolled back.
+    assert.doesNotThrow(() => {
+      saveMemoryEmbedding('mem-ATOMIC', 'atomic test', wrongDim, 'test-model');
+    });
+
+    // Atomicity proof: the failed write must have rolled back the
+    // intermediate DELETE.  If the wrap is missing, vecCountForId is 0
+    // here — the DELETE committed but the INSERT threw.
+    assert.equal(
+      vecCountForId('mem-ATOMIC'),
+      1,
+      'failed write must roll back the DELETE — vec_memories keeps the previous row',
+    );
   });
 });

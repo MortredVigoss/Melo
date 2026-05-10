@@ -27,6 +27,9 @@ import {
   recallMemories,
   getMemoriesWithoutEmbeddings,
   saveMemoryEmbedding,
+  listMemoriesNeedingReembed,
+  clearNeedsReembed,
+  pruneMemoriesByNamespaceKind,
 } from './store.js';
 import { getEmbedding as _defaultGetEmbedding, cosineSimilarity } from './embeddings.js';
 
@@ -170,6 +173,13 @@ export async function promoteAndPersistFacts(chat, agentId, config) {
       promoted++;
     }
 
+    pruneMemoriesByNamespaceKind({
+      namespace,
+      kind: PROMOTED_KIND,
+      keep: MAX_PROMOTED_FACTS,
+      preservePinned: true,
+    });
+
     return promoted;
   } catch {
     return 0;
@@ -191,13 +201,36 @@ export async function scheduleEmbeddingFillIn(config) {
   if (_fillInRunning) return;
   _fillInRunning = true;
   try {
-    const pending = getMemoriesWithoutEmbeddings();
+    const pendingById = new Map();
+    for (const row of getMemoriesWithoutEmbeddings()) {
+      if (row?.id && !pendingById.has(row.id)) {
+        pendingById.set(row.id, {
+          id: row.id,
+          searchText: row.searchText,
+          needsReembed: false,
+        });
+      }
+    }
+    for (const row of listMemoriesNeedingReembed({ limit: 200 })) {
+      if (!row?.id) continue;
+      pendingById.set(row.id, {
+        id: row.id,
+        searchText: row.searchText || row.text || '',
+        needsReembed: true,
+      });
+    }
+
+    const pending = Array.from(pendingById.values());
     if (!pending.length) return;
 
-    for (const { id, searchText } of pending) {
+    for (const { id, searchText, needsReembed } of pending) {
+      if (!searchText) continue;
       const embedding = await _getEmbedding(searchText, config).catch(() => null);
       if (embedding) {
         saveMemoryEmbedding(id, searchText, embedding);
+        if (needsReembed) {
+          clearNeedsReembed([id]);
+        }
       }
       // Yield to event loop between each embedding
       await new Promise(resolve => setImmediate(resolve));

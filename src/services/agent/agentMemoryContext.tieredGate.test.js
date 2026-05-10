@@ -1,8 +1,8 @@
 // agentMemoryContext.tieredGate.test.js — Phase E (2026-05-05).
 //
 // Pins the MELO_MEMORY_TIERS_RECALL gate behaviour:
-//   - off (default) → legacy flat recall, no scene/frame blocks emitted
-//   - on            → recallMemoriesTiered drives promptHistory, and
+//   - off explicitly → legacy flat recall, no scene/frame blocks emitted
+//   - on/default     → recallMemoriesTiered drives promptHistory, and
 //                     scene/frame summaries are rendered as their own
 //                     blocks above prompt nodes
 //   - on + tiered throws → graceful fallback to flat recall, no exception
@@ -111,9 +111,9 @@ function seedScene(replaceMemories) {
   ]);
 }
 
-test('tiered gate OFF (default) → no scene/frame blocks emitted, prompt block uses flat recall', async () => {
+test('tiered gate OFF explicitly → no scene/frame blocks emitted, prompt block uses flat recall', async () => {
   await withTempMeloHome(async () => {
-    delete process.env.MELO_MEMORY_TIERS_RECALL;
+    process.env.MELO_MEMORY_TIERS_RECALL = '0';
     const { replaceMemories } = await import(`../../memory/store.js?cb=${Date.now()}-a`);
     const { buildAgentMemoryNodeContext } = await import(`./agentMemoryContext.js?cb=${Date.now()}-a2`);
     seedScene(replaceMemories);
@@ -130,6 +130,26 @@ test('tiered gate OFF (default) → no scene/frame blocks emitted, prompt block 
       'gate off must not emit the frame block');
     assert.ok(out.includes('Prompt memory nodes:'), 'flat prompt path still renders the prompt block');
     assert.ok(out.includes('set up the project'), 'flat path returns the seeded prompt');
+  });
+});
+
+test('tiered gate default follows enabled tiers → scene + frame blocks rendered', async () => {
+  await withTempMeloHome(async () => {
+    delete process.env.MELO_MEMORY_TIERS_RECALL;
+    const { replaceMemories } = await import(`../../memory/store.js?cb=${Date.now()}-default-on`);
+    const { buildAgentMemoryNodeContext } = await import(`./agentMemoryContext.js?cb=${Date.now()}-default-on2`);
+    seedScene(replaceMemories);
+    const out = buildAgentMemoryNodeContext({
+      state: { settings: {}, approvals: [], tasks: [] },
+      chat: basicChat(),
+      latestUserMessage: 'continue the project',
+      activeAgentProfile: basicAgent(),
+      project: null,
+    });
+    assert.ok(out.includes('Conversation scene summaries:'),
+      'default recall should read scene rows when tiers are enabled');
+    assert.ok(out.includes('Frame summaries:'),
+      'default recall should read frame rows when tiers are enabled');
   });
 });
 
@@ -244,10 +264,10 @@ test('tiered gate ON with prompt + fact contents → fact rendered as separate "
   });
 });
 
-test('tiered gate OFF (default) does NOT emit "Recalled fact nodes (tiered)" block even if facts exist', async () => {
+test('tiered gate OFF explicitly does NOT emit "Recalled fact nodes (tiered)" block even if facts exist', async () => {
   // Mirror of the gate-off contract for the new fact block.
   await withTempMeloHome(async () => {
-    delete process.env.MELO_MEMORY_TIERS_RECALL;
+    process.env.MELO_MEMORY_TIERS_RECALL = '0';
     const { replaceMemories } = await import(`../../memory/store.js?cb=${Date.now()}-e0`);
     replaceMemories([
       {

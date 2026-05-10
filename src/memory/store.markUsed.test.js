@@ -1,11 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   replaceMemories,
   recordMemoryHit,
   getHitStats,
   markMemoriesUsed,
+  _resetStoreForTests,
 } from './store.js';
+
+let tempHome = null;
+let prevHome = null;
+
+test.beforeEach(async () => {
+  tempHome = await mkdtemp(join(tmpdir(), 'melo-mark-used-'));
+  prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = tempHome;
+  _resetStoreForTests?.();
+});
+
+test.afterEach(async () => {
+  _resetStoreForTests?.();
+  if (prevHome === undefined) delete process.env.MELO_HOME;
+  else process.env.MELO_HOME = prevHome;
+  await rm(tempHome, { recursive: true, force: true });
+  tempHome = null;
+  prevHome = null;
+});
 
 function mkEntry(id) {
   return {

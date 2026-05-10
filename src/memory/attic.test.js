@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateAtticLevel, enabledTiers, atticEnabled } from './attic.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { evaluateAtticLevel, enabledTiers, atticEnabled, injectHotAttic } from './attic.js';
+import { upsertMemory, getMemoriesByIds, _resetStoreForTests } from './store.js';
 
 function day(n) {
   return Date.now() - n * 86_400_000;
@@ -96,4 +100,54 @@ test('atticEnabled is true by default and false when MELO_ATTIC_ENABLED=0', () =
     if (saved == null) delete process.env.MELO_ATTIC_ENABLED;
     else process.env.MELO_ATTIC_ENABLED = saved;
   }
+});
+
+async function withTempMeloHome(fn) {
+  const dir = await mkdtemp(join(tmpdir(), 'melo-attic-'));
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = dir;
+  _resetStoreForTests?.();
+  try {
+    await fn();
+  } finally {
+    _resetStoreForTests?.();
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test('injectHotAttic does not touch non-hot candidate rows while scanning', async () => {
+  await withTempMeloHome(async () => {
+    const now = '2026-05-01T00:00:00.000Z';
+    upsertMemory({
+      id: 'attic-hot-decision',
+      namespace: 'agent:attic-test',
+      kind: 'fact',
+      text: 'Always confirm destructive actions twice',
+      searchText: 'always confirm destructive actions twice',
+      createdAt: now,
+      updatedAt: now,
+      metadata: { category: 'decision' },
+    });
+    upsertMemory({
+      id: 'attic-cold-preference',
+      namespace: 'agent:attic-test',
+      kind: 'fact',
+      text: 'A cold candidate that should not be heated by inspection',
+      searchText: 'cold candidate should not be heated by inspection',
+      createdAt: now,
+      updatedAt: now,
+      metadata: { category: 'preference' },
+    });
+
+    const block = injectHotAttic({ namespaces: ['agent:attic-test'], limit: 8 });
+    assert.match(block, /Always confirm destructive actions twice/);
+    assert.doesNotMatch(block, /cold candidate/i);
+
+    const [cold] = getMemoriesByIds(['attic-cold-preference']);
+    assert.ok(cold, 'cold row still exists');
+    assert.equal(cold.metadata.useCount, undefined);
+    assert.equal(cold.lastUsedAt, null);
+  });
 });

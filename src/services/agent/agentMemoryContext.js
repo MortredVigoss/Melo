@@ -18,7 +18,7 @@
 
 import { buildSpeakerMemoryNamespace } from '../../state/memorySnapshot.js';
 import { recallMemories, recallMemoriesTiered, markMemoriesUsed } from '../../memory/store.js';
-import { atticEnabled, injectHotAttic } from '../../memory/attic.js';
+import { atticEnabled, enabledTiers, injectHotAttic } from '../../memory/attic.js';
 import {
   buildIdentityLine,
   buildSpeakerProfileBlock,
@@ -142,10 +142,13 @@ export function buildAgentMemoryNodeContext({
   // kinds {'scene','frame','prompt','fact'}, so it cannot serve approval /
   // task / verification-correction / session-fact queries.
   //
-  // Gate is OFF by default during rollout. When the user verifies the new
-  // block helps (via dreams diary + chat quality observation), flip the
-  // default to '1' and remove the legacy branch.
-  const tieredRecallEnabled = process.env.MELO_MEMORY_TIERS_RECALL === '1';
+  // Gate follows the write-side tier configuration by default: if frame/scene
+  // rows are being built, the agent should be allowed to recall them. Operators
+  // can still force the old flat-only path with MELO_MEMORY_TIERS_RECALL=0.
+  const tieredRecallEnv = String(process.env.MELO_MEMORY_TIERS_RECALL || '').trim();
+  const configuredTiers = enabledTiers();
+  const tieredRecallEnabled = tieredRecallEnv === '1'
+    || (tieredRecallEnv !== '0' && (configuredTiers.has('scene') || configuredTiers.has('frame')));
   let tieredScenes = [];
   let tieredFrames = [];
   let tieredFacts = [];

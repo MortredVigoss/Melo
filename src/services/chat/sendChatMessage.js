@@ -385,6 +385,12 @@ export async function sendChatMessage({
     indexMessage(latestChat.id, latestChat.title, assistantMessage);
   } catch {}
 
+  // Snapshot sync writes new message/media/frame rows without embeddings.
+  // Kick the bounded fill-in worker after every completed chat turn so
+  // semantic recall catches up even when session-memory extraction does not
+  // happen on this particular turn.
+  scheduleEmbeddingFillIn(config).catch(() => {});
+
   // Session memory extraction (async, non-blocking — fire and forget).
   // Runs after saveState so it doesn't slow down the response. Previously
   // gated on !background, which meant remote channels (Telegram/Discord)

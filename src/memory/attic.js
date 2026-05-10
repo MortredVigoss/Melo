@@ -22,6 +22,8 @@ import {
   listMemoriesForAtticReassess,
   setAtticLevels,
   recallMemories,
+  recordMemoryHitsBatch,
+  markMemoriesUsed,
 } from './store.js';
 
 // Thresholds
@@ -126,6 +128,7 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
     namespaces,
     kinds: ['fact', 'session-fact', 'verification-correction', 'identity'],
     limit: limit * 4,
+    sideEffects: false,
   });
 
   const candidates = rows
@@ -139,13 +142,23 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
   if (!candidates.length) return '';
 
   const lines = ['## Hot Attic (always-on memory)'];
+  const renderedIds = [];
   let tokensRemaining = tokenBudget;
   for (const { row } of candidates) {
     const line = `- [${row.metadata?.category || row.kind}] ${row.text}`;
     const cost = Math.ceil(line.length / 4);
     if (cost > tokensRemaining) break;
     lines.push(line);
+    if (row.id) renderedIds.push(row.id);
     tokensRemaining -= cost;
+  }
+  if (renderedIds.length) {
+    recordMemoryHitsBatch(renderedIds.map((memoryId, rank) => ({
+      memoryId,
+      queryHash: 'hot-attic',
+      rank,
+    })));
+    markMemoriesUsed(renderedIds);
   }
   lines.push('(These facts are invariant enough to be always visible.)');
   return lines.join('\n');

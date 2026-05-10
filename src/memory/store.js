@@ -414,33 +414,50 @@ function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
   const hash = textHash(searchText);
   const resolvedModel = resolveCacheModelId(modelId);
   try {
-    database.prepare(
-      `INSERT OR REPLACE INTO embedding_cache (text_hash, model_id, embedding, created_at)
-       VALUES (?, ?, ?, ?)`,
-    ).run(hash, resolvedModel, buf, new Date().toISOString());
-
-    database.prepare(
-      `UPDATE memories SET embedding = ? WHERE id = ?`,
-    ).run(buf, memoryId);
-
-    if (_vecLoaded) {
-      // Phase F-2c follow-up (2026-05-05): vec0 virtual tables don't
-      // honour `INSERT OR REPLACE` — re-inserting an existing memory_id
-      // throws "UNIQUE constraint failed on vec_memories primary key"
-      // and silently kills the rest of storeEmbedding's work via the
-      // outer catch. This was leaving 242 production rows in a
-      // partially-embedded state where memories.embedding was set but
-      // vec_memories sometimes held a stale row from a previous write.
-      // The vec0-safe pattern is DELETE-then-INSERT.
+    // Phase F-2c follow-up #2 (2026-05-10): wrap the three-step write in
+    // runInTransaction so the embedding_cache INSERT, memories UPDATE, and
+    // vec_memories DELETE+INSERT either ALL commit or ALL roll back.
+    // Without this:
+    //   • atomicity: a process kill / disk-full / sqlite-busy between
+    //     `DELETE FROM vec_memories WHERE memory_id=?` and the following
+    //     `INSERT INTO vec_memories ...` leaves vec_memories permanently
+    //     missing the row while embedding_cache + memories.embedding are
+    //     already populated — the 6861892 fix that replaced
+    //     `INSERT OR REPLACE` (which was atomic per-statement) introduced
+    //     this exact gap.
+    //   • concurrency: two storeEmbedding(sameId) calls racing produce
+    //     T1.DELETE → T2.DELETE → T2.INSERT → T1.INSERT throws UNIQUE,
+    //     silently swallowed by the outer catch.  T1's caller has no
+    //     idea the write was clobbered.
+    // runInTransaction nests via SAVEPOINT (see _txDepth), so callers that
+    // already wrap storeEmbedding in their own outer transaction (e.g. a
+    // future replaceMemories-with-embeddings path) stay correct.
+    runInTransaction(() => {
       database.prepare(
-        `DELETE FROM vec_memories WHERE memory_id = ?`,
-      ).run(memoryId);
+        `INSERT OR REPLACE INTO embedding_cache (text_hash, model_id, embedding, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(hash, resolvedModel, buf, new Date().toISOString());
+
       database.prepare(
-        `INSERT INTO vec_memories (memory_id, embedding) VALUES (?, ?)`,
-      ).run(memoryId, buf);
-    }
+        `UPDATE memories SET embedding = ? WHERE id = ?`,
+      ).run(buf, memoryId);
+
+      if (_vecLoaded) {
+        // vec0 virtual tables reject `INSERT OR REPLACE` (see 6861892);
+        // DELETE-then-INSERT is the vec0-safe pattern, now atomic via
+        // the surrounding transaction.
+        database.prepare(
+          `DELETE FROM vec_memories WHERE memory_id = ?`,
+        ).run(memoryId);
+        database.prepare(
+          `INSERT INTO vec_memories (memory_id, embedding) VALUES (?, ?)`,
+        ).run(memoryId, buf);
+      }
+    });
   } catch (err) {
-    // Best-effort — surface via MELO_DEBUG=memory.store.cache
+    // Best-effort — surface via MELO_DEBUG=memory.store.cache.
+    // Transaction rollback is automatic when runInTransaction throws,
+    // so partial state never reaches disk on failure.
     debugWarn('memory.store.cache', `storeEmbedding failed for memoryId=${memoryId}`, err?.message || err);
   }
 }
@@ -893,6 +910,24 @@ function mapScoredRows(rows = [], query = '') {
     });
 }
 
+function materializeMemoryRows(rows = [], { lastUsedAt = null } = {}) {
+  return rows.map(row => ({
+    id: row.id,
+    namespace: row.namespace,
+    kind: row.kind,
+    sourceId: row.source_id ?? row.sourceId ?? null,
+    text: row.text,
+    searchText: row.search_text ?? row.searchText ?? '',
+    tokensEstimate: row.tokens_estimate ?? row.tokensEstimate ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? null,
+    updatedAt: row.updated_at ?? row.updatedAt ?? null,
+    lastUsedAt: lastUsedAt ?? row.last_used_at ?? row.lastUsedAt ?? null,
+    metadata: row.metadata || parseMetadata(row.metadata_json),
+    score: row.score,
+    ...(row.embedding !== undefined ? { embedding: row.embedding } : {}),
+  }));
+}
+
 function touchRows(rows = []) {
   if (!rows.length) {
     return [];
@@ -921,25 +956,7 @@ function touchRows(rows = []) {
     }
   });
 
-  return rows.map(row => ({
-    id: row.id,
-    namespace: row.namespace,
-    kind: row.kind,
-    sourceId: row.source_id,
-    text: row.text,
-    searchText: row.search_text,
-    tokensEstimate: row.tokens_estimate,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lastUsedAt: usedAt,
-    metadata: row.metadata,
-    score: row.score,
-    // Preserve the embedding blob when callers opted in via
-    // includeEmbedding=true (Bug E).  The property is only present on rows
-    // that carry it; keyword-fallback callers who don't set the flag are
-    // unaffected because `row.embedding` is simply undefined.
-    ...(row.embedding !== undefined ? { embedding: row.embedding } : {}),
-  }));
+  return materializeMemoryRows(rows, { lastUsedAt: usedAt });
 }
 
 // Re-entrant transaction helper.  SQLite does NOT allow nested BEGIN (it
@@ -1065,6 +1082,32 @@ const PRESERVED_METADATA_KEYS = [
   'pinned',
 ];
 
+function isSnapshotProtectedIncrementalMemory(row = {}) {
+  // `memoryPromotion.js` writes cross-session facts incrementally using
+  // upsertMemory(). Snapshot rebuilds are allowed to prune stale state-derived
+  // rows, but promoted session facts are intentionally independent of any
+  // single chat snapshot and must survive compaction/deletion saves.
+  return row.kind === 'session-fact' && String(row.id || '').startsWith('promoted:');
+}
+
+function normalizeStoredMemoryRow(row = {}) {
+  const text = String(row.text || '').trim();
+  if (!text) return null;
+  return {
+    id: row.id,
+    namespace: row.namespace,
+    kind: row.kind,
+    sourceId: row.source_id || null,
+    text,
+    searchText: row.search_text || text,
+    tokensEstimate: row.tokens_estimate || Math.ceil(text.length / 4),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastUsedAt: row.last_used_at || null,
+    metadataJson: row.metadata_json || '{}',
+  };
+}
+
 /**
  * @param {Array} entries
  * @param {{ storePath?: string }} [options]
@@ -1104,7 +1147,28 @@ export function replaceMemories(entries = [], { storePath } = {}) {
   );
 }
 
-function _runReplaceMemoriesOn(database, normalizedEntries, vecLoaded, runTx) {
+function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx) {
+  const normalizedEntries = [...incomingEntries];
+  try {
+    const incomingIds = new Set(normalizedEntries.map(row => row.id));
+    const protectedRows = database.prepare(`
+      SELECT id, namespace, kind, source_id, text, search_text, tokens_estimate,
+             created_at, updated_at, last_used_at, metadata_json
+      FROM memories
+      WHERE kind = 'session-fact' AND id LIKE 'promoted:%'
+    `).all();
+    for (const row of protectedRows) {
+      if (incomingIds.has(row.id)) continue;
+      if (!isSnapshotProtectedIncrementalMemory(row)) continue;
+      const normalized = normalizeStoredMemoryRow(row);
+      if (!normalized) continue;
+      normalizedEntries.push(normalized);
+      incomingIds.add(row.id);
+    }
+  } catch (err) {
+    debugWarn('memory.store.replace', 'protected-incremental scan failed', err?.message || err);
+  }
+
   // ─── Preserve dreaming/touch metadata + last_used_at across the rebuild ─
   // Build a map id → { preservedMeta, lastUsedAt } so the re-insert can
   // merge instead of clobber.  We also prune `memory_hits` rows whose
@@ -1262,6 +1326,7 @@ export function recallMemories({
   limit = 8,
   queryEmbedding = null,
   includeEmbedding = false,
+  sideEffects = true,
 } = {}) {
   const builtQuery = buildRecallQuery({ namespaces, kinds, allowGlobal: false });
   if (!builtQuery) {
@@ -1338,16 +1403,18 @@ export function recallMemories({
             // root cause.  See recordMemoryHitsBatch(...) in the tiered
             // path at the buildRecallQuery branch below for the symmetric
             // call site.
-            try {
-              const qHash = query
-                ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
-                : null;
-              const hits = mmrSorted.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
-              recordMemoryHitsBatch(hits);
-            } catch (err) {
-              debugWarn('memory.recall.hits', 'recallMemories semantic hit log failed', err?.message || err);
+            if (sideEffects) {
+              try {
+                const qHash = query
+                  ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
+                  : null;
+                const hits = mmrSorted.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
+                recordMemoryHitsBatch(hits);
+              } catch (err) {
+                debugWarn('memory.recall.hits', 'recallMemories semantic hit log failed', err?.message || err);
+              }
             }
-            return touchRows(mmrSorted);
+            return sideEffects ? touchRows(mmrSorted) : materializeMemoryRows(mmrSorted);
           }
         }
       }
@@ -1394,7 +1461,7 @@ export function recallMemories({
   // gates' recall/outcome scoring; without this the flat path is silent
   // and memory_hits stays empty.  See the semantic branch comment for
   // the full root-cause writeup.
-  if (rows.length > 0) {
+  if (sideEffects && rows.length > 0) {
     try {
       const qHash = query
         ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
@@ -1405,7 +1472,7 @@ export function recallMemories({
       debugWarn('memory.recall.hits', 'recallMemories keyword hit log failed', err?.message || err);
     }
   }
-  return touchRows(rows);
+  return sideEffects ? touchRows(rows) : materializeMemoryRows(rows);
 }
 
 // ─── Tiered recall (scene → frame → content) ────────────────────────────────
@@ -2113,6 +2180,51 @@ export function deleteMemoryById(id) {
     } catch (err) { debugWarn('memory.store.delete', 'deleteMemoryById failed', err?.message || err); }
   });
   return changed > 0;
+}
+
+export function pruneMemoriesByNamespaceKind({
+  namespace = '',
+  kind = '',
+  keep = 200,
+  preservePinned = true,
+} = {}) {
+  const normalizedNamespace = String(namespace || '').trim();
+  const normalizedKind = String(kind || '').trim();
+  const keepCount = Math.max(0, Number(keep) || 0);
+  if (!normalizedNamespace || !normalizedKind) return 0;
+
+  const database = getDb();
+  try {
+    const pinnedClause = preservePinned
+      ? `AND COALESCE(json_extract(metadata_json, '$.pinned'), 0) != 1`
+      : '';
+    const rows = database.prepare(`
+      SELECT id
+      FROM memories
+      WHERE namespace = ?
+        AND kind = ?
+        ${pinnedClause}
+      ORDER BY datetime(created_at) DESC, datetime(updated_at) DESC, id DESC
+      LIMIT -1 OFFSET ?
+    `).all(normalizedNamespace, normalizedKind, keepCount);
+
+    let deleted = 0;
+    runInTransaction(() => {
+      for (const row of rows) {
+        if (!row?.id) continue;
+        const res = database.prepare('DELETE FROM memories WHERE id = ?').run(row.id);
+        if (res.changes) {
+          deleted += res.changes || 0;
+          try { database.prepare('DELETE FROM memories_fts WHERE memory_id = ?').run(row.id); } catch (err) { debugWarn('memory.store.prune', 'memories_fts delete failed', err?.message || err); }
+          try { database.prepare('DELETE FROM vec_memories WHERE memory_id = ?').run(row.id); } catch (err) { debugWarn('memory.store.prune', 'vec_memories delete failed', err?.message || err); }
+        }
+      }
+    });
+    return deleted;
+  } catch (err) {
+    debugWarn('memory.store.prune', 'pruneMemoriesByNamespaceKind failed', err?.message || err);
+    return 0;
+  }
 }
 
 /**
