@@ -1141,7 +1141,21 @@ async function fetchViaJina(url, signal, { etag = null, lastModified = null } = 
  *      serialised by the pw lock (one page at a time), so more than 1
  *      fallback URL means multi-second p95 degradation.
  */
-async function fetchResultContents(urls, signal, { spanId = null, _fetchViaPlaywrightCli: _pwOverride = null } = {}) {
+async function fetchResultContents(urls, signal, {
+  spanId = null,
+  _fetchViaPlaywrightCli: _pwOverride = null,
+  // G-1c follow-up #5 (Codex C round-5 闭环 2026-05-10): seam threading
+  // for the content-fetch PW availability probe.  Was the 4th PW await
+  // I missed in round-3/4 — Codex round-5 caught it as same-class as
+  // raceSerpProviders' probe.  Lessons learned: do systematic grep for
+  // ALL PW await sites the first time, not "fix the one Codex pointed at".
+  _isPlaywrightCliAvailable: _pwAvailableOverride = null,
+  // G-1c follow-up #5 (round-5 systematic batch): also a Jina seam, so
+  // mid-await content-fetch probe abort tests can deterministically
+  // construct "Jina misses → PW fallback runs" without relying on real
+  // example.com network reachability.  Same pattern, same scope.
+  _fetchViaJina: _jinaOverride = null,
+} = {}) {
   // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): entry abort gate.
   // Pre-fix, an aborted signal at this point still ran Jina probes + PW
   // fallback because the function trusted the caller-side check.  Now
@@ -1213,7 +1227,7 @@ async function fetchResultContents(urls, signal, { spanId = null, _fetchViaPlayw
 
     for (const url of needFetch) {
       const validators = condGetCandidates.get(url) || {};
-      fetchViaJina(url, signal, validators)
+      (_jinaOverride || fetchViaJina)(url, signal, validators)
         .then(r => {
           if (done) return;
           if (r?.notModified) {
@@ -1283,7 +1297,24 @@ async function fetchResultContents(urls, signal, { spanId = null, _fetchViaPlayw
   if (signal?.aborted) {
     return [...results.values()].filter(r => r.content);
   }
-  if (failed.size > 0 && PW_FALLBACK_MAX > 0 && await isPlaywrightCliAvailable()) {
+  // G-1c follow-up #5: PW availability probe must also be abort-raced
+  // (same-class as raceSerpProviders' probe).  Seam alias falls back to
+  // production isPlaywrightCliAvailable when override is not provided.
+  // AbortError → return what we have (Jina + URL cache hits) — outer
+  // run() post-await abort gate will then bail with marker.
+  const pwAvailableImpl = _pwAvailableOverride || isPlaywrightCliAvailable;
+  let pwAvailable = false;
+  if (failed.size > 0 && PW_FALLBACK_MAX > 0) {
+    try {
+      pwAvailable = await abortRace(pwAvailableImpl(), signal);
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        return [...results.values()].filter(r => r.content);
+      }
+      throw err;
+    }
+  }
+  if (failed.size > 0 && PW_FALLBACK_MAX > 0 && pwAvailable) {
     const pwTargets = [...failed].slice(0, PW_FALLBACK_MAX);
     for (const url of pwTargets) {
       // Re-check at every iteration — between two PW calls the signal
@@ -1639,6 +1670,7 @@ export const webSearchTool = {
       _searchViaPlaywright,
       _searchViaDdg,
       _isPlaywrightCliAvailable,
+      _fetchViaJina,
     } = {},
   ) {
     const trail = [];
@@ -1986,7 +2018,12 @@ export const webSearchTool = {
     let contentItems = [];
     let contentFetchFailReason = null;
     try {
-      contentItems = await fetchResultContents(smartUrls, signal, { spanId, _fetchViaPlaywrightCli });
+      contentItems = await fetchResultContents(smartUrls, signal, {
+        spanId,
+        _fetchViaPlaywrightCli,
+        _isPlaywrightCliAvailable,
+        _fetchViaJina,
+      });
     } catch (err) {
       // catch-path abort
       if (signal?.aborted || err?.name === 'AbortError') {
@@ -2274,8 +2311,11 @@ export const __webSearchInternals = {
 };
 
 export async function checkSearchHealth({ signal } = {}) {
+  // G-1c follow-up #5 (consistency): wrap PW probe in abortRace so health
+  // check honors caller signal too (was previously bare await — discovered
+  // during the systematic PW await audit triggered by Codex C round-5).
   const [playwright, jina, cacheDb] = await Promise.all([
-    isPlaywrightCliAvailable().then(
+    abortRace(isPlaywrightCliAvailable(), signal).then(
       ok => ({ available: Boolean(ok) }),
       err => ({ available: false, error: err?.message || String(err) }),
     ),
