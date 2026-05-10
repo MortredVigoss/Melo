@@ -146,6 +146,15 @@ process.env.MELO_HOME = TEST_HOME;
 // './chatExecutionRunner.js'` is hoisted and would not.
 const { runChatAgentExecutionGraph } = await import('./chatExecutionRunner.js');
 
+// Search-routing integration tests below need built-in tools (web_search,
+// fetch_url) actually present in the registry — `shouldInjectToolsPrompt`
+// is gated on `getAllTools().length > 0`, and only `desktopStore.js` calls
+// `bootstrapBuiltinTools()` in production. The earlier approval-exit tests
+// don't reach the tools-prompt branch, so they were unaffected; once we
+// bootstrap they still pass (early-exit happens before the branch).
+const { bootstrapBuiltinTools } = await import('../../tools/registry.js');
+bootstrapBuiltinTools();
+
 after(() => {
   try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {}
   if (ORIGINAL_MELO_HOME === undefined) {
@@ -372,4 +381,179 @@ test('runChatAgentExecutionGraph: prepare phase smoke — non-approval message m
       `prepare must not blow up with a scope error on activeAgentProfile (got: ${thrown.message})`,
     );
   }
+});
+
+// ─── Search routing → tool dispatch (Codex B-grade follow-up to f04248e) ────
+//
+// The searchRouter (src/retrieval/searchRouter.js) classifies each turn into
+// one of {codex-native, melo-web, fetch-url, social-link, none} and the
+// runner translates that route into BOTH (a) the prompt content
+// (`buildSearchRoutingPrompt`) and (b) the dispatchable tool whitelist
+// (`filterToolsForSearchPlan` → `visibleToolIds`). searchRouter.test.js
+// already covers (a) via buildSearchPlan unit assertions; this block fills
+// the runner-level gap for (b) flagged by Codex pre-push review.
+//
+// Strategy:
+//   1. MELO_MOCK_RESPONSE shorts the model call so the graph reaches END
+//      without leaving the process (createOpenAICompatibleReply line 1929
+//      bypasses every provider branch when the env var is set).
+//   2. After the graph completes, runStateGraph returns the merged final
+//      state — which includes the `searchPlan` and `visibleToolIds`
+//      written by the prepare node. We assert directly on those.
+//
+// What each test pins:
+//   • searchPlan.route                 → which branch of buildSearchPlan fired
+//   • searchPlan.nativeWebSearchEnabled → flag the runner forwards to
+//                                         createCodexResponsesReply at line 450
+//   • searchPlan.exposedNetworkTools   → output of buildSearchPlan
+//   • visibleToolIds                   → what filterToolsForSearchPlan + the
+//                                         tools-prompt branch ACTUALLY kept
+//
+// Regression coverage: a future change to DEEP_RESEARCH_PATTERN /
+// EXPLICIT_LOCAL_SEARCH_PATTERN / LINK_READ_PATTERN, the trigger weights,
+// the SEARCH_NETWORK_TOOL_IDS set, or the wire-up at lines 199 / 312 /
+// 376 / 450 of chatExecutionRunner.js will turn at least one of these
+// red. The test messages match the canonical fixtures in
+// searchRouter.test.js so a changed regex flips both files in lockstep.
+
+const ORIGINAL_MOCK_RESPONSE = process.env.MELO_MOCK_RESPONSE;
+// Plain text, no `<tool_call>` blocks, so parseModelResponse returns
+// `{ thinking, toolCalls: [] }` and the invoke-model loop exits on the
+// first iteration without touching the executor.
+process.env.MELO_MOCK_RESPONSE = 'integration-mock-reply';
+
+after(() => {
+  if (ORIGINAL_MOCK_RESPONSE === undefined) {
+    delete process.env.MELO_MOCK_RESPONSE;
+  } else {
+    process.env.MELO_MOCK_RESPONSE = ORIGINAL_MOCK_RESPONSE;
+  }
+});
+
+function fixtureCodexConfig() {
+  return { authMode: 'codex', apiKey: '', baseUrl: '', model: 'gpt-4' };
+}
+
+function fixtureNonCodexConfig() {
+  return { authMode: 'api-key', apiKey: 'sk-stub', baseUrl: '', model: 'gpt-4' };
+}
+
+async function runForRouteFixture({ latestUserMessage, config }) {
+  const state = fixtureState();
+  const chat = fixtureChat({ mode: 'chat' });
+  state.chats = [chat];
+  return runChatAgentExecutionGraph({
+    config,
+    state,
+    chat,
+    workspace: fixtureWorkspace(),
+    connectors: [],
+    skills: [],
+    latestUserMessage,
+    agentId: 'main',
+  });
+}
+
+test('search routing — codex-native: native web_search enabled, fetch_url not dispatched', async () => {
+  // Same canonical message as searchRouter.test.js:18 — score ≥ 3 from the
+  // weather + "查一下" triggers, no URL, no DEEP_RESEARCH/EXPLICIT_LOCAL/
+  // LINK_READ pattern hit, codex auth → codex-native branch.
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我查一下今天墨尔本天气',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'codex-native');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, true);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
+  // visibleToolIds is the FINAL whitelist consulted by invoke-model when
+  // resolving tool calls (chatExecutionRunner.js:499). Codex Responses
+  // owns web_search server-side on this route; pushing a local web_search
+  // or fetch_url tool would cause the model to emit XML tool calls in
+  // parallel with the native capability — exactly the regression Codex
+  // review was guarding against.
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on codex-native route');
+  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden on codex-native route');
+});
+
+test('search routing — melo-web: native web_search disabled, both tools dispatched', async () => {
+  // Same canonical message as searchRouter.test.js:60 — DEEP_RESEARCH_PATTERN
+  // hits ("深度" / "多来源"), so the route forces local Melo web_search even
+  // under codex auth.
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我做一个多来源深度调研，比较这几个产品',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'melo-web');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
+  assert.deepEqual(
+    [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
+    ['fetch_url', 'web_search'],
+  );
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('web_search'), true, 'web_search must be dispatched on melo-web route');
+  assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on melo-web route');
+});
+
+test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_search hidden', async () => {
+  // No URL in the text, but LINK_READ_PATTERN matches "打开链接" — buildSearchPlan
+  // takes the link-read-intent branch (route='fetch-url', reason='link-read-intent').
+  // Pinning this here matters because LINK_READ_PATTERN was added in f04248e
+  // specifically to catch user requests like "open this link / 打开链接 …" that
+  // arrive without a pasted URL (e.g. when the user is referring to a link
+  // already discussed earlier in the chat).
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我打开链接读一下里面写了啥',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'fetch-url');
+  assert.equal(result.searchPlan?.reason, 'link-read-intent');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on fetch-url route');
+  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on fetch-url route');
+});
+
+test('search routing — none: no web intent, neither web_search nor fetch_url offered', async () => {
+  // Same canonical message as searchRouter.test.js:82 — score is 0 and no
+  // pattern hits, so the runner must offer neither network tool. This is
+  // the "ordinary chat" baseline; if a future trigger weight bump makes
+  // this message accidentally crosss the score≥3 threshold, the runner
+  // would silently start exposing network tools to plain conversations.
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我写一段温柔一点的回复',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'none');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('web_search'), false, 'web_search must be hidden when no web intent');
+  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden when no web intent');
+});
+
+test('search routing — non-codex auth + web intent falls back to melo-web (not codex-native)', async () => {
+  // Cross-check that `authMode !== 'codex'` correctly disables native search
+  // even when scoreWebSearchIntent ≥ 3. Mirrors searchRouter.test.js:70 but
+  // pinned at the runner level so a future provider-profile refactor that
+  // forgets to pass authMode through to buildSearchPlan trips here.
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我查一下今天新加坡天气',
+    config: fixtureNonCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'melo-web');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
+  assert.deepEqual(
+    [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
+    ['fetch_url', 'web_search'],
+  );
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('web_search'), true);
+  assert.equal(visible.has('fetch_url'), true);
 });
