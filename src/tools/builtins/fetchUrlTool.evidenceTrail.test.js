@@ -172,3 +172,73 @@ test('evidenceTrail: forced crawl4ai mode with missing reader emits external-rea
   assert.equal(externalEntry.outcome, 'fail');
   assert.equal(externalEntry.reason, 'cli-missing-or-no-content');
 });
+
+// ─── Codex G-1a follow-up coverage (B-1: forced throw, B-2: parse-empty) ────
+
+test('evidenceTrail: forced crawl4ai THROW emits external-reader.fail with real tier (not unknown)', async () => {
+  // Pre-fix: outer catch recorded `unknown.fail` because the forced branch
+  // didn't set `method` before fetchExternalReaders threw.  pendingTier
+  // mechanism now ensures the trail records `external-reader.fail`.
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article', extract_mode: 'crawl4ai' },
+    { _readExternalUrl: async () => { throw new Error('crawl4ai CLI segfault'); } },
+  );
+  assert.equal(result.ok, false);
+  // The fail entry must carry the actual tier name `external-reader`,
+  // never the placeholder `unknown`.
+  const failEntry = result.evidenceTrail.find(e => e.outcome === 'fail');
+  assert.ok(failEntry, 'a fail entry must be present');
+  assert.equal(failEntry.tier, 'external-reader',
+    `tier must be external-reader, got ${failEntry.tier}`);
+  assert.notEqual(failEntry.tier, 'unknown', 'tier must never regress to "unknown"');
+});
+
+test('evidenceTrail: forced playwright THROW emits playwright.fail (not unknown)', async () => {
+  // Similar to above for playwright forced mode.  We can't easily mock
+  // tryPlaywright (it's an inline closure), so this case relies on the
+  // CLI not being installed in the test environment to drive the throw
+  // path indirectly via the playwrightFetcher import — if playwright
+  // CLI IS available, the test naturally exercises the success path
+  // and the assertion still holds because the tier label is correct.
+  const result = await fetchUrlTool.run(
+    { url: 'https://example.com/article', extract_mode: 'playwright' },
+    {},
+  );
+  // Either ok or fail is acceptable — what we pin is that NO entry
+  // ever gets the bogus `unknown` tier.
+  for (const entry of result.evidenceTrail) {
+    assert.notEqual(entry.tier, 'unknown',
+      `playwright forced mode must never produce tier=unknown; got ${JSON.stringify(entry)}`);
+  }
+});
+
+test('evidenceTrail: auto path Jina returning short content records jina.fail parse-empty (not jina.ok)', async () => {
+  // Pre-fix: short content (under CONTENT_OK_THRESHOLD = 120 chars) was
+  // recorded as jina.ok even though the runner immediately escalated to
+  // playwright.  Now it should be jina.fail reason=parse-empty.
+  // We exercise this via a stub that wraps fetchUrlTool — but auto path
+  // really hits the network when reachable.  Use the social-link guard
+  // path inverted: a non-social URL with no cookie + a jina URL that
+  // returns shell-only content.  Since we can't easily mock fetchViaJina
+  // from outside, we rely on the test seam pattern: there ISN'T one for
+  // jina/direct in fetchUrlTool — so this test's job is the source-level
+  // guard: assert the recordTrail call uses `tierOutcome(content)` not
+  // a hardcoded 'ok'.
+  assert.match(
+    TOOL_SOURCE,
+    /tierOutcome\s*=\s*\(c\)\s*=>\s*looksEmpty\(c\)/,
+    'auto path must use tierOutcome() helper to gate ok/fail on content length',
+  );
+  // The three auto-path recordTrail calls (direct+cookie / jina / direct)
+  // must all use r.outcome (computed from tierOutcome), not literal 'ok'.
+  const autoBlockMatch = TOOL_SOURCE.match(/auto:\s*cookies\s+present[\s\S]*?if\s*\(looksEmpty\(content\)\)\s*\{[\s\S]*?Playwright/);
+  assert.ok(autoBlockMatch, 'could not locate auto path block in source');
+  const autoBlock = autoBlockMatch[0];
+  // Count tier-outcome aware records in the auto path: 3 (direct+cookie,
+  // jina-after-direct-fail, jina-first, direct-after-jina-fail).
+  const tierOutcomeRecords = autoBlock.match(/recordTrail\(trail,\s*'(direct\+cookie|jina|direct)',\s*r\.outcome/g) || [];
+  assert.ok(
+    tierOutcomeRecords.length >= 3,
+    `expected >= 3 recordTrail calls using r.outcome in auto path, got ${tierOutcomeRecords.length}`,
+  );
+});

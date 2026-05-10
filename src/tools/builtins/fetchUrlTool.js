@@ -359,30 +359,44 @@ export const fetchUrlTool = {
       });
     };
 
+    // Phase G-1a follow-up #1 (Codex pre-pp B 2026-05-10): track which tier
+    // was about to throw so the outer catch records the right tier instead
+    // of `unknown`.  Each forced branch sets pendingTier + pendingTierStart
+    // before the await; the outer catch reads them for the trail entry.
+    let pendingTier = null;
+    let pendingTierStart = 0;
     try {
       if (extract_mode === 'direct') {
-        const tDirect = Date.now();
+        pendingTier = cookieStr ? 'direct+cookie' : 'direct';
+        pendingTierStart = Date.now();
         content = await fetchDirect(normalized, signal, cookieStr);
-        method = cookieStr ? 'direct+cookie' : 'direct';
-        recordTrail(trail, method, 'ok', { latencyMs: Date.now() - tDirect, extra: { extractMode: 'direct', bytes: content.length } });
+        method = pendingTier;
+        recordTrail(trail, method, 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'direct', bytes: content.length } });
+        pendingTier = null;
       } else if (extract_mode === 'jina') {
         // Jina doesn't forward our cookies — fall through to direct for authenticated URLs
         if (cookieStr) {
-          const tDc = Date.now();
+          pendingTier = 'direct+cookie';
+          pendingTierStart = Date.now();
           content = await fetchDirect(normalized, signal, cookieStr);
           method = 'direct+cookie';
-          recordTrail(trail, 'direct+cookie', 'ok', { latencyMs: Date.now() - tDc, extra: { extractMode: 'jina-with-cookie', bytes: content.length } });
+          recordTrail(trail, 'direct+cookie', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'jina-with-cookie', bytes: content.length } });
+          pendingTier = null;
         } else {
-          const tJ = Date.now();
+          pendingTier = 'jina';
+          pendingTierStart = Date.now();
           content = await fetchViaJina(normalized, signal);
           method = 'jina';
-          recordTrail(trail, 'jina', 'ok', { latencyMs: Date.now() - tJ, extra: { extractMode: 'jina', bytes: content.length } });
+          recordTrail(trail, 'jina', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'jina', bytes: content.length } });
+          pendingTier = null;
         }
       } else if (extract_mode === 'playwright') {
-        const tPw = Date.now();
+        pendingTier = 'playwright';
+        pendingTierStart = Date.now();
         const pwContent = await tryPlaywright();
         if (!pwContent) {
-          recordTrail(trail, 'playwright', 'fail', { latencyMs: Date.now() - tPw, reason: 'no-content', extra: { extractMode: 'playwright' } });
+          recordTrail(trail, 'playwright', 'fail', { latencyMs: Date.now() - pendingTierStart, reason: 'no-content', extra: { extractMode: 'playwright' } });
+          pendingTier = null;
           return {
             ok: false,
             output: `Playwright extraction returned no content for "${normalized}".`,
@@ -392,12 +406,15 @@ export const fetchUrlTool = {
         }
         content = pwContent;
         method = 'playwright';
-        recordTrail(trail, 'playwright', 'ok', { latencyMs: Date.now() - tPw, extra: { extractMode: 'playwright', bytes: content.length } });
+        recordTrail(trail, 'playwright', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'playwright', bytes: content.length } });
+        pendingTier = null;
       } else if (['crawl4ai', 'scrapling', 'camoufox'].includes(extract_mode)) {
-        const tEx = Date.now();
+        pendingTier = 'external-reader';
+        pendingTierStart = Date.now();
         const external = await tryExternalReaders([extract_mode]);
         if (!external?.content) {
-          recordTrail(trail, 'external-reader', 'fail', { latencyMs: Date.now() - tEx, reason: 'cli-missing-or-no-content', method: extract_mode });
+          recordTrail(trail, 'external-reader', 'fail', { latencyMs: Date.now() - pendingTierStart, reason: 'cli-missing-or-no-content', method: extract_mode });
+          pendingTier = null;
           return {
             ok: false,
             output: `${extract_mode} extraction returned no content for "${normalized}". Make sure the local CLI/package is installed.`,
@@ -407,33 +424,46 @@ export const fetchUrlTool = {
         }
         content = external.content;
         method = external.method || extract_mode;
-        recordTrail(trail, 'external-reader', 'ok', { latencyMs: Date.now() - tEx, method: external.method || extract_mode, extra: { bytes: content.length } });
+        recordTrail(trail, 'external-reader', 'ok', { latencyMs: Date.now() - pendingTierStart, method: external.method || extract_mode, extra: { bytes: content.length } });
+        pendingTier = null;
       } else {
         // auto: cookies present → direct first; otherwise Jina first.
         // Final escalation tier: Playwright (real browser) for SPA / JS-heavy
         // pages that return empty shells via both HTTP-level fetchers. If that
         // still misses, try optional local extraction CLIs (Crawl4AI,
         // Scrapling, Camoufox) without making them hard dependencies.
+        // Phase G-1a follow-up #2 (Codex post-push B 2026-05-10): record
+        // ok ONLY when the returned content passes the looksEmpty gate;
+        // short content (parse-empty) gets recorded as fail so escalation
+        // up to playwright/external is reflected in the trail as
+        // "jina.fail parse-empty → playwright.ok" rather than the misleading
+        // "jina.ok → playwright.ok".
+        const tierOutcome = (c) => looksEmpty(c)
+          ? { outcome: 'fail', reason: 'parse-empty' }
+          : { outcome: 'ok' };
         if (cookieStr) {
           const tDc = Date.now();
           try {
             content = await fetchDirect(normalized, signal, cookieStr);
             method = 'direct+cookie';
-            recordTrail(trail, 'direct+cookie', 'ok', { latencyMs: Date.now() - tDc, extra: { bytes: content.length } });
+            const r = tierOutcome(content);
+            recordTrail(trail, 'direct+cookie', r.outcome, { latencyMs: Date.now() - tDc, reason: r.reason, extra: { bytes: content.length } });
           } catch (err) {
             debugWarn('fetch_url', `direct+cookie failed, falling back to Jina for ${normalized}:`, err?.message || err);
             recordTrail(trail, 'direct+cookie', 'fail', { latencyMs: Date.now() - tDc, reason: classifyFetchError(err) });
             const tJ = Date.now();
             content = await fetchViaJina(normalized, signal);
             method = 'jina';
-            recordTrail(trail, 'jina', 'ok', { latencyMs: Date.now() - tJ, extra: { bytes: content.length } });
+            const r = tierOutcome(content);
+            recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
           }
         } else {
           const tJ = Date.now();
           try {
             content = await fetchViaJina(normalized, signal);
             method = 'jina';
-            recordTrail(trail, 'jina', 'ok', { latencyMs: Date.now() - tJ, extra: { bytes: content.length } });
+            const r = tierOutcome(content);
+            recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
           } catch (err) {
             debugWarn('fetch_url', `Jina failed, falling back to direct for ${normalized}:`, err?.message || err);
             recordTrail(trail, 'jina', 'fail', { latencyMs: Date.now() - tJ, reason: classifyFetchError(err) });
@@ -441,7 +471,8 @@ export const fetchUrlTool = {
             try {
               content = await fetchDirect(normalized, signal, '');
               method = 'direct';
-              recordTrail(trail, 'direct', 'ok', { latencyMs: Date.now() - tD, extra: { bytes: content.length } });
+              const r = tierOutcome(content);
+              recordTrail(trail, 'direct', r.outcome, { latencyMs: Date.now() - tD, reason: r.reason, extra: { bytes: content.length } });
             } catch (err2) {
               debugWarn('fetch_url', `direct also failed, escalating to Playwright for ${normalized}:`, err2?.message || err2);
               recordTrail(trail, 'direct', 'fail', { latencyMs: Date.now() - tD, reason: classifyFetchError(err2) });
@@ -488,7 +519,14 @@ export const fetchUrlTool = {
         }
       }
     } catch (err) {
-      recordTrail(trail, method || 'unknown', 'fail', { latencyMs: Date.now() - tStart, reason: classifyFetchError(err) });
+      // Phase G-1a follow-up #1: tier resolution priority — pendingTier
+      // (set by forced branches just before the await that may throw),
+      // then `method` (set after a forced branch successfully returned but
+      // a downstream operation threw, which today shouldn't happen but
+      // keep as a safety net), then 'unknown' (truly unrecoverable).
+      const failTier = pendingTier || method || 'unknown';
+      const failStart = pendingTier ? pendingTierStart : tStart;
+      recordTrail(trail, failTier, 'fail', { latencyMs: Date.now() - failStart, reason: classifyFetchError(err) });
       return {
         ok: false,
         output: `Failed to fetch "${normalized}": ${err.message}`,
