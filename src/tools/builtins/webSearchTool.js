@@ -85,6 +85,40 @@ function bailAbortedWebSearch(trail, currentPhase, query, ctx = {}) {
   };
 }
 
+// G-1c follow-up #3 (Codex C round-3 闭环 2026-05-10): unified abort race
+// helper.  Wraps any in-flight promise (PW CLI probe, PW SERP, PW
+// content-fetch) so a caller signal abort wins immediately instead of
+// waiting for the underlying PW process to finish (5-15s typical).
+//
+// Real PW CLI subprocess kill is still G-5 — this helper only ensures
+// the JS-side `await` returns immediately and the run() outer can bail.
+// The PW child process keeps running until natural completion; the user
+// just doesn't wait for it.
+function abortRace(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise((resolve, reject) => {
+    let listener;
+    const cleanup = () => {
+      if (listener) {
+        try { signal.removeEventListener('abort', listener); } catch {}
+        listener = null;
+      }
+    };
+    listener = () => {
+      cleanup();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', listener, { once: true });
+    promise.then(
+      v => { cleanup(); resolve(v); },
+      e => { cleanup(); reject(e); },
+    );
+  });
+}
+
 function classifyWebSearchError(err) {
   const msg = String(err?.message || err || '').toLowerCase();
   if (!msg) return 'error';
@@ -1107,7 +1141,7 @@ async function fetchViaJina(url, signal, { etag = null, lastModified = null } = 
  *      serialised by the pw lock (one page at a time), so more than 1
  *      fallback URL means multi-second p95 degradation.
  */
-async function fetchResultContents(urls, signal, { spanId = null } = {}) {
+async function fetchResultContents(urls, signal, { spanId = null, _fetchViaPlaywrightCli: _pwOverride = null } = {}) {
   // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): entry abort gate.
   // Pre-fix, an aborted signal at this point still ran Jina probes + PW
   // fallback because the function trusted the caller-side check.  Now
@@ -1256,7 +1290,21 @@ async function fetchResultContents(urls, signal, { spanId = null } = {}) {
       // can flip, and the in-flight PW process is what G-5 will kill;
       // here we only ensure no further PW targets get scheduled.
       if (signal?.aborted) break;
-      const pw = await fetchViaPlaywrightCli(url);
+      // G-1c follow-up #3: abortRace around the in-flight PW call so
+      // signal abort during a single PW await returns immediately
+      // (5-15s wait → ~0).  Real subprocess kill is G-5.
+      // _pwOverride is a test seam (production callers leave it null).
+      const pwImpl = _pwOverride || fetchViaPlaywrightCli;
+      let pw;
+      try {
+        pw = await abortRace(pwImpl(url), signal);
+      } catch (err) {
+        if (err?.name === 'AbortError') break;
+        // Propagate other errors via the same swallow path the rest of
+        // the function uses — failed.add was the pre-fix behavior.
+        debugWarn('web_search', `PW fallback failed for ${url}:`, err?.message || err);
+        continue;
+      }
       if (pw.content && pw.content.length >= 100) {
         results.set(url, pw);
         setCachedUrlContent(url, pw.content);
@@ -1402,7 +1450,24 @@ async function fetchWeatherFastPath(query, signal) {
  */
 async function raceSerpProviders(query, limit, signal) {
   const errors = [];
-  const usePw = await isPlaywrightCliAvailable();
+  // G-1c follow-up #3 (Codex 2026-05-10 round-3): abort gate BEFORE the
+  // CLI probe + abort-race AROUND the probe.  Pre-fix the listener was
+  // only registered AFTER the probe (line ~1405), so cold-start CLI
+  // detection (~8s) couldn't be cancelled.
+  if (signal?.aborted) {
+    errors.push('aborted');
+    return { results: [], provider: '', errors };
+  }
+  let usePw;
+  try {
+    usePw = await abortRace(isPlaywrightCliAvailable(), signal);
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      errors.push('aborted');
+      return { results: [], provider: '', errors };
+    }
+    throw err;
+  }
 
   // Degenerate case: no Playwright → no race, just run Jina directly.
   if (!usePw) {
@@ -1476,8 +1541,10 @@ async function raceSerpProviders(query, limit, signal) {
       );
     };
 
-    // PW leg — start immediately
-    searchViaPlaywright(query, limit).then(
+    // PW leg — start immediately.  abortRace ensures signal flips
+    // immediately reject the await even if the underlying PW process
+    // keeps running until natural timeout (G-5 will kill the subprocess).
+    abortRace(searchViaPlaywright(query, limit), signal).then(
       r => {
         pwSettled = true;
         if (done) return;  // ignore late settle after abort
@@ -1552,7 +1619,7 @@ export const webSearchTool = {
 
   async run(
     { query, num_results = 5, noCache = false, allowBlockedDomains = false },
-    { signal, config } = {},
+    { signal, config, _fetchViaPlaywrightCli } = {},
   ) {
     const trail = [];
     if (!query || typeof query !== 'string' || !query.trim()) {
@@ -1895,7 +1962,7 @@ export const webSearchTool = {
     let contentItems = [];
     let contentFetchFailReason = null;
     try {
-      contentItems = await fetchResultContents(smartUrls, signal, { spanId });
+      contentItems = await fetchResultContents(smartUrls, signal, { spanId, _fetchViaPlaywrightCli });
     } catch (err) {
       // catch-path abort
       if (signal?.aborted || err?.name === 'AbortError') {
