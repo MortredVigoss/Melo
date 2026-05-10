@@ -518,6 +518,53 @@ test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_s
   assert.equal(visible.has('web_search'), false, 'web_search must be hidden on fetch-url route');
 });
 
+test('search routing — social-link: 抖音 / xiaohongshu URL routes to fetch_url with web_search hidden (Codex 83cf5d4 B 建议闭环)', async () => {
+  // searchRouter.js:148 isSocialLinkUrl checks SOCIAL_HOST_PATTERN matching
+  // (xiaohongshu|xhslink|douyin|iesdouyin|tiktok)\.com — these have a
+  // dedicated social-preview reader path inside fetch_url, so the runner
+  // must hide web_search to keep the model from issuing a parallel
+  // generic search query that bypasses the social-link extractor.
+  //
+  // Codex pre-pp on 83cf5d4 flagged that the runner-level routing tests
+  // covered codex-native / melo-web / fetch-url / none / non-codex but
+  // NOT social-link — a regex regression on SOCIAL_HOST_PATTERN, the
+  // hasSocialUrl gate, or the SEARCH_NETWORK_TOOL_IDS filter would let
+  // web_search leak back into visibleToolIds for social URLs and the
+  // unit-level searchRouter.test.js wouldn't catch it.
+  //
+  // Same canonical fixture as searchRouter.test.js:50 so a regex change
+  // flips both files in lockstep.
+  const result = await runForRouteFixture({
+    latestUserMessage: '看看这个抖音 https://v.douyin.com/abc123/',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'social-link');
+  assert.equal(result.searchPlan?.reason, 'social-url');
+  assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on social-link route');
+  assert.equal(visible.has('web_search'), false, 'web_search must be hidden so social-link reader is not bypassed');
+});
+
+test('search routing — social-link: xiaohongshu URL also routes to fetch_url (different host in SOCIAL_HOST_PATTERN)', async () => {
+  // Cross-check the second canonical social host besides douyin — if
+  // someone narrows SOCIAL_HOST_PATTERN to just douyin, this red-flags
+  // the regression at the runner layer.
+  const result = await runForRouteFixture({
+    latestUserMessage: '帮我看下这条小红书 http://xhslink.com/a/foo123',
+    config: fixtureCodexConfig(),
+  });
+
+  assert.equal(result.searchPlan?.route, 'social-link');
+  assert.equal(result.searchPlan?.reason, 'social-url');
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
+  const visible = new Set(result.visibleToolIds || []);
+  assert.equal(visible.has('fetch_url'), true);
+  assert.equal(visible.has('web_search'), false);
+});
+
 test('search routing — none: no web intent, neither web_search nor fetch_url offered', async () => {
   // Same canonical message as searchRouter.test.js:82 — score is 0 and no
   // pattern hits, so the runner must offer neither network tool. This is
