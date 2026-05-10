@@ -1220,6 +1220,12 @@ export async function readSocialLink(url, {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
         if (signal?.aborted) return bailAbortedSocial(trail, 'share-preview', ['browser', 'external-reader'], canonical);
         const preview = await previewFn(candidateUrl, { signal, canonicalUrl: canonical });
+        // G-1b follow-up #2 (Codex C 闭环 2026-05-10): also check abort
+        // AFTER each await — single-candidate loops (url === canonical)
+        // would otherwise complete normally and the signal abort that
+        // happened mid-await would be silently swallowed by the outer
+        // "no-match" record path, breaking the 5-row schema contract.
+        if (signal?.aborted) return bailAbortedSocial(trail, 'share-preview', ['browser', 'external-reader'], canonical);
         const score = preview ? scorePreview(preview) : 0;
         sharePreviewBestScore = Math.max(sharePreviewBestScore, score);
         if (
@@ -1294,6 +1300,8 @@ export async function readSocialLink(url, {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
         if (signal?.aborted) return bailAbortedSocial(trail, 'browser', ['external-reader'], canonical);
         const browserPreview = await browserPreviewFn(candidateUrl, { signal, canonicalUrl: canonical });
+        // G-1b follow-up #2: post-await abort check (see share-preview block).
+        if (signal?.aborted) return bailAbortedSocial(trail, 'browser', ['external-reader'], canonical);
         const bScore = browserPreview ? scoreBrowserPreview(browserPreview) : 0;
         browserBestScore = Math.max(browserBestScore, bScore);
         if (
@@ -1353,6 +1361,8 @@ export async function readSocialLink(url, {
           maxChars: BROWSER_FETCH_MAX_TEXT,
           timeoutMs: BROWSER_FETCH_TIMEOUT_MS,
         });
+        // G-1b follow-up #2: post-await abort check (see share-preview block).
+        if (signal?.aborted) return bailAbortedSocial(trail, 'external-reader', [], canonical);
         if (external?.content && cleanBrowserExtractedText(external.content).length > 120) {
           const body = renderExternalReaderBody(external, external.finalUrl || candidateUrl);
           recordSocialTrail(trail, 'external-reader', 'ok', {

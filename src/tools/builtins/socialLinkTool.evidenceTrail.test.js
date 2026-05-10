@@ -231,6 +231,73 @@ test('readSocialLink: mid-loop abort in external-reader returns marker (no remai
     'external-reader.fail must be the last trail entry (nothing to skip after)');
 });
 
+// ─── G-1b follow-up #2 (Codex C 闭环 round-2 2026-05-10) ─────────────────
+//
+// Single-candidate (direct URL where url === canonical) await-after abort
+// case.  Loop entry check passes, the awaited sub-fn returns null (or a
+// score-too-low preview) AFTER the signal fires inside the await.  Without
+// the post-await abort check, the loop exits normally and the outer
+// "no-match" recorder fires — breaking the 5-row schema.  Now the post-
+// await check routes through bailAbortedSocial like a true mid-loop abort.
+
+test('readSocialLink: direct URL share-preview await-after abort still records share-preview.fail aborted-mid-loop + skip remaining', async () => {
+  // Direct host (xiaohongshu.com is NOT in SHORT_LINK_HOSTS), so
+  // resolveShortLink returns the input unchanged → uniqueStrategyUrls
+  // produces a single candidate.  previewFn aborts mid-await and returns
+  // null; pre-fix this exited the loop normally and recorded
+  // share-preview.fail no-match.  Post-fix the post-await abort check
+  // catches it and bails to mid-loop semantics.
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.xiaohongshu.com/explore/abc', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: async () => { ac.abort(); return null; },
+    browserPreviewFn: async () => ({ title: 'must not see', score: 100 }),
+    externalReaderFn: async () => ({ content: 'must not see' }),
+  });
+  assert.equal(out.aborted, true);
+  const shareEntry = out.evidenceTrail.find(e => e.tier === 'share-preview');
+  assert.ok(shareEntry, 'share-preview entry expected');
+  assert.equal(shareEntry.outcome, 'fail');
+  assert.equal(shareEntry.reason, 'aborted-mid-loop',
+    `single-candidate await-after abort must classify as aborted-mid-loop, not no-match; got ${shareEntry.reason}`);
+  // 5-row schema must be intact: browser + external-reader skip.
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'browser' && e.outcome === 'skip'));
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'skip'));
+});
+
+test('readSocialLink: direct URL browser await-after abort still records browser.fail + external-reader.skip', async () => {
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.douyin.com/video/abc', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: async () => null,
+    browserPreviewFn: async () => { ac.abort(); return null; },
+    externalReaderFn: async () => ({ content: 'must not see' }),
+  });
+  assert.equal(out.aborted, true);
+  const browserEntry = out.evidenceTrail.find(e => e.tier === 'browser');
+  assert.equal(browserEntry?.outcome, 'fail');
+  assert.equal(browserEntry?.reason, 'aborted-mid-loop');
+  assert.ok(out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'skip'));
+});
+
+test('readSocialLink: direct URL external-reader await-after abort still records external-reader.fail (no remaining tiers)', async () => {
+  const ac = new AbortController();
+  const out = await readSocialLink('https://www.xiaohongshu.com/discovery/item/zzz', {
+    signal: ac.signal,
+    ytdlpFn: async () => null,
+    previewFn: async () => null,
+    browserPreviewFn: async () => null,
+    externalReaderFn: async () => { ac.abort(); return null; },
+  });
+  assert.equal(out.aborted, true);
+  const externalEntry = out.evidenceTrail.find(e => e.tier === 'external-reader');
+  assert.equal(externalEntry?.outcome, 'fail');
+  assert.equal(externalEntry?.reason, 'aborted-mid-loop');
+  // external-reader is the last tier — nothing to skip after.
+});
+
 test('readSocialLink: trail entry uses `extra` (not `metadata`) so cross-tool grep stays clean', async () => {
   // Source-level guard mirroring the fetchUrlTool one — trail entries must
   // never use `metadata:` field name to avoid colliding with the legacy
