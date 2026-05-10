@@ -58,6 +58,27 @@ import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 //   • external-reader    (camoufox/crawl4ai/scrapling)
 // Outcome 'skip' covers the `if (signal?.aborted) return` early-bail
 // branches so consumers can tell "we didn't try X" from "X failed".
+// Phase G-1b follow-up #1 (Codex C 闭环 2026-05-10): mid-loop abort
+// helper.  Multi-candidate loops in share-preview/browser/external-reader
+// previously did a bare `if (signal?.aborted) return null;` which broke
+// the G-1b contract that every social-link return carries an
+// evidenceTrail.  This helper records the current tier as fail
+// reason=aborted-mid-loop AND the remaining (untried) tiers as skip
+// reason=aborted-by-prev-tier, so the trail is always shape-stable
+// (5 entries when we reach this layer or later) and analytics scripts
+// can tell "we got to share-preview and were killed" from "we never
+// tried browser".  User-decided contract on 2026-05-10:
+//   • current tier → fail (it WAS running when abort hit)
+//   • untried tiers → skip (we never started them)
+//   • aborted marker { body:'', via:'aborted', evidenceTrail, aborted:true }
+function bailAbortedSocial(trail, currentTier, remainingTiers, canonical) {
+  recordSocialTrail(trail, currentTier, 'fail', { reason: 'aborted-mid-loop' });
+  for (const t of (remainingTiers || [])) {
+    recordSocialTrail(trail, t, 'skip', { reason: 'aborted-by-prev-tier' });
+  }
+  return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+}
+
 function recordSocialTrail(trail, tier, outcome, opts = {}) {
   if (!Array.isArray(trail)) return;
   const entry = { tier, outcome, latencyMs: Math.max(0, Number(opts.latencyMs) || 0) };
@@ -1197,7 +1218,7 @@ export async function readSocialLink(url, {
   try {
     if (typeof previewFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
-        if (signal?.aborted) return null;
+        if (signal?.aborted) return bailAbortedSocial(trail, 'share-preview', ['browser', 'external-reader'], canonical);
         const preview = await previewFn(candidateUrl, { signal, canonicalUrl: canonical });
         const score = preview ? scorePreview(preview) : 0;
         sharePreviewBestScore = Math.max(sharePreviewBestScore, score);
@@ -1271,7 +1292,7 @@ export async function readSocialLink(url, {
   try {
     if (typeof browserPreviewFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
-        if (signal?.aborted) return null;
+        if (signal?.aborted) return bailAbortedSocial(trail, 'browser', ['external-reader'], canonical);
         const browserPreview = await browserPreviewFn(candidateUrl, { signal, canonicalUrl: canonical });
         const bScore = browserPreview ? scoreBrowserPreview(browserPreview) : 0;
         browserBestScore = Math.max(browserBestScore, bScore);
@@ -1324,7 +1345,7 @@ export async function readSocialLink(url, {
   try {
     if (typeof externalReaderFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
-        if (signal?.aborted) return null;
+        if (signal?.aborted) return bailAbortedSocial(trail, 'external-reader', [], canonical);
         const external = await externalReaderFn(candidateUrl, {
           preferred: ['camoufox', 'crawl4ai', 'scrapling'],
           signal,

@@ -138,6 +138,99 @@ test('readSocialLink: abort signal at entry returns aborted marker with single s
   assert.equal(entry.reason, 'aborted-at-entry');
 });
 
+// ─── G-1b follow-up #1 (Codex C 闭环 2026-05-10): mid-loop abort coverage ────
+//
+// Pre-fix, the share-preview / browser / external-reader multi-candidate
+// loops did `if (signal?.aborted) return null;` which broke the G-1b
+// contract (every social-link return carries an evidenceTrail).  Now they
+// route through bailAbortedSocial() which records the current tier as
+// fail reason=aborted-mid-loop AND the remaining tiers as skip
+// reason=aborted-by-prev-tier — trail is always shape-stable.
+//
+// Test pattern: stub globalThis.fetch so resolveShortLink returns a
+// canonical URL different from the input, giving uniqueStrategyUrls 2
+// candidates and forcing the for-loop to enter at least once.  Then the
+// mocked sub-fn aborts the signal after its first call so the next
+// iteration's top-of-loop check fires bailAbortedSocial().
+
+async function withShortLinkResolveTo(canonicalUrl, body) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('', {
+    status: 302,
+    headers: { location: canonicalUrl },
+  });
+  try { return await body(); } finally { globalThis.fetch = originalFetch; }
+}
+
+test('readSocialLink: mid-loop abort in share-preview returns marker with full trail (current=fail, browser+external=skip)', async () => {
+  const ac = new AbortController();
+  const out = await withShortLinkResolveTo(
+    'https://www.xiaohongshu.com/explore/abc',
+    () => readSocialLink('https://xhslink.com/abc', {
+      signal: ac.signal,
+      ytdlpFn: async () => null,
+      previewFn: async () => { ac.abort(); return null; },  // abort then return null → loop continues, top check fires
+      browserPreviewFn: async () => ({ title: 'must not see' }),  // would otherwise be tried
+      externalReaderFn: async () => ({ content: 'must not see' }),
+    }),
+  );
+  assert.equal(out.aborted, true);
+  assert.equal(out.via, 'aborted');
+  const tiers = out.evidenceTrail.map(e => `${e.tier}.${e.outcome}`);
+  // share-preview ran (and was aborted mid-loop), browser + external never started.
+  assert.ok(tiers.includes('share-preview.fail'),
+    `share-preview must record fail; got ${tiers.join(', ')}`);
+  assert.ok(tiers.includes('browser.skip'),
+    `browser must record skip when aborted before reaching it; got ${tiers.join(', ')}`);
+  assert.ok(tiers.includes('external-reader.skip'),
+    `external-reader must record skip when aborted before reaching it; got ${tiers.join(', ')}`);
+  const shareEntry = out.evidenceTrail.find(e => e.tier === 'share-preview' && e.outcome === 'fail');
+  assert.equal(shareEntry.reason, 'aborted-mid-loop');
+});
+
+test('readSocialLink: mid-loop abort in browser returns marker, external=skip', async () => {
+  const ac = new AbortController();
+  const out = await withShortLinkResolveTo(
+    'https://www.xiaohongshu.com/explore/abc',
+    () => readSocialLink('https://xhslink.com/abc', {
+      signal: ac.signal,
+      ytdlpFn: async () => null,
+      previewFn: async () => null,
+      browserPreviewFn: async () => { ac.abort(); return null; },
+      externalReaderFn: async () => ({ content: 'must not see' }),
+    }),
+  );
+  assert.equal(out.aborted, true);
+  const browserEntry = out.evidenceTrail.find(e => e.tier === 'browser' && e.outcome === 'fail');
+  assert.ok(browserEntry, 'browser must be recorded as fail');
+  assert.equal(browserEntry.reason, 'aborted-mid-loop');
+  const externalEntry = out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'skip');
+  assert.ok(externalEntry, 'external-reader must be skip');
+  assert.equal(externalEntry.reason, 'aborted-by-prev-tier');
+});
+
+test('readSocialLink: mid-loop abort in external-reader returns marker (no remaining tiers to skip)', async () => {
+  const ac = new AbortController();
+  const out = await withShortLinkResolveTo(
+    'https://www.xiaohongshu.com/explore/abc',
+    () => readSocialLink('https://xhslink.com/abc', {
+      signal: ac.signal,
+      ytdlpFn: async () => null,
+      previewFn: async () => null,
+      browserPreviewFn: async () => null,
+      externalReaderFn: async () => { ac.abort(); return null; },
+    }),
+  );
+  assert.equal(out.aborted, true);
+  const externalEntry = out.evidenceTrail.find(e => e.tier === 'external-reader' && e.outcome === 'fail');
+  assert.ok(externalEntry, 'external-reader must be recorded as fail');
+  assert.equal(externalEntry.reason, 'aborted-mid-loop');
+  // No tiers AFTER external-reader, so no extra skip entries past it.
+  const externalIndex = out.evidenceTrail.findIndex(e => e === externalEntry);
+  assert.equal(externalIndex, out.evidenceTrail.length - 1,
+    'external-reader.fail must be the last trail entry (nothing to skip after)');
+});
+
 test('readSocialLink: trail entry uses `extra` (not `metadata`) so cross-tool grep stays clean', async () => {
   // Source-level guard mirroring the fetchUrlTool one — trail entries must
   // never use `metadata:` field name to avoid colliding with the legacy

@@ -196,6 +196,40 @@ test('evidenceTrail: G-1b cross-tool merge — social sub-trail entries get `soc
   assert.equal(subYtdlpEntry.extra?.hasTitle, true);
 });
 
+test('evidenceTrail: G-1b-fix — mid-loop aborted social sub-trail also merges (with skip entries for untried tiers)', async () => {
+  // The mid-loop abort fix (Codex C 闭环 2026-05-10) ensures readSocialLink
+  // returns an aborted marker WITH evidenceTrail even when abort hits
+  // inside a multi-candidate loop.  fetchUrlTool must merge those skip
+  // entries the same way it merges fail entries — pin it.
+  const result = await fetchUrlTool.run(
+    { url: 'https://v.douyin.com/aborted' },
+    {
+      _readSocialLink: async () => ({
+        body: '',
+        via: 'aborted',
+        canonicalUrl: 'https://www.douyin.com/video/aborted',
+        aborted: true,
+        evidenceTrail: [
+          { tier: 'short-link-resolve', outcome: 'ok', latencyMs: 8 },
+          { tier: 'yt-dlp', outcome: 'fail', latencyMs: 1200, reason: 'unsupported-or-no-meta' },
+          { tier: 'share-preview', outcome: 'fail', latencyMs: 50, reason: 'aborted-mid-loop' },
+          { tier: 'browser', outcome: 'skip', latencyMs: 0, reason: 'aborted-by-prev-tier' },
+          { tier: 'external-reader', outcome: 'skip', latencyMs: 0, reason: 'aborted-by-prev-tier' },
+        ],
+      }),
+    },
+  );
+  assert.equal(result.ok, false);
+  // All 5 sub-tiers must be merged with prefix, including skip entries.
+  const subEntries = result.evidenceTrail.filter(e => e.tier.startsWith('social-link.'));
+  assert.equal(subEntries.length, 5);
+  const skipEntries = subEntries.filter(e => e.outcome === 'skip');
+  assert.equal(skipEntries.length, 2, 'browser + external-reader skip entries must be present');
+  for (const e of skipEntries) {
+    assert.equal(e.reason, 'aborted-by-prev-tier');
+  }
+});
+
 test('evidenceTrail: G-1b cross-tool merge — social fail path also merges sub-trail (so operators see WHY social-link failed)', async () => {
   // Unhappy path coverage: even when socialLinkTool returns a missed
   // marker (body=''), the sub-trail must still be merged so operators
