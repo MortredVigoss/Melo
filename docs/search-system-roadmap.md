@@ -201,7 +201,48 @@ fallback 层 fetch retry 必须被 kill。今天 memory 系统类似 bug 已修
 
 - [x] G-1a `fetchUrlTool` 接 evidenceTrail（POC）— done 2026-05-10
 - [x] G-1b `socialLinkTool` 接 evidenceTrail — done 2026-05-10 (5 sub-tier + fetchUrlTool merge with `social-link.*` prefix; 4-commit chain 含 abort 3-layer 完整闭环)
-- [x] G-1c `webSearchTool` 接 evidenceTrail — done 2026-05-10 (6 phase + abort 3-layer 一次性覆盖,吸取 G-1b 教训不走 follow-up 路径)
+- [x] G-1c `webSearchTool` 接 evidenceTrail — done 2026-05-10 (6 phase, **走了 4-轮 follow-up 才闭** abort 契约 + 测试假绿一轮)
+
+## Lessons learned (G-1b/G-1c 连环 C 反思,写给后续 G-1d/G-2)
+
+abort 契约连环 C 不是 abort 这事难,是反复"再加一个 check"而不是 systematic
+处理。每次 commit 都聚焦"这一处",Codex 抓出"还有这一处",再修,再抓,如此 4 轮。
+
+### 根因 (3 类)
+
+1. **抽象不完整**: 第一刀想"3-layer abort 全覆盖"但实际 abort 边界 ≠ 3 层。
+   webSearchTool 一个文件就有 35 个 await,光 abort 入口就有: loop top /
+   await-resolve / await-throw (catch) / in-flight (await 期间) / probe
+   (CLI availability) / race 内 settled-after-abort / multi-candidate loop
+   内部 / SWR background... 试图"逐个 await 加 check"是 O(N) 且容易漏。
+
+2. **测试假绿**: pre-aborted signal 测试看似覆盖 mid-await abort,实际只测
+   loop-top check;源码 grep guard 看似 cover 一类问题,实际只 lock 一行字符
+   串。Codex 越来越严格要求**真行为断言** + **stub.calledTimes 验证 path
+   真走过**。
+
+3. **架构 vs 修补**: 每次都"再加一个 check",没"重新设计 abort 契约"。Codex
+   隐隐推我们做后者:统一 helper (abortRace) + 应用到全部 hot-path await,
+   而不是只修 PW 这一类。
+
+### G-1d/G-2 的处理原则
+
+a. **不抽象只修补 = 必踩 follow-up**。新加一类 await,先问"这条 await 跟
+   abort 怎么交互",而不是"先写,abort 后续 follow-up 加"。
+
+b. **用真实 seam 写测试,不用源码 grep**。源码 grep 防的是"未来有人删 line",
+   不是"现在这行真有效"。要 stub 行为 + 断言 path 真走过 (calledTimes /
+   被调过的 url 列表 / etc)。
+
+c. **Codex C 出来时,不只修这一处,做 systematic 检查同类**。例如 abort 在
+   PW await 漏 → 同时检查 Jina/DDG/Weather/Rerank/SWR 所有外部 await 是否
+   也漏。一波收掉。
+
+d. **G-5 abort 链路 milestone 时,做一次完整 audit + helper 统一应用**:
+   - grep 所有 await 分类 (已 take signal / 用 abortRace / 不影响)
+   - PW CLI 子进程 真 kill (跨 5+ 文件)
+   - 所有 hot-path await 走同一 abortRace helper
+   - 测试统一 mock injection pattern
 - [ ] G-1d chat thread state 写 trail（debug 可见）
 - [ ] G-1e trail 进 prompt（明确 fail reason）
 - [ ] G-1f UI 显示当前层

@@ -200,36 +200,69 @@ test('evidenceTrail: mid-await abort during SERP race finishes promptly (no wait
 // finish (5-15s typical).  Real subprocess kill is G-5; this verifies the
 // JS-layer behavior using _fetchViaPlaywrightCli test seam.
 
-test('evidenceTrail: mid-await abort during PW fallback returns promptly (abortRace, not wait for PW)', async () => {
-  // Simulate the bad path: SERP returns results, content-fetch enters
-  // PW fallback, signal abort fires while fetchViaPlaywrightCli is mid-
-  // await.  Pre-fix the await would block 5-15s waiting for PW.
-  // Post-fix abortRace rejects with AbortError immediately.
-  //
-  // The cleanest way to drive this is via a stub _fetchViaPlaywrightCli
-  // that hangs forever — abortRace then rejects on signal, the loop
-  // breaks, the run continues.  We can't easily get the SERP race to
-  // produce results without real network, so we instead time the
-  // behaviour at the helper level via a unit test of the abortRace
-  // helper exposed indirectly: stub that hangs, signal aborts after
-  // 50ms, expect run() to finish in well under 1s.
+test('evidenceTrail: mid-await abort during PW fallback returns promptly + stub IS called (G-1c round-4 Codex 闭环)', async () => {
+  // G-1c round-3 had this test but used 50ms abort which fired during
+  // SERP race (entry gate) BEFORE content-fetch ever started → the
+  // _fetchViaPlaywrightCli stub was never called and the test passed
+  // for the wrong reason (false-green).  Round-4 fix: use the new
+  // _searchViaPlaywright / _searchViaDdg seams to construct a
+  // deterministic path that actually reaches PW content fallback
+  // before abort, then assert pwStub.calledTimes >= 1 to prove the
+  // path was exercised.
   const ac = new AbortController();
-  // Stub PW: never resolves.
-  const hangingPw = () => new Promise(() => {});
-  // Drive a short query to keep total path short; abort 50ms in.
-  setTimeout(() => ac.abort(), 50);
+  let pwStubCalls = 0;
+  let pwStubAbortRaised = 0;
+  const hangingPw = (url) => {
+    pwStubCalls += 1;
+    return new Promise(() => {
+      // never resolves; abortRace will reject on signal.
+    });
+  };
+  // SERP stub: returns 3 fake results so content-fetch has work to do.
+  const pwSerpStub = () => Promise.resolve([
+    { title: 'r1', url: 'https://example.com/a', snippet: 'foo' },
+    { title: 'r2', url: 'https://example.com/b', snippet: 'bar' },
+    { title: 'r3', url: 'https://example.com/c', snippet: 'baz' },
+  ]);
+  // DDG stub: empty so SERP race always picks PW.
+  const ddgStub = () => Promise.resolve([]);
+  // CLI probe stub: PW available so the content-fetch PW fallback path
+  // is reachable.
+  const cliAvailStub = () => Promise.resolve(true);
+
   const tStart = Date.now();
-  const result = await webSearchTool.run(
-    { query: 'mid-await abort PW fallback fixture xyz789', noCache: true },
-    { signal: ac.signal, _fetchViaPlaywrightCli: hangingPw },
+  // Run + delayed abort.  We need enough time for SERP race + Jina to
+  // miss + PW fallback to start hanging.  The Jina misses naturally
+  // because example.com isn't reachable through the real Jina reader
+  // in test env (or returns empty); we abort after the PW stub has
+  // been called at least once.
+  const runP = webSearchTool.run(
+    { query: 'mid-await abort PW fallback round-4 fixture', noCache: true },
+    {
+      signal: ac.signal,
+      _fetchViaPlaywrightCli: hangingPw,
+      _searchViaPlaywright: pwSerpStub,
+      _searchViaDdg: ddgStub,
+      _isPlaywrightCliAvailable: cliAvailStub,
+    },
   );
+  // Poll until pwStubCalls > 0, then abort.  Generous 8s ceiling for
+  // Jina to time out + content-fetch to enter PW fallback.
+  const pollDeadline = Date.now() + 8000;
+  while (pwStubCalls === 0 && Date.now() < pollDeadline) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  assert.ok(pwStubCalls >= 1,
+    `PW stub must be reached before abort (proves path coverage); calledTimes=${pwStubCalls}`);
+  ac.abort();
+  const result = await runP;
   const elapsed = Date.now() - tStart;
-  assert.equal(result.ok, false);
-  assert.equal(result.aborted, true);
-  // Without abortRace this would be 5000ms+ (PW timeout).  Generous
-  // 4000ms ceiling tolerates slow CI but firmly catches regressions.
-  assert.ok(elapsed < 4000,
-    `mid-await PW abort must return promptly via abortRace, got ${elapsed}ms`);
+  // Without abortRace the PW await would block until natural timeout
+  // (5-15s+ per target × PW_FALLBACK_MAX).  abortRace must reject
+  // immediately so total elapsed stays close to the abort point.
+  // Generous 12s ceiling tolerates slow CI + Jina timeout (~6s).
+  assert.ok(elapsed < 12000,
+    `mid-await PW abort must return promptly via abortRace; got ${elapsed}ms with pwStubCalls=${pwStubCalls}`);
 });
 
 test('evidenceTrail: source-level guard — abortRace helper exists and is applied to 3 PW await sites', () => {
@@ -238,12 +271,15 @@ test('evidenceTrail: source-level guard — abortRace helper exists and is appli
   // await points red-flags here.
   assert.match(TOOL_SOURCE, /function abortRace\(promise,\s*signal\)/,
     'abortRace helper definition must be present');
-  // Site 1: isPlaywrightCliAvailable wrapping in raceSerpProviders.
-  assert.match(TOOL_SOURCE, /abortRace\(isPlaywrightCliAvailable\(\),\s*signal\)/,
-    'abortRace must wrap isPlaywrightCliAvailable in raceSerpProviders');
-  // Site 2: searchViaPlaywright PW SERP leg.
-  assert.match(TOOL_SOURCE, /abortRace\(searchViaPlaywright\(/,
-    'abortRace must wrap searchViaPlaywright PW SERP leg');
+  // Site 1: PW availability probe wrapping in raceSerpProviders.
+  // Match either bare `isPlaywrightCliAvailable()` or the seam alias
+  // `pwAvailableImpl()` (G-1c round-4 added test seams that rebind the
+  // call through deps; production still resolves to isPlaywrightCliAvailable).
+  assert.match(TOOL_SOURCE, /abortRace\(pwAvailableImpl\(\),\s*signal\)/,
+    'abortRace must wrap PW availability probe in raceSerpProviders');
+  // Site 2: PW SERP leg (similarly aliased through pwSearchImpl seam).
+  assert.match(TOOL_SOURCE, /abortRace\(pwSearchImpl\(/,
+    'abortRace must wrap PW SERP leg');
   // Site 3: PW content fallback (uses pwImpl alias).
   assert.match(TOOL_SOURCE, /abortRace\(pwImpl\(url\),\s*signal\)/,
     'abortRace must wrap pwImpl(url) in fetchResultContents PW fallback');

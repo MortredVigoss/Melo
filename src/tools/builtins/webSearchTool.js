@@ -1448,19 +1448,29 @@ async function fetchWeatherFastPath(query, signal) {
  * Both legs are bounded by their own inner timeouts (FETCH_TIMEOUT_MS);
  * the race adds no new time budget — it only decides whether to parallelize.
  */
-async function raceSerpProviders(query, limit, signal) {
+async function raceSerpProviders(query, limit, signal, deps = {}) {
   const errors = [];
-  // G-1c follow-up #3 (Codex 2026-05-10 round-3): abort gate BEFORE the
-  // CLI probe + abort-race AROUND the probe.  Pre-fix the listener was
-  // only registered AFTER the probe (line ~1405), so cold-start CLI
-  // detection (~8s) couldn't be cancelled.
+  // G-1c follow-up #4 (Codex C round-4 闭环 2026-05-10): test seams.
+  // Production callers leave deps empty; tests inject _searchViaPlaywright
+  // / _searchViaDdg / _isPlaywrightCliAvailable so they can deterministically
+  // construct paths like "SERP returns results, Jina misses, PW content
+  // fallback hangs, abort mid-await".  Without seams the previous test
+  // hit a different abort point (SERP race entry gate) and the
+  // _fetchViaPlaywrightCli stub was never called — false-green.
+  const pwSearchImpl = deps._searchViaPlaywright || searchViaPlaywright;
+  const ddgImpl = deps._searchViaDdg || searchViaDdg;
+  const pwAvailableImpl = deps._isPlaywrightCliAvailable || isPlaywrightCliAvailable;
+  // G-1c follow-up #3 (round-3): abort gate BEFORE the CLI probe +
+  // abort-race AROUND the probe.  Pre-round-3 the listener was only
+  // registered AFTER the probe, so cold-start CLI detection (~8s)
+  // couldn't be cancelled.
   if (signal?.aborted) {
     errors.push('aborted');
     return { results: [], provider: '', errors };
   }
   let usePw;
   try {
-    usePw = await abortRace(isPlaywrightCliAvailable(), signal);
+    usePw = await abortRace(pwAvailableImpl(), signal);
   } catch (err) {
     if (err?.name === 'AbortError') {
       errors.push('aborted');
@@ -1472,7 +1482,7 @@ async function raceSerpProviders(query, limit, signal) {
   // Degenerate case: no Playwright → no race, just run Jina directly.
   if (!usePw) {
     try {
-      const r = await searchViaDdg(query, limit, signal);
+      const r = await ddgImpl(query, limit, signal);
       return {
         results: r,
         provider: r.length ? 'duckduckgo' : '',
@@ -1525,7 +1535,7 @@ async function raceSerpProviders(query, limit, signal) {
     const startJina = () => {
       if (jinaStarted || done) return;
       jinaStarted = true;
-      searchViaDdg(query, limit, signal).then(
+      ddgImpl(query, limit, signal).then(
         r => {
           jinaSettled = true;
           if (done) return;  // ignore late settle after abort
@@ -1544,7 +1554,7 @@ async function raceSerpProviders(query, limit, signal) {
     // PW leg — start immediately.  abortRace ensures signal flips
     // immediately reject the await even if the underlying PW process
     // keeps running until natural timeout (G-5 will kill the subprocess).
-    abortRace(searchViaPlaywright(query, limit), signal).then(
+    abortRace(pwSearchImpl(query, limit), signal).then(
       r => {
         pwSettled = true;
         if (done) return;  // ignore late settle after abort
@@ -1619,7 +1629,17 @@ export const webSearchTool = {
 
   async run(
     { query, num_results = 5, noCache = false, allowBlockedDomains = false },
-    { signal, config, _fetchViaPlaywrightCli } = {},
+    { signal, config,
+      // G-1c follow-up #4 (Codex C round-4 闭环 2026-05-10): test seams.
+      // Production callers leave these empty; tests inject to construct
+      // deterministic abort paths.  Same pattern as fetchUrlTool's
+      // _readSocialLink / _readExternalUrl, socialLinkTool's previewFn /
+      // browserPreviewFn / etc.
+      _fetchViaPlaywrightCli,
+      _searchViaPlaywright,
+      _searchViaDdg,
+      _isPlaywrightCliAvailable,
+    } = {},
   ) {
     const trail = [];
     if (!query || typeof query !== 'string' || !query.trim()) {
@@ -1844,7 +1864,9 @@ export const webSearchTool = {
     if (signal?.aborted) return bailAbortedWebSearch(trail, 'serp', q, { intent, spanId });
     let serpOutcome;
     try {
-      serpOutcome = await raceSerpProviders(q, limit, signal);
+      serpOutcome = await raceSerpProviders(q, limit, signal, {
+        _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
+      });
     } catch (err) {
       if (signal?.aborted || err?.name === 'AbortError') {
         return bailAbortedWebSearch(trail, 'serp', q, { intent, spanId });
@@ -1888,7 +1910,9 @@ export const webSearchTool = {
         if (signal?.aborted) return bailAbortedWebSearch(trail, 'synonym-retry', q, { intent, spanId });
         synonymTried += 1;
         try {
-          const retry = await raceSerpProviders(variant, limit, signal);
+          const retry = await raceSerpProviders(variant, limit, signal, {
+            _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
+          });
           // 3-layer abort: post-await
           if (signal?.aborted) return bailAbortedWebSearch(trail, 'synonym-retry', q, { intent, spanId });
           if (retry.results.length >= SYNONYM_RETRY_THRESHOLD) {
