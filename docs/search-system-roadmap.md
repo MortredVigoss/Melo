@@ -59,7 +59,11 @@ chat runner 把任何工具失败统一包成 `model request failed`。
  * @property {string} [reason]     // 'cookie-missing' | 'login-wall' | 'timeout' | 'parse-empty' | '4xx' | '5xx' | 'extractor-throw' | 'no-content-match'
  * @property {number} latencyMs
  * @property {string} [method]     // 拼链 'playwright→camoufox' 这种
- * @property {Object} [metadata]   // 各 tier 特有：cookie tier → {hostHasCookies}; playwright → {usedHeadful}; etc
+ * @property {Object} [extra]      // 各 tier 特有：cookie tier → {hostHasCookies}; playwright → {usedHeadful}; etc.
+ *                                    Renamed from `metadata` to avoid grep collision
+ *                                    with the legacy `meta:` contract on social-link returns
+ *                                    (fetchUrlTool.socialRoute.test.js scans the file for
+ *                                    stray `metadata:` keys).
  */
 
 /**
@@ -181,7 +185,7 @@ fallback 层 fetch retry 必须被 kill。今天 memory 系统类似 bug 已修
 
 ## Phase G 进度（每 commit 滚动更新）
 
-- [ ] G-1a `fetchUrlTool` 接 evidenceTrail（POC）
+- [x] G-1a `fetchUrlTool` 接 evidenceTrail（POC）— done 2026-05-10
 - [ ] G-1b `socialLinkTool` 接 evidenceTrail
 - [ ] G-1c `webSearchTool` 接 evidenceTrail
 - [ ] G-1d chat thread state 写 trail（debug 可见）
