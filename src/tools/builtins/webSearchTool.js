@@ -17,6 +17,86 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../../config.js';
 import { debugWarn } from '../../debug.js';
+
+// ─── Phase G-1c (2026-05-10): evidenceTrail collection for web_search ────
+//
+// Same contract + vocabulary as fetchUrlTool / socialLinkTool (see
+// docs/search-system-roadmap.md §#1).  webSearchTool's run() is a phase
+// chain (not a fallback chain like fetchUrl, not a strategy chain like
+// socialLink) — phases run in order, each independent of others, and the
+// trail records what each phase did.  Phase vocabulary:
+//
+//   • validate           — query empty / wrong type
+//   • weather-fast-path  — wttr.in shortcut (only when query matches WEATHER_KEYWORDS)
+//   • cache              — fresh hit / stale (SWR) hit / miss
+//   • serp               — Playwright + DDG/Jina race result
+//   • synonym-retry      — additional SERP attempts when first is thin
+//   • content-fetch      — Jina/Playwright bulk content read
+//   • semantic-rerank    — best-effort embedding rerank
+//
+// The G-1b 3-layer abort contract is enforced uniformly (lessons from
+// the 4-commit G-1b chain we don't want to repeat):
+//   1. before await: if (signal?.aborted) → bailAbortedWebSearch
+//   2. after await: if (signal?.aborted) → bailAbortedWebSearch
+//   3. catch with abort: if (signal?.aborted || err.name === 'AbortError')
+//      → bailAbortedWebSearch
+//
+// abort-mid-loop semantics: current phase records `fail aborted-mid-loop`,
+// all subsequent (untried) phases record `skip aborted-by-prev-phase`.
+const WS_PHASE_ORDER = ['weather-fast-path', 'cache', 'serp', 'synonym-retry', 'content-fetch', 'semantic-rerank'];
+
+function recordWebSearchTrail(trail, phase, outcome, opts = {}) {
+  if (!Array.isArray(trail)) return;
+  const entry = { tier: phase, outcome, latencyMs: Math.max(0, Number(opts.latencyMs) || 0) };
+  if (opts.reason) entry.reason = opts.reason;
+  if (opts.method) entry.method = opts.method;
+  // `extra` (not `metadata`) — same convention as fetchUrlTool/socialLinkTool.
+  if (opts.extra && Object.keys(opts.extra).length) entry.extra = opts.extra;
+  trail.push(entry);
+}
+
+function bailAbortedWebSearch(trail, currentPhase, query, ctx = {}) {
+  recordWebSearchTrail(trail, currentPhase, 'fail', { reason: 'aborted-mid-loop' });
+  const idx = WS_PHASE_ORDER.indexOf(currentPhase);
+  if (idx >= 0) {
+    for (const p of WS_PHASE_ORDER.slice(idx + 1)) {
+      recordWebSearchTrail(trail, p, 'skip', { reason: 'aborted-by-prev-phase' });
+    }
+  }
+  // Backward compat: keep error='SEARCH_FAILED' so existing callers that
+  // branch on error code (and tests that pin it) don't change behavior.
+  // The new `aborted: true` flag + evidenceTrail.tier='*-mid-loop' lets
+  // newer code distinguish abort from generic search failure.
+  // meta.intent/spanId/timings stay present (existing tests pin them on
+  // the fail path); ctx threads them in from run() so the helper stays
+  // stateless.
+  return {
+    ok: false,
+    output: `Web search aborted for "${query}".`,
+    error: 'SEARCH_FAILED',
+    aborted: true,
+    meta: {
+      query,
+      timings: { totalMs: 0, serpMs: 0, contentMs: 0, cacheHit: false, weatherFastPath: false },
+      ...(ctx.intent ? { intent: ctx.intent } : {}),
+      ...(ctx.spanId !== undefined ? { spanId: ctx.spanId } : {}),
+    },
+    evidenceTrail: trail,
+  };
+}
+
+function classifyWebSearchError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  if (!msg) return 'error';
+  if (msg.includes('abort')) return 'aborted';
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout';
+  if (msg.includes('socket') || msg.includes('econnreset') || msg.includes('econnrefused')) return 'network';
+  if (msg.includes('certificate') || msg.includes('ssl')) return 'tls';
+  if (/\b4\d\d\b/.test(msg)) return '4xx';
+  if (/\b5\d\d\b/.test(msg)) return '5xx';
+  if (msg.includes('parse') || msg.includes('json')) return 'parse-error';
+  return 'error';
+}
 import { createPlaywrightSession, cleanPageText } from '../../web/playwrightFetcher.js';
 import { hostMatchesAnySuffix, SOCIAL_HOST_SUFFIXES } from './socialLinkTool.js';
 import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
@@ -1427,8 +1507,10 @@ export const webSearchTool = {
     { query, num_results = 5, noCache = false, allowBlockedDomains = false },
     { signal, config } = {},
   ) {
+    const trail = [];
     if (!query || typeof query !== 'string' || !query.trim()) {
-      return { ok: false, output: 'Missing or empty query.', error: 'INVALID_QUERY' };
+      recordWebSearchTrail(trail, 'validate', 'fail', { reason: 'invalid-query' });
+      return { ok: false, output: 'Missing or empty query.', error: 'INVALID_QUERY', evidenceTrail: trail };
     }
 
     const q = query.trim();
@@ -1463,8 +1545,29 @@ export const webSearchTool = {
 
     // Fast-path: weather queries via wttr.in (~1s)
     if (WEATHER_KEYWORDS.test(q)) {
-      const weatherResult = await fetchWeatherFastPath(q, signal);
+      const tWeather = Date.now();
+      // 3-layer abort: pre-await
+      if (signal?.aborted) return bailAbortedWebSearch(trail, 'weather-fast-path', q, { intent, spanId });
+      let weatherResult;
+      try {
+        weatherResult = await fetchWeatherFastPath(q, signal);
+      } catch (err) {
+        if (signal?.aborted || err?.name === 'AbortError') {
+          return bailAbortedWebSearch(trail, 'weather-fast-path', q, { intent, spanId });
+        }
+        recordWebSearchTrail(trail, 'weather-fast-path', 'fail', {
+          latencyMs: Date.now() - tWeather,
+          reason: classifyWebSearchError(err),
+        });
+        weatherResult = null;
+      }
+      // 3-layer abort: post-await
+      if (signal?.aborted) return bailAbortedWebSearch(trail, 'weather-fast-path', q, { intent, spanId });
       if (weatherResult) {
+        recordWebSearchTrail(trail, 'weather-fast-path', 'ok', {
+          latencyMs: Date.now() - tWeather,
+          extra: { hit: true },
+        });
         weatherResult.meta = {
           ...weatherResult.meta,
           timings: {
@@ -1478,7 +1581,15 @@ export const webSearchTool = {
           intent,
         };
         writeWebSearchDebugLine(`[end] span=${spanId} path=weather ms=${Date.now() - tStart}`);
-        return weatherResult;
+        return { ...weatherResult, evidenceTrail: trail };
+      }
+      // weather miss — fall through to cache/serp.  Only record a skip
+      // entry if we didn't already record a fail (caught error above).
+      if (!trail.some(e => e.tier === 'weather-fast-path')) {
+        recordWebSearchTrail(trail, 'weather-fast-path', 'skip', {
+          latencyMs: Date.now() - tWeather,
+          reason: 'no-data',
+        });
       }
     }
 
@@ -1487,8 +1598,14 @@ export const webSearchTool = {
     // stale rows now and refresh in the background, so the user never
     // pays the SERP latency on repeat queries.
     if (!noCache) {
+      const tCache = Date.now();
       const fresh = getCachedSearch(q, intent);
       if (fresh) {
+        recordWebSearchTrail(trail, 'cache', 'ok', {
+          latencyMs: Date.now() - tCache,
+          method: 'fresh',
+          extra: { provider: fresh.provider, results: fresh.results.length },
+        });
         const output = formatResults(
           fresh.results.slice(0, limit),
           q,
@@ -1516,11 +1633,17 @@ export const webSearchTool = {
             spanId,
             intent,
           },
+          evidenceTrail: trail,
         };
       }
 
       const stale = getStaleCachedSearch(q, intent);
       if (stale) {
+        recordWebSearchTrail(trail, 'cache', 'ok', {
+          latencyMs: Date.now() - tCache,
+          method: 'stale-swr',
+          extra: { provider: stale.provider, ageMs: Date.now() - stale.createdAt },
+        });
         const output = formatResults(
           stale.results.slice(0, limit),
           q,
@@ -1565,26 +1688,75 @@ export const webSearchTool = {
             spanId,
             intent,
           },
+          evidenceTrail: trail,
         };
       }
+      // cache fully missed — record skip-equivalent so the trail shows we
+      // checked. (Distinct from "noCache=true" which means we never even
+      // looked.)
+      recordWebSearchTrail(trail, 'cache', 'fail', {
+        latencyMs: Date.now() - tCache,
+        reason: 'no-hit',
+      });
+    } else {
+      recordWebSearchTrail(trail, 'cache', 'skip', { reason: 'noCache=true' });
     }
 
     // Staggered SERP race: Playwright starts immediately; if it hasn't come
     // back within SERP_STAGGER_MS, also kick off the Jina/DDG leg in parallel.
     // First non-empty result wins; loser's bandwidth is the only waste.
-    let serpOutcome = await raceSerpProviders(q, limit, signal);
+    const tSerp = Date.now();
+    // 3-layer abort: pre-await
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'serp', q, { intent, spanId });
+    let serpOutcome;
+    try {
+      serpOutcome = await raceSerpProviders(q, limit, signal);
+    } catch (err) {
+      if (signal?.aborted || err?.name === 'AbortError') {
+        return bailAbortedWebSearch(trail, 'serp', q, { intent, spanId });
+      }
+      recordWebSearchTrail(trail, 'serp', 'fail', {
+        latencyMs: Date.now() - tSerp,
+        reason: classifyWebSearchError(err),
+      });
+      // Skip remaining phases since serp threw.
+      for (const p of ['synonym-retry', 'content-fetch', 'semantic-rerank']) {
+        recordWebSearchTrail(trail, p, 'skip', { reason: 'serp-threw' });
+      }
+      return {
+        ok: false,
+        output: `Web search failed for "${q}": ${err?.message || err}`,
+        error: 'SEARCH_FAILED',
+        evidenceTrail: trail,
+      };
+    }
+    // 3-layer abort: post-await
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'serp', q, { intent, spanId });
     let { results, provider } = serpOutcome;
     const errors = [...serpOutcome.errors];
+    recordWebSearchTrail(trail, 'serp', results.length ? 'ok' : 'fail', {
+      latencyMs: Date.now() - tSerp,
+      method: provider || 'none',
+      reason: results.length ? undefined : 'no-results',
+      extra: { resultCount: results.length, errorCount: errors.length },
+    });
 
     // P1-2 — if the primary SERP came back thin, retry with synonym-expanded
     // variants.  Keep the first non-empty variant's results and tag the
     // provider so debug can see the retry happened.
     let synonymRetry = null;
+    const tSynonym = Date.now();
     if (results.length < SYNONYM_RETRY_THRESHOLD) {
       const variants = expandQuerySynonyms(q).slice(1); // index 0 is the raw query we already tried
+      let synonymTried = 0;
       for (const variant of variants) {
+        // 3-layer abort: pre-await
+        if (signal?.aborted) return bailAbortedWebSearch(trail, 'synonym-retry', q, { intent, spanId });
+        synonymTried += 1;
         try {
           const retry = await raceSerpProviders(variant, limit, signal);
+          // 3-layer abort: post-await
+          if (signal?.aborted) return bailAbortedWebSearch(trail, 'synonym-retry', q, { intent, spanId });
           if (retry.results.length >= SYNONYM_RETRY_THRESHOLD) {
             results = retry.results;
             provider = retry.provider ? `${retry.provider} (syn:${variant})` : provider;
@@ -1595,9 +1767,21 @@ export const webSearchTool = {
             break;
           }
         } catch (err) {
+          // 3-layer abort: catch-path
+          if (signal?.aborted || err?.name === 'AbortError') {
+            return bailAbortedWebSearch(trail, 'synonym-retry', q, { intent, spanId });
+          }
           errors.push(`syn[${variant}]: ${err?.message || err}`);
         }
       }
+      recordWebSearchTrail(trail, 'synonym-retry', synonymRetry ? 'ok' : 'fail', {
+        latencyMs: Date.now() - tSynonym,
+        reason: synonymRetry ? undefined : 'all-variants-thin',
+        extra: { variantsTried: synonymTried, picked: synonymRetry || null },
+      });
+    } else {
+      // serp returned strong results, no retry needed.
+      recordWebSearchTrail(trail, 'synonym-retry', 'skip', { reason: 'serp-strong-no-retry-needed' });
     }
 
     tAfterSerp = Date.now();
@@ -1609,6 +1793,9 @@ export const webSearchTool = {
     );
 
     if (!results.length) {
+      // serp + synonym both empty — content-fetch + rerank are skip.
+      recordWebSearchTrail(trail, 'content-fetch', 'skip', { reason: 'no-serp-results' });
+      recordWebSearchTrail(trail, 'semantic-rerank', 'skip', { reason: 'no-serp-results' });
       writeWebSearchDebugLine(`[end] span=${spanId} path=fail errors=${errors.length}`);
       return {
         ok: false,
@@ -1626,6 +1813,7 @@ export const webSearchTool = {
           spanId,
           intent,
         },
+        evidenceTrail: trail,
       };
     }
 
@@ -1634,11 +1822,33 @@ export const webSearchTool = {
       timeSensitive: intent.timeSensitive,
       allowBlockedDomains,
     });
-    const contentItems = await fetchResultContents(smartUrls, signal, { spanId }).catch(err => {
+    const tContent = Date.now();
+    // 3-layer abort: pre-await
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'content-fetch', q, { intent, spanId });
+    let contentItems = [];
+    let contentFetchFailReason = null;
+    try {
+      contentItems = await fetchResultContents(smartUrls, signal, { spanId });
+    } catch (err) {
+      // catch-path abort
+      if (signal?.aborted || err?.name === 'AbortError') {
+        return bailAbortedWebSearch(trail, 'content-fetch', q, { intent, spanId });
+      }
       debugWarn('web_search', `fetchResultContents crashed:`, err?.message || err);
-      return [];
-    });
+      contentFetchFailReason = classifyWebSearchError(err);
+      contentItems = [];
+    }
+    // post-await abort
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'content-fetch', q, { intent, spanId });
     tAfterContent = Date.now();
+    recordWebSearchTrail(trail, 'content-fetch', contentFetchFailReason ? 'fail' : 'ok', {
+      latencyMs: tAfterContent - tContent,
+      reason: contentFetchFailReason || undefined,
+      extra: {
+        urlsRequested: smartUrls.length,
+        contentItems: contentItems.length,
+      },
+    });
 
     const contentMap = new Map(
       contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
@@ -1647,14 +1857,25 @@ export const webSearchTool = {
     // P1-1 — semantic re-rank using the embedding provider.  Fails open:
     // if no provider or the embed call errors, we return results unchanged.
     let rerank = { applied: false, reason: 'not-attempted' };
+    const tRerank = Date.now();
     try {
       rerank = await semanticRerank(results, q, contentMap, { config, topN: 8 });
+      // catch-path abort already covered below; semanticRerank doesn't take
+      // a signal arg today, so post-await abort is the relevant gate here.
+      if (signal?.aborted) return bailAbortedWebSearch(trail, 'semantic-rerank', q, { intent, spanId });
       if (rerank.applied) {
         results = rerank.results;
       }
     } catch (err) {
+      if (signal?.aborted || err?.name === 'AbortError') {
+        return bailAbortedWebSearch(trail, 'semantic-rerank', q, { intent, spanId });
+      }
       rerank = { applied: false, reason: `threw:${err?.message || err}` };
     }
+    recordWebSearchTrail(trail, 'semantic-rerank', rerank.applied ? 'ok' : 'skip', {
+      latencyMs: Date.now() - tRerank,
+      reason: rerank.applied ? undefined : rerank.reason,
+    });
 
     writeWebSearchDebugLine(
       `[content] span=${spanId} fetched=${contentMap.size}/${smartUrls.length} ` +
@@ -1690,6 +1911,7 @@ export const webSearchTool = {
         rerank: { applied: rerank.applied, reason: rerank.reason },
         synonymRetry,
       },
+      evidenceTrail: trail,
     };
   },
 };
