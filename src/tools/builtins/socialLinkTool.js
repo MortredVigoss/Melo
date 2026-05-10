@@ -40,6 +40,35 @@
 import { fetchPlatformMetadataViaYtdlp } from '../../media/extractors/youtubeExtractor.js';
 import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 
+// ─── Phase G-1b (2026-05-10): evidenceTrail collection for social-link ────
+//
+// Mirrors the recordTrail/EvidenceTrailEntry contract from fetchUrlTool
+// (see docs/search-system-roadmap.md §#1).  readSocialLink() now returns
+// `{ ..., evidenceTrail: [{tier, outcome, latencyMs, reason?, method?, extra?}] }`
+// even on success/null paths.  fetchUrlTool merges these sub-entries into
+// its own trail with a `social-link.` prefix on the tier name to keep the
+// flat trail shape from G-1a while still distinguishing where each entry
+// originated from.
+//
+// Sub-tiers we record:
+//   • short-link-resolve (xhslink/v.douyin → canonical URL HEAD-follow)
+//   • yt-dlp             (deep metadata via youtubeExtractor)
+//   • share-preview      (OG/JSON-LD/SSR cards)
+//   • browser            (Playwright headless + overlay-close)
+//   • external-reader    (camoufox/crawl4ai/scrapling)
+// Outcome 'skip' covers the `if (signal?.aborted) return` early-bail
+// branches so consumers can tell "we didn't try X" from "X failed".
+function recordSocialTrail(trail, tier, outcome, opts = {}) {
+  if (!Array.isArray(trail)) return;
+  const entry = { tier, outcome, latencyMs: Math.max(0, Number(opts.latencyMs) || 0) };
+  if (opts.reason) entry.reason = opts.reason;
+  if (opts.method) entry.method = opts.method;
+  // `extra` (not `metadata`) — same convention as fetchUrlTool to avoid
+  // grep collision with the legacy social-link `meta:` return field.
+  if (opts.extra && Object.keys(opts.extra).length) entry.extra = opts.extra;
+  trail.push(entry);
+}
+
 // Browser-shaped UA — Douyin / Xiaohongshu CDNs reject node fetch's
 // default UA with 403. Used for both the short-link resolve and the
 // share-preview fallback GET.
@@ -1077,20 +1106,37 @@ export async function readSocialLink(url, {
   externalReaderFn = readUrlWithExternalReaders,
   ytdlpFn = fetchPlatformMetadataViaYtdlp,
 } = {}) {
+  const trail = [];
   if (!isSocialLinkUrl(url)) return null;
   // Codex Phase 6 follow-up (🟡 P1 2026-05-05): abort gate at entry +
   // before each strategy. abort is "host gave up, stop now"; we must
   // not waste more budget on yt-dlp / OG fetch.
-  if (signal?.aborted) return null;
+  if (signal?.aborted) {
+    recordSocialTrail(trail, 'short-link-resolve', 'skip', { reason: 'aborted-at-entry' });
+    return { body: '', via: 'aborted', canonicalUrl: url, evidenceTrail: trail, aborted: true };
+  }
 
   // Step 1 — short-link resolve.
   let canonical = url;
+  const tShort = Date.now();
   try {
     canonical = await resolveShortLink(url, { signal });
-  } catch {
+    recordSocialTrail(trail, 'short-link-resolve', 'ok', {
+      latencyMs: Date.now() - tShort,
+      extra: { resolved: canonical !== url, canonical },
+    });
+  } catch (err) {
     canonical = url;
+    recordSocialTrail(trail, 'short-link-resolve', 'fail', {
+      latencyMs: Date.now() - tShort,
+      reason: classifySocialError(err),
+      extra: { fallbackToOriginal: true },
+    });
   }
-  if (signal?.aborted) return null;
+  if (signal?.aborted) {
+    recordSocialTrail(trail, 'yt-dlp', 'skip', { reason: 'aborted-after-short-link' });
+    return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+  }
 
   // Build the effective config now that we know the canonical host —
   // explicit cookies bind to the resolved host, not the shortener.
@@ -1101,25 +1147,42 @@ export async function readSocialLink(url, {
   // early makes Melo "guess" a Douyin/Xiaohongshu video instead of reading
   // the real metadata/subtitles when yt-dlp can access them.
   let ytdlpAborted = false;
+  const tYtdlp = Date.now();
   try {
     const meta = await ytdlpFn(canonical, effectiveConfig, { signal });
     if (meta && (meta.title || meta.description || meta.subtitleText)) {
+      recordSocialTrail(trail, 'yt-dlp', 'ok', {
+        latencyMs: Date.now() - tYtdlp,
+        extra: { hasTitle: !!meta.title, hasDescription: !!meta.description, hasSubtitles: !!meta.subtitleText },
+      });
       return {
         body: renderYtdlpBody(meta, canonical),
         via: 'yt-dlp',
         canonicalUrl: canonical,
         preview: previewFromYtdlpMeta(meta),
         meta,
+        evidenceTrail: trail,
       };
     }
+    recordSocialTrail(trail, 'yt-dlp', 'fail', {
+      latencyMs: Date.now() - tYtdlp,
+      reason: meta ? 'no-title-or-body' : 'unsupported-or-no-meta',
+    });
   } catch (err) {
     // If yt-dlp failed BECAUSE the signal aborted, preview fallback is also pointless —
     // bail. Other error reasons (yt-dlp not installed / unsupported
     // platform / network blip) → fall through to preview; preview is independent
     // of yt-dlp's transport and may still succeed.
     ytdlpAborted = signal?.aborted || err?.name === 'AbortError';
+    recordSocialTrail(trail, 'yt-dlp', 'fail', {
+      latencyMs: Date.now() - tYtdlp,
+      reason: ytdlpAborted ? 'aborted' : classifySocialError(err),
+    });
   }
-  if (signal?.aborted || ytdlpAborted) return null;
+  if (signal?.aborted || ytdlpAborted) {
+    recordSocialTrail(trail, 'share-preview', 'skip', { reason: 'aborted-after-yt-dlp' });
+    return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+  }
 
   // Step 3 — chat-app style share preview / SSR fallback. This is the
   // path users observe when Telegram / WeChat can show a Xiaohongshu /
@@ -1128,12 +1191,16 @@ export async function readSocialLink(url, {
   // reliable and much faster than a real browser (which may land on a
   // recommended video after redirect).
   let shallowPreviewResult = null;
+  const tShare = Date.now();
+  let sharePreviewBestScore = 0;
+  let sharePreviewMissReason = null;
   try {
     if (typeof previewFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
         if (signal?.aborted) return null;
         const preview = await previewFn(candidateUrl, { signal, canonicalUrl: canonical });
         const score = preview ? scorePreview(preview) : 0;
+        sharePreviewBestScore = Math.max(sharePreviewBestScore, score);
         if (
           preview &&
           score >= 10 &&
@@ -1147,16 +1214,46 @@ export async function readSocialLink(url, {
             preview,
           };
           if (score >= DEEP_SOCIAL_PREVIEW_SCORE) {
-            return result;
+            recordSocialTrail(trail, 'share-preview', 'ok', {
+              latencyMs: Date.now() - tShare,
+              method: preview.profile || 'generic',
+              extra: { score, deep: true },
+            });
+            return { ...result, evidenceTrail: trail };
           }
           shallowPreviewResult = shallowPreviewResult || result;
         }
       }
+      // Loop completed without returning a deep preview.
+      if (!shallowPreviewResult) {
+        sharePreviewMissReason = sharePreviewBestScore === 0 ? 'no-preview' : 'low-score';
+      }
+    } else {
+      sharePreviewMissReason = 'no-preview-fn';
     }
-  } catch {
+  } catch (err) {
     // Preview miss — continue to browser fallback.
+    sharePreviewMissReason = classifySocialError(err);
   }
-  if (signal?.aborted) return null;
+  // Record a single share-preview entry for this strategy block (deep
+  // success path returns above; this path covers shallow + complete miss).
+  if (shallowPreviewResult) {
+    recordSocialTrail(trail, 'share-preview', 'ok', {
+      latencyMs: Date.now() - tShare,
+      method: shallowPreviewResult.via.replace(/^share-preview:/, ''),
+      extra: { score: sharePreviewBestScore, deep: false, kept: 'shallow-pending-deeper' },
+    });
+  } else {
+    recordSocialTrail(trail, 'share-preview', 'fail', {
+      latencyMs: Date.now() - tShare,
+      reason: sharePreviewMissReason || 'no-match',
+      extra: { bestScore: sharePreviewBestScore },
+    });
+  }
+  if (signal?.aborted) {
+    recordSocialTrail(trail, 'browser', 'skip', { reason: 'aborted-after-share-preview' });
+    return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+  }
 
   // Step 4 — rendered browser fallback. Some Douyin/XHS pages look
   // blocked only because a top-level login modal covers the page; after
@@ -1168,36 +1265,62 @@ export async function readSocialLink(url, {
   // fetch first and then open only the final canonical URL, the page may
   // complain that the redirected request lacks a temporary credential even
   // though the same link works in a normal browser.
+  const tBrowser = Date.now();
+  let browserBestScore = 0;
+  let browserMissReason = null;
   try {
     if (typeof browserPreviewFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
         if (signal?.aborted) return null;
         const browserPreview = await browserPreviewFn(candidateUrl, { signal, canonicalUrl: canonical });
+        const bScore = browserPreview ? scoreBrowserPreview(browserPreview) : 0;
+        browserBestScore = Math.max(browserBestScore, bScore);
         if (
           browserPreview &&
-          scoreBrowserPreview(browserPreview) >= 18 &&
+          bScore >= 18 &&
           socialPreviewMatchesExpected(browserPreview, canonical)
         ) {
           const sourceUrl = browserPreview.url || candidateUrl;
+          recordSocialTrail(trail, 'browser', 'ok', {
+            latencyMs: Date.now() - tBrowser,
+            method: browserPreview.profile || 'rendered',
+            extra: { score: bScore },
+          });
           return {
             body: renderBrowserPreviewBody(browserPreview, sourceUrl),
             via: `browser:${browserPreview.profile || 'rendered'}`,
             canonicalUrl: sourceUrl,
             originalUrl: url,
             preview: browserPreview,
+            evidenceTrail: trail,
           };
         }
       }
+      // Loop done without returning — record fail with best-score context.
+      browserMissReason = browserBestScore === 0 ? 'no-preview' : 'low-score';
+    } else {
+      browserMissReason = 'no-browser-fn';
     }
-  } catch {
+  } catch (err) {
     // Browser miss — continue to cheap unfurl fallback.
+    browserMissReason = classifySocialError(err);
   }
-  if (signal?.aborted) return null;
+  recordSocialTrail(trail, 'browser', 'fail', {
+    latencyMs: Date.now() - tBrowser,
+    reason: browserMissReason || 'no-match',
+    extra: { bestScore: browserBestScore },
+  });
+  if (signal?.aborted) {
+    recordSocialTrail(trail, 'external-reader', 'skip', { reason: 'aborted-after-browser' });
+    return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+  }
 
   // Step 4b — optional local extraction CLIs. This keeps the old
   // Playwright path as the first browser fallback while letting users who
   // install Camoufox / Crawl4AI / Scrapling get deeper reads on difficult
   // social pages without paying for a hosted scraping API.
+  const tExternal = Date.now();
+  let externalMissReason = null;
   try {
     if (typeof externalReaderFn === 'function') {
       for (const candidateUrl of uniqueStrategyUrls(url, canonical)) {
@@ -1211,6 +1334,11 @@ export async function readSocialLink(url, {
         });
         if (external?.content && cleanBrowserExtractedText(external.content).length > 120) {
           const body = renderExternalReaderBody(external, external.finalUrl || candidateUrl);
+          recordSocialTrail(trail, 'external-reader', 'ok', {
+            latencyMs: Date.now() - tExternal,
+            method: external.method || 'reader',
+            extra: { bytes: external.content.length },
+          });
           return {
             body,
             via: `external:${external.method || 'reader'}`,
@@ -1221,18 +1349,50 @@ export async function readSocialLink(url, {
               body: external.content,
               profile: external.method || 'external-reader',
             },
+            evidenceTrail: trail,
           };
         }
       }
+      externalMissReason = 'no-content-or-too-short';
+    } else {
+      externalMissReason = 'no-reader-fn';
     }
-  } catch {
+  } catch (err) {
     // External reader miss — keep the existing shallow preview fallback.
+    externalMissReason = classifySocialError(err);
   }
-  if (signal?.aborted) return null;
+  recordSocialTrail(trail, 'external-reader', 'fail', {
+    latencyMs: Date.now() - tExternal,
+    reason: externalMissReason || 'no-match',
+  });
+  if (signal?.aborted) {
+    return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };
+  }
 
   if (shallowPreviewResult) {
-    return shallowPreviewResult;
+    // Shallow preview was already recorded as ok above; return it as the
+    // final result with the full trail attached.
+    return { ...shallowPreviewResult, evidenceTrail: trail };
   }
 
-  return null;
+  return { body: '', via: 'none', canonicalUrl: canonical, evidenceTrail: trail, missed: true };
+}
+
+// ─── Phase G-1b error classifier (mirrors fetchUrlTool's) ─────────────────
+//
+// Same vocabulary as fetchUrlTool.classifyFetchError so cross-tool trail
+// analysis works without translating reason codes.  Kept as a separate
+// function (rather than imported) to avoid creating a circular dep
+// (fetchUrlTool imports socialLinkTool, not the other way around).
+function classifySocialError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  if (!msg) return 'error';
+  if (msg.includes('abort')) return 'aborted';
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout';
+  if (msg.includes('socket') || msg.includes('econnreset') || msg.includes('econnrefused')) return 'network';
+  if (msg.includes('certificate') || msg.includes('ssl')) return 'tls';
+  if (/\b4\d\d\b/.test(msg)) return '4xx';
+  if (/\b5\d\d\b/.test(msg)) return '5xx';
+  if (msg.includes('parse')) return 'parse-error';
+  return 'error';
 }

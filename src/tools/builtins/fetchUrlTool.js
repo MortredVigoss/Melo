@@ -267,6 +267,17 @@ export const fetchUrlTool = {
           explicitCookies,
           signal,
         });
+        // Phase G-1b (2026-05-10): merge social sub-trail into our flat
+        // trail with a `social-link.` tier prefix so downstream analytics
+        // can distinguish where each entry originated (outer fetchUrl tier
+        // vs nested socialLink sub-tier) without losing the depth info.
+        // Done unconditionally — even miss/abort paths return a trail
+        // worth knowing about (which sub-strategy got far enough to fail).
+        if (Array.isArray(socialResult?.evidenceTrail)) {
+          for (const e of socialResult.evidenceTrail) {
+            trail.push({ ...e, tier: `social-link.${e.tier}` });
+          }
+        }
         if (socialResult?.body) {
           const body = socialResult.body;
           const truncated = body.length > MAX_CONTENT_LENGTH

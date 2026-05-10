@@ -186,7 +186,7 @@ fallback 层 fetch retry 必须被 kill。今天 memory 系统类似 bug 已修
 ## Phase G 进度（每 commit 滚动更新）
 
 - [x] G-1a `fetchUrlTool` 接 evidenceTrail（POC）— done 2026-05-10
-- [ ] G-1b `socialLinkTool` 接 evidenceTrail
+- [x] G-1b `socialLinkTool` 接 evidenceTrail — done 2026-05-10 (5 sub-tier + fetchUrlTool merge with `social-link.*` prefix)
 - [ ] G-1c `webSearchTool` 接 evidenceTrail
 - [ ] G-1d chat thread state 写 trail（debug 可见）
 - [ ] G-1e trail 进 prompt（明确 fail reason）

@@ -160,6 +160,83 @@ test('evidenceTrail: forced crawl4ai mode emits cookie-resolve.skip + external-r
   assert.equal(externalEntry.method, 'crawl4ai');
 });
 
+test('evidenceTrail: G-1b cross-tool merge — social sub-trail entries get `social-link.` tier prefix in fetchUrl trail', async () => {
+  // When the injected reader returns its own evidenceTrail (the new
+  // socialLinkTool contract from G-1b), fetchUrlTool must merge those
+  // entries into its own flat trail with `social-link.<sub>` tier
+  // prefix so downstream consumers can see the full causal chain
+  // without losing the depth info.
+  const result = await fetchUrlTool.run(
+    { url: 'https://www.xiaohongshu.com/discovery/item/abc' },
+    {
+      _readSocialLink: async () => ({
+        body: 'real article body long enough to count as content for the readability gate to be satisfied here',
+        via: 'yt-dlp',
+        canonicalUrl: 'https://www.xiaohongshu.com/explore/abc',
+        evidenceTrail: [
+          { tier: 'short-link-resolve', outcome: 'ok', latencyMs: 12 },
+          { tier: 'yt-dlp', outcome: 'ok', latencyMs: 340, extra: { hasTitle: true } },
+        ],
+      }),
+    },
+  );
+  assert.equal(result.ok, true);
+  // Outer fetchUrl `social-link` summary entry must still be present.
+  assert.ok(
+    result.evidenceTrail.some(e => e.tier === 'social-link' && e.outcome === 'ok'),
+    'outer social-link summary entry must be preserved',
+  );
+  // Sub-trail entries must be present with `social-link.` prefix.
+  const subResolveEntry = result.evidenceTrail.find(e => e.tier === 'social-link.short-link-resolve');
+  assert.ok(subResolveEntry, 'short-link-resolve sub-entry must be merged with prefix');
+  assert.equal(subResolveEntry.outcome, 'ok');
+  assert.equal(subResolveEntry.latencyMs, 12);
+  const subYtdlpEntry = result.evidenceTrail.find(e => e.tier === 'social-link.yt-dlp');
+  assert.ok(subYtdlpEntry, 'yt-dlp sub-entry must be merged with prefix');
+  assert.equal(subYtdlpEntry.extra?.hasTitle, true);
+});
+
+test('evidenceTrail: G-1b cross-tool merge — social fail path also merges sub-trail (so operators see WHY social-link failed)', async () => {
+  // Unhappy path coverage: even when socialLinkTool returns a missed
+  // marker (body=''), the sub-trail must still be merged so operators
+  // can see which sub-strategy got how far before giving up.
+  const result = await fetchUrlTool.run(
+    { url: 'https://v.douyin.com/blocked' },
+    {
+      _readSocialLink: async () => ({
+        body: '',
+        via: 'none',
+        canonicalUrl: 'https://www.douyin.com/video/blocked',
+        missed: true,
+        evidenceTrail: [
+          { tier: 'short-link-resolve', outcome: 'ok', latencyMs: 8 },
+          { tier: 'yt-dlp', outcome: 'fail', latencyMs: 1200, reason: 'unsupported-or-no-meta' },
+          { tier: 'share-preview', outcome: 'fail', latencyMs: 200, reason: 'low-score' },
+          { tier: 'browser', outcome: 'fail', latencyMs: 6500, reason: 'low-score' },
+          { tier: 'external-reader', outcome: 'fail', latencyMs: 50, reason: 'no-reader-fn' },
+        ],
+      }),
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'SOCIAL_LINK_BLOCKED');
+  // Outer + 5 sub = 6 entries minimum.
+  const subTiers = result.evidenceTrail
+    .filter(e => e.tier.startsWith('social-link.'))
+    .map(e => e.tier);
+  assert.deepEqual(
+    subTiers,
+    [
+      'social-link.short-link-resolve',
+      'social-link.yt-dlp',
+      'social-link.share-preview',
+      'social-link.browser',
+      'social-link.external-reader',
+    ],
+    'all 5 sub-tiers must be merged in order',
+  );
+});
+
 test('evidenceTrail: forced crawl4ai mode with missing reader emits external-reader.fail cli-missing', async () => {
   const result = await fetchUrlTool.run(
     { url: 'https://example.com/article', extract_mode: 'crawl4ai' },

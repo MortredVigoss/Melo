@@ -322,10 +322,16 @@ test('readSocialLink: no explicitCookies → config.domainCookies passes through
 
 // ── Abort gating (Codex 🟡 P1 2026-05-05) ────────────────────────────
 
-test('readSocialLink: pre-aborted signal returns null without calling yt-dlp', async () => {
+test('readSocialLink: pre-aborted signal short-circuits without calling yt-dlp', async () => {
   // Codex caught: pre-fix, an already-aborted signal still ran every
   // strategy. Now the entry gate must short-circuit before yt-dlp is
   // even invoked.
+  //
+  // G-1b contract change (2026-05-10): abort path now returns a marker
+  // object {body:'', via:'aborted', evidenceTrail, aborted:true} instead
+  // of bare null, so callers that key off `result?.body` still see falsy
+  // (backward compat) but observers can read the trail to see WHERE the
+  // abort happened.
   let ytdlpCalled = false;
   const ytdlpFn = async () => { ytdlpCalled = true; return { title: 'should not see' }; };
   const ac = new AbortController();
@@ -336,7 +342,9 @@ test('readSocialLink: pre-aborted signal returns null without calling yt-dlp', a
     browserPreviewFn: null,
     ytdlpFn,
   });
-  assert.equal(out, null, 'pre-aborted signal must return null');
+  assert.equal(out?.aborted, true, 'pre-aborted signal must return aborted marker');
+  assert.equal(out?.body || '', '',
+    'aborted marker body must be empty so backward-compat callers `if (result?.body)` still treat as miss');
   assert.equal(ytdlpCalled, false, 'yt-dlp must NOT be invoked once signal is aborted');
 });
 
@@ -368,8 +376,11 @@ test('readSocialLink: yt-dlp throws AbortError → does NOT continue to OG fallb
       browserPreviewFn: null,
       ytdlpFn, // signal stays live; ytdlpFn itself throws AbortError
     });
-    assert.equal(out, null,
-      'AbortError from ytdlp must short-circuit to null (no OG)');
+    // G-1b contract: AbortError from ytdlp short-circuits to aborted
+    // marker (was bare null pre-G-1b); body still empty for compat.
+    assert.equal(out?.aborted, true,
+      'AbortError from ytdlp must short-circuit to aborted marker (no OG)');
+    assert.equal(out?.body || '', '');
     assert.equal(ogCalled, false,
       'OG fallback must not run when yt-dlp threw AbortError');
   } finally {
@@ -407,8 +418,14 @@ test('readSocialLink: yt-dlp deep result wins over share preview', async () => {
 });
 
 test('readSocialLink: share preview is fallback when yt-dlp misses', async () => {
+  // Explicitly null out externalReaderFn so the test never depends on
+  // whether crawl4ai/scrapling/camoufox are installed in the host
+  // environment — without this gate, a host with crawl4ai installed
+  // hits the real CLI and the result.via becomes 'external:crawl4ai'
+  // instead of the share-preview fallback this test is pinning.
   const out = await readSocialLink('https://www.xiaohongshu.com/explore/test', {
     browserPreviewFn: null,
+    externalReaderFn: null,
     previewFn: async () => ({
       title: 'Share preview fallback',
       description: 'This is the public preview body',
@@ -496,6 +513,12 @@ test('readSocialLink: rejects browser fallback when it lands on a different Douy
   try {
     const out = await readSocialLink(originalUrl, {
       ytdlpFn: async () => null,
+      // Phase G-1b: explicitly null externalReaderFn so the test never
+      // depends on whether crawl4ai is installed locally — without this,
+      // a host with crawl4ai hits the real CLI and returns
+      // 'external:crawl4ai' instead of the share-preview fallback this
+      // test is pinning.
+      externalReaderFn: null,
       browserPreviewFn: async () => ({
         title: 'Wrong rendered video',
         body: '浏览器实际落到了另一个推荐视频。',
