@@ -95,6 +95,13 @@ chat runner 把任何工具失败统一包成 `model request failed`。
 
 ## #2 统一 `SearchTask` 路由
 
+**Status update 2026-05-11**: RFC drafted in `docs/search-task-rfc.md` —
+contract types + migration phases + open questions list documented before
+any code change. Implementation waits on Phase 2 real-trail data
+(decisions §4 Q1-4 need production usage to answer).
+
+
+
 **问题**：现在 5 套 search 入口（codex-native / melo-web `web_search` /
 `fetch_url` / social reader / UI search bar）共用 `searchPlan` 但各自 result
 shape 不同，agent 要处理不同 contract。
