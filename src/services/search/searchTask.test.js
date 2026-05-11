@@ -463,17 +463,150 @@ test('normalizeWebSearchResult: aborted → status=fail, error=ABORTED, meta.abo
   assert.equal(r.meta.aborted, true);
 });
 
-test('normalizeWebSearchResult: SEARCH_FAILED without abort → PROVIDER_DOWN', () => {
+test('normalizeWebSearchResult: legacy "SEARCH_FAILED" + trail reason=no-results → NO_RESULTS (G-2b round-2 refinement; was PROVIDER_DOWN pre-round-2)', () => {
+  // Updated post round-2: see deriveErrorFromTrail above.  The trail
+  // reason takes priority over the generic legacy code mapping.
   const r = normalizeWebSearchResult({
     ok: false,
-    output: 'all providers failed',
+    output: 'no results',
     error: 'SEARCH_FAILED',
     meta: { query: 'q', timings: { totalMs: 8000, cacheHit: false } },
     evidenceTrail: [
       { tier: 'serp', outcome: 'fail', latencyMs: 8000, reason: 'no-results' },
     ],
   });
-  assert.equal(r.error, ERROR_CODES.PROVIDER_DOWN);
+  assert.equal(r.error, ERROR_CODES.NO_RESULTS,
+    'reason=no-results refines SEARCH_FAILED → NO_RESULTS');
+});
+
+// ─── G-2b round-2: trail-reason-aware error refinement (systematic 3-tool) ─
+
+test('deriveErrorFromTrail: webSearch serp.fail reason=no-results → NO_RESULTS (not PROVIDER_DOWN)', () => {
+  // The exact bug Codex round-2 caught: 'SEARCH_FAILED' generic legacy
+  // code → previously mapped to PROVIDER_DOWN, hiding the truth that
+  // SERP ran successfully but found nothing.
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: 'no results',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 800, cacheHit: false } },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 0 },
+      { tier: 'serp', outcome: 'fail', latencyMs: 800, reason: 'no-results' },
+    ],
+  });
+  assert.equal(r.error, ERROR_CODES.NO_RESULTS,
+    'serp.fail reason=no-results must map to NO_RESULTS, not generic PROVIDER_DOWN');
+});
+
+test('deriveErrorFromTrail: webSearch serp.fail reason=timeout → TIMEOUT', () => {
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: 'timed out',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 15000, cacheHit: false } },
+    evidenceTrail: [
+      { tier: 'serp', outcome: 'fail', latencyMs: 15000, reason: 'timeout' },
+    ],
+  });
+  assert.equal(r.error, ERROR_CODES.TIMEOUT);
+});
+
+test('deriveErrorFromTrail: webSearch serp.fail reason=5xx/4xx/network → NETWORK', () => {
+  for (const reason of ['5xx', '4xx', 'network']) {
+    const r = normalizeWebSearchResult({
+      ok: false,
+      output: 'net',
+      error: 'SEARCH_FAILED',
+      meta: { query: 'q', timings: { totalMs: 200, cacheHit: false } },
+      evidenceTrail: [
+        { tier: 'serp', outcome: 'fail', latencyMs: 200, reason },
+      ],
+    });
+    assert.equal(r.error, ERROR_CODES.NETWORK, `reason=${reason} must map to NETWORK`);
+  }
+});
+
+test('deriveErrorFromTrail: webSearch with no trail-reason falls back to legacy code mapping (PROVIDER_DOWN)', () => {
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: 'all down',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 8000, cacheHit: false } },
+    evidenceTrail: [
+      { tier: 'serp', outcome: 'fail', latencyMs: 8000 }, // no reason
+    ],
+  });
+  assert.equal(r.error, ERROR_CODES.PROVIDER_DOWN,
+    'unrecognized trail-reason falls back to legacy SEARCH_FAILED → PROVIDER_DOWN');
+});
+
+test('deriveErrorFromTrail: fetchUrl outer catch dynamic err.message refined by trail (NETWORK from 5xx reason)', () => {
+  // fetchUrlTool outer-catch returns `error: err.message` which is a
+  // free-form string our LEGACY_CODE_MAP can't match.  Pre-round-2 we
+  // would have fallen to PROVIDER_DOWN; round-2 we read the trail
+  // reason (classifyFetchError wrote it) for the precise code.
+  const r = normalizeFetchUrlResult({
+    ok: false,
+    output: 'Failed to fetch ...: 502 Bad Gateway',
+    error: 'fetch failed: HTTP 502', // free-form dynamic message
+    evidenceTrail: [
+      { tier: 'cookie-resolve', outcome: 'skip', latencyMs: 0 },
+      { tier: 'direct', outcome: 'fail', latencyMs: 1200, reason: '5xx' },
+    ],
+  });
+  assert.equal(r.error, ERROR_CODES.NETWORK,
+    'trail reason=5xx beats free-form err.message in legacy.error');
+});
+
+test('deriveErrorFromTrail: socialLink miss with low-score trail → NO_RESULTS (not blanket LOGIN_REQUIRED)', () => {
+  // socialLinkTool's miss path used to be hard-coded LOGIN_REQUIRED.
+  // For low-score share-preview misses that's wrong — the post is
+  // public but the OG card was too thin.  Now trail-reason-aware.
+  const r = normalizeSocialLinkResult({
+    body: '',
+    via: 'none',
+    canonicalUrl: 'https://www.douyin.com/video/x',
+    evidenceTrail: [
+      { tier: 'short-link-resolve', outcome: 'ok', latencyMs: 8 },
+      { tier: 'yt-dlp', outcome: 'fail', latencyMs: 500, reason: 'unsupported-or-no-meta' },
+      { tier: 'share-preview', outcome: 'fail', latencyMs: 200, reason: 'low-score' },
+      { tier: 'browser', outcome: 'fail', latencyMs: 6000, reason: 'low-score' },
+      { tier: 'external-reader', outcome: 'fail', latencyMs: 50, reason: 'no-reader-fn' },
+    ],
+    missed: true,
+  });
+  // Last fail entry is external-reader with reason=no-reader-fn → PROVIDER_DOWN.
+  // Verifies we walk to the LATEST fail (not first / not legacy default).
+  assert.equal(r.error, ERROR_CODES.PROVIDER_DOWN,
+    'last fail tier reason wins; here it is external-reader no-reader-fn');
+});
+
+test('deriveErrorFromTrail: socialLink miss where last fail is login-wall → LOGIN_REQUIRED (historical default preserved)', () => {
+  const r = normalizeSocialLinkResult({
+    body: '',
+    via: 'none',
+    canonicalUrl: 'https://www.xiaohongshu.com/explore/y',
+    evidenceTrail: [
+      { tier: 'yt-dlp', outcome: 'fail', latencyMs: 500, reason: 'login-wall' },
+      { tier: 'share-preview', outcome: 'fail', latencyMs: 200, reason: 'login-wall' },
+      { tier: 'browser', outcome: 'fail', latencyMs: 6000, reason: 'login-wall' },
+    ],
+    missed: true,
+  });
+  assert.equal(r.error, ERROR_CODES.LOGIN_REQUIRED);
+});
+
+test('deriveErrorFromTrail: empty trail + no legacy code → defaultCode (LOGIN_REQUIRED for socialLink, PROVIDER_DOWN otherwise)', () => {
+  // socialLink miss without trail or code preserves the historical default.
+  const r = normalizeSocialLinkResult({
+    body: '',
+    via: 'none',
+    canonicalUrl: 'https://www.douyin.com/video/z',
+    evidenceTrail: [],
+    missed: true,
+  });
+  assert.equal(r.error, ERROR_CODES.LOGIN_REQUIRED);
 });
 
 // ─── normalizeToSearchTaskResult dispatch ──────────────────────────────────
