@@ -61,57 +61,187 @@ export function mapErrorCode(legacyCode, ctx = {}) {
   return LEGACY_CODE_MAP[legacyCode] || ERROR_CODES.PROVIDER_DOWN;
 }
 
-// ─── trail-reason-aware error refinement (systematic, round-2 闭环) ─────────
+// ─── Phase priority (G-2b round-3): source-aware causal fail selection ────
 //
-// G-2b round-2 (Codex 2026-05-11 C round-2 闭环): a single legacy error
-// code (e.g. webSearch 'SEARCH_FAILED', fetchUrl outer-catch dynamic
-// `err.message`, socialLink miss without code) can mean 4+ different
-// things at runtime: NO_RESULTS / TIMEOUT / NETWORK / PROVIDER_DOWN /
-// LOGIN_REQUIRED etc.  The evidenceTrail already carries the precise
-// reason on the failing tier (classifyFetchError / classifySocialError /
-// classifyWebSearchError write it).  This helper derives the unified
-// code from the trail's last fail entry, falling back to the legacy
-// code mapping when the trail is empty or unhelpful.
+// Per-source ordered list — earlier phases are CAUSAL (their failure
+// triggers the chain), later phases are CASCADE (they fail because the
+// earlier phase already failed).  When picking the "real" fail to
+// classify, prefer the highest-priority phase that actually failed.
 //
-// Applied to ALL 3 tools' fail paths in this commit — not just the one
-// Codex pointed at — per lessons-learned §3 "systematic 检查同类".
+// Example webSearch trail:
+//   cache.fail(no-hit) → serp.fail(no-results) → synonym-retry.fail(all-variants-thin)
+//                       → content-fetch.skip → semantic-rerank.skip
+// Pre-round-3 "last fail" picked synonym-retry → reason 'all-variants-thin'
+// → fallback PROVIDER_DOWN.  But the CAUSAL fail is serp.fail(no-results)
+// → NO_RESULTS.  Phase priority list ['serp', 'cache', 'synonym-retry',
+// ...] makes us search for serp.fail first.
+//
+// Example fetchUrl-via-social trail (after socialLink sub-trail merge):
+//   cookie-resolve.skip → social-link.yt-dlp.fail(unsupported) →
+//   social-link.share-preview.fail(low-score) →
+//   social-link.browser.fail(low-score) →
+//   social-link.external-reader.fail(no-reader-fn) →
+//   social-link.fail(login-wall)  ← outer wrapper added by fetchUrlTool
+// Pre-round-3 "last fail" picked the outer `social-link` wrapper, masking
+// the inner `low-score` / `no-reader-fn` signals.  Phase priority puts the
+// inner `social-link.*` sub-tiers ahead of the outer `social-link` so the
+// classification reflects WHICH sub-strategy gave up.
+
+const PHASE_PRIORITY = Object.freeze({
+  // webSearch: serp is the causal phase; cache/synonym-retry/content-fetch
+  // are around it but never override its diagnosis.
+  'web-search': [
+    'serp',
+    'cache',
+    'synonym-retry',
+    'content-fetch',
+    'semantic-rerank',
+    'weather-fast-path',
+    'validate',
+  ],
+  // socialLink: depth-first — yt-dlp is the strongest signal, fall through
+  // to share-preview/browser/external-reader if yt-dlp didn't carry one.
+  'social-link': [
+    'yt-dlp',
+    'short-link-resolve',
+    'share-preview',
+    'browser',
+    'external-reader',
+  ],
+  // fetchUrl: outer paths first, but the inner `social-link.<sub>` entries
+  // (after sub-trail merge with `social-link.` prefix) are MORE specific
+  // than the outer `social-link` summary, so they win.
+  'url-fetch': [
+    'validate',
+    // inner social-link sub-tiers — preferred over the outer `social-link`
+    // wrapper because they carry the precise extractor failure reason.
+    'social-link.yt-dlp',
+    'social-link.short-link-resolve',
+    'social-link.share-preview',
+    'social-link.browser',
+    'social-link.external-reader',
+    // outer wrapper / non-social paths
+    'social-link',
+    'direct+cookie',
+    'direct',
+    'jina',
+    'playwright',
+    'external-reader',
+    'cookie-resolve',
+  ],
+});
+
+// ─── trail-reason vocabulary (G-2b round-3 systematic) ─────────────────────
+//
+// Table-driven mapping: every reason emitted by classifyFetchError /
+// classifySocialError / classifyWebSearchError + every tier-specific
+// reason added by recordTrail callers.  Single source of truth; no more
+// scattered `if (reason === 'x')` patches.
+
+const REASON_VOCABULARY = Object.freeze({
+  // Abort variants (also caught earlier by `aborted` opt; duplicated here
+  // so trails where the caller forgot to thread the flag still classify).
+  'aborted': ERROR_CODES.ABORTED,
+  'aborted-mid-loop': ERROR_CODES.ABORTED,
+  'aborted-by-prev-tier': ERROR_CODES.ABORTED,
+  'aborted-by-prev-phase': ERROR_CODES.ABORTED,
+  'aborted-at-entry': ERROR_CODES.ABORTED,
+  'aborted-after-short-link': ERROR_CODES.ABORTED,
+  'aborted-after-yt-dlp': ERROR_CODES.ABORTED,
+  'aborted-after-share-preview': ERROR_CODES.ABORTED,
+  'aborted-after-browser': ERROR_CODES.ABORTED,
+  // Timeout
+  'timeout': ERROR_CODES.TIMEOUT,
+  'timed-out': ERROR_CODES.TIMEOUT,
+  // No results (search/preview yielded nothing usable)
+  'no-results': ERROR_CODES.NO_RESULTS,
+  'all-variants-thin': ERROR_CODES.NO_RESULTS, // synonym-retry: retried all variants, none had enough
+  'low-score': ERROR_CODES.NO_RESULTS,
+  'no-match': ERROR_CODES.NO_RESULTS,
+  'no-preview': ERROR_CODES.NO_RESULTS,
+  'serp-strong-no-retry-needed': ERROR_CODES.NO_RESULTS,
+  // Login wall / auth required
+  'login-wall': ERROR_CODES.LOGIN_REQUIRED,
+  'login-required': ERROR_CODES.LOGIN_REQUIRED,
+  // Network
+  'network': ERROR_CODES.NETWORK,
+  'econnreset': ERROR_CODES.NETWORK,
+  'econnrefused': ERROR_CODES.NETWORK,
+  '4xx': ERROR_CODES.NETWORK,
+  '5xx': ERROR_CODES.NETWORK,
+  'tls': ERROR_CODES.NETWORK,
+  // Extraction failures (content reachable but parser couldn't extract)
+  'parse-error': ERROR_CODES.EXTRACTION_FAILED,
+  'parse-empty': ERROR_CODES.EXTRACTION_FAILED,
+  'no-content': ERROR_CODES.EXTRACTION_FAILED,
+  'no-content-after-fallbacks': ERROR_CODES.EXTRACTION_FAILED,
+  'no-content-or-too-short': ERROR_CODES.EXTRACTION_FAILED, // socialLink external-reader: returned too-short body
+  'extractor-throw': ERROR_CODES.EXTRACTION_FAILED,
+  'unsupported-or-no-meta': ERROR_CODES.EXTRACTION_FAILED, // socialLink yt-dlp: platform unsupported
+  'no-title-or-body': ERROR_CODES.EXTRACTION_FAILED,
+  // Input
+  'invalid-url': ERROR_CODES.INVALID_INPUT,
+  'invalid-query': ERROR_CODES.INVALID_INPUT,
+  // Provider missing
+  'cli-missing-or-no-content': ERROR_CODES.PROVIDER_DOWN,
+  'no-reader-fn': ERROR_CODES.PROVIDER_DOWN,
+  'no-browser-fn': ERROR_CODES.PROVIDER_DOWN,
+  'no-preview-fn': ERROR_CODES.PROVIDER_DOWN,
+  // Cache-related (rare in fail path but completeness)
+  'no-hit': ERROR_CODES.NO_RESULTS,
+  // No-cookie skip → not a fail reason, included for completeness
+  'no-cookie': ERROR_CODES.PROVIDER_DOWN,
+});
+
+// ─── trail-reason-aware error refinement (G-2b round-3 systematic) ─────────
+//
+// G-2b round-3 (Codex 2026-05-11 C round-3 闭环): "last fail" algorithm
+// misclassified real production trails where cascade fails (synonym-retry
+// after serp.no-results, outer social-link wrapper after inner sub-tier
+// fails) overwrote the causal classification.  Round-3 rewrite uses
+// source-aware PHASE_PRIORITY to find the *causal* fail, not the latest.
+//
+// Algorithm:
+//   1. aborted=true short-circuits to ABORTED.
+//   2. Look up PHASE_PRIORITY[source] (ordered list of tier names).
+//   3. Walk the priority list; first phase whose trail entry has
+//      outcome=fail is the causal fail.
+//   4. If no priority match, fall back to last fail (pre-round-3 behavior)
+//      as a safety net for unknown sources / new tiers.
+//   5. Look up causalFail.reason in REASON_VOCABULARY (table-driven).
+//   6. If reason missing from vocab, fall through to legacy code mapping,
+//      then defaultCode.
 
 export function deriveErrorFromTrail(trail, opts = {}) {
-  const { aborted = false, legacyCode = null, defaultCode = ERROR_CODES.PROVIDER_DOWN } = opts;
+  const {
+    aborted = false,
+    legacyCode = null,
+    defaultCode = ERROR_CODES.PROVIDER_DOWN,
+    source = null,
+  } = opts;
   if (aborted) return ERROR_CODES.ABORTED;
   const trailArr = Array.isArray(trail) ? trail : [];
-  // Walk the trail backwards to find the FINAL fail (latest tier the run
-  // gave up on).  skip-only tiers don't carry blame for the outcome.
-  const lastFail = [...trailArr].reverse().find(e => e.outcome === 'fail');
-  const reason = lastFail?.reason;
-  if (reason) {
-    // Abort variants — already covered by aborted gate above but match
-    // here too for trails where the caller forgot to thread aborted.
-    if (reason === 'aborted' || reason.startsWith('aborted-')) return ERROR_CODES.ABORTED;
-    if (reason === 'timeout' || reason === 'timed-out') return ERROR_CODES.TIMEOUT;
-    if (reason === 'no-results') return ERROR_CODES.NO_RESULTS;
-    if (reason === 'login-wall' || reason === 'login-required') return ERROR_CODES.LOGIN_REQUIRED;
-    if (reason === 'network' || reason === 'econnreset' || reason === 'econnrefused') {
-      return ERROR_CODES.NETWORK;
-    }
-    if (reason === '4xx' || reason === '5xx' || reason === 'tls') return ERROR_CODES.NETWORK;
-    if (reason === 'parse-error' || reason === 'parse-empty' || reason === 'no-content'
-      || reason === 'no-content-after-fallbacks' || reason === 'extractor-throw'
-      || reason === 'unsupported-or-no-meta' || reason === 'no-title-or-body') {
-      return ERROR_CODES.EXTRACTION_FAILED;
-    }
-    if (reason === 'invalid-url' || reason === 'invalid-query') return ERROR_CODES.INVALID_INPUT;
-    if (reason === 'cli-missing-or-no-content' || reason === 'no-reader-fn'
-      || reason === 'no-browser-fn' || reason === 'no-preview-fn') {
-      return ERROR_CODES.PROVIDER_DOWN;
-    }
-    // 'low-score' / 'no-match' / 'no-preview' = SERP-like miss
-    if (reason === 'low-score' || reason === 'no-match' || reason === 'no-preview') {
-      return ERROR_CODES.NO_RESULTS;
+  // 1. Source-aware phase priority lookup.
+  const priority = source ? PHASE_PRIORITY[source] : null;
+  let causalFail = null;
+  if (priority) {
+    for (const phase of priority) {
+      const hit = trailArr.find(e => e.tier === phase && e.outcome === 'fail');
+      if (hit) { causalFail = hit; break; }
     }
   }
-  // Fall through to legacy code mapping if trail didn't give us a clear
-  // reason (or no fail entries at all).
+  // 2. Safety net: if no priority match (unknown source, or none of the
+  //    priority phases failed but some other tier did), fall back to last
+  //    fail.
+  if (!causalFail) {
+    causalFail = [...trailArr].reverse().find(e => e.outcome === 'fail');
+  }
+  // 3. Reason → unified code via table-driven vocabulary.
+  const reason = causalFail?.reason;
+  if (reason && Object.prototype.hasOwnProperty.call(REASON_VOCABULARY, reason)) {
+    return REASON_VOCABULARY[reason];
+  }
+  // 4. Fall through to legacy code mapping.
   if (legacyCode) return mapErrorCode(legacyCode, { aborted });
   return defaultCode;
 }
@@ -201,7 +331,7 @@ export function normalizeFetchUrlResult(legacy, input = {}) {
       // For fetchUrl, outer-catch puts `err.message` into `legacy.error`,
       // a free-form string that loses precision; trail reasons (network,
       // timeout, 4xx, etc.) are the truthful classification.
-      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error }),
+      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error, source: 'url-fetch' }),
       output: legacy.output,
     };
   }
@@ -286,7 +416,7 @@ export function normalizeSocialLinkResult(legacy, input = {}) {
       evidenceTrail: trail,
       evidence: [],
       meta: { source: 'social-link', via: legacy.via || 'none', timings: { totalMs: _sumLatency(trail) } },
-      error: deriveErrorFromTrail(trail, { defaultCode: ERROR_CODES.LOGIN_REQUIRED }),
+      error: deriveErrorFromTrail(trail, { source: 'social-link', defaultCode: ERROR_CODES.LOGIN_REQUIRED }),
       output: '',
     };
   }
@@ -349,7 +479,9 @@ export function normalizeWebSearchResult(legacy, input = {}) {
       // NO_RESULTS / TIMEOUT / NETWORK / PROVIDER_DOWN — the trail's
       // serp.fail reason has the precise classification (see
       // classifyWebSearchError in webSearchTool.js).
-      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error }),
+      // G-2b round-3: source='web-search' → PHASE_PRIORITY puts serp at
+      // top so we get the CAUSAL fail, not the cascade synonym-retry.
+      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error, source: 'web-search' }),
       output: legacy.output,
     };
   }
