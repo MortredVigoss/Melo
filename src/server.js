@@ -211,6 +211,18 @@ async function _releaseDiscordLock() {
 // double-poll the same Telegram/Discord bots without ever having written to the
 // lock file — so a pure PID-file check misses it. This scan is the backstop:
 // if `ps` shows a SECOND node server.js, refuse to boot.
+//
+// 2026-05-11 fix: pre-fix regex was `/src\/server\.js/` — matched ANY
+// server.js with that suffix anywhere in the ps command line.  A user
+// reported their other Electron app (aihelper/desktop-pet) spawning a
+// `node src/server.js` from a DIFFERENT repo got falsely flagged as a
+// Melo duplicate, blocking Melo Desktop launch with "Another Melo
+// server instance is already running".  Fix: discriminate by absolute
+// path of THIS file (via `import.meta.url`), so only command lines
+// containing OUR server.js — not someone else's identically-named
+// script — are considered duplicates.
+const _MY_SERVER_PATH = fileURLToPath(import.meta.url);
+
 async function _scanForOtherServerInstances() {
   const { execFile } = await import('node:child_process');
   return new Promise(resolve => {
@@ -233,11 +245,15 @@ async function _scanForOtherServerInstances() {
           const otherPid = Number(match[1]);
           const cmd = match[2];
           if (!otherPid || otherPid === selfPid) continue;
-          // Target: any node invocation whose command line references this
-          // repo's src/server.js. We look for the literal "src/server.js"
-          // substring — both the Swift launcher form and a bare
-          // `node src/server.js` from a terminal match.
-          if (/\bnode\b/.test(cmd) && /src\/server\.js/.test(cmd)) {
+          // Strong-signal match: command line contains THIS server.js's
+          // absolute path.  Swift launcher uses absolute path; a terminal
+          // run via `node /full/path/src/server.js` also matches.
+          // A `cd /other/repo && node src/server.js` (relative path,
+          // different repo) intentionally does NOT match — that's the
+          // bug we're fixing.  If you genuinely run this very repo's
+          // server via relative path from a terminal and want guard
+          // protection, run with absolute path or via the Swift launcher.
+          if (/\bnode\b/.test(cmd) && cmd.includes(_MY_SERVER_PATH)) {
             hits.push({ pid: otherPid, command: cmd });
           }
         }
