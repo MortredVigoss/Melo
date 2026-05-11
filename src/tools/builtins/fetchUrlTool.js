@@ -14,6 +14,7 @@ import { debugWarn } from '../../debug.js';
 import { fetchPageViaPlaywright, isPlaywrightCliAvailable } from '../../web/playwrightFetcher.js';
 import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 import { isSocialLinkUrl, readSocialLink } from './socialLinkTool.js';
+import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
 const MAX_CONTENT_LENGTH = 20_000; // chars
@@ -196,7 +197,13 @@ export const fetchUrlTool = {
     { url: 'https://docs.python.org/3/library/json.html', extract_mode: 'jina' },
   ],
 
-  async run({ url, extract_mode = 'auto', cookies }, {
+  // G-2b Phase 2 (2026-05-11 lesson #5): wrap run so every return path
+  // is captured into $MELO_HOME/desktop/search-trail-log/YYYY-MM-DD.jsonl
+  // when env var MELO_SEARCH_TRAIL_LOG=1.  No-op by default.  See
+  // docs/search-task-rfc.md §7 for the rationale (4 Codex C-rounds on
+  // adapter fixtures that turned out to be hand-written guesses; we
+  // need real production shape snapshots before G-2b round-5 push).
+  run: wrapWithTrailLog('url-fetch', async function run({ url, extract_mode = 'auto', cookies }, {
     signal,
     config,
     _readSocialLink,
@@ -582,7 +589,7 @@ export const fetchUrlTool = {
     const output = `${truncated}\n\n[source: ${normalized}] [via: ${method}]`;
 
     return { ok: true, output, meta: { url: normalized, method, length: content.length }, evidenceTrail: trail };
-  },
+  }),
 };
 
 // ─── Phase G-1a (2026-05-10): error classifier for evidenceTrail.reason ────

@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../../config.js';
 import { debugWarn } from '../../debug.js';
+import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 
 // ─── Phase G-1c (2026-05-10): evidenceTrail collection for web_search ────
 //
@@ -1658,7 +1659,9 @@ export const webSearchTool = {
     { query: 'best pinterest boards for UI inspiration', allowBlockedDomains: true },
   ],
 
-  async run(
+  // G-2b Phase 2: same trail-log wrap as fetchUrlTool — see
+  // docs/search-task-rfc.md §7 for the rationale.
+  run: wrapWithTrailLog('web-search', async function run(
     { query, num_results = 5, noCache = false, allowBlockedDomains = false },
     { signal, config,
       // G-1c follow-up #4 (Codex C round-4 闭环 2026-05-10): test seams.
@@ -2108,7 +2111,7 @@ export const webSearchTool = {
       },
       evidenceTrail: trail,
     };
-  },
+  }),
 };
 
 // ─── SWR background refresh (P2-1) ───────────────────────────────────────────
