@@ -91,7 +91,14 @@ export async function executeTool(tool, args, options = {}) {
       timeoutPromise,
     ]);
     clearTimeout(timeoutId);
-    // Normalise — ensure ok/output fields exist
+    // Normalise — ensure ok/output fields exist.  G-1d (2026-05-11):
+    // preserve `evidenceTrail` (3 search tools' fallback diagnostic structure
+    // from Phase G-1a/b/c) through normalization.  Without this preservation
+    // step, every tool result reaching `chatExecutionRunner` / `subAgent` /
+    // `skillExecutor` silently lost the trail — the data was produced but
+    // never reachable by downstream consumers.  This is the smallest slice
+    // of G-1d (chat thread state 写 trail): once the executor preserves
+    // the field, callers CAN store/surface it; previously they couldn't.
     let result;
     if (!rawResult || typeof rawResult !== 'object') {
       result = { ok: true, output: String(rawResult ?? ''), meta: {} };
@@ -102,6 +109,11 @@ export async function executeTool(tool, args, options = {}) {
         error: rawResult.error,
         meta: rawResult.meta ?? {},
       };
+      // Only attach evidenceTrail when the tool actually produced one;
+      // avoids polluting all other tools' results with `evidenceTrail: undefined`.
+      if (Array.isArray(rawResult.evidenceTrail) && rawResult.evidenceTrail.length > 0) {
+        result.evidenceTrail = rawResult.evidenceTrail;
+      }
     }
     // Plugin hook: tool:after
     await emitHook('tool:after', { toolId: tool.id, args, result });
