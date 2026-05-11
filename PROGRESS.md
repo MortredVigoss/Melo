@@ -4,6 +4,33 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-11 — Phase G search-system 标准化（G-1 evidenceTrail / G-2 SearchTask RFC + 停手反思 / Phase 2 真生产 shape instrumentation）
+
+- 做了什么（17 commits 一条主线，含 5 个 Codex C 闭环 + 5 个 5th-lesson 落地）：
+  - **G-1 evidenceTrail（3 工具落地诊断结构）**：
+    - `874e798` `feat(search) G-1a`: `fetchUrlTool` 7 层 fallback (`{tier, outcome, latencyMs, reason?}`) POC。
+    - `3e0496e` + `c908254` G-1a follow-up：`pendingTier` forced throw 记 `unknown`、auto path 短内容记 `fail parse-empty` + 新 `_fetchViaJina/_fetchDirect/_tryPlaywright` test seam 闭 Codex 双 B（**A**）。
+    - `22262d4` `feat(search) G-1b`: `socialLinkTool` 5 sub-strategy + merge `social-link.*` prefix。
+    - `272a59f` + `1e77668` + `881da50` G-1b 3 轮闭 Codex C：mid-loop abort 裸 return null → 单 candidate await-后 abort check → catch-path abort 走 `bailAbortedSocial` helper（**A**）。
+    - `0e4af90` `feat(search) G-1c`: `webSearchTool` 6-phase trail + 3-layer abort 一次性覆盖。
+    - `fa7fe74` → `b5ab01a` → `3237e78` → `d7edbcd` → `d86150f` G-1c **5 轮闭 Codex C**：cache abort gate → raceSerpProviders abort listener / fetchResultContents abort gate → `abortRace` helper 统一 3 处 PW await → 改测试假绿用真 SERP/Jina seam → systematic 5 PW await audit + content-fetch probe abortRace（**A**）。
+  - **G-2 SearchTask RFC + 停手反思**：
+    - `0d6e3ef` `docs(search) G-2`: SearchTask RFC（3 工具 grep 对比 + schema 提议 + 迁移路径 + 4 个开放问题）。
+    - `4719c25` `docs(search) G-2b 停手于 4 轮 C`：连续 4 轮 normalizer Codex 都抓到没见过的真生产 shape（socialLink `meta`/`canonicalUrl`/`via` schema、webSearch evidence trail 没回带、fetchUrl `ok: false` 但 `output` 有 body 的 partial 成功 case 等）→ 决定停手、4 commits backup 到 `wip/g-2b-adapter-phase2-refresh` 分支 + RFC §7 写"5th lesson principle: Before designing a normalizer/adapter contract, run the producer in production for ≥ 1 day and grep the real shapes from logs"。
+  - **Phase 2 真生产 shape instrumentation（G-2b 停手后的破局路径）**：
+    - `5787a98` `feat(search) Phase 2`: 新 `src/services/search/trailLogger.js` + `trailLogger.test.js` 14 case，env opt-in (`MELO_SEARCH_TRAIL_LOG=1`) JSONL append 到 `MELO_HOME/desktop/search-trail-log/YYYY-MM-DD.jsonl`；3 工具`wrapWithTrailLog`接入；500 字符截断 + `meta.results` cap 12 + fs 错误 best-effort。
+    - `513da09` `fix(search) Phase 2 #1`: `media/index.js` `extractSocialPreviewContent` 直读 `readSocialLink` 旁路也接 trail-log（不止 socialLinkTool.run 走的链路）。闭 Codex Phase 2 B（**A**）。
+    - `82d9084` + `8a7657d` `fix(search) Phase 2 #2`: cross-home cache audit 发现 `webSearchTool.js` `const CACHE_DB_PATH = join(getMeloHome(), …)` 是 §6 违规（和 dreaming `DREAMS_DIR` 同类）→ `cacheDbPath()` 函数化 + `_resetWebSearchCacheForTests()` 钩子 + `getCacheDb()` 路径变化时关旧 handle 开新的；新 `webSearchTool.crossHome.test.js` 5 case（path 调用时解析 / flip+reset / idempotent reset / 源码兜底守卫 / **clearCache 真 handle 开 A→切 B→落 B + A 不复用**闭 Codex B 建议）。其他 8 处 module-load `getMeloHome()` 命中记入 G-6 milestone（**A**）。
+- 为什么：起点是 G-2 想抽 `SearchTask` 统一 3 工具契约，写 adapter 时连 4 轮被 Codex C 抓出"猜生产 shape 不对"。第 4 轮后改为先停手、记 5th lesson、回头通过 Phase 2 instrumentation 抓真数据，等 ≥1 天真生产日志后再设计 adapter。中途用户提点"做的时候多思考 怎么总是 C"，写进 lessons-learned 后 G-1c 第 5 轮自查 5 处 PW await 才完整闭环。G-2b stop 是这条原则的真应用：与其继续猜，不如换路径。
+- 产出：17 commits 全部 push 上线。Codex 评级线：G-1a (A) / G-1b (A) / G-1c (A round-5) / G-2 RFC (A) / G-2b stop+lessons (A) / Phase 2 main+#1+#2+#2-followup (B→A 闭环)。
+- P2 留账：
+  1. **G-2b round-5**：等 ≥1 天 `MELO_SEARCH_TRAIL_LOG=1` 真数据后，refresh fixtures + cherry-pick `wip/g-2b-adapter-phase2-refresh` 4 commits + 重 push。
+  2. **G-2c**: `webSearchTool` 暴露 `meta.contentItems[]`（RFC §#5 follow-up）。
+  3. **G-2d**: 弃用 legacy fields（`text`/`results.body` 直读）。
+  4. **G-6 milestone**: 另 8 处 module-load `getMeloHome()` 系统性 refactor（fetchUrlTool / memoryStore / settings 等）。
+  5. G-1d/e/f、G-3、G-4、G-5：独立 milestone，按优先级排进 roadmap。
+
+---
 ## 2026-05-10 — memory 长期记忆链路根因连锁修复 + 测试 hygiene + Codex 改动并入
 
 - 做了什么（6 commits 一个收口）：
