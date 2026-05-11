@@ -3,13 +3,21 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { getMeloHome } from '../config.js';
 
-const CACHE_DIR = join(getMeloHome(), 'media-cache');
+// G-6 #5 (audit 2026-05-11): `const CACHE_DIR = join(getMeloHome(), 'media-cache')`
+// was module-load frozen — CLAUDE.md §6 violation.  `cacheKeyToPath` is called
+// from `getCachedExtraction` / `setCachedExtraction` which are async and
+// fire-and-forget on errors, so a runtime/test MELO_HOME flip would silently
+// write+read against the WRONG home.  Resolved per-call now.
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRY_BYTES = 2 * 1024 * 1024;
 
+function mediaCacheDir() {
+  return join(getMeloHome(), 'media-cache');
+}
+
 function cacheKeyToPath(key) {
   const hash = createHash('sha256').update(String(key || '')).digest('hex');
-  return join(CACHE_DIR, hash.slice(0, 2), `${hash.slice(2)}.json`);
+  return join(mediaCacheDir(), hash.slice(0, 2), `${hash.slice(2)}.json`);
 }
 
 export async function getCachedExtraction(key) {
