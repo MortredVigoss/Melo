@@ -61,6 +61,61 @@ export function mapErrorCode(legacyCode, ctx = {}) {
   return LEGACY_CODE_MAP[legacyCode] || ERROR_CODES.PROVIDER_DOWN;
 }
 
+// ─── trail-reason-aware error refinement (systematic, round-2 闭环) ─────────
+//
+// G-2b round-2 (Codex 2026-05-11 C round-2 闭环): a single legacy error
+// code (e.g. webSearch 'SEARCH_FAILED', fetchUrl outer-catch dynamic
+// `err.message`, socialLink miss without code) can mean 4+ different
+// things at runtime: NO_RESULTS / TIMEOUT / NETWORK / PROVIDER_DOWN /
+// LOGIN_REQUIRED etc.  The evidenceTrail already carries the precise
+// reason on the failing tier (classifyFetchError / classifySocialError /
+// classifyWebSearchError write it).  This helper derives the unified
+// code from the trail's last fail entry, falling back to the legacy
+// code mapping when the trail is empty or unhelpful.
+//
+// Applied to ALL 3 tools' fail paths in this commit — not just the one
+// Codex pointed at — per lessons-learned §3 "systematic 检查同类".
+
+export function deriveErrorFromTrail(trail, opts = {}) {
+  const { aborted = false, legacyCode = null, defaultCode = ERROR_CODES.PROVIDER_DOWN } = opts;
+  if (aborted) return ERROR_CODES.ABORTED;
+  const trailArr = Array.isArray(trail) ? trail : [];
+  // Walk the trail backwards to find the FINAL fail (latest tier the run
+  // gave up on).  skip-only tiers don't carry blame for the outcome.
+  const lastFail = [...trailArr].reverse().find(e => e.outcome === 'fail');
+  const reason = lastFail?.reason;
+  if (reason) {
+    // Abort variants — already covered by aborted gate above but match
+    // here too for trails where the caller forgot to thread aborted.
+    if (reason === 'aborted' || reason.startsWith('aborted-')) return ERROR_CODES.ABORTED;
+    if (reason === 'timeout' || reason === 'timed-out') return ERROR_CODES.TIMEOUT;
+    if (reason === 'no-results') return ERROR_CODES.NO_RESULTS;
+    if (reason === 'login-wall' || reason === 'login-required') return ERROR_CODES.LOGIN_REQUIRED;
+    if (reason === 'network' || reason === 'econnreset' || reason === 'econnrefused') {
+      return ERROR_CODES.NETWORK;
+    }
+    if (reason === '4xx' || reason === '5xx' || reason === 'tls') return ERROR_CODES.NETWORK;
+    if (reason === 'parse-error' || reason === 'parse-empty' || reason === 'no-content'
+      || reason === 'no-content-after-fallbacks' || reason === 'extractor-throw'
+      || reason === 'unsupported-or-no-meta' || reason === 'no-title-or-body') {
+      return ERROR_CODES.EXTRACTION_FAILED;
+    }
+    if (reason === 'invalid-url' || reason === 'invalid-query') return ERROR_CODES.INVALID_INPUT;
+    if (reason === 'cli-missing-or-no-content' || reason === 'no-reader-fn'
+      || reason === 'no-browser-fn' || reason === 'no-preview-fn') {
+      return ERROR_CODES.PROVIDER_DOWN;
+    }
+    // 'low-score' / 'no-match' / 'no-preview' = SERP-like miss
+    if (reason === 'low-score' || reason === 'no-match' || reason === 'no-preview') {
+      return ERROR_CODES.NO_RESULTS;
+    }
+  }
+  // Fall through to legacy code mapping if trail didn't give us a clear
+  // reason (or no fail entries at all).
+  if (legacyCode) return mapErrorCode(legacyCode, { aborted });
+  return defaultCode;
+}
+
 // ─── Confidence derivation (from EvidenceTrail extractionMethod) ────────────
 //
 // Heuristic: which tier produced the result?  RFC §4 Q2 flagged this is a
@@ -141,7 +196,12 @@ export function normalizeFetchUrlResult(legacy, input = {}) {
         timings: { totalMs: _sumLatency(trail) },
         ...(aborted ? { aborted: true } : {}),
       },
-      error: mapErrorCode(legacy.error, { aborted }),
+      // G-2b round-2: trail-reason-aware refinement (lessons-learned §3
+      // systematic — applied to all 3 tools' fail paths in this commit).
+      // For fetchUrl, outer-catch puts `err.message` into `legacy.error`,
+      // a free-form string that loses precision; trail reasons (network,
+      // timeout, 4xx, etc.) are the truthful classification.
+      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error }),
       output: legacy.output,
     };
   }
@@ -215,13 +275,18 @@ export function normalizeSocialLinkResult(legacy, input = {}) {
     };
   }
   if (legacy.missed || !legacy.body) {
+    // G-2b round-2: trail-reason-aware error.  socialLinkTool miss isn't
+    // always login wall — could be no-results (low share-preview score),
+    // network failure, parse-error, etc.  The trail's last fail tier
+    // tells us which; default to LOGIN_REQUIRED only when the trail
+    // doesn't have a clearer signal (matches the historical default).
     return {
       status: 'fail',
       query: input.query || input.url || legacy.canonicalUrl || '',
       evidenceTrail: trail,
       evidence: [],
       meta: { source: 'social-link', via: legacy.via || 'none', timings: { totalMs: _sumLatency(trail) } },
-      error: ERROR_CODES.LOGIN_REQUIRED, // socialLinkTool miss is almost always login wall
+      error: deriveErrorFromTrail(trail, { defaultCode: ERROR_CODES.LOGIN_REQUIRED }),
       output: '',
     };
   }
@@ -280,7 +345,11 @@ export function normalizeWebSearchResult(legacy, input = {}) {
         ...(legacy.meta?.cacheHit ? { cache: { hit: 'fresh' } } : {}),
         ...(aborted ? { aborted: true } : {}),
       },
-      error: mapErrorCode(legacy.error, { aborted }),
+      // G-2b round-2: webSearchTool's 'SEARCH_FAILED' code conflates
+      // NO_RESULTS / TIMEOUT / NETWORK / PROVIDER_DOWN — the trail's
+      // serp.fail reason has the precise classification (see
+      // classifyWebSearchError in webSearchTool.js).
+      error: deriveErrorFromTrail(trail, { aborted, legacyCode: legacy.error }),
       output: legacy.output,
     };
   }
