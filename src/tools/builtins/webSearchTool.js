@@ -234,42 +234,60 @@ function classifyQueryIntent(rawQuery) {
 // at 256 KiB.  Same shape as telegram-debug.log so a single tail pattern
 // covers both.  Never throws — observability must never be on the hot path.
 
-const WEB_SEARCH_DEBUG_LOG_PATH = join(getMeloHome(), 'desktop', 'web-search-debug.log');
+// G-6 #3 (audit 2026-05-11): module-load `const WEB_SEARCH_DEBUG_LOG_PATH = join(getMeloHome(),…)`
+// + fire-and-forget IIFE reading the const = textbook CLAUDE.md §6 violation
+// (the canonical example in §6's "background prime task in microtask"
+// anti-pattern).  Fix per §6 doctrine: **capture at scheduling time**
+// (function entry), not lazy-resolve globally — pass logPath into the
+// IIFE via closure so it's bound to whatever home was current when the
+// caller fired the log line, not whatever home is current when the
+// microtask happens to run.  Per-path dir-ready map replaces the single
+// `_webSearchDebugDirReady` flag so a home-flip doesn't reuse a "ready"
+// signal from the previous home's directory.
 const WEB_SEARCH_DEBUG_LOG_MAX_BYTES = 256 * 1024;
-let _webSearchDebugDirReady = false;
+const _webSearchDebugDirReady = new Map(); // logPath → true once mkdir succeeded
 const _backgroundRefreshInFlight = new Set();
 
-async function _ensureWebSearchDebugDir() {
-  if (_webSearchDebugDirReady) return;
+function webSearchDebugLogPath() {
+  return join(getMeloHome(), 'desktop', 'web-search-debug.log');
+}
+
+async function _ensureWebSearchDebugDir(logPath) {
+  if (_webSearchDebugDirReady.get(logPath)) return;
   try {
-    await mkdir(dirname(WEB_SEARCH_DEBUG_LOG_PATH), { recursive: true });
-    _webSearchDebugDirReady = true;
+    await mkdir(dirname(logPath), { recursive: true });
+    _webSearchDebugDirReady.set(logPath, true);
   } catch {
     // Directory creation failure is non-fatal — logging just gets skipped.
   }
 }
 
 function writeWebSearchDebugLine(line) {
+  // CLAUDE.md §6: capture at scheduling time, before the await boundary.
+  // If MELO_HOME flips between this line and the IIFE resolving, the log
+  // still goes where the caller intended (the home that was current at
+  // the call site).
+  const logPath = webSearchDebugLogPath();
   const stamp = new Date().toISOString();
   const payload = `[${stamp}] pid=${process.pid} ${String(line || '').trim()}\n`;
   // Fire-and-forget.  Chain the entire pipeline so one promise surfaces any
   // error via debugWarn, but the caller never waits.
   (async () => {
     try {
-      await _ensureWebSearchDebugDir();
+      await _ensureWebSearchDebugDir(logPath);
       try {
-        const st = await stat(WEB_SEARCH_DEBUG_LOG_PATH).catch(() => null);
+        const st = await stat(logPath).catch(() => null);
         if (st && st.size > WEB_SEARCH_DEBUG_LOG_MAX_BYTES) {
           // Simple truncate-on-overflow — better than renaming files inside
           // a tool call that should never block.
-          await appendFile(WEB_SEARCH_DEBUG_LOG_PATH, '').catch(() => {});
+          await appendFile(logPath, '').catch(() => {});
           const { writeFile } = await import('node:fs/promises');
-          await writeFile(WEB_SEARCH_DEBUG_LOG_PATH, '', 'utf8').catch(() => {});
+          await writeFile(logPath, '', 'utf8').catch(() => {});
         }
       } catch {
         // stat failures just skip the rotation attempt — append will create.
       }
-      await appendFile(WEB_SEARCH_DEBUG_LOG_PATH, payload, 'utf8');
+      await appendFile(logPath, payload, 'utf8');
     } catch (err) {
       debugWarn('web_search.debug', 'writeWebSearchDebugLine failed', err?.message || err);
     }
