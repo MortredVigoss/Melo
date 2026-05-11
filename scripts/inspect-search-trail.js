@@ -38,7 +38,9 @@ const VALID_STATUSES = new Set(['ok', 'fail', 'aborted', 'missed']);
 
 // ─── arg parsing ──────────────────────────────────────────────────────────────
 
-function parseArgs(argv) {
+const DAY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export function parseArgs(argv) {
   const opts = {
     day: null,
     days: 1,
@@ -50,8 +52,29 @@ function parseArgs(argv) {
   for (const arg of argv.slice(2)) {
     if (arg === '--help' || arg === '-h') { opts.help = true; continue; }
     if (arg === '--raw') { opts.raw = true; continue; }
-    if (arg.startsWith('--day=')) { opts.day = arg.slice(6); continue; }
-    if (arg.startsWith('--days=')) { opts.days = Math.max(1, parseInt(arg.slice(7), 10) || 1); continue; }
+    if (arg.startsWith('--day=')) {
+      const v = arg.slice(6);
+      // Codex 🔵 follow-up (manual review on 4d572de): `--day=bad` used to
+      // pass through and silently return 0 entries — the operator couldn't
+      // distinguish "no data on that day" from "I mistyped the date".
+      // Strict YYYY-MM-DD regex + Date.parse → real exit 2 on invalid.
+      if (!DAY_REGEX.test(v) || Number.isNaN(Date.parse(v + 'T00:00:00Z'))) {
+        throw new Error(`--day must be YYYY-MM-DD (got: ${v}).`);
+      }
+      opts.day = v;
+      continue;
+    }
+    if (arg.startsWith('--days=')) {
+      const v = arg.slice(7);
+      // Codex 🔵 follow-up: `--days=abc/0/-3` used to collapse to 1 day
+      // via `parseInt(...) || 1` + `Math.max(1, ...)`.  Same exit-2 contract.
+      const n = parseInt(v, 10);
+      if (!/^[+]?\d+$/.test(v) || !Number.isFinite(n) || n < 1) {
+        throw new Error(`--days must be a positive integer (got: ${v}).`);
+      }
+      opts.days = n;
+      continue;
+    }
     if (arg.startsWith('--source=')) { opts.source = arg.slice(9); continue; }
     if (arg.startsWith('--status=')) { opts.status = arg.slice(9); continue; }
     throw new Error(`Unknown argument: ${arg}.  Run with --help for usage.`);
