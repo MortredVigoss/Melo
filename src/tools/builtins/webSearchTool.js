@@ -465,13 +465,48 @@ function parseDdgMarkdown(text, limit) {
 
 // ─── Web search cache (SQLite) ───────────────────────────────────────────────
 
-const CACHE_DB_PATH = join(getMeloHome(), 'desktop', 'search.sqlite');
+// G-2 follow-up #2 (audit 2026-05-11): cacheDbPath() was previously a
+// module-load-time `const join(getMeloHome(), ...)` — same CLAUDE.md §6
+// violation pattern as the dreaming diary DREAMS_DIR (fixed in G-1
+// 60e828d).  Per-test MELO_HOME = mkdtemp() couldn't take effect because
+// the path was frozen at the first import.  Now resolved at call time
+// + cache db handle closes & reopens when the resolved path changes,
+// so a test (or future multi-profile runtime) that switches MELO_HOME
+// gets a fresh handle pointing at the right file.
+//
+// Other 8 module-load-time getMeloHome() sites identified in the audit
+// (see docs/search-system-roadmap.md G-6 backlog) follow the same
+// pattern; they're queued for a single systematic refactor in G-6
+// rather than scattered patches here.
+function cacheDbPath() {
+  return join(getMeloHome(), 'desktop', 'search.sqlite');
+}
+
 let _cacheDb = null;
+let _openedCachePath = null;
+
+/** @internal test hook — close the cached handle so the next call
+ *  re-opens at the current MELO_HOME path.  Tests using mkdtemp+
+ *  MELO_HOME isolation should call this in beforeEach/afterEach. */
+export function _resetWebSearchCacheForTests() {
+  if (_cacheDb) {
+    try { _cacheDb.close(); } catch {}
+  }
+  _cacheDb = null;
+  _openedCachePath = null;
+}
 
 function getCacheDb() {
-  if (_cacheDb) return _cacheDb;
-  mkdirSync(dirname(CACHE_DB_PATH), { recursive: true });
-  _cacheDb = new DatabaseSync(CACHE_DB_PATH);
+  const path = cacheDbPath();
+  if (_cacheDb && _openedCachePath === path) return _cacheDb;
+  // Path changed (test switched MELO_HOME) — close old handle, open new.
+  if (_cacheDb) {
+    try { _cacheDb.close(); } catch {}
+    _cacheDb = null;
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  _cacheDb = new DatabaseSync(path);
+  _openedCachePath = path;
   _cacheDb.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS web_search_cache (
@@ -2149,7 +2184,7 @@ async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedD
 // stays co-located with the tool itself.
 
 export function getSearchCacheDbPath() {
-  return CACHE_DB_PATH;
+  return cacheDbPath();
 }
 
 /**
@@ -2159,12 +2194,12 @@ export function getSearchCacheDbPath() {
 export async function getCacheStats() {
   let sizeBytes = 0;
   try {
-    const st = await stat(CACHE_DB_PATH);
+    const st = await stat(cacheDbPath());
     sizeBytes = st.size;
   } catch {
     return {
       exists: false,
-      path: CACHE_DB_PATH,
+      path: cacheDbPath(),
       sizeBytes: 0,
       searchCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
       urlCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
@@ -2210,7 +2245,7 @@ export async function getCacheStats() {
 
   return {
     exists: true,
-    path: CACHE_DB_PATH,
+    path: cacheDbPath(),
     sizeBytes,
     searchCache: searchStats,
     urlCache: urlStats,
@@ -2269,7 +2304,7 @@ async function probeJinaReachability(signal) {
 
 async function probeCacheDb() {
   try {
-    const st = await stat(CACHE_DB_PATH);
+    const st = await stat(cacheDbPath());
     let rowCount = 0;
     let lastQueryAgeMs = null;
     try {
@@ -2282,14 +2317,14 @@ async function probeCacheDb() {
     }
     return {
       exists: true,
-      path: CACHE_DB_PATH,
+      path: cacheDbPath(),
       sizeBytes: st.size,
       rowCount,
       lastQueryAgeMs,
       ttlMs: SEARCH_CACHE_TTL_MS,
     };
   } catch {
-    return { exists: false, path: CACHE_DB_PATH, sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
+    return { exists: false, path: cacheDbPath(), sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
   }
 }
 
