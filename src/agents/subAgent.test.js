@@ -221,3 +221,85 @@ test('agentTool definition is not concurrency-safe (avoids runaway parallel spaw
   assert.equal(agentTool.isConcurrencySafe, false);
   assert.equal(agentTool.id, 'agent');
 });
+
+// ─── G-1d slice 1.5: tool_calls_done SSE carries evidenceTrail ────────────
+
+test('G-1d slice 1.5: tool_calls_done SSE event includes evidenceTrail when tool produces one', async () => {
+  // A fake tool that returns evidenceTrail — mirrors the shape G-1a/b/c
+  // search tools produce.
+  const trail = [
+    { tier: 'jina', outcome: 'fail', latencyMs: 600, reason: 'timeout' },
+    { tier: 'direct', outcome: 'ok', latencyMs: 220 },
+  ];
+  const trailTool = {
+    id: 'trail_tool',
+    name: 'trail_tool',
+    description: 'fake tool that returns evidenceTrail',
+    category: 'test',
+    isConcurrencySafe: false,
+    requiresPermission: false,
+    parametersSchema: { type: 'object', properties: {} },
+    run: async () => ({ ok: true, output: 'done', meta: {}, evidenceTrail: trail }),
+  };
+  registerTool(trailTool);
+
+  // SSE capture: record every event the sub-agent emits.
+  const sseEvents = [];
+  const sseEmitter = (event, payload) => {
+    sseEvents.push({ event, payload });
+  };
+
+  try {
+    const reply = makeFakeReply();
+    reply.queue.push('<tool_call>{"id":"c1","name":"trail_tool","arguments":{}}</tool_call>');
+    reply.queue.push('done');
+
+    const res = await runSubAgent({
+      task: 't',
+      config: validConfig(),
+      allowedToolIds: ['trail_tool'],
+      replyFn: reply,
+      sseEmitter,
+    });
+    assert.equal(res.ok, true);
+
+    const doneEvent = sseEvents.find(e => e.event === 'tool_calls_done');
+    assert.ok(doneEvent, 'tool_calls_done event must have fired');
+    const r = doneEvent.payload.results.find(x => x.id === 'c1');
+    assert.ok(r, 'result for c1 must be in the payload');
+    assert.deepEqual(r.evidenceTrail, trail,
+      'SSE payload must carry the trail unmodified (slice 1.5 wire contract)');
+  } finally {
+    unregisterTool('trail_tool');
+  }
+});
+
+test('G-1d slice 1.5: tool_calls_done SSE event omits evidenceTrail when tool did not produce one', async () => {
+  const { tool, calls } = makeRecordingTool('no_trail_tool');
+  registerTool(tool);
+
+  const sseEvents = [];
+  const sseEmitter = (event, payload) => sseEvents.push({ event, payload });
+
+  try {
+    const reply = makeFakeReply();
+    reply.queue.push('<tool_call>{"id":"c2","name":"no_trail_tool","arguments":{}}</tool_call>');
+    reply.queue.push('done');
+
+    await runSubAgent({
+      task: 't',
+      config: validConfig(),
+      allowedToolIds: ['no_trail_tool'],
+      replyFn: reply,
+      sseEmitter,
+    });
+    assert.equal(calls.length, 1);
+
+    const doneEvent = sseEvents.find(e => e.event === 'tool_calls_done');
+    const r = doneEvent.payload.results.find(x => x.id === 'c2');
+    assert.ok(!('evidenceTrail' in r),
+      'tools without a trail must NOT carry an `evidenceTrail` key on the SSE payload (no noise)');
+  } finally {
+    unregisterTool('no_trail_tool');
+  }
+});

@@ -4033,13 +4033,20 @@ async function handleSendMessage() {
           }
           render();
         } else if (message.event === 'tool_calls_done') {
-          // Tools finished: update status
+          // Tools finished: update status.  G-1d slice 1.5 (2026-05-11):
+          // capture `evidenceTrail` when present so devtools / a future
+          // debug overlay (G-1f) can show which fallback tiers a search
+          // tool walked through.  Field is optional — only the 3 search
+          // tools (fetch_url / social_link / web_search) populate it.
           const results = message.payload?.results || [];
           for (const r of results) {
             const existing = uiState.activeToolCalls.find(t => t.id === r.id);
             if (existing) {
               existing.status = r.ok ? 'ok' : 'error';
               existing.output = r.output;
+              if (Array.isArray(r.evidenceTrail) && r.evidenceTrail.length > 0) {
+                existing.evidenceTrail = r.evidenceTrail;
+              }
             }
           }
           // Clear completed calls after a short delay so user sees the checkmarks

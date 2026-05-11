@@ -537,16 +537,27 @@ export async function runChatAgentExecutionGraph({
             };
           });
 
-          // Emit SSE with results for UI
+          // Emit SSE with results for UI.  G-1d slice 1.5 (2026-05-11):
+          // forward `evidenceTrail` to the UI so devtools / debug overlay can
+          // inspect which fallback tiers a search tool walked through.  Only
+          // attach when a non-empty array was produced (slice 1 invariant
+          // from executor.js).  Trail items are small JSON objects — no
+          // need to truncate like `output`.
           if (typeof sseEmitter === 'function') {
             sseEmitter('tool_calls_done', {
               iteration,
-              results: allResults.map(({ call, result }) => ({
-                id: call.id,
-                name: call.name,
-                ok: result.ok,
-                output: result.output?.slice(0, 500), // truncate for SSE
-              })),
+              results: allResults.map(({ call, result }) => {
+                const item = {
+                  id: call.id,
+                  name: call.name,
+                  ok: result.ok,
+                  output: result.output?.slice(0, 500), // truncate for SSE
+                };
+                if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
+                  item.evidenceTrail = result.evidenceTrail;
+                }
+                return item;
+              }),
             });
           }
 

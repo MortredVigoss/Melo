@@ -247,15 +247,24 @@ export async function runSubAgent({
     });
 
     if (typeof sseEmitter === 'function') {
+      // G-1d slice 1.5: forward evidenceTrail to UI (same pattern as
+      // chatExecutionRunner). Mirror exactly to keep all three emit sites
+      // (here / chatExecutionRunner / skillExecutor) wire-compatible.
       sseEmitter('tool_calls_done', {
         iteration,
         depth,
-        results: allResults.map(({ call, result }) => ({
-          id: call.id,
-          name: call.name,
-          ok: result.ok,
-          output: result.output?.slice(0, 500),
-        })),
+        results: allResults.map(({ call, result }) => {
+          const item = {
+            id: call.id,
+            name: call.name,
+            ok: result.ok,
+            output: result.output?.slice(0, 500),
+          };
+          if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
+            item.evidenceTrail = result.evidenceTrail;
+          }
+          return item;
+        }),
       });
     }
 
