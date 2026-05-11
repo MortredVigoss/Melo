@@ -11,6 +11,7 @@ import {
 import { extractYoutubeContent } from './extractors/youtubeExtractor.js';
 import { detectUrlKind } from './urlDetector.js';
 import { isSocialLinkUrl, readSocialLink } from '../tools/builtins/socialLinkTool.js';
+import { logSearchTrail } from '../services/search/trailLogger.js';
 
 const VALID_EXTRACTED_MEDIA_KINDS = new Set(['transcript', 'caption', 'article', 'summary']);
 let TOTAL_BUDGET_MS = 30000;
@@ -129,6 +130,17 @@ async function extractSocialPreviewContent(attachment, context, signal) {
   const result = await readSocialLink(attachment.url, {
     config: context?.config || {},
     signal,
+  });
+  // Phase 2 trail-log instrumentation (Codex Phase 2 B follow-up 2026-05-11):
+  // capture the direct readSocialLink call path that bypasses fetchUrlTool's
+  // wrap.  When MELO_SEARCH_TRAIL_LOG=1, the raw socialLink result lands
+  // in $MELO_HOME/desktop/search-trail-log/YYYY-MM-DD.jsonl alongside the
+  // fetchUrl/webSearch entries — adapter fixture refresh can build a
+  // unified corpus across all 3 entry points.
+  logSearchTrail({
+    source: 'social-link',
+    input: { url: attachment.url },
+    result,
   });
   if (!result?.body) return null;
   const previewEntry = {
