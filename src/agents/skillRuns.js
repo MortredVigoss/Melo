@@ -19,15 +19,41 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { getMeloHome } from '../config.js';
 
-const STORE_PATH = join(getMeloHome(), 'desktop', 'store.sqlite');
+// G-6 (audit 2026-05-11): STORE_PATH was previously a module-load
+// `const join(getMeloHome(), …)` — CLAUDE.md §6 violation.  Existing
+// skillRuns.test.js worked around it via dynamic import after setting
+// MELO_HOME, but that pattern doesn't support mid-suite flipping or
+// multi-profile runtime user-switch.  Same lazy-resolve + handle-bounce
+// fix that landed for cache (G-2 Phase 2 #2) and FTS (G-6 #1) handles.
+function storePath() {
+  return join(getMeloHome(), 'desktop', 'store.sqlite');
+}
 
 let db = null;
+let openedPath = null;
+
+/** @internal test hook — close cached handle so the next getDb() call
+ *  re-opens at the current MELO_HOME path. */
+export function _resetSkillRunsForTests() {
+  if (db) {
+    try { db.close(); } catch {}
+  }
+  db = null;
+  openedPath = null;
+}
 
 function getDb() {
-  if (db) return db;
+  const path = storePath();
+  if (db && openedPath === path) return db;
+  // Path changed — close old handle and open new.
+  if (db) {
+    try { db.close(); } catch {}
+    db = null;
+  }
   try {
-    mkdirSync(dirname(STORE_PATH), { recursive: true });
-    db = new DatabaseSync(STORE_PATH);
+    mkdirSync(dirname(path), { recursive: true });
+    db = new DatabaseSync(path);
+    openedPath = path;
     db.exec(`
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS skill_runs (
@@ -51,6 +77,7 @@ function getDb() {
     // still proceed — telemetry is optional.
     console.warn('[skillRuns] failed to open store:', err?.message || err);
     db = null;
+    openedPath = null;
     return null;
   }
 }
