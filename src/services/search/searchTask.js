@@ -145,26 +145,40 @@ export function normalizeFetchUrlResult(legacy, input = {}) {
       output: legacy.output,
     };
   }
-  // Success path: 1 evidence item carrying the fetched body
+  // Success path: 1 evidence item carrying the fetched body.
+  //
+  // G-2b round-1 follow-up (Codex 2026-05-11 P1): when fetchUrlTool routed
+  // through the social-link path, `meta.method='social-link'` is the *outer*
+  // label and `meta.via='yt-dlp' | 'share-preview:wechat' | 'browser:douyin' |
+  // 'external:crawl4ai'` is the *real* extractor.  Pre-fix we used method,
+  // losing the sub-tier and forcing confidence='unknown' / isPartial=false
+  // even for shallow share-preview hits.  Now use via as extractionMethod
+  // for social-link and mirror normalizeSocialLinkResult's isDeep semantics.
   const method = legacy.meta?.method;
+  const via = legacy.meta?.via;
+  const isSocialLink = method === 'social-link';
+  const realMethod = isSocialLink ? (via || method) : (method || via);
+  const isDeep = !isSocialLink
+    || realMethod === 'yt-dlp'
+    || (typeof realMethod === 'string' && realMethod.startsWith('external:'));
   const evidence = [{
-    sourceType: method === 'social-link' ? 'social-link' : 'web-page',
+    sourceType: isSocialLink ? 'social-link' : 'web-page',
     title: '', // fetchUrlTool doesn't extract title separately; body carries it
     url: legacy.meta?.canonicalUrl || legacy.meta?.url || input.url || '',
     body: legacy.output,
-    confidence: deriveConfidence(method || legacy.meta?.via),
-    extractionMethod: method || legacy.meta?.via || 'unknown',
-    isPartial: false,
+    confidence: deriveConfidence(realMethod),
+    extractionMethod: realMethod || 'unknown',
+    isPartial: !isDeep,
     fetchedAt: new Date().toISOString(),
   }];
   return {
-    status: 'ok',
+    status: isDeep ? 'ok' : 'partial',
     query: input.query || legacy.meta?.url || '',
     evidenceTrail: trail,
     evidence,
     meta: {
       source: 'url-fetch',
-      via: method,
+      via: realMethod,
       timings: { totalMs: _sumLatency(trail) },
     },
     output: legacy.output,
@@ -270,10 +284,56 @@ export function normalizeWebSearchResult(legacy, input = {}) {
       output: legacy.output,
     };
   }
-  // Success — one evidence item per SERP result, with body when fetched.
+  // G-2b round-1 follow-up #2 (Codex 2026-05-11 P0): weather fast-path
+  // returns ok:true, contentFetched:1, but meta.results:[] (the fetched
+  // data is embedded in `legacy.output` as a wttr.in text block, not as
+  // a structured SERP-result row).  Pre-fix the adapter looked at
+  // results.length=0 → evidence=[] → status='fail', misclassifying a
+  // successful weather query as a failure.  Detect via the provider tag
+  // 'wttr.in' or timings.weatherFastPath and emit a single web-page
+  // evidence carrying the rendered text body.
   const provider = legacy.meta?.provider || 'unknown';
+  const isWeatherFastPath = provider === 'wttr.in'
+    || legacy.meta?.timings?.weatherFastPath === true;
+  if (isWeatherFastPath) {
+    const url = input.url || legacy.meta?.url || '';
+    return {
+      status: 'ok',
+      query: input.query || legacy.meta?.query || '',
+      evidenceTrail: trail,
+      evidence: [{
+        sourceType: 'web-page',
+        title: 'Weather',
+        url,
+        body: legacy.output,
+        confidence: 'high',
+        extractionMethod: 'wttr.in',
+        isPartial: false,
+        fetchedAt: new Date().toISOString(),
+        extra: { weatherFastPath: true },
+      }],
+      meta: {
+        source: 'web-search',
+        via: 'wttr.in',
+        timings: legacy.meta?.timings || { totalMs: _sumLatency(trail) },
+      },
+      output: legacy.output,
+    };
+  }
+
+  // Success — one evidence item per SERP result.
+  //
+  // G-2b round-1 follow-up #3 (Codex 2026-05-11 P0): for SERP results,
+  // the legacy contract does NOT expose a structured `contentMap` even
+  // when `contentFetched > 0` (fetched bodies are inlined into the
+  // `output` markdown string under "**Page content:**" sections).  G-2b
+  // adapter cannot reliably reconstruct per-url bodies from that string.
+  // → Honest representation: mark every SERP item as isPartial=true and
+  // leave body undefined.  task status='partial' (some evidence exists
+  // but no parsed bodies).  G-2c will change webSearchTool to emit
+  // `meta.contentItems[]` so the adapter can lift isPartial=false for
+  // fetched URLs; until then, isPartial=true is the only truthful tag.
   const results = Array.isArray(legacy.meta?.results) ? legacy.meta.results : [];
-  const contentMap = new Map(); // build from output if needed; for now leave body undefined
   // Cache hits are valid but lower-confidence.
   const isCache = !!legacy.meta?.timings?.cacheHit;
   const evidence = results.map(r => ({
@@ -281,16 +341,16 @@ export function normalizeWebSearchResult(legacy, input = {}) {
     title: r.title || '',
     url: r.url || '',
     snippet: r.snippet || '',
-    body: contentMap.get(r.url),
     confidence: isCache ? 'low' : deriveConfidence(provider),
     extractionMethod: isCache ? (legacy.meta?.timings?.swr ? 'cache-stale-swr' : 'cache-fresh') : provider,
-    isPartial: !contentMap.has(r.url), // no body fetched = partial
+    isPartial: true, // SERP-only: no per-url body until G-2c
     fetchedAt: new Date().toISOString(),
   }));
-  // Status: ok if any evidence item is non-partial; partial if all are partial.
-  // Per RFC §4 Q3 — per-item isPartial preserves granularity, but the
-  // task-level status reflects "any usable body got returned".
-  const status = evidence.some(e => !e.isPartial) ? 'ok' : (evidence.length ? 'partial' : 'fail');
+  // Status: partial when SERP returned items (G-2b adapter limitation —
+  // bodies are inlined in legacy.output, not structured); fail when no
+  // results at all.  When G-2c webSearchTool emits structured
+  // contentItems, this flips back to 'ok' for items with body.
+  const status = evidence.length ? 'partial' : 'fail';
   return {
     status,
     query: input.query || legacy.meta?.query || '',

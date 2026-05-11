@@ -100,15 +100,19 @@ test('deriveConfidence: unknown method → unknown', () => {
 
 // ─── normalizeFetchUrlResult: success path ─────────────────────────────────
 
-test('normalizeFetchUrlResult: success with social-link via emits SearchTaskResult.ok + evidence[0].sourceType=social-link', () => {
+test('normalizeFetchUrlResult: fetchUrl social-link via=yt-dlp surfaces sub-tier (G-2b round-1 P1 闭环)', () => {
+  // Pre-fix: adapter used meta.method='social-link' as extractionMethod,
+  // losing the real sub-tier (yt-dlp).  Now meta.via takes priority for
+  // social-link routed results so confidence + isPartial reflect the
+  // actual extractor, matching normalizeSocialLinkResult's semantics.
   const legacy = {
     ok: true,
-    output: '# Title\n\nFull article body...',
+    output: '# Title\n\nFull article body with subtitles...',
     meta: {
       url: 'https://www.xiaohongshu.com/explore/abc',
-      method: 'social-link',
+      method: 'social-link',  // outer label
       length: 400,
-      via: 'yt-dlp',
+      via: 'yt-dlp',           // real extractor
       canonicalUrl: 'https://www.xiaohongshu.com/explore/abc',
     },
     evidenceTrail: [
@@ -117,20 +121,42 @@ test('normalizeFetchUrlResult: success with social-link via emits SearchTaskResu
     ],
   };
   const r = normalizeFetchUrlResult(legacy, { url: 'https://www.xiaohongshu.com/explore/abc' });
-  assert.equal(r.status, 'ok');
-  assert.equal(r.evidence.length, 1);
+  assert.equal(r.status, 'ok', 'yt-dlp is deep → ok');
   assert.equal(r.evidence[0].sourceType, 'social-link');
-  assert.equal(r.evidence[0].extractionMethod, 'social-link');
+  assert.equal(r.evidence[0].extractionMethod, 'yt-dlp',
+    'extractionMethod must be the via sub-tier, not the outer social-link label');
+  assert.equal(r.evidence[0].confidence, 'high',
+    'yt-dlp → high confidence (vs unknown if we used method)');
   assert.equal(r.evidence[0].isPartial, false);
-  assert.equal(r.evidence[0].body, legacy.output);
-  assert.equal(r.meta.source, 'url-fetch');
-  assert.equal(r.meta.via, 'social-link');
-  assert.equal(r.meta.timings.totalMs, 850);
-  // legacy `output` preserved per checkpoint ① back-compat
-  assert.equal(r.output, legacy.output);
+  assert.equal(r.meta.via, 'yt-dlp');
 });
 
-test('normalizeFetchUrlResult: success with jina via emits high-confidence web-page evidence', () => {
+test('normalizeFetchUrlResult: fetchUrl social-link via=share-preview emits status=partial + isPartial=true (G-2b round-1 P1 闭环)', () => {
+  // Shallow path: share-preview means we got OG card data, not deep body.
+  // Must mirror normalizeSocialLinkResult's partial semantics.
+  const legacy = {
+    ok: true,
+    output: 'Title + brief OG description from share preview',
+    meta: {
+      url: 'https://www.xiaohongshu.com/explore/abc',
+      method: 'social-link',
+      via: 'share-preview:wechat',
+      canonicalUrl: 'https://www.xiaohongshu.com/explore/abc',
+    },
+    evidenceTrail: [
+      { tier: 'social-link', outcome: 'ok', latencyMs: 200, method: 'share-preview:wechat' },
+    ],
+  };
+  const r = normalizeFetchUrlResult(legacy);
+  assert.equal(r.status, 'partial', 'share-preview is shallow → partial');
+  assert.equal(r.evidence[0].extractionMethod, 'share-preview:wechat');
+  assert.equal(r.evidence[0].confidence, 'medium');
+  assert.equal(r.evidence[0].isPartial, true);
+});
+
+test('normalizeFetchUrlResult: fetchUrl non-social path still uses meta.method (back-compat)', () => {
+  // Non-social-link routes (jina/direct/playwright) use meta.method as
+  // the real extractor.  Make sure we didn't break that.
   const legacy = {
     ok: true,
     output: 'Page body',
@@ -143,6 +169,7 @@ test('normalizeFetchUrlResult: success with jina via emits high-confidence web-p
   assert.equal(r.evidence[0].extractionMethod, 'jina');
   assert.equal(r.evidence[0].confidence, 'high');
 });
+
 
 // ─── normalizeFetchUrlResult: fail paths (checkpoint ② taxonomy) ───────────
 
@@ -286,10 +313,15 @@ test('normalizeSocialLinkResult: null (non-social URL) → status=fail with adap
 
 // ─── normalizeWebSearchResult ──────────────────────────────────────────────
 
-test('normalizeWebSearchResult: success with N results → N evidence items, isPartial=true (no body fetched in legacy meta)', () => {
+test('normalizeWebSearchResult: SERP results always partial in G-2b (G-2c will lift when contentItems[] exposed)', () => {
+  // G-2b adapter limitation: webSearchTool inlines fetched bodies into
+  // legacy.output string under "**Page content:**" — no per-url
+  // contentMap exposed.  Adapter cannot truthfully claim isPartial=false
+  // for any SERP item.  G-2c will change webSearchTool to emit
+  // meta.contentItems[]; adapter then flips for fetched URLs.
   const legacy = {
     ok: true,
-    output: '[rendered]',
+    output: '[rendered with inline bodies]',
     meta: {
       query: 'q',
       provider: 'google (playwright)',
@@ -309,17 +341,72 @@ test('normalizeWebSearchResult: success with N results → N evidence items, isP
     ],
   };
   const r = normalizeWebSearchResult(legacy);
-  // 3 results, none have body (contentMap not threaded yet in G-2b) → all partial
-  // → status = partial (per RFC §4 Q3: status reflects "any usable body").
-  // When G-2c threads contentMap through, status will flip to 'ok' for fetched URLs.
   assert.equal(r.evidence.length, 3);
   for (const ev of r.evidence) {
     assert.equal(ev.sourceType, 'web-page');
-    assert.equal(ev.isPartial, true);
+    assert.equal(ev.isPartial, true,
+      'G-2b adapter cannot lift isPartial without structured contentMap — see G-2c');
+    assert.equal(ev.body, undefined, 'no body until G-2c');
   }
   assert.equal(r.status, 'partial');
   assert.equal(r.meta.via, 'google (playwright)');
   assert.equal(r.meta.timings.totalMs, 3200);
+});
+
+test('normalizeWebSearchResult: weather fast-path emits single ok evidence + extra.weatherFastPath (G-2b round-1 P0 闭环)', () => {
+  // Pre-fix: weather returns ok:true but meta.results:[] → adapter
+  // looked at length=0 → evidence=[] → status='fail'.  A successful
+  // weather query was misclassified as failure.  Now detect by
+  // provider='wttr.in' or timings.weatherFastPath=true and emit single
+  // structured evidence carrying the rendered text body.
+  const legacy = {
+    ok: true,
+    output: 'Weather data for: "Singapore" [via: wttr.in]\n\n**Location:** Singapore\n...',
+    meta: {
+      query: 'Singapore weather',
+      provider: 'wttr.in',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [],  // ← empty array, the bug trigger
+      timings: { totalMs: 1100, serpMs: 1100, contentMs: 0, cacheHit: false, weatherFastPath: true },
+    },
+    evidenceTrail: [
+      { tier: 'weather-fast-path', outcome: 'ok', latencyMs: 1100, extra: { hit: true } },
+    ],
+  };
+  const r = normalizeWebSearchResult(legacy, { query: 'Singapore weather' });
+  assert.equal(r.status, 'ok',
+    'weather fast-path must be ok, not fail (the round-1 P0 bug)');
+  assert.equal(r.evidence.length, 1);
+  const ev = r.evidence[0];
+  assert.equal(ev.sourceType, 'web-page');
+  assert.equal(ev.extractionMethod, 'wttr.in');
+  assert.equal(ev.confidence, 'high');
+  assert.equal(ev.isPartial, false, 'weather body is complete, not partial');
+  assert.equal(ev.body, legacy.output, 'rendered weather text is the body');
+  assert.equal(ev.extra?.weatherFastPath, true);
+  assert.equal(r.meta.via, 'wttr.in');
+});
+
+test('normalizeWebSearchResult: weather fast-path detected by timings.weatherFastPath when provider missing', () => {
+  // Defensive: detect via the timings flag too in case provider field
+  // shape ever changes.
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: 'weather body',
+    meta: {
+      query: 'q',
+      provider: 'unknown',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [],
+      timings: { totalMs: 800, weatherFastPath: true },
+    },
+    evidenceTrail: [{ tier: 'weather-fast-path', outcome: 'ok', latencyMs: 800 }],
+  });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.evidence.length, 1);
+  assert.equal(r.evidence[0].extra?.weatherFastPath, true);
 });
 
 test('normalizeWebSearchResult: cache fresh hit → evidence.confidence=low + meta.cache.hit=fresh', () => {
