@@ -26,43 +26,47 @@
 // _refactor-backup/REFACTOR_PLAN.md).
 
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 import { getMeloHome } from '../../config.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
 
-// Captured at module load — matches the DESKTOP_DIR capture in desktopStore.js
-// so both modules agree on where voice-debug.log lives. MELO_HOME must be set
-// before first import in any test that cares about isolation.
-const DESKTOP_DIR = join(getMeloHome(), 'desktop');
-
-// Dedicated debug log for voice rewrite + TTS — lives next to
-// discord-debug.log (same DESKTOP_DIR) so both the text and audio sides of
-// remote channels can be traced. Writes are best-effort; if the file can't
-// be opened we silently skip so we never break the rewrite path.
-const VOICE_DEBUG_LOG_PATH = join(DESKTOP_DIR, 'voice-debug.log');
+// G-6 #4 (audit 2026-05-11): DESKTOP_DIR + VOICE_DEBUG_LOG_PATH were
+// module-load `const` — CLAUDE.md §6 violation.  Old comment claimed
+// "MELO_HOME must be set before first import in any test that cares
+// about isolation" which is exactly the workaround pattern §6 deprecates.
+// Per-call resolution + per-path dir-ready map removes the freeze.
 const VOICE_DEBUG_LOG_MAX_BYTES = 256 * 1024;
-let voiceDebugLogDirReady = false;
+const _voiceDebugDirReady = new Map(); // desktopDir → true once mkdir succeeded
+
+function voiceDebugLogPath() {
+  return join(getMeloHome(), 'desktop', 'voice-debug.log');
+}
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 export function writeVoiceDebugLine(line) {
+  // §6 capture-at-entry: resolve once per call.  Sync writes follow,
+  // so no async-boundary risk, but a runtime/test MELO_HOME flip will
+  // now correctly route to the new home.
+  const logPath = voiceDebugLogPath();
+  const desktopDir = dirname(logPath);
   try {
-    if (!voiceDebugLogDirReady) {
-      mkdirSync(DESKTOP_DIR, { recursive: true });
-      voiceDebugLogDirReady = true;
+    if (!_voiceDebugDirReady.get(desktopDir)) {
+      mkdirSync(desktopDir, { recursive: true });
+      _voiceDebugDirReady.set(desktopDir, true);
     }
     try {
-      const info = statSync(VOICE_DEBUG_LOG_PATH);
+      const info = statSync(logPath);
       if (info.size > VOICE_DEBUG_LOG_MAX_BYTES) {
-        renameSync(VOICE_DEBUG_LOG_PATH, `${VOICE_DEBUG_LOG_PATH}.old`);
+        renameSync(logPath, `${logPath}.old`);
       }
     } catch {
       // File doesn't exist yet — first write will create it.
     }
-    appendFileSync(VOICE_DEBUG_LOG_PATH, `${nowIso()} ${line}\n`, 'utf8');
+    appendFileSync(logPath, `${nowIso()} ${line}\n`, 'utf8');
   } catch {
     // Never let logging errors bubble into the rewrite path.
   }

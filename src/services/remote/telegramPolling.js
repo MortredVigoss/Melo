@@ -9,27 +9,25 @@
 // packaging as the chat / approval / project clusters in 7d-5ε.
 //
 // Members:
-//   • TELEGRAM_DEBUG_LOG_PATH / TELEGRAM_DEBUG_LOG_MAX_BYTES (consts)
-//   • TELEGRAM_POLL_LIMIT (const)
-//   • _telegramCycleCounter / telegramDebugLogDirReady (module state)
+//   • TELEGRAM_DEBUG_LOG_MAX_BYTES / TELEGRAM_POLL_LIMIT (consts)
+//   • telegramDebugLogPath() (call-time path resolver — CLAUDE.md §6)
+//   • _telegramDebugDirReady (per-path dir-ready map) / _telegramCycleCounter (module state)
 //   • nextTelegramCycleId / writeTelegramDebugLine (private helpers)
 //   • renderTelegramTransportText (private helper)
 //   • shouldReplyToTelegramMessage (private routing gate)
 //   • ensureTelegramChatRecord / recordTelegramMessageWithoutReply
 //   • processTelegramPollingCycle (the public entry server.js calls)
 //
-// Mechanical adaptation (CLAUDE.md §5 / §6): the desktopStore version
-// computed `DESKTOP_DIR = join(getMeloHome(), 'desktop')` and
-// `TELEGRAM_DEBUG_LOG_PATH = join(DESKTOP_DIR, 'telegram-debug.log')` at
-// module load. The new module reproduces those same const expressions
-// at its own module load — semantics are byte-identical for any
-// single-process MELO_HOME (the typical case). Tests that flip
-// MELO_HOME mid-process see the same behavior they already saw with
-// desktopStore.
+// CLAUDE.md §6 compliance (G-6 audit 2026-05-11): the earlier mechanical
+// adaptation from desktopStore copied its module-load `DESKTOP_DIR` /
+// `TELEGRAM_DEBUG_LOG_PATH` freeze pattern verbatim — same §6 violation.
+// Now resolved per-call inside writeTelegramDebugLine (capture-at-entry),
+// so a runtime/test MELO_HOME flip routes the next log line to the new
+// home rather than the home that was current at first import.
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { getMeloHome } from '../../config.js';
 import { getResolvedConfig } from '../../config.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
@@ -93,18 +91,22 @@ import {
   updateStateAtomically,
 } from '../../state/stateStore.js';
 
-// Module-level constants and counter. DESKTOP_DIR is recomputed lazily
-// inside writeTelegramDebugLine — the only function that needs it — so
-// the module load doesn't freeze MELO_HOME. The path constants below
-// resolve `getMeloHome()` once at module load (matching desktopStore's
-// historical behavior); see the §6 carve-out note in the file header.
-const DESKTOP_DIR = join(getMeloHome(), 'desktop');
-const TELEGRAM_DEBUG_LOG_PATH = join(DESKTOP_DIR, 'telegram-debug.log');
+// G-6 #4 (audit 2026-05-11): the old code froze
+//   const DESKTOP_DIR = join(getMeloHome(), 'desktop');
+//   const TELEGRAM_DEBUG_LOG_PATH = join(DESKTOP_DIR, 'telegram-debug.log');
+// at module load — CLAUDE.md §6 violation.  The comment above CLAIMED
+// "DESKTOP_DIR is recomputed lazily inside writeTelegramDebugLine" but
+// that was aspirational, not what the code did.  Per-call resolution
+// + per-path dir-ready map closes the gap honestly.
 const TELEGRAM_DEBUG_LOG_MAX_BYTES = 256 * 1024;
 const TELEGRAM_POLL_LIMIT = 12;
 
-let telegramDebugLogDirReady = false;
+const _telegramDebugDirReady = new Map(); // desktopDir → true once mkdir succeeded
 let _telegramCycleCounter = 0;
+
+function telegramDebugLogPath() {
+  return join(getMeloHome(), 'desktop', 'telegram-debug.log');
+}
 
 function nextTelegramCycleId() {
   _telegramCycleCounter = (_telegramCycleCounter + 1) % 1_000_000;
@@ -112,20 +114,24 @@ function nextTelegramCycleId() {
 }
 
 function writeTelegramDebugLine(line) {
+  // §6 capture-at-entry: resolve once per call so a runtime/test
+  // MELO_HOME flip routes to the new home.
+  const logPath = telegramDebugLogPath();
+  const desktopDir = dirname(logPath);
   try {
-    if (!telegramDebugLogDirReady) {
-      mkdirSync(DESKTOP_DIR, { recursive: true });
-      telegramDebugLogDirReady = true;
+    if (!_telegramDebugDirReady.get(desktopDir)) {
+      mkdirSync(desktopDir, { recursive: true });
+      _telegramDebugDirReady.set(desktopDir, true);
     }
     try {
-      const info = statSync(TELEGRAM_DEBUG_LOG_PATH);
+      const info = statSync(logPath);
       if (info.size > TELEGRAM_DEBUG_LOG_MAX_BYTES) {
-        renameSync(TELEGRAM_DEBUG_LOG_PATH, `${TELEGRAM_DEBUG_LOG_PATH}.old`);
+        renameSync(logPath, `${logPath}.old`);
       }
     } catch {
       // File doesn't exist yet — first write will create it.
     }
-    appendFileSync(TELEGRAM_DEBUG_LOG_PATH, `${nowIso()} ${line}\n`, 'utf8');
+    appendFileSync(logPath, `${nowIso()} ${line}\n`, 'utf8');
   } catch {
     // Never let logging errors break polling.
   }

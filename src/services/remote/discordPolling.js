@@ -8,9 +8,9 @@
 // helpers + the public entry server.js calls.
 //
 // Members:
-//   • DISCORD_DEBUG_LOG_PATH / DISCORD_DEBUG_LOG_MAX_BYTES (consts)
-//   • DISCORD_POLL_LIMIT (const)
-//   • discordDebugLogDirReady (module state)
+//   • DISCORD_DEBUG_LOG_MAX_BYTES / DISCORD_POLL_LIMIT (consts)
+//   • discordDebugLogPath() (call-time path resolver — CLAUDE.md §6)
+//   • _discordDebugDirReady (per-path dir-ready map)
 //   • writeDiscordDebugLine (private)
 //   • shouldReplyToDiscordMessage (private routing gate)
 //   • ensureDiscordChatRecord / recordDiscordMessageWithoutReply
@@ -23,14 +23,15 @@
 // Telegram branch", and the byte-for-byte rule keeps that decision in
 // the original form.
 //
-// Mechanical adaptation (CLAUDE.md §5 / §6): same as telegramPolling —
-// the DESKTOP_DIR-derived consts are computed at module load (matching
-// desktopStore's historical behavior). See the file header in
-// telegramPolling.js for the §6 carve-out reasoning.
+// CLAUDE.md §6 compliance (G-6 audit 2026-05-11): mirrors telegramPolling.
+// The earlier mechanical adaptation copied desktopStore's module-load
+// `DESKTOP_DIR` / `DISCORD_DEBUG_LOG_PATH` freeze pattern verbatim —
+// same §6 violation.  Now resolved per-call inside writeDiscordDebugLine
+// (capture-at-entry) so a runtime/test MELO_HOME flip routes correctly.
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { getMeloHome } from '../../config.js';
 import { getResolvedConfig } from '../../config.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
@@ -90,28 +91,33 @@ import {
   updateStateAtomically,
 } from '../../state/stateStore.js';
 
-const DESKTOP_DIR = join(getMeloHome(), 'desktop');
-const DISCORD_DEBUG_LOG_PATH = join(DESKTOP_DIR, 'discord-debug.log');
 const DISCORD_DEBUG_LOG_MAX_BYTES = 256 * 1024;
 const DISCORD_POLL_LIMIT = 50;
-let discordDebugLogDirReady = false;
+const _discordDebugDirReady = new Map(); // desktopDir → true once mkdir succeeded
+
+function discordDebugLogPath() {
+  return join(getMeloHome(), 'desktop', 'discord-debug.log');
+}
 
 function writeDiscordDebugLine(line) {
+  // §6 capture-at-entry: resolve once per call.
+  const logPath = discordDebugLogPath();
+  const desktopDir = dirname(logPath);
   try {
-    if (!discordDebugLogDirReady) {
-      mkdirSync(DESKTOP_DIR, { recursive: true });
-      discordDebugLogDirReady = true;
+    if (!_discordDebugDirReady.get(desktopDir)) {
+      mkdirSync(desktopDir, { recursive: true });
+      _discordDebugDirReady.set(desktopDir, true);
     }
     try {
-      const info = statSync(DISCORD_DEBUG_LOG_PATH);
+      const info = statSync(logPath);
       if (info.size > DISCORD_DEBUG_LOG_MAX_BYTES) {
-        renameSync(DISCORD_DEBUG_LOG_PATH, `${DISCORD_DEBUG_LOG_PATH}.old`);
+        renameSync(logPath, `${logPath}.old`);
       }
     } catch {
       // File doesn't exist yet, that's fine.
     }
     const stamp = new Date().toISOString();
-    appendFileSync(DISCORD_DEBUG_LOG_PATH, `${stamp} ${line}\n`, 'utf8');
+    appendFileSync(logPath, `${stamp} ${line}\n`, 'utf8');
   } catch {
     // Never let logging errors bubble into the polling loop.
   }
