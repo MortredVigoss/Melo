@@ -23,6 +23,8 @@ import { join } from 'node:path';
 import {
   webSearchTool,
   getSearchCacheDbPath,
+  clearCache,
+  getCacheStats,
   _resetWebSearchCacheForTests,
 } from './webSearchTool.js';
 
@@ -95,6 +97,49 @@ test('_resetWebSearchCacheForTests: closes existing handle so the next call re-o
   assert.doesNotThrow(() => _resetWebSearchCacheForTests()); // idempotent
   const pathA2 = getSearchCacheDbPath();
   assert.equal(pathA, pathA2, 'path resolution stable when MELO_HOME unchanged');
+});
+
+test('real-handle round-trip: clearCache opens db under A, flip MELO_HOME, clearCache opens db under B (Codex B follow-up — actually exercises getCacheDb path-change branch)', async () => {
+  // This pins the *behavior* that the path-resolution + handle-bounce
+  // tests above only prove indirectly: that getCacheDb's "path changed,
+  // close old handle, open new" branch actually fires and lands the
+  // db file in the new home — not the old one (which would be the
+  // CLAUDE.md §6 regression we're guarding against).
+
+  // (1) Open under home A via a real export that calls getCacheDb().
+  //     clearCache('all') is cheap, has no network/PW dependency,
+  //     and exercises getCacheDb identically to the production hot path.
+  const r1 = clearCache('all');
+  assert.equal(r1.ok, true, 'clearCache must succeed under home A');
+  const pathA = join(_homeA, 'desktop', 'search.sqlite');
+  assert.ok(existsSync(pathA),
+    `after clearCache under home A, db file must exist at ${pathA}`);
+
+  // (2) Sanity: getCacheStats also opens — observe both rows present after seed.
+  const statsA = await getCacheStats();
+  assert.equal(statsA.exists, true);
+  assert.equal(statsA.path, pathA,
+    `stats.path must reflect home A, got ${statsA.path}`);
+
+  // (3) Flip MELO_HOME to B.  No reset hook called — the auto-reopen
+  //     branch inside getCacheDb is what we're testing.  If the path
+  //     was still frozen at module load, clearCache would (incorrectly)
+  //     keep writing under home A and pathB would never appear.
+  process.env.MELO_HOME = _homeB;
+
+  const r2 = clearCache('all');
+  assert.equal(r2.ok, true, 'clearCache must succeed under home B after flip');
+  const pathB = join(_homeB, 'desktop', 'search.sqlite');
+  assert.ok(existsSync(pathB),
+    `after MELO_HOME flip + clearCache, db file must exist at home B path ${pathB}`);
+
+  // (4) Both files exist independently — handle didn't follow A across.
+  assert.ok(existsSync(pathA), 'home A db must still exist (we only swapped handle, not deleted)');
+
+  // (5) Stats now report B path — handle re-resolved.
+  const statsB = await getCacheStats();
+  assert.equal(statsB.path, pathB,
+    `after flip, stats.path must reflect home B, got ${statsB.path}`);
 });
 
 test('source-level guard: webSearchTool.js does NOT use a module-load `const CACHE_DB_PATH = join(getMeloHome()…)` anymore', async () => {
