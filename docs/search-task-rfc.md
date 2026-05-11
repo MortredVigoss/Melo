@@ -1,10 +1,15 @@
 # SearchTask Contract — RFC (Phase G-2)
 
-> Status: **RFC draft, not yet implemented**. Started 2026-05-11 after G-1c
-> closed.  This doc proposes a unified `SearchTask` contract that fetchUrlTool
-> / socialLinkTool / webSearchTool will eventually conform to, but does NOT
-> mandate any code change yet — implementation waits on real evidenceTrail
-> data from Phase 2 (1-2 day production trail collection).
+> Status: **RFC drafted + G-2b adapter WIP in branch `wip/g-2b-adapter-phase2-refresh`**.
+> Started 2026-05-11 after G-1c closed.  Implementation **stopped after 4
+> Codex C-rounds** at the adapter layer — each round caught a real
+> production trail/meta shape I hadn't seen.  See §7 "Why 4 C-rounds"
+> below for the lesson.
+>
+> **NOT on master.**  4 commits sit on `wip/g-2b-adapter-phase2-refresh`
+> awaiting Phase 2 real-trail data; will be refreshed + re-pushed after
+> 1-2 days of real telegram/desktop usage produces concrete trail/meta
+> shapes the fixtures can pin against.
 >
 > See `docs/search-system-roadmap.md` §#2 for context + Lessons learned
 > §3 ("Codex C 出来时做 systematic 检查同类") which this RFC tries to
@@ -218,3 +223,63 @@ Before any code lands, the project owner should sign off on:
 Phase G-2 won't ship until these are answered.  Real trail data from
 Phase 2 (1-2 day production run) feeds into questions 2-4 of §4
 ("Open questions").
+
+---
+
+## 7. Why 4 C-rounds — the lesson that wasn't in G-1c's lessons-learned
+
+G-2b adapter went through 4 Codex C-rounds before I stopped (2026-05-11):
+
+| Round | Codex caught | What I assumed wrong |
+|---|---|---|
+| #1 | social-link `meta.via` (not `method`) carries real extractor; weather fast-path has `meta.results:[]`; SERP body inlined in `legacy.output` string | 3 tools' production return shapes |
+| #2 | `SEARCH_FAILED` is a generic code; real diagnosis is in `evidenceTrail` reasons | Trail reason vocabulary completeness |
+| #3 | "Last fail" algorithm picks cascade failures, not causal; need PHASE_PRIORITY | Production trail entry order — cascade vs causal |
+| #4 | `meta.method` can be `jina→playwright`/`direct→external` fallback chain string | Fallback chain method representation |
+
+### The root cause
+
+I **never saw real production trails / meta shapes** during this work.
+Every fixture I wrote was an educated guess at what the 3 tools actually
+return.  Codex reviews the real source code, knows the real shapes,
+catches my guesses one by one.  Four rounds is not enough — there are
+strictly more real shapes than I've guessed.
+
+### Lesson (5th principle, for G-3/G-4/G-5 and beyond)
+
+**5. Before designing a normalizer / adapter contract, run the
+   producer in production for ≥ 1 day and grep the real shapes from
+   logs.** Snapshot:
+   - `evidenceTrail` arrays produced by 3 tools across ~50 real
+     queries (mix of success / fail / abort / cache hit / fallback chain)
+   - `meta` fields actually populated on success/fail paths
+   - `legacy.error` strings (especially the free-form
+     `err.message` from outer catches)
+
+   Use those snapshots as fixture corpus.  Write the adapter against
+   real data, not against design intent.
+
+   Existing 4 lessons-learned still apply (don't only-patch / behavior
+   tests / systematic / pre-audit).  But all 4 presume you know what
+   "correct" looks like.  Lesson #5 fixes the case where you don't.
+
+### What's salvageable
+
+`wip/g-2b-adapter-phase2-refresh` branch holds:
+- ✅ ERROR_CODES taxonomy (8 codes) — design decision, validated by RFC
+- ✅ PHASE_PRIORITY map + REASON_VOCABULARY table — algorithm shape correct,
+  vocab needs refresh from real data
+- ⚠️ Per-tool normalize functions — structure correct, edge cases need
+  refresh from real fixtures (Codex caught fallback chain method,
+  weather `meta.results:[]`, social-link `via`-vs-`method`)
+- ⚠️ Test fixtures — all hand-written; replace with snapshots from
+  Phase 2 real runs
+
+Repush plan:
+1. Phase 2 instrument: log every `evidenceTrail` + `meta` returned by
+   3 tools to a file (debug-only, opt-in via env var)
+2. Run telegram bot / desktop 1-2 days
+3. Convert log entries → fixture JSON files in
+   `src/services/search/__fixtures__/`
+4. Cherry-pick `wip/g-2b-adapter-phase2-refresh` 4 commits,
+   refresh fixtures against real data, push as G-2b round-5

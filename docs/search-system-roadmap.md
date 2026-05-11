@@ -97,8 +97,18 @@ chat runner 把任何工具失败统一包成 `model request failed`。
 
 **Status update 2026-05-11**: RFC drafted in `docs/search-task-rfc.md` —
 contract types + migration phases + open questions list documented before
-any code change. Implementation waits on Phase 2 real-trail data
-(decisions §4 Q1-4 need production usage to answer).
+any code change.
+
+**G-2b adapter WIP held in branch `wip/g-2b-adapter-phase2-refresh`** (4
+commits, not on master). After 4 Codex C-rounds the lesson surfaced:
+adapter fixtures were hand-written guesses at real return shapes; every
+round Codex caught another shape I hadn't seen. RFC §7 documents the
+lesson (5th principle: snapshot real data before designing the
+normalizer). Phase 2 (production telegram/desktop run, ≥ 1 day) → log
+real `evidenceTrail` + `meta` shapes → refresh fixtures → cherry-pick
+the 4 WIP commits → re-push as G-2b round-5.
+
+
 
 
 
