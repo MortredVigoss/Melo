@@ -19,11 +19,28 @@
  */
 
 /**
+ * @typedef {Object} EvidenceTrailItem
+ * @property {string}  tier        - which fallback layer this entry came from (e.g. 'jina', 'direct', 'playwright')
+ * @property {string}  outcome     - 'ok' | 'fail' | 'aborted' | 'skip' | 'unknown'
+ * @property {number}  [latencyMs] - how long the attempt took
+ * @property {string}  [reason]    - short failure-category string (e.g. 'timeout', 'parse-empty', 'http-403')
+ * @property {string}  [method]    - subtype within the tier (e.g. for social-link: 'yt-dlp', 'oembed', 'meta')
+ * @property {Object}  [extra]     - tier-specific debug payload
+ */
+
+/**
  * @typedef {Object} ToolResult
  * @property {boolean} ok
  * @property {string}  output   - human-readable output (shown in chat)
  * @property {string}  [error]  - error message when ok=false
  * @property {Object}  [meta]   - optional structured metadata (exit codes, paths, etc.)
+ * @property {EvidenceTrailItem[]} [evidenceTrail]
+ *   - Phase G-1a/b/c: ordered diagnostic trail of fallback attempts. Currently
+ *     populated by `fetchUrlTool` / `socialLinkTool` / `webSearchTool`. The
+ *     executor preserves this field through normalization (G-1d slice 1, c3285d2)
+ *     so downstream consumers (chatExecutionRunner / subAgent / skillExecutor)
+ *     can inspect it. Only attached when the tool actually produced a non-empty
+ *     array — absent on tools that don't fall through tiers.
  */
 
 /**
