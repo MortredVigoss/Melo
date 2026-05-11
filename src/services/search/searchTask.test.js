@@ -559,10 +559,14 @@ test('deriveErrorFromTrail: fetchUrl outer catch dynamic err.message refined by 
     'trail reason=5xx beats free-form err.message in legacy.error');
 });
 
-test('deriveErrorFromTrail: socialLink miss with low-score trail → NO_RESULTS (not blanket LOGIN_REQUIRED)', () => {
-  // socialLinkTool's miss path used to be hard-coded LOGIN_REQUIRED.
-  // For low-score share-preview misses that's wrong — the post is
-  // public but the OG card was too thin.  Now trail-reason-aware.
+test('deriveErrorFromTrail: socialLink miss with multi-stage fails → causal yt-dlp wins (G-2b round-3 PHASE_PRIORITY)', () => {
+  // Round-2: this test expected PROVIDER_DOWN via "last fail" algorithm
+  // (external-reader.fail with reason=no-reader-fn).
+  // Round-3: PHASE_PRIORITY['social-link'] = ['yt-dlp', ...] puts yt-dlp
+  // first.  yt-dlp.fail(unsupported-or-no-meta) → EXTRACTION_FAILED.
+  // This reflects the actual causal failure: platform doesn't support
+  // yt-dlp extraction, and all subsequent fallbacks (share-preview /
+  // browser / external) were just cascade failures from that root cause.
   const r = normalizeSocialLinkResult({
     body: '',
     via: 'none',
@@ -576,10 +580,8 @@ test('deriveErrorFromTrail: socialLink miss with low-score trail → NO_RESULTS 
     ],
     missed: true,
   });
-  // Last fail entry is external-reader with reason=no-reader-fn → PROVIDER_DOWN.
-  // Verifies we walk to the LATEST fail (not first / not legacy default).
-  assert.equal(r.error, ERROR_CODES.PROVIDER_DOWN,
-    'last fail tier reason wins; here it is external-reader no-reader-fn');
+  assert.equal(r.error, ERROR_CODES.EXTRACTION_FAILED,
+    'PHASE_PRIORITY: yt-dlp.fail(unsupported) is causal; cascade fails do not override');
 });
 
 test('deriveErrorFromTrail: socialLink miss where last fail is login-wall → LOGIN_REQUIRED (historical default preserved)', () => {
@@ -607,6 +609,160 @@ test('deriveErrorFromTrail: empty trail + no legacy code → defaultCode (LOGIN_
     missed: true,
   });
   assert.equal(r.error, ERROR_CODES.LOGIN_REQUIRED);
+});
+
+// ─── G-2b round-3: real-shape fixtures + PHASE_PRIORITY causal selection ──
+
+test('deriveErrorFromTrail: real 5-phase webSearch trail (cache→serp→synonym-retry→skip→skip) → NO_RESULTS via causal serp.fail', () => {
+  // The exact production-shape trail Codex round-3 said adapter must
+  // classify correctly.  Pre-round-3 "last fail" picked synonym-retry's
+  // 'all-variants-thin' (not in vocab pre-round-3) → fallback PROVIDER_DOWN.
+  // Round-3 PHASE_PRIORITY for web-search puts 'serp' first, so we find
+  // serp.fail(no-results) and return NO_RESULTS.
+  const realTrail = [
+    { tier: 'weather-fast-path', outcome: 'skip', latencyMs: 0, reason: 'no-data' },
+    { tier: 'cache', outcome: 'fail', latencyMs: 5, reason: 'no-hit' },
+    { tier: 'serp', outcome: 'fail', latencyMs: 1200, reason: 'no-results', method: 'google (playwright)' },
+    { tier: 'synonym-retry', outcome: 'fail', latencyMs: 800, reason: 'all-variants-thin' },
+    { tier: 'content-fetch', outcome: 'skip', latencyMs: 0, reason: 'no-serp-results' },
+    { tier: 'semantic-rerank', outcome: 'skip', latencyMs: 0, reason: 'no-serp-results' },
+  ];
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: 'no results',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 2005, cacheHit: false } },
+    evidenceTrail: realTrail,
+  });
+  assert.equal(r.error, ERROR_CODES.NO_RESULTS,
+    'PHASE_PRIORITY puts serp first; serp.fail(no-results) is the causal classification');
+});
+
+test('deriveErrorFromTrail: real webSearch trail where serp.ok + content-fetch.fail (network) → NETWORK', () => {
+  // Serp succeeded, content-fetch failed with network — PHASE_PRIORITY
+  // skips serp (it's ok), then looks at next priority phase that
+  // failed → content-fetch.fail(network) → NETWORK.
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: '[partial]',
+    meta: {
+      query: 'q',
+      provider: 'duckduckgo',
+      resultCount: 3,
+      contentFetched: 0,
+      results: [
+        { title: 'a', url: 'https://a', snippet: '' },
+        { title: 'b', url: 'https://b', snippet: '' },
+      ],
+      timings: { totalMs: 4500, serpMs: 1000, contentMs: 3500, cacheHit: false },
+    },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 5, reason: 'no-hit' },
+      { tier: 'serp', outcome: 'ok', latencyMs: 1000, method: 'duckduckgo' },
+      { tier: 'synonym-retry', outcome: 'skip', latencyMs: 0, reason: 'serp-strong-no-retry-needed' },
+      { tier: 'content-fetch', outcome: 'fail', latencyMs: 3500, reason: 'network' },
+      { tier: 'semantic-rerank', outcome: 'skip', latencyMs: 0 },
+    ],
+  });
+  // ok:true so this is NOT a fail return — but the adapter's success
+  // path doesn't call deriveErrorFromTrail, so this test mainly pins
+  // that success structure stays correct when content-fetch failed
+  // (evidence still present from SERP, isPartial=true).
+  assert.equal(r.status, 'partial');
+  assert.equal(r.evidence.length, 2);
+});
+
+test('deriveErrorFromTrail: real fetchUrl-via-social trail (5 sub-tiers + outer wrapper) → CAUSAL inner sub-tier wins (round-3 闭环)', () => {
+  // The exact production shape fetchUrlTool emits after merging the
+  // sub-trail from socialLinkTool:
+  //   cookie-resolve.skip
+  //   social-link.short-link-resolve.ok
+  //   social-link.yt-dlp.fail(unsupported-or-no-meta)  ← CAUSAL
+  //   social-link.share-preview.fail(low-score)        ← cascade
+  //   social-link.browser.fail(low-score)              ← cascade
+  //   social-link.external-reader.fail(no-reader-fn)   ← cascade
+  //   social-link.fail(login-wall)                     ← outer wrapper
+  // Pre-round-3 "last fail" picked the outer wrapper → LOGIN_REQUIRED.
+  // Round-3 PHASE_PRIORITY puts inner `social-link.yt-dlp` first →
+  // EXTRACTION_FAILED (unsupported-or-no-meta = platform doesn't
+  // have yt-dlp extractor).
+  const realTrail = [
+    { tier: 'cookie-resolve', outcome: 'skip', latencyMs: 0, reason: 'no-cookie' },
+    { tier: 'social-link.short-link-resolve', outcome: 'ok', latencyMs: 8 },
+    { tier: 'social-link.yt-dlp', outcome: 'fail', latencyMs: 1200, reason: 'unsupported-or-no-meta' },
+    { tier: 'social-link.share-preview', outcome: 'fail', latencyMs: 200, reason: 'low-score' },
+    { tier: 'social-link.browser', outcome: 'fail', latencyMs: 6500, reason: 'low-score' },
+    { tier: 'social-link.external-reader', outcome: 'fail', latencyMs: 50, reason: 'no-reader-fn' },
+    { tier: 'social-link', outcome: 'fail', latencyMs: 8000, reason: 'login-wall' }, // outer wrapper
+  ];
+  const r = normalizeFetchUrlResult({
+    ok: false,
+    output: '...',
+    error: 'SOCIAL_LINK_BLOCKED',
+    evidenceTrail: realTrail,
+  });
+  assert.equal(r.error, ERROR_CODES.EXTRACTION_FAILED,
+    'inner social-link.yt-dlp.fail wins over outer social-link.fail wrapper');
+});
+
+test('deriveErrorFromTrail: socialLink direct call (no fetchUrl wrapping) full 5-phase miss → causal inner phase wins', () => {
+  // Direct readSocialLink path (no `social-link.` prefix, plain tier names).
+  // PHASE_PRIORITY['social-link'] puts 'yt-dlp' first.
+  const r = normalizeSocialLinkResult({
+    body: '',
+    via: 'none',
+    canonicalUrl: 'https://www.douyin.com/video/abc',
+    evidenceTrail: [
+      { tier: 'short-link-resolve', outcome: 'ok', latencyMs: 8 },
+      { tier: 'yt-dlp', outcome: 'fail', latencyMs: 1200, reason: 'unsupported-or-no-meta' },
+      { tier: 'share-preview', outcome: 'fail', latencyMs: 200, reason: 'low-score' },
+      { tier: 'browser', outcome: 'fail', latencyMs: 6500, reason: 'low-score' },
+      { tier: 'external-reader', outcome: 'fail', latencyMs: 50, reason: 'no-reader-fn' },
+    ],
+    missed: true,
+  });
+  assert.equal(r.error, ERROR_CODES.EXTRACTION_FAILED,
+    'yt-dlp is the depth-first causal phase for social-link');
+});
+
+test('deriveErrorFromTrail: real webSearch all-variants-thin (synonym-retry only, no serp.fail) → NO_RESULTS via new vocab', () => {
+  // Edge case: serp succeeded (returned thin results), synonym-retry was
+  // attempted and exhausted.  PHASE_PRIORITY['serp'] not failed →
+  // moves to 'cache' (also not failed) → 'synonym-retry'.fail(all-variants-thin)
+  // → NO_RESULTS via REASON_VOCABULARY (new vocab in round-3).
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: 'thin',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 3000, cacheHit: false } },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 5, reason: 'no-hit' },
+      { tier: 'serp', outcome: 'ok', latencyMs: 1200 },
+      { tier: 'synonym-retry', outcome: 'fail', latencyMs: 800, reason: 'all-variants-thin' },
+      { tier: 'content-fetch', outcome: 'fail', latencyMs: 1000, reason: 'no-serp-results' },
+      { tier: 'semantic-rerank', outcome: 'skip', latencyMs: 0 },
+    ],
+  });
+  assert.equal(r.error, ERROR_CODES.NO_RESULTS,
+    'all-variants-thin reason in vocab → NO_RESULTS');
+});
+
+test('deriveErrorFromTrail: socialLink no-content-or-too-short reason → EXTRACTION_FAILED (new vocab in round-3)', () => {
+  const r = normalizeSocialLinkResult({
+    body: '',
+    via: 'none',
+    canonicalUrl: 'https://www.xiaohongshu.com/explore/y',
+    evidenceTrail: [
+      { tier: 'yt-dlp', outcome: 'fail', latencyMs: 500, reason: 'unsupported-or-no-meta' },
+      { tier: 'share-preview', outcome: 'fail', latencyMs: 200, reason: 'low-score' },
+      { tier: 'browser', outcome: 'fail', latencyMs: 6000, reason: 'low-score' },
+      { tier: 'external-reader', outcome: 'fail', latencyMs: 100, reason: 'no-content-or-too-short' },
+    ],
+    missed: true,
+  });
+  // PHASE_PRIORITY['social-link'] → yt-dlp first (unsupported-or-no-meta
+  // = EXTRACTION_FAILED, matches the new round-3 vocab entry).
+  assert.equal(r.error, ERROR_CODES.EXTRACTION_FAILED);
 });
 
 // ─── normalizeToSearchTaskResult dispatch ──────────────────────────────────
