@@ -54,11 +54,26 @@ export function parseArgs(argv) {
     if (arg === '--raw') { opts.raw = true; continue; }
     if (arg.startsWith('--day=')) {
       const v = arg.slice(6);
-      // Codex 🔵 follow-up (manual review on 4d572de): `--day=bad` used to
-      // pass through and silently return 0 entries — the operator couldn't
-      // distinguish "no data on that day" from "I mistyped the date".
-      // Strict YYYY-MM-DD regex + Date.parse → real exit 2 on invalid.
-      if (!DAY_REGEX.test(v) || Number.isNaN(Date.parse(v + 'T00:00:00Z'))) {
+      // Codex 🔵 (4d572de manual review):  `--day=bad` used to pass through
+      //   and silently return 0 entries — the operator can't distinguish
+      //   "no data" from "I mistyped".  Strict regex was the first stab.
+      // Codex 🔵 (aaaaeb8 git pp C-gate): the first attempt at strict
+      //   validation used `Date.parse('2026-02-31T00:00:00Z')` — but JS
+      //   silently NORMALIZES non-existent dates (2026-02-31 → 2026-03-03)
+      //   instead of returning NaN, so calendar-impossible dates like
+      //   `2026-02-31` / `2026-04-31` still passed.  Now: regex shape +
+      //   UTC round-trip (build a Date from the components, then check
+      //   that round-tripping it back to YYYY-MM-DD yields the SAME
+      //   string).  Anything Date normalizes won't survive the round-trip.
+      if (!DAY_REGEX.test(v)) {
+        throw new Error(`--day must be YYYY-MM-DD (got: ${v}).`);
+      }
+      const [yStr, mStr, dStr] = v.split('-');
+      const y = Number(yStr);
+      const m = Number(mStr);
+      const d = Number(dStr);
+      const utc = new Date(Date.UTC(y, m - 1, d));
+      if (Number.isNaN(utc.getTime()) || utc.toISOString().slice(0, 10) !== v) {
         throw new Error(`--day must be YYYY-MM-DD (got: ${v}).`);
       }
       opts.day = v;

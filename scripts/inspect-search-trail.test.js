@@ -82,6 +82,39 @@ test('--day=2026-13-99 (regex-shaped but invalid date) exits 2', () => {
   assert.match(r.stderr, /--day must be YYYY-MM-DD/);
 });
 
+test('--day=2026-02-31 (format-valid but calendar-impossible Feb 31) exits 2', () => {
+  // Codex C-gate red test: JS `Date.parse("2026-02-31T00:00:00Z")` returns
+  // a valid Date silently normalized to 2026-03-03 — the first-attempt
+  // strict-arg fix on aaaaeb8 let this through.  UTC round-trip catches it.
+  const r = runInspect(['--day=2026-02-31'], { home: _home });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /--day must be YYYY-MM-DD/);
+});
+
+test('--day=2026-04-31 (format-valid but Apr 31 does not exist) exits 2', () => {
+  // Companion to the Feb 31 case — Apr has only 30 days.  Same JS Date
+  // normalization (→ 2026-05-01) would silently let this through without
+  // the round-trip check.
+  const r = runInspect(['--day=2026-04-31'], { home: _home });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /--day must be YYYY-MM-DD/);
+});
+
+test('--day=2024-02-29 (leap day, well-formed) passes parse', () => {
+  // Anti-false-positive: 2024 IS a leap year, so Feb 29 is real.  The
+  // round-trip check must accept it.  This guards against an over-tight
+  // fix that wholesale rejects "any Feb 29".
+  const r = runInspect(['--day=2024-02-29'], { home: _home });
+  assert.equal(r.status, 1); // dir missing — not 2 (parse passed).
+});
+
+test('--day=2023-02-29 (non-leap Feb 29) exits 2', () => {
+  // 2023 is NOT a leap year → Feb 29 doesn't exist → round-trip catches.
+  const r = runInspect(['--day=2023-02-29'], { home: _home });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /--day must be YYYY-MM-DD/);
+});
+
 test('--day=2026-05-11 (well-formed) passes parse → exit 1 only because dir missing', () => {
   // Well-formed date but log dir doesn't exist → exit 1, not 2.
   // Distinguishes "arg ok, data missing" from "arg malformed".

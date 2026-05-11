@@ -641,6 +641,18 @@ async function main() {
   let serverProcess = null;
 
   try {
+    // Fast-fail unit tests for scripts/ first.  Added per Codex C-gate
+    // finding on aaaaeb8 (manual review): `scripts/inspect-search-trail.test.js`
+    // and any future scripts/ unit tests were not part of the gate, so a
+    // CLI-contract regression (e.g. exit-code mismatch) could slip past.
+    // Runs in seconds; if it fails we skip the expensive desktop build.
+    // Intentionally narrow: `src/**/*.test.js` is NOT included here — that
+    // surface is much larger and currently has one known flake
+    // (`src/media/orchestratorAbort.test.js` #14 — spawned task pending),
+    // which would re-introduce flake into the gate.  Widening to src/ is
+    // a separate decision after that flake lands.
+    results.push(await runStep('scripts/ unit tests (test:scripts)', () => runCommand('npm', ['run', 'test:scripts'])));
+
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
     results.push(
       await runStep('Build desktop app bundle', () => runCommand('npm', ['run', 'build:desktop'])),

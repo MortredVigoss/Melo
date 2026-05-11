@@ -23,6 +23,7 @@
     "rebuild:voice": "npm rebuild @discordjs/opus",
     "bench:memory": "node scripts/bench-memory.js",
     "test:ui": "node --test 'desktop-ui/**/*.test.js'",
+    "test:scripts": "node --test 'scripts/**/*.test.js'",
     "postinstall": "node-gyp rebuild"
   },
   "dependencies": {
