@@ -18,8 +18,33 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../config.js';
 
-const SEARCH_DB_PATH = join(getMeloHome(), 'desktop', 'search.sqlite');
+// G-6 (audit 2026-05-11): SEARCH_DB_PATH was previously a module-load
+// `const join(getMeloHome(), …)` — same CLAUDE.md §6 violation pattern
+// the dreaming DREAMS_DIR / webSearchTool CACHE_DB_PATH fixes addressed.
+// FTS index opens the same `desktop/search.sqlite` file that webSearchTool's
+// cache db opens (independent handle, disjoint tables — `messages_fts` here vs
+// `web_search_cache`/`url_content_cache` over there).  If a test or
+// multi-profile runtime flips MELO_HOME, the cache-db handle now reopens
+// at the new path (Phase 2 #2 fix) but the FTS handle would silently keep
+// writing to the OLD path.  Same `getDb()`-with-path-change-detection
+// pattern applied here.
+function searchDbPath() {
+  return join(getMeloHome(), 'desktop', 'search.sqlite');
+}
+
 let _db = null;
+let _openedDbPath = null;
+
+/** @internal test hook — close cached handle so the next getDb() call
+ *  re-opens at the current MELO_HOME path.  Tests using mkdtemp+
+ *  MELO_HOME isolation should call this in beforeEach/afterEach. */
+export function _resetConversationIndexForTests() {
+  if (_db) {
+    try { _db.close(); } catch {}
+  }
+  _db = null;
+  _openedDbPath = null;
+}
 
 // ─── CJK preprocessing ───────────────────────────────────────────────────────
 
@@ -37,10 +62,17 @@ function toCjkSpaced(text = '') {
 // ─── Database init ────────────────────────────────────────────────────────────
 
 function getDb() {
-  if (_db) return _db;
+  const path = searchDbPath();
+  if (_db && _openedDbPath === path) return _db;
+  // Path changed (test or runtime switched MELO_HOME) — close old handle, open new.
+  if (_db) {
+    try { _db.close(); } catch {}
+    _db = null;
+  }
 
-  mkdirSync(dirname(SEARCH_DB_PATH), { recursive: true });
-  _db = new DatabaseSync(SEARCH_DB_PATH);
+  mkdirSync(dirname(path), { recursive: true });
+  _db = new DatabaseSync(path);
+  _openedDbPath = path;
   _db.exec(`
     PRAGMA journal_mode = WAL;
 
