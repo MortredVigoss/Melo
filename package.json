@@ -28,6 +28,7 @@
     "test:tts": "node --test src/services/tts/nativeSayQueue.test.js src/services/tts/nativeStopEndpointsGuard.test.js",
     "test:markdown-files": "node --test src/services/agent/markdownFiles.test.js",
     "test:external-readers": "node --test src/web/externalReaders.test.js",
+    "test:tools-evidence-trail": "node --test src/tools/executor.evidenceTrail.test.js src/tools/parser.evidenceTrail.test.js",
     "postinstall": "node-gyp rebuild"
   },
   "dependencies": {

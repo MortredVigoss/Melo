@@ -687,6 +687,12 @@ async function main() {
     // breaks at push gate.
     results.push(await runStep('External readers §6 + behavior (test:external-readers)', () => runCommand('npm', ['run', 'test:external-readers'])));
 
+    // G-1d slice 1 (executor.js preserve) + G-1e (parser surface to LLM prompt)
+    // — evidenceTrail end-to-end through tools layer.  Existing executor test
+    // pinned by c3285d2; parser test added by G-1e commit.  Grouped under
+    // one gate step because they share the evidenceTrail schema contract.
+    results.push(await runStep('Tools evidenceTrail (executor + parser) (test:tools-evidence-trail)', () => runCommand('npm', ['run', 'test:tools-evidence-trail'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug
