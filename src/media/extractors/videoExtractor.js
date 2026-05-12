@@ -14,6 +14,17 @@ export function _setExtractAudioContentForTests(fn) {
   _extractAudioContentImpl = typeof fn === 'function' ? fn : _realExtractAudioContent;
 }
 
+// DI hook for the audio pre-pass (the ffmpeg invocation that strips the audio
+// track into audioPath before _extractAudioContentImpl runs). Tests need this
+// because the real ffmpeg call can take 50ms locally but >1.5s on slow CI,
+// which exceeds tight orchestrator-abort test budgets and kills the audio
+// branch BEFORE the audio stub is reached — making the test silently skip
+// the path it claims to exercise. Pass null to restore the real ffmpeg call.
+let _audioPrePassImpl = null;
+export function _setAudioPrePassForTests(fn) {
+  _audioPrePassImpl = typeof fn === 'function' ? fn : null;
+}
+
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 
 // Phase 2 keyframe extraction: aim for 5 evenly-spaced frames, hard-cap 8.
@@ -293,16 +304,20 @@ async function audioBranch(videoPath, audioPath, attachment, context, signal) {
   if (signal?.aborted) return null;
   let audioBuffer = null;
   try {
-    await spawnWithAbort('ffmpeg', [
-      '-i', videoPath,
-      '-vn',
-      '-acodec', 'libopus',
-      '-b:a', '32k',
-      '-ac', '1',
-      '-ar', '16000',
-      '-y',
-      audioPath,
-    ], { signal });
+    if (_audioPrePassImpl) {
+      await _audioPrePassImpl(videoPath, audioPath, { signal });
+    } else {
+      await spawnWithAbort('ffmpeg', [
+        '-i', videoPath,
+        '-vn',
+        '-acodec', 'libopus',
+        '-b:a', '32k',
+        '-ac', '1',
+        '-ar', '16000',
+        '-y',
+        audioPath,
+      ], { signal });
+    }
     if (signal?.aborted) return null;
     audioBuffer = await readFile(audioPath);
   } catch {

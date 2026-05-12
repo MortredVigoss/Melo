@@ -25,6 +25,7 @@ import {
 import {
   _setBudgetsForTests as _setVideoBudgetsForTests,
   _setExtractAudioContentForTests,
+  _setAudioPrePassForTests,
 } from './extractors/videoExtractor.js';
 
 async function ffmpegAvailable() {
@@ -133,13 +134,41 @@ test('video post-download abort: orchestrator timeout propagates into inner audi
   const videoPath = join(workDir, 'sample.mp4');
   try {
     await buildSilentVideo(videoPath, 6);
-    const { readFile } = await import('node:fs/promises');
+    const { readFile, writeFile } = await import('node:fs/promises');
     const videoBuf = await readFile(videoPath);
-    const dataUrl = `data:video/mp4;base64,${videoBuf.toString('base64')}`;
+    // Embed a per-run nonce in the data URL parameters so the orchestrator's
+    // media cache (keyed on `${attachment.kind}:${attachment.url}`) does not
+    // pollute across runs. buildSilentVideo's bytes are deterministic; without
+    // the nonce a prior run's `keyframes-only` cache entry short-circuits
+    // extraction and the audio stub is never reached.
+    const dataUrl = `data:video/mp4;melo-test-nonce=${Date.now()}-${Math.random().toString(36).slice(2)};base64,${videoBuf.toString('base64')}`;
 
+    // Tight parent budget so the abort path fires fast. Set the SOCIAL_DIRECT
+    // budgets too — `data:video/*` URLs trigger `shouldUseLongSocialMediaBudget`,
+    // which floors per-attachment budget at SOCIAL_DIRECT_PER_ATTACHMENT_BUDGET_MS
+    // (default 55s). Without overriding that, the test's perAttachmentMs:1500
+    // is silently ignored and the inner audio budget (30s below) fires first.
+    _setMediaBudgetsForTests({
+      totalMs: 30000,
+      perAttachmentMs: 1500,
+      socialDirectTotalMs: 30000,
+      socialDirectPerAttachmentMs: 1500,
+    });
     // Generous inner budgets (30s) so only the parent can fire first.
-    _setMediaBudgetsForTests({ totalMs: 30000, perAttachmentMs: 1500 });
     _setVideoBudgetsForTests({ audioMs: 30000, keyframeMs: 30000 });
+
+    // Stub the ffmpeg audio pre-pass. The real call takes 50-300ms locally
+    // but can exceed the 1.5s parent budget on slow CI, which would kill the
+    // pre-pass and prevent the audio stub from being reached — making this
+    // test silently fail to exercise the post-download abort path it claims
+    // to verify (G-1c style false-skip). Stub writes a 4-byte placeholder so
+    // the subsequent readFile() succeeds and audioBranch advances to the
+    // _extractAudioContentImpl call that the test cares about.
+    let prePassCalls = 0;
+    _setAudioPrePassForTests(async (_videoPath, audioPath) => {
+      prePassCalls += 1;
+      await writeFile(audioPath, Buffer.from([0x4F, 0x67, 0x67, 0x53]));
+    });
 
     let audioStubSignalAborted = false;
     let audioStubReached = false;
@@ -176,6 +205,11 @@ test('video post-download abort: orchestrator timeout propagates into inner audi
       await enrichMessageWithMediaContext(message, {});
       const elapsed = Date.now() - start;
 
+      // Anti-false-green: the pre-pass DI seam MUST have been used. If the
+      // hook somehow regresses to the real ffmpeg call, prePassCalls stays 0
+      // and the timing assertion below could mask the regression on a fast
+      // machine — making this test re-flake later.
+      assert.equal(prePassCalls, 1, 'audio pre-pass stub must have been called exactly once (real seam check)');
       // Anti-false-green: the stub MUST have run, otherwise the test proves
       // nothing about parent-signal propagation.
       assert.ok(audioStubReached, 'audio stub must have been reached — otherwise ffmpeg pre-pass took longer than parent budget and the test is not exercising the post-download path');
@@ -185,6 +219,7 @@ test('video post-download abort: orchestrator timeout propagates into inner audi
       assert.ok(audioStubSignalAborted, 'parent abort must propagate into the inner audio stub signal');
       assert.ok(elapsed < 4000, `parent budget ~1.5s + cleanup; should not approach the 30s inner budget. took ${elapsed}ms`);
     } finally {
+      _setAudioPrePassForTests(null);
       _setExtractAudioContentForTests(null);
       _setVideoBudgetsForTests();
       _setMediaBudgetsForTests();
