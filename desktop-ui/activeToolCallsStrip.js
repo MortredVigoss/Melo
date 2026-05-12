@@ -32,66 +32,25 @@
  * @property {Array<{tier:string, outcome:string, latencyMs?:number, reason?:string}>} [evidenceTrail]
  */
 
-const VALID_OUTCOMES = new Set(['ok', 'fail', 'aborted', 'skip']);
+// G-1d slice 2 (2026-05-12) refactor: trail markup primitives moved to
+// `./evidenceTrailMarkup.js` so the chat-history render path (renderMessageList)
+// can reuse the EXACT same per-item DOM + CSS classes.  Both consumers stay
+// visually identical because they share one implementation.  Keep the
+// thin `shouldRenderTrail` adapter here — it maps the active-chip
+// `{ status }` shape to the shared module's `{ ok }` contract.
+import {
+  shouldShowEvidenceTrail,
+  renderEvidenceTrailList,
+  formatEvidenceTrailDetail,
+} from './evidenceTrailMarkup.js';
 
-/**
- * Mirror of `_shouldEmitEvidenceTrail` from src/tools/parser.js (G-1e).
- * Re-implemented here rather than imported because desktop-ui and src/
- * don't share a package boundary in this codebase (different bundles).
- * Keep the two in sync — both should agree on when the trail is
- * informative enough to show.
- */
 function shouldRenderTrail(call) {
-  if (!call || !Array.isArray(call.evidenceTrail) || call.evidenceTrail.length === 0) {
-    return false;
-  }
-  if (call.status === 'error') return true;
-  return call.evidenceTrail.length >= 2;
-}
-
-/**
- * Build the "<reason> · <latencyMs>ms" detail string for one trail
- * item.  Returns empty when neither reason nor latency is present —
- * caller should then omit the `<span class="tool-call-trail-detail">`
- * wrapper entirely (avoid empty span artifacts).
- */
-function formatTrailDetail(item) {
-  const parts = [];
-  if (item.reason) parts.push(String(item.reason));
-  if (typeof item.latencyMs === 'number' && Number.isFinite(item.latencyMs)) {
-    parts.push(`${Math.round(item.latencyMs)}ms`);
-  }
-  return parts.join(' · ');
-}
-
-/**
- * Render a single trail entry as one `<li>`.  Returns '' for malformed
- * items so the caller can pass any array shape and we filter quietly
- * (mirrors parser.js's _formatEvidenceTrailItem defensiveness).
- */
-function renderTrailItem(item, escapeHtml) {
-  if (!item || typeof item !== 'object') return '';
-  const tier = String(item.tier || '?');
-  const outcomeRaw = String(item.outcome || '?');
-  // Only allowlisted outcomes get a colored class; anything else falls
-  // back to plain (no `is-*` modifier) so a future producer can't break
-  // the styling by emitting a novel outcome string.
-  const outcomeClass = VALID_OUTCOMES.has(outcomeRaw) ? `is-${outcomeRaw}` : '';
-  const detail = formatTrailDetail(item);
-  return `<li class="tool-call-trail-item">`
-    + `<span class="tool-call-trail-tier">${escapeHtml(tier)}</span>`
-    + `<span class="tool-call-trail-outcome ${outcomeClass}">${escapeHtml(outcomeRaw)}</span>`
-    + (detail ? `<span class="tool-call-trail-detail">${escapeHtml(detail)}</span>` : '')
-    + `</li>`;
+  return shouldShowEvidenceTrail(call?.evidenceTrail, call?.status !== 'error');
 }
 
 function renderTrail(call, escapeHtml) {
   if (!shouldRenderTrail(call)) return '';
-  const items = call.evidenceTrail
-    .map(item => renderTrailItem(item, escapeHtml))
-    .filter(Boolean);
-  if (!items.length) return '';
-  return `<ul class="tool-call-trail">${items.join('')}</ul>`;
+  return renderEvidenceTrailList(call.evidenceTrail, escapeHtml);
 }
 
 /**
@@ -142,8 +101,12 @@ export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon } =
   `;
 }
 
-// Exported for testing only — keeps the rule mirror visible.
+// Exported for testing only — keeps the rule mirror visible.  The
+// `formatTrailDetail` export delegates to the shared module so the
+// existing test that pinned formatting still passes after the
+// G-1d slice 2 refactor (markup primitives now live in
+// evidenceTrailMarkup.js).
 export const _internalsForTests = {
   shouldRenderTrail,
-  formatTrailDetail,
+  formatTrailDetail: formatEvidenceTrailDetail,
 };

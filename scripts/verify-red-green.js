@@ -699,6 +699,14 @@ async function main() {
     // crashes hydration" regression class.
     results.push(await runStep('State hydration (stateHydration test) (test:state-hydration)', () => runCommand('npm', ['run', 'test:state-hydration'])));
 
+    // G-1d slice 2 producer-side gate: chatExecutionRunner's toolResult
+    // projection (via src/services/chat/toolResultProjection.js).  Codex on
+    // slice 2 commit 1 (B + ⚪) flagged that only hydration was covered;
+    // this pins the producer shape so refactoring the projection (e.g.
+    // adding/removing fields) trips the gate immediately instead of
+    // silently breaking the persisted assistantMessage.toolResults shape.
+    results.push(await runStep('Tool result projection (G-1d slice 2 producer) (test:tool-result-projection)', () => runCommand('npm', ['run', 'test:tool-result-projection'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

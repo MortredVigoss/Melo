@@ -4916,6 +4916,51 @@ select option {
   opacity: 0.85;
 }
 
+/* ─── Chat history: tool execution metadata per assistant message (G-1d slice 2) ─
+   Rendered by renderMessageToolResults under the assistant bubble.  Reuses the
+   `.tool-call-trail-*` classes above for the per-tier rows so the live chip
+   strip and historical view look visually identical.  Outer
+   `.message-tool-results` is a tiny stacked block below the text. */
+
+.message-tool-results {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.message-tool-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-tool-result-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  color: var(--text-muted);
+}
+
+.message-tool-result-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.message-tool-result.is-ok .message-tool-result-status {
+  color: #7de09a;
+}
+
+.message-tool-result.is-error .message-tool-result-status {
+  color: var(--danger);
+}
+
 .tool-call-spinner {
   width: 12px;
   height: 12px;

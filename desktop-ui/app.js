@@ -15,6 +15,7 @@ import { renderAdvancedPage } from './advancedPage.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
+import { renderMessageToolResults as _renderMessageToolResultsFromModule } from './messageToolResults.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -7279,6 +7280,14 @@ function renderMessageActions(message) {
   `;
 }
 
+// G-1d slice 2 (2026-05-12): renders persisted tool execution metadata
+// under assistant messages in chat history.  Extracted to
+// `./messageToolResults.js` (same pattern as activeToolCallsStrip.js)
+// so the pure-string renderer is testable without a DOM.
+function renderMessageToolResults(message) {
+  return _renderMessageToolResultsFromModule(message, escapeHtml);
+}
+
 function renderMessageList(chat) {
   return `
     <div class="message-list">
@@ -7293,6 +7302,7 @@ function renderMessageList(chat) {
               </div>
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
+              ${renderMessageToolResults(message)}
               ${renderMessageAttachments(message)}
               ${renderMessageActions(message)}
             </article>

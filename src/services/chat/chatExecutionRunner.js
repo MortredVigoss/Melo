@@ -95,6 +95,7 @@ import {
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
 import { parseModelResponse, formatToolResultsMessage } from '../../tools/parser.js';
+import { projectToolResultForPersist } from './toolResultProjection.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
@@ -580,19 +581,13 @@ export async function runChatAgentExecutionGraph({
           ];
 
           // G-1d slice 2: accumulate structured tool-result metadata for
-          // persistence on the eventual assistantMessage.  Only attach
-          // evidenceTrail when present (sparse — most tools never produce one);
-          // the executor's normalize already filters non-array / empty.
+          // persistence on the eventual assistantMessage.  Projection
+          // logic lives in `./toolResultProjection.js` so it has direct
+          // unit-test coverage (Codex review on commit 1 flagged this as
+          // a covered-by-hydration-only test gap — solved by extracting
+          // the producer-side helper).
           for (const { call, result } of allResults) {
-            const entry = {
-              toolCallId: call.id,
-              toolName: call.name,
-              ok: result.ok !== false,
-            };
-            if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
-              entry.evidenceTrail = result.evidenceTrail;
-            }
-            accumulatedToolResults.push(entry);
+            accumulatedToolResults.push(projectToolResultForPersist(call, result));
           }
 
           // If the last iteration was tool calls only, the next pass will produce
