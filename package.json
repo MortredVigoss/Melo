@@ -25,7 +25,7 @@
     "test:ui": "node --test 'desktop-ui/**/*.test.js'",
     "test:scripts": "node --test 'scripts/**/*.test.js'",
     "test:server-guard": "node --test src/serverGuard.test.js",
-    "test:tts": "node --test src/services/tts/nativeSayQueue.test.js",
+    "test:tts": "node --test src/services/tts/nativeSayQueue.test.js src/services/tts/nativeStopEndpointsGuard.test.js",
     "postinstall": "node-gyp rebuild"
   },
   "dependencies": {

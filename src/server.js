@@ -1127,6 +1127,12 @@ const server = createServer(async (request, response) => {
         try { globalThis._meloAfplayProcess.kill(); } catch {}
         globalThis._meloAfplayProcess = null;
       }
+      // Bug 1 follow-up (Codex 🔵 on 987f6e2): also clear the streaming
+      // `say` queue.  This endpoint advertises itself as the native-TTS
+      // stop alias, so omitting it would leave macOS streaming playback
+      // un-stoppable through this path — symmetric gap with the speak-stop
+      // / queue-clear endpoints which already got the fix in 987f6e2.
+      if (_nativeSayQueue) _nativeSayQueue.clear();
       sendJson(response, 200, { ok: true });
       return;
     }
