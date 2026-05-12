@@ -118,13 +118,22 @@ export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon } =
         const spinner = call.status === 'running' ? '<span class="tool-call-spinner"></span>' : '';
         const check = call.status === 'ok' ? '<span class="tool-call-check">✓</span>' : '';
         const cross = call.status === 'error' ? '<span class="tool-call-x">✗</span>' : '';
+        // C-gate fix (2026-05-12): first-row content MUST be wrapped in
+        // `.tool-call-pill-main` so the pill can stack `.tool-call-pill-main`
+        // + `.tool-call-trail` vertically WITHOUT the original row content
+        // (icon / name / status indicator) also stacking.  Prior fix used
+        // `.tool-call-pill { flex-direction: column; }` directly which
+        // broke the no-trail pill into 3 vertical rows.  Layout-contract
+        // tests in the .test.js file pin this wrapper's presence.
         return `
         <div class="tool-call-pill ${statusClass}">
-          <span class="tool-call-pill-icon">${iconMarkup}</span>
-          <span class="tool-call-pill-name">${esc(call.name)}</span>
-          ${spinner}
-          ${check}
-          ${cross}
+          <div class="tool-call-pill-main">
+            <span class="tool-call-pill-icon">${iconMarkup}</span>
+            <span class="tool-call-pill-name">${esc(call.name)}</span>
+            ${spinner}
+            ${check}
+            ${cross}
+          </div>
           ${renderTrail(call, esc)}
         </div>
       `;

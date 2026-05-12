@@ -49,6 +49,69 @@ test('single running call, no trail → existing pill markup (regression)', () =
   assert.doesNotMatch(html, /tool-call-trail/, 'no trail data → no trail block');
 });
 
+// ─── Layout contract (C-gate closeout 2026-05-12) ──────────────────────────
+//
+// The first-row pill content (icon / name / spinner / check / cross) MUST
+// be wrapped in `.tool-call-pill-main` so it stays horizontal even after
+// the outer `.tool-call-pill` becomes a column-flex container (for trail
+// stacking).  The C-grade Codex regression hit was that an earlier draft
+// of this commit had icon/name/spinner as DIRECT children of the
+// column-flex pill, producing vertical-stack pills even when no trail
+// was present.  These tests pin the wrapper presence + structural
+// ordering so a future "simplify by removing the wrapper" refactor
+// breaks loudly.
+
+test('layout: first-row content wrapped in .tool-call-pill-main (running, no trail)', () => {
+  const html = render([{ id: 'c1', name: 'bash', status: 'running' }]);
+  // The wrapper must exist AND contain icon + name + spinner.
+  assert.match(html, /<div class="tool-call-pill-main">[\s\S]*?<svg/, 'icon inside main wrapper');
+  assert.match(html, /<div class="tool-call-pill-main">[\s\S]*?tool-call-pill-name">bash/, 'name inside main wrapper');
+  assert.match(html, /<div class="tool-call-pill-main">[\s\S]*?tool-call-spinner[\s\S]*?<\/div>/, 'spinner inside main wrapper');
+});
+
+test('layout: no trail → .tool-call-pill has ONLY a .tool-call-pill-main child (no trail leak)', () => {
+  // Three status variants — all must wrap first-row content uniformly,
+  // and none should produce a `.tool-call-trail` element when no trail data.
+  for (const status of ['running', 'ok', 'error']) {
+    const html = render([{ id: 'c1', name: 'fetch_url', status }]);
+    assert.match(html, /<div class="tool-call-pill [\w-]+">\s*<div class="tool-call-pill-main">/,
+      `${status} chip: .tool-call-pill-main must be the direct child of .tool-call-pill`);
+    assert.doesNotMatch(html, /tool-call-trail/, `${status} chip without trail data must not emit any .tool-call-trail markup`);
+  }
+});
+
+test('layout: trail present → .tool-call-pill has main + trail in that order', () => {
+  const html = render([{
+    id: 'c1', name: 'fetch_url', status: 'error',
+    evidenceTrail: [{ tier: 'jina', outcome: 'fail', latencyMs: 3500, reason: 'timeout' }],
+  }]);
+  // Pill main wrapper must appear BEFORE the trail in document order
+  // (so column flex stacks correctly: row 1 = main, row 2 = trail).
+  const mainIdx = html.indexOf('class="tool-call-pill-main"');
+  const trailIdx = html.indexOf('class="tool-call-trail"');
+  assert.ok(mainIdx >= 0, 'main wrapper must be present');
+  assert.ok(trailIdx >= 0, 'trail must be present (error status forces show)');
+  assert.ok(mainIdx < trailIdx, 'main wrapper must precede trail in DOM order');
+});
+
+test('layout: status indicators (spinner/check/cross) live INSIDE main wrapper, not outside', () => {
+  // Each status's distinguishing element must sit inside the
+  // .tool-call-pill-main wrapper so the C-gate regression
+  // ("indicator stacked under name on column-flex pill") can't recur.
+  const running = render([{ id: 'r', name: 'bash', status: 'running' }]);
+  const ok = render([{ id: 'o', name: 'bash', status: 'ok' }]);
+  const err = render([{ id: 'e', name: 'bash', status: 'error' }]);
+  // Use a non-greedy match between main wrapper open and its matching close.
+  // We approximate the close by looking for the trail's `<ul>` or the pill's `</div>` — whichever comes first.
+  function mainContent(html) {
+    const m = html.match(/<div class="tool-call-pill-main">([\s\S]*?)<\/div>/);
+    return m ? m[1] : '';
+  }
+  assert.match(mainContent(running), /tool-call-spinner/, 'spinner must be inside .tool-call-pill-main');
+  assert.match(mainContent(ok), /tool-call-check/, 'check must be inside .tool-call-pill-main');
+  assert.match(mainContent(err), /tool-call-x/, 'cross must be inside .tool-call-pill-main');
+});
+
 // ─── inclusion heuristic (mirrors G-1e prompt rules) ────────────────────────
 
 test('ok status + single-tier trail → trail NOT rendered (noise gate)', () => {

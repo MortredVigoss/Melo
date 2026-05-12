@@ -4825,26 +4825,31 @@ select option {
 /* ─── Evidence trail under tool-call pill (G-1f 2026-05-12) ─────────────────
    Rendered only when informative (failure OR multi-tier fallback — see
    activeToolCallsStrip.js shouldRenderTrail).  Visible during the 1.8s
-   post-completion window before uiState.activeToolCalls is filtered.  */
+   post-completion window before uiState.activeToolCalls is filtered.
+
+   Layout: `.tool-call-pill` is the outer card (column flex container).
+   Its FIRST direct child is `.tool-call-pill-main` which keeps the
+   original row layout (icon / name / status indicator on one line).
+   When trail is present, `.tool-call-trail` becomes the second child,
+   stacking under the main row.  Without a trail, the pill renders
+   visually identical to the pre-G-1f design (single row in main).
+
+   Codex C-gate (2026-05-12) caught an earlier draft that switched
+   `.tool-call-pill` to column flex with the icon/name/spinner as DIRECT
+   children — those children then stacked vertically too.  The wrapper
+   below pins first-row horizontal layout no matter what the outer
+   container does. */
 
 .tool-call-pill {
-  /* Switch to column layout so the trail can stack under the pill content
-     when present.  Without trail it collapses to a single row visually
-     identical to the previous design (flex-direction:column with one row
-     child renders like row + nowrap). */
   flex-direction: column;
   align-items: flex-start;
 }
 
-.tool-call-pill > .tool-call-pill-icon,
-.tool-call-pill > .tool-call-pill-name,
-.tool-call-pill > .tool-call-spinner,
-.tool-call-pill > .tool-call-check,
-.tool-call-pill > .tool-call-x {
-  /* First-row children keep their inline layout via this single-row
-     anchor — using flex's `align-self:stretch` on the parent would
-     break it, so we constrain alignment on the row members. */
-  align-self: center;
+.tool-call-pill-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
 }
 
 .tool-call-trail {
