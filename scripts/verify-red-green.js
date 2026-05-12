@@ -661,6 +661,11 @@ async function main() {
     // as test:scripts).  Mirrors the test:scripts pattern.
     results.push(await runStep('Server guard unit tests (test:server-guard)', () => runCommand('npm', ['run', 'test:server-guard'])));
 
+    // 2026-05-12 Bug 1: TTS native say queue regression guard.  Same
+    // single-file allowlist pattern as test:server-guard — pure state
+    // machine, no spawn dependencies, fast.
+    results.push(await runStep('TTS native queue unit tests (test:tts)', () => runCommand('npm', ['run', 'test:tts'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

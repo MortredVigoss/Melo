@@ -4614,8 +4614,13 @@ function _streamTtsPushChunk(delta) {
     const sentence = _stripUrlsForTts(raw);
     if (sentence.length >= 4) {
       if (isMacos) {
+        // Bug 1 fix (2026-05-12): use /api/tts/native-queue-add instead of
+        // /api/tts/native.  The old endpoint kill+replaces the previous
+        // `say` process on every call — per-sentence streaming POSTs cut
+        // every sentence short by the next one.  The queue endpoint chains
+        // sequentially: each say spawns only after the previous one exits.
         const lang = _detectLang(sentence);
-        api('/api/tts/native', {
+        api('/api/tts/native-queue-add', {
           method: 'POST',
           body: { text: sentence, lang, voice: uiState.ttsMacosVoiceName },
         }).catch(() => {});
@@ -4687,8 +4692,12 @@ async function _streamTtsFlush() {
     }
   } else if (useMacos) {
     if (tail.length >= 2) {
+      // Bug 1 fix (2026-05-12): same reasoning as _streamTtsPushChunk —
+      // /api/tts/native would kill the in-flight streaming-queue say.
+      // Append to the queue so the tail plays AFTER the streamed
+      // sentences instead of cutting them.
       const lang = _detectLang(tail);
-      api('/api/tts/native', {
+      api('/api/tts/native-queue-add', {
         method: 'POST',
         body: { text: tail.slice(0, 400), lang, voice: uiState.ttsMacosVoiceName },
       }).catch(() => {});

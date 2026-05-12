@@ -8,6 +8,7 @@ import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
 import { isOriginAllowed } from './web/originCheck.js';
 import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from './services/tts/edgeTts.js';
+import { createNativeSayQueue } from './services/tts/nativeSayQueue.js';
 import { defaultSkillProposalStore } from './agents/skillProposals.js';
 import { collectMemoryStatus, withLiveProviderModelId } from './memory/status.js';
 import { wipeEmbeddingsForDimChange } from './memory/store.js';
@@ -423,6 +424,26 @@ function getStaticPath(urlPath) {
   return join(uiDir, urlPath.replace(/^\/+/, ''));
 }
 
+// ── Native say streaming queue (Bug 1 fix 2026-05-12) ─────────────────────────
+//
+// Sequential queue for /usr/bin/say invocations.  The streaming TTS UI used
+// to POST one /api/tts/native per detected sentence break; the old endpoint
+// kill+replaced the previous `say` process on every call, so multi-sentence
+// streams played only the last sentence.  This queue lets sentences chain
+// (next starts on previous exit), with `clear()` available for preemption
+// (Stop button / new chat send).  Spawn is injected lazily so the import
+// pulls only the pure state machine — no node:child_process needed for tests.
+let _nativeSayQueue = null;
+async function _getNativeSayQueue() {
+  if (_nativeSayQueue) return _nativeSayQueue;
+  const { spawn } = await import('node:child_process');
+  _nativeSayQueue = createNativeSayQueue({
+    spawn,
+    stderr: line => process.stderr.write(`${line}\n`),
+  });
+  return _nativeSayQueue;
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
@@ -772,6 +793,37 @@ const server = createServer(async (request, response) => {
         try { globalThis._meloSayProcess.kill(); } catch {}
         globalThis._meloSayProcess = null;
       }
+      // Bug 1 (2026-05-12): also clear the new native streaming queue.
+      // Without this, the streaming queue keeps reading sentences from a
+      // previous reply even after the user stop-clicked or sent a new chat.
+      if (_nativeSayQueue) _nativeSayQueue.clear();
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    // Bug 1 (2026-05-12): streaming TTS for the macOS `say` engine.
+    // Pushes one sentence into a sequential queue — the next say spawns
+    // only after the previous one exits.  Replaces the per-sentence
+    // /api/tts/native POSTs that suffered from kill+replace truncation.
+    if (url.pathname === '/api/tts/native-queue-add' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const text = String(body?.text || '').trim().slice(0, 400);
+      if (!text) { sendJson(response, 400, { ok: false, error: 'text is required.' }); return; }
+      const explicitVoice = String(body?.voice || '').trim();
+      const lang = String(body?.lang || '').toLowerCase();
+      const args = [];
+      if (explicitVoice) {
+        args.push('-v', explicitVoice);
+      } else if (lang.startsWith('zh') || lang.startsWith('cmn')) {
+        args.push('-v', 'Tingting');
+      } else if (lang.startsWith('ko')) {
+        args.push('-v', 'Yuna');
+      } else if (lang.startsWith('ja')) {
+        args.push('-v', 'Kyoko');
+      }
+      args.push('--', text);
+      const queue = await _getNativeSayQueue();
+      queue.add(args);
       sendJson(response, 200, { ok: true });
       return;
     }
@@ -933,6 +985,10 @@ const server = createServer(async (request, response) => {
         try { globalThis._meloSayProcess.kill(); } catch {}
         globalThis._meloSayProcess = null;
       }
+      // Bug 1 (2026-05-12): also halt the streaming `say` queue.  Without
+      // this, /api/tts/speak-stop wouldn't cover the macOS-streaming path
+      // — the queue would keep reading sentences after the user pressed Stop.
+      if (_nativeSayQueue) _nativeSayQueue.clear();
       sendJson(response, 200, { ok: true });
       return;
     }
