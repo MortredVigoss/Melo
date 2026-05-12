@@ -168,3 +168,90 @@ test('§6 path-derived consts (PROJECT_ROOT / MELO_FOLDER_ROOT) remain module-lo
   assert.match(code, /const\s+PROJECT_ROOT\s*=\s*dirname\(dirname\(__dirname\)\)/);
   assert.match(code, /const\s+MELO_FOLDER_ROOT\s*=\s*dirname\(PROJECT_ROOT\)/);
 });
+
+// ─── §6 real-behavior test (Codex ⚪ closeout) ─────────────────────────────
+//
+// Source-level guards above lock the lazy form structurally.  Codex's review
+// suggested also a real-behavior test that flips MELO_EXTERNAL_READERS_DIR
+// mid-process and verifies the candidate-list lookup re-resolves.  This
+// closes the lessons-learned #2 invariant ("real behavior > source grep")
+// for THIS specific change.
+//
+// How: plant a fake `crwl` executable at $MELO_EXTERNAL_READERS_DIR/bin/crwl
+// in a temp dir; verify that `readUrlWithExternalReader('crawl4ai', ...)`
+// resolves to that exact path (via the `_runCommand` stub capturing the
+// resolved command).  Then flip the env to a SECOND temp dir with a
+// different fake crwl, run again, assert the new path is now used.
+
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+
+/**
+ * Plant a fake `crwl` shell script that echoes the given marker text.
+ * Marker is padded to clear the MIN_USEFUL_CHARS=120 non-whitespace gate so
+ * readWithCrawl4AI's `isUsefulContent` returns true and we get the content
+ * back to inspect.  The script ignores all args.
+ */
+function plantFakeCrwl(marker) {
+  const root = mkdtempSync(join(tmpdir(), 'melo-extreaders-test-'));
+  const binDir = join(root, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  const crwlPath = join(binDir, 'crwl');
+  // Output something distinctive (the marker) + filler text to pass the
+  // useful-content gate (>= 120 non-whitespace chars).  Single quotes around
+  // marker so any shell metacharacters in the temp path don't break the
+  // heredoc.
+  const filler = 'X'.repeat(150);
+  writeFileSync(crwlPath, `#!/bin/sh\necho '${marker}'\necho '${filler}'\n`);
+  chmodSync(crwlPath, 0o755);
+  return { root, crwlPath };
+}
+
+test('§6 real behavior: MELO_EXTERNAL_READERS_DIR flip mid-process reroutes the candidate (path resolution re-reads env)', async () => {
+  // This is the Codex ⚪ closure: source-level guards above pin "the lazy
+  // form exists" structurally, but only an end-to-end env-flip test proves
+  // the candidate-list resolution actually RE-EXECUTES the env-reading
+  // function on each call.  A frozen const would have been baked in at
+  // first import, and the round-2 call below would still pick homeA's
+  // fake crwl instead of homeB's.
+  const homeA = plantFakeCrwl('FROM_HOME_A');
+  const homeB = plantFakeCrwl('FROM_HOME_B');
+  const prevEnv = process.env.MELO_EXTERNAL_READERS_DIR;
+  // Also clear MELO_CRAWL4AI_BIN — resolveExecutable short-circuits if it's
+  // set (env-explicit wins over candidates) and the test loses its signal.
+  const prevBin = process.env.MELO_CRAWL4AI_BIN;
+  delete process.env.MELO_CRAWL4AI_BIN;
+
+  try {
+    // Round 1: point env at home A → real spawn of homeA/bin/crwl → content
+    // includes 'FROM_HOME_A'.
+    process.env.MELO_EXTERNAL_READERS_DIR = homeA.root;
+    const resultA = await readUrlWithExternalReader('crawl4ai', 'https://example.com/a', {
+      timeoutMs: 5000,
+    });
+    assert.ok(resultA, 'round 1 must produce a result (fake crwl wrote enough chars to pass useful-content gate)');
+    assert.match(resultA.content, /FROM_HOME_A/,
+      `round 1 must resolve to homeA's fake (got content: ${resultA.content.slice(0, 200)})`);
+
+    // Round 2: flip env to home B.  If MELO_EXTERNAL_READERS_DIR were
+    // captured at module-load (the §6 bug), this call would STILL pick
+    // homeA's crwl and yield 'FROM_HOME_A'.  Lazy resolution re-reads env
+    // each call → picks homeB → yields 'FROM_HOME_B'.
+    process.env.MELO_EXTERNAL_READERS_DIR = homeB.root;
+    const resultB = await readUrlWithExternalReader('crawl4ai', 'https://example.com/b', {
+      timeoutMs: 5000,
+    });
+    assert.ok(resultB, 'round 2 must produce a result');
+    assert.match(resultB.content, /FROM_HOME_B/,
+      `round 2 must resolve to homeB's fake — frozen-const bug would have kept homeA. got: ${resultB.content.slice(0, 200)}`);
+    assert.doesNotMatch(resultB.content, /FROM_HOME_A/,
+      'round 2 content must NOT contain homeA marker (the frozen-const regression signal)');
+  } finally {
+    if (prevEnv === undefined) delete process.env.MELO_EXTERNAL_READERS_DIR;
+    else process.env.MELO_EXTERNAL_READERS_DIR = prevEnv;
+    if (prevBin === undefined) delete process.env.MELO_CRAWL4AI_BIN;
+    else process.env.MELO_CRAWL4AI_BIN = prevBin;
+    try { rmSync(homeA.root, { recursive: true, force: true }); } catch {}
+    try { rmSync(homeB.root, { recursive: true, force: true }); } catch {}
+  }
+});
