@@ -4557,11 +4557,22 @@ function _streamTtsOnToolCall() {
   // user heard "好的，让我帮你查询天" cut off because a `<tool_call>` event
   // landed mid-afplay.  Any agent reply with tool calls suffered this.
   //
-  // The real "intermediate" content is only what's in `_streamTts.buffer`
-  // (unflushed because no sentence break detected yet) and the WKWebView
-  // `browserBatch` (intentionally not spoken until flush).  Both are pure
-  // text — clearing them is enough.  Anything already in `_ttsQueue` or
-  // already mid-afplay was a complete sentence; let it finish naturally.
+  // Codex C-gate follow-up: an earlier draft of this fix also cleared
+  // `_streamTts.browserBatch` thinking it was "accumulated unspoken".
+  // It's NOT — `_streamTtsPushChunk` only writes COMPLETE, sentence-
+  // broken text into `browserBatch` (the WKWebView Browser engine
+  // batches because its native postMessage bridge terminates the
+  // previous utterance on each call; flushing the batch once at stream
+  // end IS the engine's whole workaround for that limitation).
+  // Clearing browserBatch would have re-introduced the same
+  // truncation bug on WKWebView Browser engine.  Keep browserBatch.
+  //
+  // So the real "intermediate" content is ONLY what's in
+  // `_streamTts.buffer` — raw streaming text past the last sentence
+  // break, where no `。/.!?/\n` has been detected yet, so we know it's
+  // a partial in progress.  Clearing only this is enough.  Anything
+  // already in `_ttsQueue`, mid-afplay, in browserBatch, or already
+  // submitted to speechSynthesis was a complete sentence; let it finish.
   //
   // Trade-off: if the agent narrates a complete sentence like "好的，让我
   // 帮你查询。" (note the closing 。) right before firing a tool_call, the
@@ -4569,7 +4580,7 @@ function _streamTtsOnToolCall() {
   // listener should hear it, even if it's about a forthcoming tool action).
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
-  _streamTts.browserBatch = '';
+  // Intentionally do NOT clear `_streamTts.browserBatch` — see comment above.
 }
 
 function _isTtsActive() {

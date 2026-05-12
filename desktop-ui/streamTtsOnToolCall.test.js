@@ -101,9 +101,16 @@ test('_streamTtsOnToolCall clears _streamTts.buffer (unflushed partial sentence)
     'must clear .buffer — the unflushed "我正在搜索..." partial intent narration');
 });
 
-test('_streamTtsOnToolCall clears _streamTts.browserBatch (WKWebView accumulator)', () => {
-  assert.match(codeOnly, /_streamTts\.browserBatch\s*=\s*['"]['"]/,
-    'must clear .browserBatch — WKWebView never-spoken-yet batched sentences');
+test('_streamTtsOnToolCall does NOT clear _streamTts.browserBatch (those are COMPLETE sentences WKWebView batches for flush)', () => {
+  // Codex C-gate finding on 1a1fd14: `_streamTtsPushChunk` only writes
+  // sentence-broken complete text into `browserBatch` (line ~4606:
+  // `_streamTts.browserBatch += sentence + ' '`).  Clearing it would
+  // re-introduce the same truncation bug for WKWebView Browser engine
+  // — it would silently lose every complete sentence the assistant
+  // emitted before a tool_call.  The whole point of the engine's
+  // batching is to play those at flush.  tool_call must not touch it.
+  assert.equal(/_streamTts\.browserBatch\s*=\s*['"]['"]/.test(codeOnly), false,
+    'must NOT clear browserBatch — those are complete sentences for WKWebView flush, NOT intermediate');
 });
 
 test('_streamTtsOnToolCall flags _streamTts.hasToolCalls = true', () => {
