@@ -4545,22 +4545,31 @@ async function _streamTtsStart() {
 }
 
 function _streamTtsOnToolCall() {
-  // Tool call started — discard text buffered so far (intermediate "searching..." etc.)
+  // Tool call started — discard ONLY the unflushed partial text.
+  //
+  // 2026-05-12 fix (voice mid-utterance termination Bug 2):
+  //
+  // The old implementation also fired `speak-stop` + `queue-clear` +
+  // `speechSynthesis.cancel()` + WKWebView `stopAudio` on every tool_call
+  // event.  Intent was to drop intermediate "我正在搜索..." narration before
+  // the tool fires.  But that indiscriminately killed ALREADY-COMPLETED
+  // sentences that had been flushed to the queue and were mid-playback —
+  // user heard "好的，让我帮你查询天" cut off because a `<tool_call>` event
+  // landed mid-afplay.  Any agent reply with tool calls suffered this.
+  //
+  // The real "intermediate" content is only what's in `_streamTts.buffer`
+  // (unflushed because no sentence break detected yet) and the WKWebView
+  // `browserBatch` (intentionally not spoken until flush).  Both are pure
+  // text — clearing them is enough.  Anything already in `_ttsQueue` or
+  // already mid-afplay was a complete sentence; let it finish naturally.
+  //
+  // Trade-off: if the agent narrates a complete sentence like "好的，让我
+  // 帮你查询。" (note the closing 。) right before firing a tool_call, the
+  // user will hear it — that's correct (the assistant said it, the
+  // listener should hear it, even if it's about a forthcoming tool action).
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
-  _streamTts.browserBatch = '';  // also drop accumulated WKWebView Browser-voice batch
-  // Stop any in-progress playback so intermediate phrases don't play.
-  // Covers server TTS, in-page speechSynthesis, AND WKWebView native bridge
-  // (Browser engine in desktop app could otherwise keep narrating
-  // "let me search…" after the tool fires).
-  api('/api/tts/speak-stop', { method: 'POST', body: {} }).catch(() => {});
-  api('/api/tts/queue-clear', { method: 'POST', body: {} }).catch(() => {});
-  if (globalThis.speechSynthesis?.speaking || globalThis.speechSynthesis?.pending) {
-    try { speechSynthesis.cancel(); } catch {}
-  }
-  if (window.webkit?.messageHandlers?.meloVoice) {
-    try { window.webkit.messageHandlers.meloVoice.postMessage({ action: 'stopAudio' }); } catch {}
-  }
+  _streamTts.browserBatch = '';
 }
 
 function _isTtsActive() {

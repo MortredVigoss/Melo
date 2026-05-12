@@ -661,6 +661,14 @@ async function main() {
     // as test:scripts).  Mirrors the test:scripts pattern.
     results.push(await runStep('Server guard unit tests (test:server-guard)', () => runCommand('npm', ['run', 'test:server-guard'])));
 
+    // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
+    // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
+    // as the regression guard for the mid-utterance TTS truncation bug
+    // (don't kill the queue/afplay on every tool_call event).  Wire the
+    // whole test:ui glob in so future desktop-ui regression guards land
+    // in the gate automatically.  Suite is stable (~200 cases) and fast.
+    results.push(await runStep('desktop-ui unit tests (test:ui)', () => runCommand('npm', ['run', 'test:ui'])));
+
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
     results.push(
       await runStep('Build desktop app bundle', () => runCommand('npm', ['run', 'build:desktop'])),
