@@ -1226,7 +1226,19 @@ function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx) {
     if (cached) embeddingMap.set(row.id, cached);
   }
 
-  // Clear vec_memories before rebuild (vec0 doesn't support DELETE ... WHERE)
+  // Clear vec_memories before rebuild.
+  //
+  // 2026-05-12 doc correction: the prior comment here claimed "vec0 doesn't
+  // support DELETE ... WHERE" — that's NOT true on the current sqlite-vec
+  // version (commit 6861892 tested it; `DELETE FROM vec_memories WHERE
+  // memory_id = ?` works fine).  Full wipe is a *design choice*, not a
+  // capability limitation: this function is the snapshot-rebuild path
+  // (`_runReplaceMemoriesOn`), so by the time we get here we already know
+  // the full post-rebuild set — a wipe + bulk INSERT is simpler than
+  // diff + per-row DELETE + per-row INSERT.  P2 perf留账 (PROGRESS 5-10):
+  // at 1000+ rows the per-saveState wipe-and-rebuild gets expensive; if
+  // it ever shows up in profiles, switch to diff-based update using the
+  // now-working `DELETE ... WHERE memory_id = ?` form.
   if (vecLoaded) {
     try { database.exec('DELETE FROM vec_memories'); } catch (err) { debugWarn('memory.store.replace', 'clear vec_memories failed', err?.message || err); }
   }
