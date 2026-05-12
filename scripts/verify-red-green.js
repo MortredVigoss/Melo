@@ -10,7 +10,10 @@ const serverUrl = 'http://127.0.0.1:43129';
 const connectorUrl = 'http://127.0.0.1:43131';
 const telegramMockUrl = 'http://127.0.0.1:43132';
 const telegramMockToken = 'melo-mock-telegram-token';
-const nativeAppPath = join(projectDir, 'Melo.app');
+// 2026-05-12 cleanup: build output moved to .tmp/desktop-build/ so the
+// source tree no longer carries a third Melo.app duplicate (Spotlight was
+// indexing it as a separate app).  Path tracks build-desktop-app.sh's APP_DIR.
+const nativeAppPath = join(projectDir, '.tmp', 'desktop-build', 'Melo.app');
 const desktopFolderAppPath = join(process.env.HOME || '', 'Desktop', 'melo', 'Melo.app');
 const launchpadAppPath = join(process.env.HOME || '', 'Applications', 'Melo.app');
 const nativeDebugPath = join(projectDir, '.tmp/desktop-app-debug.txt');

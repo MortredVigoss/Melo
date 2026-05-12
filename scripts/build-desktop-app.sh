@@ -5,7 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/.tmp/desktop-build"
 MODULE_CACHE_DIR="$PROJECT_DIR/.tmp/swift-module-cache"
-APP_DIR="$PROJECT_DIR/Melo.app"
+# 2026-05-12 cleanup: APP_DIR used to live at "$PROJECT_DIR/Melo.app" — that
+# put a third Melo.app right alongside the source tree, which Spotlight
+# happily indexed as a separate app duplicate of the install-target copies.
+# Moved into .tmp/desktop-build/ (alongside the Swift binary, already
+# gitignored) so the source tree stays clean.  install-desktop-app.sh and
+# verify-red-green.js were updated to read from the new location.
+APP_DIR="$BUILD_DIR/Melo.app"
 BIN_NAME="MeloDesktop"
 ICON_NAME="melo.icns"
 
