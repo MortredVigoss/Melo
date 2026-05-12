@@ -653,6 +653,14 @@ async function main() {
     // a separate decision after that flake lands.
     results.push(await runStep('scripts/ unit tests (test:scripts)', () => runCommand('npm', ['run', 'test:scripts'])));
 
+    // Codex C-gate finding on 1f6b4fb: src/serverGuard.test.js was added
+    // as a regression guard for the 6d925a4 cross-repo guard-regex fix
+    // but lived under src/**/*.test.js (excluded above), so the gate
+    // wouldn't run it — defeating the whole "防回归" intent.  Add a
+    // single-file allowlist step (NOT a src/** glob, same flake reason
+    // as test:scripts).  Mirrors the test:scripts pattern.
+    results.push(await runStep('Server guard unit tests (test:server-guard)', () => runCommand('npm', ['run', 'test:server-guard'])));
+
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
     results.push(
       await runStep('Build desktop app bundle', () => runCommand('npm', ['run', 'build:desktop'])),
