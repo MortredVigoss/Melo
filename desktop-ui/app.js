@@ -14,6 +14,7 @@ import { describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
+import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -11917,24 +11918,18 @@ function renderProductivityMcpConsentModal() {
 }
 
 // ─── Tool call status strip (shown while tool is executing) ───────────────────
-
+//
+// G-1f (2026-05-12): extracted to ./activeToolCallsStrip.js so the renderer
+// can be exercised by node --test without a DOM.  This wrapper closes over
+// uiState + the icon table + escapeHtml; the sibling module is pure
+// (deps injected).  The sibling also adds evidence-trail rendering under
+// each pill when the trail is informative (failure path OR multi-tier
+// fallback) — same heuristic as the G-1e prompt-side surfacing.
 function renderActiveToolCallsStrip() {
-  const calls = uiState.activeToolCalls;
-  if (!calls.length) return '';
-
-  return `
-    <div class="tool-calls-strip">
-      ${calls.map(call => `
-        <div class="tool-call-pill ${call.status === 'running' ? 'is-running' : call.status === 'ok' ? 'is-ok' : 'is-error'}">
-          <span class="tool-call-pill-icon">${icon.terminal}</span>
-          <span class="tool-call-pill-name">${escapeHtml(call.name)}</span>
-          ${call.status === 'running' ? '<span class="tool-call-spinner"></span>' : ''}
-          ${call.status === 'ok' ? '<span class="tool-call-check">✓</span>' : ''}
-          ${call.status === 'error' ? '<span class="tool-call-x">✗</span>' : ''}
-        </div>
-      `).join('')}
-    </div>
-  `;
+  return _renderActiveToolCallsStripFromModule(uiState.activeToolCalls, {
+    escapeHtml,
+    terminalIcon: icon.terminal,
+  });
 }
 
 // ─── Tool permission handlers ─────────────────────────────────────────────────

@@ -4822,6 +4822,95 @@ select option {
   to   { transform: rotate(360deg); }
 }
 
+/* ─── Evidence trail under tool-call pill (G-1f 2026-05-12) ─────────────────
+   Rendered only when informative (failure OR multi-tier fallback — see
+   activeToolCallsStrip.js shouldRenderTrail).  Visible during the 1.8s
+   post-completion window before uiState.activeToolCalls is filtered.  */
+
+.tool-call-pill {
+  /* Switch to column layout so the trail can stack under the pill content
+     when present.  Without trail it collapses to a single row visually
+     identical to the previous design (flex-direction:column with one row
+     child renders like row + nowrap). */
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.tool-call-pill > .tool-call-pill-icon,
+.tool-call-pill > .tool-call-pill-name,
+.tool-call-pill > .tool-call-spinner,
+.tool-call-pill > .tool-call-check,
+.tool-call-pill > .tool-call-x {
+  /* First-row children keep their inline layout via this single-row
+     anchor — using flex's `align-self:stretch` on the parent would
+     break it, so we constrain alignment on the row members. */
+  align-self: center;
+}
+
+.tool-call-trail {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  /* Pull back the monospace face slightly — feels too dense at 11px. */
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+.tool-call-trail-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.tool-call-trail-tier {
+  font-weight: 500;
+  color: var(--text);
+  min-width: 70px;
+}
+
+.tool-call-trail-outcome {
+  font-weight: 500;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+
+.tool-call-trail-outcome.is-ok {
+  color: #7de09a;
+  background: rgba(125, 224, 154, 0.1);
+}
+
+.tool-call-trail-outcome.is-fail {
+  color: var(--danger);
+  background: rgba(255, 144, 127, 0.1);
+}
+
+.tool-call-trail-outcome.is-aborted {
+  color: #c9a86e;
+  background: rgba(201, 168, 110, 0.1);
+}
+
+.tool-call-trail-outcome.is-skip {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tool-call-trail-detail {
+  color: var(--text-muted);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 .tool-call-spinner {
   width: 12px;
   height: 12px;
