@@ -678,6 +678,15 @@ async function main() {
     // in desktopStore.js.
     results.push(await runStep('markdownFiles factory + desktopStore source guard (test:markdown-files)', () => runCommand('npm', ['run', 'test:markdown-files'])));
 
+    // 2026-05-12 audit follow-up: src/web/externalReaders.js had a Codex
+    // change introducing `MELO_EXTERNAL_READERS_DIR` env capture as a
+    // module-load const — same §6 violation pattern the G-6 audit cleaned
+    // up.  Refactored to lazy resolvers + appended 5 source-level guard
+    // tests to externalReaders.test.js (existing 4 behavior tests still
+    // pass).  Wired here so a future regression to module-load const
+    // breaks at push gate.
+    results.push(await runStep('External readers §6 + behavior (test:external-readers)', () => runCommand('npm', ['run', 'test:external-readers'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

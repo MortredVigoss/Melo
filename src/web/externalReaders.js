@@ -9,6 +9,8 @@ import { debugWarn } from '../debug.js';
 
 const execFile = promisify(execFileCallback);
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = dirname(dirname(__dirname));
+const MELO_FOLDER_ROOT = dirname(PROJECT_ROOT);
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CHARS = 20_000;
@@ -17,11 +19,48 @@ const MIN_USEFUL_CHARS = 120;
 const READER_ORDER = Object.freeze(['crawl4ai', 'scrapling', 'camoufox']);
 const SCRAPLING_OUTPUT_FILE = 'content.md';
 const CAMOUFOX_SCRIPT = join(__dirname, 'camoufoxReader.py');
+
+// PROJECT_EXTERNAL_READERS_DIR is path-derived (uses __dirname only, no env),
+// so it's safe to capture at module load — won't drift at runtime.
+const PROJECT_EXTERNAL_READERS_DIR = join(PROJECT_ROOT, '.tmp', 'external-readers');
+
+// 2026-05-12 §6 audit: the `MELO_EXTERNAL_READERS_DIR` env var and the
+// derived dir/bin/pipx-venv path arrays were captured at module load
+// (`const = process.env... || join(...)`).  That's the same CLAUDE.md
+// §6 pattern the G-6 audit (6/6, b73c118) just cleaned up across the
+// repo — a fresh `MELO_EXTERNAL_READERS_DIR` set after import wouldn't
+// take effect, defeating test isolation and multi-profile scenarios.
+// Lazy-resolved through call-time getters now; `meloExternalReadersDir()`
+// re-reads `process.env` on every invocation.
+//
+// `PROJECT_ROOT` / `MELO_FOLDER_ROOT` stay as module-load consts because
+// they're derived from `__dirname` only — that's a property of the source
+// file's location, never changes at runtime.
+function meloExternalReadersDir() {
+  return process.env.MELO_EXTERNAL_READERS_DIR || join(MELO_FOLDER_ROOT, 'external-readers');
+}
+
+function externalReadersDirs() {
+  return [meloExternalReadersDir(), PROJECT_EXTERNAL_READERS_DIR];
+}
+
+function externalReadersBinDirs() {
+  return externalReadersDirs().map(dir => join(dir, 'bin'));
+}
+
+function externalReadersPipxVenvsDirs() {
+  return externalReadersDirs().map(dir => join(dir, 'pipx', 'venvs'));
+}
+
 const USER_LOCAL_BIN = join(homedir(), '.local/bin');
-const PIPX_VENVS_DIRS = Object.freeze([
-  join(homedir(), '.local/pipx/venvs'),
-  join(homedir(), '.local/share/pipx/venvs'),
-]);
+
+function pipxVenvsDirs() {
+  return [
+    ...externalReadersPipxVenvsDirs(),
+    join(homedir(), '.local/pipx/venvs'),
+    join(homedir(), '.local/share/pipx/venvs'),
+  ];
+}
 
 async function isExecutable(path) {
   try {
@@ -113,6 +152,8 @@ async function readWithCrawl4AI(url, {
     envName: 'MELO_CRAWL4AI_BIN',
     fallback: 'crwl',
     candidates: [
+      ...externalReadersBinDirs().map(dir => join(dir, 'crwl')),
+      ...externalReadersPipxVenvsDirs().map(root => join(root, 'crawl4ai', 'bin', 'crwl')),
       join(USER_LOCAL_BIN, 'crwl'),
       '/opt/homebrew/bin/crwl',
       '/usr/local/bin/crwl',
@@ -158,6 +199,8 @@ async function readWithScrapling(url, {
     envName: 'MELO_SCRAPLING_BIN',
     fallback: 'scrapling',
     candidates: [
+      ...externalReadersBinDirs().map(dir => join(dir, 'scrapling')),
+      ...externalReadersPipxVenvsDirs().map(root => join(root, 'scrapling', 'bin', 'scrapling')),
       join(USER_LOCAL_BIN, 'scrapling'),
       '/opt/homebrew/bin/scrapling',
       '/usr/local/bin/scrapling',
@@ -209,7 +252,7 @@ async function readWithCamoufox(url, {
     envName: 'MELO_CAMOUFOX_PYTHON',
     fallback: process.env.PYTHON || 'python3',
     candidates: [
-      ...PIPX_VENVS_DIRS.map(root => join(root, 'camoufox/bin/python')),
+      ...pipxVenvsDirs().map(root => join(root, 'camoufox/bin/python')),
       '/opt/homebrew/bin/python3.12',
       '/opt/homebrew/bin/python3',
       '/usr/local/bin/python3',
