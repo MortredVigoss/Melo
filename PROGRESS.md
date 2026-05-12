@@ -4,6 +4,35 @@
 > 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-12 (PM) — G-6 §6 audit 完整收官 (6/6 + 第 7 个 externalReaders) + G-1d/e/f trail 端到端 + Melo.app cleanup × 2 + docs/conventions
+
+承接上午 voice bug 那一摊后,下午 / 晚上 11 个 commits 落了 3 大块 + 一些清理:
+
+- **G-6 §6 audit 完整收官 (6/6) + 第 7 个 externalReaders 同类病**:
+  - `b73c118` `fix(state)`: **G-6 #6** desktopStore.js DESKTOP_DIR + AGENTS_DIR lazy 化。Audit 发现 scope 比怕的窄得多 (factory `createAgentMarkdownFileHelpers` 早已支持 `() => string`,只有 1 个 caller 用 string),3 行实质改动 + 7 case markdownFiles factory test + 接 gate。Codex **S** "边界清晰且测试入闸"。**G-6 §6 audit 6/6 全部 push 上线**(conversationIndex / skillRuns / webSearchTool / 3 polling+voice / media/cache / desktopStore)。
+  - `4ea50ec` + `f3a7084` `fix(web)`: **externalReaders §6 closeout** (审 Codex 工作树里的 unstaged 改动)。Codex 加 `MELO_EXTERNAL_READERS_DIR` 候选位置功能正确但 module-load env 冻结(7th §6 命中点,和 6 小时前刚收官的 G-6 自相矛盾)。Lazy 重构 + 5 source-level guard + 1 real-behavior env-flip 测试(mkdtemp + 真 spawn fake crwl 验证 lazy resolver 真随 env 翻)。Codex **A** + **A**。
+- **G-1d/e/f trail 链路完整端到端**:
+  - `736a1e5` `feat(tools)`: **G-1e** trail 进 model prompt — `formatToolResult` 加 `<evidence_trail>jina: fail (timeout, 3500ms) → direct: ok (220ms)</evidence_trail>` block,只在 ok=false 或 multi-tier fallback 时插入 + 16 case parser test + 接 `test:tools-evidence-trail` gate。Agent 看见自己 fallback 历史可以自我修正。
+  - `f91c5a9` + `6ae464f` `feat(ui)` / `fix(ui)`: **G-1f MVP** evidence trail 渲染在活跃 tool-call chip 上(1.8s 窗口内可见)。抽 `desktop-ui/activeToolCallsStrip.js` sibling module (跟 advancedPage.js 一致 pattern) + 23 case (19 渲染 + 4 layout 契约) + 4 个 CSS class。**第一次 commit C 阻 push** —— `.tool-call-pill` 直接 column flex 把 icon/name/status 都竖排了; C-gate 闭环加 `.tool-call-pill-main` wrapper 保首行横排 + 4 case 布局契约 + DOM 结构 order 测试。Codex **A** "实现清晰覆盖到位"。
+  - **整段 G-1d/e/f trail 端到端**: tool 产 trail → executor 保留 (c3285d2 slice 1) → SSE+UI uiState (01296a2 slice 1.5) → model prompt (G-1e 736a1e5) → 屏幕渲染 (G-1f MVP)。
+- **Melo.app deploy 双 cleanup** (用户截图发现 Spotlight 搜 "melo.app" 出 3 个):
+  - `4c3584a` `chore(build)`: build artifact 从 `$PROJECT_ROOT/Melo.app` 搬到 `$BUILD_DIR/.tmp/desktop-build/Melo.app`,源树不再多一个 Spotlight 索引;install script 加 idempotent legacy sweep。
+  - `a322aa7` `chore(install)`: 删冗余 `~/Desktop/melo/Applications/Melo.app` deploy target (verify-red-green 只测 Launchpad + Desktop symlink 两个,这条 3rd 副本无人引用)。两步合下来 `mdfind -name "Melo.app"` 从 3 → 1 (Launchpad,Desktop symlink 不计)。
+- **其他清理 / 留账闭环**:
+  - `3b96247` `fix(media)`: orchestratorAbort.test.js #14 flaky 修(spawned task 落地)— DI seam for ffmpeg pre-pass + cache nonce + social-direct budget override + anti-false-green guard。Codex **A**。
+  - `95386cd` `docs(memory)`: 修正 `_runReplaceMemoriesOn` "vec0 doesn't support DELETE WHERE" 错误注释 + 把 1099 行 wipe-and-rebuild perf 留账写进注释作为设计 note (5-10 P2 留账 #1 闭)。
+  - `732bc0e` `docs`: **新 `docs/conventions.md`** 192 行项目约定速查 — env vars / 目录布局 / 8 个 test:* npm scripts + verify-red-green 接入约定 / inspect-search-trail CLI / §6 反模式总结 / 进一步阅读外链。把今天加的 4 个新约定 (`MELO_SEARCH_TRAIL_LOG` / `MELO_EXTERNAL_READERS_DIR` / test gate / inspect CLI) 集中,避免 6 个月后再 grep 上下文。
+
+**今天 C-gate 战绩 4 次,全部当 commit 闭环 0 漏过** (inspect-search-trail UTC normalize / server guard test 漏 gate / voice Bug 2 误清 browserBatch / G-1f 破 chip 横排)。
+
+- 产出: 11 commits 全部 push 上线。Codex 评级线: 3b96247(A) / b73c118(**S**) / 95386cd(doc skip) / 4c3584a(skip) / a322aa7(skip) / 4ea50ec(A) / f3a7084(A) / 736a1e5(A) / 732bc0e(doc skip) / f91c5a9(C 阻) / 6ae464f(**A**)。
+- P2 留账:
+  1. **G-1d slice 2**: trail 持久化到 chat message metadata,让历史消息也能看(跨 1.8s 窗口)。需要扩 message 对象 schema + UI history render 路径,独立 milestone。
+  2. **G-1f 手动 UI 验证**: 结构化 markup 测试已绿(23/23),但**截图/真浏览器 smoke 没做**。需要启 Melo 跑带 tool_call 的回复,肉眼确认颜色/字号/布局舒适。
+  3. **`/api/tts/native` 与 `nativeQueue` 互不感知**: 手动 Read aloud + 流式同时跑会双说,多端并发真踩到再修。
+  4. **5-10 P2 留账 #3**: `MELO_MEMORY_TIERS_RECALL` 翻默认 ON 后观察 3-5 天 dreams promotion 评分。passively 等。
+
+---
 ## 2026-05-12 — voice bug 修 + inspect-search-trail CLI + server guard regex + 2 次 Codex C-gate 闭环
 
 10 commits 一条主线，两条触发 §1 强制 git pp 的 C-gate 实战课 + 一个完整 voice bug repair 段：
