@@ -666,6 +666,15 @@ async function main() {
     // machine, no spawn dependencies, fast.
     results.push(await runStep('TTS native queue unit tests (test:tts)', () => runCommand('npm', ['run', 'test:tts'])));
 
+    // G-6 #6 (2026-05-12): markdownFiles factory now has the desktopStore.js
+    // caller passing function-form `agentsDir` (G-6 #6 lazy refactor).  This
+    // suite locks both the string-form and function-form paths so a future
+    // "simplify by always treating as string" refactor would break loudly
+    // instead of silently freezing MELO_HOME at module load.  Also contains
+    // a source-level guard against re-introducing `const DESKTOP_DIR/AGENTS_DIR`
+    // in desktopStore.js.
+    results.push(await runStep('markdownFiles factory + desktopStore source guard (test:markdown-files)', () => runCommand('npm', ['run', 'test:markdown-files'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

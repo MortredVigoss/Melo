@@ -559,23 +559,41 @@ import {
 
 const execFile = promisify(execFileCallback);
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const DESKTOP_DIR = join(getMeloHome(), 'desktop');
+// G-6 #6 (audit 2026-05-12): DESKTOP_DIR + AGENTS_DIR were module-load
+// `const join(getMeloHome(), …)` — CLAUDE.md §6 violation, same pattern
+// the rest of G-6 already cleaned up (conversationIndex / skillRuns /
+// webSearchTool / voiceRewrite / discord+telegramPolling / media/cache).
+// This was the last and trickiest site: desktopStore is the central
+// state module with many consumers, but the actual DESKTOP_DIR /
+// AGENTS_DIR readers are just 1 internal usage (AGENTS_DIR → factory
+// binding), and the factory `createAgentMarkdownFileHelpers` already
+// supports a `() => string` getter form (markdownFiles.js:90-95) for
+// exactly this kind of lazy-resolution caller.  So the fix is small:
+// convert both to call-time functions and pass `agentsDir` by reference
+// to the factory.
+function desktopDir() {
+  return join(getMeloHome(), 'desktop');
+}
+function agentsDir() {
+  return join(desktopDir(), 'agents');
+}
 // STATE_PATH moved to src/state/stateStore.js in Phase 7d-5α-A1 commit 9 as a
 // lazy `statePath()` getter (private to that module). desktopStore no longer
 // references the path directly; all state I/O goes through the imported
 // loadState / saveState / persistStateAtomically / readStateSnapshot entries.
 
-const AGENTS_DIR = join(DESKTOP_DIR, 'agents');
-
-// Bind the agent markdown file helpers to our AGENTS_DIR once. The helpers
+// Bind the agent markdown file helpers to our agentsDir getter. The helpers
 // own FS I/O for IDENTITY.md / SOUL.md on each agent profile, scoped either
-// globally or per-project. See src/services/agent/markdownFiles.js.
+// globally or per-project. See src/services/agent/markdownFiles.js — its
+// factory normalizes the `agentsDir` parameter (accepts string OR
+// `() => string`), so passing the function form here gives us call-time
+// resolution without changing any existing consumer.
 const {
   getAgentMarkdownPaths,
   readTextIfExists,
   ensureMarkdownFile,
   writeMarkdownFile,
-} = createAgentMarkdownFileHelpers({ agentsDir: AGENTS_DIR });
+} = createAgentMarkdownFileHelpers({ agentsDir });
 
 // Always-on Discord diagnostic log. Writes to $MELO_HOME/desktop/discord-debug.log
 // so the user can share a single file when their bot silently fails to reply.
