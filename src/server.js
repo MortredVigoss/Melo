@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { _matchOtherServerLine } from './serverGuard.js';
 import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
 import { isOriginAllowed } from './web/originCheck.js';
 import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
@@ -238,24 +239,8 @@ async function _scanForOtherServerInstances() {
         const selfPid = process.pid;
         const hits = [];
         for (const rawLine of String(stdout).split('\n')) {
-          const line = rawLine.trim();
-          if (!line) continue;
-          const match = line.match(/^(\d+)\s+(.*)$/);
-          if (!match) continue;
-          const otherPid = Number(match[1]);
-          const cmd = match[2];
-          if (!otherPid || otherPid === selfPid) continue;
-          // Strong-signal match: command line contains THIS server.js's
-          // absolute path.  Swift launcher uses absolute path; a terminal
-          // run via `node /full/path/src/server.js` also matches.
-          // A `cd /other/repo && node src/server.js` (relative path,
-          // different repo) intentionally does NOT match — that's the
-          // bug we're fixing.  If you genuinely run this very repo's
-          // server via relative path from a terminal and want guard
-          // protection, run with absolute path or via the Swift launcher.
-          if (/\bnode\b/.test(cmd) && cmd.includes(_MY_SERVER_PATH)) {
-            hits.push({ pid: otherPid, command: cmd });
-          }
+          const hit = _matchOtherServerLine(rawLine, selfPid, _MY_SERVER_PATH);
+          if (hit) hits.push(hit);
         }
         resolve(hits);
       },
