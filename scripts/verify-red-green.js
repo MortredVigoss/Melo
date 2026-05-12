@@ -693,6 +693,12 @@ async function main() {
     // one gate step because they share the evidenceTrail schema contract.
     results.push(await runStep('Tools evidenceTrail (executor + parser) (test:tools-evidence-trail)', () => runCommand('npm', ['run', 'test:tools-evidence-trail'])));
 
+    // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
+    // through state.json normalize is the persistence backbone of slice 2.
+    // Gating this catches the "older state with malformed toolResults
+    // crashes hydration" regression class.
+    results.push(await runStep('State hydration (stateHydration test) (test:state-hydration)', () => runCommand('npm', ['run', 'test:state-hydration'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

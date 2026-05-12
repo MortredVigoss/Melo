@@ -415,6 +415,14 @@ export async function runChatAgentExecutionGraph({
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
         let finalReply = '';
+        // G-1d slice 2 (2026-05-12): accumulate per-tool-call structured
+        // metadata across loop iterations so the persisted assistant
+        // message can carry the evidenceTrail history of all tools that
+        // ran while producing this reply.  Without this, the trail dies
+        // when activeToolCalls is filtered out 1.8s after completion
+        // (G-1f window) — users翻 chat history 看不到当时哪条 tier 失败了.
+        // Each entry: { toolCallId, toolName, ok, evidenceTrail? }.
+        const accumulatedToolResults = [];
 
         for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
           // On subsequent iterations, we're streaming "thinking" not the final
@@ -571,6 +579,22 @@ export async function runChatAgentExecutionGraph({
             },
           ];
 
+          // G-1d slice 2: accumulate structured tool-result metadata for
+          // persistence on the eventual assistantMessage.  Only attach
+          // evidenceTrail when present (sparse — most tools never produce one);
+          // the executor's normalize already filters non-array / empty.
+          for (const { call, result } of allResults) {
+            const entry = {
+              toolCallId: call.id,
+              toolName: call.name,
+              ok: result.ok !== false,
+            };
+            if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
+              entry.evidenceTrail = result.evidenceTrail;
+            }
+            accumulatedToolResults.push(entry);
+          }
+
           // If the last iteration was tool calls only, the next pass will produce
           // the final prose reply. Continue loop.
         }
@@ -588,7 +612,15 @@ export async function runChatAgentExecutionGraph({
           sseEmitter('reply_text', { text: finalReply });
         }
 
-        return { reply: finalReply, next: 'finalize' };
+        // G-1d slice 2: pass accumulated tool metadata through graphState so
+        // the finalize node can attach it to normalizedReply → sendChatMessage
+        // attaches it to the persisted assistantMessage.  Only emit when
+        // non-empty so we don't pollute pure-text replies with empty arrays.
+        const out = { reply: finalReply, next: 'finalize' };
+        if (accumulatedToolResults.length > 0) {
+          out.toolResults = accumulatedToolResults;
+        }
+        return out;
       },
 
       // ── finalize ───────────────────────────────────────────────────────────
@@ -699,6 +731,14 @@ export async function runChatAgentExecutionGraph({
         normalizedReply.citations = isRemoteChannel
           ? []
           : citationExtraction.citations || [];
+
+        // G-1d slice 2: forward accumulated tool metadata (set by the
+        // tool-loop node above) onto the normalized reply.  sendChatMessage
+        // does the conditional spread onto the persisted assistantMessage —
+        // empty / absent arrays produce no `toolResults` key on the message.
+        if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {
+          normalizedReply.toolResults = graphState.toolResults;
+        }
 
         return {
           normalizedReply,

@@ -167,6 +167,107 @@ test('normalizeChat: preserves existing message metadata + viz/citations', () =>
   assert.deepEqual(m.metadata, { verificationRecord: { verdict: 'CORRECTED' } });
 });
 
+// ─── G-1d slice 2: toolResults round-trip on assistant messages ───────────
+
+test('normalizeChat: preserves toolResults with evidenceTrail on assistant message (G-1d slice 2)', () => {
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'I checked AUFB but the page returned no useful content.',
+        toolResults: [
+          {
+            toolCallId: 'call_abc',
+            toolName: 'fetch_url',
+            ok: false,
+            evidenceTrail: [
+              { tier: 'jina', outcome: 'fail', latencyMs: 3500, reason: 'parse-empty' },
+              { tier: 'direct', outcome: 'fail', latencyMs: 120, reason: 'parse-empty' },
+              { tier: 'playwright', outcome: 'fail', latencyMs: 2200, reason: 'parse-empty' },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const m = c.messages[0];
+  assert.ok(Array.isArray(m.toolResults), 'toolResults must be preserved as array');
+  assert.equal(m.toolResults.length, 1);
+  assert.equal(m.toolResults[0].toolCallId, 'call_abc');
+  assert.equal(m.toolResults[0].toolName, 'fetch_url');
+  assert.equal(m.toolResults[0].ok, false);
+  assert.equal(m.toolResults[0].evidenceTrail.length, 3);
+  assert.equal(m.toolResults[0].evidenceTrail[0].tier, 'jina');
+});
+
+test('normalizeChat: messages without toolResults have NO toolResults key (no spurious empty array)', () => {
+  // Pure-text assistant messages (no tools fired) must not get a stray
+  // `toolResults: []` — that would inflate JSON + UI would render an
+  // empty trail block.  Conditional-spread protects this.
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [
+      { id: 'm1', role: 'user', content: 'hi' },
+      { id: 'm2', role: 'assistant', content: 'hello back' },
+    ],
+  });
+  assert.ok(!('toolResults' in c.messages[0]), 'user msg: no toolResults key');
+  assert.ok(!('toolResults' in c.messages[1]), 'pure-text assistant: no toolResults key');
+});
+
+test('normalizeChat: malformed toolResults entries are filtered defensively', () => {
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'x',
+        toolResults: [
+          null,                                                  // dropped
+          undefined,                                             // dropped
+          'string',                                              // dropped (non-object)
+          { toolCallId: 'a', toolName: 'fetch_url', ok: true },  // kept (no trail = OK)
+          { toolCallId: 'b', toolName: 'web_search', ok: false, evidenceTrail: 'not-an-array' }, // kept, trail dropped
+          { toolCallId: 'c', toolName: 'social_link', ok: false, evidenceTrail: [null, { tier: 'jina', outcome: 'fail' }] }, // kept, malformed trail items dropped
+        ],
+      },
+    ],
+  });
+  const trs = c.messages[0].toolResults;
+  assert.equal(trs.length, 3, 'three valid entries survive (a/b/c), three malformed dropped');
+  assert.equal(trs[0].toolCallId, 'a');
+  assert.ok(!('evidenceTrail' in trs[0]), 'entry without trail keeps no trail key');
+  assert.ok(!('evidenceTrail' in trs[1]), 'entry with non-array trail loses the field entirely');
+  assert.equal(trs[2].evidenceTrail.length, 1, 'malformed trail items inside array are filtered');
+  assert.equal(trs[2].evidenceTrail[0].tier, 'jina');
+});
+
+test('normalizeChat: empty toolResults array → field stripped (no empty key)', () => {
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [{ id: 'm1', role: 'assistant', content: 'x', toolResults: [] }],
+  });
+  assert.ok(!('toolResults' in c.messages[0]),
+    'empty array must produce no key — same conditional-spread rule as viz/citations');
+});
+
+test('normalizeChat: ok defaults to true when omitted on toolResult entry', () => {
+  // Defensive: older state files might lack `ok` field; renderer would
+  // misclassify success as failure without a default.  Normalize to true
+  // (the more conservative "didn't say failed" interpretation).
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [{
+      id: 'm1', role: 'assistant', content: 'x',
+      toolResults: [{ toolCallId: 'a', toolName: 'fetch_url' /* no ok */ }],
+    }],
+  });
+  assert.equal(c.messages[0].toolResults[0].ok, true);
+});
+
 test('hydrateChatThreads: restores runtime session memory and compact state from checkpoint', async () => {
   const threadsDir = await mkdtemp(join(tmpdir(), 'melo-thread-runtime-'));
   try {

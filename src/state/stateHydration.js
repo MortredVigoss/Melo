@@ -89,6 +89,35 @@ const APP_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 // arg for relative workspacePath, the underlying `resolve(undefined, rawPath)`
 // threw TypeError. Restoring the local 1-arg wrapper exactly mirrors the
 // original behavior. CLAUDE.md §5: this is the "byte-for-byte" version.
+/**
+ * G-1d slice 2 (2026-05-12): defensive normalize of `message.toolResults`
+ * on state load.  Each entry is `{ toolCallId, toolName, ok, evidenceTrail? }`.
+ * Persistence path (sendChatMessage) builds these from chatExecutionRunner's
+ * accumulator, but state.json round-trip can hit older files / corrupted
+ * data — filter non-object entries and stamp safe defaults so renderers
+ * never see undefined.
+ */
+function normalizeToolResultsForHydration(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const out = [];
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue;
+    const entry = {
+      toolCallId: typeof item.toolCallId === 'string' ? item.toolCallId : '',
+      toolName: typeof item.toolName === 'string' ? item.toolName : '',
+      ok: item.ok !== false,
+    };
+    if (Array.isArray(item.evidenceTrail) && item.evidenceTrail.length > 0) {
+      // Filter trail items defensively too — same shape as G-1e parser /
+      // G-1f UI side defensiveness so a corrupt entry doesn't crash render.
+      const cleanTrail = item.evidenceTrail.filter(t => t && typeof t === 'object');
+      if (cleanTrail.length > 0) entry.evidenceTrail = cleanTrail;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 function sanitizeWorkspacePath(rawPath) {
   return sanitizeWorkspacePathRaw(rawPath, APP_ROOT);
 }
@@ -274,6 +303,16 @@ export function normalizeChat(chat) {
           // sendChatMessage attaches alongside viz.
           ...(message?.metadata && typeof message.metadata === 'object'
             ? { metadata: message.metadata }
+            : {}),
+          // G-1d slice 2 (2026-05-12): structured tool execution metadata
+          // attached by sendChatMessage when chatExecutionRunner's tool
+          // loop ran any tools.  Each entry: { toolCallId, toolName, ok,
+          // evidenceTrail? }.  Round-trip preserved so chat history UI
+          // can render the fallback trail under each assistant message
+          // that drove a tool call (past the 1.8s active-chip window).
+          // Drop malformed entries defensively.
+          ...(Array.isArray(message?.toolResults) && message.toolResults.length
+            ? { toolResults: normalizeToolResultsForHydration(message.toolResults) }
             : {}),
         }))
       : [],

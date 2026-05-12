@@ -338,6 +338,15 @@ export async function sendChatMessage({
     ...(Array.isArray(normalizedReply.citations) && normalizedReply.citations.length
       ? { citations: normalizedReply.citations }
       : {}),
+    // G-1d slice 2 (2026-05-12): tool execution metadata (toolCallId, toolName,
+    // ok, optional evidenceTrail) accumulated by chatExecutionRunner across
+    // tool-loop iterations.  Persisted on the assistantMessage so chat
+    // history can show the fallback trail past the 1.8s active-chip window.
+    // Conditional spread — pure-text replies (no tools fired) produce no
+    // `toolResults` key on the message.
+    ...(Array.isArray(normalizedReply.toolResults) && normalizedReply.toolResults.length
+      ? { toolResults: normalizedReply.toolResults }
+      : {}),
     ...(state._pendingVerificationRecord
       ? { metadata: { verificationRecord: state._pendingVerificationRecord } }
       : {}),
