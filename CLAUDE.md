@@ -32,16 +32,25 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 
 ## 2. PROGRESS.md 作为状态看板
 
-- 仓库根目录维护一份 `PROGRESS.md`，记录 **做过了什么** 和 **当前进行到哪一步**。
-- 每次完成一个可验证的步骤（测试通过、bug 修复、feature 落地、重要重构）就追加一条，格式：
+- 仓库根目录维护一份 `PROGRESS.md`，记录 **意图与上下文**——不是 changelog（changelog 是 `git log` 的活，codex review 看 diff 就能拿到代码事实）。
+- 每次完成一个可验证的步骤（测试通过、bug 修复、feature 落地、重要重构）就追加一条。**写每一句话之前先问：这条 codex 看 git diff 能不能自己拿到？** 能拿到的就删掉，只留 diff 看不到的——意图、用户拍板、评级反馈、流程偏离、谁做的（Claude / Codex / 用户手改）。
+- 标准格式（**必填 ≤ 8 行 + 选填实现摘要 ≤ 4 行**，单条不超过 12 行）：
   ```
-  ## YYYY-MM-DD HH:MM — <一句话标题>
-  - 做了什么：…
-  - 为什么：…
-  - 产出 / 提交哈希：<commit-sha>
+  ## YYYY-MM-DD — <一句话标题，why-focused>
+
+  <段 1：意图 / 解决的问题（≤ 3 行）>
+  <段 2：用户拍板 / 评级反馈 / 流程偏离（≤ 3 行，没就跳过）>
+
+  [可选 ≤ 4 行：实现摘要——只写 diff 看不出的设计承诺（如 "不是硬依赖"、"上游单点决策"、"byte-for-byte 移植"），不要罗列文件路径 / 字面量 / enum 值 / 行号统计]
+
+  本地 `npm test` GREEN。Final commit: `<hash>`.
   ```
+- **反啰嗦黑名单**——下面这些不要写进 PROGRESS.md，因为 codex 看 diff 就能拿到，重复只会稀释重点：
+  - 文件路径列表 / `--stat` 输出（"12 文件、+1066 / −92"）
+  - 代码字面量与常量值（`MIN_USEFUL_CHARS = 120` / `READER_ORDER = [...]` / `via: 'external:...'`）
+  - enum 新增的具体名字（diff 看得到）
+  - "X 文件改了什么"按层 bullet 罗列（让 codex 直接读 diff，不要帮它二次复述）
 - `PROGRESS.md` 是时间轴日志，不做分章节结构化——按时间倒序从顶部追加最新条目，旧的往下压。
-- 它与 `git log` 的区别：`git log` 面向代码变更，`PROGRESS.md` 面向 **意图与上下文**，便于未来新会话快速接续。
 - 每次更新 `PROGRESS.md` 后运行 `npm run progress:codex`，自动刷新仓库根目录的 `codex.md`。`codex.md` 是给 Claude / Codex 快速接续用的完整进度快照，包含 git 状态、最近提交和完整 `PROGRESS.md` 时间线。
 - **`codex.md` 是本地派生产物，已加入 `.gitignore` 不入版本管理**——任何提交进 git 的快照都至少落后一个 commit（它无法引用自己所在的 commit hash），曾被 review 工具误判为"快照陈旧"。新会话开局先跑一次 `npm run progress:codex` 即可拿到最新视图。
 
