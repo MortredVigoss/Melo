@@ -1,7 +1,7 @@
 # Melo 进度日志
 
 > 新条目追加在本文件顶部（时间倒序）。
-> 当本文件超过 300 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
+> 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
 ## 2026-05-12 (PM) — G-6 §6 audit 完整收官 (6/6 + 第 7 个 externalReaders) + G-1d/e/f trail 端到端 + Melo.app cleanup × 2 + docs/conventions
