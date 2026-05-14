@@ -29,6 +29,7 @@
     "test:markdown-files": "node --test src/services/agent/markdownFiles.test.js",
     "test:external-readers": "node --test src/web/externalReaders.test.js",
     "test:tools-evidence-trail": "node --test src/tools/executor.evidenceTrail.test.js src/tools/parser.evidenceTrail.test.js",
+    "test:api-direct": "node --test src/services/search/apiDirect.test.js",
     "test:state-hydration": "node --test src/state/stateHydration.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
     "postinstall": "node-gyp rebuild"

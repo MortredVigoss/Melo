@@ -693,6 +693,15 @@ async function main() {
     // one gate step because they share the evidenceTrail schema contract.
     results.push(await runStep('Tools evidenceTrail (executor + parser) (test:tools-evidence-trail)', () => runCommand('npm', ['run', 'test:tools-evidence-trail'])));
 
+    // api-direct router (2026-05-14): structured-data providers (Wikipedia
+    // for now; HN / arXiv / GitHub later) that short-circuit SERP for
+    // well-shaped queries.  Gating this here so regressions in the
+    // matches()/fetch() interface trip immediately — the webSearchTool
+    // run() depends on the {provider, ok, results, contentMap} contract
+    // shape and a silent drift would manifest as "Wikipedia results
+    // vanish from search" without obvious cause.
+    results.push(await runStep('API-direct router + Wikipedia provider (test:api-direct)', () => runCommand('npm', ['run', 'test:api-direct'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults

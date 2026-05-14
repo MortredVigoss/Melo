@@ -76,7 +76,7 @@ test('evidenceTrail: invalid query (whitespace only) returns trail with validate
   assert.equal(result.evidenceTrail[0].reason, 'invalid-query');
 });
 
-test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with all 6 phases', async () => {
+test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with all 7 phases', async () => {
   // Pre-aborted signal triggers the very first phase (weather-fast-path)
   // bail.  weather query (matches WEATHER_KEYWORDS) so we enter the
   // weather block; the pre-await abort gate then fires.
@@ -88,11 +88,11 @@ test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with 
   );
   assert.equal(result.ok, false);
   assert.equal(result.aborted, true);
-  // 6 phases: current weather-fast-path = fail, the other 5 = skip.
+  // 7 phases: current weather-fast-path = fail, the other 6 = skip.
   const tiers = result.evidenceTrail.map(e => `${e.tier}.${e.outcome}`);
   assert.ok(tiers.includes('weather-fast-path.fail'),
     `weather-fast-path must be fail; got ${tiers.join(', ')}`);
-  for (const remaining of ['cache', 'serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
+  for (const remaining of ['cache', 'api-direct', 'serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
     assert.ok(tiers.includes(`${remaining}.skip`),
       `${remaining} must be skip; got ${tiers.join(', ')}`);
   }
@@ -101,12 +101,15 @@ test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with 
   assert.ok(result.meta?.spanId);
 });
 
-test('evidenceTrail: aborted serp phase (noCache=true) records serp.fail and skips remaining phases', async () => {
+test('evidenceTrail: aborted at first network phase (noCache=true) records api-direct.fail and skips remaining phases', async () => {
   // Non-weather query + noCache=true → cache phase records skip,
-  // serp phase is the next abort gate.  This test is named "serp" not
-  // "cache" because noCache=true bypasses the cache lookup entirely
-  // (G-1c follow-up #1 renamed: was misleadingly called "aborted cache
-  // phase" before — Codex caught the false coverage).
+  // api-direct is the next abort gate.  Previously named "aborted serp
+  // phase" (serp was the first post-cache phase before api-direct landed
+  // between cache and serp).  Earlier name was "aborted cache phase",
+  // also renamed when G-1c follow-up #1 caught the false coverage.
+  // The invariant the test guards: whichever phase is first-after-cache
+  // gets the `fail aborted-mid-loop` entry; every later phase gets
+  // `skip aborted-by-prev-phase`.
   const ac = new AbortController();
   ac.abort();
   const result = await webSearchTool.run(
@@ -115,11 +118,11 @@ test('evidenceTrail: aborted serp phase (noCache=true) records serp.fail and ski
   );
   assert.equal(result.ok, false);
   assert.equal(result.aborted, true);
-  const serpEntry = result.evidenceTrail.find(e => e.tier === 'serp');
-  assert.equal(serpEntry?.outcome, 'fail');
-  assert.equal(serpEntry?.reason, 'aborted-mid-loop');
-  // synonym-retry / content-fetch / semantic-rerank all skipped.
-  for (const phase of ['synonym-retry', 'content-fetch', 'semantic-rerank']) {
+  const apiEntry = result.evidenceTrail.find(e => e.tier === 'api-direct');
+  assert.equal(apiEntry?.outcome, 'fail');
+  assert.equal(apiEntry?.reason, 'aborted-mid-loop');
+  // serp + synonym-retry / content-fetch / semantic-rerank all skipped.
+  for (const phase of ['serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
     const e = result.evidenceTrail.find(e => e.tier === phase);
     assert.equal(e?.outcome, 'skip');
     assert.equal(e?.reason, 'aborted-by-prev-phase');

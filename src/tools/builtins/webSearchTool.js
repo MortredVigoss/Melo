@@ -18,6 +18,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../../config.js';
 import { debugWarn } from '../../debug.js';
 import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
+import { tryApiDirect } from '../../services/search/apiDirect.js';
 
 // ─── Phase G-1c (2026-05-10): evidenceTrail collection for web_search ────
 //
@@ -44,7 +45,7 @@ import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 //
 // abort-mid-loop semantics: current phase records `fail aborted-mid-loop`,
 // all subsequent (untried) phases record `skip aborted-by-prev-phase`.
-const WS_PHASE_ORDER = ['weather-fast-path', 'cache', 'serp', 'synonym-retry', 'content-fetch', 'semantic-rerank'];
+const WS_PHASE_ORDER = ['weather-fast-path', 'cache', 'api-direct', 'serp', 'synonym-retry', 'content-fetch', 'semantic-rerank'];
 
 function recordWebSearchTrail(trail, phase, outcome, opts = {}) {
   if (!Array.isArray(trail)) return;
@@ -1942,6 +1943,87 @@ export const webSearchTool = {
       });
     } else {
       recordWebSearchTrail(trail, 'cache', 'skip', { reason: 'noCache=true' });
+    }
+
+    // ── API-direct layer ──────────────────────────────────────────────
+    // Before paying SERP latency, try structured-data providers (Wikipedia
+    // for "what is X" / "who is X" / explicit "wiki: X" prefix; future:
+    // HN / arXiv / GitHub).  Each provider has a cheap matches() heuristic;
+    // when no provider claims the query we record `skip no-provider-match`
+    // and fall through to SERP unchanged.  When a provider succeeds, we
+    // return its result formatted through the same formatResults() path
+    // SERP uses, so downstream consumers (UI, evidence trail, cache miss
+    // re-fill) see no shape difference.
+    //
+    // Why no cache write on api-direct hit: Wikipedia REST is sub-second
+    // and free; caching it would create a stale-vs-fresh tier inversion
+    // (cache hit returning yesterday's Wikipedia summary when the live
+    // API has today's edit).  The cache layer is for SERP, which is slow
+    // + expensive — api-direct doesn't share those constraints.
+    const tApi = Date.now();
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
+    let apiResult = null;
+    try {
+      apiResult = await tryApiDirect(q, intent, signal);
+    } catch (err) {
+      if (signal?.aborted || err?.name === 'AbortError') {
+        return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
+      }
+      recordWebSearchTrail(trail, 'api-direct', 'fail', {
+        latencyMs: Date.now() - tApi,
+        reason: classifyWebSearchError(err),
+      });
+    }
+    if (signal?.aborted) return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
+
+    if (apiResult === null) {
+      recordWebSearchTrail(trail, 'api-direct', 'skip', { reason: 'no-provider-match' });
+    } else if (apiResult.ok) {
+      recordWebSearchTrail(trail, 'api-direct', 'ok', {
+        latencyMs: apiResult.latencyMs,
+        method: apiResult.provider,
+        extra: { results: apiResult.results.length },
+      });
+      const output = formatResults(
+        apiResult.results.slice(0, limit),
+        q,
+        apiResult.provider,
+        apiResult.contentMap,
+        { queryTokens },
+      );
+      writeWebSearchDebugLine(
+        `[api-direct] span=${spanId} provider=${apiResult.provider} results=${apiResult.results.length} ms=${apiResult.latencyMs}`,
+      );
+      return {
+        ok: true,
+        output,
+        meta: {
+          query: q,
+          provider: apiResult.provider,
+          resultCount: Math.min(apiResult.results.length, limit),
+          contentFetched: apiResult.contentMap.size,
+          results: apiResult.results.slice(0, limit),
+          timings: {
+            totalMs: Date.now() - tStart,
+            serpMs: 0,
+            contentMs: 0,
+            cacheHit: false,
+            weatherFastPath: false,
+            apiDirect: true,
+          },
+          spanId,
+          intent,
+        },
+        evidenceTrail: trail,
+      };
+    } else {
+      // Provider matched but soft-failed (http error, no-results, etc) —
+      // record + fall through to SERP, so the user still gets an answer.
+      recordWebSearchTrail(trail, 'api-direct', 'fail', {
+        latencyMs: apiResult.latencyMs,
+        method: apiResult.provider,
+        reason: apiResult.reason || 'unknown',
+      });
     }
 
     // Staggered SERP race: Playwright starts immediately; if it hasn't come
