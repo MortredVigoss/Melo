@@ -459,6 +459,89 @@ test('ensureMeloChromeRunning: timeout → kills spawned child (no phantom windo
   assert.equal(spawnedChild?.killed, true, 'timeout must kill the half-up child');
 });
 
+test('ensureMeloChromeRunning: cross-MELO_HOME concurrent calls spawn independently (no result串用)', async () => {
+  // Codex G-2b round-8 闭环 (2026-05-16): global single-promise singleflight
+  // was bucketing all callers together — caller B with a different
+  // MELO_HOME used to get caller A's profileDir/lockPath/port.  The fix is
+  // to key by MELO_HOME, captured synchronously at the public entry.
+  //
+  // We can't easily test "two concurrent calls under different MELO_HOMEs"
+  // without changing process.env mid-test (race-prone), so we serialize
+  // them but assert each one writes to its OWN home's lock path and the
+  // singleflight Map entries are isolated.
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  const homeA = tmpHome;
+  const homeB = mkdtempSync(TMP_PREFIX);
+  try {
+    let spawnCount = 0;
+    const portByHome = new Map([[homeA, 60100], [homeB, 60200]]);
+    _setDepsForTests({
+      spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 10000 + spawnCount }); },
+      fetch: async (url) => {
+        const m = String(url).match(/:(\d+)\//);
+        if (!m) return { ok: false, status: 404, json: async () => ({}) };
+        return {
+          ok: true, status: 200,
+          json: async () => ({ webSocketDebuggerUrl: `ws://127.0.0.1:${m[1]}/x` }),
+        };
+      },
+      // Different port per home — call site picks via MELO_HOME at moment of call
+      findFreePort: async () => portByHome.get(process.env.MELO_HOME),
+      existsSync: () => true,
+    });
+
+    // Call A under homeA
+    process.env.MELO_HOME = homeA;
+    const resA = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+    // Call B under homeB
+    process.env.MELO_HOME = homeB;
+    const resB = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+
+    assert.equal(spawnCount, 2, 'cross-home calls must spawn separately');
+    assert.equal(resA.profileDir, _internals.chromeProfileDirFor(homeA));
+    assert.equal(resB.profileDir, _internals.chromeProfileDirFor(homeB));
+    assert.notEqual(resA.lockPath, resB.lockPath);
+    assert.notEqual(resA.port, resB.port);
+    // Each home's lock file written to ITS home's path, not crossed
+    assert.ok(existsSync(_internals.lockFilePathFor(homeA)));
+    assert.ok(existsSync(_internals.lockFilePathFor(homeB)));
+  } finally {
+    process.env.MELO_HOME = homeA;
+    try { rmSync(homeB, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('ensureMeloChromeRunning: same-home concurrent with different chromePath → first wins (lock-file semantics)', async () => {
+  // Q2 (user-decided 2026-05-16): same MELO_HOME concurrent callers with
+  // different chromePath args reuse the first caller's launch.  Mirrors
+  // the lock-file probe behavior (whichever wrote the lock first, others
+  // reuse).  User can clearMeloChromeLock() to force a fresh launch under
+  // new params.
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+
+  let spawnCount = 0;
+  let observedBinary = null;
+  _setDepsForTests({
+    spawn: (binary) => {
+      spawnCount += 1;
+      observedBinary = binary;
+      return makeFakeChild({ pid: 22222 });
+    },
+    fetch: makeReachableFetch({ acceptPort: 42424 }),
+    findFreePort: async () => 42424,
+    existsSync: () => true,
+  });
+
+  const [a, b] = await Promise.all([
+    ensureMeloChromeRunning({ chromePath: '/path/Chrome-A' }),
+    ensureMeloChromeRunning({ chromePath: '/path/Chrome-B' }),
+  ]);
+  assert.equal(spawnCount, 1, 'same-home concurrent must dedupe (singleflight)');
+  assert.equal(observedBinary, '/path/Chrome-A', 'first caller params win');
+  assert.deepEqual(a, b, 'both callers receive the same result');
+});
+
 test('isCdpPortReachable: timer cleaned up even when fetch throws (no leaked timeout)', async () => {
   const { _internals } = await import('./meloChrome.js');
 

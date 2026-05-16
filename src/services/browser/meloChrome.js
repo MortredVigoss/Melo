@@ -160,11 +160,17 @@ export function detectChromeBinary() {
   return DEFAULT_CHROME_PATHS[process.platform] || null;
 }
 
-// In-process singleflight (Codex G-2b round-7 fix, 2026-05-16): concurrent
-// callers when no lock exists used to each pick a free port and spawn
-// Chrome against the SAME profile dir — Chrome rejects the second one (same
-// profile lock) and the orphan window becomes an unrecorded zombie.  Now
-// the second caller awaits the first call's promise.
+// In-process singleflight keyed by MELO_HOME (Codex G-2b round-7 fix +
+// round-8 closeout, 2026-05-16): concurrent callers when no lock exists
+// used to each pick a free port and spawn Chrome against the SAME profile
+// dir — Chrome rejects the second one (profile lock) and the orphan window
+// becomes an unrecorded zombie.  Round-7 introduced a global single
+// promise; round-8 caught that that broke per-MELO_HOME isolation (two
+// callers with different MELO_HOMEs got the same Chrome).  Now keyed by
+// home so:
+//   • Same MELO_HOME concurrent → join existing launch (zero respawn).
+//   • Different MELO_HOMEs concurrent → independent launches, separate
+//     profileDirs + locks.
 //
 // Trade-offs (acknowledged):
 //   • Followers' signals don't abort the launch — only the owner's signal
@@ -172,11 +178,16 @@ export function detectChromeBinary() {
 //     to complete (or fail).  Acceptable for v1; the only way a follower
 //     gets "stuck" is if the owner's launch hangs near the launchTimeout
 //     boundary.
-//   • Cross-process race (two Melo processes starting at the same time):
-//     not addressed here.  In-process singleflight covers ~99% of cases
-//     (one Melo per MELO_HOME); the lock-file probe handles cross-process
-//     reuse once one of them has written it.  Doc'd as a known limit.
-let _activeLaunch = null;
+//   • Cross-process race (two Melo processes starting at the same time on
+//     the same MELO_HOME): not addressed here.  The lock-file probe handles
+//     reuse once one process writes it; the race window is bounded by
+//     spawn-to-port-up time.  Doc'd as a known limit.
+//   • Same-home concurrent with different chromePath/extraArgs: first
+//     caller's params win, follower gets the same result.  Mirrors
+//     lock-file reuse semantics (whichever process spawned first writes
+//     the lock, others reuse).  User can `clearMeloChromeLock()` to force
+//     a fresh launch with new params.
+const _activeLaunches = new Map();
 
 /**
  * Idempotent.  If a previous Melo Chrome is still alive on its lock-file
@@ -185,8 +196,9 @@ let _activeLaunch = null;
  * waits up to MELO_CHROME_LAUNCH_TIMEOUT_MS for CDP to come up, writes
  * the lock and returns connection info.
  *
- * Concurrent invocations on the same Melo process await a single
- * in-flight launch (see `_activeLaunch`).
+ * Concurrent invocations on the same MELO_HOME await a single in-flight
+ * launch (see `_activeLaunches`).  Different MELO_HOMEs spawn
+ * independently.
  *
  * Returns: `{ port, pid, reused, profileDir, lockPath }`
  *
@@ -196,17 +208,22 @@ let _activeLaunch = null;
  * and routed to a non-real-browser tier.
  */
 export async function ensureMeloChromeRunning(opts = {}) {
-  if (_activeLaunch) {
-    return _activeLaunch;
-  }
-  _activeLaunch = (async () => {
+  // CLAUDE.md §6: capture home synchronously at the public entry so the
+  // singleflight key + every downstream path is bound to this caller's
+  // MELO_HOME, not whatever the env happens to be when an async tick
+  // resumes inside _ensureMeloChromeRunningInner.
+  const home = getMeloHome();
+  const existing = _activeLaunches.get(home);
+  if (existing) return existing;
+  const launch = (async () => {
     try {
-      return await _ensureMeloChromeRunningInner(opts);
+      return await _ensureMeloChromeRunningInner({ ...opts, _capturedHome: home });
     } finally {
-      _activeLaunch = null;
+      _activeLaunches.delete(home);
     }
   })();
-  return _activeLaunch;
+  _activeLaunches.set(home, launch);
+  return launch;
 }
 
 async function _ensureMeloChromeRunningInner({
@@ -214,11 +231,15 @@ async function _ensureMeloChromeRunningInner({
   signal,
   launchTimeoutMs,
   extraArgs = [],
+  _capturedHome,
 } = {}) {
-  // CLAUDE.md §6: capture home + derived paths up front, never inside async
-  // body, so a mid-flight MELO_HOME flip can't write to a different home's
-  // lock file.
-  const home = getMeloHome();
+  // CLAUDE.md §6: home was captured at the public entry (passed in as
+  // _capturedHome).  Inner must NOT re-read getMeloHome() — that would
+  // open a window for cross-home leakage between the public entry's
+  // singleflight bucketing and the path derivation here.  Defensive
+  // fallback in the rare case inner is called without a captured home
+  // (test misuse / direct invocation).
+  const home = _capturedHome || getMeloHome();
   const profileDir = chromeProfileDirFor(home);
   const lockPath = lockFilePathFor(home);
   const binary = chromePath || detectChromeBinary();
@@ -323,11 +344,11 @@ async function _ensureMeloChromeRunningInner({
   throw new Error(`Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})`);
 }
 
-// Test-only: reset the singleflight latch.  Lets afterEach hooks recover
-// from a test that left _activeLaunch dangling (rejected promise nobody
+// Test-only: reset the singleflight latches.  Lets afterEach hooks recover
+// from a test that left a launch promise dangling (rejected promise nobody
 // awaited, etc) so the next test sees a clean state.
 export function _resetActiveLaunchForTests() {
-  _activeLaunch = null;
+  _activeLaunches.clear();
 }
 
 /**
