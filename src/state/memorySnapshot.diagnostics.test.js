@@ -250,3 +250,45 @@ test('buildMemoryStoreEntries preserves normal assistant cookie explanations', a
   assert.match(text, /persistent cookies 有/);
   assert.match(text, /browser cookies 默认会跟着所有请求发送吗/);
 });
+
+test('buildMemoryStoreEntries applies lifecycle continuity before writing store rows', async () => {
+  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-lifecycle`);
+  const entries = buildMemoryStoreEntries({
+    settings: { promptHistory: [] },
+    chats: [
+      {
+        id: 'chat-life',
+        title: 'Routine continuity',
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            content: '我早晨八点二十闹钟，然后开车四十分钟去 Doncaster 上班。',
+            createdAt: '2026-05-01T08:00:00.000Z',
+          },
+          {
+            id: 'u2',
+            role: 'user',
+            content: '我搬家到 Carlton 了。',
+            createdAt: '2026-05-10T08:00:00.000Z',
+          },
+        ],
+      },
+    ],
+  });
+
+  const alarm = entries.find(entry =>
+    entry.id === 'message:chat:chat-life:u1' &&
+    entry.namespace === 'chat:chat-life'
+  );
+  const move = entries.find(entry =>
+    entry.id === 'message:chat:chat-life:u2' &&
+    entry.namespace === 'chat:chat-life'
+  );
+
+  assert.ok(alarm, 'old alarm message should be indexed');
+  assert.ok(move, 'new move message should be indexed');
+  assert.equal(move.metadata.factKey, 'home_location');
+  assert.equal(alarm.metadata.status, 'needs_confirmation');
+  assert.equal(alarm.metadata.staleBecause.changedFactKey, 'home_location');
+});

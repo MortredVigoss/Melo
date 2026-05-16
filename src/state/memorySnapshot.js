@@ -39,6 +39,9 @@ import {
   buildFrameEntry,
 } from '../memory/frame.js';
 import {
+  applyMemoryContinuity,
+} from '../memory/lifecycle.js';
+import {
   groupIntoScenes,
   buildSceneEntry,
 } from '../memory/scene.js';
@@ -481,7 +484,7 @@ export function buildMemoryStoreEntries(state) {
     }
   }
 
-  return entries;
+  return applyMemoryContinuity(entries);
 }
 
 /**

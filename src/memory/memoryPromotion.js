@@ -32,6 +32,7 @@ import {
   pruneMemoriesByNamespaceKind,
 } from './store.js';
 import { getEmbedding as _defaultGetEmbedding, cosineSimilarity } from './embeddings.js';
+import { decorateMemoryEntry } from './lifecycle.js';
 
 // ─── Dependency injection hook (test-only) ────────────────────────────────────
 //
@@ -141,7 +142,7 @@ export async function promoteAndPersistFacts(chat, agentId, config) {
 
       // Build and write the new memory entry
       const entryId = `promoted:${effectiveAgentId}:${randomUUID()}`;
-      upsertMemory({
+      const entry = decorateMemoryEntry({
         id: entryId,
         namespace,
         kind: PROMOTED_KIND,
@@ -156,6 +157,7 @@ export async function promoteAndPersistFacts(chat, agentId, config) {
           chatTitle: chat?.title || null,
         },
       });
+      upsertMemory(entry);
 
       // Store embedding if available; otherwise schedule fill-in.
       // If we already attempted and got null, do NOT retry — same provider, same

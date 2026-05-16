@@ -1578,6 +1578,8 @@ function fetchByIds(ids, extraClause = '', extraArgs = []) {
 //   D. cross-tier orphan — a content row whose metadata.frameId doesn't
 //      appear in the recalled frame set means scene→frame narrowing did not
 //      ratify it; downgrade.
+//   E. lifecycle status — rows marked needs_confirmation stay visible but
+//      get an explicit flag so prompt builders phrase them as stale/contextual.
 
 const STAGE4_SINGLE_VALUE_CATEGORIES = new Set([
   'name',
@@ -1759,6 +1761,21 @@ export function validateContext(
     }
   }
 
+  // ── E. Lifecycle uncertainty — these are not "wrong" rows; they are
+  //        routines/derived memories whose anchor facts changed later.
+  const needsConfirmation = new Set();
+  for (const row of all) {
+    if (row?.metadata?.status === 'needs_confirmation') {
+      needsConfirmation.add(row.id);
+      conflicts.push({
+        type: 'needs_confirmation',
+        loserId: row.id,
+        winnerId: row.metadata?.staleBecause?.anchorId || null,
+        reason: `depends on changed '${row.metadata?.staleBecause?.changedFactKey || 'fact'}'`,
+      });
+    }
+  }
+
   const annotate = (row) => {
     const flags = {};
     if (invalidated.has(row.id)) flags._invalidated = true;
@@ -1767,6 +1784,7 @@ export function validateContext(
       flags._contestedBy = contested.get(row.id);
     }
     if (orphans.has(row.id)) flags._orphan = true;
+    if (needsConfirmation.has(row.id)) flags._needsConfirmation = true;
     return Object.keys(flags).length ? { ...row, ...flags } : row;
   };
 

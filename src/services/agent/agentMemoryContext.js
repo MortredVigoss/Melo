@@ -36,6 +36,24 @@ function latestUserMessageRecord(chat) {
     .find(message => message?.role === 'user') || null;
 }
 
+function memoryLifecyclePrefix(entry = {}) {
+  const status = entry.metadata?.status;
+  if (status === 'needs_confirmation') {
+    const changed = entry.metadata?.staleBecause?.changedFactKey;
+    return changed
+      ? `[needs confirmation; ${changed} changed] `
+      : '[needs confirmation] ';
+  }
+  if (status === 'historical') {
+    return '[historical] ';
+  }
+  return '';
+}
+
+function memorySnippet(entry, max = 180) {
+  return `${memoryLifecyclePrefix(entry)}${normalizeConversationSnippet(entry?.text || '', max)}`;
+}
+
 export function buildAgentMemoryNodeContext({
   state,
   chat,
@@ -290,7 +308,7 @@ export function buildAgentMemoryNodeContext({
         `Current speaker fact nodes (${currentSpeakerLabel}):\n${speakerFacts
           .map(entry => {
             const sourceText = normalizeConversationSnippet(entry.metadata?.sourceText || '', 140);
-            return `- ${entry.text}${sourceText ? ` :: from "${sourceText}"` : ''}`;
+            return `- ${memoryLifecyclePrefix(entry)}${entry.text}${sourceText ? ` :: from "${sourceText}"` : ''}`;
           })
           .join('\n')}`,
       );
@@ -302,7 +320,7 @@ export function buildAgentMemoryNodeContext({
     blocks.push(
       `Current speaker memory nodes (${currentSpeakerLabel}):\n${speakerMemories
         .map(entry => {
-          const snippet = normalizeConversationSnippet(entry.text, 180);
+          const snippet = memorySnippet(entry, 180);
           const chatTitle = normalizeConversationSnippet(entry.metadata?.chatTitle || '', 80);
           return `- ${snippet}${chatTitle ? ` :: from ${chatTitle}` : ''}`;
         })
@@ -328,7 +346,7 @@ export function buildAgentMemoryNodeContext({
           `Known facts about group participant (${label}):\n${facts
             .map(entry => {
               const sourceText = normalizeConversationSnippet(entry.metadata?.sourceText || '', 120);
-              return `- ${entry.text}${sourceText ? ` :: from "${sourceText}"` : ''}`;
+              return `- ${memoryLifecyclePrefix(entry)}${entry.text}${sourceText ? ` :: from "${sourceText}"` : ''}`;
             })
             .join('\n')}`,
         );
@@ -353,7 +371,7 @@ export function buildAgentMemoryNodeContext({
     markUsed(tieredScenes);
     blocks.push(
       `Conversation scene summaries:\n${tieredScenes
-        .map(entry => `- ${normalizeConversationSnippet(entry.text, 220)}`)
+        .map(entry => `- ${memorySnippet(entry, 220)}`)
         .join('\n')}`,
     );
   }
@@ -362,7 +380,7 @@ export function buildAgentMemoryNodeContext({
     markUsed(tieredFrames);
     blocks.push(
       `Frame summaries:\n${tieredFrames
-        .map(entry => `- ${normalizeConversationSnippet(entry.text, 200)}`)
+        .map(entry => `- ${memorySnippet(entry, 200)}`)
         .join('\n')}`,
     );
   }
@@ -371,7 +389,7 @@ export function buildAgentMemoryNodeContext({
     markUsed(promptHistory);
     blocks.push(
       `Prompt memory nodes:\n${promptHistory
-        .map(entry => `- ${normalizeConversationSnippet(entry.text, 180)}`)
+        .map(entry => `- ${memorySnippet(entry, 180)}`)
         .join('\n')}`,
     );
   }
@@ -384,7 +402,7 @@ export function buildAgentMemoryNodeContext({
     markUsed(tieredFacts);
     blocks.push(
       `Recalled fact nodes (tiered):\n${tieredFacts
-        .map(entry => `- ${normalizeConversationSnippet(entry.text, 180)}`)
+        .map(entry => `- ${memorySnippet(entry, 180)}`)
         .join('\n')}`,
     );
   }

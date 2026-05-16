@@ -155,3 +155,26 @@ test('validateContext does not contest correction vs correction', () => {
   const contestedConflicts = out.conflicts.filter(c => c.type === 'correction');
   assert.equal(contestedConflicts.length, 0);
 });
+
+test('validateContext annotates lifecycle rows that need confirmation', () => {
+  const staleRoutine = row({
+    id: 'alarm-old',
+    kind: 'prompt',
+    text: 'User alarm is 8:20',
+    metadata: {
+      status: 'needs_confirmation',
+      staleBecause: {
+        changedFactKey: 'home_location',
+        anchorId: 'home-new',
+      },
+    },
+  });
+
+  const out = validateContext({ scenes: [], frames: [], contents: [staleRoutine] });
+  assert.equal(out.contents[0]._needsConfirmation, true);
+  assert.ok(out.conflicts.some(c =>
+    c.type === 'needs_confirmation' &&
+    c.loserId === 'alarm-old' &&
+    c.winnerId === 'home-new'
+  ));
+});
