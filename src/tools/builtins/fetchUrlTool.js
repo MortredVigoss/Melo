@@ -264,7 +264,13 @@ export const fetchUrlTool = {
     //     xiaohongshu.com correctly.
     //   • Return shape: success uses `meta` (matches the legacy
     //     fetch_url contract at the bottom of run()), NOT `metadata`.
-    if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright') {
+    // Codex Stage 2b round-3 闭环 (2026-05-16): explicit cdp-chrome must
+    // also bypass the social-link short-circuit — user-intent override
+    // beats domain-pattern routing.  Pre-fix, `extract_mode='cdp-chrome'`
+    // on a twitter/reddit/小红书 URL got rerouted to social-link, the
+    // CDP branch never ran, and the schema contract ("explicit modes
+    // force their tier") was silently broken.
+    if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright' && extract_mode !== 'cdp-chrome') {
       const tSocial = Date.now();
       try {
         const explicitCookies = (cookies && String(cookies).trim()) || '';
@@ -420,10 +426,25 @@ export const fetchUrlTool = {
             : await browser.newContext(); // defensive fallback — shouldn't fire with CDP attach
           const page = await context.newPage();
           try {
+            // Codex Stage 2b round-3 闭环 (2026-05-16): `networkidle` is
+            // unreachable on most modern sites (Twitter / Slack / Discord
+            // / anything with long-polling, WebSockets, or background
+            // telemetry).  The pre-fix would 20s-timeout on those, making
+            // cdp-chrome unusable for the very sites it's most useful for.
+            // domcontentloaded + a short stability wait is the industry-
+            // standard recipe for "page is interactive enough to extract"
+            // without waiting for never-arriving network silence.
             await page.goto(normalized, {
-              waitUntil: 'networkidle',
+              waitUntil: 'domcontentloaded',
               timeout: PLAYWRIGHT_TIMEOUT_MS,
             });
+            // Give SPAs ~1.5s to finish first-paint / hydration after DOM
+            // ready before reading innerText.  Capped — don't let a
+            // long-polling page hold us hostage past this window.
+            try {
+              await page.waitForLoadState('load', { timeout: 3000 });
+            } catch { /* load may never fire on streamy pages — fine */ }
+            await new Promise(r => setTimeout(r, 1500));
             const text = await page.evaluate(() => document?.body?.innerText || '');
             return String(text || '').trim().slice(0, MAX_CONTENT_LENGTH) || null;
           } finally {

@@ -273,6 +273,84 @@ test('tryCdpChrome reuses browser.contexts()[0] (default persistent) — does NO
   }
 });
 
+test('explicit extract_mode="cdp-chrome" on social URL bypasses social-link extractor (Codex round-3 闭环)', async () => {
+  // Round-3: the social-link early-routing short-circuit only let
+  // `extract_mode='playwright'` through as an escape hatch, so explicit
+  // `cdp-chrome` on a twitter/reddit URL got rerouted to the social-link
+  // extractor instead — breaking the schema's "explicit modes force their
+  // tier" contract.  This test pins the fix: cdp-chrome explicit on a
+  // social URL must call _tryCdpChrome.
+  const twitterUrl = 'https://twitter.com/anthropic/status/1234567890';
+  let cdpCallCount = 0;
+  let socialLinkCallCount = 0;
+  const result = await fetchUrlTool.run({ url: twitterUrl, extract_mode: 'cdp-chrome' }, {
+    _tryCdpChrome: async () => {
+      cdpCallCount += 1;
+      return CDP_OK_BODY;
+    },
+    _readSocialLink: async () => {
+      socialLinkCallCount += 1;
+      return { ok: true, output: 'social-link extractor result (should NOT run)', evidenceTrail: [] };
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(cdpCallCount, 1, 'explicit cdp-chrome on social URL must invoke CDP, not social-link');
+  assert.equal(socialLinkCallCount, 0, 'social-link extractor must NOT run when user explicitly chose cdp-chrome');
+  const cdpEntry = result.evidenceTrail.find(e => e.tier === 'cdp-chrome');
+  assert.equal(cdpEntry?.outcome, 'ok');
+});
+
+test('tryCdpChrome uses domcontentloaded — pages that never reach networkidle still extract (Codex round-3 闭环)', async () => {
+  // Round-3: pre-fix `waitUntil: 'networkidle'` would 20s-timeout on long-
+  // polling sites (Twitter / Discord / Slack embeds / anything with
+  // open WebSockets or SSE).  This test wires a fake page whose goto
+  // resolves with `domcontentloaded` but a hypothetical `networkidle`
+  // wait would never resolve — the previous implementation would
+  // FETCH_FAILED on it; the fix uses domcontentloaded + a short
+  // stability wait so it succeeds.
+  const connectMod = await import('../../services/browser/connect.js');
+
+  let gotoWaitUntil = null;
+  const longPollingPage = {
+    goto: async (_url, opts) => {
+      gotoWaitUntil = opts?.waitUntil;
+      // Resolve immediately — DOM is ready, but a real networkidle wait
+      // would still be open (long-polling).  In the test we just resolve;
+      // the assertion is that the code passed 'domcontentloaded', not
+      // 'networkidle'.
+    },
+    waitForLoadState: async () => {
+      // Simulate the `load` state firing — short-circuit the 3s timeout.
+    },
+    evaluate: async () => 'Long-polling site page body — Twitter-like SPA with WebSockets streaming in the background that would never reach networkidle, but DOM content is already rendered and innerText is available.',
+    close: async () => {},
+  };
+  const defaultContext = {
+    newPage: async () => longPollingPage,
+    close: async () => {},
+  };
+  const fakeBrowser = {
+    contexts: () => [defaultContext],
+    newContext: async () => defaultContext,
+    close: async () => {},
+  };
+
+  connectMod._setEnsureChromeForTests(async () => ({
+    port: 7779, pid: 1, reused: true, profileDir: '/p', lockPath: '/l',
+  }));
+  connectMod._setConnectImplForTests(async () => fakeBrowser);
+
+  try {
+    const result = await fetchUrlTool.run({ url: 'https://twitter.com/x/status/1', extract_mode: 'cdp-chrome' }, {});
+    assert.equal(result.ok, true, 'long-polling page must succeed (pre-fix would 20s-timeout)');
+    assert.equal(gotoWaitUntil, 'domcontentloaded',
+      `goto must use domcontentloaded, not networkidle; got: ${gotoWaitUntil}`);
+  } finally {
+    connectMod._setEnsureChromeForTests(null);
+    connectMod._setConnectImplForTests(null);
+  }
+});
+
 test('tryCdpChrome: defensive fallback — contexts() returns [] → newContext() (shouldn\'t happen with CDP attach but won\'t crash)', async () => {
   const connectMod = await import('../../services/browser/connect.js');
 
