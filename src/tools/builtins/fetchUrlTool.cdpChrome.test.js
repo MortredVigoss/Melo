@@ -162,27 +162,59 @@ test('auto + env="0" → cdp-chrome skipped (strict "===1" check, not truthy)', 
 
 // ─── Explicit extract_mode='cdp-chrome' ────────────────────────────────────
 
-test('explicit extract_mode="cdp-chrome" + env OFF → still runs (user override)', async () => {
-  // env intentionally not set — explicit mode should bypass the gate.
+test('explicit extract_mode="cdp-chrome" + env OFF → FETCH_FAILED (Codex round-4 privacy gate)', async () => {
+  // Round-4 闭环 (2026-05-16): explicit mode is the AGENT'S choice via
+  // the schema enum, NOT user consent.  MELO_CDP_ENABLED is the user's
+  // consent gate (set explicitly via launchctl setenv / LaunchAgent /
+  // shell export).  Allowing explicit to bypass env would let the agent
+  // unilaterally read the user's logged-in Chrome session.  Pinned:
+  // env off → both auto AND explicit refuse, agent gets FETCH_FAILED
+  // and falls back to a tier that doesn't touch the user's login state.
   let cdpCallCount = 0;
-  let jinaCallCount = 0;
   const result = await fetchUrlTool.run({ url: SITE, extract_mode: 'cdp-chrome' }, {
-    _fetchViaJina: async () => { jinaCallCount += 1; return 'should not run'; },
-    _fetchDirect: async () => 'should not run',
-    _tryCdpChrome: async () => {
-      cdpCallCount += 1;
-      return CDP_OK_BODY;
-    },
+    _tryCdpChrome: async () => { cdpCallCount += 1; return CDP_OK_BODY; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'FETCH_FAILED');
+  assert.match(result.output, /MELO_CDP_ENABLED/);
+  assert.equal(cdpCallCount, 0, 'cdp-chrome must NOT run when env gate refuses');
+  const cdpEntry = result.evidenceTrail.find(e => e.tier === 'cdp-chrome');
+  assert.equal(cdpEntry?.outcome, 'skip');
+  assert.equal(cdpEntry?.reason, 'cdp-disabled');
+});
+
+test('explicit extract_mode="cdp-chrome" + env="0" → FETCH_FAILED (strict ===1 check)', async () => {
+  // Different env value than empty — "0" explicitly disabled.  Pre-fix
+  // (round-3) any non-empty value let it through.  Round-4 enforces
+  // strict === '1' so MELO_CDP_ENABLED=0 / false / yes / true all stay
+  // gated off, only the canonical "1" enables.
+  process.env.MELO_CDP_ENABLED = '0';
+  let cdpCallCount = 0;
+  const result = await fetchUrlTool.run({ url: SITE, extract_mode: 'cdp-chrome' }, {
+    _tryCdpChrome: async () => { cdpCallCount += 1; return CDP_OK_BODY; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'FETCH_FAILED');
+  assert.equal(cdpCallCount, 0);
+});
+
+test('explicit extract_mode="cdp-chrome" + env ON → runs successfully', async () => {
+  // Counterpart positive case: when the user HAS opted in, explicit mode
+  // works as expected.  This preserves the explicit-override path for
+  // legitimate user-initiated cdp-chrome usage.
+  process.env.MELO_CDP_ENABLED = '1';
+  let cdpCallCount = 0;
+  const result = await fetchUrlTool.run({ url: SITE, extract_mode: 'cdp-chrome' }, {
+    _tryCdpChrome: async () => { cdpCallCount += 1; return CDP_OK_BODY; },
   });
   assert.equal(result.ok, true);
   assert.equal(cdpCallCount, 1);
-  assert.equal(jinaCallCount, 0, 'explicit cdp-chrome must NOT also run jina');
   const cdpEntry = result.evidenceTrail.find(e => e.tier === 'cdp-chrome');
   assert.equal(cdpEntry?.outcome, 'ok');
-  assert.equal(cdpEntry?.extra?.extractMode, 'cdp-chrome');
 });
 
 test('explicit extract_mode="cdp-chrome" + tryCdpChrome throws → ok:false FETCH_FAILED + trail records fail', async () => {
+  process.env.MELO_CDP_ENABLED = '1'; // env gate satisfied; this test asserts post-gate behavior
   const result = await fetchUrlTool.run({ url: SITE, extract_mode: 'cdp-chrome' }, {
     _tryCdpChrome: async () => {
       throw new Error('CDP port did not respond');
@@ -195,6 +227,7 @@ test('explicit extract_mode="cdp-chrome" + tryCdpChrome throws → ok:false FETC
 });
 
 test('explicit extract_mode="cdp-chrome" + returns empty → ok:false NO_CONTENT', async () => {
+  process.env.MELO_CDP_ENABLED = '1';
   const result = await fetchUrlTool.run({ url: SITE, extract_mode: 'cdp-chrome' }, {
     _tryCdpChrome: async () => null,
   });
@@ -274,6 +307,7 @@ test('tryCdpChrome reuses browser.contexts()[0] (default persistent) — does NO
 });
 
 test('explicit extract_mode="cdp-chrome" on social URL bypasses social-link extractor (Codex round-3 闭环)', async () => {
+  process.env.MELO_CDP_ENABLED = '1'; // env gate satisfied; this test asserts the social-link bypass
   // Round-3: the social-link early-routing short-circuit only let
   // `extract_mode='playwright'` through as an escape hatch, so explicit
   // `cdp-chrome` on a twitter/reddit URL got rerouted to the social-link
@@ -301,6 +335,7 @@ test('explicit extract_mode="cdp-chrome" on social URL bypasses social-link extr
 });
 
 test('tryCdpChrome uses domcontentloaded — pages that never reach networkidle still extract (Codex round-3 闭环)', async () => {
+  process.env.MELO_CDP_ENABLED = '1'; // env gate satisfied; this test asserts the goto wait-strategy
   // Round-3: pre-fix `waitUntil: 'networkidle'` would 20s-timeout on long-
   // polling sites (Twitter / Discord / Slack embeds / anything with
   // open WebSockets or SSE).  This test wires a fake page whose goto

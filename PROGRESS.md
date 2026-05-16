@@ -4,6 +4,26 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-16 — Stage 2a/2b：connect helper + fetchUrlTool cdp-chrome tier (4 轮 C-gate 闭环)
+
+意图：把 Stage 1 的 launcher 接成 fetchUrlTool 的新 tier，让 agent 通过 CDP 用用户的真 Chrome（登录态 + anti-bot bypass + SPA 渲染）抓那些 jina/direct/headless-playwright 拿不到的内容。Stage 2a 是纯连接器（`connectMeloChrome`/`withMeloChrome`），Stage 2b 是 wire 入 fetchUrlTool。
+
+Codex 4 轮 C-gate 闭环—— Stage 2b 几乎每轮都抓真问题：
+1. **Stage 2a B → S** (`76ef1a5`): connect await 后没再检 signal，abort 在 CDP 握手中段返活 browser handle → 加 post-await gate + 关 just-connected browser。
+2. **Stage 2b round-1 → C #1** (`5b58c1d`+`0d2bb15`): `browser.newContext()` 创建隔离 context → 没 cookies = 没登录态，CDP attach 卖点彻底废。改用 `browser.contexts()[0]` 复用默认 persistent context；close 只关 page 不关 context。
+3. **Stage 2b round-2 → C #2** (`9f2ee49`+`bb43c7e`): social-link 早路由只放 `playwright` 过，explicit `cdp-chrome` 在 twitter/reddit 被截胡；`waitUntil: 'networkidle'` 在长轮询 SPA 必 20s 超时。改 escape-hatch 放行 cdp-chrome；改 `domcontentloaded` + `waitForLoadState('load')` + 1.5s 稳定窗口。
+4. **Stage 2b round-3 → C #3**（本刀）: 安全边界——`extract_mode='cdp-chrome'` 显式分支绕过 env gate，`fetch_url` 又是 `requiresPermission:false`，agent 单方面选 cdp-chrome 就能读用户登录态。**MELO_CDP_ENABLED 必须 unconditional gate**：env 是**用户**显式开关（launchctl setenv / LaunchAgent），schema enum 是**agent**选项，绕过 env 等于 agent 单方面授权自己。Q1=A (auto+explicit 同 gate)，Q2=A (v1 用全局 env，per-domain/session 留后续)。
+
+实现承诺（diff 看不出的设计点）：
+- `connectMeloChrome` 三个 await 边界都检 signal（ensure / impl-resolve / connect），最后一个还会关 just-connected browser。
+- `withMeloChrome` 保证 close-on-throw，callback error 优先于 close error。
+- `tryCdpChrome` **必须**用 `browser.contexts()[0]`（复用 CDP-attached 默认 persistent context = 用户登录态可见）；只关 page 不关 context。defensive fallback `browser.newContext()` 仅在 contexts() 返空时跑（CDP attach 下不该发生）。
+- `waitUntil: 'domcontentloaded'` + 3s `waitForLoadState('load')` + 1.5s sleep——业界 SPA 提取的稳定/上限组合。`networkidle` 在长轮询页面几乎不可达，被淘汰。
+- env gate **覆盖 auto AND explicit**：env off 时 explicit 也返 FETCH_FAILED reason='cdp-disabled'，agent 走 fallback tier，不读用户登录态。隐私边界靠 env 一刀保。
+- `'cdp-chrome'` 进 social-link early-routing 的 escape-hatch 列表（跟 `playwright` 并列）。
+
+本地 `npm test` 2481/2481 GREEN. Final commit: 待 push。
+
 ## 2026-05-16 — meloChrome Stage 1：dedicated-profile CDP attach launcher (4 轮 C-gate 闭环到 A)
 
 意图：把 Melo 的浏览器 tier 从"`@playwright/cli` 子进程 + daemon 模型"升级到"attach 用户真 Chrome"——daemon 模型曾撞 2026-05-04 system-freeze regression，且 headless 默认 + 没法用 logged-in session。这是 Stage 1：纯 launcher + lock file，不动 fetchUrlTool / webSearchTool。Stage 2 才接 playwright-core + 作为新 tier 入 fetch 链路。

@@ -527,7 +527,25 @@ export const fetchUrlTool = {
         recordTrail(trail, 'playwright', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'playwright', bytes: content.length } });
         pendingTier = null;
       } else if (extract_mode === 'cdp-chrome') {
-        // Explicit user request — bypass env gate, always try CDP attach.
+        // Codex Stage 2b round-4 闭环 (2026-05-16): env gate is mandatory
+        // for BOTH auto and explicit paths — explicit is the AGENT'S
+        // choice (via schema enum), not the user's.  Allowing explicit to
+        // bypass MELO_CDP_ENABLED would let the agent unilaterally read
+        // the user's logged-in Chrome session without consent.  The env
+        // flag IS the user's consent gate (set via launchctl setenv /
+        // LaunchAgent / shell export).
+        if (process.env.MELO_CDP_ENABLED !== '1') {
+          recordTrail(trail, 'cdp-chrome', 'skip', {
+            reason: 'cdp-disabled',
+            extra: { extractMode: 'cdp-chrome' },
+          });
+          return {
+            ok: false,
+            output: `cdp-chrome extraction requires MELO_CDP_ENABLED=1 (user-set env flag — see docs for how to enable).`,
+            error: 'FETCH_FAILED',
+            evidenceTrail: trail,
+          };
+        }
         pendingTier = 'cdp-chrome';
         pendingTierStart = Date.now();
         let cdpContent;
