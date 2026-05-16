@@ -702,6 +702,12 @@ async function main() {
     // vanish from search" without obvious cause.
     results.push(await runStep('API-direct router + Wikipedia provider (test:api-direct)', () => runCommand('npm', ['run', 'test:api-direct'])));
 
+    // meloChrome launcher (2026-05-16): CDP-attach Stage 1.  Pure unit
+    // tests — no real Chrome spawn, all OS deps stubbed via DI seam.
+    // Gating here so the lock-file / reuse / stale-detection contract
+    // can't silently drift before Stage 2 wires this into fetchUrlTool.
+    results.push(await runStep('Melo Chrome CDP launcher (test:melo-chrome)', () => runCommand('npm', ['run', 'test:melo-chrome'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults
