@@ -321,14 +321,21 @@ export async function fetchFromHN(query, signal) {
 // round-5 lesson: don't pretend to be one provider while quietly serving
 // another's data.
 
-const ARXIV_PREFIX = /^(arxiv|arXiv)\s*[:：]\s*\S/i;
-const ARXIV_PHRASE = /\barxiv\b|\b(paper|research|论文)s?\s+(on|about|关于)\s+\S|\S\s*论文\s*$/i;
+// Codex G-2b round-6 (2026-05-16): split into explicit (user named arXiv)
+// vs implicit (academic-intent phrasing but no site mention).  Implicit
+// flows through the time-sensitive gate so "latest research on AI safety"
+// goes to SERP, not arXiv where the data is necessarily lagged behind
+// preprints / publication cycles.  Mirrors the Wikipedia matchKind shape.
+const ARXIV_EXPLICIT = /^(arxiv|arXiv)\s*[:：]\s*\S|\barxiv\b/i;
+const ARXIV_IMPLICIT = /\b(paper|research|论文)s?\s+(on|about|关于)\s+\S|\S\s*论文\s*$/i;
 
 export function arxivMatchKind(query) {
   if (typeof query !== 'string') return false;
   const q = query.trim();
   if (!q) return false;
-  return (ARXIV_PREFIX.test(q) || ARXIV_PHRASE.test(q)) ? 'explicit' : false;
+  if (ARXIV_EXPLICIT.test(q)) return 'explicit';
+  if (ARXIV_IMPLICIT.test(q)) return 'implicit';
+  return false;
 }
 
 function cleanArxivQuery(query) {

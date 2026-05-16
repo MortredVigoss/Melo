@@ -450,18 +450,82 @@ test('fetchFromHN: HTTP error → http-NNN reason', async () => {
 
 // ─── arXiv provider (via Semantic Scholar) ───────────────────────────────────
 
-test('arxivMatchKind: explicit prefix + phrase matches return "explicit"', () => {
+test('arxivMatchKind: explicit prefix + site mention return "explicit"', () => {
+  // User named arXiv directly — bypass the time-sensitive gate.
   assert.equal(arxivMatchKind('arxiv: attention is all you need'), 'explicit');
   assert.equal(arxivMatchKind('arxiv:1706.03762'), 'explicit');
-  assert.equal(arxivMatchKind('paper on transformer architecture'), 'explicit');
-  assert.equal(arxivMatchKind('research on reinforcement learning'), 'explicit');
-  assert.equal(arxivMatchKind('transformer 论文'), 'explicit');
+  assert.equal(arxivMatchKind('arxiv paper on transformer'), 'explicit');
+  assert.equal(arxivMatchKind('search arxiv for transformer'), 'explicit');
+});
+
+test('arxivMatchKind: academic phrasing without site mention return "implicit" (gated by time-sensitive)', () => {
+  // Academic intent but didn't name arXiv — flows through the
+  // time-sensitive gate per Codex G-2b round-6 (2026-05-16) decision.
+  assert.equal(arxivMatchKind('paper on transformer architecture'), 'implicit');
+  assert.equal(arxivMatchKind('research on reinforcement learning'), 'implicit');
+  assert.equal(arxivMatchKind('research about quantum computing'), 'implicit');
+  assert.equal(arxivMatchKind('paper about LLM scaling'), 'implicit');
+  assert.equal(arxivMatchKind('transformer 论文'), 'implicit');
+  assert.equal(arxivMatchKind('关于 attention 的论文'), 'implicit');
 });
 
 test('arxivMatchKind: non-matching queries return false', () => {
   assert.equal(arxivMatchKind('transformer architecture'), false);
   assert.equal(arxivMatchKind('what is a transformer'), false, 'bare "what is" routes to Wikipedia not arXiv');
   assert.equal(arxivMatchKind(''), false);
+});
+
+test('tryApiDirect: arXiv implicit + intent.timeSensitive → skipped (NO arXiv fetch)', async () => {
+  // The Codex G-2b round-6 (2026-05-16) regression: "latest research on AI
+  // safety" used to short-circuit SERP into arXiv where the data is
+  // necessarily behind the preprint cycle.  Now gated.
+  _setFetchForTests(async () => { throw new Error('fetch must NOT be called when time-sensitive gate fires for arXiv'); });
+  const result = await tryApiDirect(
+    'latest research on AI safety',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.ok(result, 'expected gate-skip result object, got null');
+  assert.equal(result.ok, false);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'time-sensitive');
+  assert.equal(result.provider, 'arxiv');
+});
+
+test('tryApiDirect: arXiv implicit + intent.timeSensitive (current/今天) → skipped', async () => {
+  _setFetchForTests(async () => { throw new Error('fetch must NOT be called'); });
+  const en = await tryApiDirect(
+    'current research on quantum computing',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.equal(en?.skipped, true);
+  assert.equal(en?.provider, 'arxiv');
+  const zh = await tryApiDirect(
+    '最新的 transformer 论文',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.equal(zh?.skipped, true);
+  assert.equal(zh?.provider, 'arxiv');
+});
+
+test('tryApiDirect: arXiv explicit + intent.timeSensitive → fetches anyway (user override)', async () => {
+  // User explicitly said `arxiv:` — that's an override of the gate.
+  let fetchCalled = false;
+  _setFetchForTests(mockJsonFetch([
+    ['semanticscholar.org/graph/v1/paper/search', () => {
+      fetchCalled = true;
+      return { json: { data: [{ title: 'X', externalIds: { ArXiv: '2024.0001' } }] } };
+    }],
+  ]));
+  const result = await tryApiDirect(
+    'arxiv: latest transformer research',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.equal(fetchCalled, true, 'explicit arXiv prefix must override time-sensitive gate');
+  assert.equal(result?.ok, true);
 });
 
 test('fetchFromArxiv: filters Semantic Scholar results to arXiv-only papers', async () => {
