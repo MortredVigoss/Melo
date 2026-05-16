@@ -708,6 +708,14 @@ async function main() {
     // can't silently drift before Stage 2 wires this into fetchUrlTool.
     results.push(await runStep('Melo Chrome CDP launcher (test:melo-chrome)', () => runCommand('npm', ['run', 'test:melo-chrome'])));
 
+    // Stage 2a (2026-05-16): connectMeloChrome wrapper on top of the
+    // launcher.  Pure unit tests — playwright-core import + connect are
+    // both DI-injected so this stays decoupled from real Chrome.  Gating
+    // here so the launcher → connector contract (port handoff + signal
+    // propagation + browser-close-on-throw) can't silently drift before
+    // Stage 2b wires this into fetchUrlTool.
+    results.push(await runStep('CDP connector helper (test:browser-connect)', () => runCommand('npm', ['run', 'test:browser-connect'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults

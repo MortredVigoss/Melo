@@ -31,6 +31,7 @@
     "test:tools-evidence-trail": "node --test src/tools/executor.evidenceTrail.test.js src/tools/parser.evidenceTrail.test.js",
     "test:api-direct": "node --test src/services/search/apiDirect.test.js",
     "test:melo-chrome": "node --test src/services/browser/meloChrome.test.js",
+    "test:browser-connect": "node --test src/services/browser/connect.test.js",
     "test:state-hydration": "node --test src/state/stateHydration.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
     "postinstall": "node-gyp rebuild"
@@ -49,6 +50,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
     "pdfkit": "^0.15.0",
+    "playwright-core": "^1.60.0",
     "prism-media": "^1.3.5",
     "sharp": "^0.34.5",
     "sqlite-vec": "^0.1.9",
