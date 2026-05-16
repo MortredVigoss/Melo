@@ -174,7 +174,13 @@ export function _setDepsForTests(deps = {}) {
 
 async function isLockReusable(lock, expectedProfileDir, fetchImpl, killImpl) {
   if (!lock?.port || !lock?.pid) return false;
-  if (lock.profileDir && lock.profileDir !== expectedProfileDir) return false;
+  // Codex round-10 C 闭环 (2026-05-16): the profileDir check is REQUIRED,
+  // not merely "validated if present".  An old lock from a pre-round-8
+  // Melo version won't have profileDir set; treating that as "passes" left
+  // a hole in the three-predicate guarantee.  Forcing presence + match
+  // means upgrading users pay one Chrome cold-start once after the first
+  // upgrade — acceptable cost for the stronger contract.
+  if (!lock.profileDir || lock.profileDir !== expectedProfileDir) return false;
   // PID liveness check
   try {
     killImpl(lock.pid, 0);
