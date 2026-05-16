@@ -4,6 +4,16 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-14/16 — api-direct phase v1：Wikipedia 短路 SERP，时间敏感 query 走原路 (C → B → S 三轮闭环)
+
+意图：用户反馈"靠猜 URL"的 SERP-scrape 体系对结构化查询是浪费，"who is X"在 Wikipedia 一个 call 能拿 canonical 答案。先验证 router 架构而不展开 G-2b 留账。
+
+Codex 双 follow-up: 首版 (`09d7472`) `intent` 收下但没用，被评 **C**——"what is the latest Node.js version"会短路 SERP 拿可能过期的 Wikipedia 数据。Q1/Q2 用户拍板"显式 prefix 永远直达，隐式定义形受 timeSensitive gate"。C 闭环 (`b658f2c`) 评 **B**——pre-aborted signal mid-Wikipedia-fetch 时 `fetchFromWikipedia` catch AbortError 转 ok:false reason='aborted' 不 throw，造成 api-direct.fail + serp.fail 双 aborted-mid-loop 破坏 trail 单一 phase 不变量。B 闭环 (`7a13ce6`) **S** 无具体发现。
+
+实现承诺：provider 接口 `{name, matchKind, fetch}` — matchKind 三态（explicit/implicit/false）让显式 `wiki:` 直达、隐式定义形受 intent gate。api-direct phase 无 pre-await abort gate（fetch 内部有自己的；entry-gate 会用 fail aborted 覆盖真实 sync 结果如 skip no-provider-match）；只在 apiResult.reason='aborted' + signal.aborted 时显式 bail，确保 trail 单一 phase 拥有 aborted-mid-loop。api-direct hit 不进 cache（live Wikipedia <1s 比 cache 还快，避免 stale tier 倒挂）。
+
+本地 `npm test` 2399+ GREEN. Final commit: `7a13ce6`.
+
 ## 2026-05-12 (PM) — G-6 §6 audit 完整收官 (6/6 + 第 7 个 externalReaders) + G-1d/e/f trail 端到端 + Melo.app cleanup × 2 + docs/conventions
 
 承接上午 voice bug 那一摊后,下午 / 晚上 11 个 commits 落了 3 大块 + 一些清理:
