@@ -142,6 +142,7 @@ let _findFreePortImpl = findFreePortDefault;
 let _existsSyncImpl = existsSync;
 let _nowImpl = () => Date.now();
 let _sleepImpl = ms => new Promise(r => setTimeout(r, ms));
+let _processKillImpl = (pid, sig) => process.kill(pid, sig);
 
 export function _setDepsForTests(deps = {}) {
   _spawnImpl = deps.spawn || spawn;
@@ -150,6 +151,39 @@ export function _setDepsForTests(deps = {}) {
   _existsSyncImpl = deps.existsSync || existsSync;
   _nowImpl = deps.now || (() => Date.now());
   _sleepImpl = deps.sleep || (ms => new Promise(r => setTimeout(r, ms)));
+  _processKillImpl = deps.processKill || ((pid, sig) => process.kill(pid, sig));
+}
+
+// ─── Lock reusability ────────────────────────────────────────────────────────
+//
+// Codex G-2b round-8 closeout (2026-05-16, B-grade finding):
+// Just-port-responds-as-CDP is too weak — another Chrome instance / another
+// debugger on the same port could pass the probe.  We need to verify the
+// lock points at OUR Chrome before reusing.  Three independent checks:
+//
+//   1. profileDir match — the lock was written by a launcher for this same
+//      MELO_HOME (defense in depth; cross-home shouldn't happen due to
+//      per-home lock paths but guards against corrupt lock files).
+//   2. PID liveness via `process.kill(pid, 0)` — signal 0 sends no signal,
+//      just probes existence.  ESRCH = process dead, lock is stale.
+//   3. CDP port responds as Chrome — existing check.
+//
+// EPERM from process.kill(pid, 0) means the process is alive but owned by
+// a different user; we treat as alive (don't fail reuse — the typical
+// macOS / Linux desktop case is single-user anyway).
+
+async function isLockReusable(lock, expectedProfileDir, fetchImpl, killImpl) {
+  if (!lock?.port || !lock?.pid) return false;
+  if (lock.profileDir && lock.profileDir !== expectedProfileDir) return false;
+  // PID liveness check
+  try {
+    killImpl(lock.pid, 0);
+  } catch (err) {
+    if (err?.code === 'ESRCH') return false;
+    // EPERM / other → treat as alive (defensive)
+  }
+  // CDP port responds with webSocketDebuggerUrl
+  return await isCdpPortReachable(lock.port, fetchImpl);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -245,19 +279,23 @@ async function _ensureMeloChromeRunningInner({
   const binary = chromePath || detectChromeBinary();
   const timeoutMs = Number(launchTimeoutMs || process.env.MELO_CHROME_LAUNCH_TIMEOUT_MS || DEFAULT_LAUNCH_TIMEOUT_MS);
 
-  // 1. Check existing lock for a still-alive Chrome we can reuse.
+  // 1. Check existing lock for a still-alive Chrome we can reuse.  Per
+  // isLockReusable: requires profileDir match + PID alive + CDP port
+  // responds as Chrome.  Defends against port reuse by an unrelated
+  // process (Codex round-8 B finding).
   const existing = readLock(lockPath);
-  if (existing?.port) {
-    if (await isCdpPortReachable(existing.port, _fetchImpl)) {
-      return {
-        port: existing.port,
-        pid: existing.pid || null,
-        reused: true,
-        profileDir,
-        lockPath,
-      };
-    }
-    // Stale lock — Chrome died or the user closed it.  Clear and respawn.
+  if (existing && await isLockReusable(existing, profileDir, _fetchImpl, _processKillImpl)) {
+    return {
+      port: existing.port,
+      pid: existing.pid || null,
+      reused: true,
+      profileDir,
+      lockPath,
+    };
+  }
+  if (existing) {
+    // Stale lock — Chrome died, port stolen, or profileDir mismatch.
+    // Clear and respawn.
     clearLock(lockPath);
   }
 
@@ -360,9 +398,10 @@ export function _resetActiveLaunchForTests() {
 export async function probeMeloChrome() {
   const home = getMeloHome();
   const lockPath = lockFilePathFor(home);
+  const profileDir = chromeProfileDirFor(home);
   const existing = readLock(lockPath);
   if (!existing?.port) return null;
-  if (await isCdpPortReachable(existing.port, _fetchImpl)) {
+  if (await isLockReusable(existing, profileDir, _fetchImpl, _processKillImpl)) {
     return { port: existing.port, pid: existing.pid || null, lockPath };
   }
   return null;

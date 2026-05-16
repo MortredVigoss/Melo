@@ -136,15 +136,19 @@ test('ensureMeloChromeRunning: fresh launch writes lock + returns reused:false',
 test('ensureMeloChromeRunning: existing live Chrome returns reused:true (no respawn)', async () => {
   const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
 
-  // Pre-write a lock file pointing at port 9999.
+  // Pre-write a lock file pointing at port 9999, with profileDir matching
+  // what this home would compute (Codex round-8 B fix requires this).
   const lockPath = _internals.lockFilePathFor(tmpHome);
-  _internals.writeLock(lockPath, { port: 9999, pid: 1234, startedAt: 100 });
+  const profileDir = _internals.chromeProfileDirFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 9999, pid: 1234, startedAt: 100, profileDir });
 
   let spawnCount = 0;
   _setDepsForTests({
     spawn: () => { spawnCount += 1; return makeFakeChild(); },
     fetch: makeReachableFetch({ acceptPort: 9999 }),
     existsSync: () => true,
+    // Fake PID liveness check as alive (no throw).
+    processKill: () => {},
   });
 
   const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
@@ -313,14 +317,15 @@ test('probeMeloChrome: no lock file → null', async () => {
 test('probeMeloChrome: live lock → returns port+pid; dead lock → null', async () => {
   const { probeMeloChrome, _setDepsForTests, _internals } = await import('./meloChrome.js');
   const lockPath = _internals.lockFilePathFor(tmpHome);
-  _internals.writeLock(lockPath, { port: 9876, pid: 555, startedAt: 0 });
+  const profileDir = _internals.chromeProfileDirFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 9876, pid: 555, startedAt: 0, profileDir });
 
-  _setDepsForTests({ fetch: makeReachableFetch({ acceptPort: 9876 }) });
+  _setDepsForTests({ fetch: makeReachableFetch({ acceptPort: 9876 }), processKill: () => {} });
   const live = await probeMeloChrome();
   assert.equal(live?.port, 9876);
   assert.equal(live?.pid, 555);
 
-  _setDepsForTests({ fetch: async () => { throw new Error('refused'); } });
+  _setDepsForTests({ fetch: async () => { throw new Error('refused'); }, processKill: () => {} });
   const dead = await probeMeloChrome();
   assert.equal(dead, null);
 });
@@ -459,16 +464,12 @@ test('ensureMeloChromeRunning: timeout → kills spawned child (no phantom windo
   assert.equal(spawnedChild?.killed, true, 'timeout must kill the half-up child');
 });
 
-test('ensureMeloChromeRunning: cross-MELO_HOME concurrent calls spawn independently (no result串用)', async () => {
-  // Codex G-2b round-8 闭环 (2026-05-16): global single-promise singleflight
-  // was bucketing all callers together — caller B with a different
-  // MELO_HOME used to get caller A's profileDir/lockPath/port.  The fix is
-  // to key by MELO_HOME, captured synchronously at the public entry.
-  //
-  // We can't easily test "two concurrent calls under different MELO_HOMEs"
-  // without changing process.env mid-test (race-prone), so we serialize
-  // them but assert each one writes to its OWN home's lock path and the
-  // singleflight Map entries are isolated.
+test('ensureMeloChromeRunning: cross-MELO_HOME TRULY concurrent calls spawn independently (Codex round-8 ⚪ 闭环)', async () => {
+  // Codex round-9 ⚪ closeout: round-8's cross-home test was actually
+  // serial (await A then call B), so the old global-singleflight bug
+  // could've passed it too.  This test holds A's launch pending via a
+  // controllable fetch gate, then fires B under a different MELO_HOME
+  // and verifies they BOTH spawn concurrently.
   const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
 
   const homeA = tmpHome;
@@ -476,40 +477,159 @@ test('ensureMeloChromeRunning: cross-MELO_HOME concurrent calls spawn independen
   try {
     let spawnCount = 0;
     const portByHome = new Map([[homeA, 60100], [homeB, 60200]]);
+    // Each fetch call (probe) is gated by a manually-resolvable promise so
+    // we can hold A's polling loop suspended while B's launch fires.
+    const fetchGates = { homeA: null, homeB: null };
+
     _setDepsForTests({
       spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 10000 + spawnCount }); },
       fetch: async (url) => {
         const m = String(url).match(/:(\d+)\//);
-        if (!m) return { ok: false, status: 404, json: async () => ({}) };
+        const port = m ? Number(m[1]) : 0;
+        const which = port === 60100 ? 'homeA' : 'homeB';
+        // First call for this home: gate it.  Subsequent calls: return ready.
+        if (fetchGates[which] === null) {
+          let resolveGate;
+          fetchGates[which] = new Promise(r => { resolveGate = r; });
+          fetchGates[which]._resolve = resolveGate;
+          await fetchGates[which];
+        }
         return {
           ok: true, status: 200,
-          json: async () => ({ webSocketDebuggerUrl: `ws://127.0.0.1:${m[1]}/x` }),
+          json: async () => ({ webSocketDebuggerUrl: `ws://127.0.0.1:${port}/x` }),
         };
       },
-      // Different port per home — call site picks via MELO_HOME at moment of call
       findFreePort: async () => portByHome.get(process.env.MELO_HOME),
       existsSync: () => true,
+      sleep: async () => {}, // no real delay between probes
     });
 
-    // Call A under homeA
+    // Fire A's launch under homeA (don't await yet — it's gated on fetch).
     process.env.MELO_HOME = homeA;
-    const resA = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
-    // Call B under homeB
+    const pA = ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+    // Yield so A enters the polling loop and starts the first fetch
+    await new Promise(r => setImmediate(r));
+    // Now fire B under homeB — A is still suspended waiting for fetch
     process.env.MELO_HOME = homeB;
-    const resB = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+    const pB = ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+    await new Promise(r => setImmediate(r));
 
-    assert.equal(spawnCount, 2, 'cross-home calls must spawn separately');
+    // At this point both A and B should have called spawn (if the
+    // singleflight is keyed by home).  Pre-fix this would be 1 (B
+    // piggy-backed on A's launch).
+    assert.equal(spawnCount, 2, 'cross-home concurrent launches MUST spawn separately even when A is still pending');
+
+    // Release both gates so the launches complete.
+    fetchGates.homeA._resolve();
+    fetchGates.homeB._resolve();
+    const [resA, resB] = await Promise.all([pA, pB]);
     assert.equal(resA.profileDir, _internals.chromeProfileDirFor(homeA));
     assert.equal(resB.profileDir, _internals.chromeProfileDirFor(homeB));
-    assert.notEqual(resA.lockPath, resB.lockPath);
     assert.notEqual(resA.port, resB.port);
-    // Each home's lock file written to ITS home's path, not crossed
-    assert.ok(existsSync(_internals.lockFilePathFor(homeA)));
-    assert.ok(existsSync(_internals.lockFilePathFor(homeB)));
+    assert.notEqual(resA.lockPath, resB.lockPath);
   } finally {
     process.env.MELO_HOME = homeA;
     try { rmSync(homeB, { recursive: true, force: true }); } catch {}
   }
+});
+
+// ─── Codex G-2b round-8 B 闭环 (2026-05-16) — lock reusability ──────────────
+
+test('isLockReusable: PID dead (ESRCH) → not reusable', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  // Pre-write lock with PID 9999 + a profileDir match.
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  const profileDir = _internals.chromeProfileDirFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 7000, pid: 9999, startedAt: 0, profileDir });
+
+  // process.kill(9999, 0) throws ESRCH → lock is stale → respawn.
+  let spawnCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 1 }); },
+    fetch: makeReachableFetch({ acceptPort: 7001 }),
+    findFreePort: async () => 7001,
+    existsSync: () => true,
+    processKill: () => { const e = new Error('No such process'); e.code = 'ESRCH'; throw e; },
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, false, 'dead PID must invalidate lock');
+  assert.equal(result.port, 7001, 'must use freshly-spawned port, not the dead lock');
+  assert.equal(spawnCount, 1);
+});
+
+test('isLockReusable: profileDir mismatch → lock invalid, respawn', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  // Lock writes a profileDir that doesn't match this home's computed one.
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  _internals.writeLock(lockPath, {
+    port: 8000,
+    pid: 4321,
+    startedAt: 0,
+    profileDir: '/some/other/home/chrome-profile', // mismatch
+  });
+
+  let spawnCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 7 }); },
+    fetch: makeReachableFetch({ acceptPort: 8001 }),
+    findFreePort: async () => 8001,
+    existsSync: () => true,
+    processKill: () => {}, // PID alive
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, false, 'profileDir mismatch must invalidate lock');
+  assert.equal(spawnCount, 1);
+});
+
+test('isLockReusable: PID alive + port responds + profileDir matches → reuse', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  const profileDir = _internals.chromeProfileDirFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 9000, pid: 555, startedAt: 0, profileDir });
+
+  let spawnCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild(); },
+    fetch: makeReachableFetch({ acceptPort: 9000 }),
+    existsSync: () => true,
+    processKill: () => {}, // PID alive
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, true, 'all three reuse predicates pass → reuse');
+  assert.equal(result.port, 9000);
+  assert.equal(spawnCount, 0);
+});
+
+test('isLockReusable: PID alive but port doesnt respond → not reusable (port stolen)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  const profileDir = _internals.chromeProfileDirFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 9100, pid: 555, startedAt: 0, profileDir });
+
+  // Port 9100 dead, fresh respawn on 9101.
+  let spawnCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 1 }); },
+    fetch: async (url) => {
+      if (url.includes(':9100/')) throw new Error('connection refused'); // dead
+      return makeReachableFetch({ acceptPort: 9101 })(url);
+    },
+    findFreePort: async () => 9101,
+    existsSync: () => true,
+    processKill: () => {}, // PID alive (e.g., Chrome process up but CDP port down)
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, false, 'port not responding overrides PID liveness');
+  assert.equal(result.port, 9101);
+  assert.equal(spawnCount, 1);
 });
 
 test('ensureMeloChromeRunning: same-home concurrent with different chromePath → first wins (lock-file semantics)', async () => {
