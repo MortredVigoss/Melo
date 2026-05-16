@@ -174,13 +174,6 @@ export function _setDepsForTests(deps = {}) {
 
 async function isLockReusable(lock, expectedProfileDir, fetchImpl, killImpl) {
   if (!lock?.port || !lock?.pid) return false;
-  // Codex round-10 C 闭环 (2026-05-16): the profileDir check is REQUIRED,
-  // not merely "validated if present".  An old lock from a pre-round-8
-  // Melo version won't have profileDir set; treating that as "passes" left
-  // a hole in the three-predicate guarantee.  Forcing presence + match
-  // means upgrading users pay one Chrome cold-start once after the first
-  // upgrade — acceptable cost for the stronger contract.
-  if (!lock.profileDir || lock.profileDir !== expectedProfileDir) return false;
   // PID liveness check
   try {
     killImpl(lock.pid, 0);
@@ -189,7 +182,24 @@ async function isLockReusable(lock, expectedProfileDir, fetchImpl, killImpl) {
     // EPERM / other → treat as alive (defensive)
   }
   // CDP port responds with webSocketDebuggerUrl
-  return await isCdpPortReachable(lock.port, fetchImpl);
+  if (!await isCdpPortReachable(lock.port, fetchImpl)) return false;
+  // Codex round-11 C 闭环 (2026-05-16): profileDir handling has THREE
+  // sub-cases, not two.  Force-respawning on missing profileDir broke
+  // the common upgrade case where the OLD Melo Chrome is still alive
+  // and holding the profile-dir lock — the new spawn would fail to
+  // acquire the same profile dir, never bring CDP up, and the caller
+  // would time out.
+  //   • missing profileDir + PID alive + port responds → legacy lock from
+  //     a pre-round-10 Melo, treat as reusable; the public caller MUST
+  //     backfill the profileDir field so future calls take the strict
+  //     three-predicate path.  The lock path itself ($MELO_HOME-scoped)
+  //     already implies it's our Chrome, which combined with PID + port
+  //     liveness is sufficient evidence.
+  //   • present profileDir matching expected → reusable.
+  //   • present profileDir but mismatch → not reusable (corrupt or
+  //     manually-edited lock, or someone wrote a foreign lock here).
+  if (!lock.profileDir) return true;
+  return lock.profileDir === expectedProfileDir;
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -286,11 +296,19 @@ async function _ensureMeloChromeRunningInner({
   const timeoutMs = Number(launchTimeoutMs || process.env.MELO_CHROME_LAUNCH_TIMEOUT_MS || DEFAULT_LAUNCH_TIMEOUT_MS);
 
   // 1. Check existing lock for a still-alive Chrome we can reuse.  Per
-  // isLockReusable: requires profileDir match + PID alive + CDP port
-  // responds as Chrome.  Defends against port reuse by an unrelated
-  // process (Codex round-8 B finding).
+  // isLockReusable: requires PID alive + CDP port responds as Chrome +
+  // (profileDir match OR profileDir absent = legacy upgrade case).
+  // Defends against port reuse by an unrelated process (Codex round-8
+  // B finding) while still letting pre-round-10 Melo locks be migrated
+  // rather than force-respawned (Codex round-11 C closeout).
   const existing = readLock(lockPath);
   if (existing && await isLockReusable(existing, profileDir, _fetchImpl, _processKillImpl)) {
+    // Backfill profileDir if the lock was written by a pre-round-10 Melo.
+    // After this one-time migration, future calls take the strict
+    // three-predicate path with profileDir match required.
+    if (!existing.profileDir) {
+      writeLock(lockPath, { ...existing, profileDir });
+    }
     return {
       port: existing.port,
       pid: existing.pid || null,

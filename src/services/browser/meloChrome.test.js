@@ -606,31 +606,60 @@ test('isLockReusable: PID alive + port responds + profileDir matches → reuse',
   assert.equal(spawnCount, 0);
 });
 
-test('isLockReusable: legacy lock missing profileDir field → not reusable (Codex round-10 C 闭环)', async () => {
-  // Codex caught that the round-9 check used `lock.profileDir && ...`,
-  // which let an old lock (pre-round-8, no profileDir field) pass the
-  // profileDir predicate by skipping it entirely — contradicting the
-  // "three predicates must all pass" contract.  Now profileDir absence
-  // forces lock invalidation + Chrome respawn.  Upgrade cost: one cold
-  // start the first time Melo runs after upgrade.
+test('isLockReusable: legacy lock missing profileDir + healthy → migrate (reuse + backfill profileDir)', async () => {
+  // Codex round-11 C 闭环 (2026-05-16): round-10's force-respawn on
+  // missing-profileDir broke the upgrade case — old Melo Chrome alive +
+  // holding the same profile-dir lock means the new spawn can't acquire
+  // the dir and CDP never comes up.  Now legacy locks that are otherwise
+  // healthy (PID alive + port reachable) are MIGRATED: reused immediately
+  // and the lock file rewritten with profileDir filled in so future calls
+  // take the strict three-predicate path.
   const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
 
   const lockPath = _internals.lockFilePathFor(tmpHome);
-  // Lock written without profileDir field (legacy format)
+  const expectedProfileDir = _internals.chromeProfileDirFor(tmpHome);
+  // Legacy lock — no profileDir field
   _internals.writeLock(lockPath, { port: 9200, pid: 555, startedAt: 0 });
 
   let spawnCount = 0;
   _setDepsForTests({
     spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 1 }); },
-    fetch: makeReachableFetch({ acceptPort: 9201 }),
-    findFreePort: async () => 9201,
+    fetch: makeReachableFetch({ acceptPort: 9200 }),
     existsSync: () => true,
-    processKill: () => {}, // PID would be alive
+    processKill: () => {}, // PID alive
   });
 
   const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
-  assert.equal(result.reused, false, 'legacy lock without profileDir must NOT be reusable');
-  assert.equal(result.port, 9201);
+  assert.equal(result.reused, true, 'legacy healthy lock must be REUSED, not force-respawned');
+  assert.equal(result.port, 9200);
+  assert.equal(spawnCount, 0, 'must not respawn — old Chrome is still alive');
+  // Lock has been migrated: profileDir backfilled
+  const migrated = JSON.parse(readFileSync(lockPath, 'utf8'));
+  assert.equal(migrated.profileDir, expectedProfileDir, 'profileDir must be backfilled into the lock');
+  assert.equal(migrated.port, 9200, 'other fields preserved');
+  assert.equal(migrated.pid, 555);
+});
+
+test('isLockReusable: legacy lock missing profileDir + dead PID → still respawn (no migration without alive)', async () => {
+  // Migration is conditional: PID alive + port reachable.  If PID is dead,
+  // the legacy lock is genuinely stale and we clear+respawn even though
+  // profileDir is absent.
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  _internals.writeLock(lockPath, { port: 9210, pid: 12345, startedAt: 0 });
+
+  let spawnCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 2 }); },
+    fetch: makeReachableFetch({ acceptPort: 9211 }),
+    findFreePort: async () => 9211,
+    existsSync: () => true,
+    processKill: () => { const e = new Error('No such process'); e.code = 'ESRCH'; throw e; },
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, false, 'dead PID overrides legacy-migration path');
   assert.equal(spawnCount, 1);
 });
 
