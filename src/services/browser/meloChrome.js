@@ -87,16 +87,22 @@ async function isCdpPortReachable(port, fetchImpl, timeoutMs = PORT_PROBE_TIMEOU
   // Chrome exposes /json/version on the debug port once CDP is ready.  We
   // require webSocketDebuggerUrl in the response so a foreign HTTP server
   // happening to bind to the same port doesn't pass as Chrome.
+  //
+  // Codex G-2b round-7 fix (2026-05-16): clearTimeout in `finally` instead
+  // of after the await — fetch / json() throw paths left a delayed
+  // setTimeout to fire long after the probe returned false.  Harmless but
+  // pollutes the timer queue across many probe cycles.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeoutMs);
     const res = await fetchImpl(`http://127.0.0.1:${port}/json/version`, { signal: ac.signal });
-    clearTimeout(timer);
     if (!res.ok) return false;
     const data = await res.json();
     return Boolean(data?.webSocketDebuggerUrl);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -154,6 +160,24 @@ export function detectChromeBinary() {
   return DEFAULT_CHROME_PATHS[process.platform] || null;
 }
 
+// In-process singleflight (Codex G-2b round-7 fix, 2026-05-16): concurrent
+// callers when no lock exists used to each pick a free port and spawn
+// Chrome against the SAME profile dir — Chrome rejects the second one (same
+// profile lock) and the orphan window becomes an unrecorded zombie.  Now
+// the second caller awaits the first call's promise.
+//
+// Trade-offs (acknowledged):
+//   • Followers' signals don't abort the launch — only the owner's signal
+//     does.  If a follower aborts, they still wait for the shared launch
+//     to complete (or fail).  Acceptable for v1; the only way a follower
+//     gets "stuck" is if the owner's launch hangs near the launchTimeout
+//     boundary.
+//   • Cross-process race (two Melo processes starting at the same time):
+//     not addressed here.  In-process singleflight covers ~99% of cases
+//     (one Melo per MELO_HOME); the lock-file probe handles cross-process
+//     reuse once one of them has written it.  Doc'd as a known limit.
+let _activeLaunch = null;
+
 /**
  * Idempotent.  If a previous Melo Chrome is still alive on its lock-file
  * port, reuse it (returns `reused: true`).  Otherwise spawns a fresh
@@ -161,13 +185,31 @@ export function detectChromeBinary() {
  * waits up to MELO_CHROME_LAUNCH_TIMEOUT_MS for CDP to come up, writes
  * the lock and returns connection info.
  *
+ * Concurrent invocations on the same Melo process await a single
+ * in-flight launch (see `_activeLaunch`).
+ *
  * Returns: `{ port, pid, reused, profileDir, lockPath }`
  *
- * Throws: if the Chrome binary isn't found, or if CDP doesn't come up
- * before the timeout (caller should treat both as "no real-browser tier
- * available for this query" and fall back to other tiers).
+ * Throws: if the Chrome binary isn't found, if the spawn itself fails
+ * (binary not executable / permission denied / etc), or if CDP doesn't
+ * come up before the timeout.  All three should be caught by the caller
+ * and routed to a non-real-browser tier.
  */
-export async function ensureMeloChromeRunning({
+export async function ensureMeloChromeRunning(opts = {}) {
+  if (_activeLaunch) {
+    return _activeLaunch;
+  }
+  _activeLaunch = (async () => {
+    try {
+      return await _ensureMeloChromeRunningInner(opts);
+    } finally {
+      _activeLaunch = null;
+    }
+  })();
+  return _activeLaunch;
+}
+
+async function _ensureMeloChromeRunningInner({
   chromePath,
   signal,
   launchTimeoutMs,
@@ -230,12 +272,41 @@ export async function ensureMeloChromeRunning({
   });
   child.unref();
 
+  // Codex G-2b round-7 fix (2026-05-16): an unhandled 'error' event on the
+  // child (binary present but non-executable, permission denied, ulimit
+  // exhausted, etc) crashes the whole Node process.  Stash on the child
+  // and surface inside the polling loop so the caller gets a clean throw
+  // and the rest of Melo (server, chat, etc) stays up.
+  let spawnError = null;
+  if (typeof child.on === 'function') {
+    child.on('error', err => {
+      spawnError = err;
+    });
+  }
+
+  // killSpawnedChild — bounded best-effort cleanup, used in BOTH the abort
+  // and timeout paths.  Signal abort means "user said Stop"; we kill the
+  // (still-launching) Chrome so no phantom window remains.  Timeout means
+  // "Chrome never reported CDP ready"; same — kill it, the next attempt
+  // gets a fresh respawn rather than racing against a partially-up zombie.
+  // We do NOT kill in the reuse path above (lock-file hit) because that
+  // Chrome was launched by an earlier session and the user may be using
+  // its tabs.
+  const killSpawnedChild = () => {
+    try { child.kill?.('SIGTERM'); } catch { /* ignore — best effort */ }
+  };
+
   // 5. Wait for CDP to come up, polling every 400ms until timeout.  The
   // signal lets a caller (e.g. tool gate Stop) cancel a slow startup.
   const deadline = _nowImpl() + timeoutMs;
   while (_nowImpl() < deadline) {
     if (signal?.aborted) {
+      killSpawnedChild();
       throw new DOMException('Aborted', 'AbortError');
+    }
+    if (spawnError) {
+      killSpawnedChild();
+      throw new Error(`Chrome failed to spawn at ${binary}: ${spawnError?.message || spawnError}`);
     }
     if (await isCdpPortReachable(port, _fetchImpl)) {
       writeLock(lockPath, { port, pid: child.pid || null, startedAt: _nowImpl(), profileDir });
@@ -244,10 +315,19 @@ export async function ensureMeloChromeRunning({
     await _sleepImpl(400);
   }
 
-  // 6. Startup timed out.  Don't kill the child (it might still be coming
-  // up async; user can close it manually if they want).  Caller falls
+  // 6. Startup timed out.  Kill the child (might still be coming up but at
+  // this point it's been > launchTimeoutMs and the user is already
+  // waiting; better a clean re-try than a half-up race).  Caller falls
   // back to a non-CDP tier.
+  killSpawnedChild();
   throw new Error(`Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})`);
+}
+
+// Test-only: reset the singleflight latch.  Lets afterEach hooks recover
+// from a test that left _activeLaunch dangling (rejected promise nobody
+// awaited, etc) so the next test sees a clean state.
+export function _resetActiveLaunchForTests() {
+  _activeLaunch = null;
 }
 
 /**

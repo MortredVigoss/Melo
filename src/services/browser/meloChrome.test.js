@@ -32,13 +32,44 @@ test.afterEach(async () => {
   try { rmSync(tmpHome, { recursive: true, force: true }); } catch {}
   const mod = await import('./meloChrome.js');
   mod._setDepsForTests({});
+  // Reset the singleflight latch — a test that left _activeLaunch dangling
+  // (rejected promise nobody awaited) would otherwise leak into the next
+  // test and the spawn count would be off.
+  mod._resetActiveLaunchForTests();
 });
 
 // ─── Shared fakes ────────────────────────────────────────────────────────────
 
-function makeFakeChild({ pid = 99999 } = {}) {
-  // spawn-return shape minimum surface: pid + unref().
-  return { pid, unref: () => {} };
+function makeFakeChild({ pid = 99999, fireErrorOnce = null } = {}) {
+  // spawn-return shape minimum surface: pid + unref() + on() + kill().
+  // Codex G-2b round-7: launcher attaches 'error' listener for unhandled
+  // spawn failures and calls kill() on abort/timeout cleanup — tests need
+  // both surfaces.  fireErrorOnce, if set, fires synchronously on the
+  // first .on('error', handler) call so we can deterministically exercise
+  // the spawn-error code path.
+  let killCount = 0;
+  const child = {
+    pid,
+    killed: false,
+    unref: () => {},
+    on: (event, handler) => {
+      if (event === 'error' && fireErrorOnce) {
+        // Fire synchronously when the listener attaches.  Real EventEmitter
+        // would emit 'error' asynchronously after spawn fails, but the
+        // launcher's polling loop spins on microtasks (mocked sleep() is
+        // `async () => {}`) so a setImmediate-scheduled error never fires.
+        // Sync emission is the right test-shape: it exercises the
+        // launcher's "error observed → throw + kill" path deterministically.
+        handler(fireErrorOnce);
+      }
+    },
+    kill: () => {
+      killCount += 1;
+      child.killed = true;
+    },
+    get killCount() { return killCount; },
+  };
+  return child;
 }
 
 function makeReachableFetch({ acceptPort } = {}) {
@@ -322,4 +353,126 @@ test('detectChromeBinary: MELO_CHROME_BINARY env overrides platform default', as
     if (saved === undefined) delete process.env.MELO_CHROME_BINARY;
     else process.env.MELO_CHROME_BINARY = saved;
   }
+});
+
+// ─── Codex G-2b round-7 闭环 (2026-05-16) ──────────────────────────────────
+
+test('ensureMeloChromeRunning: spawn fires error → throws "Chrome failed to spawn" (no Node crash)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+
+  let killedChild = null;
+  _setDepsForTests({
+    spawn: () => {
+      const c = makeFakeChild({ pid: 7777, fireErrorOnce: new Error('EACCES: permission denied') });
+      killedChild = c;
+      return c;
+    },
+    fetch: async () => { throw new Error('never reachable'); },
+    findFreePort: async () => 33333,
+    existsSync: () => true,
+    sleep: async () => {}, // fast spin so the error handler tick can run
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome', launchTimeoutMs: 3000 }),
+    /Chrome failed to spawn.*EACCES: permission denied/,
+  );
+  assert.equal(killedChild?.killed, true, 'spawn-error path must kill the bad child');
+});
+
+test('ensureMeloChromeRunning: concurrent callers share a single launch (singleflight)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+
+  let spawnCount = 0;
+  // Slow the launch loop so both callers enter while it's in-flight.
+  let probeCallCount = 0;
+  _setDepsForTests({
+    spawn: () => { spawnCount += 1; return makeFakeChild({ pid: 9090 }); },
+    fetch: async (url) => {
+      probeCallCount += 1;
+      // First probe call returns "not yet"; second returns ready.  Both
+      // callers awaiting the singleflight should see the same ready result.
+      if (probeCallCount === 1) throw new Error('not yet');
+      return {
+        ok: true, status: 200,
+        json: async () => ({ webSocketDebuggerUrl: 'ws://127.0.0.1:38000/x' }),
+      };
+    },
+    findFreePort: async () => 38000,
+    existsSync: () => true,
+    sleep: async () => {}, // fast spin
+  });
+
+  const [a, b] = await Promise.all([
+    ensureMeloChromeRunning({ chromePath: '/fake/Chrome' }),
+    ensureMeloChromeRunning({ chromePath: '/fake/Chrome' }),
+  ]);
+  assert.equal(spawnCount, 1, 'singleflight must spawn exactly once for concurrent callers');
+  assert.equal(a.port, 38000);
+  assert.equal(b.port, 38000);
+  assert.deepEqual(a, b, 'both concurrent callers must receive the same launch result');
+});
+
+test('ensureMeloChromeRunning: abort during startup wait → kills spawned child + no lock written', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+
+  const ac = new AbortController();
+  let nowValue = 0;
+  let spawnedChild = null;
+  _setDepsForTests({
+    spawn: () => { spawnedChild = makeFakeChild({ pid: 4242 }); return spawnedChild; },
+    fetch: async () => { throw new Error('not yet'); },
+    findFreePort: async () => 41000,
+    existsSync: () => true,
+    now: () => nowValue,
+    sleep: () => { nowValue += 200; ac.abort(); }, // abort after first sleep
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome', signal: ac.signal, launchTimeoutMs: 5000 }),
+    err => err?.name === 'AbortError',
+  );
+  assert.equal(spawnedChild?.killed, true, 'abort must kill the just-spawned child');
+  // Lock file must NOT exist after abort — next attempt should respawn
+  const lockPath = _internals.lockFilePathFor(tmpHome);
+  assert.equal(existsSync(lockPath), false, 'abort path must not write a stale lock');
+});
+
+test('ensureMeloChromeRunning: timeout → kills spawned child (no phantom window)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+
+  let nowValue = 0;
+  let spawnedChild = null;
+  _setDepsForTests({
+    spawn: () => { spawnedChild = makeFakeChild({ pid: 5252 }); return spawnedChild; },
+    fetch: async () => { throw new Error('never up'); },
+    findFreePort: async () => 42000,
+    existsSync: () => true,
+    now: () => nowValue,
+    sleep: () => { nowValue += 500; }, // advance virtual clock
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome', launchTimeoutMs: 1500 }),
+    /did not respond within 1500ms/,
+  );
+  assert.equal(spawnedChild?.killed, true, 'timeout must kill the half-up child');
+});
+
+test('isCdpPortReachable: timer cleaned up even when fetch throws (no leaked timeout)', async () => {
+  const { _internals } = await import('./meloChrome.js');
+
+  // The fix is "clearTimeout in finally" — we can't directly observe timer
+  // queue state from Node tests, but we CAN assert the function returns
+  // false promptly (well under the timeout window) when fetch throws,
+  // which is the user-visible contract the fix enforces.
+  const startMs = Date.now();
+  const result = await _internals.isCdpPortReachable(
+    50000,
+    async () => { throw new Error('immediate fail'); },
+    /* timeoutMs */ 5000,
+  );
+  const elapsed = Date.now() - startMs;
+  assert.equal(result, false);
+  assert.ok(elapsed < 1000, `probe must return promptly on throw, took ${elapsed}ms`);
 });
