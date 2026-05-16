@@ -12,6 +12,7 @@ import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import { debugWarn } from '../../debug.js';
 import { fetchPageViaPlaywright, isPlaywrightCliAvailable } from '../../web/playwrightFetcher.js';
+import { withMeloChrome } from '../../services/browser/connect.js';
 import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
 import { isSocialLinkUrl, readSocialLink } from './socialLinkTool.js';
 import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
@@ -173,13 +174,15 @@ export const fetchUrlTool = {
       },
       extract_mode: {
         type: 'string',
-        enum: ['auto', 'jina', 'direct', 'playwright', 'crawl4ai', 'scrapling', 'camoufox'],
+        enum: ['auto', 'jina', 'direct', 'playwright', 'cdp-chrome', 'crawl4ai', 'scrapling', 'camoufox'],
         description:
-          'Extraction mode. "auto" tries Jina first, falls back to direct, then to a ' +
-          'real browser (Playwright), then optional local readers (Crawl4AI, Scrapling, Camoufox) ' +
-          'for SPA/JS-heavy pages that return empty shells. ' +
+          'Extraction mode. "auto" tries Jina first, falls back to direct, then escalates to a ' +
+          'real browser (cdp-chrome when MELO_CDP_ENABLED=1, otherwise Playwright), then optional ' +
+          'local readers (Crawl4AI, Scrapling, Camoufox) for SPA/JS-heavy pages that return empty shells. ' +
           '"jina" forces Jina reader. "direct" forces plain fetch + Readability. ' +
-          '"playwright" forces the real-browser path (slower, use only when auto fails). ' +
+          '"playwright" forces the real-browser path via the bundled CLI/Chromium (slower, use only when auto fails). ' +
+          '"cdp-chrome" attaches to the user\'s Melo Chrome session via CDP (real browser + logged-in cookies; ' +
+          'requires Google Chrome installed; window is visible). ' +
           '"crawl4ai", "scrapling", and "camoufox" force optional local CLI readers when installed.',
         default: 'auto',
       },
@@ -217,6 +220,7 @@ export const fetchUrlTool = {
     _fetchViaJina,
     _fetchDirect,
     _tryPlaywright: _tryPlaywrightOverride,
+    _tryCdpChrome: _tryCdpChromeOverride,
   } = {}) {
     const trail = [];
     const tStart = Date.now();
@@ -385,6 +389,45 @@ export const fetchUrlTool = {
       return pwContent || null;
     };
 
+    // Stage 2b (2026-05-16): CDP-attach real-browser tier.  Uses the
+    // user's Melo Chrome (visible window, dedicated profile, logged-in
+    // cookies for sites they've signed into) instead of the headless
+    // CLI Chromium that tryPlaywright uses.  Wins on anti-bot SPAs +
+    // auth-walled content where Playwright tier returns shells.
+    //
+    // Auto path: called only when MELO_CDP_ENABLED=1 (opt-in until we've
+    // collected enough trail data to know when it's worth the launch
+    // latency).  Explicit extract_mode='cdp-chrome' always uses this
+    // regardless of env, so the agent can force it per-call.
+    const tryCdpChrome = async () => {
+      if (typeof _tryCdpChromeOverride === 'function') {
+        return _tryCdpChromeOverride();
+      }
+      try {
+        return await withMeloChrome(async (browser) => {
+          const context = await browser.newContext();
+          const page = await context.newPage();
+          try {
+            await page.goto(normalized, {
+              waitUntil: 'networkidle',
+              timeout: PLAYWRIGHT_TIMEOUT_MS,
+            });
+            const text = await page.evaluate(() => document?.body?.innerText || '');
+            return String(text || '').trim().slice(0, MAX_CONTENT_LENGTH) || null;
+          } finally {
+            // Close context (cookies for THIS run flushed), browser
+            // stays connected for subsequent calls.  Per-call context
+            // avoids cross-fetch state leakage.
+            try { await context.close(); } catch { /* best-effort */ }
+          }
+        }, { signal });
+      } catch (err) {
+        // Bubble up — caller decides between fail+escalate vs propagate.
+        // Don't classify here; the trail recorder does it.
+        throw err;
+      }
+    };
+
     const tryExternalReaders = async (preferred = ['crawl4ai', 'scrapling', 'camoufox']) => {
       const reader = typeof _readExternalUrl === 'function'
         ? _readExternalUrl
@@ -447,6 +490,41 @@ export const fetchUrlTool = {
         content = pwContent;
         method = 'playwright';
         recordTrail(trail, 'playwright', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'playwright', bytes: content.length } });
+        pendingTier = null;
+      } else if (extract_mode === 'cdp-chrome') {
+        // Explicit user request — bypass env gate, always try CDP attach.
+        pendingTier = 'cdp-chrome';
+        pendingTierStart = Date.now();
+        let cdpContent;
+        try {
+          cdpContent = await tryCdpChrome();
+        } catch (err) {
+          recordTrail(trail, 'cdp-chrome', 'fail', {
+            latencyMs: Date.now() - pendingTierStart,
+            reason: classifyFetchError(err),
+            extra: { extractMode: 'cdp-chrome' },
+          });
+          pendingTier = null;
+          return {
+            ok: false,
+            output: `cdp-chrome extraction failed for "${normalized}": ${err?.message || err}`,
+            error: 'FETCH_FAILED',
+            evidenceTrail: trail,
+          };
+        }
+        if (!cdpContent) {
+          recordTrail(trail, 'cdp-chrome', 'fail', { latencyMs: Date.now() - pendingTierStart, reason: 'no-content', extra: { extractMode: 'cdp-chrome' } });
+          pendingTier = null;
+          return {
+            ok: false,
+            output: `cdp-chrome extraction returned no content for "${normalized}".`,
+            error: 'NO_CONTENT',
+            evidenceTrail: trail,
+          };
+        }
+        content = cdpContent;
+        method = 'cdp-chrome';
+        recordTrail(trail, 'cdp-chrome', 'ok', { latencyMs: Date.now() - pendingTierStart, extra: { extractMode: 'cdp-chrome', bytes: content.length } });
         pendingTier = null;
       } else if (['crawl4ai', 'scrapling', 'camoufox'].includes(extract_mode)) {
         pendingTier = 'external-reader';
@@ -518,6 +596,31 @@ export const fetchUrlTool = {
               recordTrail(trail, 'direct', 'fail', { latencyMs: Date.now() - tD, reason: classifyFetchError(err2) });
               content = '';
             }
+          }
+        }
+
+        // Stage 2b (2026-05-16): CDP-chrome escalation — gated by env.
+        // When MELO_CDP_ENABLED=1, attach to the user's logged-in Melo
+        // Chrome BEFORE falling back to headless playwright.  CDP wins
+        // on anti-bot SPAs + auth-walled content; if it fails (Chrome
+        // not installed, launch timeout, etc) we still fall through to
+        // playwright so the chain doesn't regress on env-on hosts where
+        // Chrome happens to be down.  Skipped entirely when env not set,
+        // preserving pre-Stage-2b behavior bit-for-bit.
+        if (looksEmpty(content) && process.env.MELO_CDP_ENABLED === '1') {
+          const tCdp = Date.now();
+          try {
+            const cdpContent = await tryCdpChrome();
+            if (cdpContent && !looksEmpty(cdpContent)) {
+              content = cdpContent;
+              method = method ? `${method}→cdp-chrome` : 'cdp-chrome';
+              recordTrail(trail, 'cdp-chrome', 'ok', { latencyMs: Date.now() - tCdp, extra: { escalation: true, bytes: content.length } });
+            } else {
+              recordTrail(trail, 'cdp-chrome', 'fail', { latencyMs: Date.now() - tCdp, reason: cdpContent ? 'parse-empty' : 'no-content' });
+            }
+          } catch (err) {
+            debugWarn('fetch_url', `cdp-chrome escalation failed for ${normalized}:`, err?.message || err);
+            recordTrail(trail, 'cdp-chrome', 'fail', { latencyMs: Date.now() - tCdp, reason: classifyFetchError(err) });
           }
         }
 

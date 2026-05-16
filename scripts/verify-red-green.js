@@ -716,6 +716,12 @@ async function main() {
     // Stage 2b wires this into fetchUrlTool.
     results.push(await runStep('CDP connector helper (test:browser-connect)', () => runCommand('npm', ['run', 'test:browser-connect'])));
 
+    // Stage 2b (2026-05-16): fetchUrlTool cdp-chrome tier — env-gated
+    // escalation + explicit extract_mode='cdp-chrome'.  Gating here so
+    // the "env off = no behavior change" promise + the cdp→playwright
+    // fallthrough contract can't silently regress.
+    results.push(await runStep('fetchUrlTool cdp-chrome tier (test:fetchurl-cdp)', () => runCommand('npm', ['run', 'test:fetchurl-cdp'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults
