@@ -75,6 +75,17 @@ export async function connectMeloChrome({ signal, chromePath } = {}) {
     throw new DOMException('Aborted', 'AbortError');
   }
   const browser = await connect(`http://127.0.0.1:${launchInfo.port}`);
+  // Codex G-2b Stage 2a B 🟠 闭环 (2026-05-16): post-await abort gate.
+  // Pre-fix, an abort that fired DURING `connect()` left a live browser
+  // handle exposed to the caller — withMeloChrome would happily run the
+  // callback and only "honor" the abort if the callback itself checked
+  // signal.aborted.  Now we close the freshly-connected browser and throw
+  // AbortError so Stop semantics is consistent across all three await
+  // boundaries (ensure / impl-resolve / connect).
+  if (signal?.aborted) {
+    try { await browser.close(); } catch { /* best-effort cleanup */ }
+    throw new DOMException('Aborted', 'AbortError');
+  }
   return {
     browser,
     port: launchInfo.port,

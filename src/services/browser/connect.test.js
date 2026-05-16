@@ -112,6 +112,36 @@ test('connectMeloChrome: connectOverCDP error propagates (e.g. CDP refused)', as
 
 // ─── Abort handling ─────────────────────────────────────────────────────────
 
+test('connectMeloChrome: abort DURING connect await → close just-connected browser + AbortError (Codex B 🟠 闭环)', async () => {
+  // Pre-fix the post-connect signal check was missing — abort during the
+  // CDP handshake left a live browser handle returned to the caller, and
+  // `withMeloChrome` would run the callback against it instead of bailing.
+  // This test simulates "abort fires WHILE connect is awaiting" by having
+  // the fake connect resolve after a microtask boundary, with the abort
+  // tripped synchronously between connect-enter and connect-resolve.
+  const { connectMeloChrome, _setConnectImplForTests, _setEnsureChromeForTests } =
+    await import('./connect.js');
+
+  const fakeBrowser = makeFakeBrowser();
+  const ac = new AbortController();
+
+  _setEnsureChromeForTests(async () => ({
+    port: 7777, pid: 1, reused: false, profileDir: '/p', lockPath: '/l',
+  }));
+  _setConnectImplForTests(async () => {
+    // Trip the abort INSIDE connect (between the pre-await check passing
+    // and our connect resolving), then resolve with a live browser.
+    ac.abort();
+    return fakeBrowser;
+  });
+
+  await assert.rejects(
+    () => connectMeloChrome({ signal: ac.signal }),
+    err => err?.name === 'AbortError',
+  );
+  assert.equal(fakeBrowser.closeCallCount, 1, 'just-connected browser must be closed on post-await abort');
+});
+
 test('connectMeloChrome: aborted signal between launch and connect → AbortError (no connect attempt)', async () => {
   const { connectMeloChrome, _setConnectImplForTests, _setEnsureChromeForTests } =
     await import('./connect.js');
