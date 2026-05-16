@@ -19,6 +19,14 @@ import {
   tryApiDirect,
   _setFetchForTests,
   _internals,
+  hnMatchKind,
+  fetchFromHN,
+  arxivMatchKind,
+  fetchFromArxiv,
+  githubMatchKind,
+  fetchFromGitHub,
+  stackOverflowMatchKind,
+  fetchFromStackOverflow,
 } from './apiDirect.js';
 
 // Reset fetch impl after every test so cross-test leakage is impossible.
@@ -357,4 +365,287 @@ test('_internals.PROVIDERS contains wikipedia with required interface (matchKind
   assert.ok(wiki, 'wikipedia provider must be registered');
   assert.equal(typeof wiki.matchKind, 'function');
   assert.equal(typeof wiki.fetch, 'function');
+});
+
+test('_internals.PROVIDERS contains all expected providers with matchKind+fetch', () => {
+  const provs = _internals.PROVIDERS;
+  const expected = ['wikipedia', 'hackernews', 'arxiv', 'github', 'stackoverflow'];
+  for (const name of expected) {
+    const p = provs.find(x => x.name === name);
+    assert.ok(p, `provider ${name} must be registered`);
+    assert.equal(typeof p.matchKind, 'function', `${name}.matchKind must be a function`);
+    assert.equal(typeof p.fetch, 'function', `${name}.fetch must be a function`);
+  }
+});
+
+// ─── HN Algolia provider ─────────────────────────────────────────────────────
+
+test('hnMatchKind: explicit prefix + phrase matches return "explicit"', () => {
+  assert.equal(hnMatchKind('hn: rust async'), 'explicit');
+  assert.equal(hnMatchKind('hackernews: rust async'), 'explicit');
+  assert.equal(hnMatchKind('hacker news: rust async'), 'explicit');
+  assert.equal(hnMatchKind('hacker news discussion on AI safety'), 'explicit');
+  assert.equal(hnMatchKind('hn comments on Linux kernel'), 'explicit');
+  assert.equal(hnMatchKind('what people on hacker news say about Rust'), 'explicit');
+});
+
+test('hnMatchKind: non-matching queries return false', () => {
+  assert.equal(hnMatchKind('rust async tutorial'), false);
+  assert.equal(hnMatchKind('hn'), false, 'bare "hn" without context should not match');
+  assert.equal(hnMatchKind(''), false);
+  assert.equal(hnMatchKind(null), false);
+});
+
+test('cleanHnQuery strips prefix + phrase noise', () => {
+  const c = _internals.cleanHnQuery;
+  assert.equal(c('hn: rust async'), 'rust async');
+  assert.equal(c('hacker news discussion on AI safety'), 'AI safety');
+  assert.equal(c('hn comments on Linux kernel'), 'Linux kernel');
+  assert.equal(c('what hacker news thinks about Rust'), 'what thinks about Rust');
+});
+
+test('fetchFromHN: happy path returns shaped results', async () => {
+  _setFetchForTests(async (url) => {
+    assert.match(url, /hn\.algolia\.com\/api\/v1\/search/, 'expected HN Algolia URL');
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        hits: [
+          {
+            objectID: '12345',
+            title: 'Show HN: Rust async runtime',
+            url: 'https://example.com/rust-async',
+            points: 240,
+            num_comments: 89,
+            created_at: '2026-05-10T08:00:00Z',
+            story_text: 'A new async runtime for Rust...',
+          },
+        ],
+      }),
+    };
+  });
+  const result = await fetchFromHN('hn: rust async');
+  assert.equal(result.provider, 'hackernews');
+  assert.equal(result.ok, true);
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].title, 'Show HN: Rust async runtime');
+  assert.equal(result.results[0].url, 'https://news.ycombinator.com/item?id=12345');
+  assert.match(result.results[0].snippet, /240 points · 89 comments/);
+  assert.equal(result.contentMap.size, 1);
+});
+
+test('fetchFromHN: no hits → no-results', async () => {
+  _setFetchForTests(async () => ({ ok: true, status: 200, json: async () => ({ hits: [] }) }));
+  const result = await fetchFromHN('hn: obscure xyz');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'no-results');
+});
+
+test('fetchFromHN: HTTP error → http-NNN reason', async () => {
+  _setFetchForTests(async () => ({ ok: false, status: 503, json: async () => ({}) }));
+  const result = await fetchFromHN('hn: rust');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'http-503');
+});
+
+// ─── arXiv provider (via Semantic Scholar) ───────────────────────────────────
+
+test('arxivMatchKind: explicit prefix + phrase matches return "explicit"', () => {
+  assert.equal(arxivMatchKind('arxiv: attention is all you need'), 'explicit');
+  assert.equal(arxivMatchKind('arxiv:1706.03762'), 'explicit');
+  assert.equal(arxivMatchKind('paper on transformer architecture'), 'explicit');
+  assert.equal(arxivMatchKind('research on reinforcement learning'), 'explicit');
+  assert.equal(arxivMatchKind('transformer 论文'), 'explicit');
+});
+
+test('arxivMatchKind: non-matching queries return false', () => {
+  assert.equal(arxivMatchKind('transformer architecture'), false);
+  assert.equal(arxivMatchKind('what is a transformer'), false, 'bare "what is" routes to Wikipedia not arXiv');
+  assert.equal(arxivMatchKind(''), false);
+});
+
+test('fetchFromArxiv: filters Semantic Scholar results to arXiv-only papers', async () => {
+  _setFetchForTests(async (url) => {
+    assert.match(url, /api\.semanticscholar\.org\/graph\/v1\/paper\/search/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        data: [
+          {
+            title: 'Attention Is All You Need',
+            authors: [{ name: 'Vaswani' }, { name: 'Shazeer' }, { name: 'Parmar' }, { name: 'Uszkoreit' }],
+            abstract: 'The dominant sequence transduction models...',
+            year: 2017,
+            externalIds: { ArXiv: '1706.03762', DOI: '10.5555/3295222' },
+          },
+          {
+            title: 'Not on arXiv',
+            authors: [{ name: 'X' }],
+            abstract: 'irrelevant',
+            year: 2020,
+            externalIds: { DOI: '10.1000/abcd' }, // no ArXiv — must be filtered out
+          },
+        ],
+      }),
+    };
+  });
+  const result = await fetchFromArxiv('paper on transformer');
+  assert.equal(result.ok, true);
+  assert.equal(result.results.length, 1, 'non-arXiv paper must be filtered');
+  assert.equal(result.results[0].title, 'Attention Is All You Need');
+  assert.equal(result.results[0].url, 'https://arxiv.org/abs/1706.03762');
+  assert.match(result.results[0].snippet, /\(2017\) · Vaswani, Shazeer, Parmar et al\./);
+  assert.match(result.contentMap.get('https://arxiv.org/abs/1706.03762'), /dominant sequence/);
+});
+
+test('fetchFromArxiv: all results lack ArXiv id → no-results', async () => {
+  _setFetchForTests(async () => ({
+    ok: true, status: 200,
+    json: async () => ({ data: [{ title: 'X', externalIds: { DOI: 'x' } }] }),
+  }));
+  const result = await fetchFromArxiv('arxiv: nonexistent');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'no-results');
+});
+
+// ─── GitHub provider ─────────────────────────────────────────────────────────
+
+test('githubMatchKind: explicit prefix + phrase matches return "explicit"', () => {
+  assert.equal(githubMatchKind('github: vue.js'), 'explicit');
+  assert.equal(githubMatchKind('gh: vue.js'), 'explicit');
+  assert.equal(githubMatchKind('github repo for vue.js'), 'explicit');
+  assert.equal(githubMatchKind('vue.js on github'), 'explicit');
+  assert.equal(githubMatchKind('gh repo vue'), 'explicit');
+});
+
+test('githubMatchKind: non-matching queries return false', () => {
+  assert.equal(githubMatchKind('vue.js tutorial'), false);
+  assert.equal(githubMatchKind('git push fails'), false, 'bare "git" must not match GitHub provider');
+  assert.equal(githubMatchKind(''), false);
+});
+
+test('fetchFromGitHub: happy path returns repo list', async () => {
+  _setFetchForTests(async (url, opts) => {
+    assert.match(url, /api\.github\.com\/search\/repositories/);
+    assert.equal(opts?.headers?.Accept, 'application/vnd.github+json');
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        items: [
+          {
+            full_name: 'vuejs/vue',
+            html_url: 'https://github.com/vuejs/vue',
+            description: 'A progressive, incrementally-adoptable framework',
+            stargazers_count: 207000,
+            language: 'JavaScript',
+            updated_at: '2026-05-15T00:00:00Z',
+          },
+        ],
+      }),
+    };
+  });
+  const result = await fetchFromGitHub('github: vue');
+  assert.equal(result.ok, true);
+  assert.equal(result.results[0].title, 'vuejs/vue');
+  assert.equal(result.results[0].url, 'https://github.com/vuejs/vue');
+  assert.match(result.results[0].snippet, /★ 207000/);
+  assert.match(result.results[0].snippet, /JavaScript/);
+  assert.match(result.contentMap.get('https://github.com/vuejs/vue'), /progressive/);
+});
+
+test('fetchFromGitHub: HTTP 403 (rate limited) → http-403', async () => {
+  _setFetchForTests(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+  const result = await fetchFromGitHub('github: rate-limit-test');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'http-403');
+});
+
+// ─── Stack Overflow provider ────────────────────────────────────────────────
+
+test('stackOverflowMatchKind: explicit prefix + phrase matches return "explicit"', () => {
+  assert.equal(stackOverflowMatchKind('stackoverflow: javascript closure'), 'explicit');
+  assert.equal(stackOverflowMatchKind('stack overflow: javascript closure'), 'explicit');
+  assert.equal(stackOverflowMatchKind('javascript closure on stack overflow'), 'explicit');
+});
+
+test('stackOverflowMatchKind: non-matching + ambiguous "so:" return false', () => {
+  assert.equal(stackOverflowMatchKind('javascript closure'), false);
+  assert.equal(stackOverflowMatchKind('so: I went home'), false, '"so:" must not match — too generic');
+  assert.equal(stackOverflowMatchKind(''), false);
+});
+
+test('fetchFromStackOverflow: decodes HTML entities in title', async () => {
+  _setFetchForTests(async (url) => {
+    assert.match(url, /api\.stackexchange\.com\/2\.3\/search\/advanced/);
+    assert.match(url, /site=stackoverflow/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        items: [
+          {
+            title: 'What does &quot;use strict&quot; do in JavaScript &amp; why?',
+            link: 'https://stackoverflow.com/q/1335851',
+            score: 7800,
+            answer_count: 30,
+            is_answered: true,
+            tags: ['javascript', 'syntax', 'strict-mode'],
+          },
+        ],
+      }),
+    };
+  });
+  const result = await fetchFromStackOverflow('stack overflow javascript strict');
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.results[0].title,
+    'What does "use strict" do in JavaScript & why?',
+    'HTML entities must be decoded',
+  );
+  assert.match(result.results[0].snippet, /↑ 7800/);
+  assert.match(result.results[0].snippet, /✓ answered/);
+  assert.match(result.results[0].snippet, /tags: javascript, syntax, strict-mode/);
+});
+
+// ─── Router cross-provider ──────────────────────────────────────────────────
+
+test('tryApiDirect: HN-shaped query routes to hackernews', async () => {
+  _setFetchForTests(async (url) => {
+    assert.match(url, /hn\.algolia\.com/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({ hits: [{ objectID: '1', title: 'T', points: 1, num_comments: 0 }] }),
+    };
+  });
+  const result = await tryApiDirect('hacker news rust async', null, null);
+  assert.equal(result?.provider, 'hackernews');
+  assert.equal(result?.ok, true);
+});
+
+test('tryApiDirect: GitHub-shaped query routes to github', async () => {
+  _setFetchForTests(async (url) => {
+    assert.match(url, /api\.github\.com/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({ items: [{ full_name: 'x/y', html_url: 'https://github.com/x/y' }] }),
+    };
+  });
+  const result = await tryApiDirect('github: vue', null, null);
+  assert.equal(result?.provider, 'github');
+  assert.equal(result?.ok, true);
+});
+
+test('tryApiDirect: provider order — wikipedia explicit wins over a query that also could match phrases', async () => {
+  // `wiki: hacker news ranking` contains both an explicit wiki prefix AND
+  // the "hacker news" phrase.  Provider order puts Wikipedia first, so it
+  // claims the query and HN is never consulted.  This is the right
+  // behavior: explicit prefix is the strongest signal.
+  _setFetchForTests(async (url) => {
+    assert.match(url, /wikipedia\.org/, 'must route to Wikipedia, not HN');
+    return {
+      ok: true, status: 200,
+      json: async () => ({ query: { search: [{ title: 'X', snippet: '' }] } }),
+    };
+  });
+  const result = await tryApiDirect('wiki: hacker news ranking', null, null);
+  assert.equal(result?.provider, 'wikipedia');
 });

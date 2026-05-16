@@ -229,10 +229,360 @@ export async function fetchFromWikipedia(query, signal) {
   }
 }
 
+// ─── HN Algolia provider ─────────────────────────────────────────────────────
+//
+// Hacker News full-text search via the public Algolia mirror.  Anonymous
+// access, no rate-limit issues at Melo scale.  All matches are 'explicit'
+// — there's no "implicit" definition shape that should auto-route to HN.
+// User must name the site ("hacker news" / "hn:") for us to fire.
+
+const HN_PREFIX = /^(hn|hackernews|hacker\s+news)\s*[:：]\s*\S/i;
+const HN_PHRASE = /\bhacker\s+news\b|\bhn\s+(discussion|comments|thread|story|stories)/i;
+
+export function hnMatchKind(query) {
+  if (typeof query !== 'string') return false;
+  const q = query.trim();
+  if (!q) return false;
+  return (HN_PREFIX.test(q) || HN_PHRASE.test(q)) ? 'explicit' : false;
+}
+
+function cleanHnQuery(query) {
+  return query.trim()
+    .replace(/^(hn|hackernews|hacker\s+news)\s*[:：]\s*/i, '')
+    .replace(/\b(hn|hacker\s+news)\s+(discussion|comments|thread|story|stories)(\s+(on|about))?\s*/gi, '')
+    .replace(/\b(on|about)\s+hacker\s+news\b/gi, '')
+    .replace(/\bhacker\s+news\b/gi, '')
+    .replace(/[?？.。!！]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export async function fetchFromHN(query, signal) {
+  const startTs = Date.now();
+  const cleaned = cleanHnQuery(query);
+  if (!cleaned) {
+    return { provider: 'hackernews', ok: false, reason: 'empty-query', latencyMs: 0 };
+  }
+  const { signal: reqSignal, cleanup } = combineApiDirectSignal(signal, 5000);
+  try {
+    const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(cleaned)}&tags=story&hitsPerPage=3`;
+    const res = await _fetchImpl(url, {
+      signal: reqSignal,
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      return { provider: 'hackernews', ok: false, reason: `http-${res.status}`, latencyMs: Date.now() - startTs };
+    }
+    const data = await res.json();
+    const hits = Array.isArray(data?.hits) ? data.hits : [];
+    if (!hits.length) {
+      return { provider: 'hackernews', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    const results = [];
+    const contentMap = new Map();
+    for (const hit of hits) {
+      if (!hit?.objectID) continue;
+      const title = String(hit.title || hit.story_title || 'HN story');
+      const itemUrl = `https://news.ycombinator.com/item?id=${hit.objectID}`;
+      const externalUrl = String(hit.url || '');
+      const points = Number(hit.points || 0);
+      const numComments = Number(hit.num_comments || 0);
+      const created = hit.created_at ? String(hit.created_at).slice(0, 10) : '';
+      const snippet = [
+        `${points} points`,
+        `${numComments} comments`,
+        created ? `posted ${created}` : '',
+        externalUrl ? `→ ${externalUrl}` : '',
+      ].filter(Boolean).join(' · ');
+      results.push({ title, url: itemUrl, snippet });
+      const body = String(hit.story_text || '').replace(/<[^>]+>/g, '').trim();
+      if (body) contentMap.set(itemUrl, body);
+    }
+    if (!results.length) {
+      return { provider: 'hackernews', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'hackernews', ok: true, results, contentMap, latencyMs: Date.now() - startTs };
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return { provider: 'hackernews', ok: false, reason: 'aborted', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'hackernews', ok: false, reason: classifyErrorReason(err), latencyMs: Date.now() - startTs };
+  } finally {
+    cleanup();
+  }
+}
+
+// ─── arXiv provider (via Semantic Scholar) ───────────────────────────────────
+//
+// arXiv's native API is Atom-XML which we'd need a parser for.  Semantic
+// Scholar's free Graph API aggregates arXiv + other sources and returns
+// clean JSON, no key required.  We filter results to those with an
+// externalIds.ArXiv entry so this stays "arXiv-shaped" — Codex G-2b
+// round-5 lesson: don't pretend to be one provider while quietly serving
+// another's data.
+
+const ARXIV_PREFIX = /^(arxiv|arXiv)\s*[:：]\s*\S/i;
+const ARXIV_PHRASE = /\barxiv\b|\b(paper|research|论文)s?\s+(on|about|关于)\s+\S|\S\s*论文\s*$/i;
+
+export function arxivMatchKind(query) {
+  if (typeof query !== 'string') return false;
+  const q = query.trim();
+  if (!q) return false;
+  return (ARXIV_PREFIX.test(q) || ARXIV_PHRASE.test(q)) ? 'explicit' : false;
+}
+
+function cleanArxivQuery(query) {
+  return query.trim()
+    .replace(/^(arxiv|arXiv)\s*[:：]\s*/i, '')
+    .replace(/^\s*(papers?|research|论文)\s+(on|about|关于)\s+/i, '')
+    .replace(/\s+论文\s*$/, '')
+    .replace(/\barxiv\b/gi, '')
+    .replace(/[?？.。!！]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export async function fetchFromArxiv(query, signal) {
+  const startTs = Date.now();
+  const cleaned = cleanArxivQuery(query);
+  if (!cleaned) {
+    return { provider: 'arxiv', ok: false, reason: 'empty-query', latencyMs: 0 };
+  }
+  const { signal: reqSignal, cleanup } = combineApiDirectSignal(signal, 6000);
+  try {
+    const fields = 'title,authors,abstract,year,externalIds,url';
+    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(cleaned)}&limit=5&fields=${fields}`;
+    const res = await _fetchImpl(url, {
+      signal: reqSignal,
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      return { provider: 'arxiv', ok: false, reason: `http-${res.status}`, latencyMs: Date.now() - startTs };
+    }
+    const data = await res.json();
+    const all = Array.isArray(data?.data) ? data.data : [];
+    // Keep only papers actually on arXiv — anything else is Semantic
+    // Scholar's broader corpus and shouldn't be billed as "arXiv".
+    const arxivOnly = all.filter(p => p?.externalIds?.ArXiv).slice(0, 3);
+    if (!arxivOnly.length) {
+      return { provider: 'arxiv', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    const results = [];
+    const contentMap = new Map();
+    for (const paper of arxivOnly) {
+      const arxivId = String(paper.externalIds.ArXiv);
+      const paperUrl = `https://arxiv.org/abs/${arxivId}`;
+      const title = String(paper.title || `arXiv:${arxivId}`).trim();
+      const authorList = Array.isArray(paper.authors) ? paper.authors.slice(0, 3).map(a => a.name).filter(Boolean) : [];
+      const authorTail = (Array.isArray(paper.authors) && paper.authors.length > 3) ? ' et al.' : '';
+      const year = paper.year ? String(paper.year) : '';
+      const snippet = [
+        year ? `(${year})` : '',
+        authorList.length ? authorList.join(', ') + authorTail : '',
+        `arXiv:${arxivId}`,
+      ].filter(Boolean).join(' · ');
+      results.push({ title, url: paperUrl, snippet });
+      const abstract = String(paper.abstract || '').trim();
+      if (abstract) contentMap.set(paperUrl, abstract);
+    }
+    return { provider: 'arxiv', ok: true, results, contentMap, latencyMs: Date.now() - startTs };
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return { provider: 'arxiv', ok: false, reason: 'aborted', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'arxiv', ok: false, reason: classifyErrorReason(err), latencyMs: Date.now() - startTs };
+  } finally {
+    cleanup();
+  }
+}
+
+// ─── GitHub provider ─────────────────────────────────────────────────────────
+//
+// Repository search.  Anonymous, 60 req/h rate limit (enough for typical
+// Melo usage where this is a fallback path, not a polling target).  User
+// search / code search are intentionally out of scope for v1 — same
+// matchKind/fetch pattern, just deferred until shape signal warrants it.
+
+const GH_PREFIX = /^(github|gh)\s*[:：]\s*\S/i;
+const GH_PHRASE = /\bgithub\b|\bgh\s+(repo|repos|repository|repositories)\b/i;
+
+export function githubMatchKind(query) {
+  if (typeof query !== 'string') return false;
+  const q = query.trim();
+  if (!q) return false;
+  return (GH_PREFIX.test(q) || GH_PHRASE.test(q)) ? 'explicit' : false;
+}
+
+function cleanGithubQuery(query) {
+  return query.trim()
+    .replace(/^(github|gh)\s*[:：]\s*/i, '')
+    .replace(/^\s*github\s+(repo|repos|repository|repositories)\s+(for|of)?\s*/i, '')
+    .replace(/\bgh\s+(repo|repos|repository|repositories)\b/gi, '')
+    .replace(/\bon\s+github\b/gi, '')
+    .replace(/\bgithub\b/gi, '')
+    .replace(/[?？.。!！]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export async function fetchFromGitHub(query, signal) {
+  const startTs = Date.now();
+  const cleaned = cleanGithubQuery(query);
+  if (!cleaned) {
+    return { provider: 'github', ok: false, reason: 'empty-query', latencyMs: 0 };
+  }
+  const { signal: reqSignal, cleanup } = combineApiDirectSignal(signal, 5000);
+  try {
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(cleaned)}&per_page=3&sort=best-match`;
+    const res = await _fetchImpl(url, {
+      signal: reqSignal,
+      headers: {
+        'User-Agent': UA,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) {
+      return { provider: 'github', ok: false, reason: `http-${res.status}`, latencyMs: Date.now() - startTs };
+    }
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      return { provider: 'github', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    const results = [];
+    const contentMap = new Map();
+    for (const repo of items.slice(0, 3)) {
+      if (!repo?.full_name) continue;
+      const title = String(repo.full_name);
+      const url2 = String(repo.html_url || `https://github.com/${repo.full_name}`);
+      const stars = Number(repo.stargazers_count || 0);
+      const lang = String(repo.language || '');
+      const updated = repo.updated_at ? String(repo.updated_at).slice(0, 10) : '';
+      const snippet = [
+        `★ ${stars}`,
+        lang || '',
+        updated ? `updated ${updated}` : '',
+      ].filter(Boolean).join(' · ');
+      results.push({ title, url: url2, snippet });
+      const desc = String(repo.description || '').trim();
+      if (desc) contentMap.set(url2, desc);
+    }
+    if (!results.length) {
+      return { provider: 'github', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'github', ok: true, results, contentMap, latencyMs: Date.now() - startTs };
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return { provider: 'github', ok: false, reason: 'aborted', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'github', ok: false, reason: classifyErrorReason(err), latencyMs: Date.now() - startTs };
+  } finally {
+    cleanup();
+  }
+}
+
+// ─── Stack Overflow provider ────────────────────────────────────────────────
+//
+// Stack Exchange API anonymous tier (10k queries/day, far above Melo's
+// needs).  Stackoverflow site only for v1; superuser/serverfault/codereview
+// can be added as separate providers later if there's signal in the trail.
+
+const SO_PREFIX = /^(stackoverflow|stack\s+overflow)\s*[:：]\s*\S/i;
+const SO_PHRASE = /\bstack\s+overflow\b/i;
+
+export function stackOverflowMatchKind(query) {
+  if (typeof query !== 'string') return false;
+  const q = query.trim();
+  if (!q) return false;
+  return (SO_PREFIX.test(q) || SO_PHRASE.test(q)) ? 'explicit' : false;
+}
+
+function cleanStackOverflowQuery(query) {
+  return query.trim()
+    .replace(/^(stackoverflow|stack\s+overflow)\s*[:：]\s*/i, '')
+    .replace(/\bon\s+stack\s+overflow\b/gi, '')
+    .replace(/\bstack\s+overflow\b/gi, '')
+    .replace(/[?？.。!！]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export async function fetchFromStackOverflow(query, signal) {
+  const startTs = Date.now();
+  const cleaned = cleanStackOverflowQuery(query);
+  if (!cleaned) {
+    return { provider: 'stackoverflow', ok: false, reason: 'empty-query', latencyMs: 0 };
+  }
+  const { signal: reqSignal, cleanup } = combineApiDirectSignal(signal, 5000);
+  try {
+    const url = 'https://api.stackexchange.com/2.3/search/advanced' +
+      `?order=desc&sort=relevance&site=stackoverflow&pagesize=3` +
+      `&q=${encodeURIComponent(cleaned)}`;
+    const res = await _fetchImpl(url, {
+      signal: reqSignal,
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      return { provider: 'stackoverflow', ok: false, reason: `http-${res.status}`, latencyMs: Date.now() - startTs };
+    }
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      return { provider: 'stackoverflow', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    const results = [];
+    const contentMap = new Map();
+    for (const item of items.slice(0, 3)) {
+      if (!item?.link) continue;
+      // Stack Exchange returns title encoded as HTML entities — decode the
+      // common ones so the chat UI doesn't render literal `&quot;` etc.
+      const title = String(item.title || 'Stack Overflow question')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      const url2 = String(item.link);
+      const score = Number(item.score || 0);
+      const answerCount = Number(item.answer_count || 0);
+      const isAnswered = Boolean(item.is_answered);
+      const tags = Array.isArray(item.tags) ? item.tags.slice(0, 4).join(', ') : '';
+      const snippet = [
+        `↑ ${score}`,
+        `${answerCount} answers`,
+        isAnswered ? '✓ answered' : '',
+        tags ? `tags: ${tags}` : '',
+      ].filter(Boolean).join(' · ');
+      results.push({ title, url: url2, snippet });
+    }
+    if (!results.length) {
+      return { provider: 'stackoverflow', ok: false, reason: 'no-results', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'stackoverflow', ok: true, results, contentMap, latencyMs: Date.now() - startTs };
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError') {
+      return { provider: 'stackoverflow', ok: false, reason: 'aborted', latencyMs: Date.now() - startTs };
+    }
+    return { provider: 'stackoverflow', ok: false, reason: classifyErrorReason(err), latencyMs: Date.now() - startTs };
+  } finally {
+    cleanup();
+  }
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 const PROVIDERS = [
+  // Wikipedia first — it covers the broadest implicit definition shape; the
+  // others below are explicit-site-named providers so they only fire when
+  // the user has clearly stated which corpus they want.  Order within the
+  // explicit-named group is by expected hit volume (HN gets the most
+  // organic mentions in tech queries, etc).
   { name: 'wikipedia', matchKind: wikipediaMatchKind, fetch: fetchFromWikipedia },
+  { name: 'hackernews', matchKind: hnMatchKind, fetch: fetchFromHN },
+  { name: 'arxiv', matchKind: arxivMatchKind, fetch: fetchFromArxiv },
+  { name: 'github', matchKind: githubMatchKind, fetch: fetchFromGitHub },
+  { name: 'stackoverflow', matchKind: stackOverflowMatchKind, fetch: fetchFromStackOverflow },
 ];
 
 /**
@@ -280,4 +630,8 @@ export const _internals = {
   cleanWikipediaQuery,
   detectWikiLang,
   wikipediaMatchKind,
+  cleanHnQuery,
+  cleanArxivQuery,
+  cleanGithubQuery,
+  cleanStackOverflowQuery,
 };
