@@ -4,6 +4,26 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-16 — meloChrome Stage 1：dedicated-profile CDP attach launcher (4 轮 C-gate 闭环到 A)
+
+意图：把 Melo 的浏览器 tier 从"`@playwright/cli` 子进程 + daemon 模型"升级到"attach 用户真 Chrome"——daemon 模型曾撞 2026-05-04 system-freeze regression，且 headless 默认 + 没法用 logged-in session。这是 Stage 1：纯 launcher + lock file，不动 fetchUrlTool / webSearchTool。Stage 2 才接 playwright-core + 作为新 tier 入 fetch 链路。
+
+Codex C-gate 4 轮闭环到 A——每轮都抓真 bug 而非空喷：
+1. **C #1**（`5e82074` 阻）：`spawn()` 漏 'error' listener（binary 不可执行直接崩 Node 进程）+ 无并发 singleflight + abort 不杀 child + timer leak → 1 commit `75766c1` 4 个 fix + 4 个回归。
+2. **C #2**（`75766c1` 阻）：全局单 latch singleflight 跨 MELO_HOME 串用（B 撞 A 的 profileDir）+ §6 home 没在 entry 捕获 → 改 `Map<home, Promise>`，inner 接 `_capturedHome` 不再 getMeloHome()。`fcd83df` push 评 B（带🟠 锁复用太弱）。
+3. **🟠 B 闭环 → C #3 阻**（`f8b6683`）：把 lock 复用从"仅端口响应"升级到 3 谓词（profileDir match + PID alive + 端口响应）。但 round-10 Codex 抓到 `if (lock.profileDir && ...)` 让缺字段的 legacy lock 跳过 profileDir 检查 → 改 `||` 强制必有。
+4. **C #3 阻** → 强制清锁路径在"旧 Chrome 还活着"的常见升级场景下崩盘（Chrome profile-lock 互斥让新 spawn 永远起不来）→ round-11 最终方案：**migrate 不杀**——legacy lock + PID alive + 端口响应 = 视为合法（home-scoped lock path 本身已隐含来源）+ 回填 profileDir 字段。一次性迁移，下一次起严格三谓词。`f1bc3f3` 评 **A**。
+
+实现承诺（diff 看不出的设计点）：
+- **dedicated profile** 在 `$MELO_HOME/desktop/chrome-profile/`（不污染用户日常 Chrome；可见窗口让用户能看到 Melo 在干嘛）。
+- **lock-reuse 三谓词 + legacy migration**：profileDir match（或缺字段 → 自动 backfill） + PID alive via `process.kill(pid, 0)` + CDP /json/version 必须含 `webSocketDebuggerUrl`（防 foreign HTTP server 占同端口）。
+- **singleflight keyed by MELO_HOME**（不是全局），home 在 public entry 同步捕获（CLAUDE.md §6）。
+- **abort/timeout 都 kill 子 child**——只杀本次 spawn 的，reuse 路径的 Chrome 不动（用户可能开着 tab）。
+- **没有 playwright-core dep**——Stage 1 只做 launcher + lock，Stage 2 才引入 connectOverCDP。
+- Cross-process race（两个 Melo 进程同时启）和 follower signal 不阻断 leader launch 都是已知 limit，留 Stage 2 视实际命中决定要不要做。
+
+本地 `npm test` 2458/2458 GREEN. Final commit: `f1bc3f3`.
+
 ## 2026-05-16 — api-direct providers v2：HN / arXiv (via Semantic Scholar) / GitHub / Stack Overflow + arXiv C 闭环
 
 意图：v1 (Wikipedia) 验证了 router 架构，本批加 4 个 explicit-site-named provider。tech-corpus 类查询（"hacker news 关于 Y" / "github repo for Z" / "paper on transformer" / "stack overflow X"）从 Playwright SERP + HTML 抽取，转到结构化 JSON API 一发。
