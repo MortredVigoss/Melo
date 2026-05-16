@@ -405,7 +405,19 @@ export const fetchUrlTool = {
       }
       try {
         return await withMeloChrome(async (browser) => {
-          const context = await browser.newContext();
+          // Codex Stage 2b round-2 闭环 (2026-05-16): MUST reuse the
+          // CDP-attached browser's default persistent context, NOT call
+          // browser.newContext().  newContext() creates an isolated profile
+          // with no cookies / localStorage / login state — that defeats
+          // the entire point of CDP attach (the user's real Chrome session,
+          // logged in to GitHub / Twitter / Notion etc., is invisible to
+          // an isolated context).  contexts()[0] is the default persistent
+          // context that connectOverCDP gives us; it sees everything the
+          // user's Melo Chrome profile sees.
+          const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
+          const context = (Array.isArray(contexts) && contexts[0])
+            ? contexts[0]
+            : await browser.newContext(); // defensive fallback — shouldn't fire with CDP attach
           const page = await context.newPage();
           try {
             await page.goto(normalized, {
@@ -415,10 +427,12 @@ export const fetchUrlTool = {
             const text = await page.evaluate(() => document?.body?.innerText || '');
             return String(text || '').trim().slice(0, MAX_CONTENT_LENGTH) || null;
           } finally {
-            // Close context (cookies for THIS run flushed), browser
-            // stays connected for subsequent calls.  Per-call context
-            // avoids cross-fetch state leakage.
-            try { await context.close(); } catch { /* best-effort */ }
+            // Close ONLY the page we opened.  The shared persistent
+            // context stays alive — closing it would destroy the user's
+            // login state, defeating the whole CDP-attach value
+            // proposition.  Browser handle close (CDP detach) is handled
+            // by withMeloChrome's finally.
+            try { await page.close(); } catch { /* best-effort */ }
           }
         }, { signal });
       } catch (err) {

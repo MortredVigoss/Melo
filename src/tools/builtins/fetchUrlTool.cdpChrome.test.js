@@ -212,3 +212,103 @@ test('parametersSchema enum contains "cdp-chrome"', () => {
   assert.ok(Array.isArray(enums));
   assert.ok(enums.includes('cdp-chrome'), `enum must include cdp-chrome; got ${enums.join(', ')}`);
 });
+
+// ─── Stage 2b round-2 闭环: fake-Browser test for context selection ───────
+
+test('tryCdpChrome reuses browser.contexts()[0] (default persistent) — does NOT call newContext', async () => {
+  // Codex round-2 闭环 (2026-05-16): the explicit-override tests above all
+  // bypass the real tryCdpChrome → withMeloChrome → browser interaction,
+  // so they couldn't catch the login-state-destroying newContext() bug
+  // round-1 shipped with.  This test injects a fake Browser via the
+  // connect.js DI seam so the REAL tryCdpChrome runs and we can verify
+  // which Browser methods get called.
+  const connectMod = await import('../../services/browser/connect.js');
+
+  let newContextCallCount = 0;
+  let contextCloseCallCount = 0;
+  let pageCloseCallCount = 0;
+  let gotoCallCount = 0;
+
+  const defaultContext = {
+    newPage: async () => ({
+      goto: async () => { gotoCallCount += 1; },
+      evaluate: async () => 'Fake Browser page text returned from default persistent context; pretend this is the logged-in user\'s Twitter feed body or similar auth-walled content.  Padded so looksEmpty does not fire and the auto path treats this as a successful CDP fetch.',
+      close: async () => { pageCloseCallCount += 1; },
+    }),
+    close: async () => { contextCloseCallCount += 1; },
+  };
+  const fakeBrowser = {
+    contexts: () => [defaultContext],
+    newContext: async () => { newContextCallCount += 1; return defaultContext; },
+    close: async () => {}, // CDP detach (withMeloChrome will call this)
+  };
+
+  connectMod._setEnsureChromeForTests(async () => ({
+    port: 7777, pid: 1, reused: true, profileDir: '/p', lockPath: '/l',
+  }));
+  connectMod._setConnectImplForTests(async () => fakeBrowser);
+
+  try {
+    process.env.MELO_CDP_ENABLED = '1';
+    const result = await fetchUrlTool.run({ url: SITE }, {
+      _fetchViaJina: async () => '', // HTTP fails, escalates to cdp-chrome
+      _fetchDirect: async () => '',
+      _tryPlaywright: async () => PLAYWRIGHT_OK_BODY, // would fall through if cdp fails
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(gotoCallCount, 1, 'tryCdpChrome must call page.goto exactly once');
+    assert.equal(newContextCallCount, 0,
+      'newContext() must NEVER be called — that would destroy login state');
+    assert.equal(contextCloseCallCount, 0,
+      'context.close() must NEVER be called — keeps user logged-in across fetches');
+    assert.equal(pageCloseCallCount, 1,
+      'page.close() must be called exactly once — cleans up the new tab but keeps context alive');
+
+    const cdpEntry = result.evidenceTrail.find(e => e.tier === 'cdp-chrome');
+    assert.equal(cdpEntry?.outcome, 'ok');
+  } finally {
+    connectMod._setEnsureChromeForTests(null);
+    connectMod._setConnectImplForTests(null);
+  }
+});
+
+test('tryCdpChrome: defensive fallback — contexts() returns [] → newContext() (shouldn\'t happen with CDP attach but won\'t crash)', async () => {
+  const connectMod = await import('../../services/browser/connect.js');
+
+  let newContextCallCount = 0;
+  const fallbackContext = {
+    newPage: async () => ({
+      goto: async () => {},
+      evaluate: async () => 'Fallback context page body — wide enough to pass the looksEmpty 120-char threshold so the test treats this fetch as a successful escalation outcome even on the defensive newContext() path.',
+      close: async () => {},
+    }),
+    close: async () => {},
+  };
+  const fakeBrowser = {
+    contexts: () => [], // empty — exercise the fallback
+    newContext: async () => { newContextCallCount += 1; return fallbackContext; },
+    close: async () => {},
+  };
+
+  connectMod._setEnsureChromeForTests(async () => ({
+    port: 7778, pid: 1, reused: true, profileDir: '/p', lockPath: '/l',
+  }));
+  connectMod._setConnectImplForTests(async () => fakeBrowser);
+
+  try {
+    process.env.MELO_CDP_ENABLED = '1';
+    const result = await fetchUrlTool.run({ url: SITE }, {
+      _fetchViaJina: async () => '',
+      _fetchDirect: async () => '',
+      _tryPlaywright: async () => PLAYWRIGHT_OK_BODY,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(newContextCallCount, 1,
+      'empty contexts() array exercises the defensive fallback');
+  } finally {
+    connectMod._setEnsureChromeForTests(null);
+    connectMod._setConnectImplForTests(null);
+  }
+});
