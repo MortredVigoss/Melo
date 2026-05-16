@@ -4,6 +4,16 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-16 — api-direct providers v2：HN / arXiv (via Semantic Scholar) / GitHub / Stack Overflow + arXiv C 闭环
+
+意图：v1 (Wikipedia) 验证了 router 架构，本批加 4 个 explicit-site-named provider。tech-corpus 类查询（"hacker news 关于 Y" / "github repo for Z" / "paper on transformer" / "stack overflow X"）从 Playwright SERP + HTML 抽取，转到结构化 JSON API 一发。
+
+Codex 跑 0f0d808 评 **C** 阻 push：arXiv 把 `paper on X` / `论文` 短语标 `'explicit'` 绕过 timeSensitive gate，"latest research on AI safety" 会冲进 arXiv 拿过时数据——和 Wikipedia round-5 同款病。32661f6 闭环评 **A**：arXiv matchKind 改三态（explicit = `arxiv:` 前缀 / `\barxiv\b` 站点名；implicit = `paper/research/论文` 学术意图但未点名；false）。Q1/Q2 用户拍板 both A：EN+ZH 学术意图都 implicit、都受 gate。
+
+实现承诺：所有 explicit-site-named provider（HN / GitHub / SO）的 match 都 'explicit'-only——没有 implicit 路由，避免 Wikipedia 同款 timeSensitive 陷阱。arXiv 是唯一 mixed-mode（学术意图是非站点意图，受 gate），跟 Wikipedia 一样。arXiv 走 Semantic Scholar Graph API（clean JSON，避免拉 XML parser dep），但**过滤** `externalIds.ArXiv` 存在的 paper——Codex G-2b round-5 lesson "不要假装是 X provider 实际服务 Y corpus"。PROVIDERS 排序：Wikipedia 第一（implicit 覆盖最广），后面 site-named 按预期命中率排（HN > arXiv > GH > SO）。
+
+本地 `npm test` 2425/2425 GREEN. Final commit: `32661f6`.
+
 ## 2026-05-14/16 — api-direct phase v1：Wikipedia 短路 SERP，时间敏感 query 走原路 (C → B → S 三轮闭环)
 
 意图：用户反馈"靠猜 URL"的 SERP-scrape 体系对结构化查询是浪费，"who is X"在 Wikipedia 一个 call 能拿 canonical 答案。先验证 router 架构而不展开 G-2b 留账。
