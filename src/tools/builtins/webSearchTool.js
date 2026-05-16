@@ -1948,7 +1948,7 @@ export const webSearchTool = {
     // ── API-direct layer ──────────────────────────────────────────────
     // Before paying SERP latency, try structured-data providers (Wikipedia
     // for "what is X" / "who is X" / explicit "wiki: X" prefix; future:
-    // HN / arXiv / GitHub).  Each provider has a cheap matches() heuristic;
+    // HN / arXiv / GitHub).  Each provider has a cheap matchKind() check;
     // when no provider claims the query we record `skip no-provider-match`
     // and fall through to SERP unchanged.  When a provider succeeds, we
     // return its result formatted through the same formatResults() path
@@ -1960,24 +1960,53 @@ export const webSearchTool = {
     // (cache hit returning yesterday's Wikipedia summary when the live
     // API has today's edit).  The cache layer is for SERP, which is slow
     // + expensive — api-direct doesn't share those constraints.
+    //
+    // No pre-await abort gate here.  tryApiDirect short-circuits on
+    // no-match / time-sensitive-skip with zero network — the only network
+    // it does is the actual provider.fetch() call, which has its own abort
+    // handling inside fetchFromWikipedia.  An entry-level abort gate would
+    // overwrite the real api-direct outcome (skip no-provider-match / skip
+    // time-sensitive) with `fail aborted-mid-loop`, making trail analysis
+    // unable to distinguish "abort hit while api-direct was about to skip
+    // anyway" from "abort interrupted a Wikipedia fetch".  The serp phase
+    // below keeps its own pre-await gate; abort during the SERP race
+    // remains the canonical bail point.
     const tApi = Date.now();
-    if (signal?.aborted) return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
     let apiResult = null;
+    let apiFetchErr = null;
     try {
       apiResult = await tryApiDirect(q, intent, signal);
     } catch (err) {
-      if (signal?.aborted || err?.name === 'AbortError') {
+      apiFetchErr = err;
+    }
+
+    // Record the api-direct trail entry FIRST, before the post-await abort
+    // gate.  Synchronous gate outcomes (skip no-provider-match / skip
+    // time-sensitive) must show up as their real semantics in the trail
+    // even if the signal flipped during tryApiDirect's microtask — see
+    // the no-pre-gate rationale above.  An abort during a real
+    // provider.fetch() call surfaces as apiFetchErr, which routes to the
+    // bail path below with `fail aborted-mid-loop`.
+    if (apiFetchErr) {
+      if (signal?.aborted || apiFetchErr?.name === 'AbortError') {
         return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
       }
       recordWebSearchTrail(trail, 'api-direct', 'fail', {
         latencyMs: Date.now() - tApi,
-        reason: classifyWebSearchError(err),
+        reason: classifyWebSearchError(apiFetchErr),
       });
-    }
-    if (signal?.aborted) return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
-
-    if (apiResult === null) {
+    } else if (apiResult === null) {
       recordWebSearchTrail(trail, 'api-direct', 'skip', { reason: 'no-provider-match' });
+    } else if (apiResult.skipped) {
+      // Provider matched but elected not to fire (e.g. implicit definition
+      // shape collided with intent.timeSensitive).  Record method=provider
+      // so trail analysis can distinguish "no provider knows this query"
+      // from "Wikipedia knows it but the gate said no".
+      recordWebSearchTrail(trail, 'api-direct', 'skip', {
+        latencyMs: apiResult.latencyMs,
+        method: apiResult.provider,
+        reason: apiResult.reason || 'gated',
+      });
     } else if (apiResult.ok) {
       recordWebSearchTrail(trail, 'api-direct', 'ok', {
         latencyMs: apiResult.latencyMs,

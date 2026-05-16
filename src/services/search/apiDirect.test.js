@@ -253,14 +253,108 @@ test('tryApiDirect: matching query but provider fails returns ok=false (caller f
   assert.equal(result.provider, 'wikipedia');
 });
 
+// ─── Time-sensitive gate (Codex G-2b round-5 闭环) ──────────────────────────
+
+test('wikipediaMatchKind: explicit prefix returns "explicit"', () => {
+  const k = _internals.wikipediaMatchKind;
+  assert.equal(k('wikipedia: Marie Curie'), 'explicit');
+  assert.equal(k('wiki: Marie Curie'), 'explicit');
+  assert.equal(k('维基百科：居里夫人'), 'explicit');
+  assert.equal(k('维基: 居里夫人'), 'explicit');
+});
+
+test('wikipediaMatchKind: definition shape returns "implicit"', () => {
+  const k = _internals.wikipediaMatchKind;
+  assert.equal(k('what is photosynthesis'), 'implicit');
+  assert.equal(k('who is Marie Curie'), 'implicit');
+  assert.equal(k('define photosynthesis'), 'implicit');
+  assert.equal(k('什么是光合作用'), 'implicit');
+  assert.equal(k('谁是居里夫人'), 'implicit');
+});
+
+test('wikipediaMatchKind: non-matches return false', () => {
+  const k = _internals.wikipediaMatchKind;
+  assert.equal(k('best restaurants in tokyo'), false);
+  assert.equal(k(''), false);
+  assert.equal(k(null), false);
+});
+
+test('tryApiDirect: implicit + intent.timeSensitive → skipped (NO Wikipedia hit)', async () => {
+  _setFetchForTests(async () => { throw new Error('fetch must NOT be called when time-sensitive gate fires'); });
+  const result = await tryApiDirect(
+    'what is the latest Node.js version',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.ok(result, 'expected gate-skip result object, got null');
+  assert.equal(result.ok, false);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'time-sensitive');
+  assert.equal(result.provider, 'wikipedia');
+  assert.equal(result.latencyMs, 0, 'gate-skip must not pay any latency');
+});
+
+test('tryApiDirect: implicit + intent.timeSensitive (Chinese latest/最新) → skipped', async () => {
+  _setFetchForTests(async () => { throw new Error('fetch must NOT be called'); });
+  const result = await tryApiDirect(
+    '什么是最新的 React 框架',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.reason, 'time-sensitive');
+});
+
+test('tryApiDirect: implicit + intent.timeSensitive=false → fetches normally', async () => {
+  _setFetchForTests(mockJsonFetch([
+    ['list=search', { json: { query: { search: [{ title: 'Photosynthesis', snippet: 'Plant chemistry' }] } } }],
+    ['rest_v1/page/summary', { json: { title: 'Photosynthesis', extract: 'Photosynthesis converts light...', content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Photosynthesis' } } } }],
+  ]));
+  const result = await tryApiDirect(
+    'what is photosynthesis',
+    { kind: 'general', timeSensitive: false },
+    null,
+  );
+  assert.equal(result?.ok, true);
+  assert.equal(result?.skipped, undefined, 'implicit + not time-sensitive must NOT be gated');
+});
+
+test('tryApiDirect: explicit prefix + intent.timeSensitive → fetches anyway (user-intent override)', async () => {
+  // User explicitly asked for Wikipedia even though query contains "latest".
+  // The gate must defer to user intent here — Wikipedia stub returned even
+  // if the data is stale; user can re-query without `wiki:` to force SERP.
+  let fetchCalled = false;
+  _setFetchForTests(mockJsonFetch([
+    ['list=search', () => { fetchCalled = true; return { json: { query: { search: [{ title: 'X', snippet: 'X' }] } } }; }],
+    ['rest_v1/page/summary', { json: { title: 'X', extract: 'X is a thing.', content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/X' } } } }],
+  ]));
+  const result = await tryApiDirect(
+    'wiki: latest Node.js version',
+    { kind: 'general', timeSensitive: true },
+    null,
+  );
+  assert.equal(fetchCalled, true, 'explicit prefix must override time-sensitive gate');
+  assert.equal(result?.ok, true);
+  assert.equal(result?.skipped, undefined);
+});
+
+test('tryApiDirect: no intent passed → treats as non-time-sensitive (defensive default)', async () => {
+  _setFetchForTests(mockJsonFetch([
+    ['list=search', { json: { query: { search: [{ title: 'X', snippet: 'X' }] } } }],
+    ['rest_v1/page/summary', { json: { title: 'X', extract: 'X.', content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/X' } } } }],
+  ]));
+  const result = await tryApiDirect('what is X', null, null);
+  assert.equal(result?.ok, true, 'missing intent must not block legitimate matches');
+});
+
 // ─── PROVIDERS registry sanity ───────────────────────────────────────────────
 
-test('_internals.PROVIDERS contains wikipedia with required interface', () => {
+test('_internals.PROVIDERS contains wikipedia with required interface (matchKind + fetch)', () => {
   const provs = _internals.PROVIDERS;
   assert.ok(Array.isArray(provs));
   assert.ok(provs.length >= 1);
   const wiki = provs.find(p => p.name === 'wikipedia');
   assert.ok(wiki, 'wikipedia provider must be registered');
-  assert.equal(typeof wiki.matches, 'function');
+  assert.equal(typeof wiki.matchKind, 'function');
   assert.equal(typeof wiki.fetch, 'function');
 });

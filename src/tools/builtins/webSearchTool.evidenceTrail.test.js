@@ -101,15 +101,57 @@ test('evidenceTrail: aborted weather-fast-path produces shape-stable trail with 
   assert.ok(result.meta?.spanId);
 });
 
-test('evidenceTrail: aborted at first network phase (noCache=true) records api-direct.fail and skips remaining phases', async () => {
-  // Non-weather query + noCache=true → cache phase records skip,
-  // api-direct is the next abort gate.  Previously named "aborted serp
-  // phase" (serp was the first post-cache phase before api-direct landed
-  // between cache and serp).  Earlier name was "aborted cache phase",
-  // also renamed when G-1c follow-up #1 caught the false coverage.
-  // The invariant the test guards: whichever phase is first-after-cache
-  // gets the `fail aborted-mid-loop` entry; every later phase gets
-  // `skip aborted-by-prev-phase`.
+test('evidenceTrail: time-sensitive definition query records api-direct.skip reason=time-sensitive and falls through to SERP', async () => {
+  // Codex G-2b round-5 (2026-05-14) closeout: `what is the latest Node.js
+  // version` matches the implicit definition shape but the time-sensitive
+  // keyword (`latest`) means Wikipedia would likely return stale data.
+  // The api-direct phase must skip with reason='time-sensitive' so SERP
+  // gets a chance to find current info.  We use a pre-aborted signal to
+  // catch the immediately-following serp phase's `fail aborted-mid-loop`
+  // entry, which proves api-direct didn't short-circuit.
+  const ac = new AbortController();
+  ac.abort();
+  const result = await webSearchTool.run(
+    { query: 'what is the latest Node.js version', noCache: true },
+    { signal: ac.signal },
+  );
+  const apiEntry = result.evidenceTrail.find(e => e.tier === 'api-direct');
+  assert.equal(apiEntry?.outcome, 'skip');
+  assert.equal(apiEntry?.reason, 'time-sensitive');
+  assert.equal(apiEntry?.method, 'wikipedia',
+    'method=wikipedia so trail analysis can distinguish "no provider knows" from "Wikipedia gated"');
+  // serp phase ran next (and got aborted by the pre-aborted signal).
+  const serpEntry = result.evidenceTrail.find(e => e.tier === 'serp');
+  assert.equal(serpEntry?.outcome, 'fail');
+  assert.equal(serpEntry?.reason, 'aborted-mid-loop');
+});
+
+test('evidenceTrail: time-sensitive Chinese definition (什么是最新...) also gates', async () => {
+  const ac = new AbortController();
+  ac.abort();
+  const result = await webSearchTool.run(
+    { query: '什么是最新的 React 框架', noCache: true },
+    { signal: ac.signal },
+  );
+  const apiEntry = result.evidenceTrail.find(e => e.tier === 'api-direct');
+  assert.equal(apiEntry?.outcome, 'skip');
+  assert.equal(apiEntry?.reason, 'time-sensitive');
+});
+
+test('evidenceTrail: aborted at first network phase records serp.fail; api-direct still shows its real (sync) outcome', async () => {
+  // Non-weather query + noCache=true with a pre-aborted signal:
+  //   • cache phase → skip noCache=true (sync, never paid network)
+  //   • api-direct → no provider matched ("fixture query foo bar baz"
+  //     isn't a definition shape).  api-direct has no abort gates so it
+  //     reports its REAL outcome `skip no-provider-match`, not a spurious
+  //     `fail aborted-mid-loop`.  This was the post-Codex-G-2b-round-5
+  //     fix: gate-skip semantics must survive a pre-aborted signal so
+  //     trail analysis can distinguish "abort hit while api-direct was
+  //     about to skip" from "abort interrupted a Wikipedia fetch".
+  //   • serp is the first phase that would pay network latency, so it's
+  //     the canonical bail point — `fail aborted-mid-loop`.
+  //   • synonym-retry / content-fetch / semantic-rerank → skip
+  //     aborted-by-prev-phase as before.
   const ac = new AbortController();
   ac.abort();
   const result = await webSearchTool.run(
@@ -118,11 +160,18 @@ test('evidenceTrail: aborted at first network phase (noCache=true) records api-d
   );
   assert.equal(result.ok, false);
   assert.equal(result.aborted, true);
+
   const apiEntry = result.evidenceTrail.find(e => e.tier === 'api-direct');
-  assert.equal(apiEntry?.outcome, 'fail');
-  assert.equal(apiEntry?.reason, 'aborted-mid-loop');
-  // serp + synonym-retry / content-fetch / semantic-rerank all skipped.
-  for (const phase of ['serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
+  assert.equal(apiEntry?.outcome, 'skip',
+    'api-direct must report its real sync outcome, not a spurious fail');
+  assert.equal(apiEntry?.reason, 'no-provider-match');
+
+  const serpEntry = result.evidenceTrail.find(e => e.tier === 'serp');
+  assert.equal(serpEntry?.outcome, 'fail');
+  assert.equal(serpEntry?.reason, 'aborted-mid-loop');
+
+  // synonym-retry / content-fetch / semantic-rerank all skipped.
+  for (const phase of ['synonym-retry', 'content-fetch', 'semantic-rerank']) {
     const e = result.evidenceTrail.find(e => e.tier === phase);
     assert.equal(e?.outcome, 'skip');
     assert.equal(e?.reason, 'aborted-by-prev-phase');

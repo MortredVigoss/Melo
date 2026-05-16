@@ -96,11 +96,30 @@ const WIKI_EXPLICIT = /^(wikipedia|wiki|维基百科|维基)\s*[:：]\s*\S/i;
 const WIKI_DEFINITION_EN = /^(what\s+is|what\s+are|who\s+is|who\s+was|who\s+were|define)\s+\S/i;
 const WIKI_DEFINITION_ZH = /^(什么是|谁是|定义)\s*\S/;
 
-export function isWikipediaQuery(query) {
+// Three-state match: 'explicit' (user typed `wiki:` or `维基百科：` prefix —
+// always honor), 'implicit' (definition shape — gate on intent.timeSensitive
+// upstream so "what is the latest Node.js version" doesn't hit a possibly
+// stale Wikipedia summary), or false (no match — caller skips silently).
+//
+// Codex G-2b round-5 (2026-05-14): split out from isWikipediaQuery to give
+// the router enough information to enforce "explicit overrides time-sensitive
+// gate" — the original boolean predicate let `what is the latest X` short-
+// circuit SERP unconditionally.
+export function wikipediaMatchKind(query) {
   if (typeof query !== 'string') return false;
   const q = query.trim();
   if (!q) return false;
-  return WIKI_EXPLICIT.test(q) || WIKI_DEFINITION_EN.test(q) || WIKI_DEFINITION_ZH.test(q);
+  if (WIKI_EXPLICIT.test(q)) return 'explicit';
+  if (WIKI_DEFINITION_EN.test(q) || WIKI_DEFINITION_ZH.test(q)) return 'implicit';
+  return false;
+}
+
+// Backwards-compat boolean predicate.  Kept for callers that only care
+// "does this query route to Wikipedia at all" (status checks / debug
+// logging); routing decisions inside this module use wikipediaMatchKind
+// directly so they can branch on explicit vs implicit.
+export function isWikipediaQuery(query) {
+  return wikipediaMatchKind(query) !== false;
 }
 
 function cleanWikipediaQuery(query) {
@@ -213,18 +232,42 @@ export async function fetchFromWikipedia(query, signal) {
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 const PROVIDERS = [
-  { name: 'wikipedia', matches: isWikipediaQuery, fetch: fetchFromWikipedia },
+  { name: 'wikipedia', matchKind: wikipediaMatchKind, fetch: fetchFromWikipedia },
 ];
 
 /**
  * Try each provider in declared order.  Returns:
- *   • null                                                  — no provider matched (caller skips)
- *   • { provider, ok: true,  results, contentMap, latency } — success (caller returns)
- *   • { provider, ok: false, reason, latency }              — failed (caller falls through)
+ *   • null                                                              — no provider matched (caller skips silently)
+ *   • { provider, ok: true,  results, contentMap, latencyMs }           — success (caller returns)
+ *   • { provider, ok: false, reason, latencyMs }                        — provider tried + failed (caller falls through)
+ *   • { provider, ok: false, skipped: true, reason, latencyMs }         — provider matched but skipped (e.g. implicit
+ *                                                                        match collided with intent.timeSensitive);
+ *                                                                        caller falls through to SERP without paying
+ *                                                                        any API latency
+ *
+ * Time-sensitivity gate (Codex G-2b round-5, 2026-05-14): when the
+ * provider's matchKind() is 'implicit' (definition-shape heuristic, not an
+ * explicit `wiki:` prefix) AND the upstream classifier says the query is
+ * time-sensitive (`latest` / `current` / `今天` / `最新` / weather/price/
+ * news intent), we skip the API.  Wikipedia summaries lag live data — a
+ * structured-data short-circuit for "what is the latest Node.js version"
+ * would silently return a possibly-stale answer instead of letting SERP
+ * find a current source.  Explicit `wiki:` prefix bypasses this gate
+ * because the user has stated their preference.
  */
 export async function tryApiDirect(query, intent, signal) {
   for (const provider of PROVIDERS) {
-    if (!provider.matches(query, intent)) continue;
+    const kind = provider.matchKind(query);
+    if (!kind) continue;
+    if (kind === 'implicit' && intent?.timeSensitive) {
+      return {
+        provider: provider.name,
+        ok: false,
+        skipped: true,
+        reason: 'time-sensitive',
+        latencyMs: 0,
+      };
+    }
     return provider.fetch(query, signal);
   }
   return null;
@@ -236,4 +279,5 @@ export const _internals = {
   PROVIDERS,
   cleanWikipediaQuery,
   detectWikiLang,
+  wikipediaMatchKind,
 };
