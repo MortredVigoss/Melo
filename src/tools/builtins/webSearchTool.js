@@ -2046,8 +2046,22 @@ export const webSearchTool = {
         evidenceTrail: trail,
       };
     } else {
-      // Provider matched but soft-failed (http error, no-results, etc) —
-      // record + fall through to SERP, so the user still gets an answer.
+      // Provider matched but soft-failed.  Two distinct cases:
+      //   1. Aborted-during-fetch: fetchFromWikipedia catches AbortError and
+      //      returns { ok:false, reason:'aborted' } instead of throwing —
+      //      apiFetchErr is null so we land here, NOT in the bail branch
+      //      above.  Codex G-2b round-5 B (2026-05-14) gap: without this
+      //      special-case, trail would get both `api-direct.fail aborted`
+      //      AND `serp.fail aborted-mid-loop` (serp's pre-await gate fires
+      //      next), breaking the invariant that exactly one phase carries
+      //      the abort-mid-loop fail.  api-direct WAS the active network
+      //      phase when the user hit Stop, so it owns the bail.
+      //   2. Real provider failure (http-5xx / no-results / parse-error):
+      //      record fail + fall through to SERP so the user still gets an
+      //      answer.
+      if (apiResult.reason === 'aborted' && signal?.aborted) {
+        return bailAbortedWebSearch(trail, 'api-direct', q, { intent, spanId });
+      }
       recordWebSearchTrail(trail, 'api-direct', 'fail', {
         latencyMs: apiResult.latencyMs,
         method: apiResult.provider,

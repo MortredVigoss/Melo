@@ -138,6 +138,38 @@ test('evidenceTrail: time-sensitive Chinese definition (什么是最新...) also
   assert.equal(apiEntry?.reason, 'time-sensitive');
 });
 
+test('evidenceTrail: abort during Wikipedia fetch — api-direct owns the bail, serp gets skip aborted-by-prev-phase', async () => {
+  // Codex G-2b round-5 B closeout (2026-05-14): when a signal aborts
+  // mid-Wikipedia-fetch, fetchFromWikipedia catches AbortError and returns
+  // `{ ok:false, reason:'aborted' }` rather than throwing.  Pre-fix that
+  // got recorded as api-direct.fail aborted + serp.fail aborted-mid-loop
+  // (double current-phase entry).  Now api-direct hands off via
+  // bailAbortedWebSearch so it owns the bail and serp is properly downstream
+  // skip.  Use `wiki:` explicit prefix to bypass time-sensitive gate (so we
+  // actually reach provider.fetch) AND have the pre-aborted signal flow
+  // through to fetchFromWikipedia's abort catch.
+  const ac = new AbortController();
+  ac.abort();
+  const result = await webSearchTool.run(
+    { query: 'wiki: Marie Curie', noCache: true },
+    { signal: ac.signal },
+  );
+  const apiEntry = result.evidenceTrail.find(e => e.tier === 'api-direct');
+  assert.equal(apiEntry?.outcome, 'fail');
+  assert.equal(apiEntry?.reason, 'aborted-mid-loop',
+    'api-direct must own the bail when abort hit during its provider.fetch');
+  // Exactly one phase carries aborted-mid-loop; everything after is skip.
+  for (const phase of ['serp', 'synonym-retry', 'content-fetch', 'semantic-rerank']) {
+    const e = result.evidenceTrail.find(e => e.tier === phase);
+    assert.equal(e?.outcome, 'skip', `${phase} must be skip, got ${e?.outcome}`);
+    assert.equal(e?.reason, 'aborted-by-prev-phase',
+      `${phase} must show aborted-by-prev-phase, not its own fail`);
+  }
+  // Sanity: no second aborted-mid-loop fail anywhere in the trail.
+  const failEntries = result.evidenceTrail.filter(e => e.outcome === 'fail' && e.reason === 'aborted-mid-loop');
+  assert.equal(failEntries.length, 1, `expected exactly 1 aborted-mid-loop fail, got ${failEntries.length}`);
+});
+
 test('evidenceTrail: aborted at first network phase records serp.fail; api-direct still shows its real (sync) outcome', async () => {
   // Non-weather query + noCache=true with a pre-aborted signal:
   //   • cache phase → skip noCache=true (sync, never paid network)
