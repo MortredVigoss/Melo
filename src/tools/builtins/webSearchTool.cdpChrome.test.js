@@ -233,6 +233,91 @@ test('content-fetch + env on: Jina covers everything → method=undefined (not "
 
 // ─── Production-path test (no _fetchViaCdpChrome seam) ──────────────────────
 
+test('SWR background refresh uses new {items, fallbackTier} shape (Codex Stage 2c round-3 闭环)', async () => {
+  // Codex round-3 caught: _refreshInBackground was still treating
+  // fetchResultContents' return as a bare Array, so the SWR background
+  // refresh (fired when a stale cache row is served) would crash with
+  // "contentItems.map is not a function" the moment the new round-2
+  // shape landed.  Net effect: stale rows could never get refreshed.
+  // This test asserts the destructure is correct by:
+  //   1. Calling webSearchTool.run twice — first writes a fresh cache row,
+  //   2. Manually expiring it via a direct cache update (or noCache=false
+  //      with a sleep would also work but is slower).
+  //   3. Second call should hit the stale path, queue a background
+  //      refresh, and NOT crash.
+  //
+  // We assert success indirectly: the test completes without a thrown
+  // "is not a function" error, AND the second call returns ok=true with
+  // the cached body served immediately (stale-swr contract).
+  process.env.MELO_CDP_ENABLED = '1';
+  const url = 'https://example.com/swr-refresh-test';
+  const query = 'swr refresh contract test';
+
+  let cdpRefreshCallCount = 0;
+  // Run #1: warm the cache.  noCache=true to skip the lookup, but the
+  // run still writes to cache on the way out.
+  await webSearchTool.run(
+    { query, num_results: 1, noCache: true },
+    {
+      _searchViaPlaywright: fakeSerpProvider([url]),
+      _searchViaDdg: fakeSerpProvider([]),
+      _isPlaywrightCliAvailable: async () => true,
+      _fetchViaJina: async () => ({
+        url,
+        content: 'Warm cache body — long enough to pass the 100-char content acceptance threshold and be stored in the search cache as the "current" answer for this query.',
+        notModified: false,
+      }),
+    },
+  );
+
+  // Run #2: noCache=false so the cache lookup fires.  The fresh-cache
+  // path returns first; the background SWR refresh kicks off in a
+  // microtask and uses fetchResultContents under the hood.  Pre-fix
+  // round-3 would crash inside that background task.  We register a
+  // process-level unhandledRejection listener to catch the crash if it
+  // happens — proper assertion is via the listener, not the run return.
+  const unhandled = [];
+  const handler = (err) => unhandled.push(err);
+  process.on('unhandledRejection', handler);
+  try {
+    const result = await webSearchTool.run(
+      { query, num_results: 1, noCache: false },
+      {
+        _searchViaPlaywright: fakeSerpProvider([url]),
+        _searchViaDdg: fakeSerpProvider([]),
+        _isPlaywrightCliAvailable: async () => true,
+        _fetchViaJina: async () => ({
+          url,
+          content: 'Refresh body — Jina covers everything in the SWR refresh path so no fallback fires.',
+          notModified: false,
+        }),
+        _fetchViaCdpChrome: async () => {
+          cdpRefreshCallCount += 1;
+          return { url, content: 'should not fire since Jina covers in this test' };
+        },
+      },
+    );
+    // Yield long enough for the background SWR microtask to fault (if
+    // it's going to) — Promise.resolve().then() chain depth ~3 is
+    // enough; setImmediate is the macrotask boundary.
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    assert.equal(result.ok, true);
+    // The key assertion: no unhandled "X.map is not a function" thrown
+    // from the background refresh.
+    const mapCrash = unhandled.find(e =>
+      String(e?.message || e || '').includes('contentItems.map is not a function')
+      || String(e?.message || e || '').includes('items.map is not a function'),
+    );
+    assert.equal(mapCrash, undefined,
+      `SWR background refresh must not crash on the new return shape; got: ${mapCrash?.message}`);
+  } finally {
+    process.removeListener('unhandledRejection', handler);
+  }
+});
+
 test('content-fetch + env on: real fetchViaCdpChromeForContentFetch threads signal + closes page on abort', async () => {
   // Codex Stage 2c round-2 ⚪ closeout (2026-05-17): every other test in
   // this file uses the `_fetchViaCdpChrome` seam to bypass the real

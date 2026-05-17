@@ -2423,7 +2423,15 @@ async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedD
     timeSensitive: intent.timeSensitive,
     allowBlockedDomains,
   });
-  const contentItems = await fetchResultContents(smartUrls, null).catch(() => []);
+  // Stage 2c round-3 闭环 (2026-05-17): fetchResultContents now returns
+  // `{ items, fallbackTier }`, not a bare Array.  Pre-fix this destructure
+  // was missing and the background refresh crashed with
+  // "contentItems.map is not a function" — stale cache could never get
+  // refreshed.  fallbackTier is dropped here: the SWR write goes through
+  // setCachedSearch which doesn't surface trail info to the user, and
+  // adding it would require widening the cache schema.
+  const cfResult = await fetchResultContents(smartUrls, null).catch(() => ({ items: [], fallbackTier: null }));
+  const contentItems = cfResult.items;
   const contentMap = new Map(
     contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
   );
