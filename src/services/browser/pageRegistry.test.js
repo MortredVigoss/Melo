@@ -145,6 +145,43 @@ test('openPage: empty contexts() → fallback newContext (defensive only)', asyn
   assert.equal(newContextCalls.count, 1, 'empty contexts triggers defensive newContext');
 });
 
+test('openPage: stores page.url() (landed URL) — handles redirects correctly (Codex Stage 3b round-2 闭环)', async () => {
+  // Pre-fix, openPage stored the input URL verbatim; after a redirect
+  // (30x, login, consent flow), registry.currentUrl would mislead the
+  // model into thinking the page is somewhere it isn't.  Fix uses
+  // page.url() after navigation lands.
+  const mod = await import('./pageRegistry.js');
+  const fakePage = makeFakePage();
+  // Override url() to return the redirected location
+  fakePage.url = () => 'https://example.com/login?from=%2Fdashboard';
+  const { browser } = makeFakeBrowser([fakePage]);
+  mod._setConnectImplForTests(async () => ({
+    browser, port: 5000, reused: false, profileDir: '/p', lockPath: '/l',
+  }));
+
+  // Input URL is /dashboard but the (fake) page redirects to /login.
+  const result = await mod.openPage('https://example.com/dashboard');
+  assert.equal(result.currentUrl, 'https://example.com/login?from=%2Fdashboard',
+    'currentUrl must reflect the landed URL after redirect, not the input URL');
+  // Registry entry must also reflect the landed URL
+  const info = mod.peekPageInfo(result.pageId);
+  assert.equal(info.currentUrl, 'https://example.com/login?from=%2Fdashboard');
+});
+
+test('openPage: falls back to input URL when page.url() returns empty', async () => {
+  // Defensive — fake pages / first-load races may return empty url()
+  const mod = await import('./pageRegistry.js');
+  const fakePage = makeFakePage();
+  fakePage.url = () => '';
+  const { browser } = makeFakeBrowser([fakePage]);
+  mod._setConnectImplForTests(async () => ({
+    browser, port: 5000, reused: false, profileDir: '/p', lockPath: '/l',
+  }));
+
+  const result = await mod.openPage('https://example.com/some-page');
+  assert.equal(result.currentUrl, 'https://example.com/some-page');
+});
+
 // ─── getPage / peekPageInfo ────────────────────────────────────────────────
 
 test('getPage: returns playwright page; bumps lastUsedAt', async () => {

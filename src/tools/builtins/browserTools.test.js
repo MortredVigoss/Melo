@@ -190,6 +190,36 @@ test('browser_close: unknown pageId → ok:true meta.closed:false (idempotent)',
   assert.match(result.output, /No-op/);
 });
 
+test('browser_snapshot: signal aborted during evaluate → ok:false error:"ABORTED" (Codex round-2 闭环)', async () => {
+  // Round-2 caught: page.evaluate() doesn't listen to AbortSignal, so a
+  // Stop during evaluate let the tool wait for natural CDP completion.
+  // The fix wraps evaluate in awaitWithAbort so the tool returns
+  // immediately on signal flip.  Page handle is NOT closed (persistent
+  // handle semantic; caller can browser_close explicitly).
+  const ac = new AbortController();
+  // Fake page whose evaluate hangs forever — only signal abort lets the
+  // test return.
+  const fakeRegistry = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      evaluate: () => new Promise(() => { /* never resolves */ }),
+      url: () => 'https://example.com/hangs',
+    }),
+    closePage: async () => true,
+    peekPageInfo: () => null,
+  };
+  // Trip abort 10ms after the snapshot starts.
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserSnapshotTool.run(
+    { pageId: 'pg-hangs1234' },
+    { signal: ac.signal, _pageRegistry: fakeRegistry },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED',
+    'snapshot must return ABORTED when signal flips mid-evaluate');
+  assert.match(result.output, /aborted/i);
+});
+
 test('browser_close: defensive — closePage throwing maps to error', async () => {
   // closePage is documented as best-effort but the tool must not let
   // a freak throw propagate unchecked.

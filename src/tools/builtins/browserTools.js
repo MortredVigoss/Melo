@@ -41,6 +41,30 @@ const DEFAULT_REGISTRY = { openPage, getPage, closePage, peekPageInfo };
 
 const TEXT_CHARS_CAP = 50_000;
 
+// awaitWithAbort — wrap a promise so a caller signal can reject the await
+// immediately even if the underlying playwright op (evaluate, etc) keeps
+// running internally.  Same shape as webSearchTool.abortRace; kept inline
+// for v1 (the "extract to shared helper" follow-up is a separate refactor).
+async function awaitWithAbort(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  return new Promise((resolve, reject) => {
+    let listener;
+    const cleanup = () => {
+      if (listener) {
+        try { signal.removeEventListener('abort', listener); } catch {}
+        listener = null;
+      }
+    };
+    listener = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')); };
+    signal.addEventListener('abort', listener, { once: true });
+    promise.then(
+      v => { cleanup(); resolve(v); },
+      e => { cleanup(); reject(e); },
+    );
+  });
+}
+
 // ─── browser_open ────────────────────────────────────────────────────────────
 
 export const browserOpenTool = {
@@ -116,7 +140,7 @@ export const browserSnapshotTool = {
   examples: [
     { pageId: 'pg-1a2b3c4d' },
   ],
-  async run({ pageId }, { _pageRegistry } = {}) {
+  async run({ pageId }, { signal, _pageRegistry } = {}) {
     const registry = _pageRegistry || DEFAULT_REGISTRY;
     let page;
     try {
@@ -129,8 +153,22 @@ export const browserSnapshotTool = {
       };
     }
     try {
-      const text = await page.evaluate(() => document?.body?.innerText || '');
-      const title = await page.evaluate(() => document?.title || '');
+      // Codex Stage 3b round-2 闭环 (2026-05-17): wrap evaluate() in
+      // awaitWithAbort so a caller signal flip rejects the tool's wait
+      // immediately.  page.evaluate() doesn't natively listen to
+      // AbortSignal; the underlying CDP call keeps running until natural
+      // completion / executor timeout, but the tool returns to the
+      // caller in microseconds.  Page handle stays alive (we do NOT
+      // page.close() on abort — that would defeat persistent-handle
+      // semantics; caller can explicitly browser_close if they want).
+      const text = await awaitWithAbort(
+        page.evaluate(() => document?.body?.innerText || ''),
+        signal,
+      );
+      const title = await awaitWithAbort(
+        page.evaluate(() => document?.title || ''),
+        signal,
+      );
       const currentUrl = typeof page.url === 'function' ? page.url() : '';
       const trimmed = String(text || '').trim().slice(0, TEXT_CHARS_CAP);
       return {
@@ -145,6 +183,13 @@ export const browserSnapshotTool = {
       };
     } catch (err) {
       const msg = String(err?.message || err || 'unknown error');
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return {
+          ok: false,
+          output: `browser_snapshot aborted for ${pageId}`,
+          error: 'ABORTED',
+        };
+      }
       debugWarn('browser_snapshot', `failed for ${pageId}: ${msg}`);
       return {
         ok: false,

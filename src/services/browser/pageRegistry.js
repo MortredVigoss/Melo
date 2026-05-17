@@ -155,6 +155,14 @@ export async function openPage(url, {
     }
   }
 
+  // Codex Stage 3b round-2 闭环 (2026-05-17): use page.url() after
+  // navigation, not the input url.  30x / login / consent redirects
+  // mean the page actually landed somewhere else; persisting the
+  // original URL would mislead subsequent browser_* tools and the
+  // model (e.g. "still on the login page" misclassification when the
+  // page has already redirected to the dashboard).  Falls back to the
+  // input url if page.url() is missing / fake page.
+  const landedUrl = (typeof page.url === 'function' ? page.url() : '') || url;
   const pageId = newPageId();
   const now = Date.now();
   _pages.set(pageId, {
@@ -162,9 +170,9 @@ export async function openPage(url, {
     page,
     openedAt: now,
     lastUsedAt: now,
-    currentUrl: url,
+    currentUrl: landedUrl,
   });
-  return { pageId, currentUrl: url };
+  return { pageId, currentUrl: landedUrl };
 }
 
 /**
