@@ -38,6 +38,9 @@ import {
   browserOpenTool,
   browserSnapshotTool,
   browserCloseTool,
+  browserClickTool,
+  browserFillTool,
+  browserWaitForTool,
 } from './builtins/browserTools.js';
 
 // ─── Internal registry map ────────────────────────────────────────────────────
@@ -126,5 +129,5 @@ let _bootstrapped = false;
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool]);
+  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
 }

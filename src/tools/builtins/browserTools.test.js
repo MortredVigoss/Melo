@@ -17,6 +17,9 @@ import {
   browserOpenTool,
   browserSnapshotTool,
   browserCloseTool,
+  browserClickTool,
+  browserFillTool,
+  browserWaitForTool,
 } from './browserTools.js';
 
 function fakeRegistry({ openResult, openThrows, getResult, getThrows, closeResult } = {}) {
@@ -39,6 +42,11 @@ function fakeRegistry({ openResult, openThrows, getResult, getThrows, closeResul
           return 'Fake page body text content. '.repeat(20); // ~600 chars
         },
         url: () => 'https://example.com/snapshot-test',
+        // Stage 3c interactive ops — fakes are happy-path by default;
+        // override per-test via getResult to inject throws / timeouts.
+        click: async () => {},
+        fill: async () => {},
+        waitForSelector: async () => {},
       };
     },
     closePage: async () => closeResult ?? true,
@@ -48,7 +56,7 @@ function fakeRegistry({ openResult, openThrows, getResult, getThrows, closeResul
 
 // ─── Schema sanity ──────────────────────────────────────────────────────────
 
-test('all 3 browser tools register the expected identity + safety attributes', () => {
+test('Stage 3b (read-only-ish) tools have requiresPermission:false; isConcurrencySafe:false', () => {
   for (const tool of [browserOpenTool, browserSnapshotTool, browserCloseTool]) {
     assert.ok(tool.id, `tool ${tool.name} must have an id`);
     assert.equal(tool.isConcurrencySafe, false,
@@ -61,6 +69,26 @@ test('all 3 browser tools register the expected identity + safety attributes', (
   assert.equal(browserOpenTool.id, 'browser_open');
   assert.equal(browserSnapshotTool.id, 'browser_snapshot');
   assert.equal(browserCloseTool.id, 'browser_close');
+});
+
+test('Stage 3c state-changing tools (click + fill) require permission; wait_for does not', () => {
+  // CLAUDE.md "Explicit permission" rules: clicking irreversible action
+  // buttons + sending messages both require user approval per-call.
+  // wait_for is pure observation — same permission profile as
+  // browser_snapshot (false).
+  assert.equal(browserClickTool.requiresPermission, true,
+    'click can submit forms / follow links → user must approve');
+  assert.equal(browserFillTool.requiresPermission, true,
+    'fill modifies input state, triggers framework re-renders → user must approve');
+  assert.equal(browserWaitForTool.requiresPermission, false,
+    'wait_for is pure observation; no permission needed');
+  // All 3 single-page-resource → not concurrency safe.
+  for (const tool of [browserClickTool, browserFillTool, browserWaitForTool]) {
+    assert.equal(tool.isConcurrencySafe, false, `${tool.id} must be isConcurrencySafe:false`);
+  }
+  assert.equal(browserClickTool.id, 'browser_click');
+  assert.equal(browserFillTool.id, 'browser_fill');
+  assert.equal(browserWaitForTool.id, 'browser_wait_for');
 });
 
 // ─── browser_open ───────────────────────────────────────────────────────────
@@ -218,6 +246,216 @@ test('browser_snapshot: signal aborted during evaluate → ok:false error:"ABORT
   assert.equal(result.error, 'ABORTED',
     'snapshot must return ABORTED when signal flips mid-evaluate');
   assert.match(result.output, /aborted/i);
+});
+
+// ─── Stage 3c: browser_click ────────────────────────────────────────────────
+
+test('browser_click: success returns {ok:true, meta:{clicked:true, currentUrl}}', async () => {
+  let clickedSelector = null;
+  const result = await browserClickTool.run(
+    { pageId: 'pg-c1', selector: 'button.submit' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        click: async (sel) => { clickedSelector = sel; },
+        url: () => 'https://example.com/after-click',
+      },
+    }) },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(clickedSelector, 'button.submit');
+  assert.equal(result.meta.clicked, true);
+  assert.equal(result.meta.currentUrl, 'https://example.com/after-click');
+});
+
+test('browser_click: missing/empty selector → BAD_INPUT (does not touch page)', async () => {
+  let pageCalled = false;
+  for (const selector of ['', '   ', null, undefined]) {
+    const result = await browserClickTool.run(
+      { pageId: 'pg-c2', selector },
+      { _pageRegistry: { ...fakeRegistry(), getPage: () => { pageCalled = true; return {}; } } },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'BAD_INPUT');
+  }
+  assert.equal(pageCalled, false, 'getPage must not be called when selector is invalid');
+});
+
+test('browser_click: unknown pageId → UNKNOWN_PAGE', async () => {
+  const result = await browserClickTool.run(
+    { pageId: 'pg-dead', selector: 'button' },
+    { _pageRegistry: fakeRegistry({
+      getThrows: new Error('Unknown pageId: pg-dead (closed, expired, or never opened)'),
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'UNKNOWN_PAGE');
+});
+
+test('browser_click: playwright timeout → CLICK_TIMEOUT (distinct from generic CLICK_FAILED)', async () => {
+  const result = await browserClickTool.run(
+    { pageId: 'pg-c3', selector: 'button.does-not-exist' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        click: async () => { throw new Error('Timeout 10000ms exceeded.'); },
+        url: () => 'https://example.com/x',
+      },
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'CLICK_TIMEOUT', 'timeout maps to CLICK_TIMEOUT so model can decide to wait_for first');
+});
+
+test('browser_click: generic click failure → CLICK_FAILED', async () => {
+  const result = await browserClickTool.run(
+    { pageId: 'pg-c4', selector: '.ok' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        click: async () => { throw new Error('Element is not visible'); },
+        url: () => 'https://example.com/x',
+      },
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'CLICK_FAILED');
+});
+
+test('browser_click: signal abort during click → ABORTED (page handle survives)', async () => {
+  const ac = new AbortController();
+  let pageClosed = false;
+  const fake = fakeRegistry({
+    getResult: {
+      click: () => new Promise(() => {}), // hangs forever
+      url: () => 'https://example.com/x',
+      close: async () => { pageClosed = true; }, // would be called if we close — we should NOT
+    },
+  });
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserClickTool.run(
+    { pageId: 'pg-hangs', selector: 'button' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED');
+  assert.equal(pageClosed, false,
+    'click abort must NOT close the page handle (persistent-handle semantic)');
+});
+
+// ─── Stage 3c: browser_fill ─────────────────────────────────────────────────
+
+test('browser_fill: success returns {ok:true, meta:{filled:true, valueLength}}', async () => {
+  let filledArgs = null;
+  const result = await browserFillTool.run(
+    { pageId: 'pg-f1', selector: 'input[name="email"]', value: 'me@example.com' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        fill: async (sel, val) => { filledArgs = { sel, val }; },
+        url: () => 'https://example.com/form',
+      },
+    }) },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(filledArgs, { sel: 'input[name="email"]', val: 'me@example.com' });
+  assert.equal(result.meta.filled, true);
+  assert.equal(result.meta.valueLength, 'me@example.com'.length);
+});
+
+test('browser_fill: empty string clears the field (still ok)', async () => {
+  const result = await browserFillTool.run(
+    { pageId: 'pg-f2', selector: 'input', value: '' },
+    { _pageRegistry: fakeRegistry() },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.meta.valueLength, 0);
+});
+
+test('browser_fill: non-string value → BAD_INPUT', async () => {
+  const result = await browserFillTool.run(
+    { pageId: 'pg-f3', selector: 'input', value: 42 },
+    { _pageRegistry: fakeRegistry() },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'BAD_INPUT');
+});
+
+test('browser_fill: playwright timeout → FILL_TIMEOUT', async () => {
+  const result = await browserFillTool.run(
+    { pageId: 'pg-f4', selector: 'input.late', value: 'x' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        fill: async () => { throw new Error('Timeout 10000ms exceeded.'); },
+        url: () => 'https://example.com/x',
+      },
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'FILL_TIMEOUT');
+});
+
+// ─── Stage 3c: browser_wait_for ─────────────────────────────────────────────
+
+test('browser_wait_for: selector found → ok:true {found:true, currentUrl}', async () => {
+  let waitedSelector = null;
+  const result = await browserWaitForTool.run(
+    { pageId: 'pg-w1', selector: '.expanded' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        waitForSelector: async (sel) => { waitedSelector = sel; return {}; },
+        url: () => 'https://example.com/loaded',
+      },
+    }) },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(waitedSelector, '.expanded');
+  assert.equal(result.meta.found, true);
+  assert.equal(result.meta.currentUrl, 'https://example.com/loaded');
+});
+
+test('browser_wait_for: timeout → WAIT_TIMEOUT (expected "not found" signal, not noise)', async () => {
+  const result = await browserWaitForTool.run(
+    { pageId: 'pg-w2', selector: '.never-appears', timeoutMs: 200 },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        waitForSelector: async () => { throw new Error('Timeout 200ms exceeded.'); },
+        url: () => 'https://example.com/x',
+      },
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'WAIT_TIMEOUT');
+  assert.match(result.output, /did not appear/);
+});
+
+test('browser_wait_for: non-timeout failure → WAIT_FAILED', async () => {
+  const result = await browserWaitForTool.run(
+    { pageId: 'pg-w3', selector: 'bad selector!' },
+    { _pageRegistry: fakeRegistry({
+      getResult: {
+        waitForSelector: async () => { throw new Error('Invalid selector: "bad selector!"'); },
+        url: () => 'https://example.com/x',
+      },
+    }) },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'WAIT_FAILED');
+});
+
+test('browser_wait_for: signal abort → ABORTED', async () => {
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserWaitForTool.run(
+    { pageId: 'pg-w4', selector: '.hangs' },
+    {
+      signal: ac.signal,
+      _pageRegistry: fakeRegistry({
+        getResult: {
+          waitForSelector: () => new Promise(() => {}), // hangs forever
+          url: () => 'https://example.com/x',
+        },
+      }),
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED');
 });
 
 test('browser_close: defensive — closePage throwing maps to error', async () => {

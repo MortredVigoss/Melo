@@ -200,6 +200,280 @@ export const browserSnapshotTool = {
   },
 };
 
+// ─── browser_click ───────────────────────────────────────────────────────────
+
+const DEFAULT_INTERACT_TIMEOUT_MS = 10_000;
+
+export const browserClickTool = {
+  id: 'browser_click',
+  name: 'Browser click',
+  description:
+    'Click an element on a browser page opened via browser_open.  Selector is a CSS selector ' +
+    '(e.g. "button.submit", "[data-testid=\'expand\']", "a:has-text(\'Sign in\')").  This is a ' +
+    'state-changing operation — it may submit forms, follow links, fire JS handlers, etc.  ' +
+    'After clicking, use browser_snapshot to see what changed, or browser_wait_for if the ' +
+    'click triggers a navigation / async load.',
+  category: 'web',
+  isConcurrencySafe: false,
+  // State-changing: click can submit forms / send messages / make
+  // purchases.  Per CLAUDE.md "Explicit permission" rules: clicking
+  // irreversible action buttons + sending messages both require user
+  // approval per-call.
+  requiresPermission: true,
+  parametersSchema: {
+    type: 'object',
+    properties: {
+      pageId: {
+        type: 'string',
+        description: 'Handle returned by browser_open.',
+      },
+      selector: {
+        type: 'string',
+        description:
+          'CSS selector matching the element to click.  Playwright extensions like ' +
+          '`button:has-text("Submit")` are supported.',
+      },
+      timeoutMs: {
+        type: 'number',
+        description:
+          'How long to wait for the selector to be clickable.  Default 10000.  Caller ' +
+          'should use browser_wait_for first if the element appears async.',
+      },
+    },
+    required: ['pageId', 'selector'],
+  },
+  examples: [
+    { pageId: 'pg-1a2b3c4d', selector: 'button.submit' },
+    { pageId: 'pg-1a2b3c4d', selector: 'a:has-text("Sign in")' },
+  ],
+  async run({ pageId, selector, timeoutMs }, { signal, _pageRegistry } = {}) {
+    const registry = _pageRegistry || DEFAULT_REGISTRY;
+    if (typeof selector !== 'string' || !selector.trim()) {
+      return { ok: false, output: 'browser_click: selector required', error: 'BAD_INPUT' };
+    }
+    let page;
+    try {
+      page = registry.getPage(pageId);
+    } catch (err) {
+      return {
+        ok: false,
+        output: `browser_click: ${err?.message || err}`,
+        error: 'UNKNOWN_PAGE',
+      };
+    }
+    const tMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Number(timeoutMs)
+      : DEFAULT_INTERACT_TIMEOUT_MS;
+    try {
+      await awaitWithAbort(page.click(selector, { timeout: tMs }), signal);
+      const currentUrl = typeof page.url === 'function' ? page.url() : '';
+      return {
+        ok: true,
+        output: `Clicked ${selector} on ${pageId}`,
+        meta: { pageId, selector, currentUrl, clicked: true },
+      };
+    } catch (err) {
+      const msg = String(err?.message || err || 'unknown error');
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return {
+          ok: false,
+          output: `browser_click aborted for ${pageId}`,
+          error: 'ABORTED',
+        };
+      }
+      debugWarn('browser_click', `failed for ${pageId} ${selector}: ${msg}`);
+      // Playwright timeout has a distinct shape — surface as a separate
+      // error code so the model can decide whether to retry vs change
+      // strategy (e.g. use browser_wait_for first).
+      const isTimeout = /Timeout|timeout/i.test(msg) || /exceeded/i.test(msg);
+      return {
+        ok: false,
+        output: `browser_click failed for ${pageId} (${selector}): ${msg}`,
+        error: isTimeout ? 'CLICK_TIMEOUT' : 'CLICK_FAILED',
+      };
+    }
+  },
+};
+
+// ─── browser_fill ────────────────────────────────────────────────────────────
+
+export const browserFillTool = {
+  id: 'browser_fill',
+  name: 'Browser fill',
+  description:
+    'Fill an input / textarea / contenteditable element on a browser page.  Clears any ' +
+    'existing value first and types the new text.  Selector is a CSS selector matching ' +
+    'the field.  State-changing: may trigger reactive framework re-renders, validation, ' +
+    'form auto-saves, etc.  Use browser_click on a submit button afterward to actually ' +
+    'submit; fill alone does not submit.',
+  category: 'web',
+  isConcurrencySafe: false,
+  requiresPermission: true,
+  parametersSchema: {
+    type: 'object',
+    properties: {
+      pageId: {
+        type: 'string',
+        description: 'Handle returned by browser_open.',
+      },
+      selector: {
+        type: 'string',
+        description: 'CSS selector matching the input / textarea / contenteditable.',
+      },
+      value: {
+        type: 'string',
+        description: 'Text to type.  Empty string clears the field.',
+      },
+      timeoutMs: {
+        type: 'number',
+        description: 'How long to wait for the selector to be fillable.  Default 10000.',
+      },
+    },
+    required: ['pageId', 'selector', 'value'],
+  },
+  examples: [
+    { pageId: 'pg-1a2b3c4d', selector: 'input[name="email"]', value: 'me@example.com' },
+    { pageId: 'pg-1a2b3c4d', selector: 'textarea#composer-input', value: 'Hello, world.' },
+  ],
+  async run({ pageId, selector, value, timeoutMs }, { signal, _pageRegistry } = {}) {
+    const registry = _pageRegistry || DEFAULT_REGISTRY;
+    if (typeof selector !== 'string' || !selector.trim()) {
+      return { ok: false, output: 'browser_fill: selector required', error: 'BAD_INPUT' };
+    }
+    if (typeof value !== 'string') {
+      return { ok: false, output: 'browser_fill: value must be a string', error: 'BAD_INPUT' };
+    }
+    let page;
+    try {
+      page = registry.getPage(pageId);
+    } catch (err) {
+      return {
+        ok: false,
+        output: `browser_fill: ${err?.message || err}`,
+        error: 'UNKNOWN_PAGE',
+      };
+    }
+    const tMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Number(timeoutMs)
+      : DEFAULT_INTERACT_TIMEOUT_MS;
+    try {
+      await awaitWithAbort(page.fill(selector, value, { timeout: tMs }), signal);
+      return {
+        ok: true,
+        output: `Filled ${selector} on ${pageId} (${value.length} chars)`,
+        meta: { pageId, selector, valueLength: value.length, filled: true },
+      };
+    } catch (err) {
+      const msg = String(err?.message || err || 'unknown error');
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return {
+          ok: false,
+          output: `browser_fill aborted for ${pageId}`,
+          error: 'ABORTED',
+        };
+      }
+      debugWarn('browser_fill', `failed for ${pageId} ${selector}: ${msg}`);
+      const isTimeout = /Timeout|timeout/i.test(msg) || /exceeded/i.test(msg);
+      return {
+        ok: false,
+        output: `browser_fill failed for ${pageId} (${selector}): ${msg}`,
+        error: isTimeout ? 'FILL_TIMEOUT' : 'FILL_FAILED',
+      };
+    }
+  },
+};
+
+// ─── browser_wait_for ────────────────────────────────────────────────────────
+
+export const browserWaitForTool = {
+  id: 'browser_wait_for',
+  name: 'Browser wait for',
+  description:
+    'Wait for an element matching the selector to appear on the page.  Useful after ' +
+    'browser_click triggers an async load (e.g. clicking "Load more" → wait for new ' +
+    'comments to render).  Pure observation — no state change.  Returns ok:true when ' +
+    'the element appears; ok:false WAIT_TIMEOUT when the timeout fires.',
+  category: 'web',
+  isConcurrencySafe: false,
+  // Read-only observation — no state change, no permission needed (matches
+  // browser_snapshot's requiresPermission:false).
+  requiresPermission: false,
+  parametersSchema: {
+    type: 'object',
+    properties: {
+      pageId: {
+        type: 'string',
+        description: 'Handle returned by browser_open.',
+      },
+      selector: {
+        type: 'string',
+        description: 'CSS selector to wait for.',
+      },
+      timeoutMs: {
+        type: 'number',
+        description: 'Max time to wait.  Default 10000.',
+      },
+    },
+    required: ['pageId', 'selector'],
+  },
+  examples: [
+    { pageId: 'pg-1a2b3c4d', selector: '.comment-thread', timeoutMs: 5000 },
+  ],
+  async run({ pageId, selector, timeoutMs }, { signal, _pageRegistry } = {}) {
+    const registry = _pageRegistry || DEFAULT_REGISTRY;
+    if (typeof selector !== 'string' || !selector.trim()) {
+      return { ok: false, output: 'browser_wait_for: selector required', error: 'BAD_INPUT' };
+    }
+    let page;
+    try {
+      page = registry.getPage(pageId);
+    } catch (err) {
+      return {
+        ok: false,
+        output: `browser_wait_for: ${err?.message || err}`,
+        error: 'UNKNOWN_PAGE',
+      };
+    }
+    const tMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Number(timeoutMs)
+      : DEFAULT_INTERACT_TIMEOUT_MS;
+    try {
+      await awaitWithAbort(
+        page.waitForSelector(selector, { timeout: tMs }),
+        signal,
+      );
+      const currentUrl = typeof page.url === 'function' ? page.url() : '';
+      return {
+        ok: true,
+        output: `Selector ${selector} appeared on ${pageId}`,
+        meta: { pageId, selector, currentUrl, found: true },
+      };
+    } catch (err) {
+      const msg = String(err?.message || err || 'unknown error');
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return {
+          ok: false,
+          output: `browser_wait_for aborted for ${pageId}`,
+          error: 'ABORTED',
+        };
+      }
+      const isTimeout = /Timeout|timeout/i.test(msg) || /exceeded/i.test(msg);
+      // Timeout in wait_for is the expected "not found" signal — not a
+      // debug-worthy event.  Other failures go to debug.
+      if (!isTimeout) {
+        debugWarn('browser_wait_for', `failed for ${pageId} ${selector}: ${msg}`);
+      }
+      return {
+        ok: false,
+        output: isTimeout
+          ? `browser_wait_for timed out for ${pageId} (${selector} did not appear within ${tMs}ms)`
+          : `browser_wait_for failed for ${pageId} (${selector}): ${msg}`,
+        error: isTimeout ? 'WAIT_TIMEOUT' : 'WAIT_FAILED',
+      };
+    }
+  },
+};
+
 // ─── browser_close ───────────────────────────────────────────────────────────
 
 export const browserCloseTool = {
