@@ -212,7 +212,9 @@ export const browserClickTool = {
     '(e.g. "button.submit", "[data-testid=\'expand\']", "a:has-text(\'Sign in\')").  This is a ' +
     'state-changing operation — it may submit forms, follow links, fire JS handlers, etc.  ' +
     'After clicking, use browser_snapshot to see what changed, or browser_wait_for if the ' +
-    'click triggers a navigation / async load.',
+    'click triggers a navigation / async load.  If aborted mid-click, the persistent ' +
+    'page handle is invalidated (closed) to guarantee the underlying playwright op stops ' +
+    'producing side effects — subsequent ops require a fresh browser_open.',
   category: 'web',
   isConcurrencySafe: false,
   // State-changing: click can submit forms / send messages / make
@@ -251,6 +253,18 @@ export const browserClickTool = {
     if (typeof selector !== 'string' || !selector.trim()) {
       return { ok: false, output: 'browser_click: selector required', error: 'BAD_INPUT' };
     }
+    // Codex Stage 3c round-2 闭环 (2026-05-17): pre-flight abort check
+    // BEFORE touching the registry / page object.  Without this, a Stop
+    // that fires between scheduling and run() entry would still call
+    // page.click() and produce side effects.  This is the cheap layer
+    // that catches the most common Stop-before-op-start case.
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        output: `browser_click aborted before start for ${pageId}`,
+        error: 'ABORTED',
+      };
+    }
     let page;
     try {
       page = registry.getPage(pageId);
@@ -264,6 +278,25 @@ export const browserClickTool = {
     const tMs = Number.isFinite(timeoutMs) && timeoutMs > 0
       ? Number(timeoutMs)
       : DEFAULT_INTERACT_TIMEOUT_MS;
+    // Codex Stage 3c round-2 闭环 (2026-05-17): for state-changing ops,
+    // abort must actually stop the underlying playwright op — not just
+    // make the wrapper return ABORTED early.  Playwright has no native
+    // signal support, so the only way to guarantee click stops is to
+    // close the page (same approach Stage 3a openPage uses for in-flight
+    // goto).  This invalidates the persistent handle; the caller must
+    // re-open.  This is the price of a reliable Stop on state-changing
+    // ops — chosen over the alternative ("ABORTED but op may have
+    // completed") because the latter is non-actionable for an agent.
+    let abortListener = null;
+    let pageInvalidatedByAbort = false;
+    if (signal) {
+      abortListener = () => {
+        pageInvalidatedByAbort = true;
+        // Fire-and-forget; closePage is idempotent and best-effort.
+        Promise.resolve(registry.closePage(pageId)).catch(() => {});
+      };
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
     try {
       await awaitWithAbort(page.click(selector, { timeout: tMs }), signal);
       const currentUrl = typeof page.url === 'function' ? page.url() : '';
@@ -277,8 +310,9 @@ export const browserClickTool = {
       if (err?.name === 'AbortError' || signal?.aborted) {
         return {
           ok: false,
-          output: `browser_click aborted for ${pageId}`,
+          output: `browser_click aborted for ${pageId} (page handle invalidated)`,
           error: 'ABORTED',
+          meta: { pageId, pageInvalidated: pageInvalidatedByAbort || true },
         };
       }
       debugWarn('browser_click', `failed for ${pageId} ${selector}: ${msg}`);
@@ -291,6 +325,10 @@ export const browserClickTool = {
         output: `browser_click failed for ${pageId} (${selector}): ${msg}`,
         error: isTimeout ? 'CLICK_TIMEOUT' : 'CLICK_FAILED',
       };
+    } finally {
+      if (signal && abortListener) {
+        try { signal.removeEventListener('abort', abortListener); } catch {}
+      }
     }
   },
 };
@@ -305,7 +343,9 @@ export const browserFillTool = {
     'existing value first and types the new text.  Selector is a CSS selector matching ' +
     'the field.  State-changing: may trigger reactive framework re-renders, validation, ' +
     'form auto-saves, etc.  Use browser_click on a submit button afterward to actually ' +
-    'submit; fill alone does not submit.',
+    'submit; fill alone does not submit.  If aborted mid-fill, the persistent page handle ' +
+    'is invalidated (closed) so the underlying playwright op stops producing side effects ' +
+    '— subsequent ops require a fresh browser_open.',
   category: 'web',
   isConcurrencySafe: false,
   requiresPermission: true,
@@ -343,6 +383,16 @@ export const browserFillTool = {
     if (typeof value !== 'string') {
       return { ok: false, output: 'browser_fill: value must be a string', error: 'BAD_INPUT' };
     }
+    // Codex Stage 3c round-2 闭环: pre-flight abort check before touching
+    // the page object — Stop that fires between schedule and run() entry
+    // must not produce a fill side effect.
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        output: `browser_fill aborted before start for ${pageId}`,
+        error: 'ABORTED',
+      };
+    }
     let page;
     try {
       page = registry.getPage(pageId);
@@ -356,6 +406,19 @@ export const browserFillTool = {
     const tMs = Number.isFinite(timeoutMs) && timeoutMs > 0
       ? Number(timeoutMs)
       : DEFAULT_INTERACT_TIMEOUT_MS;
+    // Codex Stage 3c round-2 闭环: same as click — for state-changing ops,
+    // abort must close the page to actually stop the underlying op.
+    // Persistent handle invalidation is the cost; the alternative ("we
+    // returned ABORTED but the field may still autofill") is unactionable.
+    let abortListener = null;
+    let pageInvalidatedByAbort = false;
+    if (signal) {
+      abortListener = () => {
+        pageInvalidatedByAbort = true;
+        Promise.resolve(registry.closePage(pageId)).catch(() => {});
+      };
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
     try {
       await awaitWithAbort(page.fill(selector, value, { timeout: tMs }), signal);
       return {
@@ -368,8 +431,9 @@ export const browserFillTool = {
       if (err?.name === 'AbortError' || signal?.aborted) {
         return {
           ok: false,
-          output: `browser_fill aborted for ${pageId}`,
+          output: `browser_fill aborted for ${pageId} (page handle invalidated)`,
           error: 'ABORTED',
+          meta: { pageId, pageInvalidated: pageInvalidatedByAbort || true },
         };
       }
       debugWarn('browser_fill', `failed for ${pageId} ${selector}: ${msg}`);
@@ -379,6 +443,10 @@ export const browserFillTool = {
         output: `browser_fill failed for ${pageId} (${selector}): ${msg}`,
         error: isTimeout ? 'FILL_TIMEOUT' : 'FILL_FAILED',
       };
+    } finally {
+      if (signal && abortListener) {
+        try { signal.removeEventListener('abort', abortListener); } catch {}
+      }
     }
   },
 };

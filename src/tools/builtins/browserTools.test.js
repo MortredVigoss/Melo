@@ -319,25 +319,73 @@ test('browser_click: generic click failure → CLICK_FAILED', async () => {
   assert.equal(result.error, 'CLICK_FAILED');
 });
 
-test('browser_click: signal abort during click → ABORTED (page handle survives)', async () => {
+test('browser_click: pre-aborted signal → ABORTED without ever calling page.click (state-change defense)', async () => {
+  // Codex Stage 3c round-2 闭环: Stop fired BEFORE the tool runs must not
+  // produce a side effect.  This is the cheap layer — the wrapper's
+  // pre-flight check.  page.click() must never be reached.
   const ac = new AbortController();
-  let pageClosed = false;
-  const fake = fakeRegistry({
-    getResult: {
-      click: () => new Promise(() => {}), // hangs forever
+  ac.abort();
+  let clickCalls = 0;
+  let closeCalls = 0;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      click: async () => { clickCalls++; },
       url: () => 'https://example.com/x',
-      close: async () => { pageClosed = true; }, // would be called if we close — we should NOT
-    },
-  });
-  setTimeout(() => ac.abort(), 10);
+    }),
+    closePage: async () => { closeCalls++; return true; },
+    peekPageInfo: () => null,
+  };
   const result = await browserClickTool.run(
-    { pageId: 'pg-hangs', selector: 'button' },
+    { pageId: 'pg-pre', selector: 'button' },
     { signal: ac.signal, _pageRegistry: fake },
   );
   assert.equal(result.ok, false);
   assert.equal(result.error, 'ABORTED');
-  assert.equal(pageClosed, false,
-    'click abort must NOT close the page handle (persistent-handle semantic)');
+  assert.match(result.output, /before start/);
+  assert.equal(clickCalls, 0,
+    'pre-aborted signal must short-circuit BEFORE page.click is touched (no side effect)');
+  // closePage should NOT fire on pre-abort path (no page acquired yet).
+  assert.equal(closeCalls, 0, 'pre-abort short-circuit must not close anything');
+});
+
+test('browser_click: in-flight abort → closePage fires + meta.pageInvalidated:true (state-change defense)', async () => {
+  // Codex Stage 3c round-2 闭环: when abort fires DURING page.click, the
+  // tool must close the page handle so the underlying playwright op
+  // actually stops producing side effects.  The persistent handle is
+  // gone — that's the documented price of reliable Stop on state changes.
+  // Mock click resolves AFTER abort would have fired, so without the
+  // abort listener we'd return ABORTED but the click would still complete
+  // later.  Test asserts closePage fires synchronously on abort and meta
+  // signals pageInvalidated:true so the agent knows to re-open.
+  const ac = new AbortController();
+  let closeCalls = 0;
+  let closedPageId = null;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      // Long-running click — mirrors a real playwright op that doesn't
+      // listen to AbortSignal.  We want the abort listener to fire
+      // closePage *while this is still pending*.
+      click: () => new Promise(resolve => setTimeout(resolve, 200)),
+      url: () => 'https://example.com/x',
+    }),
+    closePage: async (id) => { closeCalls++; closedPageId = id; return true; },
+    peekPageInfo: () => null,
+  };
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserClickTool.run(
+    { pageId: 'pg-inflight', selector: 'button' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED');
+  assert.equal(closeCalls, 1,
+    'in-flight abort MUST call closePage to actually stop the underlying click');
+  assert.equal(closedPageId, 'pg-inflight',
+    'closePage must be called with the correct pageId');
+  assert.equal(result.meta?.pageInvalidated, true,
+    'meta.pageInvalidated:true tells the agent the handle is gone — re-open needed');
 });
 
 // ─── Stage 3c: browser_fill ─────────────────────────────────────────────────
@@ -389,6 +437,62 @@ test('browser_fill: playwright timeout → FILL_TIMEOUT', async () => {
   );
   assert.equal(result.ok, false);
   assert.equal(result.error, 'FILL_TIMEOUT');
+});
+
+test('browser_fill: pre-aborted signal → ABORTED without ever calling page.fill (state-change defense)', async () => {
+  // Same contract as click — pre-aborted Stop must short-circuit before
+  // page.fill is ever called, so no characters get typed into the field.
+  const ac = new AbortController();
+  ac.abort();
+  let fillCalls = 0;
+  let closeCalls = 0;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      fill: async () => { fillCalls++; },
+      url: () => 'https://example.com/x',
+    }),
+    closePage: async () => { closeCalls++; return true; },
+    peekPageInfo: () => null,
+  };
+  const result = await browserFillTool.run(
+    { pageId: 'pg-pre-f', selector: 'input', value: 'should never type' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED');
+  assert.match(result.output, /before start/);
+  assert.equal(fillCalls, 0,
+    'pre-aborted signal must short-circuit BEFORE page.fill is touched');
+  assert.equal(closeCalls, 0);
+});
+
+test('browser_fill: in-flight abort → closePage fires + meta.pageInvalidated:true', async () => {
+  // Same contract as click — in-flight abort closes the page handle to
+  // stop the underlying playwright fill from continuing to write the
+  // value / trigger autosave / fire validation handlers.
+  const ac = new AbortController();
+  let closeCalls = 0;
+  let closedPageId = null;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      fill: () => new Promise(resolve => setTimeout(resolve, 200)),
+      url: () => 'https://example.com/x',
+    }),
+    closePage: async (id) => { closeCalls++; closedPageId = id; return true; },
+    peekPageInfo: () => null,
+  };
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserFillTool.run(
+    { pageId: 'pg-inflight-f', selector: 'input', value: 'typing' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'ABORTED');
+  assert.equal(closeCalls, 1, 'in-flight abort MUST call closePage to actually stop the fill');
+  assert.equal(closedPageId, 'pg-inflight-f');
+  assert.equal(result.meta?.pageInvalidated, true);
 });
 
 // ─── Stage 3c: browser_wait_for ─────────────────────────────────────────────
