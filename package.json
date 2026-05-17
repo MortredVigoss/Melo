@@ -35,6 +35,7 @@
     "test:fetchurl-cdp": "node --test src/tools/builtins/fetchUrlTool.cdpChrome.test.js",
     "test:websearch-cdp": "node --test src/tools/builtins/webSearchTool.cdpChrome.test.js",
     "test:page-registry": "node --test src/services/browser/pageRegistry.test.js",
+    "test:browser-tools": "node --test src/tools/builtins/browserTools.test.js",
     "test:state-hydration": "node --test src/state/stateHydration.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
     "postinstall": "node-gyp rebuild"

@@ -734,6 +734,13 @@ async function main() {
     // registry.
     results.push(await runStep('Page registry (test:page-registry)', () => runCommand('npm', ['run', 'test:page-registry'])));
 
+    // Stage 3b (2026-05-17): browser_open / browser_snapshot / browser_close
+    // — the persistent-handle counterpart to fetchUrlTool's one-shot
+    // cdp-chrome tier.  Tool-shape contracts (error mapping, idempotent
+    // close, schema) need their own gate so registry refactors can't
+    // silently break tool-side semantics.
+    results.push(await runStep('Browser tools (test:browser-tools)', () => runCommand('npm', ['run', 'test:browser-tools'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults

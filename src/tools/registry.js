@@ -34,6 +34,11 @@ import { imageTool } from './builtins/imageTool.js';
 import { reminderTool } from './builtins/reminderTool.js';
 import { knowledgeTool } from './builtins/knowledgeTool.js';
 import { xlsxTool } from './builtins/xlsxTool.js';
+import {
+  browserOpenTool,
+  browserSnapshotTool,
+  browserCloseTool,
+} from './builtins/browserTools.js';
 
 // ─── Internal registry map ────────────────────────────────────────────────────
 
@@ -121,5 +126,5 @@ let _bootstrapped = false;
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool]);
+  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool]);
 }
