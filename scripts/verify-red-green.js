@@ -727,6 +727,13 @@ async function main() {
     // silently drift after Stage 3 wires interactive browser tools.
     results.push(await runStep('webSearchTool content-fetch CDP (test:websearch-cdp)', () => runCommand('npm', ['run', 'test:websearch-cdp'])));
 
+    // Stage 3a (2026-05-17): pageRegistry — persistent page handle store
+    // for the upcoming Stage 3b/3c interactive browser tools.  Gating
+    // here so the env gate + contexts()[0] reuse + cleanup-on-error
+    // contracts can't silently regress when tools start consuming the
+    // registry.
+    results.push(await runStep('Page registry (test:page-registry)', () => runCommand('npm', ['run', 'test:page-registry'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults
