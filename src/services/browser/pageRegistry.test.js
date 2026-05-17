@@ -317,6 +317,58 @@ test('openPage: goto throws → page + browser cleaned up, registry empty', asyn
   assert.equal(mod.pageCount(), 0, 'registry must NOT have a leaked entry');
 });
 
+test('openPage: signal aborted DURING goto → page+browser closed, registry empty, AbortError (Codex round-2 闭环)', async () => {
+  // Codex round-2: pre-fix, openPage only checked signal BEFORE goto.
+  // page.goto() doesn't listen to AbortSignal, so a Stop fired during
+  // navigation let goto run to natural completion, page got registered,
+  // and the abort was silently ignored.  The fix attaches a listener
+  // that closes the page on signal flip + re-checks abort after each
+  // await; this test pins all three behaviors (no registration, both
+  // handles closed, AbortError thrown).
+  const mod = await import('./pageRegistry.js');
+
+  const ac = new AbortController();
+  let pageCloseCallCount = 0;
+  let gotoSettled = false;
+  // The page's goto resolves only when its close() is called — simulating
+  // playwright's "in-flight goto interrupted by page.close()" behavior.
+  const fakePage = {
+    goto: async () => {
+      // Hangs until close is called (then resolves via the close path).
+      await new Promise((resolve) => {
+        const checkClosed = setInterval(() => {
+          if (pageCloseCallCount > 0) {
+            clearInterval(checkClosed);
+            resolve();
+          }
+        }, 5);
+      });
+      gotoSettled = true;
+    },
+    waitForLoadState: async () => {},
+    close: async () => { pageCloseCallCount += 1; },
+  };
+  const { browser } = makeFakeBrowser([fakePage]);
+  mod._setConnectImplForTests(async () => ({
+    browser, port: 5000, reused: false, profileDir: '/p', lockPath: '/l',
+  }));
+
+  // Fire abort 20ms after openPage starts — well after connect/newPage
+  // resolve, while goto is still hanging.
+  setTimeout(() => ac.abort(), 20);
+  await assert.rejects(
+    () => mod.openPage('https://example.com/hangs', { signal: ac.signal }),
+    err => err?.name === 'AbortError',
+  );
+  assert.equal(pageCloseCallCount >= 1, true,
+    'page.close() must fire when abort listener triggers during goto');
+  assert.equal(browser.closeCallCount, 1, 'browser must be closed on abort cleanup');
+  assert.equal(mod.pageCount(), 0,
+    'no pageId may be registered when abort fires during navigation');
+  assert.equal(gotoSettled, true,
+    'goto resolved via close (its hang condition unblocked) — proves abort listener fired');
+});
+
 test('openPage: signal aborted between connect and goto → cleanup + AbortError', async () => {
   const mod = await import('./pageRegistry.js');
   const fakePage = makeFakePage();

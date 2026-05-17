@@ -95,6 +95,13 @@ export async function openPage(url, {
   // attach, which always has at least one context.
   let context;
   let page;
+  // Codex Stage 3a round-2 闭环 (2026-05-17): abort listener inside
+  // openPage closes the page on signal flip — playwright's page.goto()
+  // doesn't natively listen to AbortSignal, so a Stop during navigation
+  // would otherwise let goto run to natural completion (could be 15s),
+  // the page would get registered, and the user's Stop would be silently
+  // ignored.  Same fix pattern as fetchUrlTool Stage 2c round-2.
+  let abortListener = null;
   try {
     const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
     context = (Array.isArray(contexts) && contexts[0])
@@ -104,20 +111,48 @@ export async function openPage(url, {
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
+    // Wire abort → close-page so in-flight goto / waitForLoadState
+    // returns immediately on Stop instead of running to natural timeout.
+    if (signal) {
+      abortListener = () => {
+        page.close().catch(() => {}); // best-effort; outer finally also closes
+      };
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: openTimeoutMs,
     });
+    // Post-goto re-check — page.close() above may have raced ahead, but
+    // signal could also have flipped AFTER goto resolved naturally.
+    // Either way, no registration.
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     try {
       await page.waitForLoadState('load', { timeout: DEFAULT_LOAD_STABILITY_MS });
     } catch { /* `load` may never fire on streamy pages — fine */ }
+    // Final re-check — the load wait may have hung and abort fired
+    // mid-wait via the listener.
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
   } catch (err) {
-    // Don't leak the page or browser if goto / waitForLoadState fails.
+    // Don't leak the page or browser if goto / waitForLoadState fails
+    // OR signal aborted anywhere in the await chain.
     if (page) {
       try { await page.close(); } catch { /* best-effort */ }
     }
     try { await browser.close(); } catch { /* best-effort */ }
     throw err;
+  } finally {
+    // Remove the listener unconditionally — by this point we've either
+    // registered the page (listener no longer relevant) or we're
+    // throwing (cleanup handled above).  Leaving the listener attached
+    // would let a later abort try to close an already-closed page.
+    if (signal && abortListener) {
+      try { signal.removeEventListener('abort', abortListener); } catch {}
+    }
   }
 
   const pageId = newPageId();
