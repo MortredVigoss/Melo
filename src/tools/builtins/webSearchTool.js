@@ -1154,14 +1154,36 @@ async function fetchViaPlaywrightCli(url) {
 //   • Reuses browser.contexts()[0] (default persistent context) — must
 //     NEVER call browser.newContext() (would create isolated context
 //     with no login state, defeating the whole CDP-attach value).
-async function fetchViaCdpChromeForContentFetch(url) {
+async function fetchViaCdpChromeForContentFetch(url, signal) {
   try {
+    // Codex Stage 2c round-2 闭环 (2026-05-17): thread `signal` to
+    // withMeloChrome so connect-time abort bails immediately, AND register
+    // an abort listener inside the callback that force-closes the page —
+    // playwright-core's `page.goto({timeout})` doesn't natively accept an
+    // AbortSignal, so abort during navigation has to short-circuit via
+    // page.close().  Pre-fix, abort mid-goto would let the underlying
+    // Chrome navigation + 1.5s sleep run to natural completion while the
+    // outer abortRace already gave up.  Real signal-pass to playwright is
+    // an upstream issue; this is the JS-layer minimum.
     return await withMeloChrome(async (browser) => {
       const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
       const context = (Array.isArray(contexts) && contexts[0])
         ? contexts[0]
         : await browser.newContext(); // defensive fallback only
       const page = await context.newPage();
+      // Wire abort → close page so an in-flight goto / waitForLoadState /
+      // sleep returns immediately when the caller signal flips.
+      let abortListener = null;
+      if (signal) {
+        if (signal.aborted) {
+          try { await page.close(); } catch {}
+          return { url, content: null };
+        }
+        abortListener = () => {
+          page.close().catch(() => {}); // best-effort; finally also closes
+        };
+        signal.addEventListener('abort', abortListener, { once: true });
+      }
       try {
         await page.goto(url, {
           waitUntil: 'domcontentloaded',
@@ -1171,6 +1193,7 @@ async function fetchViaCdpChromeForContentFetch(url) {
           await page.waitForLoadState('load', { timeout: 3000 });
         } catch { /* load may never fire on streamy pages */ }
         await new Promise(r => setTimeout(r, 1500));
+        if (signal?.aborted) return { url, content: null };
         const text = await page.evaluate(() => document?.body?.innerText || '');
         const trimmed = String(text || '').trim();
         if (!trimmed || trimmed.length < 50) {
@@ -1179,11 +1202,14 @@ async function fetchViaCdpChromeForContentFetch(url) {
         const clean = cleanPageText(trimmed);
         return { url, content: clean.slice(0, CONTENT_MAX_CHARS) };
       } finally {
+        if (signal && abortListener) {
+          try { signal.removeEventListener('abort', abortListener); } catch {}
+        }
         // Close ONLY the page — leaving the persistent context alive
         // preserves the user's login state for the next content-fetch URL.
         try { await page.close(); } catch { /* best-effort */ }
       }
-    });
+    }, { signal });
   } catch (err) {
     debugWarn('web_search', `cdp-chrome content fetch failed for ${url}:`, err?.message || err);
     return { url, content: null };
@@ -1274,9 +1300,9 @@ async function fetchResultContents(urls, signal, {
   // fallback because the function trusted the caller-side check.  Now
   // we shortcut to empty so the run() outer post-await sees no work
   // happened and bails immediately.  Real PW CLI subprocess kill is G-5.
-  if (signal?.aborted) return [];
+  if (signal?.aborted) return { items: [], fallbackTier: null };
   const targets = urls.filter(url => /^https?:\/\//i.test(url));
-  if (!targets.length) return [];
+  if (!targets.length) return { items: [], fallbackTier: null };
 
   const results = new Map();
   // P0-1 — track every content hash we've accepted so duplicate pages
@@ -1321,7 +1347,7 @@ async function fetchResultContents(urls, signal, {
     }
     needFetch.push(url);
   }
-  if (!needFetch.length) return [...results.values()];
+  if (!needFetch.length) return { items: [...results.values()], fallbackTier: null };
 
   // Stage 2 — Jina with early-exit. Implemented without polling so we
   // resolve the instant the Nth success lands.
@@ -1405,16 +1431,27 @@ async function fetchResultContents(urls, signal, {
   //   • env off (default)  → headless Playwright CLI (existing behavior).
   // Same loop shape; just swap the fetcher.  Trail is recorded ONE level
   // up (run() emits a single content-fetch trail entry with method).
+  //
+  // Codex Stage 2c round-2 闭环 (2026-05-17): fallbackTier tracks the tier
+  // that ACTUALLY fired (not just the planned tier) so the run() trail
+  // entry's `method` reflects reality:
+  //   • null   — no fallback fired (Jina/cache covered everything, or
+  //              env-off + PW unavailable, or signal pre-aborted)
+  //   • 'cdp-chrome'  — at least one CDP fallback call attempted
+  //   • 'playwright'  — at least one PW fallback call attempted
+  let fallbackTier = null;
   if (signal?.aborted) {
-    return [...results.values()].filter(r => r.content);
+    return { items: [...results.values()].filter(r => r.content), fallbackTier };
   }
   const useCdp = process.env.MELO_CDP_ENABLED === '1';
   let fallbackImpl = null;
+  let plannedTier = null;
   if (useCdp) {
     // CDP path: no availability probe (the launcher fails clearly if
     // Chrome is missing, and per-URL fail naturally falls through to
     // url-cache reuse).
     fallbackImpl = _cdpOverride || fetchViaCdpChromeForContentFetch;
+    plannedTier = 'cdp-chrome';
   } else {
     // PW path: existing G-1c follow-up #5 abort-raced availability probe.
     const pwAvailableImpl = _pwAvailableOverride || isPlaywrightCliAvailable;
@@ -1424,13 +1461,14 @@ async function fetchResultContents(urls, signal, {
         pwAvailable = await abortRace(pwAvailableImpl(), signal);
       } catch (err) {
         if (err?.name === 'AbortError') {
-          return [...results.values()].filter(r => r.content);
+          return { items: [...results.values()].filter(r => r.content), fallbackTier };
         }
         throw err;
       }
     }
     if (pwAvailable) {
       fallbackImpl = _pwOverride || fetchViaPlaywrightCli;
+      plannedTier = 'playwright';
     }
   }
   if (failed.size > 0 && PW_FALLBACK_MAX > 0 && fallbackImpl) {
@@ -1442,14 +1480,18 @@ async function fetchResultContents(urls, signal, {
       if (signal?.aborted) break;
       // G-1c follow-up #3: abortRace around the in-flight fallback call
       // so signal abort during a single fetch await returns immediately.
+      // Stage 2c round-2: pass signal to the impl so it can also bail
+      // its own in-flight work (CDP fetcher uses signal to close the
+      // page on abort; PW CLI ignores the arg — pre-existing G-5 limit).
+      fallbackTier = plannedTier; // mark "fired at least once"
       let body;
       try {
-        body = await abortRace(fallbackImpl(url), signal);
+        body = await abortRace(fallbackImpl(url, signal), signal);
       } catch (err) {
         if (err?.name === 'AbortError') break;
         // Propagate other errors via the same swallow path the rest of
         // the function uses — failed.add was the pre-fix behavior.
-        debugWarn('web_search', `${useCdp ? 'cdp-chrome' : 'PW'} fallback failed for ${url}:`, err?.message || err);
+        debugWarn('web_search', `${plannedTier} fallback failed for ${url}:`, err?.message || err);
         continue;
       }
       if (body?.content && body.content.length >= 100) {
@@ -1459,7 +1501,7 @@ async function fetchResultContents(urls, signal, {
     }
   }
 
-  return [...results.values()].filter(r => r.content);
+  return { items: [...results.values()].filter(r => r.content), fallbackTier };
 }
 
 // ─── Format results ───────────────────────────────────────────────────────────
@@ -2263,15 +2305,18 @@ export const webSearchTool = {
     // 3-layer abort: pre-await
     if (signal?.aborted) return bailAbortedWebSearch(trail, 'content-fetch', q, { intent, spanId });
     let contentItems = [];
+    let contentFetchFallbackTier = null;
     let contentFetchFailReason = null;
     try {
-      contentItems = await fetchResultContents(smartUrls, signal, {
+      const cfResult = await fetchResultContents(smartUrls, signal, {
         spanId,
         _fetchViaPlaywrightCli,
         _isPlaywrightCliAvailable,
         _fetchViaJina,
         _fetchViaCdpChrome,
       });
+      contentItems = cfResult.items;
+      contentFetchFallbackTier = cfResult.fallbackTier;
     } catch (err) {
       // catch-path abort
       if (signal?.aborted || err?.name === 'AbortError') {
@@ -2287,11 +2332,12 @@ export const webSearchTool = {
     recordWebSearchTrail(trail, 'content-fetch', contentFetchFailReason ? 'fail' : 'ok', {
       latencyMs: tAfterContent - tContent,
       reason: contentFetchFailReason || undefined,
-      // Stage 2c (2026-05-17): surface which tier handled the fallback
-      // batch (cdp-chrome when MELO_CDP_ENABLED=1, otherwise playwright).
-      // The Jina primary stage is implicit — content-fetch ok with a
-      // null fallback method means "Jina covered everything".
-      method: process.env.MELO_CDP_ENABLED === '1' ? 'cdp-chrome' : 'playwright',
+      // Stage 2c round-2 闭环 (2026-05-17): trail method reflects the tier
+      // that ACTUALLY fired — null when Jina/cache covered everything (so
+      // trail-log analysis can distinguish "no fallback needed" from
+      // "fallback fired but failed").  Codex round-1 hardcoded by env,
+      // round-2 records reality.
+      method: contentFetchFallbackTier || undefined,
       extra: {
         urlsRequested: smartUrls.length,
         contentItems: contentItems.length,

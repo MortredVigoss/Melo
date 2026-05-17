@@ -445,8 +445,8 @@ test('source-level backstop (auxiliary, not primary): abortRace helper applied t
     'PW availability probe call must be wrapped');
   assert.match(TOOL_SOURCE, /abortRace\(pwSearchImpl\(/,
     'PW SERP leg call must be wrapped');
-  assert.match(TOOL_SOURCE, /abortRace\(fallbackImpl\(url\),\s*signal\)/,
-    'content-fetch fallback call must be wrapped (Stage 2c renamed pwImpl→fallbackImpl to cover both PW + CDP tiers)');
+  assert.match(TOOL_SOURCE, /abortRace\(fallbackImpl\(url,\s*signal\),\s*signal\)/,
+    'content-fetch fallback call must be wrapped (Stage 2c round-2 threaded signal as 2nd arg to the impl so CDP fetcher can close the page on abort)');
   assert.match(TOOL_SOURCE, /abortRace\(isPlaywrightCliAvailable\(\),\s*signal\)/,
     'health-check PW probe must be wrapped (round-5 consistency)');
 });
@@ -466,10 +466,13 @@ test('evidenceTrail: source-level guard — raceSerpProviders carries an abort l
 });
 
 test('evidenceTrail: source-level guard — fetchResultContents has entry + pre-fallback abort gates', () => {
+  // Stage 2c round-2: return shape changed from `[]` to
+  // `{ items, fallbackTier }` so run() can record the actual tier in
+  // trail.method.  Entry abort gate still required.
   assert.match(
     TOOL_SOURCE,
-    /async function fetchResultContents[\s\S]*?if\s*\(signal\?\.aborted\)\s*return\s*\[\]/,
-    'fetchResultContents must check signal.aborted at the very top',
+    /async function fetchResultContents[\s\S]*?if\s*\(signal\?\.aborted\)\s*return\s*\{\s*items:\s*\[\],\s*fallbackTier:\s*null\s*\}/,
+    'fetchResultContents must check signal.aborted at the very top (returning {items:[], fallbackTier:null} per Stage 2c round-2 shape)',
   );
   // Stage 3 fallback (PW or CDP per env) must check signal before entering
   // AND inside the loop.  Loop variable renamed pwTargets → fallbackTargets
