@@ -722,6 +722,11 @@ async function main() {
     // fallthrough contract can't silently regress.
     results.push(await runStep('fetchUrlTool cdp-chrome tier (test:fetchurl-cdp)', () => runCommand('npm', ['run', 'test:fetchurl-cdp'])));
 
+    // Stage 2c (2026-05-17): webSearchTool content-fetch CDP fallback.
+    // Gating here so the env-on/off branch + trail method recording can't
+    // silently drift after Stage 3 wires interactive browser tools.
+    results.push(await runStep('webSearchTool content-fetch CDP (test:websearch-cdp)', () => runCommand('npm', ['run', 'test:websearch-cdp'])));
+
     // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
     // through state.json normalize is the persistence backbone of slice 2.
     // Gating this catches the "older state with malformed toolResults

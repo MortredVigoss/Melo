@@ -134,6 +134,7 @@ function classifyWebSearchError(err) {
   return 'error';
 }
 import { createPlaywrightSession, cleanPageText } from '../../web/playwrightFetcher.js';
+import { withMeloChrome } from '../../services/browser/connect.js';
 import { hostMatchesAnySuffix, SOCIAL_HOST_SUFFIXES } from './socialLinkTool.js';
 import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
 import { getEmbedding, EMBEDDING_DIMS } from '../../memory/embeddings.js';
@@ -1138,6 +1139,57 @@ async function fetchViaPlaywrightCli(url) {
   });
 }
 
+// Stage 2c (2026-05-17): CDP-attach content fetcher.  Same shape as
+// fetchViaPlaywrightCli — returns `{ url, content }` or `{ url, content:
+// null }` on miss — so the Stage 3 fallback loop can swap between tiers
+// without touching the surrounding orchestration.
+//
+// Key differences from PW CLI:
+//   • Real Chrome with logged-in cookies (user's Melo Chrome profile),
+//     not headless CLI Chromium → wins on auth-walled / anti-bot sites.
+//   • `domcontentloaded + waitForLoadState('load', 3000) + 1.5s sleep`
+//     instead of `networkidle` — same rationale as fetchUrlTool Stage 2b
+//     round-3 闭环: long-polling pages (Twitter / Slack / Discord) never
+//     reach networkidle, would 20s-timeout otherwise.
+//   • Reuses browser.contexts()[0] (default persistent context) — must
+//     NEVER call browser.newContext() (would create isolated context
+//     with no login state, defeating the whole CDP-attach value).
+async function fetchViaCdpChromeForContentFetch(url) {
+  try {
+    return await withMeloChrome(async (browser) => {
+      const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
+      const context = (Array.isArray(contexts) && contexts[0])
+        ? contexts[0]
+        : await browser.newContext(); // defensive fallback only
+      const page = await context.newPage();
+      try {
+        await page.goto(url, {
+          waitUntil: 'domcontentloaded',
+          timeout: CONTENT_FETCH_TIMEOUT_MS,
+        });
+        try {
+          await page.waitForLoadState('load', { timeout: 3000 });
+        } catch { /* load may never fire on streamy pages */ }
+        await new Promise(r => setTimeout(r, 1500));
+        const text = await page.evaluate(() => document?.body?.innerText || '');
+        const trimmed = String(text || '').trim();
+        if (!trimmed || trimmed.length < 50) {
+          return { url, content: null };
+        }
+        const clean = cleanPageText(trimmed);
+        return { url, content: clean.slice(0, CONTENT_MAX_CHARS) };
+      } finally {
+        // Close ONLY the page — leaving the persistent context alive
+        // preserves the user's login state for the next content-fetch URL.
+        try { await page.close(); } catch { /* best-effort */ }
+      }
+    });
+  } catch (err) {
+    debugWarn('web_search', `cdp-chrome content fetch failed for ${url}:`, err?.message || err);
+    return { url, content: null };
+  }
+}
+
 /**
  * P0-4 — conditional-GET aware Jina fetch.  Pass the ETag / Last-Modified
  * we already saw for this URL (from url_content_cache) and Jina/origin may
@@ -1210,6 +1262,12 @@ async function fetchResultContents(urls, signal, {
   // construct "Jina misses → PW fallback runs" without relying on real
   // example.com network reachability.  Same pattern, same scope.
   _fetchViaJina: _jinaOverride = null,
+  // Stage 2c (2026-05-17): CDP-chrome fallback seam.  Production callers
+  // leave this null; tests inject deterministic content without needing
+  // a real Chrome.  When MELO_CDP_ENABLED=1, Stage 3 uses CDP instead of
+  // the headless PW CLI for the fallback batch (logged-in cookies +
+  // anti-bot bypass).  Env off path is unchanged.
+  _fetchViaCdpChrome: _cdpOverride = null,
 } = {}) {
   // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): entry abort gate.
   // Pre-fix, an aborted signal at this point still ran Jina probes + PW
@@ -1342,58 +1400,61 @@ async function fetchResultContents(urls, signal, {
     if (!results.has(url)) failed.add(url);
   }
 
-  // Stage 3 — Playwright fallback, capped. Only the first PW_FALLBACK_MAX
-  // misses get a second chance, to keep tail latency bounded.
-  // G-1c follow-up #2: abort gate before PW fallback block + before each
-  // PW target.  Without this, signal aborted between Jina end and PW
-  // start still rolls the user through PW_FALLBACK_MAX×fetchViaPlaywrightCli
-  // (each ~5-15s).  Real subprocess kill is G-5 — here we just refuse to
-  // queue the next PW target once the signal flips.
+  // Stage 3 — real-browser fallback, capped at PW_FALLBACK_MAX.  Two tiers:
+  //   • MELO_CDP_ENABLED=1 → CDP-chrome (logged-in cookies, anti-bot bypass).
+  //   • env off (default)  → headless Playwright CLI (existing behavior).
+  // Same loop shape; just swap the fetcher.  Trail is recorded ONE level
+  // up (run() emits a single content-fetch trail entry with method).
   if (signal?.aborted) {
     return [...results.values()].filter(r => r.content);
   }
-  // G-1c follow-up #5: PW availability probe must also be abort-raced
-  // (same-class as raceSerpProviders' probe).  Seam alias falls back to
-  // production isPlaywrightCliAvailable when override is not provided.
-  // AbortError → return what we have (Jina + URL cache hits) — outer
-  // run() post-await abort gate will then bail with marker.
-  const pwAvailableImpl = _pwAvailableOverride || isPlaywrightCliAvailable;
-  let pwAvailable = false;
-  if (failed.size > 0 && PW_FALLBACK_MAX > 0) {
-    try {
-      pwAvailable = await abortRace(pwAvailableImpl(), signal);
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        return [...results.values()].filter(r => r.content);
+  const useCdp = process.env.MELO_CDP_ENABLED === '1';
+  let fallbackImpl = null;
+  if (useCdp) {
+    // CDP path: no availability probe (the launcher fails clearly if
+    // Chrome is missing, and per-URL fail naturally falls through to
+    // url-cache reuse).
+    fallbackImpl = _cdpOverride || fetchViaCdpChromeForContentFetch;
+  } else {
+    // PW path: existing G-1c follow-up #5 abort-raced availability probe.
+    const pwAvailableImpl = _pwAvailableOverride || isPlaywrightCliAvailable;
+    let pwAvailable = false;
+    if (failed.size > 0 && PW_FALLBACK_MAX > 0) {
+      try {
+        pwAvailable = await abortRace(pwAvailableImpl(), signal);
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          return [...results.values()].filter(r => r.content);
+        }
+        throw err;
       }
-      throw err;
+    }
+    if (pwAvailable) {
+      fallbackImpl = _pwOverride || fetchViaPlaywrightCli;
     }
   }
-  if (failed.size > 0 && PW_FALLBACK_MAX > 0 && pwAvailable) {
-    const pwTargets = [...failed].slice(0, PW_FALLBACK_MAX);
-    for (const url of pwTargets) {
-      // Re-check at every iteration — between two PW calls the signal
-      // can flip, and the in-flight PW process is what G-5 will kill;
-      // here we only ensure no further PW targets get scheduled.
+  if (failed.size > 0 && PW_FALLBACK_MAX > 0 && fallbackImpl) {
+    const fallbackTargets = [...failed].slice(0, PW_FALLBACK_MAX);
+    for (const url of fallbackTargets) {
+      // Re-check at every iteration — between two fallback calls the
+      // signal can flip, and the in-flight fetcher is what G-5 will kill;
+      // here we only ensure no further targets get scheduled.
       if (signal?.aborted) break;
-      // G-1c follow-up #3: abortRace around the in-flight PW call so
-      // signal abort during a single PW await returns immediately
-      // (5-15s wait → ~0).  Real subprocess kill is G-5.
-      // _pwOverride is a test seam (production callers leave it null).
-      const pwImpl = _pwOverride || fetchViaPlaywrightCli;
-      let pw;
+      // G-1c follow-up #3: abortRace around the in-flight fallback call
+      // so signal abort during a single fetch await returns immediately.
+      let body;
       try {
-        pw = await abortRace(pwImpl(url), signal);
+        body = await abortRace(fallbackImpl(url), signal);
       } catch (err) {
         if (err?.name === 'AbortError') break;
         // Propagate other errors via the same swallow path the rest of
         // the function uses — failed.add was the pre-fix behavior.
-        debugWarn('web_search', `PW fallback failed for ${url}:`, err?.message || err);
+        debugWarn('web_search', `${useCdp ? 'cdp-chrome' : 'PW'} fallback failed for ${url}:`, err?.message || err);
         continue;
       }
-      if (pw.content && pw.content.length >= 100) {
-        results.set(url, pw);
-        setCachedUrlContent(url, pw.content);
+      if (body?.content && body.content.length >= 100) {
+        results.set(url, body);
+        setCachedUrlContent(url, body.content);
       }
     }
   }
@@ -1728,6 +1789,11 @@ export const webSearchTool = {
       _searchViaDdg,
       _isPlaywrightCliAvailable,
       _fetchViaJina,
+      // Stage 2c (2026-05-17): content-fetch CDP fallback seam.  Same
+      // shape as _fetchViaPlaywrightCli but production callers leave it
+      // null and the prod fetchViaCdpChromeForContentFetch resolves the
+      // import lazily.
+      _fetchViaCdpChrome,
     } = {},
   ) {
     const trail = [];
@@ -2204,6 +2270,7 @@ export const webSearchTool = {
         _fetchViaPlaywrightCli,
         _isPlaywrightCliAvailable,
         _fetchViaJina,
+        _fetchViaCdpChrome,
       });
     } catch (err) {
       // catch-path abort
@@ -2220,6 +2287,11 @@ export const webSearchTool = {
     recordWebSearchTrail(trail, 'content-fetch', contentFetchFailReason ? 'fail' : 'ok', {
       latencyMs: tAfterContent - tContent,
       reason: contentFetchFailReason || undefined,
+      // Stage 2c (2026-05-17): surface which tier handled the fallback
+      // batch (cdp-chrome when MELO_CDP_ENABLED=1, otherwise playwright).
+      // The Jina primary stage is implicit — content-fetch ok with a
+      // null fallback method means "Jina covered everything".
+      method: process.env.MELO_CDP_ENABLED === '1' ? 'cdp-chrome' : 'playwright',
       extra: {
         urlsRequested: smartUrls.length,
         contentItems: contentItems.length,

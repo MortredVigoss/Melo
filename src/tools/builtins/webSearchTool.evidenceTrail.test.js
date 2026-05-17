@@ -445,8 +445,8 @@ test('source-level backstop (auxiliary, not primary): abortRace helper applied t
     'PW availability probe call must be wrapped');
   assert.match(TOOL_SOURCE, /abortRace\(pwSearchImpl\(/,
     'PW SERP leg call must be wrapped');
-  assert.match(TOOL_SOURCE, /abortRace\(pwImpl\(url\),\s*signal\)/,
-    'PW content fallback call must be wrapped');
+  assert.match(TOOL_SOURCE, /abortRace\(fallbackImpl\(url\),\s*signal\)/,
+    'content-fetch fallback call must be wrapped (Stage 2c renamed pwImpl→fallbackImpl to cover both PW + CDP tiers)');
   assert.match(TOOL_SOURCE, /abortRace\(isPlaywrightCliAvailable\(\),\s*signal\)/,
     'health-check PW probe must be wrapped (round-5 consistency)');
 });
@@ -465,17 +465,19 @@ test('evidenceTrail: source-level guard — raceSerpProviders carries an abort l
     `late-settle abort guards must be present in PW + Jina branches; got ${lateSettleChecks.length}`);
 });
 
-test('evidenceTrail: source-level guard — fetchResultContents has entry + pre-PW-fallback abort gates', () => {
+test('evidenceTrail: source-level guard — fetchResultContents has entry + pre-fallback abort gates', () => {
   assert.match(
     TOOL_SOURCE,
     /async function fetchResultContents[\s\S]*?if\s*\(signal\?\.aborted\)\s*return\s*\[\]/,
     'fetchResultContents must check signal.aborted at the very top',
   );
-  // PW fallback block must check signal before entering AND in the loop.
+  // Stage 3 fallback (PW or CDP per env) must check signal before entering
+  // AND inside the loop.  Loop variable renamed pwTargets → fallbackTargets
+  // in Stage 2c to reflect the dual-tier nature (cdp-chrome OR playwright).
   assert.match(
     TOOL_SOURCE,
-    /\/\/ Stage 3[\s\S]*?if\s*\(signal\?\.aborted\)\s*\{[\s\S]*?for\s*\(const url of pwTargets\)\s*\{\s*[\s\S]*?if\s*\(signal\?\.aborted\)\s*break/,
-    'fetchResultContents Stage 3 must abort-gate before AND inside the PW fallback loop',
+    /\/\/ Stage 3[\s\S]*?if\s*\(signal\?\.aborted\)\s*\{[\s\S]*?for\s*\(const url of fallbackTargets\)\s*\{\s*[\s\S]*?if\s*\(signal\?\.aborted\)\s*break/,
+    'fetchResultContents Stage 3 must abort-gate before AND inside the fallback loop (CDP or PW)',
   );
 });
 
