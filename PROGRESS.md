@@ -4,6 +4,50 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-18 — Stage 2c B 留账闭环：real stale-SWR + real abort-during-hang (A)
+
+意图：Stage 2c round-2 落 B 时挂了 3 ⚪ 留账（"真" stale SWR / "真" abort hang / 沙箱 EPERM 第三方）。本批闭真前两个——前者证明 SWR 背景刷新真烧 Jina + 真重写 cache row，后者证明 waitForLoadState 真挂时 abort 真切断、page.close 真触发、wait 被 close 真拒绝。
+
+用户拍板 / 评级反馈：直接接受单方案动手，Codex 后审 **A**："实现聚焦且测试到位"，零 finding。MEMORY.md `feedback_test_must_validate_real_invariant` 写入 5 天后第一次落地真应用——测试设计本身就抓到一个 silent assumption（`fetchResultContents` 的 url_content_cache 层会短路掉 Jina，单 age 搜索查询行不够），把"真不变量测试"的价值给现场证明了。
+
+设计承诺（diff 看不出）：
+- `_refreshInBackground` 加 `refreshDeps` opts 让 6 个 DI seam 对称传入 raceSerpProviders + fetchResultContents；生产 `refreshDeps={}` 走模块默认实现，行为不变。
+- 真 stale SWR 测试通过 `DatabaseSync` 直接 `UPDATE created_at` + `DELETE url_content_cache`——后者是关键，单 age 搜索行会让 Jina counter 永远 0。
+- 真 abort-during-hang 用 `page.close()` 同步 reject pending `waitForLoadState`，模拟 playwright 的 "Target closed" 真传播；不用永不 resolve mock。
+
+本地 `npm test` GREEN. Final commit: `b2c5999`.
+
+## 2026-05-17 — Stage 3 全景：pageRegistry + 6 个 browser_* 工具 (3a S, 3b S, 3c A)
+
+意图：在 Stage 2 的"一次性 CDP fetch"基础上，让 agent 能持有持久 page handle 做 open → snapshot → click → fill → wait → close 序列。Stage 3a 是 pageRegistry 生命周期管理，3b 是 read-only-ish 工具（open / snapshot / close），3c 是 state-changing 工具（click / fill / wait_for，requiresPermission:true）。
+
+Codex C-闭环链（每 Stage 至少一轮真抓）：
+1. **3a C** (`728ea48`)：`page.goto` 不听 AbortSignal → 加 abort listener 直接 `page.close()`，避免 Stop 后 phantom page 进 registry。
+2. **3b B** (`ad32bed`)：input URL 写进 registry 但 30x 后已落在别处；snapshot 无 signal 线程。改用 `page.url()` 写实际 landed URL + `awaitWithAbort` 包裹 evaluate。
+3. **3c C** (`4acb4e7`)：state-changing 工具的 abort 契约破——`page.click/fill` 在 wrapper 检 abort 之前同步触发，Stop 只让 wrapper 早返回，底层 op 继续提交表单 / 发消息。改 pre-flight 检 + in-flight abort listener → `closePage(pageId)`（牺牲 persistent handle 真停 op）+ `meta.pageInvalidated:true` 提示 agent 重 open。**MEMORY.md `feedback_test_must_validate_real_invariant` 就是此处假绿教训固化**。
+
+设计承诺：
+- `pageRegistry` 用 `pg-<8hex>` ID + lastUsedAt 衰减；`cleanupIdlePages` 是 callable，非 module-load timer（§6）。
+- `browser_click` / `browser_fill` 是仅有的 `requiresPermission:true`；`browser_wait_for` 是纯观察保 false。
+- abort 期间 state-changing 工具 closePage 不可避免——产品契约选"reliable Stop"优先于"persistent handle 存活"。
+- 三个 tier 都通过 `MELO_CDP_ENABLED=1` 严控；env 是用户设的不是 agent 能选的。
+
+本地 `npm test` GREEN. Final commits: `ab08afa` `728ea48` `edd73eb` `ad32bed` `70571dd` `4acb4e7`.
+
+## 2026-05-17 — Stage 2c：webSearchTool content-fetch CDP fallback (2 轮 C → B)
+
+意图：fetchUrlTool 已通过 Stage 2b 走 CDP，但 webSearchTool 的内容回填层（SERP 后给每个结果抓 body）还停在 Jina + Playwright headless CLI。Stage 2c 让回填层在 env 开时也走 CDP，登录态 + anti-bot bypass 对搜索结果同样有效。
+
+Codex 评级反馈：2 轮 C-闭环（信号没线程进 CDP fetcher / `_refreshInBackground` 没接 round-2 的 `{items, fallbackTier}` 新 shape）后落 B，3 ⚪ 留账显式接受（真 stale SWR + 真 abort hang + 沙箱 EPERM）。用户回 "a"。
+
+设计承诺：
+- `fetchResultContents` 返回升级为 `{items, fallbackTier}`，trail 的 `content-fetch.method` 记录**实际烧到的 tier**（而非按 env hardcode）——Codex round-2 抓的精确假信号。
+- env off 路径完全不变（Stage 2c 的 "behavior change 仅在 env=1 时" 承诺）。
+- 留账两个 ⚪ 推到 2026-05-18 真测试落地（详见上方条目）。
+
+本地 `npm test` GREEN. Final commits: `f3eca59` `5a7d58a` `a96f5e9`.
+
+---
 ## 2026-05-16 — Stage 2a/2b：connect helper + fetchUrlTool cdp-chrome tier (4 轮 C-gate 闭环)
 
 意图：把 Stage 1 的 launcher 接成 fetchUrlTool 的新 tier，让 agent 通过 CDP 用用户的真 Chrome（登录态 + anti-bot bypass + SPA 渲染）抓那些 jina/direct/headless-playwright 拿不到的内容。Stage 2a 是纯连接器（`connectMeloChrome`/`withMeloChrome`），Stage 2b 是 wire 入 fetchUrlTool。
