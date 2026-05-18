@@ -727,6 +727,13 @@ async function main() {
     // silently drift after Stage 3 wires interactive browser tools.
     results.push(await runStep('webSearchTool content-fetch CDP (test:websearch-cdp)', () => runCommand('npm', ['run', 'test:websearch-cdp'])));
 
+    // Stage 2c B 留账 闭环 (2026-05-18): real stale-SWR test (UPDATE
+    // created_at into stale window) + real abort-during-hang test
+    // (waitForLoadState 真挂 + 计时验证 + page.close 计数).  Both close
+    // the "fake-green" gap MEMORY.md feedback_test_must_validate_real_invariant
+    // requires for any abort/SWR path.
+    results.push(await runStep('webSearchTool SWR + abort (test:websearch-swr-abort)', () => runCommand('npm', ['run', 'test:websearch-swr-abort'])));
+
     // Stage 3a (2026-05-17): pageRegistry — persistent page handle store
     // for the upcoming Stage 3b/3c interactive browser tools.  Gating
     // here so the env gate + contexts()[0] reuse + cleanup-on-error

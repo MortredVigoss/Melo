@@ -2011,8 +2011,18 @@ export const webSearchTool = {
           writeWebSearchDebugLine(`[cache] span=${spanId} hit=stale refresh=skipped-aborted`);
         } else if (!_backgroundRefreshInFlight.has(refreshKey)) {
           _backgroundRefreshInFlight.add(refreshKey);
+          // Stage 2c B 留账 闭环 (2026-05-18): pass the DI seams through
+          // so the background refresh path is testable (real stale-SWR
+          // test in webSearchTool.swrAbort.test.js needs to assert the
+          // refresh fired AND rewrote the row).  Production callers
+          // leave these undefined → module-default impls win, unchanged
+          // behavior.
+          const refreshDeps = {
+            _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
+            _fetchViaJina, _fetchViaPlaywrightCli, _fetchViaCdpChrome,
+          };
           queueMicrotask(() => {
-            _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config)
+            _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config, refreshDeps)
               .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err))
               .finally(() => _backgroundRefreshInFlight.delete(refreshKey));
           });
@@ -2416,8 +2426,22 @@ export const webSearchTool = {
 // only here because stale was served) and without awaiters outside the
 // cache write.  If we throw, the stale row still stands — safe fallback.
 
-async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config) {
-  const serp = await raceSerpProviders(q, limit, null);
+async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config, refreshDeps = {}) {
+  // Stage 2c B 留账 闭环 (2026-05-18): thread the parent run()'s DI seams
+  // into the background refresh too.  Pre-fix the refresh used module-
+  // default impls (real Jina / DDG / Playwright net), so its end-to-end
+  // contract was untestable without real network.  feedback_test_must_
+  // validate_real_invariant requires we can prove "refresh fired AND
+  // rewrote the cache row" with a deterministic fake — that needs DI
+  // symmetry with run().  Production callers leave refreshDeps empty so
+  // module-default impls win (same behavior as before).
+  const {
+    _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
+    _fetchViaJina, _fetchViaPlaywrightCli, _fetchViaCdpChrome,
+  } = refreshDeps;
+  const serp = await raceSerpProviders(q, limit, null, {
+    _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
+  });
   if (!serp.results.length) return;
   const smartUrls = selectContentUrls(serp.results, q, {
     timeSensitive: intent.timeSensitive,
@@ -2430,7 +2454,10 @@ async function _refreshInBackground(q, limit, intent, queryTokens, allowBlockedD
   // refreshed.  fallbackTier is dropped here: the SWR write goes through
   // setCachedSearch which doesn't surface trail info to the user, and
   // adding it would require widening the cache schema.
-  const cfResult = await fetchResultContents(smartUrls, null).catch(() => ({ items: [], fallbackTier: null }));
+  const cfResult = await fetchResultContents(smartUrls, null, {
+    _fetchViaPlaywrightCli, _isPlaywrightCliAvailable,
+    _fetchViaJina, _fetchViaCdpChrome,
+  }).catch(() => ({ items: [], fallbackTier: null }));
   const contentItems = cfResult.items;
   const contentMap = new Map(
     contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
