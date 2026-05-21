@@ -1384,17 +1384,41 @@ async function fetchResultContents(urls, signal, {
     let done = false;
     let settledCount = 0;
 
+    // 2026-05-21 audit闭环 #6: hard-deadline / early-exit must abort
+    // in-flight Jina HTTP requests, not just stop updating state.  Pre-fix
+    // `finish()` only flipped `done` and the per-promise `.then` checks
+    // guarded against state mutation — but the underlying fetch() calls
+    // kept running to natural timeout (30-60s typical), wasting bandwidth
+    // + Jina server tokens on results we already discarded.
+    // Solution: chain an internal AbortController to BOTH the outer signal
+    // (so caller Stop still flows through) AND finish() (so deadline/quorum
+    // cancels in-flight too).  Pass internalAc.signal to fetchViaJina
+    // instead of the bare outer signal.
+    const internalAc = new AbortController();
+    if (signal) {
+      if (signal.aborted) internalAc.abort();
+      else {
+        const fwd = () => internalAc.abort();
+        signal.addEventListener('abort', fwd, { once: true });
+      }
+    }
+
     const finish = () => {
       if (done) return;
       done = true;
       clearTimeout(hardDeadline);
+      // Cancel any Jina fetch still in flight — the .then bodies will
+      // see internalAc.signal.aborted and short-circuit, and node's
+      // fetch() will reject pending HTTP with AbortError so the socket
+      // is released back to the pool / closed.
+      try { internalAc.abort(); } catch {}
       resolveOuter();
     };
     const hardDeadline = setTimeout(finish, JINA_HARD_DEADLINE_MS);
 
     for (const url of needFetch) {
       const validators = condGetCandidates.get(url) || {};
-      (_jinaOverride || fetchViaJina)(url, signal, validators)
+      (_jinaOverride || fetchViaJina)(url, internalAc.signal, validators)
         .then(r => {
           if (done) return;
           if (r?.notModified) {

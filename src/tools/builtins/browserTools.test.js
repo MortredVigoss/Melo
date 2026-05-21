@@ -388,6 +388,55 @@ test('browser_click: in-flight abort → closePage fires + meta.pageInvalidated:
     'meta.pageInvalidated:true tells the agent the handle is gone — re-open needed');
 });
 
+test('browser_click: in-flight abort AWAITS closePage before returning (no race window for agent re-open)', async () => {
+  // 2026-05-21 audit闭环 #8: pre-fix the abort listener fired closePage
+  // fire-and-forget — the run() outer return path could observe ABORTED
+  // and resolve BEFORE closePage actually finished.  Agent would receive
+  // ABORTED + immediately re-fire browser_open, racing against a still-
+  // closing browser handle → 两个 connectOverCDP 同时活跃, resource peak
+  // double-occupancy.
+  //
+  // This test pins the new contract: outer finally awaits the close
+  // promise, so by the time the caller sees ABORTED, closePage has
+  // already resolved.  We use a deliberately slow closePage mock that
+  // tracks both "started" and "completed" timestamps and assert the
+  // tool didn't return between the two.
+  const ac = new AbortController();
+  let closeStartedAt = 0;
+  let closeCompletedAt = 0;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      click: () => new Promise(resolve => setTimeout(resolve, 200)),
+      url: () => 'https://example.com/x',
+    }),
+    closePage: async () => {
+      closeStartedAt = Date.now();
+      // Simulate slow CDP teardown — 50ms is enough to detect the
+      // pre-fix race (run() returns < 50ms, leaving close in flight).
+      await new Promise(r => setTimeout(r, 50));
+      closeCompletedAt = Date.now();
+      return true;
+    },
+    peekPageInfo: () => null,
+  };
+  setTimeout(() => ac.abort(), 10);
+  const tStart = Date.now();
+  const result = await browserClickTool.run(
+    { pageId: 'pg-await-close', selector: 'button' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  const returnedAt = Date.now();
+
+  assert.equal(result.error, 'ABORTED');
+  assert.ok(closeStartedAt > 0, 'closePage must have started');
+  assert.ok(closeCompletedAt > 0, 'closePage must have completed');
+  assert.ok(returnedAt >= closeCompletedAt,
+    `tool MUST NOT return before closePage completes — returned at ${returnedAt - tStart}ms, ` +
+    `close completed at ${closeCompletedAt - tStart}ms.  Pre-fix would return ~10ms, close at ~60ms ` +
+    `— agent's immediate re-open would race a still-closing browser handle.`);
+});
+
 // ─── Stage 3c: browser_fill ─────────────────────────────────────────────────
 
 test('browser_fill: success returns {ok:true, meta:{filled:true, valueLength}}', async () => {
@@ -493,6 +542,40 @@ test('browser_fill: in-flight abort → closePage fires + meta.pageInvalidated:t
   assert.equal(closeCalls, 1, 'in-flight abort MUST call closePage to actually stop the fill');
   assert.equal(closedPageId, 'pg-inflight-f');
   assert.equal(result.meta?.pageInvalidated, true);
+});
+
+test('browser_fill: in-flight abort AWAITS closePage before returning (audit闭环 #8 — parity with click)', async () => {
+  // Same invariant as the click await-close test — the fill tool's
+  // abort listener must capture the closePage promise and the outer
+  // finally must await it so the caller doesn't race a new browser_open
+  // against a still-closing browser handle.
+  const ac = new AbortController();
+  let closeStartedAt = 0;
+  let closeCompletedAt = 0;
+  const fake = {
+    openPage: async () => ({}),
+    getPage: () => ({
+      fill: () => new Promise(resolve => setTimeout(resolve, 200)),
+      url: () => 'https://example.com/x',
+    }),
+    closePage: async () => {
+      closeStartedAt = Date.now();
+      await new Promise(r => setTimeout(r, 50));
+      closeCompletedAt = Date.now();
+      return true;
+    },
+    peekPageInfo: () => null,
+  };
+  setTimeout(() => ac.abort(), 10);
+  const result = await browserFillTool.run(
+    { pageId: 'pg-await-close-fill', selector: 'input', value: 'x' },
+    { signal: ac.signal, _pageRegistry: fake },
+  );
+  const returnedAt = Date.now();
+  assert.equal(result.error, 'ABORTED');
+  assert.ok(closeStartedAt > 0 && closeCompletedAt > 0);
+  assert.ok(returnedAt >= closeCompletedAt,
+    'browser_fill must await closePage before returning ABORTED (same contract as click)');
 });
 
 // ─── Stage 3c: browser_wait_for ─────────────────────────────────────────────

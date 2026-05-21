@@ -289,11 +289,19 @@ export const browserClickTool = {
     // completed") because the latter is non-actionable for an agent.
     let abortListener = null;
     let pageInvalidatedByAbort = false;
+    // 2026-05-21 audit闭环 #8: capture the in-flight closePage Promise
+    // so the outer finally can await it before returning ABORTED.
+    // Pre-fix this was fire-and-forget — agent would receive `error:
+    // ABORTED + meta.pageInvalidated:true` and immediately re-fire
+    // browser_open, but the previous page's close was still racing
+    // against the new open's CDP attach → two connectOverCDP sessions
+    // briefly contending for the same Chrome.
+    let closingPromise = null;
     if (signal) {
       abortListener = () => {
         pageInvalidatedByAbort = true;
-        // Fire-and-forget; closePage is idempotent and best-effort.
-        Promise.resolve(registry.closePage(pageId)).catch(() => {});
+        // Start the close — capture so finally awaits it.
+        closingPromise = Promise.resolve(registry.closePage(pageId)).catch(() => {});
       };
       signal.addEventListener('abort', abortListener, { once: true });
     }
@@ -328,6 +336,13 @@ export const browserClickTool = {
     } finally {
       if (signal && abortListener) {
         try { signal.removeEventListener('abort', abortListener); } catch {}
+      }
+      // 2026-05-21 audit闭环 #8: await the in-flight close before
+      // returning so the caller can't observe ABORTED then race a new
+      // browser_open against a still-closing browser handle.  closing
+      // Promise is .catch()-wrapped above so this await never throws.
+      if (closingPromise) {
+        await closingPromise;
       }
     }
   },
@@ -410,12 +425,18 @@ export const browserFillTool = {
     // abort must close the page to actually stop the underlying op.
     // Persistent handle invalidation is the cost; the alternative ("we
     // returned ABORTED but the field may still autofill") is unactionable.
+    //
+    // 2026-05-21 audit闭环 #8: capture closingPromise so the outer
+    // finally awaits before returning ABORTED — prevents CDP attach
+    // contention between still-closing browser and the agent's immediate
+    // re-open.
     let abortListener = null;
     let pageInvalidatedByAbort = false;
+    let closingPromise = null;
     if (signal) {
       abortListener = () => {
         pageInvalidatedByAbort = true;
-        Promise.resolve(registry.closePage(pageId)).catch(() => {});
+        closingPromise = Promise.resolve(registry.closePage(pageId)).catch(() => {});
       };
       signal.addEventListener('abort', abortListener, { once: true });
     }
@@ -446,6 +467,9 @@ export const browserFillTool = {
     } finally {
       if (signal && abortListener) {
         try { signal.removeEventListener('abort', abortListener); } catch {}
+      }
+      if (closingPromise) {
+        await closingPromise;
       }
     }
   },
