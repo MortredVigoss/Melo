@@ -715,6 +715,17 @@ async function main() {
     // future refactors can't desynchronize results vs contentItems.
     results.push(await runStep('webSearchTool api-direct shape (test:websearch-api-direct)', () => runCommand('npm', ['run', 'test:websearch-api-direct'])));
 
+    // 2026-05-21 audit闭环 #5: 6 regression guards that were written
+    // explicitly to catch §6 cross-home / evidenceTrail contract drift
+    // but had no gate step — i.e. silent-skip per
+    // feedback_test_must_reach_gate.  Gate them in two narrow scripts
+    // (cross-home / evidence-trail) so the protection actually fires
+    // before push.  The §6 SWR microtask test (added same audit闭环 #1)
+    // lives inside webSearchTool.crossHome.test.js — picking up that
+    // file here locks both #1 and #3 regression protection.
+    results.push(await runStep('Cross-home isolation regression guards (test:cross-home)', () => runCommand('npm', ['run', 'test:cross-home'])));
+    results.push(await runStep('Tool-level evidenceTrail regression guards (test:evidence-trail-tools)', () => runCommand('npm', ['run', 'test:evidence-trail-tools'])));
+
     // meloChrome launcher (2026-05-16): CDP-attach Stage 1.  Pure unit
     // tests — no real Chrome spawn, all OS deps stubbed via DI seam.
     // Gating here so the lock-file / reuse / stale-detection contract

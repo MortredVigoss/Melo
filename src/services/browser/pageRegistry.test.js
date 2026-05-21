@@ -426,6 +426,109 @@ test('openPage: signal aborted between connect and goto → cleanup + AbortError
 
 // ─── listPages ─────────────────────────────────────────────────────────────
 
+// ─── 2026-05-21 audit闭环 #3: cross-MELO_HOME isolation ──────────────────
+
+test('cross-home: pageId opened under home A cannot be used by getPage when current MELO_HOME is B', async () => {
+  // The audit finding: `_pages` is module-global, so a pageId from
+  // home A returns the home A browser handle (with home A cookies +
+  // login state) even when the caller is now running under home B.
+  // Fix: entry captures home at open, getPage/closePage/peekPageInfo
+  // validate against current home and refuse cross-home access.
+  const mod = await import('./pageRegistry.js');
+  const fakePage = makeFakePage();
+  const { browser } = makeFakeBrowser([fakePage]);
+  mod._setConnectImplForTests(async () => ({ browser, port: 5000, reused: false, profileDir: '/p', lockPath: '/l' }));
+
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = '/tmp/melo-home-A-xrosshome-test';
+  try {
+    const { pageId } = await mod.openPage('https://example.com/a');
+    // Sanity: same-home read works.
+    assert.doesNotThrow(() => mod.getPage(pageId), 'same-home getPage must work');
+
+    // Flip MELO_HOME to a different value.
+    process.env.MELO_HOME = '/tmp/melo-home-B-xrosshome-test';
+    assert.throws(
+      () => mod.getPage(pageId),
+      /opened under a different MELO_HOME/,
+      'getPage from home B for a home-A pageId must throw a clear cross-home error',
+    );
+    assert.equal(mod.peekPageInfo(pageId), undefined,
+      'peekPageInfo from home B must NOT return entry — either null or throw, never silently leak');
+  } catch (e) {
+    // peekPageInfo throws path (newer impl).  Either return-null or
+    // throw is acceptable; the load-bearing invariant is "no leak".
+    assert.match(String(e), /different MELO_HOME/);
+  } finally {
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+  }
+});
+
+test('cross-home: caller-driven closePage from a different home throws (must NOT silently close another home\'s page)', async () => {
+  const mod = await import('./pageRegistry.js');
+  const fakePage = makeFakePage();
+  const { browser } = makeFakeBrowser([fakePage]);
+  mod._setConnectImplForTests(async () => ({ browser, port: 5000, reused: false, profileDir: '/p', lockPath: '/l' }));
+
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = '/tmp/melo-home-A-close-xrosshome';
+  try {
+    const { pageId } = await mod.openPage('https://example.com/x');
+
+    process.env.MELO_HOME = '/tmp/melo-home-B-close-xrosshome';
+    await assert.rejects(
+      () => mod.closePage(pageId),
+      /different MELO_HOME/,
+      'closePage from home B for a home-A pageId must throw — caller intent unclear, refuse',
+    );
+    // Page must still be alive in registry after the rejection.
+    assert.equal(mod.pageCount(), 1, 'cross-home close was refused → page stays registered');
+
+    // Same-home close (back to A) still works.
+    process.env.MELO_HOME = '/tmp/melo-home-A-close-xrosshome';
+    const closed = await mod.closePage(pageId);
+    assert.equal(closed, true);
+    assert.equal(mod.pageCount(), 0);
+  } finally {
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+  }
+});
+
+test('cross-home: closeAllPages (shutdown path) bypasses home guard — closes pages from ALL homes', async () => {
+  // Shutdown / process-exit cleanup must release every page handle
+  // regardless of which home opened it.  If closeAllPages went through
+  // closePage's home check, shutdown would refuse to clean up pages
+  // opened under a previous home (e.g. user switched profiles mid-
+  // session), leaking those Browser handles to process exit anyway.
+  const mod = await import('./pageRegistry.js');
+  let pageIdx = 0;
+  mod._setConnectImplForTests(async () => {
+    const page = makeFakePage();
+    const { browser } = makeFakeBrowser([page]);
+    pageIdx += 1;
+    return { browser, port: 5000 + pageIdx, reused: false, profileDir: '/p', lockPath: '/l' };
+  });
+
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = '/tmp/melo-home-A-closeall';
+  try {
+    await mod.openPage('https://example.com/a');
+    process.env.MELO_HOME = '/tmp/melo-home-B-closeall';
+    await mod.openPage('https://example.com/b');
+    assert.equal(mod.pageCount(), 2);
+
+    // Bulk shutdown — must release BOTH despite mixed homes.
+    await mod.closeAllPages();
+    assert.equal(mod.pageCount(), 0,
+      'closeAllPages must release every entry regardless of which home opened it (shutdown cleanup intent)');
+  } finally {
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+  }
+});
+
 test('listPages: returns metadata for every entry', async () => {
   const mod = await import('./pageRegistry.js');
   let callIdx = 0;

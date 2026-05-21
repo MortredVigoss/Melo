@@ -16,6 +16,18 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getMeloHome } from '../../config.js';
+// CLAUDE.md §6 fix (2026-05-21 audit finding #1): AsyncLocalStorage carries
+// a "captured home" context across the SWR microtask boundary so cache
+// helpers resolve to the home that was active when the refresh was
+// SCHEDULED, not whatever home process.env carries when the microtask
+// finally executes.  Without this the historical 7d-5α-A1 4-layer bug
+// pattern reopens: any future feature that flips MELO_HOME mid-runtime
+// (multi-profile, worker pool, telegram polling switching chats) would
+// silently write home-A's SWR refresh into home-B's search.sqlite.
+// Production callers leave the context empty → resolveCacheHome() returns
+// getMeloHome() exactly as before, so existing tests + behavior unchanged.
+import { AsyncLocalStorage } from 'node:async_hooks';
+const _homeCaptureContext = new AsyncLocalStorage();
 import { debugWarn } from '../../debug.js';
 import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 import { tryApiDirect } from '../../services/search/apiDirect.js';
@@ -251,7 +263,10 @@ const _webSearchDebugDirReady = new Map(); // logPath → true once mkdir succee
 const _backgroundRefreshInFlight = new Set();
 
 function webSearchDebugLogPath() {
-  return join(getMeloHome(), 'desktop', 'web-search-debug.log');
+  // §6 闭环: same captured-home context as cacheDbPath() — when a SWR
+  // refresh debug-logs, it writes to the captured home's log, not the
+  // current home's.
+  return join(_homeCaptureContext.getStore() ?? getMeloHome(), 'desktop', 'web-search-debug.log');
 }
 
 async function _ensureWebSearchDebugDir(logPath) {
@@ -498,8 +513,21 @@ function parseDdgMarkdown(text, limit) {
 // (see docs/search-system-roadmap.md G-6 backlog) follow the same
 // pattern; they're queued for a single systematic refactor in G-6
 // rather than scattered patches here.
+/**
+ * Resolve the home directory for cache writes.  When inside a
+ * _homeCaptureContext.run(home, ...) block (currently only the SWR
+ * background refresh microtask), returns the captured home.  Otherwise
+ * falls back to getMeloHome() — same behavior as before for every
+ * synchronous / first-await caller.
+ *
+ * CLAUDE.md §6 闭环 (2026-05-21 audit finding #1).
+ */
+function resolveCacheHome() {
+  return _homeCaptureContext.getStore() ?? getMeloHome();
+}
+
 function cacheDbPath() {
-  return join(getMeloHome(), 'desktop', 'search.sqlite');
+  return join(resolveCacheHome(), 'desktop', 'search.sqlite');
 }
 
 let _cacheDb = null;
@@ -2026,10 +2054,22 @@ export const webSearchTool = {
             _searchViaPlaywright, _searchViaDdg, _isPlaywrightCliAvailable,
             _fetchViaJina, _fetchViaPlaywrightCli, _fetchViaCdpChrome,
           };
+          // CLAUDE.md §6 闭环 (2026-05-21 audit #1): capture home at
+          // SCHEDULE time, not microtask-execution time.  AsyncLocalStorage
+          // propagates the captured value across all awaits inside the
+          // refresh so every cache helper (cacheDbPath / getCacheDb /
+          // setCachedSearch / setCachedUrlContent / debug-log path) resolves
+          // to the home that was active when the SWR was queued — even if
+          // some future feature flips MELO_HOME between schedule and
+          // execution.  Production single-home callers: capturedHome ===
+          // current getMeloHome(), so behavior is identical to pre-fix.
+          const capturedHome = getMeloHome();
           queueMicrotask(() => {
-            _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config, refreshDeps)
-              .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err))
-              .finally(() => _backgroundRefreshInFlight.delete(refreshKey));
+            _homeCaptureContext.run(capturedHome, () => {
+              _refreshInBackground(q, limit, intent, queryTokens, allowBlockedDomains, config, refreshDeps)
+                .catch(err => debugWarn('web_search', `SWR refresh failed for "${q}":`, err?.message || err))
+                .finally(() => _backgroundRefreshInFlight.delete(refreshKey));
+            });
           });
         } else {
           writeWebSearchDebugLine(`[cache] span=${spanId} hit=stale refresh=already-in-flight`);

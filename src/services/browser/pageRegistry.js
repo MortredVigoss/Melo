@@ -41,8 +41,17 @@
 import { randomUUID } from 'node:crypto';
 
 import { connectMeloChrome } from './connect.js';
+import { getMeloHome } from '../../config.js';
 
-// Page registry — pageId → { browser, page, openedAt, lastUsedAt, currentUrl }
+// Page registry — pageId → { browser, page, openedAt, lastUsedAt, currentUrl, home }
+//
+// 2026-05-21 audit finding #3: entries carry the MELO_HOME captured at
+// openPage time.  getPage / closePage / peekPageInfo validate that the
+// current home matches before honoring the request — without this guard,
+// pageId from home A can be used by code running under home B to drive
+// home A's Chrome profile (cookies, login state, opened tabs) — a
+// per-MELO_HOME isolation穿透.  Production single-home stays unchanged:
+// captured home always equals current home → validation passes silently.
 const _pages = new Map();
 
 const DEFAULT_OPEN_TIMEOUT_MS = 15_000;
@@ -165,14 +174,36 @@ export async function openPage(url, {
   const landedUrl = (typeof page.url === 'function' ? page.url() : '') || url;
   const pageId = newPageId();
   const now = Date.now();
+  // 2026-05-21 audit闭环 #3: capture home at open time.  Subsequent
+  // getPage / closePage / peekPageInfo validate against current home.
   _pages.set(pageId, {
     browser,
     page,
     openedAt: now,
     lastUsedAt: now,
     currentUrl: landedUrl,
+    home: getMeloHome(),
   });
   return { pageId, currentUrl: landedUrl };
+}
+
+/**
+ * Cross-home guard: if the page handle was opened under a different
+ * MELO_HOME than the current call, refuse to honor it.  Returns
+ * `{ ok: true, entry }` when home matches, or throws a descriptive error.
+ *
+ * This is shared between getPage / closePage / peekPageInfo so the
+ * isolation contract is enforced uniformly.  2026-05-21 audit闭环 #3.
+ */
+function _assertHomeMatch(pageId, entry) {
+  const current = getMeloHome();
+  if (entry.home && entry.home !== current) {
+    throw new Error(
+      `pageId ${pageId} was opened under a different MELO_HOME ` +
+      `(${entry.home}); current home is ${current}.  Cross-home page ` +
+      `handles are forbidden — open a new page under the current home.`,
+    );
+  }
 }
 
 /**
@@ -186,6 +217,7 @@ export function getPage(pageId) {
   if (!entry) {
     throw new Error(`Unknown pageId: ${pageId} (closed, expired, or never opened)`);
   }
+  _assertHomeMatch(pageId, entry);
   entry.lastUsedAt = Date.now();
   return entry.page;
 }
@@ -198,6 +230,10 @@ export function getPage(pageId) {
 export function peekPageInfo(pageId) {
   const entry = _pages.get(pageId);
   if (!entry) return null;
+  // 2026-05-21 #3: peek MUST also enforce the home guard — a debug surface
+  // that leaks "this pageId exists under home A" to a home-B caller breaks
+  // the same isolation contract as getPage doing the actual driving.
+  _assertHomeMatch(pageId, entry);
   return {
     pageId,
     currentUrl: entry.currentUrl,
@@ -215,6 +251,21 @@ export function peekPageInfo(pageId) {
 export async function closePage(pageId) {
   const entry = _pages.get(pageId);
   if (!entry) return false;
+  // Caller-driven close MUST honor home isolation (same contract as
+  // getPage / peekPageInfo).  Bulk cleanup paths (closeAllPages,
+  // cleanupIdlePages) bypass via _closePageInternal directly.
+  _assertHomeMatch(pageId, entry);
+  return _closePageInternal(pageId, entry);
+}
+
+/**
+ * Internal close — bypasses the home guard.  Used by closeAllPages /
+ * cleanupIdlePages where we want to release resources regardless of
+ * which home opened the page (process shutdown / age sweep don't have
+ * a "current home" to validate against — they SERVE the cleanup intent
+ * of every home).  Never throws.
+ */
+async function _closePageInternal(pageId, entry) {
   _pages.delete(pageId);
   try { await entry.page.close(); } catch { /* best-effort */ }
   try { await entry.browser.close(); } catch { /* best-effort */ }
@@ -223,14 +274,15 @@ export async function closePage(pageId) {
 
 /**
  * Close every registered page.  Used by shutdown hooks (server.js
- * onClose) and test cleanup.  Errors are swallowed — best-effort
- * cleanup, never propagates so callers' shutdown sequences don't break
- * on one stuck page.
+ * shutdown() — wired 2026-05-21 audit闭环 #2) and test cleanup.  Errors
+ * are swallowed — best-effort cleanup, never propagates so callers'
+ * shutdown sequences don't break on one stuck page.  Bypasses the
+ * home guard since shutdown serves cleanup intent of every home.
  */
 export async function closeAllPages() {
-  const ids = [..._pages.keys()];
-  for (const id of ids) {
-    try { await closePage(id); } catch { /* swallow */ }
+  const entries = [..._pages.entries()];
+  for (const [id, entry] of entries) {
+    try { await _closePageInternal(id, entry); } catch { /* swallow */ }
   }
 }
 
@@ -243,9 +295,15 @@ export async function cleanupIdlePages(maxIdleMs) {
   if (!Number.isFinite(maxIdleMs) || maxIdleMs <= 0) return [];
   const cutoff = Date.now() - maxIdleMs;
   const closed = [];
-  for (const [id, entry] of _pages.entries()) {
+  // Snapshot entries first (the iteration sees the size at start; the
+  // _closePageInternal mutations happen inside, but iteration is over a
+  // captured array).  Same home-bypass intent as closeAllPages — age
+  // eviction is cleanup, not a user-driven access, so home guard
+  // doesn't apply.
+  const snapshot = [..._pages.entries()];
+  for (const [id, entry] of snapshot) {
     if (entry.lastUsedAt < cutoff) {
-      const ok = await closePage(id);
+      const ok = await _closePageInternal(id, entry);
       if (ok) closed.push(id);
     }
   }
