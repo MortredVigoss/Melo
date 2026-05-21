@@ -44,6 +44,14 @@ const LEGACY_CODE_MAP = Object.freeze({
   NO_CONTENT: ERROR_CODES.EXTRACTION_FAILED,
   SOCIAL_LINK_BLOCKED: ERROR_CODES.LOGIN_REQUIRED,
   SOCIAL_LINK_FAILED: ERROR_CODES.EXTRACTION_FAILED,
+  // 2026-05-21 audit闭环 #4: fetchUrlTool also returns FETCH_FAILED on
+  // generic transport failures (HTTP fail at outer catch + cdp-chrome
+  // transport error) — pre-fix this fell through to PROVIDER_DOWN
+  // ("all providers exhausted"), misleading consumers about the cause.
+  // The trail-based primary classifier covers vocab'd reasons; this is
+  // the fallback for when trail reason isn't recognized.  NETWORK is
+  // the closest unified code (DNS/connect/5xx).
+  FETCH_FAILED: ERROR_CODES.NETWORK,
   // webSearchTool
   INVALID_QUERY: ERROR_CODES.INVALID_INPUT,
   SEARCH_FAILED: ERROR_CODES.PROVIDER_DOWN, // generic catch-all; refined by abort flag below

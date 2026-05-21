@@ -46,6 +46,17 @@ test('mapErrorCode: fetchUrlTool SOCIAL_LINK_FAILED → EXTRACTION_FAILED', () =
   assert.equal(mapErrorCode('SOCIAL_LINK_FAILED'), ERROR_CODES.EXTRACTION_FAILED);
 });
 
+test('mapErrorCode: fetchUrlTool FETCH_FAILED → NETWORK (audit闭环 #4)', () => {
+  // 2026-05-21 audit: fetchUrlTool returns FETCH_FAILED at the outer
+  // HTTP-transport catch and from cdp-chrome transport errors.  Pre-fix
+  // this code was missing from LEGACY_CODE_MAP, fell through to
+  // PROVIDER_DOWN ("all providers exhausted") which misled the UI's
+  // recovery guidance.  Now mapped to NETWORK (DNS/connect/5xx — the
+  // closest unified code).  Trail-based primary classifier still wins
+  // when the trail carries vocab'd reasons; this is the fallback.
+  assert.equal(mapErrorCode('FETCH_FAILED'), ERROR_CODES.NETWORK);
+});
+
 test('mapErrorCode: webSearchTool INVALID_QUERY → INVALID_INPUT', () => {
   assert.equal(mapErrorCode('INVALID_QUERY'), ERROR_CODES.INVALID_INPUT);
 });
