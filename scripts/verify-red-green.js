@@ -715,6 +715,14 @@ async function main() {
     // future refactors can't desynchronize results vs contentItems.
     results.push(await runStep('webSearchTool api-direct shape (test:websearch-api-direct)', () => runCommand('npm', ['run', 'test:websearch-api-direct'])));
 
+    // 2026-05-21 audit闭环 Tier-2B ⚪: Jina fan-out internal abort wiring
+    // regression — proves quorum-hit / outer-signal abort actually flips
+    // in-flight fetches' captured signal to aborted (pre-fix they'd keep
+    // running to natural timeout).  Without this gate the abort wiring
+    // could silently regress and we'd just see "slow background HTTP"
+    // tokens / bandwidth waste without an obvious failure mode.
+    results.push(await runStep('webSearchTool Jina abort wiring (test:websearch-jina-abort)', () => runCommand('npm', ['run', 'test:websearch-jina-abort'])));
+
     // 2026-05-21 audit闭环 #5: 6 regression guards that were written
     // explicitly to catch §6 cross-home / evidenceTrail contract drift
     // but had no gate step — i.e. silent-skip per
