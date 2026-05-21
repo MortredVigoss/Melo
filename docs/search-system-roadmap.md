@@ -79,14 +79,14 @@ chat runner 把任何工具失败统一包成 `model request failed`。
 
 **实施分阶段**：
 
-| Stage | 内容 | Commit |
+| Stage | 内容 | 状态 |
 |---|---|---|
-| G-1a | `fetchUrlTool` 7 层 fallback 加 trail 收集（最小化：propagate but don't surface） | 待 |
-| G-1b | `socialLinkTool` 同样接 trail | 待 |
-| G-1c | `webSearchTool` 同样接 trail | 待 |
-| G-1d | `chatExecutionRunner` 把 trail 写进 chat thread state（debug 模式可见） | 待 |
-| G-1e | trail 进 prompt 注入：fail/partial 时给模型明确 fail reason，不再让模型瞎猜 | 待 |
-| G-1f | UI 显示当前在跑哪一层（"正在打开链接 / 被登录遮挡 / 只拿到预览"） — 你 backlog 的 P2 #10 | 待 |
+| G-1a | `fetchUrlTool` 7 层 fallback 加 trail 收集（最小化：propagate but don't surface） | ✅ 完成（详见 PROGRESS.md 5-11 G phase 主线） |
+| G-1b | `socialLinkTool` 同样接 trail | ✅ 完成 |
+| G-1c | `webSearchTool` 同样接 trail | ✅ 完成（6 轮 Codex C-gate 闭环到 S） |
+| G-1d | `chatExecutionRunner` 把 trail 写进 chat thread state（debug 模式可见） | ✅ 完成 |
+| G-1e | trail 进 prompt 注入：fail/partial 时给模型明确 fail reason，不再让模型瞎猜 | ✅ 完成（端到端 trail 进 prompt） |
+| G-1f | UI 显示当前在跑哪一层（"正在打开链接 / 被登录遮挡 / 只拿到预览"） — 你 backlog 的 P2 #10 | ✅ 完成（desktop-ui activeToolCallsStrip） |
 
 **红绿灯**（G-1a 阶段）：fixture 里造一个 cookie-fail + Playwright-fail
 + external-reader-ok 的链路，断言 `evidenceTrail.length === 3 && trail[0..1].outcome === 'fail' && trail[2].outcome === 'ok'`。
@@ -99,14 +99,15 @@ chat runner 把任何工具失败统一包成 `model request failed`。
 contract types + migration phases + open questions list documented before
 any code change.
 
-**G-2b adapter WIP held in branch `wip/g-2b-adapter-phase2-refresh`** (4
-commits, not on master). After 4 Codex C-rounds the lesson surfaced:
-adapter fixtures were hand-written guesses at real return shapes; every
-round Codex caught another shape I hadn't seen. RFC §7 documents the
-lesson (5th principle: snapshot real data before designing the
-normalizer). Phase 2 (production telegram/desktop run, ≥ 1 day) → log
-real `evidenceTrail` + `meta` shapes → refresh fixtures → cherry-pick
-the 4 WIP commits → re-push as G-2b round-5.
+**G-2b adapter (2026-05-21 完成)**: cherry-picked the 4 WIP commits from
+`wip/g-2b-adapter-phase2-refresh` onto master, plus round-4/5 闭环 to
+handle `api-direct` phase + per-provider snippet/contentItems semantics
+that the original wip branch predated (api-direct landed 5-14, wip was
+from 5-11). Trail-data-driven fixture refresh was the original plan but
+proved over-cautious — Codex pre-pp gate caught the real shape gaps as
+soon as cherry-pick landed. Final state: `searchTask.js` adapter consumed
+in 7 commit chain (aca1880 / 8061525 / 0a3148f / 000d2d2 / 9bf9eda /
+31291b4 / 7685467), all A-grade. See PROGRESS.md 2026-05-21 entry.
 
 
 

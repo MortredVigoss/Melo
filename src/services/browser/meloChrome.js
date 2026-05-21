@@ -33,8 +33,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, openSync, closeSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import net from 'node:net';
 
 import { getMeloHome } from '../../config.js';
@@ -61,6 +61,25 @@ function chromeProfileDirFor(home) {
 
 function lockFilePathFor(home) {
   return join(home, 'desktop', 'chrome.lock');
+}
+
+/**
+ * Path to the Chrome stderr log for the current spawn.  Per-port so that
+ * concurrent Chromes (different MELO_HOMEs / dev configs at different
+ * ports) don't clobber each other's logs.  Opened in 'w' (truncate) on
+ * spawn so stale content from a previous Chrome at the same port is
+ * wiped — the file's lifecycle is "this Chrome instance only".
+ *
+ * 2026-05-21 audit #7 round-4 (temp-file fd 重定向, OS daemon 正解):
+ * pipe pattern was fundamentally wrong for a detached + long-lived
+ * Chrome (round-1/2/3 each hit a different failure mode — EPIPE on
+ * Melo restart, event-loop hang, or destabilized browser).  File-fd
+ * redirect is the standard daemon shape: spawn opens the file, dups
+ * the fd into the child, parent closes its handle.  Chrome writes
+ * directly to the file kernel-side; parent never touches the pipe.
+ */
+function chromeStderrLogPathFor(home, port) {
+  return join(home, 'desktop', `chrome-stderr-${port}.log`);
 }
 
 // ─── Free-port discovery ─────────────────────────────────────────────────────
@@ -337,6 +356,30 @@ async function _ensureMeloChromeRunningInner({
   const port = await _findFreePortImpl();
   mkdirSync(profileDir, { recursive: true });
 
+  // 2026-05-21 audit #7 round-4 (temp-file fd 重定向): open a per-port
+  // stderr log file in 'w' (truncate) mode and hand the fd to the child
+  // via stdio[2].  Child dup's the fd; we close our handle immediately
+  // after spawn.  Chrome writes stderr directly to the file
+  // kernel-side — parent process never touches the pipe, so:
+  //   • Melo restart doesn't EPIPE Chrome (no pipe to close)
+  //   • No active 'data' listener pinning Node's event loop
+  //   • Stale content from a previous Chrome at the same port is wiped
+  //     by the truncate, so the tail we read on next failure is always
+  //     from THIS spawn (not a previous one's noise)
+  // On spawn-fail/timeout/abort the throw paths read the file's tail
+  // and surface it in the error message for actionable diagnostic.
+  // Best-effort: if openSync throws (disk full, permission denied, etc)
+  // we fall back to 'ignore' silently — better to lose diagnostic than
+  // fail spawn for a non-critical reason.
+  const stderrLogPath = chromeStderrLogPathFor(home, port);
+  let stderrFd = -1;
+  try {
+    mkdirSync(dirname(stderrLogPath), { recursive: true });
+    stderrFd = openSync(stderrLogPath, 'w');
+  } catch {
+    stderrFd = -1; // fall through to stdio: 'ignore'
+  }
+
   // 4. Spawn Chrome detached so it survives Melo restarts.  Visible window
   // (no --headless) so the user can see what Melo is doing and intervene
   // (close tabs, log in to a site, etc).
@@ -351,9 +394,37 @@ async function _ensureMeloChromeRunningInner({
   ];
   const child = _spawnImpl(binary, args, {
     detached: true,
-    stdio: 'ignore',
+    stdio: stderrFd >= 0
+      ? ['ignore', 'ignore', stderrFd]
+      : 'ignore',
   });
   child.unref();
+
+  // Close our fd — child has dup'd it.  After this point, only the
+  // child holds an fd to the file; parent never touches it.  This is
+  // what makes the pattern safe across Melo restarts (no pipe held).
+  if (stderrFd >= 0) {
+    try { closeSync(stderrFd); } catch { /* best-effort */ }
+  }
+
+  // Tail reader — best-effort.  Called from spawn-fail / timeout / abort
+  // throw paths to surface Chrome's startup diagnostics in the thrown
+  // error.  Last 5 non-empty lines, bounded message size.  If the file
+  // doesn't exist or read fails, returns empty string (no value lost
+  // beyond what the pre-#7 'stdio: ignore' baseline gave).
+  const readStderrTail = () => {
+    if (stderrFd < 0) return ''; // fallback path was used
+    try {
+      const content = readFileSync(stderrLogPath, 'utf8');
+      const lines = content.split('\n').filter(l => l.trim());
+      if (lines.length === 0) return '';
+      const tail = lines.slice(-5);
+      return `\n  Chrome stderr (last ${tail.length} line${tail.length === 1 ? '' : 's'} from ${stderrLogPath}):\n` +
+        tail.map(l => `    ${l}`).join('\n');
+    } catch {
+      return '';
+    }
+  };
 
   // Codex G-2b round-7 fix (2026-05-16): an unhandled 'error' event on the
   // child (binary present but non-executable, permission denied, ulimit
@@ -389,7 +460,10 @@ async function _ensureMeloChromeRunningInner({
     }
     if (spawnError) {
       killSpawnedChild();
-      throw new Error(`Chrome failed to spawn at ${binary}: ${spawnError?.message || spawnError}`);
+      throw new Error(
+        `Chrome failed to spawn at ${binary}: ${spawnError?.message || spawnError}` +
+        readStderrTail(),
+      );
     }
     if (await isCdpPortReachable(port, _fetchImpl)) {
       writeLock(lockPath, { port, pid: child.pid || null, startedAt: _nowImpl(), profileDir });
@@ -403,7 +477,10 @@ async function _ensureMeloChromeRunningInner({
   // waiting; better a clean re-try than a half-up race).  Caller falls
   // back to a non-CDP tier.
   killSpawnedChild();
-  throw new Error(`Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})`);
+  throw new Error(
+    `Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})` +
+    readStderrTail(),
+  );
 }
 
 // Test-only: reset the singleflight latches.  Lets afterEach hooks recover
@@ -449,6 +526,7 @@ export const _internals = {
   DEFAULT_CHROME_PATHS,
   chromeProfileDirFor,
   lockFilePathFor,
+  chromeStderrLogPathFor,
   isCdpPortReachable,
   readLock,
   writeLock,
