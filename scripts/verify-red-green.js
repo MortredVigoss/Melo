@@ -702,6 +702,13 @@ async function main() {
     // vanish from search" without obvious cause.
     results.push(await runStep('API-direct router + Wikipedia provider (test:api-direct)', () => runCommand('npm', ['run', 'test:api-direct'])));
 
+    // Phase G-2b SearchTask adapter (2026-05-21 cherry-picked from
+    // wip/g-2b-adapter-phase2-refresh after 3 Codex C-rounds landed).
+    // Pure-function adapter maps 3 tools' legacy returns to unified
+    // SearchTaskResult — schema/error-code drift here is silent, so gate
+    // it before the upcoming G-2c caller-migration phase consumes it.
+    results.push(await runStep('SearchTask adapter (test:search-task)', () => runCommand('npm', ['run', 'test:search-task'])));
+
     // meloChrome launcher (2026-05-16): CDP-attach Stage 1.  Pure unit
     // tests — no real Chrome spawn, all OS deps stubbed via DI seam.
     // Gating here so the lock-file / reuse / stale-detection contract

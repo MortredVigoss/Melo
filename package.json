@@ -30,6 +30,7 @@
     "test:external-readers": "node --test src/web/externalReaders.test.js",
     "test:tools-evidence-trail": "node --test src/tools/executor.evidenceTrail.test.js src/tools/parser.evidenceTrail.test.js",
     "test:api-direct": "node --test src/services/search/apiDirect.test.js",
+    "test:search-task": "node --test src/services/search/searchTask.test.js",
     "test:melo-chrome": "node --test src/services/browser/meloChrome.test.js",
     "test:browser-connect": "node --test src/services/browser/connect.test.js",
     "test:fetchurl-cdp": "node --test src/tools/builtins/fetchUrlTool.cdpChrome.test.js",
