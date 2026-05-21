@@ -7,6 +7,14 @@ import { _matchOtherServerLine } from './serverGuard.js';
 import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
 import { isOriginAllowed } from './web/originCheck.js';
 import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
+// Stage 3a shutdown hook (2026-05-21 audit): pageRegistry holds persistent
+// CDP Browser+page handles per browser_open call.  Without an explicit
+// SIGTERM/SIGINT teardown they accumulate until process exit — and on Chrome
+// side, the targets aren't released cleanly.  closeAllPages is best-effort
+// (swallows individual close errors per design) so it can sit alongside
+// cleanupStalePlaywrightDaemons without risking the rest of the shutdown
+// sequence.
+import { closeAllPages } from './services/browser/pageRegistry.js';
 import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from './services/tts/edgeTts.js';
 import { createNativeSayQueue } from './services/tts/nativeSayQueue.js';
 import { defaultSkillProposalStore } from './agents/skillProposals.js';
@@ -2524,6 +2532,15 @@ function shutdown() {
   try {
     cleanupStalePlaywrightDaemons();
   } catch {}
+  // Stage 3a shutdown hook (2026-05-21 audit): close every registered CDP
+  // page+browser handle the browser_* tools opened.  Same fail-soft shape
+  // as the playwright daemon cleanup above — closeAllPages already swallows
+  // individual errors internally, but the outer try/catch is belt-and-braces
+  // so any future close-throw doesn't shortcut the rest of shutdown().
+  // Returns a Promise but we don't await it on the synchronous path here;
+  // it's added to the Promise.allSettled below where it can run in parallel
+  // with telegram/discord/server lock release.
+  const pageRegistryShutdown = closeAllPages().catch(() => {});
   // Tear down Discord voice runtime — destroys Gateway websockets + voice
   // connections so the bot disappears from voice channels cleanly on quit.
   // Lazy-import so we don't pull discord.js into cold-start when voice is
@@ -2535,6 +2552,7 @@ function shutdown() {
     _releaseTelegramLock(),
     _releaseDiscordLock(),
     voiceShutdown,
+    pageRegistryShutdown,
     // Codex C fix #11 (review #12, 2026-05-04): server-lock release
     // moved here from a separate SIGINT/SIGTERM listener that was
     // pre-empting this shutdown() via Node's listener-order. Now

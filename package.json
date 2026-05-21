@@ -37,7 +37,7 @@
     "test:websearch-cdp": "node --test src/tools/builtins/webSearchTool.cdpChrome.test.js",
     "test:websearch-swr-abort": "node --test src/tools/builtins/webSearchTool.swrAbort.test.js",
     "test:websearch-api-direct": "node --test src/tools/builtins/webSearchTool.apiDirect.test.js",
-    "test:page-registry": "node --test src/services/browser/pageRegistry.test.js",
+    "test:page-registry": "node --test src/services/browser/pageRegistry.test.js src/services/browser/pageRegistry.shutdownWire.test.js",
     "test:browser-tools": "node --test src/tools/builtins/browserTools.test.js",
     "test:state-hydration": "node --test src/state/stateHydration.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
