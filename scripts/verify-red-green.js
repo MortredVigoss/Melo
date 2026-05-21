@@ -709,6 +709,12 @@ async function main() {
     // it before the upcoming G-2c caller-migration phase consumes it.
     results.push(await runStep('SearchTask adapter (test:search-task)', () => runCommand('npm', ['run', 'test:search-task'])));
 
+    // G-2b round-5 闭环 (2026-05-21): webSearchTool **producer side** of
+    // the api-direct meta.contentItems serialization.  Consumer side is
+    // gated by test:search-task above; this step pins the OTHER half so
+    // future refactors can't desynchronize results vs contentItems.
+    results.push(await runStep('webSearchTool api-direct shape (test:websearch-api-direct)', () => runCommand('npm', ['run', 'test:websearch-api-direct'])));
+
     // meloChrome launcher (2026-05-16): CDP-attach Stage 1.  Pure unit
     // tests — no real Chrome spawn, all OS deps stubbed via DI seam.
     // Gating here so the lock-file / reuse / stale-detection contract

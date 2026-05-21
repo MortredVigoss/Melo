@@ -1836,6 +1836,11 @@ export const webSearchTool = {
       // null and the prod fetchViaCdpChromeForContentFetch resolves the
       // import lazily.
       _fetchViaCdpChrome,
+      // G-2b round-5 闭环 (2026-05-21 Codex A ⚪): api-direct DI seam so
+      // tests can pin the meta.contentItems serialization shape without
+      // hitting real Wikipedia / HN / arXiv / GitHub / Stack Overflow.
+      // Production callers leave null → uses imported tryApiDirect.
+      _tryApiDirect,
     } = {},
   ) {
     const trail = [];
@@ -2093,7 +2098,8 @@ export const webSearchTool = {
     let apiResult = null;
     let apiFetchErr = null;
     try {
-      apiResult = await tryApiDirect(q, intent, signal);
+      const apiImpl = _tryApiDirect || tryApiDirect;
+      apiResult = await apiImpl(q, intent, signal);
     } catch (err) {
       apiFetchErr = err;
     }
