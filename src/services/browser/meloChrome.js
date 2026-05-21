@@ -33,7 +33,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, openSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, openSync, closeSync, statSync, readSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import net from 'node:net';
 
@@ -392,13 +392,29 @@ async function _ensureMeloChromeRunningInner({
     '--disable-background-networking',
     ...extraArgs,
   ];
-  const child = _spawnImpl(binary, args, {
-    detached: true,
-    stdio: stderrFd >= 0
-      ? ['ignore', 'ignore', stderrFd]
-      : 'ignore',
-  });
-  child.unref();
+  // 2026-05-21 audit #7 round-4 follow-up (Codex B 🟡): wrap spawn +
+  // unref in try/finally so a SYNCHRONOUSLY-thrown spawn error (rare —
+  // most spawn failures come via the 'error' event — but possible:
+  // ENOEXEC on some platforms, oversized args, etc) still closes the
+  // parent's fd.  Async error path (the more common one) still goes
+  // through the existing closeSync after spawn returns.
+  let child;
+  try {
+    child = _spawnImpl(binary, args, {
+      detached: true,
+      stdio: stderrFd >= 0
+        ? ['ignore', 'ignore', stderrFd]
+        : 'ignore',
+    });
+    child.unref();
+  } catch (err) {
+    // Parent's fd is the only ref now (child never existed).  Close it
+    // before re-throwing so we don't leak it.
+    if (stderrFd >= 0) {
+      try { closeSync(stderrFd); } catch { /* best-effort */ }
+    }
+    throw err;
+  }
 
   // Close our fd — child has dup'd it.  After this point, only the
   // child holds an fd to the file; parent never touches it.  This is
@@ -415,7 +431,30 @@ async function _ensureMeloChromeRunningInner({
   const readStderrTail = () => {
     if (stderrFd < 0) return ''; // fallback path was used
     try {
-      const content = readFileSync(stderrLogPath, 'utf8');
+      // 2026-05-21 audit #7 round-4 follow-up (Codex B 🟡): bound the
+      // read size.  Chrome can write stderr for its entire lifetime
+      // (potentially MB-sized over weeks if GPU log spam is on).
+      // Reading the full file just to take the last 5 lines is
+      // wasteful + risky (memory spike on a runaway log).  Open the
+      // file, stat it, and seek to read only the tail window.
+      const STDERR_TAIL_WINDOW = 16 * 1024; // 16KB — comfortably 100+ lines
+      const stat = statSync(stderrLogPath);
+      const total = stat.size;
+      const start = Math.max(0, total - STDERR_TAIL_WINDOW);
+      let content;
+      if (start === 0) {
+        // File fits in window — read whole thing.
+        content = readFileSync(stderrLogPath, 'utf8');
+      } else {
+        const fd = openSync(stderrLogPath, 'r');
+        try {
+          const buf = Buffer.alloc(total - start);
+          readSync(fd, buf, 0, buf.length, start);
+          content = buf.toString('utf8');
+        } finally {
+          try { closeSync(fd); } catch { /* best-effort */ }
+        }
+      }
       const lines = content.split('\n').filter(l => l.trim());
       if (lines.length === 0) return '';
       const tail = lines.slice(-5);

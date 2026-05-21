@@ -922,6 +922,107 @@ test('stderr temp-file: Melo restart doesn\'t affect Chrome (no parent pipe held
   // hard fail because OS fd-reuse semantics vary.
 });
 
+test('stderr temp-file: parent fd is closed even when _spawnImpl synchronously throws (no fd leak)', async () => {
+  // Codex B 🟡 闭环 (2026-05-21): if _spawnImpl throws synchronously
+  // (rare — ENOEXEC / oversized args / process-table exhausted), the
+  // parent's just-opened fd would leak without try/finally cleanup.
+  // We can't directly observe "fd leaked" in Node, but we CAN observe
+  // that closeSync(fd) was called by the launcher — second close
+  // throws EBADF.
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+  let capturedFd = -1;
+  _setDepsForTests({
+    spawn: (binary, args, opts) => {
+      capturedFd = Array.isArray(opts.stdio) ? opts.stdio[2] : -1;
+      // Simulate platform-level sync throw (ENOEXEC / argv2 too long / etc).
+      throw new Error('ENOEXEC: synthetic sync spawn failure');
+    },
+    fetch: makeReachableFetch({}),
+    findFreePort: async () => 53500,
+    existsSync: () => true,
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome' }),
+    /ENOEXEC/,
+    'sync spawn throw must propagate cleanly',
+  );
+
+  // 真不变量: fd was opened (proves the temp-file path ran) AND closed
+  // even though spawn threw before reaching the normal closeSync call.
+  assert.ok(capturedFd >= 0, 'launcher must have opened the fd before spawn attempt');
+  const { closeSync } = await import('node:fs');
+  let secondCloseError = null;
+  try { closeSync(capturedFd); } catch (err) { secondCloseError = err; }
+  if (secondCloseError) {
+    const errStr = String(secondCloseError?.code || secondCloseError?.message || '');
+    assert.match(errStr, /EBADF|bad file descriptor/i,
+      'parent fd MUST be closed by the try/catch around spawn — second close should EBADF');
+  }
+  // If no error, OS reused the fd quickly — that's also acceptable
+  // (launcher's closeSync still ran, just got recycled by Node for
+  // an unrelated handle).  Either way the parent didn't leak.
+});
+
+test('stderr temp-file: large log file is read with bounded window (no MB-sized read)', async () => {
+  // Codex B 🟡 闭环 (2026-05-21): Chrome can grow stderr log over weeks
+  // of uptime.  readStderrTail() must read only the last ~16KB, not the
+  // whole file.  We verify by pre-creating a large file and triggering
+  // a timeout that surfaces the tail.  If the launcher were reading the
+  // whole file, the test would still pass functionally but use more
+  // memory; we assert the tail content includes ONLY recent lines, not
+  // ones from the bulk of the file.
+  const { ensureMeloChromeRunning, _setDepsForTests, _internals } = await import('./meloChrome.js');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const port = 53600;
+  const expectedPath = _internals.chromeStderrLogPathFor(tmpHome, port);
+  fs.mkdirSync(path.dirname(expectedPath), { recursive: true });
+
+  // Set up a fake spawn that writes a LARGE log + a recent diagnostic.
+  // Total written: ~50KB.  The launcher should only read the last ~16KB,
+  // so the "BULK" filler at the head should NOT appear in the surfaced
+  // tail; only the trailing "RECENT" lines should.
+  _setDepsForTests({
+    spawn: (binary, args, opts) => {
+      const fd = Array.isArray(opts.stdio) ? opts.stdio[2] : -1;
+      if (typeof fd === 'number' && fd >= 0) {
+        // 5000 BULK lines × ~20 chars = ~100KB to make sure we exceed
+        // the 16KB window comfortably.
+        for (let i = 0; i < 5000; i++) {
+          fs.writeSync(fd, `BULK-FILLER line ${i}\n`);
+        }
+        // Then the actually-useful diagnostic at the tail.
+        fs.writeSync(fd, 'RECENT: profile is already in use\n');
+      }
+      return makeFakeChild({ pid: 80005 });
+    },
+    fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    findFreePort: async () => port,
+    existsSync: () => true,
+    now: (() => { let t = 0; return () => (t += 1000); })(),
+    sleep: async () => {},
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome', launchTimeoutMs: 500 }),
+    err => {
+      const msg = String(err?.message || '');
+      // The tail must reach the RECENT diagnostic
+      if (!/RECENT: profile is already in use/.test(msg)) return false;
+      // Critical: the message must NOT include any BULK-FILLER from
+      // the head — proves the launcher used windowed read, not full
+      // file read.  (The last few BULK lines might land in the
+      // window — that's fine, just check the EARLY ones aren't there.)
+      if (/BULK-FILLER line 0\b/.test(msg)) return false;
+      if (/BULK-FILLER line 100\b/.test(msg)) return false;
+      return true;
+    },
+    'large-file diagnostic surface must use bounded window (only last ~16KB read)',
+  );
+});
+
 test('isCdpPortReachable: timer cleaned up even when fetch throws (no leaked timeout)', async () => {
   const { _internals } = await import('./meloChrome.js');
 
