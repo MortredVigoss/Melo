@@ -351,59 +351,9 @@ async function _ensureMeloChromeRunningInner({
   ];
   const child = _spawnImpl(binary, args, {
     detached: true,
-    // 2026-05-21 audit闭环 #7: pre-fix stdio: 'ignore' threw away
-    // Chrome's startup diagnostics — when CDP failed to come up users
-    // saw only "port did not respond" with no clue why ("--user-data-dir
-    // invalid", "permission denied", "binary corrupted", etc).  Pipe
-    // stderr ONLY during the startup-wait window — release the pipe
-    // immediately on CDP-ready / spawn-fail / timeout so it doesn't
-    // bind the (detached, long-lived) Chrome's stderr to our Node
-    // event loop forever (D-grade regression caught Codex round-2:
-    // child.unref() alone isn't enough; the active 'data' listener
-    // keeps Node alive even though the child is detached).
-    // stdout stays ignored — Chrome doesn't write useful startup info there.
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: 'ignore',
   });
   child.unref();
-
-  // 2026-05-21 audit闭环 #7 round-2: buffer last 5 lines of stderr,
-  // BUT release the pipe immediately when startup completes (either
-  // success, spawn-fail, timeout, or abort).  Bounded ring so a
-  // verbose Chrome (e.g. GPU log spam) can't OOM the buffer during the
-  // startup window.
-  const stderrTail = [];
-  const STDERR_TAIL_MAX = 5;
-  let stderrReleased = false;
-  const releaseStderr = () => {
-    if (stderrReleased) return;
-    stderrReleased = true;
-    if (!child.stderr || typeof child.stderr.removeAllListeners !== 'function') return;
-    try { child.stderr.removeAllListeners('data'); } catch {}
-    try { child.stderr.removeAllListeners('error'); } catch {}
-    // Detach stderr from event loop — without unref+destroy, the active
-    // pipe keeps the parent Node process from exiting even though
-    // child.unref() was called on the spawned process itself.
-    try { child.stderr.unref?.(); } catch {}
-    try { child.stderr.destroy?.(); } catch {}
-  };
-  if (child.stderr && typeof child.stderr.on === 'function') {
-    let pending = '';
-    child.stderr.on('data', chunk => {
-      // Defense in depth: even if releaseStderr() somehow didn't get
-      // called, stop appending after release so the ring is frozen.
-      if (stderrReleased) return;
-      pending += String(chunk);
-      const lines = pending.split('\n');
-      pending = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        stderrTail.push(line);
-        if (stderrTail.length > STDERR_TAIL_MAX) stderrTail.shift();
-      }
-    });
-    // Don't propagate stderr errors — best-effort diagnostic surface.
-    child.stderr.on('error', () => {});
-  }
 
   // Codex G-2b round-7 fix (2026-05-16): an unhandled 'error' event on the
   // child (binary present but non-executable, permission denied, ulimit
@@ -427,9 +377,6 @@ async function _ensureMeloChromeRunningInner({
   // its tabs.
   const killSpawnedChild = () => {
     try { child.kill?.('SIGTERM'); } catch { /* ignore — best effort */ }
-    // Always release stderr when killing — kill paths are all terminal,
-    // no further startup diagnostics will be collected.  Idempotent.
-    releaseStderr();
   };
 
   // 5. Wait for CDP to come up, polling every 400ms until timeout.  The
@@ -442,19 +389,10 @@ async function _ensureMeloChromeRunningInner({
     }
     if (spawnError) {
       killSpawnedChild();
-      throw new Error(
-        `Chrome failed to spawn at ${binary}: ${spawnError?.message || spawnError}` +
-        _formatStderrTail(stderrTail),
-      );
+      throw new Error(`Chrome failed to spawn at ${binary}: ${spawnError?.message || spawnError}`);
     }
     if (await isCdpPortReachable(port, _fetchImpl)) {
       writeLock(lockPath, { port, pid: child.pid || null, startedAt: _nowImpl(), profileDir });
-      // 2026-05-21 audit闭环 #7 round-2 (D-grade fix): startup window
-      // closed — Chrome is running and detached.  MUST release the
-      // stderr pipe now or our Node process will never exit (the
-      // active 'data' listener keeps the event loop alive despite
-      // child.unref() on the spawned process).
-      releaseStderr();
       return { port, pid: child.pid || null, reused: false, profileDir, lockPath };
     }
     await _sleepImpl(400);
@@ -465,23 +403,7 @@ async function _ensureMeloChromeRunningInner({
   // waiting; better a clean re-try than a half-up race).  Caller falls
   // back to a non-CDP tier.
   killSpawnedChild();
-  throw new Error(
-    `Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})` +
-    _formatStderrTail(stderrTail),
-  );
-}
-
-/**
- * Format the captured stderr tail for inclusion in thrown errors.  Returns
- * empty string when nothing was captured (most common case — Chrome stays
- * quiet on stderr unless something's wrong).
- *
- * 2026-05-21 audit闭环 #7.
- */
-function _formatStderrTail(stderrTail) {
-  if (!Array.isArray(stderrTail) || stderrTail.length === 0) return '';
-  return `\n  Chrome stderr (last ${stderrTail.length} line${stderrTail.length === 1 ? '' : 's'}):\n` +
-    stderrTail.map(l => `    ${l}`).join('\n');
+  throw new Error(`Chrome CDP port ${port} did not respond within ${timeoutMs}ms (binary=${binary})`);
 }
 
 // Test-only: reset the singleflight latches.  Lets afterEach hooks recover
