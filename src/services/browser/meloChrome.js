@@ -355,21 +355,43 @@ async function _ensureMeloChromeRunningInner({
     // Chrome's startup diagnostics — when CDP failed to come up users
     // saw only "port did not respond" with no clue why ("--user-data-dir
     // invalid", "permission denied", "binary corrupted", etc).  Pipe
-    // stderr and buffer a bounded ring (last 5 lines) so the timeout/
-    // spawn-fail thrown error carries actionable context without
-    // letting stderr volume run away on long-running spawns.  stdout
-    // stays ignored — Chrome doesn't write useful startup info there.
+    // stderr ONLY during the startup-wait window — release the pipe
+    // immediately on CDP-ready / spawn-fail / timeout so it doesn't
+    // bind the (detached, long-lived) Chrome's stderr to our Node
+    // event loop forever (D-grade regression caught Codex round-2:
+    // child.unref() alone isn't enough; the active 'data' listener
+    // keeps Node alive even though the child is detached).
+    // stdout stays ignored — Chrome doesn't write useful startup info there.
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   child.unref();
 
-  // 2026-05-21 audit闭环 #7: buffer last 5 lines of stderr.  Bounded
-  // ring so a verbose Chrome (e.g. GPU log spam) can't OOM the buffer.
+  // 2026-05-21 audit闭环 #7 round-2: buffer last 5 lines of stderr,
+  // BUT release the pipe immediately when startup completes (either
+  // success, spawn-fail, timeout, or abort).  Bounded ring so a
+  // verbose Chrome (e.g. GPU log spam) can't OOM the buffer during the
+  // startup window.
   const stderrTail = [];
   const STDERR_TAIL_MAX = 5;
+  let stderrReleased = false;
+  const releaseStderr = () => {
+    if (stderrReleased) return;
+    stderrReleased = true;
+    if (!child.stderr || typeof child.stderr.removeAllListeners !== 'function') return;
+    try { child.stderr.removeAllListeners('data'); } catch {}
+    try { child.stderr.removeAllListeners('error'); } catch {}
+    // Detach stderr from event loop — without unref+destroy, the active
+    // pipe keeps the parent Node process from exiting even though
+    // child.unref() was called on the spawned process itself.
+    try { child.stderr.unref?.(); } catch {}
+    try { child.stderr.destroy?.(); } catch {}
+  };
   if (child.stderr && typeof child.stderr.on === 'function') {
     let pending = '';
     child.stderr.on('data', chunk => {
+      // Defense in depth: even if releaseStderr() somehow didn't get
+      // called, stop appending after release so the ring is frozen.
+      if (stderrReleased) return;
       pending += String(chunk);
       const lines = pending.split('\n');
       pending = lines.pop() || '';
@@ -405,6 +427,9 @@ async function _ensureMeloChromeRunningInner({
   // its tabs.
   const killSpawnedChild = () => {
     try { child.kill?.('SIGTERM'); } catch { /* ignore — best effort */ }
+    // Always release stderr when killing — kill paths are all terminal,
+    // no further startup diagnostics will be collected.  Idempotent.
+    releaseStderr();
   };
 
   // 5. Wait for CDP to come up, polling every 400ms until timeout.  The
@@ -424,6 +449,12 @@ async function _ensureMeloChromeRunningInner({
     }
     if (await isCdpPortReachable(port, _fetchImpl)) {
       writeLock(lockPath, { port, pid: child.pid || null, startedAt: _nowImpl(), profileDir });
+      // 2026-05-21 audit闭环 #7 round-2 (D-grade fix): startup window
+      // closed — Chrome is running and detached.  MUST release the
+      // stderr pipe now or our Node process will never exit (the
+      // active 'data' listener keeps the event loop alive despite
+      // child.unref() on the spawned process).
+      releaseStderr();
       return { port, pid: child.pid || null, reused: false, profileDir, lockPath };
     }
     await _sleepImpl(400);

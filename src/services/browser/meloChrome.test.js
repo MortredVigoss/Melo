@@ -40,17 +40,51 @@ test.afterEach(async () => {
 
 // ─── Shared fakes ────────────────────────────────────────────────────────────
 
-function makeFakeChild({ pid = 99999, fireErrorOnce = null } = {}) {
-  // spawn-return shape minimum surface: pid + unref() + on() + kill().
+function makeFakeChild({ pid = 99999, fireErrorOnce = null, stderrChunks = null } = {}) {
+  // spawn-return shape minimum surface: pid + unref() + on() + kill() + stderr.
   // Codex G-2b round-7: launcher attaches 'error' listener for unhandled
   // spawn failures and calls kill() on abort/timeout cleanup — tests need
   // both surfaces.  fireErrorOnce, if set, fires synchronously on the
   // first .on('error', handler) call so we can deterministically exercise
   // the spawn-error code path.
+  //
+  // 2026-05-21 audit闭环 #7 round-2 (D-grade fix): launcher now pipes
+  // stderr for diagnostic capture, with explicit release on every
+  // terminal path.  Fake child exposes a stderr stream that tracks
+  // listener count + destroy state so tests can assert the launcher
+  // actually releases on success/fail.
   let killCount = 0;
+  const stderrListeners = { data: [], error: [] };
+  let stderrDestroyed = false;
+  let stderrUnreffed = false;
+  const stderr = {
+    on: (event, handler) => {
+      if (!stderrListeners[event]) stderrListeners[event] = [];
+      stderrListeners[event].push(handler);
+      // If test passed stderrChunks AND a 'data' listener just attached,
+      // synchronously emit each chunk so the launcher's data-handler
+      // populates the stderr tail buffer deterministically.
+      if (event === 'data' && Array.isArray(stderrChunks)) {
+        for (const chunk of stderrChunks) handler(chunk);
+      }
+    },
+    removeAllListeners: (event) => {
+      if (event) stderrListeners[event] = [];
+      else for (const k of Object.keys(stderrListeners)) stderrListeners[k] = [];
+    },
+    unref: () => { stderrUnreffed = true; },
+    destroy: () => { stderrDestroyed = true; },
+    // Test-only introspection
+    get _listenerCount() {
+      return Object.values(stderrListeners).reduce((n, arr) => n + arr.length, 0);
+    },
+    get _destroyed() { return stderrDestroyed; },
+    get _unreffed() { return stderrUnreffed; },
+  };
   const child = {
     pid,
     killed: false,
+    stderr,
     unref: () => {},
     on: (event, handler) => {
       if (event === 'error' && fireErrorOnce) {
@@ -68,6 +102,10 @@ function makeFakeChild({ pid = 99999, fireErrorOnce = null } = {}) {
       child.killed = true;
     },
     get killCount() { return killCount; },
+    // Test-only introspection
+    get _stderrListenerCount() { return stderr._listenerCount; },
+    get _stderrDestroyed() { return stderr._destroyed; },
+    get _stderrUnreffed() { return stderr._unreffed; },
   };
   return child;
 }
@@ -717,6 +755,110 @@ test('ensureMeloChromeRunning: same-home concurrent with different chromePath �
   assert.equal(spawnCount, 1, 'same-home concurrent must dedupe (singleflight)');
   assert.equal(observedBinary, '/path/Chrome-A', 'first caller params win');
   assert.deepEqual(a, b, 'both callers receive the same result');
+});
+
+// ─── 2026-05-21 audit闭环 #7 round-2 (D-grade fix): stderr pipe lifecycle ──
+//
+// The launcher now pipes Chrome's stderr to buffer the last 5 lines for
+// diagnostic surfacing in spawn-fail / timeout errors.  But the active
+// 'data' listener keeps Node's event loop alive even after child.unref()
+// — Codex D-graded the round-1 fix as "introduces process hang".  Round-2
+// releases the stderr pipe (removeAllListeners + unref + destroy) on
+// every terminal path: success, spawn-fail, timeout, abort.
+
+test('stderr lifecycle: CDP-ready path releases stderr pipe (no event-loop hang after success)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+  let capturedChild = null;
+  _setDepsForTests({
+    spawn: () => {
+      capturedChild = makeFakeChild({ pid: 11111, stderrChunks: ['line 1\n', 'line 2\n'] });
+      return capturedChild;
+    },
+    fetch: makeReachableFetch({ acceptPort: 52000 }),
+    findFreePort: async () => 52000,
+    existsSync: () => true,
+  });
+
+  const result = await ensureMeloChromeRunning({ chromePath: '/fake/Chrome' });
+  assert.equal(result.reused, false);
+
+  // 真不变量 #1: stderr listeners are all removed after success.
+  // Pre-fix the data + error listeners stayed attached → Node event
+  // loop wouldn't exit because the pipe was still active.
+  assert.equal(capturedChild._stderrListenerCount, 0,
+    'stderr listeners MUST be removed on CDP-ready — leaving them attached pins the Node event loop alive');
+
+  // 真不变量 #2: stderr stream is destroyed + unreffed.
+  assert.equal(capturedChild._stderrDestroyed, true,
+    'stderr.destroy() must be called — releases the underlying pipe so Node can exit');
+  assert.equal(capturedChild._stderrUnreffed, true,
+    'stderr.unref() must be called — detaches pipe from event loop');
+});
+
+test('stderr lifecycle: spawn-fail path releases stderr pipe (same invariant as success)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+  let capturedChild = null;
+  _setDepsForTests({
+    spawn: () => {
+      capturedChild = makeFakeChild({
+        pid: 22222,
+        fireErrorOnce: new Error('ENOENT: binary not executable'),
+      });
+      return capturedChild;
+    },
+    fetch: makeReachableFetch({}),
+    findFreePort: async () => 52100,
+    existsSync: () => true,
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome' }),
+    /Chrome failed to spawn/,
+  );
+
+  // Even on the throw path, stderr lifecycle MUST be cleaned up.
+  // killSpawnedChild() now calls releaseStderr() internally.
+  assert.equal(capturedChild._stderrListenerCount, 0,
+    'spawn-fail throw path must still release stderr listeners');
+  assert.equal(capturedChild._stderrDestroyed, true,
+    'spawn-fail throw path must destroy stderr stream');
+});
+
+test('stderr diagnostic: captured tail surfaces in thrown error on timeout (real value of the pipe)', async () => {
+  const { ensureMeloChromeRunning, _setDepsForTests } = await import('./meloChrome.js');
+  // Chrome emits some diagnostic on stderr but never opens the CDP port —
+  // launcher should time out AND include the captured stderr tail in
+  // the thrown error message so the user has actionable context.
+  _setDepsForTests({
+    spawn: () => makeFakeChild({
+      pid: 33333,
+      stderrChunks: [
+        'FATAL: profile in use by another instance\n',
+        'failed to create user data directory\n',
+      ],
+    }),
+    // Always 404 — CDP never comes up.
+    fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    findFreePort: async () => 52200,
+    existsSync: () => true,
+    // Squeeze the polling deadline so the test runs fast — `now` advances
+    // past `deadline` on the second iteration.
+    now: (() => { let t = 0; return () => (t += 1000); })(),
+    sleep: async () => {},
+  });
+
+  await assert.rejects(
+    () => ensureMeloChromeRunning({ chromePath: '/fake/Chrome', launchTimeoutMs: 500 }),
+    err => {
+      const msg = String(err?.message || '');
+      // Timeout message present
+      if (!/did not respond/.test(msg)) return false;
+      // Stderr tail surfaced for diagnostic value
+      if (!/Chrome stderr/.test(msg)) return false;
+      if (!/profile in use/.test(msg)) return false;
+      return true;
+    },
+  );
 });
 
 test('isCdpPortReachable: timer cleaned up even when fetch throws (no leaked timeout)', async () => {
