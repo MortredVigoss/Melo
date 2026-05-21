@@ -24,6 +24,7 @@ import {
   normalizeWebSearchResult,
   mapErrorCode,
   deriveConfidence,
+  deriveErrorFromTrail,
   ERROR_CODES,
 } from './searchTask.js';
 
@@ -638,10 +639,13 @@ test('deriveErrorFromTrail: real 5-phase webSearch trail (cache→serp→synonym
     'PHASE_PRIORITY puts serp first; serp.fail(no-results) is the causal classification');
 });
 
-test('deriveErrorFromTrail: real webSearch trail where serp.ok + content-fetch.fail (network) → NETWORK', () => {
-  // Serp succeeded, content-fetch failed with network — PHASE_PRIORITY
-  // skips serp (it's ok), then looks at next priority phase that
-  // failed → content-fetch.fail(network) → NETWORK.
+test('webSearch success with serp.ok + content-fetch.fail(network): SUCCESS path keeps SERP evidence (isPartial=true); does NOT route through deriveErrorFromTrail', () => {
+  // Codex G-2b round-4 闭环 (2026-05-21) ⚪: previous test name claimed to
+  // cover "→ NETWORK" classification but the fixture is ok:true, which
+  // never calls deriveErrorFromTrail.  Renamed to reflect the real
+  // invariant being tested: the SUCCESS path keeps SERP evidence even
+  // when content-fetch failed.  See companion test below for the actual
+  // deriveErrorFromTrail(...NETWORK) coverage on an ok:false fixture.
   const r = normalizeWebSearchResult({
     ok: true,
     output: '[partial]',
@@ -664,12 +668,306 @@ test('deriveErrorFromTrail: real webSearch trail where serp.ok + content-fetch.f
       { tier: 'semantic-rerank', outcome: 'skip', latencyMs: 0 },
     ],
   });
-  // ok:true so this is NOT a fail return — but the adapter's success
-  // path doesn't call deriveErrorFromTrail, so this test mainly pins
-  // that success structure stays correct when content-fetch failed
-  // (evidence still present from SERP, isPartial=true).
   assert.equal(r.status, 'partial');
   assert.equal(r.evidence.length, 2);
+  // No error code on success path:
+  assert.equal(r.error, undefined,
+    'success path must not surface an error code even if downstream phases failed');
+});
+
+test('deriveErrorFromTrail: directly exercises NETWORK classification (Codex ⚪ 闭环: real classifier call, not fake-via-success-fixture)', () => {
+  // Codex round-4 ⚪ 闭环 (2026-05-21): the previous test claimed to
+  // cover "→ NETWORK" via normalizeWebSearchResult, but the fixture
+  // was ok:true → success path → deriveErrorFromTrail never invoked.
+  // Fix per Codex's exact recommendation: call the classifier directly.
+  // This is the canonical pattern for testing pure error-classification
+  // logic — exercises the actual function under test, not a proxy.
+
+  // Causal phase: content-fetch.fail(network) — sole failing phase, so
+  // PHASE_PRIORITY['web-search'] walk picks it (serp is ok, cache is
+  // ok+treated as skip-equivalent for fail attribution since not present).
+  const networkOnlyTrail = [
+    { tier: 'serp', outcome: 'ok', latencyMs: 1000, method: 'duckduckgo' },
+    { tier: 'content-fetch', outcome: 'fail', latencyMs: 3500, reason: 'network' },
+    { tier: 'semantic-rerank', outcome: 'skip', latencyMs: 0 },
+  ];
+  assert.equal(
+    deriveErrorFromTrail(networkOnlyTrail, { source: 'web-search' }),
+    ERROR_CODES.NETWORK,
+    'content-fetch.fail(network) is the only failing phase → NETWORK',
+  );
+
+  // Same shape with timeout reason → TIMEOUT (proves vocab lookup works).
+  const timeoutTrail = [
+    { tier: 'serp', outcome: 'ok', latencyMs: 1000, method: 'duckduckgo' },
+    { tier: 'content-fetch', outcome: 'fail', latencyMs: 10000, reason: 'timeout' },
+  ];
+  assert.equal(
+    deriveErrorFromTrail(timeoutTrail, { source: 'web-search' }),
+    ERROR_CODES.TIMEOUT,
+    'content-fetch.fail(timeout) → TIMEOUT',
+  );
+
+  // aborted=true short-circuits regardless of trail content.
+  assert.equal(
+    deriveErrorFromTrail(networkOnlyTrail, { source: 'web-search', aborted: true }),
+    ERROR_CODES.ABORTED,
+    'aborted=true takes precedence over trail-derived classification',
+  );
+});
+
+// ─── Codex G-2b round-4 闭环 (2026-05-21): api-direct success branch ────────
+
+// Round-5 闭环 (Codex C, 2026-05-21): per-provider real-shape fixtures.
+// Pre-round-5 tests used "snippet-as-body" fixtures uniformly — that's
+// only Wikipedia's shape.  HN/arXiv/GitHub/SO have snippet=metadata and
+// body=contentMap[url].  These tests prove the adapter honors the new
+// `meta.contentItems` channel for per-URL body detection.
+
+test('normalizeWebSearchResult: Wikipedia real shape — snippet IS the body (extract), contentItems carries same content → isPartial=false, body present', () => {
+  // Wikipedia's apiDirect.js path: snippet = REST API extract (the article
+  // body), AND contentMap.set(url, extract) duplicates it.  Both channels
+  // agree → isPartial=false.
+  const url = 'https://en.wikipedia.org/wiki/GraphQL';
+  const extract = 'GraphQL is a query language and runtime for APIs that lets clients request exactly the fields they need. Created by Facebook in 2012, open-sourced 2015.';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: `## Wikipedia: GraphQL\n\n${extract}`,
+    meta: {
+      query: 'graphql',
+      provider: 'wikipedia',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [{ title: 'GraphQL', url, snippet: extract }],
+      contentItems: [{ url, content: extract }],
+      timings: { totalMs: 220 },
+    },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 2, reason: 'no-hit' },
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 210, method: 'wikipedia', extra: { results: 1 } },
+    ],
+  });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.evidence.length, 1);
+  const ev = r.evidence[0];
+  assert.equal(ev.sourceType, 'api-direct');
+  assert.equal(ev.confidence, 'high');
+  assert.equal(ev.isPartial, false, 'contentItems has body → isPartial=false');
+  assert.equal(ev.body, extract, 'body sourced from contentItems, not snippet');
+  assert.equal(ev.snippet, extract);
+  assert.equal(ev.extractionMethod, 'wikipedia');
+});
+
+test('normalizeWebSearchResult: HN real shape — snippet is METADATA ("{points} · {comments} · posted {date}"), body in contentItems → snippet+body both populated, isPartial=false', () => {
+  // HN's apiDirect.js literally constructs:
+  //   snippet = `${points} points · ${numComments} comments · posted ${date} · → ${externalUrl}`
+  //   contentMap.set(itemUrl, hit.story_text)  // body only if Ask HN / text post
+  // For an Ask HN story with story_text, contentItems carries the body.
+  const url = 'https://news.ycombinator.com/item?id=12345';
+  const realHnSnippet = '152 points · 89 comments · posted 2026-05-20';
+  const askHnBody = 'I built a rust async runtime over the weekend. Here are the lessons learned: tokio vs async-std is mostly about... [long body text]';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: 'HN results...',
+    meta: {
+      query: 'ask hn rust async',
+      provider: 'hacker-news',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [{ title: 'Ask HN: My rust async runtime lessons', url, snippet: realHnSnippet }],
+      contentItems: [{ url, content: askHnBody }],
+      timings: { totalMs: 380 },
+    },
+    evidenceTrail: [
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 360, method: 'hacker-news', extra: { results: 1 } },
+    ],
+  });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.evidence.length, 1);
+  const ev = r.evidence[0];
+  assert.equal(ev.isPartial, false, 'contentItems has body → isPartial=false');
+  assert.equal(ev.body, askHnBody, 'body MUST come from contentItems, NOT snippet');
+  assert.equal(ev.snippet, realHnSnippet,
+    'snippet preserved as metadata for display alongside body — they have different semantics');
+  // The critical anti-regression: snippet (metadata) MUST NOT leak into body
+  assert.notEqual(ev.body, realHnSnippet,
+    'body must NEVER equal the metadata snippet (pre-round-5 bug)');
+});
+
+test('normalizeWebSearchResult: HN link-only story (no story_text) → snippet=metadata, body MISSING, isPartial=true per-item', () => {
+  // Most HN stories are links to external articles — no story_text →
+  // contentMap is empty for that URL → contentItems doesn't include it.
+  // Adapter must honestly mark isPartial=true, body absent.
+  const url = 'https://news.ycombinator.com/item?id=99999';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: '...',
+    meta: {
+      query: 'show hn',
+      provider: 'hacker-news',
+      resultCount: 1,
+      contentFetched: 0,
+      results: [{ title: 'Show HN: My SaaS', url, snippet: '50 points · 12 comments · posted 2026-05-20 · → https://mysaas.com' }],
+      contentItems: [],
+      timings: { totalMs: 200 },
+    },
+    evidenceTrail: [
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 180, method: 'hacker-news', extra: { results: 1 } },
+    ],
+  });
+  // status stays 'ok' (we have evidence), per-item isPartial reflects the
+  // partial body availability — per RFC §4 ③ per-item granularity.
+  assert.equal(r.status, 'ok', 'status remains ok even when some bodies missing — per-item isPartial');
+  const ev = r.evidence[0];
+  assert.equal(ev.isPartial, true, 'no body in contentItems → isPartial=true');
+  assert.equal(ev.body, undefined, 'no body field at all (not empty string) when body absent');
+  assert.ok(ev.snippet.includes('points'), 'snippet metadata preserved for the consumer');
+  assert.equal(ev.confidence, 'high', 'confidence stays high — we know what we have, just no full body');
+});
+
+test('normalizeWebSearchResult: GitHub real shape — snippet="★ stars · lang · updated date", body in contentItems (repo description)', () => {
+  // GitHub's apiDirect.js:
+  //   snippet = `★ ${stars} · ${lang} · updated ${date}`
+  //   contentMap.set(url, repo.description)  // only if non-empty
+  const url = 'https://github.com/tokio-rs/tokio';
+  const metadataSnippet = '★ 28500 · Rust · updated 2026-05-19';
+  const description = 'A runtime for writing reliable asynchronous applications with Rust. Provides I/O, networking, scheduling, timers, and more.';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: '...',
+    meta: {
+      query: 'github repo rust async runtime',
+      provider: 'github',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [{ title: 'tokio-rs/tokio', url, snippet: metadataSnippet }],
+      contentItems: [{ url, content: description }],
+      timings: { totalMs: 450 },
+    },
+    evidenceTrail: [
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 430, method: 'github', extra: { results: 1 } },
+    ],
+  });
+  const ev = r.evidence[0];
+  assert.equal(ev.body, description);
+  assert.equal(ev.snippet, metadataSnippet);
+  assert.equal(ev.isPartial, false);
+  assert.equal(ev.extractionMethod, 'github');
+});
+
+test('normalizeWebSearchResult: arXiv real shape — snippet="(year) · authors · arXiv:id", body=abstract in contentItems', () => {
+  const url = 'https://arxiv.org/abs/1706.03762';
+  const metaSnippet = '(2017) · Ashish Vaswani, Noam Shazeer, Niki Parmar et al. · arXiv:1706.03762';
+  const abstract = 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks... We propose a new simple network architecture, the Transformer, based solely on attention mechanisms...';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: '...',
+    meta: {
+      query: 'attention is all you need',
+      provider: 'arxiv-semantic-scholar',
+      resultCount: 1,
+      contentFetched: 1,
+      results: [{ title: 'Attention Is All You Need', url, snippet: metaSnippet }],
+      contentItems: [{ url, content: abstract }],
+      timings: { totalMs: 510 },
+    },
+    evidenceTrail: [
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 490, method: 'arxiv-semantic-scholar', extra: { results: 1 } },
+    ],
+  });
+  const ev = r.evidence[0];
+  assert.equal(ev.body, abstract);
+  assert.equal(ev.snippet, metaSnippet);
+  assert.equal(ev.isPartial, false);
+  assert.notEqual(ev.body, metaSnippet, 'arXiv body must NEVER be the metadata line');
+});
+
+test('normalizeWebSearchResult: mixed contentItems (Wikipedia full + HN link-only) → per-item isPartial differs in the same result set', () => {
+  // The real value of per-item isPartial — heterogeneous results from the
+  // same response.  Could happen if api-direct returns multiple items
+  // with partial body availability.
+  const wpUrl = 'https://en.wikipedia.org/wiki/GraphQL';
+  const hnUrl = 'https://news.ycombinator.com/item?id=12345';
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: '...',
+    meta: {
+      query: 'graphql',
+      provider: 'wikipedia',
+      resultCount: 2,
+      contentFetched: 1,
+      results: [
+        { title: 'GraphQL', url: wpUrl, snippet: 'GraphQL is a query language...' },
+        { title: 'HN discussion', url: hnUrl, snippet: '152 points · 89 comments' },
+      ],
+      contentItems: [
+        { url: wpUrl, content: 'GraphQL is a query language and runtime for APIs...' },
+        // hnUrl absent — link-only HN story, no body
+      ],
+      timings: { totalMs: 220 },
+    },
+    evidenceTrail: [
+      { tier: 'api-direct', outcome: 'ok', latencyMs: 210, method: 'wikipedia', extra: { results: 2 } },
+    ],
+  });
+  assert.equal(r.evidence[0].isPartial, false, 'Wikipedia evidence: has body');
+  assert.equal(r.evidence[1].isPartial, true, 'HN evidence: no body in contentItems');
+  assert.ok(r.evidence[0].body, 'Wikipedia body populated');
+  assert.equal(r.evidence[1].body, undefined, 'HN body absent (per RFC §4 ③ per-item granularity)');
+});
+
+test('normalizeWebSearchResult: api-direct.skip + serp.ok → fallthrough path, SERP evidence (NOT api-direct branch)', () => {
+  // Verify api-direct.skip / .fail correctly fall through to the
+  // existing SERP path — they should NOT accidentally trigger the new
+  // api-direct success branch.
+  const r = normalizeWebSearchResult({
+    ok: true,
+    output: 'SERP results',
+    meta: {
+      query: 'general query',
+      provider: 'google (playwright)',
+      resultCount: 3,
+      contentFetched: 0,
+      results: [
+        { title: 'a', url: 'https://a', snippet: '' },
+        { title: 'b', url: 'https://b', snippet: '' },
+        { title: 'c', url: 'https://c', snippet: '' },
+      ],
+      timings: { totalMs: 1200, serpMs: 1000, contentMs: 200 },
+    },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 2, reason: 'no-hit' },
+      { tier: 'api-direct', outcome: 'skip', latencyMs: 0, reason: 'no-provider-match' },
+      { tier: 'serp', outcome: 'ok', latencyMs: 1000, method: 'google (playwright)' },
+    ],
+  });
+  // api-direct.skip → SERP path → isPartial=true / sourceType='web-page'.
+  assert.equal(r.status, 'partial', 'SERP-only path is partial (no per-url body)');
+  for (const ev of r.evidence) {
+    assert.equal(ev.sourceType, 'web-page',
+      'api-direct.skip must not flip sourceType to api-direct');
+    assert.equal(ev.isPartial, true);
+  }
+});
+
+test('normalizeWebSearchResult: api-direct.fail + serp.fail(no-results) → status=fail, NO_RESULTS (api-direct does NOT shadow causal SERP fail)', () => {
+  // When api-direct fails and SERP also fails, the causal failure is
+  // SERP.fail (api-direct was just a try-first short-circuit).  Verify
+  // PHASE_PRIORITY listing api-direct LATER than serp prevents shadowing.
+  const r = normalizeWebSearchResult({
+    ok: false,
+    output: '',
+    error: 'SEARCH_FAILED',
+    meta: { query: 'q', timings: { totalMs: 5000 } },
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 2, reason: 'no-hit' },
+      { tier: 'api-direct', outcome: 'fail', latencyMs: 800, method: 'wikipedia', reason: 'timeout' },
+      { tier: 'serp', outcome: 'fail', latencyMs: 4000, method: 'google (playwright)', reason: 'no-results' },
+    ],
+  });
+  assert.equal(r.status, 'fail');
+  assert.equal(r.error, ERROR_CODES.NO_RESULTS,
+    'serp.fail(no-results) is causal; api-direct.fail is a fallback miss, not the root cause');
 });
 
 test('deriveErrorFromTrail: real fetchUrl-via-social trail (5 sub-tiers + outer wrapper) → CAUSAL inner sub-tier wins (round-3 闭环)', () => {

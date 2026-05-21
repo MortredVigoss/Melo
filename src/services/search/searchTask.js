@@ -97,6 +97,13 @@ const PHASE_PRIORITY = Object.freeze({
     'content-fetch',
     'semantic-rerank',
     'weather-fast-path',
+    // G-2b round-4 闭环 (2026-05-21 Codex C #4): api-direct is the
+    // try-first-then-fallback short-circuit (Wikipedia / HN / arXiv /
+    // GitHub / Stack Overflow → SERP).  When api-direct.fail happens,
+    // the recovery path is SERP — so SERP.fail is the CAUSAL fail.
+    // Listing api-direct here (low priority) keeps it visible for
+    // diagnostic / vocab parity without shadowing the real causal phase.
+    'api-direct',
     'validate',
   ],
   // socialLink: depth-first — yt-dlp is the strongest signal, fall through
@@ -516,6 +523,84 @@ export function normalizeWebSearchResult(legacy, input = {}) {
       meta: {
         source: 'web-search',
         via: 'wttr.in',
+        timings: legacy.meta?.timings || { totalMs: _sumLatency(trail) },
+      },
+      output: legacy.output,
+    };
+  }
+
+  // G-2b round-4/5 闭环 (2026-05-21 Codex C #4 / #5): api-direct success path.
+  // webSearchTool short-circuits SERP when api-direct providers (Wikipedia /
+  // HN / arXiv / GitHub / Stack Overflow) match.  Without this branch the
+  // adapter fell through to the SERP path and incorrectly marked Wikipedia
+  // entries as confidence='unknown' / isPartial=true / no body, defeating
+  // the entire api-direct routing the user added 2026-05-14 a96f5e9 chain.
+  //
+  // Round-5 闭环 (Codex C, snippet/body distinction): the `snippet` field
+  // means DIFFERENT things per provider:
+  //   - Wikipedia: snippet = extract (the body itself)
+  //   - HN:        snippet = "{points} · {comments} · posted {date}" (METADATA)
+  //                body in apiResult.contentMap[url] = hit.story_text
+  //   - arXiv:     snippet = "({year}) · {authors} · arXiv:{id}" (METADATA)
+  //                body in apiResult.contentMap[url] = paper.abstract
+  //   - GitHub:    snippet = "★ {stars} · {lang} · updated {date}" (METADATA)
+  //                body in apiResult.contentMap[url] = repo.description
+  //   - Stack Overflow: similar — snippet=metadata, body=contentMap
+  // Pre-round-5 we set body=snippet uniformly → HN/GitHub appeared to have
+  // "{points} · {comments}" as their answer body, total nonsense.
+  //
+  // Round-5 fix: consume `legacy.meta.contentItems` (added to webSearchTool's
+  // api-direct.ok return path same commit) for authoritative per-URL bodies.
+  // If contentItems has body for this URL → isPartial=false / body=content.
+  // If no body → isPartial=true / body=undefined, snippet kept as metadata
+  // for display.  task status='ok' (we have evidence rows even when bodies
+  // are partial — per RFC §4 ③ "per-item isPartial" semantics).
+  const apiDirectOk = trail.find(e => e?.tier === 'api-direct' && e?.outcome === 'ok');
+  if (apiDirectOk) {
+    const results = Array.isArray(legacy.meta?.results) ? legacy.meta.results : [];
+    // method on the trail entry is the provider id ('wikipedia' / 'hacker-news' /
+    // 'arxiv-semantic-scholar' / 'github' / 'stack-overflow').  Fallback to
+    // meta.provider if trail entry lacks it.
+    const apiProvider = apiDirectOk.method || provider;
+    // Build url→body map from legacy.meta.contentItems (added round-5).
+    // If absent (pre-round-5 caller / fixture), every result is partial.
+    const contentItems = Array.isArray(legacy.meta?.contentItems)
+      ? legacy.meta.contentItems
+      : [];
+    const bodyByUrl = new Map(contentItems
+      .filter(c => c && typeof c.url === 'string' && typeof c.content === 'string')
+      .map(c => [c.url, c.content]));
+    return {
+      status: results.length ? 'ok' : 'fail',
+      query: input.query || legacy.meta?.query || '',
+      evidenceTrail: trail,
+      evidence: results.map(r => {
+        const body = bodyByUrl.get(r.url);
+        return {
+          sourceType: 'api-direct',
+          title: r.title || '',
+          url: r.url || '',
+          // snippet always preserved (metadata or body excerpt — caller
+          // decides how to render based on isPartial).
+          snippet: r.snippet || '',
+          // body ONLY present when contentItems carried real content for
+          // this URL.  HN/GitHub/SO with empty story_text/description leave
+          // body undefined and isPartial=true.
+          ...(body ? { body } : {}),
+          confidence: 'high', // structured-JSON providers are always
+                              // higher confidence than SERP heuristics,
+                              // regardless of whether per-result body
+                              // was fetched.
+          extractionMethod: apiProvider,
+          isPartial: !body,   // round-5: per-result honest signal —
+                              // body present = full answer, absent =
+                              // we have title+snippet+metadata only.
+          fetchedAt: new Date().toISOString(),
+        };
+      }),
+      meta: {
+        source: 'web-search',
+        via: apiProvider,
         timings: legacy.meta?.timings || { totalMs: _sumLatency(trail) },
       },
       output: legacy.output,

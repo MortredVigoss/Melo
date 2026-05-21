@@ -2141,15 +2141,30 @@ export const webSearchTool = {
       writeWebSearchDebugLine(
         `[api-direct] span=${spanId} provider=${apiResult.provider} results=${apiResult.results.length} ms=${apiResult.latencyMs}`,
       );
+      // G-2b round-5 闭环 (2026-05-21 Codex C #5): expose contentMap as
+      // structured `meta.contentItems` so the SearchTask adapter can
+      // distinguish "snippet IS body" (Wikipedia extract) from "snippet
+      // is metadata, body in contentMap" (HN/arXiv/GitHub/SO).  Without
+      // this the adapter has no way to set per-result isPartial honestly.
+      // Only sliced to the same limit as results so the two arrays
+      // align by URL.
+      const slicedResults = apiResult.results.slice(0, limit);
+      const contentItems = slicedResults
+        .map(r => {
+          const c = apiResult.contentMap?.get?.(r.url);
+          return c ? { url: r.url, content: c } : null;
+        })
+        .filter(Boolean);
       return {
         ok: true,
         output,
         meta: {
           query: q,
           provider: apiResult.provider,
-          resultCount: Math.min(apiResult.results.length, limit),
+          resultCount: slicedResults.length,
           contentFetched: apiResult.contentMap.size,
-          results: apiResult.results.slice(0, limit),
+          results: slicedResults,
+          contentItems,
           timings: {
             totalMs: Date.now() - tStart,
             serpMs: 0,
