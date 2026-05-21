@@ -311,23 +311,49 @@ export async function cleanupIdlePages(maxIdleMs) {
 }
 
 /**
- * Return the current registry size — debug / metric surface.  Doesn't
- * bump lastUsedAt of any entry.
+ * Return the count of registered pages for the current MELO_HOME.
+ *
+ * 2026-05-21 audit闭环 #3 round-2 (Codex C #6): pre-fix this returned
+ * `_pages.size` (process-level total).  In a multi-home runtime, that
+ * leaked the count of pages opened under other homes — "you can deduce
+ * home A opened N pages" is itself a side-channel.  Read surfaces use
+ * filter-not-throw semantics (debug API should degrade gracefully on
+ * cross-home, not crash); write surfaces (getPage/closePage) keep
+ * throw semantics since caller intent for cross-home write is unclear.
  */
 export function pageCount() {
-  return _pages.size;
+  const current = getMeloHome();
+  let n = 0;
+  for (const entry of _pages.values()) {
+    if (!entry.home || entry.home === current) n++;
+  }
+  return n;
 }
 
 /**
- * Read-only snapshot of every registered page's metadata.  Same shape
- * as peekPageInfo for one id; useful for diagnostics tools to enumerate
- * open handles.
+ * Read-only snapshot of every registered page's metadata FOR THE
+ * CURRENT MELO_HOME.  Same shape as peekPageInfo for one id; useful for
+ * diagnostics tools to enumerate open handles.
+ *
+ * 2026-05-21 audit闭环 #3 round-2 (Codex C #6): pre-fix this returned
+ * entries from every home — leaking pageId / currentUrl / openedAt of
+ * pages opened by other profiles.  Filter to the current home so this
+ * debug surface honors the same isolation boundary as peekPageInfo /
+ * getPage.  Process-level total (for shutdown / metrics callers that
+ * legitimately want global state) is intentionally NOT exposed —
+ * closeAllPages handles the global-cleanup case directly.
  */
 export function listPages() {
-  return [..._pages.entries()].map(([pageId, entry]) => ({
-    pageId,
-    currentUrl: entry.currentUrl,
-    openedAt: entry.openedAt,
-    lastUsedAt: entry.lastUsedAt,
-  }));
+  const current = getMeloHome();
+  const out = [];
+  for (const [pageId, entry] of _pages.entries()) {
+    if (entry.home && entry.home !== current) continue;
+    out.push({
+      pageId,
+      currentUrl: entry.currentUrl,
+      openedAt: entry.openedAt,
+      lastUsedAt: entry.lastUsedAt,
+    });
+  }
+  return out;
 }

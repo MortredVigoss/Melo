@@ -482,14 +482,98 @@ test('cross-home: caller-driven closePage from a different home throws (must NOT
       /different MELO_HOME/,
       'closePage from home B for a home-A pageId must throw — caller intent unclear, refuse',
     );
-    // Page must still be alive in registry after the rejection.
-    assert.equal(mod.pageCount(), 1, 'cross-home close was refused → page stays registered');
 
-    // Same-home close (back to A) still works.
+    // Page must still be alive in registry after the rejection.  Check
+    // from home A's perspective since pageCount is now home-filtered
+    // (Codex C #6 round-2: count is a privacy surface).
     process.env.MELO_HOME = '/tmp/melo-home-A-close-xrosshome';
+    assert.equal(mod.pageCount(), 1, 'cross-home close was refused → page stays registered (under home A)');
+
+    // Same-home close (under A) still works.
     const closed = await mod.closePage(pageId);
     assert.equal(closed, true);
     assert.equal(mod.pageCount(), 0);
+  } finally {
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+  }
+});
+
+test('cross-home: listPages filters to current home only — home B must NOT see home A entries (debug surface privacy)', async () => {
+  // Codex C #6 闭环 (2026-05-21 round-2): listPages was leaking
+  // pageId/currentUrl/openedAt of every home's pages, bypassing the
+  // peekPageInfo isolation we just added.  Read surfaces (list/count/
+  // peek) degrade silently on cross-home — return empty / null — vs
+  // write surfaces (get/close) throw on cross-home (intent unclear).
+  const mod = await import('./pageRegistry.js');
+  let pageIdx = 0;
+  mod._setConnectImplForTests(async () => {
+    const page = makeFakePage();
+    const { browser } = makeFakeBrowser([page]);
+    pageIdx += 1;
+    return { browser, port: 6000 + pageIdx, reused: false, profileDir: '/p', lockPath: '/l' };
+  });
+
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = '/tmp/melo-home-A-list-xrosshome';
+  try {
+    const { pageId: idA1 } = await mod.openPage('https://example.com/a1');
+    const { pageId: idA2 } = await mod.openPage('https://example.com/a2');
+    // Same-home: listPages returns both.
+    const listA = mod.listPages();
+    assert.equal(listA.length, 2,
+      'same-home listPages must include all entries opened under this home');
+    assert.ok(listA.some(p => p.pageId === idA1));
+    assert.ok(listA.some(p => p.pageId === idA2));
+
+    // Flip to home B and open a page there.
+    process.env.MELO_HOME = '/tmp/melo-home-B-list-xrosshome';
+    const { pageId: idB1 } = await mod.openPage('https://example.com/b1');
+
+    // listPages from B must ONLY see B's page, NOT A's.
+    const listB = mod.listPages();
+    assert.equal(listB.length, 1,
+      'home B listPages must exclude home A entries (privacy boundary)');
+    assert.equal(listB[0].pageId, idB1);
+    for (const p of listB) {
+      assert.notEqual(p.pageId, idA1, 'home A pageId must NOT leak through home B listPages');
+      assert.notEqual(p.pageId, idA2, 'home A pageId must NOT leak through home B listPages');
+      assert.ok(!p.currentUrl.includes('/a1'), 'home A URL must NOT leak');
+      assert.ok(!p.currentUrl.includes('/a2'), 'home A URL must NOT leak');
+    }
+  } finally {
+    if (prevHome === undefined) delete process.env.MELO_HOME;
+    else process.env.MELO_HOME = prevHome;
+  }
+});
+
+test('cross-home: pageCount returns current-home count only — does NOT leak other home\'s size', async () => {
+  // Same Codex C #6 finding for the count surface — "you can deduce
+  // home A opened N pages" is itself a side-channel.
+  const mod = await import('./pageRegistry.js');
+  let pageIdx = 0;
+  mod._setConnectImplForTests(async () => {
+    const page = makeFakePage();
+    const { browser } = makeFakeBrowser([page]);
+    pageIdx += 1;
+    return { browser, port: 6100 + pageIdx, reused: false, profileDir: '/p', lockPath: '/l' };
+  });
+
+  const prevHome = process.env.MELO_HOME;
+  process.env.MELO_HOME = '/tmp/melo-home-A-count-xrosshome';
+  try {
+    await mod.openPage('https://example.com/a1');
+    await mod.openPage('https://example.com/a2');
+    await mod.openPage('https://example.com/a3');
+    assert.equal(mod.pageCount(), 3, 'home A sees its 3 pages');
+
+    process.env.MELO_HOME = '/tmp/melo-home-B-count-xrosshome';
+    assert.equal(mod.pageCount(), 0,
+      'home B sees 0 pages — home A\'s count must NOT leak');
+
+    await mod.openPage('https://example.com/b1');
+    assert.equal(mod.pageCount(), 1,
+      'home B sees its own 1 page only (NOT 4)');
   } finally {
     if (prevHome === undefined) delete process.env.MELO_HOME;
     else process.env.MELO_HOME = prevHome;
@@ -517,12 +601,19 @@ test('cross-home: closeAllPages (shutdown path) bypasses home guard — closes p
     await mod.openPage('https://example.com/a');
     process.env.MELO_HOME = '/tmp/melo-home-B-closeall';
     await mod.openPage('https://example.com/b');
-    assert.equal(mod.pageCount(), 2);
+    // pageCount is home-filtered (Codex C #6 round-2) so we can't ask
+    // for the global total directly — check each home sees its own 1.
+    assert.equal(mod.pageCount(), 1, 'home B sees its own 1 page');
+    process.env.MELO_HOME = '/tmp/melo-home-A-closeall';
+    assert.equal(mod.pageCount(), 1, 'home A sees its own 1 page (independently)');
 
     // Bulk shutdown — must release BOTH despite mixed homes.
     await mod.closeAllPages();
+    // After closeAllPages, neither home has any page.
+    assert.equal(mod.pageCount(), 0, 'home A 0 after bulk close');
+    process.env.MELO_HOME = '/tmp/melo-home-B-closeall';
     assert.equal(mod.pageCount(), 0,
-      'closeAllPages must release every entry regardless of which home opened it (shutdown cleanup intent)');
+      'home B 0 after bulk close — closeAllPages must release every entry regardless of home');
   } finally {
     if (prevHome === undefined) delete process.env.MELO_HOME;
     else process.env.MELO_HOME = prevHome;
