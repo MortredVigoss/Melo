@@ -4,6 +4,18 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-28 — Memory / Search UI truthfulness patch
+
+意图：延续 Melo memory/search 横评后的 UI-功能一致性审计，修掉 Customize → Memory/Safety/Advanced 入口和 Memory 维护操作的真实行为偏差。
+
+实现承诺：
+- `ensureSelectedEntities` 现在保留 `advanced` / `memory` / `safety`，同时保留 legacy `runtime` 供 UI 迁移；Memory/Safety/Advanced 不会再被状态校正打回 Skills。
+- Search feature catalogue 改为真实入口：新增 Memory / Safety / Advanced，移除旧 `feature-runtime` 结果，`runtime` 关键词现在进入 Advanced。
+- Memory 面板的 Wipe embeddings 不再双重 JSON.stringify，按钮会按后端要求发送 confirm token；live provider 不可用时显示 `(provider unavailable)`，不再误报 “not initialised”。
+
+本地验证：`node --test src/state/stateSelections.customizeSection.test.js src/services/search/searchResultsBuilder.test.js desktop-ui/memoryPane.source.test.js` GREEN；`node --check desktop-ui/app.js && node --check src/state/stateSelections.js && node --check src/services/search/searchResultsBuilder.js` GREEN；`npm run build` GREEN；`git diff --check` GREEN。
+
+---
 ## 2026-05-18 — Stage 2c B 留账闭环：real stale-SWR + real abort-during-hang (A)
 
 意图：Stage 2c round-2 落 B 时挂了 3 ⚪ 留账（"真" stale SWR / "真" abort hang / 沙箱 EPERM 第三方）。本批闭真前两个——前者证明 SWR 背景刷新真烧 Jina + 真重写 cache row，后者证明 waitForLoadState 真挂时 abort 真切断、page.close 真触发、wait 被 close 真拒绝。

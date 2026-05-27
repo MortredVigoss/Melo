@@ -58,7 +58,17 @@ export function ensureSelectedEntities(state) {
         : state.projects[0]?.id || null;
   const selectedAgentScope =
     state.settings.selectedAgentScope === 'project' && selectedProjectId ? 'project' : 'global';
-  const selectedCustomizeSection = ['skills', 'agents', 'connectors', 'runtime'].includes(
+  const selectedCustomizeSection = [
+    'skills',
+    'agents',
+    'connectors',
+    'advanced',
+    'memory',
+    'safety',
+    // Legacy persisted value. The desktop UI migrates this to Advanced at
+    // render time so older state does not drop users back to Skills.
+    'runtime',
+  ].includes(
     state.settings.selectedCustomizeSection,
   )
     ? state.settings.selectedCustomizeSection

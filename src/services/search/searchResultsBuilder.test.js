@@ -111,3 +111,13 @@ test('buildSearchResults project summaries count only live artifacts', async () 
   const projectSuggestion = empty.projects.find(p => p.projectId === 'p1');
   assert.ok(projectSuggestion, 'project should appear in suggestions');
 });
+
+test('buildSearchResults exposes real Customize subsections for Memory, Safety, and Advanced', async () => {
+  const out = await buildSearchResults('memory safety runtime', fixtureState(), EMPTY_WORKSPACE);
+
+  const byId = new Map(out.features.map(item => [item.id, item]));
+  assert.equal(byId.get('feature-memory')?.action?.section, 'memory');
+  assert.equal(byId.get('feature-safety')?.action?.section, 'safety');
+  assert.equal(byId.get('feature-advanced')?.action?.section, 'advanced');
+  assert.equal(byId.has('feature-runtime'), false, 'legacy runtime feature should not be emitted');
+});

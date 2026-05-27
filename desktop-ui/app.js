@@ -10355,8 +10355,7 @@ async function doWipeEmbeddings() {
   try {
     const response = await api('/api/memory/wipe-embeddings', {
       method: 'POST',
-      body: JSON.stringify({ confirm: 'YES, WIPE EMBEDDINGS' }),
-      headers: { 'Content-Type': 'application/json' },
+      body: { confirm: 'YES, WIPE EMBEDDINGS' },
     });
     uiState.memoryStatus.wipeResult = `Cleared ${response.cleared} embeddings (dims=${response.dims}).`;
   } catch (err) {
@@ -10620,7 +10619,7 @@ function renderMemoryPane() {
           <div><div class="meta-label">Provider</div><div class="mono">${escapeHtml(s.embedding.provider)}</div></div>
           <div><div class="meta-label">Dims (configured)</div><div>${s.embedding.dimsConfigured}</div></div>
           <div><div class="meta-label">Model (stored)</div><div class="mono">${escapeHtml(s.embedding.storedModelId || '(not yet recorded)')}</div></div>
-          <div><div class="meta-label">Model (live)</div><div class="mono">${escapeHtml(drift.inferredProvider || '(provider not initialised)')}</div></div>
+          <div><div class="meta-label">Model (live)</div><div class="mono">${escapeHtml(drift.inferredProvider || (drift.probeAttempted ? '(provider unavailable)' : '(probe skipped)'))}</div></div>
         </div>
 
         <div class="meta-block-label">Recall tuning (env)</div>

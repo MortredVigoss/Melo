@@ -42,7 +42,7 @@
     "test:evidence-trail-tools": "node --test src/tools/builtins/webSearchTool.evidenceTrail.test.js src/tools/builtins/fetchUrlTool.evidenceTrail.test.js src/tools/builtins/socialLinkTool.evidenceTrail.test.js",
     "test:page-registry": "node --test src/services/browser/pageRegistry.test.js src/services/browser/pageRegistry.shutdownWire.test.js",
     "test:browser-tools": "node --test src/tools/builtins/browserTools.test.js",
-    "test:state-hydration": "node --test src/state/stateHydration.test.js",
+    "test:state-hydration": "node --test src/state/stateHydration.test.js src/state/stateSelections.customizeSection.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
     "postinstall": "node-gyp rebuild"
   },
