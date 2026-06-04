@@ -809,6 +809,12 @@ async function main() {
     // so gating them guards the migration from silent regression.
     results.push(await runStep('desktopStore atomic state (test:store-atomic)', () => runCommand('npm', ['run', 'test:store-atomic'])));
 
+    // 2026-06-04 audit闭环: poller offset-advancement fix (telegram + discord).
+    // Structural guards lock the data-loss bug shape (offset must NOT advance
+    // to batch-max before the message loop; must advance per-message in a
+    // finally). A regression that reverts to pre-loop offset set fails these.
+    results.push(await runStep('Poller offset advancement (test:polling-offset)', () => runCommand('npm', ['run', 'test:polling-offset'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

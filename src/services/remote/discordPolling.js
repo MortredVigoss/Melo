@@ -371,19 +371,21 @@ export async function processDiscordPollingCycle() {
         `[dc-poll] fetched agent=${agentId} count=${messages.length}`,
       );
 
-      if (messages.length) {
-        // Discord message IDs are snowflakes (monotonic strings). Track the highest seen.
-        const latestId = messages
-          .map(m => String(m?.id || ''))
-          .filter(Boolean)
-          .reduce((a, b) => (snowflakeGt(b, a) ? b : a), String(runtimeChannel.lastUpdateId || ''));
-        if (latestId) {
-          runtimeChannel.lastUpdateId = latestId;
-        }
-      }
+      // 2026-06-04 audit闭环: advance lastUpdateId PER MESSAGE inside the loop
+      // (see the per-message `finally` below), NOT to the batch max up front.
+      // Pre-fix, setting the offset to the highest snowflake before processing
+      // meant a throw mid-batch still persisted the advanced offset → the next
+      // fetch (?after=lastUpdateId) skipped the unprocessed messages and never
+      // looked back → silent message loss.
       processedUpdateCount += messages.length;
 
       for (const rawMessage of messages) {
+        // Per-message isolation: one message's processing error must NOT abort
+        // the rest of the batch. The `finally` advances the snowflake offset
+        // past THIS message regardless of outcome (success / skip / hard
+        // error) so the poll always makes forward progress — a hard-failed
+        // message is ack-and-logged, never retried forever (poison-safe).
+        try {
         // Pre-normalization diagnostics. If content is empty on every message,
         // the bot almost certainly lacks the MESSAGE_CONTENT privileged intent
         // (Discord Developer Portal → Bot → Privileged Gateway Intents).
@@ -697,8 +699,32 @@ export async function processDiscordPollingCycle() {
             );
           }
         }
+        } catch (perMessageError) {
+          // Per-message isolation (2026-06-04 audit闭环): log + ack-and-continue.
+          // Do NOT rethrow — the finally below advances the snowflake offset so
+          // the batch keeps progressing and the failure isn't retried forever.
+          encounteredError = true;
+          runtimeChannel.lastStatus = 'error';
+          runtimeChannel.lastError = perMessageError?.message || String(perMessageError);
+          writeDiscordDebugLine(
+            `[dc-poll] message-error agent=${agentId} message_id=${String(rawMessage?.id || '')} ` +
+              `message=${(perMessageError?.message || String(perMessageError)).slice(0, 200)}`,
+          );
+        } finally {
+          // Advance past THIS message no matter what — the single source of
+          // offset progress now. `continue` inside the try runs this too, so
+          // deliberately-skipped messages also advance (correctly acked).
+          // Snowflakes are monotonic strings → only advance on a higher id.
+          const thisId = String(rawMessage?.id || '');
+          if (thisId && snowflakeGt(thisId, String(runtimeChannel.lastUpdateId || ''))) {
+            runtimeChannel.lastUpdateId = thisId;
+          }
+        }
       }
     } catch (error) {
+      // Fetch / setup-level error (before/around the loop): the per-message
+      // loop's offset advancement didn't run for un-fetched messages, so
+      // lastUpdateId stays put and they are re-fetched next cycle — correct.
       encounteredError = true;
       runtimeChannel.lastStatus = 'error';
       runtimeChannel.lastError = error.message || String(error);

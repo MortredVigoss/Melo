@@ -46,6 +46,7 @@
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
     "test:tool-consistency": "node --test src/tools/registry.consistency.test.js",
     "test:store-atomic": "node --test src/desktopStore.concurrency.test.js src/desktopStore.atomicMigration.test.js",
+    "test:polling-offset": "node --test src/services/remote/pollingOffset.source.test.js",
     "postinstall": "node-gyp rebuild"
   },
   "dependencies": {

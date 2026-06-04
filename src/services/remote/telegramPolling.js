@@ -339,15 +339,21 @@ export async function processTelegramPollingCycle() {
       );
       runtimeChannel.lastStatus = 'connected';
       runtimeChannel.lastError = '';
-      if (updates.length) {
-        runtimeChannel.lastUpdateId = Math.max(
-          Number(runtimeChannel.lastUpdateId || 0),
-          ...updates.map(update => Number(update?.update_id || 0)),
-        );
-      }
+      // 2026-06-04 audit闭环: advance lastUpdateId PER MESSAGE inside the loop
+      // (see the per-update `finally` below), NOT to the batch max up front.
+      // Pre-fix, setting the offset to max(batch) before processing meant a
+      // throw mid-batch still persisted the advanced offset → Telegram's next
+      // getUpdates(offset+1) acked (and purged) the unprocessed updates →
+      // silent, unrecoverable message loss.
       processedUpdateCount += updates.length;
 
       for (const update of updates) {
+        // Per-message isolation: one update's processing error must NOT abort
+        // the rest of the batch. The `finally` advances the offset past THIS
+        // update regardless of outcome (success / deliberate skip / hard
+        // error) so the poll always makes forward progress — a hard-failed
+        // message is ack-and-logged, never retried forever (poison-safe).
+        try {
         const incoming = await latestProcessableTelegramText(update, telegramChannel);
         if (
           !incoming?.chatId ||
@@ -579,8 +585,32 @@ export async function processTelegramPollingCycle() {
             );
           }
         }
+        } catch (perMessageError) {
+          // Per-message isolation (2026-06-04 audit闭环): log + ack-and-continue.
+          // Do NOT rethrow — the finally below still advances the offset so the
+          // batch keeps making progress and the failure isn't retried forever.
+          encounteredError = true;
+          runtimeChannel.lastStatus = 'error';
+          runtimeChannel.lastError = perMessageError?.message || String(perMessageError);
+          writeTelegramDebugLine(
+            `[tg-cycle] message-error cycle=${cycleId} agent=${agentId} ` +
+              `update_id=${update?.update_id} ` +
+              `message=${String(perMessageError?.message || perMessageError).slice(0, 180)}`,
+          );
+        } finally {
+          // Advance past THIS update no matter what — the single source of
+          // offset progress now. `continue` inside the try runs this too, so
+          // deliberately-skipped updates also advance (correctly acked).
+          runtimeChannel.lastUpdateId = Math.max(
+            Number(runtimeChannel.lastUpdateId || 0),
+            Number(update?.update_id || 0),
+          );
+        }
       }
     } catch (error) {
+      // Fetch / setup-level error (before or around the loop): the per-message
+      // loop's own offset advancement did not run for un-fetched updates, so
+      // lastUpdateId stays put and they are re-fetched next cycle — correct.
       encounteredError = true;
       runtimeChannel.lastStatus = 'error';
       runtimeChannel.lastError = error.message || String(error);
