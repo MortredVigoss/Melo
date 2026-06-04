@@ -4,6 +4,31 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-05-23 — 全局架构一致性审计：统一性 + 逻辑合理性（Tier 1/2/3）
+
+意图：bug audit 收尾后做一轮"统一性"审计（不是找 bug，是找 convention drift /
+死抽象 / layering 错位）。Agent 跨文件交叉对比 + 本地静态扫，8 finding，二审
+定级后修 5 跳 3（#5 abort 三派二审撤销=有 cleanup 非 leak；#8 meloChrome DI seam
+deps-object 形状合理；其余命名类并入 Tier 1）。
+
+分 4 commit：Tier-1 cosmetic（category 统一 / name Title Case / examples 补全 +
+4-invariant 静态卫士）→ Tier-2 socialLinkTool 改属 services/search/socialLinkReader
+（byte-for-byte 移动，registry 从未注册它）→ Tier-3a 给 SearchTask 适配器接第一个
+生产 consumer（#2，701 行死代码闭环；Codex C round-2 抓 hydration round-trip 缺口
+补 errorCode 白名单）→ Tier-3b desktopStore 7 个 RMW 迁 updateStateAtomically（#3，
+migration 从 1/8 → 8/8）。
+
+设计承诺（diff 看不出）：
+- #2 选"接"不选"删"：errorCode 走 evidenceTrail 完全相同的 persist+SSE rails，纯
+  additive 零 model-prose 变更——不是 ship G-2c feature，是给死抽象一个真消费者。
+- #3 closure-trap 规避：createCustomAgent 的 id 分配 / toggleConnector 的 set 读取
+  全部移进 mutator（pre-atomic 读会让并发调用 allocate 同 id / 丢 toggle）。
+- 新概念测试用真不变量：no-lost-update 并发测试（12 并发 toggle 全留存）会 fail
+  against pre-migration 代码，不是 serial-correctness 假绿。
+
+本地 `npm test` GREEN。Final commit range: `6997a15`..(本条).
+
+---
 ## 2026-05-28 — Memory / Search UI truthfulness patch
 
 意图：延续 Melo memory/search 横评后的 UI-功能一致性审计，修掉 Customize → Memory/Safety/Advanced 入口和 Memory 维护操作的真实行为偏差。

@@ -1517,81 +1517,108 @@ export const __offlineBacklogTesting = {
 export { initMcpServers } from './mcp/init.js';
 
 export async function prepareDesktopLaunchState() {
-  const state = ensureSelectedEntities(await loadState());
-  state.settings = {
-    ...state.settings,
-    activeView: 'chat',
-    activeMode: 'chat',
-    selectedChatId: null,
-    selectedFilePath: null,
-  };
-  await saveState(state);
+  // 2026-05-23 架构 audit #3: migrate read-modify-write → updateStateAtomically
+  // so a concurrent write (settings save / chat create) can't clobber this
+  // launch-state reset and vice versa. Same serialization the migrated
+  // updateAgentProfile already uses.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    state.settings = {
+      ...state.settings,
+      activeView: 'chat',
+      activeMode: 'chat',
+      selectedChatId: null,
+      selectedFilePath: null,
+    };
+    return state;
+  });
 }
 
 export async function createChat({ mode, projectId, agentId }) {
-  const state = ensureSelectedEntities(await loadState());
-  assertCanCreateChat(state);
-  const chat = createChatRecord({
-    mode: mode || state.settings.activeMode,
-    projectId: projectId ?? state.settings.selectedProjectId,
-    agentId: agentId || null,
-  });
+  // 2026-05-23 架构 audit #3: all state reads (activeMode / selectedProjectId
+  // defaults, the cap check, the unshift) move INSIDE the mutator so the
+  // new chat is appended to the freshest persisted state — two concurrent
+  // createChat calls can no longer lose each other's chat. assertCanCreateChat
+  // throwing inside the mutator aborts the atomic op before persist (desired:
+  // don't half-create at the cap).
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    assertCanCreateChat(state);
+    const chat = createChatRecord({
+      mode: mode || state.settings.activeMode,
+      projectId: projectId ?? state.settings.selectedProjectId,
+      agentId: agentId || null,
+    });
 
-  state.chats.unshift(chat);
-  state.settings.selectedChatId = chat.id;
-  state.settings.activeView = 'chat';
-  state.settings.activeMode = chat.mode;
-  await saveState(state);
+    state.chats.unshift(chat);
+    state.settings.selectedChatId = chat.id;
+    state.settings.activeView = 'chat';
+    state.settings.activeMode = chat.mode;
+    return state;
+  });
 
   return getDesktopBootstrap();
 }
 
 export async function updateChat(chatId, patch = {}) {
-  const state = ensureSelectedEntities(await loadState());
-  const chatIndex = state.chats.findIndex(chat => chat.id === chatId);
-  if (chatIndex < 0) {
-    throw new Error('Chat not found.');
-  }
+  // 2026-05-23 架构 audit #3: read-find-merge moves inside the mutator so the
+  // locked-flag write merges against the freshest chat record (a concurrent
+  // updateChat / deleteChat can't be silently overwritten). Not-found throw
+  // inside the mutator aborts before persist.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const chatIndex = state.chats.findIndex(chat => chat.id === chatId);
+    if (chatIndex < 0) {
+      throw new Error('Chat not found.');
+    }
 
-  const currentChat = state.chats[chatIndex];
-  state.chats[chatIndex] = {
-    ...currentChat,
-    locked:
-      typeof patch.locked === 'boolean'
-        ? patch.locked
-        : Boolean(currentChat.locked),
-  };
-
-  await saveState(state);
+    const currentChat = state.chats[chatIndex];
+    state.chats[chatIndex] = {
+      ...currentChat,
+      locked:
+        typeof patch.locked === 'boolean'
+          ? patch.locked
+          : Boolean(currentChat.locked),
+    };
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
 export async function deleteChat(chatId) {
-  const state = ensureSelectedEntities(await loadState());
-  const existingChat = state.chats.find(chat => chat.id === chatId);
-  if (!existingChat) {
-    throw new Error('Chat not found.');
-  }
+  // 2026-05-23 架构 audit #3: filter-and-clear-selection inside the mutator so
+  // a concurrent createChat / updateChat against the same list can't be lost.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const existingChat = state.chats.find(chat => chat.id === chatId);
+    if (!existingChat) {
+      throw new Error('Chat not found.');
+    }
 
-  state.chats = state.chats.filter(chat => chat.id !== chatId);
-  if (state.settings.selectedChatId === chatId) {
-    state.settings.selectedChatId = null;
-  }
-
-  await saveState(state);
+    state.chats = state.chats.filter(chat => chat.id !== chatId);
+    if (state.settings.selectedChatId === chatId) {
+      state.settings.selectedChatId = null;
+    }
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
 export async function updateDesktopSettings(patch) {
-  const state = ensureSelectedEntities(await loadState());
-  state.settings = {
-    ...state.settings,
-    ...patch,
-    ...(patch?.promptHistory
-      ? { promptHistory: normalizePromptHistory(patch.promptHistory) }
-      : {}),
-  };
-  await saveState(state);
+  // 2026-05-23 架构 audit #3: settings spread-merge inside the mutator so the
+  // patch applies to the freshest settings object — a concurrent settings
+  // write (e.g. createChat flipping activeView) no longer races to clobber.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    state.settings = {
+      ...state.settings,
+      ...patch,
+      ...(patch?.promptHistory
+        ? { promptHistory: normalizePromptHistory(patch.promptHistory) }
+        : {}),
+    };
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
@@ -1866,22 +1893,31 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
 }
 
 export async function createCustomAgent() {
-  const state = ensureSelectedEntities(await loadState());
   // Default profile construction (id allocation + seed identity / soul /
   // tools) is pure logic — lifted into agentProfileService in Phase 7c.
   // desktopStore still owns the splice into state + markdown-file sync +
   // saveState side-effects.
-  const { agentId, profile } = buildNewCustomAgent(state.agentProfiles);
+  //
+  // 2026-05-23 架构 audit #3: id allocation MUST happen inside the mutator —
+  // buildNewCustomAgent derives the next id from state.agentProfiles, so a
+  // pre-atomic read would let two concurrent createCustomAgent calls allocate
+  // the SAME id against a stale profile map (closure-capture trap the skill
+  // warns about). syncAgentMarkdownFiles stays inside so the markdown files
+  // sync against the merged state, matching updateAgentProfile's pattern.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const { agentId, profile } = buildNewCustomAgent(state.agentProfiles);
 
-  state.agentProfiles = {
-    ...state.agentProfiles,
-    [agentId]: profile,
-  };
-  state.settings.selectedCustomizeSection = 'agents';
-  state.settings.selectedAgentId = agentId;
-  state.settings.activeView = 'agent';
-  await syncAgentMarkdownFiles(state);
-  await saveState(state);
+    state.agentProfiles = {
+      ...state.agentProfiles,
+      [agentId]: profile,
+    };
+    state.settings.selectedCustomizeSection = 'agents';
+    state.settings.selectedAgentId = agentId;
+    state.settings.activeView = 'agent';
+    await syncAgentMarkdownFiles(state);
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
@@ -2001,18 +2037,25 @@ export async function refreshModelCatalog(patch = {}, options = {}) {
 // Re-exported above.
 
 export async function toggleConnector(connectorId) {
-  const state = ensureSelectedEntities(await loadState());
-  const enabled = new Set(state.settings.enabledConnectorIds);
+  // 2026-05-23 架构 audit #3: the toggle reads the current enabled-set then
+  // flips one member — a textbook lost-update if read pre-atomically (two
+  // concurrent toggles against the same stale set double-add / double-remove
+  // or drop each other). Reading the set INSIDE the mutator makes each toggle
+  // apply to the freshest enabled list.
+  await updateStateAtomically(async latestState => {
+    const state = ensureSelectedEntities(latestState);
+    const enabled = new Set(state.settings.enabledConnectorIds);
 
-  if (enabled.has(connectorId)) {
-    enabled.delete(connectorId);
-  } else {
-    enabled.add(connectorId);
-  }
+    if (enabled.has(connectorId)) {
+      enabled.delete(connectorId);
+    } else {
+      enabled.add(connectorId);
+    }
 
-  state.settings.enabledConnectorIds = [...enabled];
-  state.settings.selectedConnectorId = connectorId;
-  await saveState(state);
+    state.settings.enabledConnectorIds = [...enabled];
+    state.settings.selectedConnectorId = connectorId;
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
