@@ -48,18 +48,52 @@ test('voice attachment id is captured-then-cleared in the send path (parallel to
   );
 });
 
-test('new-chat paths clear pending voice transcript+id (no stale transcript leak into next message)', () => {
-  // 2026-06-04 audit闭环: handleCreateChat + handleOpenNewChatHome must reset
-  // both voice fields, else a recorded-but-unsent voice message leaks a stale
-  // extractedMedia transcript (with an orphan attachmentId) into the next
-  // plain-text send. Count the reset pairs: send path (1) + 2 new-chat paths
-  // = at least 3 occurrences of each clear.
-  const transcriptClears = (appSource.match(/uiState\.composerVoiceTranscript = null;/g) || []).length;
-  const idClears = (appSource.match(/uiState\.composerVoiceAttachmentId = null;/g) || []).length;
-  assert.ok(transcriptClears >= 3,
-    `composerVoiceTranscript must be cleared on send + both new-chat paths (≥3); found ${transcriptClears}`);
-  assert.ok(idClears >= 3,
-    `composerVoiceAttachmentId must be cleared on send + both new-chat paths (≥3); found ${idClears}`);
+// 2026-06-04 audit闭环: handleCreateChat + handleOpenNewChatHome must each
+// reset BOTH voice fields, else a recorded-but-unsent voice message leaks a
+// stale extractedMedia transcript (orphan attachmentId) into the next
+// plain-text send. Codex C round-2: lock the SPECIFIC function bodies — a
+// global string count can't catch "removed the clear from one path but
+// another path has two clears". Extract each function body and assert.
+
+function functionBody(src, declRegex) {
+  // Slice from the function declaration to the next top-level `async function`
+  // / `function ` at column 0 (the next sibling). Good enough to scope the
+  // assertions to one function — these are all module-level functions.
+  const start = src.search(declRegex);
+  if (start < 0) return '';
+  const rest = src.slice(start + 1);
+  const nextDecl = rest.search(/\n(async function |function )/);
+  return nextDecl < 0 ? rest : rest.slice(0, nextDecl);
+}
+
+test('handleCreateChat clears BOTH pending voice fields (entry-point-specific)', () => {
+  const body = functionBody(appSource, /async function handleCreateChat\(/);
+  assert.ok(body, 'handleCreateChat must exist');
+  assert.match(body, /uiState\.composerVoiceTranscript = null;/,
+    'handleCreateChat must clear composerVoiceTranscript');
+  assert.match(body, /uiState\.composerVoiceAttachmentId = null;/,
+    'handleCreateChat must clear composerVoiceAttachmentId');
+});
+
+test('handleOpenNewChatHome clears BOTH pending voice fields (entry-point-specific)', () => {
+  const body = functionBody(appSource, /async function handleOpenNewChatHome\(/);
+  assert.ok(body, 'handleOpenNewChatHome must exist');
+  assert.match(body, /uiState\.composerVoiceTranscript = null;/,
+    'handleOpenNewChatHome must clear composerVoiceTranscript');
+  assert.match(body, /uiState\.composerVoiceAttachmentId = null;/,
+    'handleOpenNewChatHome must clear composerVoiceAttachmentId');
+});
+
+test('all callers of new-chat route through the two reset functions (no unguarded new-chat entry)', () => {
+  // The leak is fixed at the FUNCTION level, so every new-chat trigger must
+  // go through handleCreateChat / handleOpenNewChatHome rather than inlining
+  // its own chat-creation + composer reset. This guards against a future
+  // entry point that creates a chat inline and re-introduces the leak.
+  // Heuristic: there must be no inline POST to /api/chats outside
+  // handleCreateChat.
+  const chatPosts = (appSource.match(/api\('\/api\/chats'/g) || []).length;
+  assert.equal(chatPosts, 1,
+    `only handleCreateChat may POST /api/chats; found ${chatPosts} sites — a second inline creator would bypass the voice-field reset`);
 });
 
 // ─── Fix #2: keyboard activation for focusable link/PDF cards ───────────────
