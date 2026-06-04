@@ -48,6 +48,20 @@ test('voice attachment id is captured-then-cleared in the send path (parallel to
   );
 });
 
+test('new-chat paths clear pending voice transcript+id (no stale transcript leak into next message)', () => {
+  // 2026-06-04 audit闭环: handleCreateChat + handleOpenNewChatHome must reset
+  // both voice fields, else a recorded-but-unsent voice message leaks a stale
+  // extractedMedia transcript (with an orphan attachmentId) into the next
+  // plain-text send. Count the reset pairs: send path (1) + 2 new-chat paths
+  // = at least 3 occurrences of each clear.
+  const transcriptClears = (appSource.match(/uiState\.composerVoiceTranscript = null;/g) || []).length;
+  const idClears = (appSource.match(/uiState\.composerVoiceAttachmentId = null;/g) || []).length;
+  assert.ok(transcriptClears >= 3,
+    `composerVoiceTranscript must be cleared on send + both new-chat paths (≥3); found ${transcriptClears}`);
+  assert.ok(idClears >= 3,
+    `composerVoiceAttachmentId must be cleared on send + both new-chat paths (≥3); found ${idClears}`);
+});
+
 // ─── Fix #2: keyboard activation for focusable link/PDF cards ───────────────
 
 test('link/PDF card has a keydown activation path (not click-only) for role=link a11y', () => {

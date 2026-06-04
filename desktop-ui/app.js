@@ -3720,6 +3720,13 @@ async function handleCreateChat({
     body: { mode, projectId, agentId },
   });
   uiState.composer = '';
+  // 2026-06-04 audit闭环: clear pending voice transcript + its linking id when
+  // switching chats. Without this a recorded-but-unsent voice message leaves
+  // composerVoiceTranscript/Id set; the next plain-text send would carry a
+  // stale extractedMedia transcript referencing an orphan attachmentId.
+  // Parallels the send-path reset (handleSendMessage).
+  uiState.composerVoiceTranscript = null;
+  uiState.composerVoiceAttachmentId = null;
   applyBootstrap(payload);
 }
 
@@ -3734,6 +3741,12 @@ async function handleOpenNewChatHome() {
   uiState.composer = '';
   resetComposerHistoryNavigation();
   uiState.composerAttachments = [];
+  // 2026-06-04 audit闭环: also clear pending voice transcript + linking id
+  // (same stale-transcript leak as handleCreateChat) — composerAttachments
+  // reset above drops the audio attachment but the voice fields would
+  // otherwise survive into the next send.
+  uiState.composerVoiceTranscript = null;
+  uiState.composerVoiceAttachmentId = null;
   uiState.composerAttachmentMenuOpen = false;
   uiState.composerDragActive = false;
   uiState.commandPalette.open = false;
