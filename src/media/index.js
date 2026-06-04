@@ -10,7 +10,7 @@ import {
 } from './extractors/videoExtractor.js';
 import { extractYoutubeContent } from './extractors/youtubeExtractor.js';
 import { detectUrlKind } from './urlDetector.js';
-import { isSocialLinkUrl, readSocialLink } from '../tools/builtins/socialLinkTool.js';
+import { isSocialLinkUrl, readSocialLink } from '../services/search/socialLinkReader.js';
 import { logSearchTrail } from '../services/search/trailLogger.js';
 
 const VALID_EXTRACTED_MEDIA_KINDS = new Set(['transcript', 'caption', 'article', 'summary']);

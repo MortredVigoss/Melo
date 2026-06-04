@@ -147,7 +147,7 @@ function classifyWebSearchError(err) {
 }
 import { createPlaywrightSession, cleanPageText } from '../../web/playwrightFetcher.js';
 import { withMeloChrome } from '../../services/browser/connect.js';
-import { hostMatchesAnySuffix, SOCIAL_HOST_SUFFIXES } from './socialLinkTool.js';
+import { hostMatchesAnySuffix, SOCIAL_HOST_SUFFIXES } from '../../services/search/socialLinkReader.js';
 import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
 import { getEmbedding, EMBEDDING_DIMS } from '../../memory/embeddings.js';
 

@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fetchUrlTool } from './fetchUrlTool.js';
-import { isSocialLinkUrl } from './socialLinkTool.js';
+import { isSocialLinkUrl } from '../../services/search/socialLinkReader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOOL_SOURCE = readFileSync(join(__dirname, 'fetchUrlTool.js'), 'utf8');
@@ -30,7 +30,7 @@ const TOOL_SOURCE = readFileSync(join(__dirname, 'fetchUrlTool.js'), 'utf8');
 // extract_mode='playwright' as the override.
 
 test('fetchUrlTool source imports the social-link router', () => {
-  assert.match(TOOL_SOURCE, /import\s+\{\s*isSocialLinkUrl,\s*readSocialLink\s*\}\s+from\s+'\.\/socialLinkTool\.js'/);
+  assert.match(TOOL_SOURCE, /import\s+\{\s*isSocialLinkUrl,\s*readSocialLink\s*\}\s+from\s+'\.\.\/\.\.\/services\/search\/socialLinkReader\.js'/);
 });
 
 test('fetchUrlTool source has the early-route conditional with playwright escape hatch', () => {
@@ -85,7 +85,7 @@ test('non-social URL passes through early-route (does NOT short-circuit to SOCIA
 // reader and asserting the actual return shape + the cookies handed
 // down to it.
 
-import { isSocialLinkUrl as _verifyExportSurface } from './socialLinkTool.js';
+import { isSocialLinkUrl as _verifyExportSurface } from '../../services/search/socialLinkReader.js';
 void _verifyExportSurface; // silence unused-import — referenced via dynamic mock below
 
 test('fetch_url social-route success returns shape with `meta` key (legacy contract)', async () => {

@@ -17,7 +17,7 @@ import {
   parseSocialPreview,
   resolveShortLink,
   readSocialLink,
-} from './socialLinkTool.js';
+} from './socialLinkReader.js';
 
 // ── isSocialLinkUrl ────────────────────────────────────────────────────
 

@@ -20,7 +20,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readSocialLink } from './socialLinkTool.js';
+import { readSocialLink } from './socialLinkReader.js';
 
 function assertTrailEntryShape(entry) {
   assert.equal(typeof entry.tier, 'string');
@@ -376,7 +376,7 @@ test('readSocialLink: trail entry uses `extra` (not `metadata`) so cross-tool gr
   const { fileURLToPath } = await import('node:url');
   const { dirname, join } = await import('node:path');
   const here = dirname(fileURLToPath(import.meta.url));
-  const TOOL_SOURCE = readFileSync(join(here, 'socialLinkTool.js'), 'utf8');
+  const TOOL_SOURCE = readFileSync(join(here, 'socialLinkReader.js'), 'utf8');
   // Match real recordSocialTrail CALLS, not the function declaration
   // (which has no string-literal first arg after `trail,`).
   const calls = TOOL_SOURCE.matchAll(/recordSocialTrail\(trail,\s*['"][^'"]+['"][\s\S]*?\)\s*;/g);

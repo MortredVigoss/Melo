@@ -14,7 +14,7 @@ import { debugWarn } from '../../debug.js';
 import { fetchPageViaPlaywright, isPlaywrightCliAvailable } from '../../web/playwrightFetcher.js';
 import { withMeloChrome } from '../../services/browser/connect.js';
 import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
-import { isSocialLinkUrl, readSocialLink } from './socialLinkTool.js';
+import { isSocialLinkUrl, readSocialLink } from '../../services/search/socialLinkReader.js';
 import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
