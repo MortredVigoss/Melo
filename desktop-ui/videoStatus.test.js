@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describeVideoExtractionStatus } from './videoStatus.js';
+import { describeAudioExtractionStatus, describeVideoExtractionStatus } from './videoStatus.js';
 
 function makeAttachment(id = 'att-1') {
   return { id, kind: 'video', url: 'data:video/mp4;base64,AAAA' };
@@ -133,4 +133,69 @@ test('entry with non-array keyframes (defensive) → frameCount = 0', () => {
   };
   const out = describeVideoExtractionStatus(message, makeAttachment('att-1'));
   assert.equal(out, 'transcript ✓');
+});
+
+test('audio: no matching entry → "transcript unavailable"', () => {
+  const out = describeAudioExtractionStatus({}, { id: 'aud-1', kind: 'audio' });
+  assert.equal(out, 'transcript unavailable');
+});
+
+test('audio: whisper-cpp source shows local transcription status', () => {
+  const message = {
+    extractedMedia: [{
+      attachmentId: 'aud-1',
+      kind: 'transcript',
+      text: 'hello world',
+      metadata: { source: 'whisper-cpp' },
+    }],
+  };
+  const out = describeAudioExtractionStatus(message, { id: 'aud-1', kind: 'audio' });
+  assert.equal(out, 'transcript ✓ · local Whisper');
+});
+
+test('audio: whisper-unavailable source does not imply the model received audio content', () => {
+  const message = {
+    extractedMedia: [{
+      attachmentId: 'aud-1',
+      kind: 'transcript',
+      text: 'Audio received. Transcription requires a Whisper-compatible endpoint.',
+      metadata: { source: 'whisper-unavailable' },
+    }],
+  };
+  const out = describeAudioExtractionStatus(message, { id: 'aud-1', kind: 'audio' });
+  assert.equal(out, 'transcription unavailable');
+});
+
+test('audio: voice-message (speech-recognition, linked id) → "transcript ✓ · voice input" (2026-05-23 Codex C 闭环)', () => {
+  // The shape the voice auto-submit path now produces AFTER the id-linkage
+  // fix: audio attachment + prefilled transcript share an id. Pre-fix the
+  // voice attachment had no id and the transcript no attachmentId → no match
+  // → falsely "transcript unavailable". Pins that a correctly-linked voice
+  // message renders the voice-input status.
+  const message = {
+    extractedMedia: [{
+      attachmentId: 'voice-uuid-1',
+      kind: 'transcript',
+      text: 'remind me to water the plants tomorrow',
+      metadata: { source: 'speech-recognition', fileName: 'voice-message.wav' },
+    }],
+  };
+  const out = describeAudioExtractionStatus(message, { id: 'voice-uuid-1', kind: 'audio' });
+  assert.equal(out, 'transcript ✓ · voice input');
+});
+
+test('audio: id MISMATCH (the pre-fix bug shape) → "transcript unavailable"', () => {
+  // Guards the regression directly: a transcript whose attachmentId does NOT
+  // match the attachment id renders unavailable — exactly what the un-linked
+  // voice path produced before the fix.
+  const message = {
+    extractedMedia: [{
+      attachmentId: 'some-other-id',
+      kind: 'transcript',
+      text: 'belongs to a different attachment',
+      metadata: { source: 'speech-recognition' },
+    }],
+  };
+  const out = describeAudioExtractionStatus(message, { id: 'voice-uuid-1', kind: 'audio' });
+  assert.equal(out, 'transcript unavailable');
 });

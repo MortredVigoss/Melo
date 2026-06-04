@@ -35,3 +35,32 @@ export function describeVideoExtractionStatus(message, attachment) {
   // arrived for this attachment id — treat as transcript only.
   return frameCount ? `transcript ✓ · keyframes ✓ (${frameCount})` : 'transcript ✓';
 }
+
+export function describeAudioExtractionStatus(message, attachment) {
+  const entries = Array.isArray(message?.extractedMedia) ? message.extractedMedia : [];
+  const entry = entries.find(e => e?.attachmentId && attachment?.id && e.attachmentId === attachment.id);
+  if (!entry) {
+    return 'transcript unavailable';
+  }
+
+  const source = String(entry?.metadata?.source || '').trim();
+  if (source === 'whisper-unavailable') {
+    return 'transcription unavailable';
+  }
+  if (!String(entry?.text || '').trim()) {
+    return 'transcript unavailable';
+  }
+
+  switch (source) {
+    case 'whisper-cpp':
+      return 'transcript ✓ · local Whisper';
+    case 'native-speech':
+      return 'transcript ✓ · native';
+    case 'speech-recognition':
+      return 'transcript ✓ · voice input';
+    case 'whisper':
+      return 'transcript ✓ · Whisper';
+    default:
+      return 'transcript ✓';
+  }
+}

@@ -10,7 +10,7 @@ import {
 } from './viz/citationRenderer.js';
 import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
-import { describeVideoExtractionStatus } from './videoStatus.js';
+import { describeAudioExtractionStatus, describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
@@ -225,6 +225,11 @@ const uiState = {
   // Pending voice transcript to be pre-attached when auto-submitting a voice message.
   // Set to null when not in a voice-submit flow.
   composerVoiceTranscript: null,
+  // Stable id linking the voice audio attachment to its prefilled transcript
+  // entry. describeAudioExtractionStatus matches transcript→attachment by id,
+  // so without this the just-transcribed voice message would mis-render as
+  // "transcript unavailable" (2026-05-23 Codex C 闭环).
+  composerVoiceAttachmentId: null,
   error: '',
   // Tool execution UI state
   // pendingToolPermissions: array of one dialog descriptor per pending request.
@@ -1008,7 +1013,7 @@ function renderAttachmentPreviewList(attachments = []) {
         .map(
           attachment => `
             <div class="composer-attachment-chip">
-              <span class="chip-icon">${attachmentIcon(attachment.kind)}</span>
+              <span class="chip-icon">${attachmentIcon(attachment.kind, attachment)}</span>
               <span class="composer-attachment-label">${escapeHtml(attachmentLabel(attachment))}</span>
               ${
                 attachment.sizeLabel
@@ -1043,22 +1048,25 @@ function renderComposerAttachmentMenu() {
         <span class="chip-icon">${icon.image}</span>
         Image
       </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Video → audio is transcribed via Whisper, and ~5 evenly-spaced keyframes are sent to the model alongside the transcript.">
+      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Direct video files are parsed best-effort: audio is transcribed and keyframes are sent when the media is accessible. Platform links may fall back to preview text.">
         <span class="chip-icon">${icon.video}</span>
         <span class="composer-menu-item-text">
           <span>Video</span>
-          <span class="composer-menu-item-hint">transcript + keyframes</span>
+          <span class="composer-menu-item-hint">best-effort transcript + keyframes</span>
         </span>
       </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*">
+      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*" title="Audio is transcribed first, then the transcript is sent to the model. Raw audio is only used when the selected backend supports it.">
         <span class="chip-icon">${icon.audio}</span>
-        Audio
+        <span class="composer-menu-item-text">
+          <span>Audio</span>
+          <span class="composer-menu-item-hint">transcribed first</span>
+        </span>
       </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="application/pdf,.pdf" title="PDF documents are extracted via pdf-parse and the text is sent to the model.">
+      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="application/pdf,.pdf" title="Text-based PDFs are extracted via pdf-parse and the text is sent to the model. Scanned image-only PDFs may need OCR.">
         <span class="chip-icon">${icon.file}</span>
         <span class="composer-menu-item-text">
           <span>PDF</span>
-          <span class="composer-menu-item-hint">extracted as text</span>
+          <span class="composer-menu-item-hint">text-based PDFs</span>
         </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="add-link-attachment">
@@ -1330,34 +1338,56 @@ function renderMessageAttachments(message) {
     const imageUrl = /^https?:\/\//i.test(String(meta.previewImage || ''))
       ? String(meta.previewImage)
       : '';
+    const source = String(meta.source || '').toLowerCase();
+    const previewStatus = (() => {
+      if (!preview) return 'Link only';
+      if (meta.directMediaExtractionSucceeded) return 'Deep media parsed';
+      if (meta.directMediaExtractionAttempted) return 'Preview read · media parse unavailable';
+      if (source === 'pdf-parse') return 'PDF text extracted';
+      if (source === 'readability') return 'Article text extracted';
+      if (source.includes('yt-dlp')) return 'Video metadata extracted';
+      if (source.includes('browser:')) return 'Browser preview extracted';
+      if (source.includes('douyin-ssr')) return 'Share preview + page text';
+      if (source.includes('share-preview')) return 'Share preview extracted';
+      if (source.includes('opengraph')) return 'OpenGraph preview extracted';
+      return 'Preview extracted';
+    })();
+    const metaLine = [meta.author, meta.siteName, previewStatus].filter(Boolean).join(' · ');
+    const cardIcon = isPdfAttachment(attachment) ? icon.file : icon.link;
+    const canOpenOriginal = /^https?:\/\//i.test(String(attachment.url || ''));
+    const cardOpenAttrs = canOpenOriginal
+      ? ` data-external-url="${escapeHtml(attachment.url)}" role="link" tabindex="0"`
+      : '';
+    const cardAction = canOpenOriginal
+      ? 'Click to open in browser'
+      : 'Attached locally';
+    const unavailableText = canOpenOriginal
+      ? 'Melo has not extracted readable text for this link yet. Click to open it in your browser.'
+      : 'Melo has this local attachment, but no readable text was extracted yet.';
 
     return `
-      <div class="message-attachment-card link-card" data-copyable-surface data-external-url="${escapeHtml(attachment.url)}" role="link" tabindex="0">
-        <a class="link-card-main" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">
-          <span class="chip-icon">${icon.link}</span>
+      <div class="message-attachment-card link-card" data-copyable-surface${cardOpenAttrs}>
+        <div class="link-card-main">
+          <span class="chip-icon">${cardIcon}</span>
           <span>
             <strong>${escapeHtml(title)}</strong>
             <span class="link-card-url">${escapeHtml(attachment.url)}</span>
           </span>
-        </a>
+        </div>
         ${preview ? `
           <div class="link-preview">
             ${imageUrl ? `<img class="link-preview-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ''}
             <div class="link-preview-copy">
-              ${meta.author || meta.siteName ? `
-                <div class="link-preview-meta">${escapeHtml(
-                  [meta.author, meta.siteName].filter(Boolean).join(' · '),
-                )}</div>
-              ` : ''}
+              ${metaLine ? `<div class="link-preview-meta">${escapeHtml(metaLine)}</div>` : ''}
               <div class="link-preview-text">${escapeHtml(truncate(previewText, 360))}</div>
-              <div class="link-preview-action">Click to open in browser</div>
+              <div class="link-preview-action">${escapeHtml(cardAction)}</div>
             </div>
           </div>
         ` : `
           <div class="link-preview is-empty">
             <div class="link-preview-copy">
-              <div class="link-preview-meta">Preview unavailable</div>
-              <div class="link-preview-text">Melo has not extracted readable text for this link yet. Click to open it in your browser.</div>
+              <div class="link-preview-meta">${escapeHtml(previewStatus)}</div>
+              <div class="link-preview-text">${escapeHtml(unavailableText)}</div>
             </div>
           </div>
         `}
@@ -1413,11 +1443,13 @@ function renderMessageAttachments(message) {
           }
 
           if (attachment.kind === 'audio') {
+            const status = describeAudioExtractionStatus(message, attachment);
             return `
               <div class="message-attachment-card audio-card" data-audio-url="${escapeHtml(attachment.url)}">
                 <div class="audio-card-title">
                   <span class="chip-icon">${icon.audio}</span>
                   ${escapeHtml(attachmentLabel(attachment))}
+                  <span class="media-caption-hint">${escapeHtml(status)}</span>
                 </div>
                 <audio class="message-audio" controls src="${escapeHtml(attachment.url)}"></audio>
               </div>
@@ -3348,7 +3380,18 @@ function setVoiceState(patch = {}) {
   };
 }
 
-function attachmentIcon(kind) {
+function isPdfAttachment(attachment = {}) {
+  const mimeType = String(attachment?.mimeType || '').toLowerCase();
+  const fileName = String(attachment?.fileName || attachment?.title || attachment?.url || '');
+  return mimeType.includes('pdf') || /\.pdf(?:\?|$)/i.test(fileName);
+}
+
+function isPdfFile(file) {
+  return String(file?.type || '').toLowerCase().includes('pdf') || /\.pdf$/i.test(file?.name || '');
+}
+
+function attachmentIcon(kind, attachment = null) {
+  if (attachment && isPdfAttachment(attachment)) return icon.file;
   switch (kind) {
     case 'image':
       return icon.image;
@@ -3383,6 +3426,7 @@ function detectAttachmentKindFromFile(file) {
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
   if (file.type.startsWith('audio/')) return 'audio';
+  if (isPdfFile(file)) return 'link';
   return null;
 }
 
@@ -3410,7 +3454,7 @@ async function queueComposerFiles(fileList) {
 
     const kind = detectAttachmentKindFromFile(file);
     if (!kind) {
-      showError(`${file.name} is not supported yet. Add images, video, or audio files here.`);
+      showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
       continue;
     }
 
@@ -3421,7 +3465,7 @@ async function queueComposerFiles(fileList) {
       url,
       title: file.name,
       fileName: file.name,
-      mimeType: file.type || '',
+      mimeType: file.type || (isPdfFile(file) ? 'application/pdf' : ''),
       sizeLabel: formatFileSize(file.size),
     });
   }
@@ -3572,8 +3616,16 @@ async function handleVoiceMessageAutoSubmit(transcript, audioData) {
   // Prepare the composer with the audio attachment and the pre-computed transcript.
   // The transcript is passed as pre-populated extractedMedia so the backend skips
   // Whisper and uses the on-device SFSpeechRecognizer result directly.
+  //
+  // 2026-05-23 Codex C 闭环: give the audio attachment a stable id (every other
+  // attachment path already does — see crypto.randomUUID() in queueComposerFiles)
+  // and thread the SAME id into the prefilled transcript entry below, so
+  // describeAudioExtractionStatus can match them and render "transcript ✓ ·
+  // voice input" instead of falsely "transcript unavailable".
+  const voiceAttachmentId = crypto.randomUUID();
   uiState.composerAttachments = [
     {
+      id: voiceAttachmentId,
       kind: 'audio',
       url: audioData,
       mimeType: 'audio/wav',
@@ -3582,6 +3634,7 @@ async function handleVoiceMessageAutoSubmit(transcript, audioData) {
     },
   ];
   uiState.composerVoiceTranscript = transcript;
+  uiState.composerVoiceAttachmentId = voiceAttachmentId;
   uiState.composer = '';
   await handleSendMessage();
 }
@@ -3889,6 +3942,10 @@ async function handleSendMessage() {
   // Capture and clear the voice transcript before resetting composer state.
   const voiceTranscript = uiState.composerVoiceTranscript || null;
   uiState.composerVoiceTranscript = null;
+  // Same for the linking id (2026-05-23 Codex C 闭环) — capture before reset
+  // so the prefilled transcript entry can reference the audio attachment.
+  const voiceAttachmentId = uiState.composerVoiceAttachmentId || null;
+  uiState.composerVoiceAttachmentId = null;
 
   let chatId = uiState.bootstrap?.settings?.selectedChatId || null;
   uiState.sending = true;
@@ -3938,6 +3995,10 @@ async function handleSendMessage() {
           ? {
               extractedMedia: [
                 {
+                  // attachmentId links this transcript to the voice audio
+                  // attachment so describeAudioExtractionStatus matches them
+                  // (2026-05-23 Codex C 闭环).
+                  ...(voiceAttachmentId ? { attachmentId: voiceAttachmentId } : {}),
                   kind: 'transcript',
                   text: voiceTranscript,
                   metadata: { source: 'speech-recognition', fileName: 'voice-message.wav' },
@@ -6181,16 +6242,16 @@ function paletteCommands() {
     {
       id: 'palette-open-search',
       title: 'Open Search',
-      subtitle: 'Search chats, projects, artifacts, and files',
+      subtitle: 'Search chats, memory, projects, artifacts, and files',
       keywords: 'search view',
       action: 'open-view',
       payload: { view: 'search' },
     },
     {
       id: 'palette-open-runtime',
-      title: 'Open Runtime Browser',
-      subtitle: 'Inspect live MCP-style tools, resources, and prompts',
-      keywords: 'runtime mcp browser tools resources prompts',
+      title: 'Open Advanced / MCP Runtime',
+      subtitle: 'Inspect MCP servers, plugins, tools, resources, and prompts',
+      keywords: 'advanced runtime mcp browser tools resources prompts plugins',
       action: 'open-runtime',
     },
     {
@@ -7220,7 +7281,7 @@ function renderComposerCard({ inline = false } = {}) {
               uiState.composerDragActive
                 ? `
                   <div class="composer-drop-banner">
-                    Drop image, audio, or video here. Videos are sent as audio transcript plus a few keyframes.
+                    Drop image, audio, video, or PDF here. Media extraction runs best-effort before the model sees it.
                   </div>
                 `
                 : ''
@@ -11416,7 +11477,7 @@ function renderSearchPage() {
               id="global-search"
               type="search"
               value="${escapeHtml(uiState.searchQuery)}"
-              placeholder="Search chats, features, projects, artifacts, and files"
+              placeholder="Search chats, memory, features, projects, artifacts, and files"
             />
             <button
               class="search-clear-button"
@@ -12722,6 +12783,45 @@ function syncSearchFieldFocus() {
   });
 }
 
+// 2026-05-23 Codex C 闭环: shared activation for link/PDF cards rendered as
+// `<div role="link" tabindex="0" data-external-url=...>` (the WIP made the
+// whole card the link target instead of an inner <a>).  Both the global
+// click delegation AND the keydown handler below route through this one
+// function so the click path and the keyboard (Enter/Space) path can never
+// drift — keyboard activation was missing entirely before, an a11y regression
+// for a focusable role=link element.  Returns true if it consumed the event.
+function activateExternalCardElement(externalCard) {
+  if (!(externalCard instanceof HTMLElement)) return false;
+  const route = routeHttpUrlClick(externalCard.dataset.externalUrl || '', location.origin);
+  if (route.kind === 'same-origin') {
+    location.assign(route.href);
+    return true;
+  }
+  if (route.kind === 'external') {
+    if (!openExternalUrl(route.href)) {
+      showError('Melo could not open this link.');
+    }
+    return true;
+  }
+  // 'invalid' — data attribute was empty / non-http; surface the error so the
+  // activation is not silently dead.
+  showError('Melo could not open this link.');
+  return true;
+}
+
+// Keyboard activation for the focusable link/PDF cards: Enter matches native
+// <a> (role=link) semantics; Space is accepted too for forgiveness (and
+// preventDefault'd so it doesn't scroll the page).  Guarded to the focused
+// card itself so Enter inside any future child control isn't hijacked.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+  const externalCard = event.target?.closest?.('[data-external-url]');
+  if (!(externalCard instanceof HTMLElement)) return;
+  if (document.activeElement !== externalCard) return;
+  event.preventDefault();
+  activateExternalCardElement(externalCard);
+});
+
 document.addEventListener('click', async event => {
   let closedAttachmentMenu = false;
   const editMenu = document.querySelector('#edit-context-menu');
@@ -12802,23 +12902,11 @@ document.addEventListener('click', async event => {
 
   const externalCard = event.target.closest('[data-external-url]');
   if (externalCard instanceof HTMLElement) {
-    const route = routeHttpUrlClick(externalCard.dataset.externalUrl || '', location.origin);
-    if (route.kind === 'same-origin') {
-      event.preventDefault();
-      location.assign(route.href);
-      return;
-    }
-    if (route.kind === 'external') {
-      event.preventDefault();
-      if (!openExternalUrl(route.href)) {
-        showError('Melo could not open this link.');
-      }
-      return;
-    }
-    // 'invalid' — data attribute was empty / non-http; surface the error
-    // so the click is not silently dead.
+    // 2026-05-23 Codex C 闭环: route through the shared activator so the
+    // click and keydown paths stay identical (all three route kinds
+    // preventDefault, same as before).
     event.preventDefault();
-    showError('Melo could not open this link.');
+    activateExternalCardElement(externalCard);
     return;
   }
 
