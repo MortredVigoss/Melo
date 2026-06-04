@@ -82,7 +82,7 @@ function probeParentInoIdent(parent) {
 
 export const fileMoveTool = {
   id: 'file_move',
-  name: 'FileMove',
+  name: 'File Move',
   description:
     'Rename or move a file (or symlink) atomically. Both src and dst parent directories ' +
     'must already exist AND must NOT contain any symlinked ancestor (a parent symlink is ' +

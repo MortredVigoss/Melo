@@ -69,7 +69,7 @@ async function awaitWithAbort(promise, signal) {
 
 export const browserOpenTool = {
   id: 'browser_open',
-  name: 'Browser open',
+  name: 'Browser Open',
   description:
     'Open a persistent browser page at the given URL via CDP attach to the user\'s Melo Chrome ' +
     '(carries logged-in cookies + anti-bot bypass).  Returns a pageId handle that subsequent ' +
@@ -118,7 +118,7 @@ export const browserOpenTool = {
 
 export const browserSnapshotTool = {
   id: 'browser_snapshot',
-  name: 'Browser snapshot',
+  name: 'Browser Snapshot',
   description:
     'Capture the current text + URL + title of a browser page opened via browser_open. ' +
     'Pure read — does not navigate or interact.  Use after clicking / filling / waiting to ' +
@@ -206,7 +206,7 @@ const DEFAULT_INTERACT_TIMEOUT_MS = 10_000;
 
 export const browserClickTool = {
   id: 'browser_click',
-  name: 'Browser click',
+  name: 'Browser Click',
   description:
     'Click an element on a browser page opened via browser_open.  Selector is a CSS selector ' +
     '(e.g. "button.submit", "[data-testid=\'expand\']", "a:has-text(\'Sign in\')").  This is a ' +
@@ -352,7 +352,7 @@ export const browserClickTool = {
 
 export const browserFillTool = {
   id: 'browser_fill',
-  name: 'Browser fill',
+  name: 'Browser Fill',
   description:
     'Fill an input / textarea / contenteditable element on a browser page.  Clears any ' +
     'existing value first and types the new text.  Selector is a CSS selector matching ' +
@@ -479,7 +479,7 @@ export const browserFillTool = {
 
 export const browserWaitForTool = {
   id: 'browser_wait_for',
-  name: 'Browser wait for',
+  name: 'Browser Wait For',
   description:
     'Wait for an element matching the selector to appear on the page.  Useful after ' +
     'browser_click triggers an async load (e.g. clicking "Load more" → wait for new ' +
@@ -570,7 +570,7 @@ export const browserWaitForTool = {
 
 export const browserCloseTool = {
   id: 'browser_close',
-  name: 'Browser close',
+  name: 'Browser Close',
   description:
     'Release a browser page handle obtained from browser_open.  Idempotent: calling on an ' +
     'already-closed or unknown pageId is a no-op (returns ok:true with `closed:false`).  ' +

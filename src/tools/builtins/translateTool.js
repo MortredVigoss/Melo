@@ -79,6 +79,10 @@ export const translateTool = {
     },
     required: ['text', 'to'],
   },
+  examples: [
+    { text: '今天的天气真不错', to: 'english' },
+    { text: 'Bonjour, comment ça va?', from: 'french', to: 'zh-CN' },
+  ],
 
   async run({ text, from, to }) {
     if (!text?.trim()) return { ok: false, output: 'Missing "text".', error: 'INVALID_PARAMS' };

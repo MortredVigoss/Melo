@@ -27,7 +27,7 @@ import { safeDeleteToTrash } from '../../safety/trash.js';
 
 export const fileDeleteTool = {
   id: 'file_delete',
-  name: 'FileDelete',
+  name: 'File Delete',
   description:
     'Move one or more FILES OR SYMLINKS into the trash quarantine. ' +
     'Directories are NOT supported — recursive directory delete needs an atomic dirfd-walk ' +

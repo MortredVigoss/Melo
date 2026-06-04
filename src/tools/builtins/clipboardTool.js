@@ -77,6 +77,10 @@ export const clipboardTool = {
     },
     required: ['action'],
   },
+  examples: [
+    { action: 'read' },
+    { action: 'write', content: 'Hello, clipboard.' },
+  ],
 
   async run({ action, content }) {
     if (action === 'read') {

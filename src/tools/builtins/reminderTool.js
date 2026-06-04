@@ -144,6 +144,11 @@ export const reminderTool = {
     },
     required: ['action'],
   },
+  examples: [
+    { action: 'list' },
+    { action: 'create', time: '2026-05-24T09:00', text: 'Submit expense report' },
+    { action: 'delete', id: 'rem-abc123' },
+  ],
 
   async run({ action, time, text, id, chatId, agentId }) {
     await loadReminders();

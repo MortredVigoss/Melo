@@ -96,7 +96,7 @@ function buildEditDiffPreview(oldString, newString, count, replaceAll) {
 
 export const fileEditTool = {
   id: 'file_edit',
-  name: 'FileEdit',
+  name: 'File Edit',
   description:
     'Replace an exact string in a file with new content. ' +
     'The old_string must match exactly (including whitespace/indentation). ' +

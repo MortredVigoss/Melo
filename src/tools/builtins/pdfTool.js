@@ -505,7 +505,7 @@ export const pdfTool = {
     '4. If something is broken, FIX and re-render — common fixes: switch from `structured` (pdfkit) to `write` (HTML+Playwright) for CJK / complex layout; widen margins; chunk long sections across pages; embed images via base64 in the HTML.\n' +
     '5. Once visually verified, return the FINAL PDF URL to the user. Do NOT echo the rendered page-PNG URLs to the user — those were just for your own QA. The user wants the document, not its screenshots.\n' +
     'Skip the loop only when: (a) the user explicitly says "don\'t bother reviewing" / "just generate it", (b) the PDF is trivial (single short page), or (c) `render` errors with the poppler-not-installed hint — then surface the install hint to the user and skip self-review.',
-  category: 'files',
+  category: 'filesystem',
   isConcurrencySafe: true,
   requiresPermission: true,
   parametersSchema: {

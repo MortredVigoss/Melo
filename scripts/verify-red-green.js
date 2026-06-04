@@ -794,6 +794,14 @@ async function main() {
     // silently breaking the persisted assistantMessage.toolResults shape.
     results.push(await runStep('Tool result projection (G-1d slice 2 producer) (test:tool-result-projection)', () => runCommand('npm', ['run', 'test:tool-result-projection'])));
 
+    // 2026-05-23 架构 audit 闭环 (Tier 1 consistency): 4 cross-tool
+    // static invariants — category enum no-`files`-ghost, Title Case
+    // tool.name, every tool has examples (systemPrompt reads [0] for
+    // LLM few-shot), snake_case tool.id.  Any new builtin that drifts
+    // these silently degrades the LLM system prompt — gate it so it
+    // can't ship.
+    results.push(await runStep('Tool registry consistency (test:tool-consistency)', () => runCommand('npm', ['run', 'test:tool-consistency'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug

@@ -38,7 +38,7 @@ export const xlsxTool = {
     '(string headers or {header,key,width,numFmt}), and `rows[]` (array-of-arrays or array-of-objects). ' +
     'Header row is bold+filled, first row is frozen, and an auto-filter is applied. ' +
     'Omit `path` to auto-save into the chat workspace and receive a displayable URL.',
-  category: 'files',
+  category: 'filesystem',
   isConcurrencySafe: true,
   requiresPermission: true,
   parametersSchema: {

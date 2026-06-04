@@ -29,7 +29,7 @@ import { closeSync as closeFdSync, fstatSync } from 'node:fs';
 
 export const fileMkdirTool = {
   id: 'file_mkdir',
-  name: 'FileMkdir',
+  name: 'File Mkdir',
   description:
     'Create a single new directory at the given path. ' +
     'The parent directory must already exist as a regular directory; ' +

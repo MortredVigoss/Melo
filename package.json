@@ -44,6 +44,7 @@
     "test:browser-tools": "node --test src/tools/builtins/browserTools.test.js",
     "test:state-hydration": "node --test src/state/stateHydration.test.js src/state/stateSelections.customizeSection.test.js",
     "test:tool-result-projection": "node --test src/services/chat/toolResultProjection.test.js",
+    "test:tool-consistency": "node --test src/tools/registry.consistency.test.js",
     "postinstall": "node-gyp rebuild"
   },
   "dependencies": {

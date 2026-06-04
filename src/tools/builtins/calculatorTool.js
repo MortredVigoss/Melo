@@ -172,6 +172,11 @@ export const calculatorTool = {
     },
     required: ['action'],
   },
+  examples: [
+    { action: 'math', expression: '(2 + 3) * 4' },
+    { action: 'convert', value: 100, from: 'USD', to: 'JPY' },
+    { action: 'date', operation: 'add', date: '2026-05-23', offset: '7 days' },
+  ],
 
   async run({ action, expression, value, from, to, operation, date, offset }) {
     if (action === 'math') {

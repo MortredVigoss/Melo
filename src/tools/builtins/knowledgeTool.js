@@ -316,6 +316,11 @@ export const knowledgeTool = {
     },
     required: ['action'],
   },
+  examples: [
+    { action: 'ingest', path: '~/Documents/handbook.pdf' },
+    { action: 'search', query: 'expense reimbursement policy', top_k: 5 },
+    { action: 'list' },
+  ],
 
   async run(args = {}, context = {}) {
     const { action, path, query, top_k = 5 } = args;

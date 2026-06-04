@@ -61,7 +61,7 @@ function readFromStartFd(fd) {
 
 export const fileReadTool = {
   id: 'file_read',
-  name: 'FileRead',
+  name: 'File Read',
   description:
     'Read the contents of a file at the given path. Returns the file text. ' +
     'Paths may be absolute or relative to the workspace root. ' +

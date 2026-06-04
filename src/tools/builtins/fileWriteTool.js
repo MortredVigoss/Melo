@@ -145,7 +145,7 @@ function fetchParentInoIdent(parentDir) {
 
 export const fileWriteTool = {
   id: 'file_write',
-  name: 'FileWrite',
+  name: 'File Write',
   description:
     'Create a new file or overwrite an existing file with the given content. ' +
     'The parent directory must already exist and must be a regular directory (not a symlink) — ' +

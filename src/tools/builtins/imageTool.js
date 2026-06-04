@@ -170,7 +170,7 @@ export const imageTool = {
     'info: dimensions + format + EXIF. ' +
     'process: resize / rotate / grayscale / format convert (omit "output" to auto-save into chat workspace and return a displayable URL). ' +
     'generate: text-to-image. Default engine is local sd.cpp + SDXL (fully offline, 15-25s per image on Apple Silicon Metal) when the model file is present; falls back to MiniMax if `engine: "minimax"` is passed or no local model is installed. Returns a URL the UI renders inline.',
-  category: 'files',
+  category: 'filesystem',
   isConcurrencySafe: true,
   // No permission prompt: all four actions are non-destructive —
   //   • ocr / info      → read-only on the input file
@@ -258,6 +258,12 @@ export const imageTool = {
     },
     required: ['action'],
   },
+  examples: [
+    { action: 'ocr', path: '/path/to/screenshot.png' },
+    { action: 'info', path: '/path/to/photo.jpg' },
+    { action: 'process', path: '/path/to/in.png', operation: 'resize', width: 800 },
+    { action: 'generate', prompt: 'a cat sitting on a windowsill at sunset', width: 1024, height: 1024 },
+  ],
 
   async run(args, context = {}) {
     const { action, path: inputPath, output } = args || {};
