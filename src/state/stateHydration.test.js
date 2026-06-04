@@ -245,6 +245,62 @@ test('normalizeChat: malformed toolResults entries are filtered defensively', ()
   assert.equal(trs[2].evidenceTrail[0].tier, 'jina');
 });
 
+// ─── 架构 audit #2 round-2 (Codex C 闭环): errorCode round-trips ──────────
+//
+// toolResultProjection attaches a unified `errorCode` to failed search-tool
+// results.  Pre-fix the hydration whitelist dropped it, so the persisted
+// record / devtools overlay silently lost the code after reload.  These
+// pin the round-trip: valid non-empty string survives, malformed dropped.
+
+test('normalizeChat: preserves toolResults[].errorCode (unified SearchTask code) across hydration', () => {
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'search came back empty',
+        toolResults: [
+          {
+            toolCallId: 'call_abc',
+            toolName: 'web_search',
+            ok: false,
+            errorCode: 'NO_RESULTS',
+            evidenceTrail: [{ tier: 'serp', outcome: 'fail', reason: 'no-results' }],
+          },
+        ],
+      },
+    ],
+  });
+  const tr = c.messages[0].toolResults[0];
+  assert.equal(tr.errorCode, 'NO_RESULTS',
+    'errorCode must survive the hydration round-trip — pre-fix the whitelist silently dropped it');
+});
+
+test('normalizeChat: malformed / absent errorCode is omitted (shape-validated, not enum-checked)', () => {
+  const c = normalizeChat({
+    id: 'chat-1',
+    messages: [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'x',
+        toolResults: [
+          { toolCallId: 'a', toolName: 'web_search', ok: false, errorCode: 'NETWORK' },   // kept
+          { toolCallId: 'b', toolName: 'web_search', ok: false, errorCode: '' },           // dropped (empty)
+          { toolCallId: 'c', toolName: 'web_search', ok: false, errorCode: 42 },           // dropped (non-string)
+          { toolCallId: 'd', toolName: 'fetch_url', ok: true },                            // no errorCode at all
+        ],
+      },
+    ],
+  });
+  const trs = c.messages[0].toolResults;
+  assert.equal(trs[0].errorCode, 'NETWORK', 'valid non-empty string survives');
+  assert.ok(!('errorCode' in trs[1]), 'empty string dropped');
+  assert.ok(!('errorCode' in trs[2]), 'non-string dropped');
+  assert.ok(!('errorCode' in trs[3]), 'absent stays absent (no spurious key)');
+});
+
 test('normalizeChat: empty toolResults array → field stripped (no empty key)', () => {
   const c = normalizeChat({
     id: 'chat-1',

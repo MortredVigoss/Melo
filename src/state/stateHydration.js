@@ -91,11 +91,21 @@ const APP_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 // original behavior. CLAUDE.md §5: this is the "byte-for-byte" version.
 /**
  * G-1d slice 2 (2026-05-12): defensive normalize of `message.toolResults`
- * on state load.  Each entry is `{ toolCallId, toolName, ok, evidenceTrail? }`.
+ * on state load.  Each entry is
+ * `{ toolCallId, toolName, ok, evidenceTrail?, errorCode? }`.
  * Persistence path (sendChatMessage) builds these from chatExecutionRunner's
  * accumulator, but state.json round-trip can hit older files / corrupted
  * data — filter non-object entries and stamp safe defaults so renderers
  * never see undefined.
+ *
+ * 2026-05-23 架构 audit #2 round-2 (Codex C 闭环): `errorCode` (SearchTask
+ * unified taxonomy, attached by toolResultProjection) must survive the
+ * round-trip too — pre-fix this whitelist dropped it, so the persisted
+ * record / devtools overlay silently lost the unified code after reload.
+ * Validate SHAPE (non-empty string), NOT enum membership: stateHydration
+ * stays decoupled from searchTask's ERROR_CODES (layering), and old state
+ * carrying a code that later left the enum isn't dropped.  Malformed
+ * (non-string / empty) → omitted, same defensive treatment as evidenceTrail.
  */
 function normalizeToolResultsForHydration(rawList) {
   if (!Array.isArray(rawList)) return [];
@@ -112,6 +122,9 @@ function normalizeToolResultsForHydration(rawList) {
       // G-1f UI side defensiveness so a corrupt entry doesn't crash render.
       const cleanTrail = item.evidenceTrail.filter(t => t && typeof t === 'object');
       if (cleanTrail.length > 0) entry.evidenceTrail = cleanTrail;
+    }
+    if (typeof item.errorCode === 'string' && item.errorCode.trim()) {
+      entry.errorCode = item.errorCode;
     }
     out.push(entry);
   }
