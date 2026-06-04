@@ -21,6 +21,7 @@ const MAX_CACHE_ENTRY_BYTES = 2 * 1024 * 1024;
 // scheduler re-arm fix in this same audit), the write path drives it.
 const SWEEP_COOLDOWN_MS = 60 * 60 * 1000; // ≤ 1 sweep/hour per cache dir
 const _lastSweepAtMs = new Map(); // cacheDir → last sweep epoch ms
+let _pendingSweep = null; // in-flight background sweep promise (test drain hook)
 
 function mediaCacheDir() {
   return join(getMeloHome(), 'media-cache');
@@ -77,7 +78,10 @@ function maybeSweep(dir) {
   const last = _lastSweepAtMs.get(dir) || 0;
   if (Date.now() - last < SWEEP_COOLDOWN_MS) return;
   _lastSweepAtMs.set(dir, Date.now());
-  sweepExpiredEntries(dir).catch(() => {});
+  // Track the in-flight promise so tests can deterministically await it
+  // (_drainPendingSweepForTests) instead of guessing tick counts. Production
+  // never awaits this — fire-and-forget.
+  _pendingSweep = sweepExpiredEntries(dir).catch(() => {});
 }
 
 export async function getCachedExtraction(key) {
@@ -129,4 +133,10 @@ export async function _sweepExpiredNowForTests(dir = mediaCacheDir()) {
 }
 export function _resetSweepStateForTests() {
   _lastSweepAtMs.clear();
+  _pendingSweep = null;
+}
+// Await the background sweep launched by the most recent write (if any) so
+// tests can assert its effect deterministically — no fixed-tick guessing.
+export async function _drainPendingSweepForTests() {
+  await _pendingSweep;
 }

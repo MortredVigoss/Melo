@@ -35,6 +35,7 @@ const {
   setCachedExtraction,
   _sweepExpiredNowForTests,
   _resetSweepStateForTests,
+  _drainPendingSweepForTests,
 } = await import('./cache.js');
 
 // Mirror cacheKeyToPath so the test can locate a specific key's file WITHOUT
@@ -108,13 +109,9 @@ test('setCachedExtraction triggers the rate-limited sweep on the write path', as
 
   _resetSweepStateForTests(); // allow the next write to sweep again
   await setCachedExtraction('any-trigger', { text: 'y' }); // launches a background sweep
-
-  // The sweep is fire-and-forget (must not block the write path), so let the
-  // background walk settle before asserting. A few macrotask ticks is ample
-  // for the tiny test cache.
-  for (let i = 0; i < 5 && existsSync(stale); i++) {
-    await new Promise(r => setImmediate(r));
-  }
+  // Deterministically await the background sweep the write launched (no
+  // fixed-tick guessing — that could flake on a slow FS).
+  await _drainPendingSweepForTests();
   assert.equal(existsSync(stale), false,
     'a write (post-cooldown) must trigger a sweep that reclaims never-re-read expired entries');
 });
