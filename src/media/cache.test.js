@@ -107,10 +107,16 @@ test('setCachedExtraction triggers the rate-limited sweep on the write path', as
   await backdate(stale, 30);
 
   _resetSweepStateForTests(); // allow the next write to sweep again
-  await setCachedExtraction('any-trigger', { text: 'y' }); // its maybeSweep should reclaim the stale file
+  await setCachedExtraction('any-trigger', { text: 'y' }); // launches a background sweep
 
+  // The sweep is fire-and-forget (must not block the write path), so let the
+  // background walk settle before asserting. A few macrotask ticks is ample
+  // for the tiny test cache.
+  for (let i = 0; i < 5 && existsSync(stale); i++) {
+    await new Promise(r => setImmediate(r));
+  }
   assert.equal(existsSync(stale), false,
-    'a write (post-cooldown) must sweep never-re-read expired entries');
+    'a write (post-cooldown) must trigger a sweep that reclaims never-re-read expired entries');
 });
 
 test('unlink failure does not break the read path (best-effort prune)', async () => {

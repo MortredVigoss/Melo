@@ -65,14 +65,19 @@ async function sweepExpiredEntries(dir) {
   }
 }
 
-// Rate-limited entry point. Returns immediately (no walk) unless the cooldown
-// for this cache dir has elapsed. Keyed by dir (home-derived) so one home's
-// sweep can't suppress another's.
-async function maybeSweep(dir) {
+// Rate-limited, FIRE-AND-FORGET entry point. Returns synchronously. When the
+// cooldown for this cache dir has elapsed it stamps the timestamp (BEFORE
+// launching — the synchronous stamp doubles as a single-flight guard, since
+// JS is single-threaded a concurrent caller sees the new stamp and skips) and
+// kicks the shard walk in the background. The walk is NOT awaited so a large
+// cache can never block the media-processing write path (Codex B 闭环:
+// awaiting the full sweep risked a hot-path hitch on a big cache). Errors are
+// swallowed — cleanup must never surface to the caller.
+function maybeSweep(dir) {
   const last = _lastSweepAtMs.get(dir) || 0;
   if (Date.now() - last < SWEEP_COOLDOWN_MS) return;
   _lastSweepAtMs.set(dir, Date.now());
-  await sweepExpiredEntries(dir);
+  sweepExpiredEntries(dir).catch(() => {});
 }
 
 export async function getCachedExtraction(key) {
@@ -107,8 +112,9 @@ export async function setCachedExtraction(key, value) {
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, payload, 'utf8');
     // Rate-limited TTL sweep — the real growth bound (handles one-shot URLs
-    // that the on-read prune never sees). No-op unless the cooldown elapsed.
-    await maybeSweep(dir);
+    // that the on-read prune never sees). Fire-and-forget + cooldown-gated, so
+    // it never blocks this write even on a large cache.
+    maybeSweep(dir);
   } catch {
     // Cache misses should not block chat flow.
   }
