@@ -4,6 +4,28 @@
 > 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
 
 ---
+## 2026-06-04 — 全局逻辑 bug 审计：pollers 丢消息 + 3 个资源/泄漏修复
+
+意图：用户第三轮"审 bug"。2 个并行 agent（本会话改动回归风险 + 未触碰核心）
++ 本地核实。最严重：两个 poller (telegram/discord) 在 per-message 循环前就把
+offset 推到 batch-max，循环中途抛错 → 已推进的 offset 被持久化 → 下次 poll 把
+未处理消息当 ack 跳过（Telegram 服务端直接 purge）→ 静默永久丢消息。
+
+用户拍板：全做。poller 语义选 per-message 隔离 + 逐条推进 offset + 硬失败
+ack-and-log 不重试（poison-safe，避免无限重试卡死）。media cache 淘汰选写入
+路径限频 sweep（而非只 on-read 清理——一次性 URL 永不重读永不清）。
+
+实现承诺（diff 看不出）：
+- poller offset 推进移进 per-message finally，`continue` 也跑 finally → 故意跳过
+  的消息也正确 ack；外层 catch 只管 fetch/setup 级错误（未取的消息 offset 不动）。
+- cache sweep fire-and-forget + cooldown 时间戳 launch 前同步 stamp（天然单飞），
+  绝不阻塞媒体写入热路径；无常驻 timer（那会泄漏——见同审计 scheduler 修复）。
+- 流程失误自查：voice-leak 修复首轮评 C，我为读 review 重复跑 git pp 触发非确定
+  eval re-roll 把它推了；之后改为每次 git pp 只跑一次，C 即停。
+
+本地 `npm test` GREEN。Final commit range: `c24a0bb`..(本条)。
+
+---
 ## 2026-05-23 — 全局架构一致性审计：统一性 + 逻辑合理性（Tier 1/2/3）
 
 意图：bug audit 收尾后做一轮"统一性"审计（不是找 bug，是找 convention drift /
