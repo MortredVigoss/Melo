@@ -22,10 +22,53 @@
  * spread pattern used throughout the rest of the trail chain.
  */
 
+import { normalizeToSearchTaskResult } from '../search/searchTask.js';
+
+// 2026-05-23 架构 audit #2 闭环: the SearchTask adapter (8-code unified
+// error taxonomy in src/services/search/searchTask.js) had zero production
+// callers — 701 lines maintained but never consumed.  This wires its FIRST
+// real consumer: derive the unified errorCode for failed search-tool results
+// and attach it to the persisted toolResult entry, riding the same rails
+// `evidenceTrail` already uses (persist + SSE debug channel).  Purely
+// additive — does NOT alter model-facing prose (formatToolResult), so there
+// is no model-behavior change; the value is precise failure classification
+// in the persisted record + devtools overlay (legacy `result.error` conflates
+// e.g. SEARCH_FAILED across NO_RESULTS/TIMEOUT/NETWORK; the adapter reads the
+// trail to disambiguate).
+//
+// Only the two directly-registered search tools map to adapter `source`s.
+// (social-link is no longer a registered tool — its failures surface through
+// fetch_url's nested trail, covered by 'url-fetch'.)
+const SEARCH_TOOL_SOURCE = Object.freeze({
+  fetch_url: 'url-fetch',
+  web_search: 'web-search',
+});
+
+/**
+ * Derive the unified SearchTask error code for a failed search-tool result,
+ * or null when not applicable (success, non-search tool, or adapter throw).
+ * Best-effort enrichment — never throws.
+ *
+ * @param {{ name?: string }} call
+ * @param {{ ok?: boolean, error?: string, evidenceTrail?: Array }} result
+ * @returns {string|null}
+ */
+export function deriveUnifiedErrorCode(call, result) {
+  if (result?.ok !== false) return null;
+  const source = SEARCH_TOOL_SOURCE[call?.name];
+  if (!source) return null;
+  try {
+    const task = normalizeToSearchTaskResult(result, source, {});
+    return task?.error || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @param {{ id?: string, name?: string }} call
- * @param {{ ok?: boolean, evidenceTrail?: Array }} result
- * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array }}
+ * @param {{ ok?: boolean, error?: string, evidenceTrail?: Array }} result
+ * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array, errorCode?: string }}
  */
 export function projectToolResultForPersist(call, result) {
   const entry = {
@@ -35,6 +78,10 @@ export function projectToolResultForPersist(call, result) {
   };
   if (Array.isArray(result?.evidenceTrail) && result.evidenceTrail.length > 0) {
     entry.evidenceTrail = result.evidenceTrail;
+  }
+  const errorCode = deriveUnifiedErrorCode(call, result);
+  if (errorCode) {
+    entry.errorCode = errorCode;
   }
   return entry;
 }

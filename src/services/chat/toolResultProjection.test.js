@@ -11,7 +11,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectToolResultForPersist } from './toolResultProjection.js';
+import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
 
 // ─── happy path ────────────────────────────────────────────────────────────
 
@@ -122,4 +122,83 @@ test('null result → ok: true (default), no trail', () => {
   const p = projectToolResultForPersist({ id: 'a', name: 't' }, null);
   assert.equal(p.ok, true);
   assert.ok(!('evidenceTrail' in p));
+});
+
+// ─── 架构 audit #2 闭环: unified errorCode enrichment (SearchTask adapter) ──
+//
+// These assert the REAL invariant (not just "field exists"): a failed
+// search tool with a specific trail reason must derive the precise unified
+// code via the adapter — i.e. the adapter is actually wired and reading the
+// trail, resolving the "701 lines, 0 callers" finding.
+
+test('web_search fail with serp.fail(no-results) trail → errorCode NO_RESULTS (adapter reads trail, not conflated SEARCH_FAILED)', () => {
+  const result = {
+    ok: false,
+    error: 'SEARCH_FAILED', // the conflated legacy code the model used to see
+    output: 'no results',
+    evidenceTrail: [
+      { tier: 'cache', outcome: 'fail', latencyMs: 5, reason: 'no-hit' },
+      { tier: 'serp', outcome: 'fail', latencyMs: 4000, reason: 'no-results' },
+    ],
+    meta: { query: 'asdfqwerzxcv' },
+  };
+  const p = projectToolResultForPersist({ id: 'c1', name: 'web_search' }, result);
+  assert.equal(p.errorCode, 'NO_RESULTS',
+    'adapter must disambiguate SEARCH_FAILED → NO_RESULTS from the serp.fail(no-results) trail');
+  // The legacy `error` on the raw result is untouched (no model-prose change).
+  assert.equal(result.error, 'SEARCH_FAILED');
+});
+
+test('web_search fail with content-fetch network failure → errorCode NETWORK (distinct from no-results)', () => {
+  const result = {
+    ok: false,
+    error: 'SEARCH_FAILED',
+    evidenceTrail: [
+      { tier: 'serp', outcome: 'fail', latencyMs: 3000, reason: 'network' },
+    ],
+    meta: {},
+  };
+  const p = projectToolResultForPersist({ id: 'c2', name: 'web_search' }, result);
+  assert.equal(p.errorCode, 'NETWORK',
+    'same legacy SEARCH_FAILED must derive NETWORK when the trail reason is network');
+});
+
+test('fetch_url fail (url-fetch source) derives a unified errorCode', () => {
+  const result = {
+    ok: false,
+    error: 'FETCH_FAILED',
+    evidenceTrail: [
+      { tier: 'jina', outcome: 'fail', latencyMs: 5000, reason: 'timeout' },
+      { tier: 'direct', outcome: 'fail', latencyMs: 3000, reason: 'network' },
+    ],
+    meta: {},
+  };
+  const p = projectToolResultForPersist({ id: 'c3', name: 'fetch_url' }, result);
+  assert.ok(typeof p.errorCode === 'string' && p.errorCode.length > 0,
+    'fetch_url failures must carry a derived unified errorCode');
+});
+
+test('successful search tool → NO errorCode (only failures enriched)', () => {
+  const p = projectToolResultForPersist(
+    { id: 'c4', name: 'web_search' },
+    { ok: true, output: 'results', evidenceTrail: [{ tier: 'serp', outcome: 'ok' }] },
+  );
+  assert.ok(!('errorCode' in p), 'success must not carry an errorCode');
+});
+
+test('non-search tool failure → NO errorCode (adapter only maps the 2 search tools)', () => {
+  const p = projectToolResultForPersist(
+    { id: 'c5', name: 'bash' },
+    { ok: false, error: 'EXIT_1', output: 'command failed' },
+  );
+  assert.ok(!('errorCode' in p),
+    'bash / non-search tools have no adapter source → no errorCode enrichment');
+});
+
+test('deriveUnifiedErrorCode: returns null for success, non-search, and is exception-safe', () => {
+  assert.equal(deriveUnifiedErrorCode({ name: 'web_search' }, { ok: true }), null);
+  assert.equal(deriveUnifiedErrorCode({ name: 'bash' }, { ok: false }), null);
+  // Garbage result must not throw — best-effort enrichment.
+  assert.equal(deriveUnifiedErrorCode({ name: 'web_search' }, null), null);
+  assert.doesNotThrow(() => deriveUnifiedErrorCode({ name: 'fetch_url' }, { ok: false }));
 });

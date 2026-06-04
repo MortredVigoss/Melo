@@ -95,7 +95,7 @@ import {
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
 import { parseModelResponse, formatToolResultsMessage } from '../../tools/parser.js';
-import { projectToolResultForPersist } from './toolResultProjection.js';
+import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
@@ -564,6 +564,14 @@ export async function runChatAgentExecutionGraph({
                 };
                 if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
                   item.evidenceTrail = result.evidenceTrail;
+                }
+                // 2026-05-23 架构 audit #2 闭环: forward the unified
+                // errorCode (SearchTask taxonomy) on the same debug channel
+                // as evidenceTrail, so the live devtools overlay sees the
+                // precise failure classification. Additive; null when N/A.
+                const errorCode = deriveUnifiedErrorCode(call, result);
+                if (errorCode) {
+                  item.errorCode = errorCode;
                 }
                 return item;
               }),
