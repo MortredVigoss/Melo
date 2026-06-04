@@ -91,6 +91,12 @@ export async function triggerDreamingNow({ full = false } = {}) {
  */
 export function startIdleWatch({ emitter, idleMs = IDLE_MS } = {}) {
   if (!emitter?.on) return () => {};
+  // 2026-06-04 audit闭环: tear down any prior watch before installing a new
+  // one. `_idleUnsub` is a module-global; re-arming (powerMonitor re-init,
+  // runtime restart without stop()) used to overwrite it without clearing
+  // the previous setInterval + emitter listeners → orphaned interval firing
+  // triggerDreamingNow forever + listener accumulation.
+  try { _idleUnsub?.(); } catch {}
   let lastActivity = Date.now();
   const onActivity = () => { lastActivity = Date.now(); };
   const onCheck = () => {

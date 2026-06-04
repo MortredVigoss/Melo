@@ -815,6 +815,13 @@ async function main() {
     // finally). A regression that reverts to pre-loop offset set fails these.
     results.push(await runStep('Poller offset advancement (test:polling-offset)', () => runCommand('npm', ['run', 'test:polling-offset'])));
 
+    // 2026-06-04 audit闭环: dreaming scheduler re-arm leak + media cache TTL
+    // eviction. Both are behavioral (fake emitter / fs round-trip) — the
+    // scheduler test proves a re-arm doesn't accumulate listeners, the cache
+    // test proves an expired entry is unlinked (bounds disk growth).
+    results.push(await runStep('Dreaming scheduler re-arm (test:dreaming-scheduler)', () => runCommand('npm', ['run', 'test:dreaming-scheduler'])));
+    results.push(await runStep('Media cache TTL eviction (test:media-cache)', () => runCommand('npm', ['run', 'test:media-cache'])));
+
     // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
     // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
     // as the regression guard for the mid-utterance TTS truncation bug
