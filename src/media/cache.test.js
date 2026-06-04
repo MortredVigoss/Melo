@@ -104,6 +104,11 @@ test('setCachedExtraction triggers the rate-limited sweep on the write path', as
   // write (after the cooldown is reset), without ever reading the stale key.
   _resetSweepStateForTests();
   await setCachedExtraction('stale-oneshot', { text: 'x' }); // first write also sweeps (cooldown empty)
+  // Drain the first write's (harmless — file is fresh) background sweep BEFORE
+  // backdating, so it can't race-delete the stale file and make this test pass
+  // for the wrong reason. After this, only the SECOND write's sweep can
+  // reclaim the backdated file — which is exactly the wiring under test.
+  await _drainPendingSweepForTests();
   const stale = keyToPath(tmpHome, 'stale-oneshot');
   await backdate(stale, 30);
 
