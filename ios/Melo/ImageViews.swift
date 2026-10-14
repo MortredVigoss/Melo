@@ -27,6 +27,7 @@ struct ImageComposerBar: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var options = false
+    @State private var imageConnections: [LLMConnection] = []
     private var loading: Bool { importID != nil }
     @State private var gallery = false
     @State private var loadTask: Task<Void, Never>?
@@ -52,13 +53,16 @@ struct ImageComposerBar: View {
                 Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.sendingID != nil)
                 Menu {
                     ForEach(ImageAction.allCases,id:\.self) { action in Button(action.title) { plan.action=action } }
-                    Divider();Button("本机图片库") { gallery=true };Button("图片模型与尺寸") { options=true }
+                    Divider();Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
+                        do { imageConnections = try LLMConnection.saved().filter { !$0.key.isEmpty && $0.apiProtocol != "anthropic" }; options=true }
+                        catch { store.error="模型连接无法读取，请先在系统设置中检查连接。" }
+                    }
                 } label: { Label(plan.action == .auto ? "图片模式" : plan.action.title,systemImage:"wand.and.stars").font(.caption) }.disabled(loading || store.sendingID != nil)
                 Spacer(minLength:0)
                 if loading { ProgressView().controlSize(.small) }
                 else if plan.references.isEmpty && plan.action == .auto { Button("生图") { plan.action = .generate }.font(.caption).disabled(store.sendingID != nil) }
             }.foregroundStyle(meloGold)
-            if plan.action == .generate || plan.action == .edit { Text("\(plan.action.title) · \(plan.model) · 图片保存在此 iPhone").font(.system(size:10)).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }
+            if plan.action == .generate || plan.action == .edit { Text("\(plan.action.title) · 图片保存在此 iPhone").font(.system(size:10)).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }
         }
         .onChange(of:photos) { _,items in
             guard !items.isEmpty else { return }; let target=chatID; let token=UUID()
@@ -92,13 +96,25 @@ struct ImageComposerBar: View {
         .sheet(isPresented:$options) {
             NavigationStack {
                 Form {
+                    Section("图片连接") {
+                        Picker("生成与编辑使用", selection: Binding(get: { plan.connectionID ?? "" }, set: { plan.connectionID = $0 })) {
+                            Text("沿用本对话连接").tag("")
+                            Text("Codex（ChatGPT 账号）").tag("chatgpt")
+                            ForEach(imageConnections) { connection in Text(connection.name).tag(connection.id) }
+                            if let id = plan.connectionID, !id.isEmpty, id != "chatgpt", !imageConnections.contains(where: { $0.id == id }) { Text("原连接不可用，请重新选择").tag(id) }
+                        }
+                        Text("Codex 登录可用于聊天、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的聊天模型。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        NavigationLink("Codex 登录与账号") { ScrollView { CodexLoginCard().padding(20) }.navigationTitle("Codex 登录") }
+                    }
                     Section("图片任务") {
                         Picker("处理方式",selection:$plan.action) { ForEach(ImageAction.allCases,id:\.self){Text($0.title).tag($0)} }
-                        TextField("图片模型",text:$plan.model).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField("API 图片模型",text:$plan.model).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Text("Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。").font(.footnote).foregroundStyle(.secondary)
                         Picker("尺寸",selection:$plan.size) { Text("自动").tag("auto");Text("正方形").tag("1024x1024");Text("竖图").tag("1024x1536");Text("横图").tag("1536x1024") }
                         Picker("质量",selection:$plan.quality) { Text("自动").tag("auto");Text("低").tag("low");Text("中").tag("medium");Text("高").tag("high") }
                     }
-                    Section { Text("沿用本对话所选连接。ChatGPT 通过已登录账号调用图片工具；兼容 API 使用该连接的图像接口，可能单独计费。模型是否可用由服务决定，失败时不会自动换通道。一次最多四张参考图。") }
+                    Section { Text("Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。") }
                 }.navigationTitle("图片设置").toolbar { ToolbarItem(placement:.confirmationAction){Button("完成"){options=false}} }
             }.preferredColorScheme(.dark)
         }

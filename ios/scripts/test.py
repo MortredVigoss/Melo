@@ -27,6 +27,7 @@ suites['LifecycleJournalTests']=['ios/Melo/Models.swift','ios/Melo/LifecycleJour
 suites['VoiceInputTests']=['ios/Melo/VoiceInput.swift']
 suites['ReplyBackgroundTests']=['ios/Melo/ReplyBackgroundLifetime.swift']
 suites['ImageWorkflowTests']=shared
+suites['CodexOAuthTests']=shared+['ios/Melo/CodexOAuth.swift','ios/Melo/ChatGPTAccount.swift','ios/Melo/Keychain.swift']
 suites['ConversationHistoryTests']=['ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift']
 toolchain = [platform.machine()]
 swift_started = time.monotonic()

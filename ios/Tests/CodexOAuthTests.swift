@@ -1,0 +1,189 @@
+import Foundation
+import Security
+import CryptoKit
+
+final class CodexFixture: URLProtocol, @unchecked Sendable {
+    static var requests: [URLRequest] = []
+    static var handler: (URLRequest) throws -> (Int,Data) = { _ in fatalError("unexpected request") }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            Self.requests.append(request)
+            let (status,data)=try Self.handler(request)
+            client?.urlProtocol(self,didReceive:HTTPURLResponse(url:request.url!,statusCode:status,httpVersion:nil,headerFields:nil)!,cacheStoragePolicy:.notAllowed)
+            client?.urlProtocol(self,didLoad:data); client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self,didFailWithError:error) }
+    }
+    override func stopLoading() {}
+    static func body(_ request: URLRequest) -> Data {
+        if let body=request.httpBody { return body }
+        guard let stream=request.httpBodyStream else { return Data() }; stream.open();defer{stream.close()}
+        var data=Data();var buffer=[UInt8](repeating:0,count:4096)
+        while stream.hasBytesAvailable { let n=stream.read(&buffer,maxLength:buffer.count);if n<=0{break};data.append(contentsOf:buffer.prefix(n)) };return data
+    }
+}
+@main struct CodexOAuthTests {
+    static func reject(_ body: () throws -> Void) { do {try body();fatalError("invalid accepted")} catch {} }
+    static func json(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject:value) }
+    @MainActor static func main() async throws {
+        let config=URLSessionConfiguration.ephemeral;config.protocolClasses=[CodexFixture.self]
+        let session=URLSession(configuration:config);defer{session.invalidateAndCancel()}
+        let now=Date(),verifier=String(repeating:"a",count:43)
+        let challenge=ChatGPTProtocol.base64URL(Data(SHA256.hash(data:Data(verifier.utf8))))
+        let success:[String:String]=["authorization_code":"one-use","code_verifier":verifier,"code_challenge":challenge]
+        let values=try CodexOAuth.exchangeValues(json(success))
+        assert(values["redirect_uri"]=="https://auth.openai.com/deviceauth/callback" && values["client_id"]==CodexOAuth.clientID)
+        var bad=success;bad["code_challenge"]="wrong";reject{_=try CodexOAuth.exchangeValues(json(bad))}
+        CodexFixture.handler={ request in
+            assert(request.url!.absoluteString=="https://auth.openai.com/api/accounts/deviceauth/usercode")
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:String]
+            assert(body==["client_id":CodexOAuth.clientID])
+            return (200,try json(["device_auth_id":"device","user_code":"AAAA-BBBB","interval":"0"]))
+        }
+        let code=try await CodexOAuth.begin(session:session,now:now)
+        assert(code.interval==1 && code.expiresAt==now.addingTimeInterval(900))
+        var polls=0,sleeps=0
+        CodexFixture.handler={ request in
+            if request.url!.path.hasSuffix("deviceauth/token") {
+                polls+=1
+                let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:String]
+                assert(body==["device_auth_id":"device","user_code":"AAAA-BBBB"])
+                return polls==1 ? (403,Data()) : polls==2 ? (404,Data()) : (200,try json(success))
+            }
+            assert(request.url!.absoluteString=="https://auth.openai.com/oauth/token")
+            assert(request.value(forHTTPHeaderField:"Content-Type")=="application/x-www-form-urlencoded")
+            assert(String(decoding:CodexFixture.body(request),as:UTF8.self).contains("grant_type=authorization_code"))
+            return (200,try json(["access_token":"access","refresh_token":"refresh","id_token":"identity"]))
+        }
+        let token=try await CodexOAuth.poll(code,session:session,now:{now},sleep:{_ in sleeps+=1})
+        assert(token.access_token=="access" && polls==3 && sleeps==2)
+        let before=CodexFixture.requests.count
+        do { _=try await CodexOAuth.poll(code,session:session,now:{code.expiresAt});fatalError("expiry admitted") } catch {}
+        assert(CodexFixture.requests.count==before)
+        CodexFixture.handler={ _ in (403,Data()) }
+        do { _=try await CodexOAuth.poll(code,session:session,now:{now},sleep:{_ in throw CancellationError()});fatalError("cancel ignored") } catch is CancellationError {}
+        assert(CodexFixture.requests.count==before+1)
+        CodexFixture.handler={_ in (400,Data())}
+        do { _=try await CodexOAuth.poll(code,session:session);fatalError("400 admitted") } catch {}
+        assert(CodexFixture.requests.count==before+2)
+        let privateKey = SecKeyCreateRandomKey([kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: 2048] as CFDictionary, nil)!
+        let publicKey = SecKeyCopyPublicKey(privateKey)!
+        let der = SecKeyCopyExternalRepresentation(publicKey, nil)! as Data
+        var pos = 0
+        func read() -> Data {
+            pos += 1
+            var count = Int(der[pos]); pos += 1
+            if count & 128 != 0 { let bytes = count & 127; count = 0; for _ in 0..<bytes { count = count * 256 + Int(der[pos]); pos += 1 } }
+            let result = der.subdata(in: pos..<pos+count); pos += count; return result
+        }
+        let sequence = read()
+        var at = 0
+        func integer() -> Data {
+            at += 1; var size = Int(sequence[at]); at += 1
+            if size & 128 != 0 { let n = size & 127; size = 0; for _ in 0..<n { size = size * 256 + Int(sequence[at]); at += 1 } }
+            var result = sequence.subdata(in: at..<at+size); at += size
+            while result.first == 0 { result.removeFirst() }; return result
+        }
+        let n = integer(), e = integer()
+        let jwks = try JSONSerialization.data(withJSONObject: ["keys": [["kid": "test", "kty": "RSA", "alg": "RS256", "n": ChatGPTProtocol.base64URL(n), "e": ChatGPTProtocol.base64URL(e)]]])
+        var claims: [String: Any] = ["iss": ChatGPTProtocol.issuer, "aud": CodexOAuth.clientID, "sub": "subject", "email": "test@example.invalid", "exp": now.timeIntervalSince1970 + 120, "nonce": "nonce"]
+        func jwt(_ payload: [String: Any]) throws -> String {
+            let header = ChatGPTProtocol.base64URL(try JSONSerialization.data(withJSONObject: ["kid": "test", "alg": "RS256"]))
+            let body = ChatGPTProtocol.base64URL(try JSONSerialization.data(withJSONObject: payload))
+            let input = header + "." + body
+            let signature = SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(input.utf8) as CFData, nil)! as Data
+            return input + "." + ChatGPTProtocol.base64URL(signature)
+        }
+        claims["https://api.openai.com/auth"]=["chatgpt_account_id":"account-id"]
+        let id=try jwt(claims)
+        let grant=CodexToken(access_token:"opaque-access",refresh_token:"refresh",id_token:id,expires_in:3600,token_type:"Bearer")
+        let account=try CodexOAuth.validatedRegistration(grant,jwks:jwks,now:now)
+        assert(account.accountID=="account-id" && account.subject=="subject")
+        reject{_=try CodexOAuth.validatedRegistration(grant,jwks:Data("{}".utf8),now:now)}
+        var other=account;other.subject="someone-else"
+        reject{_=try CodexOAuth.validatedRegistration(grant,jwks:jwks,previous:other,now:now)}
+        var request=CodexOAuth.request(path:"/responses",account:account,method:"POST")
+        assert(request.url!.absoluteString=="https://chatgpt.com/backend-api/codex/responses")
+        assert(request.value(forHTTPHeaderField:"Authorization")=="Bearer opaque-access" && request.value(forHTTPHeaderField:"ChatGPT-Account-Id")=="account-id")
+        CodexFixture.handler={request in
+            assert(request.url!.path=="/oauth/token")
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:String]
+            assert(body==["client_id":CodexOAuth.clientID,"grant_type":"refresh_token","refresh_token":"refresh"])
+            return (200,try json(["access_token":"new-access","refresh_token":"rotated","expires_in":7200]))
+        }
+        let refreshed=try await CodexOAuth.refresh(account,session:session)
+        let updated=try CodexOAuth.validatedRegistration(refreshed,jwks:Data(),previous:account,now:now)
+        assert(updated.accountID==account.accountID && updated.refreshToken=="rotated" && updated.expiresAt==now.addingTimeInterval(7200))
+        reject{_=try CodexOAuth.validatedRegistration(refreshed,jwks:Data(),now:now)}
+        let input=ImageInput(data:Data([1,2,3]),mimeType:"image/png",role:"reference")
+        let task=ImageTaskPlan(action:.edit,references:[.init(id:"original")])
+        let body=CodexRequest.imageBody(messages:[ChatMessage(role:"user",content:"换成黑色背景")],inputs:[input],task:task,model:"gpt-6.1-sol",instructions:"")
+        assert(body["model"] as? String=="gpt-6.1-sol")
+        assert((body["tools"] as? [[String:String]])==[["type":"image_generation"]] && body["tool_choice"] as? String=="auto")
+        let rows=body["input"] as! [[String:Any]], content=rows[0]["content"] as! [[String:Any]]
+        assert(content[1]["image_url"] as? String==input.dataURL)
+        request.httpBody=try json(body)
+        let png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="
+        let imageEvent:[String:Any]=["type":"response.output_item.done","item":["type":"image_generation_call","status":"completed","result":png]]
+        var stream=ChatGPTStream(acceptImageCompletion:true)
+        try stream.accept(String(decoding:json(["type":"response.created","response":["tools":[["type":"image_generation","model":"gpt-image-2-codex"]]]]),as:UTF8.self))
+        try stream.accept(String(decoding:json(imageEvent),as:UTF8.self))
+        assert(stream.completed && stream.images.count==1 && stream.images[0].reportedModel=="gpt-image-2-codex")
+        var regular=ChatGPTStream();try regular.accept(String(decoding:json(imageEvent),as:UTF8.self));assert(!regular.completed)
+        var partial=ChatGPTStream(acceptImageCompletion:true)
+        try partial.accept(#"{"type":"response.image_generation_call.partial_image","partial_image_b64":"a"}"#)
+        assert(!partial.completed && partial.images.isEmpty)
+        let defaults=UserDefaults(suiteName:"Melo-Codex-QA-"+UUID().uuidString)!
+        var persisted="", writes=0
+        CodexFixture.handler={ request in
+            switch request.url!.path {
+            case "/api/accounts/deviceauth/usercode": return (200,try json(["device_auth_id":"device","user_code":"AAAA-BBBB","interval":"1"]))
+            case "/api/accounts/deviceauth/token": return (200,try json(success))
+            case "/oauth/token": return (200,try json(["access_token":"access","refresh_token":"refresh","id_token":id,"expires_in":3600]))
+            case "/.well-known/jwks.json": return (200,jwks)
+            case "/backend-api/codex/models":
+                assert(request.url!.query=="client_version=0.180.0")
+                return (200,try json(["models":[["slug":"gpt-6.1-sol","display_name":"Sol 6.1","visibility":"list"]]]))
+            default: fatalError("Unexpected auth endpoint")
+            }
+        }
+        let login=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{""},persistCredentials:{persisted=$0;writes+=1},prepareStorage:{})
+        await login.signIn()
+        for _ in 0..<100 { if !login.models.isEmpty { break };try await Task.sleep(for:.milliseconds(20)) }
+        assert(login.signedIn && !login.busy && login.deviceCode==nil && login.models.first?.slug=="gpt-6.1-sol" && writes==1)
+        let restored=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{persisted},persistCredentials:{_ in},prepareStorage:{})
+        assert(restored.active?.accountID=="account-id")
+        var expired=account;expired.expiresAt = .distantPast
+        defaults.set(expired.id,forKey:"codexActiveID")
+        let encoded=String(decoding:try JSONEncoder().encode([expired]),as:UTF8.self)
+        var refreshCalls=0, refreshWrites=0
+        CodexFixture.handler={request in
+            if request.url!.path=="/oauth/token" {
+                refreshCalls+=1
+                return (200,try json(["access_token":"new-access","refresh_token":"rotated","expires_in":3600]))
+            }
+            assert(request.url!.path=="/backend-api/codex/models")
+            return (200,try json(["models":[["slug":"gpt-6.1-sol","display_name":"Sol 6.1","visibility":"list"]]]))
+        }
+        let refreshing=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{encoded},persistCredentials:{_ in refreshWrites+=1},prepareStorage:{})
+        async let first: Void=refreshing.loadModels()
+        async let second: Void=refreshing.loadModels()
+        _=await(first,second)
+        assert(refreshCalls==1 && refreshWrites==1 && refreshing.active?.refreshToken=="rotated")
+        let imageSSE="data: " + String(decoding:try json(imageEvent),as:UTF8.self) + "\n\n"
+        var imageRequests=0
+        CodexFixture.handler={ request in
+            imageRequests+=1;assert(request.url!.path=="/backend-api/codex/responses")
+            let requestBody=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert(requestBody["model"] as? String=="gpt-6.1-sol" && requestBody["store"] as? Bool==false)
+            return (200,Data(imageSSE.utf8))
+        }
+        let result=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"换成黑色背景")],model:"gpt-6.1-sol",instructions:"",imageInputs:[input],imageTask:task)
+        assert(result.images.count==1 && imageRequests==1 && refreshing.imageVerified)
+        CodexFixture.handler={_ in imageRequests+=1;return (400,try json(["error":["code":"unsupported_tool"]]))}
+        do { _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"改背景")],model:"gpt-6.1-sol",instructions:"",imageInputs:[input],imageTask:task);fatalError("400 admitted") } catch { assert(error.localizedDescription.contains("unsupported_tool")) }
+        assert(imageRequests==2) // No automatic regeneration or API fallback.
+        print("Codex OAuth tests passed: pending, expiry, cancellation, PKCE, signed identity, account binding, refresh, request headers and complete image delivery; no live login")
+    }
+}

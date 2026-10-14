@@ -38,23 +38,29 @@ struct ImageTaskPlan: Codable, Equatable {
     var model = "gpt-image-2"
     var size = "auto"
     var quality = "auto"
+    // Local connection ID only; credentials stay in Keychain. Missing in older drafts.
+    var connectionID: String?
     var makesImage: Bool { action == .generate || action == .edit }
     func resolved(prompt: String, previousImages: [String]) throws -> Self {
         var result = self
         // Quoted instructions and discussion do not authorize an image operation.
         let masked = prompt.replacingOccurrences(of: #"(?s)```.*?```|“[^”]*”|「[^」]*」|\"[^\"]*\""#, with: "", options: .regularExpression)
         let declined = masked.components(separatedBy: CharacterSet(charactersIn: "，。；！？,;!?\n")).contains { clause in
-            let pattern = #"(?:不要|不用|不必|无需|禁止|别)\s*(?:实际|真的|真正|立即|现在)?\s*(?:生成|绘制|画|修改|编辑)(.*)$|\b(?:do not|don't|never)\s+(?:actually\s+)?(?:generate|draw|edit|modify)\b(.*)$"#
+            let pattern = #"(?:不要|不用|不必|无需|禁止|别)\s*(?:实际|真的|真正|立即|现在)?\s*(?:生成|绘制|画|修改|编辑|改|换)(.*)$|\b(?:do not|don't|never)\s+(?:actually\s+)?(?:generate|draw|edit|modify|change|replace|retouch)\b(.*)$"#
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]), let match = regex.firstMatch(in: clause, range: NSRange(clause.startIndex..., in: clause)) else { return false }
             let objects = (1..<match.numberOfRanges).compactMap { Range(match.range(at: $0), in: clause).map { String(clause[$0]).trimmingCharacters(in: .whitespacesAndNewlines) } }
             let object = objects.first ?? ""
             return object.isEmpty || object.range(of: #"^(?:了|出来|任何图片|(?:这|那|原)?(?:张)?(?:图片|图像|照片|海报|插画|图))(?:了|出来)?$|^(?:(?:an?|any|the|this|that)\s+)?(?:images?|pictures?|photos?|posters?)(?:\s+at all)?\.?$"#, options: [.regularExpression,.caseInsensitive]) != nil
         }
-        let discussion = masked.range(of: #"(?:生成|绘制|编辑|生图)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|generate|edit|draw)"#, options: [.regularExpression,.caseInsensitive]) != nil
+        let discussion = masked.range(of: #"(?:生成|绘制|编辑|生图|修改|换背景|改背景)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|修改|改|换|generate|edit|draw|change|replace|retouch)"#, options: [.regularExpression,.caseInsensitive]) != nil
         let negated = declined || discussion
         if negated { result.action = .analyze }
         else if action == .auto {
-            let edits = masked.range(of: #"(?:修改|编辑|改成|改为|换成|换个|去掉|移除|抠图|改色|变成)|\b(?:edit|modify|remove|replace|change)\b"#, options: [.regularExpression,.caseInsensitive]) != nil
+            // A local constraint ("不要改人物，只换背景") is not an edit request itself.
+            let affirmative = masked.components(separatedBy: CharacterSet(charactersIn: "，。；！？,;!?\n")).filter {
+                $0.range(of: #"(?:不要|不用|不必|无需|禁止|别)|\b(?:do not|don't|never)\b"#, options: [.regularExpression,.caseInsensitive]) == nil
+            }.joined(separator: "，")
+            let edits = affirmative.range(of: #"(?:修改|编辑|改成|改为|改一下|再改|改色|改白|改黑|改蓝|换成|换个|换一下|换背景|换掉|去掉|移除|抠图|变成|刷成|加上|加个|调亮|调暗|调浅|调深|压低.{0,8}曝光)|\b(?:edit|modify|remove|replace|change|retouch|recolor|crop|brighten|darken)\b|\bmake\s+(?:the|this)\s+(?:background|wall|image|photo)\b"#, options: [.regularExpression,.caseInsensitive]) != nil
             let generates = masked.range(of: #"^(?:请|帮我|给我|麻烦|请帮我)*\s*(?:生成|画|绘制|制作|做)[^。！？\n]{0,100}(?:图片|图像|插画|海报|照片|张图|幅图)|^(?:please\s+)?(?:generate|draw|create)\s+(?:an?\s+|\d+\s+)?(?:image|picture|illustration|photo)"#, options: [.regularExpression,.caseInsensitive]) != nil
             result.action = edits && (!references.isEmpty || !previousImages.isEmpty) ? .edit : generates ? .generate : .analyze
         }
@@ -69,6 +75,10 @@ struct ImageTaskPlan: Codable, Equatable {
         guard !result.makesImage || prompt.utf16.count <= 24000 else { throw MeloError.message("图片要求超过 24000 字符，请拆成几次修改；内容没有被截断。") }
         guard !result.makesImage || (["auto","1024x1024","1024x1536","1536x1024"].contains(size) && ["auto","low","medium","high"].contains(quality) && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { throw MeloError.message("图片尺寸、质量或模型设置无效。") }
         return result
+    }
+    func validateRoute(useChatGPT: Bool, apiProtocol: String) throws {
+        guard makesImage, !useChatGPT else { return }
+        if apiProtocol == "anthropic" { throw MeloError.message("此连接支持看图分析，但没有图片生成接口。请在图片设置中选择 Codex 或支持 Images API 的连接。") }
     }
     func instructions(_ userInstructions: String) -> String {
         guard makesImage else { return userInstructions }

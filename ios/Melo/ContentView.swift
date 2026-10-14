@@ -345,7 +345,7 @@ struct ChatView: View {
                     if store.sendingID == chatID { HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction.map { $0.title + "…" } ?? account.replyStatus).font(.subheadline).foregroundStyle(.secondary); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel() } }.padding() }
                     else if chat?.messages.last?.role == "user" {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
-                        Button { store.send("", chatID: chatID, retry: true) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
+                        Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding(16)
@@ -381,7 +381,7 @@ struct ChatView: View {
                             .frame(width: 44, height: 44).background(.white.opacity(0.05), in: Circle())
                     }.disabled(store.sendingID != nil || voiceInput.state.status == "stopping")
                      .accessibilityLabel(voiceInput.state.active ? "停止语音输入" : "语音输入，转为文字后确认发送")
-                    Button { let text = draft; store.send(text, chatID: chatID, imageTask: imagePlan); if store.sendingID == chatID { composerFocused = false; draft = ""; imagePlan = ImageTaskPlan(model: imagePlan.model, size: imagePlan.size, quality: imagePlan.quality) } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 44, height: 44).background(meloAccent, in: Circle()).foregroundStyle(.black) }.disabled(chat == nil || imageImportID != nil || voiceInput.state.active || store.sendingID != nil || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (imagePlan.references.isEmpty || imagePlan.makesImage)) || !store.storageReady).accessibilityLabel("发送消息")
+                    Button { let text = draft; store.send(text, chatID: chatID, imageTask: imagePlan); if store.sendingID == chatID { composerFocused = false; draft = ""; imagePlan = ImageTaskPlan(model: imagePlan.model, size: imagePlan.size, quality: imagePlan.quality, connectionID: imagePlan.connectionID) } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 44, height: 44).background(meloAccent, in: Circle()).foregroundStyle(.black) }.disabled(chat == nil || imageImportID != nil || voiceInput.state.active || store.sendingID != nil || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (imagePlan.references.isEmpty || imagePlan.makesImage)) || !store.storageReady).accessibilityLabel("发送消息")
                 }
                 HStack {
                     if composerFocused {

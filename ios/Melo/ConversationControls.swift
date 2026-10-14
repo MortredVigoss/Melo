@@ -58,7 +58,7 @@ struct ConversationControls: View {
     private var models: [String] { Array(Set(account.models.map(\.slug) + [defaultGPT, current?.connectionID == "chatgpt" ? current?.model ?? "" : ""])).filter { !$0.isEmpty }.sorted() }
     private var usesChatGPT: Bool { current.map { $0.connectionID == "chatgpt" } ?? (defaultMode == "chatgpt") }
     private var capability: String {
-        if usesChatGPT { return account.signedIn ? "ChatGPT · 文字与网页检索" : "ChatGPT 尚未登录 · 请先配置连接" }
+        if usesChatGPT { return account.signedIn ? "Codex · 文字、网页与图片" : "Codex 尚未登录 · 请先配置连接" }
         if let current, LLMConnection.resolve(current, in: connections)?.key.isEmpty != false { return "\(current.name ?? "所选连接")尚未配置 · 请先连接或重新选择" }
         return "API · 文字对话 · 本机尚未接入联网和电脑工具"
     }
@@ -75,7 +75,7 @@ struct ConversationControls: View {
                 Menu {
                     Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用角色或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     if account.signedIn {
-                        Section("ChatGPT") {
+                        Section("Codex（ChatGPT 账号）") {
                             ForEach(models, id: \.self) { model in Button { store.selectModel(.init(connectionID: "chatgpt", model: model), chatID: chatID) } label: { Label(model, systemImage: current?.connectionID == "chatgpt" && current?.model == model ? "checkmark" : "cpu") } }
                         }
                     }

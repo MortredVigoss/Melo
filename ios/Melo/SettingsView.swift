@@ -25,24 +25,7 @@ struct SettingsContent: View {
                 LocalDataSettings()
                 Button { diagnostics = true } label: { Label("运行记录与退出排查", systemImage: "waveform.path.ecg").font(.subheadline).frame(minHeight: 44) }
                 MobileConnectionStatus().meloPanel()
-                VStack(alignment: .leading, spacing: 17) {
-                    HStack { Image(systemName: "person.crop.circle").font(.title).foregroundStyle(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(account.signedIn ? "ChatGPT 已连接" : "连接你的 ChatGPT").font(.headline); Text(account.status).font(.caption).foregroundStyle(.secondary) }; Spacer() }
-                    Text("在官方页面授权，手机直接连接模型，电脑关机也能聊天。可使用与电脑版相同的账号，也可独立选择。").font(.subheadline).foregroundStyle(.secondary)
-                    if !account.registrations.isEmpty {
-                        ForEach(Array(account.registrations.enumerated()), id: \.element.id) { index, registration in
-                            Button { store.cancel(); account.select(registration.id) } label: {
-                                HStack { Image(systemName: account.activeID == registration.id ? "checkmark.circle.fill" : "circle"); VStack(alignment: .leading, spacing: 3) { Text(registration.email).lineLimit(1); Text("账号 \(index + 1) · \(registration.refreshToken.isEmpty ? "待授权" : "已保存")").font(.caption2).foregroundStyle(.secondary) }; Spacer() }.font(.subheadline)
-                            }.disabled(account.busy)
-                        }
-                    }
-                    if account.busy { HStack { ProgressView(); Text(account.status).font(.caption).foregroundStyle(.secondary) } }
-                    else {
-                        Button { Task { await account.signIn(existingID: account.activeID) } } label: { HStack { Image(systemName: "arrow.up.right.circle"); Text("Continue with ChatGPT").fontWeight(.semibold); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline).foregroundStyle(.black).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 15)) }
-                        if !account.registrations.isEmpty { Button("使用其他 ChatGPT 账号") { Task { await account.signIn() } }.font(.caption) }
-                    }
-                    if account.signedIn { Button("退出当前账号", role: .destructive) { store.cancel(); Task { await account.signOut() } }.font(.caption).disabled(account.busy) }
-                    Link("查看 ChatGPT 用量与应用授权", destination: URL(string: "https://chatgpt.com/settings/usage")!).font(.caption).foregroundStyle(.secondary)
-                }.meloPanel()
+                CodexLoginCard().meloPanel()
                 ModelSettingsSection()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Label("数据与同步", systemImage: "arrow.triangle.2.circlepath").font(.headline); Spacer(); Text("\(store.chats.count) 段对话").font(.caption).foregroundStyle(meloGold) }

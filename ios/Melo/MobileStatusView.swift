@@ -23,7 +23,7 @@ struct MobileConnectionStatus: View {
             HStack(alignment: .top) {
                 Image(systemName: "cpu").foregroundStyle(meloGold)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(authMode == "chatgpt" ? "ChatGPT 授权" : selected?.name ?? "API 连接").font(.headline)
+                    Text(authMode == "chatgpt" ? "Codex 登录" : selected?.name ?? "API 连接").font(.headline)
                     Text(authMode == "chatgpt" ? (chatGPTModel.isEmpty ? "尚未选择模型" : chatGPTModel) : (model.isEmpty ? "尚未选择模型" : model)).font(.subheadline).foregroundStyle(MeloTheme.muted).textSelection(.enabled)
                 }
             }

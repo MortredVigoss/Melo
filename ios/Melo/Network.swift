@@ -11,6 +11,18 @@ enum Network {
         guard ["context_length_exceeded", "max_tokens_exceeded", "prompt_too_long"].contains(code) || ["maximum context length", "context window", "prompt is too long", "input is too long"].contains(where: { message.contains($0) }) else { return nil }
         return .message("对话或引用资料超出此模型的上下文上限。请减少资料、缩短本次输入，或新建对话；原记录已保留。")
     }
+    // Keep diagnostic codes, not the provider's arbitrary message or echoed request data.
+    static func rejectionDetail(_ data: Data) -> String {
+        guard data.count <= 16_384, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = object["error"] as? [String: Any] else { return "" }
+        let fields = ["code", "param"].compactMap { field -> String? in
+            guard let value = error[field] as? String, value.count <= 100,
+                  value.range(of: #"^[A-Za-z][A-Za-z0-9_.\[\]-]*$"#, options: .regularExpression) != nil,
+                  !value.hasPrefix("sk-"), !value.hasPrefix("eyJ") else { return nil }
+            return "\(field)=\(value)"
+        }
+        return fields.isEmpty ? "" : "（" + fields.joined(separator: "，") + "）"
+    }
     static let session = URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
     static func endpoint(_ value: String) throws -> URL {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.fragment == nil else { throw MeloError.message("请输入完整的 HTTPS 服务地址。") }
@@ -29,7 +41,7 @@ enum Network {
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
             switch http.statusCode {
-            case 400: throw MeloError.message("服务拒绝了本次请求（400），请检查所选模型、工具或输入内容；原记录已保留。")
+            case 400, 422: throw MeloError.message("服务拒绝了本次请求（\(http.statusCode)）\(rejectionDetail(data))，请检查所选模型、工具或输入内容；原记录已保留。")
             case 413: throw MeloError.message("资料超过服务容量限制（413），原记录已保留。请先导出备份，再减少同步资料或本次输入。")
             case 401, 403: throw MeloError.message("服务拒绝了登录凭证，请检查设置中的密钥。")
             case 409: throw MeloError.message("同步内容发生冲突，原有记录已保留。")

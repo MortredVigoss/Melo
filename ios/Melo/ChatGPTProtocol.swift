@@ -70,6 +70,9 @@ enum ChatGPTProtocol {
 }
 
 struct ChatGPTStream {
+    private let acceptImageCompletion: Bool
+    private var reportedImageModel = ""
+    init(acceptImageCompletion: Bool = false) { self.acceptImageCompletion = acceptImageCompletion }
     private(set) var observation = ExecutionObservation()
     private(set) var completed = false
     private(set) var text = ""
@@ -82,13 +85,30 @@ struct ChatGPTStream {
         if json == "[DONE]" { return }
         guard let data = json.data(using: .utf8), let event = try JSONSerialization.jsonObject(with: data) as? [String: Any], let type = event["type"] as? String else { throw MeloError.message("模型响应格式无效。") }
         observation.accept(event)
+        if let response = event["response"] as? [String:Any], let tools = response["tools"] as? [[String:Any]],
+           let model = tools.first(where: { $0["type"] as? String == "image_generation" })?["model"] as? String {
+            reportedImageModel = model
+        }
         if type.hasPrefix("response.image_generation_call.") || (event["item"] as? [String: Any])?["type"] as? String == "image_generation_call" {
             generatingImage = true
             observation.stage("image:generate", name: "处理图片", status: "running", output: "图片服务正在生成结果")
         }
-        if type == "response.failed" || type == "response.incomplete" || type == "error" { throw MeloError.message("模型未完成回复，可能达到计划额度或服务暂时不可用。请检查 ChatGPT 的应用使用限额后重试。") }
+        if type == "response.failed" || type == "response.incomplete" || type == "error" {
+            let details = (event["response"] as? [String: Any]) ?? (type == "error" && event["error"] == nil ? ["error": event] : event)
+            let detailData = (try? JSONSerialization.data(withJSONObject: details)) ?? Data()
+            throw MeloError.message("模型未完成回复\(Network.rejectionDetail(detailData))，请检查所选模型、工具支持和计划额度；本次要求已保留。")
+        }
         if type.hasPrefix("response.web_search_call.") { searching = !type.hasSuffix("completed"); if type.hasSuffix("completed") { searched = true } }
         if type == "response.output_text.delta", let delta = event["delta"] as? String { text += delta }
+        // Codex can deliver the complete image before the response tail. Only a
+        // completed image tool item qualifies; partial images/text never do.
+        if acceptImageCompletion, type == "response.output_item.done", let item = event["item"] as? [String:Any],
+           item["type"] as? String == "image_generation_call", item["status"] as? String == "completed" {
+            images = [try ImagePayload.decode(base64:item["result"] as? String,model:item["model"] as? String ?? reportedImageModel,prompt:item["revised_prompt"] as? String ?? "")]
+            observation.stage("image:generate",name:"处理图片",status:"completed",output:"已收到完整图片")
+            if let index = observation.pipeline.firstIndex(where: { $0.id == "image:generate" }) { observation.pipeline[index].returnedModel = images.first?.reportedModel.isEmpty == false ? images.first?.reportedModel : nil }
+            generatingImage=false; completed=true
+        }
         if type == "response.completed" {
             guard let response = event["response"] as? [String: Any], response["status"] as? String == "completed" else { throw MeloError.message("模型未完成回复。") }
             observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
@@ -100,7 +120,7 @@ struct ChatGPTStream {
                 guard imageItems.count <= 4 else { throw MeloError.message("单次图片返回超过四张，未写入对话。") }
                 images = try imageItems.map { item in
                     guard item["status"] as? String == "completed" else { throw MeloError.message("图片尚未生成完成。") }
-                    return try ImagePayload.decode(base64: item["result"] as? String, model: item["model"] as? String ?? "", prompt: item["revised_prompt"] as? String ?? "")
+                    return try ImagePayload.decode(base64: item["result"] as? String, model: item["model"] as? String ?? reportedImageModel, prompt: item["revised_prompt"] as? String ?? "")
                 }
                 if !images.isEmpty {
                     observation.stage("image:generate", name: "处理图片", status: "completed", output: "已收到 \(images.count) 张完整图片")
@@ -140,8 +160,8 @@ struct ChatGPTSSE {
     private var previousCR = false
     private var byteCount = 0
     private let maxBytes: Int
-    init(maxBytes: Int = 8 * 1024 * 1024) { self.maxBytes = maxBytes }
-    private(set) var stream = ChatGPTStream()
+    init(maxBytes: Int = 8 * 1024 * 1024, acceptImageCompletion: Bool = false) { self.maxBytes = maxBytes; self.stream = ChatGPTStream(acceptImageCompletion: acceptImageCompletion) }
+    private(set) var stream: ChatGPTStream
     mutating func accept(_ byte: UInt8) throws {
         byteCount += 1
         guard byteCount <= maxBytes else { throw MeloError.message("模型响应超过容量限制。") }

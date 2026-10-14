@@ -38,7 +38,9 @@ import SwiftUI
     private let file: URL
     private var preferencesFile: URL { file.deletingLastPathComponent().appendingPathComponent("preferences.json") }
     private var syncRecoveryFile: URL { file.deletingLastPathComponent().appendingPathComponent("pending-sync.json") }
-    init(directory: URL? = nil, background: ReplyBackgroundLifetime? = nil, replyLoader: (([ChatMessage], String) async throws -> ModelReply)? = nil, syncLoader: ((Data) async throws -> Data)? = nil) {
+    private let loadConnections: () throws -> [LLMConnection]
+    init(directory: URL? = nil, background: ReplyBackgroundLifetime? = nil, replyLoader: (([ChatMessage], String) async throws -> ModelReply)? = nil, syncLoader: ((Data) async throws -> Data)? = nil, loadConnections: @escaping () throws -> [LLMConnection] = LLMConnection.saved) {
+        self.loadConnections = loadConnections
         self.replyLoader = replyLoader
         self.syncLoader = syncLoader
         imageLibrary = ImageLibrary(directory: (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo")).appendingPathComponent("Images"))
@@ -212,12 +214,12 @@ import SwiftUI
         func fail(_ reason: String) { if let onPreflightFailure { onPreflightFailure(reason) } else { self.error = reason } }
         guard sendingID == nil, storageReady, let index = chats.firstIndex(where: { $0.id == chatID }) else { onPreflightFailure?("当前无法发送，请确认对话存在且没有其他请求进行中。"); return }
         var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if clean.isEmpty, imageTask?.references.isEmpty == false {
+        if !retry, clean.isEmpty, imageTask?.references.isEmpty == false {
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
             clean = "请分析这些图片。"
         }
         guard retry || !clean.isEmpty else { return }
-        let plan: ImageTaskPlan
+        var plan: ImageTaskPlan
         let imageInputs: [ImageInput]
         do {
             let previousImages = chats[index].messages.reversed().compactMap { message -> [String]? in
@@ -227,42 +229,59 @@ import SwiftUI
                 clean = last.content
                 plan = try (imageLibrary.index.requests[last.id] ?? ImageTaskPlan(action: .analyze)).resolved(prompt: clean, previousImages: [])
             } else { plan = try (imageTask ?? ImageTaskPlan()).resolved(prompt: clean, previousImages: previousImages) }
+            // A deliberate retry may choose a new image connection; keep the original input and other parameters.
+            if retry, let connectionID = imageTask?.connectionID { plan.connectionID = connectionID }
             imageInputs = try imageLibrary.inputs(plan.references)
         } catch { fail(error.localizedDescription); return }
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
         let selectedAgent = agent(for: chatID)
         let roleModel = selectedAgent.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let useChatGPT = choice.map { $0.connectionID == "chatgpt" } ?? ((UserDefaults.standard.string(forKey: "modelAuthMode") ?? "chatgpt") == "chatgpt")
+        var useChatGPT = choice.map { $0.connectionID == "chatgpt" } ?? ((UserDefaults.standard.string(forKey: "modelAuthMode") ?? "chatgpt") == "chatgpt")
         var endpoint = UserDefaults.standard.string(forKey: "modelEndpoint") ?? ""
         var model = UserDefaults.standard.string(forKey: "modelName") ?? ""
         if choice == nil && !roleModel.isEmpty { model = roleModel }
         var key = Secrets.read("modelKey")
         var apiProtocol = UserDefaults.standard.string(forKey: "modelProtocol") ?? "chat-completions"
-        if let choice, !useChatGPT {
+        if let choice, !useChatGPT, !(plan.makesImage && plan.connectionID?.isEmpty == false) {
             do {
-                guard let connection = LLMConnection.resolve(choice, in: try LLMConnection.saved()) else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
+                guard let connection = LLMConnection.resolve(choice, in: try loadConnections()) else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
                 endpoint = try connection.endpoint(); model = choice.model; key = connection.key; apiProtocol = connection.apiProtocol
             } catch { fail(error.localizedDescription); return }
         }
-        let chatGPTModel = choice?.model ?? (roleModel.isEmpty ? (UserDefaults.standard.string(forKey: "chatgptModel") ?? "") : roleModel)
+        if plan.makesImage, plan.connectionID == "chatgpt" { useChatGPT = true }
+        else if plan.makesImage, let connectionID = plan.connectionID, !connectionID.isEmpty {
+            do {
+                guard let connection = try loadConnections().first(where: { $0.id == connectionID }) else { throw MeloError.message("所选图片连接尚未在此手机配置，请重新选择；原图和要求已保留。") }
+                endpoint = try connection.endpoint(); key = connection.key; apiProtocol = connection.apiProtocol
+                useChatGPT = false
+            } catch { fail(error.localizedDescription); return }
+        }
+        let defaultCodexModel = UserDefaults.standard.string(forKey: "chatgptModel") ?? ""
+        let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
+        let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         var instructions = ConversationContext.instructions(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID))
         if !plan.makesImage {
             do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions) }
             catch { fail(error.localizedDescription); return }
         }
-        if plan.makesImage && !useChatGPT && apiProtocol == "anthropic" && replyLoader == nil {
-            fail("此连接支持看图分析，但没有图片生成接口。请为本对话选择 ChatGPT 或兼容图像 API 的连接。"); return
+        if replyLoader == nil {
+            do { try plan.validateRoute(useChatGPT: useChatGPT, apiProtocol: apiProtocol) }
+            catch { fail(error.localizedDescription); return }
         }
         if replyLoader == nil {
             do {
                 if useChatGPT {
-                    guard account.signedIn, !chatGPTModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("请先登录 ChatGPT 并选择模型。") }
+                    guard account.signedIn, !chatGPTModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message(CodexOAuth.loginRequired + " 请在模型服务中选择可用模型。") }
                 } else {
-                    guard !key.isEmpty, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("请先配置本对话的模型与 API 密钥。") }
+                    guard !key.isEmpty, !(plan.makesImage ? plan.model : model).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("请先配置本对话的模型与 API 密钥。") }
                     _ = try Network.endpoint(endpoint)
                 }
             } catch { fail(error.localizedDescription); return }
+        }
+        if retry, plan.makesImage, let question = chats[index].messages.last, question.role == "user" {
+            do { try imageLibrary.bind(plan.references.compactMap { imageLibrary.index.assets[$0.id] }, to: question.id, request: plan) }
+            catch { fail(error.localizedDescription); return }
         }
         if !retry {
             let original = chats[index]
@@ -351,7 +370,10 @@ import SwiftUI
                 replyBackground.finish(runID: record.runId, success: true)
             } catch is CancellationError { if expiredRunID != record.runId { finishRun(record.runId, state: "cancelled") } }
             catch let failure as URLError where failure.code == .cancelled { if expiredRunID != record.runId { finishRun(record.runId, state: "cancelled") } }
-            catch { if expiredRunID != record.runId { finishRun(record.runId, state: "failed"); self.error = error.localizedDescription } }
+            catch { if expiredRunID != record.runId {
+                stage(record.runId, id: "reply:failure", name: "请求失败", status: "failed", output: String(error.localizedDescription.prefix(1000)))
+                finishRun(record.runId, state: "failed"); self.error = error.localizedDescription
+            } }
         }
     }
     func importImage(_ data: Data, title: String = "参考图片") throws -> LocalImage {
