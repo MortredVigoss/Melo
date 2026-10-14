@@ -44,6 +44,7 @@ export class OpenAIEmbedProvider extends EmbeddingProvider {
       const data = await res.json();
       const raw = data?.data?.[0]?.embedding;
       if (!Array.isArray(raw) || !raw.length) return null;
+      this.observedDims = raw.length;
       return toDims(new Float32Array(raw), this._dims);
     } catch {
       return null;

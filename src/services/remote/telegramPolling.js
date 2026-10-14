@@ -1,3 +1,5 @@
+import { createRequestContext } from '../../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Telegram polling cluster — sub-phase 7d-5ζ commit 1 of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -34,8 +36,8 @@ import { enrichMessageWithMediaContext } from '../../media/index.js';
 import {
   mergeChannelRuntimeFields,
   normalizeAgentChannels,
-} from '../agent/agentChannels.js';
-import { allAgentIdsFromProfiles } from '../agent/agentLibrary.js';
+} from '../../domain/agent/agentChannels.js';
+import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 import { generateChatTitle } from '../chat/providerErrors.js';
 import { sendChatMessage } from '../chat/sendChatMessage.js';
 import { rewriteForVoice } from '../media/voiceRewrite.js';
@@ -44,7 +46,7 @@ import {
   normalizeMessageBlocks,
   serializeMessageBlocks,
   stripAllMarkdownForTelegram,
-} from '../message/messageBlocks.js';
+} from '../../domain/message/messageBlocks.js';
 import { loadAttachmentBytes } from './attachmentBytes.js';
 import { classifyGroupMessageAddressal } from './groupAddressalClassifier.js';
 import { updateGroupRelationshipGraph } from './groupRelationship.js';
@@ -78,7 +80,7 @@ import {
   normalizeAgentProfile,
   normalizeAgentProfiles,
 } from '../../state/agentProfiles.js';
-import { refreshChatMemorySummary } from '../../state/chatThreadContext.js';
+import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
 import {
   createChatRecord,
   summarizeMessagePreview,
@@ -87,7 +89,6 @@ import { normalizeChat } from '../../state/stateHydration.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import {
   loadState,
-  saveState,
   updateStateAtomically,
 } from '../../state/stateStore.js';
 
@@ -197,7 +198,8 @@ async function shouldReplyToTelegramMessage(incoming, telegramChannel, profile, 
 }
 
 async function ensureTelegramChatRecord(agentId, incoming) {
-  const state = ensureSelectedEntities(await loadState());
+  let record;
+  await updateStateAtomically(state => {
   const externalThreadKey = buildTelegramThreadKey(
     agentId,
     incoming?.chatId,
@@ -223,9 +225,9 @@ async function ensureTelegramChatRecord(agentId, incoming) {
     }
     if (needsSave) {
       existingChat.updatedAt = nowIso();
-      await saveState(state);
     }
-    return existingChat;
+    record = existingChat;
+    return;
   }
 
   const chat = {
@@ -242,18 +244,15 @@ async function ensureTelegramChatRecord(agentId, incoming) {
     externalThreadKey,
   };
   state.chats.unshift(chat);
-  await saveState(state);
-  return chat;
+  record = chat;
+  });
+  return record;
 }
 
 async function recordTelegramMessageWithoutReply(agentId, incoming, existingChat = null) {
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
-  const state = ensureSelectedEntities(rawState);
+  const config = await getResolvedConfig();
   const chat = normalizeChat(existingChat || (await ensureTelegramChatRecord(agentId, incoming)));
-  const currentChat = state.chats.find(entry => entry.id === chat.id);
-  if (!currentChat) {
-    return null;
-  }
+  let currentChat = null;
 
   const userMessage = {
     id: randomUUID(),
@@ -273,6 +272,9 @@ async function recordTelegramMessageWithoutReply(agentId, incoming, existingChat
     config,
     modelSupportsVision: false,
   });
+  await updateStateAtomically(state => {
+  currentChat = state.chats.find(entry => entry.id === chat.id);
+  if (!currentChat) return;
   currentChat.messages.push(userMessage);
   currentChat.updatedAt = nowIso();
   currentChat.chatType = incoming?.chatType || currentChat.chatType;
@@ -286,11 +288,12 @@ async function recordTelegramMessageWithoutReply(agentId, incoming, existingChat
   updateGroupRelationshipGraph(currentChat, incoming, false);
 
   refreshChatMemorySummary(currentChat);
-  await saveState(state);
+  });
   return currentChat;
 }
 
 export async function processTelegramPollingCycle() {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => processTelegramPollingCycle(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const agentIds = allAgentIdsFromProfiles(state.agentProfiles);
   let hasActiveChannel = false;

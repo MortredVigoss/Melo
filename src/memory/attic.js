@@ -18,12 +18,12 @@
  *   injectHotAttic({ namespaces, limit }) – assemble the Hot block for prompts
  */
 
+import { requestEnvironment } from '../runtime/requestScope.js';
+import { normalizedFact } from './factPolicy.js';
 import {
   listMemoriesForAtticReassess,
   setAtticLevels,
   recallMemories,
-  recordMemoryHitsBatch,
-  markMemoriesUsed,
 } from './store.js';
 
 // Thresholds
@@ -123,20 +123,27 @@ export function reassessAttic({ sinceIso = null, limit = 2000, nowMs = Date.now(
  * @param {number}     [options.tokenBudget]      default ATTIC_HOT_TOKEN_BUDGET
  * @returns {string}
  */
-export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET } = {}) {
+export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall } = {}) {
   const rows = recallMemories({
     namespaces,
     kinds: ['fact', 'session-fact', 'verification-correction', 'identity'],
     limit: limit * 4,
     sideEffects: false,
+    accept,
   });
 
+  const seen = new Set();
   const candidates = rows
     .map(row => ({
       row,
       level: evaluateAtticLevel(row),
     }))
-    .filter(({ level }) => level === 'hot')
+    .filter(({ level,row }) => {
+      if (level !== 'hot') return false;
+      const key = normalizedFact(row.text);
+      if (seen.has(key)) return false;
+      seen.add(key);return true;
+    })
     .slice(0, limit);
 
   if (!candidates.length) return '';
@@ -152,30 +159,25 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
     if (row.id) renderedIds.push(row.id);
     tokensRemaining -= cost;
   }
-  if (renderedIds.length) {
-    recordMemoryHitsBatch(renderedIds.map((memoryId, rank) => ({
-      memoryId,
-      queryHash: 'hot-attic',
-      rank,
-    })));
-    markMemoriesUsed(renderedIds);
-  }
+  onRecall?.(candidates.filter(({row})=>renderedIds.includes(row.id)).map(({row})=>({
+    ...row, renderedText: `- [${row.metadata?.category || row.kind}] ${row.text}`,
+  })));
   lines.push('(These facts are invariant enough to be always visible.)');
   return lines.join('\n');
 }
 
 // ─── Env-var helpers (so the caller can gate whole phases) ──────────────────
 
-export function atticEnabled() {
-  return process.env.MELO_ATTIC_ENABLED !== '0';
+export function atticEnabled(env = requestEnvironment()) {
+  return env.MELO_ATTIC_ENABLED !== '0';
 }
 
 /**
  * Parse MELO_MEMORY_TIERS into a Set of enabled tier names.
  * Default: all tiers enabled.
  */
-export function enabledTiers() {
-  const raw = String(process.env.MELO_MEMORY_TIERS || '').trim();
+export function enabledTiers(env = requestEnvironment()) {
+  const raw = String(env.MELO_MEMORY_TIERS || '').trim();
   if (!raw) return new Set(['scene', 'frame', 'content']);
   return new Set(raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
 }

@@ -13,6 +13,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { detectImageMimeFromBytes, generateImageViaMinimax } from './imageGen.js';
 
+test('oversized MiniMax requests are rejected without silently dropping requirements or spending quota', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('must not send'); };
+  try {
+    await assert.rejects(
+      generateImageViaMinimax({ prompt: 'x'.repeat(1501), apiKey: 'test-key' }),
+      { code: 'IMAGE_PROMPT_TOO_LONG' },
+    );
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // ─── Magic-byte sniffer ─────────────────────────────────────────────────────
 
 function makePngBuffer(payloadSize = 2048) {

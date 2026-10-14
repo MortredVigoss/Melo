@@ -32,8 +32,8 @@ export function discordApiBase() {
   ).replace(/\/+$/, '');
 }
 
-export function buildDiscordUrl(path, searchParams = {}) {
-  const url = new URL(`${discordApiBase()}${path.startsWith('/') ? '' : '/'}${path}`);
+export function buildDiscordUrl(path, searchParams = {}, baseUrl = discordApiBase()) {
+  const url = new URL(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`);
   for (const [key, value] of Object.entries(searchParams || {})) {
     if (value === undefined || value === null || value === '') {
       continue;
@@ -46,14 +46,14 @@ export function buildDiscordUrl(path, searchParams = {}) {
 export async function discordApiRequest(
   channel,
   path,
-  { method = 'GET', body = null, searchParams = {}, timeoutMs = 15000 } = {},
+  { method = 'GET', body = null, searchParams = {}, timeoutMs = 15000, baseUrl } = {},
 ) {
   const token = String(channel?.botToken || '').trim();
   if (!token) {
     throw new Error('Discord needs a bot token before it can be used.');
   }
 
-  const url = buildDiscordUrl(path, searchParams);
+  const url = buildDiscordUrl(path, searchParams, baseUrl);
   const headers = {
     authorization: `Bot ${token}`,
     'user-agent': 'MeloDesktopBot (https://github.com, 1.0)',

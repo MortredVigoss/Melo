@@ -77,24 +77,18 @@ test('buildLanguageConstraint: undetectable input → empty string', () => {
   assert.equal(buildLanguageConstraint('hi'), '');
 });
 
-test('buildLanguageConstraint: mentions detected language label + locks reply to it', () => {
+test('buildLanguageConstraint: detected language is a default, not an unconditional lock', () => {
   const out = buildLanguageConstraint('这是一段中文测试文本');
-  assert.match(out, /\[LANGUAGE RULE — MANDATORY, NO EXCEPTIONS\]/);
+  assert.match(out, /\[Reply language default\]/);
   assert.match(out, /Chinese \(中文\)/);
-  assert.match(out, /MUST reply ENTIRELY in/);
+  assert.match(out, /takes precedence over this default/);
+  assert.doesNotMatch(out, /ENTIRELY|NO EXCEPTIONS/);
 });
 
-test('buildLanguageConstraint: line order — switch-warning BEFORE the English-terms exception', () => {
-  // Per the original desktopStore implementation: the "Do NOT switch
-  // languages" line comes first, then the "if you need English terms"
-  // exception. Reordering changes what the model sees in the prompt;
-  // this test is the regression guard.
+test('buildLanguageConstraint: explicit output language wins over persona defaults', () => {
   const out = buildLanguageConstraint('这是一段中文测试文本');
-  const switchIdx = out.indexOf('Do NOT switch languages');
-  const englishIdx = out.indexOf('If you need to reference English terms');
-  assert.ok(switchIdx > 0, 'switch-warning line must be present');
-  assert.ok(englishIdx > 0, 'English-terms line must be present');
-  assert.ok(switchIdx < englishIdx, 'switch-warning must come before the English-terms line');
+  assert.match(out, /explicit target language, translation, bilingual output/);
+  assert.match(out, /When no explicit language request.*persona/);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -111,8 +105,8 @@ test('buildOutputHardConstraints: desktop default omits the remote-channel cap',
   const out = buildOutputHardConstraints({ isRemoteChannel: false });
   assert.doesNotMatch(out, /Keep remote-channel replies tight/);
   assert.doesNotMatch(out, /plain-text messaging channel/);
-  // Sanity: still has the markdown-ban core.
-  assert.match(out, /Do NOT use markdown emphasis/);
+  assert.match(out, /explicit.*format/);
+  assert.match(out, /Safety, file-access approval/);
 });
 
 test('buildOutputHardConstraints: remote channel adds the length cap + repeat suppressors', () => {

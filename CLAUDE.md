@@ -131,5 +131,7 @@ function queueBackgroundJob(state) {
 
 ## 其他既有规则（不在本文件但仍生效）
 
+- 用户于 2026-10-08 指定：每次手机端“对齐”先读 `docs/mobile-alignment-workflow.md`，检查 `melo主线`、`设计 Melo`、`melo ui` 三条线程所涉及的**实际代码 diff**，再写计划，按依赖顺序执行。功能、接口、Bug 修复和 UI/特效必须一起跟进并验收；不以线程总结、按钮或编译成功代替功能完成。
+
 - `~/.claude/projects/-Users-mortred-Desktop-melo/memory/MEMORY.md` 中的 Melo 六条硬性规则继续适用（方案评分先行、红绿灯检测、功能隔离、UI 对齐、设计语言统一、配置保留）。
 - 所有总结用中文输出。

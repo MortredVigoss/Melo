@@ -1,3 +1,10 @@
+import { recordTaskApproval } from '../services/task/taskApprovalCheckpoint.js';
+import { operationScope } from '../safety/permissionContext.js';
+import { reserveTaskOperation } from '../services/task/operationLedger.js';
+import { loadState } from '../state/stateStore.js';
+import { randomUUID } from 'node:crypto';
+import { observeTool } from './executionObservation.js';
+import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
 /**
  * Tool executor.
  *
@@ -13,6 +20,7 @@
 
 import { requestPermission } from './permissions.js';
 import { emitHook } from '../plugins/hooks.js';
+import { resolveRuntimePaths } from '../runtime/paths.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
@@ -30,13 +38,60 @@ const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
  * @returns {Promise<import('./tool.js').ToolResult>}
  */
 export async function executeTool(tool, args, options = {}) {
+  let requestContext = options.requestContext || currentRequestContext();
+  if (requestContext && !options.scopeResolved) {
+    const home = requestContext.home;
+    const state = requestContext.turnBinding ? null : await loadState({ home });
+    const chat = state?.chats.find(c => c.id === requestContext.chatId);
+    const turnBinding = requestContext.turnBinding || {
+      role: chat?.agentId || 'main', project: chat?.projectId || null,
+      taskId: state?.tasks.find(t => t.execution?.runId === requestContext.runId && t.execution.status === 'running')?.id || null,
+    };
+    const permissionScope = await operationScope({ ...requestContext, turnBinding }, options.workspacePath, options.agentId);
+    const taskId = turnBinding.taskId;
+    requestContext = Object.freeze({...requestContext, permissionScope});
+    return runWithRequestContext(requestContext, () => executeTool(tool,args,{...options,requestContext,scopeResolved:true,taskId}));
+  }
+  const id = options.toolCallId || randomUUID();
+  let executionStarted = false;
+  const observe = (status, result) => {
+    if (status === 'running') executionStarted = true;
+    try { options.sseEmitter?.('execution_event', observeTool({ id, name: tool.id, args, status, result })); } catch {}
+  };
+  let waiting = false;
+  const emit = (type,payload) => {
+    if(type === 'tool_permission' && options.taskId) {
+      waiting = true;
+      recordTaskApproval(requestContext,options.taskId,id,payload.operation || tool.id,true).catch(()=>{});
+    }
+    options.sseEmitter?.(type,payload);
+  };
+  observe('queued');
+  try {
+    const ticket = reserveTaskOperation({home:requestContext?.home || options.meloHome || resolveRuntimePaths().home,taskId:options.taskId,tool,args,workspacePath:options.workspacePath,invocationId:`${requestContext?.runId || 'direct'}:${id}`});
+    let result;
+    try { result = ticket?.result || await runObservedTool(tool, args, { ...options, sseEmitter:emit, observe }); }
+    catch(error) { ticket?.finish?.({ok:false,meta:{executionStarted}}); throw error; }
+    ticket?.finish?.({ ...result, meta: { executionStarted, ...result.meta } });
+    observe(null, result);
+    return result;
+  } catch (error) {
+    observe(null, { ok: false, output: error.message, error: error.code, meta: { aborted: !!options.signal?.aborted } });
+    throw error;
+  } finally { if(waiting) await recordTaskApproval(requestContext,options.taskId,id,tool.id,false).catch(()=>{}); }
+}
+
+async function runObservedTool(tool, args, options = {}) {
+  const requestContext = options.requestContext || currentRequestContext();
+  const meloHome = options.meloHome || requestContext?.home || resolveRuntimePaths().home;
   const { sseEmitter, workspacePath, signal, chatId, onOutput, config, agentDepth, allowedToolIds } = options;
 
   // ── Permission gate ──────────────────────────────────────────────────────────
   if (tool.requiresPermission !== false) {
+    options.observe?.('waiting');
     try {
       // Pass chatId so session-scope grants don't leak across chats.
-      await requestPermission(tool.id, args, sseEmitter, signal, chatId);
+      await requestPermission(tool.id, args, sseEmitter, signal, chatId, requestContext);
     } catch (err) {
       return {
         ok: false,
@@ -58,18 +113,41 @@ export async function executeTool(tool, args, options = {}) {
   }
 
   // ── Plugin hook: tool:before ────────────────────────────────────────────────
-  await emitHook('tool:before', { toolId: tool.id, args });
+  await emitHook('tool:before', { toolId: tool.id, args, runId: requestContext?.runId, requestId: requestContext?.requestId });
+
+  const controller = new AbortController();
+  let cancelError = null;
+  let rejectCancelled;
+  const cancelled = new Promise((_, reject) => { rejectCancelled = reject; });
+  const cancel = error => {
+    if (controller.signal.aborted) return;
+    cancelError = error;
+    rejectCancelled(error);
+    controller.abort(error);
+  };
+  const onAbort = () => cancel(Object.assign(new Error('Tool execution aborted.'), { code: 'ABORTED' }));
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
 
   // ── Execution context ────────────────────────────────────────────────────────
   const context = {
-    signal,
+    requestContext,
+    runId: requestContext?.runId,
+    requestId: requestContext?.requestId,
+    meloHome,
+    signal: controller.signal,
     workspacePath,
-    onOutput,
+    onOutput: typeof onOutput === 'function' ? (...values) => {
+      if (!controller.signal.aborted) onOutput(...values);
+    } : onOutput,
     chatId,
     config,
-    sseEmitter,
+    onExecutionState: status => { if (!controller.signal.aborted && ['waiting', 'running'].includes(status)) options.observe?.(status); },
+    sseEmitter: typeof sseEmitter === 'function' ? (...values) => {
+      if (!controller.signal.aborted) sseEmitter(...values);
+    } : sseEmitter,
     agentDepth: agentDepth || 0,
-    // Null means "no restriction" (main model loop); an array means the sub-agent
+    // Null is the legacy unrestricted caller; an array (including []) means the sub-agent
     // must stay within this whitelist. Tools like `agent` propagate this downward.
     allowedToolIds: Array.isArray(allowedToolIds) ? allowedToolIds : null,
   };
@@ -78,18 +156,21 @@ export async function executeTool(tool, args, options = {}) {
   const timeout = tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS;
   let timeoutId;
 
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error(`Tool "${tool.id}" timed out after ${timeout / 1000}s.`)),
-      timeout,
-    );
-  });
+  timeoutId = setTimeout(() => cancel(Object.assign(
+    new Error(`Tool "${tool.id}" timed out after ${timeout / 1000}s.`),
+    { code: 'TOOL_TIMEOUT' },
+  )), timeout);
 
   try {
     const rawResult = await Promise.race([
-      tool.run(args, context),
-      timeoutPromise,
+      Promise.resolve().then(() => {
+        if (controller.signal.aborted) throw cancelError;
+        if (!tool.observesOwnLifecycle) options.observe?.('running');
+        return tool.run(args, context);
+      }),
+      cancelled,
     ]);
+    if (cancelError) throw cancelError;
     clearTimeout(timeoutId);
     // Normalise — ensure ok/output fields exist.  G-1d (2026-05-11):
     // preserve `evidenceTrail` (3 search tools' fallback diagnostic structure
@@ -124,10 +205,13 @@ export async function executeTool(tool, args, options = {}) {
       ok: false,
       output: `Tool error: ${err.message}`,
       error: err.message,
-      meta: {},
+      meta: cancelError ? { aborted: true, timedOut: cancelError.code === 'TOOL_TIMEOUT' } : {},
     };
     await emitHook('tool:after', { toolId: tool.id, args, result });
     return result;
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -158,7 +242,7 @@ export async function executeToolCalls(calls, options = {}) {
     await Promise.all(
       group.map(async (idx) => {
         const { id, tool, args } = calls[idx];
-        const result = await executeTool(tool, args, options);
+        const result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
         results[idx] = { id, toolId: tool.id, result };
       }),
     );
@@ -173,7 +257,7 @@ export async function executeToolCalls(calls, options = {}) {
       // Flush any accumulated safe tools first
       await flushParallel();
       // Then run this serial tool
-      const result = await executeTool(tool, args, options);
+      const result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
       results[i] = { id, toolId: tool.id, result };
     }
   }

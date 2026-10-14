@@ -3,7 +3,7 @@
 // dependency on `agentUsesTool` is satisfied via the agentTools service
 // (already a leaf in src/services/agent/).
 
-import { agentUsesTool } from '../agent/agentTools.js';
+import { agentUsesTool } from '../../domain/agent/agentTools.js';
 
 export function buildProjectContextSection(project, activeAgentProfile) {
   return project && agentUsesTool(activeAgentProfile, 'projects')

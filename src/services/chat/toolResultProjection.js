@@ -79,7 +79,14 @@ export function projectToolResultForPersist(call, result) {
   if (Array.isArray(result?.evidenceTrail) && result.evidenceTrail.length > 0) {
     entry.evidenceTrail = result.evidenceTrail;
   }
-  const errorCode = deriveUnifiedErrorCode(call, result);
+  if (result?.meta?.backupOperationId) entry.backupOperationId = result.meta.backupOperationId;
+  if (result?.meta?.path) entry.path = String(result.meta.path);
+  if (Number.isInteger(result?.meta?.exitCode)) entry.exitCode = result.meta.exitCode;
+  if (result?.meta?.replayed) entry.replayed = true;
+  const errorCode = deriveUnifiedErrorCode(call, result) || (result?.ok === false
+    ? result?.meta?.denied ? 'PERMISSION_DENIED'
+      : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED'
+    : null);
   if (errorCode) {
     entry.errorCode = errorCode;
   }

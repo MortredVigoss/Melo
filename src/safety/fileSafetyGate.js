@@ -1,3 +1,6 @@
+import { commandTemplate, findCommandRule, saveCommandRule } from './commandRules.js';
+import { recordPermission } from './permissionAudit.js';
+import { permissionReceipt, rememberPermissionDecision } from './permissionReceipts.js';
 /**
  * fileSafetyGate.js — unified entrypoint for every file operation in
  * the agent runtime.
@@ -19,10 +22,7 @@
  *     (same pattern as src/tools/permissions.js).
  *   - Per-chat grants stored in chatScopedGrants.js — process memory
  *     only, never persisted.
- *   - "Always allow" persistence (across processes) is intentionally
- *     NOT exposed by this gate. The user's spec said "不默认提供长期
- *     授权" — long-term policy lives in toolPermissionRules and is a
- *     deliberate config edit, not a click-through.
+ *   - Always allow persists exact-file grants after an explicit UI decision.
  *
  * SSE wire shape — every prompt fires:
  *   sseEmitter('tool_permission', {
@@ -33,8 +33,11 @@
  * without disturbing the old toolId-only path.
  */
 
+import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
+import { createRequestContext } from '../runtime/requestContext.js';
+import { resolveRuntimePaths } from '../runtime/paths.js';
 import { randomUUID } from 'node:crypto';
-import { stat } from 'node:fs/promises';
+import { stat, realpath } from 'node:fs/promises';
 import { isAbsolute, normalize, resolve, sep, basename } from 'node:path';
 
 import {
@@ -152,17 +155,22 @@ function clipText(value, max) {
 // Send the prompt and wait for the UI's response. Returns the resolved
 // scope choice ('once' | 'file' | 'dir'); rejects with FILE_SAFETY_DENIED
 // on deny / timeout / abort.
-function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmation = null }) {
+function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmation = null, persistentAllowed = true }) {
+  if (signal?.aborted) return Promise.reject(denyError('File operation aborted.'));
+  const context = currentRequestContext() || createRequestContext({ chatId, signal });
+  const canPersist = persistentAllowed && !payload.sensitive && ((!!payload.realPath && ['read', 'write_new', 'write_overwrite', 'edit'].includes(kind)) || (kind === 'bash' && !!payload.commandTemplate));
   return new Promise((resolveFn, rejectFn) => {
     const requestId = randomUUID();
 
     const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
       _pending.delete(requestId);
       rejectFn(denyError(`File safety prompt timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`));
     }, REQUEST_TIMEOUT_MS);
 
     const onAbort = () => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       _pending.delete(requestId);
       rejectFn(denyError('File operation aborted.'));
     };
@@ -172,7 +180,9 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
       chatId,
       kind,
       expectedConfirmation,
+      context, payload, canPersist,
       resolve: (decision) => {
+        recordPermission({operation:kind,decision:'allow',reason:decision.persistent ? '用户长期授权' : '用户单次授权',path:payload.realPath || null},context);
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
         _pending.delete(requestId);
@@ -192,6 +202,7 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
         kind: 'file_safety',
         operation: kind,
         ...payload,
+        persistentAllowed: canPersist,
       });
     }
   });
@@ -205,18 +216,18 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
 // extras.confirmInput — for delete stage 2, the user-typed string. The
 //   gate validates it against the expectedConfirmation captured at
 //   prompt time, so the UI can't accidentally bypass the check.
-// extras.persistent — Phase 3b "Always allow" flag. Forwarded to the
-//   awaiting request* function so it can mirror the per-chat grant
-//   into a config-persisted allowlist rule. Has no effect for
-//   read_batch / move / delete / bash — those operations don't write
-//   persistent rules per gate policy.
+// extras.persistent saves an exact-file rule before acknowledging approval.
 export function resolveFileSafety(requestId, scope, extras = {}) {
   const entry = _pending.get(requestId);
   if (!entry) {
-    return { ok: false, reason: 'Unknown or expired file-safety request.' };
+    return permissionReceipt(requestId) || { ok: false, reason: 'Unknown or expired file-safety request.' };
   }
 
+  if (entry.context.home !== resolveRuntimePaths().home) return { ok: false, reason: 'Permission belongs to another home.' };
+  if (entry.resolving) return { ok: false, reason: '授权正在保存，请稍候。' };
   if (scope === SCOPE.DENY) {
+    recordPermission({operation:entry.kind,decision:'deny',reason:'用户拒绝',path:entry.payload.realPath || null},entry.context);
+    rememberPermissionDecision(requestId);
     entry.reject('User denied operation.');
     return { ok: true };
   }
@@ -244,7 +255,25 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
     return { ok: false, reason: `Unknown scope "${scope}".` };
   }
 
-  entry.resolve({ scope, persistent: !!extras.persistent });
+  if (extras.persistent) {
+    if (!entry.canPersist || scope !== SCOPE.FILE) return { ok: false, reason: '此操作仅支持逐次确认；长期授权仅适用于当前文件。' };
+    entry.resolving = true;
+    return runWithRequestContext(entry.context, async () => {
+      try {
+        if (entry.kind === 'bash') await saveCommandRule(entry.payload.commandTemplate);
+        else await addFileSafetyRule({ operation: entry.kind.startsWith('write_') ? 'write' : entry.kind, scope: 'file', realPath: entry.payload.realPath });
+        if (!_pending.has(requestId)) return { ok: false, reason: '授权已过期，请重新发起操作。' };
+        rememberPermissionDecision(requestId);
+        entry.resolve({ scope, persistent: true });
+        return { ok: true };
+      } catch (error) {
+        entry.resolving = false;
+        return { ok: false, reason: `无法保存授权：${error.message}` };
+      }
+    });
+  }
+  rememberPermissionDecision(requestId);
+  entry.resolve({ scope, persistent: false });
   return { ok: true };
 }
 
@@ -532,6 +561,8 @@ export async function requestRead({
   baseDir,
   bypassGrants = false,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Read requested with empty path.');
 
@@ -546,7 +577,7 @@ export async function requestRead({
 
   if (!sensitive) {
     const lexicalInWs = isWithinWorkspace(abs, workspacePath);
-    const realInWs = isWithinWorkspace(realPath, workspacePath);
+    const realInWs = isWithinWorkspace(realPath, realWorkspace);
     // Q1A: silent allow only when BOTH lexical and real sit inside
     // workspace. A workspace symlink to /tmp/foo (real outside ws)
     // forces a prompt.
@@ -585,6 +616,7 @@ export async function requestRead({
   const decision = await _prompt({
     sseEmitter, signal, chatId,
     kind: OP_KIND.READ,
+    persistentAllowed: !bypassGrants,
     payload: {
       path: abs,                      // what caller asked for
       realPath,                       // what'll actually be read
@@ -595,7 +627,7 @@ export async function requestRead({
       category,
       withinWorkspace:
         isWithinWorkspace(abs, workspacePath) &&
-        isWithinWorkspace(realPath, workspacePath),
+        isWithinWorkspace(realPath, realWorkspace),
     },
   });
 
@@ -609,19 +641,16 @@ export async function requestRead({
   // tools that approve a directory target where the default
   // 'dir' scope (= grant parentDir) would over-grant.
   if (!bypassGrants) {
-    if (decision.scope === SCOPE.FILE) {
+    if (!decision.persistent && decision.scope === SCOPE.FILE) {
       grantFile(chatId, realPath, [GRANT_KIND.READ]);
-    } else if (decision.scope === SCOPE.DIR) {
+    } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
       grantDir(chatId, parentDir(realPath), [GRANT_KIND.READ]);
     }
     // Phase 3b: persistent="yes" attaches a forever rule on top of
     // (not in place of) the per-chat grant. SCOPE.FILE → exact-path
     // rule, SCOPE.DIR → parent-dir prefix rule. Sensitive paths fall
     // through `if (sensitive)` above and never reach here.
-    if (decision.persistent && decision.scope === SCOPE.FILE) {
-      try { await addFileSafetyRule({ operation: 'read', scope: 'file', realPath }); }
-      catch { /* allowlist write is best-effort; UI surfaces failures via load errors */ }
-    } else if (decision.persistent && decision.scope === SCOPE.DIR) {
+ else if (decision.persistent && decision.scope === SCOPE.DIR) {
       try { await addFileSafetyRule({ operation: 'read', scope: 'dir', realPath: parentDir(realPath) }); }
       catch { /* see above */ }
     }
@@ -655,6 +684,8 @@ export async function requestReadBatch({
   workspacePath,
   baseDir,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   if (!Array.isArray(paths) || !paths.length) {
     throw denyError('requestReadBatch requires a non-empty paths[] array.');
   }
@@ -717,7 +748,7 @@ export async function requestReadBatch({
       hasSymlinks: benign.some(b => b.hasSymlinkInChain),
       withinWorkspace: benign.every(b =>
         isWithinWorkspace(b.lexicalPath, workspacePath) &&
-        isWithinWorkspace(b.realPath, workspacePath),
+        isWithinWorkspace(b.realPath, realWorkspace),
       ),
     },
   });
@@ -751,6 +782,8 @@ export async function requestWrite({
   diffPreview = null,
   bypassGrants = false,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Write requested with empty path.');
 
@@ -807,23 +840,20 @@ export async function requestWrite({
       diffPreview: clipText(diffPreview, 8000),
       withinWorkspace:
         isWithinWorkspace(abs, workspacePath) &&
-        isWithinWorkspace(realPath, workspacePath),
+        isWithinWorkspace(realPath, realWorkspace),
     },
   });
 
-  if (decision.scope === SCOPE.FILE) {
+  if (!decision.persistent && decision.scope === SCOPE.FILE) {
     grantFile(chatId, realPath, [GRANT_KIND.WRITE]);
-  } else if (decision.scope === SCOPE.DIR) {
+  } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
     grantDir(chatId, parentDir(realPath), [GRANT_KIND.WRITE]);
   }
   // Phase 3b: persistent flag stacks an exact-file rule on top of the
   // per-chat grant. We deliberately do NOT support a persistent dir
   // rule for write/edit — granting "agent may write anywhere under X
   // forever" is the exact blast-radius the gate exists to prevent.
-  if (decision.persistent && decision.scope === SCOPE.FILE) {
-    try { await addFileSafetyRule({ operation: 'write', scope: 'file', realPath }); }
-    catch { /* best-effort */ }
-  }
+
   const operationToken = _issueOperationToken({
     kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
     chatId,
@@ -844,6 +874,8 @@ export async function requestEdit({
   newString = null,
   diffPreview = null,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   const abs = toAbsolute(path, baseDir);
   if (!abs) throw denyError('Edit requested with empty path.');
 
@@ -896,22 +928,19 @@ export async function requestEdit({
       diffPreview: clipText(diffPreview, 8000),
       withinWorkspace:
         isWithinWorkspace(abs, workspacePath) &&
-        isWithinWorkspace(realPath, workspacePath),
+        isWithinWorkspace(realPath, realWorkspace),
     },
   });
 
-  if (decision.scope === SCOPE.FILE) {
+  if (!decision.persistent && decision.scope === SCOPE.FILE) {
     grantFile(chatId, realPath, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
-  } else if (decision.scope === SCOPE.DIR) {
+  } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
     grantDir(chatId, parentDir(realPath), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
   }
   // Phase 3b: persistent rule for edit is stored under operation:'edit'
   // (write-rules already cover edit at lookup time). Same no-dir-persistent
   // policy as the write path.
-  if (decision.persistent && decision.scope === SCOPE.FILE) {
-    try { await addFileSafetyRule({ operation: 'edit', scope: 'file', realPath }); }
-    catch { /* best-effort */ }
-  }
+
   const operationToken = _issueOperationToken({
     kind: OP_KIND.EDIT,
     chatId,
@@ -932,6 +961,8 @@ export async function requestMove({
   workspacePath,
   baseDir,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   const absSrc = toAbsolute(src, baseDir);
   const absDst = toAbsolute(dst, baseDir);
   if (!absSrc || !absDst) throw denyError('Move requested with empty src or dst.');
@@ -979,8 +1010,8 @@ export async function requestMove({
       withinWorkspace:
         isWithinWorkspace(absSrc, workspacePath) &&
         isWithinWorkspace(absDst, workspacePath) &&
-        isWithinWorkspace(srcResolved.realPath, workspacePath) &&
-        isWithinWorkspace(dstResolved.realPath, workspacePath),
+        isWithinWorkspace(srcResolved.realPath, realWorkspace) &&
+        isWithinWorkspace(dstResolved.realPath, realWorkspace),
     },
   });
   // No session grants for move — see header. Codex D round 3 (2026-05-03)
@@ -1019,6 +1050,8 @@ export async function requestDelete({
   baseDir,
   reason = null,
 }) {
+  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+    ? await realpath(workspacePath).catch(() => null) : null;
   const inputPaths = Array.isArray(paths) ? paths : [paths];
   const absPaths = inputPaths
     .map(p => toAbsolute(p, baseDir))
@@ -1059,7 +1092,7 @@ export async function requestDelete({
       expectedConfirmation,
       withinWorkspace: resolved.every(r =>
         isWithinWorkspace(r.lexicalPath, workspacePath) &&
-        isWithinWorkspace(r.realPath, workspacePath),
+        isWithinWorkspace(r.realPath, realWorkspace),
       ),
     },
   });
@@ -1185,6 +1218,9 @@ export async function requestBashOp({
     }
   }
 
+  const template = cwdInsideWorkspace ? await commandTemplate(command, realCwd || effectiveCwd) : null;
+  if (await findCommandRule(template)) return;
+
   // Phase 2D follow-up #6 (Codex 🟠, 2026-05-04): payload now
   // includes the effective cwd info so the UI can show whether
   // a cwdOverride points outside the workspace. Without this the
@@ -1195,6 +1231,7 @@ export async function requestBashOp({
     kind: OP_KIND.BASH,
     payload: {
       command: clipText(command, 4000),
+      commandTemplate: template,
       risks: risks.slice(0, 32),
       workspacePath: workspacePath || null,
       effectiveCwd: effectiveCwd || null,

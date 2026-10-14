@@ -179,11 +179,15 @@ export function _shouldEmitEvidenceTrail(result) {
  * @param {import('./tool.js').ToolResult} result
  * @returns {string}
  */
-export function formatToolResult(call, result) {
+export function formatToolResult(call, result, { maxOutputChars = Infinity } = {}) {
   const okAttr = result.ok ? 'true' : 'false';
+  const raw = String(result.output ?? '');
+  const output = raw.length > maxOutputChars
+    ? `${raw.slice(0, maxOutputChars)}\n[Tool output truncated; request a narrower excerpt if needed.]`
+    : raw;
   const lines = [
-    `<tool_result id="${call.id}" name="${call.name}" ok="${okAttr}">`,
-    `<output>${escapeXml(result.output ?? '')}</output>`,
+    `<tool_result id="${escapeXml(call.id).replace(/"/g, '&quot;')}" name="${escapeXml(call.name).replace(/"/g, '&quot;')}" ok="${okAttr}">`,
+    `<output>${escapeXml(output)}</output>`,
   ];
   if (!result.ok && result.error) {
     lines.push(`<error>${escapeXml(result.error)}</error>`);
@@ -207,8 +211,8 @@ export function formatToolResult(call, result) {
  * @param {Array<{ call: ToolCallRequest, result: import('./tool.js').ToolResult }>} pairs
  * @returns {string}
  */
-export function formatToolResultsMessage(pairs) {
-  return pairs.map(({ call, result }) => formatToolResult(call, result)).join('\n\n');
+export function formatToolResultsMessage(pairs, options) {
+  return pairs.map(({ call, result }) => formatToolResult(call, result, options)).join('\n\n');
 }
 
 function escapeXml(s) {

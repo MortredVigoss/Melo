@@ -1,0 +1,397 @@
+{
+  "fixture": {
+    "chats": 64,
+    "messagesPerChat": 20,
+    "rounds": 50,
+    "model": "stub",
+    "embedding": "stub-null"
+  },
+  "scenarios": {
+    "casual": {
+      "totalMs": 15729,
+      "calls": {
+        "embeddings": 0,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 200,
+          "p50": 0.005,
+          "p95": 0.011
+        },
+        "state.manifest.read": {
+          "n": 200,
+          "p50": 0.149,
+          "p95": 0.87
+        },
+        "state.normalize": {
+          "n": 200,
+          "p50": 0.622,
+          "p95": 0.764
+        },
+        "state.threads.hydrate": {
+          "n": 200,
+          "p50": 56.357,
+          "p95": 65.228
+        },
+        "state.skills.scan": {
+          "n": 200,
+          "p50": 0.086,
+          "p95": 0.567
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 2.974,
+          "p95": 3.618
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 2.831,
+          "p95": 3.415
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 17.279,
+          "p95": 18.547
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.568,
+          "p95": 0.846
+        },
+        "memory.index": {
+          "n": 100,
+          "p50": 7.842,
+          "p95": 9.255
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 91.719,
+          "p95": 100.098
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 57.693,
+          "p95": 62.545
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.03,
+          "p95": 0.207
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 1.435,
+          "p95": 2.37
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 90.129,
+          "p95": 101.455
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 64.511,
+          "p95": 77.22
+        }
+      }
+    },
+    "short": {
+      "totalMs": 16309,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 200,
+          "p50": 0.005,
+          "p95": 0.009
+        },
+        "state.manifest.read": {
+          "n": 200,
+          "p50": 0.153,
+          "p95": 0.321
+        },
+        "state.normalize": {
+          "n": 200,
+          "p50": 0.604,
+          "p95": 0.782
+        },
+        "state.threads.hydrate": {
+          "n": 200,
+          "p50": 57.169,
+          "p95": 61.779
+        },
+        "state.skills.scan": {
+          "n": 200,
+          "p50": 0.096,
+          "p95": 0.616
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 2.993,
+          "p95": 3.62
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 2.879,
+          "p95": 3.424
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 18.22,
+          "p95": 19.422
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.582,
+          "p95": 0.973
+        },
+        "memory.index": {
+          "n": 100,
+          "p50": 10.206,
+          "p95": 11.956
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 95.456,
+          "p95": 102.777
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 58.512,
+          "p95": 64.893
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.031,
+          "p95": 0.084
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.003,
+          "p95": 0.016
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 6.759,
+          "p95": 8.939
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 9.464,
+          "p95": 12.129
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 95.763,
+          "p95": 101.676
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 64.94,
+          "p95": 67.674
+        }
+      }
+    },
+    "long": {
+      "totalMs": 80118,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 200,
+          "p50": 0.006,
+          "p95": 0.01
+        },
+        "state.manifest.read": {
+          "n": 200,
+          "p50": 0.188,
+          "p95": 0.807
+        },
+        "state.normalize": {
+          "n": 200,
+          "p50": 0.605,
+          "p95": 0.739
+        },
+        "state.threads.hydrate": {
+          "n": 200,
+          "p50": 58.669,
+          "p95": 65.419
+        },
+        "state.skills.scan": {
+          "n": 200,
+          "p50": 0.101,
+          "p95": 0.743
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 3.308,
+          "p95": 4.011
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 3.035,
+          "p95": 3.598
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 19.844,
+          "p95": 21.833
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.593,
+          "p95": 0.876
+        },
+        "memory.index": {
+          "n": 100,
+          "p50": 17.148,
+          "p95": 22.141
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 107.623,
+          "p95": 117.643
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 59.406,
+          "p95": 63.416
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.049,
+          "p95": 0.076
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.003,
+          "p95": 0.004
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 1266.33,
+          "p95": 2212.642
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 1273.914,
+          "p95": 2220.491
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 106.887,
+          "p95": 118.659
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 67.303,
+          "p95": 77.336
+        }
+      }
+    },
+    "group": {
+      "totalMs": 18824,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 200,
+          "p50": 0.005,
+          "p95": 0.01
+        },
+        "state.manifest.read": {
+          "n": 200,
+          "p50": 0.172,
+          "p95": 0.784
+        },
+        "state.normalize": {
+          "n": 200,
+          "p50": 0.573,
+          "p95": 0.712
+        },
+        "state.threads.hydrate": {
+          "n": 200,
+          "p50": 59.065,
+          "p95": 63.057
+        },
+        "state.skills.scan": {
+          "n": 200,
+          "p50": 0.103,
+          "p95": 1.109
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 3.108,
+          "p95": 3.671
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 3.038,
+          "p95": 3.464
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 20.527,
+          "p95": 23.263
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.582,
+          "p95": 0.836
+        },
+        "memory.index": {
+          "n": 100,
+          "p50": 23.572,
+          "p95": 26.401
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 114.052,
+          "p95": 125.445
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 60.769,
+          "p95": 66.276
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.034,
+          "p95": 0.061
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.003,
+          "p95": 0.004
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 10.185,
+          "p95": 12.156
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 17.731,
+          "p95": 19.78
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 112.911,
+          "p95": 123.226
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 67.48,
+          "p95": 71.757
+        }
+      }
+    }
+  }
+}

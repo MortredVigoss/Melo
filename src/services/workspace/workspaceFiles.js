@@ -28,6 +28,7 @@
 // canonical copy too without drift.
 
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { invalidateWorkspaceTree } from './workspaceTreeCache.js';
 import {
   basename,
   dirname,
@@ -59,13 +60,7 @@ export const IGNORED_DIR_NAMES = new Set([
  * Falls back to `fallbackRoot` when rawPath is missing — used by callers
  * that treat an unset workspace path as "use the app install directory".
  */
-export function sanitizeWorkspacePath(rawPath, fallbackRoot) {
-  if (!rawPath || typeof rawPath !== 'string') {
-    return fallbackRoot;
-  }
-
-  return isAbsolute(rawPath) ? resolve(rawPath) : resolve(fallbackRoot, rawPath);
-}
+export { sanitizeWorkspacePath } from '../../domain/workspacePath.js';
 
 export function toRelativePath(rootPath, filePath) {
   const relativePath = relative(rootPath, filePath);
@@ -162,6 +157,7 @@ export async function writeWorkspaceFile(rootPath, relativeFilePath, content) {
   const absolutePath = resolveWorkspaceFilePath(rootPath, relativeFilePath);
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, content, 'utf8');
+  invalidateWorkspaceTree(rootPath);
   return readWorkspaceFile(rootPath, relativeFilePath);
 }
 

@@ -1,38 +1,19 @@
-/**
- * memoryPromotion.js
- *
- * Promotes per-chat sessionMemory facts into the cross-session long-term
- * memories table so they persist after the chat is compacted or deleted.
- *
- * Also provides the background embedding fill-in job that generates
- * embeddings for all memory entries that still lack them.
- *
- * Flow:
- *   After maybeExtractSessionMemory() fires, the caller invokes:
- *     promoteAndPersistFacts(chat, agentId, config)  — fire and forget
- *
- *   This function:
- *     1. Reads session facts from chat.sessionMemory
- *     2. Deduplicates against already-promoted facts (text + optionally semantic)
- *     3. Writes new facts into memories table via upsertMemory
- *     4. Triggers embedding generation for new facts
- *
- * Promoted facts live in namespace `agent:<agentId>` with kind `session-fact`,
- * so they are automatically included in every recallMemories() call.
- */
+/** Sync extracted facts with canonical, scoped records and fill embeddings.
+ * User overrides and tombstones survive checkpoint replay. Automatic memories
+ * stay in their source chat; semantic similarity never discards a fact. */
 
-import { randomUUID } from 'node:crypto';
+import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../runtime/requestScope.js';
+import { getMeloHome } from '../config.js';
+import { reconcileChatFacts } from './factRecords.js';
 import {
-  upsertMemory,
-  recallMemories,
+  listMemoryRecords,
+  getMemoriesByIds,
   getMemoriesWithoutEmbeddings,
   saveMemoryEmbedding,
   listMemoriesNeedingReembed,
   clearNeedsReembed,
-  pruneMemoriesByNamespaceKind,
 } from './store.js';
-import { getEmbedding as _defaultGetEmbedding, cosineSimilarity } from './embeddings.js';
-import { decorateMemoryEntry } from './lifecycle.js';
+import { getEmbedding as _defaultGetEmbedding } from './embeddings.js';
 
 // ─── Dependency injection hook (test-only) ────────────────────────────────────
 //
@@ -48,149 +29,26 @@ export function _setGetEmbeddingForTests(fn) {
   _getEmbedding = typeof fn === 'function' ? fn : _defaultGetEmbedding;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/** Cosine similarity threshold above which two facts are considered duplicates. */
-const DEDUP_THRESHOLD = 0.88;
-
-/** Maximum promoted facts kept per agent. Oldest are pruned beyond this. */
-const MAX_PROMOTED_FACTS = 200;
-
-/** Kind identifier used for promoted session memory facts. */
 export const PROMOTED_KIND = 'session-fact';
 
-// ─── Deduplication ───────────────────────────────────────────────────────────
-
-function isTextDuplicate(fact, existingTexts) {
-  const normalized = fact.toLowerCase().trim();
-  for (const existing of existingTexts) {
-    const e = existing.toLowerCase().trim();
-    if (e === normalized) return true;
-    if (e.includes(normalized) || normalized.includes(e)) return true;
-  }
-  return false;
-}
-
-function isSemanticDuplicate(candidateEmb, existingEmbs) {
-  for (const emb of existingEmbs) {
-    if (cosineSimilarity(candidateEmb, emb) > DEDUP_THRESHOLD) return true;
-  }
-  return false;
-}
-
-// ─── Main promotion function ──────────────────────────────────────────────────
-
-/**
- * Promote new session memory facts from a chat to the long-term memory store.
- * Safe to call fire-and-forget — all errors are swallowed.
- *
- * @param {object} chat      chat record with populated sessionMemory array
- * @param {string} agentId   effective agent id (e.g. 'main')
- * @param {object} config    resolved Melo config (for embedding backend)
- * @returns {Promise<number>} count of newly promoted facts
- */
 export async function promoteAndPersistFacts(chat, agentId, config) {
-  try {
-    const facts = Array.isArray(chat?.sessionMemory) ? chat.sessionMemory : [];
-    if (!facts.length) return 0;
-
-    const effectiveAgentId = agentId || 'main';
-    const namespace = `agent:${effectiveAgentId}`;
-    const now = new Date().toISOString();
-
-    // Load already-promoted facts for this agent to deduplicate against.
-    // We explicitly ask for the embedding blob so the semantic-dedup branch
-    // below actually has something to compare against (Bug E: without this
-    // flag, recallMemories returns embedding=undefined and the whole
-    // semantic branch is dead code — every candidate slips through).
-    const existingPromoted = recallMemories({
-      namespaces: [namespace],
-      kinds: [PROMOTED_KIND],
-      limit: MAX_PROMOTED_FACTS,
-      includeEmbedding: true,
-    });
-
-    const existingTexts = existingPromoted.map(r => r.text || '');
-    const existingEmbeddings = existingPromoted.map(r => {
-      if (!r.embedding) return null;
-      try { return new Float32Array(r.embedding.buffer ?? r.embedding); } catch { return null; }
-    });
-    const hasEmbeddings = existingEmbeddings.some(Boolean);
-
-    let promoted = 0;
-
-    for (const factObj of facts) {
-      const factText = String(factObj?.fact || '').trim();
-      if (!factText) continue;
-
-      // Fast text dedup
-      if (isTextDuplicate(factText, existingTexts)) continue;
-
-      // Semantic dedup (only if we have existing embeddings to compare against).
-      // Bug C: track whether we've already called getEmbedding for this fact so we
-      // don't retry a just-failed call below. If the provider is flapping, one
-      // miss is one miss — the background fill-in job will pick it up later.
-      let factEmbedding = null;
-      let embedAttempted = false;
-      if (hasEmbeddings) {
-        factEmbedding = await _getEmbedding(factText, config).catch(() => null);
-        embedAttempted = true;
-        if (factEmbedding && isSemanticDuplicate(factEmbedding, existingEmbeddings.filter(Boolean))) {
-          continue;
-        }
-      }
-
-      // Build and write the new memory entry
-      const entryId = `promoted:${effectiveAgentId}:${randomUUID()}`;
-      const entry = decorateMemoryEntry({
-        id: entryId,
-        namespace,
-        kind: PROMOTED_KIND,
-        sourceId: chat?.id || null,
-        text: factText,
-        searchText: factText.toLowerCase().replace(/\s+/g, ' ').trim(),
-        createdAt: factObj?.extractedAt || now,
-        updatedAt: now,
-        metadata: {
-          category: factObj?.category || 'general',
-          chatId: chat?.id || null,
-          chatTitle: chat?.title || null,
-        },
-      });
-      upsertMemory(entry);
-
-      // Store embedding if available; otherwise schedule fill-in.
-      // If we already attempted and got null, do NOT retry — same provider, same
-      // call, same odds.  Leave it to scheduleEmbeddingFillIn() to try again.
-      let emb = factEmbedding;
-      if (!emb && !embedAttempted) {
-        emb = await _getEmbedding(factText, config).catch(() => null);
-      }
-      if (emb) {
-        saveMemoryEmbedding(entryId, factText.toLowerCase().replace(/\s+/g, ' ').trim(), emb);
-        existingEmbeddings.push(emb);
-      }
-
-      existingTexts.push(factText);
-      promoted++;
+  const context={...currentRequestContext(),env:{...requestEnvironment()}};
+  return runWithRequestContext(context,async()=>{
+    const before=new Set(listMemoryRecords().map(r=>r.id));
+    const entries=reconcileChatFacts(chat,agentId);
+    for (const entry of entries) {
+      if (entry.metadata.validTo || entry.metadata.forgotten) continue;
+      if (getMemoriesByIds([entry.id])[0]?.embedding) continue;
+      const embedding=await _getEmbedding(entry.text,config).catch(()=>null);
+      if (embedding) saveMemoryEmbedding(entry.id,entry.searchText,embedding);
     }
-
-    pruneMemoriesByNamespaceKind({
-      namespace,
-      kind: PROMOTED_KIND,
-      keep: MAX_PROMOTED_FACTS,
-      preservePinned: true,
-    });
-
-    return promoted;
-  } catch {
-    return 0;
-  }
+    return entries.filter(e=>!before.has(e.id)).length;
+  });
 }
 
 // ─── Background embedding fill-in ────────────────────────────────────────────
 
-let _fillInRunning = false;
+const _fillInRunning = new Set();
 
 /**
  * Generate embeddings for all memory entries that still lack one.
@@ -200,8 +58,11 @@ let _fillInRunning = false;
  * @param {object} config  resolved Melo config
  */
 export async function scheduleEmbeddingFillIn(config) {
-  if (_fillInRunning) return;
-  _fillInRunning = true;
+  const home=getMeloHome();
+  const context={...currentRequestContext(),env:{...requestEnvironment(),MELO_HOME:home}};
+  if (_fillInRunning.has(home)) return;
+  _fillInRunning.add(home);
+  return runWithRequestContext(context,async()=>{
   try {
     const pendingById = new Map();
     for (const row of getMemoriesWithoutEmbeddings()) {
@@ -222,7 +83,7 @@ export async function scheduleEmbeddingFillIn(config) {
       });
     }
 
-    const pending = Array.from(pendingById.values());
+    const pending = Array.from(pendingById.values()).slice(0, 100);
     if (!pending.length) return;
 
     for (const { id, searchText, needsReembed } of pending) {
@@ -247,6 +108,7 @@ export async function scheduleEmbeddingFillIn(config) {
   } catch {
     // best-effort
   } finally {
-    _fillInRunning = false;
+    _fillInRunning.delete(home);
   }
+  });
 }

@@ -391,38 +391,16 @@ test('hygiene contract: playwrightFetcher exposes idle-close machinery', async (
   assert.equal(typeof mod.closePlaywrightSessionSoon, 'function');
 });
 
-test('hygiene contract #2: stale-daemon cleanup runs at module load', async () => {
-  // Hygiene fix #2 (system-freeze second occurrence): the first hygiene
-  // fix (closeSoon idle-close) only handled within-session accumulation.
-  // The system froze a second time after melo crashes / SIGKILL left
-  // orphan `cliDaemon.js melo-(shared|search)` processes that kept
-  // spawning Chrome. Pin: source MUST contain the cleanup call at
-  // module load + the regex matching daemon arg pattern.
-  const { readFile } = await import('node:fs/promises');
-  const src = await readFile(
-    new URL('../../web/playwrightFetcher.js', import.meta.url),
-    'utf8',
-  );
-  assert.match(
-    src,
-    /function cleanupStalePlaywrightDaemons/,
-    'cleanupStalePlaywrightDaemons function must exist',
-  );
-  // Daemon match pattern — anchor at $ avoids matching a hypothetical
-  // `cliDaemon.js melo-shared-extra`. The src contains the literal
-  // bytes `cliDaemon\\.js melo-(shared|search)$` (the JS source
-  // single-quoted string `'cliDaemon\\.js melo-(shared|search)$'`),
-  // so substring check matches the JS string-literal form directly.
-  assert.ok(
-    src.includes('cliDaemon\\\\.js melo-(shared|search)$'),
-    'pkill regex must match exact daemon arg pattern (cliDaemon.js melo-...)',
-  );
-  // Module-load invocation (vs only being declared).
-  const cleanupInvocations = src.match(/^cleanupStalePlaywrightDaemons\(\);?$/gm);
-  assert.ok(
-    (cleanupInvocations?.length ?? 0) >= 1,
-    'cleanupStalePlaywrightDaemons must be invoked at module load',
-  );
+test('hygiene contract #2: startup cleanup preserves other live owners', async () => {
+  const { selectOwnedDaemonPids } = await import('../../runtime/processOwnership.js');
+  const table = [
+    '11 501 node /pw/cliDaemon.js melo-shared-p100-1234abcd',
+    '12 501 node /pw/cliDaemon.js melo-search-p200-1234abcd',
+    '13 502 node /pw/cliDaemon.js melo-search-p300-1234abcd',
+  ].join('\n');
+  assert.deepEqual(selectOwnedDaemonPids(table, {
+    uid: 501, includeOrphans: true, isAlive: pid => pid === 100,
+  }), [12]);
 });
 
 test('hygiene contract #2: cleanupStalePlaywrightDaemons is named export', async () => {

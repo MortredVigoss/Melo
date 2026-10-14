@@ -25,7 +25,7 @@
 // point; future chatExecutionService (sub-phase 7d-5) will consume it
 // directly.
 
-import { buildRecentWindow } from '../../memory/contextCompact.js';
+import { buildRecentWindow } from '../../memory/contextWindow.js';
 import {
   normalizeMessageAttachments,
   titleCase,
@@ -34,8 +34,8 @@ import {
   normalizeExtractedMedia,
   renderExtractedMediaContext,
 } from '../../media/index.js';
-import { messageVisibleText } from '../message/messageBlocks.js';
-import { shouldSuppressAssistantContextText } from './contextFilters.js';
+import { messageVisibleText } from '../../domain/message/messageBlocks.js';
+import { shouldSuppressAssistantContextText } from '../../domain/chat/contextFilters.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Attachment classification constants
@@ -537,6 +537,10 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
  *     latest turn is a follow-up without its own media,
  *   - historical rich-media stripping for older user turns.
  */
+// Weak metadata never enters provider payloads or JSON serialization.
+const sourceIds = new WeakMap();
+export function modelMessageSourceIds(messages) { return messages.map(message=>sourceIds.get(message)).filter(Boolean); }
+
 export function buildModelMessagesFromChat(chat) {
   const isGroupChat = chat?.chatType === 'group' || chat?.chatType === 'supergroup';
   const allMessages = Array.isArray(chat?.messages) ? chat.messages : [];
@@ -581,9 +585,11 @@ export function buildModelMessagesFromChat(chat) {
     } else if (index !== latestIndex && message?.role === 'user') {
       effectiveMessage = stripHistoricalRichMediaFromMessage(message);
     }
-    return {
+    const modelMessage = {
       role: message.role,
       content: messageToModelContent(effectiveMessage, { includeSenderPrefix: isGroupChat }),
     };
+    sourceIds.set(modelMessage,message.id);
+    return modelMessage;
   });
 }

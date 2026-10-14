@@ -5,10 +5,11 @@ const VISION_PATTERNS = [
   /^gpt-4\.1/i,
   /^chatgpt-4o/i,
   /^gpt-5/i,
+  /^gpt-6(?:\.|-)/i,
   /^o[134](?:$|-)/i,
   /^claude-3/i,
   /^claude-(?:sonnet|opus|haiku)-[34]/i,
-  /^gemini-(1\.5|2|pro)/i,
+  /^gemini-(1\.5|[2-9]|pro)/i,
   /^qwen.*vl/i,
   /^llava/i,
   /^pixtral/i,
@@ -16,7 +17,8 @@ const VISION_PATTERNS = [
   /vision/i,
 ];
 
-export function modelSupportsVision(modelName = '') {
+export function modelSupportsVision(modelName = '', tested = null) {
+  if (tested?.requestedModel === modelName && typeof tested.ok === 'boolean') return tested.ok;
   const normalized = String(modelName || '').trim();
   if (!normalized) {
     return false;

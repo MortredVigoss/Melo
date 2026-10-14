@@ -35,13 +35,13 @@ import {
   agentDefinitionFor,
   allAgentIdsFromProfiles,
   MOOD_OPTION_IDS,
-} from '../services/agent/agentLibrary.js';
+} from '../domain/agent/agentLibrary.js';
 import {
   normalizeAgentTools,
   normalizeIdWhitelist,
   normalizeMcpServerWhitelist,
-} from '../services/agent/agentTools.js';
-import { normalizeAgentChannels } from '../services/agent/agentChannels.js';
+} from '../domain/agent/agentTools.js';
+import { normalizeAgentChannels } from '../domain/agent/agentChannels.js';
 
 function normalizeOptionalNumber(value, { min = -Infinity, max = Infinity } = {}) {
   const numeric = Number(value);
@@ -85,8 +85,8 @@ const VOICE_REPLY_MODES = new Set(['summary', 'full', 'off']);
 
 export function normalizeAgentProfile(agentId, profile) {
   const definition = agentDefinitionFor(agentId, profile);
-  const identity = readAgentIdentityValue(profile, definition.defaultIdentity);
-  const soulMd = readAgentSoulValue(profile, definition.defaultSoul);
+  const identity = profile?.portableIdentity && typeof profile.identity === 'string' ? profile.identity : readAgentIdentityValue(profile, definition.defaultIdentity);
+  const soulMd = profile?.portableIdentity && typeof profile.soulMd === 'string' ? profile.soulMd : readAgentSoulValue(profile, definition.defaultSoul);
   const tools = normalizeAgentTools(profile?.tools);
   const model =
     typeof profile?.model === 'string' && profile.model.trim()
@@ -126,10 +126,13 @@ export function normalizeAgentProfile(agentId, profile) {
   return withLegacyAgentAliases(
     {
       id: definition.id,
-      name: definition.name,
+      name: profile?.portableIdentity && typeof profile.name === 'string' ? profile.name : definition.name,
+      portableIdentity: profile?.portableIdentity === true,
+      symbol: typeof profile?.symbol === 'string' ? profile.symbol : 'person.crop.square',
+      avatarData: typeof profile?.avatarData === 'string' && profile.avatarData.length < 500000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(profile.avatarData) ? profile.avatarData : '',
       laneLabel: definition.laneLabel,
-      description: definition.description,
-      rolePrompt: definition.rolePrompt,
+      description: profile?.portableIdentity && typeof profile.description === 'string' ? profile.description : definition.description,
+      rolePrompt: profile?.portableIdentity && typeof profile.rolePrompt === 'string' ? profile.rolePrompt : definition.rolePrompt,
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,
       tools,
@@ -184,7 +187,7 @@ export function normalizeAgentOverride(agentId, profile) {
   if (MOOD_OPTION_IDS.has(profile.mood)) {
     normalized.mood = profile.mood;
   }
-  for (const key of ['name', 'laneLabel', 'description', 'rolePrompt']) {
+  for (const key of ['name', 'laneLabel', 'description', 'rolePrompt', 'symbol']) {
     if (typeof profile?.[key] === 'string' && profile[key].trim()) {
       normalized[key] = profile[key].trim();
     }
@@ -192,6 +195,8 @@ export function normalizeAgentOverride(agentId, profile) {
   if (profile.tools !== undefined) {
     normalized.tools = normalizeAgentTools(profile.tools);
   }
+  if (typeof profile.avatarData === 'string') normalized.avatarData = profile.avatarData;
+  if (profile.portableIdentity) { normalized.portableIdentity = true; normalized.identity = profile.identity || ''; normalized.soulMd = profile.soulMd || ''; }
   if (typeof profile.model === 'string') {
     normalized.model = profile.model.trim();
   }

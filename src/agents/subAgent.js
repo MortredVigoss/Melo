@@ -1,3 +1,5 @@
+import { delegatedConfig } from './delegatedConfig.js';
+import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
 /**
  * Sub-agent executor.
  *
@@ -15,7 +17,7 @@
  */
 
 import { createOpenAICompatibleReply } from '../openai.js';
-import { getAllTools, getTool } from '../tools/registry.js';
+import { getAllTools, getTool } from '../tools/registryCore.js';
 import { executeToolCalls } from '../tools/executor.js';
 import { parseModelResponse, formatToolResultsMessage } from '../tools/parser.js';
 import { buildToolsSystemPrompt } from '../tools/systemPrompt.js';
@@ -36,7 +38,7 @@ function resolveAllowedTools(allowedToolIds, depth) {
   const all = getAllTools();
   const atDepthCap = depth >= SUB_AGENT_MAX_DEPTH - 1;
 
-  if (Array.isArray(allowedToolIds) && allowedToolIds.length > 0) {
+  if (Array.isArray(allowedToolIds)) {
     const allowSet = new Set(allowedToolIds);
     return all.filter(t => {
       if (!allowSet.has(t.id)) return false;
@@ -89,6 +91,8 @@ export async function runSubAgent({
   depth = 0,
   allowedToolIds = null,
   replyFn = createOpenAICompatibleReply,
+  roleId = null,
+  onProviderResponse,
 }) {
   if (depth >= SUB_AGENT_MAX_DEPTH) {
     return {
@@ -139,17 +143,24 @@ export async function runSubAgent({
   ];
   let finalOutput = '';
   let totalToolCalls = 0;
+  let iterations = 0;
+  let failedTools = 0;
+  const toolResults = [];
+  const providerConfig = delegatedConfig(config);
 
   for (let iteration = 0; iteration < MAX_SUB_AGENT_ITERATIONS; iteration++) {
     if (signal?.aborted) {
       return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration } };
     }
 
+    iterations++;
     const rawReply = await replyFn({
+      onProviderResponse,
       authMode: config.authMode,
-      apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-      baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-      model: process.env.MELO_MODEL || config.model,
+      apiProtocol: config.apiProtocol,
+      apiKey: providerConfig.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      model: providerConfig.model,
       systemPrompt,
       messages: loopMessages,
       signal,
@@ -216,10 +227,12 @@ export async function runSubAgent({
         workspacePath,
         signal,
         chatId,
-        config,
+        config: providerConfig,
         // Critical: propagate depth so nested agent tool calls correctly
         // observe the SUB_AGENT_MAX_DEPTH guard.
         agentDepth: depth,
+        agentId: roleId,
+        executionPrefix: `role:${roleId || depth}:${iteration}:`,
         // Also propagate the allowed-tool whitelist so nested sub-agents
         // cannot widen privileges.
         allowedToolIds: allowedTools.map(t => t.id),
@@ -268,6 +281,8 @@ export async function runSubAgent({
       });
     }
 
+    toolResults.push(...allResults.map(({call,result})=>projectToolResultForPersist(call,result)));
+    failedTools += allResults.filter(r=>r.result.ok === false).length;
     loopMessages = [
       ...loopMessages,
       { role: 'assistant', content: rawReply },
@@ -275,6 +290,7 @@ export async function runSubAgent({
     ];
   }
 
+  const exhausted = !finalOutput;
   if (!finalOutput) {
     // Iteration budget exhausted without a terminal prose reply. Use the last
     // assistant message but scrub tool-call XML and thinking blocks so the
@@ -285,9 +301,9 @@ export async function runSubAgent({
   }
 
   return {
-    ok: true,
+    ok: !exhausted && failedTools === 0,
     output: finalOutput,
-    meta: { depth, iterations: MAX_SUB_AGENT_ITERATIONS, toolCalls: totalToolCalls },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, exhausted, toolResults },
   };
 }
 

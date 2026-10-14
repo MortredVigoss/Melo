@@ -27,7 +27,7 @@
 import {
   readTextIfExists,
   ensureMarkdownFile,
-} from '../services/agent/markdownFiles.js';
+} from '../persistence/agentMarkdownFiles.js';
 import { normalizeMarkdownContent } from '../shared/helpers.js';
 import {
   normalizeAgentProfile,
@@ -35,7 +35,7 @@ import {
   normalizeAgentOverride,
   normalizeProjectAgentOverrides,
 } from './agentProfiles.js';
-import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
+import { allAgentIdsFromProfiles } from '../domain/agent/agentLibrary.js';
 
 // Per-MELO_HOME debounce. Original was a single `let markdownPrimeQueued`
 // boolean; once one home triggered a prime pass, every other home would
@@ -43,7 +43,7 @@ import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
 // finished. After this module became non-cache-busted (Phase 7d-5α-A1),
 // the flag started leaking across test homes the same way `markdownSynced`
 // did. Same fix shape: a Set keyed by current home.
-const markdownPrimePendingHomes = new Set();
+const markdownPrimePendingHomes = new Map();
 
 /**
  * Import agent IDENTITY.md / SOUL.md from disk into state.agentProfiles.
@@ -166,10 +166,9 @@ async function primeAgentMarkdownFiles(state, getAgentMarkdownPaths) {
 export function queueAgentMarkdownPrime(state, providedHome, providedGetAgentMarkdownPaths) {
   const home = providedHome || getMeloHome();
   if (markdownPrimePendingHomes.has(home)) {
-    return;
+    return markdownPrimePendingHomes.get(home);
   }
 
-  markdownPrimePendingHomes.add(home);
   const getPathsForCapturedHome = providedGetAgentMarkdownPaths
     || createAgentMarkdownFileHelpers({
       agentsDir: join(home, 'desktop', 'agents'),
@@ -182,7 +181,7 @@ export function queueAgentMarkdownPrime(state, providedHome, providedGetAgentMar
     ),
   };
 
-  Promise.resolve()
+  const work = Promise.resolve()
     .then(() => primeAgentMarkdownFiles(snapshot, getPathsForCapturedHome))
     .catch(error => {
       console.warn(`Failed to prime Melo agent markdown files: ${error.message}`);
@@ -190,6 +189,8 @@ export function queueAgentMarkdownPrime(state, providedHome, providedGetAgentMar
     .finally(() => {
       markdownPrimePendingHomes.delete(home);
     });
+  markdownPrimePendingHomes.set(home, work);
+  return work;
 }
 
 // Each export above (importAgentMarkdownFiles + queueAgentMarkdownPrime)
@@ -200,6 +201,6 @@ export function queueAgentMarkdownPrime(state, providedHome, providedGetAgentMar
 // but doesn't survive an async microtask boundary. The factory itself
 // still accepts the lazy-getter form for any other consumer that wants it
 // (e.g. desktopStore's syncAgentMarkdownFiles, which is fully sync).
-import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
+import { createAgentMarkdownFileHelpers } from '../persistence/agentMarkdownFiles.js';
 import { join } from 'node:path';
 import { getMeloHome } from '../config.js';

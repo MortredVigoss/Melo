@@ -1,10 +1,8 @@
 // ─── Viz-spec service ────────────────────────────────────────────────────────
-// "Demon mode" visualization protocol. When the user has toggled the Demon
-// button in the desktop composer (uiState.demonMode), sendChatMessage passes
-// `demonMode: true` through to runChatAgentExecutionGraph, which asks this
-// module for the instruction block that tells the model how to emit a
-// `<viz-spec>…</viz-spec>` JSON trailer on answers whose subject-matter
-// actually benefits from an interactive visualization.
+// Legacy Demon visualization protocol. New-request authoring is retired
+// (user request, 2026-10-07); saved specs and their renderers remain readable.
+// The chat runner uses enabled:false to strip unexpected trailers without
+// creating a new visualization. Instruction builders remain for compatibility.
 //
 // Why this lives in its own service:
 //   - The emit-side (system prompt) and the parse-side (strip trailer,
@@ -499,15 +497,15 @@ function normalizeTreeSpec(raw) {
  *         { kind: 'interactive', renderer, title, params, formula }
  *         { kind: 'tree',        renderer, title, rootLabel, nodes }
  *
- * When isRemoteChannel === true the function only strips tags and always
- * returns `viz: null` — remote channels never carry visualizations.
+ * When disabled or isRemoteChannel === true, only strip tags and return
+ * `viz: null`; this also supports temporarily retired authoring.
  */
-export function extractVizSpec(text = '', { isRemoteChannel = false } = {}) {
+export function extractVizSpec(text = '', { isRemoteChannel = false, enabled = true } = {}) {
   const source = String(text || '');
   const match = source.match(VIZ_SPEC_PATTERN);
   const strippedText = source.replace(VIZ_SPEC_GLOBAL_PATTERN, '').trim();
 
-  if (isRemoteChannel || !match) {
+  if (!enabled || isRemoteChannel || !match) {
     return { text: strippedText, viz: null };
   }
 

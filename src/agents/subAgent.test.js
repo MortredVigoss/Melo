@@ -147,7 +147,7 @@ test('H2: sub-agent cannot call a tool outside allowedToolIds whitelist', async 
       replyFn: reply,
     });
 
-    assert.equal(res.ok, true);
+    assert.equal(res.ok, false); // Denied tools remain a failed role, even after a prose reply.
     assert.equal(allowedCalls.length, 1);
     assert.equal(forbiddenCalls.length, 0);
 
@@ -302,4 +302,15 @@ test('G-1d slice 1.5: tool_calls_done SSE event omits evidenceTrail when tool di
   } finally {
     unregisterTool('no_trail_tool');
   }
+});
+
+test('delegation uses the request environment even when process defaults belong to another request',async()=>{
+ const {runWithRequestContext}=await import('../runtime/requestScope.js');
+ const before={...process.env};process.env.MELO_MODEL='global-wrong';process.env.MELO_API_KEY='global-wrong-key';
+ try {
+  const calls=[];
+  await runWithRequestContext({env:{MELO_MODEL:'request-model',MELO_API_KEY:'request-key',MELO_BASE_URL:'https://request.test'}},()=>runSubAgent({task:'hello',config:validConfig(),allowedToolIds:[],replyFn:async o=>{calls.push(o);return 'done';}}));
+  assert.equal(calls[0].model,'request-model');assert.equal(calls[0].apiKey,'request-key');assert.equal(calls[0].baseUrl,'https://request.test');
+  await runSubAgent({task:'hello',config:{...validConfig(),model:'chosen-role',modelResolvedForTurn:true},allowedToolIds:[],replyFn:async o=>{assert.equal(o.model,'chosen-role');assert.equal(o.apiKey,'sk-test');return 'done';}});
+ } finally {for(const k of ['MELO_MODEL','MELO_API_KEY']){if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k];}}
 });

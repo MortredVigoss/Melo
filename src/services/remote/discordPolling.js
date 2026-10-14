@@ -1,3 +1,5 @@
+import { createRequestContext } from '../../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Discord polling cluster — sub-phase 7d-5ζ commit 2 of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -38,12 +40,12 @@ import { enrichMessageWithMediaContext } from '../../media/index.js';
 import {
   mergeChannelRuntimeFields,
   normalizeAgentChannels,
-} from '../agent/agentChannels.js';
-import { allAgentIdsFromProfiles } from '../agent/agentLibrary.js';
+} from '../../domain/agent/agentChannels.js';
+import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 import { generateChatTitle } from '../chat/providerErrors.js';
 import { sendChatMessage } from '../chat/sendChatMessage.js';
 import { rewriteForVoice } from '../media/voiceRewrite.js';
-import { normalizeMessageBlocks } from '../message/messageBlocks.js';
+import { normalizeMessageBlocks } from '../../domain/message/messageBlocks.js';
 import { loadAttachmentBytes } from './attachmentBytes.js';
 import {
   discordApiRequest,
@@ -78,7 +80,7 @@ import {
   normalizeAgentProfile,
   normalizeAgentProfiles,
 } from '../../state/agentProfiles.js';
-import { refreshChatMemorySummary } from '../../state/chatThreadContext.js';
+import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
 import {
   createChatRecord,
   summarizeMessagePreview,
@@ -87,7 +89,6 @@ import { normalizeChat } from '../../state/stateHydration.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import {
   loadState,
-  saveState,
   updateStateAtomically,
 } from '../../state/stateStore.js';
 
@@ -180,7 +181,8 @@ async function shouldReplyToDiscordMessage(
 }
 
 async function ensureDiscordChatRecord(agentId, incoming) {
-  const state = ensureSelectedEntities(await loadState());
+  let record;
+  await updateStateAtomically(state => {
   const externalThreadKey = buildDiscordThreadKey(
     agentId,
     incoming?.guildId,
@@ -199,9 +201,9 @@ async function ensureDiscordChatRecord(agentId, incoming) {
     }
     if (needsSave) {
       existingChat.updatedAt = nowIso();
-      await saveState(state);
     }
-    return existingChat;
+    record = existingChat;
+    return;
   }
 
   const chat = {
@@ -218,18 +220,15 @@ async function ensureDiscordChatRecord(agentId, incoming) {
     externalThreadKey,
   };
   state.chats.unshift(chat);
-  await saveState(state);
-  return chat;
+  record = chat;
+  });
+  return record;
 }
 
 async function recordDiscordMessageWithoutReply(agentId, incoming, existingChat = null) {
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
-  const state = ensureSelectedEntities(rawState);
+  const config = await getResolvedConfig();
   const chat = normalizeChat(existingChat || (await ensureDiscordChatRecord(agentId, incoming)));
-  const currentChat = state.chats.find(entry => entry.id === chat.id);
-  if (!currentChat) {
-    return null;
-  }
+  let currentChat = null;
 
   const userMessage = {
     id: randomUUID(),
@@ -248,6 +247,9 @@ async function recordDiscordMessageWithoutReply(agentId, incoming, existingChat 
     config,
     modelSupportsVision: false,
   });
+  await updateStateAtomically(state => {
+  currentChat = state.chats.find(entry => entry.id === chat.id);
+  if (!currentChat) return;
   currentChat.messages.push(userMessage);
   currentChat.updatedAt = nowIso();
   currentChat.chatType = incoming?.chatType || currentChat.chatType;
@@ -259,7 +261,7 @@ async function recordDiscordMessageWithoutReply(agentId, incoming, existingChat 
   updateGroupRelationshipGraph(currentChat, incoming, false);
 
   refreshChatMemorySummary(currentChat);
-  await saveState(state);
+  });
   return currentChat;
 }
 
@@ -298,6 +300,7 @@ async function sendDiscordAudioReply(channel, incoming, audioBuffer, mimeType = 
 }
 
 export async function processDiscordPollingCycle() {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => processDiscordPollingCycle(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const agentIds = allAgentIdsFromProfiles(state.agentProfiles);
   let hasActiveChannel = false;

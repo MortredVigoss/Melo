@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { getMeloHome } from '../config.js';
 import { atomicWriteJson } from '../storage.js';
 
@@ -19,7 +20,8 @@ function defaultThreadsDir() {
   return join(getMeloHome(), 'desktop', 'threads');
 }
 function resolveThreadsDir(explicit) {
-  return explicit || defaultThreadsDir();
+  const dir = resolve(explicit || defaultThreadsDir());
+  try { return realpathSync(dir); } catch { return dir; }
 }
 const THREAD_CHECKPOINT_VERSION = 1;
 const MAX_CACHE_ENTRIES = 48;
@@ -43,6 +45,11 @@ const MAX_CACHE_ENTRIES = 48;
 // bucket trace back to the same source — eliminating the last cache-
 // vs-disk consistency hazard.
 const checkpointCacheByDir = new Map();
+const cacheGenerations = new Map();
+let globalGeneration = 0;
+export function checkpointCacheGeneration(threadsDir) {
+  return `${globalGeneration}:${cacheGenerations.get(resolveThreadsDir(threadsDir)) || 0}`;
+}
 function getCacheBucket(explicitThreadsDir) {
   const dir = resolveThreadsDir(explicitThreadsDir);
   let bucket = checkpointCacheByDir.get(dir);
@@ -210,6 +217,11 @@ export async function pruneThreadCheckpoints(keepThreadIds = [], { threadsDir } 
  *     directory derived from current `getMeloHome()`.
  */
 export function invalidateThreadCheckpointCache(threadId = null, { allHomes = false, threadsDir } = {}) {
+  if (allHomes) globalGeneration += 1;
+  else {
+    const dir = resolveThreadsDir(threadsDir);
+    cacheGenerations.set(dir, (cacheGenerations.get(dir) || 0) + 1);
+  }
   if (allHomes) {
     if (threadId == null) {
       checkpointCacheByDir.clear();

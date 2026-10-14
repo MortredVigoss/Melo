@@ -1,3 +1,4 @@
+import { chatPreviewSource } from './ownedSnapshot.js';
 // ─── Conversation (chat list) view-model helpers ─────────────────────────────
 // Small, pure helpers that turn a persisted chat object into the shape the
 // sidebar / chat list UI consumes. These live in the state layer (rather
@@ -33,8 +34,8 @@ import {
 } from '../shared/helpers.js';
 import {
   normalizePreviewPlainText,
-  messageVisibleText,
-} from '../services/message/messageBlocks.js';
+  serializeMessageBlocks,
+} from '../domain/message/messageBlocks.js';
 
 // `createChatRecord` builds a fresh persistent chat shape with safe
 // defaults. Originally lived in desktopStore as a 17-line LOCAL helper
@@ -66,7 +67,7 @@ export function sortChats(chats) {
 }
 
 export function summarizeChat(chat) {
-  const lastMessage = [...chat.messages].reverse().find(message => message.role !== 'system');
+  const { lastMessage, messageCount } = chatPreviewSource(chat);
   return {
     id: chat.id,
     title: chat.title,
@@ -77,7 +78,7 @@ export function summarizeChat(chat) {
     updatedLabel: formatUpdatedAt(chat.updatedAt),
     preview: summarizeMessagePreview(lastMessage),
     memorySummary: chat.memorySummary || '',
-    messageCount: chat.messages.length,
+    messageCount,
   };
 }
 
@@ -90,7 +91,10 @@ export function summarizeMessagePreview(message) {
     return 'No messages yet.';
   }
 
-  const visibleContent = normalizePreviewPlainText(messageVisibleText(message));
+  // Project and sidebar previews use the same single formatting pass as chat.
+  // Stripping once before replyPlainText would erase code delimiters and then
+  // interpret literal __name__ a second time as emphasis.
+  const visibleContent = normalizePreviewPlainText(message.content || serializeMessageBlocks(message.blocks || []));
   if (visibleContent) {
     return visibleContent.slice(0, 140);
   }

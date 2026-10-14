@@ -1,3 +1,5 @@
+import { startBuiltinMaintenance } from './builtinMaintenance.js';
+import { stopBuiltinEmbeddings } from './embedProviders/BuiltinEmbedProvider.js';
 /**
  * Memory runtime — centralised boot wiring for the memory subsystem.
  *
@@ -7,8 +9,8 @@
  *   1. Resolve the configured memory provider (sqlite-vec / chroma / lancedb /
  *      http-proxy, with optional shadow + per-namespace routes) so that any
  *      misconfigured env var fails fast.
- *   2. Resolve the configured embedding provider (ollama / openai / custom-http)
- *      so that the backend picker caches its choice and warm-starts.
+ *   2. Resolve the bundled embedding model (or an explicit integration override)
+ *      and rebuild old vectors in verified, staged batches when needed.
  *   3. Register the dreaming scheduler timers (incremental + full sweeps).
  *
  * The returned handle exposes `stop()` so the host can release timers on
@@ -30,7 +32,7 @@ import { checkEmbeddingDimensions, EMBEDDING_DIMS } from './embeddings.js';
 import {
   readStoredEmbeddingDims,
   readStoredEmbeddingModelId,
-  wipeEmbeddingsForDimChange,
+  requireEmbeddingRepair,
   writeStoredEmbeddingModelId,
 } from './store.js';
 import { startDreamingScheduler, stop as stopDreamingScheduler } from './dreaming/scheduler.js';
@@ -90,9 +92,8 @@ export async function startMemoryRuntime({
   // disk.  Either kind of mismatch means stored vectors can't be compared
   // against new embeddings meaningfully (they're from different spaces).
   //
-  // We surface this loudly AND wipe embeddings so the next embed pass
-  // repopulates from the aligned space.  The memory rows themselves stay;
-  // only the vector column is cleared.
+  // Preserve the old index until a staged replacement has been verified.
+  // Keyword recall remains available while incompatible vectors are excluded.
   try {
     const check = await checkEmbeddingDimensions(embedder);
     const storedDims = readStoredEmbeddingDims();
@@ -104,16 +105,16 @@ export async function startMemoryRuntime({
       // table-schema check in store.js handles dims-don't-fit-rebuild;
       // here we only warn if the stored dims record disagrees.
       if (storedDims && storedDims !== check.dims) {
-        log(`[memory.runtime] P2-13: stored embedding_dims=${storedDims} but provider reports ${check.dims} — wiping stored vectors so the next embed pass repopulates`);
-        const cleared = wipeEmbeddingsForDimChange(check.dims);
-        log(`[memory.runtime] P2-13: wiped ${cleared} stored embeddings`);
+        log(`[memory.runtime] P2-13: stored embedding_dims=${storedDims} but provider reports ${check.dims} — preserving vectors until a verified repair completes`);
+        requireEmbeddingRepair();
+        log(`[memory.runtime] P2-13: preserved vectors; repair required`);
       }
     } else if (check.reason === 'provider-canonical-mismatch') {
       log(`[memory.runtime] P2-13: embedding provider dims=${check.providerDims} ≠ canonical EMBEDDING_DIMS=${EMBEDDING_DIMS}. ` +
           `Vectors will be padded/truncated in getEmbedding, but old stored vectors may be from a different space.`);
       if (storedDims && storedDims !== EMBEDDING_DIMS) {
-        const cleared = wipeEmbeddingsForDimChange(EMBEDDING_DIMS);
-        log(`[memory.runtime] P2-13: wiped ${cleared} stored embeddings`);
+        requireEmbeddingRepair();
+        log(`[memory.runtime] P2-13: preserved vectors; repair required`);
       }
     } else if (check.reason === 'provider-no-dims') {
       log(`[memory.runtime] P2-13: embedding provider did not declare dims — skipping alignment check`);
@@ -135,12 +136,11 @@ export async function startMemoryRuntime({
           // First successful boot with this provider — just tag it.
           writeStoredEmbeddingModelId(providerModel);
         } else if (storedModel !== providerModel) {
+          requireEmbeddingRepair();
           log(`[memory.runtime] Phase-2: embedding model drift detected — ` +
               `stored="${storedModel}" but provider reports "${providerModel}". ` +
               `Dims still align, but the two vector spaces may be incompatible. ` +
-              `Recall quality may degrade until old vectors are rebuilt. ` +
-              `Run wipeEmbeddingsForDimChange(${EMBEDDING_DIMS}) to force a refresh, ` +
-              `or set MELO_EMBED_PROVIDER back to recover.`);
+              `Keyword recall remains available while a verified staged rebuild completes.`);
           // NOT updating _meta on drift — the stored modelId stays pointing
           // at the space that actually wrote the on-disk vectors so the
           // warning persists across reboots until the user resolves it.
@@ -166,11 +166,14 @@ export async function startMemoryRuntime({
     }
   }
 
+  const maintenance = !skipScheduler ? startBuiltinMaintenance(embedder,{log}) : null;
   _runtimeHandle = {
     provider,
     embedder,
     schedulerStarted,
     stop() {
+      maintenance?.stop();
+      stopBuiltinEmbeddings().catch(()=>{});
       try { stopDreamingScheduler(); } catch {}
       _runtimeHandle = null;
     },

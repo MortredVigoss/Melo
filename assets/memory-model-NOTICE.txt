@@ -1,0 +1,11 @@
+Melo built-in semantic memory
+
+Model: intfloat/multilingual-e5-small (MIT)
+https://huggingface.co/intfloat/multilingual-e5-small
+ONNX conversion: Xenova/multilingual-e5-small
+https://huggingface.co/Xenova/multilingual-e5-small/tree/761b726dd34fb83930e26aab4e9ac3899aa1fa78
+
+Quantized model and tokenizer checksums are pinned in scripts/prepare-memory-model.js.
+384 native dimensions; zero-extended to the existing 1024-dimensional storage schema.
+Inference uses the bundled @huggingface/transformers and ONNX Runtime libraries and their respective licenses.
+No remote inference or runtime model downloads.

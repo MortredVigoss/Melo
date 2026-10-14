@@ -1,0 +1,58 @@
+enum SyncWireContract {
+    static let schema: SyncValue = try! JSONDecoder().decode(SyncValue.self, from: Data(##"SCHEMA_JSON"##.utf8))
+    static func validate(_ value: SyncValue, definition: String = "workspace") throws {
+        try check(value, schema["$defs"][definition])
+    }
+    static func check(_ value: SyncValue, _ rule: SyncValue) throws {
+        func fail() throws { throw MeloError.message("同步数据不符合共享协议，原数据已保留。") }
+        let fields = rule.object
+        if let ref = fields["$ref"] { try check(value, schema["$defs"][ref.string.components(separatedBy: "/").last!]); return }
+        if let fixed = fields["const"], fixed != value { try fail() }
+        if let values = fields["enum"], !values.array.contains(value) { try fail() }
+        if let excluded = fields["not"], (try? check(value, excluded)) != nil { try fail() }
+        if let choices = fields["anyOf"], !choices.array.contains(where: { (try? check(value, $0)) != nil }) { try fail() }
+        for item in rule["allOf"].array { try check(value, item) }
+        if let condition = fields["if"], (try? check(value, condition)) != nil, let then = fields["then"] { try check(value, then) }
+        let types = rule["type"].array.isEmpty ? [rule["type"].string] : rule["type"].array.map(\.string)
+        var actual: String
+        switch value {
+        case .null: actual = "null"
+        case .string: actual = "string"
+        case .number: actual = "number"
+        case .bool: actual = "boolean"
+        case .array: actual = "array"
+        case .object: actual = "object"
+        }
+        var integer = false
+        if case .number(let n) = value { integer = n.isFinite && n.rounded() == n && abs(n) <= 9_007_199_254_740_991 }
+        if fields["type"] != nil && !types.contains(actual) && !(types.contains("integer") && integer) { try fail() }
+        func bounds(_ n: Double, _ minimum: String, _ maximum: String) throws {
+            if case .number(let limit) = rule[minimum], n < limit { try fail() }
+            if case .number(let limit) = rule[maximum], n > limit { try fail() }
+        }
+        switch value {
+        case .string(let text):
+            try bounds(Double(text.unicodeScalars.count), "minLength", "maxLength")
+            try bounds(Double(text.utf16.count), "x-minUtf16Length", "x-maxUtf16Length")
+            if let pattern = fields["pattern"], text.range(of: pattern.string, options: .regularExpression) == nil { try fail() }
+        case .number(let n):
+            if !n.isFinite { try fail() }
+            try bounds(n, "minimum", "maximum")
+        case .array(let items):
+            try bounds(Double(items.count), "minItems", "maxItems")
+            if let itemRule = fields["items"] { for item in items { try check(item, itemRule) } }
+        case .object(let object):
+            try bounds(Double(object.count), "minProperties", "maxProperties")
+            for key in rule["required"].array { if object[key.string] == nil { try fail() } }
+            for (key, item) in object {
+                if let names = fields["propertyNames"] { try check(.string(key), names) }
+                if let property = rule["properties"].object[key] { try check(item, property) }
+                else if let extra = fields["additionalProperties"] {
+                    if extra == .bool(false) { try fail() }
+                    if case .object = extra { try check(item, extra) }
+                }
+            }
+        default: break
+        }
+    }
+}

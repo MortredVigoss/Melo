@@ -1,3 +1,5 @@
+import { createRequestContext } from '../../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // External-connector mutation handlers — sub-phase 7d-5ε commit 1 of
 // the desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -26,7 +28,6 @@ import { randomUUID } from 'node:crypto';
 import { nowIso } from '../../shared/helpers.js';
 import {
   loadState,
-  saveState,
   updateStateAtomically,
 } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
@@ -35,7 +36,7 @@ import {
   findProjectById,
 } from '../../state/stateLookups.js';
 import { BUILTIN_CONNECTORS } from '../../state/stateHydration.js';
-import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
+import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import { buildWorkspaceSnapshot } from '../workspace/workspaceSnapshot.js';
 import {
   normalizeExternalConnector,
@@ -44,7 +45,7 @@ import {
   readExternalConnectorPromptPayload,
   requestExternalConnectorJson,
 } from './externalConnector.js';
-import { normalizeExternalToolRuns } from '../activity/activityLog.js';
+import { normalizeExternalToolRuns } from '../../domain/activity/activityLog.js';
 
 export async function createExternalConnector({
   name,
@@ -58,40 +59,43 @@ export async function createExternalConnector({
   resourcePath,
   promptPath,
 }) {
-  const state = ensureSelectedEntities(await loadState());
-  const connector = normalizeExternalConnector({
-    id: randomUUID(),
-    name: name?.trim() || 'External connector',
-    description: description?.trim() || '',
-    endpoint,
-    prompt: prompt?.trim() || '',
-    authToken: authToken?.trim() || '',
-    healthPath,
-    manifestPath,
-    contextPath,
-    resourcePath,
-    promptPath,
-    createdAt: nowIso(),
-    updatedAt: nowIso(),
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createExternalConnector(...arguments));
+  await updateStateAtomically(state => {
+    const connector = normalizeExternalConnector({
+      id: randomUUID(),
+      name: name?.trim() || 'External connector',
+      description: description?.trim() || '',
+      endpoint,
+      prompt: prompt?.trim() || '',
+      authToken: authToken?.trim() || '',
+      healthPath,
+      manifestPath,
+      contextPath,
+      resourcePath,
+      promptPath,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    });
+
+    if (!connector.endpoint) {
+      throw new Error('Connector endpoint is required.');
+    }
+
+    state.externalConnectors.unshift(connector);
+    if (!state.settings.enabledConnectorIds.includes(connector.id)) {
+      state.settings.enabledConnectorIds.push(connector.id);
+    }
+    state.settings.selectedConnectorId = connector.id;
+    state.settings.selectedCustomizeSection = 'connectors';
+    state.settings.activeView = 'customize';
+    return state;
   });
-
-  if (!connector.endpoint) {
-    throw new Error('Connector endpoint is required.');
-  }
-
-  state.externalConnectors.unshift(connector);
-  if (!state.settings.enabledConnectorIds.includes(connector.id)) {
-    state.settings.enabledConnectorIds.push(connector.id);
-  }
-  state.settings.selectedConnectorId = connector.id;
-  state.settings.selectedCustomizeSection = 'connectors';
-  state.settings.activeView = 'customize';
-  await saveState(state);
 
   return getDesktopBootstrap();
 }
 
 export async function updateExternalConnector(connectorId, patch) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => updateExternalConnector(...arguments));
   // Sanitize the patch so blank strings on secret-like fields are dropped
   // instead of overwriting the persisted value. See
   // feedback_preserve_user_config.md. The existing authToken line below is
@@ -144,33 +148,44 @@ export async function updateExternalConnector(connectorId, patch) {
 }
 
 export async function removeExternalConnector(connectorId) {
-  const state = ensureSelectedEntities(await loadState());
-  const nextConnectors = state.externalConnectors.filter(connector => connector.id !== connectorId);
-  if (nextConnectors.length === state.externalConnectors.length) {
-    throw new Error('External connector not found.');
-  }
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => removeExternalConnector(...arguments));
+  await updateStateAtomically(state => {
+    const nextConnectors = state.externalConnectors.filter(connector => connector.id !== connectorId);
+    if (nextConnectors.length === state.externalConnectors.length) {
+      throw new Error('External connector not found.');
+    }
 
-  state.externalConnectors = nextConnectors;
-  state.settings.enabledConnectorIds = state.settings.enabledConnectorIds.filter(
-    id => id !== connectorId,
-  );
-  if (state.settings.selectedConnectorId === connectorId) {
-    state.settings.selectedConnectorId = BUILTIN_CONNECTORS[0].id;
-  }
+    state.externalConnectors = nextConnectors;
+    state.settings.enabledConnectorIds = state.settings.enabledConnectorIds.filter(
+      id => id !== connectorId,
+    );
+    if (state.settings.selectedConnectorId === connectorId) {
+      state.settings.selectedConnectorId = BUILTIN_CONNECTORS[0].id;
+    }
 
-  await saveState(state);
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
 export async function pingExternalConnector(connectorId) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => pingExternalConnector(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const connector = findExternalConnectorById(state, connectorId);
   if (!connector) {
     throw new Error('External connector not found.');
   }
 
-  Object.assign(connector, await refreshExternalConnectorStatus(connector));
-  await saveState(state);
+  const refreshed = await refreshExternalConnectorStatus(connector);
+  await updateStateAtomically(latest => {
+    const current = findExternalConnectorById(latest, connectorId);
+    // A response from an old endpoint must not overwrite edited credentials/configuration.
+    if (!current || current.endpoint !== connector.endpoint || current.authToken !== connector.authToken) return;
+    for (const key of ['lastStatus', 'lastError', 'lastCheckedAt', 'manifest']) {
+      current[key] = refreshed[key];
+    }
+    current.updatedAt = nowIso();
+  });
   return getDesktopBootstrap();
 }
 
@@ -179,6 +194,7 @@ export async function readExternalConnectorResource({
   resourceId,
   projectId,
 }) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => readExternalConnectorResource(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const connector = findExternalConnectorById(state, connectorId);
   if (!connector) {
@@ -205,6 +221,7 @@ export async function previewExternalConnectorPrompt({
   promptId,
   projectId,
 }) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => previewExternalConnectorPrompt(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const connector = findExternalConnectorById(state, connectorId);
   if (!connector) {
@@ -232,6 +249,7 @@ export async function invokeExternalConnectorTool({
   input,
   projectId,
 }) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => invokeExternalConnectorTool(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const connector = findExternalConnectorById(state, connectorId);
   if (!connector) {
@@ -297,7 +315,7 @@ export async function invokeExternalConnectorTool({
     connector.lastError = '';
     connector.lastCheckedAt = nowIso();
     connector.updatedAt = nowIso();
-    await saveState(state);
+    await persistConnectorToolOutcome(connector, state.externalToolRuns[0]);
 
     return {
       bootstrap: await getDesktopBootstrap(),
@@ -319,7 +337,17 @@ export async function invokeExternalConnectorTool({
     connector.lastError = error.message;
     connector.lastCheckedAt = nowIso();
     connector.updatedAt = nowIso();
-    await saveState(state);
+    await persistConnectorToolOutcome(connector, state.externalToolRuns[0]);
     throw error;
   }
+}
+
+async function persistConnectorToolOutcome(connector, toolRun) {
+  await updateStateAtomically(latest => {
+    latest.externalToolRuns = normalizeExternalToolRuns([toolRun, ...latest.externalToolRuns]);
+    const current = findExternalConnectorById(latest, connector.id);
+    if (!current || current.endpoint !== connector.endpoint || current.authToken !== connector.authToken) return;
+    for (const key of ['lastStatus', 'lastError', 'lastCheckedAt']) current[key] = connector[key];
+    current.updatedAt = nowIso();
+  });
 }

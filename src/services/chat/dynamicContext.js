@@ -7,10 +7,10 @@
 // upstream dependencies (ensureChatThreadContext, renderThreadContext,
 // truncateText) live in dedicated leaf modules already.
 
-import { ensureChatThreadContext } from '../../state/chatThreadContext.js';
+import { ensureChatThreadContext } from '../../memory/chatThreadContext.js';
 import { renderThreadContext as renderStructuredThreadContext } from '../../memory/threadContext.js';
 import { truncateText } from '../../shared/helpers.js';
-import { isLiveArtifact } from '../artifact/artifactService.js';
+import { isLiveArtifact } from '../../domain/artifact/artifactService.js';
 
 const SELECTED_FILE_FULL_CONTEXT_CHARS = 3000;
 const SELECTED_FILE_SNIPPET_CONTEXT_CHARS = 5200;
@@ -198,7 +198,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
 
   if (connectors.some(connector => connector.id === 'local-command' && connector.enabled)) {
     const projectRuns = state.commandRuns
-      .filter(run => run.projectId === chat.projectId)
+      .filter(run => run.chatId === chat.id || (Boolean(chat.projectId) && run.projectId === chat.projectId))
       .slice(0, 3);
 
     if (projectRuns.length) {
@@ -220,7 +220,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
     const relatedArtifacts = state.artifacts
       .filter(artifact =>
         isLiveArtifact(artifact) &&
-        (artifact.chatId === chat.id || artifact.projectId === chat.projectId),
+        (artifact.chatId === chat.id || (Boolean(chat.projectId) && artifact.projectId === chat.projectId)),
       )
       .slice(0, 4);
 

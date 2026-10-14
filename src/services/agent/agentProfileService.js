@@ -35,9 +35,9 @@
 import {
   AGENT_CHANNEL_IDS,
   normalizeAgentChannels,
-} from './agentChannels.js';
-import { nextCustomAgentId } from './agentLibrary.js';
-import { DEFAULT_AGENT_TOOL_IDS } from './agentTools.js';
+} from '../../domain/agent/agentChannels.js';
+import { nextCustomAgentId } from '../../domain/agent/agentLibrary.js';
+import { DEFAULT_AGENT_TOOL_IDS } from '../../domain/agent/agentTools.js';
 import { normalizeAgentProfile } from '../../state/agentProfiles.js';
 
 // ────────────────────────────────────────────────────────────────────────────

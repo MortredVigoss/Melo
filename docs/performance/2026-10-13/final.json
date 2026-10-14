@@ -1,0 +1,379 @@
+{
+  "fixture": {
+    "chats": 64,
+    "messagesPerChat": 20,
+    "rounds": 50,
+    "model": "stub",
+    "embedding": "stub-null",
+    "indexing": "worker"
+  },
+  "scenarios": {
+    "casual": {
+      "totalMs": 1090,
+      "calls": {
+        "embeddings": 0,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 100,
+          "p50": 0.004,
+          "p95": 0.01
+        },
+        "state.snapshot.copy": {
+          "n": 200,
+          "p50": 0.581,
+          "p95": 0.872
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 0.029,
+          "p95": 0.036
+        },
+        "state.chat.copy": {
+          "n": 500,
+          "p50": 0.051,
+          "p95": 0.251
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 0.022,
+          "p95": 0.029
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 2.156,
+          "p95": 3.523
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.542,
+          "p95": 0.83
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 5.99,
+          "p95": 7.379
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 0.688,
+          "p95": 1.038
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.499,
+          "p95": 0.736
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 0.005,
+          "p95": 0.015
+        },
+        "turn.prepare_to_first_token": {
+          "n": 50,
+          "p50": 1.846,
+          "p95": 3.1
+        },
+        "model.request": {
+          "n": 50,
+          "p50": 0.011,
+          "p95": 0.027
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 4.877,
+          "p95": 5.948
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 6.982,
+          "p95": 7.755
+        }
+      }
+    },
+    "short": {
+      "totalMs": 1555,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 100,
+          "p50": 0.004,
+          "p95": 0.005
+        },
+        "state.snapshot.copy": {
+          "n": 200,
+          "p50": 0.576,
+          "p95": 0.711
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 0.029,
+          "p95": 0.032
+        },
+        "state.chat.copy": {
+          "n": 500,
+          "p50": 0.051,
+          "p95": 0.479
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 0.023,
+          "p95": 0.03
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 2.801,
+          "p95": 3.985
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.504,
+          "p95": 0.773
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 6.36,
+          "p95": 8.067
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 0.661,
+          "p95": 0.845
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 0.654,
+          "p95": 0.781
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.002,
+          "p95": 0.004
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 6.599,
+          "p95": 9.105
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 0.006,
+          "p95": 0.009
+        },
+        "turn.prepare_to_first_token": {
+          "n": 50,
+          "p50": 9.942,
+          "p95": 12.968
+        },
+        "model.request": {
+          "n": 50,
+          "p50": 0.013,
+          "p95": 0.018
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 6.473,
+          "p95": 7.812
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 7.015,
+          "p95": 7.462
+        }
+      }
+    },
+    "long": {
+      "totalMs": 2891,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 100,
+          "p50": 0.004,
+          "p95": 0.005
+        },
+        "state.snapshot.copy": {
+          "n": 200,
+          "p50": 0.577,
+          "p95": 0.635
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 0.03,
+          "p95": 0.032
+        },
+        "state.chat.copy": {
+          "n": 500,
+          "p50": 0.05,
+          "p95": 0.728
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 0.023,
+          "p95": 0.026
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 4.313,
+          "p95": 5.305
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.507,
+          "p95": 0.795
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 8.596,
+          "p95": 10.165
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 0.661,
+          "p95": 0.721
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 1.009,
+          "p95": 1.115
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.002,
+          "p95": 0.003
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 25.054,
+          "p95": 35.343
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 0.008,
+          "p95": 0.013
+        },
+        "turn.prepare_to_first_token": {
+          "n": 50,
+          "p50": 33.048,
+          "p95": 44.699
+        },
+        "model.request": {
+          "n": 50,
+          "p50": 0.015,
+          "p95": 0.02
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 8.082,
+          "p95": 9.092
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 7.341,
+          "p95": 7.685
+        }
+      }
+    },
+    "group": {
+      "totalMs": 2353,
+      "calls": {
+        "embeddings": 50,
+        "models": 50
+      },
+      "stages": {
+        "state.queue.wait": {
+          "n": 100,
+          "p50": 0.004,
+          "p95": 0.005
+        },
+        "state.snapshot.copy": {
+          "n": 200,
+          "p50": 0.578,
+          "p95": 0.666
+        },
+        "state.compare.before": {
+          "n": 100,
+          "p50": 0.03,
+          "p95": 0.033
+        },
+        "state.chat.copy": {
+          "n": 500,
+          "p50": 0.051,
+          "p95": 0.949
+        },
+        "state.compare.after": {
+          "n": 100,
+          "p50": 0.023,
+          "p95": 0.03
+        },
+        "state.threads.persist": {
+          "n": 100,
+          "p50": 5.066,
+          "p95": 6.368
+        },
+        "state.manifest.commit": {
+          "n": 100,
+          "p50": 0.522,
+          "p95": 0.661
+        },
+        "turn.save_user": {
+          "n": 50,
+          "p50": 9.122,
+          "p95": 9.981
+        },
+        "turn.load": {
+          "n": 50,
+          "p50": 0.661,
+          "p95": 0.707
+        },
+        "intent.classify": {
+          "n": 50,
+          "p50": 1.334,
+          "p95": 2.241
+        },
+        "memory.embedding": {
+          "n": 50,
+          "p50": 0.002,
+          "p95": 0.003
+        },
+        "memory.recall": {
+          "n": 50,
+          "p50": 10.006,
+          "p95": 11.6
+        },
+        "model.first_token": {
+          "n": 50,
+          "p50": 0.007,
+          "p95": 0.01
+        },
+        "turn.prepare_to_first_token": {
+          "n": 50,
+          "p50": 18.815,
+          "p95": 20.517
+        },
+        "model.request": {
+          "n": 50,
+          "p50": 0.014,
+          "p95": 0.019
+        },
+        "turn.save_reply": {
+          "n": 50,
+          "p50": 10.104,
+          "p95": 11.726
+        },
+        "bootstrap.build": {
+          "n": 50,
+          "p50": 7.623,
+          "p95": 8.459
+        }
+      }
+    }
+  },
+  "indexCatchUpMs": 44.79158399999869
+}

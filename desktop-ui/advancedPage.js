@@ -29,12 +29,9 @@
  *                                         the very first render (loaded=false &&
  *                                         loading=false && error=null) so the
  *                                         caller can kick its async refresher.
- * @param {string} [options.statePathHint] path string shown in the "Most settings
- *                                         live in …" tip and copied to the
- *                                         clipboard by the Copy-path button.
- *                                         Defaults to the canonical
- *                                         `~/.melo/desktop/state.json`; callers
- *                                         can override when MELO_HOME is custom.
+ * @param {string} [options.statePathHint] verified config path copied by the
+ *                                         Copy-path button. Empty until runtime
+ *                                         diagnostics resolves the active home.
  * @param {Array<{id: string, command?: string, args?: string[], description?: string,
  *                flag: string, enabled: boolean}>} [options.mcpPresets]
  *                                         Built-in MCP server presets (AntV chart,
@@ -45,13 +42,17 @@
  *                                         empty-state.
  * @returns {string} HTML string for the Advanced pane.
  */
+import { renderRuntimePanel } from './runtimePanel.js';
+
 export function renderAdvancedPage({
   data,
   adv,
   escapeHtml,
   scheduleRefresh,
-  statePathHint = '~/.melo/desktop/state.json',
+  statePathHint = '',
   mcpPresets = [],
+  taskPanelHtml = '',
+  approvalPanelHtml = '',
 }) {
   // Lazy first fetch on initial render of this section.
   if (!adv.loaded && !adv.loading && !adv.error) {
@@ -204,30 +205,27 @@ export function renderAdvancedPage({
         <div class="header-row">
           <div>
             <h2 class="pane-title">
-              Advanced
-              <span class="chip is-accent">Experimental</span>
+              系统状态
+              <span class="chip">本机工作空间</span>
             </h2>
             <p class="page-kicker">
-              Developer features. Status, reload, disconnect, and kill operations are safe — configuration changes (adding new MCP servers, editing endpoints) happen elsewhere or are deferred.
+              查看哪些能力可用、哪些连接需要处理。技术参数和扩展管理收在下方。
             </p>
-            <p class="page-kicker page-kicker-tip">
-              Most settings live in <code>${escapeHtml(statePathHint)}</code>.
-              <button class="ghost-link" type="button"
-                      data-action="copy-melo-state-path"
-                      data-path="${escapeHtml(statePathHint)}">
-                Copy path
-              </button>
-            </p>
+
           </div>
           <div class="inline-actions">
             <button class="small-button" type="button" data-action="refresh-advanced-status">
-              ${adv.loading ? 'Refreshing…' : 'Refresh'}
+              ${adv.loading ? '检查中…' : '刷新状态'}
             </button>
           </div>
         </div>
 
         ${errorBlock}
+        ${taskPanelHtml}
+        ${approvalPanelHtml}
+        ${renderRuntimePanel(adv.diagnostics, escapeHtml)}
 
+        <details class="quality-details"><summary>扩展与连接管理</summary>
         <div class="subsection">
           <div class="header-row">
             <h3 class="subsection-title">Built-in MCP servers</h3>
@@ -283,6 +281,16 @@ export function renderAdvancedPage({
             ${taskRows}
           </div>
         </div>
+        </details>
+        <details class="quality-details"><summary>技术详情</summary>            <p class="page-kicker page-kicker-tip">
+              ${statePathHint ? `Model configuration: <code>${escapeHtml(statePathHint)}</code>.
+              <button class="ghost-link" type="button"
+                      data-action="copy-melo-state-path"
+                      data-path="${escapeHtml(statePathHint)}">
+                Copy path
+              </button>` : 'Configuration path will appear after refresh.'}
+            </p>
+        </details>
       </div>
     </div>
   `;

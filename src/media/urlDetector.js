@@ -1,4 +1,4 @@
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+import { extractTextUrls } from './textUrls.js';
 
 const VIDEO_HOSTS = [
   // YouTube
@@ -99,12 +99,12 @@ export function detectUrlKind(url) {
 
 export function extractUrlsFromText(content = '') {
   const text = String(content || '');
-  const matches = [...text.matchAll(URL_PATTERN)];
+  const matches = extractTextUrls(text);
   const seen = new Set();
   const results = [];
 
   for (const match of matches) {
-    const url = String(match[0] || '').replace(/[.,!?;:)'"]+$/, '');
+    const url = match;
     if (!url || seen.has(url) || url.startsWith('data:')) {
       continue;
     }

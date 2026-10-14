@@ -15,7 +15,7 @@ import {
   updateConfig,
 } from './config.js';
 import { createOpenAICompatibleReply } from './openai.js';
-import { webSearchTool, checkSearchHealth, getCacheStats, clearCache } from './tools/builtins/webSearchTool.js';
+import { webSearchTool, getCacheStats, clearCache } from './tools/builtins/webSearchTool.js';
 import { searchHistoryTool } from './tools/builtins/searchHistoryTool.js';
 import { draftSkillFromConversation } from './agents/skillDrafting.js';
 import { createCustomSkill } from './desktopStore.js';
@@ -30,7 +30,7 @@ import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 // and never reaches CLI's signal handlers.
 //
 // Why both startup-cleanup AND signal-cleanup:
-//   - startup cleanup at module-load reaps daemons from PRIOR runs
+//   - startup cleanup at the CLI entry point reaps daemons from PRIOR runs
 //     (covers crashes / SIGKILL).
 //   - signal cleanup here reaps daemons from THIS run before the
 //     CLI exits (covers Ctrl-C / kill TERM during search).
@@ -43,7 +43,7 @@ process.once('SIGTERM', () => _cliCleanup(143));
 
 // Codex P2 (review #11/#12, 2026-05-04): uncaughtException /
 // unhandledRejection emergency-exit. Same rationale as server.js:
-// state is untrusted, do SYNC cleanup only (execSync pkill) + exit
+// state is untrusted, do synchronous owned-process cleanup only + exit
 // immediately. Without this, Node 19+ default behavior is exit on
 // unhandled rejection — and our cleanupStalePlaywrightDaemons
 // startup hook on the NEXT melo run reaps any leaked daemons.
@@ -70,7 +70,8 @@ function printHelp() {
       '  melo history "<query>"      Search past conversation history (flags: --json, --limit N)',
       '  melo memory status          Show memory store snapshot (counts, tiers, dreams, drift)',
       '  melo memory consolidate     Run dreaming sweep now (flags: --full, --json)',
-      '  melo doctor                 Show local runtime + search subsystem status',
+      '  melo doctor                 Show runtime + capability evidence (--json, --probe, --storage)',
+      '  melo --home <directory> ... Select a separate data directory',
       '  melo config show            Show resolved config',
       `  melo config set <k> <v>     Set authMode (${VALID_AUTH_MODES.join(' | ')}) | apiKey | model | baseUrl | systemPrompt`,
       '',
@@ -676,70 +677,14 @@ async function runMemoryConsolidateCommand({ full = false, json = false } = {}) 
   }
 }
 
-async function runDoctor() {
-  const resolved = await getResolvedConfig();
-  const fileConfig = await loadConfig();
-
-  output.write('Melo doctor\n\n');
-  output.write(`config path    ${getConfigPath()}\n`);
-  output.write(`provider       ${resolved.provider}\n`);
-  output.write(`auth mode      ${resolved.authMode}\n`);
-  output.write(`base URL       ${resolved.baseUrl}\n`);
-  output.write(`model          ${resolved.model}\n`);
-  output.write(`api key        ${maskApiKey(resolved.apiKey)}\n`);
-  if (resolved.authMode === 'codex') {
-    output.write(
-      `codex login    ${
-        resolved.codexAuth?.loggedIn
-          ? `${resolved.codexAuth.email || 'signed in'} (${resolved.codexAuth.plan || 'unknown'})`
-          : 'not signed in'
-      }\n`,
-    );
-    output.write(`config source  Codex desktop login (ChatGPT OAuth via codex/responses)\n`);
-  } else {
-    output.write(
-      `config source  ${
-        resolved.apiKey && resolved.apiKey === fileConfig.apiKey
-          ? 'config file'
-          : process.env.MELO_API_KEY
-            ? 'MELO_API_KEY'
-            : process.env.OPENAI_API_KEY
-              ? 'OPENAI_API_KEY'
-              : 'not set'
-      }\n`,
-    );
+async function runDoctor(args = []) {
+  const allowed = new Set(['--json', '--probe', '--storage']);
+  for (const arg of args) {
+    if (!allowed.has(arg)) throw new Error(`Unknown doctor option: ${arg}`);
   }
-  output.write(
-    `network mode   ${
-      process.env.MELO_MOCK_RESPONSE ? 'mock response enabled' : 'live provider'
-    }\n\n`,
-  );
-
-  // ─── Search subsystem health ────────────────────────────────────────────
-  // Tells you at a glance whether a `melo search` right now will hit the
-  // real Google pipeline (playwright), fall back to Jina, or fail outright.
-  output.write('search subsystem\n');
-  try {
-    const health = await checkSearchHealth({ signal: AbortSignal.timeout(5_000) });
-    const pwTag = health.playwright.available ? 'available' : `unavailable${health.playwright.error ? ` (${health.playwright.error})` : ''}`;
-    const jinaTag = health.jina.reachable
-      ? `reachable${health.jina.status ? ` (HTTP ${health.jina.status})` : ''}`
-      : `unreachable${health.jina.error ? ` (${health.jina.error})` : ''}`;
-    output.write(`  playwright   ${pwTag}\n`);
-    output.write(`  jina reader  ${jinaTag}\n`);
-    if (health.cacheDb.exists) {
-      const kb = (health.cacheDb.sizeBytes / 1024).toFixed(1);
-      const ageStr = health.cacheDb.lastQueryAgeMs != null
-        ? `${Math.round(health.cacheDb.lastQueryAgeMs / 60_000)} min ago`
-        : 'no entries';
-      output.write(`  cache db     ${health.cacheDb.path} (${kb} KB, ${health.cacheDb.rowCount} rows, last ${ageStr})\n`);
-    } else {
-      output.write(`  cache db     ${health.cacheDb.path} (not yet created)\n`);
-    }
-    output.write(`  overall      ${health.healthy ? 'healthy' : 'DEGRADED — no provider reachable'}\n\n`);
-  } catch (error) {
-    output.write(`  health check failed: ${error.message}\n\n`);
-  }
+  const { collectRuntimeDiagnostics, formatDiagnostics } = await import('./runtime/diagnostics.js');
+  const report = await collectRuntimeDiagnostics({ probe: args.includes('--probe'), includeStorage: args.includes('--storage') });
+  output.write(args.includes('--json') ? `${JSON.stringify(report, null, 2)}\n` : formatDiagnostics(report));
 }
 
 async function handleConfig(args) {
@@ -976,7 +921,13 @@ async function runInteractiveChat() {
 }
 
 async function main() {
-  const [command, ...args] = process.argv.slice(2);
+  const cliArgs = process.argv.slice(2);
+  if (cliArgs[0] === '--home') {
+    if (!cliArgs[1] || cliArgs[1].startsWith('--')) throw new Error('--home requires a directory');
+    process.env.MELO_HOME = cliArgs[1];
+    cliArgs.splice(0, 2);
+  }
+  const [command, ...args] = cliArgs;
 
   switch (command) {
     case undefined:
@@ -988,7 +939,7 @@ async function main() {
       printHelp();
       return;
     case 'doctor':
-      await runDoctor();
+      await runDoctor(args);
       return;
     case 'config':
       await handleConfig(args);
@@ -1024,8 +975,9 @@ const isEntryPoint = (() => {
 })();
 
 if (isEntryPoint) {
+  cleanupStalePlaywrightDaemons({ includeOrphans: true, onlyOrphans: true });
   main().catch(error => {
     output.write(`Error: ${error.message}\n`);
     process.exitCode = 1;
-  });
+  }).finally(() => cleanupStalePlaywrightDaemons());
 }

@@ -15,7 +15,7 @@
 //   • normalizeConversationSnippet  ← memory/heuristics.js
 // so this is a true zero-LOCAL leaf despite the function being long.
 
-import { normalizeAgentChannels } from '../agent/agentChannels.js';
+import { normalizeAgentChannels } from '../../domain/agent/agentChannels.js';
 import {
   buildGroupRelationshipSummary,
   collectBystanderContext,

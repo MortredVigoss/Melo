@@ -122,7 +122,7 @@ test('promote: no prior embeddings → getEmbedding called ONCE per fact (post-u
   assert.equal(stub.callCount(), 1, 'getEmbedding called exactly once');
 });
 
-test('promote: prior embeddings present + semantic HIT → getEmbedding called ONCE, fact skipped', async () => {
+test('promote: similar vectors cannot silently delete a distinct fact from another chat', async () => {
   const agentId = `bugC-hit-${Date.now()}`;
   const ns = `agent:${agentId}`;
 
@@ -149,7 +149,7 @@ test('promote: prior embeddings present + semantic HIT → getEmbedding called O
     agentId,
     {},
   );
-  assert.equal(n, 0, 'fact was dropped as semantic duplicate');
+  assert.equal(n, 1, 'distinct facts survive even when vectors coincide');
   assert.equal(stub.callCount(), 1, 'getEmbedding called once for semantic check, not retried');
 });
 
@@ -329,7 +329,7 @@ test('scheduleEmbeddingFillIn: refreshes merge survivors flagged needsReembed', 
   );
 });
 
-test('promoteAndPersistFacts prunes promoted session facts beyond per-agent cap', async () => {
+test('promoted facts remain scoped to the source chat without deleting history at an agent cap', async () => {
   const agentId = `bugC-cap-${Date.now()}`;
   const chat = {
     id: 'chat-cap',
@@ -348,10 +348,10 @@ test('promoteAndPersistFacts prunes promoted session facts beyond per-agent cap'
   assert.equal(promoted, 205);
 
   const rows = recallMemories({
-    namespaces: [`agent:${agentId}`],
+    namespaces: ['chat:chat-cap'],
     kinds: [PROMOTED_KIND],
     limit: 300,
     sideEffects: false,
   });
-  assert.equal(rows.length, 200, 'only the newest 200 promoted facts remain');
+  assert.equal(rows.length, 205, 'canonical records and tombstones survive checkpoint windows');
 });

@@ -322,43 +322,12 @@ test('wiring — applyFormInputToDraft is invoked inside the document `input` li
   );
 });
 
-test('wiring — scheduleConnectorAutosave is invoked inside both input and change listeners', () => {
-  // After the dispatcher writes the draft, the same paths must also
-  // schedule the 3-second idle autosave so a user who pastes a key
-  // and walks away (page switch, tab close) doesn't lose the value.
-  // Both listeners must opt in: input handles text/password/textarea;
-  // change handles the authMode <select> (which doesn't fire input).
-  const inputStart = APP_SRC.indexOf("addEventListener('input'");
-  const changeStart = APP_SRC.indexOf("addEventListener('change'");
-  assert.ok(inputStart >= 0 && changeStart > inputStart);
-
-  const findEnd = startIdx => {
-    const openParen = APP_SRC.indexOf('(', startIdx);
-    let depth = 0;
-    for (let i = openParen; i < APP_SRC.length; i += 1) {
-      const c = APP_SRC[i];
-      if (c === '(') depth += 1;
-      else if (c === ')') {
-        depth -= 1;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
-
-  const inputBody = APP_SRC.slice(inputStart, findEnd(inputStart));
-  const changeBody = APP_SRC.slice(changeStart, findEnd(changeStart));
-
-  assert.match(
-    inputBody,
-    /scheduleConnectorAutosave\(/,
-    'input listener must call scheduleConnectorAutosave so paste-typed keys land on server after 3s idle',
-  );
-  assert.match(
-    changeBody,
-    /scheduleConnectorAutosave\(/,
-    'change listener must call scheduleConnectorAutosave so authMode <select> changes also autosave',
-  );
+test('wiring — settings keystrokes keep drafts local until explicit Save', () => {
+  const inputStart=APP_SRC.indexOf("document.addEventListener('input'");
+  const changeStart=APP_SRC.indexOf("document.addEventListener('change'");
+  const submitStart=APP_SRC.indexOf("document.addEventListener('submit'");
+  assert.doesNotMatch(APP_SRC.slice(inputStart,submitStart), /scheduleConnectorAutosave\(/);
+  assert.ok(changeStart>inputStart);
 });
 
 test('wiring — flushPendingConnectorAutosaveOnUnload is registered on pagehide / beforeunload', () => {
@@ -377,39 +346,10 @@ test('wiring — flushPendingConnectorAutosaveOnUnload is registered on pagehide
   );
 });
 
-test('wiring — set-model-auth-mode button enters the same autosave pipeline', () => {
-  // Codex C 第七轮（2026-04-28）：Settings → Model 用按钮切 Local /
-  // API key / OAuth（不是 <select>），所以 input/change listener 都
-  //不触发新增的 connector autosave。"切到 api-key 等 3 秒后切走"
-  // 的场景需要这个 action 也调 scheduleConnectorAutosave。
-  const caseStart = APP_SRC.indexOf("case 'set-model-auth-mode':");
-  assert.ok(caseStart >= 0, 'set-model-auth-mode case must exist');
-  // Bound the snippet to just this case body — the next `case '…':`
-  // belongs to a different action and may legitimately use
-  // `trigger.closest('form')` (e.g. load-model-options).
-  const nextCaseIdx = APP_SRC.indexOf("\n      case '", caseStart + 1);
-  const caseSnippet = APP_SRC.slice(caseStart, nextCaseIdx > 0 ? nextCaseIdx : caseStart + 2500);
-  assert.match(
-    caseSnippet,
-    /scheduleConnectorAutosave\(/,
-    'set-model-auth-mode action must schedule the autosave so button-driven authMode swaps still persist after 3s idle',
-  );
-
-  // Codex C 第九轮 (2026-04-28): the action calls render() before
-  // looking up the form. trigger.closest('form') after render() walks
-  // a detached / orphan node, so the autosave wiring silently breaks.
-  // Re-query by stable id so the FormData snapshot is taken from the
-  // *live* form rebuilt by render().
-  assert.match(
-    caseSnippet,
-    /document\.getElementById\(['"]model-config-form['"]\)/,
-    'set-model-auth-mode must re-query the form by stable id AFTER render(); trigger.closest("form") on a detached trigger silently fails',
-  );
-  assert.doesNotMatch(
-    caseSnippet,
-    /trigger\.closest\(['"]form['"]\)/,
-    'set-model-auth-mode must NOT use trigger.closest("form") — render() detaches the trigger',
-  );
+test('wiring — changing model authentication stays in the editable draft', () => {
+  const start=APP_SRC.indexOf("case 'set-model-auth-mode':");
+  const end=APP_SRC.indexOf("\n      case '",start+1);
+  assert.doesNotMatch(APP_SRC.slice(start,end),/scheduleConnectorAutosave\(/);
 });
 
 test('wiring — scheduleConnectorAutosave cancels pending timer on codex skip', () => {

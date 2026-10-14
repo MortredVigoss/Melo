@@ -91,6 +91,12 @@ export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', api
   if (!prompt || typeof prompt !== 'string') {
     throw new Error('generateImageViaMinimax: prompt is required');
   }
+  if (prompt.length > 1500) {
+    throw Object.assign(
+      new Error('MiniMax 图片要求最多 1500 字符，请缩短或拆分；未截断要求，也未发起生成。'),
+      { code: 'IMAGE_PROMPT_TOO_LONG' },
+    );
+  }
   if (!apiKey) {
     throw new Error('generateImageViaMinimax: apiKey is required');
   }
@@ -109,7 +115,7 @@ export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', api
     },
     body: JSON.stringify({
       model: MINIMAX_IMAGE_MODEL,
-      prompt: prompt.slice(0, 1500),
+      prompt,
       aspect_ratio: ratio,
       n: 1,
       response_format: 'url',

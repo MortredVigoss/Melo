@@ -2022,6 +2022,7 @@ export const webSearchTool = {
             resultCount: Math.min(fresh.results.length, limit),
             contentFetched: fresh.contentMap.size,
             results: fresh.results.slice(0, limit),
+            contentItems: [...fresh.contentMap].map(([url, content]) => ({ url, characters: content.length })),
             timings: {
               totalMs: Date.now() - tStart,
               serpMs: 0,
@@ -2107,6 +2108,7 @@ export const webSearchTool = {
             resultCount: Math.min(stale.results.length, limit),
             contentFetched: stale.contentMap.size,
             results: stale.results.slice(0, limit),
+            contentItems: [...stale.contentMap].map(([url, content]) => ({ url, characters: content.length })),
             timings: {
               totalMs: Date.now() - tStart,
               serpMs: 0,
@@ -2487,7 +2489,10 @@ export const webSearchTool = {
         provider,
         resultCount: results.length,
         contentFetched: contentMap.size,
+        contentItems: [...contentMap].map(([url, content]) => ({ url, characters: content.length })),
         results,
+        contentFreshFetched: contentItems.filter(item => item.content && !item.fromUrlCache).length,
+        contentFromCache: contentItems.filter(item => item.content && item.fromUrlCache).length,
         timings: {
           totalMs: tAfterContent - tStart,
           serpMs: tAfterSerp - tStart,
@@ -2683,29 +2688,31 @@ async function probeJinaReachability(signal) {
   }
 }
 
-async function probeCacheDb() {
+async function probeCacheDb(path = cacheDbPath()) {
   try {
-    const st = await stat(cacheDbPath());
+    const st = await stat(path);
     let rowCount = 0;
     let lastQueryAgeMs = null;
     try {
-      const db = getCacheDb();
-      const row = db.prepare('SELECT COUNT(*) AS c, MAX(created_at) AS latest FROM web_search_cache').get();
-      rowCount = Number(row?.c || 0);
-      if (row?.latest) lastQueryAgeMs = Date.now() - Number(row.latest);
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        const row = db.prepare('SELECT COUNT(*) AS c, MAX(created_at) AS latest FROM web_search_cache').get();
+        rowCount = Number(row?.c || 0);
+        if (row?.latest) lastQueryAgeMs = Date.now() - Number(row.latest);
+      } finally { db.close(); }
     } catch {
       /* ignore — existence + size still useful */
     }
     return {
       exists: true,
-      path: cacheDbPath(),
+      path,
       sizeBytes: st.size,
       rowCount,
       lastQueryAgeMs,
       ttlMs: SEARCH_CACHE_TTL_MS,
     };
   } catch {
-    return { exists: false, path: cacheDbPath(), sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
+    return { exists: false, path, sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
   }
 }
 
@@ -2730,6 +2737,8 @@ export const __webSearchInternals = {
 };
 
 export async function checkSearchHealth({ signal } = {}) {
+  const home = getMeloHome();
+  const cachePath = cacheDbPath();
   // G-1c follow-up #5 (consistency): wrap PW probe in abortRace so health
   // check honors caller signal too (was previously bare await — discovered
   // during the systematic PW await audit triggered by Codex C round-5).
@@ -2739,20 +2748,23 @@ export async function checkSearchHealth({ signal } = {}) {
       err => ({ available: false, error: err?.message || String(err) }),
     ),
     probeJinaReachability(signal),
-    probeCacheDb(),
+    probeCacheDb(cachePath),
   ]);
 
   const primaryOk = playwright.available;
   const fallbackOk = jina.reachable;
-  const healthy = primaryOk || fallbackOk;
+  const { readCapabilityEvidence, capabilityStatus } = await import('../../runtime/capabilities.js');
+  const evidence = capabilityStatus((await readCapabilityEvidence(home)).search);
+  const healthy = evidence.status === 'green';
 
   return {
     healthy,
     playwright,
     jina,
     cacheDb,
-    summary: healthy
-      ? `search: ${primaryOk ? 'playwright ✓' : 'playwright ✗'}, ${fallbackOk ? 'jina ✓' : 'jina ✗'}, cache ${cacheDb.exists ? `${cacheDb.rowCount} rows` : 'empty'}`
-      : 'search: no provider reachable (playwright ✗, jina ✗)',
+    available: primaryOk || fallbackOk,
+    status: evidence.status,
+    evidence,
+    summary: `search: ${evidence.status.toUpperCase()} (${evidence.reason}); Playwright ${primaryOk ? 'installed' : 'unavailable'}, Jina ${fallbackOk ? 'reachable' : 'unreachable'}. Dependency probes do not verify page content.`,
   };
 }

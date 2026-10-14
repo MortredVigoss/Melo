@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta
@@ -7,7 +7,16 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Melo Desktop</title>
+    <link rel="stylesheet" href="/launchScreen.css" />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/emerald.css" />
+    <link rel="stylesheet" href="/neural.css" />
+    <link rel="stylesheet" href="/modelPresentation.css" />
+    <link rel="stylesheet" href="/atomicButton.css" />
+    <link rel="stylesheet" href="/executionPanel.css" />
+    <link rel="stylesheet" href="/neuralGlass.css" />
+    <link rel="stylesheet" href="/localSettings.css" />
+    <link rel="stylesheet" href="/settingsEdit.css" />
     <!-- Importmap so the Demon 3D renderer can say `import * as THREE from 'three'`
          and `import { OrbitControls } from 'three/addons/controls/OrbitControls.js'`
          without a bundler. The server serves these from node_modules under
@@ -23,6 +32,7 @@
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/app.js"></script>
+    <script src="/launchScreen.js"></script>
+    <script type="module" src="/app.js" onerror="window.MeloLaunch?.show({phase:'error',detail:'界面资源未能载入，请重新打开 Melo。'})"></script>
   </body>
 </html>

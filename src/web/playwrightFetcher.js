@@ -24,81 +24,36 @@
  * don't fight for the same browser window.
  */
 
-import { execFile, execSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { selectOwnedDaemonPids } from '../runtime/processOwnership.js';
 import { debugWarn } from '../debug.js';
+const ownedDaemonNames = new Set();
+const runningCliChildren = new Set();
+const ownerSuffix = `p${process.pid}-${randomBytes(4).toString('hex')}`;
+let closingSessions = false;
 
-// Hygiene fix #2 (system-freeze regression, 2026-05-04 second
-// occurrence) + revision (Codex C fix, 2026-05-04 review #11):
-//
-// Original problem: Codex's first hygiene fix (idle-close +
-// isConcurrencySafe + SWR dedup at commit 506814d) only addressed
-// WITHIN-session accumulation. The system froze a second time; ps
-// showed 144+ `playwright_chromiumdev_profile-*` Chrome helpers +
-// 20+ detached `cliDaemon.js melo-(shared|search)` daemons spanning
-// multiple hours — each prior melo run / crash / SIGKILL left
-// orphan daemons that kept spawning Chrome instances.
-//
-// Root cause: `npx -y @playwright/cli` spawns a detached daemon
-// (PPID=1 after parent exits). Daemon owns its own Chrome. Without
-// explicit `playwright-cli close`, daemon runs forever.
-//
-// First revision of the fix added module-level SIGINT/SIGTERM/
-// beforeExit listeners that called process.exit() — Codex review
-// #11 graded C: those listeners were registered before server.js's
-// own shutdown (via the import chain server.js → desktopStore →
-// tools/registry → webSearchTool → playwrightFetcher), and Node
-// runs signal listeners in registration order. The early exit
-// pre-empted server.js's lock release / telegram/discord cleanup /
-// voice shutdown / server.close().
-//
-// Final structure:
-//
-//   1. cleanupStalePlaywrightDaemons() at module load (kept).
-//      pkills melo-shared/melo-search daemons left from prior runs.
-//      Idempotent. ROOT cause fix — every fresh melo start reaps
-//      whatever previous runs left behind. Covers crash / SIGKILL /
-//      multi-instance / hard exit paths because the NEXT start
-//      cleans them up.
-//
-//   2. cleanupStalePlaywrightDaemons EXPORTED (new).
-//      Called by server.js's existing shutdown() handler so the
-//      signal-handler chain stays under server.js's control.
-//      Low-level modules don't own process exit anymore.
-//
-// Trade-off: pkill matches across all melo instances. Two concurrent
-// melos kill each other's daemons → the other pays a ~1s cold-start
-// hit on next web_search. Acceptable vs the system-freeze cost.
-//
-// Coverage gaps (acknowledged):
-//   - process.exit() called directly by some other module — won't
-//     trigger server.js shutdown(). startup cleanup at NEXT start
-//     reaps the daemons.
-//   - uncaughtException — same. Could add an uncaughtException hook
-//     here, but Codex review flagged module-level signal handlers
-//     as the root cause of the C grade; uncaughtException + exit
-//     hooks are a server.js / top-level concern, not playwright-
-//     Fetcher's.
-export function cleanupStalePlaywrightDaemons() {
-  // macOS uses pkill from procps; Linux ditto. Skip on Windows
-  // (we don't support it as a melo target anyway).
-  if (process.platform !== 'darwin' && process.platform !== 'linux') return;
-  try {
-    // Match the daemon arg pattern: `cliDaemon.js melo-shared` /
-    // `cliDaemon.js melo-search`. Anchored at end-of-line to avoid
-    // matching a hypothetical `cliDaemon.js melo-shared-extra`.
-    execSync(
-      'pkill -f "cliDaemon\\.js melo-(shared|search)$"',
-      { timeout: 5000, stdio: 'ignore' },
-    );
-  } catch {
-    // pkill exits 1 when no processes match — perfectly normal on
-    // a clean system. Any other error is also non-fatal.
+export function cleanupStalePlaywrightDaemons({ includeOrphans = false, onlyOrphans = false } = {}) {
+  if (!['darwin', 'linux'].includes(process.platform)) return;
+  if (!onlyOrphans) {
+    closingSessions = true;
+    for (const child of runningCliChildren) {
+      try { child.kill('SIGTERM'); } catch {}
+    }
   }
+  try {
+    const table = execFileSync('ps', ['-axo', 'pid=,uid=,command='], { timeout: 1500, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+    const pids = selectOwnedDaemonPids(table, {
+      uid: process.getuid(),
+      ownNames: onlyOrphans ? new Set() : ownedDaemonNames,
+      includeOrphans,
+      isAlive: pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; } },
+    });
+    for (const pid of pids) {
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+    }
+  } catch { /* Cleanup is best effort; it never targets another live Melo. */ }
 }
-
-// Run cleanup at module load — idempotent. Every melo cold-start
-// reaps whatever the previous run left orphaned.
-cleanupStalePlaywrightDaemons();
 
 const DEFAULT_TIMEOUT_MS = 14_000;
 const DEFAULT_MAX_CHARS = 20_000;
@@ -157,6 +112,8 @@ export function createPlaywrightSession({
   if (!sessionName) {
     throw new Error('createPlaywrightSession requires a sessionName');
   }
+  const ownedSessionName = `${sessionName}-${ownerSuffix}`;
+  ownedDaemonNames.add(ownedSessionName);
 
   let _cliAvailable = null;
   let _browserOpen = false;
@@ -186,14 +143,16 @@ export function createPlaywrightSession({
   }
 
   function runCli(args, timeoutMs = defaultTimeoutMs) {
+    if (closingSessions) return Promise.reject(new Error('Melo browser session is shutting down.'));
     clearIdleTimer();
     const command = args?.[0];
     return new Promise((resolve, reject) => {
       const child = execFile(
         'npx',
-        ['-y', PLAYWRIGHT_CLI_PACKAGE, `-s=${sessionName}`, '--raw', ...args],
+        ['-y', PLAYWRIGHT_CLI_PACKAGE, `-s=${ownedSessionName}`, '--raw', ...args],
         { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, NODE_NO_WARNINGS: '1' } },
         (err, stdout) => {
+          runningCliChildren.delete(child);
           if (command === 'close') {
             _browserOpen = false;
             _closeRequested = false;
@@ -210,6 +169,7 @@ export function createPlaywrightSession({
           resolve(stdout || '');
         },
       );
+      runningCliChildren.add(child);
       child.stderr?.resume();
     });
   }

@@ -21,7 +21,7 @@
  */
 
 import { createOpenAICompatibleReply } from '../openai.js';
-import { normalizeCustomSkill } from '../desktopStore.js';
+import { normalizeCustomSkill } from '../domain/skill/skillService.js';
 
 // Hard caps so a single /save-as-skill cannot feed the whole transcript to
 // the model (a) to control cost, (b) to keep the draft focused on a single
@@ -182,6 +182,7 @@ export async function draftSkillFromConversation({
   try {
     rawReply = await replyFn({
       authMode: config.authMode,
+      apiProtocol: config.apiProtocol,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,

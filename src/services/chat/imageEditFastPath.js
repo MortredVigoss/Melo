@@ -285,6 +285,13 @@ export async function tryImageEditFastPath({
     return null;
   }
 
+  const operationId = `image-edit-${randomBytes(8).toString('hex')}`;
+  const observe = (status, extra = {}) => {
+    try { sseEmitter?.('execution_event', { kind: 'operation', id: operationId, name: 'image_edit',
+      module: 'create', provider: 'OpenAI 图像编辑', status, ...extra }); } catch {}
+  };
+  if (signal?.aborted) return null;
+  observe('running');
   let result;
   try {
     result = await editFn({
@@ -292,9 +299,11 @@ export async function tryImageEditFastPath({
       prompt: userText,
       sourceImageBytes: resolved.bytes,
       sourceImageMime: resolved.mime,
+      model: config.model,
       signal,
     });
   } catch {
+    observe(signal?.aborted ? 'cancelled' : 'failed', { errorCode: 'IMAGE_EDIT_FAILED' });
     // editImageViaCodex itself throws on Codex 4xx / 5xx, on missing
     // credentials, on stream stall. Falling through to the agent
     // loop is the right move — the model will produce a text reply
@@ -306,8 +315,10 @@ export async function tryImageEditFastPath({
   try {
     url = signWorkspaceFileUrl(result.path);
   } catch {
+    observe('failed', { errorCode: 'IMAGE_SAVE_FAILED' });
     return null;
   }
+  observe('completed', { artifacts: [{ id: `artifact-${operationId}`, kind: 'image', title: '编辑后的图片', path: result.path, url }] });
 
   // Bracket the URL with blank lines so it never glues to surrounding
   // prose ("Here's a cat:![cat](http…)" would render but reads worse)

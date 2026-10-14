@@ -1,0 +1,641 @@
+[
+  {
+    "name": "id chat_1",
+    "definition": "id",
+    "input": "chat_1",
+    "valid": true
+  },
+  {
+    "name": "id constructor",
+    "definition": "id",
+    "input": "constructor",
+    "valid": false
+  },
+  {
+    "name": "id ../x",
+    "definition": "id",
+    "input": "../x",
+    "valid": false
+  },
+  {
+    "name": "id reminder:x",
+    "definition": "id",
+    "input": "reminder:x",
+    "valid": false
+  },
+  {
+    "name": "id 名字",
+    "definition": "id",
+    "input": "名字",
+    "valid": false
+  },
+  {
+    "name": "id ",
+    "definition": "id",
+    "input": "",
+    "valid": false
+  },
+  {
+    "name": "id {'$repeat': {'text': 'a', 'count': 180}}",
+    "definition": "id",
+    "input": {
+      "$repeat": {
+        "text": "a",
+        "count": 180
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "id {'$repeat': {'text': 'a', 'count': 181}}",
+    "definition": "id",
+    "input": {
+      "$repeat": {
+        "text": "a",
+        "count": 181
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "message id reminder:abc",
+    "definition": "messageId",
+    "input": "reminder:abc",
+    "valid": true
+  },
+  {
+    "name": "message id reminder:",
+    "definition": "messageId",
+    "input": "reminder:",
+    "valid": false
+  },
+  {
+    "name": "message id constructor",
+    "definition": "messageId",
+    "input": "constructor",
+    "valid": false
+  },
+  {
+    "name": "message id message",
+    "definition": "messageId",
+    "input": "message",
+    "valid": true
+  },
+  {
+    "name": "revision 1",
+    "definition": "revision",
+    "input": 1,
+    "valid": true
+  },
+  {
+    "name": "revision 0",
+    "definition": "revision",
+    "input": 0,
+    "valid": false
+  },
+  {
+    "name": "revision 9007199254740991",
+    "definition": "revision",
+    "input": 9007199254740991,
+    "valid": true
+  },
+  {
+    "name": "revision 9007199254740992",
+    "definition": "revision",
+    "input": 9007199254740992,
+    "valid": false
+  },
+  {
+    "name": "revision 1.5",
+    "definition": "revision",
+    "input": 1.5,
+    "valid": false
+  },
+  {
+    "name": "UTF16 title 100",
+    "definition": "agent",
+    "input": {
+      "name": {
+        "$repeat": {
+          "text": "😀",
+          "count": 100
+        }
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "UTF16 title 101",
+    "definition": "agent",
+    "input": {
+      "name": {
+        "$repeat": {
+          "text": "😀",
+          "count": 101
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "valid workspace",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "reserved clock",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "constructor": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "empty clock",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {},
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "empty value",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {}
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "wrong subtitle",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": 32
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown kind",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "unknown",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "reminder role",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "reminder:role",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "duplicate record",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "agent",
+          "id": "custom",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "name": "自定义",
+                "subtitle": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "message scene 27",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "message",
+          "id": "reminder:r",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "chatId": "chat",
+                "scene": {
+                  "runId": "run",
+                  "status": "completed",
+                  "sources": [
+                    {
+                      "id": "source",
+                      "url": "https://example.com/",
+                      "title": "Example"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "message scene 28",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "message",
+          "id": "reminder:r",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "chatId": "chat",
+                "scene": {
+                  "runId": "run",
+                  "status": "running"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "message scene 29",
+    "definition": "workspace",
+    "input": {
+      "version": 1,
+      "records": [
+        {
+          "kind": "message",
+          "id": "reminder:r",
+          "versions": [
+            {
+              "clock": {
+                "phone": 1
+              },
+              "value": {
+                "chatId": "chat",
+                "scene": {
+                  "runId": "run",
+                  "status": "completed",
+                  "sources": [
+                    {
+                      "url": "javascript:alert(1)"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "task valid",
+    "definition": "taskSync",
+    "input": {
+      "tasks": [
+        {
+          "id": "t",
+          "title": "task",
+          "status": "todo",
+          "owner": "main",
+          "checkpoint": "ready",
+          "revision": 1,
+          "sourceDevice": "desktop",
+          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "chatId": null,
+          "needsApproval": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "task unsafe device",
+    "definition": "taskSync",
+    "input": {
+      "tasks": [
+        {
+          "id": "t",
+          "title": "task",
+          "status": "todo",
+          "owner": "main",
+          "checkpoint": "ready",
+          "revision": 1,
+          "sourceDevice": "../x",
+          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "chatId": null,
+          "needsApproval": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "task date invalid",
+    "definition": "taskSync",
+    "input": {
+      "tasks": [
+        {
+          "id": "t",
+          "title": "task",
+          "status": "todo",
+          "owner": "main",
+          "checkpoint": "ready",
+          "revision": 1,
+          "sourceDevice": "desktop",
+          "updatedAt": "invalid",
+          "chatId": null,
+          "needsApproval": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "snapshot valid reminder",
+    "definition": "snapshot",
+    "input": {
+      "version": 1,
+      "chats": [
+        {
+          "id": "c",
+          "title": "Chat",
+          "createdAt": "2026-10-13T00:00:00.000Z",
+          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "messages": [
+            {
+              "id": "reminder:r",
+              "role": "assistant",
+              "content": "hello",
+              "createdAt": "2026-10-13T00:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "snapshot duplicate message",
+    "definition": "snapshot",
+    "input": {
+      "version": 1,
+      "chats": [
+        {
+          "id": "c",
+          "title": "Chat",
+          "createdAt": "2026-10-13T00:00:00.000Z",
+          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "messages": [
+            {
+              "id": "reminder:r",
+              "role": "assistant",
+              "content": "hello",
+              "createdAt": "2026-10-13T00:00:00.000Z"
+            },
+            {
+              "id": "reminder:r",
+              "role": "assistant",
+              "content": "hello",
+              "createdAt": "2026-10-13T00:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "snapshot invalid role",
+    "definition": "snapshot",
+    "input": {
+      "version": 1,
+      "chats": [
+        {
+          "id": "c",
+          "title": "Chat",
+          "createdAt": "2026-10-13T00:00:00.000Z",
+          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "messages": [
+            {
+              "id": "reminder:r",
+              "role": "system",
+              "content": "hello",
+              "createdAt": "2026-10-13T00:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "identifier rejects trailing newline",
+    "definition": "id",
+    "input": "chat\n",
+    "valid": false
+  },
+  {
+    "name": "merged memory provenance",
+    "definition": "memory",
+    "valid": true,
+    "input": {
+      "id": "memory_a",
+      "chatId": "chat-a",
+      "agentId": "main",
+      "scope": "chat",
+      "status": "historical",
+      "text": "old preference",
+      "memoryID": "promoted:old",
+      "updatedAt": "2026-10-13T00:00:00.000Z",
+      "mergedInto": "promoted:new"
+    }
+  },
+  {
+    "name": "empty merge target rejected",
+    "definition": "memory",
+    "valid": false,
+    "input": {
+      "id": "memory_a",
+      "chatId": "chat-a",
+      "agentId": "main",
+      "scope": "chat",
+      "status": "historical",
+      "text": "old preference",
+      "memoryID": "promoted:old",
+      "updatedAt": "2026-10-13T00:00:00.000Z",
+      "mergedInto": ""
+    }
+  },
+  {
+    "name": "model receipt purpose",
+    "definition": "message",
+    "valid": true,
+    "input": {
+      "chatId": "chat-a",
+      "models": [
+        {
+          "requestedModel": "fast",
+          "reportedModel": "fast",
+          "simulated": false,
+          "purpose": "intent-judge"
+        }
+      ]
+    }
+  }
+]

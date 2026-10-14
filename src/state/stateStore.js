@@ -1,50 +1,17 @@
-// State machine — Phase 7d-5α-A1 final commit (commit 8+9 bundle).
-//
-// This is the bridge module the entire 7d-5α-A1 series has been building
-// toward. It owns:
-//
-//   • The on-disk state.json path (statePath())
-//   • The single shared write-queue (stateWriteQueue) — guarantees
-//     persist-atomically and save-state writes never overlap.
-//   • The "have we synced agent markdown files yet" boot flag
-//     (markdownSynced).
-//   • The four canonical state-machine entry points the rest of the
-//     codebase uses to load / persist desktop state:
-//
-//       loadState(), saveState(state), persistStateAtomically(state),
-//       readStateSnapshot({ persistRepair })
-//
-//     plus enqueueStateWrite — see the §5 carve-out note below.
-//
-// Notably NOT here: updateStateAtomically. It stays in desktopStore for
-// now because its body uses ensureSelectedEntities, which has 57 callers
-// across desktopStore and is not safe to move in this phase. To still
-// share the queue with saveState, this module exports an
-// `enqueueStateWrite(work)` helper that schedules `work` on the same
-// queue. desktopStore's updateStateAtomically uses that helper instead
-// of mutating the queue directly.
-//
-// CLAUDE.md §5 carve-out:
-//   • saveState and persistStateAtomically: BYTE-IDENTICAL bodies to the
-//     desktopStore originals. They use the local `stateWriteQueue` let
-//     directly, exactly as before.
-//   • updateStateAtomically (still in desktopStore) is now adapted to
-//     call enqueueStateWrite(work) instead of mutating the queue
-//     directly. This is the only practical way to keep the queue
-//     module-private to stateStore without forcing ensureSelectedEntities
-//     into this commit. Documented as a §5 mechanical adjustment, same
-//     class as the APP_ROOT dirname adjustment in commit 7.
-//
-// Sub-phase ledger: this commit closes 7d-5α-A1. After this lands, the
-// full state-machine (read + write + queue) lives in src/state/, and
-// the chatGraphRunner could in principle be moved to a service module
-// without an import cycle on the state-machine quartet. Other elephant
-// dependencies (effectiveAgentProfile, prompt builders, etc.) still
-// live in desktopStore and would need their own subsequent phases
-// (7d-5β / 7d-5γ) before runner extraction can happen.
-
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { measureStage, measureStageSync, startStage } from '../runtime/performanceTrace.js';
+import { compactChatRuns } from '../persistence/turnArchive.js';
+import { backupLegacyState } from './storageMigration.js';
+import { createRequestContext } from '../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
+import { realpathSync } from 'node:fs';
+import { checkpointCacheGeneration, pruneThreadCheckpoints } from '../memory/checkpointer.js';
+import { syncDerivedSnapshot } from '../memory/derivedIndex.js';
+import { dispatchDerivedCommit } from './derivedDispatcher.js';
+// Serialized state transactions. Business services mutate the latest state; snapshots are read-only.
+import { readFile, stat } from 'node:fs/promises';
+import { ownSnapshot, commitSnapshot, unchangedChats, metadataJson } from './ownedSnapshot.js';
+import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { atomicWriteJson } from '../storage.js';
 import { getMeloHome } from '../config.js';
 import { parseStatePayload } from './statePayload.js';
@@ -53,18 +20,16 @@ import {
   hydrateChatThreads,
   createDefaultState,
 } from './stateHydration.js';
-import { pruneExcessChats } from './chatPruning.js';
 import { mergeDiskSkillsIntoState } from './diskSkills.js';
 import {
   importAgentMarkdownFiles,
   queueAgentMarkdownPrime,
 } from './markdownSync.js';
-import { createAgentMarkdownFileHelpers } from '../services/agent/markdownFiles.js';
+import { createAgentMarkdownFileHelpers } from '../persistence/agentMarkdownFiles.js';
 import {
   persistChatThreads,
   serializeChatForPersistence,
 } from './chatPersistence.js';
-import { syncMemoryStoreSnapshot } from './memorySnapshot.js';
 // Phase 7d-5δ commit 8b: ensureSelectedEntities moved to its own leaf
 // (stateSelections.js) in commit 8a, which finally clears the §5 carve-out
 // blocker that kept `updateStateAtomically` in desktopStore.js. The
@@ -84,7 +49,12 @@ function markSyncedFor(home) {
   markdownSyncedByHome.set(home, true);
 }
 
-let stateWriteQueue = Promise.resolve();
+const stateQueues = new Map();
+const committedByHome = new Map();
+const loadingByHome = new Map();
+const MAX_RESIDENT_HOMES = 8;
+const snapshotSource = Symbol('stateSnapshotSource');
+const fingerprint = raw => createHash('sha256').update(raw).digest('hex');
 
 // Build a home-bound load context. CLAUDE.md §6: every async hop inside
 // readStateSnapshot uses the SAME captured home. The state.json path,
@@ -96,8 +66,9 @@ let stateWriteQueue = Promise.resolve();
 // Every state-machine helper that touches a home-derived path
 // (hydrateChatThreads, persistChatThreads via the chain, the four
 // checkpointer ops) accepts this ctx and uses its threadsDir.
-function captureLoadContext() {
-  const home = getMeloHome();
+function captureLoadContext(home = getMeloHome()) {
+  home = resolve(home);
+  try { home = realpathSync(home); } catch {}
   const stateFilePath = join(home, 'desktop', 'state.json');
   const threadsDir = join(home, 'desktop', 'threads');
   const storePath = join(home, 'desktop', 'store.sqlite');
@@ -107,58 +78,124 @@ function captureLoadContext() {
   return { home, stateFilePath, threadsDir, storePath, getAgentMarkdownPaths };
 }
 
-export async function readStateSnapshot({ persistRepair = true } = {}) {
+async function readSnapshot({ persistRepair = false, maintenance = false, previousChats = [], home: requestedHome } = {}) {
   // Capture once at entry. Any later getMeloHome() reads inside this
   // function (or any function it awaits into) would be a §6 violation
   // and would re-introduce the cross-home leak Codex caught at fix-4.
-  const ctx = captureLoadContext();
+  const ctx = captureLoadContext(requestedHome);
   const { home, stateFilePath, threadsDir, getAgentMarkdownPaths } = ctx;
 
+  let manifestFound = false;
   try {
-    const raw = await readFile(stateFilePath, 'utf8');
+    const raw = await measureStage('state.manifest.read', () => readFile(stateFilePath, 'utf8'));
+    manifestFound = true;
     const { parsed, repaired } = parseStatePayload(raw);
-    const state = hydrateState(parsed);
+    if (Number(parsed._storageFormat) > 2) throw Object.assign(new Error('This state was written by a newer Melo storage version.'), { code: 'STATE_VERSION_UNSUPPORTED' });
+    const state = measureStageSync('state.normalize', () => hydrateState(parsed));
     const alreadySyncedThisHome = isMarkdownSyncedFor(home);
     const markdownImported = alreadySyncedThisHome
       ? false
       : await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
     if (!alreadySyncedThisHome) {
-      markSyncedFor(home);
-      queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
+      if (maintenance) {
+        markSyncedFor(home);
+        await queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
+      }
     }
-    const threadRepaired = await hydrateChatThreads(state, { threadsDir });
-    await mergeDiskSkillsIntoState(state);
+    const threadRepaired = await measureStage('state.threads.hydrate', () => hydrateChatThreads(state, { threadsDir, previousChats }));
+    await measureStage('state.skills.scan', () => mergeDiskSkillsIntoState(state));
 
-    // Auto-prune legacy excess chats (from before the MAX_RECENT_CHATS limit was enforced).
-    const excessBefore = (state.chats || []).length;
-    pruneExcessChats(state);
-    const prunedExcess = excessBefore > (state.chats || []).length;
-
-    if ((repaired || markdownImported || threadRepaired || prunedExcess) && persistRepair) {
+    if ((repaired || markdownImported || threadRepaired) && persistRepair) {
       // Pass the entire captured ctx so the repair save also writes
       // state.json + thread checkpoints to the home we read from,
       // regardless of any env flip during this load chain.
-      await saveState(state, { ctx });
+      await persistStateAtomically(state, { ctx });
     }
 
+    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired, committedRuns: structuredClone(state.chatRuns || []) };
     return state;
   } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+    if (!manifestFound && error && typeof error === 'object' && error.code === 'ENOENT') {
       const state = createDefaultState();
       await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
-      markSyncedFor(home);
-      queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
-      await hydrateChatThreads(state, { threadsDir });
+      if (maintenance) {
+        markSyncedFor(home);
+        await queueAgentMarkdownPrime(state, home, getAgentMarkdownPaths);
+      }
+      await measureStage('state.threads.hydrate', () => hydrateChatThreads(state, { threadsDir }));
       await mergeDiskSkillsIntoState(state);
       return state;
     }
 
-    throw new Error(`Failed to read desktop state: ${error.message}`);
+    throw Object.assign(new Error(`Failed to read desktop state: ${error.message}`, { cause: error }), { code: error.code });
   }
 }
 
-export async function loadState() {
-  return readStateSnapshot({ persistRepair: true });
+async function manifestStamp(ctx) {
+  try {
+    const value = await stat(ctx.stateFilePath, { bigint: true });
+    return `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}`;
+  } catch (error) { if (error.code === 'ENOENT') return 'missing'; throw error; }
+}
+
+function publishCommitted(ctx, state, stamp, unchanged = new Set(), { refreshed = false } = {}) {
+  const previous = committedByHome.get(ctx.home)?.state;
+  // Preserve read-time normalization of imported entities without traversing
+  // every transcript during a commit.
+  const normalized = { ...hydrateState({ ...state, chats: [] }), chats: state.chats };
+  const committed = commitSnapshot(normalized, previous, unchanged);
+  const entry = { state: committed, source: { ...state[snapshotSource], base: committed }, stamp,
+    generation: checkpointCacheGeneration(ctx.threadsDir), loadedAt: refreshed ? Date.now() : (committedByHome.get(ctx.home)?.loadedAt || Date.now()) };
+  committedByHome.delete(ctx.home);
+  committedByHome.set(ctx.home, entry);
+  while (committedByHome.size > MAX_RESIDENT_HOMES) committedByHome.delete(committedByHome.keys().next().value);
+  return entry;
+}
+
+function ownCommitted(entry) {
+  const snapshot = measureStageSync('state.snapshot.copy', () => ownSnapshot(entry.state));
+  snapshot[snapshotSource] = entry.source;
+  return snapshot;
+}
+
+async function readCommitted(ctx) {
+  const stamp = await manifestStamp(ctx);
+  const cached = committedByHome.get(ctx.home);
+  if (cached && cached.stamp === stamp && cached.generation === checkpointCacheGeneration(ctx.threadsDir)
+      && Date.now() - cached.loadedAt < 30_000) return cached;
+  // Only cold/externally changed loads coalesce. Reads never join the write
+  // queue and can observe the previous committed revision during a slow write.
+  if (loadingByHome.has(ctx.home)) return loadingByHome.get(ctx.home);
+  const current = currentRequestContext();
+  const context = current?.home === ctx.home ? current : createRequestContext({ ...current, home: ctx.home });
+  const promise = runWithRequestContext(context, async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = await manifestStamp(ctx);
+      let state;
+      try { state = await readSnapshot({ home: ctx.home, previousChats: cached?.generation === checkpointCacheGeneration(ctx.threadsDir) ? cached.state.chats : [] }); }
+      catch (error) {
+        if (before !== await manifestStamp(ctx)) continue;
+        throw error;
+      }
+      const after = await manifestStamp(ctx);
+      if (before !== after) continue;
+      return publishCommitted(ctx, state, after, new Set(state.chats.filter(chat => cached?.state.chats.includes(chat)).map(chat => chat.id)), { refreshed: true });
+    }
+    throw Object.assign(new Error('State is changing; retry the read.'), { code: 'STATE_CONFLICT', statusCode: 409 });
+  });
+  loadingByHome.set(ctx.home, promise);
+  try { return await promise; }
+  finally { if (loadingByHome.get(ctx.home) === promise) loadingByHome.delete(ctx.home); }
+}
+
+export async function readStateSnapshot({ persistRepair = true, home = getMeloHome() } = {}) {
+  const ctx = captureLoadContext(home);
+  if (persistRepair) return updateStateAtomically(() => {}, { home: ctx.home });
+  return ownCommitted(await readCommitted(ctx));
+}
+
+export function loadState({ home = getMeloHome() } = {}) {
+  return readStateSnapshot({ persistRepair: false, home });
 }
 
 /**
@@ -176,57 +213,95 @@ export async function loadState() {
  *   • capturedStatePath — DEPRECATED in favor of `ctx`; kept for any
  *     caller still using the older shape from fix-5.
  */
-export async function persistStateAtomically(state, { ctx = null, capturedStatePath = null } = {}) {
-  const threadsDir = ctx?.threadsDir;
-  await persistChatThreads(state.chats, { threadsDir });
-  const targetPath =
-    ctx?.stateFilePath || capturedStatePath || join(getMeloHome(), 'desktop', 'state.json');
-  await atomicWriteJson(targetPath, {
-    ...state,
-    chats: state.chats.map(serializeChatForPersistence),
-  });
-  // ctx.storePath, when present, lets the memory snapshot land on the
-  // home captured at the top of the load chain, completing the fix-7
-  // chain. Omitted = legacy lazy via the cached production db.
-  syncMemoryStoreSnapshot(state, { ctx });
+export async function persistStateAtomically(state, { ctx = null, capturedStatePath = null, _writeState = atomicWriteJson } = {}) {
+  ctx = ctx || captureLoadContext(capturedStatePath ? dirname(dirname(capturedStatePath)) : getMeloHome());
+  if (Array.isArray(state.chatRuns)) {
+    const chatIds = new Set(state.chats.map(chat => chat.id));
+    state.chatRuns = state.chatRuns.filter(run => chatIds.has(run.chatId));
+  }
+  compactChatRuns(state, state[snapshotSource]?.committedRuns, ctx.home);
+  if (state._storageFormat !== 2) await backupLegacyState(ctx);
+  const unchanged = state._storageFormat === 2 && !state[snapshotSource]?.requiresRepair
+    ? unchangedChats(state, state[snapshotSource]?.base) : new Set();
+  const { keepThreadIds } = await measureStage('state.threads.persist', () => persistChatThreads(state.chats, { threadsDir: ctx.threadsDir, unchanged }));
+  const next = { ...state, _storageFormat: 2, _revision: (Number(state._revision) || 0) + 1,
+    chats: state.chats.map(serializeChatForPersistence) };
+  // The manifest is the commit point: a failed write cannot publish staged
+  // message files, and the previous committed checkpoints still exist.
+  await measureStage('state.manifest.commit', () => _writeState(ctx.stateFilePath, next));
+  state._storageFormat = next._storageFormat;
+  state._revision = next._revision;
+  state[snapshotSource] = { home: ctx.home, fingerprint: fingerprint(`${JSON.stringify(next, null, 2)}\n`), requiresRepair: false, committedRuns: structuredClone(state.chatRuns || []) };
+  const published = publishCommitted(ctx, state, await manifestStamp(ctx), unchanged);
+  state[snapshotSource] = published.source;
+  try {
+    if (!dispatchDerivedCommit(ctx.home, next._revision)) measureStageSync('memory.index', () => syncDerivedSnapshot(published.state, ctx));
+  } catch (error) {
+    console.warn(`Derived snapshot deferred: ${error.message}`);
+  }
+  try {
+    await pruneThreadCheckpoints(keepThreadIds, { threadsDir: ctx.threadsDir });
+  } catch (error) {
+    console.warn(`Checkpoint cleanup deferred: ${error.message}`);
+  }
 }
 
+// Legacy initialization/import API. Never silently accept a stale loaded snapshot.
+// Production business mutations use updateStateAtomically; see architecture boundary tests.
 export async function saveState(state, { ctx = null, capturedStatePath = null } = {}) {
-  stateWriteQueue = stateWriteQueue
-    .catch(() => {})
-    .then(() => persistStateAtomically(state, { ctx, capturedStatePath }));
-  await stateWriteQueue;
-  return state;
+  const source = state[snapshotSource];
+  const home = ctx?.home || (capturedStatePath ? dirname(dirname(capturedStatePath)) : source?.home || getMeloHome());
+  const captured = ctx || captureLoadContext(home);
+  return enqueueStateWrite(async () => {
+    if (source) {
+      const current = await readFile(captured.stateFilePath, 'utf8').catch(error => {
+        if (error.code === 'ENOENT') return '';
+        throw error;
+      });
+      if (source.home !== home || fingerprint(current) !== source.fingerprint) {
+        const error = new Error('State changed since this snapshot was read. Use updateStateAtomically.');
+        error.code = 'STATE_CONFLICT';
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+    await persistStateAtomically(state, { ctx: captured, capturedStatePath });
+    state[snapshotSource] = committedByHome.get(captured.home)?.source || state[snapshotSource];
+    return state;
+  }, { home });
 }
 
-// Phase 7d-5α-A1 §5 carve-out (now mostly historical): originally a
-// helper for desktopStore's `updateStateAtomically` to share this
-// queue without owning the let binding. After Phase 7d-5δ commit 8b,
-// `updateStateAtomically` moved here and uses the queue directly via
-// `stateWriteQueue.then(...)`. `enqueueStateWrite` is kept exported
-// because there may still be external callers that opted into the
-// queue-sharing API; it can be retired in a follow-up cleanup.
-export async function enqueueStateWrite(work) {
-  stateWriteQueue = stateWriteQueue.catch(() => {}).then(work);
-  return stateWriteQueue;
+export function enqueueStateWrite(work, { home = getMeloHome() } = {}) {
+  let key = resolve(home);
+  try { key = realpathSync(key); } catch {}
+  const current = currentRequestContext();
+  const context = current?.home === home ? current : createRequestContext({ ...current, home });
+  const queued = startStage('state.queue.wait');
+  const result = (stateQueues.get(key) || Promise.resolve()).catch(() => {}).then(() => { queued(); return runWithRequestContext(context, work); });
+  stateQueues.set(key, result);
+  const cleanup = () => { if (stateQueues.get(key) === result) stateQueues.delete(key); };
+  result.then(cleanup, cleanup);
+  return result;
 }
 
-// updateStateAtomically — Phase 7d-5δ commit 8b: byte-for-byte port
-// from desktopStore.js. Reads the latest state through the same queue
-// that saveState uses, lets the caller mutate it, then persists. The
-// double `ensureSelectedEntities` is intentional: once on read so the
-// mutator sees a coerced state, once on the candidate so we never
-// persist invalid selections.
-export async function updateStateAtomically(mutator) {
-  let nextState = null;
-  await enqueueStateWrite(async () => {
+export async function updateStateAtomically(mutator, { home = getMeloHome() } = {}) {
+  const ctx = captureLoadContext(home);
+  return enqueueStateWrite(async () => {
     const latestState = ensureSelectedEntities(
-      await readStateSnapshot({ persistRepair: false }),
+      ownCommitted(await readCommitted(ctx)),
     );
+    if (!isMarkdownSyncedFor(ctx.home)) {
+      markSyncedFor(ctx.home);
+      await queueAgentMarkdownPrime(latestState, ctx.home, ctx.getAgentMarkdownPaths);
+    }
+    const before = measureStageSync('state.compare.before', () => metadataJson(latestState));
     const candidateState = await mutator(latestState);
-    nextState = ensureSelectedEntities(candidateState || latestState);
-    await persistStateAtomically(nextState);
+    const nextState = ensureSelectedEntities(candidateState || latestState);
+    // No-op commands (retries, empty cleanup, identical settings) do not
+    // rewrite the manifest or rebuild derived indexes.
+    if (nextState._storageFormat !== 2 || latestState[snapshotSource]?.requiresRepair || measureStageSync('state.compare.after', () => metadataJson(nextState)) !== before || unchangedChats(nextState, latestState[snapshotSource]?.base).size !== nextState.chats.length) {
+      await persistStateAtomically(nextState, { ctx });
+    }
     return nextState;
-  });
-  return nextState;
+  }, { home: ctx.home });
 }

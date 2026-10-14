@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import { updateNeuralWorkspace,preserveNeuralRegion } from './neuralDom.js';
+import { changedBootstrapSections,pageAffected } from './bootstrapPatch.js';
+test('unrelated bootstrap patches skip generating and parsing the current page while retaining a focused draft',()=>{
+  const dom=new JSDOM('<div id="app"></div>'),app=dom.window.document.querySelector('#app');
+  const before={settings:{activeView:'chat'},activeChat:{id:'a'},profile:{name:'old'}};
+  const changes=changedBootstrapSections(before,{...before,profile:{name:'new'}});
+  assert.equal(pageAffected('chat',changes),false);
+  assert.equal(pageAffected('settings',changes),true);
+  updateNeuralWorkspace(app,'<main class="content-scroll" data-neural-key="page-chat"><textarea>saved</textarea></main><header>old</header>');
+  const page=app.firstChild,input=page.firstChild;input.value='unsaved draft';input.focus();input.setSelectionRange(3,7);
+  let renders=0;
+  const html=pageAffected('chat',changes)?(++renders,'unused'):preserveNeuralRegion(page);
+  updateNeuralWorkspace(app,html+'<header>new</header>');
+  assert.equal(renders,0);assert.equal(app.firstChild,page);assert.equal(input.value,'unsaved draft');assert.equal(input.selectionStart,3);
+  assert.equal(dom.window.document.activeElement,input);
+  updateNeuralWorkspace(app,'<main class="content-scroll" data-neural-key="page-chat">new content</main><header>new</header>');
+  assert.equal(app.firstChild.textContent,'new content');
+});

@@ -37,9 +37,14 @@ import { randomUUID } from 'node:crypto';
 const MAX_OUTPUT_CHARS = 500_000; // ~500 KB cap on in-memory output
 
 export class BackgroundRunner {
-  constructor() {
+  constructor({ now = Date.now, retentionMs = 30 * 60_000, maxFinished = 20 } = {}) {
+    this.now = now;
+    this.retentionMs = retentionMs;
+    this.maxFinished = maxFinished;
+    this._cleanupTimer = null;
     /** @type {Map<string, RunRecord>} */
     this._runs = new Map();
+    this._processes = new Map();
   }
 
   /**
@@ -53,7 +58,8 @@ export class BackgroundRunner {
    * @param {AbortSignal} [options.signal]      - external abort
    * @returns {string}  - run id
    */
-  start({ command, workspacePath, timeout = 10 * 60_000, onComplete, signal }) {
+  start({ command, workspacePath, timeout = 10 * 60_000, onComplete, signal, env = { ...process.env } }) {
+    this.prune();
     const id = randomUUID();
     /** @type {RunRecord} */
     const record = {
@@ -62,27 +68,47 @@ export class BackgroundRunner {
       status: 'running',
       output: '',
       exitCode: null,
-      startedAt: Date.now(),
+      startedAt: this.now(),
       endedAt: null,
       _subscribers: [],
     };
     this._runs.set(id, record);
 
+    if (signal?.aborted) {
+      record.status = 'killed';
+      record.endedAt = this.now();
+      this.prune();
+      if (onComplete) Promise.resolve().then(() => onComplete(record)).catch(() => {});
+      return id;
+    }
+
     const proc = spawn('bash', ['-c', command], {
       cwd: workspacePath || process.cwd(),
-      env: { ...process.env },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
-
-    const killTimer = setTimeout(() => {
-      proc.kill('SIGTERM');
-      setTimeout(() => proc.kill('SIGKILL'), 3000);
-    }, timeout);
-
-    const onAbort = () => {
-      proc.kill('SIGTERM');
-      setTimeout(() => proc.kill('SIGKILL'), 2000);
+    let forceTimer = null;
+    let finished = false;
+    let resolveClosed;
+    const closed = new Promise(resolve => { resolveClosed = resolve; });
+    const sendSignal = name => {
+      try {
+        if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, name);
+        else proc.kill(name);
+      } catch {}
     };
+    const stop = () => {
+      if (finished || forceTimer) return;
+      record.status = 'killed';
+      sendSignal('SIGTERM');
+      forceTimer = setTimeout(() => sendSignal('SIGKILL'), 2000);
+      forceTimer.unref?.();
+    };
+    this._processes.set(id, { stop, closed });
+    const killTimer = setTimeout(stop, timeout);
+    killTimer.unref?.();
+    const onAbort = stop;
     signal?.addEventListener('abort', onAbort, { once: true });
 
     const onData = (chunk) => {
@@ -97,15 +123,20 @@ export class BackgroundRunner {
     proc.stderr.on('data', onData);
 
     proc.on('close', (code, sigName) => {
+      if (finished) return;
+      // The shell may exit before a redirected descendant that ignored TERM.
+      if (record.status === 'killed') sendSignal('SIGKILL');
+      finished = true;
       clearTimeout(killTimer);
+      clearTimeout(forceTimer);
       signal?.removeEventListener('abort', onAbort);
-
-      if (record.status !== 'running') return; // already killed externally
+      this._processes.delete(id);
+      resolveClosed();
       record.exitCode = sigName ? null : (code ?? 1);
-      record.status = sigName
+      record.status = sigName || record.status === 'killed'
         ? 'killed'
         : record.exitCode === 0 ? 'done' : 'error';
-      record.endedAt = Date.now();
+      record.endedAt = this.now();
 
       // Notify all subscribers that the stream ended
       const endChunk = `\n[Process ${record.status}: exit ${record.exitCode ?? sigName}]`;
@@ -113,24 +144,31 @@ export class BackgroundRunner {
         try { sub(endChunk); } catch {}
       }
       record._subscribers = [];
+      this.prune();
 
       if (typeof onComplete === 'function') {
-        onComplete(record);
+        Promise.resolve().then(() => onComplete(record)).catch(() => {});
       }
     });
 
     proc.on('error', (err) => {
+      if (finished) return;
+      finished = true;
       clearTimeout(killTimer);
+      clearTimeout(forceTimer);
       signal?.removeEventListener('abort', onAbort);
+      this._processes.delete(id);
+      resolveClosed();
       record.status = 'error';
       record.output += `\n[Spawn error: ${err.message}]`;
-      record.endedAt = Date.now();
+      record.endedAt = this.now();
       for (const sub of record._subscribers) {
         try { sub(`\n[Spawn error: ${err.message}]`); } catch {}
       }
       record._subscribers = [];
+      this.prune();
       if (typeof onComplete === 'function') {
-        onComplete(record);
+        Promise.resolve().then(() => onComplete(record)).catch(() => {});
       }
     });
 
@@ -157,6 +195,24 @@ export class BackgroundRunner {
     return catchUp;
   }
 
+  unsubscribe(runId, subscriber) {
+    const record = this._runs.get(runId);
+    if (record) record._subscribers = record._subscribers.filter(fn => fn !== subscriber);
+  }
+
+  prune() {
+    clearTimeout(this._cleanupTimer);
+    const finished = [...this._runs.values()].filter(r => r.endedAt != null).sort((a, b) => b.endedAt - a.endedAt);
+    finished.forEach((record, index) => {
+      if (index >= this.maxFinished || this.now() - record.endedAt >= this.retentionMs) this._runs.delete(record.id);
+    });
+    const expiry = [...this._runs.values()].filter(r => r.endedAt != null).map(r => r.endedAt + this.retentionMs);
+    if (expiry.length) {
+      this._cleanupTimer = setTimeout(() => this.prune(), Math.max(1, Math.min(...expiry) - this.now()));
+      this._cleanupTimer.unref?.();
+    }
+  }
+
   /**
    * Kill a running task.
    * @param {string} runId
@@ -164,9 +220,14 @@ export class BackgroundRunner {
   kill(runId) {
     const record = this._runs.get(runId);
     if (!record || record.status !== 'running') return;
-    record.status = 'killed';
-    record.endedAt = Date.now();
-    // The proc.on('close') will fire and clean up
+    this._processes.get(runId)?.stop();
+  }
+
+  async shutdown() {
+    const processes = [...this._processes.values()];
+    for (const child of processes) child.stop();
+    await Promise.allSettled(processes.map(child => child.closed));
+    clearTimeout(this._cleanupTimer);
   }
 
   /**
@@ -175,6 +236,7 @@ export class BackgroundRunner {
    * @returns {RunRecord|null}
    */
   status(runId) {
+    this.prune();
     return this._runs.get(runId) || null;
   }
 
@@ -183,6 +245,7 @@ export class BackgroundRunner {
    * @returns {RunRecord[]}
    */
   list() {
+    this.prune();
     return [...this._runs.values()];
   }
 
@@ -192,7 +255,7 @@ export class BackgroundRunner {
    */
   cleanup(runId) {
     const record = this._runs.get(runId);
-    if (record && record.status !== 'running') {
+    if (record && record.endedAt != null) {
       this._runs.delete(runId);
     }
   }

@@ -1,3 +1,4 @@
+import { saveState, loadState } from '../../state/stateStore.js';
 // Smoke tests for chatExecutionRunner — sub-phase 7d-5δ commit 7c.
 //
 // Why this file exists: gate's D-grade on the elephant extraction
@@ -260,6 +261,7 @@ test('runChatAgentExecutionGraph imports + prepare phase resolve cleanly (planCo
   const state = fixtureState();
   const chat = fixtureChat({ mode: 'chat' });
   state.chats = [chat];
+  await saveState(state);
 
   // "git status" matches a curated planCommandAction pattern AND the agent
   // has local-command enabled — runner takes the approval early-exit and
@@ -286,10 +288,9 @@ test('runChatAgentExecutionGraph imports + prepare phase resolve cleanly (planCo
     /approval/i.test(result.normalizedReply.content || ''),
     `approval response should mention approval (got: ${JSON.stringify(result.normalizedReply.content)})`,
   );
-  // The approval was queued onto state.approvals.
-  assert.ok(Array.isArray(state.approvals));
-  assert.equal(state.approvals.length, 1);
-  assert.equal(state.approvals[0].kind, 'command');
+  const persisted = await loadState();
+  assert.equal(persisted.approvals.length, 1);
+  assert.equal(persisted.approvals[0].kind, 'command');
 
   // Belt-and-suspenders: verify saveState wrote into the isolated TEST_HOME
   // and not into the developer's real `~/.melo`.
@@ -303,6 +304,7 @@ test('runChatAgentExecutionGraph approval-exit via planExternalConnectorAction',
   const state = fixtureState();
   const chat = fixtureChat({ mode: 'chat' });
   state.chats = [chat];
+  await saveState(state);
 
   // Build a synthetic external-MCP connector whose manifest tool name will
   // match the user message via planExternalConnectorAction. This exercises
@@ -331,8 +333,9 @@ test('runChatAgentExecutionGraph approval-exit via planExternalConnectorAction',
   });
 
   assert.ok(result.normalizedReply, 'approval-exit returns a normalizedReply');
-  assert.equal(state.approvals.length, 1);
-  assert.equal(state.approvals[0].kind, 'external-tool');
+  const persisted = await loadState();
+  assert.equal(persisted.approvals.length, 1);
+  assert.equal(persisted.approvals[0].kind, 'external-tool');
 });
 
 test('runChatAgentExecutionGraph: prepare phase smoke — non-approval message must not throw a scope error', async () => {
@@ -357,6 +360,7 @@ test('runChatAgentExecutionGraph: prepare phase smoke — non-approval message m
   const state = fixtureState();
   const chat = fixtureChat({ mode: 'chat' });
   state.chats = [chat];
+  await saveState(state);
 
   let thrown = null;
   try {
@@ -442,6 +446,7 @@ async function runForRouteFixture({ latestUserMessage, config }) {
   const state = fixtureState();
   const chat = fixtureChat({ mode: 'chat' });
   state.chats = [chat];
+  await saveState(state);
   return runChatAgentExecutionGraph({
     config,
     state,
@@ -603,4 +608,53 @@ test('search routing — non-codex auth + web intent falls back to melo-web (not
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('web_search'), true);
   assert.equal(visible.has('fetch_url'), true);
+});
+
+test('main tool dispatch carries its MCP whitelist and resolved role model into a nested skill', async () => {
+  const {registerTool,unregisterTool}=await import('../../tools/registry.js');
+  const {runSkill}=await import('../../agents/skillExecutor.js');
+  const state=fixtureState(),chat=fixtureChat({messages:[{id:'probe-user',role:'user',content:'Read the local file for this task'}]});
+  state.chats=[chat];state.agentProfiles.main.model='role-selected-model';state.agentProfiles.main.enabledMcpServerIds=[];
+  await saveState(state);
+  let effects=0,dispatched,skillReplies=0;
+  const forbidden={id:'mcp:blocked:probe',name:'probe',description:'must be blocked',parametersSchema:{type:'object',properties:{}},requiresPermission:false,run:async()=>{effects++;return {ok:true,output:'ran'};}};
+  const probe={...forbidden,id:'scope_probe',run:async(_,context)=>{
+    dispatched=context;
+    return runSkill({skill:{id:'audit',type:'executable',name:'audit'},task:'probe',config:context.config,allowedToolIds:context.allowedToolIds,
+      replyFn:async()=>skillReplies++===0?'<tool_call>{"id":"child","name":"mcp:blocked:probe","arguments":{}}</tool_call>':'done'});
+  }};
+  registerTool(forbidden);registerTool(probe);
+  try {
+    let replies=0;
+    await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'Read the local file for this task',agentId:'main',
+      _dependencies:{getEmbedding:async()=>null,createReply:async()=>replies++===0?'<tool_call>{"id":"parent","name":"scope_probe","arguments":{}}</tool_call>':'finished'}});
+    assert.ok(dispatched,'probe must actually execute');assert.ok(Array.isArray(dispatched.allowedToolIds));assert.ok(!dispatched.allowedToolIds.includes(forbidden.id));
+    assert.equal(dispatched.config.model,'role-selected-model');assert.equal(skillReplies,2);assert.equal(effects,0);
+  } finally {unregisterTool(forbidden.id);unregisterTool(probe.id);}
+});
+
+
+test('optional fast judge retains the answer model and contributes its real usage receipt', async () => {
+  const state = fixtureState(), chat = fixtureChat(); state.chats = [chat];
+  const events = []; let judgments = 0, answers = 0;
+  const config = { ...fixtureConfig, extraFast: { enabled: true } };
+  await saveState(state);
+  const result = await runChatAgentExecutionGraph({ config, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: '今天的心情还算不错呢', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+    _dependencies: { getEmbedding: async () => null,
+      judgeFast: async options => {
+        judgments++; options.onDecision({ source: 'model', model: 'judge-mini', reportedModel: 'judge-mini',
+          latencyMs: 10, usage: { input: 8, output: 1, cached: 0, cacheWrite: 0 } }); return 'casual';
+      },
+      createReply: async options => {
+        answers++; assert.equal(options.model, 'gpt-4');
+        options.onProviderResponse?.({ requestedModel: options.model, reportedModel: options.model, usage: { input: 20, output: 10, cached: 0, cacheWrite: 0 } });
+        return '今天还不错。';
+      },
+    } });
+  assert.equal(judgments, 1); assert.equal(answers, 1);
+  assert.equal(result.normalizedReply.modelResponses[0].purpose, 'intent-judge');
+  assert.equal(result.normalizedReply.usage.input, 28); assert.equal(result.normalizedReply.usage.output, 11);
+  assert.equal(result.normalizedReply.usage.requests, 2);
+  assert.ok(events.some(event => event.type === 'execution_event' && event.value.id === 'judge:intent'));
 });

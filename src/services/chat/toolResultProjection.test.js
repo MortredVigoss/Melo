@@ -186,13 +186,12 @@ test('successful search tool → NO errorCode (only failures enriched)', () => {
   assert.ok(!('errorCode' in p), 'success must not carry an errorCode');
 });
 
-test('non-search tool failure → NO errorCode (adapter only maps the 2 search tools)', () => {
+test('non-search tool failure retains its machine-readable error code', () => {
   const p = projectToolResultForPersist(
     { id: 'c5', name: 'bash' },
     { ok: false, error: 'EXIT_1', output: 'command failed' },
   );
-  assert.ok(!('errorCode' in p),
-    'bash / non-search tools have no adapter source → no errorCode enrichment');
+  assert.equal(p.errorCode, 'EXIT_1');
 });
 
 test('deriveUnifiedErrorCode: returns null for success, non-search, and is exception-safe', () => {
@@ -201,4 +200,10 @@ test('deriveUnifiedErrorCode: returns null for success, non-search, and is excep
   // Garbage result must not throw — best-effort enrichment.
   assert.equal(deriveUnifiedErrorCode({ name: 'web_search' }, null), null);
   assert.doesNotThrow(() => deriveUnifiedErrorCode({ name: 'fetch_url' }, { ok: false }));
+});
+
+test('browser capability failures and real permission denials persist distinctly', () => {
+  assert.equal(projectToolResultForPersist({ name: 'browser_open' }, { ok: false, error: 'CDP_DISABLED' }).errorCode, 'CDP_DISABLED');
+  assert.equal(projectToolResultForPersist({ name: 'browser_click' }, { ok: false, error: 'User denied', meta: { denied: true } }).errorCode, 'PERMISSION_DENIED');
+  assert.equal(projectToolResultForPersist({ name: 'browser_open' }, { ok: false, error: 'secret or arbitrary upstream message' }).errorCode, 'TOOL_FAILED');
 });

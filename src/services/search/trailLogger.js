@@ -23,9 +23,11 @@
 // resolution at module top would freeze the path against whichever
 // MELO_HOME was set when the tool was first imported.
 
-import { mkdirSync, appendFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { appendBoundedLog } from '../../runtime/boundedLog.js';
 import { dirname, join } from 'node:path';
 import { getMeloHome } from '../../config.js';
+import { createCapabilityRecorder, describeSearchEvidence } from '../../runtime/capabilities.js';
 
 const BODY_TRUNCATE_LIMIT = 500;
 // Per-host limit so a single chatty host can't bury the rest.  Soft cap
@@ -107,8 +109,19 @@ function _shapeForLog(result) {
  */
 export function wrapWithTrailLog(source, runFn) {
   return async function wrappedRun(args, opts = {}) {
+    const record = createCapabilityRecorder({ config: opts.config });
     const input = { query: args?.query, url: args?.url };
-    const result = await runFn.call(this, args, opts);
+    let result;
+    try {
+      result = await runFn.call(this, args, opts);
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !opts.signal?.aborted) {
+        void record(source === 'web-search' ? 'search' : 'link', { ok: false, reason: 'reader-failed' });
+      }
+      throw error;
+    }
+    const evidence = describeSearchEvidence(source, result);
+    void record(evidence.id, evidence);
     // Best-effort log AFTER the result is in hand — never delay or
     // alter the return on the production path.
     logSearchTrail({ source, input, result });
@@ -156,7 +169,7 @@ export function logSearchTrail({ source, input = {}, result } = {}) {
       body: _shapeForLog(result).body, // socialLink uses body, not output
     };
     // Single-line JSON for grep / jq friendliness.
-    appendFileSync(path, JSON.stringify(payload) + '\n', 'utf8');
+    appendBoundedLog(path, JSON.stringify(payload) + '\n');
   } catch (err) {
     // Logging is best-effort.  Don't crash the tool.  Use console.warn
     // directly (not debugWarn) so the warning doesn't get filtered by

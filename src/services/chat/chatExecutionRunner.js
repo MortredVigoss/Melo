@@ -1,3 +1,13 @@
+import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
+import { recordMemoryFeedback } from '../../memory/store.js';
+import { resolveSessionFacts } from '../../memory/factRecords.js';
+import { selectedMaterials } from './conversationSelection.js';
+import { runAgentTeam } from '../../agents/team.js';
+import { summarizePricedUsage } from '../../runtime/usage.js';
+import { observeModelReplies } from './executionPipeline.js';
+import { persistCompactSnapshot } from './derivedState.js';
+import { createRequestContext, requestIdentity } from '../../runtime/requestContext.js';
+import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -21,18 +31,18 @@ import {
 import { nowIso } from '../../shared/helpers.js';
 import { findProjectById } from '../../state/stateLookups.js';
 import { effectiveAgentProfile } from '../../state/agentProfiles.js';
-import { saveState } from '../../state/stateStore.js';
+import { updateStateAtomically } from '../../state/stateStore.js';
 import {
   filterConnectorsForAgent,
   filterSkillsForAgent,
   filterMcpToolsForAgent,
   createSharedSkillIndexFactory,
-} from '../agent/agentTools.js';
+} from '../../domain/agent/agentTools.js';
 import { buildAgentMemoryNodeContext } from '../agent/agentMemoryContext.js';
 import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from './matcherContext.js';
-import { buildModelMessagesFromChat } from './messageBuilder.js';
+import { buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
 import { tryImageEditFastPath } from './imageEditFastPath.js';
 import { formatModelMessageForVisionDebug } from './visionDebug.js';
 import { buildDynamicContext } from './dynamicContext.js';
@@ -41,21 +51,20 @@ import {
   buildApprovalResponse,
 } from './chatActionPlanning.js';
 import {
-  buildReActSystemPrompt,
+  buildReActPromptSections,
   buildLanguageConstraint,
 } from './systemPrompt.js';
-import { MODE_DEFS } from './modeDefs.js';
+import { MODE_DEFS } from '../../domain/chat/modeDefs.js';
 import { summarizeConnectorPrompts } from '../connector/connectorPrompts.js';
 import { summarizeSkillsPrompts } from '../skill/skillPrompts.js';
-import { listExecutableSkills } from '../skill/skillService.js';
+import { listExecutableSkills } from '../../domain/skill/skillService.js';
 import { buildProjectContextSection } from '../project/projectContext.js';
 import {
   normalizeApproval,
   normalizeApprovals,
-} from '../approval/approvalService.js';
-import { normalizeAssistantReplyForConversation } from '../message/messageBlocks.js';
+} from '../../domain/approval/approvalService.js';
+import { normalizeAssistantReplyForConversation } from '../../domain/message/messageBlocks.js';
 import {
-  buildVizSpecInstructions,
   extractVizSpec,
 } from '../viz/vizSpec.js';
 import {
@@ -71,13 +80,13 @@ import { getSkillLastRunMap } from '../../agents/skillRuns.js';
 import { buildSkillTool } from '../../agents/skillExecutor.js';
 import { getEmbedding } from '../../memory/embeddings.js';
 import {
-  shouldCompact,
+  planIncrementalCompact,
   compactConversation,
   formatCompactContextBlock,
 } from '../../memory/contextCompact.js';
-import { formatSessionMemoryBlock } from '../../memory/sessionMemory.js';
+import { formatSessionMemoryBlock, selectSessionMemoryFacts } from '../../memory/sessionMemory.js';
 import {
-  classifyIntent,
+  classifyRequest,
   intentRequiresVerification,
 } from '../../retrieval/intentRouter.js';
 import {
@@ -98,7 +107,13 @@ import { parseModelResponse, formatToolResultsMessage } from '../../tools/parser
 import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
+import { inferImageTask, runImageTask } from './imageTask.js';
+import { visionConnection, imageSettings } from '../../images/imageSettings.js';
+import { prepareVisionInputs } from '../../media/visionInputs.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
+import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
+import { fitRequestContext, resolveContextBudget } from './contextBudget.js';
+import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -110,6 +125,8 @@ import { createOpenAICompatibleReply } from '../../openai.js';
 const getSharedSkillIndex = createSharedSkillIndexFactory({ buildSkillIndex });
 
 export async function runChatAgentExecutionGraph({
+  context,
+  home,
   config,
   state,
   chat,
@@ -117,6 +134,9 @@ export async function runChatAgentExecutionGraph({
   connectors,
   skills,
   latestUserMessage,
+  imageTask = null,
+  onImageTaskResolved,
+  onImageProgress,
   agentId,
   background = false,
   channelContext = null,
@@ -125,13 +145,43 @@ export async function runChatAgentExecutionGraph({
   onReasoningDelta,
   sseEmitter,
   providerProfile = 'default',
-  demonMode = false,
+  _dependencies = {},
 }) {
+  context ||= createRequestContext({ home, chatId: chat.id, signal, config, workspacePath: workspace?.rootPath });
+  if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
+  home ||= context.home;
+  const env = context.env;
+  const firstToken = startStage('turn.prepare_to_first_token');
+  const originalDelta = onDelta;
+  if (typeof originalDelta === 'function') onDelta = (...args) => {
+    if (args[0]?.delta || args[0]?.text) firstToken();
+    return originalDelta(...args);
+  };
+  const modelResponses = [];
+  const replyProvider = _dependencies.createReply || createOpenAICompatibleReply;
+  const observedReply = observeModelReplies(replyProvider, sseEmitter);
+  const createReply = options => {
+    const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
+    return measureStage('model.request', () => observedReply({
+      ...options,
+      onDelta: endFirstToken ? (...args) => {
+        if (args[0]?.delta || args[0]?.text) endFirstToken();
+        return options.onDelta(...args);
+      } : options.onDelta,
+      onProviderResponse: receipt => { modelResponses.push(receipt); options.onProviderResponse?.(receipt); },
+    }));
+  };
+  const embedQuery = _dependencies.getEmbedding || getEmbedding;
+  const contextBudget = resolveContextBudget(env);
+  const promptDebug = env.MELO_PROMPT_DEBUG === '1';
+  const modelOverrides = {
+    apiKey: config.activeLlmProfileId ? config.apiKey : env.MELO_API_KEY || env.OPENAI_API_KEY || config.apiKey,
+    baseUrl: config.activeLlmProfileId ? config.baseUrl : env.MELO_BASE_URL || env.OPENAI_BASE_URL || config.baseUrl,
+    model: config.conversationModelSelected ? config.model : config.activeLlmProfileId ? '' : env.MELO_MODEL || '',
+    verifier: config.activeLlmProfileId ? config.model : env.MELO_VERIFIER_MODEL || '',
+  };
   const isRemoteChannel = background && Boolean(channelContext?.channelId);
-  // Demon viz-spec is a desktop-only feature. Telegram / Discord don't render
-  // visualizations, so we drop the flag on remote channels to guarantee the
-  // system prompt additions and the post-reply parse both stay off.
-  const vizEnabled = Boolean(demonMode) && !isRemoteChannel;
+
 
   const graph = createStateGraph({
     start: 'prepare',
@@ -142,13 +192,13 @@ export async function runChatAgentExecutionGraph({
       // compose-system-prompt nodes into a single parallel-aware step.
       //
       // Execution order:
-      //   1. Sync setup (fast, <1 ms each): resolve agent, channel, memory recall
+      //   1. Resolve the agent, channel and recent message window.
       //   2. Promise.all: classifyIntent + buildDynamicContext run concurrently
       //      – classifyIntent may make a fast API call (rule-based first, API only
       //        for ambiguous messages)
       //      – buildDynamicContext reads workspace files / connectors
       //   3. Inline: plan-actions, optional queue-approval (early exit), then
-      //      compose final system prompt
+      //      recall memory only when useful, then compose the final system prompt
       async 'prepare'() {
         // ── 1. Sync setup ──────────────────────────────────────────────────
         const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];
@@ -175,19 +225,6 @@ export async function runChatAgentExecutionGraph({
         });
         const channelPrompt = buildChannelRoutePrompt({ chat, channelContext, profile: activeAgentProfile });
 
-        // Compute query embedding for semantic recall (null if no backend available).
-        // Fast (~50ms ollama, <100ms OpenAI); never blocks if unavailable.
-        const queryEmbedding = await getEmbedding(latestUserMessage, config).catch(() => null);
-
-        // SQLite recall — uses KNN when embedding available, keyword scoring otherwise.
-        const memoryContext = buildAgentMemoryNodeContext({
-          state,
-          chat,
-          latestUserMessage,
-          activeAgentProfile,
-          project,
-          queryEmbedding,
-        });
         const toolRoutingPrompt = buildToolRoutingPrompt({ activeAgentProfile, agentConnectors });
 
         // Sync context assembly (remote channels skip project/connector detail
@@ -196,7 +233,7 @@ export async function runChatAgentExecutionGraph({
         const projectContext = isRemoteChannel ? '' : buildProjectContextSection(project, activeAgentProfile);
         const connectorPrompts = isRemoteChannel ? '' : summarizeConnectorPrompts(agentConnectors);
         const skillsPrompts = summarizeSkillsPrompts(enabledSkills, { remote: isRemoteChannel });
-        const modelMessages = buildModelMessagesFromChat(chat);
+        let modelMessages = buildModelMessagesFromChat(chat);
         const searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
@@ -208,12 +245,35 @@ export async function runChatAgentExecutionGraph({
         // that genuinely await I/O; run them concurrently to eliminate the
         // sequential stall that previously added one full round-trip before
         // invoke-model could start.
-        const [intent, dynamicContext] = await Promise.all([
-          classifyIntent(latestUserMessage, { config, signal }),
+        const [classification, dynamicContext] = await Promise.all([
+          measureStage('intent.classify', () => classifyRequest(latestUserMessage, {
+            config: { ...config, model: modelOverrides.model || activeAgentProfile.model || config.model },
+            signal, contextMessages: chat.messages,
+            judge: _dependencies.judgeFast,
+            onDecision: decision => {
+              if (decision.model && decision.source !== 'cache') modelResponses.push({
+                requestedModel: decision.model, reportedModel: decision.reportedModel || '',
+                usage: decision.usage || null, transport: decision.transport || '', purpose: 'intent-judge',
+              });
+              sseEmitter?.('execution_event', {
+                kind: 'pipeline', id: 'judge:intent', name: '意图判断', module: 'compute', status: 'completed',
+                output: decision.source === 'model'
+                  ? `${decision.model} · ${decision.latencyMs} ms`
+                  : decision.source === 'cache' ? '复用近期相同判断，无新增模型请求' : '快速判断不可用，使用保守规则',
+                metadata: decision,
+              });
+            },
+          })),
           isRemoteChannel
             ? Promise.resolve('')
             : buildDynamicContext(state, chat, workspace, agentConnectors, latestUserMessage),
         ]);
+        const intent = classification.taskType;
+        const allowLiveSpeech = classification.riskLevel === 'normal' && intent === 'casual' &&
+          (chat.messages?.length || 0) <= 1 && !chat.compactSummary &&
+          !(chat.messages?.at(-1)?.attachments?.length) &&
+          /^(?:hi|hello|hey|ok|okay|thanks|thank you|你好|嗨|好的|好|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
+        sseEmitter?.('speech_policy', { allowLiveSpeech });
 
         // ── 3. Plan actions (needs agentConnectors resolved above) ─────────
         const plannedAction = planChatGraphAction({
@@ -229,16 +289,17 @@ export async function runChatAgentExecutionGraph({
             kind: plannedAction.kind,
             title: plannedAction.title,
             description: plannedAction.description,
-            payload: plannedAction.payload,
+            payload: { ...plannedAction.payload, execution: requestIdentity(context) },
             projectId: chat.projectId || null,
             chatId: chat.id,
             status: 'pending',
             createdAt: nowIso(),
             updatedAt: nowIso(),
           });
-          state.approvals.unshift(approval);
-          state.approvals = normalizeApprovals(state.approvals);
-          await saveState(state);
+          await updateStateAtomically(latest => {
+            if (!latest.chats.some(entry => entry.id === chat.id)) throw new Error('Chat not found.');
+            latest.approvals = normalizeApprovals([approval, ...latest.approvals]);
+          }, home ? { home } : {});
 
           return {
             normalizedReply: normalizeAssistantReplyForConversation(
@@ -256,31 +317,34 @@ export async function runChatAgentExecutionGraph({
         // all historical context beyond the 60K sliding window. The compact
         // only fires on genuinely large histories and the MAX_COMPACT_FAILURES
         // circuit breaker still guards against a hot-loop of failed summaries.
-        const allChatMessages = Array.isArray(chat.messages) ? chat.messages : [];
         const hasModelConfig = Boolean(
           config.authMode === 'codex' ||
           config.apiKey ||
           (config.authMode === 'local' && config.baseUrl),
         );
 
-        if (hasModelConfig &&
-            shouldCompact(allChatMessages, chat.compactFailures || 0)) {
+        const compactPlan = hasModelConfig ? planIncrementalCompact(chat) : null;
+        if (compactPlan) {
           try {
-            const summary = await compactConversation(allChatMessages, { config, signal });
+            const summary = await compactConversation(compactPlan.messages, {
+              config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
+            });
             if (summary) {
-              // Pin the compact boundary to the last message currently in history.
-              const lastMsg = allChatMessages[allChatMessages.length - 1];
-              chat.compactSummary = summary;
-              chat.compactBoundaryMessageId = lastMsg?.id || '';
-              chat.compactedMessageCount = allChatMessages.length;
+              chat.compactSummary = compactPlan.truncated
+                ? '[部分历史过长，摘要仅包含可容纳的片段；原文保留在对话记录中。]\n' + summary
+                : summary;
+              chat.compactBoundaryMessageId = compactPlan.boundaryId;
+              chat.compactedMessageCount = compactPlan.compactedCount;
               chat.compactedAt = new Date().toISOString();
               chat.compactFailures = 0;
               // Persist so the summary survives restarts.
-              await saveState(state);
+              await persistCompactSnapshot(chat, compactPlan, { home });
+              modelMessages = buildModelMessagesFromChat(chat);
             } else {
               chat.compactFailures = (chat.compactFailures || 0) + 1;
             }
-          } catch {
+          } catch (error) {
+            if (signal?.aborted) throw signal.reason || error;
             chat.compactFailures = (chat.compactFailures || 0) + 1;
           }
         }
@@ -306,7 +370,12 @@ export async function runChatAgentExecutionGraph({
         // pass through filterMcpToolsForAgent untouched.
         let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
         let visibleToolIds = new Set();
-        if (shouldInjectToolsPrompt({ mode: chat.mode })) {
+        const toolContextPolicy = selectToolContextPolicy({
+          text: latestUserMessage, chat, searchPlan,
+          hasExecutableSkills: requiresSkillToolContext(listExecutableSkills(enabledSkills), latestUserMessage),
+          highRisk: classification.riskLevel === 'high',
+        });
+        if (!allowLiveSpeech && toolContextPolicy.mode !== 'none' && shouldInjectToolsPrompt({ mode: chat.mode })) {
           // prepare scope owns the local `activeAgentProfile` (line 150);
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
@@ -315,37 +384,52 @@ export async function runChatAgentExecutionGraph({
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
           toolsPrompt = [
             toolsPrompt,
-            buildToolsSystemPrompt(promptTools),
+            buildToolsSystemPrompt(promptTools, { includeExamples: false }),
           ].filter(Boolean).join('\n\n');
         }
+        if (toolContextPolicy.mode === 'none') {
+          toolsPrompt = [toolsPrompt, 'This is a self-contained text task. Answer directly from the user-provided context or basic knowledge; no tools are exposed for this turn. If information is missing, say so.'].filter(Boolean).join('\n\n');
+        }
+        if (promptDebug) process.stdout.write(`[tool-context] ${JSON.stringify(toolContextPolicy)}\n`);
 
-        // Session memory block — inject top extracted facts
-        const sessionMemoryBlock = formatSessionMemoryBlock(chat.sessionMemory || []);
+        // Standalone greetings need no retrieval or embedding. A short confirmation
+        // in an ongoing task ("好" / "ok") still keeps its full context.
+        const skipMemory = classification.riskLevel === 'normal' && intent === 'casual' &&
+          !(chat.messages?.at(-1)?.attachments?.length) &&
+          /^(?:hi|hello|hey|thanks|thank you|你好|嗨|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
+        const sessionFacts = skipMemory ? [] : selectSessionMemoryFacts(resolveSessionFacts(chat,activeAgentProfile?.id));
+        const sessionMemoryBlock = formatSessionMemoryBlock(sessionFacts);
+        const memoryCandidates = [], memoryRendered = sessionFacts.map(f=>({
+          id:f.id,text:f.fact,kind:'session-fact',renderedText:`- [${f.category}] ${f.fact}`,
+        }));
+        memoryCandidates.push(...memoryRendered);
+        const queryEmbedding = skipMemory ? null : await measureStage('memory.embedding', () => embedQuery(latestUserMessage,config)).catch(()=>null);
+        const memoryContext = skipMemory ? '' : measureStageSync('memory.recall', () => buildAgentMemoryNodeContext({
+          state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,
+          includedMessageIds:modelMessageSourceIds(modelMessages), excludedFacts:sessionFacts,
+          onRecall:rows=>memoryRendered.push(...rows),onCandidates:rows=>memoryCandidates.push(...rows),
+        }));
 
-        const vizInstructions = buildVizSpecInstructions({
-          enabled: vizEnabled,
-          isRemoteChannel,
-        });
-
-        // Source citations (NotebookLM-style pins). Gated on the same Demon
-        // toggle as viz; additionally requires the active project to have
-        // at least one workspace file so the model has something real to
-        // cite. `workspace` is already loaded earlier in the graph.
+        // Demon authoring is temporarily retired (user request, 2026-10-07).
+        // Existing saved visualizations remain readable. File citations are
+        // independent of that retired toggle and retain their existing UI.
+        const vizInstructions = '';
         const hasProjectFiles =
           !isRemoteChannel &&
           Array.isArray(workspace?.filePaths) &&
           workspace.filePaths.length > 0;
         const citationInstructions = buildCitationInstructions({
-          enabled: vizEnabled,
+          enabled: !isRemoteChannel,
           isRemoteChannel,
           hasProjectFiles,
         });
 
-        const systemPrompt = buildReActSystemPrompt({
+        const promptSections = buildReActPromptSections({
           config,
           profile: activeAgentProfile,
           modePrompt: modeDef.prompt,
           projectContext,
+          selectedMaterials: isRemoteChannel ? '' : selectedMaterials(state, chat),
           channelPrompt,
           memoryContext,
           toolRoutingPrompt,
@@ -360,13 +444,22 @@ export async function runChatAgentExecutionGraph({
           citationInstructions,
           kind: 'chat',
           isRemoteChannel,
-          intent,
+          intent: classification,
         });
+        const preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, ...contextBudget });
+        if (promptDebug) process.stdout.write(`[prompt-budget] ${JSON.stringify(preparedRequest.diagnostics)}\n`);
 
         return {
           intent,
-          systemPrompt,
-          modelMessages,
+          classification,
+          toolContextPolicy,
+          allowLiveSpeech,
+          promptSections: preparedRequest.sections,
+          promptDiagnostics: preparedRequest.diagnostics,
+          memoryCandidates, memoryRendered,
+          memoryUsage: [],
+          systemPrompt: preparedRequest.systemPrompt,
+          modelMessages: preparedRequest.messages,
           memoryContext,
           dynamicContext,
           projectContext,
@@ -385,7 +478,15 @@ export async function runChatAgentExecutionGraph({
       //   3. If tool calls exist: execute them, append results, loop (max 10)
       //   4. If no tool calls (or max iterations reached): proceed to finalize
       async 'invoke-model'(graphState) {
-        if (process.env.MELO_DEBUG_VISION === '1') {
+        const selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
+        const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true };
+        const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
+        if (teamTask) {
+          const team = await runAgentTeam({plan:teamTask.execution.teamPlan,task:teamTask.execution.content,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || []});
+          modelResponses.push(...team.results.flatMap(r=>r.receipts));
+          return {reply:team.results.map(r=>`${r.role} · ${r.ok ? '已交付，待核对' : '需要修复'}\n${r.output}`).join('\n\n'),team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}`,toolName:`角色 ${r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
+        }
+        if (env.MELO_DEBUG_VISION === '1') {
           for (const [index, message] of graphState.modelMessages.entries()) {
             process.stdout.write(`${formatModelMessageForVisionDebug(message, index)}\n`);
           }
@@ -400,8 +501,31 @@ export async function runChatAgentExecutionGraph({
         // See imageEditFastPath.js for the gating + pipeline. Failures /
         // gate misses return null; we fall through to the normal loop and
         // the agent decides what to do (apologise, re-route, etc.).
-        const fastPathReply = await tryImageEditFastPath({
-          config,
+        const task = inferImageTask(latestUserMessage, graphState.modelMessages, imageTask);
+        const taskMessage = chat.messages.filter(m => m.role === 'user').at(-1);
+        const attachments = taskMessage?.attachments || [];
+        if (task && taskMessage) {
+          taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
+          await onImageTaskResolved?.(task);
+        }
+        if (task && task.action !== 'analyze') {
+          const reply = await runImageTask({task,config,messages:graphState.modelMessages,attachments,workspace,signal,sseEmitter,onDelta,onImageProgress,selectedModel,home});
+          return {reply,next:'finalize'};
+        }
+        if (task?.action === 'analyze') {
+          const references = new Map(task.references.map(ref => [attachments.find(a => a.id === ref.attachmentId)?.url,ref]));
+          const decorated = graphState.modelMessages.map((message, index, all) => index === all.length-1 && Array.isArray(message.content) ? {...message,content:message.content.map(part=>{
+            if(part.type !== 'image_url') return part;
+            const ref=references.get(part.image_url.url);
+            return {...part,image_url:{...part.image_url,detail:task.detail,ocr:task.ocr,...(ref?{role:ref.role,crop:ref.crop}:{})}};
+          })} : message);
+          let serial=0;
+          graphState.modelMessages = await prepareVisionInputs(decorated,{signal,detail:task.detail,onObservation:e=>sseEmitter?.('execution_event',{kind:'pipeline',id:`vision-prepare:${++serial}`,module:'compute',status:'completed',...e})});
+        }
+        const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
+        const vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
+        const fastPathReply = task?.action === 'analyze' ? null : await tryImageEditFastPath({
+          config: { ...config, model:selectedModel },
           messages: graphState.modelMessages,
           workspace,
           signal,
@@ -424,22 +548,39 @@ export async function runChatAgentExecutionGraph({
         // (G-1f window) — users翻 chat history 看不到当时哪条 tier 失败了.
         // Each entry: { toolCallId, toolName, ok, evidenceTrail? }.
         const accumulatedToolResults = [];
+        const evidencePairs = [];
 
         for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
           // On subsequent iterations, we're streaming "thinking" not the final
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
 
-          const rawReply = await createOpenAICompatibleReply({
-            authMode: config.authMode,
-            apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-            baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-            model: process.env.MELO_MODEL || graphState.activeAgentProfile.model || config.model,
-            systemPrompt: graphState.systemPrompt,
-            messages: loopMessages,
+          const request = fitRequestContext({ sections: graphState.promptSections, messages: loopMessages, ...contextBudget });
+          if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
+          if (isFirstIteration) {
+            signal?.throwIfAborted();
+            const used = (graphState.memoryRendered || []).filter(row=>row.renderedText && request.systemPrompt.includes(row.renderedText));
+            graphState.memoryUsage = [...new Map(used.map(row=>[row.id,{
+              id:row.id,text:String(row.text).slice(0,200),kind:row.kind,
+              sourceChatId:row.metadata?.chatId || chat.id,
+              sourceMessageId:row.metadata?.sourceMessageId || row.metadata?.messageId || null,
+            }])).values()].slice(0,40);
+            try { recordMemoryFeedback({candidates:graphState.memoryCandidates,usedIds:used.map(row=>row.id),
+              requestId:`${chat.id}:${context.requestId}`,query:latestUserMessage}); }
+            catch(error) { console.warn(`[memory.feedback] ${error.message}`); }
+          }
+          const rawReply = await createReply({
+            authMode: vision?.authMode || config.authMode,
+            apiProtocol: vision?.apiProtocol || config.apiProtocol,
+            apiKey: vision?.apiKey ?? modelOverrides.apiKey,
+            baseUrl: vision?.baseUrl || modelOverrides.baseUrl,
+            model: vision?.model || selectedModel,
+            systemPrompt: request.systemPrompt,
+            messages: request.messages,
+            cacheScope: `${agentId}:${chat.id}`,
             signal,
             onDelta: isFirstIteration ? onDelta : undefined,
-            onReasoningDelta: isFirstIteration ? onReasoningDelta : undefined,
+            onReasoningDelta,
             providerProfile,
             // Workspace path enables inline image generation through the
             // Codex OAuth chat stream (createCodexResponsesReply adds the
@@ -457,6 +598,8 @@ export async function runChatAgentExecutionGraph({
             // matching block.
             workspacePath: workspace?.rootPath || null,
             nativeWebSearchEnabled: graphState.searchPlan?.nativeWebSearchEnabled === true,
+            nativeImageGenerationEnabled: imageSettings(config).engine === 'codex-oauth',
+            onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
           const { thinking, toolCalls } = parseModelResponse(rawReply);
@@ -519,11 +662,16 @@ export async function runChatAgentExecutionGraph({
             executableCalls.filter(c => c.tool !== null),
             {
               sseEmitter,
+              requestContext: context,
+              executionPrefix: `${iteration}:`,
+              meloHome: context.home,
               workspacePath: workspace?.rootPath,
               signal,
               chatId: chat.id,
-              config,
+              config: delegatedModelConfig,
+              allowedToolIds: [...visibleToolIds],
               agentDepth: 0,
+              agentId: graphState.activeAgentProfile?.id || agentId,
               onOutput: typeof sseEmitter === 'function'
                 ? chunk => sseEmitter('tool_output', { chunk })
                 : undefined,
@@ -584,7 +732,8 @@ export async function runChatAgentExecutionGraph({
             { role: 'assistant', content: rawReply },
             {
               role: 'user',
-              content: formatToolResultsMessage(allResults),
+              content: formatToolResultsMessage(allResults, { maxOutputChars: 8000 }),
+              isToolResult: true,
             },
           ];
 
@@ -596,30 +745,29 @@ export async function runChatAgentExecutionGraph({
           // the producer-side helper).
           for (const { call, result } of allResults) {
             accumulatedToolResults.push(projectToolResultForPersist(call, result));
+            evidencePairs.push({ call, result, receivedAt: nowIso() });
           }
+          if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
 
           // If the last iteration was tool calls only, the next pass will produce
           // the final prose reply. Continue loop.
         }
 
-        // Safety: if we exhausted iterations without a final reply, use last raw output
+        // Exhaustion is not success; never publish a tool-call block as an answer.
         if (!finalReply) {
-          finalReply = loopMessages[loopMessages.length - 2]?.content ?? '';
+          finalReply = /[\u3400-\u9fff]/.test(latestUserMessage)
+            ? '本轮已达到工具执行上限，尚未完成核实。请缩小问题范围后继续；我不会把未完成的尝试当成结果。'
+            : 'This turn reached its tool execution limit before verification finished. Please narrow the request; incomplete attempts are not confirmed results.';
         }
 
-        // When tool calls were used, the final reply was NOT streamed via onDelta
-        // (subsequent iterations suppress streaming). Emit it now so the UI can
-        // feed it to TTS and display it without waiting for finalize to complete.
+        // Only finalize may publish reply_text to the speech channel.
         const hadToolCalls = loopMessages.length > graphState.modelMessages.length;
-        if (hadToolCalls && typeof sseEmitter === 'function') {
-          sseEmitter('reply_text', { text: finalReply });
-        }
 
         // G-1d slice 2: pass accumulated tool metadata through graphState so
         // the finalize node can attach it to normalizedReply → sendChatMessage
         // attaches it to the persisted assistantMessage.  Only emit when
         // non-empty so we don't pollute pure-text replies with empty arrays.
-        const out = { reply: finalReply, next: 'finalize' };
+        const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
         }
@@ -630,19 +778,16 @@ export async function runChatAgentExecutionGraph({
       // Combines the old parse-uncertainty / verify-uncertain-claim /
       // normalize-reply nodes.
       //
-      // Verification fires when the model flagged uncertainty AND the intent
-      // warrants it. The !background guard is intentionally removed: Telegram
-      // and other remote-channel messages deserve corrections too. The only
-      // channel-specific difference is that UNVERIFIED warnings are suppressed
-      // on remote channels (controlled inside applyVerificationToReply).
+      // Verification sees fresh tool evidence and stays enabled for all channels.
       async 'finalize'(graphState) {
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', name: '整理回答与引用', status: 'running', output: '处理返回文字、引用与消息格式' });
         const channelKind = isRemoteChannel ? 'remote' : 'desktop';
         const parsed = parseUncertaintyMarker(graphState.reply);
         const shouldVerify =
           parsed.hasMarker &&
-          intentRequiresVerification(graphState.intent);
+          intentRequiresVerification(graphState.classification || graphState.intent);
 
-        if (process.env.MELO_VERIFY_DEBUG === '1') {
+        if (env.MELO_VERIFY_DEBUG === '1') {
           process.stdout.write(
             `[verify] intent=${graphState.intent} hasMarker=${parsed.hasMarker} source=${parsed.source} background=${background}\n`,
           );
@@ -657,15 +802,18 @@ export async function runChatAgentExecutionGraph({
             assistantReply: parsed.cleanReply,
             uncertainClaim: parsed.uncertainClaim,
             contextBlocks: [graphState.memoryContext, graphState.dynamicContext, graphState.projectContext],
-            config,
+            toolEvidence: graphState.toolEvidence || [],
+            config: { ...config, apiKey: modelOverrides.apiKey, baseUrl: modelOverrides.baseUrl },
             model:
-              process.env.MELO_VERIFIER_MODEL ||
+              modelOverrides.verifier ||
+              modelOverrides.model ||
               graphState.activeAgentProfile.model ||
               config.model,
             signal,
+            _createReply: createReply,
           });
 
-          if (process.env.MELO_VERIFY_DEBUG === '1') {
+          if (env.MELO_VERIFY_DEBUG === '1') {
             process.stdout.write(
               `[verify] verdict=${verification.verdict} reason=${verification.reason}\n`,
             );
@@ -689,22 +837,23 @@ export async function runChatAgentExecutionGraph({
         //     leaks through the markdown strip passes or ends up in the
         //     message history.
         //   - Never attaches a viz on remote channels — `isRemoteChannel`
-        //     forces extractVizSpec to strip-only mode.
+        //     forces extractVizSpec to strip-only mode. New requests also
+        //     use strip-only mode while Demon authoring is retired.
         const preNormalizeText = finalReplyText || graphState.reply || '';
-        const vizExtraction = extractVizSpec(preNormalizeText, { isRemoteChannel });
+        const vizExtraction = extractVizSpec(preNormalizeText, { enabled: false, isRemoteChannel });
 
         // Source-citation extraction:
-        //   - Same Demon gate as viz. Runs on the text AFTER viz trailer
+        //   - Runs on the text AFTER legacy viz trailer
         //     removal so a viz block can't accidentally be parsed as cite.
         //   - On remote channels, every `<cite>` tag is collapsed to its
         //     inner quote text — TG/DC has no side drawer to open.
         //   - On desktop, the tags are kept (re-emitted in canonical form)
         //     so the frontend can render inline pills.
         const citationExtraction = extractCitations(
-          vizExtraction.text || preNormalizeText,
+          vizExtraction.text,
           { isRemoteChannel },
         );
-        const textForNormalization = citationExtraction.text || preNormalizeText;
+        const textForNormalization = citationExtraction.text;
 
         const rawNormalized = normalizeAssistantReplyForConversation(
           textForNormalization,
@@ -734,14 +883,27 @@ export async function runChatAgentExecutionGraph({
         normalizedReply.citations = isRemoteChannel
           ? []
           : citationExtraction.citations || [];
+        // Retain the verified source form without changing existing channel renderers.
+        if (textForNormalization.trim() !== normalizedReply.content) {
+          normalizedReply.canonicalReply = textForNormalization.trim();
+        }
 
         // G-1d slice 2: forward accumulated tool metadata (set by the
         // tool-loop node above) onto the normalized reply.  sendChatMessage
         // does the conditional spread onto the persisted assistantMessage —
         // empty / absent arrays produce no `toolResults` key on the message.
+        normalizedReply.memoryUsage = graphState.memoryUsage || [];
+        if (graphState.team) normalizedReply.team = graphState.team;
         if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {
           normalizedReply.toolResults = graphState.toolResults;
         }
+        if (signal?.aborted) throw signal.reason || new Error('Request aborted');
+        if (modelResponses.length) {
+          normalizedReply.modelResponses = modelResponses;
+          normalizedReply.usage = summarizePricedUsage(modelResponses, config.modelPricing);
+        }
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', status: 'completed', output: '回答格式与引用整理完成' });
+        sseEmitter?.('reply_text', { text: normalizedReply.content, final: true });
 
         return {
           normalizedReply,

@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // src/services/tts/ → src/server.js is ../../server.js
-const serverJsSource = readFileSync(join(here, '..', '..', 'server.js'), 'utf8');
+const serverJsSource = readFileSync(join(here, '..', '..', 'http', 'ttsRoutes.js'), 'utf8');
 
 /**
  * Pull out a routing block of the form:
@@ -37,10 +37,11 @@ const serverJsSource = readFileSync(join(here, '..', '..', 'server.js'), 'utf8')
  * Returns the block body (between matching braces).
  */
 function getRouteBody(source, pathname) {
-  const sigil = `url.pathname === '${pathname}' && request.method === 'POST'`;
+  const sigil = `method: 'POST', paths: ["${pathname}"]`;
   const sigilIdx = source.indexOf(sigil);
   if (sigilIdx < 0) return null;
-  const openIdx = source.indexOf('{', sigilIdx);
+  const arrow = source.indexOf('=> {', sigilIdx);
+  const openIdx = arrow < 0 ? -1 : arrow + 3;
   if (openIdx < 0) return null;
   let depth = 0;
   for (let i = openIdx; i < source.length; i += 1) {

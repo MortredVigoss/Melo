@@ -187,7 +187,7 @@ export function buildFrameEntry(chat, frame, options = {}) {
 
   if (!summaryText) return null;
 
-  // Stable frame id: hash of (chatId, startAt, endAt) — the "time window"
+  // Stable frame id: time window plus boundary message ids (same-ms imports stay distinct) — the "time window"
   // identity of the frame.  This is deliberately *not* keyed on message
   // indices so that when the chat gets re-indexed (new message inserted,
   // older turns pruned, etc.) the same slice still hashes to the same id,
@@ -232,7 +232,7 @@ export function buildFrameId(chat, frame) {
   const chatId = chat?.id || 'unknown';
   if (frame?.startAt && frame?.endAt) {
     const digest = createHash('sha1')
-      .update(`${chatId}\u241E${frame.startAt}\u241E${frame.endAt}`)
+      .update(`${chatId}\u241E${frame.startAt}\u241E${frame.endAt}\u241E${chat?.messages?.[frame.startIndex]?.id || ''}\u241E${chat?.messages?.[frame.endIndex]?.id || ''}`)
       .digest('hex')
       .slice(0, 16);
     return `frame:${chatId}:${digest}`;

@@ -7,7 +7,7 @@
 // formatted string. The single dependency (`agentUsesTool`) is already
 // in a leaf module.
 
-import { agentUsesTool } from '../agent/agentTools.js';
+import { agentUsesTool } from '../../domain/agent/agentTools.js';
 
 export function taskExecutionPrompt(task, project, workspace, profile) {
   const blocks = [

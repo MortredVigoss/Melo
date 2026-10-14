@@ -1,0 +1,20 @@
+/* Black gold: near-black surfaces, aged gold and amber highlights. */
+:root {
+  --bg:#0c0b09; --bg-elevated:#14120f; --bg-panel:#181612;
+  --bg-soft:#221e18; --bg-hover:#2a261e; --text:#eae8e3;
+  --text-muted:#b3a997; --text-soft:#9b8e76; --teal:#b38f4b;
+  --teal-soft:rgba(179,143,75,.12); --border:rgba(196,185,165,.09);
+  --border-strong:rgba(196,185,165,.18); --sidebar-width:230px;
+}
+html,body {background:#0c0b09;}
+.sidebar {background:linear-gradient(180deg,#12110f,#0f0d0b);}
+.workspace {background:radial-gradient(ellipse at 60% 24%,rgba(50,38,17,.1),transparent 60%),#0d0c0a;}
+.topbar {background:rgba(15,13,11,.94);border-color:var(--border);}
+.status-dot {box-shadow:0 0 0 4px rgba(179,143,75,.08);}
+.nav-item.is-active,.recent-item.is-active {background:rgba(143,122,84,.09);box-shadow:inset 0 0 0 1px rgba(175,157,123,.1);}
+.composer-card.is-thread {background:#171512;}
+.composer-icon-button.is-send {background:#785c28;box-shadow:0 0 18px rgba(150,116,53,.15);}
+.composer-icon-button.is-primary,.composer-icon-button.is-recording {
+ background:linear-gradient(135deg,#4f3d1b,#907036);box-shadow:0 5px 16px rgba(115,89,42,.14);border-color:rgba(194,175,138,.12);
+}
+.composer-input-frame:focus-within {border-color:rgba(163,140,98,.4);box-shadow:0 0 0 1px rgba(179,143,75,.09);}

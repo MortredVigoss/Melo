@@ -33,25 +33,25 @@ export function extractFactsRuleBased(messages = []) {
   const facts = [];
   const seen = new Set();
 
-  for (const message of messages) {
+  for (const message of [...messages].reverse()) {
     if (message?.role !== 'user' && message?.role !== 'assistant') continue;
     const text = flattenContent(message.content);
     if (!text.trim()) continue;
 
-    for (const sentence of splitSentences(text)) {
+    for (const sentence of splitSentences(text).reverse()) {
       if (facts.length >= MAX_FACTS_PER_CALL) break;
       const extracted = extractFromSentence(sentence, message.role);
       for (const fact of extracted) {
         const key = `${fact.category}:${fact.fact.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        facts.push(fact);
+        facts.push({ ...fact, sourceMessageId: message.id || null, sourceRole: message.role, sourceSenderId: message.senderId || null, sourceText: sentence.slice(0, 400) });
         if (facts.length >= MAX_FACTS_PER_CALL) break;
       }
     }
   }
 
-  return facts;
+  return facts.reverse();
 }
 
 // ─── Sentence-level extraction ──────────────────────────────────────────────
@@ -97,10 +97,10 @@ function matchUserPreference(text) {
   }
   // Chinese
   m =
-    text.match(/我(?:更喜欢|比较喜欢|喜欢|偏好|讨厌|不喜欢)([^，。！？,.!?]{2,30})/u);
+    text.match(/我(更喜欢|比较喜欢|不喜欢|喜欢|偏好|讨厌)([^，。！？,.!?]{2,30})/u);
   if (m?.[1]) {
     return {
-      fact: `User prefers ${truncate(m[1].trim(), 60)}`,
+      fact: `User ${['不喜欢', '讨厌'].includes(m[1]) ? 'dislikes' : 'prefers'} ${truncate(m[2].trim(), 60)}`,
       category: 'user_preference',
     };
   }
@@ -149,7 +149,7 @@ function matchCorrection(text) {
   }
   // Chinese
   m =
-    text.match(/(?:其实|不对|不是这样|不应该).{1,6}([^，。！？,.!?]{3,50})/u);
+    text.match(/(?:其实|不对|不是这样|不应该)[，,：:\s]*([^，。！？,.!?]{3,50})/u);
   if (m?.[1]) {
     return {
       fact: `Correction: ${truncate(m[1].trim(), 90)}`,

@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { readdir, utimes } from 'node:fs/promises';
+import { readdir, utimes, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -126,4 +126,24 @@ test('unlink failure does not break the read path (best-effort prune)', async ()
   // regardless of any prune attempt.
   const got = await getCachedExtraction('never-written-key');
   assert.equal(got, null);
+});
+
+test('quota evicts oldest generated cache only, preserving unrelated files and symlinks', async () => {
+  await setCachedExtraction('old-quota', { text: 'a'.repeat(200) });
+  await _drainPendingSweepForTests();
+  await setCachedExtraction('new-quota', { text: 'b'.repeat(200) });
+  await backdate(keyToPath(tmpHome, 'old-quota'), 1);
+  const cacheDir = join(tmpHome, 'media-cache');
+  const unrelated = join(cacheDir, 'notes.json');
+  await writeFile(unrelated, 'user data');
+  const modelDir = join(tmpHome, 'sd-models');
+  await mkdir(modelDir);
+  const modelPath = join(modelDir, `${'c'.repeat(62)}.json`);
+  await writeFile(modelPath, 'preserve model data');
+  await symlink(modelDir, join(cacheDir, '00'));
+  await _sweepExpiredNowForTests(cacheDir, 220);
+  assert.equal(existsSync(keyToPath(tmpHome, 'old-quota')), false);
+  assert.equal(existsSync(keyToPath(tmpHome, 'new-quota')), true);
+  assert.equal(existsSync(unrelated), true);
+  assert.equal(existsSync(modelPath), true);
 });

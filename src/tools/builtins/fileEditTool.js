@@ -431,6 +431,7 @@ export const fileEditTool = {
           oldLines,
           newLines,
           occurrencesReplaced: replaced,
+          change: { kind: 'replacement', path: realPath, before: old_string.slice(0, 8000), after: new_string.slice(0, 8000), truncated: old_string.length > 8000 || new_string.length > 8000 },
           backupOperationId: snap.operationId,
         },
       };

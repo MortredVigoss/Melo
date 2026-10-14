@@ -23,6 +23,7 @@
 // surface that the function expects to call.
 
 import { stat } from 'node:fs/promises';
+import { cachedWorkspaceTree } from './workspaceTreeCache.js';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -76,7 +77,7 @@ export async function buildWorkspaceSnapshot(state, project) {
     };
   }
 
-  const { entries, filePaths } = await listWorkspaceEntries(rootPath);
+  const { entries, filePaths } = await cachedWorkspaceTree(rootPath, () => listWorkspaceEntries(rootPath));
   const selectedFilePath = filePaths.includes(state.settings.selectedFilePath)
     ? state.settings.selectedFilePath
     : filePaths[0] || null;

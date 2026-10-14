@@ -74,6 +74,9 @@ function resolveTtsConfig(config = {}) {
     return { apiKey: explicitKey, baseUrl };
   }
 
+  // Named LLM connections do not grant access to a voice service.
+  if (config?.activeLlmProfileId && config.baseUrl !== 'https://api.openai.com/v1') return { apiKey: '', baseUrl: '' };
+
   // Priority 2: api-key mode
   if (authMode === 'api-key') {
     const apiKey = String(

@@ -52,9 +52,9 @@ test('server.js forwards confirmInput and persistent fields to resolveFileSafety
 });
 
 test('server.js exposes /api/safety/file-allowlist GET + remove endpoints', () => {
-  assert.ok(serverSrc.includes("url.pathname === '/api/safety/file-allowlist'"),
+  assert.ok(serverSrc.includes('paths: ["/api/safety/file-allowlist"]'),
     'list endpoint missing');
-  assert.ok(serverSrc.includes("url.pathname === '/api/safety/file-allowlist/remove'"),
+  assert.ok(serverSrc.includes('paths: ["/api/safety/file-allowlist/remove"]'),
     'remove endpoint missing');
 });
 
@@ -94,11 +94,11 @@ test('desktop-ui/app.js exposes the Safety customize section + Refresh/Revoke ac
 // ── Phase 4 — domain cookies + image-intent gate ──────────────────────
 
 test('server.js exposes /api/settings/domain-cookies GET / upsert / remove endpoints', () => {
-  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies'"),
+  assert.ok(serverSrc.includes('paths: ["/api/settings/domain-cookies"]'),
     'GET listing endpoint missing');
-  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies/upsert'"),
+  assert.ok(serverSrc.includes('paths: ["/api/settings/domain-cookies/upsert"]'),
     'upsert endpoint missing');
-  assert.ok(serverSrc.includes("url.pathname === '/api/settings/domain-cookies/remove'"),
+  assert.ok(serverSrc.includes('paths: ["/api/settings/domain-cookies/remove"]'),
     'remove endpoint missing');
 });
 
@@ -110,8 +110,8 @@ test('server.js GET endpoint omits cookie values from the response shape', () =>
   //
   // We split on the next route's pathname so we don't accidentally
   // match the upsert / remove blocks below.
-  const startIdx = serverSrc.indexOf("url.pathname === '/api/settings/domain-cookies' && request.method === 'GET'");
-  const endIdx = serverSrc.indexOf("url.pathname === '/api/settings/domain-cookies/upsert'", startIdx);
+  const startIdx = serverSrc.indexOf('paths: ["/api/settings/domain-cookies"]');
+  const endIdx = serverSrc.indexOf('paths: ["/api/settings/domain-cookies/upsert"]', startIdx);
   assert.ok(startIdx > 0 && endIdx > startIdx, 'GET endpoint block boundaries not found');
   const block = serverSrc.slice(startIdx, endIdx);
   // Identifiers in the response shape can appear as `name:` (explicit

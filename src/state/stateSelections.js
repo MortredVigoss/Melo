@@ -23,16 +23,16 @@
 import { normalizeAgentProfiles } from './agentProfiles.js';
 import { sortChats } from './conversation.js';
 import { BUILTIN_CONNECTORS } from './stateHydration.js';
-import { allAgentIdsFromProfiles } from '../services/agent/agentLibrary.js';
-import { BUILTIN_SKILLS } from '../services/skill/skillService.js';
-import { MODE_DEFS } from '../services/chat/modeDefs.js';
-import { normalizePromptHistory } from '../services/activity/activityLog.js';
+import { allAgentIdsFromProfiles } from '../domain/agent/agentLibrary.js';
+import { BUILTIN_SKILLS } from '../domain/skill/skillService.js';
+import { MODE_DEFS } from '../domain/chat/modeDefs.js';
+import { normalizePromptHistory } from '../domain/activity/activityLog.js';
 
 export function ensureSelectedEntities(state) {
   const chats = sortChats(state.chats);
   const normalizedAgentProfiles = normalizeAgentProfiles(state.agentProfiles);
   const availableAgentIds = allAgentIdsFromProfiles(normalizedAgentProfiles);
-  const activeView = ['chat', 'search', 'agent', 'model', 'customize', 'chats', 'projects', 'artifacts'].includes(
+  const activeView = ['chat', 'search', 'agent', 'model', 'settings', 'customize', 'chats', 'projects', 'artifacts'].includes(
     state.settings.activeView,
   )
     ? state.settings.activeView

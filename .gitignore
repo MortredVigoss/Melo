@@ -47,3 +47,6 @@ generated/
 # committed.
 /bench/memory/golden.json
 /bench/memory/results-*.md
+
+# Pinned embedding weights are verified and bundled by prepare-memory-model.js.
+/assets/models/multilingual-e5-small/

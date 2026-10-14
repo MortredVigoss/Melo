@@ -9,7 +9,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -643,4 +643,22 @@ test('tryImageEditFastPath: image_url present + image-only verb (recolor/crop/re
   } finally {
     await rm(ws, { recursive: true, force: true });
   }
+});
+
+
+test('image edit publishes one actual pipeline with a saved candidate and truthful failure', async t => {
+  const ws = await mkdtemp(join(tmpdir(), 'melo-scene-edit-'));
+  t.after(() => rm(ws, { recursive: true, force: true }));
+  const events = [];
+  const emit = (type, event) => { if (type === 'execution_event') events.push(event); };
+  await tryImageEditFastPath({ config: codexConfig(), messages: buildEditMessages(), workspace: { rootPath: ws }, sseEmitter: emit,
+    editFn: async ({ outputPath }) => { assert.equal(events.at(-1).status, 'running'); await writeFile(outputPath, fakePng(4096)); return { path: outputPath }; } });
+  assert.deepEqual(events.map(e => e.status), ['running', 'completed']);
+  assert.equal(events[1].artifacts.length, 1);
+  assert.equal(events[1].artifacts[0].kind, 'image');
+  events.length = 0;
+  await tryImageEditFastPath({ config: codexConfig(), messages: buildEditMessages(), workspace: { rootPath: ws }, sseEmitter: emit,
+    editFn: async () => { throw new Error('failed'); } });
+  assert.deepEqual(events.map(e => e.status), ['running', 'failed']);
+  assert.equal(events[1].artifacts, undefined);
 });

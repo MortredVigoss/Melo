@@ -1,8 +1,13 @@
+import { BuiltinEmbedProvider } from './BuiltinEmbedProvider.js';
+import { readFileSync } from 'node:fs';
+import { getConfigPath } from '../../config.js';
+import { requestEnvironment } from '../../runtime/requestScope.js';
 /**
  * Factory for EmbeddingProvider.  Resolution order:
  *
- *   MELO_EMBED_PROVIDER env var  — explicit pick, values: 'ollama' | 'openai' | 'http'
- *   else: try ollama → openai → http in that order, picking the first available.
+ *   MELO_EMBED_PROVIDER env var — explicit integration override.
+ *   Otherwise use only Melo's bundled local model. Never auto-probe external
+ *   applications or silently send memory text to a cloud embedding service.
  *
  * Returns a thin wrapper with an LRU cache so repeated embeds are free.
  */
@@ -35,6 +40,7 @@ function makeCache() {
 // can iterate the same factories getEmbeddingProvider would, surfacing
 // per-provider rejection reasons without booting the singleton.
 export const REGISTRY = new Map();
+REGISTRY.set('builtin', () => new BuiltinEmbedProvider());
 REGISTRY.set('ollama', () => new OllamaEmbedProvider());
 REGISTRY.set('openai', () => new OpenAIEmbedProvider());
 REGISTRY.set('http', () => new CustomHttpEmbedProvider());
@@ -51,6 +57,8 @@ export function withEmbeddingCache(provider) {
     ...provider,
     get dims() { return provider.dims; },
     get modelId() { return provider.modelId; },
+    get observedDims() { return provider.observedDims ?? provider.dims; },
+    async probe(text) { return provider.embed(text); },
     async isAvailable() { return provider.isAvailable(); },
     async embed(text) {
       const key = String(text || '').trim();
@@ -66,28 +74,33 @@ export function withEmbeddingCache(provider) {
 }
 
 let _singleton = null;
+let _singletonKey = null;
 
 /** Build an EmbeddingProvider from env; caches the instance. */
 export async function getEmbeddingProvider() {
-  if (_singleton) return _singleton;
+  const configPath = getConfigPath();
+  const env = { ...requestEnvironment() };
+  let connection = null;
+  try { connection = JSON.parse(readFileSync(configPath, 'utf8')).embeddingConnection; } catch {}
+  const key = JSON.stringify([configPath, connection, env.MELO_EMBED_PROVIDER, env.MELO_EMBED_MODEL_DIR]);
+  if (_singleton && _singletonKey === key) return _singleton;
+  _singleton = null; _singletonKey = key;
+  const explicit = String(env.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
+  // Local semantic retrieval is owned by Melo. No probing of other apps or
+  // automatic cloud fallback; external adapters remain explicit integrations.
+  const order = explicit ? [explicit] : ['builtin'];
 
-  const explicit = String(process.env.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
-  const order = explicit
-    ? [explicit]
-    : ['ollama', 'openai', 'http'];
-
-  for (const name of order) {
-    const factory = REGISTRY.get(name);
-    if (!factory) continue;
-    const p = factory();
+  const candidates = order.map(name => REGISTRY.get(name)?.()).filter(Boolean);
+  for (const p of candidates) {
     // eslint-disable-next-line no-await-in-loop
     if (await p.isAvailable()) {
-      _singleton = withEmbeddingCache(p);
-      return _singleton;
+      const instance = withEmbeddingCache(p);
+      if (_singletonKey === key) _singleton = instance;
+      return instance;
     }
   }
 
-  _singleton = null;
+  if (_singletonKey === key) _singleton = null;
   return null;
 }
 

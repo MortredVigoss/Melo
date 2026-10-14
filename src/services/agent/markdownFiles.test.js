@@ -94,13 +94,13 @@ test('missing agentsDir throws (defensive — factory contract requires it)', ()
 
 // ─── source-level guard against re-introducing the freeze ───────────────────
 
-test('source-level guard: desktopStore.js does NOT re-introduce `const DESKTOP_DIR = join(getMeloHome()…)`', async () => {
+test('source-level guard: agent mutations do NOT re-introduce `const DESKTOP_DIR = join(getMeloHome()…)`', async () => {
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
   const { dirname, join } = await import('node:path');
   const here = dirname(fileURLToPath(import.meta.url));
   // src/services/agent/ → src/desktopStore.js is ../../desktopStore.js
-  const source = readFileSync(join(here, '..', '..', 'desktopStore.js'), 'utf8');
+  const source = readFileSync(join(here, 'agentMutations.js'), 'utf8');
   assert.equal(
     /const\s+DESKTOP_DIR\s*=\s*join\(\s*getMeloHome\(\)/.test(source),
     false,
@@ -111,15 +111,7 @@ test('source-level guard: desktopStore.js does NOT re-introduce `const DESKTOP_D
     false,
     'AGENTS_DIR must not be a module-load-time const',
   );
-  // Positive: function form must exist.
-  assert.match(
-    source,
-    /function\s+desktopDir\s*\(\)\s*\{[\s\S]*?return\s+join\(\s*getMeloHome\(\)/,
-    'desktopDir() must be a call-time function',
-  );
-  assert.match(
-    source,
-    /function\s+agentsDir\s*\(\)\s*\{[\s\S]*?return\s+join\(\s*desktopDir\(\)/,
-    'agentsDir() must derive from desktopDir() at call time',
-  );
+  // The extracted domain module resolves the factory root at call time.
+  assert.match(source, /const\s+agentsDir\s*=\s*\(\)\s*=>\s*join\(getMeloHome\(\)/);
+  assert.match(source, /createAgentMarkdownFileHelpers\(\{ agentsDir \}\)/);
 });

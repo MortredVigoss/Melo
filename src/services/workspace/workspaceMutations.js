@@ -1,3 +1,5 @@
+import { createRequestContext } from '../../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Workspace mutation handlers — sub-phase 7d-5ε commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -18,10 +20,10 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nowIso } from '../../shared/helpers.js';
-import { loadState, saveState, updateStateAtomically } from '../../state/stateStore.js';
+import { loadState, updateStateAtomically } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findProjectById } from '../../state/stateLookups.js';
-import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
+import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import {
   sanitizeWorkspacePath as sanitizeWorkspacePathRaw,
 } from './workspaceFiles.js';
@@ -30,9 +32,9 @@ import {
   saveWorkspaceFileContent as saveWorkspaceFileContentService,
   applyArtifactContentToWorkspace as applyArtifactContentToWorkspaceService,
 } from './workspaceService.js';
-import { normalizeArtifact } from '../artifact/artifactService.js';
+import { normalizeArtifact } from '../../domain/artifact/artifactService.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
-import { MAX_COMMAND_RUNS } from '../activity/activityLog.js';
+import { MAX_COMMAND_RUNS } from '../../domain/activity/activityLog.js';
 
 const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 const execFile = promisify(execFileCallback);
@@ -42,11 +44,13 @@ function sanitizeWorkspacePath(rawPath) {
 }
 
 export async function selectWorkspaceFile(filePath) {
-  const state = ensureSelectedEntities(await loadState());
-  state.settings.selectedFilePath = filePath || null;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  await saveState(state);
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => selectWorkspaceFile(...arguments));
+  await updateStateAtomically(state => {
+    state.settings.selectedFilePath = filePath || null;
+    state.settings.activeMode = 'code';
+    state.settings.activeView = 'chat';
+    return state;
+  });
   return getDesktopBootstrap();
 }
 
@@ -56,6 +60,7 @@ function buildWorkspaceProjectResolver(state) {
 }
 
 export async function readWorkspaceFilePreview(params = {}) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => readWorkspaceFilePreview(...arguments));
   const state = ensureSelectedEntities(await loadState());
   return readWorkspaceFilePreviewService(params, {
     resolveProject: buildWorkspaceProjectResolver(state),
@@ -63,45 +68,50 @@ export async function readWorkspaceFilePreview(params = {}) {
 }
 
 export async function saveWorkspaceFile({ filePath, content, projectId } = {}) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => saveWorkspaceFile(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const { project, relativeFilePath } = await saveWorkspaceFileContentService(
     { filePath, content, projectId },
     { resolveProject: buildWorkspaceProjectResolver(state) },
   );
 
-  state.settings.selectedFilePath = relativeFilePath;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  project.updatedAt = nowIso();
-  await saveState(state);
+  await updateStateAtomically(latest => {
+    latest.settings.selectedFilePath = relativeFilePath;
+    latest.settings.activeMode = 'code';
+    latest.settings.activeView = 'chat';
+    const currentProject = findProjectById(latest, project.id);
+    if (currentProject) currentProject.updatedAt = nowIso();
+  });
 
   return getDesktopBootstrap();
 }
 
 export async function createArtifact({ title, content, language, projectId, kind = 'note' }) {
-  const state = ensureSelectedEntities(await loadState());
-  const trimmedContent = (content || '').trim();
-  if (!trimmedContent) {
-    throw new Error('Artifact content cannot be empty.');
-  }
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createArtifact(...arguments));
+  await updateStateAtomically(state => {
+    const trimmedContent = (content || '').trim();
+    if (!trimmedContent) {
+      throw new Error('Artifact content cannot be empty.');
+    }
 
-  const artifact = normalizeArtifact({
-    id: randomUUID(),
-    title: title?.trim() || 'Untitled artifact',
-    content: trimmedContent,
-    language: language?.trim() || 'text',
-    kind,
-    projectId: projectId || state.settings.selectedProjectId,
-    createdAt: nowIso(),
+    const artifact = normalizeArtifact({
+      id: randomUUID(),
+      title: title?.trim() || 'Untitled artifact',
+      content: trimmedContent,
+      language: language?.trim() || 'text',
+      kind,
+      projectId: projectId || state.settings.selectedProjectId,
+      createdAt: nowIso(),
+    });
+
+    state.artifacts.unshift(artifact);
+    const project = findProjectById(state, artifact.projectId);
+    if (project) {
+      project.updatedAt = nowIso();
+    }
+
+    return state;
   });
-
-  state.artifacts.unshift(artifact);
-  const project = findProjectById(state, artifact.projectId);
-  if (project) {
-    project.updatedAt = nowIso();
-  }
-
-  await saveState(state);
   return getDesktopBootstrap();
 }
 
@@ -115,6 +125,7 @@ export async function createArtifact({ title, content, language, projectId, kind
  * before calling) so the UI can send a single field.
  */
 export async function updateArtifact(artifactId, patch = {}) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => updateArtifact(...arguments));
   if (!artifactId || typeof artifactId !== 'string') {
     throw new Error('Artifact id is required.');
   }
@@ -195,6 +206,7 @@ export async function updateArtifact(artifactId, patch = {}) {
  *     unknown row)
  */
 export async function deleteArtifact(artifactId) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => deleteArtifact(...arguments));
   if (!artifactId || typeof artifactId !== 'string') {
     throw new Error('Artifact id is required.');
   }
@@ -230,6 +242,7 @@ export async function deleteArtifact(artifactId) {
  * isn't currently soft-deleted (defensive against a double-undo race).
  */
 export async function restoreArtifact(artifactId) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => restoreArtifact(...arguments));
   if (!artifactId || typeof artifactId !== 'string') {
     throw new Error('Artifact id is required.');
   }
@@ -274,6 +287,7 @@ export async function restoreArtifact(artifactId) {
  * @returns {Promise<{purged: number}>} how many rows were evicted.
  */
 export async function purgeStaleSoftDeletes({ olderThanDays = 7, nowMs = Date.now() } = {}) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => purgeStaleSoftDeletes(...arguments));
   const cutoffMs = nowMs - olderThanDays * 86_400_000;
   let purged = 0;
 
@@ -297,6 +311,7 @@ export async function purgeStaleSoftDeletes({ olderThanDays = 7, nowMs = Date.no
 }
 
 export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => applyArtifactToWorkspaceFile(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const artifact = state.artifacts.find(entry => entry.id === artifactId);
   // Reject stale ids that point at a soft-deleted row — writing
@@ -318,16 +333,19 @@ export async function applyArtifactToWorkspaceFile({ artifactId, filePath, proje
     { resolveProject: buildWorkspaceProjectResolver(state) },
   );
 
-  state.settings.selectedFilePath = targetPath;
-  state.settings.activeMode = 'code';
-  state.settings.activeView = 'chat';
-  project.updatedAt = nowIso();
-  await saveState(state);
+  await updateStateAtomically(latest => {
+    latest.settings.selectedFilePath = targetPath;
+    latest.settings.activeMode = 'code';
+    latest.settings.activeView = 'chat';
+    const currentProject = findProjectById(latest, project.id);
+    if (currentProject) currentProject.updatedAt = nowIso();
+  });
 
   return getDesktopBootstrap();
 }
 
 export async function runLocalCommand({ templateId, query, projectId }) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => runLocalCommand(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const project = findProjectById(state, projectId || state.settings.selectedProjectId);
   if (!project) {
@@ -361,7 +379,7 @@ export async function runLocalCommand({ templateId, query, projectId }) {
     output = `${error.stdout || ''}${error.stderr || ''}`.trim() || error.message;
   }
 
-  state.commandRuns.unshift({
+  const commandRun = {
     id: randomUUID(),
     projectId: project.id,
     templateId: template.id,
@@ -371,13 +389,15 @@ export async function runLocalCommand({ templateId, query, projectId }) {
     success,
     output: output.slice(0, 12000),
     executedAt: nowIso(),
+  };
+  await updateStateAtomically(latest => {
+    latest.commandRuns = [commandRun, ...latest.commandRuns].slice(0, MAX_COMMAND_RUNS);
+    const currentProject = findProjectById(latest, project.id);
+    if (currentProject) currentProject.updatedAt = nowIso();
   });
-  state.commandRuns = state.commandRuns.slice(0, MAX_COMMAND_RUNS);
-  project.updatedAt = nowIso();
-  await saveState(state);
 
   return {
     bootstrap: await getDesktopBootstrap(),
-    commandRun: state.commandRuns[0],
+    commandRun,
   };
 }

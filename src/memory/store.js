@@ -110,6 +110,8 @@ function applyMemoryStoreSchema(database, vecLoaded) {
     );
     CREATE INDEX IF NOT EXISTS idx_memories_namespace_kind
       ON memories(namespace, kind);
+    CREATE INDEX IF NOT EXISTS idx_memories_chat_kind
+      ON memories(json_extract(metadata_json, '$.chatId'), kind, id);
     CREATE INDEX IF NOT EXISTS idx_memories_namespace_updated
       ON memories(namespace, updated_at DESC);
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -148,11 +150,8 @@ function applyMemoryStoreSchema(database, vecLoaded) {
   //    memories(id).  Once per boot, check the schema and — if needed —
   //    clean orphan hits and rebuild the table with the cascade constraint.
   //    Safe to run repeatedly; a no-op after the first upgrade.
-  const hitsSchema = database.prepare(
-    `SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_hits'`
-  ).get();
-  const hasFkCascade = /FOREIGN\s+KEY[^)]*REFERENCES\s+memories\s*\(\s*id\s*\)[^)]*ON\s+DELETE\s+CASCADE/i
-    .test(String(hitsSchema?.sql || ''));
+  const hasFkCascade = database.prepare('PRAGMA foreign_key_list(memory_hits)').all()
+    .some(fk => fk.table === 'memories' && fk.from === 'memory_id' && fk.on_delete === 'CASCADE');
   if (!hasFkCascade) {
     database.exec(`
       BEGIN;
@@ -177,6 +176,12 @@ function applyMemoryStoreSchema(database, vecLoaded) {
       COMMIT;
     `);
   }
+
+  // Keep query diversity separate from per-turn idempotency. Legacy hits remain intact.
+  if (!database.prepare('PRAGMA table_info(memory_hits)').all().some(c => c.name === 'request_id')) {
+    database.exec('ALTER TABLE memory_hits ADD COLUMN request_id TEXT');
+  }
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_hits_request ON memory_hits(request_id,memory_id)');
 
   // Embedding dimension metadata table
   database.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`);
@@ -224,13 +229,10 @@ function applyMemoryStoreSchema(database, vecLoaded) {
   const needVecRebuild = vecSchema && !schemaHasRightDims;
 
   if (needVecRebuild) {
-    // Dimension mismatch (e.g. nomic 768 → bge-m3 1024): drop stale index and cache
-    try { database.exec(`DROP TABLE IF EXISTS vec_memories`); } catch (err) { debugWarn('memory.store.vec', 'drop vec_memories during rebuild failed', err?.message || err); }
-    database.exec(`DELETE FROM embedding_cache`);
-    database.prepare(`UPDATE memories SET embedding = NULL`).run();
-    console.log(`[memory] vec_memories dimension mismatch — dropping and rebuilding for float[${EMBEDDING_DIMS}]`);
+    // Preserve the old index until repair.js validates and commits its replacement.
+    database.prepare("INSERT OR REPLACE INTO _meta VALUES ('embedding_repair_required', '1')").run();
   }
-  database.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES ('embedding_dims', ?)`).run(String(EMBEDDING_DIMS));
+  database.prepare(`INSERT OR IGNORE INTO _meta (key, value) VALUES ('embedding_dims', ?)`).run(String(EMBEDDING_DIMS));
 
   // Create vec0 table for KNN search if sqlite-vec loaded successfully.
   // `vecLoaded` is captured at call time — for the cached production db
@@ -250,7 +252,7 @@ function applyMemoryStoreSchema(database, vecLoaded) {
       const vecPresent = database.prepare(
         `SELECT 1 FROM sqlite_master WHERE type='table' AND name='vec_memories'`,
       ).get();
-      vecAvailable = Boolean(vecPresent);
+      vecAvailable = Boolean(vecPresent) && !needVecRebuild;
     } catch (err) {
       debugWarn('memory.store.vec', 'vec_memories create failed, disabling vector search', err?.message || err);
       vecAvailable = false;
@@ -415,11 +417,17 @@ function getCachedEmbedding(text, modelId = null, database = null) {
  *   reembed flag even when the vec0 write rolled back.
  */
 function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
+  searchText=String(searchText || '').toLowerCase().replace(/\s+/g,' ').trim();
   if (!embedding) return false;
   const database = getDb();
-  const buf = Buffer.from(embedding.buffer);
+  const current = database.prepare('SELECT search_text FROM memories WHERE id = ?').get(memoryId);
+  if (!current || current.search_text !== searchText) return false;
+  const buf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
   const hash = textHash(searchText);
   const resolvedModel = resolveCacheModelId(modelId);
+  const storedModel = database.prepare("SELECT value FROM _meta WHERE key='embedding_model_id'").get()?.value;
+  if (storedModel && modelId && storedModel !== modelId) return false;
+  if (database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value === '1') return false;
   try {
     // Phase F-2c follow-up #2 (2026-05-10): wrap the three-step write in
     // runInTransaction so the embedding_cache INSERT, memories UPDATE, and
@@ -472,28 +480,37 @@ function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
 }
 
 /** KNN query against vec_memories. Returns [{memory_id, distance}] */
-function knnRecall(queryEmbedding, limit) {
+function knnRecall(queryEmbedding, limit, { namespaces = [], kinds = [] } = {}) {
   if (!_vecLoaded || !queryEmbedding) return [];
   try {
-    const buf = Buffer.from(queryEmbedding.buffer);
+    if (!namespaces.length) return [];
+    const buf = Buffer.from(queryEmbedding.buffer, queryEmbedding.byteOffset, queryEmbedding.byteLength);
+    const kindClause = kinds.length ? ` AND kind IN (${kinds.map(() => '?').join(', ')})` : '';
     return getDb().prepare(`
       SELECT memory_id, distance
       FROM vec_memories
       WHERE embedding MATCH ?
+        AND memory_id IN (
+          SELECT id FROM memories
+          WHERE namespace IN (${namespaces.map(() => '?').join(', ')})${kindClause} AND ${activeMemorySQL()}
+        )
       ORDER BY distance
       LIMIT ?
-    `).all(buf, limit);
+    `).all(buf, ...namespaces, ...kinds, limit);
   } catch (err) {
     debugWarn('memory.recall.knn', 'knnRecall query failed', err?.message || err);
     return [];
   }
 }
 
-function buildMemoriesFtsQuery(text) {
-  const tokens = String(text || '')
+export function buildMemoriesFtsQuery(text) {
+  const unique = [...new Set(String(text || '')
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .split(/\s+/)
-    .filter(Boolean)
+    .filter(Boolean))];
+  // Repeated CJK text used to produce thousands of identical OR branches.
+  // Keep bounded evidence from both ends of a long query.
+  const tokens = (unique.length > 128 ? [...unique.slice(0,64), ...unique.slice(-64)] : unique)
     .map(t => `"${t.replace(/"/g, '')}"`)
     .join(' OR ');
   return tokens || null;
@@ -643,40 +660,57 @@ function parseMetadata(raw) {
   }
 }
 
+const activeMemorySQL = (prefix = '') => {
+  const meta = `${prefix}metadata_json`;
+  return ['mergedInto','sourceDeleted','quarantined','forgotten','mobileSyncConflict'].map(key =>
+    `COALESCE(json_extract(${meta}, '$.${key}'), '') IN ('', 0)`).join(' AND ') +
+    ` AND (json_extract(${meta}, '$.validTo') IS NULL OR julianday(json_extract(${meta}, '$.validTo')) IS NULL OR julianday(json_extract(${meta}, '$.validTo')) > julianday('now'))`;
+};
 function buildRecallQuery({ namespaces = [], kinds = [], allowGlobal = false } = {}) {
-  const normalizedNamespaces = namespaces
-    .map(value => String(value || '').trim())
-    .filter(Boolean);
-  const normalizedKinds = kinds.map(value => String(value || '').trim()).filter(Boolean);
-  const namespaceClause = normalizedNamespaces.length
-    ? `namespace IN (${normalizedNamespaces.map(() => '?').join(', ')})`
-    : allowGlobal
-      ? '1 = 1'
-      : '';
-  if (!namespaceClause) {
-    return null;
+  const normalizedNamespaces = [...new Set(namespaces.map(value => String(value || '').trim()).filter(Boolean))];
+  const normalizedKinds = [...new Set(kinds.map(value => String(value || '').trim()).filter(Boolean))];
+  if (!normalizedNamespaces.length && !allowGlobal) return null;
+  return { normalizedNamespaces, normalizedKinds, allowGlobal };
+}
+function keywordRecallRows(built, query = '', {limit = 64, accept = () => true} = {}) {
+  if (!built) return [];
+  const database = getDb(), {normalizedNamespaces:ns, normalizedKinds:kinds} = built;
+  const clauses = [activeMemorySQL('m.')], params = [];
+  if (ns.length) { clauses.push(`m.namespace IN (${ns.map(()=>'?').join(',')})`); params.push(...ns); }
+  if (kinds.length) { clauses.push(`m.kind IN (${kinds.map(()=>'?').join(',')})`); params.push(...kinds); }
+  const columns = 'm.id,m.namespace,m.kind,m.source_id,m.text,m.search_text,m.tokens_estimate,m.created_at,m.updated_at,m.last_used_at,m.metadata_json';
+  const pageSize = Math.max(64,Math.min(512,limit*2));
+  function collect(sql, bindings, fts = false) {
+    const stmt=database.prepare(sql), out=[];
+    for(let offset=0;out.length<limit;offset+=pageSize) {
+      const rows=stmt.all(...bindings,pageSize,offset);
+      const scored = fts ? rows.map(row=>({...row,metadata:parseMetadata(row.metadata_json),score:-row.rank})) : mapScoredRows(rows,query);
+      for(const row of scored) if(accept(materializeMemoryRows([row])[0]))out.push(row);
+      if(rows.length<pageSize)break;
+    }
+    return out.slice(0,limit);
   }
-
-  const kindClause = normalizedKinds.length
-    ? ` AND kind IN (${normalizedKinds.map(() => '?').join(', ')})`
-    : '';
-
-  return {
-    normalizedNamespaces,
-    normalizedKinds,
-    sql: `
-      SELECT id, namespace, kind, source_id, text, search_text, tokens_estimate,
-             created_at, updated_at, last_used_at, metadata_json
-      FROM memories
-      WHERE ${namespaceClause}${kindClause}
-      ORDER BY updated_at DESC
-      LIMIT 512
-    `,
-  };
+  const ftsQuery = buildMemoriesFtsQuery(toCjkSpaced(query));
+  if(ftsQuery) {
+    try {
+      const matches=collect(`SELECT ${columns},bm25(memories_fts) AS rank FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
+        WHERE memories_fts MATCH ? AND ${clauses.join(' AND ')} ORDER BY rank,m.id LIMIT ? OFFSET ?`,[ftsQuery,...params],true);
+      if(matches.length)return matches;
+    } catch(error) { debugWarn('memory.recall.fts','FTS unavailable; using scoped substring fallback',error?.message || error); }
+    // Rare fuzzy/partial queries retain their old fallback, but SQL narrows
+    // candidates before materialization and never imposes a newest-512 cutoff.
+    const tokens=tokenizeQuery(query).slice(0,32);
+    if(tokens.length) {
+      clauses.push('('+tokens.map(()=>`lower(m.search_text) LIKE ? ESCAPE '\\'`).join(' OR ')+')');
+      params.push(...tokens.map(token=>'%'+[...token].map(c=>c.replace(/[\\%_]/g,'\\$&')).join('%')+'%'));
+    }
+  }
+  return collect(`SELECT ${columns} FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY m.updated_at DESC,m.id LIMIT ? OFFSET ?`,params);
 }
 
 // Exported for unit tests — these are pure and deterministic.
 export function isEntryInvalidated(metadata, nowMs = Date.now()) {
+  if (metadata?.mergedInto || metadata?.mobileSyncConflict || metadata?.sourceDeleted || metadata?.quarantined || metadata?.forgotten) return true;
   const validTo = metadata?.validTo;
   if (!validTo) return false;
   const parsed = Date.parse(validTo);
@@ -937,37 +971,6 @@ function materializeMemoryRows(rows = [], { lastUsedAt = null } = {}) {
   }));
 }
 
-function touchRows(rows = []) {
-  if (!rows.length) {
-    return [];
-  }
-
-  const database = getDb();
-  const usedAt = new Date().toISOString();
-  const touch = database.prepare('UPDATE memories SET last_used_at = ? WHERE id = ?');
-  // metadata_json is a generic blob — we bump useCount inside it so that
-  // importance scoring can weight hot facts without a schema migration.
-  const touchMeta = database.prepare(
-    'UPDATE memories SET metadata_json = ? WHERE id = ?',
-  );
-
-  runInTransaction(() => {
-    for (const row of rows) {
-      touch.run(usedAt, row.id);
-      const nextMetadata = {
-        ...(row.metadata || {}),
-        useCount: Math.max(0, Number(row.metadata?.useCount) || 0) + 1,
-        lastBoostedAt: usedAt,
-      };
-      touchMeta.run(JSON.stringify(nextMetadata), row.id);
-      // Keep the returned shape in sync so callers see the new counter.
-      row.metadata = nextMetadata;
-    }
-  });
-
-  return materializeMemoryRows(rows, { lastUsedAt: usedAt });
-}
-
 // Re-entrant transaction helper.  SQLite does NOT allow nested BEGIN (it
 // errors with "cannot start a transaction within a transaction"), so when
 // `runInTransaction` is invoked while another tx is already open we use a
@@ -1037,6 +1040,8 @@ export function upsertMemory(entry) {
   const row = normalizeEntry(entry);
   if (!row) return;
   const database = getDb();
+  const previous = database.prepare('SELECT search_text FROM memories WHERE id = ?').get(row.id);
+  const textChanged = previous && previous.search_text !== row.searchText;
   const alreadyInFts = database.prepare(
     `SELECT 1 FROM memories_fts WHERE memory_id = ? LIMIT 1`,
   ).get(row.id);
@@ -1048,6 +1053,8 @@ export function upsertMemory(entry) {
         created_at, updated_at, last_used_at, metadata_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        namespace      = excluded.namespace,
+        source_id      = excluded.source_id,
         text           = excluded.text,
         search_text    = excluded.search_text,
         updated_at     = excluded.updated_at,
@@ -1057,6 +1064,10 @@ export function upsertMemory(entry) {
       row.searchText, null, row.tokensEstimate,
       row.createdAt, row.updatedAt, row.lastUsedAt, row.metadataJson,
     );
+    if (textChanged) {
+      database.prepare('UPDATE memories SET embedding = NULL WHERE id = ?').run(row.id);
+      if (_vecLoaded) database.prepare('DELETE FROM vec_memories WHERE memory_id = ?').run(row.id);
+    }
     // FTS5 virtual tables don't support ON CONFLICT — the only safe update
     // is DELETE + INSERT.  Bug fix: previously we only INSERTed when the
     // row was missing, so updates to search_text on an existing id left
@@ -1076,7 +1087,7 @@ export function upsertMemory(entry) {
 }
 
 /**
- * Keys on `metadata_json` that the dreaming pipeline / touchRows / validity
+ * Keys on `metadata_json` that dreaming, confirmed usage and validity
  * tracker own.  `replaceMemories` preserves them across a rebuild so a
  * snapshot never wipes background work.
  */
@@ -1089,6 +1100,13 @@ const PRESERVED_METADATA_KEYS = [
   'validFrom',
   'validTo',
   'pinned',
+  'forgotten',
+  'sourceDeleted',
+  'quarantined',
+  'mobileSyncConflict',
+  'userEdited',
+  'scope',
+  'audience',
 ];
 
 function isSnapshotProtectedIncrementalMemory(row = {}) {
@@ -1097,24 +1115,6 @@ function isSnapshotProtectedIncrementalMemory(row = {}) {
   // rows, but promoted session facts are intentionally independent of any
   // single chat snapshot and must survive compaction/deletion saves.
   return row.kind === 'session-fact' && String(row.id || '').startsWith('promoted:');
-}
-
-function normalizeStoredMemoryRow(row = {}) {
-  const text = String(row.text || '').trim();
-  if (!text) return null;
-  return {
-    id: row.id,
-    namespace: row.namespace,
-    kind: row.kind,
-    sourceId: row.source_id || null,
-    text,
-    searchText: row.search_text || text,
-    tokensEstimate: row.tokens_estimate || Math.ceil(text.length / 4),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lastUsedAt: row.last_used_at || null,
-    metadataJson: row.metadata_json || '{}',
-  };
 }
 
 /**
@@ -1156,151 +1156,67 @@ export function replaceMemories(entries = [], { storePath } = {}) {
   );
 }
 
-function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx) {
-  const normalizedEntries = [...incomingEntries];
-  try {
-    const incomingIds = new Set(normalizedEntries.map(row => row.id));
-    const protectedRows = database.prepare(`
-      SELECT id, namespace, kind, source_id, text, search_text, tokens_estimate,
-             created_at, updated_at, last_used_at, metadata_json
-      FROM memories
-      WHERE kind = 'session-fact' AND id LIKE 'promoted:%'
-    `).all();
-    for (const row of protectedRows) {
-      if (incomingIds.has(row.id)) continue;
-      if (!isSnapshotProtectedIncrementalMemory(row)) continue;
-      const normalized = normalizeStoredMemoryRow(row);
-      if (!normalized) continue;
-      normalizedEntries.push(normalized);
-      incomingIds.add(row.id);
-    }
-  } catch (err) {
-    debugWarn('memory.store.replace', 'protected-incremental scan failed', err?.message || err);
-  }
+// A patch contains only changed source rows and IDs whose source disappeared.
+// UPDATE (never REPLACE) preserves FK-linked hit history for surviving IDs.
+export function patchMemories(entries = [], { deleteIds = [], storePath } = {}) {
+  const normalized = entries.map(normalizeEntry).filter(Boolean);
+  if (storePath && storePath !== _openedStorePath) return withDisposableStoreAt(storePath, (database, vecLoaded) =>
+    _runReplaceMemoriesOn(database, normalized, vecLoaded, work => runInTransactionOn(database, work), {deleteIds}));
+  return _runReplaceMemoriesOn(getDb(), normalized, _vecLoaded, work => runInTransaction(work), {deleteIds});
+}
 
-  // ─── Preserve dreaming/touch metadata + last_used_at across the rebuild ─
-  // Build a map id → { preservedMeta, lastUsedAt } so the re-insert can
-  // merge instead of clobber.  We also prune `memory_hits` rows whose
-  // memory_id will no longer exist after the rebuild, avoiding orphan drift.
-  const incomingIds = new Set(normalizedEntries.map(row => row.id));
-  const preservedById = new Map();
-  try {
-    const existing = database.prepare(
-      `SELECT id, metadata_json, last_used_at FROM memories`,
-    ).all();
-    for (const row of existing) {
-      if (!incomingIds.has(row.id)) continue;
-      let oldMeta = {};
-      try { oldMeta = JSON.parse(row.metadata_json || '{}') || {}; } catch {}
-      const preserved = {};
-      for (const key of PRESERVED_METADATA_KEYS) {
-        if (oldMeta[key] !== undefined) preserved[key] = oldMeta[key];
-      }
-      preservedById.set(row.id, { preserved, lastUsedAt: row.last_used_at });
-    }
-  } catch (err) {
-    // metadata table might be empty on first run — fine
-    debugWarn('memory.store.replace', 'preserve-scan failed', err?.message || err);
-  }
-
-  const clearMemories = database.prepare('DELETE FROM memories');
-  const clearFts = database.prepare('DELETE FROM memories_fts');
-  const insert = database.prepare(`
-    INSERT INTO memories (
-      id, namespace, kind, source_id, text, search_text, embedding, tokens_estimate,
-      created_at, updated_at, last_used_at, metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertFts = database.prepare(`
-    INSERT INTO memories_fts (memory_id, namespace, kind, search_text)
-    VALUES (?, ?, ?, ?)
-  `);
-  // Pre-fetch cached embeddings so we can populate the embedding column and
-  // vec_memories table in the same transaction.
-  const embeddingMap = new Map();
-  for (const row of normalizedEntries) {
-    // Pass the captured database explicitly so the disposable-store
-    // branch never falls back to getDb()'s lazy resolution, which
-    // would read whatever the current env points at. CLAUDE.md §6.
-    const cached = getCachedEmbedding(row.searchText, null, database);
-    if (cached) embeddingMap.set(row.id, cached);
-  }
-
-  // Clear vec_memories before rebuild.
-  //
-  // 2026-05-12 doc correction: the prior comment here claimed "vec0 doesn't
-  // support DELETE ... WHERE" — that's NOT true on the current sqlite-vec
-  // version (commit 6861892 tested it; `DELETE FROM vec_memories WHERE
-  // memory_id = ?` works fine).  Full wipe is a *design choice*, not a
-  // capability limitation: this function is the snapshot-rebuild path
-  // (`_runReplaceMemoriesOn`), so by the time we get here we already know
-  // the full post-rebuild set — a wipe + bulk INSERT is simpler than
-  // diff + per-row DELETE + per-row INSERT.  P2 perf留账 (PROGRESS 5-10):
-  // at 1000+ rows the per-saveState wipe-and-rebuild gets expensive; if
-  // it ever shows up in profiles, switch to diff-based update using the
-  // now-working `DELETE ... WHERE memory_id = ?` form.
-  if (vecLoaded) {
-    try { database.exec('DELETE FROM vec_memories'); } catch (err) { debugWarn('memory.store.replace', 'clear vec_memories failed', err?.message || err); }
-  }
-
-  const insertVec = vecLoaded
-    ? database.prepare(`INSERT OR REPLACE INTO vec_memories (memory_id, embedding) VALUES (?, ?)`)
-    : null;
-
-  // Drop memory_hits rows whose memory_id won't exist post-rebuild.  This is
-  // the snapshot-safe analogue of an ON DELETE CASCADE foreign key.
-  const pruneOrphanHits = database.prepare(
-    `DELETE FROM memory_hits WHERE memory_id NOT IN (SELECT value FROM json_each(?))`,
-  );
-
+function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx, {deleteIds = null} = {}) {
+  const incoming = new Map(incomingEntries.map(row => [row.id, row]));
+  if (incoming.size !== incomingEntries.length) throw new Error('UNIQUE constraint failed: duplicate memory id in snapshot');
+  const select = database.prepare('SELECT id, namespace, kind, source_id, text, search_text, tokens_estimate, created_at, updated_at, last_used_at, metadata_json FROM memories WHERE id = ?');
+  const remove = database.prepare('DELETE FROM memories WHERE id = ?');
+  const removeFts = database.prepare('DELETE FROM memories_fts WHERE memory_id = ?');
+  const removeVec = vecLoaded ? database.prepare('DELETE FROM vec_memories WHERE memory_id = ?') : null;
+  const insertVec = vecLoaded ? database.prepare('INSERT INTO vec_memories(memory_id,embedding) VALUES (?,?)') : null;
+  const insertFts = database.prepare('INSERT INTO memories_fts(memory_id,namespace,kind,search_text) VALUES (?,?,?,?)');
+  const save = database.prepare(`INSERT INTO memories(id,namespace,kind,source_id,text,search_text,tokens_estimate,created_at,updated_at,last_used_at,metadata_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET namespace=excluded.namespace,kind=excluded.kind,source_id=excluded.source_id,
+    text=excluded.text,search_text=excluded.search_text,tokens_estimate=excluded.tokens_estimate,created_at=excluded.created_at,
+    updated_at=excluded.updated_at,last_used_at=excluded.last_used_at,metadata_json=excluded.metadata_json`);
+  const setEmbedding = database.prepare('UPDATE memories SET embedding = ? WHERE id = ?');
   runTx(() => {
-    clearMemories.run();
-    clearFts.run();
-    try { pruneOrphanHits.run(JSON.stringify([...incomingIds])); } catch (err) { debugWarn('memory.store.replace', 'pruneOrphanHits failed', err?.message || err); }
-    for (const row of normalizedEntries) {
-      const embBuf = embeddingMap.has(row.id)
-        ? Buffer.from(embeddingMap.get(row.id).buffer)
-        : null;
-
-      // Merge preserved dreaming fields back onto the fresh metadata.
-      let metadataJson = row.metadataJson;
-      const keep = preservedById.get(row.id);
-      if (keep && Object.keys(keep.preserved).length) {
-        try {
-          const fresh = JSON.parse(row.metadataJson || '{}') || {};
-          metadataJson = JSON.stringify({ ...fresh, ...keep.preserved });
-        } catch {
-          metadataJson = row.metadataJson;
-        }
-      }
-      const lastUsedAt = row.lastUsedAt || keep?.lastUsedAt || null;
-
-      insert.run(
-        row.id,
-        row.namespace,
-        row.kind,
-        row.sourceId,
-        row.text,
-        row.searchText,
-        embBuf,
-        row.tokensEstimate,
-        row.createdAt,
-        row.updatedAt,
-        lastUsedAt,
-        metadataJson,
-      );
-      insertFts.run(
-        row.id,
-        row.namespace,
-        row.kind,
-        toCjkSpaced(row.searchText),
-      );
-      if (insertVec && embBuf) {
-        insertVec.run(row.id, embBuf);
+    const removed = deleteIds || database.prepare('SELECT id,kind FROM memories').all()
+      .filter(row => !incoming.has(row.id) && !isSnapshotProtectedIncrementalMemory(row)).map(row => row.id);
+    for (const id of new Set(removed)) {
+      if (incoming.has(id)) continue;
+      const prior = select.get(id);
+      if (!prior || isSnapshotProtectedIncrementalMemory(prior)) continue;
+      removeVec?.run(id); removeFts.run(id); remove.run(id);
+    }
+    for (const row of incoming.values()) {
+      const prior = select.get(row.id);
+      const oldMeta = parseMetadata(prior?.metadata_json);
+      const metadata = parseMetadata(row.metadataJson);
+      for (const key of PRESERVED_METADATA_KEYS) if (oldMeta[key] !== undefined) metadata[key] = oldMeta[key];
+      const metadataJson = JSON.stringify(metadata);
+      const lastUsedAt = prior?.last_used_at || row.lastUsedAt || null;
+      const textChanged = !prior || prior.search_text !== row.searchText;
+      const indexChanged = textChanged || prior.namespace !== row.namespace || prior.kind !== row.kind;
+      // Profile snapshots have no source timestamp. Do not manufacture a new
+      // modification time on every unrelated global settings update.
+      const sameIdentity = prior && row.kind === 'identity' && prior.text === row.text && prior.metadata_json === metadataJson;
+      const createdAt = row.kind === 'identity' && prior ? prior.created_at : row.createdAt;
+      const updatedAt = sameIdentity ? prior.updated_at : row.updatedAt;
+      const same = prior && prior.namespace === row.namespace && prior.kind === row.kind && prior.source_id === row.sourceId &&
+        prior.text === row.text && prior.search_text === row.searchText && prior.tokens_estimate === row.tokensEstimate &&
+        prior.created_at === createdAt && prior.updated_at === updatedAt && prior.last_used_at === lastUsedAt && prior.metadata_json === metadataJson;
+      if (same) continue;
+      save.run(row.id,row.namespace,row.kind,row.sourceId,row.text,row.searchText,row.tokensEstimate,createdAt,updatedAt,lastUsedAt,metadataJson);
+      if (indexChanged) { removeFts.run(row.id); insertFts.run(row.id,row.namespace,row.kind,toCjkSpaced(row.searchText)); }
+      if (textChanged) {
+        const cached = getCachedEmbedding(row.searchText, null, database);
+        const embedding = cached ? Buffer.from(cached.buffer, cached.byteOffset, cached.byteLength) : null;
+        setEmbedding.run(embedding,row.id); removeVec?.run(row.id);
+        if (embedding) insertVec?.run(row.id,embedding);
       }
     }
   });
-  return normalizedEntries.length;
+  return incoming.size;
 }
 
 /**
@@ -1319,7 +1235,19 @@ function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx) {
  * @param {string|null}  [modelId]    optional — overrides _meta resolution
  */
 export function saveMemoryEmbedding(memoryId, searchText, embedding, modelId = null) {
-  return storeEmbedding(memoryId, searchText, embedding, modelId);
+  const actualModel = modelId || embedding?.modelId || null;
+  const storedModel = readStoredEmbeddingModelId();
+  if (actualModel && storedModel && actualModel !== storedModel) {
+    requireEmbeddingRepair();
+    // Cache may hold multiple spaces; the active vector index may not.
+    if (embedding?.length === EMBEDDING_DIMS && [...embedding].every(Number.isFinite)) {
+      getDb().prepare('INSERT OR REPLACE INTO embedding_cache VALUES (?, ?, ?, ?)')
+        .run(textHash(searchText),actualModel,Buffer.from(embedding.buffer,embedding.byteOffset,embedding.byteLength),new Date().toISOString());
+    }
+    return false;
+  }
+  if (actualModel && !storedModel) writeStoredEmbeddingModelId(actualModel);
+  return storeEmbedding(memoryId, searchText, embedding, actualModel);
 }
 
 /**
@@ -1340,6 +1268,30 @@ export function getMemoriesWithoutEmbeddings() {
   }
 }
 
+/** Batch the flat per-turn requests into one candidate pool. Sparse categories
+ * get a scoped refill so plentiful prompt rows cannot starve corrections/tasks.
+ * Namespace + kind restrictions still apply before each ANN top-K selection.
+ */
+export function recallMemoryGroups({groups = [], query = '', queryEmbedding = null, accept = () => true} = {}) {
+  const active = groups.filter(g => g.namespaces?.length && g.kinds?.length && g.limit > 0);
+  if (!active.length) return new Map();
+  const namespaces = [...new Set(active.flatMap(g=>g.namespaces))];
+  const kinds = [...new Set(active.flatMap(g=>g.kinds))];
+  const matches = (row,g) => g.namespaces.includes(row.namespace) && g.kinds.includes(row.kind) && (!g.accept || g.accept(row));
+  const pool = recallMemories({namespaces,kinds,query,queryEmbedding,
+    limit: Math.min(512,active.reduce((sum,g)=>sum+g.limit,0)*4),
+    accept: row => accept(row) && active.some(g=>matches(row,g))});
+  const counts = getDb().prepare(`SELECT namespace,kind,COUNT(*) AS n FROM memories
+    WHERE namespace IN (${namespaces.map(()=>'?').join(',')}) AND kind IN (${kinds.map(()=>'?').join(',')})
+      AND ${activeMemorySQL()} GROUP BY namespace,kind`).all(...namespaces,...kinds);
+  return new Map(active.map(group => {
+    let rows = pool.filter(row=>matches(row,group)).slice(0,group.limit);
+    const count = counts.filter(row=>group.namespaces.includes(row.namespace) && group.kinds.includes(row.kind)).reduce((sum,row)=>sum+row.n,0);
+    if (rows.length < Math.min(group.limit,count)) rows = recallMemories({...group,query,queryEmbedding,accept:row=>accept(row)&&matches(row,group)});
+    return [group.id,rows];
+  }));
+}
+
 export function recallMemories({
   namespaces = [],
   kinds = [],
@@ -1347,7 +1299,7 @@ export function recallMemories({
   limit = 8,
   queryEmbedding = null,
   includeEmbedding = false,
-  sideEffects = true,
+  accept = () => true,
 } = {}) {
   const builtQuery = buildRecallQuery({ namespaces, kinds, allowGlobal: false });
   if (!builtQuery) {
@@ -1357,11 +1309,11 @@ export function recallMemories({
   const database = getDb();
   const lim = Math.max(1, limit);
 
-  // Semantic path: KNN against vec_memories, then filter by namespace/kind
-  if (queryEmbedding && _vecLoaded) {
+  // Constrain ANN before taking top K: other chats/kinds must not crowd out
+  // valid candidates, even when thousands of prompt rows are more similar.
+  if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      // Over-fetch from KNN (no namespace filter at vec layer) then filter in JS
-      const knnResults = knnRecall(queryEmbedding, lim * 8);
+      const knnResults = knnRecall(queryEmbedding, lim * 8, {namespaces:builtQuery.normalizedNamespaces,kinds:builtQuery.normalizedKinds});
       if (knnResults.length > 0) {
         const ids = knnResults.map(r => r.memory_id);
         const placeholders = ids.map(() => '?').join(', ');
@@ -1405,37 +1357,29 @@ export function recallMemories({
                 _invalidated: isEntryInvalidated(metadata, now),
               };
             })
-            .filter(row => !row._invalidated)
+            .filter(row => !row._invalidated && accept(materializeMemoryRows([row])[0]))
             .sort((a, b) => b.score - a.score);
 
           // Phase 1 #1: MMR diversity rerank. Uses row.embedding which the
           // SELECT above explicitly fetches. Falls back to score-order slice
           // when embeddings are missing.
-          const mmrSorted = applyMmrRerank(sorted, lim);
+          // Fuse both candidate sets. New/unembedded exact matches must compete
+          // even when ANN found unrelated rows. Reciprocal rank avoids mixing
+          // raw keyword scores (hundreds) with cosine scores (0..1).
+          const lexical = keywordRecallRows(builtQuery, query, {limit:lim*4,accept});
+          if (!String(query).trim()) lexical.length=0;
+          const fused = new Map();
+          sorted.forEach((row,i)=>fused.set(row.id,{...row,score:1/(60+i+1)}));
+          lexical.forEach((row,i)=>{
+            const prior=fused.get(row.id);
+            const exact=query && String(row.search_text || row.text).toLowerCase().includes(String(query).toLowerCase());
+            fused.set(row.id,{...row,...prior,score:(prior?.score||0)+1/(60+i+1)+(exact?0.05:0)});
+          });
+          const mmrSorted = String(query).trim() ? [...fused.values()].sort((a,b)=>b.score-a.score).slice(0,lim) : applyMmrRerank(sorted,lim);
 
           if (mmrSorted.length > 0) {
             logRecallScores('recallMemories.semantic', mmrSorted, query);
-            // Phase E follow-up (2026-05-10): mirror the tiered path's
-            // hit-recording.  Without this, flat recall (the default path,
-            // gated by MELO_MEMORY_TIERS_RECALL=0) never writes
-            // memory_hits, so dreaming gates' recall + outcome scoring is
-            // dead.  Production stores have shown 0 memory_hits rows
-            // despite 1k+ memories accumulated over months — this is the
-            // root cause.  See recordMemoryHitsBatch(...) in the tiered
-            // path at the buildRecallQuery branch below for the symmetric
-            // call site.
-            if (sideEffects) {
-              try {
-                const qHash = query
-                  ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
-                  : null;
-                const hits = mmrSorted.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
-                recordMemoryHitsBatch(hits);
-              } catch (err) {
-                debugWarn('memory.recall.hits', 'recallMemories semantic hit log failed', err?.message || err);
-              }
-            }
-            return sideEffects ? touchRows(mmrSorted) : materializeMemoryRows(mmrSorted);
+            return materializeMemoryRows(mmrSorted);
           }
         }
       }
@@ -1454,13 +1398,7 @@ export function recallMemories({
   // effectively dead.  Opt-in `includeEmbedding: true` re-fetches just the
   // embedding BLOB by id for the final scored slice, so callers that need
   // it pay the cost, everyone else stays on the lean path.
-  const rows = mapScoredRows(
-    database.prepare(builtQuery.sql).all(
-      ...builtQuery.normalizedNamespaces,
-      ...builtQuery.normalizedKinds,
-    ),
-    query,
-  ).slice(0, lim);
+  const rows = keywordRecallRows(builtQuery,query,{limit:lim,accept});
 
   if (includeEmbedding && rows.length > 0) {
     const ids = rows.map(r => r.id);
@@ -1477,23 +1415,7 @@ export function recallMemories({
   }
 
   logRecallScores('recallMemories.keyword', rows, query);
-  // Phase E follow-up (2026-05-10): symmetric hit log to the semantic
-  // branch above.  Keyword fallback path also needs to feed dreaming
-  // gates' recall/outcome scoring; without this the flat path is silent
-  // and memory_hits stays empty.  See the semantic branch comment for
-  // the full root-cause writeup.
-  if (sideEffects && rows.length > 0) {
-    try {
-      const qHash = query
-        ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16)
-        : null;
-      const hits = rows.map((r, i) => ({ memoryId: r.id, queryHash: qHash, rank: i }));
-      recordMemoryHitsBatch(hits);
-    } catch (err) {
-      debugWarn('memory.recall.hits', 'recallMemories keyword hit log failed', err?.message || err);
-    }
-  }
-  return sideEffects ? touchRows(rows) : materializeMemoryRows(rows);
+  return materializeMemoryRows(rows);
 }
 
 // ─── Tiered recall (scene → frame → content) ────────────────────────────────
@@ -1827,6 +1749,7 @@ export function recallMemoriesTiered({
   atticLevels = null,
   validate = true,
   dropContested = false,
+  accept = () => true,
 } = {}) {
   const { scenes: sLim = 3, frames: fLim = 8, contents: cLim = 12 } = limits;
   const database = getDb();
@@ -1840,11 +1763,26 @@ export function recallMemoriesTiered({
     return atticLevels.includes(level);
   };
 
+  if (!normalizedNs.length) return {scenes:[],frames:[],contents:[],conflicts:[]};
+  const mergeTier = (semantic, kinds, limit) => {
+    if (!String(query).trim() && semantic.length) return semantic.filter(row=>accept(materializeMemoryRows([row])[0])).slice(0,limit);
+    const built = buildRecallQuery({namespaces:normalizedNs,kinds,allowGlobal:false});
+    const lexical=keywordRecallRows(built,query,{limit:limit*4,accept:row=>atticOk(row) && accept(row)});
+    const fused=new Map();
+    semantic.filter(row=>accept(materializeMemoryRows([row])[0])).forEach((row,i)=>fused.set(row.id,{...row,score:1/(61+i)}));
+    lexical.forEach((row,i)=>{
+      const prior=fused.get(row.id);
+      const exact=query && String(row.search_text || row.text).toLowerCase().includes(String(query).toLowerCase());
+      fused.set(row.id,{...row,...prior,score:(prior?.score || 0)+1/(61+i)+(exact?0.05:0)});
+    });
+    return [...fused.values()].sort((a,b)=>b.score-a.score).slice(0,limit);
+  };
+
   // ─── Step 1 — scenes ────────────────────────────────────────────────────
   let scenes = [];
-  if (queryEmbedding && _vecLoaded) {
+  if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, sLim * 6);
+      const knn = knnRecall(queryEmbedding, sLim * 6, {namespaces:normalizedNs,kinds:['scene']});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
@@ -1861,25 +1799,15 @@ export function recallMemoriesTiered({
       scenes = [];
     }
   }
-  if (!scenes.length) {
-    // Keyword fallback across scene rows.
-    const built = buildRecallQuery({ namespaces: normalizedNs, kinds: ['scene'], allowGlobal: false });
-    if (built) {
-      const rows = mapScoredRows(
-        database.prepare(built.sql).all(...built.normalizedNamespaces, ...built.normalizedKinds),
-        query,
-      ).slice(0, sLim);
-      scenes = rows.filter(atticOk);
-    }
-  }
 
+  scenes=mergeTier(scenes,['scene'],sLim);
   const sceneIds = scenes.map(s => s.metadata?.sceneId).filter(Boolean);
 
   // ─── Step 2 — frames (restricted to the scenes we picked) ───────────────
   let frames = [];
-  if (queryEmbedding && _vecLoaded) {
+  if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, fLim * 6);
+      const knn = knnRecall(queryEmbedding, fLim * 6, {namespaces:normalizedNs,kinds:['frame']});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
@@ -1906,24 +1834,15 @@ export function recallMemoriesTiered({
       frames = [];
     }
   }
-  if (!frames.length) {
-    const built = buildRecallQuery({ namespaces: normalizedNs, kinds: ['frame'], allowGlobal: false });
-    if (built) {
-      const rows = mapScoredRows(
-        database.prepare(built.sql).all(...built.normalizedNamespaces, ...built.normalizedKinds),
-        query,
-      ).slice(0, fLim);
-      frames = rows.filter(atticOk);
-    }
-  }
 
+  frames=mergeTier(frames,['frame'],fLim);
   const frameIds = frames.map(f => f.metadata?.frameId).filter(Boolean);
 
   // ─── Step 3 — content (leaf prompts/facts) ──────────────────────────────
   let contents = [];
-  if (queryEmbedding && _vecLoaded) {
+  if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, cLim * 6);
+      const knn = knnRecall(queryEmbedding, cLim * 6, {namespaces:normalizedNs,kinds:['prompt','fact']});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
@@ -1949,25 +1868,9 @@ export function recallMemoriesTiered({
       contents = [];
     }
   }
-  if (!contents.length) {
-    const built = buildRecallQuery({ namespaces: normalizedNs, kinds: ['prompt', 'fact'], allowGlobal: false });
-    if (built) {
-      const rows = mapScoredRows(
-        database.prepare(built.sql).all(...built.normalizedNamespaces, ...built.normalizedKinds),
-        query,
-      ).slice(0, cLim);
-      contents = rows.filter(atticOk);
-    }
-  }
 
-  const touched = touchRows([...scenes, ...frames, ...contents]);
-  const byId = new Map(touched.map(row => [row.id, row]));
-
-  // Hit log — power for promotion gates.  Cheap fire-and-forget insert.
-  const qHash = query ? createHash('sha1').update(String(query)).digest('hex').slice(0, 16) : null;
-  const hits = [];
-  [...scenes, ...frames, ...contents].forEach((r, i) => hits.push({ memoryId: r.id, queryHash: qHash, rank: i }));
-  try { recordMemoryHitsBatch(hits); } catch (err) { debugWarn('memory.recall.hits', 'recordMemoryHitsBatch failed', err?.message || err); }
+  contents=mergeTier(contents,['prompt','fact'],cLim);
+  const byId = new Map(materializeMemoryRows([...scenes, ...frames, ...contents]).map(row => [row.id, row]));
 
   const scenesOut = scenes.map(s => byId.get(s.id) || s);
   const framesOut = frames.map(f => byId.get(f.id) || f);
@@ -2147,6 +2050,28 @@ export function recordMemoryHitsBatch(hits = []) {
   return n;
 }
 
+/** One feedback transaction at the model boundary, after context budgeting.
+ * Recall/search are pure reads. Candidates dropped from the prompt are hits,
+ * but only fully included entries increase useCount. Replays of a turn are safe.
+ */
+export function recordMemoryFeedback({ candidates = [], usedIds = [], requestId, query = '' } = {}) {
+  if (!requestId || !candidates.length) return 0;
+  const database = getDb(), queryHash = createHash('sha1').update(String(query)).digest('hex');
+  const now = new Date().toISOString();
+  const insert = database.prepare(`INSERT OR IGNORE INTO memory_hits(memory_id,hit_at,query_hash,rank,request_id)
+    SELECT id,?,?,?,? FROM memories WHERE id=? AND ${activeMemorySQL()}`);
+  let used = 0;
+  runInTransaction(() => {
+    const fresh = [];
+    [...new Map(candidates.filter(r => r?.id).map(r => [r.id,r])).values()].forEach((row,rank) => {
+      if (insert.run(now,queryHash,rank,requestId,row.id).changes) fresh.push(row.id);
+    });
+    const included = new Set(usedIds);
+    used = markMemoriesUsed(fresh.filter(id => included.has(id)), {queryHash,requestId});
+  });
+  return used;
+}
+
 /**
  * Aggregate hit stats per memory row over the last `windowDays`.  Returns rows:
  *   { memoryId, hits, distinctQueries, avgRank, goodOutcomes }
@@ -2307,7 +2232,7 @@ export function cleanupOrphanHits() {
  * @param {number}   [opts.windowMs]  default 10 * 60_000
  * @returns {number} number of rows updated
  */
-export function markMemoriesUsed(memoryIds = [], { windowMs = 10 * 60_000 } = {}) {
+export function markMemoriesUsed(memoryIds = [], { windowMs = 10 * 60_000, queryHash = null, requestId = null } = {}) {
   if (!Array.isArray(memoryIds) || !memoryIds.length) return 0;
   const sinceIso = new Date(Date.now() - windowMs).toISOString();
   const database = getDb();
@@ -2322,18 +2247,23 @@ export function markMemoriesUsed(memoryIds = [], { windowMs = 10 * 60_000 } = {}
          FROM memory_hits
         WHERE memory_id = ?
           AND hit_at >= ?
+          AND (? IS NULL OR query_hash = ?)
+          AND (? IS NULL OR request_id = ?)
           AND (outcome IS NULL OR outcome = '')
         ORDER BY hit_at DESC
         LIMIT 1
      )
   `);
+  const usedAt = new Date().toISOString();
+  const bump = database.prepare(`UPDATE memories SET last_used_at = ?, metadata_json = json_set(metadata_json,
+    '$.useCount', MAX(0,COALESCE(CAST(json_extract(metadata_json, '$.useCount') AS INTEGER),0)) + 1, '$.lastBoostedAt', ?) WHERE id = ?`);
   let n = 0;
   runInTransaction(() => {
-    for (const id of memoryIds) {
+    for (const id of new Set(memoryIds)) {
       if (!id) continue;
       try {
-        const res = stmt.run(id, sinceIso);
-        if (res.changes) n += 1;
+        const res = stmt.run(id, sinceIso, queryHash, queryHash, requestId, requestId);
+        if (res.changes) { bump.run(usedAt, usedAt, id); n += 1; }
       } catch (err) {
         // best-effort
         debugWarn('memory.recall.hits', `markMemoriesUsed failed for ${id}`, err?.message || err);
@@ -2719,83 +2649,37 @@ export function memoryStatsExtended() {
 
 // ─── End tiered recall additions ─────────────────────────────────────────────
 
-export function searchMemories({ query = '', kinds = [], limit = 12 } = {}) {
-  const database = getDb();
-  const normalizedKinds = kinds.map(v => String(v || '').trim()).filter(Boolean);
-  const lim = Math.max(1, limit);
+export function searchMemories({query = '', kinds = [], limit = 20} = {}) {
+  const built = buildRecallQuery({kinds,allowGlobal:true});
+  return materializeMemoryRows(keywordRecallRows(built,query,{limit:Math.max(1,limit)}));
+}
 
-  // Fast path: use FTS5 BM25 when a query is provided.
-  //
-  // Search audit B-4: we (a) filter out temporally-invalidated entries in the
-  // FTS result set so expired facts never leak into UI search, and (b) fall
-  // through to keyword scoring when the post-filter FTS set is empty.
-  // Previously, if FTS matched rows that were all invalidated, the branch
-  // returned an empty array WITHOUT running keyword scoring — so a query
-  // that keyword-scoring could have answered via fuzzy / substring match
-  // silently returned nothing.
-  if (query && query.trim()) {
-    const ftsQuery = buildMemoriesFtsQuery(toCjkSpaced(query.trim()));
-    if (ftsQuery) {
-      try {
-        const kindClause = normalizedKinds.length
-          ? ` AND kind IN (${normalizedKinds.map(() => '?').join(', ')})`
-          : '';
-        const ftsRows = database.prepare(`
-          SELECT memory_id, bm25(memories_fts) AS rank
-          FROM memories_fts
-          WHERE memories_fts MATCH ?${kindClause}
-          ORDER BY rank
-          LIMIT ?
-        `).all(ftsQuery, ...normalizedKinds, lim * 4); // over-fetch for post-join
+export function requireEmbeddingRepair() {
+  getDb().prepare("INSERT OR REPLACE INTO _meta VALUES ('embedding_repair_required', '1')").run();
+}
 
-        if (ftsRows.length > 0) {
-          const ids = ftsRows.map(r => r.memory_id);
-          const placeholders = ids.map(() => '?').join(', ');
-          const memRows = database.prepare(`
-            SELECT id, namespace, kind, source_id, text, search_text, tokens_estimate,
-                   created_at, updated_at, last_used_at, metadata_json
-            FROM memories
-            WHERE id IN (${placeholders})
-          `).all(...ids);
-
-          // Re-order by FTS5 rank, attach metadata, drop invalidated.
-          const rankMap = new Map(ftsRows.map(r => [r.memory_id, r.rank]));
-          const now = Date.now();
-          const results = memRows
-            .map(row => {
-              const metadata = parseMetadata(row.metadata_json);
-              return {
-                ...row,
-                metadata,
-                score: -(rankMap.get(row.id) ?? 0), // bm25 returns negatives; negate for ascending sort
-                _invalidated: isEntryInvalidated(metadata, now),
-              };
-            })
-            .filter(row => !row._invalidated)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, lim);
-
-          if (results.length > 0) {
-            return touchRows(results);
-          }
-          // else fall through to keyword scoring
-        }
-      } catch (err) {
-        // Fall through to JS scoring on FTS5 error
-        debugWarn('memory.search.fts', 'searchMemories FTS path failed, falling back to JS scoring', err?.message || err);
-      }
-    }
+export function notifyMemoryIndexRepaired(home) {
+  if (db && _openedStorePath === join(home,'desktop','store.sqlite')) {
+    try { db.prepare('SELECT memory_id FROM vec_memories LIMIT 1').get(); _vecLoaded = true; } catch {}
   }
+}
 
-  // Fallback: JS scoring (original behaviour, also used when query is empty).
-  // mapScoredRows already filters out invalidated rows.
-  const builtQuery = buildRecallQuery({ namespaces: [], kinds: normalizedKinds, allowGlobal: true });
-  if (!builtQuery) return [];
+// Stable keyset traversal for maintenance/export. Updating rows must not move
+// them across an OFFSET boundary or silently leave records beyond a UI limit.
+export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, batchSize = 500 } = {}) {
+  let after = '';
+  const query = getDb().prepare(`SELECT * FROM memories WHERE kind = ? AND id > ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ORDER BY id LIMIT ?`);
+  for (;;) {
+    const rows = query.all(kind, after, ...(chatId ? [chatId] : []), Math.max(1, Math.min(10000, batchSize)));
+    if (!rows.length) return;
+    after = rows.at(-1).id;
+    yield* materializeMemoryRows(rows);
+  }
+}
 
-  const rows = mapScoredRows(
-    database.prepare(builtQuery.sql).all(...builtQuery.normalizedKinds),
-    query,
-  ).slice(0, lim);
-
-  return touchRows(rows);
+// Administrative reads never count as recall or increase importance.
+export function listMemoryRecords({ kind = 'session-fact', limit = 1000, offset = 0, chatId = null } = {}) {
+  const rows=getDb().prepare(`SELECT * FROM memories WHERE kind = ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ORDER BY updated_at DESC, id LIMIT ? OFFSET ?`)
+    .all(kind,...(chatId?[chatId]:[]),Math.max(1,Math.min(10000,Number(limit)||1000)),Math.max(0,Number(offset)||0));
+  return materializeMemoryRows(rows);
 }

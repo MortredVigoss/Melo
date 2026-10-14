@@ -107,7 +107,7 @@ export const browserOpenTool = {
       debugWarn('browser_open', `failed to open ${url}: ${msg}`);
       return {
         ok: false,
-        output: `browser_open failed for "${url}": ${msg}`,
+        output: `browser_open failed for "${url}": ${msg}. This is a browser capability failure, not a user permission denial. For public information, use the available native web_search or Melo web_search/fetch_url route. Do not stop the research merely because this browser is unavailable.`,
         error: msg.includes('MELO_CDP_ENABLED') ? 'CDP_DISABLED' : 'OPEN_FAILED',
       };
     }

@@ -5,7 +5,7 @@ import {
   normalizeComparablePhrase,
   normalizeConversationSnippet,
 } from './heuristics.js';
-import { shouldSuppressAssistantContextText } from '../services/chat/contextFilters.js';
+import { shouldSuppressAssistantContextText } from '../domain/chat/contextFilters.js';
 
 function defaultMessageTextResolver(message) {
   return String(message?.content || '').trim();

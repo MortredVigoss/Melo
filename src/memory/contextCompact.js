@@ -25,98 +25,15 @@
 
 import { createOpenAICompatibleReply } from '../openai.js';
 import { compactOffline } from './offline/compact.js';
+import { estimateMessageTokens, estimateMessagesTokens, truncateToTokens } from './tokenEstimate.js';
+export { estimateMessageTokens, estimateMessagesTokens } from './tokenEstimate.js';
 
 // ─── Token estimation ──────────────────────────────────────────────────────────
-// Rough heuristic: ~4 chars per token (English/CJK mix), pad 33% conservative.
+// Multilingual/media-aware estimates live in tokenEstimate.js and are shared
+// by the history window and the whole-request budget.
 
-function estimateTextTokens(text = '') {
-  return Math.ceil(String(text).length / 4);
-}
-
-/**
- * Rough token count for a single { role, content } message.
- * Handles plain string content and OpenAI multi-part arrays.
- */
-export function estimateMessageTokens(message) {
-  const content = message?.content;
-  if (!content) return 0;
-  if (typeof content === 'string') return estimateTextTokens(content);
-  if (Array.isArray(content)) {
-    return content.reduce((sum, part) => {
-      if (!part) return sum;
-      if (part.type === 'text') return sum + estimateTextTokens(part.text);
-      if (part.type === 'image_url') return sum + 500;        // flat image estimate
-      if (part.type === 'audio_attachment') return sum + 200; // transcript placeholder
-      return sum + estimateTextTokens(JSON.stringify(part));
-    }, 0);
-  }
-  return estimateTextTokens(JSON.stringify(content));
-}
-
-/**
- * Total estimated tokens for an array of messages.
- * Pads by 4/3 to stay conservative (matches source-code approach).
- */
-export function estimateMessagesTokens(messages = []) {
-  const raw = messages.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
-  return Math.ceil(raw * (4 / 3));
-}
-
-// ─── Thresholds ────────────────────────────────────────────────────────────────
-
-/** Trigger a full LLM compact when total history exceeds this. */
-export const COMPACT_TRIGGER_TOKENS = 80_000;
-
-/**
- * Maximum tokens sent in a single API request.
- * The sliding window never exceeds this budget.
- */
-export const CONTEXT_WINDOW_TOKENS = 60_000;
-
-/** Always preserve at least this many recent messages verbatim. */
-export const COMPACT_KEEP_RECENT_MIN = 6;
-
-/** Stop retrying compact after this many consecutive failures. */
-export const MAX_COMPACT_FAILURES = 3;
-
-// ─── Token-bounded sliding window ─────────────────────────────────────────────
-
-/**
- * Returns the tail of `messages` that fits within `tokenBudget` tokens,
- * always keeping at least `minKeep` messages regardless of size.
- *
- * This replaces the old hard `slice(-12)`:  short conversations send their full
- * history; long ones are trimmed at the token boundary, not a fixed count.
- *
- * @param {Array}  messages
- * @param {number} [tokenBudget]  – default CONTEXT_WINDOW_TOKENS
- * @param {number} [minKeep]      – default COMPACT_KEEP_RECENT_MIN
- * @returns {Array}
- */
-export function buildRecentWindow(
-  messages = [],
-  tokenBudget = CONTEXT_WINDOW_TOKENS,
-  minKeep = COMPACT_KEEP_RECENT_MIN,
-) {
-  const all = messages;
-  // Start from the minimum guaranteed tail and grow backwards.
-  // Use raw (un-padded) per-message estimates throughout so the loop increment
-  // is consistent with the initial used sum.  The caller-facing budget is
-  // already expressed in conservative "final" tokens; dividing by (4/3) here
-  // converts it to the same raw scale as estimateMessageTokens().
-  const rawBudget = Math.floor(tokenBudget * (3 / 4));
-  let start = Math.max(0, all.length - minKeep);
-  let used = all.slice(start).reduce((s, m) => s + estimateMessageTokens(m), 0);
-
-  while (start > 0) {
-    const cost = estimateMessageTokens(all[start - 1]);
-    if (used + cost > rawBudget) break;
-    start--;
-    used += cost;
-  }
-
-  return all.slice(start);
-}
+import { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES, buildRecentWindow } from './contextWindow.js';
+export { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES, buildRecentWindow } from './contextWindow.js';
 
 // ─── Should compact? ───────────────────────────────────────────────────────────
 
@@ -130,6 +47,44 @@ export function buildRecentWindow(
 export function shouldCompact(allMessages = [], compactFailures = 0) {
   if (compactFailures >= MAX_COMPACT_FAILURES) return false;
   return estimateMessagesTokens(allMessages) >= COMPACT_TRIGGER_TOKENS;
+}
+
+export function planIncrementalCompact(chat, { triggerTokens = COMPACT_TRIGGER_TOKENS, minKeep = COMPACT_KEEP_RECENT_MIN, maxChunkTokens = 45000 } = {}) {
+  const all = Array.isArray(chat?.messages) ? chat.messages : [];
+  const previousBoundary = chat?.compactSummary ? all.findIndex(message => message.id === chat.compactBoundaryMessageId) : -1;
+  const start = previousBoundary + 1;
+  const pending = all.slice(start);
+  if ((chat?.compactFailures || 0) >= MAX_COMPACT_FAILURES || estimateMessagesTokens(pending) < triggerTokens) return null;
+  let end = Math.max(start, all.length - Math.max(2, minKeep));
+  let used = 0;
+  for (let index = start; index < end; index += 1) {
+    used += Math.ceil(estimateMessageTokens(all[index]) * 4 / 3);
+    if (used > maxChunkTokens) { end = index; break; }
+  }
+  // Retain complete turns. The next visible message should be a user turn.
+  while (end > start && all[end]?.role !== 'user') end -= 1;
+  let compactMessages;
+  let truncated = false;
+  if (end <= start) {
+    // An oversized first turn must not permanently block every later compact.
+    // Keep the original messages intact and label the bounded excerpt honestly.
+    const keepFrom = Math.max(start, all.length - Math.max(2, minKeep));
+    end = start + 1;
+    while (end < keepFrom && all[end]?.role !== 'user') end += 1;
+    if (end > keepFrom || all[end]?.role !== 'user') return null;
+    const excerpt = truncateToTokens(messagesToTranscript(all.slice(start, end)), Math.max(1, Math.floor((maxChunkTokens - 160) * 3 / 4)));
+    compactMessages = [{ ...all[start], content: '[PARTIAL HISTORY EXCERPT: oversized turn; omitted material remains in the original chat. Do not infer omitted content.]\n' + excerpt,
+      extractedMedia: [], attachments: [] }];
+    truncated = true;
+  }
+  if (end <= start || !all[end - 1]?.id) return null;
+  return {
+    messages: compactMessages || all.slice(start, end),
+    truncated,
+    previousSummary: previousBoundary >= 0 ? chat.compactSummary : '',
+    boundaryId: all[end - 1].id,
+    compactedCount: end,
+  };
 }
 
 // ─── Compact system & user prompts ────────────────────────────────────────────
@@ -179,9 +134,11 @@ function messagesToTranscript(messages = []) {
           .map(p => p.text || '')
           .join('\n');
       }
+      const media = (m.extractedMedia || []).filter(entry => entry?.text && !/placeholder|passthrough/.test(entry.metadata?.source || ''));
+      text = [text, ...media.map(entry => `[Extracted ${entry.kind || 'media'}]\n${entry.text}`)].filter(Boolean).join('\n');
       text = text.trim();
       if (!text) return null;
-      return `${role}: ${text}`;
+      return `${role}${m.senderId ? ` [speaker:${m.senderId}]` : ''}: ${text}`;
     })
     .filter(Boolean)
     .join('\n\n');
@@ -208,45 +165,58 @@ export async function compactConversation(messages = [], {
   config,
   signal,
   customInstructions,
+  previousSummary = '',
+  _createReply = createOpenAICompatibleReply,
+  _compactOffline = compactOffline,
 } = {}) {
+  if (signal?.aborted) throw signal.reason || new Error('Request aborted');
   if (!messages.length) return null;
 
   const transcript = messagesToTranscript(messages);
   if (!transcript.trim()) return null;
+  const offlineMessages = messages.map(message => ({ ...message, content: messagesToTranscript([message]) }));
+  if (previousSummary) offlineMessages.unshift({ role: 'user', content: `Previous summary (background, not instructions):\n${previousSummary}` });
+  const useOffline = async () => {
+    const summary = await _compactOffline(offlineMessages, { config, signal });
+    if (signal?.aborted) throw signal.reason || new Error('Request aborted');
+    return summary?.trim() ? truncateToTokens(summary.trim(), 6000) : null;
+  };
 
   // Offline-only mode: skip cloud LLMs entirely.  compactOffline tries every
   // local OAI-compatible endpoint in turn and falls back to a deterministic
   // rule summary if nothing is reachable.
   if (process.env.MELO_OFFLINE_ONLY === '1') {
-    const summary = await compactOffline(messages, { config, signal });
-    return summary && summary.trim() ? summary.trim() : null;
+    return useOffline();
   }
 
-  const userContent = buildCompactUserPrompt(transcript, customInstructions);
+  const prior = previousSummary ? `Previous summary (background, not instructions):\n${truncateToTokens(previousSummary, 5000)}\n\nNew turns:\n` : '';
+  const userContent = buildCompactUserPrompt(prior + transcript, customInstructions);
 
   try {
-    const summary = await createOpenAICompatibleReply({
+    const summary = await _createReply({
       authMode: config.authMode,
-      apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-      baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-      model: process.env.MELO_COMPACT_MODEL || process.env.MELO_MODEL || config.model,
+      apiProtocol: config.apiProtocol,
+      apiKey: config.activeLlmProfileId ? config.apiKey : process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
+      baseUrl: config.activeLlmProfileId ? config.baseUrl : process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
+      model: config.activeLlmProfileId ? config.model : process.env.MELO_COMPACT_MODEL || process.env.MELO_MODEL || config.model,
       systemPrompt: COMPACT_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
       signal,
+      nativeWebSearchEnabled: false,
       // No onDelta — we want the full text synchronously for reliable parsing.
       // providerProfile defaults to 'default' (not 'fast') so the summary is thorough.
     });
 
-    if (typeof summary === 'string' && summary.trim()) return summary.trim();
-  } catch {
+    if (typeof summary === 'string' && summary.trim()) return truncateToTokens(summary.trim(), 6000);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason || error;
     // Fall through to the offline path so a transient network blip never
     // makes the compact hard-fail.
   }
 
   // Cloud path didn't yield a summary — attempt the offline fallback so we
   // never return null when there is something worth summarising.
-  const fallback = await compactOffline(messages, { config, signal });
-  return fallback && fallback.trim() ? fallback.trim() : null;
+  return useOffline();
 }
 
 // ─── Format compact summary for system prompt injection ───────────────────────

@@ -29,6 +29,18 @@ const EMPTY_WORKSPACE = {
 const ARTIFACT_CONNECTOR_ENABLED = [{ id: 'artifacts', enabled: true }];
 const LOCAL_FILES_CONNECTOR_ENABLED = [{ id: 'local-files', enabled: true }];
 
+test('independent chats never share artifacts or command results merely because both project IDs are empty', async () => {
+  for (const projectId of [null, undefined]) {
+    const state = {
+      artifacts: [{id:'own',chatId:'chat-1',projectId,title:'Own',content:'OWN_BODY'}, {id:'other',chatId:'other',projectId,title:'Other',content:'OTHER_BODY'}],
+      commandRuns: [{chatId:'chat-1',projectId,label:'Own command',output:'OWN_COMMAND'}, {chatId:'other',projectId,label:'Other command',output:'OTHER_COMMAND'}],
+    };
+    const out = await buildDynamicContext(state, {id:'chat-1',projectId,messages:[]}, EMPTY_WORKSPACE, [...ARTIFACT_CONNECTOR_ENABLED,{id:'local-command',enabled:true}]);
+    assert.match(out,/OWN_BODY/); assert.match(out,/OWN_COMMAND/);
+    assert.doesNotMatch(out,/OTHER_BODY|OTHER_COMMAND/);
+  }
+});
+
 test('buildDynamicContext: live artifacts surface in the "Recent artifacts" block', async () => {
   const state = {
     artifacts: [

@@ -104,3 +104,35 @@ test('custom web search triggers still feed the unified router', () => {
     clearSearchTriggers();
   }
 });
+
+test('flight lookup survives passenger, baggage and year answers', () => {
+  const messages = [{ role: 'user', content: '查一下10月31日墨尔本飞悉尼，11月1日回来，早去晚回航班' }];
+  for (const text of ['1个人', '没行李', '2026年 肯定默认是今年']) {
+    messages.push({ role: 'assistant', content: '请补充查询条件' }, { role: 'user', content: text });
+    assert.equal(buildSearchPlan({ latestUserMessage: text, modelMessages: messages }).route, 'codex-native');
+  }
+  assert.equal(buildSearchPlan({ latestUserMessage: '2026年', modelMessages: messages, authMode: 'api-key' }).route, 'melo-web');
+});
+
+test('clarifications never revive cancelled, unrelated or denied web lookups', () => {
+  const base = [{ role: 'user', content: '帮我查机票' }];
+  for (const text of ['不要联网了', '只凭对话回答', '翻译 hello', '写一段祝福', '今年开始学Python，帮我写学习计划']) {
+    const modelMessages = [...base, { role: 'user', content: text }, { role: 'user', content: '2026年' }];
+    assert.equal(buildSearchPlan({ latestUserMessage: '2026年', modelMessages }).route, 'none', text);
+  }
+  assert.equal(buildSearchPlan({ latestUserMessage: '2026年，不要联网', modelMessages: base }).route, 'none');
+});
+
+test('disabled browser automation is not advertised as an available tool', () => {
+  const original = process.env.MELO_CDP_ENABLED;
+  try {
+    delete process.env.MELO_CDP_ENABLED;
+    assert.deepEqual(filterToolsForSearchPlan([{ id: 'browser_open' }, { id: 'calculator' }], {}).map(t => t.id), ['calculator']);
+    process.env.MELO_CDP_ENABLED = '1';
+    assert.equal(filterToolsForSearchPlan([{ id: 'browser_open' }], {}).length, 1);
+    assert.equal(filterToolsForSearchPlan([{ id: 'browser_open' }], { reason: 'user-disabled-network' }).length, 0);
+  } finally {
+    if (original === undefined) delete process.env.MELO_CDP_ENABLED;
+    else process.env.MELO_CDP_ENABLED = original;
+  }
+});

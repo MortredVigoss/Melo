@@ -1,4 +1,7 @@
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+import { currentRequestContext, requestEnvironment } from '../runtime/requestScope.js';
+import { getRequestNetworkPolicy, requestUrls } from './requestPolicy.js';
+
+import { extractTextUrls } from '../media/textUrls.js';
 
 const SOCIAL_HOST_PATTERN = /(?:^|\.)((xiaohongshu|xhslink|douyin|iesdouyin|tiktok)\.com|xhslink\.com)$/i;
 
@@ -17,6 +20,7 @@ const DEFAULT_WEB_SEARCH_TRIGGER_RULES = Object.freeze([
   { pattern: /(天气|几度|多少度|下雨|气温|温度)/u, weight: 3 },
   { pattern: /(怎么去|在哪|地址|电话|营业时间|开放时间)/u, weight: 2 },
   { pattern: /(多少钱|价格|票价|费用|报价)/u, weight: 2 },
+  { pattern: /航班|机票|\bflight(?:s| schedule| fare)?\b/iu, weight: 3 },
 ]);
 
 const DEEP_RESEARCH_PATTERN = /(?:\b(?:deep research|research deeply|compare sources|multiple sources|source pack|citations?)\b|深度|详细调研|多来源|多个来源|横向对比|资料包|引用来源|来源对比)/iu;
@@ -24,6 +28,7 @@ const EXPLICIT_LOCAL_SEARCH_PATTERN = /(?:\b(?:local browser|melo search|browser
 const LINK_READ_PATTERN = /(?:\b(?:open|read|fetch|summari[sz]e|parse|extract)\s+(?:this\s+)?(?:link|url|page|article|website|post)\b|打开链接|读取链接|读一下链接|总结链接|解析链接|这个链接|链接里|网页里|页面里|文章里)/iu;
 
 const SEARCH_NETWORK_TOOL_IDS = new Set(['web_search', 'fetch_url']);
+const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查一下|查找/iu;
 
 let extraWebSearchTriggers = [];
 
@@ -86,18 +91,7 @@ export function latestUserMessageText(messages = []) {
   return '';
 }
 
-export function extractUrlsFromText(text = '') {
-  const value = String(text || '');
-  const urls = [];
-  const seen = new Set();
-  for (const match of value.matchAll(URL_PATTERN)) {
-    const url = String(match[0] || '').replace(/[.,!?;:)'"]+$/u, '');
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
-}
+export const extractUrlsFromText = extractTextUrls;
 
 export function isSocialLinkUrl(url = '') {
   try {
@@ -109,14 +103,19 @@ export function isSocialLinkUrl(url = '') {
 }
 
 export function scoreWebSearchIntent(text = '') {
-  const query = String(text || '').trim();
+  const policy = getRequestNetworkPolicy(text);
+  if (policy.searchForbidden || policy.localSearch) return 0;
+  const query = policy.instruction.trim();
   if (!query) return 0;
 
   let score = 0;
   for (const { pattern, weight } of DEFAULT_WEB_SEARCH_TRIGGER_RULES) {
     if (pattern.test(query)) score += weight;
   }
-  for (const { pattern, weight } of extraWebSearchTriggers) {
+  const context = currentRequestContext();
+  const configured = context ? (context.config?.webSearchTriggers || []).map(compileTrigger).filter(Boolean) : extraWebSearchTriggers;
+  for (const { pattern, weight } of configured) {
+    pattern.lastIndex = 0;
     if (pattern.test(query)) score += weight;
   }
   return score;
@@ -128,9 +127,12 @@ export function shouldUseNativeWebSearch(messagesOrText = [], { authMode = 'code
     : String(messagesOrText || '').trim();
   if (authMode !== 'codex') return false;
   if (!text) return false;
+  const policy = getRequestNetworkPolicy(text);
+  if (policy.searchForbidden || policy.localSearch) return false;
   if (extractUrlsFromText(text).length) return false;
   if (DEEP_RESEARCH_PATTERN.test(text) || EXPLICIT_LOCAL_SEARCH_PATTERN.test(text)) return false;
-  return scoreWebSearchIntent(text) >= 3;
+  const score = scoreWebSearchIntent(text);
+  return score >= 3 || (score >= 2 && EXPLICIT_SEARCH.test(policy.instruction));
 }
 
 export function buildSearchPlan({
@@ -138,10 +140,35 @@ export function buildSearchPlan({
   modelMessages = [],
   authMode = 'codex',
 } = {}) {
-  const latestText = String(latestUserMessage || '').trim() || latestUserMessageText(modelMessages);
-  const modelText = latestUserMessageText(modelMessages);
-  const routeText = [latestText, modelText].filter(Boolean).join('\n');
-  const urls = extractUrlsFromText(routeText);
+  let latestText = String(latestUserMessage || '').trim() || latestUserMessageText(modelMessages);
+  const latestPolicy = getRequestNetworkPolicy(latestText);
+  // Slot answers keep the pending lookup alive across several clarifications.
+  // Stop at a new task or a network/search denial; never resurrect old consent.
+  const slotAnswer = text => text.length <= 120 && /^(?:(?:就|只有|一共)?\s*(?:\d+|[一二三四五六七八九十两])\s*(?:个)?(?:人|位|成人)|(?:没(?:有)?|不带|无|不用|不要)(?:托运|随身)?(?:行李|托运)|(?:\d{4}年|今年|明年|后年)(?:[，,\s]*(?:肯定|当然)?默认(?:是|按)?今年)?|(?:早上|上午|下午|晚上|早去晚回)|(?:经济舱|商务舱)|(?:\d+\s*(?:adults?|people)|no\s+(?:checked\s+)?(?:bags?|luggage)))[\s。.!！]*$/iu.test(text.trim());
+  if (!latestPolicy.searchForbidden && !latestPolicy.localSearch && slotAnswer(latestText)) {
+    const previous = modelMessages.filter(message => message?.role === 'user').map(message => normalizeMessageContent(message.content));
+    if (previous.at(-1) === latestText) previous.pop();
+    const answers = [latestText];
+    for (const text of previous.slice(-8).reverse()) {
+      const priorPolicy = getRequestNetworkPolicy(text);
+      if (priorPolicy.searchForbidden || priorPolicy.localSearch) break;
+      if (slotAnswer(text)) { answers.unshift(text); continue; }
+      if (scoreWebSearchIntent(text) >= 2) latestText = [text, ...answers].join('\n');
+      break;
+    }
+  }
+  if (/^(?:ok|okay|yes|sure|continue|go ahead|好|好的|继续)[\s!.?。！？]*$/iu.test(latestText)) {
+    const previousUsers = modelMessages.filter(message => message?.role === 'user');
+    if (normalizeMessageContent(previousUsers.at(-1)?.content) === latestText) previousUsers.pop();
+    const previousText = normalizeMessageContent(previousUsers.at(-1)?.content);
+    if (previousText) latestText = previousText;
+  }
+  const policy = getRequestNetworkPolicy(latestText);
+  const routeText = policy.instruction;
+  const urls = requestUrls(latestText);
+  const noSearch = reason => ({ route: 'none', reason, nativeWebSearchEnabled: false, exposedNetworkTools: [], urls: [] });
+  if (policy.fetchForbidden) return noSearch('user-disabled-network');
+  if (policy.localSearch) return noSearch('explicit-workspace-search');
   const hasUrl = urls.length > 0;
   const hasSocialUrl = urls.some(isSocialLinkUrl);
 
@@ -155,7 +182,7 @@ export function buildSearchPlan({
     };
   }
 
-  if (hasUrl || LINK_READ_PATTERN.test(routeText)) {
+  if (hasUrl || (!policy.searchForbidden && LINK_READ_PATTERN.test(routeText))) {
     return {
       route: 'fetch-url',
       reason: hasUrl ? 'url-present' : 'link-read-intent',
@@ -164,6 +191,8 @@ export function buildSearchPlan({
       urls,
     };
   }
+
+  if (policy.searchForbidden) return noSearch('user-disabled-search');
 
   if (DEEP_RESEARCH_PATTERN.test(routeText) || EXPLICIT_LOCAL_SEARCH_PATTERN.test(routeText)) {
     return {
@@ -185,7 +214,7 @@ export function buildSearchPlan({
     };
   }
 
-  if (scoreWebSearchIntent(routeText) >= 3) {
+  if (scoreWebSearchIntent(routeText) >= 3 || (scoreWebSearchIntent(routeText) >= 2 && EXPLICIT_SEARCH.test(routeText))) {
     return {
       route: 'melo-web',
       reason: 'non-codex-web-intent',
@@ -208,6 +237,8 @@ export function filterToolsForSearchPlan(tools = [], searchPlan = {}) {
   const exposed = new Set(searchPlan?.exposedNetworkTools || []);
   return (Array.isArray(tools) ? tools : []).filter(tool => {
     const id = String(tool?.id || '');
+    if (/^browser_/u.test(id) && requestEnvironment().MELO_CDP_ENABLED !== '1') return false;
+    if (searchPlan.reason === 'user-disabled-network' && /^browser_/u.test(id)) return false;
     if (!SEARCH_NETWORK_TOOL_IDS.has(id)) return true;
     return exposed.has(id);
   });
@@ -220,6 +251,8 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to Codex OAuth native web_search as the primary web source.',
       'Use the native web_search capability for current public web facts.',
+      'A browser tool failure does not mean public information is unavailable. Continue with native web_search; do not describe a disabled browser capability as a user permission denial.',
+      'For flights, distinguish date-specific schedules (flight number, airports, local departure/arrival times) from live fares. Retrieve public schedules even if prices cannot be verified. Cite the exact travel dates and sources; never use generic route schedules or cached starting fares as a confirmed dated offer.',
       'Do not emit XML tool calls for `web_search` or `fetch_url` in this turn.',
     ].join('\n');
   }
@@ -228,6 +261,7 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to Melo web_search for structured source retrieval.',
       'Use `web_search` for broad web lookup, then answer from the returned sources.',
+      'If browser automation is unavailable, continue with public web search. Separate confirmed date-specific flight schedules from live fares and report precisely which facts remain unverified.',
     ].join('\n');
   }
   if (route === 'fetch-url') {
@@ -243,6 +277,9 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       'This turn is routed to `fetch_url`; social links are handled by Melo\'s dedicated social preview reader.',
       'Use `fetch_url` for the pasted social URL. Do not use `web_search` for this turn.',
     ].join('\n');
+  }
+  if (searchPlan.reason === 'user-disabled-network' || searchPlan.reason === 'user-disabled-search') {
+    return '## Search Routing\nThe user forbids web lookup for this turn. Answer from available context; if it is insufficient, say so. Do not invent current facts or replace web search with a local command unless the user separately requested that local action.';
   }
   return '';
 }

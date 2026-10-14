@@ -1,0 +1,12 @@
+build/
+dist/
+*.xcuserstate
+xcuserdata/
+
+build-signed/
+
+build-preview/
+build-gmail/
+
+# Local Xcode build variants are disposable outputs, not app sources.
+/build-*/

@@ -19,15 +19,9 @@ const appSource = readFileSync(join(here, 'app.js'), 'utf8');
 
 // ─── Fix #1: voice transcript ↔ audio attachment id linkage ────────────────
 
-test('voice auto-submit assigns a stable id to the audio attachment', () => {
-  // The voice attachment must get an id like every other attachment path
-  // (queueComposerFiles uses crypto.randomUUID()).  Pre-fix it had none, so
-  // describeAudioExtractionStatus could never match its transcript.
-  assert.match(
-    appSource,
-    /const voiceAttachmentId = crypto\.randomUUID\(\);[\s\S]*?id: voiceAttachmentId,[\s\S]*?kind: 'audio'/,
-    'handleVoiceMessageAutoSubmit must generate a voiceAttachmentId and put it on the audio attachment',
-  );
+test('dictation inserts into the existing composer and never auto-submits audio', () => {
+  assert.match(appSource, /onCommit: text => \{\s*appendComposerText\(text\)/);
+  assert.doesNotMatch(appSource, /function handleVoiceMessageAutoSubmit/);
 });
 
 test('voice transcript entry references the audio attachment id (attachmentId linkage)', () => {
@@ -43,7 +37,7 @@ test('voice transcript entry references the audio attachment id (attachmentId li
 test('voice attachment id is captured-then-cleared in the send path (parallel to voiceTranscript)', () => {
   assert.match(
     appSource,
-    /const voiceAttachmentId = uiState\.composerVoiceAttachmentId \|\| null;\s*\n\s*uiState\.composerVoiceAttachmentId = null;/,
+    /const voiceAttachmentId = \(prepared \? null : uiState\.composerVoiceAttachmentId\) \|\| null;\s*\n\s*if \(!prepared\) uiState\.composerVoiceAttachmentId = null;/,
     'send path must capture + clear composerVoiceAttachmentId, mirroring composerVoiceTranscript',
   );
 });

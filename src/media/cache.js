@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, lstat, writeFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { getMeloHome } from '../config.js';
 
@@ -10,6 +10,12 @@ import { getMeloHome } from '../config.js';
 // write+read against the WRONG home.  Resolved per-call now.
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRY_BYTES = 2 * 1024 * 1024;
+const DEFAULT_CACHE_BUDGET_BYTES = 256 * 1024 * 1024;
+
+function cacheBudgetBytes() {
+  const value = Number(process.env.MELO_MEDIA_CACHE_MAX_BYTES);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_CACHE_BUDGET_BYTES;
+}
 
 // 2026-06-04 audit闭环 round-2 (Codex C): the on-read unlink alone does NOT
 // bound growth — media keys are `attachment.kind:url`, and a one-shot URL is
@@ -36,33 +42,54 @@ function cacheKeyToPath(key, dir = mediaCacheDir()) {
 // Best-effort: never throws, skips anything it can't stat/unlink. `dir` is
 // captured by the caller at entry (§6) and threaded in — this async walk
 // never re-reads getMeloHome().
-async function sweepExpiredEntries(dir) {
+async function sweepExpiredEntries(dir, maxBytes = DEFAULT_CACHE_BUDGET_BYTES) {
   const cutoff = Date.now() - CACHE_TTL_MS;
+  const retained = [];
+  let totalBytes = 0;
   let shards;
   try {
+    if (!(await lstat(dir)).isDirectory()) return;
     shards = await readdir(dir);
   } catch {
     return; // no cache dir yet — nothing to sweep
   }
   for (const shard of shards) {
+    if (!/^[a-f0-9]{2}$/.test(shard)) continue;
     const shardDir = join(dir, shard);
     let files;
     try {
+      if (!(await lstat(shardDir)).isDirectory()) continue;
       files = await readdir(shardDir);
     } catch {
       continue;
     }
     for (const file of files) {
+      if (!/^[a-f0-9]{62}\.json$/.test(file)) continue;
       const filePath = join(shardDir, file);
       try {
-        const details = await stat(filePath);
+        const details = await lstat(filePath);
+        if (!details.isFile()) continue;
         if (details.mtimeMs < cutoff) {
           await unlink(filePath);
+        } else {
+          retained.push({ filePath, size: details.size, mtimeMs: details.mtimeMs });
+          totalBytes += details.size;
         }
       } catch {
         // raced delete / permission / not-a-file — skip, sweep is best-effort
       }
     }
+  }
+  // Only generated hash-addressed cache entries are eligible for eviction.
+  retained.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  for (const entry of retained) {
+    if (totalBytes <= maxBytes) break;
+    try {
+      const current = await lstat(entry.filePath);
+      if (!current.isFile() || current.mtimeMs !== entry.mtimeMs) continue;
+      await unlink(entry.filePath);
+      totalBytes -= entry.size;
+    } catch {}
   }
 }
 
@@ -74,14 +101,14 @@ async function sweepExpiredEntries(dir) {
 // cache can never block the media-processing write path (Codex B 闭环:
 // awaiting the full sweep risked a hot-path hitch on a big cache). Errors are
 // swallowed — cleanup must never surface to the caller.
-function maybeSweep(dir) {
+function maybeSweep(dir, maxBytes) {
   const last = _lastSweepAtMs.get(dir) || 0;
   if (Date.now() - last < SWEEP_COOLDOWN_MS) return;
   _lastSweepAtMs.set(dir, Date.now());
   // Track the in-flight promise so tests can deterministically await it
   // (_drainPendingSweepForTests) instead of guessing tick counts. Production
   // never awaits this — fire-and-forget.
-  _pendingSweep = sweepExpiredEntries(dir).catch(() => {});
+  _pendingSweep = sweepExpiredEntries(dir, maxBytes).catch(() => {});
 }
 
 export async function getCachedExtraction(key) {
@@ -105,6 +132,7 @@ export async function getCachedExtraction(key) {
 }
 
 export async function setCachedExtraction(key, value) {
+  const budget = cacheBudgetBytes();
   try {
     const dir = mediaCacheDir(); // §6: single home read at entry, threaded below
     const filePath = cacheKeyToPath(key, dir);
@@ -118,7 +146,7 @@ export async function setCachedExtraction(key, value) {
     // Rate-limited TTL sweep — the real growth bound (handles one-shot URLs
     // that the on-read prune never sees). Fire-and-forget + cooldown-gated, so
     // it never blocks this write even on a large cache.
-    maybeSweep(dir);
+    maybeSweep(dir, budget);
   } catch {
     // Cache misses should not block chat flow.
   }
@@ -128,8 +156,8 @@ export async function setCachedExtraction(key, value) {
 // Run the sweep immediately (bypass cooldown) — lets tests assert that
 // never-re-read expired entries are pruned. `dir` defaults to the current
 // home's cache dir.
-export async function _sweepExpiredNowForTests(dir = mediaCacheDir()) {
-  await sweepExpiredEntries(dir);
+export async function _sweepExpiredNowForTests(dir = mediaCacheDir(), maxBytes = cacheBudgetBytes()) {
+  await sweepExpiredEntries(dir, maxBytes);
 }
 export function _resetSweepStateForTests() {
   _lastSweepAtMs.clear();

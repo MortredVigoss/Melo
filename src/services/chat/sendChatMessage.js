@@ -1,3 +1,13 @@
+import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
+import { conversationConfig, selectedMaterials } from './conversationSelection.js';
+import { visionConnection } from '../../images/imageSettings.js';
+import { createExecutionRecorder } from './executionScenes.js';
+import { persistSessionMemorySnapshot } from './derivedState.js';
+import { createRequestContext, requestIdentity } from '../../runtime/requestContext.js';
+import { runWithRequestContext } from '../../runtime/requestScope.js';
+import { validateChatRequest } from './requestContract.js';
+import { beginChatRun, completeChatRun, interruptChatRun } from './turnLedger.js';
+import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, persistImageProgress, finishPartialImageReply } from './imageTurnState.js';
 // sendChatMessage entry — sub-phase 7d-5δ commit 8f of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -20,9 +30,11 @@
 // extractions stay free of cycles.
 
 import { randomUUID } from 'node:crypto';
-import { dirname } from 'node:path';
+import { scheduleChatTurn } from './turnScheduler.js';
+import { schedulePostTurnTask } from '../../runtime/postTurnTasks.js';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getResolvedConfig } from '../../config.js';
+import { getMeloHome, getResolvedConfig } from '../../config.js';
 import {
   loadState,
   updateStateAtomically,
@@ -30,17 +42,17 @@ import {
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findProjectById } from '../../state/stateLookups.js';
 import { effectiveAgentProfile } from '../../state/agentProfiles.js';
-import { refreshChatMemorySummary } from '../../state/chatThreadContext.js';
-import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
-import { scanRecentChatsForSkillProposals } from '../../state/skillProposalScan.js';
-import { allAgentIdsFromProfiles } from '../agent/agentLibrary.js';
+import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
+import { getDesktopBootstrap } from '../desktop/bootstrap.js';
+import { scanRecentChatsForSkillProposals } from '../skill/proposalScan.js';
+import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 import { buildWorkspaceSnapshot } from '../workspace/workspaceSnapshot.js';
 import { buildConnectors } from '../connector/connectorRollup.js';
 import {
   COMMAND_TEMPLATES,
   commandTemplateDescriptor,
 } from '../command/commandTemplates.js';
-import { buildSkills } from '../skill/skillService.js';
+import { buildSkills } from '../../domain/skill/skillService.js';
 import { runChatAgentExecutionGraph } from './chatExecutionRunner.js';
 import {
   generateChatTitle,
@@ -49,11 +61,12 @@ import {
 import {
   normalizeAssistantReplyForConversation,
   normalizeMessageBlocks,
-} from '../message/messageBlocks.js';
-import { extractArtifacts } from '../artifact/artifactService.js';
+} from '../../domain/message/messageBlocks.js';
+import { extractArtifacts } from '../../domain/artifact/artifactService.js';
 import { summarizeMessagePreview } from '../../state/conversation.js';
-import { normalizePromptHistory } from '../activity/activityLog.js';
+import { normalizePromptHistory } from '../../domain/activity/activityLog.js';
 import { promoteTextUrlsToAttachments } from '../../media/urlDetector.js';
+import { getRequestNetworkPolicy, requestUrls } from '../../retrieval/requestPolicy.js';
 import { modelSupportsVision } from '../../media/visionCapability.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
 import { indexMessage } from '../../memory/conversationIndex.js';
@@ -88,11 +101,58 @@ function isAbortError(error) {
   );
 }
 
-export async function sendChatMessage({
+export function sendChatMessage(options) {
+  validateChatRequest(options);
+  const context = options.context || createRequestContext({
+    requestId: options.requestId || randomUUID(), chatId: options.chatId, signal: options.signal,
+  });
+  if (!hasPerformanceTrace()) return withPerformanceTrace({
+    logPath: context.env.MELO_PERF_LOG === '1' ? join(context.home, 'desktop/logs/performance.jsonl') : null,
+    onTiming: row => options.sseEmitter?.('execution_event', { ...requestIdentity(context),
+      kind: 'performance', id: `timing:${row.stage}`, name: row.stage, status: row.status,
+      metadata: { performance: row }, output: `${row.durationMs} ms` }),
+  }, () => sendChatMessage({ ...options, context }));
+  return runWithRequestContext(context, () => {
+    const configPromise = getResolvedConfig();
+    configPromise.catch(() => {});
+    return scheduleChatTurn(context, async () => {
+      const { record, replay, turnBinding } = await beginChatRun(options, context);
+      if (replay) return {
+        bootstrap: options.skipBootstrap ? null : await getDesktopBootstrap(),
+        assistantMessage: replay, requestId: record.requestId, runId: record.runId, replayed: true,
+      };
+      const identity = requestIdentity(context);
+      const emit = (event, data) => options.sseEmitter?.(event, { ...identity, ...data });
+      const executionRecorder = createExecutionRecorder(context, options.content, emit);
+      try {
+        const result = await executeChatTurn({ ...options, home: context.home, context: Object.freeze({ ...context, turnBinding }), configPromise, executionRecorder,
+          sseEmitter: (event, data) => {
+            if (event === 'execution_event') executionRecorder.event(data);
+            emit(event, data);
+          },
+        });
+        return { ...result, requestId: context.requestId, runId: context.runId };
+      } catch (error) {
+        const status = context.signal?.aborted ? 'cancelled' : 'failed';
+        const partialReply = await finishPartialImageReply(context, status);
+        await interruptChatRun(context, error).catch(() => {});
+        await executionRecorder.finish(status, partialReply);
+        throw error;
+      }
+    });
+  });
+}
+
+async function executeChatTurn({
+  executionRecorder,
+  context,
+  home,
+  configPromise,
   chatId,
   content,
   mode,
   attachments = [],
+  imageTask = null,
   extractedMedia = [],
   signal,
   onDelta,
@@ -103,22 +163,27 @@ export async function sendChatMessage({
   skipBootstrap = false,
   channelContext = null,
   providerProfile = 'default',
-  // Demon viz mode flag — piped from the desktop composer's `uiState.demonMode`
-  // toggle via `/api/chat/send(/stream)`. Remote channels (background === true
-  // with channelContext) always ignore this flag downstream.
-  demonMode = false,
+
 }) {
-  const [config, rawState] = await Promise.all([getResolvedConfig(), loadState()]);
+  const [defaultConfig, rawState] = await Promise.all([configPromise, loadState({ home })]);
   const state = ensureSelectedEntities(rawState);
   const chat = state.chats.find(entry => entry.id === chatId);
 
   if (!chat) {
     throw new Error('Chat not found.');
   }
+  const config = conversationConfig(defaultConfig, chat.modelSelection);
+  if (!channelContext?.channelId) selectedMaterials(state, chat);
+  executionRecorder?.setSearchContext?.(chat.messages);
 
+  if (imageTask?.retryOf) {
+    ({content, attachments, imageTask} = restoreImageRetry(chat, imageTask));
+  }
+  attachments = await imageFollowUpAttachments({chat, content, attachments, imageTask, home});
   const trimmed = content?.trim();
-  const textDerivedAttachments = trimmed
-    ? promoteTextUrlsToAttachments(trimmed, attachments)
+  const networkPolicy = getRequestNetworkPolicy(trimmed);
+  const textDerivedAttachments = trimmed && !networkPolicy.fetchForbidden
+    ? promoteTextUrlsToAttachments(requestUrls(trimmed).join('\n'), attachments)
     : [];
   const normalizedAttachments = normalizeMessageAttachments([
     ...(attachments || []),
@@ -133,9 +198,7 @@ export async function sendChatMessage({
     : chat.agentId || 'main';
   const activeProject = chat.projectId
     ? findProjectById(state, chat.projectId)
-    : background
-      ? null
-      : findProjectById(state, state.settings.selectedProjectId);
+    : null;
   const shouldUseBackgroundWorkspace = background && Boolean(channelContext?.channelId);
   const workspace = shouldUseBackgroundWorkspace
     ? {
@@ -163,6 +226,7 @@ export async function sendChatMessage({
   const userMessage = {
     id: randomUUID(),
     role: 'user',
+    metadata: { ...requestIdentity(context), ...(imageTask ? {imageTask} : {}) },
     content: trimmed || '',
     blocks: normalizeMessageBlocks([], trimmed || ''),
     attachments: normalizedAttachments,
@@ -175,14 +239,16 @@ export async function sendChatMessage({
     senderName: channelContext?.senderName || null,
     senderUsername: channelContext?.senderUsername || null,
   };
+  signal?.throwIfAborted();
   chat.messages.push(userMessage);
   chat.updatedAt = nowIso();
+  const visualConnection=userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
+  const visualTest=visualConnection.visionTest || config.llmProfiles?.[config.activeLlmProfileId]?.visionTest;
   await enrichMessageWithMediaContext(userMessage, {
     config,
+    allowRemoteExtraction: !networkPolicy.fetchForbidden,
     modelSupportsVision: modelSupportsVision(
-      process.env.MELO_MODEL ||
-      activeAgentProfile?.model ||
-      config.model,
+      visualConnection.model, visualTest,
     ),
   });
   refreshChatMemorySummary(chat);
@@ -213,16 +279,21 @@ export async function sendChatMessage({
   await updateStateAtomically(s => {
     const latestState = ensureSelectedEntities(s);
     const latestChat = latestState.chats.find(entry => entry.id === chat.id);
-    if (latestChat) {
-      latestChat.messages = chat.messages;
+    if (!latestChat) throw new Error('Chat not found before persisting user message.');
+    signal?.throwIfAborted();
+    {
+      latestChat.messages.push(userMessage);
       latestChat.updatedAt = chat.updatedAt;
-      latestChat.title = chat.title;
+      if (!latestChat.title || latestChat.title === 'New chat') latestChat.title = chat.title;
       latestChat.agentId = chat.agentId;
       latestChat.mode = chat.mode;
-      latestChat.memorySummary = chat.memorySummary;
+      refreshChatMemorySummary(latestChat);
+      Object.assign(chat, latestChat);
     }
     if (trimmed && !background) {
-      latestState.settings.promptHistory = state.settings.promptHistory;
+      latestState.settings.promptHistory = normalizePromptHistory([
+        state.settings.promptHistory[0], ...(latestState.settings.promptHistory || []),
+      ]);
     }
     if (!background) {
       latestState.settings.selectedChatId = chat.id;
@@ -230,21 +301,30 @@ export async function sendChatMessage({
       latestState.settings.activeView = 'chat';
     }
     return latestState;
-  });
+  }, { home });
 
   // Plugin hook: chat:message:before
   await emitHook('chat:message:before', { chat, message: userMessage, config });
+  signal?.throwIfAborted();
 
   let normalizedReply;
+  let partialImageMessage;
   try {
     const graphResult = await runChatAgentExecutionGraph({
       config,
+      home,
+      context: { ...context, config, workspacePath: workspace.rootPath },
       state,
       chat,
       workspace,
       connectors,
       skills,
       latestUserMessage: trimmed,
+      imageTask,
+      onImageTaskResolved: task => persistResolvedImageTask(context, task),
+      onImageProgress: async progress => {
+        partialImageMessage = await persistImageProgress(context, progress, {id:effectiveAgentId,name:activeAgentProfile.name});
+      },
       agentId: effectiveAgentId,
       background,
       channelContext,
@@ -253,8 +333,8 @@ export async function sendChatMessage({
       onReasoningDelta,
       sseEmitter,
       providerProfile,
-      demonMode,
     });
+    signal?.throwIfAborted();
     normalizedReply = graphResult.normalizedReply;
     // Capture CORRECTED verdicts so they can be written into the assistant
     // message and later re-indexed as verification-correction memory entries.
@@ -262,7 +342,7 @@ export async function sendChatMessage({
       state._pendingVerificationRecord = graphResult.verificationRecord;
     }
   } catch (error) {
-    if (signal?.aborted || isAbortError(error)) {
+    if (signal?.aborted || isAbortError(error) || partialImageMessage) {
       throw error;
     }
     const normalizedFailureReply = normalizeAssistantReplyForConversation(
@@ -274,6 +354,7 @@ export async function sendChatMessage({
     const assistantMessage = {
       id: randomUUID(),
       role: 'assistant',
+      metadata: { ...requestIdentity(context), agent:{id:activeAgentProfile.id, name:activeAgentProfile.name}, executionError: error.code || error.name || 'PROVIDER_ERROR' },
       content: normalizedFailureReply.content,
       blocks: normalizedFailureReply.blocks,
       attachments: [],
@@ -290,7 +371,9 @@ export async function sendChatMessage({
       if (!latestChat) {
         throw new Error('Chat not found after provider failure.');
       }
+      signal?.throwIfAborted();
       latestChat.messages.push(assistantMessage);
+      completeChatRun(latestState, context, assistantMessage);
       latestChat.updatedAt = nowIso();
       refreshChatMemorySummary(latestChat);
       if (activeProject?.id) {
@@ -305,7 +388,9 @@ export async function sendChatMessage({
         latestState.settings.activeView = 'chat';
       }
       return latestState;
-    });
+    }, { home });
+
+    await executionRecorder?.finish('failed', assistantMessage);
 
     // Index new messages (fire and forget)
     try {
@@ -319,8 +404,9 @@ export async function sendChatMessage({
     };
   }
 
+  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', name: '保存回答', status: 'running', output: '写入聊天记录' });
   const assistantMessage = {
-    id: randomUUID(),
+    id: partialImageMessage?.id || randomUUID(),
     role: 'assistant',
     content: normalizedReply.content,
     blocks: normalizedReply.blocks,
@@ -347,9 +433,17 @@ export async function sendChatMessage({
     ...(Array.isArray(normalizedReply.toolResults) && normalizedReply.toolResults.length
       ? { toolResults: normalizedReply.toolResults }
       : {}),
-    ...(state._pendingVerificationRecord
-      ? { metadata: { verificationRecord: state._pendingVerificationRecord } }
-      : {}),
+    ...{ metadata: {
+          ...requestIdentity(context),
+          memoryUsage: normalizedReply.memoryUsage || [],
+          ...(partialImageMessage ? {imageDelivery:{...partialImageMessage.metadata.imageDelivery,status:'completed'}} : {}),
+          agent: {id:effectiveAgentId, name:activeAgentProfile.name},
+          ...(normalizedReply.team ? {team:normalizedReply.team} : {}),
+          ...(normalizedReply.usage ? {usage:normalizedReply.usage} : {}),
+          ...(normalizedReply.modelResponses?.length ? { modelResponses: normalizedReply.modelResponses } : {}),
+          ...(state._pendingVerificationRecord ? { verificationRecord: state._pendingVerificationRecord } : {}),
+          ...(normalizedReply.canonicalReply ? { canonicalReply: normalizedReply.canonicalReply } : {}),
+        } },
   };
   delete state._pendingVerificationRecord;
   // Persist the assistant reply inside the atomic queue so we always merge
@@ -364,7 +458,11 @@ export async function sendChatMessage({
     if (!latestChat) {
       throw new Error('Chat not found before persisting assistant reply.');
     }
-    latestChat.messages.push(assistantMessage);
+    signal?.throwIfAborted();
+    const existingIndex = latestChat.messages.findIndex(m => m.id === assistantMessage.id);
+    if (existingIndex >= 0) latestChat.messages[existingIndex] = assistantMessage;
+    else latestChat.messages.push(assistantMessage);
+    completeChatRun(latestState, context, assistantMessage);
     latestChat.updatedAt = nowIso();
     refreshChatMemorySummary(latestChat);
 
@@ -386,7 +484,10 @@ export async function sendChatMessage({
       latestState.settings.activeView = 'chat';
     }
     return latestState;
-  });
+  }, { home });
+
+  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', status: 'completed', output: '回答与引用已保存，可交付界面' });
+  await executionRecorder?.finish('completed', assistantMessage);
 
   // Conversation history indexing (fire and forget — never blocks the response)
   try {
@@ -398,7 +499,7 @@ export async function sendChatMessage({
   // Kick the bounded fill-in worker after every completed chat turn so
   // semantic recall catches up even when session-memory extraction does not
   // happen on this particular turn.
-  scheduleEmbeddingFillIn(config).catch(() => {});
+  schedulePostTurnTask(home, () => scheduleEmbeddingFillIn(config));
 
   // Session memory extraction (async, non-blocking — fire and forget).
   // Runs after saveState so it doesn't slow down the response. Previously
@@ -406,7 +507,7 @@ export async function sendChatMessage({
   // never built up a sessionMemory layer — long-running bots had to rely
   // purely on vector recall. Now runs for every channel; the extraction
   // itself is a best-effort LLM call that never throws to the caller.
-  maybeExtractSessionMemory(latestChat, { config }).then(async extracted => {
+  schedulePostTurnTask(home, () => maybeExtractSessionMemory(latestChat, { config }).then(async extracted => {
     if (extracted) {
       // Persist the updated session memory through updateStateAtomically so
       // we don't race with concurrent writes from the chat flow (new
@@ -414,30 +515,23 @@ export async function sendChatMessage({
       // was detached from the write queue and could roll back a newer
       // message append. We copy only the three memory fields onto the
       // latest persisted chat rather than overwriting the chat wholesale.
-      await updateStateAtomically(s => {
-        const c = s.chats?.find(ch => ch.id === latestChat.id);
-        if (c) {
-          c.sessionMemory = latestChat.sessionMemory;
-          c.memoryLastExtractedAt = latestChat.memoryLastExtractedAt;
-          c.memoryLastExtractedAtCount = latestChat.memoryLastExtractedAtCount;
-        }
-        return s;
-      }).catch(() => {});
+      const applied = await persistSessionMemorySnapshot(latestChat, { home }).catch(() => false);
+      if (!applied) return;
 
       // Promote new session facts to cross-session long-term memory
       const agentId = latestChat.agentId || 'main';
-      promoteAndPersistFacts(latestChat, agentId, config).catch(() => {});
+      await promoteAndPersistFacts(latestChat, agentId, config).catch(() => {});
 
       // Background: fill in any missing embeddings
-      scheduleEmbeddingFillIn(config).catch(() => {});
+      await scheduleEmbeddingFillIn(config).catch(() => {});
     }
-  }).catch(() => {});
+  }));
 
   // Phase 3.4.1 — opportunistic skill-proposal scan. Fire-and-forget so it
   // never blocks the response; dedupes naturally via the store's seedId
   // check, so repeated turns in the same chat don't spam proposals.
   if (!background) {
-    scanRecentChatsForSkillProposals().catch(() => {});
+    schedulePostTurnTask(home, () => scanRecentChatsForSkillProposals());
   }
 
   // Plugin hook: chat:message:after

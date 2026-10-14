@@ -299,37 +299,28 @@ test('globTool: deny base → DENIED, no fs walk', async () => {
   });
 });
 
-test('globTool: walks past sensitive subtree silently and reports skip count', async () => {
-  // Workspace contains a benign tree + a symlink-named entry that
-  // would point at a sensitive path. Since we can't actually create
-  // /etc inside ws, simulate by symlinking a workspace dir into the
-  // .ssh-named slot (classifyPath uses path-prefix matching, so the
-  // lexical name itself doesn't trigger; we have to actually plant
-  // a sensitive path inside ws). Skip if HOME isn't set or .ssh
-  // doesn't exist on this machine.
-  await withTempEnv(async ({ ws }) => {
+test('globTool: skips Melo internal subtree without walking the real user home', async () => {
+  await withTempEnv(async ({ ws, home }) => {
     const gate = await freshGate();
-    // Plant a benign file under ws.
-    await writeFile(join(ws, 'safe.txt'), '', 'utf8');
-    // Glob from $HOME if it exists and contains something. Use a
-    // restrictive pattern so we only get a few results regardless.
-    const home = process.env.HOME;
-    if (!home) return; // sandbox without HOME, skip
-    let promptCount = 0;
-    const sse = (event, payload) => {
-      promptCount++;
-      gate.resolveFileSafety(payload.requestId, 'once');
-    };
-    const result = await globTool.run(
-      { pattern: '**/no-such-file-anywhere-1234.xyz', cwd: home, max_results: 5 },
-      { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },
-    );
-    assert.equal(result.ok, true);
-    // Most home dirs contain at least .ssh OR .aws OR .gnupg etc, so
-    // skippedSensitive should usually be > 0. If not (clean machine),
-    // just verify the field exists and is a number.
-    assert.equal(typeof result.meta.skippedSensitive, 'number');
-    assert.ok(result.meta.skippedSensitive >= 0);
+    // A real directory classified MELO_INTERNAL, inside an isolated base.
+    const base = await realpath(await mkdtemp(join(tmpdir(), 'p2b-tree-')));
+    const previous = process.env.MELO_HOME;
+    try {
+      const internal = join(base, 'private-melo');
+      await mkdir(internal);
+      await writeFile(join(internal, 'secret.txt'), 'do not enumerate');
+      await writeFile(join(base, 'safe.txt'), 'public');
+      process.env.MELO_HOME = internal;
+      const result = await globTool.run({pattern:'**/*.txt',cwd:base},
+        {workspacePath:ws,chatId:'chat-A',sseEmitter:autoApprove(gate)});
+      assert.equal(result.ok,true);
+      assert.match(result.output,/safe\.txt/);
+      assert.doesNotMatch(result.output,/secret\.txt/);
+      assert.ok(result.meta.skippedSensitive > 0);
+    } finally {
+      process.env.MELO_HOME = previous;
+      await rm(base,{recursive:true,force:true});
+    }
   });
 });
 

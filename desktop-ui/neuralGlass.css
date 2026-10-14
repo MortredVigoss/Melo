@@ -1,0 +1,401 @@
+/* Shared black-gold materials. Loaded after component styles so every surface
+   uses the same edge, tint and spacing without flattening its spatial role. */
+:root {
+ --space-text:#ede8df;
+ --space-muted:#b9b0a2;
+ --space-soft:#968f84;
+ --space-gold:#d1b27d;
+ --space-edge:rgba(211,188,148,.16);
+ --space-edge-soft:rgba(211,188,148,.085);
+ --space-edge-raised:rgba(222,199,162,.25);
+ --space-glass:radial-gradient(ellipse at 0 0,rgba(174,145,100,.075),transparent 52%),linear-gradient(145deg,rgba(28,27,26,.54),rgba(9,12,18,.65));
+ --space-card:linear-gradient(145deg,rgba(40,37,32,.30),rgba(12,15,20,.40));
+ --space-floating:linear-gradient(145deg,rgba(43,39,33,.82),rgba(13,16,22,.90));
+ --space-dialog:radial-gradient(ellipse at 0 0,rgba(193,161,108,.09),transparent 60%),linear-gradient(145deg,rgba(35,33,30,.73),rgba(11,14,20,.84));
+ --space-inset:rgba(6,9,14,.30);
+ --space-hover:rgba(192,157,98,.10);
+ --space-selected:rgba(192,157,98,.16);
+ --space-shadow:0 24px 64px #0005,0 5px 14px #0004,inset 1px 1px rgba(244,222,181,.09),inset -1px -1px rgba(0,0,0,.38);
+ --space-shadow-raised:0 36px 90px #0009,0 10px 24px #0006,inset 1px 1px rgba(244,222,181,.13),inset -1px -1px rgba(0,0,0,.55);
+ --space-radius-control:10px;
+ --space-radius-card:16px;
+ --space-radius-panel:22px;
+ --space-gap:12px;
+ --space-inset-size:20px;
+ --space-blur:4px;
+ --text:var(--space-text);--text-muted:var(--space-muted);--text-soft:var(--space-soft);
+ --border:var(--space-edge-soft);--border-strong:var(--space-edge-raised);
+ --radius-xl:var(--space-radius-panel);--radius-lg:var(--space-radius-card);--radius-md:var(--space-radius-control);
+}
+
+/* Scene motion retains one persistent coordinate system. */
+.neural-core-anchor,.neural-primary .neural-cluster {
+ left:0;top:0;
+ transition:translate .76s cubic-bezier(.22,.78,.18,1),transform .38s ease,opacity .38s ease,filter .38s ease;
+ will-change:translate;
+}
+.neural-branches {transition:left .76s cubic-bezier(.22,.78,.18,1),width .76s cubic-bezier(.22,.78,.18,1),opacity .3s .08s,transform .76s cubic-bezier(.22,.78,.18,1);}
+.neural-dashboard.workspace {
+ container:workspace / inline-size;
+ background:var(--space-glass);border-color:var(--space-edge);border-radius:var(--space-radius-panel);box-shadow:var(--space-shadow);
+ transition:background .4s,border-color .4s,box-shadow .4s,opacity .25s;transform-origin:0 0;
+}
+.neural-shell.is-overview .neural-dashboard {background:none;box-shadow:none;border:0;}
+.neural-shell:after {background:linear-gradient(90deg,transparent 20%,rgba(4,6,10,.05) 65%,rgba(4,6,10,.12));}
+.neural-dashboard .topbar,.neural-dashboard-label {background:rgba(10,12,16,.12);border-color:var(--space-edge-soft);backdrop-filter:none;-webkit-backdrop-filter:none;}
+.neural-dashboard .topbar {height:52px;min-height:52px;padding:8px var(--space-inset-size);gap:12px;}
+.neural-dashboard-label {min-height:32px;padding:8px var(--space-inset-size);}
+.neural-dashboard .content-shell,.neural-dashboard .content-scroll,.neural-dashboard .page {background:transparent;}
+.neural-dashboard .page {padding:var(--space-inset-size);}
+.neural-dashboard .page-title.compact {font-size:26px;line-height:1.35;letter-spacing:-.025em;}
+.neural-dashboard :is(.thread-header,.section-header)>div:first-child {min-width:0;}
+.neural-dashboard .thread-header {gap:12px;}
+.neural-dashboard .chat-thread {grid-template-columns:minmax(0,1fr);}
+.neural-dashboard .thread-scroll-region {min-width:0;}
+.neural-dashboard :is(.page-grid,.config-grid) {gap:16px;}
+.neural-dashboard :is(.surface-card,.detail-card,.project-card,.chat-card,.artifact-card,.feature-card,.model-connection-summary) {
+ background:var(--space-card);border-color:var(--space-edge-soft);border-radius:var(--space-radius-card);box-shadow:inset 1px 1px #f4deba09,inset -1px -1px #0003,0 4px 12px #0001;
+}
+.neural-dashboard :is(.project-card,.chat-card,.artifact-card,.project-form-card) {padding:16px;}
+.neural-dashboard .card-title {font-size:21px;line-height:1.4;margin-bottom:8px;}
+.neural-dashboard .card-summary {font-size:13px;line-height:1.75;margin-bottom:16px;}
+.neural-dashboard .customize-pane {padding:16px;}
+.neural-dashboard .quality-status-grid {gap:12px;margin:16px 0;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));}
+.neural-dashboard .quality-status-card {padding:16px;gap:8px;background:var(--space-card);border-color:var(--space-edge);border-radius:var(--space-radius-card);}
+.neural-dashboard .quality-status-card>strong {font-size:16px;line-height:1.5;}
+.neural-dashboard .quality-status-card :is(small,summary) {font-size:11px;}
+.neural-dashboard .quality-details {border-color:var(--space-edge-soft);margin:12px 0;padding:12px 0;}
+.neural-dashboard :is(.input,.textarea,.search-input,.agent-content-editor) {background:var(--space-inset);border-color:var(--space-edge);border-radius:var(--space-radius-control);color:var(--space-text);}
+.neural-dashboard :is(.input,.textarea,.search-input):focus {border-color:var(--space-gold);box-shadow:0 0 0 2px #d1b27d0d;}
+
+/* Secondary navigation is one quiet, regular rail. */
+.neural-branches-heading {padding:0 12px 16px;}
+.neural-branches-heading h2 {font-size:21px;margin:10px 0 8px;}
+.neural-branches-heading p {font-size:11px;line-height:1.7;margin:0;color:var(--space-muted);}
+.neural-branch {min-height:58px;padding:10px 8px;margin-bottom:4px;border-radius:var(--space-radius-control);gap:8px;}
+.neural-branch strong {font-size:12px;line-height:1.45;font-weight:500;}
+.neural-branch small {font-size:10px;line-height:1.45;color:var(--space-soft);}
+.neural-branch:hover,.neural-branch.is-active {background:var(--space-hover);border-color:var(--space-edge);}
+.neural-branch.is-active strong {color:#eddbb7;}
+.neural-branch-caption {padding-top:12px;color:var(--space-soft);}
+
+/* All ordinary controls share a 36px rhythm; the input dock uses 40px. */
+.neural-dashboard :is(.small-button,.pill-button,.ghost-button) {min-height:36px;padding:8px 12px;border-radius:var(--space-radius-control);font-size:12px;line-height:1.4;}
+.neural-dashboard .pill-button {background:var(--space-card);border-color:var(--space-edge);font-size:11px;}
+.neural-dashboard :is(.small-button,.ghost-button).is-primary {
+ background:linear-gradient(135deg,#b69a64,#d0b47f);border-color:#d7bb854d;color:#17140f;box-shadow:inset 0 1px #ffedc929;
+}
+.neural-dashboard :is(.small-button,.ghost-button).is-primary:hover {background:#dcc18d;}
+.neural-dashboard .status-pill {padding:5px 8px;font-size:10px;background:#bba98409;border-color:var(--space-edge-soft);}
+.neural-dashboard .composer-card,.neural-home-composer .composer-card {
+ background:var(--space-card);border-color:var(--space-edge);border-radius:var(--space-radius-card);box-shadow:var(--space-shadow);
+ backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+.neural-dashboard .composer-input-frame {background:var(--space-inset);border-color:var(--space-edge-soft);border-radius:var(--space-radius-control);box-shadow:none;}
+.neural-dashboard .composer-textarea {font-size:13px;line-height:1.65;}
+.neural-dashboard .message-bubble {background:rgba(16,18,22,.38);border-radius:var(--space-radius-card);}
+.neural-dashboard .message.is-user .message-bubble {background:rgba(75,58,31,.28);}
+.neural-dashboard .composer-icon-button,.neural-home-composer .composer-icon-button,.atomic-button {width:40px;height:40px;min-height:40px;flex:0 0 40px;border-radius:var(--space-radius-control);}
+.model-picker-trigger {min-height:40px;border-radius:var(--space-radius-control);background:var(--space-card);border-color:var(--space-edge);}
+.neural-dashboard .composer-actions {gap:8px;}
+.neural-dashboard .composer-bottom-right {gap:6px;}
+
+/* Floating surfaces use more body and a slightly brighter rim than the
+   workspace. Blur stays local: no full-window filter over the live cosmos. */
+.palette-shell,.tool-permission-shell,.model-picker-panel,.agent-selector-dropdown,.tts-voice-panel,.composer-attachment-menu,.edit-context-menu,.slash-palette,.task-lane-overflow-menu,.citation-drawer-panel,.neural-preview,.execution-inspector {
+ background:var(--space-floating);border:1px solid var(--space-edge-raised);box-shadow:var(--space-shadow-raised);
+ backdrop-filter:blur(var(--space-blur));-webkit-backdrop-filter:blur(var(--space-blur));
+ color:var(--space-text);border-radius:var(--space-radius-card);
+}
+.palette-backdrop,.tool-permission-backdrop {background:rgba(3,5,10,.22);backdrop-filter:none;-webkit-backdrop-filter:none;padding:clamp(24px,9vh,80px) 24px 24px;}
+/* Keep star light visible while underlying interface text recedes. */
+#app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-shell :is(.neural-navigation,.neural-branches,.neural-dashboard,.neural-activity) {opacity:.22!important;}
+#app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-preview {visibility:hidden;}
+.palette-shell,.tool-permission-shell {background:var(--space-dialog);border-radius:var(--space-radius-panel);animation:space-surface-enter .32s cubic-bezier(.22,.78,.18,1);}
+.palette-shell {width:min(640px,100%);max-height:calc(100dvh - 112px);display:flex;flex-direction:column;}
+.palette-header {padding:20px;border-color:var(--space-edge);background:rgba(9,11,15,.10);flex-shrink:0;}
+.palette-input {font-size:15px;line-height:1.6;}
+.palette-list {min-height:0;max-height:min(62vh,520px);padding:8px;gap:4px;overscroll-behavior:contain;}
+.palette-item {padding:12px;border-radius:var(--space-radius-control);background:transparent;transition:background .15s,border-color .15s;}
+.palette-item:hover,.palette-item.is-active {background:var(--space-selected);border-color:var(--space-edge);}
+.palette-item .list-row-title {font-size:13px;font-weight:500;line-height:1.5;}
+.palette-item .list-row-meta {font-size:11px;line-height:1.65;color:var(--space-muted);margin-top:4px;}
+.tool-permission-backdrop {padding:24px;}
+.tool-permission-shell {max-height:calc(100dvh - 48px);overflow:auto;background:var(--space-floating);}
+.tool-permission-header {padding:20px;gap:12px;}
+.tool-permission-body {padding:16px 20px;}
+.tool-permission-footer {padding:16px 20px 20px;border-color:var(--space-edge);}
+.tool-permission-subtitle {color:var(--space-muted);line-height:1.6;}
+.tool-permission-args {background:var(--space-inset);border-radius:var(--space-radius-control);border-color:var(--space-edge);}
+.model-picker-panel {padding:16px;border-radius:var(--space-radius-card);}
+.model-picker-option,.agent-selector-row,.composer-menu-item,.slash-palette-item {border-radius:var(--space-radius-control);}
+.model-picker-option:hover,.agent-selector-row:hover,.composer-menu-item:hover,.slash-palette-item:hover {background:var(--space-hover);}
+.model-picker-option.is-selected,.agent-selector-row.is-selected {background:var(--space-selected);}
+.model-picker-panel footer,.model-receipt-body {border-color:var(--space-edge);}
+.model-receipt-body {background:var(--space-card);border-radius:var(--space-radius-control);}
+.tts-voice-panel {padding:16px;gap:12px;}
+.neural-preview {font-size:12px;line-height:1.7;padding:12px 16px;}
+.citation-drawer-backdrop {background:rgba(3,5,10,.22);}
+.citation-drawer-panel {top:16px;right:16px;height:calc(100% - 32px);width:min(520px,calc(100vw - 32px));border-radius:var(--space-radius-panel);}
+.citation-drawer-header {padding:20px;border-color:var(--space-edge);}
+.citation-drawer-title {color:var(--space-text);font-size:14px;line-height:1.5;}
+.citation-drawer-meta {color:var(--space-muted);line-height:1.6;}
+.citation-drawer-quote {background:var(--space-hover);color:#d4c5ac;border-color:var(--space-edge-soft);padding:12px 20px;}
+
+/* The task space uses the same material, while module color belongs only to
+   real module identity. Never turn a tint into a fabricated execution state. */
+.execution-panel {background:var(--space-card);border-color:var(--space-edge);border-radius:var(--space-radius-card);box-shadow:inset 0 1px #f4deba08;margin-bottom:12px;}
+.execution-panel-header {padding:8px 12px;min-height:44px;border-color:var(--space-edge-soft);gap:8px;}
+.execution-panel-header strong {color:var(--space-gold);font-size:11px;letter-spacing:.035em;}
+.execution-panel-header .execution-status {color:var(--space-muted);line-height:1.5;}
+.execution-panel button,.execution-panel select {border-radius:var(--space-radius-control);font-size:10px;min-height:28px;border-color:var(--space-edge);color:var(--space-muted);}
+.execution-panel button:hover {background:var(--space-hover);color:var(--space-text);}
+.execution-panel .execution-module {background:var(--space-floating);border-radius:var(--space-radius-control);padding:7px 9px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
+.execution-module strong {font-size:11px;color:var(--space-text);}
+.execution-module small {font-size:9px;color:var(--space-soft);}
+.execution-module[data-status=completed] small {color:#c3bba8;}
+.execution-source {background:var(--space-card);border-color:var(--space-edge);border-radius:var(--space-radius-control);color:var(--space-text);}
+.execution-source strong {font-size:11px;line-height:1.5;}
+.execution-source small {font-size:9px;color:var(--space-muted);line-height:1.55;}
+.execution-source-rank {font-size:9px;color:var(--space-gold);}
+.execution-source[data-priority=primary] {background:var(--space-card);border-color:var(--space-edge-raised);box-shadow:inset 0 1px #f4deba08;}
+.execution-source[data-priority=secondary] {background:rgba(10,13,18,.28);border-color:var(--space-edge-soft);}
+.execution-source[data-cited=true] {border-color:#d1b27d66;box-shadow:inset 0 1px #f4deba0d,0 0 16px #c09c630a;}
+.execution-source:hover,.execution-source:focus-visible {background:var(--space-floating);border-color:#d1b27d99;box-shadow:0 6px 24px #0004;}
+.execution-inspector {font-size:11px;line-height:1.7;padding:12px;}
+.execution-candidate {background:var(--space-card);border-color:var(--space-edge);border-radius:var(--space-radius-control);}
+.execution-pipeline {gap:8px;}
+.execution-pipeline button {background:var(--space-card);border-color:var(--space-edge);padding:12px;}
+.execution-pipeline strong {color:#d1bfdd;font-size:11px;}
+.execution-pipeline small {color:var(--space-muted);font-size:10px;}
+.execution-panel-footer {padding:8px 12px;gap:12px;border-color:var(--space-edge-soft);color:var(--space-soft);align-items:flex-start;}
+.execution-panel-footer span:last-child {text-align:right;max-width:45%;}
+.execution-search-trail button {background:var(--space-card);border-color:var(--space-edge);}
+.execution-zoom {background:var(--space-floating);border-color:var(--space-edge);border-radius:var(--space-radius-control);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
+.execution-zoom-hint {color:var(--space-soft);}
+
+/* Scroll only an oversized scene, never push the input below the window.
+   Its 3D coordinate plane keeps full-sized source cards and live hit testing. */
+.execution-panel-viewport {position:relative;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b49b6f66 transparent;}
+.execution-panel-viewport:focus-visible {outline:1px solid var(--space-gold);outline-offset:-2px;}
+.chat-thread .execution-panel-viewport {max-height:clamp(180px,calc(100dvh - 480px),520px);}
+.chat-thread .execution-panel-stage {height:max(clamp(180px,calc(100dvh - 480px),410px),var(--detail-height,0px));min-height:180px;}
+.execution-panel-viewport>.execution-zoom {position:sticky;bottom:8px;width:max-content;max-width:calc(100% - 20px);margin:-44px 10px 8px auto;}
+.execution-panel.is-collapsed .execution-panel-viewport {display:none;}
+.chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) {gap:12px;}
+.chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .page-title {font-size:17px;}
+.chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .small-button {min-height:30px;padding:6px 9px;font-size:10px;}
+.composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-textarea {max-height:60px;}
+.neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:row;align-items:center;}
+.neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-input-frame {flex:1;min-width:0;order:-1;}
+@container workspace (max-width:640px) {
+ .neural-dashboard .topbar-right .status-pill:first-child {display:none;}
+ .neural-dashboard .topbar,.neural-dashboard-label {padding-inline:16px;}
+ .neural-dashboard .page {padding:16px;}
+ .execution-panel-header {flex-wrap:wrap;gap:4px 8px;}
+ .execution-panel-header .execution-status {order:2;flex-basis:100%;font-size:9px;}
+ .execution-panel-header strong {margin-right:auto;}
+ .execution-panel-footer {font-size:8px;gap:8px;}
+ .execution-zoom-hint {display:none;}
+ .execution-panel .execution-module {padding:5px 7px;row-gap:1px;}
+ .execution-module strong {font-size:10px;line-height:1.4;}
+ .execution-module small {font-size:8px;line-height:1.4;}
+ .chat-thread .execution-panel-viewport {max-height:clamp(220px,calc(100dvh - 500px),480px);}
+ .chat-thread .execution-panel-stage {height:max(clamp(220px,calc(100dvh - 500px),410px),var(--detail-height,0px));min-height:220px;}
+ .thread-header .inline-actions {align-self:flex-start;}
+}
+@container workspace (max-width:520px) {
+ .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:column-reverse;align-items:stretch;}
+ .chat-thread .execution-panel-viewport {max-height:clamp(180px,calc(100dvh - 550px),480px);}
+ .chat-thread .execution-panel-stage {height:max(clamp(180px,calc(100dvh - 550px),410px),var(--detail-height,0px));min-height:180px;}
+}
+@media(max-width:600px) {
+ .palette-backdrop {padding:16px;}
+ .palette-shell {max-height:calc(100dvh - 32px);}
+ .palette-list {max-height:none;}
+ .palette-header {padding:16px;}
+ .tool-permission-backdrop {padding:16px;}
+ .tool-permission-shell {width:100%;max-height:calc(100dvh - 32px);}
+ .neural-dashboard .topbar .pill-button {font-size:10px;padding:6px 8px;}
+ .neural-dashboard .composer-icon-button,.atomic-button {width:34px;height:34px;min-height:34px;flex-basis:34px;}
+ .neural-dashboard .model-picker-trigger {min-height:34px;padding:6px 8px;gap:5px;}
+ .model-picker-trigger small {display:none;}
+ .neural-dashboard .composer-bottom-right {gap:4px;}
+ .neural-dashboard .composer-actions {gap:4px;}
+ .execution-panel .execution-voice {display:none;}
+ .execution-panel-footer {flex-wrap:wrap;}
+ .execution-panel-footer span:last-child {max-width:100%;text-align:left;}
+}
+@media(max-height:660px) {
+ .neural-dashboard .topbar {min-height:44px;height:44px;}
+ .neural-dashboard-label {min-height:28px;padding-block:6px;}
+ .neural-dashboard .page {padding-block:12px;}
+ .execution-panel-footer {padding-block:6px;}
+}
+@keyframes space-surface-enter {from{opacity:0;transform:perspective(1200px) translate3d(0,14px,-55px);}to{opacity:1;transform:perspective(1200px) translate3d(0,0,0);}}
+@media(prefers-reduced-motion:reduce){.palette-shell,.tool-permission-shell{animation:none;}.neural-core-anchor,.neural-primary .neural-cluster{will-change:auto;}}
+.neural-shell:not([data-spatial-ready=true]) :is(.neural-core-anchor,.neural-cluster,.neural-branches,.neural-dashboard){transition:none!important;}
+
+/* A common light source: warm upper-left rims, cool lower-right occlusion.
+   The core socket is translucent; the GPU tissue remains visible inside it. */
+.neural-core-anchor:before {
+ content:"";position:absolute;left:0;top:0;width:var(--core-size);height:var(--core-size);
+ transform:translate(-50%,-50%);border-radius:50%;
+ background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(9,12,17,.13) 65%,rgba(171,145,102,.035) 71%,transparent 74%);
+ border:1px solid rgba(184,163,130,.065);
+ box-shadow:inset 2px 2px 9px #0005,inset -1px -1px 0 #dec29309,0 12px 30px #0002;
+ transition:width .76s cubic-bezier(.22,.78,.18,1),height .76s cubic-bezier(.22,.78,.18,1),opacity .5s;
+}
+.neural-core-anchor:after {
+ content:"M E L O  /  C O R E";position:absolute;left:0;top:calc(var(--core-size)/2 + 14px);
+ transform:translateX(-50%);white-space:nowrap;font:8px/1.4 "SF Mono",monospace;letter-spacing:.12em;color:#bbab8c;
+ transition:top .76s cubic-bezier(.22,.78,.18,1),opacity .4s;
+}
+.neural-shell:not([data-neural-stage=overview]) .neural-core-anchor:after {opacity:0;}
+.neural-shell[data-neural-stage=detail] .neural-core-anchor:before {opacity:.45;}
+.neural-primary .neural-orb,.neural-shell[data-neural-stage=overview] .neural-cluster.is-active .neural-orb {
+ border-radius:50%;width:66px;height:66px;border:1px solid #d3bd8f38;
+ background:radial-gradient(ellipse at 28% 18%,#e1c48e30,transparent 45%),radial-gradient(ellipse at 40% 35%,#4c402d77,#0b0e1399 78%);
+ box-shadow:inset 2px 2px 5px #f5dcac12,inset -8px -10px 16px #0009,0 9px 20px #0007,0 1px 0 #e8cb8f17;
+ transition:width .76s,height .76s,background .35s,box-shadow .35s,border-color .35s;
+}
+.neural-primary .neural-orb:before {inset:-5px;border-color:#c1ac7b12;transform:none;}
+.neural-primary .neural-orb:after {inset:4px;border-color:#c9b78f13;transform:none;}
+.neural-primary .neural-orb>span {font-size:23px;color:#d3c7b0;text-shadow:0 1px 5px #000;}
+.neural-primary .neural-cluster-copy {
+ min-width:76px;padding:8px 12px;border:1px solid #d5c09414;border-radius:10px;
+ background:linear-gradient(140deg,#3a342726,#0c10142e);box-shadow:inset 1px 1px #f5dcac07,0 4px 10px #0002;
+}
+.neural-primary .neural-cluster-copy strong {font-size:12px;letter-spacing:.06em;color:#e1d7c6;}
+.neural-primary .neural-cluster-copy small {font-size:7px;letter-spacing:.09em;color:#a89c87;}
+.neural-shell[data-neural-stage=overview] .neural-cluster[data-group=projects] .neural-cluster-copy {position:absolute;left:calc(50% + 46px);top:8px;}
+.neural-primary .neural-cluster:hover .neural-orb,
+.neural-primary .neural-cluster:focus-visible .neural-orb,
+.neural-shell[data-neural-stage=overview] .neural-cluster.is-active:hover .neural-orb,
+.neural-shell[data-neural-stage=overview] .neural-cluster.is-active:focus-visible .neural-orb,
+.neural-shell:not([data-neural-stage=overview]) .neural-cluster.is-active .neural-orb {
+ border-color:#dcc18b80;
+ background:radial-gradient(ellipse at 28% 18%,#ead2a346,transparent 45%),radial-gradient(ellipse at 43% 40%,#8b602770,#12130fbb 78%);
+ box-shadow:inset 2px 2px 7px #f5dcac22,inset -8px -10px 16px #0008,0 10px 24px #0006,0 0 24px #be884421;
+}
+.neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-orb {width:40px;height:40px;}
+.neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy {padding:5px 8px;min-width:64px;background:#18191a35;}
+.neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy small {font-size:6px;}
+.neural-shell[data-neural-stage=module] .neural-cluster:not(.is-active):not(:hover) {opacity:.76;}
+.neural-shell[data-neural-stage=detail] .neural-cluster:not(:hover) {filter:brightness(.90) saturate(.75);transform:translate(-50%,-50%) scale(.78);opacity:.68;}
+.neural-shell[data-neural-stage=detail] .neural-cluster.is-active:not(:hover) {filter:none;transform:translate(-50%,-50%) scale(.94);opacity:1;}
+/* The rail has a fixed anchor. Scale each orb around its own center so hover
+   cannot move the scene port or revive the overview's perspective turn. */
+.neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-cluster {
+ --rail-scale:.82;
+ transform:translate(-50%,-50%) scale(var(--rail-scale));
+}
+.neural-shell[data-neural-stage=detail] .neural-primary .neural-cluster {--rail-scale:.78;}
+.neural-shell[data-neural-stage=module] .neural-primary .neural-cluster.is-active {--rail-scale:1;}
+.neural-shell[data-neural-stage=detail] .neural-primary .neural-cluster.is-active {--rail-scale:.94;}
+.neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-orb {
+ transform-origin:center;
+ transition:width .76s,height .76s,transform .2s ease,filter .2s ease;
+}
+.neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-cluster:is(:hover,:focus-visible) {
+ transform:translate(-50%,-50%) scale(var(--rail-scale));
+ filter:brightness(1.22);opacity:1;
+}
+.neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-cluster:is(:hover,:focus-visible) .neural-orb {transform:scale(1.04);}
+.neural-branch {background:linear-gradient(135deg,#b69a6310,transparent 70%);border-color:#c9b1820b;box-shadow:inset 0 1px #f5dcac04;}
+.neural-branch:hover,.neural-branch.is-active {box-shadow:inset 1px 1px #f5dcac0d,0 5px 12px #0002;}
+.neural-branch.is-active>i {background:#e5be7a;box-shadow:0 0 9px #d6a65477;}
+.neural-branch strong {font-size:13px;}
+.neural-branches-heading>span {letter-spacing:.10em;color:var(--space-soft);}
+.neural-module-summary {border-left:1px solid var(--space-edge);padding:24px 0 24px 26px;}
+.neural-module-summary h1 {font-family:inherit;font-size:34px!important;font-weight:400;letter-spacing:-.04em;}
+.neural-module-summary p {max-width:240px;color:var(--space-muted);}
+.neural-home-caption p {font-size:14px;letter-spacing:.02em;color:#c6bca8;}
+.neural-home-composer .composer-card {background:var(--space-glass);box-shadow:var(--space-shadow);}
+.neural-dashboard .topbar {background:linear-gradient(110deg,#d2b78005,transparent 70%);}
+.neural-dashboard-label {letter-spacing:.06em;color:#a69983;}
+.neural-dashboard .page-title {font-family:inherit;font-weight:500;}
+.neural-shell[data-neural-stage=detail][data-flight=true] .neural-dashboard>.content-shell {animation:space-content-arrive .46s ease-out both;}
+@keyframes space-content-arrive {from{opacity:.32;}to{opacity:1;}}
+.execution-panel {background:linear-gradient(145deg,#1c1a1924,#0a0e141a);box-shadow:inset 1px 1px #f4deba08,inset -1px -1px #0003;}
+.execution-panel .execution-module {box-shadow:inset 1px 1px #f4deba0d,0 7px 16px #0004;}
+.execution-source {box-shadow:inset 1px 1px #f4deba09,0 5px 14px #0002;}
+@media(max-width:1100px) {
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy {min-width:44px;padding:4px 7px;}
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy small {display:none;}
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy strong {font-size:11px;}
+ .neural-branch strong {font-size:12px;}
+}
+@media(max-width:600px) {
+ .neural-primary .neural-orb {width:43px;height:43px;}
+ .neural-primary .neural-cluster-copy {min-width:56px;padding:5px 7px;}
+ .neural-primary .neural-cluster-copy small {display:none;}
+ .neural-core-anchor:after {font-size:6px;}
+ .neural-module-summary {display:none;}
+}
+@media(prefers-reduced-motion:reduce){.neural-core-anchor:before,.neural-core-anchor:after{transition:none;}.neural-shell .content-shell{animation:none!important;}}
+
+/* Navigation bodies are rendered as neural tissue in the shared scene.
+   Keep the full DOM hit boxes; remove every visible shell, including hover. */
+.neural-shell .neural-primary .neural-cluster .neural-orb {
+ background:transparent!important;border-color:transparent!important;box-shadow:none!important;
+}
+.neural-shell .neural-primary .neural-orb:before,.neural-shell .neural-primary .neural-orb:after {display:none;}
+.neural-shell .neural-primary .neural-orb>span {visibility:hidden;}
+.neural-core-anchor:before {border:0;background:none;box-shadow:none;}
+/* If neither renderer can be created, retain a readable borderless symbol. */
+.neural-shell:has(.neural-cosmos.is-fallback:not([data-renderer])) .neural-orb>span {visibility:visible;}
+
+/* Module identity follows the same palette as its neural lobe and light path. */
+.neural-primary .neural-cluster-copy {border-color:rgba(var(--neural-rgb),.22);background:linear-gradient(140deg,rgba(var(--neural-rgb),.10),#0c10142e);}
+.neural-primary .neural-cluster:hover .neural-cluster-copy,.neural-primary .neural-cluster:focus-visible .neural-cluster-copy {border-color:rgba(var(--neural-rgb),.52);box-shadow:inset 0 1px rgba(var(--neural-rgb),.12),0 4px 16px #0004;}
+.neural-primary .neural-cluster:hover .neural-cluster-copy strong,.neural-primary .neural-cluster:focus-visible .neural-cluster-copy strong {color:var(--neural-light);}
+.neural-branches-heading>span {color:var(--neural-light);}
+.neural-branch {background:linear-gradient(135deg,rgba(var(--neural-rgb),.075),transparent 70%);border-color:rgba(var(--neural-rgb),.06);}
+.neural-branch>i {background:var(--neural-color);box-shadow:0 0 6px rgba(var(--neural-rgb),.3);}
+.neural-branch:before {background:rgba(var(--neural-rgb),.3);}
+.neural-branch:hover,.neural-branch.is-active {background:rgba(var(--neural-rgb),.14);border-color:rgba(var(--neural-rgb),.32);}
+.neural-branch.is-active strong {color:var(--neural-light);}
+.neural-branch.is-active>i {background:var(--neural-light);box-shadow:0 0 9px rgba(var(--neural-rgb),.65);}
+
+/* The core is picked from its current projected depth, not a flat overlay. */
+.neural-shell[data-core-hover]:not([data-core-hover="-1"]) {cursor:pointer;}
+/* Keyboard focus belongs to the readable label, never a box around the volume. */
+.neural-primary .neural-cluster:focus-visible {outline:none;}
+.neural-primary .neural-cluster:focus-visible .neural-cluster-copy {outline:1px solid var(--neural-light);outline-offset:3px;}
+
+/* Let the constellation occupy the window, with a measured input dock below.
+   Geometry and GPU picking use the same sizes; no viewport-wide CSS zoom. */
+.neural-shell[data-neural-stage=overview] .neural-primary .neural-cluster .neural-orb {
+ width:var(--neural-home-orb,80px);height:var(--neural-home-orb,80px);
+}
+.neural-shell[data-neural-stage=overview] .neural-cluster {width:160px;gap:8px;}
+.neural-shell[data-neural-stage=overview] .neural-cluster-copy {padding:8px 14px;}
+.neural-shell[data-neural-stage=overview] .neural-cluster-copy strong {font-size:14px;}
+.neural-shell[data-neural-stage=overview] .neural-cluster-copy small {font-size:8px;}
+.neural-shell[data-neural-stage=overview] .neural-cluster[data-group=projects] .neural-cluster-copy {left:calc(50% + var(--neural-home-orb,80px)/2 + 10px);top:14px;}
+.neural-home-composer .composer-shell {position:relative;gap:8px;}
+.neural-home-composer .composer-conversation-choice {min-height:36px;margin:0;padding:0 116px 0 4px;}
+.neural-home-composer .image-task-options {position:absolute;right:4px;top:0;margin:0;z-index:6;}
+.neural-home-composer .image-task-options>button {min-height:36px;padding:6px 12px;font-size:11px;}
+.neural-home-composer .image-task-fields {
+ position:absolute;right:0;bottom:calc(100% + 10px);width:min(560px,calc(100vw - 64px));
+ max-height:min(320px,calc(100dvh - 160px));overflow:auto;padding:16px;
+ background:var(--space-floating);border-color:var(--space-edge-raised);border-radius:var(--space-radius-card);
+ box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur));-webkit-backdrop-filter:blur(var(--space-blur));
+}
+.neural-home-composer .composer-card {padding:12px 14px;}
+.neural-home-composer .composer-textarea {font-size:14px;min-height:44px;}
+.neural-home-caption {margin-bottom:12px;}
+.neural-home-caption p {font-size:16px;margin:7px 0;}
+.neural-shell[data-neural-stage=module] .neural-branch {min-height:66px;padding:12px;}
+.neural-shell[data-neural-stage=module] .neural-branch strong {font-size:14px;}
+.neural-shell[data-neural-stage=module] .neural-branch small {font-size:11px;}
+.neural-shell[data-neural-stage=module] .neural-branches-heading h2 {font-size:26px;}
+@media(max-width:700px) {
+ .neural-shell[data-neural-stage=overview] .neural-cluster {width:100px;gap:5px;}
+ .neural-shell[data-neural-stage=overview] .neural-cluster-copy {padding:6px 8px;}
+ .neural-shell[data-neural-stage=overview] .neural-cluster-copy strong {font-size:12px;}
+ .neural-home-composer .composer-card {padding:8px 10px;}
+}
+.neural-shell[data-neural-stage=overview] .neural-core-anchor:after {display:none;}

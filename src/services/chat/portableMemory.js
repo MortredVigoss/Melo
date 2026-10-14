@@ -1,0 +1,108 @@
+import { createHash } from 'node:crypto';
+import { iterateMemoryRecords, getMemoriesByIds, upsertMemory, withTransaction } from '../../memory/store.js';
+import { quarantineDeletedChatFacts } from '../../memory/factRecords.js';
+import { factNamespace, normalizedFact } from '../../memory/factPolicy.js';
+import { putWorkspace, stableJSON, mergeWorkspaces } from '../../../mobile-sync/workspaceProtocol.js';
+
+export const portableMemoryID = id => 'memory_' + createHash('sha256').update(id).digest('hex');
+// Older clients omit validity. Preserve the real timestamp unless they
+// explicitly change state; newer clients transmit validTo, including null.
+function portableValidTo(v, prior) {
+  if (Object.hasOwn(v, 'validTo')) return v.validTo || (['historical','forgotten'].includes(v.status) ? prior?.metadata.validTo || v.updatedAt : null);
+  if (v.status === 'active' && (prior?.metadata.forgotten || prior?.metadata.quarantined)) return null;
+  return prior?.metadata.validTo || (['historical','forgotten'].includes(v.status) ? v.updatedAt : null);
+}
+function value(row) {
+  const m=row.metadata || {};
+  return {id:portableMemoryID(row.id),memoryID:row.id,text:row.text,originalFact:m.originalFact || row.text,
+    scope:m.scope || 'chat',status:m.mergedInto?'historical':m.forgotten?'forgotten':m.quarantined?'unconfirmed':m.validTo && Date.parse(m.validTo)<=Date.now()?'historical':'active',
+    chatId:m.chatId,messageId:m.sourceMessageId || '',projectId:m.projectId || '',agentId:m.agentId || 'main',
+    sourceText:String(m.sourceText || '').slice(0,1600),category:m.category || 'general',updatedAt:row.updatedAt,userEdited:m.userEdited===true,validTo:m.validTo || null,
+    ...(m.mergedInto ? {mergedInto:m.mergedInto} : {})};
+}
+export function refreshPortableMemory(state) {
+  const live=new Set(state.chats.filter(c=>!c.externalThreadKey).map(c=>c.id)), expected=new Map();
+  for(const row of iterateMemoryRecords()) {
+    if(!live.has(row.metadata.chatId) || row.metadata.audience==='remote')continue;
+    const v=value(row); if(!v.text || v.text.length>2000 || v.originalFact.length>2000)continue;
+    expected.set(row.id,stableJSON(v));
+    putWorkspace(state.mobileWorkspaceSync,'memory',v.id,v,state.mobileWorkspaceDevice);
+  }
+  return expected;
+}
+
+// The workspace and its redo journal must reach the state manifest before the
+// separate memory database is touched. Replaying after a crash is idempotent.
+export function stagePortableMemory(state, expected, baseline) {
+  for (const r of state.mobileWorkspaceSync?.records || []) {
+    if (r.kind !== 'memory') continue;
+    for (const {value:v} of r.versions) {
+      const prior = getMemoriesByIds([v.memoryID])[0];
+      if (r.id !== portableMemoryID(v.memoryID) || v.id !== r.id) throw new Error('Memory identity mismatch');
+      if (prior && (prior.kind !== 'session-fact' || prior.metadata.chatId !== v.chatId || prior.metadata.audience === 'remote')) throw new Error('Memory source mismatch');
+      if (v.mergedInto !== undefined && v.mergedInto !== prior?.metadata.mergedInto) throw new Error('Memory merge source mismatch');
+    }
+  }
+  state.mobileMemoryPending = {
+    expected: [...expected],
+    clocks: Object.fromEntries((baseline?.records || []).filter(r => r.kind === 'memory').map(r => [r.id,
+      r.versions.reduce((clock, v) => { for (const [device,n] of Object.entries(v.clock)) clock[device] = Math.max(clock[device] || 0,n); return clock; }, {})])),
+  };
+  attachMemoryFacts(state);
+}
+function attachMemoryFacts(state) {
+  for (const r of state.mobileWorkspaceSync?.records || []) {
+    if (r.kind !== 'memory' || r.versions.length !== 1) continue;
+    const v = r.versions[0].value;
+    const chat = state.chats.find(c => c.id === v.chatId && !c.externalThreadKey);
+    if (!chat) continue;
+    if (r.id !== portableMemoryID(v.memoryID) || v.id !== r.id) throw new Error('Memory identity mismatch');
+    chat.sessionMemory ||= [];
+    if (!chat.sessionMemory.some(f => normalizedFact(f.fact) === normalizedFact(v.originalFact))) chat.sessionMemory.push({fact:v.originalFact,category:v.category,sourceMessageId:v.messageId,sourceRole:'user',sourceText:v.sourceText,extractedAt:v.updatedAt});
+  }
+}
+export function replayPortableMemory(state) {
+  const pending = state.mobileMemoryPending;
+  if (!pending) return;
+  const expected = new Map(pending.expected);
+  for (const r of state.mobileWorkspaceSync?.records || []) {
+    if (r.kind !== 'memory') continue;
+    const v = r.versions[0].value, prior = getMemoriesByIds([v.memoryID])[0];
+    if (!prior || stableJSON(value(prior)) === expected.get(v.memoryID) || r.versions.some(x => stableJSON(x.value) === stableJSON(value(prior)))) continue;
+    // A desktop edit after the durable handoff is a concurrent version, never
+    // an excuse to overwrite either edit. This actor only advances on recovery.
+    const clock = {...pending.clocks[r.id]};
+    clock['memory-recovery'] = (clock['memory-recovery'] || 0) + 1;
+    state.mobileWorkspaceSync = mergeWorkspaces(state.mobileWorkspaceSync, {version:1,records:[{kind:'memory',id:r.id,versions:[{clock,value:value(prior)}]}]});
+  }
+  applyPortableMemory(state);
+  state.mobileMemoryPending = null;
+}
+export function applyPortableMemory(state, expected=null) {
+  const rows=(state.mobileWorkspaceSync?.records || []).filter(r=>r.kind==='memory');
+  const local=new Map(state.chats.filter(c=>!c.externalThreadKey).map(c=>[c.id,c]));
+  withTransaction(()=>{
+    const deleted=new Set((state.mobileDeletedChats || []).map(r=>r.id));
+    quarantineDeletedChatFacts(deleted);
+    for(const register of rows) {
+      const v=register.versions[0].value;
+      if(register.id!==portableMemoryID(v.memoryID) || v.id!==register.id)throw new Error('Memory identity mismatch');
+      if(!local.has(v.chatId))continue;
+      const prior=getMemoriesByIds([v.memoryID])[0];
+      if(prior && (prior.kind!=='session-fact' || prior.metadata.chatId!==v.chatId || prior.metadata.audience==='remote'))throw new Error('Memory source mismatch');
+      if(v.mergedInto!==undefined && v.mergedInto!==prior?.metadata.mergedInto)throw new Error('Memory merge source mismatch');
+      if(expected && (prior ? stableJSON(value(prior)) : undefined)!==expected.get(v.memoryID))throw Object.assign(new Error('记忆在同步期间变化，请重新同步；新内容未被覆盖。'),{statusCode:409});
+      if(register.versions.length>1) {
+        if(prior && !prior.metadata.mobileSyncConflict)upsertMemory({...prior,metadata:{...prior.metadata,mobileSyncConflict:true}});
+        continue;
+      }
+      if(prior && stableJSON(value(prior))===stableJSON(v) && !prior.metadata.mobileSyncConflict)continue;
+      const chat=local.get(v.chatId);
+      const metadata={...prior?.metadata,originalFact:v.originalFact,chatId:v.chatId,chatTitle:chat.title,projectId:v.projectId || null,agentId:v.agentId,
+        sourceMessageId:v.messageId || null,sourceText:v.sourceText,sourceRole:'user',source:chat.source || 'desktop',audience:'local',category:v.category,
+        scope:v.scope,userEdited:v.userEdited,forgotten:v.status==='forgotten',quarantined:v.status==='unconfirmed',validTo:portableValidTo(v, prior),mobileSyncConflict:false};
+      upsertMemory({id:v.memoryID,namespace:factNamespace({id:v.chatId,projectId:v.projectId},v.scope,v.agentId),kind:'session-fact',sourceId:v.chatId,text:v.text,searchText:normalizedFact(v.text),createdAt:prior?.createdAt || v.updatedAt,updatedAt:v.updatedAt,metadata});
+    }
+  });
+  attachMemoryFacts(state);
+}

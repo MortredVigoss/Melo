@@ -1,31 +1,11 @@
-/**
- * embeddings.js
- *
- * Text embedding generation for semantic memory search.
- *
- * Preferred path: delegate to the `embedProviders/` abstraction.  That module
- * implements MELO_EMBED_PROVIDER resolution (ollama / openai / custom http)
- * and its own LRU cache.  This file only falls back to its legacy
- * pick-a-backend logic when the abstraction did not produce a provider (boot
- * order quirk, an old import cycle, a test that skipped the runtime wiring).
- *
- * Keeping the legacy path means a plain `import { getEmbedding }` still
- * works even in the smallest scripts that never boot the runtime, while the
- * full app goes through the configured provider.
- *
- * Returns Float32Array(1024) or null if no backend is available.
- *
- * The caller should treat null as "semantic search unavailable" and fall back
- * to the existing keyword-based recall.
- */
+/** Text embeddings from Melo's selected provider. Built-in inference is the
+ * default; failures return null so retrieval can use keywords. No automatic
+ * switch to another app, service, or API. */
 
 import { getEmbeddingProvider } from './embedProviders/createEmbeddingProvider.js';
 
 export const EMBEDDING_DIMS = 1024;
 
-const OLLAMA_BASE = 'http://localhost:11434';
-const OLLAMA_MODEL = 'bge-m3';
-const EMBED_TIMEOUT_MS = 8_000;
 
 // ─── LRU cache ────────────────────────────────────────────────────────────────
 
@@ -92,112 +72,11 @@ function toStandardDims(arr) {
   return l2Normalize(out);
 }
 
-// ─── Ollama backend ───────────────────────────────────────────────────────────
-
-async function embedWithOllama(text) {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), EMBED_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${OLLAMA_BASE}/api/embed`, {
-      method: 'POST',
-      signal: ac.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: OLLAMA_MODEL, input: text }),
-    });
-    if (!res.ok) throw new Error(`ollama embed ${res.status}`);
-    const data = await res.json();
-    // Response: { embeddings: [[...]] }
-    const raw = data?.embeddings?.[0] ?? data?.embedding;
-    if (!Array.isArray(raw) || !raw.length) throw new Error('empty embedding');
-    return toStandardDims(new Float32Array(raw));
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ─── OpenAI backend ───────────────────────────────────────────────────────────
-
-async function embedWithOpenAI(text, apiKey) {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), EMBED_TIMEOUT_MS);
-  try {
-    const res = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      signal: ac.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-large',
-        input: text,
-        dimensions: EMBEDDING_DIMS,
-      }),
-    });
-    if (!res.ok) throw new Error(`openai embed ${res.status}`);
-    const data = await res.json();
-    const raw = data?.data?.[0]?.embedding;
-    if (!Array.isArray(raw) || !raw.length) throw new Error('empty embedding');
-    return toStandardDims(new Float32Array(raw));
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ─── Backend availability cache ───────────────────────────────────────────────
-
-// Cache which backend works to avoid repeated failed requests.
-// Resets every 5 minutes so transient failures don't lock out a backend forever.
-let _backendCache = null;
-let _backendCacheAt = 0;
-const BACKEND_CACHE_TTL_MS = 5 * 60 * 1000;
-
-async function pickBackend(config) {
-  const now = Date.now();
-  if (_backendCache !== null && now - _backendCacheAt < BACKEND_CACHE_TTL_MS) {
-    return _backendCache;
-  }
-
-  // 1. Try ollama (check tags endpoint, fast)
-  try {
-    const ac = new AbortController();
-    setTimeout(() => ac.abort(), 2_000);
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: ac.signal });
-    if (res.ok) {
-      const data = await res.json();
-      const hasModel = (data?.models ?? []).some(m =>
-        String(m?.name || '').toLowerCase().includes('bge-m3'),
-      );
-      if (hasModel) {
-        _backendCache = { type: 'ollama' };
-        _backendCacheAt = now;
-        return _backendCache;
-      }
-    }
-  } catch {
-    // ollama not running or model not found
-  }
-
-  // 2. Try OpenAI API key — skipped entirely when the user pins offline mode.
-  if (process.env.MELO_OFFLINE_ONLY !== '1') {
-    const openaiKey = process.env.OPENAI_API_KEY || process.env.MELO_API_KEY || config?.apiKey;
-    if (openaiKey && !openaiKey.includes('chatgpt') && openaiKey.startsWith('sk-')) {
-      _backendCache = { type: 'openai', key: openaiKey };
-      _backendCacheAt = now;
-      return _backendCache;
-    }
-  }
-
-  _backendCache = { type: 'none' };
-  _backendCacheAt = now;
-  return _backendCache;
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
  * Generate an embedding for the given text.
- * Returns Float32Array(768) or null if no embedding backend is available.
+ * Returns Float32Array(1024) or null if no embedding backend is available.
  *
  * @param {string} text
  * @param {object} [config]  Melo resolved config (for API key fallback)
@@ -207,8 +86,8 @@ export async function getEmbedding(text, config = {}) {
   const normalized = String(text || '').trim();
   if (!normalized) return null;
 
-  // Truncate to 512 chars — more than enough for a short memory fact
-  const input = normalized.slice(0, 512);
+  // Bound model input; longer source text remains available in the store.
+  const input = normalized.slice(0, 8192);
 
   // ── Preferred: delegate to the embedProviders abstraction so MELO_EMBED_PROVIDER
   //    selection (and its LRU cache) applies uniformly across the app.
@@ -219,54 +98,24 @@ export async function getEmbedding(text, config = {}) {
       const cachedProvider = cacheGet(providerModelId, input);
       if (cachedProvider) return cachedProvider;
       const vec = await provider.embed(input);
+      if (provider.observedDims != null && provider.observedDims !== EMBEDDING_DIMS) return null;
       if (vec) {
         // Some custom providers may return a non-1024-dim vector; normalise
         // to the store's canonical EMBEDDING_DIMS so sqlite-vec doesn't
         // silently reject it.
         const out = vec.length === EMBEDDING_DIMS ? vec : toStandardDims(new Float32Array(vec));
+        Object.defineProperty(out, 'modelId', {value:providerModelId,configurable:true});
         cacheSet(providerModelId, input, out);
         return out;
       }
-      // Provider returned null — fall through to the legacy picker below,
-      // which may still succeed via a different transport.
+      // A unavailable provider leaves lexical retrieval available.
     }
   } catch {
-    // provider boot failure shouldn't kill recall — fall through
+    // Provider failure must not break chat or change inference providers.
   }
 
-  const backend = await pickBackend(config);
-  // Legacy picker uses well-known model ids; cache under them so a later
-  // provider swap can't return these vectors to the wrong caller.
-  const legacyModelId =
-    backend.type === 'ollama' ? `ollama:${OLLAMA_MODEL}` :
-    backend.type === 'openai' ? 'openai:text-embedding-3-large' :
-    null;
-
-  if (legacyModelId) {
-    const cachedLegacy = cacheGet(legacyModelId, input);
-    if (cachedLegacy) return cachedLegacy;
-  }
-
-  try {
-    let embedding = null;
-
-    if (backend.type === 'ollama') {
-      embedding = await embedWithOllama(input);
-    } else if (backend.type === 'openai') {
-      embedding = await embedWithOpenAI(input, backend.key);
-    } else {
-      return null; // no backend available
-    }
-
-    if (embedding) {
-      cacheSet(legacyModelId, input, embedding);
-      return embedding;
-    }
-  } catch {
-    // On failure, invalidate backend cache so next call retries
-    _backendCache = null;
-  }
-
+  // A missing/busy bundled model degrades to keyword retrieval. Never start
+  // another application or send memory text to a fallback API.
   return null;
 }
 

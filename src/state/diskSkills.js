@@ -18,7 +18,7 @@
 // added.
 
 import { loadSkillsFromDisk } from '../agents/skillsDisk.js';
-import { BUILTIN_SKILLS, normalizeCustomSkill } from '../services/skill/skillService.js';
+import { BUILTIN_SKILLS, normalizeCustomSkill } from '../domain/skill/skillService.js';
 
 export async function mergeDiskSkillsIntoState(state) {
   let diskSkills = [];

@@ -195,6 +195,7 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
     ].join('\n');
     let voiceText = await createOpenAICompatibleReply({
       authMode: config.authMode,
+      apiProtocol: config.apiProtocol,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,

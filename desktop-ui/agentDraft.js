@@ -74,6 +74,7 @@ export function agentDraftFromProfile(agent) {
       : [];
   return {
     name: agent?.name || '',
+    avatarData: agent?.avatarData || '',
     laneLabel: agent?.laneLabel || '',
     description: agent?.description || '',
     rolePrompt: agent?.rolePrompt || '',

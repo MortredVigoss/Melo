@@ -1,0 +1,21 @@
+.settings-edit-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;grid-column:1/-1;padding:12px 0;margin-bottom:16px;border-bottom:1px solid #bcad9424}
+.settings-save-status{font-size:13px;line-height:1.6;color:var(--text-secondary,#aaa69e)}
+.settings-edit-toolbar[data-edit-status=dirty] .settings-save-status,.settings-edit-toolbar[data-edit-status=editing] .settings-save-status{color:#dec087}
+.settings-edit-toolbar .small-button.settings-save-button{background:#d0ac6c;color:#171b20;border:1px solid #e4c48f;box-shadow:0 0 14px #d0ac6c18;font-weight:650;min-width:104px}
+.settings-edit-toolbar[data-edit-status=saving] .settings-save-button{background:#314f69;color:#d8edff;border-color:#6487a3;opacity:1}
+.settings-edit-toolbar[data-edit-status=saved] .settings-save-status{color:#a2ddbc;background:#55967522;border:1px solid #73b99355;border-radius:8px;padding:6px 12px}
+.settings-edit-toolbar[data-edit-status=error] .settings-save-status{color:#f0aaa2}
+.settings-edit-toolbar[data-edit-status=error] .settings-save-button{background:#663b3a;color:#ffe6e1;border-color:#d38b83}
+.settings-edit-toolbar .settings-save-button:disabled:not([data-edit-status=saving] *){opacity:.5;box-shadow:none;cursor:default}
+[data-settings-managed] :disabled,.local-settings fieldset:disabled{cursor:default}
+.local-settings fieldset{border:0;padding:0;margin:0;min-width:0}
+.local-settings fieldset:disabled input,.local-settings fieldset:disabled select,[data-settings-managed] input:disabled,[data-settings-managed] textarea:disabled,[data-settings-managed] select:disabled{opacity:.78}
+@media(max-width:600px){.settings-edit-toolbar{align-items:flex-start}.settings-edit-toolbar>.inline-actions{margin-left:auto}.settings-edit-toolbar .small-button{min-height:40px}}
+
+.settings-connection-fields{border:0;margin:0;padding:0;display:grid;gap:14px;min-width:0}
+.agent-selector-caption{font-size:11px;opacity:.7;margin-right:4px}
+.agent-selector-dropdown header{padding:12px 14px 8px;border-bottom:1px solid #bcad9424;margin-bottom:6px}
+.agent-selector-dropdown header p{font-size:12px;line-height:1.6;color:var(--text-secondary);margin:6px 0}
+.composer-conversation-choice{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+
+[data-settings-managed] button[hidden], [data-action=submit-agent-profile][hidden]{display:none!important}

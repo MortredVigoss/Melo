@@ -21,8 +21,8 @@ import { findProjectById } from '../../state/stateLookups.js';
 import { effectiveAgentProfile } from '../../state/agentProfiles.js';
 import { buildWorkspaceSnapshot } from '../workspace/workspaceSnapshot.js';
 import { taskExecutionPrompt } from '../task/taskPrompt.js';
-import { normalizeTasks } from '../task/taskService.js';
-import { normalizeApprovals } from '../approval/approvalService.js';
+import { normalizeTasks } from '../../domain/task/taskService.js';
+import { normalizeApprovals } from '../../domain/approval/approvalService.js';
 import { normalizeConversationSnippet } from '../../memory/heuristics.js';
 import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildProjectContextSection } from '../project/projectContext.js';
@@ -102,9 +102,10 @@ export async function runTaskAgentExecutionGraph({
       async 'invoke-task-model'(graphState) {
         const reply = await createOpenAICompatibleReply({
           authMode: config.authMode,
-          apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-          baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-          model: process.env.MELO_MODEL || graphState.profile.model || config.model,
+          apiProtocol: config.apiProtocol,
+          apiKey: config.activeLlmProfileId ? config.apiKey : process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
+          baseUrl: config.activeLlmProfileId ? config.baseUrl : process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
+          model: config.activeLlmProfileId ? config.model : process.env.MELO_MODEL || graphState.profile.model || config.model,
           systemPrompt: graphState.systemPrompt,
           messages: [{ role: 'user', content: graphState.taskPrompt }],
         });

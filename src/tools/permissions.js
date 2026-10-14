@@ -1,3 +1,9 @@
+import { scopeMatches } from '../safety/permissionContext.js';
+import { recordPermission } from '../safety/permissionAudit.js';
+import { permissionReceipt, rememberPermissionDecision } from '../safety/permissionReceipts.js';
+import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
+import { createRequestContext } from '../runtime/requestContext.js';
+import { resolveRuntimePaths } from '../runtime/paths.js';
 /**
  * Tool permission manager.
  *
@@ -36,8 +42,7 @@ const sessionAlwaysDeny = new Map();
 const DEFAULT_CHAT_SCOPE = '__default__';
 
 function scopeKey(chatId) {
-  if (chatId === undefined || chatId === null || chatId === '') return DEFAULT_CHAT_SCOPE;
-  return String(chatId);
+  return JSON.stringify([resolveRuntimePaths().home, String(chatId || DEFAULT_CHAT_SCOPE)]);
 }
 
 function ensureChatBucket(map, chatId) {
@@ -81,7 +86,8 @@ export async function checkPermissionRule(toolId, args = {}, chatId = undefined)
     const config = await getResolvedConfig();
     const rules = Array.isArray(config.toolPermissionRules) ? config.toolPermissionRules : [];
     for (const rule of rules) {
-      if (rule.toolId === toolId) {
+      if (rule.toolId === toolId && scopeMatches(rule.permissionScope, currentRequestContext()?.permissionScope)) {
+        recordPermission({operation:toolId,decision:rule.action,reason:rule.permissionScope ? '匹配角色与项目授权' : '匹配原有全局工具授权',ruleId:rule.id || rule.toolId});
         if (rule.action === 'allow') return 'allow';
         if (rule.action === 'deny') return 'deny';
       }
@@ -104,8 +110,14 @@ export async function checkPermissionRule(toolId, args = {}, chatId = undefined)
  * @param {string}   [chatId]      - scopes session-level rules to this chat
  * @returns {Promise<void>}        - resolves if allowed, throws if not
  */
-export async function requestPermission(toolId, args, sseEmitter, signal, chatId = undefined) {
+export async function requestPermission(toolId, args, sseEmitter, signal, chatId = undefined, context = null) {
+  context ||= currentRequestContext() || createRequestContext({ chatId, signal });
+  if (currentRequestContext() !== context) {
+    return runWithRequestContext(context, () => requestPermission(toolId, args, sseEmitter, signal, chatId, context));
+  }
+  signal?.throwIfAborted();
   const rule = await checkPermissionRule(toolId, args, chatId);
+  signal?.throwIfAborted();
   if (rule === 'allow') return;
   if (rule === 'deny') throw new Error(`Tool "${toolId}" is not permitted by policy.`);
 
@@ -114,6 +126,7 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRequests.delete(requestId);
+      signal?.removeEventListener('abort', onAbort);
       reject(new Error(`Permission request for "${toolId}" timed out after ${PERMISSION_TIMEOUT_MS / 1000}s.`));
     }, PERMISSION_TIMEOUT_MS);
 
@@ -129,7 +142,9 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
       // Stash chatId on the pending entry so that resolvePermission can
       // key session rules to the right chat without requiring the UI to
       // echo it back in the POST body.
-      chatId: scopeKey(chatId),
+      chatId,
+      context,
+      toolId,
       resolve: () => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
@@ -150,6 +165,10 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
         requestId,
         toolId,
         args,
+        chatId,
+        runId: context.runId,
+        turnRequestId: context.requestId,
+        permissionScope: context.permissionScope || null,
       });
     }
   });
@@ -165,7 +184,18 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
  */
 export async function resolvePermission(requestId, granted, scope = 'once', toolId = '') {
   const pending = pendingRequests.get(requestId);
-  if (!pending) return { ok: false, reason: 'Unknown or expired request.' };
+  if (!pending) return permissionReceipt(requestId) || { ok: false, reason: 'Unknown or expired request.' };
+  if (pending.context.home !== resolveRuntimePaths().home) return { ok: false, reason: 'Permission belongs to another home.' };
+  if (toolId && toolId !== pending.toolId) return { ok: false, reason: 'Tool does not match the permission request.' };
+  toolId = pending.toolId;
+  if (currentRequestContext() !== pending.context) {
+    return runWithRequestContext(pending.context, () => resolvePermission(requestId, granted, scope, toolId));
+  }
+  if (pending.context.signal?.aborted) return { ok: false, reason: 'Request was cancelled.' };
+  if (pending.resolving) return { ok: false, reason: 'A decision is already being applied.' };
+  if (!['once', 'session', 'always'].includes(scope)) return { ok: false, reason: 'Invalid permission scope.' };
+  pending.resolving = true;
+  try {
 
   // The chatId was captured when the request was created; using it here
   // guarantees session rules land in the right per-chat bucket even if
@@ -186,6 +216,8 @@ export async function resolvePermission(requestId, granted, scope = 'once', tool
     }
   }
 
+  recordPermission({operation:toolId,decision:granted ? 'allow' : 'deny',reason:`用户决定 · ${scope}`}, pending.context);
+  rememberPermissionDecision(requestId);
   if (granted) {
     pending.resolve();
   } else {
@@ -193,6 +225,10 @@ export async function resolvePermission(requestId, granted, scope = 'once', tool
   }
 
   return { ok: true };
+  } catch (error) {
+    pending.resolving = false;
+    return { ok: false, reason: `无法保存授权：${error.message}` };
+  }
 }
 
 /**
@@ -210,6 +246,7 @@ export async function resolvePermission(requestId, granted, scope = 'once', tool
  * "Always allow" on any tool.
  */
 export async function persistPermissionRule(toolId, action) {
+  const permissionScope = currentRequestContext()?.permissionScope || null;
   try {
     // Wrap in withConfigLock so two concurrent "Always allow" clicks
     // (or a permission write racing an updateModelConfig) can't both
@@ -218,16 +255,16 @@ export async function persistPermissionRule(toolId, action) {
     await withConfigLock(async () => {
       const current = await loadConfig();
       const rules = Array.isArray(current.toolPermissionRules) ? [...current.toolPermissionRules] : [];
-      const idx = rules.findIndex(r => r.toolId === toolId);
+      const idx = rules.findIndex(r => r.toolId === toolId && JSON.stringify(r.permissionScope || null) === JSON.stringify(permissionScope));
       if (idx >= 0) {
-        rules[idx] = { toolId, action };
+        rules[idx] = { toolId, action, ...(permissionScope ? {permissionScope,id:rules[idx].id || randomUUID(),createdAt:Date.now()} : {}) };
       } else {
-        rules.push({ toolId, action });
+        rules.push({ toolId, action, ...(permissionScope ? {permissionScope,id:randomUUID(),createdAt:Date.now()} : {}) });
       }
       await saveConfig({ ...current, toolPermissionRules: rules });
     });
-  } catch {
-    // Non-fatal — rule just won't persist
+  } catch (error) {
+    throw error;
   }
 }
 

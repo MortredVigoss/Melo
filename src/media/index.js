@@ -12,6 +12,7 @@ import { extractYoutubeContent } from './extractors/youtubeExtractor.js';
 import { detectUrlKind } from './urlDetector.js';
 import { isSocialLinkUrl, readSocialLink } from '../services/search/socialLinkReader.js';
 import { logSearchTrail } from '../services/search/trailLogger.js';
+import { createCapabilityRecorder, describeMediaEvidence } from '../runtime/capabilities.js';
 
 const VALID_EXTRACTED_MEDIA_KINDS = new Set(['transcript', 'caption', 'article', 'summary']);
 let TOTAL_BUDGET_MS = 30000;
@@ -399,6 +400,7 @@ export function memoryKindForExtractedMedia(kind = '') {
 }
 
 export async function enrichMessageWithMediaContext(message, context = {}) {
+  const record = createCapabilityRecorder({ config: context.config });
   if (!message || typeof message !== 'object') {
     return message;
   }
@@ -410,6 +412,13 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
 
   if (Array.isArray(message.extractedMedia) && message.extractedMedia.length) {
     message.extractedMedia = normalizeExtractedMedia(message.extractedMedia);
+    for (const entry of message.extractedMedia) {
+      const attachment = (Array.isArray(message.attachments) ? message.attachments : []).find(item => item?.id && item.id === entry.attachmentId);
+      if (!attachment) continue;
+      // Reused/on-device text proves available context, not a fresh backend run.
+      const evidence = describeMediaEvidence(attachment, entry, { ...context, cached: true });
+      void record(evidence.id, evidence);
+    }
     return message;
   }
 
@@ -421,9 +430,13 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
 
   const deadline = Date.now() + totalBudgetForAttachments(attachments);
   const extractionTasks = attachments.map(async attachment => {
+    // Explicit closed-context/no-network requests must not prefetch links before routing.
+    if (context.allowRemoteExtraction === false && /^https?:\/\//iu.test(attachment.url || '')) return null;
     const cacheKey = `${attachment.kind}:${attachment.url}`;
     const cached = await getCachedExtraction(cacheKey);
     if (cached && !shouldBypassCachedExtraction(attachment, cached)) {
+      const evidence = describeMediaEvidence(attachment, cached, { ...context, cached: true });
+      void record(evidence.id, evidence);
       return {
         attachmentId: attachment.id || null,
         ...cached,
@@ -449,6 +462,8 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
         signal => routeExtraction(attachment, context, signal).catch(() => null),
         remaining,
       );
+      const evidence = describeMediaEvidence(attachment, result, context);
+      void record(evidence.id, evidence);
       if (!result) {
         return null;
       }

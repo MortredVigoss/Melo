@@ -196,3 +196,12 @@ test('P2-10: buildFrameEntry emits the hash-based id on its entry + metadata', (
   assert.equal(entry.metadata.frameId, expected);
   assert.match(entry.id, /^frame:chat-p210-entry:[0-9a-f]{16}$/);
 });
+
+test('frames split from messages sharing the same timestamp retain distinct stable identities', () => {
+  const chat = { id: 'same-ms-import', messages: Array.from({ length: 40 }, (_, i) =>
+    makeMsg(i % 2 ? 'assistant' : 'user', `Unique imported content ${i}`, 0, { id: `message-${i}` })) };
+  const frames = splitFrames(chat.messages);
+  assert.ok(frames.length > 1);
+  const ids = frames.map(frame => buildFrameId(chat, frame));
+  assert.equal(new Set(ids).size, frames.length);
+});

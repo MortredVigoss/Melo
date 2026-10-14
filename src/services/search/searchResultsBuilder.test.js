@@ -121,3 +121,10 @@ test('buildSearchResults exposes real Customize subsections for Memory, Safety, 
   assert.equal(byId.get('feature-advanced')?.action?.section, 'advanced');
   assert.equal(byId.has('feature-runtime'), false, 'legacy runtime feature should not be emitted');
 });
+
+
+test('exact filename is not displaced by the first twenty fuzzy matches', async () => {
+  const filePaths = [...Array.from({ length: 30 }, (_, i) => `assets/melo-icon-${i}.png`), 'melo-smoke-output.md'];
+  const result = await buildSearchResults('melo-smoke', fixtureState(), { ...EMPTY_WORKSPACE, filePaths });
+  assert.equal(result.files[0]?.filePath, 'melo-smoke-output.md');
+});

@@ -35,7 +35,7 @@ import {
   readdir,
   open,
 } from 'node:fs/promises';
-import { writeSync, ftruncateSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
+import { readFileSync, writeSync, ftruncateSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
 import { constants as fsConstants } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
 
@@ -476,6 +476,10 @@ export async function restoreFromBackup(operationId, opts = {}) {
   const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
 
   if (target.wasMissing) {
+    if ('expectedCurrentHash' in opts) {
+      const bytes = await readFile(resolvedTarget).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+      if ((bytes ? createHash('sha256').update(bytes).digest('hex') : null) !== opts.expectedCurrentHash) throw new Error('文件在恢复前发生变化，请重新预览。');
+    }
     // Round 13 follow-up #5 (Codex 🔴): undo-create unlink uses
     // unlinkatChecked so the {dev, ino} probe and the unlinkat
     // syscall happen on the SAME dirfd. Bare atomicUnlink would
@@ -501,7 +505,7 @@ export async function restoreFromBackup(operationId, opts = {}) {
       openLeaf = await atomicOpenLeaf(
         resolvedParent,
         resolvedLeaf,
-        DC.O_WRONLY | DC.O_CREAT | DC.O_TRUNC,
+        DC.O_RDWR | DC.O_CREAT,
         0o644,
       );
     } catch (err) {
@@ -524,6 +528,12 @@ export async function restoreFromBackup(operationId, opts = {}) {
         );
       }
       const buf = await readFile(beforePath);
+      if ('expectedCurrentHash' in opts) {
+        const current = readFileSync(openLeaf.leafFd);
+        const hash = createHash('sha256').update(current).digest('hex');
+        if (hash !== opts.expectedCurrentHash && !(opts.expectedCurrentHash === null && current.length === 0)) throw new Error('文件在恢复前发生变化，请重新预览。');
+      }
+      ftruncateSync(openLeaf.leafFd, 0);
       writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
     } finally {
       openLeaf.closeLeaf();

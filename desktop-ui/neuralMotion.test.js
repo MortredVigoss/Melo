@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
+import {captureNeuralLayout,animateNeuralLayout} from './neuralMotion.js';
+
+test('spatial flight preserves the visible origin through interruption and respects static mode',t=>{
+ const dom=new JSDOM(`<div class="neural-shell" data-neural-stage="overview"><div class="neural-core-anchor"></div>${Array.from({length:5},()=>'<button class="neural-cluster"></button>').join('')}<aside class="neural-branches"></aside><section class="neural-dashboard"></section></div>`);
+ let reduced=false;
+ const bindings={document:dom.window.document,ResizeObserver:class {observe(){} disconnect(){}},requestAnimationFrame:cb=>{cb();return 1;},matchMedia:()=>({matches:reduced}),getComputedStyle:()=>({transform:'none'})};
+ const previous=new Map(Object.keys(bindings).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+ for(const [key,value] of Object.entries(bindings))Object.defineProperty(globalThis,key,{value,writable:true,configurable:true});
+ const root=document.querySelector('.neural-shell'),panel=root.querySelector('.neural-dashboard');
+ root.getBoundingClientRect=()=>({width:1280,height:720});
+ let visible={left:360,top:500,width:560,height:180};panel.getBoundingClientRect=()=>visible;
+ const animations=[];panel.animate=(frames,options)=>{const a={frames,options,cancelled:false,cancel(){this.cancelled=true;}};animations.push(a);return a;};
+ t.after(()=>{clearTimeout(root._flightTimer);for(const [key,descriptor] of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}dom.window.close();});
+ animateNeuralLayout(null);
+ const home=captureNeuralLayout();root.dataset.neuralStage='detail';visible={left:446,top:20,width:814,height:680};
+ animateNeuralLayout(home);
+ assert.equal(animations.length,1);
+ assert.match(animations[0].frames[0].transform,/translate\(-86px,480px\)/,'starts from the previous visible surface');
+ assert.equal(animations[0].frames[1].transform,'none');
+ animateNeuralLayout(captureNeuralLayout());assert.equal(animations.length,1,'background renders never restart the flight');
+ visible={left:400,top:180,width:700,height:500};const interrupted=captureNeuralLayout();
+ root.dataset.neuralStage='overview';visible={left:360,top:500,width:560,height:180};animateNeuralLayout(interrupted);
+ assert.equal(animations[0].cancelled,true);
+ assert.match(animations[1].frames[0].transform,/translate\(40px,-320px\)/,'reverse uses the on-screen intermediate rectangle');
+ animateNeuralLayout(captureNeuralLayout(),true);assert.equal(animations[1].cancelled,true,'static mode also cancels an active flight');
+ reduced=true;const old=captureNeuralLayout();root.dataset.neuralStage='detail';animateNeuralLayout(old);
+ assert.equal(animations.length,2,'reduced motion changes layout directly');
+ assert.equal(root.querySelector('.neural-branches').inert,false);
+});

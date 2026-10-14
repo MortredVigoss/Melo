@@ -1,3 +1,6 @@
+import { isDeepStrictEqual } from 'node:util';
+import { serializeChatForPersistence } from './chatManifest.js';
+import { normalizeLocalPreferences } from '../domain/settings/localPreferences.js';
 // State hydration + default state — Phase 7d-5α-A1 (commit 7/9).
 //
 // This is the read side of the state machine: turning the on-disk state.json
@@ -44,29 +47,29 @@ import {
   normalizeAgentStorageId,
   normalizeMessageAttachments,
 } from '../shared/helpers.js';
-import { normalizeMessageBlocks } from '../services/message/messageBlocks.js';
+import { normalizeMessageBlocks } from '../domain/message/messageBlocks.js';
 import { normalizeExtractedMedia } from '../media/index.js';
-import { sanitizeWorkspacePath as sanitizeWorkspacePathRaw } from '../services/workspace/workspaceFiles.js';
-import { normalizeProject as normalizeProjectRaw } from '../services/project/projectService.js';
-import { BUILTIN_SKILLS } from '../services/skill/skillService.js';
+import { sanitizeWorkspacePath as sanitizeWorkspacePathRaw } from '../domain/workspacePath.js';
+import { normalizeProject as normalizeProjectRaw } from '../domain/project/projectService.js';
+import { BUILTIN_SKILLS } from '../domain/skill/skillService.js';
 import {
   normalizeAgentProfiles,
   normalizeProjectAgentOverrides,
 } from './agentProfiles.js';
-import { normalizeArtifact } from '../services/artifact/artifactService.js';
+import { normalizeArtifact } from '../domain/artifact/artifactService.js';
 import {
   normalizeCommandRuns,
   normalizeExternalToolRuns,
   normalizePromptHistory,
-} from '../services/activity/activityLog.js';
-import { normalizeExternalConnector } from '../services/connector/externalConnector.js';
-import { normalizeTasks } from '../services/task/taskService.js';
-import { normalizeApprovals } from '../services/approval/approvalService.js';
+} from '../domain/activity/activityLog.js';
+import { normalizeExternalConnector } from '../domain/connector/externalConnector.js';
+import { normalizeTasks } from '../domain/task/taskService.js';
+import { normalizeApprovals } from '../domain/approval/approvalService.js';
 import {
   setChatThreadContextCache,
   buildThreadContextForChat,
   ensureChatThreadContext,
-} from './chatThreadContext.js';
+} from '../memory/chatThreadContext.js';
 
 // One day in ms — used by `defaultProjectTime` below. The original
 // desktopStore.js sourced this constant from a top-level `const ONE_DAY_MS`
@@ -126,6 +129,10 @@ function normalizeToolResultsForHydration(rawList) {
     if (typeof item.errorCode === 'string' && item.errorCode.trim()) {
       entry.errorCode = item.errorCode;
     }
+    if (typeof item.backupOperationId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(item.backupOperationId)) entry.backupOperationId = item.backupOperationId;
+    if (typeof item.path === 'string') entry.path = item.path;
+    if (Number.isInteger(item.exitCode)) entry.exitCode = item.exitCode;
+    if (item.replayed === true) entry.replayed = true;
     out.push(entry);
   }
   return out;
@@ -219,9 +226,12 @@ export function normalizeProject(project) {
 export function normalizeChat(chat) {
   const normalized = {
     id: chat?.id || randomUUID(),
+    ...(Object.hasOwn(chat || {}, 'checkpointId') ? { checkpointId: chat.checkpointId || null } : {}),
     title: chat?.title || 'New chat',
     mode: chat?.mode || 'chat',
     projectId: chat?.projectId || null,
+    contextArtifactIds: Array.isArray(chat?.contextArtifactIds) ? [...new Set(chat.contextArtifactIds.filter(id=>typeof id==='string'))] : [],
+    ...(chat?.modelSelection && typeof chat.modelSelection.model === 'string' ? {modelSelection: {profileId:String(chat.modelSelection.profileId || ''), model:chat.modelSelection.model, authMode:chat.modelSelection.authMode, baseUrl:chat.modelSelection.baseUrl,...(chat.modelSelection.portable?{portable:chat.modelSelection.portable}:{})}} : {}),
     agentId:
       typeof chat?.agentId === 'string' && chat.agentId.trim()
         ? normalizeAgentStorageId(chat.agentId)
@@ -396,12 +406,23 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
  *   loop. Omitted = legacy lazy resolution (still works for any
  *   single-shot caller outside readStateSnapshot's orchestration).
  */
-export async function hydrateChatThreads(state, { threadsDir } = {}) {
+export async function hydrateChatThreads(state, { threadsDir, previousChats = [] } = {}) {
+  const previous = new Map(previousChats.map(chat => [chat.id,chat]));
   let repaired = false;
   const hydratedChats = [];
 
   for (const storedChat of Array.isArray(state.chats) ? state.chats : []) {
-    const checkpoint = await loadThreadCheckpoint(storedChat.id, { threadsDir });
+    const prior = previous.get(storedChat.id);
+    if (prior && storedChat.checkpointId && !(storedChat.messages?.length) &&
+        isDeepStrictEqual(serializeChatForPersistence(storedChat), serializeChatForPersistence(prior))) {
+      hydratedChats.push(prior);
+      continue;
+    }
+    const checkpoint = storedChat.checkpointId === null ? null
+      : await loadThreadCheckpoint(storedChat.checkpointId || storedChat.id, { threadsDir });
+    if (storedChat.checkpointId && !checkpoint) {
+      throw Object.assign(new Error(`Missing committed checkpoint for chat ${storedChat.id}.`), { code: 'STATE_CHECKPOINT_MISSING' });
+    }
     const hasLegacyMessages = Array.isArray(storedChat.messages) && storedChat.messages.length > 0;
     const sourceMessages = Array.isArray(checkpoint?.messages)
       ? checkpoint.messages
@@ -555,6 +576,7 @@ export function hydrateState(parsed = {}) {
     settings: {
       ...defaults.settings,
       ...parsed.settings,
+      localPreferences: normalizeLocalPreferences(parsed.settings?.localPreferences),
       enabledConnectorIds,
       connectorPresetVersion: defaults.settings.connectorPresetVersion,
       enabledSkillIds,
@@ -578,6 +600,10 @@ export function hydrateState(parsed = {}) {
       parsed.agentProfiles,
     ),
     tasks: normalizeTasks(parsed.tasks),
+    mobileTaskSync: parsed.mobileTaskSync || null,
+    mobileWorkspaceSync: parsed.mobileWorkspaceSync || null,
+    mobileMemoryPending: parsed.mobileMemoryPending || null,
+    mobileWorkspaceDevice: typeof parsed.mobileWorkspaceDevice === 'string' ? parsed.mobileWorkspaceDevice : null,
     approvals: normalizeApprovals(parsed.approvals),
   };
 }

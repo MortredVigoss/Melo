@@ -33,13 +33,13 @@ export function telegramApiBase() {
   return String(process.env.MELO_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 }
 
-export function buildTelegramMethodUrl(channel, method, searchParams = {}) {
+export function buildTelegramMethodUrl(channel, method, searchParams = {}, baseUrl = telegramApiBase()) {
   const token = String(channel?.botToken || '').trim();
   if (!token) {
     throw new Error('Telegram needs a bot token before it can be used.');
   }
 
-  const url = new URL(`${telegramApiBase()}/bot${encodeURIComponent(token)}/${method}`);
+  const url = new URL(`${baseUrl}/bot${encodeURIComponent(token)}/${method}`);
   for (const [key, value] of Object.entries(searchParams || {})) {
     if (value === undefined || value === null || value === '') {
       continue;
@@ -52,9 +52,9 @@ export function buildTelegramMethodUrl(channel, method, searchParams = {}) {
 export async function telegramApiRequest(
   channel,
   method,
-  { searchParams = {}, body = null, timeoutMs = 15000 } = {},
+  { searchParams = {}, body = null, timeoutMs = 15000, baseUrl } = {},
 ) {
-  const url = buildTelegramMethodUrl(channel, method, searchParams);
+  const url = buildTelegramMethodUrl(channel, method, searchParams, baseUrl);
   const response = await fetch(url, {
     method: body ? 'POST' : 'GET',
     headers: body

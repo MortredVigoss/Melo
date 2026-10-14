@@ -289,3 +289,23 @@ test('runSkill: forwards skill whitelist as nested allowedToolIds into tool cont
     unregisterTool('probe');
   }
 });
+
+test('an explicitly empty caller whitelist executes no registered tool', async () => {
+  const {tool,calls}=makeRecordingTool('empty_list_probe');registerTool(tool);
+  try {
+    const reply=makeFakeReply();reply.queue.push('<tool_call>{"name":"empty_list_probe","arguments":{}}</tool_call>','finished');
+    await runSkill({skill:executableSkill(),config:validConfig(),allowedToolIds:[],replyFn:reply});
+    assert.equal(calls.length,0);assert.match(reply.callLog[1].messages.at(-1).content,/TOOL_NOT_WHITELISTED|not in.*whitelist/);
+  } finally {unregisterTool(tool.id);}
+});
+
+test('skill captures the request connection once across tool-loop awaits',async()=>{
+ const {runWithRequestContext}=await import('../runtime/requestScope.js');const {createRequestContext}=await import('../runtime/requestContext.js');const before=process.env.MELO_MODEL;
+ const {tool}=makeRecordingTool('env_probe');registerTool(tool);let count=0;
+ try {
+  await runWithRequestContext(createRequestContext({env:{MELO_MODEL:'bound-model',MELO_API_KEY:'bound-key'}}),()=>runSkill({skill:executableSkill(),config:validConfig(),allowedToolIds:['env_probe'],replyFn:async options=>{
+   assert.equal(options.model,'bound-model');assert.equal(options.apiKey,'bound-key');process.env.MELO_MODEL='mutated';
+   return count++===0?'<tool_call>{"id":"probe","name":"env_probe","arguments":{}}</tool_call>':'done';
+  }}));assert.equal(count,2);
+ }finally{unregisterTool(tool.id);if(before===undefined)delete process.env.MELO_MODEL;else process.env.MELO_MODEL=before;}
+});

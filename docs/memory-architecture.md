@@ -1,6 +1,17 @@
+<!-- Current contract, 2026-10-11; older phase notes below are historical. -->
+
+Memory facts now carry source message/sender, scope, validity and user overrides.
+Automatic facts are chat-scoped; explicit local sharing supports project, agent or personal scope. Remote audiences never inherit local shared facts. Corrections replace only matching subjects; legacy invalidation is reconciled into canonical SQLite records. User edits and forgotten tombstones survive checkpoint replay and index rebuild. Original chats remain intact.
+
+Melo bundles quantized multilingual-e5-small and runs ONNX inference on a Node worker. Model assets are checksum-pinned at build time; inference disables networking. No Ollama, separate service or API key is needed. Native 384-dimensional normalized vectors are zero-extended to 1024 for the existing schema without changing cosine distances. The distinct model ID prevents mixing with old bge-m3 vectors. A staged, verified rebuild switches models atomically while keyword recall remains usable. Keyword and semantic candidates are fused for both flat and hierarchical retrieval.
+
+Knowledge → Memory supports viewing facts and source statements, editing, scope selection, reversible forgetting, and records of memory context supplied to new answers. These records do not claim final citation or internal reasoning. Existing source-less facts are labelled accordingly. Tests: `npm run test:memory` (included in the main gate).
+
+---
+
 # Melo Memory Architecture
 
-Status: shipped · Last updated: 2026-04-18
+Historical phase notes: 2026-04-18. The current contract above supersedes old provider defaults and fact-scope behavior described below.
 
 This document describes the memory stack after the Phase A–E rewrite and the
 subsequent Dreaming / Pluggable-Backends pass.  It complements

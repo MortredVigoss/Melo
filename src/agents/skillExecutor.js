@@ -1,3 +1,4 @@
+import { delegatedConfig } from './delegatedConfig.js';
 /**
  * Skill executor.
  *
@@ -46,7 +47,7 @@ function resolveSkillTools(skill, callerAllowedToolIds) {
   const skillWhitelist = Array.isArray(skill?.toolWhitelist) && skill.toolWhitelist.length > 0
     ? new Set(skill.toolWhitelist)
     : null;
-  const callerWhitelist = Array.isArray(callerAllowedToolIds) && callerAllowedToolIds.length > 0
+  const callerWhitelist = Array.isArray(callerAllowedToolIds)
     ? new Set(callerAllowedToolIds)
     : null;
 
@@ -174,6 +175,7 @@ export async function runSkill({
     return result;
   }
 
+  const providerConfig = delegatedConfig(config);
   const allowedTools = resolveSkillTools(skill, allowedToolIds);
   const systemPrompt = buildSkillSystemPrompt(skill, allowedTools);
 
@@ -210,9 +212,10 @@ export async function runSkill({
 
     const rawReply = await replyFn({
       authMode: config.authMode,
-      apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-      baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-      model: process.env.MELO_MODEL || config.model,
+      apiProtocol: config.apiProtocol,
+      apiKey: providerConfig.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      model: providerConfig.model,
       systemPrompt,
       messages: loopMessages,
       signal,
@@ -255,7 +258,7 @@ export async function runSkill({
         workspacePath,
         signal,
         chatId,
-        config,
+        config: providerConfig,
         // Skills count as one additional agent-depth level so
         // SUB_AGENT_MAX_DEPTH still caps nesting if a tool call inside the
         // skill happens to be the agent tool.

@@ -19,6 +19,7 @@
 // createOpenAICompatibleReply (HTTP) and the shared attachment normalizer.
 
 import { createOpenAICompatibleReply } from '../../openai.js';
+import { judgeFast } from '../../judge/fastJudge.js';
 import { normalizeMessageAttachments } from '../../shared/helpers.js';
 
 /**
@@ -26,7 +27,7 @@ import { normalizeMessageAttachments } from '../../shared/helpers.js';
  * Uses the compact model and asks a single yes/no question.
  * Falls back to false on any error to avoid blocking the poll loop.
  */
-export async function classifyGroupMessageAddressal(incoming, recentChat, config, profile) {
+export async function classifyGroupMessageAddressal(incoming, recentChat, config, profile, { signal, onDecision, judge = judgeFast } = {}) {
   const text = String(incoming?.text || '').trim();
   const hasVoice = normalizeMessageAttachments(incoming?.attachments).some(a => a.kind === 'audio');
   // Voice-only messages already scored ≥0.55 in buildTelegramReplyScore and won't reach gray zone
@@ -69,15 +70,24 @@ New message from ${incoming.senderName || 'unknown'}: "${text.slice(0, 200)}"
 
 Answer with exactly one word: "yes" or "no".`;
 
+  if (config?.extraFast?.enabled === true) {
+    const label = await judge({ config, task: 'addressal', systemPrompt: 'You are a yes/no classifier. Reply with only "yes" or "no".',
+      messages: [{ role: 'user', content: prompt }], fallback: 'no', signal, onDecision });
+    return label === 'yes';
+  }
+
   try {
     const raw = await createOpenAICompatibleReply({
       authMode: config.authMode,
-      apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-      baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-      model: process.env.MELO_COMPACT_MODEL || process.env.MELO_MODEL || config.model,
+      apiProtocol: config.apiProtocol,
+      apiKey: config.activeLlmProfileId ? config.apiKey : process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
+      baseUrl: config.activeLlmProfileId ? config.baseUrl : process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
+      model: config.activeLlmProfileId ? config.model : process.env.MELO_COMPACT_MODEL || process.env.MELO_MODEL || config.model,
       systemPrompt: 'You are a yes/no classifier. Reply with only "yes" or "no".',
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 4,
+      // The old maxTokens: 4 was ignored by the adapter. Keep the disabled
+      // path unbounded as before; the opt-in judge above owns its own budget.
+      signal,
     });
     return /^\s*yes\b/i.test(String(raw || ''));
   } catch {

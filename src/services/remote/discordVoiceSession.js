@@ -489,9 +489,10 @@ export class DiscordVoiceSession {
     try {
       const raw = await createOpenAICompatibleReply({
         authMode: config.authMode,
-        apiKey: process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
-        baseUrl: process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
-        model: process.env.MELO_MODEL || config.model,
+        apiProtocol: config.apiProtocol,
+        apiKey: config.activeLlmProfileId ? config.apiKey : process.env.MELO_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
+        baseUrl: config.activeLlmProfileId ? config.baseUrl : process.env.MELO_BASE_URL || process.env.OPENAI_BASE_URL || config.baseUrl,
+        model: config.activeLlmProfileId ? config.model : process.env.MELO_MODEL || config.model,
         systemPrompt,
         messages,
         // Voice replies should be short by default; this hard-caps the LLM even

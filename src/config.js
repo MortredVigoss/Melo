@@ -1,43 +1,22 @@
-import { homedir } from 'node:os';
+import { requestEnvironment, currentRequestContext, runWithRequestContext } from './runtime/requestScope.js';
+import { createRequestContext } from './runtime/requestContext.js';
 import { dirname, join } from 'node:path';
-import { mkdir, readFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile } from 'node:fs/promises';
 import { getCodexAuthState } from './codexAuth.js';
 import { atomicWriteJson } from './storage.js';
-import { registerWebSearchTriggers } from './openai.js';
+import { registerSearchTriggers as registerWebSearchTriggers } from './retrieval/searchRouter.js';
+import { resolveRuntimePaths } from './runtime/paths.js';
+import { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
 
 export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 export const CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api';
 export const LOCAL_MODEL_BASE_URL = 'http://127.0.0.1:11434/v1';
 
-function deepFreezeCatalogs(catalogs) {
-  for (const key of Object.keys(catalogs)) {
-    if (Array.isArray(catalogs[key])) {
-      Object.freeze(catalogs[key]);
-    }
-  }
-  return Object.freeze(catalogs);
-}
-
-export const DEFAULT_MODEL_CATALOGS = deepFreezeCatalogs({
-  local: ['llama3.1'],
-  'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  // codex catalog uses ChatGPT-internal API names — gpt-5.5 (current
-  // flagship) + gpt-5.4 (previous flagship, still accepted) + gpt-4.1
-  // (cheap fallback). User feedback 2026-04-29: prefer same-generation
-  // 5.x fallback over 4.1-mini for the codex auth mode, since the
-  // ChatGPT app surfaces 5.5/5.4 as siblings in its model picker.
-  // api-key catalog keeps the OpenAI platform API names (4.1 / 4.1-mini)
-  // because gpt-5.4/5.5 don't exist on platform.openai.com.
-  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
-});
+export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
-export const DEFAULT_MODELS_BY_AUTH_MODE = Object.freeze({
-  local: 'llama3.1',
-  'api-key': 'gpt-4.1-mini',
-  codex: 'gpt-5.5',
-});
 
 export const DEFAULT_CONFIG = Object.freeze({
+  extraFast: Object.freeze({ enabled: false, revision: 0, measurements: {} }),
   provider: 'openai-compatible',
   baseUrl: CODEX_OAUTH_BASE_URL,
   model: DEFAULT_MODELS_BY_AUTH_MODE.codex,
@@ -153,6 +132,7 @@ function normalizeCatalogEntry(values = []) {
 // in-place upgrade. A genuinely-customised catalog (anything not
 // in this list) is left alone — we can't safely guess intent.
 const KNOWN_OBSOLETE_CODEX_CATALOGS = Object.freeze([
+  Object.freeze(['gpt-5.5', 'gpt-5.4', 'gpt-4.1']),  // last pre-GPT-6 default
   Object.freeze(['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini']),  // pre-5.5 default
   Object.freeze(['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini']),  // 5.5 first cut, before B
 ]);
@@ -231,6 +211,13 @@ function resolveModelForAuthMode({ authMode, requestedModel, modelCatalogs }) {
     return normalizedRequestedModel;
   }
 
+  // OAuth and API-key catalogs share OpenAI model IDs. Removing an older
+  // model from the suggested OAuth list must not rewrite an explicit pin.
+  if (['codex', 'api-key'].includes(normalizedAuthMode) &&
+      ['codex', 'api-key'].some(mode => modelCatalogs?.[mode]?.includes(normalizedRequestedModel))) {
+    return normalizedRequestedModel;
+  }
+
   const appearsInKnownCatalog = Object.values(modelCatalogs || {}).some(values =>
     Array.isArray(values) && values.includes(normalizedRequestedModel),
   );
@@ -281,11 +268,11 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
   // through verbatim, and the user keeps explicit ownership of
   // the field.  Codex audit 2026-04-29.
   const incomingModel = String(config.model || '').trim();
-  const resolvedModel = skipModelNormalize
+  const resolvedModel = (skipModelNormalize || config.activeLlmProfileId)
     ? (incomingModel || resolveDefaultModelForAuthMode(authMode, modelCatalogs))
     : resolveModelForAuthMode({
         authMode,
-        requestedModel: config.model || DEFAULT_CONFIG.model,
+        requestedModel: incomingModel,
         modelCatalogs,
       });
   return {
@@ -304,7 +291,7 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
 }
 
 export function getMeloHome() {
-  return process.env.MELO_HOME || join(homedir(), '.melo');
+  return resolveRuntimePaths().home;
 }
 
 export function getConfigPath() {
@@ -350,6 +337,7 @@ export async function saveConfig(nextConfig, options = {}) {
 
   const payload = normalizeConfigShape(nextConfig, options);
   await atomicWriteJson(configPath, payload);
+  await chmod(configPath, 0o600);
   return payload;
 }
 
@@ -361,7 +349,7 @@ export async function saveConfig(nextConfig, options = {}) {
 // other's patch. Mirrors the queue pattern in src/state/stateStore.js.
 // Codex audit 2026-04-28 (revision gate without atomicity is just
 // a slower race).
-let _configWriteQueue = Promise.resolve();
+const configWriteQueues = new Map();
 
 /**
  * Run a config read-modify-write transaction under the shared
@@ -373,10 +361,12 @@ let _configWriteQueue = Promise.resolve();
  * @returns {Promise<T>}
  */
 export async function withConfigLock(work) {
-  const next = _configWriteQueue.catch(() => {}).then(work);
-  // Silence unhandled-rejection on the queue tail so a single throwing
-  // caller doesn't poison every subsequent transaction.
-  _configWriteQueue = next.catch(() => {});
+  const context = currentRequestContext() || createRequestContext();
+  const key = context.home;
+  const next = (configWriteQueues.get(key) || Promise.resolve()).catch(() => {}).then(() => runWithRequestContext(context, work));
+  configWriteQueues.set(key, next);
+  const cleanup = () => { if (configWriteQueues.get(key) === next) configWriteQueues.delete(key); };
+  next.then(cleanup, cleanup);
   return next;
 }
 
@@ -391,6 +381,7 @@ export async function updateConfig(key, value) {
 }
 
 export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
+  const env = { ...requestEnvironment() };
   // `skipModelNormalize` propagates the catalog-only contract used
   // by `refreshModelCatalog` all the way through the API/UI surface
   // (Codex audit 2026-04-29). Without this, even after the on-disk
@@ -408,20 +399,20 @@ export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
   // below would only ever see a pre-folded `fileConfig.model`.
   const fileConfig = await loadConfig({ skipModelNormalize });
   const authMode = normalizeAuthMode(
-    process.env.MELO_AUTH_MODE || fileConfig.authMode || DEFAULT_CONFIG.authMode,
+    (fileConfig.activeLlmProfileId ? fileConfig.authMode : env.MELO_AUTH_MODE || fileConfig.authMode) || DEFAULT_CONFIG.authMode,
   );
   const codexAuth = await getCodexAuthState();
   const baseUrl =
-    process.env.MELO_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
+    fileConfig.activeLlmProfileId ? fileConfig.baseUrl : env.MELO_BASE_URL ||
+    env.OPENAI_BASE_URL ||
     fileConfig.baseUrl;
   const normalizedBaseUrl =
     authMode === 'codex' && (!baseUrl || baseUrl === OPENAI_API_BASE_URL)
       ? CODEX_OAUTH_BASE_URL
       : baseUrl;
   const modelCatalogs = normalizeModelCatalogs(fileConfig.modelCatalogs);
-  const requestedModel = process.env.MELO_MODEL || fileConfig.model;
-  const resolvedModel = skipModelNormalize
+  const requestedModel = fileConfig.activeLlmProfileId ? fileConfig.model : env.MELO_MODEL || fileConfig.model;
+  const resolvedModel = (skipModelNormalize || fileConfig.activeLlmProfileId)
     ? (String(requestedModel || '').trim() || resolveDefaultModelForAuthMode(authMode, modelCatalogs))
     : resolveModelForAuthMode({
         authMode,
@@ -431,14 +422,14 @@ export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
 
   const resolved = {
     ...normalizeConfigShape(fileConfig, { skipModelNormalize }),
-    provider: process.env.MELO_PROVIDER || fileConfig.provider,
+    provider: env.MELO_PROVIDER || fileConfig.provider,
     baseUrl: normalizedBaseUrl,
     model: resolvedModel,
-    systemPrompt: process.env.MELO_SYSTEM_PROMPT || fileConfig.systemPrompt,
+    systemPrompt: env.MELO_SYSTEM_PROMPT || fileConfig.systemPrompt,
     authMode,
-    apiKey:
-      process.env.MELO_API_KEY ||
-      process.env.OPENAI_API_KEY ||
+    apiKey: fileConfig.activeLlmProfileId ? fileConfig.apiKey :
+      env.MELO_API_KEY ||
+      env.OPENAI_API_KEY ||
       fileConfig.apiKey,
     modelCatalogs,
     codexAuth,
@@ -447,7 +438,7 @@ export async function getResolvedConfig({ skipModelNormalize = false } = {}) {
   // Push user-defined web-search triggers into the openai.js module so that
   // `shouldEnableCodexNativeWebSearch` picks them up without threading config
   // through every call site. Called on every resolve — idempotent, cheap.
-  registerWebSearchTriggers(resolved.webSearchTriggers);
+  if (!currentRequestContext()) registerWebSearchTriggers(resolved.webSearchTriggers);
 
   return resolved;
 }

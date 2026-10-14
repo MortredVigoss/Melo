@@ -41,10 +41,10 @@ function freshState(overrides = {}) {
 
 // ─── Page skeleton + 4 subsections always present ───────────────────────────
 
-test('renderAdvancedPage shows the four subsection titles + Experimental chip', () => {
+test('renderAdvancedPage shows system status and collapsed technical controls', () => {
   const html = renderAdvancedPage(freshState());
-  assert.match(html, /<h2[^>]*>[\s\S]*?Advanced/);
-  assert.match(html, /Experimental/);
+  assert.match(html, /<h2[^>]*>[\s\S]*?系统状态/);
+  assert.match(html, /本机工作空间/);
   assert.match(html, /Built-in MCP servers/);
   assert.match(html, /External MCP connectors/);
   assert.match(html, /CLI \/ stdio MCP servers/);
@@ -58,12 +58,19 @@ test('renderAdvancedPage exposes the safe-ops actions used by the page', () => {
   assert.match(html, /data-action="reload-mcp-servers"/);
 });
 
-test('renderAdvancedPage shows the state.json path hint with a Copy button', () => {
+test('system tools page keeps unresolved approvals outside collapsed technical controls', () => {
+  const approvalPanelHtml = '<section aria-label="操作审批"><button>已核对，关闭记录</button></section>';
+  const html = renderAdvancedPage(freshState({ approvalPanelHtml }));
+  assert.ok(html.includes(approvalPanelHtml));
+  const beforeApproval = html.slice(0, html.indexOf(approvalPanelHtml));
+  assert.equal((beforeApproval.match(/<details\b/g) || []).length, (beforeApproval.match(/<\/details>/g) || []).length);
+});
+
+test('renderAdvancedPage never invents a legacy path before diagnostics resolves the home', () => {
   const html = renderAdvancedPage(freshState());
-  assert.match(html, /Most settings live in/);
-  assert.match(html, /<code>~\/\.melo\/desktop\/state\.json<\/code>/);
-  assert.match(html, /data-action="copy-melo-state-path"/);
-  assert.match(html, /data-path="~\/\.melo\/desktop\/state\.json"/);
+  assert.match(html, /Configuration path will appear after refresh/);
+  assert.doesNotMatch(html, /data-action="copy-melo-state-path"/);
+  assert.doesNotMatch(html, /~\/\.melo/);
 });
 
 test('renderAdvancedPage honours custom statePathHint (e.g. non-default MELO_HOME)', () => {
@@ -304,7 +311,7 @@ test('running task renders the Kill button; finished task does not', () => {
 
 test('loading state flips Refresh button label to "Refreshing…"', () => {
   const html = renderAdvancedPage(freshState({ adv: { loading: true } }));
-  assert.match(html, /Refreshing…/);
+  assert.match(html, /检查中…/);
   assert.doesNotMatch(html, />Refresh<\/button>/);
 });
 

@@ -18,7 +18,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_CONNECTORS } from '../../state/stateHydration.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
-import { visibleArtifacts } from '../artifact/artifactService.js';
+import { visibleArtifacts } from '../../domain/artifact/artifactService.js';
 import { formatUpdatedAt } from '../../shared/helpers.js';
 import { maskSecret } from './externalConnector.js';
 
@@ -37,7 +37,6 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
       case 'openai-compatible':
         connectorConfig = {
           authMode: config.authMode,
-          apiKey: config.apiKey,
           maskedApiKey: config.apiKey
             ? `${config.apiKey.slice(0, 4)}...${config.apiKey.slice(-4)}`
             : '(not set)',

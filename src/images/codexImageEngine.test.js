@@ -104,10 +104,10 @@ test('generateImageViaCodex returns decoded bytes when output_item.done carries 
     assert.equal(init.method, 'POST');
     // Verify the tool + model shape in the body.
     const body = JSON.parse(init.body);
-    assert.equal(body.model, 'gpt-5.5');
+    assert.equal(body.model, 'gpt-6.1-sol');
     assert.equal(body.stream, true);
     assert.deepEqual(body.tools, [{ type: 'image_generation' }]);
-    assert.equal(body.input[0].content[0].text, 'a tabby cat');
+    assert.ok(body.input[0].content[0].text.includes('\nUser request (verbatim):\na tabby cat\n'));
     // Header sanity.
     assert.equal(init.headers.authorization, 'Bearer oauth-tok-xyz');
     assert.equal(init.headers['chatgpt-account-id'], 'acct-123');
@@ -136,7 +136,7 @@ test('generateImageViaCodex returns decoded bytes when output_item.done carries 
   });
   assert.ok(Buffer.isBuffer(result.buffer));
   assert.equal(result.mimeType, 'image/png');
-  assert.equal(result.model, 'gpt-5.5');
+  assert.equal(result.model, 'gpt-6.1-sol');
   assert.ok(result.buffer.length >= 4096);
 });
 
@@ -498,12 +498,12 @@ test('buildEditPromptText carries the user prompt and explicit preserve scaffold
   // The scaffold is the same every time — that is the point of having
   // a frozen template instead of a free-form prompt.
   assert.match(text, /^Edit the uploaded image\./);
-  assert.match(text, /Preserve composition, subject identity, face, logo/);
-  assert.match(text, /Only change: 把里面的 5\.5 改成 gpt/);
+  assert.match(text, /Preserve all other attributes/);
+  assert.match(text, /把里面的 5\.5 改成 gpt/);
   assert.match(text, /Use the uploaded image as the primary reference\.$/);
   // Without an editSpec, the "Reference" block is omitted entirely so
   // the prompt stays terse.
-  assert.doesNotMatch(text, /Reference \(from analysis\)/);
+  assert.doesNotMatch(text, /Reference \(from analysis/);
 });
 
 test('buildEditPromptText embeds the editSpec when stage 1 produced one', () => {
@@ -517,18 +517,14 @@ test('buildEditPromptText embeds the editSpec when stage 1 produced one', () => 
     userPrompt: 'add sunglasses',
     editSpec,
   });
-  assert.match(text, /Reference \(from analysis\):/);
+  assert.match(text, /Reference \(from analysis/);
   assert.match(text, /Subject: orange tabby cat closeup/);
   assert.match(text, /Preserve: fur color, eye highlights, paw position/);
-  assert.match(text, /Only change: add sunglasses/);
+  assert.match(text, /add sunglasses/);
 });
 
-test('buildEditPromptText handles missing args gracefully', () => {
-  // Defensive: don't throw on undefined / empty inputs. A call with
-  // nothing produces the bare scaffold + an empty "Only change:" line.
-  const text = buildEditPromptText();
-  assert.match(text, /^Edit the uploaded image\./);
-  assert.match(text, /Only change: $/m);
+test('buildEditPromptText rejects missing requirements instead of generating an empty edit', () => {
+  assert.throws(() => buildEditPromptText(), /具体要求/);
 });
 
 // ─── editImageViaCodex (two-stage live request shape) ───────────────────────
@@ -625,9 +621,9 @@ test('editImageViaCodex sends stage 1 (no tools) THEN stage 2 (image_generation 
   const stage2User = stage2.input.find(i => i.role === 'user');
   const stage2InputText = stage2User.content.find(p => p.type === 'input_text')?.text;
   assert.match(stage2InputText, /Edit the uploaded image\./);
-  assert.match(stage2InputText, /Reference \(from analysis\):/);
+  assert.match(stage2InputText, /Reference \(from analysis/);
   assert.match(stage2InputText, /Preserve: fur color, eye color/);
-  assert.match(stage2InputText, /Only change: 把里面的 5\.5 改成 gpt/);
+  assert.match(stage2InputText, /把里面的 5\.5 改成 gpt/);
   const stage2Image = stage2User.content.find(p => p.type === 'input_image');
   assert.ok(stage2Image, 'stage 2 must re-attach the source image as input_image');
   assert.match(stage2Image.image_url, /^data:image\/png;base64,/);
@@ -678,8 +674,8 @@ test('editImageViaCodex skipVisionAnalysis=true skips stage 1 and goes straight 
   assert.deepEqual(calls[0].body.tools, [{ type: 'image_generation' }]);
   const userText = calls[0].body.input[0].content.find(p => p.type === 'input_text').text;
   assert.match(userText, /Edit the uploaded image\./);
-  assert.doesNotMatch(userText, /Reference \(from analysis\)/);
-  assert.match(userText, /Only change: add a hat/);
+  assert.doesNotMatch(userText, /Reference \(from analysis/);
+  assert.match(userText, /add a hat/);
   assert.equal(result.editSpec, null, 'editSpec must be null when stage 1 is skipped');
 });
 
@@ -726,8 +722,8 @@ test('editImageViaCodex falls through stage-1 failure WITHOUT failing the whole 
   );
   // Stage 2 prompt has no Reference block since stage 1 produced none.
   const stage2Text = calls[1].body.input[0].content.find(p => p.type === 'input_text').text;
-  assert.doesNotMatch(stage2Text, /Reference \(from analysis\)/);
-  assert.match(stage2Text, /Only change: change the colors/);
+  assert.doesNotMatch(stage2Text, /Reference \(from analysis/);
+  assert.match(stage2Text, /change the colors/);
 });
 
 test('editImageViaCodex rejects missing / undersized inputs', async () => {
@@ -838,4 +834,46 @@ test('editAndSaveImageViaCodex writes the edited image to disk', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('image engine keeps requested language model separate from provider-reported model', async () => {
+  const frames=[];
+  const result=await generateImageViaCodex({prompt:'one image',model:'gpt-6.1-sol',credentialProvider:async()=>loggedInCredential(),onPreview:(data,index)=>frames.push(index),fetchImpl:async()=>mockResponseFromEvents([
+    sseEvent({type:'response.created',response:{model:'gpt-reported'}}),
+    sseEvent({type:'response.image_generation_call.partial_image',partial_image_b64:fakePngBase64(2048),partial_image_index:0}),
+    sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(2048),output_format:'png'}}),
+  ])});
+  assert.equal(result.requestedModel,'gpt-6.1-sol');assert.equal(result.reportedModel,'gpt-reported');assert.deepEqual(frames,[0]);
+});
+
+test('generation preserves requirements after 4000 characters and rejects oversized input before a paid request', async () => {
+  const tail='EXACT FINAL COPY: Melo 2026 · Do not add a logo';
+  const prompt='A detailed visual requirement. '.repeat(200)+tail;
+  let sent;let calls=0;
+  await generateImageViaCodex({prompt,credentialProvider:async()=>loggedInCredential(),fetchImpl:async(_url,init)=>{
+    calls++;sent=JSON.parse(init.body);
+    return mockResponseFromEvents([sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(2048),output_format:'png'}})]);
+  }});
+  assert.ok(sent.input[0].content[0].text.includes(tail));
+  await assert.rejects(generateImageViaCodex({prompt:'x'.repeat(40000),credentialProvider:async()=>loggedInCredential(),fetchImpl:async()=>{calls++;throw new Error('must not send');}}),{code:'IMAGE_PROMPT_TOO_LONG'});
+  assert.equal(calls,1);
+});
+
+test('editing template lets explicit user changes override preserved reference attributes',()=>{
+  const text=buildEditPromptText({userPrompt:'Change the palette to gold and use a wide composition.',editSpec:'Preserve: purple colors, square layout'});
+  assert.match(text,/explicit.*(?:override|take precedence)/i);
+  assert.doesNotMatch(text,/^Preserve composition, subject identity, face, logo, text layout, colors, camera angle, and proportions\.$/m);
+});
+
+test('both edit stages retain late requirements and reference generation does not freeze layout', async()=>{
+  const prompt='Detailed requirements. '.repeat(240)+'CHANGE THE COMPOSITION TO A WIDE POSTER';
+  const bodies=[];
+  const result=await editImageViaCodex({prompt,action:'generate',referenceRoles:['style','subject'],sourceImageBytes:fakeImageBytes(2048),sourceImageMime:'image/png',referenceImages:[{buffer:fakeImageBytes(2048),mimeType:'image/png'}],credentialProvider:async()=>loggedInCredential(),fetchImpl:async(_url,init)=>{
+    bodies.push(JSON.parse(init.body));
+    return bodies.length===1 ? mockResponseFromEvents([sseEvent({type:'response.completed',response:{output:[{type:'message',content:[{text:'Style: purple. Preserve: square layout'}]}]}})]) : mockResponseFromEvents([sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(2048),output_format:'png'}})]);
+  }});
+  assert.equal(bodies.length,2);assert.ok(result.buffer.length>1024);
+  for(const body of bodies){const parts=body.input[0].content;assert.ok(parts[0].text.includes(prompt));assert.equal(parts.filter(p=>p.type==='input_image').length,2);assert.match(parts[0].text,/Image 1: 风格/);assert.match(parts[0].text,/Image 2: 主体/);}
+  assert.match(bodies[1].instructions,/create a new image/);
+  assert.doesNotMatch(bodies[1].instructions,/Preserve composition/);
 });

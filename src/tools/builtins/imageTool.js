@@ -1,3 +1,5 @@
+import { imageSettings, imageConnection } from '../../images/imageSettings.js';
+import { generateApiImage } from '../../images/openaiImageEngine.js';
 /**
  * image tool
  *
@@ -17,7 +19,7 @@
  * preserved: write to that path, return the path as text.
  */
 
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import { resolve, extname, basename, join, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -129,34 +131,11 @@ function resolveOutputPath(outputArg, workspacePath) {
   return resolve(outputArg);
 }
 
-/**
- * Decide the engine try-order for `generate`.
- *
- * - 'sdcpp'        → try sd.cpp only
- * - 'minimax'      → try MiniMax only
- * - 'codex-oauth'  → try Codex OAuth image tool only
- * - 'auto' (default) → honour config.imageEngine; otherwise
- *     codex-oauth → sdcpp → minimax. Codex is first because:
- *        • zero marginal cost for Plus subscribers (counted against Codex
- *          usage bucket, not a separate API bill);
- *        • quality/speed beats local sd.cpp on most Apple-Silicon laptops;
- *        • gracefully falls through with NOT_CONFIGURED when the user isn't
- *          signed into Codex, so sdcpp (fully offline) stays the safe
- *          fallback for anyone without an OAuth session.
- */
+// Honour the selected image service. Failed calls never switch billing accounts.
 function resolveEngineOrder(engineArg, { config } = {}) {
-  if (engineArg === 'sdcpp') return ['sdcpp'];
-  if (engineArg === 'minimax') return ['minimax'];
-  if (engineArg === 'codex-oauth' || engineArg === 'codex') return ['codex-oauth'];
-  const preferred = String(config?.imageEngine || '').trim().toLowerCase();
-  if (preferred === 'minimax') return ['minimax', 'codex-oauth', 'sdcpp'];
-  if (preferred === 'sdcpp') return ['sdcpp', 'codex-oauth', 'minimax'];
-  if (preferred === 'codex-oauth' || preferred === 'codex') {
-    return ['codex-oauth', 'sdcpp', 'minimax'];
-  }
-  // Default: try the free cloud path (Codex Plus subscription) first, fall
-  // back to local sd.cpp (fully offline), then paid cloud as the last resort.
-  return ['codex-oauth', 'sdcpp', 'minimax'];
+  if (engineArg === 'codex') return ['codex-oauth'];
+  if (['sdcpp','minimax','codex-oauth','openai-api'].includes(engineArg)) return [engineArg];
+  return [imageSettings(config).engine];
 }
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
@@ -169,7 +148,7 @@ export const imageTool = {
     'ocr: extract text (zh/en/ja/ko). ' +
     'info: dimensions + format + EXIF. ' +
     'process: resize / rotate / grayscale / format convert (omit "output" to auto-save into chat workspace and return a displayable URL). ' +
-    'generate: text-to-image. Default engine is local sd.cpp + SDXL (fully offline, 15-25s per image on Apple Silicon Metal) when the model file is present; falls back to MiniMax if `engine: "minimax"` is passed or no local model is installed. Returns a URL the UI renders inline.',
+    'generate: text-to-image. Uses the image engine selected in Melo settings; reports failures without switching services. Returns a URL the UI renders inline.',
   category: 'filesystem',
   isConcurrencySafe: true,
   // No permission prompt: all four actions are non-destructive —
@@ -221,18 +200,11 @@ export const imageTool = {
       },
       engine: {
         type: 'string',
-        enum: ['auto', 'sdcpp', 'minimax', 'codex-oauth'],
+        enum: ['auto', 'sdcpp', 'minimax', 'codex-oauth', 'openai-api'],
         description:
-          'generate: which backend to use. "auto" (default) tries Codex OAuth ' +
-          '(image_generation tool via /codex/responses; free for ChatGPT Plus ' +
-          'subscribers) first, then local sd.cpp, then MiniMax. ' +
-          '"codex-oauth" forces the OAuth path; "sdcpp" forces local; "minimax" ' +
-          'forces paid cloud. NOTE: when the user is on Codex OAuth, image ' +
-          'generation is also wired straight into the regular chat stream ' +
-          '(see createCodexResponsesReply) — the model can simply ask for an ' +
-          'image and Codex will inline it; this `image` tool stays available ' +
-          'for explicit-engine selection (forcing sdcpp / minimax) and for ' +
-          'OCR / process / info actions which do not exist on the chat path.',
+          'generate: "auto" uses the image service selected in Melo settings. ' +
+          'Explicit options choose one service only: codex-oauth, openai-api, sdcpp or minimax. ' +
+          'Requests consume the selected account quota; failures never silently switch services.',
       },
       steps: {
         type: 'number',
@@ -350,6 +322,14 @@ export const imageTool = {
             };
           }
 
+          if (engine === 'openai-api') {
+            const settings=imageSettings(config);
+            const result=await generateApiImage({connection:imageConnection(config,{...settings,engine}),prompt,quality:settings.quality,size:settings.size,signal});
+            signal?.throwIfAborted();
+            await writeFile(outPath,result.buffer);
+            const url=signWorkspaceFileUrl(outPath);
+            return {ok:true,output:`Generated image: ${url}\nRequested model: ${result.requestedModel}; reported model: ${result.reportedModel || 'not reported'}`,meta:{path:outPath,url,bytes:result.buffer.length,mimeType:result.mimeType,engine,model:result.requestedModel,reportedModel:result.reportedModel}};
+          }
           if (engine === 'codex-oauth') {
             // Codex OAuth image tool. We pass the same `signal` through; the
             // engine layer also enforces its own 120s timeout. The engine
@@ -360,6 +340,7 @@ export const imageTool = {
               const { generateAndSaveImageViaCodex } = await import('../../images/codexImageEngine.js');
               const result = await generateAndSaveImageViaCodex({
                 prompt,
+                model: imageSettings(config).codexModel,
                 outputPath: outPath,
                 signal,
               });
@@ -376,7 +357,7 @@ export const imageTool = {
                   mimeType: result.mimeType,
                   prompt,
                   engine: 'codex-oauth',
-                  model: result.model,
+                  model: result.model, reportedModel: result.reportedModel,
                 },
               };
             } catch (e) {

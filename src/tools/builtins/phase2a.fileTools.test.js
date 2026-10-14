@@ -245,25 +245,24 @@ test('fileDeleteTool: happy path moves file to trash with two-stage approval', a
   });
 });
 
-test('fileDeleteTool: wrong filename in stage-2 → rejected, file untouched', async () => {
+test('fileDeleteTool: wrong confirmation remains retryable; deny cancels without deleting', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     const target = join(ws, 'doomed.txt');
     await writeFile(target, 'x', 'utf8');
-    const result = await fileDeleteTool.run(
-      { paths: [target] },
-      {
-        workspacePath: ws,
-        chatId: 'chat-A',
-        sseEmitter: autoApprove(gate, [
-          { scope: 'once' },
-          { scope: 'once', confirmInput: 'wrong-name.txt' },
-        ]),
-      },
-    );
+    let mismatch;
+    const result = await fileDeleteTool.run({ paths: [target] }, {
+      workspacePath: ws, chatId: 'chat-A',
+      sseEmitter: (_event, payload) => queueMicrotask(() => {
+        if (payload.stage !== 'confirm') return gate.resolveFileSafety(payload.requestId, 'once');
+        mismatch = gate.resolveFileSafety(payload.requestId, 'once', { confirmInput: 'wrong-name.txt' });
+        gate.resolveFileSafety(payload.requestId, 'deny');
+      }),
+    });
+    assert.equal(mismatch?.reason, 'CONFIRMATION_MISMATCH');
     assert.equal(result.ok, false);
     assert.equal(result.error, 'DENIED');
-    assert.equal(await fileExists(target), true, 'target untouched on confirmation failure');
+    assert.equal(await fileExists(target), true);
   });
 });
 
@@ -1392,25 +1391,11 @@ test('round 13 followup #2: fileDelete refuses directories (no atomic dirfd-walk
     await writeFile(join(dir, 'a.txt'), 'a', 'utf8');
     await writeFile(join(dir, 'sub', 'b.txt'), 'b', 'utf8');
 
-    let promptCount = 0;
-    const sse = (event, payload) => {
-      promptCount++;
-      // Auto-approve both stages of the two-stage delete.
-      if (event === 'tool_permission') {
-        const lastInputForId = (id, tries = 5) => {
-          // best-effort: find the latest pending request to fill confirmInput
-          return null;
-        };
-        // Stage 1 has no confirmInput; stage 2 needs basename or 'DELETE'.
-        const requestId = payload.requestId;
-        const meta = payload?.payload || payload;
-        if (meta && meta.kind === 'file_safety' && meta.stage === 'confirm-delete') {
-          gate.resolveFileSafety(requestId, 'once', { confirmInput: 'DELETE' });
-        } else {
-          gate.resolveFileSafety(requestId, 'once');
-        }
-      }
-    };
+    const sse = (_event, payload) => queueMicrotask(() => {
+      gate.resolveFileSafety(payload.requestId, 'once', {
+        confirmInput: payload.stage === 'confirm' ? payload.expectedConfirmation : undefined,
+      });
+    });
     const result = await fileDeleteTool.run(
       { paths: [dir], reason: 'cleanup' },
       { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse },

@@ -173,6 +173,7 @@ export const bashTool = {
   // Phase 2B read tools follow.
   requiresPermission: false,
   isConcurrencySafe: false,
+  observesOwnLifecycle: true,
   parametersSchema: {
     type: 'object',
     properties: {
@@ -205,9 +206,10 @@ export const bashTool = {
   async run(args, context = {}) {
     const { command, timeout = 30_000, cwd: cwdOverride } = args;
     const { workspacePath, onOutput, signal, sseEmitter, chatId } = context;
+    const childEnv = { ...process.env };
 
     if (typeof command !== 'string' || !command.trim()) {
-      return { ok: false, output: 'command must be a non-empty string.', error: 'INVALID_ARGS' };
+      return { ok: false, output: 'command must be a non-empty string.', error: 'INVALID_ARGS', meta: { executionStarted: false } };
     }
 
     // Phase 2D + follow-up #1 (2026-05-04, post-Codex 🔴): default-
@@ -240,6 +242,7 @@ export const bashTool = {
       try { realCwd = realpathSync(effectiveCwd); } catch { /* might not exist */ }
       const cwdInWs = cwdInsideWorkspace(effectiveCwd, workspacePath);
       try {
+        context.onExecutionState?.('waiting');
         await requestBashOp({
           command,
           risks: promptRisks,
@@ -256,13 +259,15 @@ export const bashTool = {
           ok: false,
           output: err.message,
           error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-          meta: { denied: err.code === 'FILE_SAFETY_DENIED', risks: promptRisks },
+          meta: { executionStarted: false, denied: err.code === 'FILE_SAFETY_DENIED', risks: promptRisks },
         };
       }
     }
 
     const clampedTimeout = Math.min(Math.max(timeout, 1000), 120_000);
     const cwd = effectiveCwd;
+    if (signal?.aborted) return { ok: false, output: 'Command aborted.', error: 'ABORTED', meta: { executionStarted: false } };
+    context.onExecutionState?.('running');
 
     return new Promise((resolve) => {
       let stdout = '';
@@ -270,31 +275,36 @@ export const bashTool = {
       let stdoutTruncated = false;
       let stderrTruncated = false;
       let finished = false;
+      let stopped = false;
+      let forceTimer;
 
       const proc = spawn('bash', ['-c', command], {
         cwd,
-        env: { ...process.env },
+        env: childEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
       });
 
-      const killTimer = setTimeout(() => {
-        if (!finished) {
-          proc.kill('SIGTERM');
-          setTimeout(() => { if (!finished) proc.kill('SIGKILL'); }, 2000);
-        }
-      }, clampedTimeout);
-
-      const onAbort = () => {
-        if (!finished) {
-          proc.kill('SIGTERM');
-          setTimeout(() => { if (!finished) proc.kill('SIGKILL'); }, 2000);
-        }
+      const killGroup = sig => {
+        try {
+          if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, sig);
+          else proc.kill(sig);
+        } catch { /* the owned process group already exited */ }
       };
+      const onAbort = () => {
+        if (finished || stopped) return;
+        stopped = true;
+        killGroup('SIGTERM');
+        forceTimer = setTimeout(() => killGroup('SIGKILL'), 2000);
+        forceTimer.unref?.();
+      };
+      const killTimer = setTimeout(onAbort, clampedTimeout);
       signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
 
       proc.stdout.on('data', (chunk) => {
         const text = chunk.toString();
-        if (typeof onOutput === 'function') onOutput(text);
+        if (!stopped && typeof onOutput === 'function') onOutput(text);
         if (!stdoutTruncated) {
           if (stdout.length + text.length > MAX_STREAM_BYTES) {
             stdout += text.slice(0, MAX_STREAM_BYTES - stdout.length);
@@ -307,7 +317,7 @@ export const bashTool = {
 
       proc.stderr.on('data', (chunk) => {
         const text = chunk.toString();
-        if (typeof onOutput === 'function') onOutput(text);
+        if (!stopped && typeof onOutput === 'function') onOutput(text);
         if (!stderrTruncated) {
           if (stderr.length + text.length > MAX_STREAM_BYTES) {
             stderr += text.slice(0, MAX_STREAM_BYTES - stderr.length);
@@ -319,12 +329,14 @@ export const bashTool = {
       });
 
       proc.on('close', (code, sigName) => {
+        if (stopped) killGroup('SIGKILL');
         finished = true;
+        clearTimeout(forceTimer);
         clearTimeout(killTimer);
         signal?.removeEventListener('abort', onAbort);
 
         const exitCode = sigName ? null : (code ?? 1);
-        const ok = exitCode === 0;
+        const ok = !stopped && exitCode === 0;
         const parts = [];
         if (stdout) parts.push(`stdout:\n${stdout.trimEnd()}${stdoutTruncated ? TRUNCATION_NOTICE : ''}`);
         if (stderr) parts.push(`stderr:\n${stderr.trimEnd()}${stderrTruncated ? TRUNCATION_NOTICE : ''}`);
@@ -334,20 +346,21 @@ export const bashTool = {
         resolve({
           ok,
           output: parts.join('\n\n'),
-          error: ok ? undefined : `Exit code ${exitCode ?? sigName}`,
-          meta: { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated },
+          error: ok ? undefined : stopped ? 'ABORTED' : `Exit code ${exitCode ?? sigName}`,
+          meta: { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, aborted: stopped },
         });
       });
 
       proc.on('error', (err) => {
         finished = true;
+        clearTimeout(forceTimer);
         clearTimeout(killTimer);
         signal?.removeEventListener('abort', onAbort);
         resolve({
           ok: false,
           output: `Failed to spawn process: ${err.message}`,
           error: err.message,
-          meta: { exitCode: null, stdout, stderr },
+          meta: { executionStarted: false, exitCode: null, stdout, stderr },
         });
       });
     });

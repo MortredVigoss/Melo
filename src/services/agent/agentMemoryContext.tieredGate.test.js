@@ -313,6 +313,6 @@ test('tiered gate ON with empty store → no scene/frame blocks, no exception', 
     assert.equal(out.includes('Conversation scene summaries:'), false);
     assert.equal(out.includes('Frame summaries:'), false);
     // Latest user turn block always emits when latestUserMessage is set.
-    assert.ok(out.includes('Latest user turn'), 'latest user turn block always emitted');
+    assert.equal(out, '', 'empty recall must not repeat the current user turn');
   });
 });

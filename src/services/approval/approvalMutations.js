@@ -1,3 +1,5 @@
+import { createRequestContext } from '../../runtime/requestContext.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Approval mutation handlers — sub-phase 7d-5ε commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -15,11 +17,11 @@ import {
 } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findApprovalById } from '../../state/stateLookups.js';
-import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
+import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import {
   normalizeApproval,
   normalizeApprovals,
-} from './approvalService.js';
+} from '../../domain/approval/approvalService.js';
 import {
   runLocalCommand,
   saveWorkspaceFile,
@@ -35,6 +37,7 @@ export async function createApproval({
   projectId,
   chatId,
 }) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createApproval(...arguments));
   await updateStateAtomically(state => {
     const approval = normalizeApproval({
       id: randomUUID(),
@@ -57,15 +60,18 @@ export async function createApproval({
 }
 
 export async function rejectApproval(approvalId) {
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => rejectApproval(...arguments));
   await updateStateAtomically(state => {
     const approval = findApprovalById(state, approvalId);
     if (!approval) {
       throw new Error('Approval request not found.');
     }
 
+    if (!['pending', 'uncertain'].includes(approval.status)) throw Object.assign(new Error('Approval is no longer pending.'), { code: 'APPROVAL_NOT_PENDING', statusCode: 409 });
+    const uncertain = approval.status === 'uncertain';
     approval.status = 'rejected';
     approval.updatedAt = nowIso();
-    approval.resultSummary = 'Request rejected.';
+    approval.resultSummary = uncertain ? '用户核对后关闭记录；此前操作结果未确认，不代表已撤销。' : 'Request rejected.';
     state.approvals = normalizeApprovals(state.approvals);
     return state;
   });
@@ -73,24 +79,22 @@ export async function rejectApproval(approvalId) {
 }
 
 export async function executeApproval(approvalId) {
-  const state = ensureSelectedEntities(await loadState());
-  const approval = findApprovalById(state, approvalId);
-  if (!approval) {
-    throw new Error('Approval request not found.');
-  }
-
+  if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => executeApproval(...arguments));
+  let approval;
+  let replayed = false;
   await updateStateAtomically(latestState => {
-    const runningApproval = findApprovalById(latestState, approvalId);
-    if (!runningApproval) {
-      throw new Error('Approval request not found.');
+    approval = findApprovalById(latestState, approvalId);
+    if (!approval) throw new Error('Approval request not found.');
+    if (approval.status === 'approved') { replayed = true; return; }
+    if (approval.status !== 'pending') {
+      throw Object.assign(new Error('Approval is no longer pending.'), { code: 'APPROVAL_NOT_PENDING', statusCode: 409 });
     }
-
-    runningApproval.status = 'running';
-    runningApproval.updatedAt = nowIso();
-    runningApproval.resultSummary = 'Running approved action...';
+    approval.status = 'running';
+    approval.updatedAt = nowIso();
+    approval.resultSummary = 'Running approved action...';
     latestState.approvals = normalizeApprovals(latestState.approvals);
-    return latestState;
   });
+  if (replayed) return { bootstrap: await getDesktopBootstrap(), replayed: true };
 
   try {
     let result;

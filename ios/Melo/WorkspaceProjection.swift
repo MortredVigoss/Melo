@@ -1,0 +1,121 @@
+import Foundation
+
+struct PortableConnection {
+    var id: String
+    var name: String
+    var baseURL: String
+    var apiProtocol: String
+}
+enum WorkspaceProjection {
+    static func base(_ value: String) -> String {
+        var result = value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        for suffix in ["/chat/completions", "/messages"] where result.hasSuffix(suffix) { result = String(result.dropLast(suffix.count)) }
+        return result
+    }
+    static func agent(_ a: AgentProfile) -> [String: Any] {
+        ["name": a.name, "subtitle": a.subtitle, "instructions": a.instructions, "symbol": a.symbol, "avatarData": a.avatarData?.base64EncodedString() ?? "", "identity": a.identity ?? "", "soul": a.soul ?? "", "systemPrompt": a.systemPrompt ?? "", "mood": a.mood ?? "warm", "model": a.model ?? ""]
+    }
+    static func model(_ selection: ConversationModel?, connections: [PortableConnection]) -> Any {
+        guard let selection else { return NSNull() }
+        let local = connections.first { $0.id == selection.connectionID }
+        return ["connectionID": selection.syncConnectionID ?? selection.connectionID, "name": selection.name ?? local?.name ?? (selection.connectionID == "chatgpt" ? "ChatGPT" : ""), "model": selection.model, "authMode": selection.authMode ?? (selection.connectionID == "chatgpt" ? "codex" : "api-key"), "baseURL": base(selection.baseURL ?? local?.baseURL ?? ""), "apiProtocol": selection.apiProtocol ?? local?.apiProtocol ?? "chat-completions"]
+    }
+    static func modelSelection(_ value: SyncValue, connections: [PortableConnection]) -> ConversationModel? {
+        guard value != .null else { return nil }
+        if value["authMode"].string == "codex" { return .init(connectionID: "chatgpt", model: value["model"].string, name: value["name"].string, baseURL:value["baseURL"].string,apiProtocol:value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:"codex") }
+        let matches = connections.filter { base($0.baseURL) == base(value["baseURL"].string) && $0.apiProtocol == value["apiProtocol"].string }
+        let local = matches.first { $0.id == value["connectionID"].string } ?? (matches.count == 1 ? matches[0] : nil)
+        return .init(connectionID: local?.id ?? "unconnected-sync", model: value["model"].string, name: value["name"].string, baseURL: value["baseURL"].string, apiProtocol: value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:value["authMode"].string)
+    }
+    static func stage(_ s: ExecutionStage) -> [String: Any] {
+        ["id":s.id,"module":s.module,"name":s.name,"status":s.status,"provider":"","input":s.input,"output":s.output,"query":"","resultSummary":"","model":s.model ?? "","returnedModel":s.returnedModel ?? "","channel":s.channel ?? "","startedAt":s.startedAt ?? "","finishedAt":s.finishedAt ?? ""]
+    }
+    static func scene(_ r: ExecutionRecord, device: String) -> [String: Any] {
+        let operations = r.operations.map { s -> [String: Any] in ["id":s.id,"module":s.module,"name":s.name,"status":s.status,"provider":s.provider,"input":s.input,"output":s.output,"query":s.query,"resultSummary":s.resultSummary,"model":"","returnedModel":"","channel":"","startedAt":"","finishedAt":""] }
+        let sources = r.sources.map { s -> [String: Any] in ["id":s.id,"url":s.url,"title":s.title,"titleProvided":s.titleProvided,"order":s.order,"rank":s.rank,"reading":s.reading,"appeared":s.appeared,"accessed":s.accessed,"opened":s.opened,"cited":s.cited,"providers":s.providers,"queries":s.queries] }
+        return ["runId":r.runId,"status":r.status,"query":r.query,"startedAt":r.startedAt,"finishedAt":r.finishedAt ?? "","lastModule":r.lastModule ?? "","requestedModel":r.requestedModel,"returnedModel":r.returnedModel ?? "","sourceDevice":r.sourceDevice ?? device,"operations":operations,"pipeline":(r.pipeline ?? []).map(stage),"sources":sources]
+    }
+    static func refreshed(_ preferences: MobilePreferences, chats: [Conversation], records: [ExecutionRecord], connections: [PortableConnection], device: String) throws -> SyncWorkspace {
+        var workspace = try (preferences.workspaceSync ?? SyncWorkspace()).validated()
+        func put(_ kind: String, _ id: String, _ value: [String: Any]) throws { workspace.put(kind: kind, id: id, value: try .from(value), device: device) }
+        let live = Set(chats.map(\.id))
+        for fact in preferences.memoryFacts ?? [] where live.contains(fact.chatId) {
+            let data = try JSONEncoder().encode(fact)
+            workspace.put(kind: "memory", id: fact.id, value: try JSONDecoder().decode(SyncValue.self, from: data), device: device)
+        }
+        for a in preferences.agents { try put("agent", a.id, agent(a)) }
+        for p in preferences.projects ?? [] {
+            let overrides = (preferences.projectAgents?[p.id] ?? [:]).mapValues(agent)
+            try put("project", p.id, ["name":p.name,"goal":p.goal,"instructions":p.instructions ?? "","archived":p.archived == true,"knowledgeIds":(p.knowledgeIds ?? []).sorted(),"agentOverrides":overrides])
+        }
+        for n in preferences.knowledge ?? [] { try put("knowledge",n.id,["title":n.title,"content":n.content,"deleted":n.deleted == true,"kind":n.kind ?? "note","language":n.language ?? "text","projectId":n.projectId as Any? ?? NSNull()]) }
+        for chat in chats {
+            try put("conversation",chat.id,["agentId":preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo","projectId":preferences.chatProjects?[chat.id] as Any? ?? NSNull(),"knowledgeIds":(preferences.chatKnowledge?[chat.id] ?? []).sorted(),"model":model(preferences.chatModels?[chat.id],connections:connections)])
+            for message in chat.messages where message.role == "assistant" {
+                let persona = preferences.messageAgents?[message.id]
+                let record = records.last { $0.messageId == message.id && $0.terminal }
+                let models = (preferences.messageModels?[message.id] ?? []).map { receipt -> [String: Any] in
+                    var value: [String: Any] = ["requestedModel":receipt.requestedModel,"reportedModel":receipt.reportedModel,"simulated":receipt.simulated]
+                    if let purpose = receipt.purpose { value["purpose"] = purpose }
+                    return value
+                }
+                try put("message",message.id,["chatId":chat.id,"agent":persona.map { ["agentID":$0.agentID,"name":$0.name,"symbol":$0.symbol] } as Any? ?? NSNull(),"models":models,"scene":record.map { scene($0,device:device) } as Any? ?? NSNull()])
+            }
+        }
+        return workspace
+    }
+    static func readAgent(_ id: String, _ v: SyncValue) -> AgentProfile {
+        .init(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:v["instructions"].string,avatarData:Data(base64Encoded:v["avatarData"].string),identity:v["identity"].string,soul:v["soul"].string,systemPrompt:v["systemPrompt"].string,mood:v["mood"].string,model:v["model"].string)
+    }
+    static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection]) throws {
+        _ = try workspace.validated()
+        for row in workspace.records where row.versions.count == 1 {
+            let v = row.versions[0].value
+            switch row.kind {
+            case "memory":
+                let fact = try v.decoded(MobileMemoryFact.self).validated()
+                var facts = preferences.memoryFacts ?? []
+                if let index = facts.firstIndex(where: { $0.id == fact.id }) { facts[index] = fact } else { facts.append(fact) }
+                preferences.memoryFacts = facts
+            case "agent":
+                let a = readAgent(row.id,v)
+                if let index = preferences.agents.firstIndex(where: { $0.id == row.id }) { preferences.agents[index] = a } else { preferences.agents.append(a) }
+            case "project":
+                let p = PersonalProject(id:row.id,name:v["name"].string,goal:v["goal"].string,instructions:v["instructions"].string,knowledgeIds:Set(v["knowledgeIds"].array.map(\.string)),archived:v["archived"].bool)
+                var projects = preferences.projects ?? []; if let index = projects.firstIndex(where: { $0.id == row.id }) { projects[index] = p } else { projects.append(p) }; preferences.projects = projects
+                if preferences.projectAgents == nil { preferences.projectAgents = [:] }
+                preferences.projectAgents?[row.id] = v["agentOverrides"].object.mapValues { readAgent("",$0) }
+                for id in preferences.projectAgents?[row.id]?.keys.map({$0}) ?? [] { preferences.projectAgents?[row.id]?[id]?.id = id }
+            case "knowledge":
+                let n = KnowledgeNote(id:row.id,title:v["title"].string,content:v["content"].string,deleted:v["deleted"].bool,kind:v["kind"].string,language:v["language"].string,projectId:v["projectId"] == .null ? nil : v["projectId"].string)
+                var notes = preferences.knowledge ?? []; if let index = notes.firstIndex(where: { $0.id == row.id }) { notes[index] = n } else { notes.append(n) }; preferences.knowledge = notes
+            case "conversation":
+                preferences.chatAgents[row.id] = v["agentId"].string
+                if preferences.chatProjects == nil { preferences.chatProjects = [:] }; preferences.chatProjects?[row.id] = v["projectId"] == .null ? nil : v["projectId"].string
+                if preferences.chatKnowledge == nil { preferences.chatKnowledge = [:] }; preferences.chatKnowledge?[row.id] = Set(v["knowledgeIds"].array.map(\.string))
+                if preferences.chatModels == nil { preferences.chatModels = [:] }; preferences.chatModels?[row.id] = modelSelection(v["model"],connections:connections)
+            case "message":
+                if v["agent"] != .null {
+                    if preferences.messageAgents == nil { preferences.messageAgents = [:] }
+                    preferences.messageAgents?[row.id] = try v["agent"].decoded(ReplyPersona.self)
+                }
+                if preferences.messageModels == nil { preferences.messageModels = [:] }
+                preferences.messageModels?[row.id] = try v["models"].decoded([PortableModelReceipt].self)
+                if v["scene"] != .null {
+                    let s = v["scene"]
+                    guard ["completed","failed","cancelled","interrupted"].contains(s["status"].string) else { throw MeloError.message("同步场景不是结束状态，未恢复执行。") }
+                    var record = ExecutionRecord(chatId:v["chatId"].string,query:s["query"].string,requestedModel:s["requestedModel"].string)
+                    record.runId=s["runId"].string; record.status=s["status"].string; record.startedAt=s["startedAt"].string; record.finishedAt=s["finishedAt"].string; record.messageId=row.id
+                    record.sourceDevice=s["sourceDevice"].string; record.returnedModel=s["returnedModel"].string; record.lastModule=s["lastModule"].string
+                    record.operations=try s["operations"].decoded([ExecutionOperation].self); record.pipeline=try s["pipeline"].decoded([ExecutionStage].self); record.sources=try s["sources"].decoded([ExecutionSource].self)
+                    record.observationNote="跨设备同步的真实执行与来源记录；本机未重新执行。"
+                    if let index=records.firstIndex(where: { $0.runId==record.runId }) { if records[index].terminal { records[index]=record } } else { records.append(record) }
+                    if preferences.messageSources == nil { preferences.messageSources = [:] }
+                    preferences.messageSources?[row.id] = record.sources.filter(\.cited).compactMap { WebSource.validated(title:$0.title,url:$0.url) }
+                }
+            default: break
+            }
+        }
+        preferences.workspaceSync = workspace
+    }
+}

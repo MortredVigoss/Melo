@@ -1,23 +1,28 @@
+import { normalizeUsage } from './runtime/usage.js';
+import { prepareVisionInputs } from './media/visionInputs.js';
+import { fastGenerationOptions } from './shared/fastGeneration.js';
+import { requestAnthropicReply } from './providers/anthropic.js';
+import { DEFAULT_MODEL_CATALOGS, normalizeReasoningEffort } from './shared/modelCatalog.js';
+import { readCodexModelCatalog } from './providers/codexModels.js';
+import { readCodexSseResponse, readChatCompletionsSseResponse } from './providers/streams.js';
+export { readCodexSseResponse } from './providers/streams.js';
+import { normalizeMessageContent, extractAssistantText, extractProviderErrorMessage } from './providers/responseText.js';
+import { requestEnvironment } from './runtime/requestScope.js';
 import { execFile as execFileCallback } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { arch, platform, release, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { createCapabilityRecorder } from './runtime/capabilities.js';
+import { resolveRuntimePaths } from './runtime/paths.js';
+import { buildPromptCacheKey } from './retrieval/promptCacheKey.js';
 import { promisify } from 'node:util';
-import {
-  getCodexCredential,
-  resolveCodexExecutable,
-} from './codexAuth.js';
+import { getCodexCredential } from './codexAuth.js';
+import { IMAGE_INTENT_RULES } from './images/imagePrompts.js';
 import { signWorkspaceFileUrl } from './web/urlSigning.js';
 import { detectImageMimeFromBytes } from './images/imageGen.js';
-// Pull just the regex constants — NOT the detectImageIntent helper. The
-// helper lives in services/chat/messageBuilder.js, which transitively
-// imports memory/contextCompact.js, which itself imports from openai.js.
-// Pulling the function would create a load-order cycle (openai →
-// messageBuilder → contextCompact → openai) that ES-module late binding
-// usually resolves but that's fragile. Importing the regex constants is
-// safe — they evaluate at module load time and have no further deps —
-// and we re-implement the small AND/OR detector locally below.
+// Shared message intent rules; messageBuilder depends only on the pure
+// context window, never on a provider-backed compactor.
 import {
   IMAGE_GEN_INTENT_PATTERN,
   IMAGE_EDIT_INTENT_PATTERN,
@@ -30,30 +35,14 @@ import {
 } from './retrieval/searchRouter.js';
 
 const execFile = promisify(execFileCallback);
-const DEFAULT_CODEX_CLI_TIMEOUT_MS = 600000;
 const DEFAULT_CODEX_REQUEST_TIMEOUT_MS = 600000;
 const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 600000;
-const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120000;
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 const DEFAULT_CODEX_FAST_REASONING_EFFORT = 'low';
 const DEFAULT_CODEX_TEXT_VERBOSITY = 'medium';
 const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api';
-const CODEX_EVENT_TYPES = Object.freeze({
-  OUTPUT_DELTA: 'response.output_text.delta',
-  COMPLETED: 'response.completed',
-  DONE: 'response.done',
-  INCOMPLETE: 'response.incomplete',
-  ERROR: 'error',
-  FAILED: 'response.failed',
-});
-const DEFAULT_DISCOVERED_MODELS = Object.freeze({
-  local: ['llama3.1'],
-  'api-key': ['gpt-4.1', 'gpt-4.1-mini'],
-  // codex auth mode → ChatGPT-internal API names (5.x sibling fallback).
-  // api-key auth mode → OpenAI platform API names (4.x). See
-  // DEFAULT_MODEL_CATALOGS in src/config.js for the rationale.
-  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
-});
+
+const DEFAULT_DISCOVERED_MODELS = DEFAULT_MODEL_CATALOGS;
 const CODEX_NATIVE_WEB_SEARCH_TOOL = Object.freeze({
   type: 'web_search',
   external_web_access: true,
@@ -123,9 +112,10 @@ const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   'as the edit reference automatically — you do not need to fetch, read, or locate the',
   'file yourself. DO NOT ask the user for a file path. DO NOT call read_file or any',
   'filesystem tool. DO NOT reply with text-only instructions ("please save this file',
-  "and tell me the path\"). Just emit a short edit prompt to image_generation and the",
+  "and tell me the path\"). Emit a faithful edit prompt retaining all user constraints and the",
   'host app will display the result inline. If multiple images are attached, edit the',
   'most recently uploaded one unless the user specifies otherwise.',
+  'For edits, preserve unrequested attributes; only change what the user explicitly asks to change.',
   // Explicit pass-through. Required because the conversation may carry
   // a stale uploaded image from earlier turns; this block must not push
   // the model into edit-mode for unrelated follow-ups.
@@ -294,11 +284,12 @@ export function buildCodexResponsesTools({
   workspacePath = null,
   hasInputImage: _hasInputImage = false,
   hasImageIntent = false,
+  nativeImageGenerationEnabled = true,
 } = {}) {
   const tools = [];
   if (enableWebSearch) tools.push(CODEX_NATIVE_WEB_SEARCH_TOOL);
   if (
-    hasImageIntent &&
+    nativeImageGenerationEnabled && hasImageIntent &&
     typeof workspacePath === 'string' &&
     workspacePath.startsWith('/')
   ) {
@@ -436,12 +427,7 @@ async function ensureFetchKeepAliveConfigured() {
   return keepAliveSetupPromise;
 }
 
-function resolveStreamIdleTimeoutMs() {
-  const configured = Number.parseInt(process.env.MELO_STREAM_IDLE_TIMEOUT_MS || '', 10);
-  return Number.isFinite(configured) && configured > 0
-    ? configured
-    : DEFAULT_STREAM_IDLE_TIMEOUT_MS;
-}
+
 
 function isAbortError(error) {
   return Boolean(
@@ -461,144 +447,23 @@ function uniqueModels(models = [], currentModel = '') {
   );
 }
 
-function normalizeMessageContent(content) {
-  if (typeof content === 'string') {
-    return content.trim();
-  }
-
-  if (!Array.isArray(content)) {
-    return '';
-  }
-
-  return content
-    .map(item => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item.text === 'string') return item.text;
-      return '';
-    })
-    .join('')
-    .trim();
-}
-
-function extractChatCompletionsText(payload) {
-  const choice = payload?.choices?.[0];
-  const content = choice?.message?.content;
-
-  return normalizeMessageContent(content);
-}
-
-function extractResponsesText(payload) {
-  if (typeof payload?.output_text === 'string' && payload.output_text.trim()) {
-    return payload.output_text.trim();
-  }
-
-  const output = Array.isArray(payload?.output) ? payload.output : [];
-  const parts = [];
-
-  for (const item of output) {
-    if (item?.type !== 'message' || !Array.isArray(item.content)) {
-      continue;
-    }
-
-    for (const content of item.content) {
-      if (typeof content?.text === 'string' && content.text.trim()) {
-        parts.push(content.text);
-      } else if (
-        content?.text &&
-        typeof content.text === 'object' &&
-        typeof content.text.value === 'string' &&
-        content.text.value.trim()
-      ) {
-        parts.push(content.text.value);
-      }
-    }
-  }
-
-  return parts.join('\n').trim();
-}
-
-function extractAssistantText(payload) {
-  const responseText = extractResponsesText(payload);
-  if (responseText) {
-    return responseText;
-  }
-
-  const chatText = extractChatCompletionsText(payload);
-  if (chatText) {
-    return chatText;
-  }
-
-  return 'Melo received an empty response from the model.';
-}
-
-function extractChatCompletionDelta(payload) {
-  const delta = payload?.choices?.[0]?.delta;
-  if (!delta) {
-    return '';
-  }
-
-  if (typeof delta.content === 'string') {
-    return delta.content;
-  }
-
-  if (!Array.isArray(delta.content)) {
-    return '';
-  }
-
-  return delta.content
-    .map(item => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item.text === 'string') return item.text;
-      if (item?.text && typeof item.text?.value === 'string') return item.text.value;
-      return '';
-    })
-    .join('');
-}
-
-function extractProviderErrorMessage(payload, fallback = 'Provider request failed.') {
-  if (!payload || typeof payload !== 'object') {
-    return fallback;
-  }
-
-  return (
-    payload?.error?.message ||
-    payload?.message ||
-    payload?.detail ||
-    fallback
-  );
-}
-
 function shouldEnableCodexNativeWebSearch(messages = []) {
   return shouldUseNativeWebSearch(messages, { authMode: 'codex' });
 }
 
-function normalizeCodexReasoningEffort(rawValue) {
-  const candidate = String(rawValue || '')
-    .trim()
-    .toLowerCase();
-
-  return ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(candidate)
-    ? candidate
-    : DEFAULT_CODEX_REASONING_EFFORT;
+function normalizeCodexReasoningEffort(rawValue, model) {
+  return normalizeReasoningEffort(model, rawValue, DEFAULT_CODEX_REASONING_EFFORT);
 }
 
-function resolveFastCodexReasoningEffort(fallback = DEFAULT_CODEX_FAST_REASONING_EFFORT) {
-  return normalizeCodexReasoningEffort(
-    process.env.MELO_CODEX_FAST_REASONING_EFFORT || fallback,
-  );
-}
-
-function resolveCodexCliTimeoutMs() {
-  const configured = Number.parseInt(process.env.MELO_CODEX_TIMEOUT_MS || '', 10);
-  return Number.isFinite(configured) && configured > 0
-    ? configured
-    : DEFAULT_CODEX_CLI_TIMEOUT_MS;
+function resolveFastCodexReasoningEffort(model, fallback = DEFAULT_CODEX_FAST_REASONING_EFFORT) {
+  if (/^gpt-6-luna(?:-|$)/i.test(model)) return 'none';
+  return normalizeReasoningEffort(model, requestEnvironment().MELO_CODEX_FAST_REASONING_EFFORT || fallback, fallback);
 }
 
 function resolveCodexRequestTimeoutMs() {
   const configured = Number.parseInt(
-    process.env.MELO_CODEX_REQUEST_TIMEOUT_MS ||
-      process.env.MELO_CODEX_TIMEOUT_MS ||
+    requestEnvironment().MELO_CODEX_REQUEST_TIMEOUT_MS ||
+      requestEnvironment().MELO_CODEX_TIMEOUT_MS ||
       '',
     10,
   );
@@ -676,6 +541,7 @@ function normalizeProviderMessageContent(content) {
         type: 'image_url',
         image_url: {
           url: item.image_url.url.trim(),
+          ...(item.image_url.detail ? { detail: item.image_url.detail } : {}),
         },
       });
       continue;
@@ -722,7 +588,7 @@ function extractDataUrlMetadata(url = '') {
   };
 }
 
-async function readAttachmentResource(url, { timeoutMs = 30000 } = {}) {
+async function readAttachmentResource(url, { timeoutMs = 30000, signal } = {}) {
   const normalizedUrl = normalizeAttachmentUrl(url);
   if (!normalizedUrl) {
     return null;
@@ -740,7 +606,7 @@ async function readAttachmentResource(url, { timeoutMs = 30000 } = {}) {
   }
 
   const response = await fetch(normalizedUrl, {
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     return null;
@@ -895,6 +761,7 @@ async function buildCodexImageInputPart(item = {}) {
   if (imageUrl.startsWith('data:image/')) {
     return {
       type: 'input_image',
+      ...(item.image_url?.detail ? { detail: item.image_url.detail } : {}),
       image_url: imageUrl,
     };
   }
@@ -903,6 +770,7 @@ async function buildCodexImageInputPart(item = {}) {
   if (!resource?.buffer?.length) {
     return {
       type: 'input_image',
+      ...(item.image_url?.detail ? { detail: item.image_url.detail } : {}),
       image_url: imageUrl,
     };
   }
@@ -910,6 +778,7 @@ async function buildCodexImageInputPart(item = {}) {
   const mimeType = inferImageMimeType({ url: imageUrl }, resource.contentType);
   return {
     type: 'input_image',
+      ...(item.image_url?.detail ? { detail: item.image_url.detail } : {}),
     image_url: `data:${mimeType};base64,${resource.buffer.toString('base64')}`,
   };
 }
@@ -1109,479 +978,6 @@ export async function buildCodexResponsesInput(messages = [], { signal } = {}) {
   return results;
 }
 
-function parseCodexSseEvent(block) {
-  const lines = block
-    .split(/\r?\n/)
-    .map(line => line.trimEnd());
-  const dataLines = [];
-
-  for (const line of lines) {
-    if (!line || line.startsWith(':')) {
-      continue;
-    }
-
-    if (line.startsWith('data:')) {
-      dataLines.push(line.slice(5).trimStart());
-    }
-  }
-
-  if (!dataLines.length) {
-    return null;
-  }
-
-  const payload = dataLines.join('\n').trim();
-  if (!payload || payload === '[DONE]') {
-    return null;
-  }
-
-  try {
-    return JSON.parse(payload);
-  } catch {
-    return null;
-  }
-}
-
-function parseChatCompletionsSseEvent(block) {
-  const lines = block
-    .split(/\r?\n/)
-    .map(line => line.trimEnd());
-  const dataLines = lines
-    .filter(line => line && !line.startsWith(':'))
-    .filter(line => line.startsWith('data:'))
-    .map(line => line.slice(5).trimStart());
-
-  if (!dataLines.length) {
-    return null;
-  }
-
-  const payload = dataLines.join('\n').trim();
-  if (!payload || payload === '[DONE]') {
-    return null;
-  }
-
-  try {
-    return JSON.parse(payload);
-  } catch {
-    return null;
-  }
-}
-
-function extractCodexEventError(event) {
-  if (!event || typeof event !== 'object') {
-    return 'Codex OAuth request failed.';
-  }
-
-  if (event.type === 'error') {
-    return (
-      event.error?.message ||
-      event.error?.code ||
-      event.message ||
-      event.code ||
-      'Codex OAuth request failed.'
-    );
-  }
-
-  if (event.type === 'response.failed') {
-    return (
-      event.error?.message ||
-      event.error?.code ||
-      event.response?.error?.message ||
-      event.response?.error?.code ||
-      event.response?.incomplete_details?.reason ||
-      'Codex response failed.'
-    );
-  }
-
-  return 'Codex OAuth request failed.';
-}
-
-function isCodexReasoningDeltaEvent(eventType = '') {
-  const normalized = String(eventType || '').trim();
-  if (!normalized) {
-    return false;
-  }
-
-  return (
-    /^response\.reasoning(?:[\w.]*?)\.delta$/u.test(normalized) ||
-    /^response\.reasoning(?:[\w.]*?)\.summary(?:[\w.]*?)\.delta$/u.test(normalized) ||
-    /^response\.reasoning_summary(?:[\w.]*?)\.delta$/u.test(normalized)
-  );
-}
-
-function extractCodexReasoningDelta(event) {
-  if (!event || typeof event !== 'object') {
-    return '';
-  }
-
-  if (typeof event.delta === 'string') {
-    return event.delta;
-  }
-
-  if (typeof event.text === 'string') {
-    return event.text;
-  }
-
-  if (typeof event.summary === 'string') {
-    return event.summary;
-  }
-
-  if (event?.text && typeof event.text?.value === 'string') {
-    return event.text.value;
-  }
-
-  return '';
-}
-
-async function cleanupReader(reader) {
-  try {
-    await reader.cancel();
-  } catch {}
-
-  try {
-    reader.releaseLock();
-  } catch {}
-}
-
-function buildStreamStalledError(idleTimeoutMs) {
-  return new Error(
-    `Model stopped producing output for ${Math.round(
-      idleTimeoutMs / 1000,
-    )} seconds. The request was cancelled because the stream stalled, not because the task was too long.`,
-  );
-}
-
-async function drainSseBuffer(buffer, onBlock, { includeTrailing = false } = {}) {
-  let remaining = buffer;
-
-  while (true) {
-    const separatorIndex = remaining.search(/\r?\n\r?\n/);
-    if (separatorIndex === -1) {
-      break;
-    }
-
-    const separatorLength = remaining.startsWith('\r\n\r\n', separatorIndex) ? 4 : 2;
-    const block = remaining.slice(0, separatorIndex);
-    remaining = remaining.slice(separatorIndex + separatorLength);
-    await onBlock(block);
-  }
-
-  if (includeTrailing && remaining.trim()) {
-    await onBlock(remaining);
-    remaining = '';
-  }
-
-  return remaining;
-}
-
-async function readSseStream(
-  response,
-  {
-    missingBodyMessage,
-    idleTimeoutMs = resolveStreamIdleTimeoutMs(),
-    processEventBlock,
-  },
-) {
-  if (!response.body) {
-    throw new Error(missingBodyMessage);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let lastActivityAt = Date.now();
-  let stalled = false;
-  let normalCompletion = false;
-  const stallChecker = setInterval(() => {
-    if (Date.now() - lastActivityAt > idleTimeoutMs) {
-      stalled = true;
-      void reader.cancel().catch(() => {});
-      clearInterval(stallChecker);
-    }
-  }, 5000);
-  stallChecker.unref?.();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        normalCompletion = true;
-        break;
-      }
-
-      lastActivityAt = Date.now();
-      buffer += decoder.decode(value, { stream: true });
-      buffer = await drainSseBuffer(buffer, processEventBlock);
-    }
-
-    buffer += decoder.decode();
-    buffer = await drainSseBuffer(buffer, processEventBlock, { includeTrailing: true });
-  } catch (error) {
-    if (stalled && !normalCompletion) {
-      throw buildStreamStalledError(idleTimeoutMs);
-    }
-    throw error;
-  } finally {
-    clearInterval(stallChecker);
-    await cleanupReader(reader);
-  }
-}
-
-// Exported for tests: lets the unit test feed a mocked SSE stream directly
-// without faking the full createCodexResponsesReply credential / fetch path.
-export async function readCodexSseResponse(
-  response,
-  {
-    onDelta,
-    onReasoningDelta,
-    onInlineImage,
-    idleTimeoutMs = resolveStreamIdleTimeoutMs(),
-  } = {},
-) {
-  let deltaText = '';
-  let reasoningText = '';
-  let completedResponse = null;
-  // attemptedImageIds — dedup so we don't re-invoke onInlineImage for a
-  // single image_generation_call that the stream surfaces twice (once
-  // via response.output_item.done, again inside response.completed).
-  // A failed callback still gets recorded here — same item, same crash,
-  // no point retrying within one response.
-  const attemptedImageIds = new Set();
-  // injectedImageSnippets — the markdown URL strings we actually appended
-  // into deltaText. The final-text branch uses this list to verify that
-  // whichever text we end up returning (deltaText or canonical
-  // completedText) carries every image we generated. Codex review round 2
-  // (2026-04-29) caught two failure modes a Set-of-ids couldn't pin:
-  //   • SET-only: completed-only path produced deltaText="<image markdown
-  //     only>", emittedImageIds.size > 0 → returned deltaText, dropping
-  //     the canonical text the model emitted in the response.completed
-  //     payload.
-  //   • SET-only: a save failure flipped emittedImageIds.size to 0 even
-  //     though we'd already streamed the markdown to onDelta — but UI
-  //     can't take it back.
-  // Tracking the snippets themselves lets us implement the contract
-  // verbatim: the returned text must contain (a) all canonical prose AND
-  // (b) every image markdown we successfully injected.
-  const injectedImageSnippets = [];
-
-  // When an inline image lands, emit it as a markdown URL into the
-  // streamed reply text. The snippet is appended to deltaText so the URL
-  // survives the final return path AND streamed via onDelta so the
-  // desktop UI can render it inline before completion.
-  const emitInlineImage = async item => {
-    if (typeof onInlineImage !== 'function') return;
-    if (!item || typeof item !== 'object') return;
-    const id = String(item.id || `${Date.now()}-${attemptedImageIds.size}`);
-    if (attemptedImageIds.has(id)) return;
-    attemptedImageIds.add(id);
-    let snippet;
-    try {
-      snippet = await onInlineImage(item);
-    } catch {
-      // Save / sign failures must never break the chat reply — we just
-      // skip the image. The model's prose still streams normally, and
-      // injectedImageSnippets stays untouched so the final-text branch
-      // does not append a markdown URL we never wrote.
-      return;
-    }
-    if (typeof snippet !== 'string' || !snippet) return;
-    injectedImageSnippets.push(snippet);
-    deltaText += snippet;
-    if (typeof onDelta === 'function') {
-      await onDelta({ delta: snippet, text: deltaText });
-    }
-  };
-
-  const processEventBlock = async block => {
-    const event = parseCodexSseEvent(block);
-    if (!event) {
-      return;
-    }
-
-    if (
-      event.type === CODEX_EVENT_TYPES.OUTPUT_DELTA &&
-      typeof event.delta === 'string'
-    ) {
-      deltaText += event.delta;
-      if (typeof onDelta === 'function') {
-        await onDelta({
-          delta: event.delta,
-          text: deltaText,
-        });
-      }
-      return;
-    }
-
-    if (isCodexReasoningDeltaEvent(event.type)) {
-      const delta = extractCodexReasoningDelta(event);
-      if (delta) {
-        reasoningText += delta;
-        if (typeof onReasoningDelta === 'function') {
-          await onReasoningDelta({
-            delta,
-            text: reasoningText,
-            eventType: event.type,
-          });
-        }
-      }
-      return;
-    }
-
-    // Streaming-path success signal for the built-in image_generation tool.
-    // Same shape as codexImageEngine (which uses this endpoint standalone).
-    if (
-      event.type === 'response.output_item.done' &&
-      event.item?.type === 'image_generation_call' &&
-      typeof event.item.result === 'string' &&
-      event.item.result
-    ) {
-      await emitInlineImage(event.item);
-      return;
-    }
-
-    if (
-      event.type === CODEX_EVENT_TYPES.COMPLETED ||
-      event.type === CODEX_EVENT_TYPES.DONE ||
-      event.type === CODEX_EVENT_TYPES.INCOMPLETE
-    ) {
-      completedResponse = event.response || completedResponse;
-      // Fallback: under heavy load, some output_item.done events arrive
-      // out-of-order or are merged into the terminal response payload.
-      // Walk the completed output once for any image_generation_call we
-      // haven't emitted yet so the user still sees the image.
-      const output = completedResponse?.output;
-      if (Array.isArray(output)) {
-        for (const item of output) {
-          if (
-            item &&
-            item.type === 'image_generation_call' &&
-            typeof item.result === 'string' &&
-            item.result
-          ) {
-            await emitInlineImage(item);
-          }
-        }
-      }
-      return;
-    }
-
-    if (
-      event.type === CODEX_EVENT_TYPES.ERROR ||
-      event.type === CODEX_EVENT_TYPES.FAILED
-    ) {
-      throw new Error(extractCodexEventError(event));
-    }
-  };
-
-  await readSseStream(response, {
-    missingBodyMessage: 'Codex OAuth request returned no response body.',
-    idleTimeoutMs,
-    processEventBlock,
-  });
-
-  // Final-text contract (Codex review round 2, 2026-04-29):
-  //
-  //   1. Canonical text — `extractResponsesText(completedResponse)` is
-  //      authoritative when present; it's the model's own final
-  //      answer assembled by the server from all output_text items.
-  //      `deltaText` is just our running concatenation of streamed
-  //      delta chunks plus any image markdown we appended.
-  //
-  //   2. Image markdown — every successfully injected snippet must
-  //      appear in the returned text. Otherwise downstream
-  //      `extractUrlAttachmentsFromText` won't see the .png URL and
-  //      every generated image silently disappears from the assistant
-  //      message.
-  //
-  // Failure modes we MUST NOT regress (each pinned by a test):
-  //   • Pure text reply → return canonical completedText; no behaviour
-  //     change vs pre-image-feature path.
-  //   • Streamed text + image → completedText alone misses the image;
-  //     deltaText already contains both, so return deltaText.
-  //   • Completed-only payload (no text deltas) + image → completedText
-  //     has the prose, deltaText has only the image markdown. Combine.
-  //   • Save failure for one of N images → injectedImageSnippets only
-  //     lists the ones that landed; we don't re-inject failed ones.
-  const completedText = extractResponsesText(completedResponse);
-  const trimmedDelta = deltaText.trim();
-  const baseText = completedText || trimmedDelta;
-
-  if (!injectedImageSnippets.length) {
-    if (baseText) return baseText;
-    throw new Error('Codex OAuth request completed without returning a final reply.');
-  }
-
-  // Pick whichever base text already contains every image snippet —
-  // that's the version that actually flowed through onDelta to the UI
-  // in real time (so the user has already seen it inline). When neither
-  // contains them all, append the missing snippets to the canonical
-  // text so the final return matches the streamed UI state.
-  const allInDelta = injectedImageSnippets.every(s => deltaText.includes(s));
-  if (allInDelta && trimmedDelta) {
-    // deltaText already has prose + images interleaved in the stream
-    // order the user saw. Prefer it when completedText is absent OR
-    // its prose is already a substring of deltaText.
-    if (!completedText || deltaText.includes(completedText)) {
-      return trimmedDelta;
-    }
-    // completedText carries prose deltaText didn't catch (e.g. a chunk
-    // arrived as part of the terminal payload, not as an output_text
-    // delta). Append images to canonical text — see contract case 3.
-  }
-
-  if (completedText) {
-    const missing = injectedImageSnippets.filter(s => !completedText.includes(s));
-    if (!missing.length) return completedText;
-    // Snippets are wrapped with leading+trailing blank lines so a
-    // simple concat keeps the markdown URL parseable by
-    // extractUrlAttachmentsFromText without further glue.
-    return [completedText, ...missing].join('').trimEnd();
-  }
-
-  if (trimmedDelta) return trimmedDelta;
-  throw new Error('Codex OAuth request completed without returning a final reply.');
-}
-
-async function readChatCompletionsSseResponse(
-  response,
-  { onDelta, idleTimeoutMs = resolveStreamIdleTimeoutMs() } = {},
-) {
-  let fullText = '';
-
-  const processEventBlock = async block => {
-    const event = parseChatCompletionsSseEvent(block);
-    if (!event) {
-      return;
-    }
-
-    if (event?.error) {
-      throw new Error(extractProviderErrorMessage(event, 'Streaming provider request failed.'));
-    }
-
-    const delta = extractChatCompletionDelta(event);
-    if (delta) {
-      fullText += delta;
-      if (typeof onDelta === 'function') {
-        await onDelta({
-          delta,
-          text: fullText,
-        });
-      }
-    }
-  };
-
-  await readSseStream(response, {
-    missingBodyMessage: 'Streaming request returned no response body.',
-    idleTimeoutMs,
-    processEventBlock,
-  });
-
-  if (fullText.trim()) {
-    return fullText.trim();
-  }
-
-  throw new Error('Streaming request completed without returning a final reply.');
-}
-
 async function readCodexErrorResponse(response) {
   const raw = (await response.text()).trim();
   if (!raw) {
@@ -1601,104 +997,6 @@ async function readCodexErrorResponse(response) {
   }
 }
 
-function buildCodexExecPrompt(systemPrompt, messages) {
-  const transcript = messages
-    .map(message => {
-      const role = message?.role === 'assistant' ? 'Assistant' : 'User';
-      const content = normalizeMessageContent(message?.content);
-      if (!content) {
-        return '';
-      }
-
-      return `${role}:\n${content}`;
-    })
-    .filter(Boolean)
-    .join('\n\n');
-
-  return [
-    systemPrompt,
-    '',
-    'Continue this conversation and respond to the latest user message.',
-    '',
-    transcript,
-  ].join('\n');
-}
-
-async function createCodexCliReply({ model, systemPrompt, messages, signal, onDelta }) {
-  const tempDir = await mkdtemp(join(tmpdir(), 'melo-codex-'));
-  const outputPath = join(tempDir, 'last-message.txt');
-  const prompt = buildCodexExecPrompt(systemPrompt, messages);
-  const codexExecutable = await resolveCodexExecutable();
-  const reasoningEffort = normalizeCodexReasoningEffort(
-    process.env.MELO_CODEX_REASONING_EFFORT,
-  );
-  const timeoutMs = resolveCodexCliTimeoutMs();
-
-  try {
-    await execFile(
-      codexExecutable,
-      [
-        'exec',
-        '-c',
-        `model_reasoning_effort="${reasoningEffort}"`,
-        '--skip-git-repo-check',
-        '--sandbox',
-        'read-only',
-        '--ephemeral',
-        '--output-last-message',
-        outputPath,
-        ...(model ? ['--model', model] : []),
-        prompt,
-      ],
-      {
-        timeout: timeoutMs,
-        killSignal: 'SIGTERM',
-        signal,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
-
-    const reply = (await readFile(outputPath, 'utf8')).trim();
-    if (!reply) {
-      throw new Error('Codex CLI completed without returning a final reply.');
-    }
-
-    if (typeof onDelta === 'function') {
-      await onDelta({
-        delta: reply,
-        text: reply,
-      });
-    }
-
-    return reply;
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      throw new Error(
-        'Codex CLI is not installed or not on PATH. Install Codex or switch Melo to API key mode.',
-      );
-    }
-
-    if (error && typeof error === 'object' && error.killed && error.signal === 'SIGTERM') {
-      throw new Error(
-        `Codex CLI timed out after ${Math.round(timeoutMs / 1000)} seconds.`,
-      );
-    }
-
-    const details = [error?.stderr, error?.stdout, error?.message]
-      .filter(value => typeof value === 'string' && value.trim())
-      .join('\n')
-      .trim();
-    throw new Error(
-      `Codex CLI request failed.${details ? `\n${details}` : ''}`,
-    );
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-}
-
 // Exported for tests so payload-level regressions (Codex review 2026-04-30:
 // `tools` / `instructions` / `model` combinations across edit-mode,
 // pure-generate and pure-text cases) can be pinned without standing up
@@ -1713,12 +1011,24 @@ export async function createCodexResponsesReply({
   signal,
   onDelta,
   onReasoningDelta,
+  onModelMetadata,
+  onExecutionEvent,
   providerProfile = 'default',
   workspacePath = null,
   nativeWebSearchEnabled,
+  nativeImageGenerationEnabled = true,
+  cacheScope,
   _credentialProvider = getCodexCredential,
   _fetchImpl,
 } = {}) {
+  const capturedHome = resolveRuntimePaths().home;
+  const endpoint = resolveCodexResponsesEndpoint(baseUrl);
+  const sessionId = createCodexSessionId();
+  const timeoutMs = resolveCodexRequestTimeoutMs();
+  const reasoningEffort = normalizeCodexReasoningEffort(requestEnvironment().MELO_CODEX_REASONING_EFFORT, model);
+  const isFastProfile = providerProfile === 'fast';
+  const effectiveReasoningEffort = isFastProfile ? resolveFastCodexReasoningEffort(model) : reasoningEffort;
+  const record = createCapabilityRecorder({ config: { authMode: 'codex', model } });
   const credential = await _credentialProvider();
   if (!credential.loggedIn) {
     if (credential.expired) {
@@ -1732,16 +1042,9 @@ export async function createCodexResponsesReply({
   }
 
   const accessToken = credential.accessToken;
-  const endpoint = resolveCodexResponsesEndpoint(baseUrl);
-  const sessionId = createCodexSessionId();
-  const timeoutMs = resolveCodexRequestTimeoutMs();
-  const reasoningEffort = normalizeCodexReasoningEffort(
-    process.env.MELO_CODEX_REASONING_EFFORT,
-  );
-  const isFastProfile = providerProfile === 'fast';
-  const effectiveReasoningEffort = isFastProfile
-    ? resolveFastCodexReasoningEffort(reasoningEffort)
-    : reasoningEffort;
+  const promptCacheKey = buildPromptCacheKey({
+    home: capturedHome, accountId: credential.accountId, endpoint, model, scope: cacheScope, profile: providerProfile,
+  }) || sessionId;
   const enableWebSearch = typeof nativeWebSearchEnabled === 'boolean'
     ? nativeWebSearchEnabled
     : shouldEnableCodexNativeWebSearch(messages);
@@ -1785,26 +1088,16 @@ export async function createCodexResponsesReply({
     workspacePath,
     hasInputImage,
     hasImageIntent,
+    nativeImageGenerationEnabled,
   });
   const enableInlineImage = tools.some(t => t?.type === 'image_generation');
-  // Append the edit-mode instruction only when both (a) inline image is
-  // enabled (workspace exists) AND (b) there is actually an input image
-  // — otherwise we'd inject anti-file-path guidance into pure text
-  // turns, which has no upside and risks confusing the model.
-  const effectiveInstructions =
-    enableInlineImage && hasInputImage
-      ? `${systemPrompt}\n\n${CODEX_INLINE_IMAGE_EDIT_INSTRUCTION}`
-      : systemPrompt;
+  // All actual image routes share intent rules. Ordinary chat and vision-only
+  // turns retain their original instructions; edit guidance needs a reference.
+  const effectiveInstructions = enableInlineImage
+    ? [systemPrompt, IMAGE_INTENT_RULES, ...(hasInputImage ? [CODEX_INLINE_IMAGE_EDIT_INSTRUCTION] : [])].join('\n\n')
+    : systemPrompt;
 
-  // The model is whatever the caller chose. An earlier cut force-
-  // overrode it to gpt-5.5 whenever inline image was enabled — Codex
-  // review caught that as too wide (it silently swapped models for
-  // every Codex+workspace chat including pure-text Q&A) and the user
-  // reverted the rule on 2026-04-30. The default Codex catalog
-  // (gpt-5.5, gpt-5.4, gpt-4.1) is image-tool-capable across the
-  // board, so users only see image-generation failures if they
-  // explicitly switch to gpt-5-codex-mini, in which case the model's
-  // own "I can't draw" response is the right signal.
+  // Preserve the selected model for both text and image-tool requests.
   const payload = {
     model,
     store: false,
@@ -1812,8 +1105,8 @@ export async function createCodexResponsesReply({
     instructions: effectiveInstructions,
     input: await buildCodexResponsesInput(messages, { signal }),
     text: { verbosity: isFastProfile ? 'low' : DEFAULT_CODEX_TEXT_VERBOSITY },
-    include: ['reasoning.encrypted_content'],
-    prompt_cache_key: sessionId,
+    include: ['reasoning.encrypted_content', ...(nativeWebSearchEnabled ? ['web_search_call.action.sources'] : [])],
+    prompt_cache_key: promptCacheKey,
     reasoning: {
       effort: effectiveReasoningEffort,
       summary: 'auto',
@@ -1852,7 +1145,12 @@ export async function createCodexResponsesReply({
   const onInlineImage = enableInlineImage
     ? async item => {
         const saved = await saveCodexInlineImageItem(item, workspacePath);
-        if (!saved) return null;
+        if (!saved) {
+          onExecutionEvent?.({ kind: 'operation', id: item.id, name: 'native_image_generation', module: 'create', status: 'failed', errorCode: 'IMAGE_SAVE_FAILED' });
+          return null;
+        }
+        onExecutionEvent?.({ kind: 'operation', id: item.id, name: 'native_image_generation', module: 'create', status: 'completed',
+          artifacts: [{ id: `image-${item.id}`, kind: 'image', url: saved.url, path: saved.path, title: '生成图片' }] });
         // Bracket the URL with blank lines so it never glues to surrounding
         // prose ("Here's a cat:![cat](http…)" would render but reads worse).
         return `\n\n![generated image](${saved.url})\n\n`;
@@ -1860,20 +1158,33 @@ export async function createCodexResponsesReply({
     : undefined;
 
   return readCodexSseResponse(response, {
+    onModelMetadata,
     onDelta,
     onReasoningDelta,
     onInlineImage,
+    onInlineImagePreview: enableInlineImage ? async event => {
+      if (!event.item_id || !event.partial_image_b64) return;
+      try {
+        const {saveImageArtifact}=await import('./images/imageArtifacts.js');
+        const saved=await saveImageArtifact(workspacePath,Buffer.from(event.partial_image_b64,'base64'),{prefix:'preview',signal});
+        onExecutionEvent?.({kind:'preview',id:event.item_id,url:saved.url,path:saved.path,index:event.partial_image_index});
+      } catch(error) { if(signal?.aborted) throw error; }
+    } : undefined,
+    onExecutionEvent,
+    onNativeSearch: () => record('search', { ok: true, level: 'results', provider: 'codex-native', reason: 'native-search-completed' }),
   });
 }
 
 export async function discoverAvailableModels({
   authMode,
+  apiProtocol,
   apiKey,
   baseUrl,
   model,
 }) {
   if (authMode === 'codex') {
-    return uniqueModels(DEFAULT_DISCOVERED_MODELS.codex, model);
+    const catalog = await readCodexModelCatalog();
+    return uniqueModels(catalog.length ? catalog : DEFAULT_DISCOVERED_MODELS.codex, model);
   }
 
   const normalizedUrl = normalizeBaseUrl(baseUrl || '');
@@ -1884,8 +1195,10 @@ export async function discoverAvailableModels({
   await ensureFetchKeepAliveConfigured();
   const response = await fetch(`${normalizedUrl}/models`, {
     method: 'GET',
+    redirect: 'error',
     headers: {
       'content-type': 'application/json',
+      ...(apiProtocol === 'anthropic' || new URL(normalizedUrl).hostname === 'api.anthropic.com' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : {}),
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
     signal: AbortSignal.timeout(15000),
@@ -1912,8 +1225,36 @@ export async function discoverAvailableModels({
   );
 }
 
-export async function createOpenAICompatibleReply({
+export async function createOpenAICompatibleReply(options) {
+  const record = createCapabilityRecorder({ config: options });
+  let metadata = {};
+  try {
+    const reply = await requestOpenAICompatibleReply({
+      ...options, onModelMetadata: value => { metadata = { ...metadata, ...value }; options.onModelMetadata?.(value); },
+    });
+    const reportedModel = /^[a-z0-9._:/-]{1,150}$/i.test(metadata.reportedModel || '') ? metadata.reportedModel : '';
+    const receipt = {
+      requestedModel: options.model, reportedModel,
+      usage: normalizeUsage(metadata.usage),
+      transport: metadata.transport || (options.authMode === 'codex' ? 'codex-responses' : 'chat-completions'),
+      simulated: Boolean(requestEnvironment().MELO_MOCK_RESPONSE),
+    };
+    options.onProviderResponse?.(receipt);
+    if (options.providerProfile !== 'fast') {
+      await record('model', { ok: Boolean(String(reply || '').trim()), level: 'response', provider: options.authMode || '', ...receipt });
+    }
+    return reply;
+  } catch (error) {
+    if (options.providerProfile !== 'fast' && !isAbortError(error)) {
+      await record('model', { ok: false, reason: 'provider-request-failed', provider: options.authMode || '' });
+    }
+    throw error;
+  }
+}
+
+async function requestOpenAICompatibleReply({
   authMode,
+  apiProtocol,
   apiKey,
   baseUrl,
   model,
@@ -1922,12 +1263,17 @@ export async function createOpenAICompatibleReply({
   signal,
   onDelta,
   onReasoningDelta,
+  onModelMetadata,
+  onExecutionEvent,
   providerProfile = 'default',
   workspacePath = null,
   nativeWebSearchEnabled,
+  nativeImageGenerationEnabled = true,
+  cacheScope,
+  maxTokens,
 }) {
-  if (process.env.MELO_MOCK_RESPONSE) {
-    const mockReply = process.env.MELO_MOCK_RESPONSE;
+  if (requestEnvironment().MELO_MOCK_RESPONSE) {
+    const mockReply = requestEnvironment().MELO_MOCK_RESPONSE;
     if (typeof onDelta === 'function') {
       const chunks = mockReply.match(/.{1,18}/g) || [mockReply];
       let text = '';
@@ -1943,8 +1289,7 @@ export async function createOpenAICompatibleReply({
   }
 
   if (authMode === 'codex') {
-    try {
-      return await createCodexResponsesReply({
+    return await createCodexResponsesReply({
         baseUrl,
         model,
         systemPrompt,
@@ -1952,26 +1297,14 @@ export async function createOpenAICompatibleReply({
         signal,
         onDelta,
         onReasoningDelta,
+        onModelMetadata,
+        onExecutionEvent,
         providerProfile,
         workspacePath,
         nativeWebSearchEnabled,
+        nativeImageGenerationEnabled,
+        cacheScope,
       });
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      if (process.env.MELO_CODEX_ENABLE_CLI_FALLBACK !== '1') {
-        throw error;
-      }
-
-      return createCodexCliReply({
-        model,
-        systemPrompt,
-        messages,
-        signal,
-        onDelta,
-      });
-    }
   }
 
   if (authMode !== 'local' && !apiKey) {
@@ -1984,12 +1317,17 @@ export async function createOpenAICompatibleReply({
     throw new Error('No base URL configured. Open Model settings and set a valid endpoint first.');
   }
 
+  messages = await prepareVisionInputs(messages, { readResource: readAttachmentResource, signal });
+  const protocol = apiProtocol || (new URL(baseUrl).hostname === 'api.anthropic.com' ? 'anthropic' : 'chat-completions');
+  if (protocol === 'anthropic') return requestAnthropicReply({ baseUrl: normalizeBaseUrl(baseUrl), apiKey, model, systemPrompt, messages: normalizeProviderMessages(messages), signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal), onDelta, onModelMetadata, maxTokens: maxTokens ?? (providerProfile === 'fast' ? 1024 : undefined) });
+
   const endpoint = `${normalizeBaseUrl(baseUrl)}/chat/completions`;
   // Resolve audio_attachment parts to input_audio (base64) so models that support
   // native audio input (e.g. GPT-4o Audio, local multimodal models) can process them
   // directly instead of requiring Whisper transcription.
   const resolvedMessages = await resolveAudioAttachments(normalizeProviderMessages(messages), { signal });
   const payload = {
+    ...fastGenerationOptions({ model, baseUrl, maxTokens, providerProfile }),
     model,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -2001,6 +1339,7 @@ export async function createOpenAICompatibleReply({
   await ensureFetchKeepAliveConfigured();
   const response = await fetch(endpoint, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'content-type': 'application/json',
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
@@ -2023,10 +1362,11 @@ export async function createOpenAICompatibleReply({
 
   const responseType = response.headers.get('content-type') || '';
   if (typeof onDelta === 'function' && responseType.includes('text/event-stream')) {
-    return readChatCompletionsSseResponse(response, { onDelta });
+    return readChatCompletionsSseResponse(response, { onDelta, onModelMetadata });
   }
 
   const json = await response.json();
+  onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage });
   const assistantText = extractAssistantText(json);
   if (typeof onDelta === 'function') {
     await onDelta({

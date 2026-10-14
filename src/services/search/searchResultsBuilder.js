@@ -32,14 +32,14 @@ import {
   normalizeSearchValue,
   weightedKeywordScore,
 } from '../../search/scoring.js';
-import { normalizePromptHistory } from '../activity/activityLog.js';
-import { summarizeArtifact, visibleArtifacts } from '../artifact/artifactService.js';
-import { messageVisibleText } from '../message/messageBlocks.js';
+import { normalizePromptHistory } from '../../domain/activity/activityLog.js';
+import { summarizeArtifact, visibleArtifacts } from '../../domain/artifact/artifactService.js';
+import { messageVisibleText } from '../../domain/message/messageBlocks.js';
 import {
   attachmentSearchText,
   messageSearchText,
-} from '../message/messageSearch.js';
-import { summarizeProject } from '../project/projectService.js';
+} from '../../domain/message/messageSearch.js';
+import { summarizeProject } from '../../domain/project/projectService.js';
 import {
   formatUpdatedAt,
   normalizeMessageAttachments,
@@ -677,8 +677,11 @@ export async function buildSearchResults(query, state, workspace, connectors = [
   }));
 
   const files = (workspace.filePaths || [])
-    .filter(filePath => fuzzySearchScore(q, filePath))
-    .slice(0, 20);
+    .map(filePath => ({ filePath, score: fuzzySearchScore(q, filePath) }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.filePath.localeCompare(b.filePath))
+    .slice(0, 20)
+    .map(entry => entry.filePath);
 
   const fileItems = files.map(filePath => ({
     id: `file:${filePath}`,

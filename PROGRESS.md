@@ -1,432 +1,273 @@
-# Melo 进度日志
+## 2026-10-14 — 将多轮已验改动形成可审查、可发布的集成版本
+
+用户在整组架构工作后明确要求 `git pp`；Codex 将现有 Melo 源码、测试和文档形成集成检查点，保留全部用户数据并排除本地构建缓存、模型权重和签名产物。
+这批工作跨多个历史 WIP 阶段，未遵循先前约定的分阶段独立提交；本次如实作为集成提交审查，不宣称整个提交为逐字节移植，既有局部移植核对证据仍保留。
+本次完整 `npm test` GREEN：3453 项回归（340 文件，零排除、零跳过）、19 组 Swift、浏览器、打包安装、两个原生入口和运行时 smoke；未增加真实模型或手机端验收声明。
+测试期间候选源码散列未变化；常见凭证格式扫描无命中。生成渲染资源中的上游着色器空白及移植尾部空行保持原样，未为整理提交改动产品逻辑。
+验证日志位于 `.tmp/git-pp-20261014/gate.log`；接下来由 `git pp` 对提交范围做前置审查，S/A/B 才推送，再做同范围后审。
+
+## 2026-10-14 — 续签原版本，让手机恢复使用且保留数据
+
+Codex 按用户“重新覆盖安装”续装原 0.5.16（21）；旧描述文件当天到期，沿用原 Gmail 团队更新签名，未改产品源码或重启桌面。
+原包可执行代码、资源和权限均保持一致；覆盖后 7 份文件散列一致，启动后的用户内容也一致，任务记录仅编码顺序变化。
+用户解锁后启动成功，PID 23333 后续仍存活；手机通话使 Device Hub 画面预览不可用，未声称此次视觉或真实模型已验。
+临时签名续至 10 月 21 日；续签隔离构建缺生成资源而失败，其产物未交付，实际交付为已验证原包的续签。证据见 docs/ios-reinstall-20261014.md。
+
+## 2026-10-13 — 手机对齐后保留数据覆盖，锁屏启动单独待验
+
+Codex 按用户“对齐 覆盖安装”读取三线程与上次装机源码，补齐主线近期行为并保留神经设计；未开启用户语音开关或切换回答模型。
+本轮已覆盖 0.5.16 (21)，9 段对话、59 条消息、5 个角色及 5 份文件散列一致；用户解锁后实体启动、主页效果和进程存活已确认；启动时仅清理 3 条此前已删除对话的任务记录，现有用户数据与剩余任务不变。
+19 组 Swift、40 共享样例、72 同步测试和 3 原生 fixture 通过；全库初跑唯一失败是新增测试未先解决 fixture 冲突，修正后相关套件通过。
+完整 npm test 会安装/启动桌面，因此在该阶段前终止，改跑独立 unit/iOS/语法检查；共享 WIP 不混合提交或推送。计划与证据见 docs/ios-align-install-20261013.md。
+
+## 2026-10-13 — 让聊天历史增长不再拖慢每次读取和保存
+
+Codex 按用户“都做”执行整组架构改造；不替用户启用额外快速，也不引入外部语义检索软件。
+基准固定为 64 个聊天、每个 20 条预置消息、四类任务各 50 轮，模型与向量使用桩；数字只代表本机开销，详细 P50/P95 留在架构验收文档。
+派生索引允许短暂滞后于已保存消息，通过持久修订回执、重启补跑和删除来源隔离保证可恢复；管理页区分后台更新、暂缓和完成。
+移植先核对函数体哈希；兼容入口保留。完整 gate 揭示了网页资源旧映射和旧版 UI 验收假设，已修正，并将可选记忆预热移出启动阻塞路径。
+完整 npm test GREEN：3449 项回归、19 组 Swift、浏览器、打包安装和两个原生入口通过；macOS 桌面目录授权放行后同签名复测，原生退出收尾也已修复。
+最终基准读取 P50 为 0.66–0.69ms、保存约 5–10ms；原始数据和限制见 docs/architecture-performance-2026-10-13.md。未调用真实模型、未安装 iPhone。
+原工作树有大量并行 WIP，保留开工快照和本轮差异证据，未混合提交或推送其他线程改动。
+
+## 2026-10-12 — 将快速判断设为用户自选，并按已有连接分配
+
+Codex 按用户要求落地“额外快速”，默认关闭；只影响意图与群聊灰区判断，回答模型及本机记忆检索保持各自职责。
+分配只使用已保存连接的模型，不把发现列表当作已验证可用；类型偏好仅用于冷启动，短请求实测后按任务分别选择，未宣称模型名称等同最快。
+开启时最多检测三个模型、每个两次合成短请求；运行时单次四秒、无串联重试，未知用量保留未知，缓存及规则命中不伪造模型调用。
+测试包含 API/Anthropic 本地 HTTP 和 OAuth 注入传输；真实浏览器覆盖编辑、失败重试、冲突保留选择、刷新及窄屏。它们不代表真实账号的端到端提速。
+专项 14、模型 93、提示词 129、架构 30 项通过；UI 全套 357 项在新增冲突/用途测试前通过，新增测试已接专项与正常 gate；语法检查通过。
+本轮是桌面服务与其网页设置；iOS 独立模型链没有这两处判断器，未添加无作用开关，未修改其模型或安装包。
+未启用用户真实配置、未覆盖安装或重启桌面、未跑含安装动作的完整 npm test；混合 WIP 未混合提交或执行 git pp。验收在 `.tmp/extra-fast-20261012/` 与 `.tmp/extra-fast-browser/`。
+
+## 2026-10-12 — 让记忆热度来自实际提示词，并停止全库重建
+
+Codex 按用户要求完成本轮记忆审计修复；历史命中已被旧版级联删除的部分无法重建，后续记录以实际模型请求为准。
+检索与管理搜索只读，预算裁掉的候选不计使用；按请求去重保留查询多样性，已合并记忆不再自动召回，闲聊跳过检索。
+增量索引仍留在提交后的有序路径，复用消息检查点辨别同数量编辑；事实仅在提取结果或归属变更时对齐，未引入外部检索软件。
+延续既定删除规则：删除来源对话后，其共享记忆也停止自动调用；本轮同步回归已通过。
+临时库 500 聊天/5000 消息/6004 记忆，单消息修改仅 4 次行写入，其他聊天零写入；索引更新约 9ms，不代表端到端耗时。
+记忆 411、提示词 128、审计 389、架构 30、同步 30 项通过；未调用真实模型、未覆盖安装或重启桌面，未跑含安装动作的整个 npm test。
+保留混合 WIP 未混合提交；本轮红绿回归、临时库压测和局部基线在 `.tmp/memory-audit-20261012/`。
+
+## 2026-10-12 — 统一删除与记忆边界，让冲突草稿可继续保存
+
+Codex 复核第五轮审计并修复确认项；本轮选择统一规则：删除来源对话后停止自动调用其中记忆，已共享范围也适用，保留记录供检查。
+删除清理持久化后再执行，锁定/执行中拒绝同步删除；失败重启可续，手机图片只移除无其他对话、草稿或编辑链引用的部分。
+冲突需用户明确合并并再次保存；未修改字段跟随最新值，同字段冲突保留用户修改，旧草稿可恢复。
+同步 30 项、记忆 395 项、审计 389 项、架构回归及 18 组 Swift/4 项 JS 通过；新增同步全目录已接正常 gate，最终针对性复测和语法检查通过。
+模拟器真实 ChatStore fixture 通过部分写入失败、重启恢复、执行记录删除及共用图片保留；未调用真实模型，未覆盖真机或重启桌面，也未跑会自动安装的整个 npm test。
+混合 WIP 保留未提交；本轮基线、构建与验收证据在 `.tmp/audit-round5-20261012/`。
+
+## 2026-10-12 — 查明手机朗读未开启，并修复录音与播放会话冲突
+
+用户询问前台自动朗读为何手机不能用；Codex 只读核对真机为 0.5.15（20），朗读开关尚未保存，默认关闭，未替用户开启或覆盖安装。
+另确认输入留下 record 会话而朗读沿用该会话；改独立系统播放并提供试听、真实开始/完成状态和启动超时提示，离开前台停止。
+Debug 模拟器构建及生产入口 fixture 通过，包含 record 后实际语音开始回调、关闭/后台不播、试听与停止；语音输入状态测试通过。
+未验证真机可听性、静音/蓝牙输出，未消耗模型额度；共享 WIP 不混合提交，证据与专项说明分别在 `.tmp/ios-speech-20261012/` 和 `docs/ios-foreground-speech.md`。
+
+## 2026-10-11 — 让三线程对齐真正进入手机，并保留未保存修改
+
+用户明确要求对齐后覆盖安装；Codex 重新核对三线程和源码，把最新设置/角色草稿保护连同前两轮未装修复交付到 iPhone，保留原神经效果与透明阅读边界。
+18 组 Swift、4 项 JS、原生草稿切换/重启恢复、角色查看/暂存/保存颜色与任务空间实点通过；沿用原 Gmail 团队签名，Mortred (3) 已更新到 0.5.15 (20) 并启动，进程随后仍存活。
+安装前后 5 份文件散列一致，9 段聊天、57 条消息、5 个角色保留；启动后执行记录仅 JSON 编码顺序变动。手机正使用另一前台应用，未反复抢前台，未声称实体逐页或真实模型已验。
+公网同步、图片遮罩/批量/二进制同步、桌面执行与完整记忆引擎、长后台/旧退出问题仍有边界。共享 WIP 未混合提交，独立差异、源码基线和验收证据在 `.tmp/ios-align-install-20261011/`。
+
+## 2026-10-11 — 修完六项设计审计并验证桌面实际交互
 
-> 新条目追加在本文件顶部（时间倒序）。
-> 当本文件超过 500 行时，按 CLAUDE.md §3 自动压缩：最旧 70% 归档为一句话摘要，最新 30% 保留完整格式。
+用户授权全部修复本轮六项设计漏洞；Codex 保留现有神经视觉，并把跨页面草稿、保存回执和模型连接归属作为验收依据。
+原始审计已复现六个反例；356 项 UI、18 项连接与对话后端测试通过，隔离浏览器完成窄屏实际点击发送、角色草稿/预设、提示词与语音设置不切换连接、连接冲突及刷新保护验收。
+语法检查及原生构建通过，已覆盖安装并重启桌面；CUA 实测 Cmd+Q 与关闭窗口均提示未保存设置，继续编辑保留草稿，取消后恢复原昵称。
+模型配置字节、9 段聊天及 6 个角色配置保留（排除频道轮询时间）；未调用真实模型、未覆盖手机，也未把浏览器窄屏测试当作原生 iPhone 验收。
+新增浏览器验收命令接入日常门禁，本轮未重跑整个 npm test；混合 WIP 未提交推送，证据在 `.tmp/design-fixes-20261011/` 与 `.tmp/settings-design-check/`。
 
----
-## 2026-06-04 — 全局逻辑 bug 审计：pollers 丢消息 + 3 个资源/泄漏修复
+## 2026-10-11 — 对齐必须包括设置保存和记忆使用的实际语义
 
-意图：用户第三轮"审 bug"。2 个并行 agent（本会话改动回归风险 + 未触碰核心）
-+ 本地核实。最严重：两个 poller (telegram/discord) 在 per-message 循环前就把
-offset 推到 batch-max，循环中途抛错 → 已推进的 offset 被持久化 → 下次 poll 把
-未处理消息当 ack 跳过（Telegram 服务端直接 purge）→ 静默永久丢消息。
+用户要求三线程功能与 UI 全部一致；Codex 对照源码后补显式保存与可追溯记忆，保留桌面共用渲染，不把手机按钮或状态同步当执行能力。
+写入恢复先持久化交接再更新记忆库，并发编辑留为冲突；新的资料导入允许直接保存，刷新模型目录不改已保存选择。
+专项与原生功能 fixture 通过，Debug/未签名 Release 构建通过；Mac 锁屏阻止原生画面验收，未装机；真实服务和完整平台差距仍明确保留。
+共享 WIP 按手机协议保留，未混合提交/推送；本輪有 before/after 及差异证据。没有宣称全量 npm test 或全部功能同等。
 
-用户拍板：全做。poller 语义选 per-message 隔离 + 逐条推进 offset + 硬失败
-ack-and-log 不重试（poison-safe，避免无限重试卡死）。media cache 淘汰选写入
-路径限频 sweep（而非只 on-read 清理——一次性 URL 永不重读永不清）。
+## 2026-10-11 — 让手机修改可确认、草稿可保留，并核清遗留验收
 
-实现承诺（diff 看不出）：
-- poller offset 推进移进 per-message finally，`continue` 也跑 finally → 故意跳过
-  的消息也正确 ack；外层 catch 只管 fetch/setup 级错误（未取的消息 offset 不动）。
-- cache sweep fire-and-forget + cooldown 时间戳 launch 前同步 stamp（天然单飞），
-  绝不阻塞媒体写入热路径；无常驻 timer（那会泄漏——见同审计 scheduler 修复）。
-- 流程失误自查：voice-leak 修复首轮评 C，我为读 review 重复跑 git pp 触发非确定
-  eval re-roll 把它推了；之后改为每次 git pp 只跑一次，C 即停。
+用户要求避免角色误编辑、清楚区分保存状态，修复键盘与历史，并完成以前未完项；Codex 核对三线程和源码后按现有神经视觉实施。
+原生实测故意造成保存失败，确认草稿保留且恢复后可重试；图片检查预检失败曾关闭弹层，现已留在原页。后台测试改为等待实际状态，真实切出模拟器后回复仍保存。
+15 组 Swift、4 项 JS、9 项 Node 与原生交互/同步/图片/后台 fixture 通过，Debug/未签名 Release 构建完成；未用真实模型额度、未覆盖或重启实体手机。
+公共同步地址仍缺，真机长期后台/锁屏未验，原偶发退出仍未知；补运行记录不能当成修复。平台功能差距和主线反向交接逐项保留。
+共享工作树未混合提交推送；源码差异、截图、反例及结果保存在 `.tmp/ios-interactions-20261011/`。
 
-本地 `npm test` GREEN。Final commit range: `c24a0bb`..(本条)。
+## 2026-10-11 — 让设置修改与保存有明确边界，并让对话角色可实际切换
 
----
-## 2026-05-23 — 全局架构一致性审计：统一性 + 逻辑合理性（Tier 1/2/3）
+用户要求设置先编辑再保存、保存结果有颜色反馈，并指出对话选择 Agent 仍未做好；本轮由 Codex 在现有混合 WIP 上修复。
+草稿不会因字段变化或连接测试而写入；保存成功以服务端确认作为依据，失败保留草稿。角色选择用于新对话和既有对话的后续请求。
+UI 353 项、对话角色 7 项通过，语法检查通过；隔离服务实测取消、保存失败重试、锁定、模型/图片配置、角色切换与刷新、窄屏菜单、记忆编辑与恢复。
+真实桌面重启后已看到默认角色、金冬天、懂王 川普，并实际切换后恢复原选择；个人资料编辑/取消也已核对。9 段聊天、6 个角色、模型配置和个人资料保留。
+本轮未安装手机原生版、未消耗真实对话模型额度；没有提交推送混合工作树。验收与备份保存在 `.tmp/settings-edit-20261011/`。
 
-意图：bug audit 收尾后做一轮"统一性"审计（不是找 bug，是找 convention drift /
-死抽象 / layering 错位）。Agent 跨文件交叉对比 + 本地静态扫，8 finding，二审
-定级后修 5 跳 3（#5 abort 三派二审撤销=有 cleanup 非 leak；#8 meloChrome DI seam
-deps-object 形状合理；其余命名类并入 Tier 1）。
+## 2026-10-11 — 让记忆可核对，并由 Melo 自己完成本地检索
 
-分 4 commit：Tier-1 cosmetic（category 统一 / name Title Case / examples 补全 +
-4-invariant 静态卫士）→ Tier-2 socialLinkTool 改属 services/search/socialLinkReader
-（byte-for-byte 移动，registry 从未注册它）→ Tier-3a 给 SearchTask 适配器接第一个
-生产 consumer（#2，701 行死代码闭环；Codex C round-2 抓 hydration round-trip 缺口
-补 errorCode 白名单）→ Tier-3b desktopStore 7 个 RMW 迁 updateStateAtomically（#3，
-migration 从 1/8 → 8/8）。
+用户授权修复记忆审计全部问题，并明确本地语义检索不能依赖外部软件；Codex 改为随桌面包提供模型，推理禁用网络。
+自动事实默认限原对话，跨对话共享需用户明确选择；修正、停用和恢复以持久记录为准，旧检查点不能覆盖用户修改。
+原始五个反例先红后绿；真实资料验收再捕获跨范围候选挤占，补反例并修复。记忆 395 项、UI 348 项通过；完整门禁无红项，自动原生启动两项显式跳过。
+已实际安装并重启桌面，内置模型检测及原生记忆页通过；1238 条索引在本机完成重建，36 条事实保留，其中 5 条历史失效记录不再自动使用。
+配置与 9 段聊天内容文件哈希保持一致、6 个角色保留；状态变化仅导航、版本计数与频道轮询时间。没有覆盖手机或消耗真实对话模型额度。
+混合 WIP 未提交推送；备份、反例、界面验收和数据对比保存在 `.tmp/memory-fixes-20261011/`，人工原生验收独立于门禁状态记录。
 
-设计承诺（diff 看不出）：
-- #2 选"接"不选"删"：errorCode 走 evidenceTrail 完全相同的 persist+SSE rails，纯
-  additive 零 model-prose 变更——不是 ship G-2c feature，是给死抽象一个真消费者。
-- #3 closure-trap 规避：createCustomAgent 的 id 分配 / toggleConnector 的 set 读取
-  全部移进 mutator（pre-atomic 读会让并发调用 allocate 同 id / 丢 toggle）。
-- 新概念测试用真不变量：no-lost-update 并发测试（12 并发 toggle 全留存）会 fail
-  against pre-migration 代码，不是 serial-correctness 假绿。
+## 2026-10-10 — 让连续改图、停止和补图保持同一份真实成果
 
-本地 `npm test` GREEN。Final commit range: `6997a15`..(本条).
+用户授权修完图片复审五项；Codex 完成修复并将反例接入门禁，旧代码重跑确认这些测试能捕获原缺陷。
+生成成果先写聊天再推送；停止仅结束剩余执行，重试读取原请求全文与输入快照；跨聊天成果不可继承，缺文件不退回旧原图。
+图片 158 项、聊天专项 40 项、UI 347 项及 13 组 Swift 通过；完整门禁无红项，两个自动原生启动检查显式跳过，整体 YELLOW。
+门禁中补齐共享场景包，并将提醒测试断言对齐已有的新 ID 格式；没有修改提醒业务逻辑。
+桌面构建安装后已退出并重新打开，图片入口实看可用；9 段对话 / 6 个角色及核对的 10 个配置和聊天文件哈希不变。
+未重新消耗真实生图额度，未覆盖安装手机；共享 WIP 未混合提交推送，差异、红绿证据和数据对比保存在 `.tmp/image-fixes-20261010/`。
 
----
-## 2026-05-28 — Memory / Search UI truthfulness patch
+## 2026-10-10 — 图片绿灯之外仍需覆盖连续编辑与取消
 
-意图：延续 Melo memory/search 横评后的 UI-功能一致性审计，修掉 Customize → Memory/Safety/Advanced 入口和 Memory 维护操作的真实行为偏差。
+用户要求再次审计；Codex 按当前图片链路做隔离复现，未修改业务代码，未重启或覆盖应用。
+确认连续改图取错来源、取消核对未保存聊天成果、局部否定误分类、参考数量误作输出数量、补图重试截断五项；不将文件仍存误报为文件丢失。
+图片 147 项、UI 347 项回归通过，但不能覆盖这些边界；本地模拟服务完成生产聊天入口的取消验证，未消耗真实生图额度或声称原生验收。
+本轮报告和复现保留在 `.tmp/image-audit-20261010/`；上一轮优化文件哈希均未变化。混合工作树未提交推送，修复尚未执行。
 
-实现承诺：
-- `ensureSelectedEntities` 现在保留 `advanced` / `memory` / `safety`，同时保留 legacy `runtime` 供 UI 迁移；Memory/Safety/Advanced 不会再被状态校正打回 Skills。
-- Search feature catalogue 改为真实入口：新增 Memory / Safety / Advanced，移除旧 `feature-runtime` 结果，`runtime` 关键词现在进入 Advanced。
-- Memory 面板的 Wipe embeddings 不再双重 JSON.stringify，按钮会按后端要求发送 confirm token；live provider 不可用时显示 `(provider unavailable)`，不再误报 “not initialised”。
+## 2026-10-10 — 把已验证的同步修复交到实体手机
 
-本地验证：`node --test src/state/stateSelections.customizeSection.test.js src/services/search/searchResultsBuilder.test.js desktop-ui/memoryPane.source.test.js` GREEN；`node --check desktop-ui/app.js && node --check src/state/stateSelections.js && node --check src/services/search/searchResultsBuilder.js` GREEN；`npm run build` GREEN；`git diff --check` GREEN。
+用户明确要求覆盖；Codex 核对源码与已测试版本一致，再签名安装 0.5.12 (17) 至 Mortred (3)，未卸载或清理数据。
+安装后文件原字节保留；启动后执行记录仅 JSON 排序重新编码，28 条内容一致，7 段对话 / 49 条消息和设置不变；同一应用进程复核仍在。
+本轮未做新的模型 / 云同步调用，未部署桌面或云服务，未声称实体 UI 或原偶发退出已验收；备份留在私有用户 Library。
+混合工作树未提交推送；已测试源码未改，不重复跑整套测试。安装证据独立留存，避免把编译、安装和端到端验收混为一谈。
 
----
-## 2026-05-18 — Stage 2c B 留账闭环：real stale-SWR + real abort-during-hang (A)
+## 2026-10-10 — 让同步故障不再阻断手机继续聊天
 
-意图：Stage 2c round-2 落 B 时挂了 3 ⚪ 留账（"真" stale SWR / "真" abort hang / 沙箱 EPERM 第三方）。本批闭真前两个——前者证明 SWR 背景刷新真烧 Jina + 真重写 cache row，后者证明 waitForLoadState 真挂时 abort 真切断、page.close 真触发、wait 被 close 真拒绝。
+用户转来第三轮只读审计；Codex 对照当前三条线程与源码复现后修复，旧消息缺时间一项确认已有兼容，不重复改造。
+同步删除必须跨设备持久化并压过旧副本；超过容量不裁正文，仍保留 8 MiB 总限与冲突保护。发送完成后不等待自动同步。
+67 项 Node 专项、13 组 Swift / 4 项手机 JS、原生慢同步与删除恢复检查通过；0.5.12 (17) Debug / 未签名 Release 构建通过，未运行完整 npm test。
+没有覆盖实体手机、部署云服务或重启用户桌面；真实服务验收与原偶发退出仍未完成。图片处理保留既有验证边界。
+共享未提交工作树按本轮基线追踪，未混合提交推送；超过 500 行的进度按仓库规则摘要归档，原文另存。
 
-用户拍板 / 评级反馈：直接接受单方案动手，Codex 后审 **A**："实现聚焦且测试到位"，零 finding。MEMORY.md `feedback_test_must_validate_real_invariant` 写入 5 天后第一次落地真应用——测试设计本身就抓到一个 silent assumption（`fetchResultContents` 的 url_content_cache 层会短路掉 Jina，单 age 搜索查询行不够），把"真不变量测试"的价值给现场证明了。
+## 2026-10-10 — 让星图与工作内容用足桌面空间
 
-设计承诺（diff 看不出）：
-- `_refreshInBackground` 加 `refreshDeps` opts 让 6 个 DI seam 对称传入 raceSerpProviders + fetchResultContents；生产 `refreshDeps={}` 走模块默认实现，行为不变。
-- 真 stale SWR 测试通过 `DatabaseSync` 直接 `UPDATE created_at` + `DELETE url_content_cache`——后者是关键，单 age 搜索行会让 Jina counter 永远 0。
-- 真 abort-during-hang 用 `page.close()` 同步 reject pending `waitForLoadState`，模拟 playwright 的 "Target closed" 真传播；不用永不 resolve mock。
+用户认为屏幕占比太少、留白过大；Codex 延续五色神经语言，调整空间分配，保留旋转、对焦与功能层级。
+首页输入区宽度随窗口变化，图片配置作为浮层展开；保留主线新增角色、资料与模型入口，不改聊天或供应商逻辑。
+347 项界面测试及语法检查通过；已实看 900×660、1280×720、1440×900、1920×1080 的布局与分支切换，原生窗口刷新确认。未运行真实模型任务或覆盖手机。
+混合工作树保留；本轮修改前基线与截图存于本地验收目录，未混合提交推送。
+用户随后指出放大后的中心太空；Codex 补内部体积颗粒和局部神经连接，保留现有布局、暗部与批量绘制层。347 项界面测试再次通过，原生刷新已实看；未声称完成 GPU 占用基准测试。
 
-本地 `npm test` GREEN. Final commit: `b2c5999`.
+## 2026-10-10 — 让图片要求完整执行并把偏差告诉用户
 
-## 2026-05-17 — Stage 3 全景：pageRegistry + 6 个 browser_* 工具 (3a S, 3b S, 3c A)
-
-意图：在 Stage 2 的"一次性 CDP fetch"基础上，让 agent 能持有持久 page handle 做 open → snapshot → click → fill → wait → close 序列。Stage 3a 是 pageRegistry 生命周期管理，3b 是 read-only-ish 工具（open / snapshot / close），3c 是 state-changing 工具（click / fill / wait_for，requiresPermission:true）。
-
-Codex C-闭环链（每 Stage 至少一轮真抓）：
-1. **3a C** (`728ea48`)：`page.goto` 不听 AbortSignal → 加 abort listener 直接 `page.close()`，避免 Stop 后 phantom page 进 registry。
-2. **3b B** (`ad32bed`)：input URL 写进 registry 但 30x 后已落在别处；snapshot 无 signal 线程。改用 `page.url()` 写实际 landed URL + `awaitWithAbort` 包裹 evaluate。
-3. **3c C** (`4acb4e7`)：state-changing 工具的 abort 契约破——`page.click/fill` 在 wrapper 检 abort 之前同步触发，Stop 只让 wrapper 早返回，底层 op 继续提交表单 / 发消息。改 pre-flight 检 + in-flight abort listener → `closePage(pageId)`（牺牲 persistent handle 真停 op）+ `meta.pageInvalidated:true` 提示 agent 重 open。**MEMORY.md `feedback_test_must_validate_real_invariant` 就是此处假绿教训固化**。
-
-设计承诺：
-- `pageRegistry` 用 `pg-<8hex>` ID + lastUsedAt 衰减；`cleanupIdlePages` 是 callable，非 module-load timer（§6）。
-- `browser_click` / `browser_fill` 是仅有的 `requiresPermission:true`；`browser_wait_for` 是纯观察保 false。
-- abort 期间 state-changing 工具 closePage 不可避免——产品契约选"reliable Stop"优先于"persistent handle 存活"。
-- 三个 tier 都通过 `MELO_CDP_ENABLED=1` 严控；env 是用户设的不是 agent 能选的。
-
-本地 `npm test` GREEN. Final commits: `ab08afa` `728ea48` `edd73eb` `ad32bed` `70571dd` `4acb4e7`.
-
-## 2026-05-17 — Stage 2c：webSearchTool content-fetch CDP fallback (2 轮 C → B)
-
-意图：fetchUrlTool 已通过 Stage 2b 走 CDP，但 webSearchTool 的内容回填层（SERP 后给每个结果抓 body）还停在 Jina + Playwright headless CLI。Stage 2c 让回填层在 env 开时也走 CDP，登录态 + anti-bot bypass 对搜索结果同样有效。
-
-Codex 评级反馈：2 轮 C-闭环（信号没线程进 CDP fetcher / `_refreshInBackground` 没接 round-2 的 `{items, fallbackTier}` 新 shape）后落 B，3 ⚪ 留账显式接受（真 stale SWR + 真 abort hang + 沙箱 EPERM）。用户回 "a"。
-
-设计承诺：
-- `fetchResultContents` 返回升级为 `{items, fallbackTier}`，trail 的 `content-fetch.method` 记录**实际烧到的 tier**（而非按 env hardcode）——Codex round-2 抓的精确假信号。
-- env off 路径完全不变（Stage 2c 的 "behavior change 仅在 env=1 时" 承诺）。
-- 留账两个 ⚪ 推到 2026-05-18 真测试落地（详见上方条目）。
-
-本地 `npm test` GREEN. Final commits: `f3eca59` `5a7d58a` `a96f5e9`.
-
----
-## 2026-05-16 — Stage 2a/2b：connect helper + fetchUrlTool cdp-chrome tier (4 轮 C-gate 闭环)
-
-意图：把 Stage 1 的 launcher 接成 fetchUrlTool 的新 tier，让 agent 通过 CDP 用用户的真 Chrome（登录态 + anti-bot bypass + SPA 渲染）抓那些 jina/direct/headless-playwright 拿不到的内容。Stage 2a 是纯连接器（`connectMeloChrome`/`withMeloChrome`），Stage 2b 是 wire 入 fetchUrlTool。
-
-Codex 4 轮 C-gate 闭环—— Stage 2b 几乎每轮都抓真问题：
-1. **Stage 2a B → S** (`76ef1a5`): connect await 后没再检 signal，abort 在 CDP 握手中段返活 browser handle → 加 post-await gate + 关 just-connected browser。
-2. **Stage 2b round-1 → C #1** (`5b58c1d`+`0d2bb15`): `browser.newContext()` 创建隔离 context → 没 cookies = 没登录态，CDP attach 卖点彻底废。改用 `browser.contexts()[0]` 复用默认 persistent context；close 只关 page 不关 context。
-3. **Stage 2b round-2 → C #2** (`9f2ee49`+`bb43c7e`): social-link 早路由只放 `playwright` 过，explicit `cdp-chrome` 在 twitter/reddit 被截胡；`waitUntil: 'networkidle'` 在长轮询 SPA 必 20s 超时。改 escape-hatch 放行 cdp-chrome；改 `domcontentloaded` + `waitForLoadState('load')` + 1.5s 稳定窗口。
-4. **Stage 2b round-3 → C #3**（本刀）: 安全边界——`extract_mode='cdp-chrome'` 显式分支绕过 env gate，`fetch_url` 又是 `requiresPermission:false`，agent 单方面选 cdp-chrome 就能读用户登录态。**MELO_CDP_ENABLED 必须 unconditional gate**：env 是**用户**显式开关（launchctl setenv / LaunchAgent），schema enum 是**agent**选项，绕过 env 等于 agent 单方面授权自己。Q1=A (auto+explicit 同 gate)，Q2=A (v1 用全局 env，per-domain/session 留后续)。
-
-实现承诺（diff 看不出的设计点）：
-- `connectMeloChrome` 三个 await 边界都检 signal（ensure / impl-resolve / connect），最后一个还会关 just-connected browser。
-- `withMeloChrome` 保证 close-on-throw，callback error 优先于 close error。
-- `tryCdpChrome` **必须**用 `browser.contexts()[0]`（复用 CDP-attached 默认 persistent context = 用户登录态可见）；只关 page 不关 context。defensive fallback `browser.newContext()` 仅在 contexts() 返空时跑（CDP attach 下不该发生）。
-- `waitUntil: 'domcontentloaded'` + 3s `waitForLoadState('load')` + 1.5s sleep——业界 SPA 提取的稳定/上限组合。`networkidle` 在长轮询页面几乎不可达，被淘汰。
-- env gate **覆盖 auto AND explicit**：env off 时 explicit 也返 FETCH_FAILED reason='cdp-disabled'，agent 走 fallback tier，不读用户登录态。隐私边界靠 env 一刀保。
-- `'cdp-chrome'` 进 social-link early-routing 的 escape-hatch 列表（跟 `playwright` 并列）。
-
-本地 `npm test` 2481/2481 GREEN. Final commit: 待 push。
-
-## 2026-05-16 — meloChrome Stage 1：dedicated-profile CDP attach launcher (4 轮 C-gate 闭环到 A)
-
-意图：把 Melo 的浏览器 tier 从"`@playwright/cli` 子进程 + daemon 模型"升级到"attach 用户真 Chrome"——daemon 模型曾撞 2026-05-04 system-freeze regression，且 headless 默认 + 没法用 logged-in session。这是 Stage 1：纯 launcher + lock file，不动 fetchUrlTool / webSearchTool。Stage 2 才接 playwright-core + 作为新 tier 入 fetch 链路。
-
-Codex C-gate 4 轮闭环到 A——每轮都抓真 bug 而非空喷：
-1. **C #1**（`5e82074` 阻）：`spawn()` 漏 'error' listener（binary 不可执行直接崩 Node 进程）+ 无并发 singleflight + abort 不杀 child + timer leak → 1 commit `75766c1` 4 个 fix + 4 个回归。
-2. **C #2**（`75766c1` 阻）：全局单 latch singleflight 跨 MELO_HOME 串用（B 撞 A 的 profileDir）+ §6 home 没在 entry 捕获 → 改 `Map<home, Promise>`，inner 接 `_capturedHome` 不再 getMeloHome()。`fcd83df` push 评 B（带🟠 锁复用太弱）。
-3. **🟠 B 闭环 → C #3 阻**（`f8b6683`）：把 lock 复用从"仅端口响应"升级到 3 谓词（profileDir match + PID alive + 端口响应）。但 round-10 Codex 抓到 `if (lock.profileDir && ...)` 让缺字段的 legacy lock 跳过 profileDir 检查 → 改 `||` 强制必有。
-4. **C #3 阻** → 强制清锁路径在"旧 Chrome 还活着"的常见升级场景下崩盘（Chrome profile-lock 互斥让新 spawn 永远起不来）→ round-11 最终方案：**migrate 不杀**——legacy lock + PID alive + 端口响应 = 视为合法（home-scoped lock path 本身已隐含来源）+ 回填 profileDir 字段。一次性迁移，下一次起严格三谓词。`f1bc3f3` 评 **A**。
-
-实现承诺（diff 看不出的设计点）：
-- **dedicated profile** 在 `$MELO_HOME/desktop/chrome-profile/`（不污染用户日常 Chrome；可见窗口让用户能看到 Melo 在干嘛）。
-- **lock-reuse 三谓词 + legacy migration**：profileDir match（或缺字段 → 自动 backfill） + PID alive via `process.kill(pid, 0)` + CDP /json/version 必须含 `webSocketDebuggerUrl`（防 foreign HTTP server 占同端口）。
-- **singleflight keyed by MELO_HOME**（不是全局），home 在 public entry 同步捕获（CLAUDE.md §6）。
-- **abort/timeout 都 kill 子 child**——只杀本次 spawn 的，reuse 路径的 Chrome 不动（用户可能开着 tab）。
-- **没有 playwright-core dep**——Stage 1 只做 launcher + lock，Stage 2 才引入 connectOverCDP。
-- Cross-process race（两个 Melo 进程同时启）和 follower signal 不阻断 leader launch 都是已知 limit，留 Stage 2 视实际命中决定要不要做。
-
-本地 `npm test` 2458/2458 GREEN. Final commit: `f1bc3f3`.
-
-## 2026-05-16 — api-direct providers v2：HN / arXiv (via Semantic Scholar) / GitHub / Stack Overflow + arXiv C 闭环
-
-意图：v1 (Wikipedia) 验证了 router 架构，本批加 4 个 explicit-site-named provider。tech-corpus 类查询（"hacker news 关于 Y" / "github repo for Z" / "paper on transformer" / "stack overflow X"）从 Playwright SERP + HTML 抽取，转到结构化 JSON API 一发。
-
-Codex 跑 0f0d808 评 **C** 阻 push：arXiv 把 `paper on X` / `论文` 短语标 `'explicit'` 绕过 timeSensitive gate，"latest research on AI safety" 会冲进 arXiv 拿过时数据——和 Wikipedia round-5 同款病。32661f6 闭环评 **A**：arXiv matchKind 改三态（explicit = `arxiv:` 前缀 / `\barxiv\b` 站点名；implicit = `paper/research/论文` 学术意图但未点名；false）。Q1/Q2 用户拍板 both A：EN+ZH 学术意图都 implicit、都受 gate。
-
-实现承诺：所有 explicit-site-named provider（HN / GitHub / SO）的 match 都 'explicit'-only——没有 implicit 路由，避免 Wikipedia 同款 timeSensitive 陷阱。arXiv 是唯一 mixed-mode（学术意图是非站点意图，受 gate），跟 Wikipedia 一样。arXiv 走 Semantic Scholar Graph API（clean JSON，避免拉 XML parser dep），但**过滤** `externalIds.ArXiv` 存在的 paper——Codex G-2b round-5 lesson "不要假装是 X provider 实际服务 Y corpus"。PROVIDERS 排序：Wikipedia 第一（implicit 覆盖最广），后面 site-named 按预期命中率排（HN > arXiv > GH > SO）。
-
-本地 `npm test` 2425/2425 GREEN. Final commit: `32661f6`.
-
-## 2026-05-14/16 — api-direct phase v1：Wikipedia 短路 SERP，时间敏感 query 走原路 (C → B → S 三轮闭环)
-
-意图：用户反馈"靠猜 URL"的 SERP-scrape 体系对结构化查询是浪费，"who is X"在 Wikipedia 一个 call 能拿 canonical 答案。先验证 router 架构而不展开 G-2b 留账。
-
-Codex 双 follow-up: 首版 (`09d7472`) `intent` 收下但没用，被评 **C**——"what is the latest Node.js version"会短路 SERP 拿可能过期的 Wikipedia 数据。Q1/Q2 用户拍板"显式 prefix 永远直达，隐式定义形受 timeSensitive gate"。C 闭环 (`b658f2c`) 评 **B**——pre-aborted signal mid-Wikipedia-fetch 时 `fetchFromWikipedia` catch AbortError 转 ok:false reason='aborted' 不 throw，造成 api-direct.fail + serp.fail 双 aborted-mid-loop 破坏 trail 单一 phase 不变量。B 闭环 (`7a13ce6`) **S** 无具体发现。
-
-实现承诺：provider 接口 `{name, matchKind, fetch}` — matchKind 三态（explicit/implicit/false）让显式 `wiki:` 直达、隐式定义形受 intent gate。api-direct phase 无 pre-await abort gate（fetch 内部有自己的；entry-gate 会用 fail aborted 覆盖真实 sync 结果如 skip no-provider-match）；只在 apiResult.reason='aborted' + signal.aborted 时显式 bail，确保 trail 单一 phase 拥有 aborted-mid-loop。api-direct hit 不进 cache（live Wikipedia <1s 比 cache 还快，避免 stale tier 倒挂）。
-
-本地 `npm test` 2399+ GREEN. Final commit: `7a13ce6`.
-
-## 2026-05-12 (PM) — G-6 §6 audit 完整收官 (6/6 + 第 7 个 externalReaders) + G-1d/e/f trail 端到端 + Melo.app cleanup × 2 + docs/conventions
-
-承接上午 voice bug 那一摊后,下午 / 晚上 11 个 commits 落了 3 大块 + 一些清理:
-
-- **G-6 §6 audit 完整收官 (6/6) + 第 7 个 externalReaders 同类病**:
-  - `b73c118` `fix(state)`: **G-6 #6** desktopStore.js DESKTOP_DIR + AGENTS_DIR lazy 化。Audit 发现 scope 比怕的窄得多 (factory `createAgentMarkdownFileHelpers` 早已支持 `() => string`,只有 1 个 caller 用 string),3 行实质改动 + 7 case markdownFiles factory test + 接 gate。Codex **S** "边界清晰且测试入闸"。**G-6 §6 audit 6/6 全部 push 上线**(conversationIndex / skillRuns / webSearchTool / 3 polling+voice / media/cache / desktopStore)。
-  - `4ea50ec` + `f3a7084` `fix(web)`: **externalReaders §6 closeout** (审 Codex 工作树里的 unstaged 改动)。Codex 加 `MELO_EXTERNAL_READERS_DIR` 候选位置功能正确但 module-load env 冻结(7th §6 命中点,和 6 小时前刚收官的 G-6 自相矛盾)。Lazy 重构 + 5 source-level guard + 1 real-behavior env-flip 测试(mkdtemp + 真 spawn fake crwl 验证 lazy resolver 真随 env 翻)。Codex **A** + **A**。
-- **G-1d/e/f trail 链路完整端到端**:
-  - `736a1e5` `feat(tools)`: **G-1e** trail 进 model prompt — `formatToolResult` 加 `<evidence_trail>jina: fail (timeout, 3500ms) → direct: ok (220ms)</evidence_trail>` block,只在 ok=false 或 multi-tier fallback 时插入 + 16 case parser test + 接 `test:tools-evidence-trail` gate。Agent 看见自己 fallback 历史可以自我修正。
-  - `f91c5a9` + `6ae464f` `feat(ui)` / `fix(ui)`: **G-1f MVP** evidence trail 渲染在活跃 tool-call chip 上(1.8s 窗口内可见)。抽 `desktop-ui/activeToolCallsStrip.js` sibling module (跟 advancedPage.js 一致 pattern) + 23 case (19 渲染 + 4 layout 契约) + 4 个 CSS class。**第一次 commit C 阻 push** —— `.tool-call-pill` 直接 column flex 把 icon/name/status 都竖排了; C-gate 闭环加 `.tool-call-pill-main` wrapper 保首行横排 + 4 case 布局契约 + DOM 结构 order 测试。Codex **A** "实现清晰覆盖到位"。
-  - **整段 G-1d/e/f trail 端到端**: tool 产 trail → executor 保留 (c3285d2 slice 1) → SSE+UI uiState (01296a2 slice 1.5) → model prompt (G-1e 736a1e5) → 屏幕渲染 (G-1f MVP)。
-- **Melo.app deploy 双 cleanup** (用户截图发现 Spotlight 搜 "melo.app" 出 3 个):
-  - `4c3584a` `chore(build)`: build artifact 从 `$PROJECT_ROOT/Melo.app` 搬到 `$BUILD_DIR/.tmp/desktop-build/Melo.app`,源树不再多一个 Spotlight 索引;install script 加 idempotent legacy sweep。
-  - `a322aa7` `chore(install)`: 删冗余 `~/Desktop/melo/Applications/Melo.app` deploy target (verify-red-green 只测 Launchpad + Desktop symlink 两个,这条 3rd 副本无人引用)。两步合下来 `mdfind -name "Melo.app"` 从 3 → 1 (Launchpad,Desktop symlink 不计)。
-- **其他清理 / 留账闭环**:
-  - `3b96247` `fix(media)`: orchestratorAbort.test.js #14 flaky 修(spawned task 落地)— DI seam for ffmpeg pre-pass + cache nonce + social-direct budget override + anti-false-green guard。Codex **A**。
-  - `95386cd` `docs(memory)`: 修正 `_runReplaceMemoriesOn` "vec0 doesn't support DELETE WHERE" 错误注释 + 把 1099 行 wipe-and-rebuild perf 留账写进注释作为设计 note (5-10 P2 留账 #1 闭)。
-  - `732bc0e` `docs`: **新 `docs/conventions.md`** 192 行项目约定速查 — env vars / 目录布局 / 8 个 test:* npm scripts + verify-red-green 接入约定 / inspect-search-trail CLI / §6 反模式总结 / 进一步阅读外链。把今天加的 4 个新约定 (`MELO_SEARCH_TRAIL_LOG` / `MELO_EXTERNAL_READERS_DIR` / test gate / inspect CLI) 集中,避免 6 个月后再 grep 上下文。
-
-**今天 C-gate 战绩 4 次,全部当 commit 闭环 0 漏过** (inspect-search-trail UTC normalize / server guard test 漏 gate / voice Bug 2 误清 browserBatch / G-1f 破 chip 横排)。
-
-- 产出: 11 commits 全部 push 上线。Codex 评级线: 3b96247(A) / b73c118(**S**) / 95386cd(doc skip) / 4c3584a(skip) / a322aa7(skip) / 4ea50ec(A) / f3a7084(A) / 736a1e5(A) / 732bc0e(doc skip) / f91c5a9(C 阻) / 6ae464f(**A**)。
-- P2 留账:
-  1. **G-1d slice 2**: trail 持久化到 chat message metadata,让历史消息也能看(跨 1.8s 窗口)。需要扩 message 对象 schema + UI history render 路径,独立 milestone。
-  2. **G-1f 手动 UI 验证**: 结构化 markup 测试已绿(23/23),但**截图/真浏览器 smoke 没做**。需要启 Melo 跑带 tool_call 的回复,肉眼确认颜色/字号/布局舒适。
-  3. **`/api/tts/native` 与 `nativeQueue` 互不感知**: 手动 Read aloud + 流式同时跑会双说,多端并发真踩到再修。
-  4. **5-10 P2 留账 #3**: `MELO_MEMORY_TIERS_RECALL` 翻默认 ON 后观察 3-5 天 dreams promotion 评分。passively 等。
-
----
-## 2026-05-12 — voice bug 修 + inspect-search-trail CLI + server guard regex + 2 次 Codex C-gate 闭环
-
-10 commits 一条主线，两条触发 §1 强制 git pp 的 C-gate 实战课 + 一个完整 voice bug repair 段：
-
-- **Phase 2 inspect 工具 + C-gate 实战 #1**：
-  - `4d572de` `feat(scripts)`: `inspect-search-trail.js` 356 行 read-only CLI（by-source / tier×outcome / fail reasons / failing URLs / latency P50 五维聚合）。我用了 `git push` 而非 `git pp`——本批次 >1h 是违反 §1。
-  - `aaaaeb8` `fix(scripts)`: 用户问"已经 gitpp 了吗"，我事后手动 codex review，评 **B** 抓出"`--day` 不严格"+ "测试覆盖不足"；改严格 + 16 case test 又 push。这次走 git pp。
-  - `83b611a` `fix(scripts)` C-gate 闭环：git pp 被 codex 评 **C** 阻 push，抓出 JS Date 静默 normalize 真陷阱（`Date.parse('2026-02-31')` → 2026-03-03），我自己测试都没覆盖到。改成 UTC round-trip + 4 calendar red 测 + 接 `verify-red-green.js` step 0（`test:scripts`）；Codex **A** 无具体发现。
-- **server guard regex 修 + C-gate 实战 #2**：
-  - `6d925a4` `fix(server)`: 用户截图反馈 Melo Desktop 启不开 "Another Melo server instance is already running (pid 38832)"；排查发现 aihelper desktop-pet 跑自己的 `node src/server.js` 被 `_scanForOtherServerInstances` 的 regex `/src\/server\.js/` 误判。改成 `fileURLToPath(import.meta.url)` 绝对路径匹配，cross-repo 不再误锁。Codex **A**。
-  - `1f6b4fb` `test(server)`: 抽 `_matchOtherServerLine` 到 sibling `src/serverGuard.js` + 13 case 回归（5 个 cross-repo + 自身/异常/non-node/policy boundary）。我以为接 npm run 跑就够，结果……
-  - `8527fff` `fix(verify)` C-gate 闭环：git pp 评 C 又抓——`src/serverGuard.test.js` 在 `src/**/*.test.js` 里，verify-red-green 排除 src/，所以"防回归测试不进 gate 形同虚设"。加 `npm run test:server-guard` script + 接 verify-red-green step。**和 inspect-search-trail 同一类病同一天再犯一次**，写进 lessons：每加 `*.test.js` 必须问自己"push 前 gate 会跑吗"。
-- **agent 语音输出中途终止 bug 调查 + 修**：
-  - 用户报"好几次语音都没发完就突然终止了，MiniMax / API key 也这样"。深查到 **两个独立 bug**：
-    - **Bug 2 (主因，所有 engine)**：`desktop-ui/app.js` `_streamTtsOnToolCall` 在 `<tool_call>` 流事件每次都一刀切 `speak-stop`+`queue-clear`+`speechSynthesis.cancel`+WKWebView `stopAudio`——把已完整成句、在 `_ttsQueue` 里或 mid-afplay 的句子也杀了。任何带 tool_call 的回复都中刀。
-    - **Bug 1 (macOS engine 专属)**：`/api/tts/native` 每次 spawn `say` 前 kill 旧的；流式 TTS 每检测到一个句子断点就单独 POST 一次→每句被下一句杀，用户只听到最后一句。
-  - `1a1fd14` `fix(ui)`: Bug 2 初次尝试，git pp 评 **C** 拦 push——我连 `_streamTts.browserBatch` 也清了，Codex 抓"那是 WKWebView 按句切好的完整句 batch，清=同样 bug 在 WKWebView 重演"。
-  - `66c2f91` `fix(ui)` Bug 2 C-gate 闭环：删 `browserBatch` 清空那行 + 改测试反转成"必须**不**清 browserBatch" + 加 `test:ui` 接 verify-red-green。Codex **A** 无具体发现。
-  - `987f6e2` `fix(tts)` Bug 1: 新 `src/services/tts/nativeSayQueue.js` pure state machine + spawn 注入 + 9 case unit test。drain 循环串行 spawn `say`/await exit/起下一个，`clear()` 一刀打断（Stop / 新发消息）。`finally` 块加 wake-up tail 处理"drain 收尾时新 items 已被 add 进来"边界（自查时踩过这个坑，测试套抓到）。新端点 `/api/tts/native-queue-add`；`/api/tts/speak-stop` + `/api/tts/queue-clear` 加 `_nativeSayQueue.clear()`；UI macOS 两处 push/flush 切到新 endpoint。Codex **B** + 🔵 (`/api/tts/native-stop` legacy alias 漏)。
-  - `2090e01` `fix(tts)` Bug 1 🔵 闭环：补 `/api/tts/native-stop` 同步加 `_nativeSayQueue.clear()` + 新 `nativeStopEndpointsGuard.test.js` 6 case 守 3 个 stop endpoint 必须含 `clear()` 调用（brace-walk + strip-comments 防注释误匹配）。Codex **A** 无具体发现。
-
-- 为什么 / 教训沉淀（两次 C-gate 同一天，反思 + 防御写进 gate）：
-  1. **CLAUDE.md §1 强制 git pp 不能跳**——4d572de 用 git push 跳 Codex 被抓个真 bug（Date.parse 静默 normalize），印证规则的价值。机械改动也不许跳。
-  2. **"测试存在 ≠ 测试有效"——必须接进 gate**：两次 C-gate 同一类病（inspect-search-trail.test.js 和 serverGuard.test.js 都"存在但 gate 不跑"），现在 verify-red-green.js step 0 跑 `test:scripts` + `test:server-guard` + `test:tts` + `test:ui` 共四套窄范围单测，fail-early。每加新 `*.test.js` 必须问"push 前 gate 会跑吗"。
-  3. **bug 调查要 systematic，不能逮到一条就停**：voice bug 调查时第一次找到 macOS bug（Bug 1）就要交答案，被用户"MiniMax 也是这样"打回；继续深挖才找到真正主因 Bug 2（所有 engine 共病）。lessons-learned #3「Codex C 不只修这一处，做 systematic 检查同类」的真应用。
-  4. **每个修复都要 build "防回归 guard"**：每个 commit 都新加一个守卫测试，把后续"反过来改回去"的 path 锁死。streamTtsOnToolCall 守 4 类 kill + browserBatch 不许清；nativeStopEndpointsGuard 守 3 endpoint 都要调 clear()。
-
-- 产出：10 commits 全部 push 上线。Codex 评级线: 4d572de(skip)/aaaaeb8(B→**手动 review B**)/83b611a(**A**)/6d925a4(A)/1f6b4fb(C 拦)/8527fff(**A**)/1a1fd14(C 拦)/66c2f91(**A**)/987f6e2(B + 🔵)/2090e01(**A**)。**0 个 C 漏掉**——两次 C 都立刻 follow-up 闭环。
-
-- P2 留账：
-  1. **afplay mutex 防御 cleanup**：Bug 1+2 修后变理论 hazard（仅 Telegram polling 并发 case），defer。
-  2. **`/api/tts/native` 单端点**（手动 Read aloud 用）和 nativeQueue 互不感知；同时跑会双说。多端并发 case 真踩到再修。
-  3. **spawned task 的 `src/media/extractors/videoExtractor.js` + `orchestratorAbort.test.js`** 改动还 unstaged 在工作树（DI seam + cache nonce + anti-false-green guard），需要审/弃决策。
-  4. **G-1f UI render evidence trail overlay**：slice 1.5 已把 trail 透到 `uiState.activeToolCalls[i]`，但 UI 没渲染——独立 milestone。
-
----
-## 2026-05-11 — Phase G search-system 标准化（G-1 evidenceTrail / G-2 SearchTask RFC + 停手反思 / Phase 2 真生产 shape instrumentation / G-6 §6 audit 批量落地）
-
-- 做了什么（21 commits 一条主线，含 5 个 Codex C 闭环 + 5 个 5th-lesson 落地 + G-6 §6 audit 4 commits）：
-  - **G-1 evidenceTrail（3 工具落地诊断结构）**：
-    - `874e798` `feat(search) G-1a`: `fetchUrlTool` 7 层 fallback (`{tier, outcome, latencyMs, reason?}`) POC。
-    - `3e0496e` + `c908254` G-1a follow-up：`pendingTier` forced throw 记 `unknown`、auto path 短内容记 `fail parse-empty` + 新 `_fetchViaJina/_fetchDirect/_tryPlaywright` test seam 闭 Codex 双 B（**A**）。
-    - `22262d4` `feat(search) G-1b`: `socialLinkTool` 5 sub-strategy + merge `social-link.*` prefix。
-    - `272a59f` + `1e77668` + `881da50` G-1b 3 轮闭 Codex C：mid-loop abort 裸 return null → 单 candidate await-后 abort check → catch-path abort 走 `bailAbortedSocial` helper（**A**）。
-    - `0e4af90` `feat(search) G-1c`: `webSearchTool` 6-phase trail + 3-layer abort 一次性覆盖。
-    - `fa7fe74` → `b5ab01a` → `3237e78` → `d7edbcd` → `d86150f` G-1c **5 轮闭 Codex C**：cache abort gate → raceSerpProviders abort listener / fetchResultContents abort gate → `abortRace` helper 统一 3 处 PW await → 改测试假绿用真 SERP/Jina seam → systematic 5 PW await audit + content-fetch probe abortRace（**A**）。
-  - **G-2 SearchTask RFC + 停手反思**：
-    - `0d6e3ef` `docs(search) G-2`: SearchTask RFC（3 工具 grep 对比 + schema 提议 + 迁移路径 + 4 个开放问题）。
-    - `4719c25` `docs(search) G-2b 停手于 4 轮 C`：连续 4 轮 normalizer Codex 都抓到没见过的真生产 shape（socialLink `meta`/`canonicalUrl`/`via` schema、webSearch evidence trail 没回带、fetchUrl `ok: false` 但 `output` 有 body 的 partial 成功 case 等）→ 决定停手、4 commits backup 到 `wip/g-2b-adapter-phase2-refresh` 分支 + RFC §7 写"5th lesson principle: Before designing a normalizer/adapter contract, run the producer in production for ≥ 1 day and grep the real shapes from logs"。
-  - **Phase 2 真生产 shape instrumentation（G-2b 停手后的破局路径）**：
-    - `5787a98` `feat(search) Phase 2`: 新 `src/services/search/trailLogger.js` + `trailLogger.test.js` 14 case，env opt-in (`MELO_SEARCH_TRAIL_LOG=1`) JSONL append 到 `MELO_HOME/desktop/search-trail-log/YYYY-MM-DD.jsonl`；3 工具`wrapWithTrailLog`接入；500 字符截断 + `meta.results` cap 12 + fs 错误 best-effort。
-    - `513da09` `fix(search) Phase 2 #1`: `media/index.js` `extractSocialPreviewContent` 直读 `readSocialLink` 旁路也接 trail-log（不止 socialLinkTool.run 走的链路）。闭 Codex Phase 2 B（**A**）。
-    - `82d9084` + `8a7657d` `fix(search) Phase 2 #2`: cross-home cache audit 发现 `webSearchTool.js` `const CACHE_DB_PATH = join(getMeloHome(), …)` 是 §6 违规（和 dreaming `DREAMS_DIR` 同类）→ `cacheDbPath()` 函数化 + `_resetWebSearchCacheForTests()` 钩子 + `getCacheDb()` 路径变化时关旧 handle 开新的；新 `webSearchTool.crossHome.test.js` 5 case（path 调用时解析 / flip+reset / idempotent reset / 源码兜底守卫 / **clearCache 真 handle 开 A→切 B→落 B + A 不复用**闭 Codex B 建议）。其他 8 处 module-load `getMeloHome()` 命中记入 G-6 milestone（**A**）。
-  - **G-6 §6 audit 批量落地（Phase 2 #2 同类点系统性扫干净）**：
-    - `12d4082` `fix(memory) G-6 #1`: `conversationIndex` `SEARCH_DB_PATH` lazy 化（FTS handle 和 webSearchTool cache 共享同一个 `search.sqlite` 文件，独立 handle、disjoint tables，跨 home 必须各自 reopen）；新 `conversationIndex.crossHome.test.js` 4 case（disjoint token FTS 隔离 + 源码守卫）。Codex **S** "无具体发现"。
-    - `39b246b` `fix(agents) G-6 #2`: `skillRuns` `STORE_PATH` lazy 化（原 `skillRuns.test.js` 用 set-MELO_HOME-then-dynamic-import workaround 绕，但不支持 mid-suite flip + 多 profile 切户）；新 `skillRuns.crossHome.test.js` 4 case。Codex **A**。
-    - `f6dcc47` `fix(search) G-6 #3`: `webSearchTool` 调试日志 logPath 调度时捕获（§6 教科书 fire-and-forget IIFE 反模式：`(async () => { await appendFile(MODULE_LOAD_CONST, …) })()`）；`_webSearchDebugDirReady` 从 boolean 改成 `Map<path, true>` 避免跨 home 复用 ready 信号。
-    - `8094d78` `fix(services) G-6 #4`: 3 个 fire-and-forget sync debug log 文件（`voiceRewrite` / `telegramPolling` / `discordPolling`）一并 capture-at-entry——3 个文件原都是从 desktopStore byte-for-byte 抄过来的 §6 违规，`telegramPolling.js` 的头部 comment 甚至写着"DESKTOP_DIR is recomputed lazily"但实际不是（aspirational fake doc）。
-- 为什么：起点是 G-2 想抽 `SearchTask` 统一 3 工具契约，写 adapter 时连 4 轮被 Codex C 抓出"猜生产 shape 不对"。第 4 轮后改为先停手、记 5th lesson、回头通过 Phase 2 instrumentation 抓真数据，等 ≥1 天真生产日志后再设计 adapter。中途用户提点"做的时候多思考 怎么总是 C"，写进 lessons-learned 后 G-1c 第 5 轮自查 5 处 PW await 才完整闭环。G-2b stop 是这条原则的真应用：与其继续猜，不如换路径。
-- 产出：21 commits 全部 push 上线。Codex 评级线：G-1a (A) / G-1b (A) / G-1c (A round-5) / G-2 RFC (A) / G-2b stop+lessons (A) / Phase 2 main+#1+#2+#2-followup (B→A 闭环) / G-6 #1 (**S**) / G-6 #2 (A) / G-6 #3+#4 (机械改动 git push 跳 Codex)。
-- P2 留账：
-  1. **G-2b round-5**：等 ≥1 天 `MELO_SEARCH_TRAIL_LOG=1` 真数据后，refresh fixtures + cherry-pick `wip/g-2b-adapter-phase2-refresh` 4 commits + 重 push。
-  2. **G-2c**: `webSearchTool` 暴露 `meta.contentItems[]`（RFC §#5 follow-up）。
-  3. **G-2d**: 弃用 legacy fields（`text`/`results.body` 直读）。
-  4. **G-6 剩余**: `desktopStore DESKTOP_DIR`（中枢高风险，需独立 milestone）+ `media/cache CACHE_DIR`（小文件 mechanical）。前两个 layer 已扫干净 4/6。
-  5. G-1d/e/f、G-3、G-4、G-5：独立 milestone，按优先级排进 roadmap。
-
-## 归档摘要（2026-05-11 之前的 5-10 + 5-07 条目）
-
-按 CLAUDE.md §3 触发：5-12 voice bug + 工具 + C-gate 系列 10 条 commits 让总行数破 300，把 5-10 memory 1 条 + 5-07 五条压成单段摘要（详细见 `git log --follow -p PROGRESS.md`）。
-
-- **2026-05-10 — memory 长期记忆链路根因连锁修复 + 测试 hygiene + Codex 改动并入** —— 6 commits 收口 3 处 silent-failure 同源 bug：`recallMemories` flat 路径补 `recordMemoryHitsBatch` (memory_hits=0 根因) / `diary.js` `DREAMS_DIR` lazy 化 + 测试 mkdtemp 隔离 (§6 违规) / `storeEmbedding` 三步 SQL atomic 包裹 / `saveMemoryEmbedding` 返 boolean 修 silent failure 永久取消重试。同 commit 并入 Codex memory 系列 (attic hits / pruneByNamespaceKind / tieredRecallEnabled 默认 ON / fire-and-forget scheduleEmbeddingFillIn 等)。`570a7c6` + `0c2be68` + `60e828d` + `83cf5d4` + `d7fe057` + `6eef4ae`
-- **2026-05-07 23:49 — codex-review 解析三连 bug 修复** —— `sed` 换 `perl -CSD -Mutf8` 一行：剥 ANSI CSI + UTF-8 正则 `[：:]` + dash 锚点排除模板行。三个独立 bug 同时撞，只修一个仍 broken (`verify-pp-parse-fix` 分支验证)。
-- **2026-05-07 — Codex 实现：抽 searchRouter + crawl4ai/scrapling/camoufox 外读器** —— 上游 chat runner 单点决策 native web_search，给社媒 SPA 难抓页加 optional 本地 reader (READER_ORDER 顺序试)。`f04248e`
-- **2026-05-07 — Codex C 闭环：narrow-patch + `_clearedFields` sentinel** —— `e54b12b` C 抓 narrow-patch 把用户主动清空也忽略；用户拍板"清空→恢复默认 + 显式 marker"。后端 `normalizeAgentUpdatePatch` 接受 `_clearedFields: string[]`，UI 表单 save 扫四个 protected 字段填进 marker。
-- **2026-05-07 — Codex 实现：per-agent MiniMax TTS 参数端到端** —— 11 文件四束：profile normalizer (clamp 0.5–2.0 / -12–12 / 0.1–10.0) / patch contract 保留四个空字符串字段 / UI draft round-trip / Discord voice spread per-agent。5 套 test 锁 contracts。
-- **2026-05-07 — Codex pre-push B + 1 P0：跨引擎 stale event 竞态** —— `sayEnded`/`audioEnded` 共用 callback → 老 say 被 playAudio 终止后延迟发 sayEnded 错误清新 AVAudio ref。新 `ttsBridgeRouter.js` `selectTtsBridgeCallback` source+action 匹配 + 9 case 测试。`d1b76cf` + `0db3c1c` + `2a8481a`
-- **2026-05-07 — 语音系统全局审计 + 15 项修复 (4 P0 / 7 P1 / 4 P2)** —— general-purpose agent 全局 read-only 审计 19 条发现修 15 (2 P2 跳)：原生转写端口 rollover / Stop 按钮 SSE 半句仍念 / queue-clear 不取消 fetch / WKWebView 桥跨引擎抢占 / applicationWillTerminate 停 TTS / 录音不停 TTS / transcribe 软回退占位当成功 / select-tts-custom-voice 抹用户调参 / set-tts-engine 切声音抹 ttsProvider / WKWebView playAudio 加 audioEnded 回调 / WKWebView reload 还在录 / Edge TTS 抽 services/tts/edgeTts.js 共用 / minimaxVoiceResolver no-cache / baked-in voiceId 默认改 '' / `_speakWithNativeBridge` 空文本守卫。npm test 全 GREEN。
-
----
-
-## 归档摘要（2026-05-08 之前的 5-06 条目）
-
-按 CLAUDE.md §3 触发：5-10 新条目让总行数破 300，把最旧的 5-06 五条压成单段摘要（详细见 `git log --follow -p PROGRESS.md`）。
-
-- 2026-05-06 — Codex C 第三轮闭环：抽 `routeHttpUrlClick` helper，`<a>` 和 `[data-external-url]` 卡片分支共用；same-origin → location.assign / external → openExternalUrl / invalid → 分支化处理。UI 套 187/187（`9f29a16` 接续 commit）。
-- 2026-05-06 — Codex C 第二轮闭环：context filter 收到 5 个 verbatim marker 删裸词，同源 URL 强制 `location.assign` 绕 `target="_blank"` 陷阱（`12e1358`）。
-- 2026-05-06 — Codex C 首轮闭环：context filter 删 `|cookie|cookies` 裸词改特异短语，JS 同源 URL 不再 preventDefault（`bc823ac` + `9ece26f`）。
-- 2026-05-06 — Codex 实现 backend 链路升级：`socialLinkTool` +911 行 / 视频 keyframe 入 prompt / 新 `contextFilters` 模块过滤 assistant 失败诊断 / Codex `cyber_policy` 文案分支。23 src 文件（`bc823ac`）。
-- 2026-05-06 — Codex 实现 desktop 层：WKWebView 外链路由 `decidePolicyFor` 跳系统浏览器 / link-card preview / 静态资源 `cache-control: no-cache`（修 1 天 cache 让用户必须重启的 bug）。5 文件（`9ece26f`）。
-
----
-
-## 归档摘要（2026-05-05 之前的所有条目）
-
-> 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
-
-- **2026-05-05 — Chat UI 三 bug 一次清 + 一个月 chat 跳到中部 / 滑动卡顿 root cause 终结** —— Bug 1/2 修了链接卡片溢出 + 滚动条对齐 thread 区；Bug 3 sync-restore 引入立刻可复现回归当场回退。后续 5 轮 JS scrollTop writer patch 全错，真根因是 `.thread-scroll-region` 缺 `overscroll-behavior-y: contain` 触发 CSS scroll chaining；最终 4 项收口 ship：单 scroller (`is-chat-view` gate) / 1500ms scroll guard / 41 处后台 render 走 `bgRender` helper / 附件 min-height 240px 占位。教训写进 user memory `feedback_ui_root_cause_first.md`。`6b3941f` … `7b021ad`
-- **2026-05-05 — Phase E：长期记忆 dreaming 接 production + tiered recall 灰度 + memory CLI** —— frame/scene 写入实际已接（Phase 7d-5α-A1 commit 5/9），真问题是生产 chat 数据流没产 entries（`memories=1, dreams=12`）；加 `MELO_DEBUG_MEMORY=1` 单行诊断 + tiered recall 灰度开关 (`MELO_MEMORY_TIERS_RECALL`，默认 off) + `melo memory status/consolidate` CLI；604 测试全绿（+13 case）。
-- **2026-05-04 — Phase 4：image_generation 意图门控 + domain cookies 管理 UI（小红书/抖音误路由根治）** —— image_generation 工具改成「workspace AND hasImageIntent」才进列；`detectImageIntent` 两层 regex (英中) + AND-gate 防 CSS/theming 误命中；新加 domain cookies UI 治抽取断层；55 imageIntent + production wiring 全绿。
-
-- **2026-05-04 — Phase 3a/3b/3c：file_safety prompt 进 production + 持久化 allowlist + 管理 UI** —— 13 轮 Codex review 把 backend 锤到 A 后发现 production 接线整条没接（resolveFileSafety 仅 13 个 test 文件调用、前端 SSE 因 toolId 缺失被过滤丢掉），一次性补完三阶段：3a 接 server.js permission-response 路由按 kind:'file_safety' 分流 + desktop-ui 双 payload 形态 + renderFileSafetyDialog 按 operation 分布局；3b 新建 fileSafetyAllowlist.js 持久化 rule（file/dir + write 覆盖 edit + 不允许 dir-persistent）+ dialog "Always allow" 按钮；3c Customize 加 Safety section 列规则/Revoke。后续 Codex follow-up 修了 confirm-input recoverable + production-wiring contract test。`f5b5646` / `270d04c` / `28f1346`
-- **2026-05-04 — dynamicContext multi-language keyword scoring (selected-file-context known-limit closure)** —— 重写 `_CODE_KEYWORD_REGEX` 覆盖 7 语言家族（JS/TS/Python/Rust/Go/Java/C#/Ruby/Swift/Kotlin）+ `\b` word boundary 防 `asynchronization` 误中 `async`；保留 `it(` lookahead 区分测试 framework 与英文 prose；dynamicContext.test 11/11 + 全 src 1975/1975 全绿。`5ffca5c` / `170eb30`
-- **2026-05-04 — uncaughtException / unhandledRejection 顶层 emergency-exit (Codex P2 known-limit closure)** —— 加 src/server.js + src/index.js 的 sync emergency-exit (log → cleanupStalePlaywrightDaemons → process.exit(1))，cleanup 完整覆盖 module-load + SIGINT/SIGTERM + uncaughtException + unhandledRejection 四层；webSearchTool.helpers 43/43 + 全 src 1973/1973 全绿。`fb99ccf`
-- **2026-05-04 — Phase 2D round 14 + hygiene fix #2 + P1 inline-shell-out 工具：13 轮 Codex review 收敛到 A** —— 整 1 天 13 轮 D/C/A review 闭 12 个独立 bypass 维度（awk/expansion/wrapper enum/inline-shell-out/sed exotic delim/跨进程 daemon hygiene），最后 review #13 评 A "修复闭环充分"；nuclear option Y + 16-iter cap fail-closed + cross-process daemon hygiene 三件大头修法定型。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
-- **2026-05-04 — Phase 2D round 14 awk + hygiene fix #2 + P1 inline-shell-out 完整 13 轮 review 系列** —— 见上方 summary。完整 13 轮原始 entries 见 git history（commit 序列从 `eb9e541` 到 `6c525a9`）。
-- **2026-05-04 — sed exotic delimiter coverage (Phase 2D round 14 known-limit closure)** —— `sedExpressionHasEcmd` imperative scanner 处理任意 delim (`,`/`|`/`:`/`#`/`@`)，关闭 round 14 末尾 known limit，保 escape-aware + replacement-text false-positive 守卫。`47c08ed`
-- **2026-05-04 — Selected file context: query-relevant excerpts for large files** —— `buildSelectedFileContextBlock` 抽出，大文件 (>3000 chars) tokenize query + score 每行 + top-4 seed + ±10 行 + merge → 5200 chars budget 渲染 (`lineNo\tcontent` 格式)；小文件向后兼容。`e81fb12`
-- **2026-05-04 — Web search / Playwright resource hygiene fix #1（系统卡死 root cause）** —— `isConcurrencySafe: true → false` (修 unbounded queue) + `closeSoon` 15s idle close + `_browserOpen` state machine + SWR background refresh dedup via `_backgroundRefreshInFlight` Set + `.finally` cleanup + pin `@playwright/cli@0.1.11`。覆盖 within-session 累积。`506814d`
-> 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
-
-- **2026-05-04 — File Safety Gate Phase 2D：bash 工具走 bashRiskParser → requestBashOp（14 轮 follow-up + self-review）** —— bashTool 入口接 `bashRiskParser` → `requestBashOp` gate（`requiresPermission:false`，零风险静默 / 风险弹 prompt / delete-class 硬拒 + file_delete 提示）。14 轮 Codex follow-up 修透各种 bypass：#1 silent-by-default → allowlist + `nested_shell` risk kind（bash -c / eval / xargs sh -c / $() / `\``...）；#2 砍 npm/pnpm/yarn allowlist（package.json scripts 是任意 shell）；#3 cwd 必须在 ws + path-shape arg 必拒 + git option deny-list；#4 realpath-based `cwdInsideWorkspace` 关 lexical/symlink 双逃逸 + `isVersionProbe` EXACTLY 匹配；#5 砍整 git allowlist（`--output=` 等无底洞）；#6 SILENT_ALLOWLIST 收敛到 6 条 + cwd 三件套 prompt payload（effectiveCwd / realCwd / cwdInsideWorkspace）；#7 nested_shell **硬拒**（与 delete 同列，零 prompt 零 spawn）；#8 token-scan 替代 head-only + COMMAND_WRAPPERS bounded set；#9 expansion-before-c（`$SHELL -c` / `${SHELL}` / `bash${EMPTY}` / `ba*`）；#10 新增 `code_execution` 硬拒（python -c / heredoc / pipe-fed / stdin redirect）+ SCRIPT_INTERPRETERS / INLINE_CODE_FLAGS；#11 抽 `effectiveInterpreterHead` helper（4 路径共享 wrapper-skip）；#12 splitWithSeparators 加 `|&` 同 `&&`/`||` two-char；#13 新增 `argv_rewrite` 硬拒（`env -S` / `--split-string`）；#14 awk inline-program + sed e-cmd（`isAwkBasename` + `sedExpressionHasEcmd` 双 pattern + `findWrappedCommand` 重构）；#14 self-review（user 让我自查）发现 awk var=val skip 漏 `awk 'x=system("rm")'` + sed pattern 1 over-tightening 漏所有 address-prefix（`/foo/e`/`$e`/`2e`/...）+ pre-existing parser gap 让 preposed redirect（`< /tmp/x rm`）所有 head-based 检测 miss → 加 `skipPreamble` 同时跳 redirects + env-assignments。终态：bashRiskParser 57/57 + phase2d.bashTool 100/100 + 全 src 1907→1914 全绿。已知 limit：sed exotic delim（`s,x,y,e`/`s|x|y|e`/`s#x#y#e`） / `awk -f /dev/stdin` / `e thing.txt` 文件名假阳 / `gawk -E` 误标 / SCRIPT_INTERPRETERS deny-list 但有界。Final commits: `eb9e541` (round 14) + `3b5ac4c` (self-review) + 前置 `3c2ba41` / `22f67e4` / `42f80cf` / `31a4135` / `ef0d142` / `bc923ea` / `f867ff1` / `a6ab5e0` / `d20c733`.
-- **2026-05-04 — File Safety Gate Phase 2C：rich-media reads (pdf / image / knowledge) 接入 gate** —— `gatedReadIntoBuffer(absPath, ctx, opts)` 统一原语：requestRead 走 gate → atomicOpenLeaf 拿 dirfd-bound leaf fd → S_ISREG + size cap → readSync Buffer。pdfTool（10 actions）/ imageTool（ocr/info/process）/ knowledgeTool（index 一次 requestRead `bypassGrants:true` subtree dirfd-walk）全部接 Buffer 路径不再 re-open path。phase2c.richMedia 19 case；4 轮 follow-up C→A。已知 limit：pdftoppm / rg 仍按 path 读，系统 tmpdir 0o700/0o600 缩攻击面。Final commits: `3dccb3e` + `4cba848` + `e4eaa32` + `9589946` + `e093cf8`.
-- **2026-05-04 — File Safety Gate Phase 2B：read tools (file_read / glob / grep) 接入 gate** —— fileRead 走 atomicOpenLeaf O_RDONLY|O_NONBLOCK + S_ISREG；glob/grep 走 dirfd-bound 递归 walker（openat O_DIRECTORY|O_NOFOLLOW + readdirAt）。grep 砍 rg fast-path 统一 JS walker。native addon 加 O_NONBLOCK + readdirAt + `openDirNoFollowChain` component-by-component walker（关 ancestor-symlink chain 漏洞）。phase2b.readTools + dirfdOps.checked 共 35 case；4 轮 follow-up D→A。Final commits: `b8356d9` + `b91a993` + `bb4d95f` + `fc6f886` + `7e20b88`.
-- **2026-05-03 — File Safety Gate Phase 2A round 13：N-API dirfd-bound atomic ops（终结 12 轮 path-race patch loop）** —— 12 轮 Codex C/D 后引入 native N-API addon 走 POSIX `*at()` syscall。`atomicOpenLeaf` / `atomicRename` / `atomicMkdir` / `atomicUnlink` / `atomicSymlink` / `atomicLstat` + checked variants（probe + syscall 共用 fd 无 reopen race）。fileWriteTool / fileEditTool / fileMoveTool / fileMkdirTool / fileDeleteTool + backup/trash 全链 dirfd-bound。phase2a.fileTools 65 case + 各 errno/checked test；整体 src 1736/1736；5 轮 follow-up D→A。Final commit: `f73ba46`.
-
-> 按 CLAUDE.md §3 自动压缩：每条仅保留标题 + 一句话结论 + commit hash。完整原始条目见 git history (`git log --follow -p PROGRESS.md`)。
-
-- **2026-05-03 — File Safety Gate Phase 1：四模块地基（无接入，纯独立）** —— `sensitivePaths` (4 类硬黑名单) + `chatScopedGrants` (per-(chat,path,kind) 内存授权) + `fileSafetyGate` (8 入口 / 三段决策 / 两阶段 delete) + `trash` (.melo-trash quarantine + 永不自动删) + `backup` (snapshotBeforeWrite + recordAfterDiff) + `bashRiskParser` (8 risk kinds + quote-aware tokenizer)；Phase 1 共 9 轮 Codex pre-pp gate (C/D 多次往返) 才到 A。修过：lexical isWithinWorkspace bypass via `safeResolvePath` + 取最严格 sensitivity；`requestReadBatch` 改强制 paths[] partition (sensitive 单独走)；trash/backup `purge*`/`restore*` operationId 双层防护 (`OPERATION_ID_PATTERN` + `assertWithinRoot`)；commit-token 体系 (`_issueOperationToken` + `commitOperation` TTL 5m + single-use)；restore 链 layer (a/b/c/d) atomic approval-and-commit；`safeDeleteToTrash` 改 `{operationTokens, ctx}` token-bound；`commitOperation` 加 `expectedKind`/`expectedKinds` 强校验防 cross-kind token 复用；symlink delete 改 lstat-based no-follow（`_unsafeRawDelete` 删 link 不删 target）；restore 链 `wasSymlink` 分支独立校验 manifest `symlinkTarget` + 加 `resolvedPathAtDelete` tamper detection。Phase 1 测试矩阵 192/192；全量 1660/1660。`5ebf668` + `987a536` + `4854864` + `cc3170f` + `ad0260c` + `45e3d16` + 后续多轮 → final commit 系列见 git log Phase 1 段
-- **2026-05-01 17:30 — PDF Batch C：edit_spec 中间层（in_place_overlay + rebuild）** —— `pdfEditSpec.js` strict validator + `pickRebuildEngine` (auto: explicit > language > sectionsContainCjk > pdfkit) + 11th `from_spec` action 接 in_place_overlay (text/image/metadata/form fields) 和 rebuild (pdfkit / html_playwright)；顺手修了 pre-existing pdfkit `info.* undefined` crash；6 轮 Codex C 修 nested-doc / margins thread-through / CSS injection / sectionsContainCjk 路由 + sectionsToHtml object-row table 渲染漏；`789fc55` + `a4172bc` + `fc0262b` + `1b07201` + `c6e02b1` + `372b251` + `cd5b2bd`
-- **2026-05-01 16:00 — PDF Batch B：视觉验收 workflow 嵌入 pdfTool description** —— +700 字符 `VISUAL REVIEW WORKFLOW` block 5 步流程 (生成 → render → 自检 LAYOUT/FONT/CONTENT FIDELITY → fix → 仅 echo FINAL URL)；3 层 defence-in-depth 修全局 URL rule vs render PNG echo 冲突 (in-context QA-only marker + `artifactRole: 'review'` + global rule EXCEPTION clause)；`c2bd16f` + `96753e0`
-- **2026-05-01 14:00 — PDF 能力 Batch A：simple ops + render** —— `pdf-lib` 6 helpers (merge/split/delete_pages/watermark/add_page_numbers/prepend_cover) + `pdftoppm` render backend (zero API cost)；pdfTool actions 3 → 10；CJK 在 watermark/page_numbers reject；`resolveInputPdfPath` helper 修 input/output 路径解析不对称；`cd13148` + `98a1502`
-- **2026-04-30 11:30 — 独立 image edit pipeline（用户产品级 audit 落实）** —— `codexImageEngine.editImageViaCodex` 两阶段（vision analysis → 短 edit prompt scaffold）+ `detectImageEditIntent` + chat fast-path 短路 ReAct loop；Codex D SSRF guard 收紧到 data-URI ONLY（拒所有 http(s)）；2 轮 C 收紧 `IMAGE_FOLLOW_UP_PATTERN` 仅 image-OBJECT 短语 + Gate 5 双 pattern 同时为真才 fire（防 "把这个函数改成 async" 误编辑截图）。`41d20cf` + `94518d0` + `2a417b2` + `7a871de` + `d64bfc0` + `fcafa6d`
-- **2026-04-30 09:30 — Codex 内联图编辑模式（image-to-image edit）** —— `messagesHaveInputImages` + `buildCodexResponsesTools(hasInputImage)` + `CODEX_INLINE_IMAGE_EDIT_INSTRUCTION` 三件套；4 轮 Codex C 修后撤销 effectiveModel→gpt-5.5 silent swap、保留 caller's model；用户实测 Codex 拒 input_fidelity → 改 bare `{type:'image_generation'}` 形态。`2618ec5` + `672b2c0` + `bc640c1` + `3ab34b5`
-- **2026-04-29 00:30 — Codex chat 流内联图：image_generation tool 真正打通** —— `createCodexResponsesReply` 加 workspacePath 参数启用裸 image_generation tool；`readCodexSseResponse` 抓 `image_generation_call.done` emit markdown URL 注入 deltaText；3 轮 Codex C 修真 bug（dedup tracker vs emit tracker 拆 / final-text 必须含 prose+image / mime sniff strict by magic-byte，不信 output_format）。`1f17365` + `e7a7311` + `6edfc5e`
-- **2026-04-28 13:30 — 用户截图反馈三连：MiniMax key 保存丢值 + 模型版本 + Voice 面板高度** —— 真因：connector-config 表单没接 draft mirror，password input 每次 background render 回 SSR `value=""` → 提交空被 keepIfBlank 当 preserve；后续 17+ 轮 Codex C/D 分别修 dispatcher / autosave / `_autosaveRevision` gate / `withConfigLock` 原子化 / refreshModelCatalog 锁外 discovery / catalog-only 契约（loadConfig + getResolvedConfig + getDesktopBootstrap 全链 `skipModelNormalize`）。`28a47b1` … `554c079`
-- **2026-04-28 12:30 — Codex D 第三轮：initMcpServers 无条件 reconcile + 抽出可测模块** —— 去 `hasServers` 短路（empty config 也跑 reconciler）；抽 [src/mcp/init.js](src/mcp/init.js) DI hook 可测；toolId.test.js 里 NUL 字节修成 unicode escape 让 git 当 text。`479a897` + `5a9afa9`
-- **2026-04-28 12:00 — Codex C 第四轮：MCP server id 契约 + 共享 toolId helper（safe vs safe:evil）** —— 新建 [src/mcp/toolId.js](src/mcp/toolId.js) `MCP_SERVER_ID_PATTERN = /^[A-Za-z0-9_-]+$/`，用 `parseMcpToolId` 替 `split(':')[1]` 防 agent 授权 `safe` 静默放行 `safe:evil`；启动时 stderr 警告非法 server name。`3876cdc`
-- **2026-04-28 11:30 — Codex C 第三轮：agentDraftFor 漏 enabledMcpServerIds → 静默清空 + stale 撤销失效** —— 抽 [desktop-ui/agentDraft.js](desktop-ui/agentDraft.js) `agentDraftFromProfile(agent)` 纯函数补 `enabledMcpServerIds: Array.isArray(...) ? [...] : []` deny-all 默认；12 个契约测试覆盖 round-trip 保留、unsubmitted 不丢、stale chip whitelist 撤销路径。`75f9f72`
-- **2026-04-28 11:00 — Codex D 第二轮：MCP lifecycle reconciler（全局 disable 真生效）** —— `bootstrapMcpServers` 加 reconciler phase，先 disconnect stale active 再 connect effective；`connectMcpServer(disabled)` 也 disconnect 旧 client；抽 `reconcileMcpLifecycle` 纯函数 + 7 lifecycle 测试。`6957783`
-- **2026-04-28 10:30 — Codex C 第二轮：mcpAuthSurface 统一 + boolean 严格 + 测试 NUL 修复** —— bootstrap 暴露 built-in ∪ user MCP 的 union surface（之前 UI 只列 built-in，user MCP 死锁）；`/api/mcp/preset-toggle` 严格 `typeof === 'boolean'`；test 文件里 NUL 字节用 python 替换。`4d9dc73`
-- **2026-04-28 10:00 — Codex D 第一轮：MCP 默认全关 + cwd reframe + path 加严 + agent UI 撤销** —— md2pdf 默认改 false（4 层模型）；cwd 不再叫 sandbox（不限制绝对路径），改 default working dir；path 禁 `.`/`..`/无字母数字 leaf + resolve 校验 root；chip 改 CSS 类（仍可点撤销已有授权）；README 加 4 层状态文档。`799a9a4`
-- **2026-04-28 09:00 — MCP 全局接入 + per-agent 白名单 + Advanced UI（AntV chart + markdown→pdf）** —— 4 phase 一次性：BUILTIN_MCP_PRESETS（antv-chart + markdown2pdf）+ McpStdioClient cwd + 默认 cwd 子目录；agent profile `enabledMcpServerIds`（deny-all）+ filterMcpToolsForAgent prompt/dispatch 双 enforcement；buildMcpTool 默认 requiresPermission=true 走 approval；bootstrap mcpPresets[] + Advanced toggle UI + agent customize chip-row + `/api/mcp/preset-toggle` 端点。30 新单测，1133/1133 全绿。`8778052` + `3ae3285`
-- **2026-04-27 16:50 — TTS / 视频 / 配置入口 4 处体验断点** —— Voice 面板加 Auto radio + WKWebView 改名 Desktop native voice + 视频附件 chip 读 extractedMedia 显示真实状态 + Voice 面板加配置 MiniMax/Whisper 跳转。`9f5a87a`
-- **2026-04-27 19:30 — Codex D fix: desktopStore re-export gap + server import smoke net** — af2e3b7→768d511 left `restoreArtifact`/`purgeStaleSoftDeletes` un-re-exported, server boot would throw on first ESM load; added the missing re-exports + `src/server.imports.smoke.test.js` (parses server.js import list and asserts every name is reachable through desktopStore). Codex S. `5a888ee`
-- **2026-04-27 19:00 — Codex C round 2: artifact soft-delete reader audit + 11 regression tests** — af2e3b7 missed 4 readers (dynamicContext/search/apply/connector count); added `isLiveArtifact`/`visibleArtifacts` helper, wired 7 readers, +11 tests. `768d511`
-- **2026-04-27 18:30 — artifact soft-delete contract → server-driven** — `e1a8ecf` used a client setTimeout (timer lost on reload) → Codex C; switched to server-side `deletedAt` + `/api/artifacts/restore` + 7d GC, client became fire-and-forget pair, 17 backend tests. `af2e3b7`
-- **2026-04-27 18:00 — 5 处次级 UX 体验提升** —— 批 1 `5f9107a`：PDF 入口 + Advanced Copy state.json + Tasks lane overflow + Search 空状态分类提示 + showFlashToast helper。批 2 `e1a8ecf`：artifacts 软删 + undo toast 第一版（client-timer，被 18:30 D-grade 改成 server-driven）；undoToast.js + 16 单测。test:ui 71/71，memory 330/330。
-- **2026-04-27 17:30 — desktop-ui test harness 落地** —— byte-for-byte port `describeVideoExtractionStatus` + 拆 `renderAdvancedPage` 成显式 props；`npm run test:ui` 52/52 全绿；闭环 14:30 Advanced B + 本批 ⚪ 两条 same-root follow-up；后续 desktop-ui "抽纯函数 + .test.js" 标准模式确立。Codex S。`a9aa5a8`+`7a6710e`
-- **2026-04-27 16:25 — Codex B 第三轮：threshold capture 真正 mid-call 锁定** —— compactQualityThreshold 始终返回 finite number（空/非法 → 0.6 默认），evaluator 不再回头读 env；contract test 锁定 mid-call env 突变不影响 fallback 决定。`da4e09e`
-- **2026-04-27 16:10 — Codex B 追加 follow-up：MELO_SUMMARY_QUALITY_THRESHOLD="" 边界** —— `Number('') === 0` 让 fallback 全放行；trim + 空字符串短路 + 2 回归测试。`d339782`
-- **2026-04-27 15:55 — Codex B 4 条 follow-up：bench rank / vec-aware / threshold capture / fallback DI** —— 🔵 `--rank tier\|global` 默认 tier；🟡 `embeddingActive && vecAvailable` 才报 ANN；🟡 入口 capture threshold；⚪ `_setCallLocalLlmForTests` DI hook + 4 mock 测试。`9d504b2`
-- **2026-04-27 15:30 — F-3C：README "Memory and embeddings" 节落地** —— bge-m3 onboarding 引导（`ollama pull bge-m3` + 4 级降级链 + env 矩阵 + bench 跑法）；闭环最后一条横评扣分项。`dece161`
-- **2026-04-27 15:15 — F-2C：reference-free summary quality + dreams diary 接入** —— 新增 `src/memory/dreaming/summaryQuality.js`（length / entityCoverage / tokenGroundedness 三指标 score = 0.1+0.4+0.5）+ `auditSummary` 写当日 DREAMS.md；`compact.js` 接入按 `MELO_COMPACT_QUALITY_GATE` 处理 LLM 输出；18 新单测 + memory 套 323/323 全绿。`aad4f72`
-- **2026-04-27 14:45 — F-1A：memory retrieval bench（黄金集 + recall@k 报告）** —— 新增 `bench/memory/{golden.example.json, README.md}` + `scripts/bench-memory.js` + npm `bench:memory`；支持 `--no-embed` / `--validate` / `--json` / `--threshold-recall5` CI gate；305/305 memory tests 不退化。`eb74e07`
-- **2026-04-27 14:30 — 后台能力分层：MCP / plugins / background-tasks 挪到 Customize → Advanced** —— 新增 renderAdvancedPage() 4 subsection；侧栏 Runtime → Advanced 入口 coerce；删 684 行死代码；regression 1057/1057；Codex B。`e9eb5b6`+`40c747b`
-- **2026-04-27 14:00 — UI overlap 全局 audit：根因 .detail-card height: 100% 一处修光** —— 删 styles.css:3262 `height: 100%`，保留 min-height; 6 类 UI 叠加 audit 仅此一处中招。Codex A。`2731e90`
-- **2026-04-27 13:30 — Codex C #16/#17/#18/#19 fix chain：customize grid 1101px+ 真实可用宽度** —— 三轮宽度+折叠 Codex C 闭环：grid 220/270/440 总 700px，撤单列折叠，修 ≤1100px overflow:hidden 裁切。`3022905`+`f20767b`+`bcc2b09`+`ae0a964`
-- **2026-04-27 13:00 — Customize 页面布局调整：列宽 + 卡片间距 + 重复 .toggle-row 清理** —— grid 改 220/270/440-1fr；删旧 `.toggle-row` 副本；padding 14×16 给文字呼吸；`.skill-health-card` 加 margin-top。`ab06fca`
-- **2026-04-27 12:30 — Codex C #15 fix：stale localStorage cache 不再回写覆盖 saved default** —— `src/shared/minimaxVoiceResolver.js` 抽出纯函数（cache 校验后才优先；stale cache 命中 fallback 链 + drop flag 清 localStorage）；10 个 unit case + 3 个 SECRET_LIKE 防擦 case，bisect 验证。（待 commit）
-- **2026-04-27 12:00 — Codex C #14 fix：activate-minimax-voice 不再擦掉 saved Default Voice ID** —— client 优先链加 `bootstrap.settings.config.minimaxVoiceId` fallback + 三者都空时 toast 错误不发 POST；server `SECRET_LIKE_CONFIG_KEYS` 加 `minimaxVoiceId` 兜底防意外擦。（待 commit）
-- **2026-04-27 11:30 — Codex C fix：MiniMax 数据契约统一 + 测试按钮支持 saved key** —— `connectorRollup.js` 给 connector config 加 4+4 字段（minimax/whisper），TTS 面板改读 `hasMinimaxKey`，`/api/tts/test-minimax` 表单空字段 fallback 到 saved。（待 commit）
-- **2026-04-27 11:00 — MiniMax 完整配置入口：connector 表单 + agent voiceId 字段 + 测试播放** —— bootstrap 暴露 `hasMinimaxKey/maskedMinimaxApiKey/minimaxGroupId/minimaxVoiceId`；server 加 `POST /api/tts/test-minimax`；connector 表单加 4 input + Test 按钮；agent 编辑页加 minimaxVoiceId 字段。（待 commit）
-- **2026-04-27 10:30 — Codex C #12 fix：WKWebView Browser voice 流式累积 + 末段一次播报** —— Desktop app 下 streaming TTS 累积成末段单播（WKWebView bridge 不支持 FIFO 队列）；真浏览器仍逐句 enqueue speechSynthesis。（待 commit）
-- **2026-04-27 10:00 — Browser voice 在 desktop app 没声音 fix：路由到 Swift native bridge** —— `speakWithBrowser` 检测 `webkit.messageHandlers.meloVoice`，desktop app 走 Swift AVSpeechSynthesizer；voice picker 在 desktop 下 disabled + 提示。（待 commit）
-- **2026-04-27 09:30 — TTS 拆清楚三种声音来源：Browser / macOS / Edge / MiniMax / API** —— 把"System voice"拆成 Browser voice（speechSynthesis）+ macOS voice（/usr/bin/say）；新加 `/api/tts/say-voices` 端点。（待 commit）
-- **2026-04-27 09:00 — Codex B 跟进：OCR 受控测试 + ESRCH 严格断言** —— 加 `_setTesseractForTests` DI hook + 2 个 mid-createWorker / mid-recognize abort 测试；yt-dlp 测试 `process.kill(pid, 0)` 收紧到只接 `/ESRCH/`。（待 commit）
-- **2026-04-27 08:30 — Codex C #11 fix：fake yt-dlp 改 exec 防 orphan + OCR 提前注册 abort listener** —— fake bash 末行 `sleep 99999` → `exec sleep`；`runOcrWithAbort` listener 提前到 createWorker 之前注册 + flag/workerRef 三种 abort 路径。（待 commit）
-- **2026-04-27 08:00 — Codex B 跟进：OCR 改 Tesseract worker 可中断 + yt-dlp 测试反假绿加固** —— `Tesseract.recognize` 换成 `createWorker` + `worker.recognize` + 可 terminate；yt-dlp fake 写 4 marker 证明 SIGKILL 真生效。（待 commit）
-- **2026-04-27 07:30 — Codex C #10 fix：videoExtractor 直接调 AbortSignal.any 改走 composeAbortSignals** —— 抽出 `composeAbortSignals(...signals)` 通用版；videoExtractor.js 3 处 `AbortSignal.any` 全替换；2 个 monkeypatch 回归证 fallback 仍 propagate。（待 commit）
-- **2026-04-27 07:00 — Phase 4 第 1 刀：orchestrator abort 全链路 + 全 extractor signal 贯通** —— image / PDF / link / yt-dlp 信号链路一次扫干净；`combineSignals` 抽到 common.js；4 个 orchestrator-level integration test。（待 commit）
-- **2026-04-27 06:30 — Codex B-grade follow-up：AbortSignal.any 兼容 fallback + 测试 fixture-fail 显式 skip** —— `combineSignals` 加 Node <20.3 manual fallback；whisper-cli 假绿测试改 `t.skip()`。`424cbe8`
-- **2026-04-27 05:00 — audioExtractor signal 测试反假绿 + 下载阶段补 signal（C #6）** —— 加 `_setWhisperCliForTests` DI hook 解决 module-load 资源化；OpenAI 测试 authMode 改 'api-key'；新增 download abort 测试；`readAttachmentBuffer` 接 signal 走 combineSignals。`aadc7dd`
-- **2026-04-27 04:30 — audioExtractor 全链路 signal 化（C #5）** —— `tryWhisperCpp` / `convertToWavForNative` 走 `execFileAsync({ signal })`；native + OpenAI fetch 走 combineSignals；3 个真 child-kill / fetch-abort 测试证明 backend 真响应 abort。`0ed90fd`
-- **2026-04-27 04:00 — Video Phase 3 hardening：audio + keyframes 真并行** —— audio + keyframes 改 `Promise.all` 并行，独立 budget（audio 10s / keyframe 5s）；新增 `withAudioBudget` + `audioBranch`（spawnWithAbort 接 ffmpeg）；slow/hanging audio + 100ms budget → frames-only entry。`1f29b00`
-- **2026-04-27 03:30 — Video Phase 3 落地：keyframes 不再依赖 transcript 成功** —— 加 `_setExtractAudioContentForTests` DI hook；audio 抽取 fail/null 时不再吞 keyframes，改返 `source: 'video-keyframes-only'` entry；意外抓到 silent-video 真 bug（ffmpeg -vn 在无音轨时 reject 整个 extraction）。`a5d855c`
-- **2026-04-27 03:00 — Video Phase 2 修复 #2：abort 链路贯通 ffprobe + ffmpeg** —— 抽 `spawnWithAbort(bin, args, { signal, collectStdout, onSpawn })` 统一 child + signal 耦合；`probeDurationSec` 接受 signal；3 个 child-kill 测试用真挂死的 `node -e setInterval` 证 SIGKILL 实落地。`1dba8b4`
-- **2026-04-27 02:30 — Video Phase 2 修复：keyframe 抽取 5s 硬超时** —— 加 `KEYFRAME_BUDGET_MS = 5000`、`extractKeyframes(_,_,{signal})` 接收 AbortSignal、`withKeyframeBudget(work, ms)` race 内部 AbortController 与 setTimeout，超时 SIGKILL ffmpeg 子进程 + resolve []，transcript 成头等公民。`5d33930`
-- **2026-04-27 02:00 — Video Phase 2 上线：关键帧抽取（音轨 transcript + 5 张关键帧）** —— `videoExtractor.js` 加 `probeDurationSec` + `extractKeyframes`，每 N 秒一帧 / scale 512px / JPEG q4 / cap 8 张；`messageBuilder.js` 按 `attachmentId` 把 keyframes emit 成 `image_url` parts；UI 副标改 "transcript + keyframes"。后被 5d33930 / 1dba8b4 / a5d855c 多轮 Codex C-grade gate 修补。`adb21ca`
-- **2026-04-27 01:35 — Video Phase 1：UI 文案诚实化** —— 视频 attachment 实际只走 `ffmpeg -vn` 抽音轨转写、无视觉信息，UI 加副标 "audio transcript only" / drop banner / caption hint 三处同步，避免用户误以为模型能看画面。`75b9370`
-- **2026-04-27 01:10 — Composer Link 入口统一 URL 分类** —— `desktop-ui/app.js` 的 manual Link 改走 `promoteTextUrlsToAttachments`（共享 `/shared/urlDetector.js` 静态路由），YouTube/音频/视频/PDF/普通网页粘贴文字 vs 点 Link 得到同样的 kind/mimeType/title；6 个 promoted-shape 契约测试。`207ea6a`
-- **2026-04-27 00:45 — Artifacts UI 按钮重新设计** —— Edit/Delete 改 `.small-button` 文字变体（is-outline / is-danger / is-primary），跟已有 Queue write 同款语言；删 unused pencil/trash icon；编辑表单加 surface-card 类对齐创建表单。`0a8064a`
-- **2026-04-27 00:30 — Artifacts CRUD：补 service-layer 单元测试** —— `workspaceMutations.test.js` 加 8 个测试覆盖刚抽出的 `updateArtifact` + `deleteArtifact`（identity 保留 / 空 content 拒 / 未知 id 报错 / 项目 updatedAt bump 等），用 mkdtemp + dynamic-import + after()-cleanup 同款隔离模式。`fac4732`
-- **2026-04-27 00:00 — Artifacts：只读产物架升级成可管理知识架** —— 修语义闭环（`artifact.summary` 不存在字段 → 改读 `artifact.content` 安全截断）；后端 + UI 加 update/delete CRUD（POST `/api/artifacts/update` / `/api/artifacts/delete`）；UI 加 Edit/Delete 按钮 + 编辑表单 + UUID + uiState.editingArtifact{Id,Draft}。`2777eab`
-- **2026-04-26 23:30 — Phase 7d-5ζ：Telegram + Discord polling clusters 一并搬走** —— `src/services/remote/telegramPolling.js`(~610 行) + `discordPolling.js`(~750 行) byte-for-byte 抽出；desktopStore 净减 ~1140 行 → 2029（本会话累计 -76.2%）。`5419a9b`
-- **2026-04-26 23:00 — Phase 7d-5ε commit 3：4 簇 mutations 一并抽走** —— project + task + workspace + approval = 17 funcs / 412 行，4 个 sibling leaf 模块同 commit 创建；workspaceMutations.js 后续作为 Artifacts CRUD 升级落点。`b997e14`
-- **2026-04-26 22:30 — Phase 7d-5ε commit 2：抽出 Skill mutations 簇** —— `src/services/skill/skillMutations.js` byte-for-byte 把 10 个 exported skill CRUD 搬走（~331 行）。`208e51d`
-- **2026-04-26 22:00 — Phase 7d-5ε commit 1：抽出 External Connector CRUD 簇** —— 7 个 exported CRUD 函数搬到 `src/services/connector/externalConnectorMutations.js`（~277 行）。`9721cd1`
-- **2026-04-26 21:30 — desktopStore unused-import cleanup r2 + PROGRESS condense** —— 第二轮死 import 清理（9 整删 + 2 trim），同时 PROGRESS 从 189 → 127 行。`55b7630`
-- **2026-04-26 21:00 — Phase 7d-5δ commit 8f：抽出 sendChatMessage（path B 真正收尾）+ scanRecentChatsForSkillProposals** —— `src/services/chat/sendChatMessage.js`（~360 行）+ `src/state/skillProposalScan.js`（49 行）；本会话累计突破半数 (-51.2%)。`9895335` + `f1ced20`
-- **2026-04-26 20:30 — Phase 7d-5δ commit 8e：抽出 getDesktopBootstrap + 4 cluster-private helper** —— `src/state/desktopBootstrap.js`(~240 行)；getAgentMarkdownPaths 工厂用 lazy `() => join(getMeloHome(), ...)` 形式遵守 CLAUDE.md §6 调度时捕获 env。`0a05a30` + `e7d2872`
-- **2026-04-26 20:00 — Phase 7d-5δ commit 8d：抽出 search-results builder 簇（644 行 6 函数 + 1 const，单 commit 第二大瘦身）** —— `src/services/search/searchResultsBuilder.js` byte-for-byte 抽走整个 cluster；getDesktopBootstrap 的最大 LOCAL 依赖。`edd3e76`
-- **2026-04-26 19:30 — Phase 7d-5δ commit 8c：抽出 refreshChatMemorySummary + buildConnectors** —— refreshChatMemorySummary 追加到 chatThreadContext.js；buildConnectors 搬到新建 `src/services/connector/connectorRollup.js`（共 105 行）。`66cd1a8`
-- **2026-04-26 19:00 — Phase 7d-5δ commit 8b：updateStateAtomically 搬回 state/stateStore.js（§5 carve-out 反转）** —— 13 行 helper 从 desktopStore byte-for-byte 搬到该住的 stateStore.js；§5 carve-out 失去存在理由后退役。`3c71ee6`
-- **2026-04-26 18:30 — Phase 7d-5δ commit 8a：抽出 ensureSelectedEntities（最大 LOCAL 依赖，58 callers）** —— 67 行 selection-coercion helper 搬到 src/state/stateSelections.js；retire 了 §5 carve-out 的 ensureSelectedEntities 阻塞物，让 8b 能把 updateStateAtomically 搬回 stateStore。`9955870`
-- **2026-04-26 18:00 — desktopStore unused-import cleanup（path B 完成后的 housekeeping）** —— Python 脚本扫 110 个 import block，22 整删 + 17 trim，共减 105 行；中间踩过"花括号里夹注释"导致 `projectAgentOverrideFor` 被误吞的小 bug，regression suite 即时抓到。`46a85b8`
-- **2026-04-26 17:45 — Phase 7d-5δ commit 7d：smoke 测试加 MELO_HOME 隔离（gate 第 3 次 D + 数据丢失事件 + 恢复）** —— 此前 7c smoke 测试没隔离 MELO_HOME，运行时**真覆盖了 ~/.melo/desktop/state.json**；恢复 04-22 备份；测试加 mkdtemp + after() hook + mtime 哨兵双保险。`b4cc16a`
-- **2026-04-26 17:00 — Phase 7d-5δ commit 7b：抽出 runChatAgentExecutionGraph 大象（517 行）** —— 单 commit 史上最大 byte-for-byte 抽取；getSharedSkillIndex 同行迁移；gate 一次 D（getAllTools 漏 import）即时修复。`9c76db9` + `91a25d9`
-- **2026-04-26 16:45 — Phase 7d-5δ commit 7a：抽出 MODE_DEFS** —— 20 行静态数组，elephant 抽取的最后一个 prereq。`2f52bf2`
-- **2026-04-26 16:30 — Phase 7d-5δ commit 6：抽出 runTaskAgentExecutionGraph（第一个 runner，pattern 验证通过）** —— 87 行任务执行图搬到 services/chat/taskExecutionRunner.js，零 desktopStore 反向 import。`ce97d12`
-- **2026-04-26 16:00 — Phase 7d-5δ commit 5：抽出 effectiveAgentProfile + projectAgentOverrideFor** —— 两个 profile 组合 helper 放进现成的 state/agentProfiles.js；实查 8 callers 不是 57。`7055c17`
-- **2026-04-26 15:30 — Phase 7d-5δ commit 4：抽出 taskExecutionPrompt** —— 26 行纯函数搬到 services/task/taskPrompt.js，唯一依赖 agentUsesTool 已是 leaf。`12e85aa`
-- **2026-04-26 15:00 — Phase 7d-5δ commit 3：抽出 buildWorkspaceSnapshot（带 APP_ROOT 深度调整）** —— 52 行 async 搬到 services/workspace/workspaceSnapshot.js，APP_ROOT 用 4 个 dirname 重算（同 stateHydration 模式）。`f3f61d5`
-- **2026-04-26 14:30 — Phase 7d-5δ commit 2：抽出 4 个 findXById finder 簇** —— `findProjectById/findExternalConnectorById/findTaskById/findApprovalById` 共 16 行搬到 src/state/stateLookups.js；35 callers 走 imported name。`be96ec6`
-- **2026-04-26 14:00 — Phase 7d-5δ commit 1：抽出 chat-graph action planner 簇** —— 7 函数（normalizeGraphNeedle / planCommandAction / planExternalConnectorAction / 等 + planChatGraphAction + buildApprovalResponse）共 ~210 行搬到 services/chat/chatActionPlanning.js。`7866271`
-- **2026-04-26 13:30 — Phase 7d-5γ commit 4：抽出 buildAgentMemoryNodeContext + 私有 helper（单 commit 史上最大瘦身 -330 行）** —— 337 行函数 + 5 行 latestUserMessageRecord 搬到 services/agent/agentMemoryContext.js；解码"Explore agent 报 7+ LOCAL deps，实查只 1 个"。`b30d563`
-- **2026-04-26 13:00 — Phase 7d-5γ commit 3：抽出 buildChannelRoutePrompt（实查后是真叶子）** —— 117 行函数搬到 services/remote/channelRoutePrompt.js；中间踩过一个 import 路径错认（normalizeConversationSnippet 实际在 memory/heuristics.js 不在 viz/citation.js），被测试套件即时捕获。`8bda000`
-- **2026-04-26 12:45 — Phase 7d-5γ commit 2：抽出 buildToolRoutingPrompt（拿到 S 评级）** —— commit 1 把 COMMAND_TEMPLATES 抽走后 buildToolRoutingPrompt 降级为零依赖叶子。Codex 评 S。`de7815c`
-- **2026-04-26 12:30 — Phase 7d-5γ commit 1：抽出 COMMAND_TEMPLATES + commandTemplateDescriptor** —— 静态数据 + 专用 shaper 一起搬到新建 services/command/ 子目录，6 个内部 caller 走 imported name。`6e2e171`
-- **2026-04-26 12:00 — Phase 7d-5β commit 3：抽出 buildDynamicContext + PROGRESS condense** —— 61 行 async 搬到 services/chat/dynamicContext.js；同 commit 把 fix-5/6/7 三个详细条目移入归档。`6d18e87`
-- **2026-04-26 11:30 — Phase 7d-5β commit 2：抽出 buildProjectContextSection（单依赖）** —— 5 行函数搬到 services/project/projectContext.js，唯一依赖 agentUsesTool 已经是 leaf。`8364a5f`
-- **2026-04-26 11:00 — Phase 7d-5β commit 1：4 真叶子 bundle commit + re-export fixup** —— matcherContext / connectorPrompts / skillPrompts / visionDebug 共一个 commit，gate 抓出 contract-break (C → A fixup)。`d056e8d` + `ce56b0c`
-- **2026-04-26 10:15 — git pp B-finding 顺手修：commit_count == 0 早退出** —— 本地落后 upstream 时不再浪费一轮 Codex eval。`5742e66`
-- **2026-04-26 10:00 — git pp 第二轮收紧：显式 refspec push** —— 用 `git push <remote> HEAD:<remote-branch>` 替代裸 `git push`，绕开 push.default 影响。`2c43ec2`
-- **2026-04-26 09:30 — git pp 收紧范围：上游必需 + 拒绝额外参数** —— 强制 tracking upstream + 拒绝转发任何 args + pre/post 共用 base_sha。`137c9a6`
-- **2026-04-26 09:00 — Phase 7d-5α-A1 fix-8：applyMemoryStoreSchema 返回 vecAvailable（第 8 次 C 评级修复）** —— vec_memories CREATE 失败时把 disposable handle 的 vec 标志降为 false，下游 _runReplaceMemoriesOn 不再 prepare 不存在的 vec_memories；fix-7 测试加固直接查 memories 行。`5d2c6ac`
-- **2026-04-26 07:30 — Phase 7d-5α-A1 fix-7：memory store cross-home isolation（pre-push gate 第一次实战）** —— `applyMemoryStoreSchema` 抽出私有函数；`withDisposableStoreAt` + `runInTransactionOn` 给替代 storePath 走独立 sqlite 句柄；`getCachedEmbedding`/`resolveCacheModelId` 都接受 explicit database 参数（transitive call chain 隔离）；新增 fix-7 回归测试。`559fbae`
-- **2026-04-26 06:30 — Phase 7d-5α-A1 fix-6：StateLoadContext 贯穿全 chain（结束 6 轮 isolation 修复）** —— 把 home 升格为 first-class context object：`checkpointer` 4 op + `hydrateChatThreads` + `persistChatThreads` 全部接受 `{ threadsDir }`；缓存改 by-dir 索引；`captureLoadContext` 扩展为 `{home, stateFilePath, threadsDir, getAgentMarkdownPaths}` 贯穿整个 load chain；新增 stateLoadContextChain.test.js（3 tests）。`f3b0f29`
-- **2026-04-26 05:30 — Phase 7d-5α-A1 fix-5：readStateSnapshot 整体 home capture（CLAUDE.md §6 落到调用链）** —— `captureLoadContext()` 在 readStateSnapshot 入口一次性捕获 home + path + helpers，整个 load chain 共享；`saveState/persistStateAtomically` 接受 `capturedStatePath`；新增 readStateSnapshot full-chain capture 测试。`08cfab3`
-- **2026-04-26 04:30 — Phase 7d-5α-A1 fix-4：async-timing capture (Q5-B + Q6-b + CLAUDE.md §6 落盘)** —— `queueAgentMarkdownPrime` + `importAgentMarkdownFiles` 改成调度/入口时一次性捕获 home-bound factory，async 体内禁止再读 env；CLAUDE.md §6 写入硬规则。`2063d9e`
-- **2026-04-26 03:30 — Phase 7d-5α-A1 fix-3：cache-level cross-home isolation (Q3-B + Q4-b + 扩大 audit)** —— `checkpointCache` 改嵌套 `Map<home, Map<threadId>>`、`markdownPrimeQueued` 改 Set；4 项 module-level state 全审计无遗漏。`a104f23`
-- **2026-04-26 02:30 — Phase 7d-5α-A1 commit 8+9 fix：MELO_HOME 隔离修复 (Q1a + Q2b)** —— `markdownSynced` 单 boolean → by-home Map；`createAgentMarkdownFileHelpers` 接受 lazy `() => agentsDir`；checkpointer.js 的 `THREADS_DIR` const 改 lazy。`808db9e`
-- **2026-04-26 01:30 — Phase 7d-5α-A1 收尾 (Commit 8+9)：state-machine 全部搬出 desktopStore** —— 新增 `markdownSync.js` + `stateStore.js`（共 ~280 行）；desktopStore 净减 ~196 行（7304 → 7186）；`enqueueStateWrite` §5 carve-out。`856aa07`
-- **2026-04-26 00:55 — Phase 7d-5α-A1 commit 7 fix：恢复 sanitizeWorkspacePath wrapper + 审计 commits 1-6** —— `stateHydration.js` 找回 1-arg local wrapper（绕 2-arg `Raw` 函数的 byte-for-byte 漏洞）；新增 10 个回归测试。`a6c1802`
-- **2026-04-26 00:28 — git pp 改成 push 前先 evaluation** —— `scripts/codex-review.sh` 升级双门：pre-push evaluation 解析评级阻断 C/D，保留 post-push 兜底。（用户改，未单独 commit；后续被 `f4bc254` 替换）
-- **2026-04-26 00:25 — Phase 7d-5α-A1 (Commit 7/9)：抽出 stateHydration 簇** —— 9 个 export（4 hydrate + 2 normalize + 1 helper + 4 const），`APP_ROOT` 多套一层 `dirname` 适配深 1 层目录。`7b051fa`
-- **2026-04-25 23:55 — Phase 7d-5α-A1 (Commit 6/9)：抽出 mergeDiskSkillsIntoState** —— 41 行纯叶子搬到 `diskSkills.js`，desktopStore 的 `reloadDiskSkills` 从此 import。`c332b07`
-- **2026-04-25 23:35 — Phase 7d-5α-A1 (Commit 5/9)：抽出 memorySnapshot 簇 (~400 行最大单 commit)** —— `syncMemoryStoreSnapshot` + `buildMemoryStoreEntries`(384 行) + `buildSpeakerMemoryNamespace`，零循环。`f0b528e`
-- **2026-04-25 23:10 — Phase 7d-5α-A1 (Commit 4/9)：persistChatThreads 加入 chatPersistence.js** —— commit 3 已搬走 `ensureChatThreadContext`，所以 4 个 deps 全外部化。`8ab7817`
-- **2026-04-25 22:55 — Phase 7d-5α-A1 (Commit 3/9)：抽出 chatThreadContext 簇** —— 9 个 export（cache helper + builder + checkpoint payload），后续 commit 4/7 的 prerequisite。`2cc94a8`
-- **2026-04-25 22:30 — Phase 7d-5α-A1 (Commit 2/9)：抽出 serializeChatForPersistence 纯叶子** —— 17 行 pure object reshape 单独 commit；同时把原"7-commit 计划"修订为 9 commit。`4d81ef4`
-- **2026-04-25 22:00 — Phase 7d-5α-A1 (Commit 1/7)：抽出 chatPruning（撤回 cec12c3 错方向，重做 path A）** —— 4 个 chat-pruning 符号搬到 `state/chatPruning.js`，byte-for-byte。`80efd7d`
-- **2026-04-25 21:30 — Phase 7d-5α：暴露 state-machine helpers 为后续 elephant 移植铺路** —— 5 个函数加 `export` 关键字，纯加 export 不动逻辑。（无独立 commit hash；后续被 `856aa07` 调整覆盖）
-- **2026-04-25 19:30 — Phase 7d-2：抽出 systemPrompt + CLAUDE.md §5 落盘** —— `buildReActSystemPrompt` + 5 helper 搬走（~210 行 + 25 测试）；§5 byte-for-byte 规则首次写入。`ffc477a`
-- **2026-04-25 19:03 — 增加 git pp 后 D/C/B/A/S 质量评估 gate + codex.md 改本地派生** —— `EVALUATION.md` 写入五档评分；`codex.md` 加进 `.gitignore`。`1f636e2`
-- **2026-04-25 00:20 — Phase 7d-1：抽出 messageBuilder (chatExecutionService 拆解 ①/N)** —— 8 函数 + 9 常量搬走（~280 行），desktopStore 净减 269 行（最大单次瘦身），首次发现"简化重写"陷阱并回退。`8c387a4`
-- **2026-04-24 23:45 — Phase 7c：抽出 agentProfileService 纯逻辑核心** —— 3 块纯逻辑（normalize patch / stale-draft guard / new agent seed），18 个新单元测试。`7250cd7`
-- **2026-04-24 23:00 — Phase 7b：抽出 workspaceService + 强化 review prompt** —— 3 个 workspace I/O 函数 + 测试；`codex-review.sh` 强制 4 步探索流程。`33aba21` + `0f7d2af`
-- **2026-04-24 22:10 — Phase 7a：抽出 searchService (desktopStore 解耦 ①/④)** —— 2 个 search 函数搬到 `services/search/`，DI 边界 + 薄壳 re-export 范式确立。`8c03a68`
-- **2026-04-24 21:47 — `npm run progress:codex` 自动生成 codex.md 快照** —— 跨会话快速接续机制。`3fcbdea`
-- **2026-04-24 21:30 — 首次远程推送 + 工作协议落盘** —— 配置 `origin = github.com/MortredVigoss/Melo`，3 个积压 commit 全量推送。`5f128c6` + `8fb3cf9` + `f87c06c`
-- **2026-04-24 20:00 — 修复图片生成 HTTP 400** —— `/codex/responses` 请求体加 `instructions` 字段，模型不再编造"等了 180 秒"。`8fb3cf9`
-- **2026-04-24 19:00 — 修复 4 处历史测试失败** —— `audioExtractor.js` 加 codex-env-fallback；`openai.js` 去掉 `[Audio attachment: …]` 占位符。`5f128c6`
-- **2026-04-24 14:00 — 初始化工作协议** —— 新建 `CLAUDE.md`（三条硬性规则）和 `PROGRESS.md`。`f87c06c`
+用户授权优化提示词与图片处理；Codex 沿用既有模型和账户，将视觉核对设为可选，不增加提示规划请求或自动付费重试。
+独立目录真实新图约 34 秒交付、改图约 37 秒交付，检查分别在约 40/45 秒完成；改图中心被额外放大，检查如实报告不符，不将出图成功冒充完全保真。
+最终图片 147、模型 91、提示流程 126 项通过，UI 346 项通过；主门禁已执行项通过，已有原生冷启动检查仍显式跳过并保留 YELLOW。
+桌面直接启动及核对开关实查通过；9 段聊天、6 个角色、消息与配置核对一致。本轮不宣称手机实体安装或其他供应商账户实测。
+共享 WIP 保留，使用本轮前快照及独立差异证据，不混合提交推送；验收边界见图片优化文档。
+
+## 2026-10-10 — 让手机版图片任务保留原图与完整结果
+
+用户把图片处理列为优先事项；Codex 核对三线程和实际源码后，沿用现有手机账号入口，保留桌面与其他线程 WIP，没有搬运凭证。
+原生验收发现并修复目录 URL 表示造成的选图误拒；失败重试、原图追溯和跨对话隔离均使用独立模拟器夹具验证。
+13 组 Swift、4 项手机 JS、Debug/Release 编译及相册/OCR/原图对照/连续修改操作通过；真实账号图片生成与编辑尚待验收，图片跨端同步不在此轮完成范围。
+0.5.11 (16) 签名等待系统钥匙串授权，实体手机未覆盖或重启；不将桌面生图成功或模拟器测试当手机真实连通。差距与主线反向交接记入图片专项文档，间歇退出仍不标已修复。
+
+## 2026-10-10 — 复扫手机对齐，补完整问答边界
+
+用户要求再扫三线程与源码；Codex 以已安装 0.5.10 为基线，区分桌面执行器修复、手机已有保护和真实遗漏，保留其他线程 WIP。
+复现并修复长对话被条数上限切开的问题；三个手机协议共用完整轮次选择，磁盘历史不改。神经 UI 无新实现，资源哈希一致。
+12 组 Swift、4 项手机 JS、48 项专项及 Debug 原生构建通过；隔离模拟器短时后台完成、中断恢复和重试验收通过，未用真实模型。
+实体仍为 0.5.10 (15)，本轮未签名覆盖或重启；聊天/偏好三份散列一致，执行记录可读但散列变化，不能证明四份全相同。原间歇退出与完整工具/图片/云能力差距保留，详见 docs/ios-rescan-20261010.md。
+
+## 2026-10-10 — 用局部改色核对现有图片提示词效果
+
+用户询问图像处理及提示词优化现状；Codex 核对现有两阶段改图链路，并使用上一轮生成的测试图实际编辑。
+约 33 秒完成：中央紫色节点改为金色，画布仍为 1254×1254；人工查看其余紫色节点、连接与背景基本保留，未声称像素级不变或复杂编辑普遍达标。
+当前改图已有视觉参考与保留项约束，但文生图结构化规划、模板冲突、长提示截断和可选后验仍有改进空间；本轮未修改生产提示词或用户设置。
+
+## 2026-10-10 — 用现有登录实测 Image 2，区分语言模型和图片型号
+
+用户要求实测当前方式；Codex 通过 Melo 现有生图引擎和当前 OAuth 登录，做两次真实生成，没有改模型设置或聊天数据。
+默认请求及明确指定 gpt-image-2 均约 21 秒完成，返回有效 1254×1254 PNG；服务端两次都报告图片工具型号 gpt-image-2-codex、语言模型 gpt-6.1-sol。
+这确认当前账户通道实际可生图；未冒称公开 Images API 的同版本权重或所有订阅均可用。图片及脱敏请求/响应证据保存在本轮隔离验收目录。
+
+## 2026-10-10 — 让审计修复经过真实交付失败与权限路径验收
+
+用户提供第二轮审计，Codex 延续已授权的核实与修复；优先保证角色权限和外部副作用边界，不照报告自动重试未知结果。
+确认项已回归，提醒状态和原生录音时限两项按现状纠正；上一轮关于缺日期及语音字段的判断由本轮证据修正。
+专项 389 项、最终界面 345 项通过；实点并行授权、审批恢复关闭和丢弃完成通知后同请求回放，未调用真实供应商。
+正式 Mac 已更新并重开，9 段对话内容、6 个角色主要资料及模型配置保留；应用服务启动仍有独立卡住现象，直接启动成功，不宣称 Launchpad 验收通过。手机未覆盖。
+总门禁已执行项通过、原生启动两项显式跳过；其他线程混合 WIP 保留，本轮基线与差异独立保存，未提交推送。
+
+## 2026-10-10 — 手机对齐包含设置消费点与任务回看
+
+用户要求同时对齐并覆盖安装；Codex 已读三条线程和上一安装版本源码基线，保留混合 WIP，不混合提交。
+本轮沿用主线本机设置实现；补齐手机历史分页和原生朗读设置入口，完整图像/电脑执行与云账户差距继续明示。
+11 组 Swift、4 项手机 JS、21 项共享专项通过；模拟器保存重启、资料导入及语音设置返回已验。0.5.10 已同身份签名覆盖并启动，四份数据 SHA-256 一致。实体屏幕共享被麦克风/相机使用阻止，真实模型/后台未复验。
+
+## 2026-10-10 — 不等待云账户，先让个人资料与本机设置可用
+
+用户明确本轮不做注册登录，Supabase 准备好后再接；个人资料和设备偏好先本机保存，不能暗中迁移现有聊天或模型连接。
+Codex 已完成桌面/手机设置入口与实际消费点，导入复用已有冲突合并协议；可迁移资料导出明确排除凭据、原始附件和设备授权。
+隔离专项 7 项、界面 338 项、11 组 Swift 与总门禁已运行；总门禁原生启动项明确跳过，其余通过。原生两端编译成功，另实点桌面选图/导入/导出、模拟器昵称/头像/动效与资料重启持久化。
+Mac 正式安装已更新并打开设置，9 段对话、6 个角色内容及模型配置保留（频道轮询时间正常更新）；手机未覆盖真机。应用服务启动曾卡于 Node 读文件，开发启动恢复，独立发行启动仍需复核。
+共享工作树仍有大量其他线程 WIP；已保存本轮源码基线，暂不混合提交推送。云账户、多语言和联网更新服务未伪造为已接入。
+
+## 2026-10-10 — 用可复现证据收敛运行链路审计
+
+用户在核实 Claude 报告后授权按建议顺序修；Codex 区分了真实缺陷、既有保护与无法证明的外部结果，未照单删除失败收据或截断历史。
+承诺保留聊天和旧场景、区分调用重传与主动重试、避免不明外部副作用重复发送；永久/多次失败提醒保留可核对的状态。
+最终隔离全量 3261 项、专项 325 项、11 组 Swift 通过；共享脚本过期门禁已修复。Mac 解锁后重开正式桌面，9 段对话 ID/连接配置一致，6 个角色及选择菜单核实；未覆盖手机、未用真实账号发测试消息。
+共享工作树保留其他线程修改，本轮改前副本和差异独立保存；尚未提交推送。
+
+## 2026-10-10 — 将主线两轮功能与最新神经反馈一起送到手机
+
+用户要求三线程对齐后覆盖安装；Codex 先比对 0.5.6 基线与主线已落盘的手机功能，再核验接口、项目资料、角色与回复，补齐原地 4% 导航反馈。
+11 组 Swift、4 项手机 JS、52 项共享专项通过；独立模拟器实点菜单、项目共享资料、历史角色与阅读边界，并核对预检零请求和恢复日志。冷启动神经加载曾需一次显式重试，已记录现场现象。
+0.5.9 (14) 同团队原位覆盖 Mortred (3)，回读与启动通过；聊天、任务、配置文件大小/修改时间保持一致。未调用真实模型，未部署私人同步服务器，完整图像与桌面执行差距不标已完成。
+本轮源码基线和证据已保存，后续从该基线继续；其他线程混合修改保留，未提交推送。
+
+## 2026-10-10 — 现场反馈优先于先前的界面可用结论
+
+用户现场确认首页效果可保留，但分区内的竖排导航悬停应原地放大 3–5%，并指出角色菜单打不开；本轮由 Codex 修复并在实际桌面复核。
+浏览器测试未覆盖的 WKWebView 嵌套浮窗位置差异，已通过场景外独立挂载解决；真实桌面确认默认与自定义角色切换，恢复用户原选金冬天和项目页。未发送测试对话。
+24 项针对性回归通过；五个导航中心误差小于 0.001 像素，放大 4%。证据保存在本地验收目录。
+共享工作区原有混合改动保留；不将其他线程的未提交实现混入本轮提交。Final commit: 未提交。
+
+## 2026-10-09 至 10 — 修复审计发现的逻辑与跨端不一致
+
+独立对话上下文隔离、删除资料失效、实际项目角色与模型、列表及代码保真、发送前校验已修复；项目共享资料及归档已接入两端。
+同步新增版本化角色、项目、文本资料、会话选择和真实来源/模型记录；离线冲突保留待选，连接按端点匹配，连接凭证和工具权限留在本机，旧服务明确提示部分同步。
+最终全量 3237/3237、11 组 Swift、52 项扩展专项与 HTTP 发送契约通过；42 GREEN / 2 YELLOW / 0 RED 门禁后以正式窗口补原生启动核验。
+浏览器实点冲突采用、项目归档保留历史、共享资料/删除及格式通过；独立模拟器确认预检失败零消息零请求、同步恢复日志重启补齐。正式桌面已更新并打开，原 9 段对话 / 6 个角色保留。
+0.5.8 (13) 最终 Release 包已完成钥匙串授权、重新编译、签名及严格验签，SHA-256 e502a646…025034；尚未覆盖实体手机。远端私有同步服务未部署，需同版升级才有全量上下文同步。
+证据：.tmp/logic-fixes-20261009/；方案：docs/conversation-foundations-plan.md。共享目录混合改动保持未提交，不打包其他线程内容。
+
+## 归档摘要（2026-10-10 之前的较早条目）
+
+完整原文保留在 [第三轮审计前归档](docs/progress-archive-20261010-audit-round3.md)。
+
+- 2026-10-09 — 对话选择、角色、知识与阅读修复：按五项计划同步改桌面与手机：项目目标/归组、可选用知识资料、Agent 每轮指令与上传头像、每对话模型/角色、结构化回复和手机导航原地高亮。
+- 2026-10-09 — 按用户要求将神经空间新版送到手机：用户在对齐交付后明确要求覆盖安装；Codex 使用已验签的 0.5.6 包原位更新 Mortred (3)，保留同一 Gmail 应用标识与签名团队，没有卸载或迁移数据。
+- 2026-10-08 — 在手机中延续桌面的神经空间与真实执行记录：用户要求对齐三条 Melo 线程，尤其细致复刻神经网络；本轮先保存实际源码差异和顺序计划，再完成手机适配，未改变桌面源码、账号或用户数据。
+- 2026-10-08 — 让分析、代码和图片过程有可核对的执行证据：用户授权按上一轮方案全部实施；Codex 将公开摘要与实际计算分开，图片输入和生成分别选择连接，并让参考图、遮罩、候选、失败重试进入同一执行记录。
+- 2026-10-08 — 让启动页与黑金神经工作空间保持一致：用户要求按现有 UI 设计改善软件启动加载；本轮只调整桌面与网页启动体验，保留其他线程源码和现有用户配置。
+- 2026-10-08 — 让图标在空间中拆开，并在交互时重新成立：用户认可五区颜色，但否定连续描线图标；要求短线在不同深度旋转，交互时快速拼回识别视角，知识起初换莫比乌斯环，随后用户改选正四面体并要求知识与系统同样空间拆散；中枢脑区浮动并在悬停时前移约 10%。
+- 2026-10-08 — 把五个图标变成有区域身份的神经光路：用户要求保留原图标辨识度，以亮光路描线融入缓慢转动的神经球，并将暗橙金、暗红、暗紫、暗青灰、暗铜贯穿中枢与对应支路。
+- 2026-10-08 — 让导航、中枢与工作面属于同一个空间：用户接受参考视频中的材质、层级与连续展开方案，随后明确五个功能入口应去掉圆壳，改成神经结构并保留实际点击面积。Codex 以黑金空间延续此方向，导航反馈与真实执行事件仍分开。
+- 2026-10-08 — 先把语音变成可确认的输入，再设计多模型与实时通话：用户要求先完成语音输入，并设计按用户连接协作的模型预算、核实 GPT-Live；继续遵守供应商仅提供模型、Melo 掌管执行的边界。本轮默认停止后追加草稿、确认发送，不再覆盖草稿或自动发送录音。
+- 2026-10-08 — 切换应用时保留正在进行的手机回复：用户要求将“三线程实际 diff→计划→按顺序执行”写成固定协议，并补手机后台续行；本轮授权是实现功能，没有重新安装手机。功能与 UI 同步范围保持，桌面未迁移缺项不因此标为完成。
+- 2026-10-08 — 确认手机启动，固定功能与 UI 同步对齐：用户明确后续每次“对齐”都必须同步功能与 UI；三线程扫描、接口/行为/Bug/入口/材质/动效范围及逐项缺口披露已写入对齐文档与授权记忆增补。
+- 2026-10-08 — Gmail 装机保留旧版，先验证数据再确认启动：用户要求覆盖安装；实机仍是原账号旧标识，工程已按此前要求切到 Gmail 新标识。继续遵守 Gmail 选择，安装独立新版并迁移记录，旧应用和原始数据保留，未进行卸载或钥匙串跨团队复制。
+- 2026-10-08 — 将手机对齐固定为三线程检查，保留真实能力边界：用户明确要求每次扫描 melo主线、设计 Melo、melo ui；本轮已读最新四轮并核对实际源码，约定同时保存在对齐文档与用户授权的记忆增补中。
+- 2026-10-08 — 完成低分项六条后续，让执行可核对、恢复与授权有边界：用户明确要求后续全部实施。Codex 完成记忆诊断/事务重建、连接故障定位、工具证据验收/备份预览恢复、范围授权/审计、跨端任务检查点/接力，以及限定角色协作和用量/费用/人工评分记录。
+- 2026-10-08 — 多平台只提供模型，执行主导权留在 Melo：用户明确拍板只接 LLM，保留 Melo 的 harness。Codex 据此完成 API/直接授权连接；未采用代理 SDK/CLI，也未把普通网页登录当成第三方推理 OAuth。
+- 2026-10-07 — Melo UI：统一黑金玻璃材质与排版层级：集中统一工作区、内容卡片与浮层的颜色、细边、阴影、圆角和间距；主线新增能力状态卡片也接入。弹窗保留深空背景，同时通过更厚的玻璃和底层文字退暗维持阅读区分，模糊仅用于局部浮层。
+- 2026-10-07 — 产品状态页、任务恢复与三选项权限：用户要求按低分项完善 Melo；系统/记忆页先展示中文状态，技术信息折叠，系统入口增加可执行任务面板。任务接入真实对话工具链，专属对话保存运行记录；结果待验收，失败/取消/重启中断可明确继续修复，不自动重复操作。
+- 2026-10-07 — 手机对齐主线交付语义和 UI 神经团交互：用户要求同时读取主线/UI线程并对齐手机版。Codex 保留主线已写入手机的交付记录，原样重打包最新神经团拾取与触角动作，补齐手机 API 截断回答/返回模型/引用溯源；没有将授权渠道调研当成已接入功能。
+- 2026-10-07 — 核对第三方模型 API 与跳转授权，修正虚假成功：用户要求核对除 GPT 登录外的实际 API 能力，并探索豆包等跳转登录方式。隔离 HTTP 证明现有兼容通道能发请求，但当前桌面未配置其他聊天 Key，未将本地 fixture 当成厂商推理成功。
+- 2026-10-07 — 神经团直接点击与停留触角动作：- 总览中增加按三维区域范围拾取，点神经线团/紫色主体所在区域和点文字框共用同一个放大入口；鼠标悬停局部提亮。按当前透视和深度选中，忽略拖动、滚轮/捏合后的误点击及详情遮挡。
+- 2026-10-07 — 让搜索工具与回答交付过程在任务空间中可核对：用户确认按相关性展示前五个来源，并指出搜索工具和模型返回至展示的过程不可见。来源恢复统一相关性排序，引用只作独立标记，保留引用恢复与去重；工具总览复用各功能区的真实记录，每次只计一次，主体不重复爬行。
+- 2026-10-07 — 将手机工程签名切到用户指定的 Gmail 账号：用户要求在已登录的两个 Xcode 账号中使用 Gmail。Codex 在账号页确认对应 Personal Team；苹果拒绝新团队注册旧应用标识，因此使用独立标识完成签名，未把它冒充商店转让或会员审批通过。
+- 2026-10-07 — 手机对齐主线引用遗漏修复，保留已有任务证据：用户要求读取主线 bug 修复并同步覆盖手机。Codex 核对最新来源合并/展示改动，先复现手机正文链接漏入任务空间，再对齐新回复与历史回看；引用与阅读证据继续分开，不重跑历史搜索。
+- 2026-10-07 — 修正模拟器验收漏掉的手机任务空间黑屏：用户确认标题和返回按钮可见而内容全黑。Codex 修正本地路径别名和网页加载握手，补上有界加载/失败提示，避免把“应用已启动”当作场景已成功。旧版没有加载诊断，单一根因未武断认定。
+- 2026-10-07 — 按用户要求覆盖安装 iPhone 0.5：已确认实体手机 Mortred（3）连接，复核已有签名构建后直接覆盖安装；设备报告由 0.4.0/build 4 更新为 0.5.0/build 5。普通启动成功，后续进程查询确认运行，原聊天/偏好文件仍在且修改时间早于安装。未卸载或清空数据、未读取钥匙串、未触发模型查询；安装与运行证据保存于 `.tmp/ios-v5-checks/`。真实搜索及此前退出问题不因安装成功而标记已验收。
+- 2026-10-07 — iPhone 0.5 对齐 PC 神经任务空间与检索交互：用户要求扫描电脑版最新改动并尽可能还原手机功能和效果。Codex 阅读主线/UI线程及现有源码，将电脑版 Three.js 场景、紫色细线神经分支、五模块、来源浮层和缩放逻辑打包到 iPhone；原生增加原子按钮、单轮回看、模型身份与来源复制，场景仅接收实际手机搜索事件。保留透明阅读边界，小屏十来源使用独立滚动视口；旧引用可回看但不补造工具记录。
+- 2026-10-07 — 神经任务空间缩放与五模块总览：- 增加局部滚轮、触摸板捏合事件、缩放按钮与键盘控制；65%–260%，按任务记忆。拉远同时回正镜头，五模块可见，来源卡片淡出并保留选择。
+- 2026-10-07 — 用紫色神经线束与透明浮层统一任务空间：用户明确撤回实心主体方向，要求与背景神经网络相同的细线分叉，用深紫色微光区分；来源卡片要通透，同时保留实际来源和交互。Codex 移除体积表面与实体核心，采用空间细线、节点光晕和原有事件驱动的形变；结束后姿态冻结，仅保留氛围呼吸。
+- 归档摘要（2026-10-08 之前）：完整原文见 [压缩前归档](docs/progress-archive-20261008.md)。 提交：b2c5999, 728ea48, ad32bed, 4acb4e7, ab08afa, edd73eb, 70571dd, f3eca59, 5a7d58a, a96f5e9, 76ef1a5, 5b58c1d, 0d2bb15, 9f2ee49, bb43c7e, 5e82074, 75766c1, fcd83df, f8b6683, f1bc3f3, 0f0d808, 32661f6, 09d7472, b658f2c, 7a13ce6, b73c118, 4ea50ec, f3a7084, 736a1e5, f91c5a9, 6ae464f, c3285d2, 01296a2, 4c3584a, a322aa7, 3b96247, 95386cd, 732bc0e, 4d572de, aaaaeb8, 83b611a, 6d925a4, 1f6b4fb, 8527fff, 1a1fd14, 66c2f91, 987f6e2, 2090e01, 874e798, 3e0496e, c908254, 22262d4, 272a59f, 1e77668, 881da50, 0e4af90, fa7fe74, b5ab01a, 3237e78, d7edbcd, d86150f, 0d6e3ef, 4719c25, 5787a98, 513da09, 82d9084, 8a7657d, 12d4082, 39b246b, f6dcc47, 8094d78, 570a7c6, 0c2be68, 60e828d, 83cf5d4, d7fe057, 6eef4ae, f04248e, e54b12b, d1b76cf, 0db3c1c, 2a8481a, 9f29a16, 12e1358, bc823ac, 9ece26f, 6b3941f, 7b021ad, f5b5646, 270d04c, 28f1346, 5ffca5c, 170eb30, fb99ccf, eb9e541, 6c525a9, 47c08ed, e81fb12, 506814d, 3b5ac4c, 3c2ba41, 22f67e4, 42f80cf, 31a4135, ef0d142, bc923ea, f867ff1, a6ab5e0, d20c733, 3dccb3e, 4cba848, e4eaa32, 9589946, e093cf8, b8356d9, b91a993, bb4d95f, fc6f886, 7e20b88, f73ba46, 5ebf668, 987a536, 4854864, cc3170f, ad0260c, 45e3d16, 789fc55, a4172bc, fc0262b, 1b07201, c6e02b1, 372b251, cd5b2bd, c2bd16f, 96753e0, cd13148, 98a1502, 41d20cf, 94518d0, 2a417b2, 7a871de, d64bfc0, fcafa6d, 2618ec5, 672b2c0, bc640c1, 3ab34b5, 1f17365, e7a7311, 6edfc5e, 28a47b1, 554c079, 479a897, 5a9afa9, 3876cdc, 75f9f72, 6957783, 4d9dc73, 799a9a4, 8778052, 3ae3285, 9f5a87a, 5a888ee, 768d511, e1a8ecf, af2e3b7, 5f9107a, a9aa5a8, 7a6710e, da4e09e, d339782, 9d504b2, dece161, aad4f72, eb74e07, e9eb5b6, 40c747b, 2731e90, 3022905, f20767b, bcc2b09, ae0a964, ab06fca, 424cbe8, aadc7dd, 0ed90fd, 1f29b00, a5d855c, 1dba8b4, 5d33930, adb21ca, 75b9370, 207ea6a, 0a8064a, fac4732, 2777eab, 5419a9b, b997e14, 208e51d, 9721cd1, 55b7630, 9895335, f1ced20, 0a05a30, e7d2872, edd3e76, 66cd1a8, 3c71ee6, 9955870, 46a85b8, b4cc16a, 9c76db9, 91a25d9, 2f52bf2, ce97d12, 7055c17, 12e85aa, f3f61d5, be96ec6, 7866271, b30d563, 8bda000, de7815c, 6e2e171, 6d18e87, 8364a5f, d056e8d, ce56b0c, 5742e66, 2c43ec2, 137c9a6, 5d2c6ac, 559fbae, f3b0f29, 08cfab3, 2063d9e, a104f23, 808db9e, 856aa07, a6c1802, f4bc254, 7b051fa, c332b07, f0b528e, 8ab7817, 2cc94a8, 4d81ef4, 80efd7d, ffc477a, 1f636e2, 8c387a4, 7250cd7, 33aba21, 0f7d2af, 8c03a68, 3fcbdea, 5f128c6, 8fb3cf9, f87c06c。

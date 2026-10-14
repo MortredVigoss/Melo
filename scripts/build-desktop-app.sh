@@ -27,6 +27,9 @@ swiftc \
   -framework Speech \
   -framework WebKit \
   "$PROJECT_DIR/desktop-app/main.swift" \
+  "$PROJECT_DIR/desktop-app/ProcessShutdown.swift" \
+  "$PROJECT_DIR/ios/Melo/VoiceInput.swift" \
+  "$PROJECT_DIR/ios/Melo/SystemSpeechInput.swift" \
   -o "$BUILD_DIR/$BIN_NAME"
 
 rm -rf "$APP_DIR"
@@ -72,3 +75,14 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   </dict>
 </plist>
 PLIST
+
+# swiftc signs the executable, but the assembled bundle also needs a resource seal.
+# Sign after Info.plist and icons are present so local updates remain launchable.
+# Model assets are part of Melo, never fetched by inference at runtime.
+(cd "$PROJECT_DIR" && node scripts/prepare-memory-model.js)
+mkdir -p "$APP_DIR/Contents/Resources/models"
+cp "$PROJECT_DIR/assets/memory-model-NOTICE.txt" "$APP_DIR/Contents/Resources/models/NOTICE.txt"
+ditto "$PROJECT_DIR/assets/models/multilingual-e5-small" "$APP_DIR/Contents/Resources/models/multilingual-e5-small"
+node "$PROJECT_DIR/scripts/build-launch-screen.js" "$APP_DIR/Contents/Resources/Launch.html"
+codesign --force --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"

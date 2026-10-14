@@ -4,8 +4,10 @@ import Darwin
 import Foundation
 import Speech
 import WebKit
+import ServiceManagement
+import UserNotifications
 
-final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler, AVAudioPlayerDelegate {
+final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, AVAudioPlayerDelegate {
   private var window: NSWindow!
   private var webView: WKWebView!
   private var serverProcess: Process?
@@ -39,18 +41,16 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   ) ?? 43127
   private var port = 43127
   private var hasLoadedServer = false
+  private var launchAttempt = UUID()
+  private var launchRequest: URLSessionDataTask?
   private var resolvedNodePath: String?
   private var serverOutput = ""
-  private let audioEngine = AVAudioEngine()
-  // Primary recognizer (follows system language) — used for live microphone input.
-  private static func makeSpeechRecognizer() -> SFSpeechRecognizer? {
-    if let lang = Locale.preferredLanguages.first {
-      if let r = SFSpeechRecognizer(locale: Locale(identifier: lang)) { return r }
-    }
-    if let r = SFSpeechRecognizer(locale: Locale.autoupdatingCurrent) { return r }
-    return SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-  }
-  private var speechRecognizer: SFSpeechRecognizer? = MeloAppDelegate.makeSpeechRecognizer()
+  private let debugQueue = DispatchQueue(label: "com.melo.desktop.diagnostics", qos: .utility)
+  private lazy var voiceInput: VoiceInput = {
+    let input = VoiceInput(engine: SystemSpeechInput())
+    input.onUpdate = { [weak self] state in self?.emitVoiceEvent(state) }
+    return input
+  }()
 
   // Multilingual recognizer pool for batch file transcription (Telegram voice notes etc.).
   // Tries all available recognizers in parallel and picks the highest-confidence result.
@@ -73,20 +73,12 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     }
     return pool
   }()
-  private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-  private var recognitionTask: SFSpeechRecognitionTask?
-  private var latestTranscript = ""
-  private var isVoiceRecording = false
   // Native TTS audio player (bypasses WKWebView autoplay restrictions)
   private var ttsAudioPlayer: AVAudioPlayer?
   // Native speech synthesizer for high-quality system TTS
   private let speechSynthesizer = AVSpeechSynthesizer()
   // `say` command process for system TTS (avoids AVAudioEngine session conflicts)
   private var sayProcess: Process?
-  // Raw audio capture for voice-message attachments
-  private var capturedAudioBuffers: [AVAudioPCMBuffer] = []
-  private let capturedAudioLock = NSLock()
-  private var capturedAudioFormat: AVAudioFormat?
   // Native transcription server (127.0.0.1:transcriptionPort)
   // Lets the Node.js backend request on-device SFSpeechRecognizer transcription
   // for Telegram voice notes and other remote audio without needing a Whisper API key.
@@ -110,7 +102,11 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   private var runtimeMeloHomePath: String {
-    projectDir + "/.tmp/melo-home-user"
+    if let explicitHome = ProcessInfo.processInfo.environment["MELO_HOME"],
+       !explicitHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return URL(fileURLWithPath: explicitHome.trimmingCharacters(in: .whitespacesAndNewlines)).standardizedFileURL.path
+    }
+    return projectDir + "/.tmp/melo-home-user"
   }
 
   private var legacySharedMeloHomePath: String {
@@ -120,6 +116,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   func applicationDidFinishLaunching(_ notification: Notification) {
     installMainMenu()
     buildWindow()
+    window.isReleasedWhenClosed = false
     writeDebug("status=launching")
     loadPlaceholder()
     startServerIfNeeded()
@@ -129,11 +126,58 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
+    UserDefaults.standard.string(forKey: "melo.closeBehavior") != "background"
+  }
+
+  private var checkingUnsavedSettings = false
+  private var terminatingServer = false
+
+  private func finishTermination(_ sender: NSApplication) {
+    guard !terminatingServer else { return }
+    terminatingServer = true
+    launchRequest?.cancel()
+    ProcessShutdown.stop(serverProcess) {
+      sender.reply(toApplicationShouldTerminate: true)
+    }
+  }
+
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    // Background mode keeps this window and its drafts alive.
+    if UserDefaults.standard.string(forKey: "melo.closeBehavior") == "background" { return true }
+    NSApp.terminate(nil)
+    return false
+  }
+
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if checkingUnsavedSettings || terminatingServer { return .terminateLater }
+    guard let webView = webView else {
+      DispatchQueue.main.async { self.finishTermination(sender) }
+      return .terminateLater
+    }
+    checkingUnsavedSettings = true
+    webView.evaluateJavaScript("Boolean(window.MeloHasUnsavedSettings?.())") { [weak self] value, _ in
+      guard let self = self else { sender.reply(toApplicationShouldTerminate: true); return }
+      if value as? Bool == true {
+        let alert = NSAlert()
+        alert.messageText = "还有未保存的设置"
+        alert.informativeText = "退出后，未保存的修改会丢失。如果正在保存，请先等待保存结果。"
+        alert.addButton(withTitle: "继续编辑")
+        alert.addButton(withTitle: "放弃未保存修改并退出")
+        let discard = alert.runModal() == .alertSecondButtonReturn
+        self.checkingUnsavedSettings = false
+        if discard { self.finishTermination(sender) }
+        else { sender.reply(toApplicationShouldTerminate: false) }
+      } else {
+        self.checkingUnsavedSettings = false
+        self.finishTermination(sender)
+      }
+    }
+    return .terminateLater
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    stopVoiceRecognition(manual: false)
+    voiceInput.cancel()
+    launchRequest?.cancel()
     // Without these calls a `say` child or AVAudioPlayer can keep playing for
     // several seconds after the app window has closed, until the OS reaps the
     // detached children.
@@ -142,7 +186,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     speechSynthesizer.stopSpeaking(at: .immediate)
     sayProcess?.terminate()
     sayProcess = nil
-    serverProcess?.terminate()
+    if serverProcess?.isRunning == true { serverProcess?.terminate() }
     if transcriptionServerFd >= 0 {
       close(transcriptionServerFd)
       transcriptionServerFd = -1
@@ -161,6 +205,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
       action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
       keyEquivalent: ""
     )
+    appMenu.addItem(withTitle: "设置…", action: #selector(openMeloSettings), keyEquivalent: ",")
     appMenu.addItem(.separator())
     appMenu.addItem(
       withTitle: "Quit Melo",
@@ -216,11 +261,12 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
       backing: .buffered,
       defer: false
     )
+    window.delegate = self
     window.center()
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = false
     window.isMovableByWindowBackground = false
-    window.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1.0)
+    window.backgroundColor = NSColor(red: 8/255, green: 9/255, blue: 11/255, alpha: 1.0)
     window.setContentSize(NSSize(width: 1320, height: 860))
     window.minSize = NSSize(width: 1080, height: 720)
     window.title = "Melo"
@@ -234,6 +280,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     configuration.mediaTypesRequiringUserActionForPlayback = []  // allow TTS autoplay
     webView = WKWebView(frame: rect, configuration: configuration)
     webView.navigationDelegate = self
+    webView.uiDelegate = self
     webView.setValue(false, forKey: "drawsBackground")
 
     window.contentView = webView
@@ -241,58 +288,21 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   private func loadPlaceholder() {
-    let html = """
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          :root {
-            color-scheme: dark;
-          }
-          html, body {
-            margin: 0;
-            height: 100%;
-            background:
-              radial-gradient(circle at top right, rgba(24,183,177,0.12), transparent 22%),
-              linear-gradient(180deg, #181916 0%, #151613 100%);
-            color: rgba(255,247,232,0.92);
-            font-family: "Avenir Next", "Helvetica Neue", sans-serif;
-          }
-          body {
-            display: grid;
-            place-items: center;
-          }
-          .card {
-            width: 420px;
-            border-radius: 30px;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.03);
-            box-shadow: 0 28px 60px rgba(0,0,0,0.28);
-            padding: 28px 30px;
-          }
-          h1 {
-            margin: 0 0 12px;
-            font: 500 38px/1.08 "Iowan Old Style", Georgia, serif;
-            letter-spacing: -0.04em;
-          }
-          p {
-            margin: 0;
-            color: rgba(255,255,255,0.66);
-            line-height: 1.7;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>Launching Melo Desktop</h1>
-          <p>Starting the local UI server and loading your workspace...</p>
-        </div>
-      </body>
-    </html>
-    """
+    loadLaunchPage(phase: "service")
+  }
 
-    webView.loadHTMLString(html, baseURL: nil)
+  private func loadLaunchPage(phase: String, detail: String = "") {
+    let payload = ["phase": phase, "detail": detail]
+    guard let data = try? JSONSerialization.data(withJSONObject: payload),
+          let json = String(data: data, encoding: .utf8),
+          let resource = Bundle.main.url(forResource: "Launch", withExtension: "html"),
+          let template = try? String(contentsOf: resource, encoding: .utf8) else {
+      webView.loadHTMLString("<html style='background:#08090b;color:#ede8df'><body><h1>melo</h1><p>启动界面资源缺失，请重新安装 Melo。</p></body></html>", baseURL: nil)
+      return
+    }
+    // JSON is inert data. Escape '<' so diagnostic output cannot close the script tag.
+    let safeJSON = json.replacingOccurrences(of: "<", with: "\\u003c")
+    webView.loadHTMLString(template.replacingOccurrences(of: "__MELO_LAUNCH_STATE__", with: safeJSON), baseURL: nil)
   }
 
   private func startServerIfNeeded() {
@@ -328,9 +338,10 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
       String(port),
     ]
     process.currentDirectoryURL = URL(fileURLWithPath: projectDir)
-    process.environment = [
+    process.environment = ProcessInfo.processInfo.environment.merging([
       "HOME": NSHomeDirectory(),
       "MELO_HOME": runtimeMeloHomePath,
+      "MELO_EMBED_MODEL_DIR": Bundle.main.resourceURL!.appendingPathComponent("models/multilingual-e5-small").path,
       // The server may bind a rolled-forward port if the configured 43127 is
       // taken (see prepareLaunchPort). Anything in Node that needs to talk
       // back to native services on port+N (transcription server at port+1,
@@ -346,14 +357,14 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         "/usr/sbin",
         "/sbin",
       ].joined(separator: ":"),
-    ]
+    ], uniquingKeysWith: { _, launchValue in launchValue })
 
     let outputPipe = Pipe()
     process.standardOutput = outputPipe
     process.standardError = outputPipe
     bindServerOutput(outputPipe)
     process.terminationHandler = { [weak self] terminated in
-      guard let self = self else { return }
+      guard let self = self, !self.terminatingServer else { return }
       self.writeDebug(
         """
         status=server-exited
@@ -392,6 +403,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
 
     do {
       try fileManager.createDirectory(at: runtimeURL, withIntermediateDirectories: true)
+      if let explicitHome = ProcessInfo.processInfo.environment["MELO_HOME"],
+         !explicitHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
       let runtimeConfig = runtimeURL.appendingPathComponent("config.json")
       let legacyConfig = legacyURL.appendingPathComponent("config.json")
       if !fileManager.fileExists(atPath: runtimeConfig.path),
@@ -411,77 +424,65 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   private func pollServerAndLoad() {
-    var attempts = 0
-    let timer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] timer in
-      guard let self = self else {
-        timer.invalidate()
-        return
-      }
-
-      attempts += 1
-      if self.serverIsHealthy() {
-        timer.invalidate()
-        self.resetServerLaunchState()
-        self.hasLoadedServer = true
-        self.writeDebug(
-          """
-          status=server-ready
-          bundlePath=\(self.bundlePath)
-          serverURL=\(self.serverURL.absoluteString)
-          projectDir=\(self.projectDir)
-          """
-        )
-        self.webView.load(URLRequest(url: self.serverURL))
-        return
-      }
-
-      if attempts >= 45 {
-        timer.invalidate()
-        self.writeDebug(
-          """
-          status=server-timeout
-          serverURL=\(self.serverURL.absoluteString)
-          nodePath=\(self.resolvedNodePath ?? "(unknown)")
-          output=\(self.trimmedServerOutput())
-          """
-        )
-        self.loadErrorPage(
-          message: """
-          Melo Desktop could not reach the local UI server.
-          Expected \(self.serverURL.absoluteString)
-
-          Node: \(self.resolvedNodePath ?? "(not found)")
-          Last output:
-          \(self.trimmedServerOutput())
-          """
-        )
-      }
-    }
-
-    RunLoop.main.add(timer, forMode: .common)
+    guard serverProcess?.isRunning == true else { return }
+    launchRequest?.cancel()
+    let attempt = UUID()
+    launchAttempt = attempt
+    let deadline = Date().addingTimeInterval(20)
+    // Capture the intended runtime once; another process on this port is not ready.
+    let expectedHome = runtimeMeloHomePath
+    let expectedPID = Int(serverProcess?.processIdentifier ?? -1)
+    let origin = serverURL
+    pollLaunchHealth(attempt: attempt, deadline: deadline, origin: origin, expectedHome: expectedHome, expectedPID: expectedPID)
   }
 
-  private func serverIsHealthy() -> Bool {
-    guard let url = URL(string: serverURL.absoluteString + "/api/health") else {
-      return false
-    }
-
-    guard
-      let data = try? Data(contentsOf: url),
-      let text = String(data: data, encoding: .utf8)
-    else {
-      return false
-    }
-
-    return text.contains("\"ok\":true")
-  }
-
-  private func resetServerLaunchState() {
-    guard let url = URL(string: serverURL.absoluteString + "/api/launch/reset") else {
+  private func pollLaunchHealth(attempt: UUID, deadline: Date, origin: URL, expectedHome: String, expectedPID: Int) {
+    guard launchAttempt == attempt, !hasLoadedServer else { return }
+    guard serverProcess?.isRunning == true, Date() < deadline else {
+      loadErrorPage(message: "本地工作空间未能启动。\n地址：\(origin.absoluteString)\n\(trimmedServerOutput())")
       return
     }
+    var request = URLRequest(url: origin.appendingPathComponent("api/health"))
+    request.timeoutInterval = 1
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    // Never block the main thread: the loading UI must keep animating and responding.
+    launchRequest = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+      let payload = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+      let runtime = payload?["runtime"] as? [String: Any]
+      let healthy = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
+        && payload?["ok"] as? Bool == true
+        && runtime?["home"] as? String == expectedHome
+        && runtime?["pid"] as? Int == expectedPID
+      DispatchQueue.main.async {
+        guard let self, self.launchAttempt == attempt else { return }
+        if healthy {
+          self.prepareWorkspacePage(attempt: attempt, origin: origin)
+        } else {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.pollLaunchHealth(attempt: attempt, deadline: deadline, origin: origin, expectedHome: expectedHome, expectedPID: expectedPID)
+          }
+        }
+      }
+    }
+    launchRequest?.resume()
+  }
 
-    _ = try? Data(contentsOf: url)
+  private func prepareWorkspacePage(attempt: UUID, origin: URL) {
+    var request = URLRequest(url: origin.appendingPathComponent("api/launch/reset"))
+    request.timeoutInterval = 5
+    launchRequest = URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+      DispatchQueue.main.async {
+        guard let self, self.launchAttempt == attempt else { return }
+        guard error == nil, let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else {
+          self.loadErrorPage(message: "工作空间已连接，但界面初始化失败。请重试。\n\(error?.localizedDescription ?? "服务未返回成功状态")")
+          return
+        }
+        self.hasLoadedServer = true
+        self.writeDebug("status=server-ready\nbundlePath=\(self.bundlePath)\nserverURL=\(origin.absoluteString)\nprojectDir=\(self.projectDir)")
+        self.webView.load(URLRequest(url: origin))
+      }
+    }
+    launchRequest?.resume()
   }
 
   private func prepareLaunchPort() {
@@ -530,60 +531,10 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   private func loadErrorPage(message: String) {
-    let escaped = message
-      .replacingOccurrences(of: "&", with: "&amp;")
-      .replacingOccurrences(of: "<", with: "&lt;")
-      .replacingOccurrences(of: ">", with: "&gt;")
-      .replacingOccurrences(of: "\n", with: "<br />")
-
-    let html = """
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          html, body {
-            margin: 0;
-            height: 100%;
-            background: #151613;
-            color: rgba(255,221,214,0.96);
-            font-family: "Avenir Next", "Helvetica Neue", sans-serif;
-          }
-          body {
-            display: grid;
-            place-items: center;
-          }
-          .error {
-            width: 560px;
-            border-radius: 30px;
-            border: 1px solid rgba(255,144,127,0.28);
-            background: rgba(255,144,127,0.12);
-            padding: 24px 26px;
-            line-height: 1.75;
-          }
-          button {
-            margin-top: 18px;
-            border: 0;
-            border-radius: 999px;
-            padding: 10px 16px;
-            background: rgba(255,255,255,0.12);
-            color: white;
-            font: inherit;
-            cursor: pointer;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="error">
-          \(escaped)
-          <br />
-          <button onclick="window.location.reload()">Retry launch</button>
-        </div>
-      </body>
-    </html>
-    """
-
-    webView.loadHTMLString(html, baseURL: nil)
+    launchRequest?.cancel()
+    launchAttempt = UUID()
+    hasLoadedServer = false
+    loadLaunchPage(phase: "error", detail: message)
   }
 
   func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -595,11 +546,28 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
       return
     }
 
+    let localActions = ["getLocalSettings", "setLocalSettings", "openLoginItems", "openMicrophoneSettings", "savePortableArchive", "notifyReplyComplete"]
+    if localActions.contains(action) {
+      guard message.frameInfo.isMainFrame, let url = message.frameInfo.request.url,
+            url.scheme == "http", url.host == host, url.port == port else { return }
+      handleLocalSettings(payload, action: action); return
+    }
     switch action {
+    case "retryLaunch":
+      guard !hasLoadedServer else { return }
+      loadPlaceholder()
+      if serverProcess?.isRunning != true { startServerIfNeeded() }
+      pollServerAndLoad()
     case "toggle":
-      toggleVoiceRecognition()
+      if voiceInput.state.active { voiceInput.stop() }
+      else {
+        voiceInput.start(id: payload["sessionID"] as? String ?? UUID().uuidString,
+                         locale: payload["language"] as? String ?? "zh-CN")
+      }
     case "stop":
-      stopVoiceRecognition(manual: true)
+      if payload["sessionID"] as? String == voiceInput.state.sessionID { voiceInput.stop() }
+    case "cancelVoice":
+      if payload["sessionID"] as? String == voiceInput.state.sessionID { voiceInput.cancel() }
     case "playAudio":
       // Cross-engine teardown: stop everything else first so MiniMax / API
       // audio never overlaps a still-running `say` or speechSynthesizer
@@ -679,368 +647,114 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         let url = URL(string: rawUrl),
         isExternalWebUrl(url)
       {
-        NSWorkspace.shared.open(url)
+        openExternalLink(url)
       }
     default:
       break
     }
   }
 
-  private func toggleVoiceRecognition() {
-    if isVoiceRecording {
-      stopVoiceRecognition(manual: true)
-      return
-    }
-
-    requestVoicePermissions { granted, errorMessage in
-      guard granted else {
-        self.emitVoiceEvent(
-          supported: true,
-          recording: false,
-          status: "error",
-          partial: nil,
-          finalText: nil,
-          error: errorMessage ?? "Voice input permission was denied."
-        )
-        return
-      }
-
-      self.startVoiceRecognition()
-    }
+  func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+               initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+    guard frame.isMainFrame, let url = frame.request.url,
+          url.scheme == "http", url.host == host, url.port == port else { completionHandler(nil); return }
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = parameters.allowsDirectories
+    panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+    panel.beginSheetModal(for: window) { response in completionHandler(response == .OK ? panel.urls : nil) }
   }
 
-  private func requestVoicePermissions(completion: @escaping (Bool, String?) -> Void) {
-    SFSpeechRecognizer.requestAuthorization { status in
-      guard status == .authorized else {
-        DispatchQueue.main.async {
-          let message: String
-          switch status {
-          case .authorized:
-            message = ""
-          case .denied:
-            message = "Speech recognition access is denied. Enable it in System Settings."
-          case .restricted:
-            message = "Speech recognition is restricted on this Mac."
-          case .notDetermined:
-            message = "Speech recognition permission has not been granted yet."
-          @unknown default:
-            message = "Speech recognition is unavailable."
-          }
-          completion(false, message)
-        }
-        return
-      }
+  @objc private func openMeloSettings() {
+    window.makeKeyAndOrderFront(nil)
+    webView.evaluateJavaScript("window.dispatchEvent(new Event('melo-open-settings'));")
+  }
 
-      AVCaptureDevice.requestAccess(for: .audio) { granted in
-        DispatchQueue.main.async {
-          completion(
-            granted,
-            granted ? nil : "Microphone access is denied. Enable it in System Settings."
-          )
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    window.makeKeyAndOrderFront(nil)
+    return true
+  }
+
+  private func localSettingsReply(_ requestID: String, extra: [String: Any] = [:]) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      DispatchQueue.main.async {
+        let status = settings.authorizationStatus
+        var value: [String: Any] = [
+          "requestID": requestID,
+          "closeBehavior": UserDefaults.standard.string(forKey: "melo.closeBehavior") ?? "quit",
+          "notifications": UserDefaults.standard.bool(forKey: "melo.notifications") && status == .authorized,
+          "notificationStatus": status == .authorized ? "系统已允许" : status == .denied ? "系统未允许，可前往 macOS 通知设置更改" : "开启时申请系统授权",
+          "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
+          "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
+        ]
+        if #available(macOS 13, *) {
+          value["launchAtLogin"] = SMAppService.mainApp.status == .enabled
+          value["loginNeedsApproval"] = SMAppService.mainApp.status == .requiresApproval
         }
+        value.merge(extra) { _, new in new }
+        guard let data = try? JSONSerialization.data(withJSONObject: value), let json = String(data: data, encoding: .utf8) else { return }
+        self.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('melo-local-settings',{detail:\(json)}));")
       }
     }
   }
 
-  private func startVoiceRecognition() {
-    DispatchQueue.main.async {
-      self.resetVoiceRecognitionState()
-
-      guard let recognizer = self.speechRecognizer ?? SFSpeechRecognizer(locale: Locale(identifier: "en_US")) else {
-        self.emitVoiceEvent(
-          supported: false,
-          recording: false,
-          status: "error",
-          partial: nil,
-          finalText: nil,
-          error: "Speech recognition is unavailable on this device."
-        )
-        return
-      }
-
-      guard recognizer.isAvailable else {
-        self.emitVoiceEvent(
-          supported: true,
-          recording: false,
-          status: "error",
-          partial: nil,
-          finalText: nil,
-          error: "Speech recognition is temporarily unavailable."
-        )
-        return
-      }
-
-      self.speechRecognizer = recognizer
-      self.latestTranscript = ""
-      // Clear any previously captured audio
-      self.capturedAudioLock.lock()
-      self.capturedAudioBuffers = []
-      self.capturedAudioLock.unlock()
-      self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-      self.recognitionRequest?.shouldReportPartialResults = true
-      self.recognitionRequest?.taskHint = .dictation
-
-      guard let recognitionRequest = self.recognitionRequest else {
-        self.emitVoiceEvent(
-          supported: true,
-          recording: false,
-          status: "error",
-          partial: nil,
-          finalText: nil,
-          error: "Unable to prepare voice input."
-        )
-        return
-      }
-
-      let inputNode = self.audioEngine.inputNode
-      let recordingFormat = inputNode.outputFormat(forBus: 0)
-      self.capturedAudioFormat = recordingFormat
-      inputNode.removeTap(onBus: 0)
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-        guard let self = self else { return }
-        self.recognitionRequest?.append(buffer)
-        // Capture raw PCM for voice-message attachment (cap at ~700 buffers ≈ 16 s)
-        if let copy = buffer.copy() as? AVAudioPCMBuffer {
-          self.capturedAudioLock.lock()
-          if self.capturedAudioBuffers.count < 700 {
-            self.capturedAudioBuffers.append(copy)
-          }
-          self.capturedAudioLock.unlock()
+  private func handleLocalSettings(_ payload: [String: Any], action: String) {
+    let requestID = payload["requestID"] as? String ?? ""
+    switch action {
+    case "getLocalSettings": localSettingsReply(requestID)
+    case "setLocalSettings":
+      let key = payload["key"] as? String ?? ""
+      if key == "closeBehavior", let value = payload["value"] as? String, ["quit", "background"].contains(value) {
+        UserDefaults.standard.set(value, forKey: "melo.closeBehavior"); localSettingsReply(requestID)
+      } else if key == "launchAtLogin", #available(macOS 13, *) {
+        do {
+          if payload["value"] as? String == "true" { try SMAppService.mainApp.register() }
+          else { try SMAppService.mainApp.unregister() }
+          localSettingsReply(requestID)
+        } catch { localSettingsReply(requestID, extra: ["error": error.localizedDescription]) }
+      } else if key == "notifications", let enabled = payload["value"] as? Bool {
+        if !enabled { UserDefaults.standard.set(false, forKey: "melo.notifications"); localSettingsReply(requestID); return }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { allowed, error in
+          UserDefaults.standard.set(allowed, forKey: "melo.notifications")
+          self.localSettingsReply(requestID, extra: allowed ? [:] : ["error": error?.localizedDescription ?? "系统未允许通知，请在 macOS 通知设置中允许 Melo。"])
         }
+      } else { localSettingsReply(requestID, extra: ["error": "设备设置无效。"] ) }
+    case "openLoginItems":
+      if #available(macOS 13, *) { SMAppService.openSystemSettingsLoginItems() }
+      localSettingsReply(requestID)
+    case "openMicrophoneSettings":
+      NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+      localSettingsReply(requestID)
+    case "savePortableArchive":
+      guard let text = payload["text"] as? String, text.utf8.count <= 16 * 1024 * 1024 else { localSettingsReply(requestID, extra: ["error": "资料文件超过导出上限。"]); return }
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = payload["name"] as? String ?? "Melo-资料.json"
+      panel.beginSheetModal(for: window) { response in
+        guard response == .OK, let url = panel.url else { self.localSettingsReply(requestID, extra: ["cancelled": true]); return }
+        do { try text.write(to: url, atomically: true, encoding: .utf8); self.localSettingsReply(requestID) }
+        catch { self.localSettingsReply(requestID, extra: ["error": error.localizedDescription]) }
       }
-
-      self.audioEngine.prepare()
-
-      do {
-        try self.audioEngine.start()
-      } catch {
-        self.resetVoiceRecognitionState()
-        self.emitVoiceEvent(
-          supported: true,
-          recording: false,
-          status: "error",
-          partial: nil,
-          finalText: nil,
-          error: "Melo could not start the microphone. \(error.localizedDescription)"
-        )
-        return
-      }
-
-      self.isVoiceRecording = true
-      self.emitVoiceEvent(
-        supported: true,
-        recording: true,
-        status: "listening",
-        partial: nil,
-        finalText: nil,
-        error: nil
-      )
-
-      self.recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { result, error in
-        if let result = result {
-          let transcript = result.bestTranscription.formattedString.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-          self.latestTranscript = transcript
-
-          if result.isFinal {
-            // Build WAV data URL BEFORE stopVoiceRecognition clears the captured buffers.
-            let audioDataURL = self.buildWavDataURL()
-            self.emitVoiceEvent(
-              supported: true,
-              recording: false,
-              status: "ready",
-              partial: nil,
-              finalText: transcript,
-              audioData: audioDataURL,
-              error: nil
-            )
-            self.stopVoiceRecognition(manual: false, emitEvent: false)
-          } else {
-            self.emitVoiceEvent(
-              supported: true,
-              recording: true,
-              status: "listening",
-              partial: transcript,
-              finalText: nil,
-              error: nil
-            )
-          }
-          return
-        }
-
-        if let error = error {
-          // recognitionRequest is set to nil inside resetVoiceRecognitionState().
-          // If it is already nil here, the error is a side-effect of an intentional
-          // cancel (e.g. after isFinal, or after manual stop) — not a real failure.
-          // Emitting an event in that case causes duplicate text insertion and a
-          // spurious error notification, so we bail out early.
-          guard self.recognitionRequest != nil else { return }
-
-          self.stopVoiceRecognition(manual: false, emitEvent: false)
-          self.emitVoiceEvent(
-            supported: true,
-            recording: false,
-            status: "error",
-            partial: nil,
-            finalText: self.latestTranscript.isEmpty ? nil : self.latestTranscript,
-            error: error.localizedDescription
-          )
-        }
-      }
+    case "notifyReplyComplete":
+      guard UserDefaults.standard.bool(forKey: "melo.notifications"), !NSApp.isActive else { return }
+      let content = UNMutableNotificationContent(); content.title = "Melo 回复已完成"; content.body = "打开 Melo 查看结果。"; content.sound = .default
+      UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    default: break
     }
   }
 
-  private func resetVoiceRecognitionState() {
-    if audioEngine.isRunning {
-      audioEngine.stop()
-    }
-    audioEngine.inputNode.removeTap(onBus: 0)
-    // Clear audio capture buffers (tap is removed above so no new writes will arrive)
-    capturedAudioLock.lock()
-    capturedAudioBuffers = []
-    capturedAudioLock.unlock()
-    capturedAudioFormat = nil
-    // Nil recognitionRequest BEFORE cancelling the task. recognitionTask?.cancel() can
-    // synchronously invoke the recognition callback with error 216 (cancelled). That
-    // callback guards on `recognitionRequest != nil`; setting it to nil first ensures
-    // the guard fires and we return early, preventing a duplicate finalText event.
-    let req = recognitionRequest
-    recognitionRequest = nil
-    req?.endAudio()
-    recognitionTask?.cancel()
-    recognitionTask = nil
-    isVoiceRecording = false
-  }
-
-  private func stopVoiceRecognition(manual: Bool, emitEvent: Bool = true) {
-    DispatchQueue.main.async {
-      let capturedTranscript = self.latestTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-      // Build the WAV data URL before resetVoiceRecognitionState clears the buffers.
-      let audioDataURL = (manual && !capturedTranscript.isEmpty) ? self.buildWavDataURL() : nil
-      self.resetVoiceRecognitionState()
-
-      if emitEvent {
-        self.emitVoiceEvent(
-          supported: true,
-          recording: false,
-          status: manual ? "stopped" : "idle",
-          partial: nil,
-          finalText: manual && !capturedTranscript.isEmpty ? capturedTranscript : nil,
-          audioData: audioDataURL,
-          error: nil
-        )
-      }
-    }
-  }
-
-  // Builds a WAV data URL from the captured PCM buffers, downmixed to mono 16-bit.
-  // Returns nil if no audio was captured or the buffers are empty.
-  private func buildWavDataURL() -> String? {
-    capturedAudioLock.lock()
-    let buffers = capturedAudioBuffers
-    let format = capturedAudioFormat
-    capturedAudioLock.unlock()
-
-    guard !buffers.isEmpty, let fmt = format, fmt.channelCount > 0 else { return nil }
-
-    let sampleRate = UInt32(fmt.sampleRate)
-    let inputChannels = Int(fmt.channelCount)
-    let outputChannels: UInt16 = 1 // always mono output
-    let bitsPerSample: UInt16 = 16
-
-    var pcmData = Data()
-    for buffer in buffers {
-      guard let floatData = buffer.floatChannelData else { continue }
-      let frameCount = Int(buffer.frameLength)
-      for frame in 0..<frameCount {
-        var sample: Float = 0
-        for ch in 0..<inputChannels {
-          sample += floatData[ch][frame]
-        }
-        sample /= Float(inputChannels)
-        let clamped = max(-1.0, min(1.0, sample))
-        var s16 = Int16(clamped < 0 ? clamped * 32768.0 : clamped * 32767.0).littleEndian
-        withUnsafeBytes(of: &s16) { pcmData.append(contentsOf: $0) }
-      }
-    }
-
-    guard !pcmData.isEmpty else { return nil }
-
-    let dataSize = UInt32(pcmData.count)
-    let byteRate = sampleRate * UInt32(outputChannels) * UInt32(bitsPerSample / 8)
-    let blockAlign = outputChannels * (bitsPerSample / 8)
-
-    func le32(_ v: UInt32) -> Data {
-      var x = v.littleEndian
-      return Data(bytes: &x, count: 4)
-    }
-    func le16(_ v: UInt16) -> Data {
-      var x = v.littleEndian
-      return Data(bytes: &x, count: 2)
-    }
-
-    var wavData = Data()
-    wavData.append("RIFF".data(using: .ascii)!)
-    wavData.append(le32(36 + dataSize))
-    wavData.append("WAVE".data(using: .ascii)!)
-    wavData.append("fmt ".data(using: .ascii)!)
-    wavData.append(le32(16))
-    wavData.append(le16(1))             // PCM format
-    wavData.append(le16(outputChannels))
-    wavData.append(le32(sampleRate))
-    wavData.append(le32(byteRate))
-    wavData.append(le16(blockAlign))
-    wavData.append(le16(bitsPerSample))
-    wavData.append("data".data(using: .ascii)!)
-    wavData.append(le32(dataSize))
-    wavData.append(pcmData)
-
-    return "data:audio/wav;base64,\(wavData.base64EncodedString())"
-  }
-
-  private func emitVoiceEvent(
-    supported: Bool,
-    recording: Bool,
-    status: String,
-    partial: String?,
-    finalText: String?,
-    audioData: String? = nil,
-    error: String?
-  ) {
-    var payload: [String: Any] = [
-      "supported": supported,
-      "recording": recording,
-      "status": status,
+  private func emitVoiceEvent(_ state: VoiceInputSnapshot) {
+    let payload: [String: Any] = [
+      "supported": true, "sessionID": state.sessionID,
+      "recording": state.recording, "status": state.status,
+      "partial": state.partial, "finalText": state.finalText,
+      "error": state.error, "notice": state.notice,
     ]
-
-    if let partial = partial, !partial.isEmpty {
-      payload["partial"] = partial
-    }
-
-    if let finalText = finalText, !finalText.isEmpty {
-      payload["finalText"] = finalText
-    }
-
-    if let audioData = audioData, !audioData.isEmpty {
-      payload["audioData"] = audioData
-    }
-
-    if let error = error, !error.isEmpty {
-      payload["error"] = error
-    }
-
-    guard
-      let data = try? JSONSerialization.data(withJSONObject: payload),
-      let json = String(data: data, encoding: .utf8)
-    else {
-      return
-    }
-
-    DispatchQueue.main.async {
-      self.webView.evaluateJavaScript(
-        "window.dispatchEvent(new CustomEvent('melo-voice', { detail: \(json) }));",
-        completionHandler: nil
-      )
-    }
+    guard let data = try? JSONSerialization.data(withJSONObject: payload),
+          let json = String(data: data, encoding: .utf8) else { return }
+    webView.evaluateJavaScript(
+      "window.dispatchEvent(new CustomEvent('melo-voice', { detail: \(json) }));",
+      completionHandler: nil
+    )
   }
 
   // TTS playback events — separate channel from voice-recording events
@@ -1136,9 +850,13 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
   }
 
   private func writeDebug(_ message: String) {
+    // Diagnostic filesystem writes must never prevent the window from launching.
     let dir = URL(fileURLWithPath: projectDir + "/.tmp", isDirectory: true)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    try? message.write(toFile: debugPath, atomically: true, encoding: .utf8)
+    let path = debugPath
+    debugQueue.async {
+      try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+      try? message.write(toFile: path, atomically: true, encoding: .utf8)
+    }
   }
 
   private func captureReadyUIAudit(attempt: Int = 0) {
@@ -1152,26 +870,31 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
           document.querySelector('.page-title')?.textContent?.trim() ||
           document.body.innerText.slice(0, 120).trim();
         const composer = document.querySelector('#composer');
-        const sendButton = document.querySelector('.composer-icon-button.is-primary');
-        const homeSurface = document.querySelector('.chat-home');
+        const sendButton = document.querySelector('form[data-form="composer"] button[type="submit"]');
+        const homeSurface = document.querySelector('.neural-overview, .neural-chat-home');
+        const visible = element => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+        };
         const left = document.querySelector('.topbar-left');
         const center = document.querySelector('.topbar-center');
         const right = document.querySelector('.topbar-right');
-        const primaryNavItems = Array.from(document.querySelectorAll('.nav-group .nav-item'));
+        const primaryNavItems = Array.from(document.querySelectorAll('.neural-cluster[data-group]'));
         const primaryNavTitle =
-          primaryNavItems[0]?.querySelector('.nav-title')?.textContent?.trim() || '';
+          primaryNavItems[0]?.dataset.group || '';
         const primaryNavTitles = primaryNavItems
-          .map(item => item.querySelector('.nav-title')?.textContent?.trim() || '')
+          .map(item => item.dataset.group || '')
           .join('|');
         const primaryNavVisible = primaryNavItems.every(item => {
           const rect = item.getBoundingClientRect();
-          return rect.top >= 0 && rect.bottom <= window.innerHeight;
+          return visible(item) && rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth;
         });
         const contentScrollbar = document.querySelector('.content-scrollbar');
         const contentScrollbarThumb = document.querySelector('.content-scrollbar-thumb');
         let topbarOverlap = false;
         let composerActionVisible = false;
-        if (left && center && right) {
+        if (visible(left) && visible(center) && visible(right)) {
           const l = left.getBoundingClientRect();
           const c = center.getBoundingClientRect();
           const r = right.getBoundingClientRect();
@@ -1179,12 +902,12 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         }
         if (sendButton) {
           const rect = sendButton.getBoundingClientRect();
-          composerActionVisible = rect.bottom <= window.innerHeight - 12 && rect.top >= 0;
+          composerActionVisible = rect.width > 0 && rect.height > 0 && rect.bottom <= window.innerHeight && rect.top >= 0 && rect.left >= 0 && rect.right <= window.innerWidth;
         }
         return JSON.stringify({
           pageTitle,
           hasComposer: Boolean(composer),
-          homeSurfaceVisible: Boolean(homeSurface),
+          homeSurfaceVisible: visible(homeSurface),
           topbarOverlap,
           composerActionVisible,
           primaryNavCount: primaryNavItems.length,
@@ -1215,7 +938,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
           primaryNavCount = json["primaryNavCount"] as? Int ?? 0
         }
 
-        let readyForVerification = hasComposer && homeSurfaceVisible && primaryNavCount >= 8
+        let readyForVerification = hasComposer && homeSurfaceVisible && primaryNavCount == 5
         if !readyForVerification && attempt < maxAttempts {
           self.captureReadyUIAudit(attempt: attempt + 1)
           return
@@ -1235,7 +958,9 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         if FileManager.default.fileExists(atPath: self.autoCloseSentinelPath) {
           try? FileManager.default.removeItem(atPath: self.autoCloseSentinelPath)
           DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            self.window.close()
+            // Verification exits even when the user's normal close-window
+            // preference is to keep Melo running in the background.
+            NSApp.terminate(nil)
           }
         }
       }
@@ -1412,27 +1137,19 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     }
   }
 
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    if (error as NSError).code != NSURLErrorCancelled { loadErrorPage(message: error.localizedDescription) }
+  }
+
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    if (error as NSError).code != NSURLErrorCancelled { loadErrorPage(message: error.localizedDescription) }
+  }
+
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     guard hasLoadedServer else { return }
 
-    // If a reload landed while the mic was hot, JS has lost its in-flight
-    // recording state (uiState.voice resets to recording:false at module
-    // load). Tearing down the recognition session here keeps the two sides
-    // in sync — otherwise the icons read "idle" while Swift is still
-    // capturing audio, and a mid-window mic click would tell Swift to stop
-    // and discard the recording.
-    if isVoiceRecording {
-      stopVoiceRecognition(manual: false, emitEvent: false)
-    }
-
-    emitVoiceEvent(
-      supported: speechRecognizer != nil,
-      recording: isVoiceRecording,
-      status: isVoiceRecording ? "listening" : "idle",
-      partial: nil,
-      finalText: nil,
-      error: nil
-    )
+    // Also cancels permission requests and invalidates their late callbacks.
+    voiceInput.cancel()
 
     captureReadyUIAudit()
   }
@@ -1448,12 +1165,30 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     }
 
     if isExternalWebUrl(url) {
-      NSWorkspace.shared.open(url)
+      openExternalLink(url)
       decisionHandler(.cancel)
       return
     }
 
     decisionHandler(.allow)
+  }
+
+  private func openExternalLink(_ url: URL) {
+    guard let browser = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+      reportExternalLinkFailure()
+      return
+    }
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = true
+    NSWorkspace.shared.open([url], withApplicationAt: browser, configuration: configuration) { _, error in
+      if error != nil { self.reportExternalLinkFailure() }
+    }
+  }
+
+  private func reportExternalLinkFailure() {
+    DispatchQueue.main.async {
+      self.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('melo-external-link', {detail:{ok:false}}));", completionHandler: nil)
+    }
   }
 
   private func isExternalWebUrl(_ url: URL) -> Bool {

@@ -361,6 +361,8 @@ test('payload — edit-mode (workspace + input image): bare image_generation too
   // tool_choice must allow the model to invoke image_generation
   assert.equal(captured.body.tool_choice, 'auto');
   // Instructions: contain the edit-mode block
+  assert.match(captured.body.instructions, /Explicit user changes take precedence/);
+  assert.match(captured.body.instructions, /preserve unrequested attributes/i);
   assert.match(
     captured.body.instructions,
     /INLINE IMAGE EDITING/,
@@ -422,6 +424,7 @@ test('payload — pure text-to-image (workspace + no input image): minimal tool,
     'pure generate must NOT carry input_fidelity (cost + behaviour bias)',
   );
   // Instructions: edit block must NOT be appended for pure-generate
+  assert.match(captured.body.instructions, /subject, intended use, composition, style, exact text/);
   assert.doesNotMatch(
     captured.body.instructions,
     /INLINE IMAGE EDITING/,

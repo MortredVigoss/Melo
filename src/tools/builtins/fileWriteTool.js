@@ -535,6 +535,7 @@ export const fileWriteTool = {
           bytes: content.length,
           backupOperationId: snap.operationId,
           wasCreate: isCreate,
+          change: { kind: isCreate ? 'created' : 'overwrite', path: realPath, before: currentBuffer.toString('utf8').slice(0, 8000), after: content.slice(0, 8000), truncated: currentBuffer.length > 8000 || content.length > 8000 },
         },
       };
     } catch (err) {

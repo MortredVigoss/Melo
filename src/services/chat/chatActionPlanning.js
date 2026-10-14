@@ -22,7 +22,8 @@
 //
 // Only `agentUsesTool` is imported from outside the cluster.
 
-import { agentUsesTool } from '../agent/agentTools.js';
+import { agentUsesTool } from '../../domain/agent/agentTools.js';
+import { isExplicitActionRequest, isExplicitLocalSearch, maskQuotedText } from '../../retrieval/requestPolicy.js';
 
 function normalizeGraphNeedle(value = '') {
   return String(value || '')
@@ -38,9 +39,12 @@ function extractSearchQueryFromMessage(message = '') {
     return '';
   }
 
-  const quotedMatch = raw.match(/["“”'‘’](.+?)["“”'‘’]/);
+  const action = maskQuotedText(raw).match(/\b(?:search|find|grep|ripgrep|rg)\b|搜索|查找|检索/iu);
+  if (!action) return '';
+  const tail = raw.slice(action.index + action[0].length).trim();
+  const quotedMatch = tail.match(/["“”'‘’](.+?)["“”'‘’]/);
   if (quotedMatch?.[1]) {
-    return quotedMatch[1].trim();
+    return /[\p{L}\p{N}]/u.test(quotedMatch[1]) ? quotedMatch[1].trim() : '';
   }
 
   const patterns = [
@@ -51,7 +55,8 @@ function extractSearchQueryFromMessage(message = '') {
   for (const pattern of patterns) {
     const match = raw.match(pattern);
     if (match?.[1]) {
-      return match[1].trim();
+      const query = match[1].trim().replace(/^(?:the |this )?(?:workspace|repo(?:sitory)?|codebase|local files)\s+(?:for\s+)?/iu, '').replace(/[。.!！?？]+$/u, '').trim();
+      return /[\p{L}\p{N}]/u.test(query) ? query : '';
     }
   }
 
@@ -65,7 +70,7 @@ function planCommandAction({ latestUserMessage = '', activeAgentProfile, chat })
 
   const raw = String(latestUserMessage || '').trim();
   const message = normalizeGraphNeedle(raw);
-  if (!message) {
+  if (!message || !isExplicitActionRequest(raw)) {
     return null;
   }
 
@@ -92,8 +97,16 @@ function planCommandAction({ latestUserMessage = '', activeAgentProfile, chat })
     },
   ];
 
+  const quotedCommand = /^(?:(?:please|can you|could you)\s+)*(?:run|execute)\s+[`"“]|^(?:请|帮我|请帮我)?(?:运行|执行)\s*[`"“]/iu.test(raw);
+  const commandText = quotedCommand ? raw : maskQuotedText(raw);
   for (const spec of commandSpecs) {
-    if (spec.patterns.some(pattern => pattern.test(raw))) {
+    if (spec.patterns.some(pattern => {
+      const match = pattern.exec(commandText);
+      if (!match) return false;
+      const prefix = commandText.slice(0, match.index).replace(/[`"“]/gu, '').trim();
+      return /^(?:(?:please|can you|could you|would you|run|execute|show|use|list)\s*)*$/iu.test(prefix) ||
+        /^(?:(?:请|麻烦|帮我|运行|执行|查看|显示|使用|列出)\s*)*$/u.test(prefix);
+    })) {
       return {
         kind: 'command',
         requiresApproval: true,
@@ -109,8 +122,7 @@ function planCommandAction({ latestUserMessage = '', activeAgentProfile, chat })
   }
 
   if (
-    /(search|find|grep|ripgrep|rg|搜索|查找|检索)/i.test(raw) &&
-    !/(weather|天气)/i.test(raw)
+    isExplicitLocalSearch(raw)
   ) {
     const query = extractSearchQueryFromMessage(raw);
     if (query) {
@@ -158,8 +170,8 @@ function planExternalConnectorAction({
   }
 
   const raw = String(latestUserMessage || '').trim();
-  const message = normalizeGraphNeedle(raw);
-  if (!message) {
+  const message = normalizeGraphNeedle(maskQuotedText(raw));
+  if (!message || !isExplicitActionRequest(raw)) {
     return null;
   }
 

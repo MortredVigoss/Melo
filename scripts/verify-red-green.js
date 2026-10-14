@@ -70,15 +70,18 @@ function printSummary(results) {
   log('');
 }
 
-async function runCommand(command, args, { env = {}, cwd = projectDir } = {}) {
+async function runCommand(command, args, { env = {}, cwd = projectDir, timeoutMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       env: {
         ...process.env,
+        MELO_HOME: verifyMeloHome,
+        MELO_TEST_MODE: '1',
         ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
     });
 
     let stdout = '';
@@ -133,6 +136,8 @@ function spawnProcess(command, args, { env = {}, cwd = projectDir } = {}) {
     cwd,
     env: {
       ...process.env,
+      MELO_HOME: verifyMeloHome,
+      MELO_TEST_MODE: '1',
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -551,10 +556,16 @@ function parseNativeDebugOutput(rawOutput) {
 }
 
 async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
+  await unlink(nativeDebugPath).catch(() => {});
   await writeFile(autoCloseSentinelPath, '', 'utf8');
   try {
     await runCommand('osascript', ['-e', 'tell application "Melo" to quit']).catch(() => '');
-    await runCommand('open', ['-n', '-W', appPath]);
+    await runCommand('open', [
+      '--env', `MELO_HOME=${join(verifyMeloHome, 'native')}`,
+      '--env', 'MELO_TEST_MODE=1',
+      '--env', 'MELO_MOCK_RESPONSE=Native smoke reply.',
+      '-n', '-W', appPath,
+    ], { timeoutMs: 60000 });
     const debugOutput = await readFile(nativeDebugPath, 'utf8');
     const parsed = parseNativeDebugOutput(debugOutput);
     const uiAudit = parsed.uiAudit || {};
@@ -592,18 +603,18 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
       },
       {
         key: 'primaryNavCount',
-        test: value => value === 8,
+        test: value => value === 5,
         message: 'Native launch reported unexpected primary sidebar actions',
       },
       {
         key: 'primaryNavTitle',
-        test: value => value === 'New chat',
-        message: 'Native launch did not preserve New chat as the first sidebar action',
+        test: value => value === 'chat',
+        message: 'Native launch did not preserve conversations as the first neural module',
       },
       {
         key: 'primaryNavTitles',
-        test: value => value === 'New chat|Search|Agent|Model|Customize|Chats|Projects|Artifacts',
-        message: 'Native launch did not preserve the full primary sidebar action set',
+        test: value => value === 'chat|projects|agents|knowledge|system',
+        message: 'Native launch did not preserve all five neural modules',
       },
       {
         key: 'primaryNavVisible',
@@ -644,191 +655,16 @@ async function main() {
   let serverProcess = null;
 
   try {
-    // Fast-fail unit tests for scripts/ first.  Added per Codex C-gate
-    // finding on aaaaeb8 (manual review): `scripts/inspect-search-trail.test.js`
-    // and any future scripts/ unit tests were not part of the gate, so a
-    // CLI-contract regression (e.g. exit-code mismatch) could slip past.
-    // Runs in seconds; if it fails we skip the expensive desktop build.
-    // Intentionally narrow: `src/**/*.test.js` is NOT included here — that
-    // surface is much larger and currently has one known flake
-    // (`src/media/orchestratorAbort.test.js` #14 — spawned task pending),
-    // which would re-introduce flake into the gate.  Widening to src/ is
-    // a separate decision after that flake lands.
-    results.push(await runStep('scripts/ unit tests (test:scripts)', () => runCommand('npm', ['run', 'test:scripts'])));
+    // Discover all checked-in unit/integration fixtures automatically. Browser,
+    // Swift, build and install checks remain explicit stages below.
+    results.push(await runStep('Discovered regression tests (test:unit)', () => runCommand('npm', ['run', 'test:unit'])));
 
-    // Codex C-gate finding on 1f6b4fb: src/serverGuard.test.js was added
-    // as a regression guard for the 6d925a4 cross-repo guard-regex fix
-    // but lived under src/**/*.test.js (excluded above), so the gate
-    // wouldn't run it — defeating the whole "防回归" intent.  Add a
-    // single-file allowlist step (NOT a src/** glob, same flake reason
-    // as test:scripts).  Mirrors the test:scripts pattern.
-    results.push(await runStep('Server guard unit tests (test:server-guard)', () => runCommand('npm', ['run', 'test:server-guard'])));
+    // JS fixtures are discovered above; only non-Node-test journeys need
+    // explicit stages. No parallel hand-maintained file allowlist.
+    results.push(await runStep('Settings design browser journeys', () => runCommand('npm', ['run', 'test:settings-design'])));
+    results.push(await runStep('Extra fast browser journey', () => runCommand('npm', ['run', 'test:extra-fast-browser'])));
 
-    // 2026-05-12 Bug 1: TTS native say queue regression guard.  Same
-    // single-file allowlist pattern as test:server-guard — pure state
-    // machine, no spawn dependencies, fast.
-    results.push(await runStep('TTS native queue unit tests (test:tts)', () => runCommand('npm', ['run', 'test:tts'])));
-
-    // G-6 #6 (2026-05-12): markdownFiles factory now has the desktopStore.js
-    // caller passing function-form `agentsDir` (G-6 #6 lazy refactor).  This
-    // suite locks both the string-form and function-form paths so a future
-    // "simplify by always treating as string" refactor would break loudly
-    // instead of silently freezing MELO_HOME at module load.  Also contains
-    // a source-level guard against re-introducing `const DESKTOP_DIR/AGENTS_DIR`
-    // in desktopStore.js.
-    results.push(await runStep('markdownFiles factory + desktopStore source guard (test:markdown-files)', () => runCommand('npm', ['run', 'test:markdown-files'])));
-
-    // 2026-05-12 audit follow-up: src/web/externalReaders.js had a Codex
-    // change introducing `MELO_EXTERNAL_READERS_DIR` env capture as a
-    // module-load const — same §6 violation pattern the G-6 audit cleaned
-    // up.  Refactored to lazy resolvers + appended 5 source-level guard
-    // tests to externalReaders.test.js (existing 4 behavior tests still
-    // pass).  Wired here so a future regression to module-load const
-    // breaks at push gate.
-    results.push(await runStep('External readers §6 + behavior (test:external-readers)', () => runCommand('npm', ['run', 'test:external-readers'])));
-
-    // G-1d slice 1 (executor.js preserve) + G-1e (parser surface to LLM prompt)
-    // — evidenceTrail end-to-end through tools layer.  Existing executor test
-    // pinned by c3285d2; parser test added by G-1e commit.  Grouped under
-    // one gate step because they share the evidenceTrail schema contract.
-    results.push(await runStep('Tools evidenceTrail (executor + parser) (test:tools-evidence-trail)', () => runCommand('npm', ['run', 'test:tools-evidence-trail'])));
-
-    // api-direct router (2026-05-14): structured-data providers (Wikipedia
-    // for now; HN / arXiv / GitHub later) that short-circuit SERP for
-    // well-shaped queries.  Gating this here so regressions in the
-    // matches()/fetch() interface trip immediately — the webSearchTool
-    // run() depends on the {provider, ok, results, contentMap} contract
-    // shape and a silent drift would manifest as "Wikipedia results
-    // vanish from search" without obvious cause.
-    results.push(await runStep('API-direct router + Wikipedia provider (test:api-direct)', () => runCommand('npm', ['run', 'test:api-direct'])));
-
-    // Phase G-2b SearchTask adapter (2026-05-21 cherry-picked from
-    // wip/g-2b-adapter-phase2-refresh after 3 Codex C-rounds landed).
-    // Pure-function adapter maps 3 tools' legacy returns to unified
-    // SearchTaskResult — schema/error-code drift here is silent, so gate
-    // it before the upcoming G-2c caller-migration phase consumes it.
-    results.push(await runStep('SearchTask adapter (test:search-task)', () => runCommand('npm', ['run', 'test:search-task'])));
-
-    // G-2b round-5 闭环 (2026-05-21): webSearchTool **producer side** of
-    // the api-direct meta.contentItems serialization.  Consumer side is
-    // gated by test:search-task above; this step pins the OTHER half so
-    // future refactors can't desynchronize results vs contentItems.
-    results.push(await runStep('webSearchTool api-direct shape (test:websearch-api-direct)', () => runCommand('npm', ['run', 'test:websearch-api-direct'])));
-
-    // 2026-05-21 audit闭环 Tier-2B ⚪: Jina fan-out internal abort wiring
-    // regression — proves quorum-hit / outer-signal abort actually flips
-    // in-flight fetches' captured signal to aborted (pre-fix they'd keep
-    // running to natural timeout).  Without this gate the abort wiring
-    // could silently regress and we'd just see "slow background HTTP"
-    // tokens / bandwidth waste without an obvious failure mode.
-    results.push(await runStep('webSearchTool Jina abort wiring (test:websearch-jina-abort)', () => runCommand('npm', ['run', 'test:websearch-jina-abort'])));
-
-    // 2026-05-21 audit闭环 #5: 6 regression guards that were written
-    // explicitly to catch §6 cross-home / evidenceTrail contract drift
-    // but had no gate step — i.e. silent-skip per
-    // feedback_test_must_reach_gate.  Gate them in two narrow scripts
-    // (cross-home / evidence-trail) so the protection actually fires
-    // before push.  The §6 SWR microtask test (added same audit闭环 #1)
-    // lives inside webSearchTool.crossHome.test.js — picking up that
-    // file here locks both #1 and #3 regression protection.
-    results.push(await runStep('Cross-home isolation regression guards (test:cross-home)', () => runCommand('npm', ['run', 'test:cross-home'])));
-    results.push(await runStep('Tool-level evidenceTrail regression guards (test:evidence-trail-tools)', () => runCommand('npm', ['run', 'test:evidence-trail-tools'])));
-
-    // meloChrome launcher (2026-05-16): CDP-attach Stage 1.  Pure unit
-    // tests — no real Chrome spawn, all OS deps stubbed via DI seam.
-    // Gating here so the lock-file / reuse / stale-detection contract
-    // can't silently drift before Stage 2 wires this into fetchUrlTool.
-    results.push(await runStep('Melo Chrome CDP launcher (test:melo-chrome)', () => runCommand('npm', ['run', 'test:melo-chrome'])));
-
-    // Stage 2a (2026-05-16): connectMeloChrome wrapper on top of the
-    // launcher.  Pure unit tests — playwright-core import + connect are
-    // both DI-injected so this stays decoupled from real Chrome.  Gating
-    // here so the launcher → connector contract (port handoff + signal
-    // propagation + browser-close-on-throw) can't silently drift before
-    // Stage 2b wires this into fetchUrlTool.
-    results.push(await runStep('CDP connector helper (test:browser-connect)', () => runCommand('npm', ['run', 'test:browser-connect'])));
-
-    // Stage 2b (2026-05-16): fetchUrlTool cdp-chrome tier — env-gated
-    // escalation + explicit extract_mode='cdp-chrome'.  Gating here so
-    // the "env off = no behavior change" promise + the cdp→playwright
-    // fallthrough contract can't silently regress.
-    results.push(await runStep('fetchUrlTool cdp-chrome tier (test:fetchurl-cdp)', () => runCommand('npm', ['run', 'test:fetchurl-cdp'])));
-
-    // Stage 2c (2026-05-17): webSearchTool content-fetch CDP fallback.
-    // Gating here so the env-on/off branch + trail method recording can't
-    // silently drift after Stage 3 wires interactive browser tools.
-    results.push(await runStep('webSearchTool content-fetch CDP (test:websearch-cdp)', () => runCommand('npm', ['run', 'test:websearch-cdp'])));
-
-    // Stage 2c B 留账 闭环 (2026-05-18): real stale-SWR test (UPDATE
-    // created_at into stale window) + real abort-during-hang test
-    // (waitForLoadState 真挂 + 计时验证 + page.close 计数).  Both close
-    // the "fake-green" gap MEMORY.md feedback_test_must_validate_real_invariant
-    // requires for any abort/SWR path.
-    results.push(await runStep('webSearchTool SWR + abort (test:websearch-swr-abort)', () => runCommand('npm', ['run', 'test:websearch-swr-abort'])));
-
-    // Stage 3a (2026-05-17): pageRegistry — persistent page handle store
-    // for the upcoming Stage 3b/3c interactive browser tools.  Gating
-    // here so the env gate + contexts()[0] reuse + cleanup-on-error
-    // contracts can't silently regress when tools start consuming the
-    // registry.
-    results.push(await runStep('Page registry (test:page-registry)', () => runCommand('npm', ['run', 'test:page-registry'])));
-
-    // Stage 3b (2026-05-17): browser_open / browser_snapshot / browser_close
-    // — the persistent-handle counterpart to fetchUrlTool's one-shot
-    // cdp-chrome tier.  Tool-shape contracts (error mapping, idempotent
-    // close, schema) need their own gate so registry refactors can't
-    // silently break tool-side semantics.
-    results.push(await runStep('Browser tools (test:browser-tools)', () => runCommand('npm', ['run', 'test:browser-tools'])));
-
-    // G-1d slice 2 (2026-05-12): chat-message-level toolResults round-trip
-    // through state.json normalize is the persistence backbone of slice 2.
-    // Gating this catches the "older state with malformed toolResults
-    // crashes hydration" regression class.
-    results.push(await runStep('State hydration (stateHydration test) (test:state-hydration)', () => runCommand('npm', ['run', 'test:state-hydration'])));
-
-    // G-1d slice 2 producer-side gate: chatExecutionRunner's toolResult
-    // projection (via src/services/chat/toolResultProjection.js).  Codex on
-    // slice 2 commit 1 (B + ⚪) flagged that only hydration was covered;
-    // this pins the producer shape so refactoring the projection (e.g.
-    // adding/removing fields) trips the gate immediately instead of
-    // silently breaking the persisted assistantMessage.toolResults shape.
-    results.push(await runStep('Tool result projection (G-1d slice 2 producer) (test:tool-result-projection)', () => runCommand('npm', ['run', 'test:tool-result-projection'])));
-
-    // 2026-05-23 架构 audit 闭环 (Tier 1 consistency): 4 cross-tool
-    // static invariants — category enum no-`files`-ghost, Title Case
-    // tool.name, every tool has examples (systemPrompt reads [0] for
-    // LLM few-shot), snake_case tool.id.  Any new builtin that drifts
-    // these silently degrades the LLM system prompt — gate it so it
-    // can't ship.
-    results.push(await runStep('Tool registry consistency (test:tool-consistency)', () => runCommand('npm', ['run', 'test:tool-consistency'])));
-
-    // 2026-05-23 架构 audit #3 闭环: desktopStore RMW→updateStateAtomically
-    // migration. The no-lost-update concurrency tests exercise the actual
-    // lost-update window (N concurrent non-conflicting mutations must all
-    // survive) — they fail against the pre-migration read-modify-write code,
-    // so gating them guards the migration from silent regression.
-    results.push(await runStep('desktopStore atomic state (test:store-atomic)', () => runCommand('npm', ['run', 'test:store-atomic'])));
-
-    // 2026-06-04 audit闭环: poller offset-advancement fix (telegram + discord).
-    // Structural guards lock the data-loss bug shape (offset must NOT advance
-    // to batch-max before the message loop; must advance per-message in a
-    // finally). A regression that reverts to pre-loop offset set fails these.
-    results.push(await runStep('Poller offset advancement (test:polling-offset)', () => runCommand('npm', ['run', 'test:polling-offset'])));
-
-    // 2026-06-04 audit闭环: dreaming scheduler re-arm leak + media cache TTL
-    // eviction. Both are behavioral (fake emitter / fs round-trip) — the
-    // scheduler test proves a re-arm doesn't accumulate listeners, the cache
-    // test proves an expired entry is unlinked (bounds disk growth).
-    results.push(await runStep('Dreaming scheduler re-arm (test:dreaming-scheduler)', () => runCommand('npm', ['run', 'test:dreaming-scheduler'])));
-    results.push(await runStep('Media cache TTL eviction (test:media-cache)', () => runCommand('npm', ['run', 'test:media-cache'])));
-
-    // desktop-ui/**/*.test.js — same "test exists but gate doesn't run it"
-    // gap.  In particular `streamTtsOnToolCall.test.js` was added 2026-05-12
-    // as the regression guard for the mid-utterance TTS truncation bug
-    // (don't kill the queue/afplay on every tool_call event).  Wire the
-    // whole test:ui glob in so future desktop-ui regression guards land
-    // in the gate automatically.  Suite is stable (~200 cases) and fast.
-    results.push(await runStep('desktop-ui unit tests (test:ui)', () => runCommand('npm', ['run', 'test:ui'])));
+    results.push(await runStep('iPhone protocol and shared renderer (test:ios)', () => runCommand('npm', ['run', 'test:ios'])));
 
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
     results.push(
@@ -837,21 +673,27 @@ async function main() {
     results.push(
       await runStep('Install desktop app bundle', () => runCommand('npm', ['run', 'install:desktop'])),
     );
-    results.push(
-      await runStep('Desktop folder Melo.app launch', async () => {
-        const output = await assertNativeLaunch(desktopFolderAppPath, [
-          desktopFolderAppPath,
-          launchpadAppPath,
-        ]);
-        return output.split('\n').slice(0, 5).join('\n');
-      }),
-    );
-    results.push(
-      await runStep('Launchpad Melo.app launch', async () => {
-        const output = await assertNativeLaunch(launchpadAppPath);
-        return output.split('\n').slice(0, 5).join('\n');
-      }),
-    );
+    if (process.env.MELO_SKIP_NATIVE_LAUNCH === '1') {
+      for (const name of ['Desktop folder Melo.app launch', 'Launchpad Melo.app launch']) {
+        results.push({ name, status: 'YELLOW', durationMs: 0, detail: 'Explicitly skipped: native window verification requires an unlocked desktop.' });
+      }
+    } else {
+      results.push(
+        await runStep('Desktop folder Melo.app launch', async () => {
+          const output = await assertNativeLaunch(desktopFolderAppPath, [
+            desktopFolderAppPath,
+            launchpadAppPath,
+          ]);
+          return output.split('\n').slice(0, 5).join('\n');
+        }),
+      );
+      results.push(
+        await runStep('Launchpad Melo.app launch', async () => {
+          const output = await assertNativeLaunch(launchpadAppPath);
+          return output.split('\n').slice(0, 5).join('\n');
+        }),
+      );
+    }
 
     await rm(verifyMeloHome, { recursive: true, force: true });
 
@@ -912,6 +754,11 @@ async function main() {
       }),
     );
     results.push(
+      await runStep('Runtime browser end-to-end', () => runCommand('node', ['scripts/smoke-runtime.js'], {
+        env: { MELO_SMOKE_BASE_URL: serverUrl },
+      })),
+    );
+    results.push(
       await runStep('Bootstrap agent persona contract', async () => {
         const bootstrap = await fetchBootstrap();
         assertAgentPersonaShape(bootstrap);
@@ -941,7 +788,9 @@ async function main() {
     process.exit(1);
   }
 
-  log('Overall status: GREEN');
+  log(results.some(result => result.status === 'YELLOW')
+    ? 'Overall status: YELLOW (completed checks passed; native launch remains unverified)'
+    : 'Overall status: GREEN');
 }
 
 main().catch(error => {

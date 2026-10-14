@@ -7,7 +7,7 @@
 // already live in dedicated leaf modules — this is a true zero-LOCAL
 // extraction.
 
-import { agentUsesTool } from './agentTools.js';
+import { agentUsesTool } from '../../domain/agent/agentTools.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
 
 export function buildToolRoutingPrompt({ activeAgentProfile, agentConnectors = [] }) {

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 /**
  * src/memory/status.js
  *
@@ -13,12 +14,12 @@
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveRuntimePaths } from '../runtime/paths.js';
 
 export function getMeloHome() {
-  return process.env.MELO_HOME || join(homedir(), '.melo');
+  return resolveRuntimePaths().home;
 }
 
 function safeCount(db, sql) {
@@ -79,12 +80,12 @@ export const MEMORY_STATUS_SCHEMA_VERSION = 1;
  *   tuning: { mmrLambda: number, recencyHalfLifeDays: number },
  * }}
  */
-export function collectMemoryStatus() {
-  const meloHome = getMeloHome();
+export function collectMemoryStatus({ meloHome = getMeloHome() } = {}) {
   const storePath = join(meloHome, 'desktop', 'store.sqlite');
   const dreamsDir = join(meloHome, 'desktop', 'dreams');
 
   const snapshot = {
+    derivedIndex: derivedIndexStatus(meloHome),
     schemaVersion: MEMORY_STATUS_SCHEMA_VERSION,
     meloHome,
     store: { path: storePath, exists: false, sizeBytes: null },
@@ -108,7 +109,7 @@ export function collectMemoryStatus() {
     byAttic: {},
     dreams: { dir: dreamsDir, latest: null, count: 0 },
     embedding: {
-      provider: process.env.MELO_EMBED_PROVIDER || '(default)',
+      provider: process.env.MELO_EMBED_PROVIDER || 'builtin',
       cacheRows: null,
       dimsConfigured: Number(process.env.MELO_EMBED_DIMS || 1024),
       storedModelId: null,
@@ -131,7 +132,8 @@ export function collectMemoryStatus() {
 
     let db = null;
     try {
-      db = new DatabaseSync(storePath, { readOnly: true });
+      db = new DatabaseSync(storePath, { readOnly: true, allowExtension: true });
+      try { db.loadExtension(createRequire(import.meta.url)('sqlite-vec').getLoadablePath()); } catch {}
       snapshot.meta = readMeta(db);
       snapshot.counts = {
         memories: safeCount(db, 'SELECT COUNT(*) AS n FROM memories'),
@@ -292,3 +294,4 @@ export function withLiveProviderModelId(snapshot, providerModelId) {
     },
   };
 }
+import { derivedIndexStatus } from '../state/derivedDispatcher.js';

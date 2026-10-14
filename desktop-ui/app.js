@@ -1,3 +1,24 @@
+import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
+import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
+import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
+import { renderMemoryFacts } from './memoryFacts.js';
+import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion } from './localSettings.js';
+import { renderSyncConflicts } from './syncConflicts.js';
+import { renderConversationContext } from './conversationContext.js';
+import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
+import { renderReplyDocument, replyPlainText } from './replyDocument.js';
+import { renderImageSettings, renderImageTaskControls, consumeImageTask, restoreImageTask, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
+import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
+import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
+import { renderAtomicButton } from './atomicButton.js';
+import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation } from './executionPanel.js';
+import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt } from './modelPresentation.js';
+import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
+import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from './neuralDom.js';
+import { resolveWorkspaceStage } from './neuralLayout.js';
+import { captureNeuralLayout, animateNeuralLayout } from './neuralMotion.js';
+import { neuralGroups, groupForSettings, renderNeuralNavigation, renderNeuralOverview, syncNeuralScene } from './neuralShell.js';
 import {
   renderVizMountHtml,
   mountVizBlocks,
@@ -9,11 +30,18 @@ import {
   resetCitationPreviewCache,
 } from './viz/citationRenderer.js';
 import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
+import { extractTextUrls } from '/shared/textUrls.js';
+import { renderCopyLinkButton, copyLinkText } from './linkActions.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { describeAudioExtractionStatus, describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
+import { renderAttachmentCards } from './attachmentCards.js';
+import { createSearchPageRenderer } from './searchPage.js';
+import { createScrollPreservation } from './scrollPreservation.js';
+import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
+import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
 import { renderMessageToolResults as _renderMessageToolResultsFromModule } from './messageToolResults.js';
 import {
@@ -33,12 +61,32 @@ import {
 } from './fileSafetyResponse.js';
 
 const app = document.querySelector('#app');
+const memoryFactEdit = new EditSession();
+const settingsFormEditors = createSettingsFormEditors({render,
+  ownsDraft: form => form.dataset.form === 'agent-profile-update',
+  scope: form => form.dataset.agentId ? agentDraftKey(form.dataset.agentId) : form.dataset.form==='task-pricing' ? uiState.bootstrap?.settings?.config?.model || '' : '',
+  onCancel: form => {
+    if(form.dataset.agentId) delete uiState.agentDrafts[agentDraftKey(form.dataset.agentId)];
+    if(form.dataset.form==='task-pricing') uiState.taskPricing=null;
+    if(['connector-config','model-config'].includes(form.dataset.form)) clearModelFormDraft(form);
+  },
+});
+settingsFormEditors.install(document);
+installUnsavedSettingsGuard(window);
+
 
 const uiState = {
+  neuralGroup: null,
+  neuralOverview: true,
+  neuralExpanded: false,
+  neuralStill: false,
   bootstrap: null,
   loading: true,
   sending: false,
   sendAbortController: null,
+  activeTurn: null,
+  modelPickerOpen: false,
+  modelPickerSaving: false,
   thinkingSince: 0,
   searchLoading: false,
   searchFileLoading: false,
@@ -136,6 +184,7 @@ const uiState = {
     cliServers: [],
     plugins: [],
     tasks: [],
+    diagnostics: null,
   },
   // Phase 3 — Skill detail tab: 'overview' (default) or 'markdown'.
   skillDetailTab: 'overview',
@@ -194,15 +243,11 @@ const uiState = {
     selectedIndex: 0,
   },
   voice: {
-    supported: Boolean(globalThis.webkit?.messageHandlers?.meloVoice),
+    supported: voiceInputSupported(),
     recording: false,
     status: 'idle',
     preview: '',
     error: '',
-    // JS-level guard: true after the first finalText is received for a recording
-    // session. Prevents duplicate text if Swift fires the event twice (e.g. the
-    // kAFAssistantErrorDomain 216 cancel-error triggering a second finalText).
-    finalReceived: false,
   },
   composerAttachments: [],
   composerAttachmentMenuOpen: false,
@@ -261,11 +306,11 @@ const uiState = {
   ttsCustomVoiceId: localStorage.getItem('melo-tts-custom-voice-id') || '',
   // Active chat agent — which agent handles new chats from the home screen
   activeChatAgentId: localStorage.getItem('melo-active-chat-agent') || 'main',
+  newChatModel: null,
+  newChatArtifactIds: [],
+  newChatProjectId: null,
+  showArchivedProjects: false,
   agentSelectorOpen: false,
-  // Demon mode — experimental toggle to the left of the model selector.
-  // Persisted to localStorage so it survives reloads; currently just a UI
-  // flag — downstream behavior hooks in will read `uiState.demonMode`.
-  demonMode: localStorage.getItem('melo-demon-mode') === '1',
   // Scroll position saved before re-render for position restoration
   lastKnownScrollTop: 0,
   // Anchor captured before an innerHTML swap so viz cards' async hydration
@@ -426,11 +471,11 @@ const MODEL_SETUP_DEFAULTS = {
   },
   'api-key': {
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-5.5',
+    model: DEFAULT_MODELS_BY_AUTH_MODE['api-key'],
   },
   codex: {
     baseUrl: 'https://chatgpt.com/backend-api',
-    model: 'gpt-5.5',
+    model: DEFAULT_MODELS_BY_AUTH_MODE.codex,
   },
 };
 
@@ -460,15 +505,14 @@ function thinkingLabel() {
     return '';
   }
 
-  if (!uiState.thinkingSince) {
-    return '正在思考';
-  }
+  const label = turnLabel(uiState.activeTurn, { permission: uiState.pendingToolPermissions.length > 0, tools: uiState.activeToolCalls.some(tool => tool.status === 'running') });
+  if (!uiState.thinkingSince) return label;
 
   const elapsedSeconds = Math.max(
     0,
     Math.floor((Date.now() - uiState.thinkingSince) / 1000),
   );
-  return elapsedSeconds > 0 ? `正在思考 ${elapsedSeconds}s` : '正在思考';
+  return elapsedSeconds > 0 ? `${label} · ${elapsedSeconds}s` : label;
 }
 
 function parseRenderableMessageBlocks(value = '') {
@@ -534,15 +578,7 @@ function normalizeDisplayConversationText(value = '') {
 }
 
 function renderTextBlock(value = '') {
-  const normalized = normalizeDisplayConversationText(value);
-  if (!normalized) {
-    return '';
-  }
-
-  return normalized
-    .split(/\n{2,}/g)
-    .map(paragraph => `<p>${renderInlineText(paragraph)}</p>`)
-    .join('');
+  return renderReplyDocument(String(value).replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, ''), renderInlineText, escapeHtml);
 }
 
 function renderRichText(value = '') {
@@ -758,7 +794,7 @@ function renderMessageBlocks(message) {
         textForDisplay = cleanText;
       }
 
-      const displayText = normalizeDisplayConversationText(textForDisplay);
+      const displayText = textForDisplay.trim();
       if (!displayText) {
         return '';
       }
@@ -767,7 +803,7 @@ function renderMessageBlocks(message) {
         <div
           class="message-bubble"
           data-copyable-surface
-          data-copy-text="${escapeHtml(displayText)}"
+          data-copy-text="${escapeHtml(replyPlainText(displayText))}"
         >
           ${renderTextBlock(displayText)}
         </div>
@@ -795,12 +831,12 @@ function renderInlineText(value = '') {
 
   while ((match = pattern.exec(value))) {
     html += renderInlineSegmentWithCites(value.slice(cursor, match.index), escapeHtml);
-    const url = match[2] || match[3];
+    const url = extractTextUrls(match[2] || match[3])[0];
     const label = match[1] || url;
     html += `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(
       label,
-    )}</a>`;
-    cursor = match.index + match[0].length;
+    )}</a>${renderCopyLinkButton(url, escapeHtml)}`;
+    cursor = match.index + (match[2] ? match[0].length : url.length);
   }
 
   html += renderInlineSegmentWithCites(value.slice(cursor), escapeHtml);
@@ -1297,170 +1333,7 @@ function renderTtsVoicePanel() {
 }
 
 function renderMessageAttachments(message) {
-  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
-  if (!attachments.length) {
-    return '';
-  }
-
-  const extractedMedia = Array.isArray(message?.extractedMedia) ? message.extractedMedia : [];
-  const compactPreviewText = value =>
-    String(value || '')
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(line =>
-        line &&
-        !/^source:\s*/i.test(line) &&
-        !/^\[note:/i.test(line) &&
-        !/^preview image:\s*/i.test(line),
-      )
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const previewForAttachment = attachment => {
-    const url = String(attachment?.url || '').trim();
-    return extractedMedia.find(entry => {
-      if (!entry || typeof entry !== 'object') return false;
-      if (attachment?.id && entry.attachmentId === attachment.id) return true;
-      const meta = entry.metadata || {};
-      return [meta.url, meta.originalUrl].some(candidate => String(candidate || '').trim() === url);
-    }) || null;
-  };
-
-  const renderLinkAttachmentCard = attachment => {
-    const preview = previewForAttachment(attachment);
-    const meta = preview?.metadata || {};
-    const title = meta.title || attachmentLabel(attachment);
-    const body = preview?.text
-      ? compactPreviewText(preview.text)
-      : '';
-    const previewText = body || 'Readable preview extracted. Click to open the original page.';
-    const imageUrl = /^https?:\/\//i.test(String(meta.previewImage || ''))
-      ? String(meta.previewImage)
-      : '';
-    const source = String(meta.source || '').toLowerCase();
-    const previewStatus = (() => {
-      if (!preview) return 'Link only';
-      if (meta.directMediaExtractionSucceeded) return 'Deep media parsed';
-      if (meta.directMediaExtractionAttempted) return 'Preview read · media parse unavailable';
-      if (source === 'pdf-parse') return 'PDF text extracted';
-      if (source === 'readability') return 'Article text extracted';
-      if (source.includes('yt-dlp')) return 'Video metadata extracted';
-      if (source.includes('browser:')) return 'Browser preview extracted';
-      if (source.includes('douyin-ssr')) return 'Share preview + page text';
-      if (source.includes('share-preview')) return 'Share preview extracted';
-      if (source.includes('opengraph')) return 'OpenGraph preview extracted';
-      return 'Preview extracted';
-    })();
-    const metaLine = [meta.author, meta.siteName, previewStatus].filter(Boolean).join(' · ');
-    const cardIcon = isPdfAttachment(attachment) ? icon.file : icon.link;
-    const canOpenOriginal = /^https?:\/\//i.test(String(attachment.url || ''));
-    const cardOpenAttrs = canOpenOriginal
-      ? ` data-external-url="${escapeHtml(attachment.url)}" role="link" tabindex="0"`
-      : '';
-    const cardAction = canOpenOriginal
-      ? 'Click to open in browser'
-      : 'Attached locally';
-    const unavailableText = canOpenOriginal
-      ? 'Melo has not extracted readable text for this link yet. Click to open it in your browser.'
-      : 'Melo has this local attachment, but no readable text was extracted yet.';
-
-    return `
-      <div class="message-attachment-card link-card" data-copyable-surface${cardOpenAttrs}>
-        <div class="link-card-main">
-          <span class="chip-icon">${cardIcon}</span>
-          <span>
-            <strong>${escapeHtml(title)}</strong>
-            <span class="link-card-url">${escapeHtml(attachment.url)}</span>
-          </span>
-        </div>
-        ${preview ? `
-          <div class="link-preview">
-            ${imageUrl ? `<img class="link-preview-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ''}
-            <div class="link-preview-copy">
-              ${metaLine ? `<div class="link-preview-meta">${escapeHtml(metaLine)}</div>` : ''}
-              <div class="link-preview-text">${escapeHtml(truncate(previewText, 360))}</div>
-              <div class="link-preview-action">${escapeHtml(cardAction)}</div>
-            </div>
-          </div>
-        ` : `
-          <div class="link-preview is-empty">
-            <div class="link-preview-copy">
-              <div class="link-preview-meta">${escapeHtml(previewStatus)}</div>
-              <div class="link-preview-text">${escapeHtml(unavailableText)}</div>
-            </div>
-          </div>
-        `}
-      </div>
-    `;
-  };
-
-  const isPlayableVideoUrl = url =>
-    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$))/i.test(String(url || ''));
-
-  const isSocialPreviewUrl = url => {
-    try {
-      const host = new URL(String(url || '')).hostname.replace(/^www\./, '').toLowerCase();
-      return [
-        'douyin.com',
-        'v.douyin.com',
-        'iesdouyin.com',
-        'xiaohongshu.com',
-        'xhslink.com',
-      ].some(suffix => host === suffix || host.endsWith(`.${suffix}`));
-    } catch {
-      return false;
-    }
-  };
-
-  return `
-    <div class="message-attachments">
-      ${attachments
-        .map(attachment => {
-          if (attachment.kind === 'image') {
-            return `
-              <figure class="message-attachment-card media-card image-card">
-                <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
-                <figcaption>${escapeHtml(attachmentLabel(attachment))}</figcaption>
-              </figure>
-            `;
-          }
-
-          if (attachment.kind === 'video') {
-            if (!isPlayableVideoUrl(attachment.url) || isSocialPreviewUrl(attachment.url)) {
-              return renderLinkAttachmentCard(attachment);
-            }
-            const status = describeVideoExtractionStatus(message, attachment);
-            return `
-              <div class="message-attachment-card media-card">
-                <video class="message-video" controls src="${escapeHtml(attachment.url)}"></video>
-                <div class="media-caption">
-                  ${escapeHtml(attachmentLabel(attachment))}
-                  <span class="media-caption-hint">${escapeHtml(status)}</span>
-                </div>
-              </div>
-            `;
-          }
-
-          if (attachment.kind === 'audio') {
-            const status = describeAudioExtractionStatus(message, attachment);
-            return `
-              <div class="message-attachment-card audio-card" data-audio-url="${escapeHtml(attachment.url)}">
-                <div class="audio-card-title">
-                  <span class="chip-icon">${icon.audio}</span>
-                  ${escapeHtml(attachmentLabel(attachment))}
-                  <span class="media-caption-hint">${escapeHtml(status)}</span>
-                </div>
-                <audio class="message-audio" controls src="${escapeHtml(attachment.url)}"></audio>
-              </div>
-            `;
-          }
-
-          return renderLinkAttachmentCard(attachment);
-        })
-        .join('')}
-    </div>
-  `;
+  return renderAttachmentCards(message, { escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
 }
 
 function getGreeting() {
@@ -1583,11 +1456,11 @@ function renderStreamingAssistantMessage(chat) {
   return `
     ${toolStrip}
     <article class="message assistant is-streaming">
-      <div class="message-role">Melo</div>
+      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:'助手'}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || '助手')}</div>
       <div
         class="message-bubble"
         data-copyable-surface
-        data-copy-text="${escapeHtml(streamCleanText)}"
+        data-copy-text="${escapeHtml(replyPlainText(streamCleanText))}"
       >
         ${renderRichText(streamCleanText)}
       </div>
@@ -1643,7 +1516,7 @@ function renderStreamingFast() {
   // Update bubble text + copy-surface in place. innerHTML swap here is
   // scoped to ONE small element, not the whole app, so no flash.
   bubble.innerHTML = renderRichText(streamCleanText);
-  bubble.setAttribute('data-copy-text', streamCleanText);
+  bubble.setAttribute('data-copy-text', replyPlainText(streamCleanText));
 
   // Update / remove the citation cards under the bubble.
   const citationHtml = renderSourceCitationCards(streamCitations);
@@ -1758,11 +1631,11 @@ function mainAgentProfile() {
 }
 
 function activeChatAgentProfile() {
-  return agentProfileById(uiState.activeChatAgentId) || agentProfileById('main');
+  return conversationAgent(uiState.bootstrap, {overview:uiState.neuralOverview, newAgentId:uiState.activeChatAgentId,newProjectId:uiState.newChatProjectId});
 }
 
 function allChatAgentProfiles() {
-  return uiState.bootstrap?.customize?.agents || [];
+  return conversationAgents(uiState.bootstrap, {overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId});
 }
 
 function selectedAgentProfile() {
@@ -1776,7 +1649,7 @@ function selectedAgentScope() {
 }
 
 function agentDraftKey(agentId, scope = selectedAgentScope(), projectId = activeProject()?.id || 'global') {
-  return `${scope}:${projectId}:${agentId}`;
+  return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
 }
 
 function agentSaveKey(
@@ -1784,7 +1657,7 @@ function agentSaveKey(
   scope = selectedAgentScope(),
   projectId = activeProject()?.id || 'global',
 ) {
-  return `${scope}:${projectId}:${agentId}`;
+  return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
 }
 
 function agentSecretVisibilityKey(agentId, channelId) {
@@ -1926,7 +1799,7 @@ function restoreAgentScrollState() {
 }
 
 // Generic form-input focus + caret preservation across the app-wide
-// innerHTML rebuild that every render() does. Without this, any render
+// incremental updates in render(). This fallback also covers replaced pages. Any render
 // triggered mid-typing (autosave spinner, 4-second runtime refresh, toast
 // timer, unrelated state changes, etc.) yanks the caret out of the input
 // the user is editing — the user sees focus jump "somewhere else", usually
@@ -2098,7 +1971,7 @@ function connectorEnabled(connectorId) {
 
 function filteredProjects() {
   const query = uiState.projectSearch.trim().toLowerCase();
-  const projects = uiState.bootstrap?.projects || [];
+  const projects = (uiState.bootstrap?.projects || []).filter(project=>Boolean(project.archived)===uiState.showArchivedProjects);
   if (!query) return projects;
 
   return projects.filter(project =>
@@ -2488,7 +2361,7 @@ async function handleOpenSearchResult(result) {
         activeView: 'chat',
         activeMode: chat?.mode || 'chat',
         selectedProjectId:
-          chat?.projectId || uiState.bootstrap.settings.selectedProjectId,
+          chat?.projectId || null,
         selectedFilePath: null,
       });
       break;
@@ -2504,7 +2377,7 @@ async function handleOpenSearchResult(result) {
         activeView: 'chat',
         activeMode: chat?.mode || 'chat',
         selectedProjectId:
-          chat?.projectId || uiState.bootstrap.settings.selectedProjectId,
+          chat?.projectId || null,
         selectedFilePath: null,
       });
       break;
@@ -2552,10 +2425,13 @@ function startSelectedFileEdit() {
 }
 
 async function api(path, options = {}) {
+  // Keep the request's exact baseline even if another response arrives first.
+  const base = uiState.bootstrap?._snapshot ? structuredClone(uiState.bootstrap) : null;
   const response = await fetch(path, {
     method: options.method || 'GET',
     headers: {
       'content-type': 'application/json',
+      ...(base ? { 'x-melo-bootstrap-base': base._snapshot.token } : {}),
       ...(options.headers || {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -2567,7 +2443,7 @@ async function api(path, options = {}) {
     throw new Error(payload.error || 'Request failed.');
   }
 
-  return payload;
+  return decodeBootstrap(payload, base);
 }
 
 function parseEventStreamBlock(block) {
@@ -2627,7 +2503,7 @@ async function streamApi(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || 'Streaming request failed.');
+    throw chatStreamError(payload);
   }
 
   if (!response.body) {
@@ -2670,13 +2546,14 @@ async function streamApi(path, options = {}) {
         if (message.event === 'done') {
           donePayload = message.payload;
         } else if (message.event === 'error') {
-          throw new Error(message.payload?.error || 'Streaming request failed.');
+          throw chatStreamError(message.payload);
         } else if (message.event === 'aborted') {
-          return null;
+          throw new DOMException('The request was stopped.', 'AbortError');
         }
       }
     }
 
+    if (!donePayload) throw chatStreamError({ code: 'STREAM_INTERRUPTED' });
     return donePayload;
   } finally {
     try {
@@ -2705,12 +2582,20 @@ async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}
     }
   }
 
+  let changedSections = null;
   try {
     const normalizedQuery = query.trim();
     const suffix = normalizedQuery
       ? `?q=${encodeURIComponent(normalizedQuery)}`
       : '';
-    uiState.bootstrap = await api(`/api/bootstrap${suffix}`);
+    const firstBootstrap = !uiState.bootstrap;
+    const incoming = await api(`/api/bootstrap${suffix}`);
+    if (olderBootstrap(incoming, uiState.bootstrap)) return;
+    changedSections = changedBootstrapSections(uiState.bootstrap, incoming);
+    uiState.bootstrap = incoming;
+    if (firstBootstrap) {
+      uiState.neuralOverview = uiState.bootstrap.settings.activeView === 'chat' && !uiState.bootstrap.settings.selectedChatId;
+    }
     // Only sync searchQuery from the server response when the user hasn't typed
     // something newer while the request was in-flight. Full innerHTML re-renders
     // recreate the input element, so overwriting with a stale value discards any
@@ -2732,7 +2617,7 @@ async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}
     // the typing-guard in render() can defer it if the user is mid-keystroke
     // in a config input — prevents the "cursor jumps between Discord Bot
     // token fields" symptom.
-    render({ background: quiet });
+    render({ background: quiet, changedSections });
   }
 }
 
@@ -2765,7 +2650,6 @@ function syncSearchFileStream(query = uiState.searchQuery) {
   const activeView = uiState.bootstrap?.settings?.activeView || 'chat';
   if (!normalizedQuery || activeView !== 'search' || typeof EventSource !== 'function') {
     stopSearchFileStream();
-    render();
     return;
   }
 
@@ -2898,19 +2782,28 @@ function openExternalUrl(url) {
     return true;
   }
 
-  window.open(normalized, '_blank', 'noopener,noreferrer');
+  // Opening with noopener returns null even on success. Create the window
+  // synchronously so a real popup failure can be reported, then sever opener.
+  const opened = window.open('about:blank', '_blank');
+  if (!opened) return false;
+  opened.opener = null;
+  opened.location.replace(normalized);
   return true;
 }
+
+window.addEventListener('melo-external-link', event => {
+  if (event.detail?.ok === false) showError('浏览器未能打开，请点击链接旁的「复制链接」后粘贴到浏览器。');
+});
 
 function composerHintText({ inline = false } = {}) {
   if (uiState.sending) {
     return 'Working on your message now. Live lookups can take a little longer.';
   }
   if (uiState.voice.recording) {
-    return 'Listening now. Speak naturally, then tap the mic to send.';
+    return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
   }
   if (uiState.voice.preview) {
-    return 'Voice ready — sending…';
+    return '转写完成后可编辑，再点击发送。';
   }
   if (!inline && !uiState.composer.trim()) {
     return 'Type / for Melo commands, files, projects, and actions.';
@@ -2919,22 +2812,6 @@ function composerHintText({ inline = false } = {}) {
     return 'Reply in this thread';
   }
   return 'Enter to send. Shift+Enter for a new line.';
-}
-
-function voiceStatusLabel() {
-  if (!uiState.voice.supported) {
-    return 'Voice unavailable';
-  }
-  if (uiState.voice.recording) {
-    return 'Listening';
-  }
-  if (uiState.voice.preview) {
-    return 'Transcript ready';
-  }
-  if (uiState.voice.error) {
-    return 'Needs attention';
-  }
-  return 'Voice ready';
 }
 
 function appendComposerText(text = '') {
@@ -3541,136 +3418,55 @@ function setComposerDragActive(active) {
   render();
 }
 
-function stopVoiceCaptureIfNeeded() {
-  if (!uiState.voice.recording || !voiceBridgeSupported()) {
-    return;
-  }
-  globalThis.webkit.messageHandlers.meloVoice.postMessage({
-    action: 'stop',
-  });
+function voiceContext() {
+  const settings = uiState.bootstrap?.settings || {};
+  return [settings.activeView, settings.selectedProjectId, settings.selectedChatId, uiState.activeChatAgentId].join('|');
 }
 
-function handleVoiceBridgeEvent(detail = {}) {
-  const nextState = {
-    supported: detail.supported ?? true,
-    recording: detail.recording ?? uiState.voice.recording,
-    status: detail.status ?? uiState.voice.status,
-    preview: detail.partial ?? uiState.voice.preview,
-    error: detail.error ?? '',
-    finalReceived: uiState.voice.finalReceived,
-  };
-
-  // Reset the dedup guard when a new recording session starts.
-  if (detail.recording === true) {
-    nextState.finalReceived = false;
-  }
-
-  if (detail.finalText) {
-    // Dedup guard: ignore repeated finalText events from the same recording session.
-    // This prevents duplicate text if Swift fires the cancel-error callback after
-    // the isFinal callback (kAFAssistantErrorDomain error 216).
-    if (uiState.voice.finalReceived) {
+const voiceInput = createVoiceInput({
+  getContext: voiceContext,
+  onChange: state => {
+    const samePhase = state.status === uiState.voice.status && state.sessionID === uiState.voice.sessionID;
+    setVoiceState(state);
+    const preview = document.querySelector('.voice-preview-body');
+    if (samePhase && voiceInputActive(state) && preview) {
+      // Partial words must not rebuild the chat, interrupt scrolling or break IME typing.
+      preview.textContent = state.preview || '识别内容将进入输入框，不会自动发送。';
       return;
     }
-    nextState.finalReceived = true;
-    nextState.preview = '';
-    nextState.recording = false;
-    nextState.status = 'ready';
-    nextState.error = '';
-
-    if (detail.audioData) {
-      // Voice message UX: auto-submit as an audio attachment so the message is
-      // displayed as a voice bubble rather than inserting text into the composer.
-      setVoiceState(nextState);
-      render();
-      void handleVoiceMessageAutoSubmit(detail.finalText, detail.audioData);
-      return;
-    }
-
-    // Fallback: insert transcript text into the composer (no audio capture available).
-    appendComposerText(detail.finalText);
-  }
-
-  if (detail.error) {
-    nextState.preview = '';
-    nextState.recording = false;
-    showError(detail.error);
-  }
-
-  setVoiceState(nextState);
-  render();
-
-  if (detail.finalText && !detail.audioData) {
+    render();
+  },
+  onCommit: text => {
+    appendComposerText(text);
     window.requestAnimationFrame(() => {
       const composer = document.querySelector('#composer');
-      if (!(composer instanceof HTMLTextAreaElement)) {
-        return;
-      }
+      if (!(composer instanceof HTMLTextAreaElement)) return;
       composer.focus();
       composer.selectionStart = composer.selectionEnd = composer.value.length;
     });
-  }
+  },
+});
+
+function stopVoiceCaptureIfNeeded() {
+  if (voiceInputActive(uiState.voice)) voiceInput.cancel();
 }
 
-async function handleVoiceMessageAutoSubmit(transcript, audioData) {
-  // Prepare the composer with the audio attachment and the pre-computed transcript.
-  // The transcript is passed as pre-populated extractedMedia so the backend skips
-  // Whisper and uses the on-device SFSpeechRecognizer result directly.
-  //
-  // 2026-05-23 Codex C 闭环: give the audio attachment a stable id (every other
-  // attachment path already does — see crypto.randomUUID() in queueComposerFiles)
-  // and thread the SAME id into the prefilled transcript entry below, so
-  // describeAudioExtractionStatus can match them and render "transcript ✓ ·
-  // voice input" instead of falsely "transcript unavailable".
-  const voiceAttachmentId = crypto.randomUUID();
-  uiState.composerAttachments = [
-    {
-      id: voiceAttachmentId,
-      kind: 'audio',
-      url: audioData,
-      mimeType: 'audio/wav',
-      fileName: 'voice-message.wav',
-      title: 'Voice message',
-    },
-  ];
-  uiState.composerVoiceTranscript = transcript;
-  uiState.composerVoiceAttachmentId = voiceAttachmentId;
-  uiState.composer = '';
-  await handleSendMessage();
-}
+function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
 
 function toggleVoiceInput() {
-  if (!voiceBridgeSupported()) {
-    showError('Voice input is available only in the desktop app build.');
-    return;
-  }
-
-  // When engaging the mic, stop any in-flight TTS first. AVAudioSession is
-  // shared between record and playback in the desktop bridge, so leftover
-  // playback bleeds into the mic input and contaminates the transcript with
-  // the assistant's own words. Skip the stop on the toggle-off path so a
-  // user pressing the button to end recording doesn't also kill an
-  // unrelated speak that just started.
-  if (!uiState.voice.recording) {
-    stopCurrentTts();
-  }
-
-  setVoiceState({
-    supported: true,
-    error: '',
-    status: uiState.voice.recording ? 'stopping' : 'requesting',
-  });
-  render();
-  globalThis.webkit.messageHandlers.meloVoice.postMessage({
-    action: uiState.voice.recording ? 'stop' : 'toggle',
-  });
+  if (voiceInputActive(uiState.voice)) { voiceInput.stop(); return; }
+  if (uiState.sending) return;
+  stopCurrentTts();
+  voiceInput.start(uiState.voiceLanguage || 'zh-CN');
 }
 
 function applyBootstrap(payload) {
+  if (olderBootstrap(payload, uiState.bootstrap)) return;
+  if (voiceInputActive(uiState.voice) && ['activeView', 'selectedChatId', 'selectedProjectId'].some(key => payload?.settings?.[key] !== uiState.bootstrap?.settings?.[key])) stopVoiceCaptureIfNeeded();
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
-  uiState.agentDrafts = {};
+  // Drafts belong to each role and scope; only save/cancel may discard them.
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
     stopSearchFileStream();
@@ -3683,15 +3479,10 @@ function applyBootstrap(payload) {
   render();
 }
 
-// Apply a server bootstrap payload without clearing the user's in-flight
-// form drafts. Used by autosave paths (channel autosave, markdown autosave,
-// runtime polling) where we MUST NOT wipe whatever the user is still typing.
-// applyBootstrap's unconditional `agentDrafts = {}` reset is what caused the
-// "yesterday's Discord config disappeared + cursor jumps to top" symptom:
-// every autosave response cleared the live draft and rebuilt every input's
-// value from the server snapshot, discarding any chars the user had typed
-// mid-save. See feedback_preserve_user_config.md.
+// Background refreshes also preserve drafts and defer DOM updates while typing.
 function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
+  if (olderBootstrap(payload, uiState.bootstrap)) return;
+  const changedSections = changedBootstrapSections(uiState.bootstrap, payload);
   uiState.bootstrap = payload;
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
@@ -3699,10 +3490,15 @@ function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
   }
   // Forward the `background` flag so the typing guard in render() can defer
   // the DOM swap if the user is actively typing (see feedback: "还是跳光标").
-  render({ background });
+  render({ background, changedSections });
 }
 
 async function patchSettings(patch) {
+  if (['activeView', 'selectedChatId', 'selectedProjectId'].some(key => key in patch && patch[key] !== uiState.bootstrap?.settings?.[key])) stopVoiceCaptureIfNeeded();
+  if (patch.activeView) {
+    uiState.neuralOverview = false;
+    uiState.neuralGroup = null;
+  }
   const payload = await api('/api/settings', {
     method: 'POST',
     body: patch,
@@ -3712,14 +3508,16 @@ async function patchSettings(patch) {
 
 async function handleCreateChat({
   mode = uiState.bootstrap.settings.activeMode,
-  projectId = uiState.bootstrap.settings.selectedProjectId,
+  projectId = uiState.newChatProjectId,
   agentId = uiState.activeChatAgentId || 'main',
 } = {}) {
   const payload = await api('/api/chats', {
     method: 'POST',
-    body: { mode, projectId, agentId },
+    body: { mode, projectId, agentId, modelSelection:uiState.newChatModel, contextArtifactIds:uiState.newChatArtifactIds },
   });
   uiState.composer = '';
+  uiState.composerAttachments = [];
+  resetComposerHistoryNavigation();
   // 2026-06-04 audit闭环: clear pending voice transcript + its linking id when
   // switching chats. Without this a recorded-but-unsent voice message leaves
   // composerVoiceTranscript/Id set; the next plain-text send would carry a
@@ -3731,6 +3529,8 @@ async function handleCreateChat({
 }
 
 async function handleOpenNewChatHome() {
+  uiState.neuralOverview = false;
+  uiState.neuralGroup = null;
   stopVoiceCaptureIfNeeded();
   setVoiceState({
     recording: false,
@@ -3936,12 +3736,15 @@ async function startProjectSession(projectId, mode) {
   await handleCreateChat({ projectId, mode });
 }
 
-async function handleSendMessage() {
-  if (uiState.sending) return;
-  const content = uiState.composer.trim();
-  const attachments = [...uiState.composerAttachments];
+async function handleSendMessage(prepared = null) {
+  if (uiState.sending || uiState.agentSelectionSaving || (!prepared && voiceInputActive(uiState.voice))) return;
+  const content = prepared?.content || uiState.composer.trim();
+  const attachments = prepared ? [] : [...uiState.composerAttachments];
   if (!content && !attachments.length) return;
 
+  const fromOverview = prepared ? false : uiState.neuralOverview;
+  uiState.neuralOverview = false;
+  uiState.neuralGroup = null;
   if (content && (await handleComposerCommand())) {
     return;
   }
@@ -3950,21 +3753,32 @@ async function handleSendMessage() {
   // block to decide between flushing the buffered TTS tail (good run) and
   // dropping it (aborted run — a half-finished sentence would otherwise
   // play seconds after the Stop click).
+  const imageTask = prepared?.imageTask || consumeImageTask();
   let sendWasAborted = false;
+  let sendSucceeded = false;
+  const replyDelivery = createReplyDelivery();
 
   // Capture and clear the voice transcript before resetting composer state.
-  const voiceTranscript = uiState.composerVoiceTranscript || null;
-  uiState.composerVoiceTranscript = null;
+  const voiceTranscript = (prepared ? null : uiState.composerVoiceTranscript) || null;
+  if (!prepared) uiState.composerVoiceTranscript = null;
   // Same for the linking id (2026-05-23 Codex C 闭环) — capture before reset
   // so the prefilled transcript entry can reference the audio attachment.
-  const voiceAttachmentId = uiState.composerVoiceAttachmentId || null;
-  uiState.composerVoiceAttachmentId = null;
+  const voiceAttachmentId = (prepared ? null : uiState.composerVoiceAttachmentId) || null;
+  if (!prepared) uiState.composerVoiceAttachmentId = null;
 
-  let chatId = uiState.bootstrap?.settings?.selectedChatId || null;
+  let chatId = prepared?.chatId || (fromOverview ? null : uiState.bootstrap?.settings?.selectedChatId || null);
+  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask,
+    voiceTranscript, voiceAttachmentId, mode: uiState.bootstrap?.settings?.activeMode,
+    agentId: activeChat()?.agentId || uiState.bootstrap?.settings?.selectedAgentId,
+    modelSelection: activeChat()?.modelSelection || null });
+  const retry = !prepared && uiState.composerRetry?.key === submissionKey(chatId) ? uiState.composerRetry : null;
   uiState.sending = true;
+  uiState.activeTurn = createTurnPresentation(prepared?.requestId || retry?.requestId || crypto.randomUUID());
+  uiState.modelPickerOpen = false;
   uiState.thinkingSince = Date.now();
   uiState.sendAbortController = new AbortController();
-  const previousBootstrap = cloneBootstrapState(uiState.bootstrap);
+  let previousBootstrap = cloneBootstrapState(uiState.bootstrap);
+  const turnRequestId = uiState.activeTurn.requestId;
   resetStreamingAssistant();
   uiState.composer = '';
   resetComposerHistoryNavigation();
@@ -3983,6 +3797,7 @@ async function handleSendMessage() {
     if (!chatId) {
       await handleCreateChat();
       chatId = uiState.bootstrap.settings.selectedChatId;
+      previousBootstrap = cloneBootstrapState(uiState.bootstrap);
       applyOptimisticUserMessage({
         chatId,
         content,
@@ -4001,9 +3816,11 @@ async function handleSendMessage() {
     const result = await streamApi('/api/chat/send/stream', {
       method: 'POST',
       body: {
+        requestId: turnRequestId,
         chatId,
         content,
         attachments,
+        ...(imageTask ? { imageTask } : {}),
         ...(voiceTranscript
           ? {
               extractedMedia: [
@@ -4020,13 +3837,19 @@ async function handleSendMessage() {
             }
           : {}),
         mode: uiState.bootstrap.settings.activeMode,
-        // Demon visualization mode — lets the backend decide to inject
-        // viz-spec emission instructions into the system prompt for this
-        // reply. Server-side gates still drop it for remote channels.
-        demonMode: Boolean(uiState.demonMode),
+
       },
       signal: uiState.sendAbortController.signal,
       onEvent: message => {
+        if (message.event === 'execution_scene') receiveExecutionScene(message.payload?.scene);
+        const previousPhase = uiState.activeTurn?.phase;
+        receiveTurnPresentation(uiState.activeTurn, message.event, message.payload);
+        if (previousPhase !== uiState.activeTurn?.phase) render();
+        const delivery = receiveReplyDelivery(replyDelivery, message.event, message.payload);
+        if (delivery.speechDelta) _streamTtsPushChunk(delivery.speechDelta);
+        if (typeof delivery.finalSpeechText === 'string' && _isTtsActive()) {
+          _streamTts.buffer = delivery.finalSpeechText;
+        }
         if (message.event === 'delta') {
           uiState.streamingChatId = chatId;
           // payload.delta is always the incremental text; payload.text is the accumulated total.
@@ -4041,7 +3864,6 @@ async function handleSendMessage() {
               ? message.payload.text
               : `${uiState.streamingAssistantText}${delta}`;
           // Feed incremental delta to streaming TTS
-          if (payloadDelta) _streamTtsPushChunk(payloadDelta);
           // Fast path: during a pure-delta stream frame, patch ONLY the
           // streaming bubble instead of doing a full `app.innerHTML = ...`
           // rebuild. Falls back to render() the first time through (DOM
@@ -4072,9 +3894,9 @@ async function handleSendMessage() {
             render();
           } else if (payload.toolId) {
             const { toolId, args } = payload;
-            // Replace any existing request for same toolId (avoid stacking)
+            // Retransmissions replace only themselves; parallel calls need distinct decisions.
             uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-              p => p.toolId !== toolId,
+              p => p.requestId !== requestId,
             );
             uiState.pendingToolPermissions.push({
               kind: 'tool',
@@ -4085,11 +3907,7 @@ async function handleSendMessage() {
             render();
           }
         } else if (message.event === 'reply_text') {
-          // Final reply after tool calls — populate TTS buffer so flush() can speak it
-          const replyText = message.payload?.text || '';
-          if (replyText && _isTtsActive()) {
-            _streamTts.buffer = replyText;
-          }
+          // Speech is handled by replyDelivery only after the finalized event.
         } else if (message.event === 'tool_calls_start') {
           // Tools about to execute — strip <tool_call> XML from the streaming display
           uiState.streamingAssistantText = uiState.streamingAssistantText
@@ -4135,6 +3953,9 @@ async function handleSendMessage() {
       },
     });
 
+    sendSucceeded = true;
+    if (!prepared) uiState.composerRetry = null;
+    notifyLocalCompletion();
     if (result?.bootstrap) {
       applyBootstrap(result.bootstrap);
     } else {
@@ -4157,10 +3978,16 @@ async function handleSendMessage() {
     }
     uiState.composer = content;
     uiState.composerAttachments = attachments;
+    uiState.composerVoiceTranscript = voiceTranscript;
+    uiState.composerVoiceAttachmentId = voiceAttachmentId;
+    if (!prepared) uiState.composerRetry = { requestId: turnRequestId, chatId, key: submissionKey(chatId),
+      interrupted: error.code === 'REQUEST_INTERRUPTED' };
+    restoreImageTask(imageTask);
     uiState.composerAttachmentMenuOpen = false;
     showError(error.message);
   } finally {
     uiState.sending = false;
+    uiState.activeTurn = null;
     uiState.sendAbortController = null;
     uiState.thinkingSince = 0;
     uiState.activeToolCalls = [];
@@ -4171,7 +3998,7 @@ async function handleSendMessage() {
     // would have the assistant speak garbled fragments seconds after the
     // click. Discard the buffer AND tell the server to abort any synthesis
     // already on its way (covers the queue path + speak-text fast paths).
-    if (sendWasAborted) {
+    if (sendWasAborted || !sendSucceeded) {
       try { await api('/api/tts/queue-clear', { method: 'POST', body: {} }); } catch {}
       try { await api('/api/tts/speak-stop', { method: 'POST', body: {} }); } catch {}
       _streamTtsReset();
@@ -5016,6 +4843,7 @@ async function handleUpdateProject(form) {
         summary: String(formData.get('summary') || ''),
         instructions: String(formData.get('instructions') || ''),
         workspacePath: String(formData.get('workspacePath') || ''),
+        knowledgeIds: formData.getAll('knowledgeIds').map(String),
       },
     },
   });
@@ -5176,34 +5004,23 @@ async function handleSaveConnectorConfig(form) {
   const formData = new FormData(form);
   const draft = uiState.modelSetupDraft || {};
   const pick = name => pickConnectorField(draft, formData, name);
-  const authMode = pick('authMode') || 'codex';
-  const apiKey = pick('apiKey');
-  const body = {
-    authMode,
-    baseUrl: pick('baseUrl'),
-    model: pick('model'),
-    systemPrompt: pick('systemPrompt'),
-    whisperApiKey: pick('whisperApiKey'),
-    whisperBaseUrl: pick('whisperBaseUrl'),
-    // MiniMax T2A V2. Server-side `keepIfBlank` semantics for the secret
-    // keys (apiKey/groupId) treats empty as "preserve current"; the voice
-    // id is non-secret and writable as text. minimaxApiKey is masked in
-    // the form so blank means "no change", not "wipe key".
-    minimaxApiKey: pick('minimaxApiKey'),
-    minimaxGroupId: pick('minimaxGroupId'),
-    minimaxVoiceId: pick('minimaxVoiceId'),
-  };
-
-  if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
-    body.apiKey = apiKey;
-  }
+  // Each form owns only its fields. Connection credentials live in the
+  // model provider editor, so prompt/audio saves cannot switch connections.
+  const keys = form.dataset.form === 'model-config' ? ['systemPrompt'] :
+    ['whisperApiKey', 'whisperBaseUrl', 'minimaxApiKey', 'minimaxGroupId', 'minimaxVoiceId'];
+  const body = Object.fromEntries(keys.map(name => [name, pick(name)]));
 
   const payload = await api('/api/settings/model', {
     method: 'POST',
     body,
   });
-  uiState.modelSetupDraft = null;
+  clearModelFormDraft(form);
   applyBootstrap(payload);
+}
+
+function clearModelFormDraft(form) {
+  const keys = form.dataset.form === 'model-config' ? ['systemPrompt'] : ['whisperApiKey','whisperBaseUrl','minimaxApiKey','minimaxGroupId','minimaxVoiceId'];
+  for (const key of keys) if (uiState.modelSetupDraft) delete uiState.modelSetupDraft[key];
 }
 
 async function handleLoadModelOptions(form) {
@@ -5281,106 +5098,10 @@ async function handleUpdateAgentProfile(form) {
   const scope = selectedAgentScope();
   const projectId = scope === 'project' ? project?.id || 'global' : 'global';
   const saveKey = agentSaveKey(form.dataset.agentId, scope, projectId);
-  const hasFormField = name =>
-    Boolean(form.elements.namedItem(name)) || formData.has(name);
-  const csvList = value => String(value || '')
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean);
-  const patch = {};
-  const assignString = (key, field = key) => {
-    if (!hasFormField(field)) return;
-    patch[key] = String(formData.get(field) || '').trim();
-  };
-  const assignNumber = (key, field = key) => {
-    if (!hasFormField(field)) return;
-    const raw = String(formData.get(field) ?? '').trim();
-    patch[key] = raw ? Number(raw) : '';
-  };
-
-  assignString('name');
-  assignString('laneLabel');
-  assignString('description');
-  assignString('rolePrompt');
-  assignString('identity');
-  assignString('soul.md');
-  assignString('mood');
-  assignString('model');
-  assignString('systemPrompt');
-  assignString('voiceReplyMode');
-  assignString('voicePersonality');
-  assignString('edgeTtsVoice');
-  assignString('minimaxVoiceId');
-  assignNumber('ttsSpeed');
-  assignNumber('ttsPitch');
-  assignNumber('ttsVol');
-
-  // Tag protected metadata fields the user actively cleared. The form
-  // submit is a full-form save (not a narrow patch), so an empty string
-  // here is user intent. Backend's narrow-patch protection drops empty
-  // strings unless the field is listed here, in which case it falls back
-  // to the agent definition default.
-  const protectedClearable = ['name', 'laneLabel', 'description', 'rolePrompt'];
-  const clearedFields = protectedClearable.filter(
-    key => key in patch && typeof patch[key] === 'string' && !patch[key].trim(),
-  );
-  if (clearedFields.length) patch._clearedFields = clearedFields;
-
-  if (hasFormField('tools')) {
-    patch.tools = csvList(formData.get('tools'));
-  }
-  if (hasFormField('enabledSkillIds')) {
-    const rawSkillIds = formData.get('enabledSkillIds');
-    patch.enabledSkillIds = rawSkillIds === '__all__'
-      ? null
-      : csvList(rawSkillIds);
-  }
-  if (hasFormField('enabledConnectorIds')) {
-    const rawConnectorIds = formData.get('enabledConnectorIds');
-    patch.enabledConnectorIds = rawConnectorIds === '__all__'
-      ? null
-      : csvList(rawConnectorIds);
-  }
-  if (hasFormField('enabledMcpServerIds')) {
-    // Stdio MCP whitelist — unlike skills/connectors above, MCP defaults
-    // to deny-all (`null` is coerced to `[]` by the backend normalizer),
-    // so we never offer the "all servers" sentinel here.  An empty string
-    // means "no MCP servers for this agent".
-    patch.enabledMcpServerIds = csvList(formData.get('enabledMcpServerIds'));
-  }
-
-  const channels = {};
-  if (
-    hasFormField('telegramEnabled') ||
-    hasFormField('telegramBotToken') ||
-    hasFormField('telegramChatId') ||
-    hasFormField('telegramVoiceReply')
-  ) {
-    channels.telegram = {
-      enabled: formData.get('telegramEnabled') === 'on',
-      botToken: String(formData.get('telegramBotToken') || '').trim(),
-      chatId: String(formData.get('telegramChatId') || '').trim(),
-      voiceReply: formData.get('telegramVoiceReply') === 'on',
-    };
-  }
-  if (
-    hasFormField('discordEnabled') ||
-    hasFormField('discordBotToken') ||
-    hasFormField('discordGuildId') ||
-    hasFormField('discordChannelId') ||
-    hasFormField('discordVoiceReply')
-  ) {
-    channels.discord = {
-      enabled: formData.get('discordEnabled') === 'on',
-      botToken: String(formData.get('discordBotToken') || '').trim(),
-      guildId: String(formData.get('discordGuildId') || '').trim(),
-      channelId: String(formData.get('discordChannelId') || '').trim(),
-      voiceReply: formData.get('discordVoiceReply') === 'on',
-    };
-  }
-  if (Object.keys(channels).length) {
-    patch.channels = channels;
-  }
+  const draftKey = agentDraftKey(form.dataset.agentId, scope, project?.id || 'global');
+  const patch = buildAgentProfilePatch(form, formData);
+  const avatarDraft = agentDraftFor(agentProfileById(form.dataset.agentId));
+  if (Object.hasOwn(avatarDraft || {}, 'avatarData')) patch.avatarData=avatarDraft.avatarData;
 
   const minimumVisibleMs = 100;
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
@@ -5400,6 +5121,7 @@ async function handleUpdateAgentProfile(form) {
       },
     });
     await waitForMinimumVisibleState;
+    delete uiState.agentDrafts[draftKey];
     applyBootstrap(payload);
     const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
@@ -5426,49 +5148,11 @@ async function handleTestAgentChannel(trigger) {
     return;
   }
 
-  // Flush any pending channel autosave before testing so a token the user just
-  // typed isn't wiped out by applyBootstrap() when the test response lands.
-  // Without this flush, clicking "Test Telegram" within 350ms of typing the
-  // token caused the bootstrap refresh to overwrite the in-flight draft.
-  if (pendingAgentChannelAutosave) {
-    window.clearTimeout(agentChannelAutosaveTimer);
-    const snapshot = pendingAgentChannelAutosave;
-    pendingAgentChannelAutosave = null;
-    try {
-      await saveAgentChannelSnapshot(snapshot);
-    } catch (error) {
-      showError(error.message);
-      return;
-    }
-  }
-
-  const formData = new FormData(form);
+  // Test the persisted channel. Drafts are committed only by Save.
   const channelId = trigger.dataset.channelId;
   const project = activeProject();
   const scope = selectedAgentScope();
-  // Include voiceReply on the test patch so testing the Telegram connection
-  // does not overwrite the persisted voiceReply setting with its default.
-  // The server merges {...currentChannel, ...patch}, so carrying voiceReply
-  // from the live DOM keeps the user's latest toggle state intact through
-  // the post-test state refresh.
-  const patch =
-    channelId === 'telegram'
-      ? {
-          enabled: formData.get('telegramEnabled') === 'on',
-          botToken: String(formData.get('telegramBotToken') || '').trim(),
-          chatId: String(formData.get('telegramChatId') || '').trim(),
-          voiceReply: formData.get('telegramVoiceReply') === 'on',
-        }
-      : {
-          enabled: formData.get('discordEnabled') === 'on',
-          botToken: String(formData.get('discordBotToken') || '').trim(),
-          guildId: String(formData.get('discordGuildId') || '').trim(),
-          channelId: String(formData.get('discordChannelId') || '').trim(),
-          // Carry the Discord voiceReply tick so testing the connection doesn't
-          // wipe the user's newly-toggled checkbox. Same merge semantics as
-          // Telegram's telegramVoiceReply above.
-          voiceReply: formData.get('discordVoiceReply') === 'on',
-        };
+  const patch = {};
 
   const payload = await api('/api/agents/channel/test', {
     method: 'POST',
@@ -5931,32 +5615,12 @@ async function handleImportAgentPreset(agentId, presetId) {
     return;
   }
 
-  const scope = selectedAgentScope();
-  const project = activeProject();
-  const currentAgent = selectedAgentProfile();
-  const currentToolIds = Array.isArray(currentAgent?.toolIds)
-    ? currentAgent.toolIds
-    : Array.isArray(currentAgent?.tools)
-      ? currentAgent.tools.map(tool => tool.id)
-      : [];
-  const payload = await api('/api/agents/update', {
-    method: 'POST',
-    body: {
-      agentId,
-      scope,
-      projectId: scope === 'project' ? project?.id : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-      patch: {
-        identity: preset.identity || preset.identify,
-        'soul.md': preset.soulMd,
-        mood: preset.mood,
-        tools: [...currentToolIds],
-        model: currentAgent?.model || '',
-        systemPrompt: currentAgent?.systemPrompt || '',
-      },
-    },
+  mergeAgentDraft(agentId, {
+    identity: preset.identity || preset.identify,
+    'soul.md': preset.soulMd,
+    mood: preset.mood,
   });
-  applyBootstrap(payload);
+  render();
 }
 
 async function handleResetProjectAgentOverride(agentId) {
@@ -5976,6 +5640,7 @@ async function handleResetProjectAgentOverride(agentId) {
       clearProjectOverride: true,
     },
   });
+  delete uiState.agentDrafts[agentDraftKey(agentId, 'project', project.id)];
   applyBootstrap(payload);
 }
 
@@ -6106,20 +5771,27 @@ async function handleUpdateTaskStatus(taskId, status) {
   applyBootstrap(payload);
 }
 
-async function handleRunTask(taskId) {
-  const payload = await api('/api/tasks/run', {
-    method: 'POST',
-    body: { taskId },
-  });
-  applyBootstrap(payload);
+async function handleRunTask(taskId, teamPlan = null) {
+  if (uiState.sending || uiState.preparingTask) throw new Error('请先等待或停止当前执行。');
+  uiState.preparingTask = true;
+  try {
+  const draft = uiState.composer;
+  const attachments = uiState.composerAttachments;
+  const payload = await api('/api/tasks/prepare', { method: 'POST', body: { taskId, teamPlan } });
+  applyBootstrap(payload.bootstrap);
+  await handleSendMessage(payload.execution);
+  if (!uiState.composer || uiState.composer === payload.execution.content) {
+    uiState.composer = draft;
+    uiState.composerAttachments = attachments;
+  }
+  render();
+  } finally { uiState.preparingTask = false; }
 }
-
 async function handleRunTaskLane(owner) {
-  const payload = await api('/api/tasks/run-lane', {
-    method: 'POST',
-    body: { owner },
-  });
-  applyBootstrap(payload);
+  // One visible task at a time: every approval and Stop uses the chat stream.
+  const next = activeTasks().find(t => t.owner === owner && ['todo', 'blocked'].includes(t.status));
+  if (!next) throw new Error('没有待执行的任务。');
+  await handleRunTask(next.id);
 }
 
 async function createApprovalRequest(body) {
@@ -6370,6 +6042,8 @@ async function executePaletteCommand(command) {
   }
 
   closeCommandPalette();
+  uiState.neuralOverview = false;
+  uiState.neuralGroup = null;
 
   switch (command.action) {
     case 'new-chat':
@@ -6729,7 +6403,7 @@ function renderSidebar() {
 function renderTopbar() {
   const data = uiState.bootstrap;
   const project = activeProject();
-  const currentAgent = selectedAgentProfile() || mainAgentProfile();
+  const currentAgent = conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
   return `
     <header class="topbar">
@@ -6773,12 +6447,24 @@ function renderTopbar() {
         }
         <div class="status-pill">
           <span class="status-dot"></span>
-          ${escapeHtml(data.settings.config.model)}
+          ${!uiState.neuralOverview && activeChat()?.modelSelection ? '本对话' : currentAgent?.model ? '角色默认' : '默认'} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
         </div>
       </div>
     </header>
   `;
 }
+
+function syncModelPickerPosition() {
+  const panel = document.querySelector('#model-picker-panel');
+  const trigger = document.querySelector('.model-picker-trigger');
+  if (!panel || !trigger) return;
+  if (typeof panel.showPopover === 'function' && !panel.matches(':popover-open')) panel.showPopover();
+  const anchor = trigger.getBoundingClientRect();
+  const position = modelPanelPosition(anchor, { width: panel.offsetWidth, height: panel.offsetHeight }, { width: innerWidth, height: innerHeight });
+  panel.style.left = `${position.left}px`;
+  panel.style.top = `${position.top}px`;
+}
+window.addEventListener('resize', syncModelPickerPosition);
 
 function composerPlaceholder() {
   if (!activeChat()) {
@@ -6862,7 +6548,7 @@ function modelOptionsForAuthMode(authMode) {
 
   return Array.from(
     new Set(
-      [selectedModel, ...(catalogs[mode] || []), ...(mode === config.authMode ? config.availableModels || [] : [])]
+      [...(catalogs[mode] || []), ...(mode === config.authMode ? config.availableModels || [] : []), selectedModel]
         .map(value => String(value || '').trim())
         .filter(Boolean),
     ),
@@ -6922,17 +6608,26 @@ function renderComposerCommandDeck({ inline = false } = {}) {
   `;
 }
 
+async function previewTaskBackup(operationId) {
+  try { uiState.taskRestore = await api('/api/tasks/restore-preview', {method:'POST',body:{operationId}}); render(); } catch(error) { showError(error.message); }
+}
+async function confirmTaskRestore(token) {
+  try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; showFlashToast(`已恢复；恢复前的内容也已备份：${result.safetyBackupId}`); render(); } catch(error) { showError(error.message); }
+}
 function renderTaskPanel({ compact = false } = {}) {
   const tasks = activeTasks();
+  const config = uiState.bootstrap?.settings?.config || {};
 
   return `
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Tasks & agents</h2>
+          <h2 class="pane-title">任务</h2>
+          <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
+          ${uiState.taskRestore ? `<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
         </div>
         <button class="small-button" data-action="toggle-task-form">
-          ${uiState.showTaskForm ? 'Hide form' : 'New task'}
+          ${uiState.showTaskForm ? '收起' : '新建任务'}
         </button>
       </div>
       ${(() => {
@@ -6948,7 +6643,7 @@ function renderTaskPanel({ compact = false } = {}) {
         return `
           <div class="chip-row task-lane-row task-lane-overflow-anchor">
             <button class="chip chip-button" data-action="run-task-lane" data-owner="${primary}">
-              Run ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
+              执行下一项 · ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
             </button>
             <button class="chip chip-button task-lane-overflow-toggle"
                     type="button"
@@ -6964,7 +6659,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   const ownerProfile = agentProfileById(owner);
                   return `
                     <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
-                      Run ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
+                      执行下一项 · ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
                     </button>
                   `;
                 }).join('')}
@@ -6978,16 +6673,16 @@ function renderTaskPanel({ compact = false } = {}) {
           ? `
             <form class="config-form" data-form="task-create">
               <label class="label">
-                Title
+                任务名称
                 <input class="input" name="title" value="${escapeHtml(uiState.draftTask.title)}" />
               </label>
               <label class="label">
-                Summary
+                目标与验收要求
                 <textarea class="config-textarea" name="summary">${escapeHtml(uiState.draftTask.summary)}</textarea>
               </label>
               <div class="project-form-grid">
                 <label class="label">
-                  Owner
+                  执行角色
                   <select class="config-select" name="owner">
                     ${['main', 'research', 'builder', 'reviewer']
                       .map(
@@ -7001,7 +6696,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   </select>
                 </label>
                 <label class="label">
-                  Kind
+                  任务类型
                   <select class="config-select" name="kind">
                     ${['task', 'agent']
                       .map(
@@ -7015,7 +6710,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   </select>
                 </label>
               </div>
-              <button class="small-button is-primary" type="submit">Create work item</button>
+              <button class="small-button is-primary" type="submit">创建任务</button>
             </form>
           `
           : ''
@@ -7024,14 +6719,14 @@ function renderTaskPanel({ compact = false } = {}) {
         ${
           tasks.length
             ? tasks
-                .slice(0, compact ? 4 : 8)
+                .slice(0, compact ? 4 : 24)
                 .map(
                   task => {
                     const ownerProfile = agentProfileById(task.owner);
                     return `
                     <article class="run-card">
                       <div class="thread-meta">
-                        <span class="chip is-accent">${escapeHtml(task.kind.toUpperCase())}</span>
+                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? '角色任务' : '任务')}</span>
                         <span class="chip">${escapeHtml(task.ownerLabel)}</span>
                         ${
                           ownerProfile
@@ -7042,6 +6737,7 @@ function renderTaskPanel({ compact = false } = {}) {
                         <span class="meta-label">${escapeHtml(task.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(task.title)}</div>
+                      ${task.handoff && task.handoff.revision === task.syncRevision ? `<p class="alert compact-alert">收到手机接力请求。检查现有结果后点击“继续 / 修复”；工具权限仍在本机确认。</p>` : ""}
                       ${
                         task.summary
                           ? `<div class="list-row-meta">${escapeHtml(task.summary)}</div>`
@@ -7054,30 +6750,34 @@ function renderTaskPanel({ compact = false } = {}) {
                       }
                       <div class="thread-meta">
                         <span class="meta-label">${escapeHtml(task.lastRunLabel)}</span>
-                        <span class="meta-label">${task.runCount} runs</span>
+                        <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
+                      ${task.status === 'blocked' ? `<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
+                      ${task.status !== 'running' ? `<details class="quality-details"><summary>多角色协作 · 职责与费用</summary><p>每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
+                      ${task.acceptance?.team ? `<details class="quality-details" open><summary>各角色结果与成本</summary>${task.acceptance.team.results.map(r=>`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : '失败'} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
+                      ${task.runHistory?.length ? `<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
+                      ${task.acceptance ? `<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
+                      ${(task.acceptance.failures || []).map(f => `<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
+                      ${(task.acceptance.criteria || []).map(c => `<label class="toggle-row"><input type="checkbox" data-task-check="${escapeHtml(task.id)}" data-criterion="${escapeHtml(c.id)}" ${(uiState.taskChecks?.[task.id]?.runId === task.execution?.runId ? uiState.taskChecks[task.id][c.id] : c.checked) ? 'checked' : ''} ${task.status !== 'review' ? 'disabled' : ''} />${escapeHtml(c.label)}</label>`).join('')}
+                      ${(task.acceptance.tools || []).map(t => `<p>${escapeHtml(t.toolName)} · ${t.ok ? '成功' : '失败'}${t.exitCode != null ? ` · 退出码 ${t.exitCode}` : ''} ${escapeHtml(t.path || '')}${t.backupOperationId ? `<button class="small-button" data-action="preview-task-backup" data-operation-id="${escapeHtml(t.backupOperationId)}">预览恢复</button>` : ''}</p>`).join('')}
+                      ${task.status === 'review' ? `<label>验收评分<select id="quality-score-${task.id}"><option value="">暂不评分</option><option value="5">5 · 满足要求</option><option value="4">4 · 小幅改善</option><option value="3">3 · 部分满足</option><option value="2">2 · 明显不足</option><option value="1">1 · 不可用</option></select></label>` : ''}
+                      </details>` : ''}
                       <div class="inline-actions">
                         ${
-                          task.kind === 'agent'
-                            ? `<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}">Run worker</button>`
-                            : ''
+                          task.status !== 'running'
+                            ? `<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? '继续 / 修复' : '开始执行'}</button>`
+                            : '<span class="meta-label">在对话中查看进度或停止</span>'
                         }
-                        ${['todo', 'running', 'blocked', 'done']
-                          .map(
-                            status => `
-                              <button class="small-button ${task.status === status ? 'is-primary' : ''}" data-action="set-task-status" data-task-id="${task.id}" data-status="${status}">
-                                ${status}
-                              </button>
-                            `,
-                          )
-                          .join('')}
+                        ${task.execution?.chatId ? `<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
+                        ${task.status === 'review' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="done">验收完成</button>` : ''}
+                        ${task.status === 'done' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="todo">重新打开</button>` : ''}
                       </div>
                     </article>
                   `;
                   },
                 )
                 .join('')
-            : '<div class="empty-state compact">No task items yet. Create one from the command workbench or this panel.</div>'
+            : '<div class="empty-state compact">还没有任务。创建后可执行、查看记录并验收。</div>'
         }
       </div>
     </section>
@@ -7086,27 +6786,28 @@ function renderTaskPanel({ compact = false } = {}) {
 
 function renderApprovalPanel({ compact = false } = {}) {
   const approvals = approvalQueue();
+  let displayedCompleted = 0;
+  const visibleApprovals = approvals.filter(item => ['pending', 'running', 'uncertain'].includes(item.status) || displayedCompleted++ < (compact ? 4 : 24));
 
   return `
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Approvals</h2>
-          <p class="page-kicker">Commands, file writes, and external tools queue here before execution.</p>
+          <h2 class="pane-title">操作审批</h2>
+          <p class="page-kicker">命令、文件写入与外部工具的审批和执行记录。</p>
         </div>
-        <span class="chip is-accent">${approvals.filter(item => item.status === 'pending').length} pending</span>
+        <span class="chip is-accent">${approvals.filter(item => item.status === 'pending').length} 待确认 · ${approvals.filter(item => item.status === 'uncertain').length} 待核对</span>
       </div>
       <div class="mini-list">
         ${
           approvals.length
-            ? approvals
-                .slice(0, compact ? 4 : 8)
+            ? visibleApprovals
                 .map(
                   approval => `
                     <article class="run-card">
                       <div class="thread-meta">
                         <span class="chip is-accent">${escapeHtml(approval.kind)}</span>
-                        <span class="chip">${escapeHtml(approval.status)}</span>
+                        <span class="chip">${escapeHtml(({pending:'等待确认',running:'执行中',uncertain:'结果待核对',approved:'已执行',rejected:'已关闭'})[approval.status] || approval.status)}</span>
                         <span class="meta-label">${escapeHtml(approval.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(approval.title)}</div>
@@ -7125,20 +6826,20 @@ function renderApprovalPanel({ compact = false } = {}) {
                           ? `
                             <div class="inline-actions">
                               <button class="small-button is-primary" data-action="execute-approval" data-approval-id="${approval.id}">
-                                Approve & run
+                                同意并执行
                               </button>
                               <button class="small-button" data-action="reject-approval" data-approval-id="${approval.id}">
-                                Reject
+                                拒绝
                               </button>
                             </div>
                           `
-                          : ''
+                          : approval.status === 'uncertain' ? `<div class="inline-actions"><button class="small-button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}">已核对，关闭记录</button></div>` : ''
                       }
                     </article>
                   `,
                 )
                 .join('')
-            : '<div class="empty-state compact">No approval requests yet.</div>'
+            : '<div class="empty-state compact">暂无审批记录。</div>'
         }
       </div>
     </section>
@@ -7147,12 +6848,13 @@ function renderApprovalPanel({ compact = false } = {}) {
 
 function renderComposerCard({ inline = false } = {}) {
   const data = uiState.bootstrap;
-  const project = activeProject();
+  const composerChat = !uiState.neuralOverview ? activeChat() : null;
+  const project = data.projects.find(p=>p.id===(composerChat ? composerChat.projectId : uiState.newChatProjectId));
   const workspace = data.workspace || {};
   const selectedFile = workspace.selectedFile;
-  const voiceSupported = voiceBridgeSupported() || uiState.voice.supported;
+  const voiceSupported = voiceInputSupported();
   const isHomeComposer = !inline;
-  const voicePreviewMarkup = '';
+  const voicePreviewMarkup = renderVoiceInput(uiState.voice, escapeHtml);
   const footerMarkup =
     isHomeComposer || selectedFile
       ? `
@@ -7171,8 +6873,11 @@ function renderComposerCard({ inline = false } = {}) {
 
   return `
     <div class="composer-shell">
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?'<span class="list-row-meta" role="status">正在切换角色…</span>':''}</div>
+      ${renderExecutionPanel()}
+      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? `<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
-        !data.settings.config.hasCredentials
+        !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : uiState.newChatModel)
           ? `
             <div class="alert">
               ${
@@ -7208,51 +6913,32 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
-                <button
-                  class="composer-demon-toggle ${uiState.demonMode ? 'is-active' : ''}"
-                  type="button"
-                  data-action="toggle-demon-mode"
-                  title="Demon mode"
-                  aria-pressed="${uiState.demonMode ? 'true' : 'false'}"
-                >
-                  <span class="composer-demon-tick" aria-hidden="true">${uiState.demonMode ? '✓' : ''}</span>
-                  <span class="composer-demon-label">Demon</span>
-                </button>
-                <div class="composer-model-select-wrap">
-                  <select class="model-select composer-model-select" data-action="save-model-select" aria-label="Model">
-                    ${modelOptionsForAuthMode(data.settings.config.authMode)
-                      .map(
-                        model => `
-                          <option value="${model}" ${
-                            data.settings.config.model === model ? 'selected' : ''
-                          }>
-                            ${model}
-                          </option>
-                        `,
-                      )
-                      .join('')}
-                  </select>
-                </div>
+                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
+                ${renderModelPicker({
+                  config: data.settings.config,
+                  selection:!uiState.neuralOverview && activeChat() ? activeChat().modelSelection : uiState.newChatModel,
+                  models: modelOptionsForAuthMode(data.settings.config.authMode),
+                  agent: conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId }),
+                  open: uiState.modelPickerOpen,
+                  saving: uiState.modelPickerSaving,
+                }, escapeHtml)}
 
                 <div class="tts-voice-panel-anchor">
                   ${renderTtsVoicePanel()}
-                  <button
-                    class="composer-icon-button ${uiState.ttsAutoPlay ? 'is-recording' : ''}"
-                    type="button"
-                    data-action="toggle-tts-autoplay"
-                    title="Voice settings"
-                    aria-label="Voice settings"
-                  >
-                    <span class="toolbar-icon">${icon.speak}</span>
-                  </button>
+                  ${renderAtomicButton()}
                 </div>
 
+                <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
+                  ${[['zh-CN', '中文'], ['en-US', 'English'], ['system', '系统语言']].map(([value, label]) => `<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select>
                 <button
                   class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
                   type="button"
                   data-action="toggle-voice-input"
-                  ${voiceSupported && !uiState.sending ? '' : 'disabled'}
-                  title="${voiceSupported ? escapeHtml(voiceStatusLabel()) : 'Voice input requires the desktop app'}"
+                  ${!uiState.sending && uiState.voice.status !== 'stopping' ? '' : 'disabled'}
+                  aria-label="${escapeHtml(voiceInputLabel(uiState.voice))}"
+                  aria-pressed="${voiceInputActive(uiState.voice)}"
+                  title="${voiceSupported ? escapeHtml(voiceInputLabel(uiState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
                 >
                   <span class="toolbar-icon">${uiState.voice.recording ? icon.stop : icon.mic}</span>
                 </button>
@@ -7265,7 +6951,7 @@ function renderComposerCard({ inline = false } = {}) {
                       </button>
                     `
                     : `
-                      <button class="composer-icon-button is-primary" type="submit" title="Send message">
+                      <button class="composer-icon-button is-primary" type="submit" title="Send message" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
                         <span class="toolbar-icon">${icon.send}</span>
                       </button>
                     `
@@ -7289,6 +6975,7 @@ function renderComposerCard({ inline = false } = {}) {
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
 
+            ${renderImageTaskControls(uiState.composerAttachments)}
             ${renderAttachmentPreviewList(uiState.composerAttachments)}
             ${
               uiState.composerDragActive
@@ -7366,18 +7053,21 @@ function renderMessageList(chat) {
   return `
     <div class="message-list">
       ${chat.messages
+        .map(selectedMessagePresentation)
         .map(
           message => `
             <article class="message ${message.role} ${
               uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             }" data-message-id="${escapeHtml(message.id)}">
               <div class="message-role">
-                ${message.role === 'assistant' ? 'Melo' : uiState.bootstrap.profile.name}
+                ${message.role === 'assistant' ? `${renderAgentAvatar((uiState.bootstrap.customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(uiState.bootstrap.profile, escapeHtml, 24)} ${escapeHtml(uiState.bootstrap.profile.name)}`}
               </div>
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
               ${renderMessageAttachments(message)}
+              ${renderModelReceipt(message, escapeHtml)}
+              ${renderSceneReplay(message)}
               ${renderMessageActions(message)}
             </article>
           `,
@@ -7434,10 +7124,11 @@ function renderAgentSelectorChip() {
   const agent = activeChatAgentProfile();
   if (!agent) return '';
   return `
-    <button class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
+    <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
-            title="Select which agent to chat with">
-      ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
+            aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
+            title="选择对话角色" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
+      <span class="agent-selector-caption">角色</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
   `;
@@ -7448,14 +7139,15 @@ function renderAgentSelectorDropdown() {
   const agents = allChatAgentProfiles();
   if (!agents.length) return '';
   return `
-    <div class="agent-selector-dropdown agent-selector-slide-up">
+    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话角色">
+      <header><strong>选择对话 Agent</strong><p>默认角色和你创建的角色都在这里。切换只影响后续回复。</p></header>
       ${agents.map(agent => `
-        <button class="agent-selector-row ${uiState.activeChatAgentId === agent.id ? 'is-selected' : ''}"
-                data-action="select-chat-agent"
+        <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
+                data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
                 data-agent-id="${escapeHtml(agent.id)}">
-          <span class="agent-selector-name">${escapeHtml(agent.name)}</span>
+          ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
           ${agent.moodLabel ? `<span class="agent-selector-mood">${escapeHtml(agent.moodLabel)}</span>` : ''}
-          ${agent.isCustom ? `<span class="agent-selector-tag">Custom</span>` : ''}
+          ${agent.id === 'main' ? `<span class="agent-selector-tag">默认</span>` : agent.isCustom ? `<span class="agent-selector-tag">自定义</span>` : ''}
         </button>
       `).join('')}
     </div>
@@ -7464,29 +7156,11 @@ function renderAgentSelectorDropdown() {
 
 function renderRegularChatPage() {
   const chat = activeChat();
-  const project = activeProject();
-  const mainAgent = mainAgentProfile();
+  const project = uiState.bootstrap.projects.find(p=>p.id===chat?.projectId);
+  const chatAgent = conversationAgent(uiState.bootstrap, { newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
   if (!chat) {
-    return `
-      <section class="page is-chat">
-        <div class="chat-home">
-          <div class="greeting">
-            <span class="spark">${icon.spark}</span>
-            <h1 class="page-title">
-              ${getGreeting()}, ${escapeHtml(uiState.bootstrap.profile.name)}
-            </h1>
-          </div>
-
-          <div class="agent-chip-anchor">
-            ${renderAgentSelectorDropdown()}
-            ${renderAgentSelectorChip()}
-          </div>
-
-          ${renderComposerCard()}
-        </div>
-      </section>
-    `;
+    return `<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
   }
 
   return `
@@ -7499,13 +7173,6 @@ function renderRegularChatPage() {
               <span class="thread-title-caret">${icon.chevronDown}</span>
             </h1>
             <div class="thread-meta">
-              ${
-                mainAgent
-                  ? `<span class="chip">${escapeHtml(mainAgent.name)} · ${escapeHtml(
-                      mainAgent.moodLabel,
-                    )}</span>`
-                  : ''
-              }
               ${
                 project ? `<span class="chip">${escapeHtml(project.name)}</span>` : ''
               }
@@ -8022,21 +7689,20 @@ function renderProjectsOverview() {
         <div class="page-grid">
           <div class="header-row">
             <div>
-              <h1 class="page-title compact">Projects</h1>
-              <p class="page-kicker">Group chats, artifacts, and instructions together.</p>
+              <h1 class="page-title compact">项目</h1>
+              <p class="page-kicker">把同一目标下的对话、资料与工作要求放在一起。</p>
             </div>
           </div>
 
           <div class="surface-card project-empty-hero">
             <div class="project-empty-hero__icon">${icon.folder}</div>
-            <h2 class="project-empty-hero__title">No projects yet</h2>
+            <h2 class="project-empty-hero__title">还没有项目</h2>
             <p class="project-empty-hero__body">
-              Projects keep a workspace path, instructions, and related chats together so Melo
-              has context every time you continue a thread.
+              为一件持续进行的事创建项目，写下目标与要求，再把相关对话放进来。每次继续对话都会带上项目背景。
             </p>
             <button class="ghost-button is-primary" data-action="toggle-project-form">
               <span class="toolbar-icon">${icon.plus}</span>
-              Create your first project
+              创建第一个项目
             </button>
           </div>
         </div>
@@ -8049,14 +7715,15 @@ function renderProjectsOverview() {
       <div class="page-grid">
         <div class="header-row project-overview-header">
           <div>
-            <h1 class="page-title compact">Projects</h1>
-            <p class="page-kicker">${totalProjects} ${totalProjects === 1 ? 'project' : 'projects'}</p>
+            <h1 class="page-title compact">项目</h1>
+            <p class="page-kicker">${totalProjects} 个项目</p>
           </div>
 
           <div class="inline-actions">
+            <button class="ghost-button" data-action="toggle-archived-projects">${uiState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
             <button class="ghost-button is-primary" data-action="toggle-project-form">
               <span class="toolbar-icon">${icon.plus}</span>
-              New project
+              新建项目
             </button>
           </div>
         </div>
@@ -8070,7 +7737,7 @@ function renderProjectsOverview() {
               id="project-search"
               type="search"
               value="${escapeHtml(uiState.projectSearch)}"
-              placeholder="Search projects..."
+              placeholder="搜索项目…"
             />
           </div>
         </div>
@@ -8086,8 +7753,8 @@ function renderProjectsOverview() {
               <div class="surface-card empty-state compact">
                 ${
                   searchActive
-                    ? `No projects match "${escapeHtml(uiState.projectSearch)}".`
-                    : 'No projects yet — create your first one to get started.'
+                    ? `没有匹配“${escapeHtml(uiState.projectSearch)}”的项目。`
+                    : '还没有项目，先创建一个目标。'
                 }
               </div>
             `
@@ -8099,7 +7766,7 @@ function renderProjectsOverview() {
 
 function renderProjectCard(item) {
   // A single project card in the overview grid. Clicking anywhere on the
-  // card opens the detail view. Action buttons (Open chat / Code session)
+  // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
   // stop propagation so they don't also trigger the card click.
   return `
     <button
@@ -8116,11 +7783,11 @@ function renderProjectCard(item) {
       <div class="project-card__footer">
         <span class="project-card__metric">
           <span class="toolbar-icon">${icon.bubble}</span>
-          ${item.chatCount} ${item.chatCount === 1 ? 'chat' : 'chats'}
+          ${item.chatCount} 段对话
         </span>
         <span class="project-card__metric">
           <span class="toolbar-icon">${icon.box}</span>
-          ${item.artifactCount} ${item.artifactCount === 1 ? 'artifact' : 'artifacts'}
+          ${item.artifactCount} 份资料与成果
         </span>
       </div>
     </button>
@@ -8132,42 +7799,42 @@ function renderProjectCreateForm() {
     <form class="project-form-card surface-card" data-form="project-create">
       <div class="project-form-grid">
         <label class="label">
-          Project name
+          项目名称
           <input class="input" name="name" value="${escapeHtml(
             uiState.draftProject.name,
-          )}" placeholder="e.g. Client site rebuild" />
+          )}" placeholder="例如：旅行规划、产品开发" />
         </label>
         <label class="label">
-          Tag
+          分类
           <input class="input" name="tag" value="${escapeHtml(
             uiState.draftProject.tag,
-          )}" placeholder="e.g. Design" />
+          )}" placeholder="例如：生活、工作" />
         </label>
       </div>
 
       <label class="label">
-        Workspace path
+        项目文件夹
         <input class="input" name="workspacePath" value="${escapeHtml(
           uiState.draftProject.workspacePath,
-        )}" placeholder="Optional — absolute path to a folder on your computer" />
+        )}" placeholder="可选；留空将创建独立项目文件夹" />
       </label>
 
       <label class="label">
-        Summary
+        项目目标
         <input class="input" name="summary" value="${escapeHtml(
           uiState.draftProject.summary,
-        )}" placeholder="What is this project about?" />
+        )}" placeholder="希望完成什么？" />
       </label>
       <label class="label">
-        Instructions
-        <textarea class="textarea" name="instructions" placeholder="Project-specific instructions for Melo">${escapeHtml(
+        持续工作要求
+        <textarea class="textarea" name="instructions" placeholder="这个项目里，Melo 应遵守哪些要求？">${escapeHtml(
           uiState.draftProject.instructions,
         )}</textarea>
       </label>
       <div class="inline-actions">
-        <button class="small-button is-primary" type="submit">Create project</button>
+        <button class="small-button is-primary" type="submit">创建项目</button>
         <button class="small-button is-outline" type="button" data-action="toggle-project-form">
-          Cancel
+          取消
         </button>
       </div>
     </form>
@@ -8189,7 +7856,7 @@ function renderProjectsDetailView(project) {
               data-action="clear-project-selection"
             >
               <span class="toolbar-icon">${icon.chevronLeft}</span>
-              All projects
+              返回项目列表
             </button>
             <h1 class="page-title compact">${escapeHtml(project.name)}</h1>
             ${
@@ -8204,23 +7871,27 @@ function renderProjectsDetailView(project) {
               class="small-button"
               data-action="chat-from-project"
               data-project-id="${project.id}"
+              ${project.archived?'disabled':''}
             >
-              Open chat
+              开启项目对话
             </button>
             <button
               class="small-button is-primary"
               data-action="code-from-project"
               data-project-id="${project.id}"
+              ${project.archived?'disabled':''}
             >
-              Code session
+              处理项目代码
             </button>
+            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?'恢复项目':'归档项目'}</button>
           </div>
         </div>
 
         <div class="chip-row">
           <span class="chip is-accent">${escapeHtml(project.tag)}</span>
-          <span class="chip">${project.chatCount} ${project.chatCount === 1 ? 'chat' : 'chats'}</span>
-          <span class="chip">${project.artifactCount} ${project.artifactCount === 1 ? 'artifact' : 'artifacts'}</span>
+          ${project.archived?'<span class="chip">已归档 · 对话与资料保留</span>':''}
+          <span class="chip">${project.chatCount ?? relatedChats.length} 段对话</span>
+          <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份资料与成果</span>
           ${
             project.workspacePath
               ? `<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
@@ -8230,7 +7901,7 @@ function renderProjectsDetailView(project) {
 
         <div class="project-detail-grid">
           <section class="surface-card project-detail-panel">
-            <h2 class="subsection-title">Project settings</h2>
+            <h2 class="subsection-title">项目设置</h2>
             <form
               class="project-form-card"
               data-form="project-update"
@@ -8238,25 +7909,25 @@ function renderProjectsDetailView(project) {
             >
               <div class="project-form-grid">
                 <label class="label">
-                  Project name
+                  项目名称
                   <input class="input" name="name" value="${escapeHtml(project.name)}" />
                 </label>
                 <label class="label">
-                  Tag
+                  分类
                   <input class="input" name="tag" value="${escapeHtml(project.tag)}" />
                 </label>
               </div>
               <label class="label">
-                Workspace path
+                项目文件夹
                 <input
                   class="input"
                   name="workspacePath"
                   value="${escapeHtml(project.workspacePath)}"
-                  placeholder="Optional — absolute path to a folder on your computer"
+                  placeholder="可选；留空将创建独立项目文件夹"
                 />
               </label>
               <label class="label">
-                Summary
+                项目目标
                 <input
                   class="input"
                   name="summary"
@@ -8264,15 +7935,18 @@ function renderProjectsDetailView(project) {
                 />
               </label>
               <label class="label">
-                Instructions
+                持续工作要求
                 <textarea class="textarea" name="instructions">${escapeHtml(
                   project.instructions,
                 )}</textarea>
               </label>
+              <fieldset class="context-materials"><legend>项目共享资料</legend><p>这些资料用于项目内所有对话，与对话单独选用的资料去重后合计最多 8 份、24000 字。</p>
+                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || '<p>先在知识分支保存资料。</p>'}
+              </fieldset>
               <div class="inline-actions">
                 <button class="small-button is-primary" type="submit">
                   <span class="toolbar-icon">${icon.save}</span>
-                  Save project
+                  保存项目
                 </button>
               </div>
             </form>
@@ -8281,8 +7955,8 @@ function renderProjectsDetailView(project) {
           <aside class="project-detail-aside">
             <section class="surface-card project-detail-panel">
               <div class="header-row">
-                <h2 class="subsection-title">Recent chats</h2>
-                <span class="meta-label">${relatedChats.length} linked</span>
+                <h2 class="subsection-title">相关对话</h2>
+                <span class="meta-label">${relatedChats.length} 段</span>
               </div>
               <div class="mini-list">
                 ${
@@ -8302,15 +7976,15 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">No chats linked to this project yet.</div>'
+                    : '<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>'
                 }
               </div>
             </section>
 
             <section class="surface-card project-detail-panel">
               <div class="header-row">
-                <h2 class="subsection-title">Artifacts</h2>
-                <span class="meta-label">${relatedArtifacts.length} saved</span>
+                <h2 class="subsection-title">资料与成果</h2>
+                <span class="meta-label">${relatedArtifacts.length} 份</span>
               </div>
               <div class="mini-list">
                 ${
@@ -8332,7 +8006,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">No artifacts for this project yet.</div>'
+                    : '<div class="empty-state compact">还没有保存的资料或成果。</div>'
                 }
               </div>
             </section>
@@ -8515,7 +8189,7 @@ function renderAgentWorkbench(selected) {
       </div>
 
       <div class="agent-compact-note">
-        IDENTITY.md and SOUL.md are editable here in the UI and saved to disk for this agent lane.
+        身份与背景、回复与工作要求都会用于每次请求；编辑后对下一轮生效。
       </div>
 
       <form
@@ -8524,11 +8198,12 @@ function renderAgentWorkbench(selected) {
         data-form="agent-profile-update"
         data-agent-id="${selected.id}"
       >
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${
           selected.isCustom
             ? `
               <label class="label">
-                Agent name
+                角色名称
                 <input
                   class="config-input"
                   type="text"
@@ -8538,10 +8213,13 @@ function renderAgentWorkbench(selected) {
                 />
               </label>
               <label class="label">
-                Description
-                <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="What this custom agent is for.">${escapeHtml(
+                一句话定位
+                <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="一句话说明这个角色的身份与用途。">${escapeHtml(
                   draft?.description || selected.description || '',
                 )}</textarea>
+              </label>
+              <label class="label">思考与回复方式
+                <textarea class="textarea agent-control-editor" name="rolePrompt" placeholder="例如：先给结论，用两三句短句解释；不确定时明确说明。">${escapeHtml(draft?.rolePrompt ?? selected.rolePrompt ?? '')}</textarea>
               </label>
             `
             : `
@@ -8558,7 +8236,7 @@ function renderAgentWorkbench(selected) {
             data-action="select-agent-editor-tab"
             data-tab="identity"
           >
-            IDENTITY.md
+            身份与背景
           </button>
           <button
             class="chip chip-button ${uiState.agentEditorTab === 'soul' ? 'is-accent' : ''}"
@@ -8566,7 +8244,7 @@ function renderAgentWorkbench(selected) {
             data-action="select-agent-editor-tab"
             data-tab="soul"
           >
-            SOUL.md
+            长期行为偏好
           </button>
         </div>
 
@@ -8574,7 +8252,7 @@ function renderAgentWorkbench(selected) {
           <div class="agent-editor-header">
             <div class="agent-editor-heading">
               <div class="meta-block-label">Content</div>
-              <div class="list-row-meta">Edit the live markdown content for this file.</div>
+              <div class="list-row-meta">补充角色背景；具体回复方式优先采用上方设定。</div>
             </div>
           </div>
           <div class="agent-editor-path">
@@ -8615,7 +8293,7 @@ function renderAgentWorkbench(selected) {
         </label>
 
         <label class="label">
-          System prompt
+          补充系统要求
           <textarea class="textarea code-editor agent-control-editor" name="systemPrompt" placeholder="Optional lane-specific system prompt.">${escapeHtml(
             draft?.systemPrompt || '',
           )}</textarea>
@@ -9109,212 +8787,28 @@ function renderAgentPage() {
 function renderModelPage() {
   const config = uiState.bootstrap.settings.config;
   const draft = effectiveModelSetupDraft();
-  const authMode = draft.authMode || 'codex';
-  const defaults = modelDefaultsForAuthMode(authMode);
-  const authModeLabel =
-    authMode === 'local' ? 'Local model' : authMode === 'api-key' ? 'API key' : 'OAuth';
-  const modelOptions = modelOptionsForAuthMode(authMode);
-  const modelOptionsMarkup = modelOptions
-    .map(
-      option => `
-        <option value="${escapeHtml(option)}" ${
-          (draft.model || defaults.model) === option ? 'selected' : ''
-        }>
-          ${escapeHtml(option)}
-        </option>
-      `,
-    )
-    .join('');
-
-  let modeSpecific = '';
-  if (authMode === 'local') {
-    modeSpecific = `
-      <div class="agent-compact-note">
-        Local model mode expects a local OpenAI-compatible endpoint. Melo will call the configured endpoint directly and will only send an authorization header if you fill in an optional key.
-      </div>
-      <label class="label">
-        Local endpoint
-        <input
-          class="config-input"
-          type="text"
-          name="baseUrl"
-          value="${escapeHtml(draft.baseUrl || defaults.baseUrl)}"
-          placeholder="${defaults.baseUrl}"
-        />
-      </label>
-      <label class="label">
-        Local model
-        <div class="select-like model-field-select">
-          <select class="config-select" name="model">
-            ${modelOptionsMarkup}
-          </select>
-        </div>
-      </label>
-      <label class="label">
-        Optional local access key
-        <input
-          class="input"
-          name="apiKey"
-          type="password"
-          value=""
-          placeholder="Optional"
-        />
-      </label>
-      <div class="inline-actions">
-        <button class="small-button" type="button" data-action="load-model-options">
-          ${uiState.modelCatalogLoading ? 'Reading models…' : 'Read local models'}
-        </button>
-      </div>
-    `;
-  } else if (authMode === 'api-key') {
-    modeSpecific = `
-      <div class="agent-compact-note">
-        API mode uses the official provider endpoint and a manually supplied API key.
-      </div>
-      <label class="label">
-        Base URL
-        <input
-          class="config-input"
-          type="text"
-          name="baseUrl"
-          value="${escapeHtml(draft.baseUrl || defaults.baseUrl)}"
-          placeholder="${defaults.baseUrl}"
-        />
-      </label>
-      <label class="label">
-        Model
-        <div class="select-like model-field-select">
-          <select class="config-select" name="model">
-            ${modelOptionsMarkup}
-          </select>
-        </div>
-      </label>
-      <label class="label">
-        API key
-        <input
-          class="input"
-          name="apiKey"
-          type="password"
-          value=""
-          placeholder="${escapeHtml(config.maskedApiKey || 'sk-...')}"
-        />
-      </label>
-      <div class="list-row-meta">Leave this blank if you want to keep the current saved key.</div>
-      <div class="inline-actions">
-        <button class="small-button" type="button" data-action="load-model-options">
-          ${uiState.modelCatalogLoading ? 'Reading models…' : 'Read available models'}
-        </button>
-      </div>
-    `;
-  } else {
-    modeSpecific = `
-      <div class="agent-compact-note">
-        OAuth mode reuses your local Codex device login. Clicking Start OAuth opens a Terminal-based Codex login flow, then you can come back here and refresh the status. This is a Codex login bridge, not a direct API-key flow.
-      </div>
-      <div class="detail-meta">
-        <div class="meta-block-label">OAuth status</div>
-        <div>
-          ${
-            config.codexAuth?.loggedIn
-              ? `Signed in through Codex as ${escapeHtml(config.codexAuth.email || 'your OpenAI account')}${config.codexAuth.plan ? ` · ${escapeHtml(config.codexAuth.plan)}` : ''}.`
-              : 'No active Codex OAuth session is available yet.'
-          }
-        </div>
-      </div>
-      <div class="inline-actions">
-        <button class="small-button is-primary" type="button" data-action="start-model-oauth">
-          Start OAuth
-        </button>
-        <button class="small-button" type="button" data-action="refresh-model-status">
-          Refresh status
-        </button>
-      </div>
-      <label class="label">
-        OAuth endpoint
-        <input
-          class="config-input"
-          type="text"
-          name="baseUrl"
-          value="${escapeHtml(draft.baseUrl || defaults.baseUrl)}"
-          placeholder="${defaults.baseUrl}"
-        />
-      </label>
-      <label class="label">
-        Model
-        <div class="select-like model-field-select">
-          <select class="config-select" name="model">
-            ${modelOptionsMarkup}
-          </select>
-        </div>
-      </label>
-      <div class="inline-actions">
-        <button class="small-button" type="button" data-action="load-model-options">
-          ${uiState.modelCatalogLoading ? 'Reading models…' : 'Refresh model list'}
-        </button>
-      </div>
-    `;
-  }
-
   return `
     <section class="page page-model">
       <div class="model-page-titlebar">
-        <h1 class="page-title compact">Model</h1>
+        <h1 class="page-title compact">模型与连接</h1>
       </div>
-      <div class="project-workbench model-page-grid">
-        <section class="surface-card model-setup-card">
-          <div class="header-row model-setup-header">
-            <span class="chip is-accent">${escapeHtml(authModeLabel)}</span>
-          </div>
-
+      <div class="model-connection-summary">
+        <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
+        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
+      </div>
+      ${renderLlmConnections(config)}
+      ${renderExtraFast(config)}
+      ${renderImageSettings(config)}
+      <details class="model-prompt-settings"><summary>全局系统提示词</summary>
+        <section class="surface-card">
+          <p>应用于模型请求的基础指令。保存这里不会更换模型连接。</p>
           <form id="model-config-form" class="config-form" data-form="model-config">
-            <input type="hidden" name="authMode" value="${escapeHtml(authMode)}" />
-            <div class="label model-setup-select">
-              <span>Set up model type</span>
-              <div class="model-type-switch" role="tablist" aria-label="Set up model type">
-                <button
-                  class="small-button ${authMode === 'local' ? 'is-primary' : ''}"
-                  type="button"
-                  data-action="set-model-auth-mode"
-                  data-auth-mode="local"
-                >
-                  Local model
-                </button>
-                <button
-                  class="small-button ${authMode === 'api-key' ? 'is-primary' : ''}"
-                  type="button"
-                  data-action="set-model-auth-mode"
-                  data-auth-mode="api-key"
-                >
-                  API key
-                </button>
-                <button
-                  class="small-button ${authMode === 'codex' ? 'is-primary' : ''}"
-                  type="button"
-                  data-action="set-model-auth-mode"
-                  data-auth-mode="codex"
-                >
-                  OAuth
-                </button>
-              </div>
-            </div>
-
-            ${modeSpecific}
-
-            <label class="label">
-              System prompt
-              <textarea class="config-textarea" name="systemPrompt">${escapeHtml(
-                draft.systemPrompt || '',
-              )}</textarea>
+            <label class="label">系统提示词
+              <textarea class="config-textarea" name="systemPrompt">${escapeHtml(draft.systemPrompt || '')}</textarea>
             </label>
-
-            <div class="inline-actions">
-              <button class="small-button is-primary" type="submit">
-                Save model setup
-              </button>
-            </div>
           </form>
         </section>
-      </div>
+      </details>
     </section>
   `;
 }
@@ -9395,6 +8889,7 @@ function renderAgentDetails(selected) {
       </div>
 
       <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${
           selected.isCustom
             ? `
@@ -9794,81 +9289,17 @@ function renderConnectorDetails(selected) {
         selected.config,
       );
       if (state === 'pending') {
-        return `<span class="chip is-warning is-tiny">● 待保存（3 秒后自动保存）</span>`;
+        return `<span class="chip is-warning is-tiny">● 待保存（点击保存后生效）</span>`;
       }
       if (state === 'saved') {
         return `<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(masked)}</span>`;
       }
       return `<span class="chip is-tiny">● 未配置</span>`;
     };
-    const draftAuthMode = draft.authMode || 'codex';
     extra = `
+      <p>模型地址、密钥和登录授权在模型连接中统一管理。</p>
+      <button type="button" class="small-button" data-action="open-view" data-view="model">打开模型连接</button>
       <form id="connector-config-form" class="config-form" data-form="connector-config">
-        <label class="label">
-          Auth mode
-          <select class="input" name="authMode">
-            <option value="local" ${draftAuthMode === 'local' ? 'selected' : ''}>
-              Local model
-            </option>
-            <option value="codex" ${draftAuthMode === 'codex' ? 'selected' : ''}>
-              Codex / ChatGPT OAuth
-            </option>
-            <option value="api-key" ${draftAuthMode === 'api-key' ? 'selected' : ''}>
-              OpenAI API key
-            </option>
-          </select>
-        </label>
-        ${
-          draftAuthMode === 'codex'
-            ? `
-              <div class="detail-meta">
-                ${
-                  selected.config.codexAuth?.loggedIn
-                    ? `Using local Codex login as ${escapeHtml(
-                        selected.config.codexAuth.email || 'signed-in account',
-                      )}${selected.config.codexAuth.plan ? ` · plan ${escapeHtml(selected.config.codexAuth.plan)}` : ''}.`
-                    : 'No local Codex login found yet. Open the Model page to start the OAuth sign-in flow.'
-                }
-              </div>
-            `
-            : `
-        <label class="label">
-          <span class="label-row">OpenAI API key ${credentialChip('apiKey')}</span>
-          <input
-            class="input"
-            name="apiKey"
-            type="password"
-            value=""
-            placeholder="${escapeHtml(selected.config.maskedApiKey || 'sk-...')}"
-          />
-        </label>
-        <div class="list-row-meta">Leave this blank if you want to keep the current saved key.</div>
-            `
-        }
-        <label class="label">
-          Base URL
-          <input
-            class="input"
-            name="baseUrl"
-            value="${escapeHtml(draft.baseUrl || '')}"
-            placeholder="https://api.openai.com/v1"
-          />
-        </label>
-        <label class="label">
-          Model
-          <input
-            class="input"
-            name="model"
-            value="${escapeHtml(draft.model || '')}"
-            placeholder="gpt-5.5"
-          />
-        </label>
-        <label class="label">
-          System prompt
-          <textarea class="config-textarea" name="systemPrompt">${escapeHtml(
-            draft.systemPrompt || '',
-          )}</textarea>
-        </label>
         <div class="detail-meta">
           <div class="meta-block-label">Whisper transcription</div>
           <div>
@@ -10224,20 +9655,22 @@ async function refreshAdvancedStatus() {
   try {
     // Fan out — three independent endpoints, none of which block the
     // others, so a slow one doesn't gate the rest.
-    const [serversResp, pluginsResp, tasksResp] = await Promise.all([
+    const [serversResp, pluginsResp, tasksResp, diagnosticsResp] = await Promise.all([
       api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
       api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
       api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
+      api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
     ]);
-    const errors = [serversResp, pluginsResp, tasksResp]
+    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp]
       .filter(r => r && r._error)
       .map(r => r._error);
-    if (errors.length === 3) {
+    if (errors.length === 4) {
       uiState.advanced.error = errors.join(' · ');
     } else {
       uiState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
       uiState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
       uiState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
+      uiState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
       uiState.advanced.loaded = true;
       // Surface partial errors without blanking the panel.
       if (errors.length > 0) {
@@ -10284,14 +9717,53 @@ async function handleKillBackgroundTask(runId) {
   }
 }
 
+async function handleMemoryRepairAction(action) {
+  const m = uiState.memoryStatus;
+  if (action === 'memory-pause') { m.pauseRepair = true; return; }
+  if (m.repairBusy) return;
+  const connection = action === 'memory-connect' ? { baseUrl: document.getElementById('memory-embed-url')?.value, model: document.getElementById('memory-embed-model')?.value } : null;
+  m.repairBusy = true; m.pauseRepair = false; bgRender();
+  try {
+    if (action === 'memory-repair') {
+      do {
+        const result = await api('/api/memory/repair', { method: 'POST', body: {} });
+        if (m.snapshot) m.snapshot.repair = result;
+        bgRender();
+        if (result.status !== 'paused') break;
+      } while (!m.pauseRepair);
+      await refreshMemoryStatus();
+      m.diagnosis = null;
+    } else {
+      m.diagnosis = await api(connection ? '/api/memory/connect' : '/api/memory/diagnose', connection ? { method: 'POST', body: connection } : {});
+    }
+  } catch (error) { showError(error.message); }
+  finally { m.repairBusy = false; bgRender(); }
+}
+
+async function handleMemoryFactAction(action, id) {
+  if (uiState.memoryFactBusy) return;
+  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat'}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
+  if (action === 'memory-fact-cancel') { uiState.memoryFactEditing=null; uiState.memoryFactDraft=null; memoryFactEdit.cancel(); bgRender(); return; }
+  if (action === 'memory-fact-search') { uiState.memoryFactQuery=document.getElementById('memory-fact-query')?.value || ''; uiState.memoryFactOffset=0; await refreshMemoryStatus(); return; }
+  if (action === 'memory-fact-prev' || action === 'memory-fact-next') { uiState.memoryFactOffset=Math.max(0,(uiState.memoryFactOffset || 0)+(action.endsWith('next')?50:-50)); await refreshMemoryStatus(); return; }
+  if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
+  const patch=action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
+  uiState.memoryFactBusy=true; bgRender();
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?'已保存':action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  catch(error) { memoryFactEdit.failed(error); showError(error.message); }
+  finally { uiState.memoryFactBusy=false;bgRender(); }
+}
+
 async function refreshMemoryStatus() {
   if (uiState.memoryStatus.loading) return;
   uiState.memoryStatus.loading = true;
   uiState.memoryStatus.error = null;
   bgRender();
   try {
-    const response = await api('/api/memory/status');
+    const [response, facts] = await Promise.all([api('/api/memory/status'), api(`/api/memory/facts?q=${encodeURIComponent(uiState.memoryFactQuery || '')}&offset=${uiState.memoryFactOffset || 0}`)]);
+    uiState.memoryFacts = facts;
     uiState.memoryStatus.snapshot = response;
+    if (!uiState.memoryConnection && response.connection) uiState.memoryConnection = response.connection;
     uiState.memoryStatus.loaded = true;
   } catch (err) {
     uiState.memoryStatus.error = err?.message || 'Failed to load memory status';
@@ -10313,8 +9785,9 @@ async function refreshSafetyAllowlist() {
   uiState.safetyAllowlist.error = null;
   bgRender();
   try {
-    const response = await api('/api/safety/file-allowlist');
-    uiState.safetyAllowlist.rules = Array.isArray(response.rules) ? response.rules : [];
+    const [response, tools, audit] = await Promise.all([api('/api/safety/file-allowlist'), api('/api/tools/permission-rules'), api('/api/permissions/audit')]);
+    uiState.safetyAllowlist.audit = audit.events || [];
+    uiState.safetyAllowlist.rules = [...(response.rules || []), ...(tools.rules || []).map(r => ({ ...r, id: `tool:${r.id || r.toolId}`, toolId: r.toolId, operation: r.action, scope: 'tool', realPath: r.toolId })), ...(audit.commands || []).map(r=>({...r,id:`command:${r.id}`,commandRuleId:r.id,operation:'bash',scope:'command',realPath:`${r.template.command} · ${r.template.cwd}`}))];
     uiState.safetyAllowlist.loaded = true;
   } catch (err) {
     uiState.safetyAllowlist.error = err?.message || 'Failed to load safety rules';
@@ -10329,13 +9802,13 @@ async function removeSafetyAllowlistRule(id) {
   uiState.safetyAllowlist.pendingRemoveId = id;
   bgRender();
   try {
-    const response = await api('/api/safety/file-allowlist/remove', {
-      method: 'POST',
-      body: { id },
+    const selectedRule = uiState.safetyAllowlist.rules.find(r => r.id === id);
+    if (selectedRule?.commandRuleId) { await api('/api/permissions/command/remove',{method:'POST',body:{id:selectedRule.commandRuleId}}); await refreshSafetyAllowlist(); return; }
+    const toolId = selectedRule?.toolId;
+    await api(toolId ? '/api/tools/permission-rules/remove' : '/api/safety/file-allowlist/remove', {
+      method: 'POST', body: toolId ? { toolId, id:selectedRule.id.startsWith('tool:') && selectedRule.permissionScope ? selectedRule.id.slice(5) : undefined } : { id },
     });
-    if (Array.isArray(response.rules)) {
-      uiState.safetyAllowlist.rules = response.rules;
-    }
+    await refreshSafetyAllowlist();
   } catch (err) {
     uiState.safetyAllowlist.error = err?.message || 'Failed to revoke rule';
   } finally {
@@ -10463,14 +9936,20 @@ function fmtMemoryRelTime(ms) {
 }
 
 function renderSafetyPane() {
-  const { loading, loaded, rules, error, pendingRemoveId } = uiState.safetyAllowlist;
+  const { loading, loaded, error, pendingRemoveId } = uiState.safetyAllowlist;
+  const filters = uiState.safetyAllowlist.filters || {};
+  const matches = row => (!filters.role || (row.permissionScope?.role || row.role || 'global') === filters.role) && (!filters.project || (row.permissionScope?.project || row.project || 'none') === filters.project) && (!filters.operation || row.operation === filters.operation);
+  const allRules = uiState.safetyAllowlist.rules || [];
+  const rules = allRules.filter(matches);
+  const audit = (uiState.safetyAllowlist.audit || []).filter(matches);
   if (!loaded && !loading && !error) {
     Promise.resolve().then(refreshSafetyAllowlist);
   }
 
   const opLabel = (op, scope) => {
-    const opPart = op === 'read' ? 'Read' : op === 'write' ? 'Write' : op === 'edit' ? 'Edit' : op;
-    const scopePart = scope === 'dir' ? 'directory tree' : 'exact file';
+    if (scope === 'tool') return op === 'allow' ? '始终允许此工具' : '拒绝此工具';
+    const opPart = op === 'read' ? '读取' : op === 'write' ? '写入' : op === 'edit' ? '编辑' : op;
+    const scopePart = scope === 'dir' ? '整个目录' : '当前文件';
     return `${opPart} — ${scopePart}`;
   };
 
@@ -10485,7 +9964,7 @@ function renderSafetyPane() {
 
   const body = (() => {
     if (loading && !loaded) {
-      return `<div class="empty-state compact">Loading safety rules…</div>`;
+      return `<div class="empty-state compact">正在读取授权…</div>`;
     }
     if (error) {
       return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
@@ -10493,9 +9972,8 @@ function renderSafetyPane() {
     if (!rules.length) {
       return `
         <div class="empty-state compact">
-          No persistent file-access rules yet.
-          When you click <strong>Always allow this file</strong> or <strong>Always allow parent dir</strong>
-          on a file-safety prompt, the rule lands here.
+          还没有长期授权。
+          点击权限弹窗中的 <strong>Always allow</strong> 后，可在这里查看和撤销。
         </div>
       `;
     }
@@ -10506,13 +9984,13 @@ function renderSafetyPane() {
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(opLabel(rule.operation, rule.scope))}</div>
               <div class="safety-rule-path mono small">${escapeHtml(rule.realPath)}</div>
-              <div class="list-row-meta">Added ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
+<div class="list-row-meta">${escapeHtml(rule.permissionScope ? `角色 ${rule.permissionScope.role} · 项目 ${rule.permissionScope.project || "无"} · ${rule.permissionScope.workspace?.path || "无工作目录"}` : "原有全局授权")} · 保存于 ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
             </div>
             <button class="small-button is-danger"
               data-action="safety-allowlist-remove"
               data-rule-id="${escapeHtml(rule.id)}"
               ${pendingRemoveId === rule.id ? 'disabled' : ''}>
-              ${pendingRemoveId === rule.id ? 'Revoking…' : 'Revoke'}
+              ${pendingRemoveId === rule.id ? '撤销中…' : '撤销'}
             </button>
           </div>
         `).join('')}
@@ -10524,17 +10002,18 @@ function renderSafetyPane() {
     <div class="detail-card">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Safety</h2>
+          <h2 class="pane-title">权限与隐私</h2>
           <p class="page-kicker">
-            File-access rules added via the file-safety dialog's "Always allow" buttons.
-            Rules persist across restarts. Per-chat grants live elsewhere — they clear on chat end.
+            管理你通过 Always allow 保存的工具与文件授权。撤销后，下次操作将重新询问。
           </p>
         </div>
         <div class="inline-actions">
-          <button class="small-button" data-action="refresh-safety-allowlist">Refresh</button>
+          <button class="small-button" data-action="refresh-safety-allowlist">刷新</button>
         </div>
       </div>
+      <div class="inline-actions">${[['role','角色',r=>r.permissionScope?.role || r.role || 'global'],['project','项目',r=>r.permissionScope?.project || r.project || 'none'],['operation','操作',r=>r.operation]].map(([key,label,get])=>`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
+      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定角色')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || '<p>尚无记录。</p>'}</details>
       <p class="list-row-meta" style="margin-top: 16px;">
         Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
         — the dialog only offers Allow once / Deny for them. Move and delete operations are
@@ -10641,16 +10120,19 @@ function renderMemoryPane() {
   }
   const content = (() => {
     if (loading && !snapshot) {
-      return `<div class="empty-state compact">Loading memory status…</div>`;
+      return `<div class="empty-state compact">正在检查记忆…</div>`;
     }
     if (error) {
       return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!snapshot) {
-      return `<div class="empty-state compact">No data yet. Click refresh.</div>`;
+      return `<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
     }
     const s = snapshot;
     const drift = s.embedding?.drift || {};
+    const diagnosis = uiState.memoryStatus.diagnosis;
+    const needsRebuild = diagnosis ? diagnosis.issues.some(issue => ['model_changed', 'missing_index'].includes(issue.code)) : drift.hasDrift;
+    const semanticStatus = diagnosis?.available === false ? '暂不可用' : needsRebuild ? '需要重建' : diagnosis?.available ? '检测通过' : drift.inferredProvider ? '已配置 · 待检测' : drift.probeAttempted ? '暂不可用' : '未检测';
     const metaRows = s.meta
       ? Object.entries(s.meta)
           .map(([k, v]) => `<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
@@ -10660,14 +10142,15 @@ function renderMemoryPane() {
       <div class="detail-card memory-card">
         <div class="header-row">
           <div>
-            <h2 class="pane-title">Memory</h2>
-            <p class="page-kicker">Read-only snapshot of the local memory store, embedding provider, and dreaming pipeline.</p>
+            <h2 class="pane-title">记忆</h2>
+            <p class="page-kicker">查看 Melo 记住了什么，以及哪些检索能力当前可用。</p>
           </div>
           <div class="inline-actions">
-            <button class="small-button" data-action="refresh-memory-status">Refresh</button>
+            <button class="small-button" data-action="refresh-memory-status">刷新</button>
           </div>
         </div>
 
+        ${s.derivedIndex ? `<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
         ${drift.hasDrift ? `
           <div class="alert compact-alert">
             <strong>Embedding model drift detected.</strong>
@@ -10677,6 +10160,23 @@ function renderMemoryPane() {
           </div>
         ` : ''}
 
+        <div class="quality-status-grid">
+          <div class="quality-status-card"><span>已保存记忆</span><strong>${s.counts.memories ?? '—'}</strong><small>记录保存在本机</small></div>
+          <div class="quality-status-card"><span>关键词索引</span><strong>${s.counts.memoriesFts == null ? '未确认' : s.counts.memoriesFts > 0 ? '已建立' : '等待内容'}</strong><small>可按文字检索已有记录</small></div>
+          <div class="quality-status-card"><span>语义检索</span><strong>${semanticStatus}</strong><small>${diagnosis?.available === false ? '当前使用关键词检索；已有文字记忆保留' : diagnosis?.available ? '以实际检索结果为准' : '点击检测模型，验证检索是否可用'}</small></div>
+        </div>
+        <section class="quality-details">
+          <h3>检索模型与索引</h3>
+          <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
+          <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
+          <button class="small-button" data-action="memory-repair" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
+          ${uiState.memoryStatus.repairBusy ? '<button class="small-button" data-action="memory-pause">本批完成后暂停</button>' : ''}</div>
+          ${s.repair ? `<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
+          ${uiState.memoryStatus.diagnosis ? `<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
+          <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
+        </section>
+        ${renderMemoryFacts(uiState.memoryFacts,{query:uiState.memoryFactQuery,editing:uiState.memoryFactEditing,busy:uiState.memoryFactBusy,draft:uiState.memoryFactDraft,session:memoryFactEdit,feedback:uiState.memoryFactFeedback})}
+        <details class="quality-details"><summary>技术详情与维护</summary>
         <div class="meta-block-label">Store</div>
         <div class="meta-grid">
           <div><div class="meta-label">Path</div><div class="mono small">${escapeHtml(s.store.path)}</div></div>
@@ -10748,6 +10248,7 @@ function renderMemoryPane() {
           <div class="meta-block-label">_meta table</div>
           <div class="meta-grid">${metaRows}</div>
         </div>
+        </details>
       </div>
     `;
   })();
@@ -10999,17 +10500,16 @@ function renderCustomizePage() {
               data-section="advanced"
             >
               <div class="list-row-title">
-                Advanced
-                <span class="chip is-accent">Experimental</span>
+                系统状态
               </div>
-              <div class="list-row-meta">MCP servers, plugins, background tasks. Status, reload, disconnect, kill — config edits deferred.</div>
+              <div class="list-row-meta">任务、能力状态与扩展管理。</div>
             </button>
             <button
               class="section-button ${section === 'memory' ? 'is-active' : ''}"
               data-action="open-customize-section"
               data-section="memory"
             >
-              <div class="list-row-title">Memory</div>
+              <div class="list-row-title">记忆</div>
               <div class="list-row-meta">Inspect the memory store, embedding model, and dreaming activity.</div>
             </button>
             <button
@@ -11017,7 +10517,7 @@ function renderCustomizePage() {
               data-action="open-customize-section"
               data-section="safety"
             >
-              <div class="list-row-title">Safety</div>
+              <div class="list-row-title">权限与隐私</div>
               <div class="list-row-meta">Persistent file-access rules — review and revoke "Always allow" grants.</div>
             </button>
           </div>
@@ -11030,7 +10530,10 @@ function renderCustomizePage() {
                 adv: uiState.advanced,
                 escapeHtml,
                 scheduleRefresh: () => Promise.resolve().then(refreshAdvancedStatus),
+                statePathHint: uiState.advanced.diagnostics?.paths?.configPath || '',
                 mcpPresets: uiState.bootstrap?.customize?.mcpPresets || [],
+                taskPanelHtml: renderTaskPanel(),
+                approvalPanelHtml: renderApprovalPanel(),
               })
             : section === 'memory'
               ? renderMemoryPane()
@@ -11116,13 +10619,13 @@ function renderArtifactsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">Artifacts</h1>
+            <h1 class="page-title compact">资料与成果</h1><p class="page-kicker">保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。</p>
           </div>
 
           <div class="inline-actions">
             <button class="ghost-button is-primary" data-action="toggle-artifact-form">
               <span class="toolbar-icon">${icon.plus}</span>
-              New artifact
+              添加资料
             </button>
           </div>
         </div>
@@ -11133,32 +10636,32 @@ function renderArtifactsPage() {
               <form class="project-form-card surface-card" data-form="artifact-create">
                 <div class="project-form-grid">
                   <label class="label">
-                    Title
+                    标题
                     <input class="input" name="title" value="${escapeHtml(
                       uiState.draftArtifact.title,
-                    )}" placeholder="Build notes" />
+                    )}" placeholder="资料标题" />
                   </label>
                   <label class="label">
-                    Language
+                    格式或语言
                     <input class="input" name="language" value="${escapeHtml(
                       uiState.draftArtifact.language,
                     )}" placeholder="markdown" />
                   </label>
                 </div>
                 <label class="label">
-                  Kind
+                  类别
                   <input class="input" name="kind" value="${escapeHtml(
                     uiState.draftArtifact.kind,
                   )}" placeholder="note" />
                 </label>
                 <label class="label">
-                  Content
-                  <textarea class="textarea" name="content" placeholder="Paste a plan, code block, or durable output">${escapeHtml(
+                  正文
+                  <textarea class="textarea" name="content" placeholder="写入背景资料、笔记或保存成果">${escapeHtml(
                     uiState.draftArtifact.content,
                   )}</textarea>
                 </label>
                 <div class="inline-actions">
-                  <button class="small-button is-primary" type="submit">Save artifact</button>
+                  <button class="small-button is-primary" type="submit">保存资料</button>
                   <button class="small-button is-outline" type="button" data-action="toggle-artifact-form">
                     Cancel
                   </button>
@@ -11221,32 +10724,32 @@ function renderArtifactsPage() {
                     <form class="project-form-card surface-card" data-form="artifact-update">
                       <div class="project-form-grid">
                         <label class="label">
-                          Title
+                          标题
                           <input class="input" name="title" value="${escapeHtml(
                             uiState.editingArtifactDraft.title,
                           )}" />
                         </label>
                         <label class="label">
-                          Language
+                          格式或语言
                           <input class="input" name="language" value="${escapeHtml(
                             uiState.editingArtifactDraft.language,
                           )}" />
                         </label>
                       </div>
                       <label class="label">
-                        Kind
+                        类别
                         <input class="input" name="kind" value="${escapeHtml(
                           uiState.editingArtifactDraft.kind,
                         )}" />
                       </label>
                       <label class="label">
-                        Content
+                        正文
                         <textarea class="textarea tall" name="content">${escapeHtml(
                           uiState.editingArtifactDraft.content,
                         )}</textarea>
                       </label>
                       <div class="inline-actions">
-                        <button class="small-button is-primary" type="submit">Save changes</button>
+                        <button class="small-button is-primary" type="submit">保存修改</button>
                         <button class="small-button is-outline" type="button" data-action="cancel-edit-artifact">
                           Cancel
                         </button>
@@ -11316,9 +10819,9 @@ function renderArtifactsPage() {
                         : ''
                     }
 
-                    <pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>
+                    ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? `<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : `<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
                   `
-                : '<div class="empty-state">Select an artifact to preview it.</div>'
+                : '<div class="empty-state">选择一份资料查看或编辑。</div>'
             }
           </section>
         </div>
@@ -11327,245 +10830,8 @@ function renderArtifactsPage() {
   `;
 }
 
-function renderSearchBucket(title, itemsHtml, count) {
-  return `
-    <section class="surface-card search-bucket">
-      <div class="search-bucket-header">
-        <h2 class="pane-title">${title}</h2>
-        <span class="chip">${count}</span>
-      </div>
-      <div class="search-list">${itemsHtml}</div>
-    </section>
-  `;
-}
-
-function renderSearchResultButton(item) {
-  // Workspace file-group rows carry a `hits: [...]` array of per-line hits
-  // from `streamWorkspaceContentByFile`.  When we have at least one extra
-  // hit beyond the top-scoring line that the group already advertises, we
-  // render an expandable sub-list so the user can drill into a specific
-  // line without having to open the file first.
-  const hasSubHits =
-    Array.isArray(item.hits) && item.hits.length > 0 && item.filePath;
-
-  if (!hasSubHits) {
-    return `
-    <button
-      class="search-action-button"
-      data-action="open-search-result"
-      data-result-id="${escapeHtml(item.id)}"
-    >
-      <span class="search-action-icon">${searchResultIcon(item)}</span>
-      <span class="search-action-copy">
-        <span class="search-action-title-row">
-          <span class="search-action-title">${escapeHtml(item.title)}</span>
-          ${
-            item.badge
-              ? `<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
-              : ''
-          }
-        </span>
-        ${
-          item.subtitle
-            ? `<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
-            : ''
-        }
-      </span>
-      ${
-        item.meta
-          ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
-          : ''
-      }
-    </button>
-  `;
-  }
-
-  const isExpanded = Boolean(uiState.expandedSearchGroups?.[item.filePath]);
-  const subHitCount = item.hits.length;
-  const expandLabel = isExpanded
-    ? `Hide ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`
-    : `Show ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`;
-
-  return `
-    <div class="search-action-row search-action-row--file-group${
-      isExpanded ? ' is-expanded' : ''
-    }">
-      <div class="search-action-row-head">
-        <button
-          class="search-action-button search-action-button--grow"
-          data-action="open-search-result"
-          data-result-id="${escapeHtml(item.id)}"
-        >
-          <span class="search-action-icon">${searchResultIcon(item)}</span>
-          <span class="search-action-copy">
-            <span class="search-action-title-row">
-              <span class="search-action-title">${escapeHtml(item.title)}</span>
-              ${
-                item.badge
-                  ? `<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
-                  : ''
-              }
-            </span>
-            ${
-              item.subtitle
-                ? `<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
-                : ''
-            }
-          </span>
-          ${
-            item.meta
-              ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
-              : ''
-          }
-        </button>
-        <button
-          type="button"
-          class="search-action-expand"
-          data-action="toggle-search-group-hits"
-          data-file-path="${escapeHtml(item.filePath)}"
-          aria-expanded="${isExpanded ? 'true' : 'false'}"
-          title="${escapeHtml(expandLabel)}"
-        >
-          <span class="search-action-expand-chip">${subHitCount}</span>
-          <span class="search-action-expand-caret">${isExpanded ? '▾' : '▸'}</span>
-        </button>
-      </div>
-      ${
-        isExpanded
-          ? `<div class="search-action-sublist" role="list">${item.hits
-              .map(hit => renderSearchResultSubHit(item, hit))
-              .join('')}</div>`
-          : ''
-      }
-    </div>
-  `;
-}
-
-// Render a single per-line hit underneath an expanded file-group row.
-// Clicking a sub-hit directly opens the file at that specific line (it
-// ignores the group's own top-scoring line in favour of the line the user
-// actually clicked).  We avoid injecting these into `currentSearchItems`
-// because they are drill-downs, not independently rankable results — the
-// click boost is credited to the parent group.
-function renderSearchResultSubHit(parent, hit) {
-  const rawLine = Number(hit?.lineNumber) || 0;
-  const previewText = hit?.lineText || hit?.subtitle || '';
-  const preview = truncate(String(previewText).trim(), 160);
-  return `
-    <button
-      type="button"
-      class="search-action-subhit"
-      role="listitem"
-      data-action="open-file-match-line"
-      data-file-path="${escapeHtml(parent.filePath)}"
-      data-line-number="${rawLine}"
-      data-parent-result-id="${escapeHtml(parent.id)}"
-    >
-      <span class="search-action-subhit-line">L${rawLine || '?'}</span>
-      <span class="search-action-subhit-text">${escapeHtml(preview)}</span>
-    </button>
-  `;
-}
-
 function renderSearchPage() {
-  const query = uiState.searchQuery.trim();
-  const buckets = searchBucketsForRender();
-  const activeResults = currentSearchItems();
-  const total = activeResults.length;
-  const functionCount = activeResults.filter(item =>
-    ['feature', 'skill', 'connector'].includes(item.kind),
-  ).length;
-  const chatCount = activeResults.filter(
-    item => item.kind === 'chat-thread' || item.kind === 'chat-hit',
-  ).length;
-
-  return `
-    <section class="page search-page">
-      <div class="search-stage">
-        <div class="search-panel">
-          <div class="search-panel-header">
-            <span class="search-panel-icon">${icon.search}</span>
-            <input
-              class="search-input search-panel-input"
-              id="global-search"
-              type="search"
-              value="${escapeHtml(uiState.searchQuery)}"
-              placeholder="Search chats, memory, features, projects, artifacts, and files"
-            />
-            <button
-              class="search-clear-button"
-              type="button"
-              data-action="clear-search-query"
-              title="Clear search"
-            >
-              ×
-            </button>
-          </div>
-
-          <div class="search-panel-body">
-            <div class="search-panel-meta">
-              ${
-                query
-                  ? `
-                    <span class="chip">${total} result${total === 1 ? '' : 's'}</span>
-                    <span class="chip">${functionCount} functions</span>
-                    <span class="chip">${chatCount} chat matches</span>
-                  `
-                  : '<span class="meta-label">Search everything in Melo with fuzzy matching.</span>'
-              }
-              ${
-                uiState.searchLoading
-                  ? '<span class="meta-label">Refreshing…</span>'
-                  : ''
-              }
-              ${
-                uiState.searchFileLoading
-                  ? '<span class="meta-label">Searching files…</span>'
-                  : ''
-              }
-            </div>
-
-            ${
-              total
-                ? `
-                  <div class="search-buckets">
-                    ${buckets
-                      .map(bucket =>
-                        renderSearchBucket(
-                          bucket.title,
-                          bucket.items.map(renderSearchResultButton).join(''),
-                          bucket.items.length,
-                        ),
-                      )
-                      .join('')}
-                  </div>
-                `
-                : query
-                  ? `<div class="empty-state">
-                      <div class="empty-state-title">No matches for "${escapeHtml(query)}".</div>
-                      <div class="empty-state-meta">
-                        Search covers <strong>chats &amp; messages</strong>,
-                        <strong>prompt history</strong>,
-                        <strong>memory</strong>,
-                        <strong>artifacts</strong>,
-                        <strong>projects</strong>,
-                        <strong>skills / connectors</strong>, and
-                        <strong>workspace files</strong>. Try simpler keywords, an exact phrase, or check spelling.
-                      </div>
-                    </div>`
-                  : `<div class="empty-state">
-                      <div class="empty-state-title">Start typing to search.</div>
-                      <div class="empty-state-meta">
-                        Looks across chats, messages, memory, artifacts, projects, and workspace files.
-                        A file path, a project name, or a phrase you remember from a past chat all work.
-                      </div>
-                    </div>`
-            }
-          </div>
-        </div>
-      </div>
-    </section>
-  `;
+  return createSearchPageRenderer({ uiState, escapeHtml, truncate, icon, searchResultIcon, searchBucketsForRender, currentSearchItems }).renderSearchPage();
 }
 
 function renderPage() {
@@ -11583,6 +10849,8 @@ function renderPage() {
       return renderAgentPage();
     case 'model':
       return renderModelPage();
+    case 'settings':
+      return renderLocalSettings(uiState.bootstrap);
     case 'customize':
       return renderCustomizePage();
     case 'artifacts':
@@ -11667,16 +10935,18 @@ function renderToolPermissionDialog() {
         <div class="tool-permission-header">
           <span class="tool-permission-icon">${icon.chip}</span>
           <div>
-            <div class="tool-permission-title">Tool Permission Request</div>
-            <div class="tool-permission-subtitle">Melo wants to run a tool</div>
+            <div class="tool-permission-title">需要你的授权</div>
+            <div class="tool-permission-subtitle">确认这次操作的范围</div>
           </div>
         </div>
         <div class="tool-permission-body">
           <div class="tool-permission-tool-name">${escapeHtml(toolId)}</div>
+          ${entry.confirmError ? `<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
+          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
         </div>
         <div class="tool-permission-footer">
-          <div class="inline-actions">
+          <fieldset class="inline-actions permission-actions" ${entry.submitting ? 'disabled aria-busy="true"' : ''}>
             <button class="small-button is-primary"
               data-action="tool-permission-allow-once"
               data-request-id="${escapeHtml(requestId)}"
@@ -11684,18 +10954,18 @@ function renderToolPermissionDialog() {
               Allow once
             </button>
             <button class="small-button"
-              data-action="tool-permission-allow-session"
-              data-request-id="${escapeHtml(requestId)}"
-              data-tool-id="${escapeHtml(toolId)}">
-              Always allow
-            </button>
-            <button class="small-button"
               data-action="tool-permission-deny"
               data-request-id="${escapeHtml(requestId)}"
               data-tool-id="${escapeHtml(toolId)}">
               Deny
             </button>
-          </div>
+            <button class="small-button"
+              data-action="tool-permission-allow-always"
+              data-request-id="${escapeHtml(requestId)}"
+              data-tool-id="${escapeHtml(toolId)}">
+              Always allow
+            </button>
+          </fieldset>
         </div>
       </div>
     </div>
@@ -11813,91 +11083,13 @@ function _fileSafetyBody(operation, payload) {
 }
 
 function _fileSafetyButtons(operation, payload, requestId) {
-  // Button set varies per operation:
-  //   - sensitive read / read_batch / move / bash / delete-intent → once + deny
-  //   - delete-confirm → confirm + cancel (sends scope='once' with confirmInput)
-  //   - read (benign) / write / edit → once + file + dir + always-file + deny
-  //     (read also offers always-dir; write/edit deliberately skip dir-persistent
-  //      to keep blast radius bounded — see fileSafetyGate.js requestWrite path.)
-  const sensitive = !!payload?.sensitive;
-  const stage = payload?.stage;
-  const deny = `
-    <button class="small-button"
-      data-action="file-safety-deny"
-      data-request-id="${escapeHtml(requestId)}">
-      Deny
-    </button>
-  `;
-  const once = (label = 'Allow once') => `
-    <button class="small-button is-primary"
-      data-action="file-safety-allow"
-      data-scope="once"
-      data-request-id="${escapeHtml(requestId)}">
-      ${label}
-    </button>
-  `;
-  const file = `
-    <button class="small-button"
-      data-action="file-safety-allow"
-      data-scope="file"
-      data-request-id="${escapeHtml(requestId)}">
-      Allow this file (chat)
-    </button>
-  `;
-  const dir = `
-    <button class="small-button"
-      data-action="file-safety-allow"
-      data-scope="dir"
-      data-request-id="${escapeHtml(requestId)}">
-      Allow parent dir (chat)
-    </button>
-  `;
-  const alwaysFile = `
-    <button class="small-button"
-      data-action="file-safety-allow"
-      data-scope="file"
-      data-persistent="1"
-      data-request-id="${escapeHtml(requestId)}">
-      Always allow this file
-    </button>
-  `;
-  const alwaysDir = `
-    <button class="small-button"
-      data-action="file-safety-allow"
-      data-scope="dir"
-      data-persistent="1"
-      data-request-id="${escapeHtml(requestId)}">
-      Always allow parent dir
-    </button>
-  `;
-
-  switch (operation) {
-    case 'read_batch':
-    case 'move':
-    case 'bash':
-      return once() + deny;
-    case 'read':
-      return sensitive
-        ? once() + deny
-        : once() + file + dir + alwaysFile + alwaysDir + deny;
-    case 'write_new':
-    case 'write_overwrite':
-    case 'edit':
-      return once() + file + dir + alwaysFile + deny;
-    case 'delete':
-      if (stage === 'confirm') {
-        return `
-          <button class="small-button is-primary"
-            data-action="file-safety-confirm-delete"
-            data-request-id="${escapeHtml(requestId)}">
-            Confirm delete
-          </button>
-        ` + deny;
-      }
-      return once('Continue') + deny;
-    default:
-      return once() + deny;
-  }
+  const confirm = operation === 'delete' && payload?.stage === 'confirm';
+  const persistent = payload?.persistentAllowed === true;
+  return `
+    <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">Allow once</button>
+    <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">Deny</button>
+    <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>Always allow</button>
+    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、角色与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、角色与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
 }
 
 function renderFileSafetyDialog(entry) {
@@ -11926,9 +11118,9 @@ function renderFileSafetyDialog(entry) {
           ${body}
         </div>
         <div class="tool-permission-footer">
-          <div class="inline-actions">
+          <fieldset class="inline-actions permission-actions" ${entry.submitting ? 'disabled aria-busy="true"' : ''}>
             ${buttons}
-          </div>
+          </fieldset>
         </div>
       </div>
     </div>
@@ -12017,245 +11209,53 @@ function renderActiveToolCallsStrip() {
 
 // ─── Tool permission handlers ─────────────────────────────────────────────────
 
-async function handleToolPermissionResponse(requestId, toolId, granted, scope) {
-  // Optimistically remove from queue
-  uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-    p => p.requestId !== requestId,
-  );
-  render();
-
-  try {
-    await api('/api/tools/permission-response', {
-      method: 'POST',
-      body: { requestId, granted, scope, toolId },
-    });
-  } catch (err) {
-    // Non-fatal — server already resolved or timed out
-    if (process?.env?.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.warn('permission-response failed:', err.message);
-    }
-  }
-}
-
-// File-safety responses use the same endpoint but a different resolver
-// (resolveFileSafety in fileSafetyGate.js). The discriminator on the
-// POST body is `kind: 'file_safety'`. For delete stage 2, confirmInput
-// carries the user-typed string the gate validates against the captured
-// expectedConfirmation.
-async function handleFileSafetyResponse(requestId, granted, scope, confirmInput = '', persistent = false) {
-  // Codex review (Phase 3 follow-up, 2026-05-04 🟡 P1): delete stage-2
-  // mismatch must be recoverable, so the queue mutation depends on
-  // whether this is a confirm-stage entry or a regular allow/deny.
-  // The decision logic lives in fileSafetyResponse.js so it can be
-  // unit-tested without a DOM (P2 follow-up to the same review).
+async function submitPermission(requestId, body) {
   const entry = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
-  const preflight = decideFileSafetyPreflight(entry);
-  if (preflight.action === 'remove_optimistic') {
-    uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-      p => p.requestId !== requestId,
-    );
-    render();
-  }
-
+  if (!entry || entry.submitting) return;
+  entry.submitting = true;
+  entry.confirmError = '';
+  render();
   let response = null;
   let error = null;
-  try {
-    response = await api('/api/tools/permission-response', {
-      method: 'POST',
-      body: {
-        requestId,
-        granted,
-        scope,
-        kind: 'file_safety',
-        confirmInput,
-        persistent,
-      },
-    });
-  } catch (err) {
-    error = err;
-    if (process?.env?.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.warn('file-safety response failed:', err.message);
-    }
-  }
-
+  try { response = await api('/api/tools/permission-response', { method: 'POST', body: { requestId, ...body } }); }
+  catch (err) { error = err; }
   const decision = decideFileSafetyResponseAction({ entry, response, error });
-  if (decision.action === 'remove') {
-    uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-      p => p.requestId !== requestId,
-    );
-    render();
-  } else if (decision.action === 'mark_error') {
-    const live = uiState.pendingToolPermissions.find(p => p.requestId === requestId);
-    if (live) {
-      live.confirmError = decision.message;
-      render();
-    }
-  }
+  entry.submitting = false;
+  if (decision.action === 'remove') uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(p => p.requestId !== requestId);
+  else entry.confirmError = decision.message;
+  render();
+}
+async function handleToolPermissionResponse(requestId, toolId, granted, scope) {
+  return submitPermission(requestId, { toolId, granted, scope });
+}
+async function handleFileSafetyResponse(requestId, granted, scope, confirmInput = '', persistent = false) {
+  return submitPermission(requestId, { granted, scope, kind: 'file_safety', confirmInput, persistent });
 }
 
 function _positionAgentDropdown() {
   const chip = document.querySelector('[data-action="toggle-agent-selector"]');
   const dropdown = document.querySelector('.agent-selector-dropdown');
   if (!chip || !dropdown) return;
-  const chipRect = chip.getBoundingClientRect();
-  const dropH = dropdown.offsetHeight;
-  // Center of dropdown aligns with center of chip
-  const top = chipRect.top + chipRect.height / 2 - dropH / 2;
-  const left = chipRect.right + 10;
-  dropdown.style.top = top + 'px';
-  dropdown.style.left = left + 'px';
+  // A fixed child of the transformed composer still inherits its containing
+  // block; the top layer gives this menu actual viewport coordinates.
+  if (typeof dropdown.showPopover === 'function') {
+    if (!dropdown.matches(':popover-open')) dropdown.showPopover();
+  } else {
+    document.querySelector('#app').appendChild(dropdown);
+  }
+  const position = modelPanelPosition(chip.getBoundingClientRect(), { width: dropdown.offsetWidth, height: dropdown.offsetHeight }, { width: innerWidth, height: innerHeight });
+  dropdown.style.top = `${position.top}px`;
+  dropdown.style.left = `${position.left}px`;
 }
+window.addEventListener('resize', _positionAgentDropdown);
+window.addEventListener('scroll', _positionAgentDropdown, { capture: true, passive: true });
 
 // Generic scroll preservation: any nested scrollable pane that isn't already
 // covered by a dedicated capture/restore path would reset to 0 whenever
 // render() rewrites the DOM — including the 4-second agent runtime refresh.
 // This walks known scrollable selectors and saves scrollTop keyed by position
 // within the DOM, so the same instance can be found again after re-render.
-const _PRESERVED_SCROLL_SELECTORS = [
-  '.customize-pane',
-  '.search-panel-body',
-  '.search-results-stream',
-  '.agent-list-pane',
-  '.agent-detail-column',
-];
-
-function captureScrollPositions() {
-  const map = new Map();
-  _PRESERVED_SCROLL_SELECTORS.forEach(selector => {
-    document.querySelectorAll(selector).forEach((el, index) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.scrollTop > 0) {
-        map.set(`${selector}::${index}`, el.scrollTop);
-      }
-    });
-  });
-  return map;
-}
-
-function restoreScrollPositions(map) {
-  if (!map || map.size === 0) return;
-  map.forEach((scrollTop, key) => {
-    const [selector, indexStr] = key.split('::');
-    const elements = document.querySelectorAll(selector);
-    const target = elements[Number(indexStr)];
-    if (target instanceof HTMLElement) {
-      target.scrollTop = scrollTop;
-    }
-  });
-}
-
-// ── Named textarea scroll preservation ───────────────────────────────────────
-// captureFocusedInputState only saves scrollTop for the ACTIVELY focused
-// element. But users also scroll around textareas they haven't clicked into —
-// e.g. reading the Voice personality text, the system prompt, the connector
-// description — and a background render that fires while their cursor is
-// outside the textarea (3s autosave resolving, 4s runtime poll, toast timer,
-// etc.) used to yank the textarea's scrollTop back to 0, because
-// app.innerHTML swap creates a brand-new DOM node with no scroll history.
-//
-// This pair covers ALL <textarea name="..."> elements inside <form id="...">,
-// keyed by (formId, name) — the same stable identity pair we use for focus
-// restore. Inputs (type=text etc.) don't have a visible scrollTop so they're
-// skipped. The agent-content-editor textarea (IDENTITY.md) also has its own
-// dedicated capture via captureAgentEditorState; this generic path is a
-// cheap safety net that catches every OTHER named textarea in the app.
-function captureFormTextareaScrolls() {
-  const map = new Map();
-  document.querySelectorAll('form[id] textarea[name]').forEach(el => {
-    if (!(el instanceof HTMLTextAreaElement)) return;
-    if (el.scrollTop <= 0) return;
-    const form = el.form;
-    if (!form || !form.id || !el.name) return;
-    map.set(`${form.id}::${el.name}`, el.scrollTop);
-  });
-  return map;
-}
-
-function restoreFormTextareaScrolls(map) {
-  if (!map || map.size === 0) return;
-  map.forEach((scrollTop, key) => {
-    const sep = key.indexOf('::');
-    if (sep < 0) return;
-    const formId = key.slice(0, sep);
-    const name = key.slice(sep + 2);
-    const form = document.getElementById(formId);
-    if (!(form instanceof HTMLFormElement)) return;
-    const el = form.elements.namedItem(name);
-    if (el instanceof HTMLTextAreaElement) {
-      el.scrollTop = scrollTop;
-    }
-  });
-}
-
-// ── Thread anchor: scroll preservation that survives async viz hydration ──
-// Why this exists: render() saves scrollTop before the innerHTML swap and
-// restores it afterward. That's fine for simple text content, but Demon viz
-// cards hydrate asynchronously — scene3d canvases mount on the microtask
-// queue (or later, for the lazy globe-flight), and when they take a layout
-// slot the content ABOVE the user's viewport grows by hundreds of pixels.
-// The restored scrollTop is then pointing at the wrong content. The user
-// sees their scroll "jump" to a different viz card.
-//
-// Capturing an anchor by DOM element (message-id) instead of scrollTop
-// lets us correct for layout shift after the async hydration completes.
-
-// Snapshot the anchor: whatever .message article is closest to (but not
-// past) the top of the viewport, its messageId, and its y-offset within
-// the viewport. We also record the autoFollow flag — if the user was
-// pinned to the bottom we should stay pinned, not anchor.
-function captureThreadAnchor(scroller) {
-  if (!(scroller instanceof HTMLElement)) return null;
-  const scrollerRect = scroller.getBoundingClientRect();
-  // Auto-follow threshold — if the user is within 24px of the bottom, skip
-  // anchoring entirely. syncThreadViewport already handles that case.
-  const distanceFromBottom =
-    scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
-  if (distanceFromBottom < 24) return null;
-  const messages = scroller.querySelectorAll('.message[data-message-id]');
-  let bestId = null;
-  let bestOffsetFromScrollerTop = Infinity;
-  for (const el of messages) {
-    if (!(el instanceof HTMLElement)) continue;
-    const r = el.getBoundingClientRect();
-    // Distance from scroller-top to message-top (negative if above viewport).
-    const delta = r.top - scrollerRect.top;
-    // Prefer the first message whose TOP is at or below the scroller top
-    // (i.e. the first one partially visible). If none exist (user is above
-    // the first message), fall back to the message with the smallest
-    // positive delta that we've seen.
-    if (delta >= 0 && delta < bestOffsetFromScrollerTop) {
-      bestId = el.dataset.messageId;
-      bestOffsetFromScrollerTop = delta;
-      break;
-    }
-  }
-  if (!bestId) return null;
-  return { messageId: bestId, viewportOffset: bestOffsetFromScrollerTop };
-}
-
-// Restore by anchor: find the element with the same messageId, measure its
-// new y-offset, and shift scrollTop so the element is back at the original
-// viewport offset. Idempotent — can be called multiple times as async viz
-// cards hydrate and re-grow the layout.
-function restoreThreadAnchor(anchor) {
-  if (!anchor || !anchor.messageId) return false;
-  const scroller = document.querySelector('.thread-scroll-region');
-  if (!(scroller instanceof HTMLElement)) return false;
-  const el = scroller.querySelector(
-    `.message[data-message-id="${String(anchor.messageId).replace(/"/g, '')}"]`,
-  );
-  if (!(el instanceof HTMLElement)) return false;
-  const scrollerRect = scroller.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  const currentOffset = elRect.top - scrollerRect.top;
-  const correction = currentOffset - anchor.viewportOffset;
-  // Small delta — don't bother; also avoids thrashing when we're already stable.
-  if (Math.abs(correction) < 1) return true;
-  scroller.scrollTop += correction;
-  return true;
-}
+const { captureScrollPositions, restoreScrollPositions, captureFormTextareaScrolls, restoreFormTextareaScrolls, captureThreadAnchor, restoreThreadAnchor } = createScrollPreservation({ document, HTMLElement, HTMLTextAreaElement, HTMLFormElement });
 
 // Helper for non-user-initiated renders — refresh polls, EventSource pushes,
 // fetch().then() chains, error-toast clearance setTimeouts, etc. Goes through
@@ -12267,16 +11267,18 @@ function bgRender(opts = {}) {
   return render({ ...opts, background: true });
 }
 
-function render({ background = false } = {}) {
+function render({ background = false, changedSections = null } = {}) {
   if (uiState.loading && !uiState.bootstrap) {
-    app.innerHTML = '<div class="loading-state">Launching Melo Desktop...</div>';
+    window.MeloLaunch?.show({ phase: 'workspace' }, () => loadBootstrap());
     return;
   }
 
   if (!uiState.bootstrap) {
-    app.innerHTML = '<div class="loading-state">Unable to load Melo Desktop.</div>';
+    window.MeloLaunch?.show({ phase: 'error', detail: uiState.error }, () => loadBootstrap());
     return;
   }
+
+  if (document.querySelector('.melo-launch')) window.MeloLaunch?.dismiss();
 
   // ── Typing guard ──────────────────────────────────────────────────────────
   // If this render was triggered by a background path (autosave response,
@@ -12417,20 +11419,37 @@ function render({ background = false } = {}) {
   // one too would clip the home content on short windows / when composer
   // grows multi-line. Codex P1 follow-up 2026-05-05.
   const _isChatView =
-    uiState.bootstrap?.settings?.activeView === 'chat' && !!_chat;
-  app.innerHTML = `
-    <div class="shell">
-      ${renderSidebar()}
-      <div class="workspace">
+    uiState.bootstrap?.settings?.activeView === 'chat' && !!_chat && !uiState.neuralOverview;
+  applyLocalAppearance(uiState.bootstrap, uiState);
+  const neuralGroup = uiState.neuralGroup || groupForSettings(uiState.bootstrap.settings);
+  const neuralBefore = captureNeuralLayout();
+  const neuralStage = resolveWorkspaceStage(uiState.neuralOverview, uiState.neuralExpanded);
+  if (uiState.commandPalette.open || uiState.pendingToolPermissions.length) { uiState.modelPickerOpen = false; uiState.agentSelectorOpen = false; }
+  const currentPage = app.querySelector('main.content-scroll');
+  const keepPage = background && changedSections && !uiState.neuralOverview && !uiState.sending &&
+    !pageAffected(uiState.bootstrap.settings.activeView, changedSections) && currentPage;
+  const pageHtml = keepPage ? preserveNeuralRegion(currentPage) :
+    `<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
+  updateNeuralWorkspace(app, `
+    <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${uiState.sending}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
+      <div class="neural-cosmos" aria-hidden="true"></div>
+      <div class="neural-core-anchor" aria-hidden="true"></div>
+      ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
+      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : '本地工作空间'}</div>
+      <div class="neural-preview" role="status" aria-live="polite" hidden></div>
+      <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
+        ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
+        <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?'返回分支':'返回总览'} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
-          <main class="content-scroll">${renderPage()}</main>
+          ${pageHtml}
           <div class="content-scrollbar" aria-hidden="true">
             <div class="content-scrollbar-thumb"></div>
           </div>
         </div>
       </div>
     </div>
+    ${renderAgentSelectorDropdown()}
     <input id="composer-attachment-input" class="hidden-file-input" type="file" multiple />
     ${renderCommandPalette()}
     ${renderEditContextMenu()}
@@ -12440,7 +11459,14 @@ function render({ background = false } = {}) {
     ${renderToolPermissionDialog()}
     ${renderProductivityMcpConsentModal()}
     ${uiState.error ? `<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
-  `;
+  `);
+
+  settingsFormEditors.decorate(app);
+  syncNeuralComposer(app, uiState.composer);
+  animateNeuralLayout(neuralBefore, uiState.neuralStill);
+  syncNeuralScene(uiState.neuralStill);
+  syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: retryMissingImages, onSelectionChanged: bgRender });
+  syncModelPickerPosition();
 
   activeEditableContextTarget = null;
   activeCopyContextTarget = null;
@@ -12481,7 +11507,7 @@ function render({ background = false } = {}) {
   syncComposerTextareaHeight();
   restoreAgentEditorState();
   // Put the caret back into whichever input/textarea was focused before the
-  // innerHTML rebuild. Runs AFTER restoreAgentEditorState so the agent-specific
+  // page update. Runs AFTER restoreAgentEditorState so the agent-specific
   // textarea restore wins for that one input; this helper covers everything
   // else (Discord Guild ID, Telegram bot token, nickname lists, etc.).
   restoreFocusedInputState(_savedFocusedInput);
@@ -12836,6 +11862,18 @@ document.addEventListener('keydown', event => {
 });
 
 document.addEventListener('click', async event => {
+  const copyLink = event.target.closest('[data-copy-link]');
+  if (copyLink instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await copyLinkText(copyLink.dataset.copyLink);
+      showFlashToast('链接已复制');
+    } catch {
+      showError('复制失败，请选中链接后按 ⌘C 复制。');
+    }
+    return;
+  }
   let closedAttachmentMenu = false;
   const editMenu = document.querySelector('#edit-context-menu');
   if (
@@ -12876,6 +11914,16 @@ document.addEventListener('click', async event => {
   ) {
     uiState.composerAttachmentMenuOpen = false;
     closedAttachmentMenu = true;
+  }
+
+  if (uiState.modelPickerOpen && !event.target.closest('.model-picker-anchor')) {
+    uiState.modelPickerOpen = false;
+    render();
+  }
+
+  if (uiState.agentSelectorOpen && !event.target.closest('.agent-chip-anchor, #agent-selector-panel')) {
+    uiState.agentSelectorOpen = false;
+    render();
   }
 
   if (
@@ -12932,9 +11980,80 @@ document.addEventListener('click', async event => {
   }
 
   const action = trigger.dataset.action;
+  if (action?.startsWith('image-')) {
+    event.preventDefault();
+    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: uiState.composerAttachments, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
+    return;
+  }
+  if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
+  if (action?.startsWith('extra-fast-') && trigger.tagName === 'BUTTON') {
+    event.preventDefault();
+    await handleExtraFast(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) });
+    return;
+  }
+  if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
+    event.preventDefault();
+    await handleLlmConnection(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
+    return;
+  }
+  if (['new-chat','open-view','open-chat','focus-project','open-artifact','select-agent-profile','open-customize-section','select-palette-command','open-search-result','select-customize-item'].includes(action)) {
+    uiState.neuralOverview = false;
+    uiState.neuralGroup = null;
+  }
 
   try {
     switch (action) {
+      case 'toggle-model-picker':
+        uiState.modelPickerOpen = !uiState.modelPickerOpen;
+        uiState.ttsVoicePanelOpen = false;
+        uiState.composerAttachmentMenuOpen = false;
+        render();
+        if (uiState.modelPickerOpen) document.querySelector('.model-picker-option.is-selected')?.focus();
+        break;
+      case 'pick-default-model': {
+        if (uiState.modelPickerSaving) break;
+        if (uiState.sending) break;
+        const model = trigger.dataset.model;
+        const selection = model ? {model, profileId:trigger.dataset.profileId || ''} : null;
+        uiState.modelPickerSaving = true;
+        render();
+        try {
+          if (activeChat() && !uiState.neuralOverview) applyBootstrapPreservingDrafts(await api('/api/chats/update', {method:'POST', body:{chatId:activeChat().id, patch:{modelSelection:selection}}}));
+          else uiState.newChatModel = selection;
+          uiState.modelPickerOpen = false;
+        } finally {
+          uiState.modelPickerSaving = false;
+          render();
+          document.querySelector('.model-picker-trigger')?.focus();
+        }
+        break;
+      }
+      case 'neural-group':
+        if (!neuralGroups.some(group => group.id === trigger.dataset.group)) break;
+        await flushPendingAgentMarkdownAutosave();
+        await flushPendingAgentChannelAutosave();
+        uiState.neuralGroup = trigger.dataset.group;
+        uiState.neuralExpanded = true;
+        uiState.neuralOverview = true;
+        render();
+        break;
+      case 'neural-back':
+        await flushPendingAgentMarkdownAutosave();
+        await flushPendingAgentChannelAutosave();
+        uiState.neuralExpanded = !uiState.neuralOverview;
+        uiState.neuralOverview = true;
+        render();
+        break;
+      case 'neural-overview':
+        uiState.neuralExpanded = false;
+        await flushPendingAgentMarkdownAutosave();
+        await flushPendingAgentChannelAutosave();
+        uiState.neuralOverview = true;
+        render();
+        break;
+      case 'neural-motion':
+        applyBootstrap(await api('/api/settings/local', {method:'POST',body:{preferences:{motion:uiState.bootstrap.settings.localPreferences?.motion === 'reduced' ? 'system' : 'reduced'}}}));
+        break;
       case 'copy-surface-selection':
       case 'copy-surface-all':
       case 'copy-surface-select-all':
@@ -12963,6 +12082,10 @@ document.addEventListener('click', async event => {
         break;
       case 'new-chat':
         await handleOpenNewChatHome();
+        break;
+      case 'restart-interrupted-send':
+        uiState.composerRetry = null;
+        await handleSendMessage();
         break;
       case 'stop-send':
         handleStopSending();
@@ -13075,7 +12198,7 @@ document.addEventListener('click', async event => {
         // 之后重新查 *活的* form 节点。Codex audit 2026-04-28。
         const authForm = document.getElementById('model-config-form');
         if (authForm instanceof HTMLFormElement) {
-          scheduleConnectorAutosave(authForm);
+          // Settings are committed only by the explicit Save action.
         }
         break;
       }
@@ -13125,7 +12248,7 @@ document.addEventListener('click', async event => {
           activeView: 'chat',
           activeMode: chat?.mode || 'chat',
           selectedProjectId:
-            chat?.projectId || uiState.bootstrap.settings.selectedProjectId,
+            chat?.projectId || null,
           selectedFilePath: null,
         });
         break;
@@ -13151,9 +12274,20 @@ document.addEventListener('click', async event => {
       case 'code-from-project':
         await startProjectSession(trigger.dataset.projectId, 'code');
         break;
+      case 'resolve-sync-conflict': {
+        const row=uiState.bootstrap.syncConflicts.find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
+        const index=Number(trigger.dataset.index);
+        await api('/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
+        applyBootstrap(await api('/api/bootstrap')); break;
+      }
       case 'toggle-project-form':
         uiState.showProjectForm = !uiState.showProjectForm;
         render();
+        break;
+      case 'toggle-archived-projects':
+        uiState.showArchivedProjects = !uiState.showArchivedProjects; render(); break;
+      case 'archive-project':
+        applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{archived:trigger.dataset.archived==='true'}}}));
         break;
       case 'toggle-task-form':
         uiState.showTaskForm = !uiState.showTaskForm;
@@ -13168,6 +12302,22 @@ document.addEventListener('click', async event => {
           activeView: 'customize',
           selectedCustomizeSection: trigger.dataset.section,
         });
+        break;
+      case 'memory-fact-search':
+      case 'memory-fact-prev':
+      case 'memory-fact-next':
+      case 'memory-fact-edit':
+      case 'memory-fact-cancel':
+      case 'memory-fact-save':
+      case 'memory-fact-forget':
+      case 'memory-fact-restore':
+        await handleMemoryFactAction(action,trigger.dataset.id || trigger.closest('[data-memory-record]')?.dataset.memoryRecord);
+        break;
+      case 'memory-pause':
+      case 'memory-diagnose':
+      case 'memory-connect':
+      case 'memory-repair':
+        await handleMemoryRepairAction(action);
         break;
       case 'refresh-memory-status':
         // Reset cache so re-opening the panel forces a fresh collect.
@@ -13794,12 +12944,12 @@ document.addEventListener('click', async event => {
           'once',
         );
         break;
-      case 'tool-permission-allow-session':
+      case 'tool-permission-allow-always':
         await handleToolPermissionResponse(
           trigger.dataset.requestId,
           trigger.dataset.toolId,
           true,
-          'session',
+          'always',
         );
         break;
       case 'tool-permission-deny':
@@ -13837,8 +12987,28 @@ document.addEventListener('click', async event => {
         );
         break;
       }
+      case 'preview-task-backup':
+        await previewTaskBackup(trigger.dataset.operationId);
+        break;
+      case 'confirm-task-restore':
+        await confirmTaskRestore(trigger.dataset.token);
+        break;
       case 'set-task-status':
+        if (trigger.dataset.status === 'done') {
+          const acceptanceChecks = Object.fromEntries([...document.querySelectorAll('[data-task-check]')].filter(el => el.dataset.taskCheck === trigger.dataset.taskId).map(el => [el.dataset.criterion, el.checked]));
+          try { applyBootstrap(await api('/api/tasks/update', { method:'POST', body: { taskId:trigger.dataset.taskId, patch:{status:'done',acceptanceChecks,qualityScore:document.getElementById(`quality-score-${trigger.dataset.taskId}`)?.value} } })); render(); } catch(error) { showError(error.message); }
+          break;
+        }
         await handleUpdateTaskStatus(trigger.dataset.taskId, trigger.dataset.status);
+        break;
+      case 'task-operations':
+        try { uiState.taskOperations ||= {}; uiState.taskOperations[trigger.dataset.taskId] = (await api(`/api/tasks/operations?taskId=${encodeURIComponent(trigger.dataset.taskId)}`)).operations; render(); } catch(error) { showError(error.message); }
+        break;
+      case 'task-operation-retry':
+        try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
+        break;
+      case 'run-task-team':
+        await handleRunTask(trigger.dataset.taskId, {roles:(document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research,reviewer').split(','),concurrency:2});
         break;
       case 'run-task':
         await handleRunTask(trigger.dataset.taskId);
@@ -13873,6 +13043,9 @@ document.addEventListener('click', async event => {
         );
         render();
         break;
+      case 'cancel-voice-input':
+        voiceInput.cancel();
+        break;
       case 'toggle-voice-input':
         toggleVoiceInput();
         break;
@@ -13887,11 +13060,6 @@ document.addEventListener('click', async event => {
         if (uiState.ttsVoicePanelOpen && !uiState.ttsMacosVoicesLoaded) {
           loadMacosVoices();
         }
-        render();
-        break;
-      case 'toggle-demon-mode':
-        uiState.demonMode = !uiState.demonMode;
-        localStorage.setItem('melo-demon-mode', uiState.demonMode ? '1' : '0');
         render();
         break;
       case 'toggle-tts-enable':
@@ -14041,19 +13209,26 @@ document.addEventListener('click', async event => {
         render();
         break;
       }
+      case 'clear-agent-avatar': {
+        mergeAgentDraft(trigger.dataset.agentId,{avatarData:''});
+        render(); break;
+      }
       case 'toggle-agent-selector': {
         uiState.agentSelectorOpen = !uiState.agentSelectorOpen;
         render();
+        if (uiState.agentSelectorOpen) document.querySelector('.agent-selector-row.is-selected')?.focus({ preventScroll: true });
         break;
       }
       case 'select-chat-agent': {
         const agentId = trigger.dataset.agentId;
-        if (agentId) {
-          uiState.activeChatAgentId = agentId;
-          localStorage.setItem('melo-active-chat-agent', agentId);
-        }
-        uiState.agentSelectorOpen = false;
-        render();
+        if (uiState.sending || uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
+        const chat = !uiState.neuralOverview ? activeChat() : null;
+        uiState.agentSelectionSaving=true; render();
+        try {
+          if(chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch:{agentId}}}));
+          else {uiState.activeChatAgentId=agentId;localStorage.setItem('melo-active-chat-agent',agentId);}
+          uiState.agentSelectorOpen=false;
+        } finally {uiState.agentSelectionSaving=false;render();}
         break;
       }
       case 'select-palette-command': {
@@ -14073,6 +13248,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -14087,6 +13263,11 @@ document.addEventListener('input', event => {
   // background-initiated renders that would otherwise wipe document.activeElement
   // mid-keystroke and cause the "cursor jumped to another input" bug.
   lastUserKeystrokeAt = Date.now();
+  if (target.dataset.memoryConnection) { uiState.memoryConnection ||= {}; uiState.memoryConnection[target.dataset.memoryConnection] = target.value; return; }
+  if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
+  if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
+  if (editExtraFast(target)) return;
+  if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
 
   if (target.id === 'composer') {
     uiState.composer = target.value;
@@ -14209,7 +13390,7 @@ document.addEventListener('input', event => {
       fieldName: target.name,
       value: target.value,
       currentDraft: uiState.modelSetupDraft,
-      fallbackDraft: effectiveModelSetupDraft(),
+      fallbackDraft: {},
       modelDefaultsForAuthMode,
     });
     if (dispatch) {
@@ -14221,7 +13402,7 @@ document.addEventListener('input', event => {
       // 3-second idle autosave: snapshot the submit body now (in
       // case the form gets unmounted by a page switch before the
       // timer fires) and queue the actual POST.
-      scheduleConnectorAutosave(target.form);
+      // Settings are committed only by the explicit Save action.
     }
     return;
   }
@@ -14244,7 +13425,7 @@ document.addEventListener('input', event => {
       // Schedule autosave on every keystroke so the token isn't lost if the
       // user switches tabs or hits the Test button before the field blurs.
       // Debounced inside scheduleAgentChannelAutosave (350ms).
-      scheduleAgentChannelAutosave(agentId);
+      // Settings are committed only by the explicit Save action.
       return;
     }
 
@@ -14256,7 +13437,7 @@ document.addEventListener('input', event => {
       mergeAgentDraft(agentId, {
         [target.name]: target.value,
       });
-      scheduleAgentChannelAutosave(agentId);
+      // Settings are committed only by the explicit Save action.
       return;
     }
 
@@ -14266,10 +13447,10 @@ document.addEventListener('input', event => {
     if (target.name === 'identity') {
       nextDraft.identify = target.value;
       captureAgentEditorState();
-      scheduleAgentMarkdownAutosave(agentId);
+      // Settings are committed only by the explicit Save action.
     } else if (target.name === 'soul.md') {
       captureAgentEditorState();
-      scheduleAgentMarkdownAutosave(agentId);
+      // Settings are committed only by the explicit Save action.
     }
   }
 });
@@ -14298,6 +13479,36 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
+  if (target.dataset?.chatContext) {
+    const chat = !uiState.neuralOverview ? activeChat() : null;
+    const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
+    try {
+      if (uiState.sending) throw new Error('请等待当前回复结束后再修改。');
+      if (chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch}}));
+      else if (Object.hasOwn(patch,'projectId')) uiState.newChatProjectId = patch.projectId;
+      else {
+        const notes=uiState.bootstrap.artifacts.filter(a=>patch.contextArtifactIds.includes(a.id));
+        if(notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length,0)>24000) throw new Error('最多选用 8 份、合计 24000 字资料。');
+        uiState.newChatArtifactIds=patch.contextArtifactIds;
+      }
+    } catch(error) { showError(error.message); }
+    render(); return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.agentAvatar) {
+    const isCurrentEdit=settingsFormEditors.editToken(target.form);
+    const draftKey=agentDraftKey(target.dataset.agentAvatar);
+    const originalDraft=agentDraftFor(agentProfileById(target.dataset.agentAvatar));
+    try {
+      const avatarData = await readAgentAvatar(target.files?.[0]);
+      if(!isCurrentEdit()) return;
+      uiState.agentDrafts[draftKey]={...originalDraft,...uiState.agentDrafts[draftKey],avatarData};
+      render();
+    }
+    catch (error) { showError(error.message); }
+    return;
+  }
+
   if (
     !(
       target instanceof HTMLSelectElement ||
@@ -14307,6 +13518,13 @@ document.addEventListener('change', async event => {
   ) {
     return;
   }
+
+  if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
+  if (target.dataset.taskCheck) { uiState.taskChecks ||= {}; const task=activeTasks().find(t=>t.id===target.dataset.taskCheck); uiState.taskChecks[target.dataset.taskCheck] ||= {}; Object.assign(uiState.taskChecks[target.dataset.taskCheck],{runId:task?.execution?.runId,[target.dataset.criterion]:target.checked}); return; }
+  if (target.dataset.permissionFilter) { uiState.safetyAllowlist.filters ||= {}; uiState.safetyAllowlist.filters[target.dataset.permissionFilter] = target.value; render(); return; }
+  if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
+  if (editExtraFast(target)) return;
+  if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
 
   try {
     if (target.id === 'composer-attachment-input') {
@@ -14412,7 +13630,7 @@ document.addEventListener('change', async event => {
       fieldName: target.name,
       value: target.value,
       currentDraft: uiState.modelSetupDraft,
-      fallbackDraft: effectiveModelSetupDraft(),
+      fallbackDraft: {},
       modelDefaultsForAuthMode,
     });
     if (draftDispatch) {
@@ -14420,7 +13638,7 @@ document.addEventListener('change', async event => {
       if (draftDispatch.shouldRender) render();
       // Same 3-second idle autosave as the input listener — covers
       // the authMode <select>, which doesn't fire `input` events.
-      scheduleConnectorAutosave(target.form);
+      // Settings are committed only by the explicit Save action.
       return;
     }
 
@@ -14436,7 +13654,7 @@ document.addEventListener('change', async event => {
         updateAgentChannelDraft(agentId, channelId, {
           enabled: target.checked,
         });
-        scheduleAgentChannelAutosave(agentId);
+        // Settings are committed only by the explicit Save action.
         render();
         return;
       }
@@ -14451,7 +13669,7 @@ document.addEventListener('change', async event => {
         updateAgentChannelDraft(agentId, channelId, {
           voiceReply: target.checked,
         });
-        scheduleAgentChannelAutosave(agentId);
+        // Settings are committed only by the explicit Save action.
         render();
         return;
       }
@@ -14469,7 +13687,7 @@ document.addEventListener('change', async event => {
         updateAgentChannelDraft(agentId, channelId, {
           [fieldName]: target.value,
         });
-        scheduleAgentChannelAutosave(agentId);
+        // Settings are committed only by the explicit Save action.
         return;
       }
 
@@ -14482,7 +13700,7 @@ document.addEventListener('change', async event => {
         mergeAgentDraft(agentId, {
           [target.name]: target.value,
         });
-        scheduleAgentChannelAutosave(agentId);
+        // Settings are committed only by the explicit Save action.
         render();
         return;
       }
@@ -14493,7 +13711,11 @@ document.addEventListener('change', async event => {
       if (target.name === 'identity') {
         nextDraft.identify = target.value;
       }
-      render();
+      // Text/number blur precedes the Save click. Replacing the form here
+      // detaches that button mid-click and can also reset its input value.
+      if (target instanceof HTMLSelectElement || ['checkbox', 'radio'].includes(target.type)) {
+        render();
+      }
     }
   } catch (error) {
     showError(error.message);
@@ -14560,6 +13782,10 @@ document.addEventListener('submit', async event => {
   if (!(form instanceof HTMLFormElement)) return;
   event.preventDefault();
 
+  const editTicket=settingsFormEditors.start(form);
+  if(editTicket===false) return;
+  let saveError=null;
+  if(editTicket) queueMicrotask(()=>render());
   try {
     switch (form.dataset.form) {
       case 'composer':
@@ -14571,6 +13797,13 @@ document.addEventListener('submit', async event => {
       case 'project-update':
         await handleUpdateProject(form);
         break;
+      case 'task-pricing': {
+        const body=Object.fromEntries(new FormData(form));
+        await api('/api/tasks/pricing',{method:'POST',body});
+        uiState.taskPricing=null;
+        await loadBootstrap(uiState.searchQuery,{quiet:true});
+        break;
+      }
       case 'agent-profile-update':
         await handleUpdateAgentProfile(form);
         break;
@@ -14605,9 +13838,19 @@ document.addEventListener('submit', async event => {
         break;
     }
   } catch (error) {
+    saveError=error;
     showError(error.message);
   }
+  finally { if(editTicket) settingsFormEditors.finish(editTicket,saveError); }
 });
+
+// Keep a deliberately opened receipt visible inside the existing thread scroller.
+document.addEventListener('toggle', event => {
+  const receipt = event.target;
+  if (receipt instanceof HTMLElement && receipt.matches('.model-receipt[open]')) {
+    requestAnimationFrame(() => { if (receipt.isConnected) receipt.scrollIntoView({ block: 'nearest', behavior: 'auto' }); });
+  }
+}, true);
 
 document.addEventListener('keydown', async event => {
   const target = event.target;
@@ -14623,6 +13866,37 @@ document.addEventListener('keydown', async event => {
   // form of active editing.
   if (isEditable) {
     lastUserKeystrokeAt = Date.now();
+  }
+
+  if (uiState.modelPickerOpen && event.key === 'Escape') {
+    event.preventDefault();
+    uiState.modelPickerOpen = false;
+    render();
+    document.querySelector('.model-picker-trigger')?.focus();
+    return;
+  }
+  if (uiState.agentSelectorOpen && event.key === 'Escape') {
+    event.preventDefault();
+    uiState.agentSelectorOpen = false;
+    render();
+    document.querySelector('[data-action="toggle-agent-selector"]')?.focus({ preventScroll: true });
+    return;
+  }
+  if (uiState.agentSelectorOpen && target?.closest('#agent-selector-panel') && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const options = [...document.querySelectorAll('.agent-selector-row:not(:disabled)')];
+    const index = options.indexOf(target);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[next]?.focus();
+    return;
+  }
+  if (uiState.modelPickerOpen && target?.closest('.model-picker-panel') && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const options = [...document.querySelectorAll('.model-picker-option:not(:disabled)')];
+    const index = options.indexOf(target);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[next]?.focus();
+    return;
   }
 
   // Phase 3.3.3 — slash palette keyboard navigation. Intercepts arrow keys,
@@ -14710,14 +13984,16 @@ document.addEventListener('keydown', async event => {
 
   if (
     target?.id === 'composer' &&
-    event.key === 'Enter' &&
-    !event.shiftKey &&
-    !event.isComposing &&
+    shouldSendOnEnter(event, uiState.bootstrap?.settings?.localPreferences) &&
     !uiState.commandPalette.open
   ) {
     event.preventDefault();
     await handleSendMessage();
     return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+    event.preventDefault(); await patchSettings({activeView:'settings'}); return;
   }
 
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -14869,3 +14145,22 @@ installCitationDrawer({
 
 loadBootstrap();
 initBrowserVoices();
+
+// Stop capture when the page leaves; reopening a chat never restarts listening.
+window.addEventListener('pagehide', () => stopVoiceCaptureIfNeeded());
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopVoiceCaptureIfNeeded(); });
+document.addEventListener('change', event => {
+  if (event.target.matches?.('[data-voice-language]')) {
+    uiState.voiceLanguage = event.target.value;
+    api('/api/settings/local',{method:'POST',body:{preferences:{voiceLanguage:event.target.value}}}).then(data=>applyBootstrapPreservingDrafts(data)).catch(error=>showError(error.message));
+  }
+});
+
+function retryMissingImages({ chatId, query, task }) {
+  if (uiState.sending || chatId !== uiState.bootstrap?.settings?.selectedChatId || !task?.retryOf) return;
+  handleSendMessage({ chatId, content: query || '继续图片任务', imageTask: task });
+}
+
+installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
+window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));

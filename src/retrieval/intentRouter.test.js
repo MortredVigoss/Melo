@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyIntent,
+  classifyRequest,
   intentAllowsUncertaintyMarker,
   intentRequiresVerification,
   lruGet,
@@ -13,6 +14,17 @@ test('classifyIntent handles obvious casual and factual turns with rules only', 
   assert.equal(await classifyIntent('hi'), 'casual');
   assert.equal(await classifyIntent('What is Singapore?'), 'factual');
   assert.equal(await classifyIntent('什么是向量数据库？'), 'factual');
+});
+
+test('short confirmations inherit previous factual task and risk, not standalone-greeting policy', async () => {
+  const request = await classifyRequest('好', { contextMessages: [
+    { role: 'user', content: '帮我写一份药物剂量说明' },
+    { role: 'assistant', content: '需要核实一下，可以吗？' },
+    { role: 'user', content: '好' },
+  ] });
+  assert.equal(request.taskType, 'creative');
+  assert.equal(request.riskLevel, 'high');
+  assert.equal(request.requiresVerification, true);
 });
 
 test('classifyIntent handles coding, creative, and high-stakes turns with rules', async () => {
@@ -76,4 +88,3 @@ test('classifyIntent cache is isolated — _resetIntentCacheForTests clears it',
   _resetIntentCacheForTests();
   assert.equal(await classifyIntent('hi'), 'casual');
 });
-
