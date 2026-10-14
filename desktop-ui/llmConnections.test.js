@@ -4,6 +4,25 @@ import { JSDOM } from 'jsdom';
 import { LLM_PROVIDERS } from '../src/shared/llmProviders.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 
+test('legacy ChatGPT settings show Sol/Astra choices and persist only after explicit save', async () => {
+  const {renderLlmConnections:markup,editLlmConnection:change,handleLlmConnection:act}=await import('./llmConnections.js?model-choice-test');
+  const config={authMode:'codex',model:'gpt-6-astra',modelCatalogs:{codex:['gpt-6.1-sol','gpt-6-astra']},llmConnections:{providers:LLM_PROVIDERS,profiles:[],activeId:''}};
+  let dom, saves=0;
+  const render=()=>{dom?.window.close();dom=new JSDOM(markup(config));};
+  const hooks={config,render,refresh:async()=>{},api:async(url,{body})=>{
+    assert.match(url,/\/save$/); assert.equal(body.model,'gpt-6.1-sol'); saves++;
+    return {profiles:[{...body,revision:1}]};
+  }};
+  render();assert.equal(dom.window.document.querySelector('[name=model]').value,'gpt-6-astra');
+  assert.equal(dom.window.document.querySelector('[data-action=llm-pick-model]').matches(':disabled'),true);
+  await act('llm-edit',hooks);
+  let select=dom.window.document.querySelector('[data-action=llm-pick-model]');select.value='gpt-6.1-sol';change(select,config);render();
+  assert.equal(dom.window.document.querySelector('[name=model]').value,'gpt-6.1-sol'); assert.equal(saves,0);
+  await act('llm-cancel',hooks);assert.equal(dom.window.document.querySelector('[name=model]').value,'gpt-6-astra');
+  await act('llm-edit',hooks);select=dom.window.document.querySelector('[data-action=llm-pick-model]');select.value='gpt-6.1-sol';change(select,config);
+  await act('llm-save',hooks);assert.equal(saves,1);dom.window.close();
+});
+
 test('connection UI preserves manual model IDs, keeps secrets provider-local, and activates only on request', async () => {
   const config = { authMode: 'codex', codexAuth: { loggedIn: true }, llmConnections: { providers: LLM_PROVIDERS, activeId: '', profiles: [] } };
   let dom, modelRequests = 0, active = '', nextId = 0, saves=0;

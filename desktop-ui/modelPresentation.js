@@ -8,6 +8,35 @@ export function modelLabel(model) {
   return labels[model] || String(model || '未配置');
 }
 
+// Only the active connection may use its discovered catalog. Two providers
+// sharing an auth mode (e.g. API key) do not necessarily offer the same models.
+export function connectionModelOptions(config, profile = null) {
+  const activeId = config.llmConnections?.activeId || '';
+  const active = !profile || (activeId ? profile.id === activeId : profile.authMode === config.authMode &&
+    (profile.authMode === 'codex' || profile.baseUrl === config.baseUrl));
+  const mode = profile?.authMode || config.authMode;
+  return [...new Set([
+    ...(active || mode === 'codex' ? config.modelCatalogs?.[mode] || [] : []),
+    ...(active ? config.availableModels || [] : []),
+    ...(profile?.models || []),
+    profile?.model,
+    ...(active ? [config.model] : []),
+  ].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+export function renderDefaultModelSettings(config, escape) {
+  return `<section class="surface-card default-model-settings">
+    <h2 class="pane-title">默认回答模型</h2>
+    <p class="page-kicker">沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；角色或对话已指定的模型保留。</p>
+    <form class="config-form" data-form="default-model-config">
+      <label class="label">选择模型<select class="config-select" name="model" required aria-label="系统默认回答模型">
+        ${connectionModelOptions(config).map(model => `<option value="${escape(model)}" ${model === config.model ? 'selected' : ''}>${escape(modelLabel(model))} · ${escape(model)}</option>`).join('')}
+      </select></label>
+      <p class="list-row-meta">点击编辑后选择，保存后生效。其他平台或自定义模型 ID 可在下方“模型提供方”配置；可用性以实际请求为准。</p>
+    </form>
+  </section>`;
+}
+
 export function modelPanelPosition(anchor, panel, viewport) {
   const above = anchor.top - panel.height - 12;
   return {
@@ -36,7 +65,7 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
   const current = selection?.model || agent?.model || config.model;
   const profiles = config.llmConnections?.profiles || [];
   const activeID = config.llmConnections?.activeId || '';
-  const choices = [{id:activeID,name:'当前连接',models}, ...profiles.filter(p=>p.id!==activeID).map(p=>({id:p.id,name:p.name,models:[...new Set([p.model,...(p.models||[])].filter(Boolean))]}))];
+  const choices = [{id:activeID,name:'当前连接',models}, ...profiles.filter(p=>p.id!==activeID).map(p=>({id:p.id,name:p.name,models:connectionModelOptions(config,p)}))];
   return `<div class="model-picker-anchor">
     <button type="button" class="model-picker-trigger" data-action="toggle-model-picker" aria-label="选择对话模型" aria-expanded="${open}" aria-controls="model-picker-panel" ${saving ? 'disabled' : ''} title="本对话：${escape(current || '')}">
       <span class="model-picker-dot" aria-hidden="true"></span><span>${escape(modelLabel(current))}</span><small>${selection?'本对话':'默认'}</small><span aria-hidden="true">⌄</span>

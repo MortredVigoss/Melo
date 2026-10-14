@@ -51,7 +51,7 @@ export function paintEditActions(bar, session, options={}) {
 export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsDraft=()=>false}) {
   const sessions = new Map();
   const drafts = new Map();
-  const selector = ['agent-profile-update','connector-config','model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
+  const selector = ['agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
   const savedActions = new Set(['test-agent-channel']);
   const safeActions = new Set(['select-agent-editor-tab','switch-agent-channel-tab','toggle-agent-secret']);
   const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || ''}:${scope(form)}`;
@@ -106,7 +106,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
       if(action==='form-settings-edit' || action==='form-settings-cancel') {
         event.preventDefault(); event.stopImmediatePropagation();
         if(get(key).status==='saving') return;
-        if(action.endsWith('-edit')) get(key).begin(); else {get(key).cancel();drafts.delete(key);const form=button.closest('form');onCancel(form);form.remove();}
+        if(action.endsWith('-edit')) get(key).begin(); else {get(key).cancel();drafts.delete(key);const form=button.closest('form');onCancel(form);form.reset();}
         render(); return;
       }
       const form=button.closest(selector);

@@ -13,7 +13,7 @@ import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './
 import { renderAtomicButton } from './atomicButton.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation } from './executionPanel.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
-import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt } from './modelPresentation.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
 import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from './neuralDom.js';
 import { resolveWorkspaceStage } from './neuralLayout.js';
@@ -6539,6 +6539,7 @@ function modelDefaultsForAuthMode(authMode) {
 
 function modelOptionsForAuthMode(authMode) {
   const config = uiState.bootstrap?.settings?.config || {};
+  if (!authMode || authMode === config.authMode) return connectionModelOptions(config);
   const catalogs = config.modelCatalogs || {};
   const mode = authMode || config.authMode || 'codex';
   const selectedModel =
@@ -8796,6 +8797,7 @@ function renderModelPage() {
         <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
         <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
       </div>
+      ${renderDefaultModelSettings(config, escapeHtml)}
       ${renderLlmConnections(config)}
       ${renderExtraFast(config)}
       ${renderImageSettings(config)}
@@ -13812,6 +13814,9 @@ document.addEventListener('submit', async event => {
         break;
       case 'model-config':
         await handleSaveConnectorConfig(form);
+        break;
+      case 'default-model-config':
+        applyBootstrap(await api('/api/settings/model', {method: 'POST', body: {model: new FormData(form).get('model')}}));
         break;
       case 'skill-custom-create':
         await handleCreateCustomSkill(form);

@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { EditSession, createSettingsFormEditors } from './settingsEdit.js';
+import { updateNeuralWorkspace } from './neuralDom.js';
+
+test('cancel restores a model select without removing an unchanged reconciled form',()=>{
+ const dom=new JSDOM('<main></main>'),doc=dom.window.document,root=doc.querySelector('main');
+ const render=()=>{updateNeuralWorkspace(root,'<section><form data-form="default-model-config"><select name="model"><option value="sol" selected>Sol</option><option value="astra">Astra</option></select></form></section>');controls.decorate(doc);};
+ const controls=createSettingsFormEditors({render,onCancel(){}});controls.install(doc);render();
+ doc.querySelector('[data-action=form-settings-edit]').click();const select=doc.querySelector('select');
+ select.value='astra';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));render();
+ assert.equal(doc.querySelector('select').value,'astra');
+ doc.querySelector('[data-action=form-settings-cancel]').click();
+ assert.equal(doc.querySelector('select'),select);assert.equal(select.value,'sol');assert.equal(select.disabled,true);
+ dom.window.close();
+});
 
 test('save feedback reflects acknowledgement, prevents duplicate submissions and retains failed drafts',()=>{
  const s=new EditSession();assert.equal(s.start(),false);s.begin();assert.equal(s.start(),false);s.change();assert.equal(s.start(),true);assert.equal(s.status,'saving');assert.equal(s.start(),false);s.cancel();assert.equal(s.status,'saving');s.failed(new Error('disk full'));assert.equal(s.editing,true);assert.equal(s.dirty,true);assert.equal(s.start(),true);s.saved();assert.equal(s.editing,false);assert.equal(s.dirty,false);

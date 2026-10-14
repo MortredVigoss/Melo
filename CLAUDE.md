@@ -32,6 +32,8 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 
 ## 2. PROGRESS.md 作为状态看板
 
+- 回归分层：`npm test` 现为按改动边界的日常检查；完整发布 gate 用 `npm run test:full` 或 `npm run verify:red-green`。报告须写明实际执行层级；日常通过不能称完整验收通过。规则和缓存边界见 `docs/testing-workflow.md`。
+
 - 仓库根目录维护一份 `PROGRESS.md`，记录 **意图与上下文**——不是 changelog（changelog 是 `git log` 的活，codex review 看 diff 就能拿到代码事实）。
 - 每次完成一个可验证的步骤（测试通过、bug 修复、feature 落地、重要重构）就追加一条。**写每一句话之前先问：这条 codex 看 git diff 能不能自己拿到？** 能拿到的就删掉，只留 diff 看不到的——意图、用户拍板、评级反馈、流程偏离、谁做的（Claude / Codex / 用户手改）。
 - 标准格式（**必填 ≤ 8 行 + 选填实现摘要 ≤ 4 行**，单条不超过 12 行）：
