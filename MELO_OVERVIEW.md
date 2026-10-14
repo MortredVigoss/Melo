@@ -15,7 +15,7 @@
 
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
-| 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留 | 用户自行完成真实授权；尚无最终登录成功证据，不代输账号 |
+| 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留 | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 桌面图片链 | 2026-10-14 生产 Codex 编辑约 45.2 秒，1254×1254 PNG，返回 `gpt-image-2-codex` | 没有 Image 2.1 证据；不额外使用用户室内照片消费额度 |
 | 阅读密度 / 图片预览 | 设计线程桌面已安装并实点预览、下载；手机模拟器交互通过 | 相关源码仍 WIP；后续主线 build23 来自共享树，但没有手机照片库成功写入的专项真机验收 |
@@ -75,6 +75,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 请求身份与运行身份关联执行/审批；相同完成请求可回放已存结果，中断或副作用结果不明需要明确新请求。
 - iPhone 设置默认只读，明确编辑和保存；失败/冲突保留草稿。图片仅在没有其他对话/草稿/编辑链引用时清理。
 - Codex 授权后台暂停新轮询、回前台恢复同码；临时网络有限退避；主动取消阻止迟到保存；一次性 token 交换结果不明不自动重放。
+- 手机待授权设备码仅在 `ChatGPTAccount` 内存中保留，不支持进程结束后的待授权恢复；已登录凭证单独写 Keychain。验证码过期需重新申请，不能把前后台恢复描述成重启恢复。
+- 手机模型目录使用 Codex 兼容版本 `0.180.0`；历史真实 GET 对比发现 `0.157.0` 漏掉 Sol 6.1。内部连接 ID `chatgpt` 只是迁移兼容标识，不表示仍调用旧 SIWC；API 连接可独立选择，执行器仍为 Melo。
 
 架构详证：[`docs/backend-architecture.md`](docs/backend-architecture.md)、[`docs/architecture-performance-2026-10-13.md`](docs/architecture-performance-2026-10-13.md)、[`docs/memory-architecture.md`](docs/memory-architecture.md)。记忆文档下半历史默认值不覆盖其顶部现行约定。
 
@@ -85,7 +87,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
-| melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth | 继承精简交接及仓库证据，不再默认全文回读 |
+| melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已核对 `85ac3a5` / `14e602f`、源码与日志，登录改动无未提交部分；build23 验证边界见末尾交接，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | 公开摘要/API 元数据；正文与输入区紧凑；移除重复 Quick actions；图片预览下载/长按 | 桌面实测，手机模拟器；WIP；`docs/execution-panel.md`、`docs/chat-density-20261014.md` |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 2026-10-10 中枢/五入口放大、输入与列表宽度、图片玻璃浮层；中心颗粒/节点密度 | 当次 347 项 UI 与原生观察；`.tmp/ui-density-20261010/`、`.tmp/core-density-20261010/`；后续设计改动以现源码为准 |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 2026-10-14 权限与文件访问；目录书签、预览、确认导入文本/PDF | WIP；20 组 Swift、模拟器/构建；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
@@ -184,3 +186,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 行为：每次全文回读 → 先读本总览、模块证据和实际 diff；建立线程登记、代码地图、验证边界、更新模板；同步仓库接手规则与手机对齐规则。
 - 验证：本地文档链接/代码入口检查、`git diff --check`、快照生成；没有改产品源码或重跑产品 gate。
 - 未完：用户手机真实 Codex 授权、图片服务、实体文件/照片权限仍待验。本文不会自动读取未唤醒线程，后续线程按规则主动更新。
+
+### 2026-10-15 — melo主线（历史·2026-10-15）— 补齐手机登录交付证据与未验边界
+- 线程 ID：`01a10bf2-e092-7862-87fe-2f237a8fb6a0`；产品代码已提交 `85ac3a5`、`14e602f`；本次只补文档，不恢复产品开发。直接核对实际源码、对应提交、专项文档及现存测试/构建/安装日志。
+- 行为与接口：旧 SIWC 图片请求失败 → 独立 Codex 授权与图片路由；切换应用后清码报 `cancelled` → 保留同码、前台继续、应用内官方浏览器。入口为 `ios/Melo/CodexOAuth.swift`、`ChatGPTAccount.swift`、`CodexLoginView.swift`、`MeloApp.swift`；图片接 `ChatStore.swift` / `ImageWorkflow.swift`，协议测试 `ios/Tests/CodexOAuthTests.swift`。
+- 失败与处理：旧轮询夹具以 `NSURLErrorDomain -999` 失败，修复后通过；早期未签名模拟器无法写 Keychain 的夹具改为注入测试连接，生产仍用 Keychain；首次签名等待由用户完成系统授权。未回退到旧 SIWC、未复制桌面凭证、未自动重放一次性换令牌。
+- 历史验证层级：当时 `npm run test:ios` 的 4 项 JS/哈希与 21 组 Swift 通过；Release 真机与 Debug 模拟器构建通过；模拟器实点官方登录页，关闭仍保留同码和设置位置，未完成账号授权。本次仅复读日志与源码，不宣称重新通过当前产品 gate。
+- 共享树边界：21 组包含 iPhone 线程尚未提交的 `LocalFileAccessTests`；build23 亦含当时共享 WIP。现存 `MeloApp.swift` / Xcode 工程 / `ios/scripts/test.py` 的未提交差异属于文件权限接入，不能据此把他线程专项权限验收标绿或混入本历史线程提交。
+- 真机与数据：0.5.17 (23) 的安装、启动、版本回执及保留比对均存在；聊天、执行记录、草稿、偏好和图片索引语义相同，图片字节相同。证据根目录 `.tmp/mobile-image-edit-20261014/`：`login-resume-{red,green,device-build,simulator-build}.log`、`login-resume-{install,launch,apps,preservation}.json`；详细说明见 `docs/mobile-image-edit-20261014.md`。
+- 未完 / 下一步：真实手机登录、账号图片权限及实际改图由用户授权后在新主线继续验证；同码恢复不覆盖进程结束，过期或强杀后重新获取。历史桌面修图成功不证明手机账号成功，也没有 Image 2.1 证据。本轮不操作设备/账号、不发模型请求、不改数据。
