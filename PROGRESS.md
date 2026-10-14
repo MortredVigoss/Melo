@@ -1,3 +1,11 @@
+## 2026-10-15 — 为 Samsung 提供可独立使用的 Android 客户端
+
+Codex 按用户确认采用 Kotlin / Jetpack Compose，模型凭证在 App 内配置，开发与验证只使用 Fixture。
+用户指定 Galaxy Z Fold6，并明确今天先完成代码、不连接手机；Emulator 验证与 One UI 8.5 实机验收分别记录，不以模拟器替代 Samsung 结果。
+保留现有 iOS / 桌面实现及共享 scene、协议语义；通过现有 Node 服务检查双向同步，避免 normalization 和日期精度造成伪冲突。
+本轮只在本地分支形成代码检查点，未授权发布；平台验证范围与剩余实体机验收记录于 Android 说明。
+本地 JVM、两种 viewport runtime suite、Node shared protocol 与 APK signature / alignment 检查通过；构建因 Memory pressure 改为串行完成。
+
 ## 2026-10-14 — 让模型工具请求和 Melo 实际执行建立原生对应关系
 
 Codex 按用户给定的 OpenAI 文档将主聊天、子任务和技能接到 Responses function calling；Melo 保留授权与执行职责，不改变用户模型和账户配置。

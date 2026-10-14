@@ -10,6 +10,10 @@
     "melo": "./src/index.js"
   },
   "scripts": {
+    "build:android": "node scripts/android.mjs build",
+    "test:android": "node scripts/android.mjs test",
+    "check:android": "node scripts/android.mjs check",
+    "test:android:connected": "node scripts/android.mjs connected",
     "build": "node scripts/check-syntax.js",
     "build:native": "node-gyp rebuild",
     "build:desktop": "zsh scripts/build-desktop-app.sh",

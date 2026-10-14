@@ -2,6 +2,8 @@
 
 Local-first Melo CLI.
 
+原生 Android 客户端（Kotlin + Jetpack Compose，Samsung Galaxy Z Fold6 / One UI 8.5 适配目标）见 [Android 构建与验证说明](android/README.md)。
+
 ## What this build does
 
 - Runs fully on your machine as a terminal app
