@@ -18,6 +18,11 @@ function requiredIndices(messages) {
     if (messages[index]?.role === 'user' && !messages[index]?.isToolResult) { latestUser = index; break; }
   }
   const indices = new Set(latestUser >= 0 ? [latestUser] : []);
+  if (latestUser >= 0 && messages.slice(latestUser).some(message => message.responseItems || message.functionCallOutputs)) {
+    // Responses continuation is one indivisible chain from the current user
+    // input through every call/output/reasoning item. Fail closed if too large.
+    for (let index = latestUser; index < messages.length; index += 1) indices.add(index);
+  }
   // Keep the newest tool-call/result pair together, including error evidence.
   const last = messages.length - 1;
   if (messages[last]?.isToolResult) {
@@ -33,10 +38,11 @@ function overflow() {
   return error;
 }
 
-export function fitRequestContext({ sections = [], messages = [], totalTokens = 60000, outputReserve = 8000 }) {
+export function fitRequestContext({ sections = [], messages = [], totalTokens = 60000, outputReserve = 8000, toolDefinitions = [] }) {
   const inputLimit = Math.floor(totalTokens - outputReserve);
   const seen = new Set();
-  const diagnostics = { totalTokens, outputReserve, droppedSections: [], truncatedSections: [], duplicateSections: [] };
+  const toolTokens = toolDefinitions.length ? Math.ceil(estimateTextTokens(JSON.stringify(toolDefinitions)) * 4 / 3) : 0;
+  const diagnostics = { totalTokens, outputReserve, toolTokens, droppedSections: [], truncatedSections: [], duplicateSections: [] };
   const unique = sections.filter(section => {
     if (!section.text?.trim()) return false;
     const key = section.text.trim();
@@ -49,7 +55,7 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
   const messageCosts = messages.map(estimateMessageTokens);
   let selectedRawCost = [...indices].reduce((sum, index) => sum + messageCosts[index], 0);
   const selectedMessages = () => [...indices].sort((a, b) => a - b).map(index => messages[index]);
-  const promptCost = () => Math.ceil(estimateTextTokens(renderPromptSections([...selected.values()])) * 4 / 3) + 32;
+  const promptCost = () => Math.ceil(estimateTextTokens(renderPromptSections([...selected.values()])) * 4 / 3) + 32 + toolTokens;
   const remaining = inputLimit - promptCost() - Math.ceil(selectedRawCost * 4 / 3);
   if (remaining < 0) throw overflow();
 
@@ -87,7 +93,7 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
   const keptSections = unique.filter(section => selected.has(section.id)).map(section => selected.get(section.id));
   const systemPrompt = renderPromptSections(keptSections);
   const keptMessages = selectedMessages();
-  diagnostics.inputTokens = Math.ceil(estimateTextTokens(systemPrompt) * 4 / 3) + 32 + estimateMessagesTokens(keptMessages);
+  diagnostics.inputTokens = Math.ceil(estimateTextTokens(systemPrompt) * 4 / 3) + 32 + toolTokens + estimateMessagesTokens(keptMessages);
   diagnostics.droppedMessages = messages.length - keptMessages.length;
   diagnostics.sections = keptSections.map(section => ({ id: section.id, estimatedTokens: estimateTextTokens(section.text) }));
   if (diagnostics.inputTokens > inputLimit) throw overflow();

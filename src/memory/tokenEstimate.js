@@ -6,6 +6,11 @@ export function estimateTextTokens(value = '') {
 }
 
 export function estimateMessageTokens(message) {
+  const protocolItems = message?.responseItems || message?.functionCallOutputs;
+  if (Array.isArray(protocolItems)) {
+    // Include opaque encrypted state conservatively; never log or truncate it.
+    return 6 + estimateTextTokens(JSON.stringify(protocolItems));
+  }
   const content = message?.content;
   let cost = 6;
   if (Array.isArray(content)) {

@@ -21,9 +21,12 @@ import { delegatedConfig } from './delegatedConfig.js';
 import { createOpenAICompatibleReply } from '../openai.js';
 import { getAllTools, getTool } from '../tools/registry.js';
 import { executeToolCalls } from '../tools/executor.js';
-import { parseModelResponse, formatToolResultsMessage } from '../tools/parser.js';
+import { parseModelResponse } from '../tools/parser.js';
 import { buildToolsSystemPrompt } from '../tools/systemPrompt.js';
 import { recordSkillRun } from './skillRuns.js';
+import { createFunctionCallingSession } from '../tools/functionCalling.js';
+import { fitRequestContext, resolveContextBudget } from '../services/chat/contextBudget.js';
+import { requestEnvironment } from '../runtime/requestScope.js';
 
 // Hard ceiling so a misconfigured skill can't burn the whole budget.
 const ABSOLUTE_ITERATION_CAP = 16;
@@ -77,7 +80,7 @@ function cleanReplyForParent(rawReply) {
  * standard output constraints and the tool list are appended so the
  * skill can use tools the same way the main loop does.
  */
-function buildSkillSystemPrompt(skill, allowedTools) {
+function buildSkillSystemPrompt(skill, allowedTools, options = {}) {
   const sections = [];
 
   sections.push(
@@ -96,7 +99,7 @@ function buildSkillSystemPrompt(skill, allowedTools) {
   );
 
   if (allowedTools.length > 0) {
-    sections.push(buildToolsSystemPrompt(allowedTools));
+    sections.push(buildToolsSystemPrompt(allowedTools, options));
   } else {
     sections.push(
       'This skill has no tools available. Produce the answer directly from the caller\'s request.',
@@ -177,7 +180,9 @@ export async function runSkill({
 
   const providerConfig = delegatedConfig(config);
   const allowedTools = resolveSkillTools(skill, allowedToolIds);
-  const systemPrompt = buildSkillSystemPrompt(skill, allowedTools);
+  const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
+  const contextBudget = resolveContextBudget(requestEnvironment());
+  const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native });
 
   // Compose the first user turn. We include both the structured args (for
   // machine-readable invocation) and any task text the caller supplied.
@@ -202,6 +207,8 @@ export async function runSkill({
 
   let finalOutput = '';
   let totalToolCalls = 0;
+  let completed = false;
+  let iterations = 0;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     if (signal?.aborted) {
@@ -210,21 +217,27 @@ export async function runSkill({
       return aborted;
     }
 
+    iterations++;
+    const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
+      messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
     const rawReply = await replyFn({
+      ...functionSession.requestOptions(),
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
       baseUrl: providerConfig.baseUrl,
       model: providerConfig.model,
       systemPrompt,
-      messages: loopMessages,
+      messages: request.messages,
       signal,
     });
 
-    const { toolCalls } = parseModelResponse(rawReply);
+    const turn = functionSession.parse(rawReply);
+    const { toolCalls } = turn;
 
     if (!toolCalls.length) {
-      finalOutput = cleanReplyForParent(rawReply);
+      finalOutput = cleanReplyForParent(turn.text);
+      completed = true;
       break;
     }
 
@@ -243,6 +256,7 @@ export async function runSkill({
 
     const allowSet = new Set(allowedTools.map(t => t.id));
     const executableCalls = toolCalls.map(tc => {
+      if (tc.rejectedResult) return { id: tc.id, tool: null, args: tc.arguments, callRef: tc };
       if (!allowSet.has(tc.name)) {
         return { id: tc.id, tool: null, args: tc.arguments, callRef: tc, denied: true };
       }
@@ -269,6 +283,7 @@ export async function runSkill({
     );
 
     const allResults = toolCalls.map(tc => {
+      if (tc.rejectedResult) return { call: tc, result: tc.rejectedResult };
       const call = executableCalls.find(c => c.id === tc.id);
       if (call?.denied) {
         return {
@@ -310,30 +325,21 @@ export async function runSkill({
       });
     }
 
-    loopMessages = [
-      ...loopMessages,
-      { role: 'assistant', content: rawReply },
-      { role: 'user', content: formatToolResultsMessage(allResults) },
-    ];
-  }
-
-  if (!finalOutput) {
-    const lastAssistant = [...loopMessages].reverse().find(m => m.role === 'assistant');
-    finalOutput = lastAssistant ? cleanReplyForParent(lastAssistant.content) : '';
-    if (!finalOutput) finalOutput = '(Skill produced no output within iteration budget)';
+    loopMessages = functionSession.append(loopMessages, turn, allResults);
   }
 
   const finalResult = {
-    ok: true,
-    output: finalOutput,
+    ok: completed && Boolean(finalOutput),
+    output: finalOutput || (completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
+    ...(!completed ? { error: 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : {}),
     meta: {
       skillId: skill.id,
-      iterations: maxIterations,
+      iterations,
       toolCalls: totalToolCalls,
       depth,
     },
   };
-  recordTelemetry(true, null);
+  recordTelemetry(finalResult.ok, finalResult.ok ? null : finalResult);
   return finalResult;
 }
 

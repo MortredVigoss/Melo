@@ -219,7 +219,7 @@ test('runSkill: forbids the `agent` tool even if explicitly whitelisted', async 
 
 // ─── Iteration cap ───────────────────────────────────────────────────────────
 
-test('runSkill: stops at maxIterations and still returns scrubbed output', async () => {
+test('runSkill: reaching maxIterations reports incomplete work without raw tool calls', async () => {
   const { tool: a } = makeRecordingTool('tool_a');
   registerTool(a);
   try {
@@ -235,7 +235,9 @@ test('runSkill: stops at maxIterations and still returns scrubbed output', async
       args: { text: 'x' },
       replyFn: reply,
     });
-    assert.equal(res.ok, true);
+    assert.equal(res.ok, false);
+    assert.equal(res.error, 'SKILL_ITERATION_LIMIT');
+    assert.equal(res.meta.iterations, 2);
     // 2 iterations → 2 model calls.
     assert.equal(reply.callLog.length, 2);
     // The final output is scrubbed (no raw <tool_call>).

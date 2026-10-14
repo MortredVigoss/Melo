@@ -103,7 +103,6 @@ import {
   buildToolsSystemPrompt,
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
-import { parseModelResponse, formatToolResultsMessage } from '../../tools/parser.js';
 import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
@@ -114,6 +113,7 @@ import { createOpenAICompatibleReply } from '../../openai.js';
 import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
 import { fitRequestContext, resolveContextBudget } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
+import { createFunctionCallingSession } from '../../tools/functionCalling.js';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -370,6 +370,7 @@ export async function runChatAgentExecutionGraph({
         // pass through filterMcpToolsForAgent untouched.
         let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
         let visibleToolIds = new Set();
+        let promptTools = [];
         const toolContextPolicy = selectToolContextPolicy({
           text: latestUserMessage, chat, searchPlan,
           hasExecutableSkills: requiresSkillToolContext(listExecutableSkills(enabledSkills), latestUserMessage),
@@ -380,13 +381,12 @@ export async function runChatAgentExecutionGraph({
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          const promptTools = [...routedTools, ...skillTools];
+          promptTools = [...routedTools, ...skillTools];
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
-          toolsPrompt = [
-            toolsPrompt,
-            buildToolsSystemPrompt(promptTools, { includeExamples: false }),
-          ].filter(Boolean).join('\n\n');
         }
+        const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
+          toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, promptTools);
+        toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n');
         if (toolContextPolicy.mode === 'none') {
           toolsPrompt = [toolsPrompt, 'This is a self-contained text task. Answer directly from the user-provided context or basic knowledge; no tools are exposed for this turn. If information is missing, say so.'].filter(Boolean).join('\n\n');
         }
@@ -446,7 +446,7 @@ export async function runChatAgentExecutionGraph({
           isRemoteChannel,
           intent: classification,
         });
-        const preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, ...contextBudget });
+        const preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
         if (promptDebug) process.stdout.write(`[prompt-budget] ${JSON.stringify(preparedRequest.diagnostics)}\n`);
 
         return {
@@ -465,6 +465,7 @@ export async function runChatAgentExecutionGraph({
           projectContext,
           activeAgentProfile,
           skillTools,
+          promptTools,
           searchPlan,
           visibleToolIds: [...visibleToolIds],
           next: 'invoke-model',
@@ -474,12 +475,13 @@ export async function runChatAgentExecutionGraph({
       // ── invoke-model ───────────────────────────────────────────────────────
       // Implements a ReAct tool loop:
       //   1. Call model with current messages
-      //   2. Parse response for <tool_call> blocks
+      //   2. Read native function calls (or legacy text calls on other providers)
       //   3. If tool calls exist: execute them, append results, loop (max 10)
       //   4. If no tool calls (or max iterations reached): proceed to finalize
       async 'invoke-model'(graphState) {
         const selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
-        const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true };
+        const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true,
+          toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask) {
           const team = await runAgentTeam({plan:teamTask.execution.teamPlan,task:teamTask.execution.content,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || []});
@@ -537,6 +539,11 @@ export async function runChatAgentExecutionGraph({
         }
 
         const MAX_TOOL_ITERATIONS = 10;
+        const functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
+          toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
+        const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
+          ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
+            { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n') } : section);
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
         let finalReply = '';
@@ -555,7 +562,7 @@ export async function runChatAgentExecutionGraph({
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
 
-          const request = fitRequestContext({ sections: graphState.promptSections, messages: loopMessages, ...contextBudget });
+          const request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
           if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
           if (isFirstIteration) {
             signal?.throwIfAborted();
@@ -570,6 +577,7 @@ export async function runChatAgentExecutionGraph({
             catch(error) { console.warn(`[memory.feedback] ${error.message}`); }
           }
           const rawReply = await createReply({
+            ...functionSession.requestOptions(),
             authMode: vision?.authMode || config.authMode,
             apiProtocol: vision?.apiProtocol || config.apiProtocol,
             apiKey: vision?.apiKey ?? modelOverrides.apiKey,
@@ -602,11 +610,12 @@ export async function runChatAgentExecutionGraph({
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
-          const { thinking, toolCalls } = parseModelResponse(rawReply);
+          const turn = functionSession.parse(rawReply);
+          const { thinking, toolCalls } = turn;
 
           // No tool calls → this is the final response
           if (!toolCalls.length) {
-            finalReply = rawReply;
+            finalReply = turn.text;
             break;
           }
 
@@ -647,7 +656,7 @@ export async function runChatAgentExecutionGraph({
             filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id),
           );
           const executableCalls = toolCalls.map(tc => {
-            let tool = skillToolsById.get(tc.name) || getTool(tc.name);
+            let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || getTool(tc.name);
             if (tool && !visibleToolIds.has(tool.id)) {
               tool = null;
             }
@@ -680,6 +689,7 @@ export async function runChatAgentExecutionGraph({
 
           // Also handle unresolved tool names (not in registry)
           const allResults = toolCalls.map(tc => {
+            if (tc.rejectedResult) return { call: tc, result: tc.rejectedResult };
             const found = execResults.find(r => r.id === tc.id);
             if (found) return { call: tc, result: found.result };
             return {
@@ -727,15 +737,7 @@ export async function runChatAgentExecutionGraph({
           }
 
           // Append assistant turn (thinking + tool calls) and tool results
-          loopMessages = [
-            ...loopMessages,
-            { role: 'assistant', content: rawReply },
-            {
-              role: 'user',
-              content: formatToolResultsMessage(allResults, { maxOutputChars: 8000 }),
-              isToolResult: true,
-            },
-          ];
+          loopMessages = functionSession.append(loopMessages, turn, allResults);
 
           // G-1d slice 2: accumulate structured tool-result metadata for
           // persistence on the eventual assistantMessage.  Projection

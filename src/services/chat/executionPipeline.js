@@ -1,3 +1,5 @@
+import { modelReplyText } from '../../tools/functionCalling.js';
+
 // Observe application boundaries, never prompts, hidden reasoning or guessed
 // progress. Wrapping an existing callback must not enable extra streaming.
 export function observeModelReplies(provider, emit) {
@@ -30,7 +32,7 @@ export function observeModelReplies(provider, emit) {
       });
       if (summary) summarize('completed');
       publish({ id, name: receipt?.simulated ? '模拟响应' : name, status: 'completed', returnedModel: receipt?.reportedModel || '',
-        output: `${receipt?.simulated ? '模拟返回' : '模型返回完成'} · 收到 ${String(reply || '').length} 个字符${receipt?.reportedModel ? ` · 服务返回模型：${receipt.reportedModel}` : ' · 服务未报告模型标识'}` });
+        output: `${receipt?.simulated ? '模拟返回' : '模型返回完成'} · 收到 ${modelReplyText(reply).length} 个字符${reply?.responseItems?.some(item => item.type === 'function_call') ? ` · ${reply.responseItems.filter(item => item.type === 'function_call').length} 个工具请求待执行` : ''}${receipt?.reportedModel ? ` · 服务返回模型：${receipt.reportedModel}` : ' · 服务未报告模型标识'}` });
       return reply;
     } catch (error) {
       if (summary) summarize(options.signal?.aborted || error?.name === 'AbortError' ? 'cancelled' : 'failed');

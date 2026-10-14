@@ -1,6 +1,7 @@
 import { observeNativeItem } from '../tools/executionObservation.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 import { extractResponsesText, extractChatCompletionDelta, extractProviderErrorMessage } from './responseText.js';
+import { createResponseItemCollector } from './responseItems.js';
 
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120000;
 
@@ -240,12 +241,14 @@ export async function readCodexSseResponse(
     onNativeSearch,
     onExecutionEvent,
     onModelMetadata,
+    returnToolResponse = false,
     idleTimeoutMs = resolveStreamIdleTimeoutMs(),
   } = {},
 ) {
   let deltaText = '';
   let reasoningText = '';
   let completedResponse = null;
+  const responseItems = returnToolResponse ? createResponseItemCollector() : null;
   // attemptedImageIds — dedup so we don't re-invoke onInlineImage for a
   // single image_generation_call that the stream surfaces twice (once
   // via response.output_item.done, again inside response.completed).
@@ -321,6 +324,7 @@ export async function readCodexSseResponse(
     if (!event) {
       return;
     }
+    responseItems?.accept(event);
     if(event.type === 'response.image_generation_call.partial_image') await onInlineImagePreview?.(event);
     if (event.type === 'response.output_item.added') observeItem(event.item, 'running');
     if (event.type === 'response.output_item.done') {
@@ -419,6 +423,9 @@ export async function readCodexSseResponse(
     processEventBlock,
   });
 
+  const outputItems = responseItems?.complete();
+  const finish = text => returnToolResponse ? { protocol: 'responses', text, responseItems: outputItems } : text;
+
   // Final-text contract (Codex review round 2, 2026-04-29):
   //
   //   1. Canonical text — `extractResponsesText(completedResponse)` is
@@ -456,7 +463,7 @@ export async function readCodexSseResponse(
   const baseText = completedText || trimmedDelta;
 
   if (!injectedImageSnippets.length) {
-    if (baseText) return baseText;
+    if (baseText || outputItems?.some(item => item.type === 'function_call')) return finish(baseText);
     throw new Error('Codex OAuth request completed without returning a final reply.');
   }
 
@@ -471,7 +478,7 @@ export async function readCodexSseResponse(
     // order the user saw. Prefer it when completedText is absent OR
     // its prose is already a substring of deltaText.
     if (!completedText || deltaText.includes(completedText)) {
-      return trimmedDelta;
+      return finish(trimmedDelta);
     }
     // completedText carries prose deltaText didn't catch (e.g. a chunk
     // arrived as part of the terminal payload, not as an output_text
@@ -480,14 +487,14 @@ export async function readCodexSseResponse(
 
   if (completedText) {
     const missing = injectedImageSnippets.filter(s => !completedText.includes(s));
-    if (!missing.length) return completedText;
+    if (!missing.length) return finish(completedText);
     // Snippets are wrapped with leading+trailing blank lines so a
     // simple concat keeps the markdown URL parseable by
     // extractUrlAttachmentsFromText without further glue.
-    return [completedText, ...missing].join('').trimEnd();
+    return finish([completedText, ...missing].join('').trimEnd());
   }
 
-  if (trimmedDelta) return trimmedDelta;
+  if (trimmedDelta) return finish(trimmedDelta);
   throw new Error('Codex OAuth request completed without returning a final reply.');
 }
 

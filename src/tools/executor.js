@@ -231,19 +231,39 @@ async function runObservedTool(tool, args, options = {}) {
  */
 export async function executeToolCalls(calls, options = {}) {
   if (!calls.length) return [];
+  if (calls.length > 32 || new Set(calls.map(call => call.id)).size !== calls.length) {
+    return calls.map(call => ({ id: call.id, toolId: call.tool?.id,
+      result: { ok: false, error: 'INVALID_TOOL_BATCH', output: 'Too many calls or duplicate call IDs; no tools in this batch were executed.' } }));
+  }
 
   const results = new Array(calls.length);
   let parallelGroup = []; // indices of queued concurrent-safe calls
+
+  async function executeIndex(idx) {
+    const { id, tool, args } = calls[idx];
+    let result;
+    try {
+      result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
+    } catch (error) {
+      // A scope/ledger failure is also a result for this call. Await the rest
+      // of the batch before any serial write or next model request begins.
+      result = { ok: false, error: error.code || 'TOOL_EXECUTION_FAILED', output: error.message,
+        meta: { aborted: !!options.signal?.aborted } };
+    }
+    results[idx] = { id, toolId: tool.id, result };
+  }
 
   async function flushParallel() {
     if (!parallelGroup.length) return;
     const group = parallelGroup.slice();
     parallelGroup = [];
+    let cursor = 0;
     await Promise.all(
-      group.map(async (idx) => {
-        const { id, tool, args } = calls[idx];
-        const result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
-        results[idx] = { id, toolId: tool.id, result };
+      Array.from({ length: Math.min(4, group.length) }, async () => {
+        while (cursor < group.length) {
+          const idx = group[cursor++];
+          await executeIndex(idx);
+        }
       }),
     );
   }
@@ -257,8 +277,7 @@ export async function executeToolCalls(calls, options = {}) {
       // Flush any accumulated safe tools first
       await flushParallel();
       // Then run this serial tool
-      const result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
-      results[i] = { id, toolId: tool.id, result };
+      await executeIndex(i);
     }
   }
 

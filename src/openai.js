@@ -1,4 +1,5 @@
 import { normalizeUsage } from './runtime/usage.js';
+import { modelReplyText } from './tools/functionCalling.js';
 import { prepareVisionInputs } from './media/visionInputs.js';
 import { fastGenerationOptions } from './shared/fastGeneration.js';
 import { requestAnthropicReply } from './providers/anthropic.js';
@@ -151,7 +152,7 @@ export function extractLatestUserTextForIntent(messages) {
   if (!Array.isArray(messages)) return '';
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message?.role !== 'user') continue;
+    if (message?.role !== 'user' || message.isToolResult) continue;
     const content = message.content;
     if (typeof content === 'string') return content.trim();
     if (Array.isArray(content)) {
@@ -224,7 +225,7 @@ export function latestUserMessageHasImage(messages) {
   if (!Array.isArray(messages)) return false;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message?.role !== 'user') continue;
+    if (message?.role !== 'user' || message.isToolResult) continue;
     const content = message.content;
     if (!Array.isArray(content)) return false;
     for (const item of content) {
@@ -945,6 +946,14 @@ export async function buildCodexResponsesInput(messages = [], { signal } = {}) {
   const results = [];
 
   for (const message of messages) {
+    if (Array.isArray(message?.responseItems)) {
+      results.push(...message.responseItems);
+      continue;
+    }
+    if (Array.isArray(message?.functionCallOutputs)) {
+      results.push(...message.functionCallOutputs);
+      continue;
+    }
     if (message?.role !== 'user' && message?.role !== 'assistant') {
       continue;
     }
@@ -1018,6 +1027,7 @@ export async function createCodexResponsesReply({
   nativeWebSearchEnabled,
   nativeImageGenerationEnabled = true,
   cacheScope,
+  functionTools,
   _credentialProvider = getCodexCredential,
   _fetchImpl,
 } = {}) {
@@ -1090,6 +1100,7 @@ export async function createCodexResponsesReply({
     hasImageIntent,
     nativeImageGenerationEnabled,
   });
+  if (Array.isArray(functionTools)) tools.push(...functionTools);
   const enableInlineImage = tools.some(t => t?.type === 'image_generation');
   // All actual image routes share intent rules. Ordinary chat and vision-only
   // turns retain their original instructions; edit guidance needs a reference.
@@ -1172,6 +1183,36 @@ export async function createCodexResponsesReply({
     } : undefined,
     onExecutionEvent,
     onNativeSearch: () => record('search', { ok: true, level: 'results', provider: 'codex-native', reason: 'native-search-completed' }),
+    returnToolResponse: Array.isArray(functionTools),
+  });
+}
+
+// Public API function turns use the same stateless Responses continuation as
+// OAuth. No provider-hosted agent runtime or server-side conversation storage.
+export async function createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages,
+  functionTools, signal, onDelta, onReasoningDelta, onModelMetadata, maxTokens,
+  _fetchImpl = fetch } = {}) {
+  const payload = {
+    model, instructions: systemPrompt, store: false, stream: true,
+    input: await buildCodexResponsesInput(messages, { signal }),
+    include: ['reasoning.encrypted_content'],
+    ...(Number.isFinite(maxTokens) ? { max_output_tokens: maxTokens } : {}),
+    ...(functionTools?.length ? { tools: functionTools, tool_choice: 'auto', parallel_tool_calls: true } : {}),
+  };
+  await ensureFetchKeepAliveConfigured();
+  const response = await _fetchImpl(`${normalizeBaseUrl(baseUrl).replace(/\/responses$/, '')}/responses`, {
+    method: 'POST', redirect: 'error', signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal),
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) }, body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let detail = raw;
+    try { detail = extractProviderErrorMessage(JSON.parse(raw), raw); } catch {}
+    throw new Error(`Responses request failed (${response.status}): ${detail}`);
+  }
+  return readCodexSseResponse(response, { onDelta, onReasoningDelta,
+    onModelMetadata: metadata => onModelMetadata?.({ ...metadata, transport: 'responses' }),
+    returnToolResponse: Array.isArray(functionTools),
   });
 }
 
@@ -1241,7 +1282,7 @@ export async function createOpenAICompatibleReply(options) {
     };
     options.onProviderResponse?.(receipt);
     if (options.providerProfile !== 'fast') {
-      await record('model', { ok: Boolean(String(reply || '').trim()), level: 'response', provider: options.authMode || '', ...receipt });
+      await record('model', { ok: Boolean(modelReplyText(reply).trim() || reply?.responseItems?.some(item => item.type === 'function_call')), level: 'response', provider: options.authMode || '', ...receipt });
     }
     return reply;
   } catch (error) {
@@ -1271,6 +1312,7 @@ async function requestOpenAICompatibleReply({
   nativeImageGenerationEnabled = true,
   cacheScope,
   maxTokens,
+  functionTools,
 }) {
   if (requestEnvironment().MELO_MOCK_RESPONSE) {
     const mockReply = requestEnvironment().MELO_MOCK_RESPONSE;
@@ -1304,6 +1346,7 @@ async function requestOpenAICompatibleReply({
         nativeWebSearchEnabled,
         nativeImageGenerationEnabled,
         cacheScope,
+        functionTools,
       });
   }
 
@@ -1318,6 +1361,10 @@ async function requestOpenAICompatibleReply({
   }
 
   messages = await prepareVisionInputs(messages, { readResource: readAttachmentResource, signal });
+  if (Array.isArray(functionTools) || apiProtocol === 'responses') {
+    return createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages, functionTools, signal,
+      onDelta, onReasoningDelta, onModelMetadata, maxTokens });
+  }
   const protocol = apiProtocol || (new URL(baseUrl).hostname === 'api.anthropic.com' ? 'anthropic' : 'chat-completions');
   if (protocol === 'anthropic') return requestAnthropicReply({ baseUrl: normalizeBaseUrl(baseUrl), apiKey, model, systemPrompt, messages: normalizeProviderMessages(messages), signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal), onDelta, onModelMetadata, maxTokens: maxTokens ?? (providerProfile === 'fast' ? 1024 : undefined) });
 

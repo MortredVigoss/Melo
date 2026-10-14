@@ -66,6 +66,7 @@
     "test:mobile-sync": "node --test mobile-sync/*.test.js",
     "bench:turn": "node scripts/bench-turn.js",
     "test:unit": "node scripts/run-unit-tests.js",
+    "test:function-calling": "node --test src/tools/functionCalling.test.js src/tools/functionCalling.execution.test.js src/providers/functionCalling.test.js src/services/chat/functionCalling.integration.test.js src/agents/skillExecutor.test.js",
     "test:architecture-performance": "node --test src/state/residentState.test.js src/runtime/performanceTrace.test.js src/runtime/derivedIndexing.test.js src/http/bootstrapTransport.test.js src/http/routeRegistry.test.js src/services/workspace/workspaceTreeCache.test.js desktop-ui/bootstrapPatch.test.js scripts/check-dependencies.test.js",
     "generate:sync-contract": "node scripts/generate-sync-contract.js",
     "test:sync-contract": "node --test mobile-sync/syncContract.test.js scripts/generate-sync-contract.test.js"
@@ -75,6 +76,7 @@
     "@huggingface/transformers": "4.3.1",
     "@mozilla/readability": "^0.5.0",
     "@vscode/ripgrep": "^1.17.1",
+    "ajv": "8.17.1",
     "discord.js": "^14.16.3",
     "exceljs": "^4.4.0",
     "ffmpeg-static": "^5.2.0",
