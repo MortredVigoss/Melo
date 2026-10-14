@@ -4,6 +4,7 @@ struct CodexLoginCard: View {
     @EnvironmentObject var store: ChatStore
     @EnvironmentObject var account: ChatGPTAccount
     @State private var copied = false
+    @State private var showAuthorization = false
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             Label(account.signedIn ? "Codex 已连接" : "连接 Codex",systemImage:"person.crop.circle.badge.checkmark").font(.headline)
@@ -27,9 +28,9 @@ struct CodexLoginCard: View {
                 HStack {
                     Button(copied ? "已复制" : "复制验证码",systemImage:copied ? "checkmark" : "doc.on.doc") { UIPasteboard.general.string=code.userCode; copied=true }
                     Spacer()
-                    Button("打开官方授权页",systemImage:"arrow.up.right") { UIApplication.shared.open(CodexOAuth.verificationURL) }
+                    Button("打开官方授权页",systemImage:"arrow.up.right") { showAuthorization=true }
                 }.font(.subheadline)
-                Text("验证码 15 分钟内有效。若网页提示未开启设备码登录，请在 ChatGPT 安全设置或工作区权限中开启。完成网页授权后返回 Melo 即可。")
+                Text("验证码 15 分钟内有效。授权页在 Melo 内打开，关闭网页不会取消登录。若切换到其他应用，回来后会继续等待。网页若提示未开启设备码登录，请在 ChatGPT 安全设置或工作区权限中开启。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("取消本次登录",role:.cancel) { account.cancelLogin() }
             } else if account.busy {
@@ -50,6 +51,11 @@ struct CodexLoginCard: View {
             if let error=account.error { Text(error).font(.footnote).foregroundStyle(.orange).textSelection(.enabled) }
             Text("使用你的 Codex 订阅额度；具体模型和图像权限由服务端决定。登录本身不会生成图片或发起测试对话。")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+        .sheet(isPresented:$showAuthorization) { SourceBrowser(url:CodexOAuth.verificationURL).ignoresSafeArea() }
+        .onChange(of:account.deviceCode?.id) { _, id in
+            copied=false
+            if id == nil { showAuthorization=false }
         }
     }
 }

@@ -34,8 +34,13 @@ import SwiftUI
                 .onChange(of: store.sendingID) { _, id in RuntimeDiagnostics.journal.record(id == nil ? "request-end" : "request-start", requestActive: id != nil) }
                 .onChange(of: scenePhase) { _, phase in
                     RuntimeDiagnostics.journal.record(phase == .background ? "background" : phase == .active ? "active" : "inactive", requestActive: store.sendingID != nil)
+                    store.account.setApplicationActive(phase == .active)
                     if phase == .background { store.enteredBackground() }
-                    if phase == .active { store.becameActive(); Task { await store.sync() } }
+                    if phase == .active {
+                        store.becameActive()
+                        // Keep account authorization and its settings view stable on return.
+                        if !store.account.busy { Task { await store.sync() } }
+                    }
                 }
         }
     }

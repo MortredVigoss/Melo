@@ -21,6 +21,7 @@ struct ChatGPTModel: Decodable, Identifiable {
     @Published private(set) var imageVerified = false
     private var loginTask: Task<Void,Never>?
     private var attemptID: UUID?
+    private var applicationActive = true
     private var refreshing: Task<CodexRegistration,Error>?
     private var epoch = UUID()
     private let session: URLSession
@@ -67,12 +68,18 @@ struct ChatGPTModel: Decodable, Identifiable {
         do {
             let code=try await CodexOAuth.begin(session:session)
             guard attemptID == attempt else { return }
-            deviceCode=code; status="请打开官方页面，输入验证码；完成后返回 Melo"
+            deviceCode=code; status="等待官方网页授权 · 切换应用后可继续"
             loginTask=Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let token=try await CodexOAuth.poll(code,session:self.session)
-                    let account=try await CodexOAuth.registration(token,previous:old,session:self.session)
+                    let token=try await CodexOAuth.poll(code,session:self.session,beforeRequest:{
+                        try await self.waitForActive(until:code.expiresAt)
+                    },onRetry:{
+                        self.status="连接暂时中断，验证码已保留 · 返回 Melo 后自动继续"
+                    })
+                    let account=try await CodexOAuth.registration(token,previous:old,session:self.session,beforeRequest:{
+                        try await self.waitForActive(until:code.expiresAt)
+                    })
                     try Task.checkCancellation()
                     guard self.attemptID == attempt else { return }
                     try self.save(account)
@@ -84,13 +91,23 @@ struct ChatGPTModel: Decodable, Identifiable {
                 } catch {
                     guard self.attemptID == attempt else { return }
                     self.attemptID=nil; self.deviceCode=nil; self.busy=false; self.loginTask=nil
-                    self.updateStatus(); self.error=error.localizedDescription
+                    self.updateStatus(); self.error=CodexOAuth.loginError(error)
                 }
             }
         } catch {
             guard attemptID == attempt else { return }
-            attemptID=nil; busy=false; updateStatus(); self.error=error.localizedDescription
+            attemptID=nil; busy=false; updateStatus(); self.error=CodexOAuth.loginError(error)
         }
+    }
+    func setApplicationActive(_ active: Bool) { applicationActive=active }
+    private func waitForActive(until deadline: Date) async throws {
+        while !applicationActive {
+            try Task.checkCancellation()
+            guard Date() < deadline else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
+            try await Task.sleep(for:.milliseconds(200))
+        }
+        try Task.checkCancellation()
+        guard Date() < deadline else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
     }
     func cancelLogin() {
         guard attemptID != nil else { return }

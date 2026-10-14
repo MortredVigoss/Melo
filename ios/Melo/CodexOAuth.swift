@@ -69,11 +69,38 @@ enum CodexOAuth {
         let interval = Double(value["interval"] as? String ?? "") ?? (value["interval"] as? Double) ?? 5
         return .init(id:id,userCode:code,interval:interval.isFinite && interval >= 0 && interval <= 900 ? max(1,interval) : 5,expiresAt:now.addingTimeInterval(900))
     }
-    static func poll(_ code: CodexDeviceCode, session: URLSession = session, now: () -> Date = Date.init, sleep: (Double) async throws -> Void = { try await Task.sleep(for:.seconds($0)) }) async throws -> CodexToken {
+    // Only retry idempotent pending-status reads. A transport cancellation while
+    // iOS suspends the app is distinct from cancelling the enclosing login Task.
+    static func isTransientTransport(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        return [.cancelled, .timedOut, .networkConnectionLost, .notConnectedToInternet,
+                .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed].contains(error.code)
+    }
+    static func loginError(_ error: Error) -> String {
+        if isTransientTransport(error) { return "登录连接暂时中断，请检查网络后重新获取验证码。" }
+        if error is CancellationError { return "本次登录已取消，可以重新登录。" }
+        return error.localizedDescription
+    }
+    static func poll(_ code: CodexDeviceCode, session: URLSession = session, now: () -> Date = Date.init,
+                     sleep: (Double) async throws -> Void = { try await Task.sleep(for:.seconds($0)) },
+                     beforeRequest: () async throws -> Void = {}, onRetry: () async -> Void = {}) async throws -> CodexToken {
+        var retryDelay = max(1,code.interval)
         while true {
             try Task.checkCancellation()
+            try await beforeRequest()
             guard now() < code.expiresAt else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
-            let (body, status) = try await post("/api/accounts/deviceauth/token", ["device_auth_id":code.id,"user_code":code.userCode], session:session)
+            let body: Data, status: Int
+            do {
+                (body,status) = try await post("/api/accounts/deviceauth/token", ["device_auth_id":code.id,"user_code":code.userCode], session:session)
+            } catch {
+                try Task.checkCancellation()
+                guard isTransientTransport(error) else { throw error }
+                await onRetry()
+                try await sleep(max(0,min(retryDelay,code.expiresAt.timeIntervalSince(now()))))
+                retryDelay = max(code.interval,min(30,retryDelay * 2))
+                continue
+            }
+            retryDelay = max(1,code.interval)
             try Task.checkCancellation()
             guard now() < code.expiresAt else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
             if status == 403 || status == 404 {
@@ -82,7 +109,18 @@ enum CodexOAuth {
             }
             guard status == 200 else { throw MeloError.message("Codex 授权未完成（\(status)）\(Network.rejectionDetail(body))，可以重新获取验证码。") }
             let values = try exchangeValues(body)
-            let (token, tokenStatus) = try await post("/oauth/token",values,form:true,session:session)
+            try await beforeRequest()
+            try Task.checkCancellation()
+            let token: Data, tokenStatus: Int
+            do {
+                (token,tokenStatus) = try await post("/oauth/token",values,form:true,session:session)
+            } catch {
+                try Task.checkCancellation()
+                // The authorization code is single-use. Its exchange might have
+                // succeeded remotely, so never replay it after an ambiguous failure.
+                guard isTransientTransport(error) else { throw error }
+                throw MeloError.message("授权凭证交换时连接中断，无法确认是否完成。请重新获取验证码；不会重复提交这次授权码。")
+            }
             guard tokenStatus == 200 else { throw MeloError.message("Codex 授权换取令牌失败（\(tokenStatus)）\(Network.rejectionDetail(token))，请重新登录。") }
             return try JSONDecoder().decode(CodexToken.self,from:token)
         }
@@ -100,14 +138,28 @@ enum CodexOAuth {
         guard status == 200 else { throw MeloError.message("Codex 登录凭证未能更新（\(status)）\(Network.rejectionDetail(data))，请重新授权。") }
         return try JSONDecoder().decode(CodexToken.self,from:data)
     }
-    static func registration(_ token: CodexToken, previous: CodexRegistration? = nil, session: URLSession = session) async throws -> CodexRegistration {
+    static func registration(_ token: CodexToken, previous: CodexRegistration? = nil, session: URLSession = session,
+                             beforeRequest: () async throws -> Void = {}) async throws -> CodexRegistration {
         let jwks: Data
         if token.id_token != nil {
-            let (body,status) = try await data(URLRequest(url:URL(string:issuer + "/.well-known/jwks.json")!),session:session)
+            let (body,status) = try await signingKeys(session:session,beforeRequest:beforeRequest)
             guard status == 200 else { throw MeloError.message("无法验证 Codex 官方身份签名，请稍后重试。") }
             jwks = body
         } else { jwks = Data() }
         return try validatedRegistration(token,jwks:jwks,previous:previous)
+    }
+    private static func signingKeys(session: URLSession, beforeRequest: () async throws -> Void) async throws -> (Data,Int) {
+        for attempt in 0..<3 {
+            try await beforeRequest()
+            try Task.checkCancellation()
+            do { return try await data(URLRequest(url:URL(string:issuer + "/.well-known/jwks.json")!),session:session) }
+            catch {
+                try Task.checkCancellation()
+                guard isTransientTransport(error), attempt < 2 else { throw error }
+                try await Task.sleep(for:.seconds(attempt + 1))
+            }
+        }
+        throw MeloError.message("无法验证 Codex 官方身份签名，请稍后重试。")
     }
     static func validatedRegistration(_ token: CodexToken, jwks: Data, previous: CodexRegistration? = nil, now: Date = Date()) throws -> CodexRegistration {
         guard !token.access_token.isEmpty, token.access_token.count < 64_000,

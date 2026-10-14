@@ -67,6 +67,41 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={_ in (400,Data())}
         do { _=try await CodexOAuth.poll(code,session:session);fatalError("400 admitted") } catch {}
         assert(CodexFixture.requests.count==before+2)
+        // A suspended iOS transport is not the user cancelling authorization.
+        var interruptedPolls=0, recoveredSleeps=0
+        CodexFixture.handler={request in
+            if request.url!.path.hasSuffix("deviceauth/token") {
+                interruptedPolls+=1
+                if interruptedPolls==1 { throw URLError(.cancelled) }
+                if interruptedPolls==2 { throw URLError(.networkConnectionLost) }
+                return (200,try json(success))
+            }
+            return (200,try json(["access_token":"recovered","refresh_token":"refresh"]))
+        }
+        let recovered=try await CodexOAuth.poll(code,session:session,now:{now},sleep:{_ in recoveredSleeps+=1})
+        assert(recovered.access_token=="recovered" && interruptedPolls==3 && recoveredSleeps==2)
+        var networkFailures=0, retryClock=now
+        CodexFixture.handler={_ in networkFailures+=1;throw URLError(.notConnectedToInternet)}
+        do {
+            _=try await CodexOAuth.poll(code,session:session,now:{retryClock},sleep:{_ in retryClock=code.expiresAt})
+            fatalError("offline poll ignored expiry")
+        } catch { assert(error.localizedDescription.contains("过期")) }
+        assert(networkFailures==1)
+        do {
+            _=try await CodexOAuth.poll(code,session:session,now:{now},sleep:{_ in throw CancellationError()})
+            fatalError("explicit cancellation retried")
+        } catch is CancellationError {}
+        assert(networkFailures==2)
+        var exchanges=0, exchangePolls=0
+        CodexFixture.handler={request in
+            if request.url!.path.hasSuffix("deviceauth/token") { exchangePolls+=1;return (200,try json(success)) }
+            exchanges+=1;throw URLError(.cancelled)
+        }
+        do { _=try await CodexOAuth.poll(code,session:session);fatalError("uncertain exchange replayed") }
+        catch { assert(error.localizedDescription.contains("不会重复提交")) }
+        assert(exchanges==1 && exchangePolls==1)
+        assert(!CodexOAuth.isTransientTransport(URLError(.serverCertificateUntrusted)))
+        assert(!CodexOAuth.loginError(URLError(.cancelled)).contains("cancelled"))
         let privateKey = SecKeyCreateRandomKey([kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: 2048] as CFDictionary, nil)!
         let publicKey = SecKeyCopyPublicKey(privateKey)!
         let der = SecKeyCopyExternalRepresentation(publicKey, nil)! as Data
@@ -135,13 +170,21 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         try partial.accept(#"{"type":"response.image_generation_call.partial_image","partial_image_b64":"a"}"#)
         assert(!partial.completed && partial.images.isEmpty)
         let defaults=UserDefaults(suiteName:"Melo-Codex-QA-"+UUID().uuidString)!
-        var persisted="", writes=0
+        var persisted="", writes=0, lifecyclePolls=0, keyReads=0, lifecycleExchanges=0
         CodexFixture.handler={ request in
             switch request.url!.path {
             case "/api/accounts/deviceauth/usercode": return (200,try json(["device_auth_id":"device","user_code":"AAAA-BBBB","interval":"1"]))
-            case "/api/accounts/deviceauth/token": return (200,try json(success))
-            case "/oauth/token": return (200,try json(["access_token":"access","refresh_token":"refresh","id_token":id,"expires_in":3600]))
-            case "/.well-known/jwks.json": return (200,jwks)
+            case "/api/accounts/deviceauth/token":
+                lifecyclePolls+=1
+                if lifecyclePolls==1 { throw URLError(.cancelled) }
+                return (200,try json(success))
+            case "/oauth/token":
+                lifecycleExchanges+=1
+                return (200,try json(["access_token":"access","refresh_token":"refresh","id_token":id,"expires_in":3600]))
+            case "/.well-known/jwks.json":
+                keyReads+=1
+                if keyReads==1 { throw URLError(.networkConnectionLost) }
+                return (200,jwks)
             case "/backend-api/codex/models":
                 assert(request.url!.query=="client_version=0.180.0")
                 return (200,try json(["models":[["slug":"gpt-6.1-sol","display_name":"Sol 6.1","visibility":"list"]]]))
@@ -149,11 +192,29 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
             }
         }
         let login=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{""},persistCredentials:{persisted=$0;writes+=1},prepareStorage:{})
+        login.setApplicationActive(false)
         await login.signIn()
-        for _ in 0..<100 { if !login.models.isEmpty { break };try await Task.sleep(for:.milliseconds(20)) }
+        let waitingCode=login.deviceCode?.id
+        try await Task.sleep(for:.milliseconds(250))
+        assert(login.busy && waitingCode != nil && lifecyclePolls==0 && writes==0)
+        login.setApplicationActive(true)
+        for _ in 0..<100 { if login.status.contains("连接暂时中断") { break };try await Task.sleep(for:.milliseconds(20)) }
+        assert(login.busy && login.error==nil && login.deviceCode?.id==waitingCode && lifecyclePolls==1)
+        login.setApplicationActive(false)
+        try await Task.sleep(for:.milliseconds(1200))
+        assert(lifecyclePolls==1 && writes==0) // No background poll and no new usercode request.
+        login.setApplicationActive(true)
+        for _ in 0..<200 { if !login.models.isEmpty { break };try await Task.sleep(for:.milliseconds(20)) }
         assert(login.signedIn && !login.busy && login.deviceCode==nil && login.models.first?.slug=="gpt-6.1-sol" && writes==1)
+        assert(lifecyclePolls==2 && lifecycleExchanges==1 && keyReads==2)
         let restored=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{persisted},persistCredentials:{_ in},prepareStorage:{})
         assert(restored.active?.accountID=="account-id")
+        let cancelled=ChatGPTAccount(session:session,defaults:defaults,readCredentials:{""},persistCredentials:{_ in fatalError("cancelled login saved credentials")},prepareStorage:{})
+        cancelled.setApplicationActive(false)
+        await cancelled.signIn()
+        cancelled.cancelLogin();cancelled.setApplicationActive(true)
+        try await Task.sleep(for:.milliseconds(250))
+        assert(!cancelled.busy && cancelled.deviceCode==nil && cancelled.error==nil && lifecyclePolls==2)
         var expired=account;expired.expiresAt = .distantPast
         defaults.set(expired.id,forKey:"codexActiveID")
         let encoded=String(decoding:try JSONEncoder().encode([expired]),as:UTF8.self)
@@ -184,6 +245,6 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={_ in imageRequests+=1;return (400,try json(["error":["code":"unsupported_tool"]]))}
         do { _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"改背景")],model:"gpt-6.1-sol",instructions:"",imageInputs:[input],imageTask:task);fatalError("400 admitted") } catch { assert(error.localizedDescription.contains("unsupported_tool")) }
         assert(imageRequests==2) // No automatic regeneration or API fallback.
-        print("Codex OAuth tests passed: pending, expiry, cancellation, PKCE, signed identity, account binding, refresh, request headers and complete image delivery; no live login")
+        print("Codex OAuth tests passed: background pause/resume, transport recovery, explicit cancellation, expiry, single-use exchange, PKCE, signed identity, account binding, refresh and image delivery; no live login")
     }
 }
