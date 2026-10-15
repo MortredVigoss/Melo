@@ -344,13 +344,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         codexAuth: config.codexAuth || null,
         availableModels: availableModelsForConfig(config),
         modelCatalogs: normalizeModelCatalogs(config.modelCatalogs || DEFAULT_MODEL_CATALOGS),
-        // First-boot productivity-MCP consent gate. Stays false until
-        // the user dismisses the consent modal (Enable all / Skip).
-        // The frontend reads this off `bootstrap.settings.config` and
-        // shows the modal exactly once per MELO_HOME. Codex audit
-        // 2026-04-29 — DEFAULT_CONFIG cannot auto-spawn 3rd-party
-        // npm packages without a consent click, even with deny-all
-        // per-agent whitelist active.
+        // Retained for older frontends; startup no longer asks for consent.
         productivityMcpsConsented: Boolean(config.productivityMcpsConsented),
       },
     },

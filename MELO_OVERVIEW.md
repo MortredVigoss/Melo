@@ -17,6 +17,7 @@
 | --- | --- | --- |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
+| MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
 | 桌面神经总览 | 放大、五区分段图标和中枢加密已在 `b96c48a`；当前核心 JS 无未提交差异 | 347 项是 10-10 历史 UI 回归；加密后的 GPU/功耗、现安装包和用户最终验收未复验；样式后续 WIP 见设计线程 |
@@ -104,7 +105,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | --- | --- | --- | --- |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
-| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | 2026-10-15 补 API 观测与阅读/图片交接；另只读核对默认图像通道，确认 Sunburst 配置不等于当前 Codex 型号 | 两组仍 WIP；桌面实测与手机模拟器证据分列，手机照片写入、独立采集待验；详见[设计回执](docs/handoffs/melo-thread-backfill-20261015.md#design-api)及 `docs/execution-panel.md`、`docs/chat-density-20261014.md` |
+| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-08 分段五色神经图标/纵深与启动专项；10-10 总览放大、图片浮层及中心加密；10-15 只补历史交接 | UI 核心已收进 `b96c48a`；现样式另有设计线程 WIP。历史 347 项与原生截图非当前验收；[核对与失败边界](docs/handoffs/melo-ui-20261015.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
@@ -164,7 +165,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 已完成补录的线程 | 详细交接入口 |
 | --- | --- |
 | melo主线（历史·2026-10-15） | [登录交付及生命周期](docs/handoffs/melo-thread-backfill-20261015.md#historical) |
-| 设计 Melo | [API 观测](docs/handoffs/melo-thread-backfill-20261015.md#design-api)、[阅读与图片保存](docs/handoffs/melo-thread-backfill-20261015.md#design-reading) |
+| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
 | melo ui | [神经场景交接](docs/handoffs/melo-ui-20261015.md)、[原始回执](docs/handoffs/melo-thread-backfill-20261015.md#ui) |
 | 读取 melo ui 方案 | [派发、历史测试与 Library 截图](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | [文件权限接入与本次复核](docs/handoffs/melo-thread-backfill-20261015.md#iphone) |
@@ -214,3 +215,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 核对：后端 UI 选中值回退、无项目 APP_ROOT、上下文分流仍在；首页通常显式 null，新项目已有独立目录，共享同步协议已有 goal/agentOverrides；用户编辑与自动重建记忆的移动行为不同。
 - 建议：项目配置统一解析，本机工作区/授权独立绑定，运行/审批捕获目标快照；无项目按需持久目录，原图走稳定资产引用。图片预览 P0 独立修，原件自动回收等生命周期规则稳定；详见两份计划的依赖顺序。
 - 证据：`.tmp/project-architecture-audit-20261015/source-manifest.json` 的27份源码散列（HEAD 2cae1cd 加共享WIP）；验证为静态调用路径、文档链接与diff，未运行产品gate/原生操作或模型请求。保留全部其他线程WIP。
+
+### 2026-10-15 — 设计 Melo — 免费 MCP 默认启动
+- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：已验证，待本地提交。用户明确授权无需额外支出的 MCP 默认启动、删除开机选择弹窗，覆盖旧版首启点击政策。
+- 核对：旧弹窗只控制 AntV / Markdown2PDF / Mermaid；启动默认另含本地 Playwright。AntV 使用官方免费远程渲染，其余三个本机运行；Browserless 及自定义配置不自动扩展授权。当前真实用户配置四项原已开启，未改账号、图像质量或聊天数据。
+- 实际文件：`src/config.js` 新默认及旧未答复标记迁移；`src/mcp/init.js` 保留启动接线并隔离测试外部进程；`desktop-ui/app.js` 删除弹窗和选择回调，旧 dispatcher 删除。后续手动关闭持久保留；角色授权与单次调用审批不变。
+- 验证：新迁移及极简 PATH 冷进程回归先红后绿；MCP 63/63，浏览器启动/刷新/服务重启专项 1/1。原生真实启动发现 NVM Node 所在目录没进 PATH，四服务均未连接；已在 `src/mcp/client.js` 补本 Node 安装目录并保留显式服务 PATH。重启后四服务全部连接，Browserless 关闭，无启动弹窗；14 对话/1项目/6角色保留。
+- 证据：`.tmp/mcp-startup-20261015/desktop-path-fixed.json`（PID 79771）及 red/green/browser 日志。共享树日常 JS 3493/3494，已有图片预览焦点断言失败，独立复跑同样失败（主线也已记录）；不改无关 WIP。隔离暂存树 `npm test` 通过：3485 JS / 1 项未复制打包模型而跳过、语法、设置/加速浏览器、21 Swift/共享渲染；179.6 秒。第二次原生冷启动 PID 86552 四项已连接，退出旧进程已清理。没有模型/生图/真实业务工具调用；详见 `docs/mcp-startup-20261015.md`。

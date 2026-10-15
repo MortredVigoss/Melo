@@ -123,7 +123,7 @@ export async function connectMcpServer(serverName, serverConfig) {
     // pinned to an exact version (browserless today) must NOT spawn —
     // doing so would let `npx -y @pkg@latest` execute whatever the
     // maintainer pushed up at the moment of boot, defeating the
-    // version-lock contract the consent modal promises. Same disconnect-
+    // version-lock contract for automatic startup. Same disconnect-
     // existing-then-skip dance as the `disabled` branch above so an
     // earlier-running version doesn't linger after the contract changes.
     if (_clients.has(serverName)) {
@@ -276,9 +276,8 @@ function pinPackageArg(arg) {
   // npx args look like `<package>@<spec>` or just `<package>`.  We
   // rewrite to the locked version when we know one. This stops
   // `npx -y latest` supply-chain churn (Codex audit 2026-04-29):
-  // first-boot consent confirms the user trusts the pinned versions
-  // listed in the modal; later silent upgrades happen on a melo
-  // release boundary, not on whoever publishes a new npm tag.
+  // the built-in startup policy uses these pinned versions; upgrades
+  // happen on a Melo release boundary, not on each new npm tag.
   if (typeof arg !== 'string') return arg;
   const atIdx = arg.lastIndexOf('@');
   // scoped names (`@scope/name`) have an `@` at index 0 we must
@@ -345,13 +344,9 @@ for (const preset of Object.values(BROWSER_MCP_PRESETS)) {
  * Built-in MCP server presets for productivity tools (charts, document
  * conversion).  Same flag-driven on/off model as `BROWSER_MCP_PRESETS`;
  * each entry surfaces in `getBuiltinMcpPresets()` for the Advanced UI to
- * render a toggle.  Defaults are tuned for safety: only the document
- * converter is on out of the box (matches user request "默认只启用搜索和
- * PDF"); chart server stays opt-in because it pulls a heavier dep tree
- * + can fetch external resources at render time.
- *
- *   config.enableMarkdown2PdfMcp = true (default)  → @99xio/markdown2pdf-mcp
- *   config.enableAntvChartMcp    = false (default) → @antv/mcp-server-chart
+ * render a toggle. These no-fee presets start by default; manual disables
+ * remain effective. AntV uses a free remote renderer; PDF and Mermaid render
+ * locally. Startup alone does not grant tool-call permission to agents.
  */
 const BUILTIN_MCP_PRESETS = {
   'antv-chart': {

@@ -221,21 +221,14 @@ test('mcpPresetToggleRefusalReason — unknown flag falls through to allow (serv
   assert.equal(mcpPresetToggleRefusalReason('enableNonexistentMcp', true), null);
 });
 
-test('DEFAULT_CONFIG keeps every productivity-MCP flag false (no auto-spawn on fresh install)', async () => {
-  // Codex C 二轮 audit (2026-04-29): an out-of-the-box melo install
-  // must NOT spawn arbitrary npm packages without a user click. The
-  // first-boot consent modal is what flips these flags on. This test
-  // pins the contract — flipping a default to true here re-opens the
-  // unsupervised supply-chain attack surface and breaks consent UX.
+test('DEFAULT_CONFIG enables the four no-fee presets and leaves the cloud preset off', async () => {
   const { DEFAULT_CONFIG } = await import('../config.js');
-  assert.equal(DEFAULT_CONFIG.enableAntvChartMcp, false);
-  assert.equal(DEFAULT_CONFIG.enableMarkdown2PdfMcp, false);
-  assert.equal(DEFAULT_CONFIG.enableMermaidMcp, false);
-  // Browser MCPs follow the same default-off rule.
-  assert.equal(DEFAULT_CONFIG.enablePlaywrightMcp, false);
+  assert.equal(DEFAULT_CONFIG.enableAntvChartMcp, true);
+  assert.equal(DEFAULT_CONFIG.enableMarkdown2PdfMcp, true);
+  assert.equal(DEFAULT_CONFIG.enableMermaidMcp, true);
+  assert.equal(DEFAULT_CONFIG.enablePlaywrightMcp, true);
   assert.equal(DEFAULT_CONFIG.enableBrowserlessMcp, false);
-  // Consent gate starts false — first-boot modal sets it true.
-  assert.equal(DEFAULT_CONFIG.productivityMcpsConsented, false);
+  assert.equal(DEFAULT_CONFIG.productivityMcpsConsented, true);
 });
 
 test('preset config is stripped of the preset-only `flag` + `description` fields', () => {

@@ -55,7 +55,6 @@ import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.j
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
-import { runProductivityMcpsConsentChoice } from './productivityMcpConsent.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import {
   decideFileSafetyPreflight,
@@ -11131,71 +11130,6 @@ function renderFileSafetyDialog(entry) {
   `;
 }
 
-// ─── First-boot productivity-MCP consent modal ────────────────────────────────
-//
-// Codex audit 2026-04-29 (二轮): the per-agent whitelist + per-call
-// approval gates only restrict tool *calls* — they do NOT gate the
-// npm download / install scripts / server startup code that runs as
-// soon as `initMcpServers` spawns the stdio child. Default-true on
-// `enableAntvChartMcp / enableMarkdown2PdfMcp / enableMermaidMcp`
-// would therefore execute three external npm packages on every
-// fresh install with zero user click — supply-chain attack surface
-// no in-melo gate can close.
-//
-// Resolution: defaults stay false, but one consent modal at first
-// boot lets the user accept all three (with the exact pinned
-// versions shown) or skip in a single click. Once dismissed, the
-// `productivityMcpsConsented` flag flips true and this modal never
-// shows again on this MELO_HOME.
-function renderProductivityMcpConsentModal() {
-  if (uiState.bootstrap?.settings?.config?.productivityMcpsConsented) {
-    return '';
-  }
-  // Don't stack on top of the tool-permission modal — that one is
-  // higher-priority (mid-conversation request) and the consent
-  // modal can wait one render.
-  if (uiState.pendingToolPermissions?.length) {
-    return '';
-  }
-  return ui`
-    <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="Productivity MCP consent">
-      <div class="tool-permission-shell">
-        <div class="tool-permission-header">
-          <span class="tool-permission-icon">${icon.chip}</span>
-          <div>
-            <div class="tool-permission-title">启用本地 productivity MCP？</div>
-            <div class="tool-permission-subtitle">First-boot consent — 仅询问一次</div>
-          </div>
-        </div>
-        <div class="tool-permission-body">
-          <div style="margin-bottom: 12px;">
-            Melo 推荐三个本地 stdio MCP server（无需 API key）：
-          </div>
-          <ul style="margin: 0 0 12px 16px; padding: 0; line-height: 1.7;">
-            <li><code>@antv/mcp-server-chart@0.9.10</code> — 25+ 种图表</li>
-            <li><code>@99xio/markdown2pdf-mcp@2.2.0</code> — Markdown → PDF</li>
-            <li><code>mcp-mermaid@0.4.1</code> — 流程图 / 序列图 → PNG</li>
-          </ul>
-          <div style="font-size: 13px; opacity: 0.78; line-height: 1.6;">
-            版本已锁定 — 启用即信任以上 pinned npm 包在你机器上执行本地代码（包脚本、子进程、文件 / 网络访问 melo 都无法沙箱）。<br>
-            启用后每个 agent 仍需在 Customize → Agents 的 chip-row 里逐个授权才能调用，单次调用还会再问一次。
-          </div>
-        </div>
-        <div class="tool-permission-footer">
-          <div class="inline-actions">
-            <button class="small-button is-primary" data-action="productivity-mcps-enable-all">
-              全部启用
-            </button>
-            <button class="small-button" data-action="productivity-mcps-skip">
-              暂不启用
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 // ─── Tool call status strip (shown while tool is executing) ───────────────────
 //
 // G-1f (2026-05-12): extracted to ./activeToolCallsStrip.js so the renderer
@@ -11461,7 +11395,6 @@ function render({ background = false, changedSections = null } = {}) {
     ${renderRecentContextMenu()}
     ${renderAudioContextMenu()}
     ${renderToolPermissionDialog()}
-    ${renderProductivityMcpConsentModal()}
     ${uiState.error ? ui`<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
   `);
 
@@ -12595,29 +12528,6 @@ document.addEventListener('click', async event => {
           await refreshAdvancedStatus();
         } catch (err) {
           uiState.error = `Toggle failed: ${err?.message || err}`;
-          render();
-          setTimeout(() => { uiState.error = null; render(); }, 4000);
-        }
-        break;
-      }
-      case 'productivity-mcps-enable-all':
-      case 'productivity-mcps-skip': {
-        // First-boot consent modal. Either choice flips
-        // `productivityMcpsConsented` true so the modal never shows
-        // again on this MELO_HOME. "Enable all" additionally turns
-        // on the three flags first via /api/mcp/preset-toggle.
-        // The actual sequence lives in
-        // desktop-ui/productivityMcpConsent.js so node:test can
-        // exercise it without a fake DOM.
-        try {
-          await runProductivityMcpsConsentChoice({
-            enableAll: action === 'productivity-mcps-enable-all',
-            apiFn: api,
-          });
-          uiState.advanced = { ...uiState.advanced, loaded: false };
-          await loadBootstrap(uiState.searchQuery, { quiet: true });
-        } catch (err) {
-          uiState.error = `Consent save failed: ${err?.message || err}`;
           render();
           setTimeout(() => { uiState.error = null; render(); }, 4000);
         }
