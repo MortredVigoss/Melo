@@ -5,7 +5,6 @@
 <h1 align="center">Melo</h1>
 <p align="center"><strong>Your models, your memory, your workspace.</strong></p>
 <p align="center">A local-first personal AI workspace for macOS and iPhone.</p>
-<p align="center">English · <a href="README.zh-CN.md">简体中文</a></p>
 
 Melo brings conversations, projects, persistent memory, and tool-driven work into one personal workspace. A neural interface connects the macOS desktop, a native iPhone client, and a terminal interface.
 
