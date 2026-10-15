@@ -1077,6 +1077,177 @@
         "version",
         "chats"
       ]
+    },
+    "agentCapabilities": {
+      "type": "object",
+      "required": [
+        "version",
+        "readFiles",
+        "writeFiles",
+        "runCommands",
+        "network",
+        "knowledgeMemory",
+        "generateMedia",
+        "delegate",
+        "mcpServers",
+        "skills",
+        "connectors"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "readFiles": {
+          "type": "boolean"
+        },
+        "writeFiles": {
+          "type": "boolean"
+        },
+        "runCommands": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "boolean"
+        },
+        "knowledgeMemory": {
+          "type": "boolean"
+        },
+        "generateMedia": {
+          "type": "boolean"
+        },
+        "delegate": {
+          "type": "boolean"
+        },
+        "mcpServers": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "connectors": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "agentCollaboration": {
+      "type": "object",
+      "required": [
+        "canDelegate",
+        "delegateTargets",
+        "maxDelegationDepth",
+        "maxIterations",
+        "maxTokens",
+        "timeoutMs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "canDelegate": {
+          "type": "boolean"
+        },
+        "delegateTargets": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "maxDelegationDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "maxIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900000
+        }
+      }
+    },
+    "agentContextSources": {
+      "type": "object",
+      "required": [
+        "projects",
+        "knowledge",
+        "memory"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "type": "boolean"
+        },
+        "knowledge": {
+          "type": "boolean"
+        },
+        "memory": {
+          "type": "boolean"
+        }
+      }
+    },
+    "agentSettings": {
+      "type": "object",
+      "required": [
+        "agentId",
+        "projectId",
+        "capabilities",
+        "collaboration",
+        "contextSources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/id"
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "$ref": "#/$defs/agentCapabilities"
+        },
+        "collaboration": {
+          "$ref": "#/$defs/agentCollaboration"
+        },
+        "contextSources": {
+          "$ref": "#/$defs/agentContextSources"
+        }
+      }
     }
   }
 }

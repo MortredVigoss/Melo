@@ -3761,6 +3761,7 @@ async function handleSendMessage(prepared = null) {
   // dropping it (aborted run — a half-finished sentence would otherwise
   // play seconds after the Stop click).
   const imageTask = prepared?.imageTask || consumeImageTask();
+  const teamPlan = prepared?.teamPlan || null;
   let sendWasAborted = false;
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
@@ -3774,7 +3775,7 @@ async function handleSendMessage(prepared = null) {
   if (!prepared) uiState.composerVoiceAttachmentId = null;
 
   let chatId = prepared?.chatId || (fromOverview ? null : uiState.bootstrap?.settings?.selectedChatId || null);
-  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask,
+  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
     voiceTranscript, voiceAttachmentId, mode: uiState.bootstrap?.settings?.activeMode,
     agentId: activeChat()?.agentId || uiState.bootstrap?.settings?.selectedAgentId,
     modelSelection: activeChat()?.modelSelection || null });
@@ -3828,6 +3829,7 @@ async function handleSendMessage(prepared = null) {
         content,
         attachments,
         ...(imageTask ? { imageTask } : {}),
+        ...(teamPlan ? {teamPlan} : {}),
         ...(voiceTranscript
           ? {
               extractedMedia: [
@@ -6765,7 +6767,7 @@ function renderTaskPanel({ compact = false } = {}) {
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
                       ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多Agent协作 · 职责与费用</summary><p>每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
+                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多Agent协作 · 职责与费用</summary><p>每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。</p><select id="team-plan-${task.id}"><option value="parallel-research">并行调研</option><option value="research-build-review">调研 → 实施 → 复核</option><option value="review-loop">实施 / 复核循环（最多 2 轮）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
                       ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各成员结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
                       ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
                       ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
@@ -6925,6 +6927,7 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
+                <details class="conversation-context"><summary>多 Agent 协作</summary><input class="input" id="chat-team-members" placeholder="成员 Agent ID，逗号分隔；空为默认成员"><select id="chat-team-template"><option value="research-build-review">调研 → 实施 → 复核</option><option value="parallel-research">并行调研</option><option value="review-loop">实施 / 复核循环</option></select><button type="button" class="small-button" data-action="run-chat-team" ${uiState.sending?'disabled':''}>执行输入框中的团队任务</button></details>
                 ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
@@ -10808,7 +10811,7 @@ function renderToolPermissionDialog() {
           </div>
         </div>
         <div class="tool-permission-body">
-          <div class="tool-permission-tool-name">${escapeHtml(toolId)}</div>
+          <div class="tool-permission-tool-name">${escapeHtml(entry.agentId || 'Agent')} · ${escapeHtml(toolId)}</div>
           ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
           <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
@@ -10982,6 +10985,7 @@ function renderFileSafetyDialog(entry) {
           </div>
         </div>
         <div class="tool-permission-body">
+          <p>${escapeHtml(entry.agentId || 'Agent')}</p>
           ${errorBanner}
           ${body}
         </div>
@@ -11308,6 +11312,7 @@ function render({ background = false, changedSections = null } = {}) {
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
+        ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
         ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
         <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
@@ -12144,9 +12149,10 @@ document.addEventListener('click', async event => {
         await startProjectSession(trigger.dataset.projectId, 'code');
         break;
       case 'resolve-sync-conflict': {
-        const row=uiState.bootstrap.syncConflicts.find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
+        const settings=trigger.dataset.settings==='true';
+        const row=(settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
         const index=Number(trigger.dataset.index);
-        await api('/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
+        await api(settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
         applyBootstrap(await api('/api/bootstrap')); break;
       }
       case 'toggle-project-form':
@@ -12892,8 +12898,13 @@ document.addEventListener('click', async event => {
       case 'task-operation-retry':
         try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
         break;
+      case 'run-chat-team': {
+        const chat=activeChat(), content=uiState.composer.trim();
+        if(!content) {showError('请先在输入框写下团队任务。');break;}
+        await handleSendMessage({chatId:chat?.id,content,teamPlan:{templateId:document.getElementById('chat-team-template')?.value || 'research-build-review',...(document.getElementById('chat-team-members')?.value?.trim()?{members:document.getElementById('chat-team-members').value.split(',').map(s=>s.trim()).filter(Boolean)}:{})}});break;
+      }
       case 'run-task-team':
-        await handleRunTask(trigger.dataset.taskId, {roles:(document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research,reviewer').split(','),concurrency:2});
+        await handleRunTask(trigger.dataset.taskId, {templateId:document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research-build-review'});
         break;
       case 'run-task':
         await handleRunTask(trigger.dataset.taskId);

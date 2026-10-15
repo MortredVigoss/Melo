@@ -37,12 +37,20 @@ struct SettingsContent: View {
                     DisclosureGroup("同步服务配置") {
                         SyncSettingsSection()
                     }.font(.subheadline)
-                    Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
                     ForEach(store.preferences.personaRecoveries ?? []) { recovery in
                         DisclosureGroup("本机人设恢复副本") {
                             Text(recovery.key + " · " + recovery.createdAt).font(.caption)
                             ForEach(recovery.agents.keys.sorted(), id: \.self) { id in
                                 Text(recovery.agents[id]?.instructions ?? "").font(.caption).textSelection(.enabled)
+                            }
+                        }
+                    }
+                    ForEach(store.preferences.agentSettingsSync?.conflicts ?? [], id: \.key) { conflict in
+                        DisclosureGroup("Agent 能力冲突 · \(conflict.label)") {
+                            ForEach(Array(conflict.versions.enumerated()),id: \.offset) { index,version in
+                                Text(version.value["content"].string).font(.caption).textSelection(.enabled)
+                                Button("采用版本 \(index + 1)") { store.resolveAgentSettingsConflict(conflict.key,choice:index,expected:version) }.disabled(store.syncing)
                             }
                         }
                     }

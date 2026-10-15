@@ -137,8 +137,10 @@ enum WorkspaceProjection {
         }
         return (try workspace.validated(), holds)
     }
-    static func readAgent(_ id: String, _ v: SyncValue) -> AgentProfile {
-        .init(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
+    static func readAgent(_ id: String, _ v: SyncValue, previous: AgentProfile? = nil) -> AgentProfile {
+        var result = AgentProfile(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
+        result.capabilities=previous?.capabilities; result.collaboration=previous?.collaboration; result.contextSources=previous?.contextSources
+        return result
     }
 
     static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection], resolvedKeys: Set<String> = []) throws {
@@ -163,13 +165,14 @@ enum WorkspaceProjection {
                 if let index = facts.firstIndex(where: { $0.id == fact.id }) { facts[index] = fact } else { facts.append(fact) }
                 preferences.memoryFacts = facts
             case "agent":
-                let a = readAgent(row.id,v)
+                let a = readAgent(row.id,v,previous:preferences.agents.first { $0.id == row.id })
                 if let index = preferences.agents.firstIndex(where: { $0.id == row.id }) { preferences.agents[index] = a } else { preferences.agents.append(a) }
             case "project":
                 let p = PersonalProject(id:row.id,name:v["name"].string,goal:v["goal"].string,instructions:v["instructions"].string,knowledgeIds:Set(v["knowledgeIds"].array.map(\.string)),archived:v["archived"].bool)
                 var projects = preferences.projects ?? []; if let index = projects.firstIndex(where: { $0.id == row.id }) { projects[index] = p } else { projects.append(p) }; preferences.projects = projects
                 if preferences.projectAgents == nil { preferences.projectAgents = [:] }
-                preferences.projectAgents?[row.id] = v["agentOverrides"].object.mapValues { readAgent("",$0) }
+                let previousAgents=preferences.projectAgents?[row.id] ?? [:]
+                preferences.projectAgents?[row.id] = Dictionary(uniqueKeysWithValues:v["agentOverrides"].object.map { id,value in (id,readAgent(id,value,previous:previousAgents[id])) })
                 for id in preferences.projectAgents?[row.id]?.keys.map({$0}) ?? [] { preferences.projectAgents?[row.id]?[id]?.id = id }
             case "knowledge":
                 let n = KnowledgeNote(id:row.id,title:v["title"].string,content:v["content"].string,deleted:v["deleted"].bool,kind:v["kind"].string,language:v["language"].string,projectId:v["projectId"] == .null ? nil : v["projectId"].string)

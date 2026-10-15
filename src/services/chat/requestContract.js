@@ -1,3 +1,4 @@
+import {validateTeamPlan} from '../../agents/team.js';
 import { validateImageTask } from '../../images/imageSettings.js';
 import { createHash } from 'node:crypto';
 
@@ -27,6 +28,7 @@ export function validateChatRequest(input) {
   }
   if (!input.content?.trim() && !input.attachments?.length) throw requestError('EMPTY_MESSAGE', 'Message cannot be empty.');
   if (input.imageTask != null) { try { validateImageTask(input.imageTask); } catch(error) { throw requestError('INVALID_IMAGE_TASK',error.message); } }
+  if(input.teamPlan!=null) {try {validateTeamPlan(input.teamPlan);}catch(error){throw requestError('INVALID_TEAM_PLAN',error.message);}}
   return input;
 }
 
@@ -43,6 +45,7 @@ export function chatRequestFingerprint(input) {
     agentId: input.agentId || null, background: Boolean(input.background),
     channelContext: input.channelContext || null, providerProfile: input.providerProfile || 'default',
     demonMode: Boolean(input.demonMode),
+    ...(input.teamPlan ? {teamPlan:validateTeamPlan(input.teamPlan)} : {}),
     ...(input.imageTask ? { imageTask: validateImageTask(input.imageTask) } : {}),
   }))).digest('hex');
 }

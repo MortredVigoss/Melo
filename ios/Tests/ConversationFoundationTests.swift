@@ -117,6 +117,31 @@ import Foundation
     assert(heldPreferences.agents[0].instructions == "Remote edit")
     assert(heldPreferences.personaRecoveries?.last?.agents["held"]?.instructions.count == 50001)
     assert(!WorkspaceProjection.pending(heldPreferences).contains("agent:held"))
+    var capPreferences=MobilePreferences()
+    capPreferences.agents=[AgentProfile(id:"portable",name:"Test",subtitle:"",symbol:"star",instructions:"keep persona")]
+    capPreferences.agents[0].capabilities=nil
+    capPreferences.projects=[.init(id:"p",name:"Project",goal:"")]
+    capPreferences.projectAgents=["p":["portable":capPreferences.agents[0]]]
+    let capWire=try JSONDecoder().decode(SyncWorkspace.self,from:Data(contentsOf:URL(fileURLWithPath:"mobile-sync/fixtures/agent-settings.json")))
+    try AgentSettingsProjection.apply(capWire,preferences:&capPreferences)
+    assert(capPreferences.agents[0].capabilities?["network"].bool == true)
+    assert(capPreferences.projectAgents?["p"]?["portable"]?.capabilities?["network"].bool == false)
+    assert(capPreferences.agents[0].instructions == "keep persona")
+    let capAgain=try AgentSettingsProjection.refreshed(capPreferences,device:"phone")
+    assert(capAgain == capWire)
+    var other=capPreferences
+    let otherCaps=other.agents[0].capabilities?.object ?? [:]
+    other.agents[0].capabilities = .object(otherCaps.merging(["writeFiles":.bool(true)]) { _,v in v })
+    let localCaps=capPreferences.agents[0].capabilities?.object ?? [:]
+    capPreferences.agents[0].capabilities = .object(localCaps.merging(["runCommands":.bool(true)]) { _,v in v })
+    let mergedCaps=try AgentSettingsProjection.refreshed(other,device:"second").merging(AgentSettingsProjection.refreshed(capPreferences,device:"phone"))
+    assert(mergedCaps.conflicts.count == 1)
+    try AgentSettingsProjection.apply(mergedCaps,preferences:&capPreferences)
+    assert(capPreferences.agents[0].capabilities?["runCommands"].bool == true)
+    let capSaved=try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(capPreferences))
+    assert(capSaved.agentSettingsSync?.conflicts.count == 1)
+    let legacyUpdate=WorkspaceProjection.readAgent("portable",.object(["name":.string("New"),"instructions":.string("new persona")]),previous:capSaved.agents[0])
+    assert(legacyUpdate.capabilities == capSaved.agents[0].capabilities)
     print("Conversation foundations passed: legacy preferences, avatar/selection persistence, role/project/reference prompts, history attribution and readable tables/code")
  }
 }

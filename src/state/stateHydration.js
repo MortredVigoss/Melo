@@ -1,3 +1,4 @@
+import {normalizeHandoff} from '../agents/handoff.js';
 import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { recommendedCapabilities } from '../domain/agent/capabilities.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
@@ -133,6 +134,8 @@ function normalizeToolResultsForHydration(rawList) {
       entry.errorCode = item.errorCode;
     }
     if (typeof item.backupOperationId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(item.backupOperationId)) entry.backupOperationId = item.backupOperationId;
+    if (item.handoff) entry.handoff=normalizeHandoff(item.handoff);
+    if (item.member) entry.member={agentId:String(item.member.agentId),name:String(item.member.name),memberId:String(item.member.memberId),durationMs:Number(item.member.durationMs)||0};
     if (typeof item.path === 'string') entry.path = item.path;
     if (Number.isInteger(item.exitCode)) entry.exitCode = item.exitCode;
     if (item.replayed === true) entry.replayed = true;

@@ -46,6 +46,7 @@ struct AgentEditor: View {
                     }
                 }
                 if session.isEditing { editableFields } else { details }
+                capabilityDetails
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle(LocalizedStringKey(session.isNew ? "创建Agent" : "Agent详情"))
@@ -86,6 +87,19 @@ struct AgentEditor: View {
         .onChange(of: current) { _, value in if let value { session.refresh(value) } }
         .onChange(of: session) { _, _ in _ = preserveDraft() }
         .onDisappear { _ = preserveDraft() }
+    }
+    @ViewBuilder private var capabilityDetails: some View {
+        Section("电脑执行能力") {
+            Text("能力范围与电脑同步；请在电脑编辑。手机不执行多 Agent 协作。").font(.caption).foregroundStyle(.secondary)
+            if let caps=session.draft.capabilities {
+                ForEach(["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"],id: \.self) { key in
+                    HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }
+                }
+                ForEach(["mcpServers","skills","connectors"],id: \.self) { key in
+                    if !caps[key].array.isEmpty { Text(key + ": " + caps[key].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
+                }
+            } else { Text("能力设置尚未从电脑同步") }
+        }
     }
     @ViewBuilder private var details: some View {
         Section {

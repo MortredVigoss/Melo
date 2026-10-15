@@ -305,7 +305,7 @@ import SwiftUI
                 }, reportFailure: false)
             }
         }
-        var recalled: (facts: [MobileMemoryFact], semantic: Bool) = plan.makesImage ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id)), hasAttachments: !plan.references.isEmpty)
+        var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id)), hasAttachments: !plan.references.isEmpty)
         let memoryBudget = max(0, ConversationHistory.textByteBudget - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
         instructions += MobileMemoryRecall.instructions(recalled.facts)
@@ -497,7 +497,37 @@ import SwiftUI
             migrateLegacyReferences()
             let conflicts = preferences.workspaceSync?.conflicts.count ?? 0
             syncStatus = !WorkspaceProjection.pending(preferences).isEmpty ? "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" : remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
+            if syncLoader == nil { await syncAgentSettings(endpoint:endpoint,token:token) }
         } catch { syncStatus = "同步未完成 · " + error.localizedDescription; if reportErrors { self.error = error.localizedDescription } }
+    }
+    private func syncAgentSettings(endpoint: String, token: String) async {
+        do {
+            let outgoing=try AgentSettingsProjection.refreshed(preferences,device:syncDevice)
+            guard updatePreferences({ $0.agentSettingsSync=outgoing }) else { return }
+            let base=try Network.endpoint(endpoint)
+            let url=base.deletingLastPathComponent().appendingPathComponent("agent-settings")
+            let data=try await Network.post(url,token:token,body:JSONEncoder().encode(outgoing),timeout:20,optionalExtension:true)
+            let remote=try AgentSettingsProjection.validated(JSONDecoder().decode(SyncWorkspace.self,from:data))
+            let latest=try AgentSettingsProjection.refreshed(preferences,device:syncDevice)
+            var next=preferences
+            try AgentSettingsProjection.apply(latest.merging(remote),preferences:&next)
+            try commitSync(.init(snapshot:.init(chats:chats,tasks:taskCheckpoints,handoffs:taskHandoffs,deletedChats:deletedChats),preferences:next,records:executionRecords))
+            preferences=next
+            if !(next.agentSettingsSync?.conflicts.isEmpty ?? true) { syncStatus += " · Agent 能力设置有冲突，所有版本已保留" }
+        } catch is Network.ExtensionUnavailable {
+            syncStatus += " · Agent 能力设置待同步，请升级同步服务"
+        } catch { syncStatus += " · Agent 能力设置待同步：" + error.localizedDescription }
+    }
+    func resolveAgentSettingsConflict(_ key: String, choice: Int, expected: SyncVersion) {
+        guard storageReady,executionReady,!syncing else { return }
+        do {
+            var workspace=try AgentSettingsProjection.refreshed(preferences,device:syncDevice)
+            guard let row=workspace.records.first(where: { $0.key == key }),row.versions.indices.contains(choice),row.versions[choice] == expected else { throw MeloError.message("同步冲突已变化，请刷新后重新选择。") }
+            try workspace.resolve(key:key,choice:choice,device:syncDevice)
+            var next=preferences;try AgentSettingsProjection.apply(workspace,preferences:&next)
+            guard updatePreferences({ $0=next }) else { return }
+            syncStatus="冲突选择已保存 · 下次同步会发送所选版本"
+        } catch { self.error=error.localizedDescription }
     }
     private var syncDevice: String {
         if let saved = UserDefaults.standard.string(forKey: "syncDeviceID") { return saved }

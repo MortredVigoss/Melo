@@ -153,6 +153,7 @@ async function executeChatTurn({
   mode,
   attachments = [],
   imageTask = null,
+  teamPlan = null,
   extractedMedia = [],
   signal,
   onDelta,
@@ -321,6 +322,7 @@ async function executeChatTurn({
       skills,
       latestUserMessage: trimmed,
       imageTask,
+      teamPlan,
       onImageTaskResolved: task => persistResolvedImageTask(context, task),
       onImageProgress: async progress => {
         partialImageMessage = await persistImageProgress(context, progress, {id:effectiveAgentId,name:activeAgentProfile.name});

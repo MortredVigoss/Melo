@@ -155,7 +155,10 @@ async function runObservedTool(tool, args, options = {}) {
     capabilities: options.capabilities,
     collaboration: options.collaboration,
     agentProfiles: options.agentProfiles,
+    extraTools: options.extraTools,
     projectId: options.projectId,
+    ancestry: options.ancestry,
+    maxDelegationDepth: options.maxDelegationDepth,
     // Null is the legacy unrestricted caller; an array (including []) means the sub-agent
     // must stay within this whitelist. Tools like `agent` propagate this downward.
     allowedToolIds: Array.isArray(allowedToolIds) ? allowedToolIds : null,

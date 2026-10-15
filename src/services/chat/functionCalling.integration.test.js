@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {emptyCapabilities} from '../../domain/agent/capabilities.js';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,7 +18,7 @@ const reasoning = id => ({ type: 'reasoning', id, summary: [], encrypted_content
 const done = output => `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'fixture-response', model: 'fixture-model', status: 'completed', output } })}\n\n`;
 const message = { type: 'message', role: 'assistant', id: 'answer', status: 'completed', content: [{ type: 'output_text', text: '核对完成。', annotations: [] }] };
 
-async function harness(t, respond) {
+async function harness(t, respond, options={}) {
   const home = await mkdtemp(join(tmpdir(), 'melo-main-functions-'));
   const requests = [], events = [], executions = [], permissions = [];
   const server = createServer(async (req, res) => {
@@ -34,16 +35,17 @@ async function harness(t, respond) {
   t.after(async () => { unregisterTool('fixture_lookup'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(home, { recursive: true, force: true }); });
   const config = { authMode: 'api-key', apiProtocol: 'responses', apiKey: 'fixture-key', model: 'fixture-model',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, activeLlmProfileId: 'fixture', conversationModelSelected: true };
-  const text = '请调用工具读取本地代码并核对其中的内容';
+  const text = options.text || '请调用工具读取本地代码并核对其中的内容';
   const chat = { id: 'fixture-chat', title: 'Fixture', mode: 'chat', agentId: 'main', projectId: null,
     messages: [{ id: 'user-1', role: 'user', content: text, createdAt: new Date().toISOString() }], sessionMemory: [] };
   const state = { projects: [], chats: [chat], tasks: [], approvals: [], artifacts: [], commandRuns: [], externalConnectors: [],
     agentProfiles: { main: { id: 'main', name: 'Fixture', model: 'fixture-model', tools: [], skills: [], channels: {}, identity: '', soulMd: '' } },
     projectAgentOverrides: {}, settings: { selectedChatId: chat.id, selectedAgentId: 'main', activeMode: 'chat', promptHistory: [] } };
+  if(options.profiles)state.agentProfiles=options.profiles;
   const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config,
     env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0' } }),
     turnBinding: { role: 'main', project: null, taskId: null } });
-  const run = signal => runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat, signal,
+  const run = signal => runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat, signal, teamPlan:options.teamPlan,
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
     connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null },
     sseEmitter(type, event) {
@@ -88,4 +90,20 @@ test('main chat never executes calls from a truncated stream or a cancelled turn
   await assert.rejects(h.run(AbortSignal.abort()), /abort/i);
   assert.equal(h.requests.length, requests, 'cancelled turn performs no model request');
   assert.equal(h.executions.length, 0); assert.equal(h.permissions.length, 0);
+});
+
+
+test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{
+ const cap={...emptyCapabilities(),delegate:true};
+ const profiles={main:{id:'main',name:'Main',instructions:'parent',model:'parent',capabilities:cap},research:{id:'research',name:'Research',instructions:'research persona',model:'research-model',capabilities:emptyCapabilities()},reviewer:{id:'reviewer',name:'Reviewer',instructions:'review persona',model:'review-model',capabilities:emptyCapabilities()}};
+ const h=await harness(t,round=>done([{...message,content:[{type:'output_text',text:JSON.stringify({conclusion:'result '+round,evidence:['fixture source'],changedFiles:[],unfinished:[],review:'approve'}),annotations:[]}]}]),{text:'比较这些选择',profiles,teamPlan:{members:['research','reviewer'],mode:'sequential'}});
+ const result=await h.run();
+ assert.equal(h.requests.length,2);
+ assert.deepEqual(h.requests.map(r=>r.body.model),['research-model','review-model']);
+ assert.match(JSON.stringify(h.requests[0].body),/research persona/);
+ assert.match(JSON.stringify(h.requests[1].body),/review persona/);
+ assert.match(JSON.stringify(h.requests[1].body),/result 1/);
+ assert.ok(h.requests.every(r=>!(r.body.tools||[]).some(t=>t.type==='web_search'||t.type==='image_generation'||t.name==='bash')));
+ assert.equal(h.events.filter(e=>e.event.handoff).length,2);
+ assert.match(result.normalizedReply.content,/result/);
 });

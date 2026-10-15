@@ -17,6 +17,13 @@ async function sync() {
     const remote = await exchange(endpoint, outgoing);
     requireDeletionAcknowledgement(outgoing, remote);
     await exchange(local, remote);
+    try {
+      const settingsLocal=local.replace('/api/mobile-sync','/api/agent-settings-sync');
+      const settingsRemote=new URL(endpoint);settingsRemote.pathname=settingsRemote.pathname.replace(/\/sync$/, '/agent-settings');
+      const caps=await exchange(settingsLocal);
+      const remoteCaps=await exchange(settingsRemote,caps);
+      await exchange(settingsLocal,remoteCaps);
+    }catch(error){console.error('Chat synced; Agent settings pending: '+error.message);}
     console.log(outgoing.workspace && remote.workspace ? 'Chat and context sync complete' : 'Chat text synced; update both sync endpoints to support roles, models, knowledge and execution sources');
   }
   catch (error) { console.error(error.message); }

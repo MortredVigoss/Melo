@@ -4,6 +4,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 enum Network {
+    struct ExtensionUnavailable: Error {}
     static func contextLimitError(_ data: Data) -> MeloError? {
         guard data.count <= 16_384, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let error = json["error"] as? [String: Any] else { return nil }
         let code = (error["code"] as? String ?? "").lowercased()
@@ -28,7 +29,7 @@ enum Network {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.fragment == nil else { throw MeloError.message("请输入完整的 HTTPS 服务地址。") }
         return url
     }
-    static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120) async throws -> Data {
+    static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120, optionalExtension: Bool = false) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = timeout
@@ -38,6 +39,7 @@ enum Network {
         request.httpBody = body
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
+        if optionalExtension && http.statusCode == 404 { throw ExtensionUnavailable() }
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
             switch http.statusCode {

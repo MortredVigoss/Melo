@@ -31115,6 +31115,146 @@
           }
         }
       }
+    },
+    "电脑执行能力": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电脑执行能力"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop capabilities"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デスクトップの実行機能"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데스크톱 실행 기능"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capacidades de escritorio"
+          }
+        }
+      }
+    },
+    "能力范围与电脑同步；请在电脑编辑。手机不执行多 Agent 协作。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能力范围与电脑同步；请在电脑编辑。手机不执行多 Agent 协作。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capabilities sync with desktop; edit them there. Multi-Agent collaboration runs on desktop."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機能範囲はデスクトップと同期されます。編集と複数 Agent の共同実行はデスクトップで行います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기능 범위는 데스크톱과 동기화됩니다. 편집 및 다중 Agent 협업은 데스크톱에서 실행합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las capacidades se sincronizan con el escritorio, donde se editan y ejecuta la colaboración entre Agents."
+          }
+        }
+      }
+    },
+    "能力设置尚未从电脑同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能力设置尚未从电脑同步"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capabilities have not synced from desktop yet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機能設定はまだデスクトップから同期されていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 데스크톱에서 기능 설정을 동기화하지 않았습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las capacidades aún no se han sincronizado desde el escritorio"
+          }
+        }
+      }
+    },
+    "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync conversations, Agent avatars, projects, shared materials, model selections, sources and task checkpoints. Agent capabilities sync separately. Keys, desktop paths and file grants remain local. A private context sync service is required."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話、Agent のアバター、プロジェクト、共有資料、モデル選択、出典、タスクのチェックポイントを同期します。Agent の機能範囲は別に同期し、キー、パス、ファイル許可は端末内に保持します。専用の同期サービスが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화, Agent 아바타, 프로젝트, 공유 자료, 모델 선택, 출처 및 작업 체크포인트를 동기화합니다. Agent 기능은 별도로 동기화하고 키, 경로, 파일 권한은 로컬에 보관합니다. 개인 동기화 서비스가 필요합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sincroniza conversaciones, avatares de Agent, proyectos, materiales, modelos, fuentes y puntos de control. Las capacidades de Agent se sincronizan por separado. Las claves, rutas y permisos de archivos permanecen locales. Requiere un servicio privado de sincronización."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -137,6 +137,7 @@ export function applyExecutionEvent(scene, event) {
       for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel']) {
         if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 12000 : 1000);
       }
+      if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
       if (event.status === 'running' && !stage.startedAt) stage.startedAt = at;
       if (TERMINAL_SCENE_STATUSES.includes(event.status)) stage.finishedAt = at;
       if (event.channel === 'reasoning-summary') stage.channel = 'reasoning-summary';

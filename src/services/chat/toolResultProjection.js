@@ -1,3 +1,4 @@
+import {normalizeHandoff} from '../../agents/handoff.js';
 /**
  * src/services/chat/toolResultProjection.js
  *
@@ -79,6 +80,8 @@ export function projectToolResultForPersist(call, result) {
   if (Array.isArray(result?.evidenceTrail) && result.evidenceTrail.length > 0) {
     entry.evidenceTrail = result.evidenceTrail;
   }
+  if (result?.meta?.handoff) entry.handoff=normalizeHandoff(result.meta.handoff);
+  if (result?.meta?.member) entry.member={agentId:String(result.meta.member.agentId),name:String(result.meta.member.name),memberId:String(result.meta.member.memberId),durationMs:Number(result.meta.member.durationMs)||0};
   if (result?.meta?.backupOperationId) entry.backupOperationId = result.meta.backupOperationId;
   if (result?.meta?.path) entry.path = String(result.meta.path);
   if (Number.isInteger(result?.meta?.exitCode)) entry.exitCode = result.meta.exitCode;

@@ -365,6 +365,7 @@ export function buildSkillTool(skill) {
         ? `[Skill] ${skill.description.trim()}`
         : `[Skill] Run the "${skill.name}" skill.`,
     category: 'skill',
+    allowedAgentIds: skill.allowedAgentIds || [],
     requiresPermission: false,
     // Skills run their own tool loop and can do side-effectful things;
     // never run two in parallel under the same caller.
