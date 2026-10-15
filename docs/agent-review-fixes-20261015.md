@@ -23,3 +23,9 @@
 - 桌面真实 HTTP + 浏览器：同步令牌拒绝、无来源请求拒绝、过期版本拒绝、桌面显式确认、两次冷启动持久化通过。首轮浏览器夹具因冷启动回到首页未导航至 Agent 设置超时；修正导航后通过，未放宽产品断言。
 - 21 组 Swift 已通过，包含围栏人设解析。未在实体手机重新安装；日常 JS 3545/3545、827 文件语法和两组浏览器已过；首轮因新增翻译后未更新 iOS 场景散列失败，重新生成后 21 Swift/共享渲染全部通过。
 - 证据：`/tmp/melo-agent-audit-red.log`、`/tmp/melo-agent-audit-focused.log`、`/tmp/melo-agent-audit-compat.log`、`/tmp/melo-agent-index-security.log`、`/tmp/melo-agent-sync-http-ui2.log`、`/tmp/melo-agent-audit-swift.log`。
+
+## 共享源码集成验收
+
+共享树保留其他线程阅读/图片/执行详情和手机改动；两个冲突保留旧顶栏删除，并同时保留手机知识/成果与人设围栏测试。共享资源按合并后的源文件重新生成。
+`npm test` 单次完整日常检查 GREEN（181.3 秒）：3554/3554 JS、834 文件语法、设置与加速浏览器、23 Swift 组及共享渲染。证据 `/tmp/melo-agent-audit-shared-daily.log`；这不是完整发布 gate 或真实账号协作验收。
+本机运行后端重启前备份在 `.tmp/agent-review-fixes-20261015/runtime-restart/`，含 43 文件原件及散列，确认没有活跃任务。重启回执后补；本轮没有替换手机安装包。
