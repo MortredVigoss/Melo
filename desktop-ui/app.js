@@ -6459,7 +6459,7 @@ function renderTopbar() {
         }
         <div class="status-pill">
           <span class="status-dot"></span>
-          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? '角色默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
+          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? 'Agent 默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
         </div>
       </div>
     </header>
@@ -8064,7 +8064,17 @@ function renderAgentCapabilities(selected,draft) {
   const value=k=>draft?.['cap_'+k] ?? c[k];
   const checked=k=>value(k)===true||value(k)==='on';
   const collaboration=draft?.collaboration || selected.collaboration || {};
-  return `<details class="agent-capabilities"><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+  const pending=selected.pendingCapabilityChange;
+  const settingText=value=>typeof value==='boolean'?t(value?'开启':'关闭'):Array.isArray(value)?value.join(', '):String(value);
+  const pendingChanges=pending ? [
+    ...Object.entries(selected.capabilityLabels||{}).filter(([key])=>pending.requested.capabilities[key]&&!selected.capabilities?.[key]).map(([,label])=>label),
+    ...[['mcpServers','MCP 服务'],['skills','技能'],['connectors','连接器']].flatMap(([key,label])=>pending.requested.capabilities[key].filter(id=>!selected.capabilities?.[key]?.includes(id)).map(id=>`${t(label)}: ${id}`)),
+    ...[['canDelegate','允许委派'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
+    ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
+  ] : [];
+  return `<details class="agent-capabilities" ${pending?'open':''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+    ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
+    ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
     ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     ${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(label)}</label>`).join('')}
@@ -12081,6 +12091,10 @@ document.addEventListener('click', async event => {
       case 'code-from-project':
         await startProjectSession(trigger.dataset.projectId, 'code');
         break;
+      case 'confirm-agent-settings': {
+        await api('/api/agent-settings-sync/confirm',{method:'POST',body:{id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'}});
+        applyBootstrap(await api('/api/bootstrap')); break;
+      }
       case 'resolve-sync-conflict': {
         const settings=trigger.dataset.settings==='true';
         const row=(settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);

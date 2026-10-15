@@ -24,10 +24,13 @@ export function validateTeamPlan(plan) {
 }
 export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
+ if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
  if(capabilities&&!capabilities.delegate)throw Object.assign(new Error('主 Agent 未开启委派能力，无法启动团队。'),{code:'CAPABILITY_DENIED'});
  const started=Date.now(), results=[];
  const profiles=agentProfiles || Object.fromEntries(plan.members.map(id=>[id,{...normalizeAgentProfile(id,{}),capabilities:recommendedCapabilities(id)}]));
  for(const id of plan.members)if(!profiles[id])throw new Error(`团队成员 Agent 不存在：${id}`);
+ const unmigrated=plan.members.filter(id=>!profiles[id].capabilities);
+ if(unmigrated.length)throw Object.assign(new Error(`请先在桌面完成以下 Agent 的能力迁移，再启动团队：${unmigrated.map(id=>profiles[id].name||id).join('、')}。`),{code:'AGENT_MIGRATION_REQUIRED'});
  async function member(id,prior,round=1) {
   if(signal?.aborted){const r={role:id,agentId:id,name:profiles[id].name,ok:false,output:'已取消，未启动此成员。',cancelled:true,receipts:[],durationMs:0};results.push(r);return r;}
   // Old plans without a profile map are supported for callers predating Agent definitions.
@@ -51,5 +54,5 @@ export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmi
  } else {
   const prior=[];for(const id of plan.members){const r=await member(id,prior);if(r.handoff)prior.push(r.handoff);}
  }
- return {ok:accepted&&results.length>0&&results.every(r=>r.ok),accepted,mode:plan.mode,results,durationMs:Date.now()-started,concurrency:plan.concurrency,usage:summarizePricedUsage(results.flatMap(r=>r.receipts),config.modelPricing || {})};
+ return {ok:!signal?.aborted&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,mode:plan.mode,results,durationMs:Date.now()-started,concurrency:plan.concurrency,usage:summarizePricedUsage(results.flatMap(r=>r.receipts),config.modelPricing || {})};
 }

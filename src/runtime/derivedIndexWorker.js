@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { loadState } from '../state/stateStore.js';
 import { syncDerivedSnapshot } from '../memory/derivedIndex.js';
+import {warmKnowledgeIndex} from '../memory/knowledgeIndex.js';
 import { reconcileLegacyFacts, quarantineDeletedChatFacts } from '../memory/factRecords.js';
 import { createRequestContext } from './requestContext.js';
 import { runWithRequestContext } from './requestScope.js';
@@ -30,6 +31,9 @@ async function run() {
       if (raw !== await readFile(manifest, 'utf8')) { requested = true; return; }
       const started = performance.now();
       syncDerivedSnapshot(state, ctx, { throwOnError: true });
+      // Embedding is optional background work, outside prompt retrieval and
+      // outside the durable source/index acknowledgement path.
+      void warmKnowledgeIndex({home}).catch(()=>{});
       if (!initialized) { reconcileLegacyFacts(state); initialized = true; }
       const chatIds = new Set(state.chats.map(chat => chat.id));
       quarantineDeletedChatFacts([...previousChatIds].filter(id => !chatIds.has(id)));

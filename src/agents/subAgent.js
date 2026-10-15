@@ -173,10 +173,14 @@ export async function runSubAgent({
     const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
     if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults}};
     const tokensBefore=usedTokens;
+    const remaining=maxTokens-usedTokens-estimatedInput;
+    const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
+    const outputLimit=Math.max(1,Math.floor(Math.min(remaining,Math.max(1,contextBudget.totalTokens-estimatedInput),Number.isFinite(configuredLimit)&&configuredLimit>0?configuredLimit:remaining)));
+    let responseUsage=null;
     const rawReply = await replyFn({
       ...functionSession.requestOptions(),
-      maxTokens:Math.max(1,Math.min(4096,maxTokens-usedTokens-estimatedInput)),
-      onProviderResponse:receipt=>{const u=receipt.usage;usedTokens+=u ? u.input+u.output : estimatedInput+4096;onProviderResponse?.(receipt);},
+      maxTokens:outputLimit,
+      onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;onProviderResponse?.(receipt);},
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -192,7 +196,8 @@ export async function runSubAgent({
       // No onDelta for sub-agents — output goes through tool result
     });
 
-    if(usedTokens===tokensBefore) usedTokens+=estimatedInput+4096;
+    const measured=responseUsage&&Number(responseUsage.input)+Number(responseUsage.output);
+    usedTokens=tokensBefore+(Number.isFinite(measured)&&measured>0?measured:estimatedInput+Math.ceil(estimateTextTokens(typeof rawReply==='string'?rawReply:JSON.stringify(rawReply))*4/3));
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
 

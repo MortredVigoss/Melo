@@ -13,7 +13,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { getMeloHome } from '../../config.js';
 import { loadState } from '../../state/stateStore.js';
 import { selectedKnowledge } from '../../services/chat/knowledgeContext.js';
-import { searchKnowledge,pruneKnowledgeIndex } from '../../memory/knowledgeIndex.js';
+import { searchKnowledge,pruneKnowledgeIndex,indexKnowledgeDocuments,warmKnowledgeIndex } from '../../memory/knowledgeIndex.js';
 import { requestRead } from '../../safety/fileSafetyGate.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
 import {
@@ -268,7 +268,8 @@ async function indexDirectory(dir, ctx = {}) {
   const key=activeIndex.getStore();
   indexes.delete(key);indexes.set(key, { chunks, idf, indexed: documents.length, dirs: [approvedReal], documents });
   const home=JSON.parse(key)[0];
-  pruneKnowledgeIndex({home,namespace:'files:'+key,keepIds:documents.map(d=>d.id)});
+  indexKnowledgeDocuments({home,namespace:'files:'+key,documents,prune:true});
+  void warmKnowledgeIndex({home,namespace:'files:'+key}).catch(()=>{});
   while(indexes.size>4){const oldest=indexes.keys().next().value;indexes.delete(oldest);pruneKnowledgeIndex({home:JSON.parse(oldest)[0],namespace:'files:'+oldest,keepIds:[]});}
   return { files: files.length, chunks: chunks.length, skippedSensitive: skipped.sensitive };
 }

@@ -27,7 +27,22 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     }
     private var sections: [String: String] {
         var result: [String: String] = [:], current = "工作要求"
+        var fence: (Character, Int)?
         for line in instructions.components(separatedBy: "\n") {
+            let spaces = line.prefix(while: { $0 == " " }).count
+            let trimmed = line.dropFirst(spaces)
+            let char = trimmed.first
+            let count = trimmed.prefix(while: { $0 == char }).count
+            let marker = spaces <= 3 && (char == "`" || char == "~") && count >= 3
+            let suffix = trimmed.dropFirst(count)
+            if let active = fence {
+                result[current, default: ""] += line + "\n"
+                if marker && char == active.0 && count >= active.1 && suffix.trimmingCharacters(in: .whitespaces).isEmpty { fence = nil }
+                continue
+            }
+            if marker && (char != "`" || !suffix.contains("`")) {
+                fence = (char!, count); result[current, default: ""] += line + "\n"; continue
+            }
             if Self.headings.contains(where: { line == "## " + $0 }) { current = String(line.dropFirst(3)); continue }
             result[current, default: ""] += line + "\n"
         }

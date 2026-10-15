@@ -604,7 +604,7 @@ export function hydrateState(parsed = {}) {
       ? parsed.externalConnectors.map(normalizeExternalConnector)
       : defaults.externalConnectors,
     externalToolRuns: normalizeExternalToolRuns(parsed.externalToolRuns),
-    agentProfiles: normalizeAgentProfiles(hydrateAgentRecords(parsed)),
+    agentProfiles: Object.keys(parsed).length===0 ? defaults.agentProfiles : normalizeAgentProfiles(hydrateAgentRecords(parsed)),
     projectAgentOverrides: normalizeProjectAgentOverrides(
       hydrateProjectAgentRecords(parsed),
       hydrateAgentRecords(parsed),

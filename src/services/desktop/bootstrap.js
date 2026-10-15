@@ -202,6 +202,7 @@ function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}, 
     return {
       ...summarizeAgentProfile(profile),
       capabilityLabels: CAPABILITY_LABELS,
+      pendingCapabilityChange: Object.values(state.agentSettingsPending||{}).find(p=>p.agentId===agentId&&p.projectId===(editingScope==='project'?projectId:null))||null,
       capabilityMigration: profile.capabilities ? null : capabilityMigrationPreview(profile,migrationOptions(state)),
       capabilityOptions: migrationOptions(state).skills.map(s=>({id:s.id,name:s.name})),
       identityPath: paths.identityPath,

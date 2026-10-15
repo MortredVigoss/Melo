@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from './agentDocument.js';
 import { normalizeAgentProfile, effectiveAgentProfile } from '../../state/agentProfiles.js';
 import { summarizeAgentPrompt } from '../../services/chat/systemPrompt.js';
+import {serializeAgentState} from './agentState.js';
+import {AGENT_LIBRARY} from './agentLibrary.js';
+
+test('fenced code headings remain literal persona text during section parsing', () => {
+  const identity='Real identity\n\n```md\n## 风格\ninside code\n```\n\n~~~~markdown\n## 补充要求\n```\n~~~~';
+  const document=composeAgentInstructions({identity,soulMd:'Real style'});
+  assert.deepEqual(agentInstructionFields(document),{rolePrompt:'',identity,soulMd:'Real style',systemPrompt:''});
+  assert.equal(agentInstructionFields(mergeAgentInstructions({instructions:document},{soulMd:'Changed'})).identity,identity);
+});
+test('first-run persona seed becomes user-owned state and is not silently rewritten by new built-in defaults', () => {
+  const seeded=normalizeAgentProfile('main',{}),saved=serializeAgentState({agentProfiles:{main:seeded}});
+  const old=AGENT_LIBRARY.main.defaultIdentity;
+  try {
+    AGENT_LIBRARY.main.defaultIdentity='A future release default';
+    assert.equal(normalizeAgentProfile('main',saved.agentProfiles.main).instructions,seeded.instructions);
+    assert.equal(normalizeAgentProfile('main',{...saved.agentProfiles.main,instructions:'Explicit user edit'}).instructions,'Explicit user edit');
+  } finally {AGENT_LIBRARY.main.defaultIdentity=old;}
+});
 
 test('legacy persona sections migrate without dropping any content or repeating the prompt', () => {
   const legacy = { rolePrompt:'work exactly', identity:'identity exactly', soulMd:'style exactly', systemPrompt:'extra exactly' };

@@ -13,7 +13,17 @@ export function agentInstructionFields(instructions = '') {
   const result = Object.fromEntries(SECTIONS.map(([key]) => [key, '']));
   const sections = new Map(SECTIONS.map(([key, title]) => [title, key]));
   let field = 'rolePrompt';
+  let fence=null;
   for (const line of String(instructions).split('\n')) {
+    const marker=line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if(fence) {
+      result[field] += `${line}\n`;
+      if(marker&&marker[1][0]===fence.char&&marker[1].length>=fence.length&&!marker[2].trim())fence=null;
+      continue;
+    }
+    if(marker&&(marker[1][0]!=='`'||!marker[2].includes('`'))) {
+      fence={char:marker[1][0],length:marker[1].length};result[field] += `${line}\n`;continue;
+    }
     const heading = line.match(/^## (工作要求|身份|风格|补充要求)$/);
     if (heading) { field = sections.get(heading[1]); continue; }
     result[field] += `${line}\n`;
