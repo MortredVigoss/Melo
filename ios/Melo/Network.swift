@@ -71,6 +71,11 @@ enum Network {
         do {
             let data = try await post(url, token: token, body: payload, session: session, headers: headers)
             try Task.checkCancellation()
+            if let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let choices = receipt["choices"] as? [[String: Any]]
+                observation.apiReceipt(receipt, transport: apiProtocol, finishReason: receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String)
+                onObservation?(observation)
+            }
             struct Response: Decodable {
                 struct Choice: Decodable {
                     struct Message: Decodable { var content: String? }

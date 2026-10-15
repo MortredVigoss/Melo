@@ -72,7 +72,7 @@ enum ChatGPTProtocol {
 struct ChatGPTStream {
     private let acceptImageCompletion: Bool
     private var reportedImageModel = ""
-    init(acceptImageCompletion: Bool = false) { self.acceptImageCompletion = acceptImageCompletion }
+    init(acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.acceptImageCompletion = acceptImageCompletion; observation = ExecutionObservation(requestStarted: requestStarted) }
     private(set) var observation = ExecutionObservation()
     private(set) var completed = false
     private(set) var text = ""
@@ -160,7 +160,7 @@ struct ChatGPTSSE {
     private var previousCR = false
     private var byteCount = 0
     private let maxBytes: Int
-    init(maxBytes: Int = 8 * 1024 * 1024, acceptImageCompletion: Bool = false) { self.maxBytes = maxBytes; self.stream = ChatGPTStream(acceptImageCompletion: acceptImageCompletion) }
+    init(maxBytes: Int = 8 * 1024 * 1024, acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.maxBytes = maxBytes; self.stream = ChatGPTStream(acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted) }
     private(set) var stream: ChatGPTStream
     mutating func accept(_ byte: UInt8) throws {
         byteCount += 1

@@ -186,6 +186,7 @@ struct ChatGPTModel: Decodable, Identifiable {
         var requestObservation = ExecutionObservation()
         requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
         onObservation?(requestObservation)
+        let requestStarted = ProcessInfo.processInfo.systemUptime
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
         guard http.statusCode == 200 else {
@@ -210,7 +211,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             }
             return ModelReply(text: text, sources: stream.sources, searched: stream.searched, images: stream.images)
         }
-        var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageTask?.makesImage == true)
+        var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageTask?.makesImage == true, requestStarted: requestStarted)
         var revision = -1
         var receivedText = false
         var consumedBytes = 0

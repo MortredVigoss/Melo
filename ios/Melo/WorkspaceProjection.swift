@@ -197,7 +197,17 @@ enum WorkspaceProjection {
                     record.sourceDevice=s["sourceDevice"].string; record.returnedModel=s["returnedModel"].string; record.lastModule=s["lastModule"].string
                     record.operations=try s["operations"].decoded([ExecutionOperation].self); record.pipeline=try s["pipeline"].decoded([ExecutionStage].self); record.sources=try s["sources"].decoded([ExecutionSource].self)
                     record.observationNote="跨设备同步的真实执行与来源记录；本机未重新执行。"
-                    if let index=records.firstIndex(where: { $0.runId==record.runId }) { if records[index].terminal { records[index]=record } } else { records.append(record) }
+                    if let index=records.firstIndex(where: { $0.runId==record.runId }) {
+                        if records[index].terminal {
+                            // The v1 wire omits local receipts; a sync echo must not erase them.
+                            let local = records[index].pipeline ?? []
+                            for stage in (record.pipeline ?? []).indices {
+                                let id = record.pipeline![stage].id
+                                record.pipeline?[stage].api = local.first { $0.id == id }?.api
+                            }
+                            records[index]=record
+                        }
+                    } else { records.append(record) }
                     if preferences.messageSources == nil { preferences.messageSources = [:] }
                     preferences.messageSources?[row.id] = record.sources.filter(\.cited).compactMap { WebSource.validated(title:$0.title,url:$0.url) }
                 }

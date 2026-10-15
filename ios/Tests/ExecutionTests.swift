@@ -1,6 +1,23 @@
 import Foundation
 @main struct ExecutionTests {
     static func main() throws {
+        var receipt = ExecutionObservation(requestStarted: ProcessInfo.processInfo.systemUptime - 1)
+        receipt.accept(["type":"response.created", "response":["id":"resp_safe", "model":"real-model", "status":"in_progress", "headers":["authorization":"secret"], "input":"private prompt"]])
+        receipt.accept(["type":"response.completed", "response":["status":"completed", "usage":["input_tokens":42,"output_tokens":9,"total_tokens":51,"input_tokens_details":["cached_tokens":20],"output_tokens_details":["reasoning_tokens":3]], "output":[]]])
+        let api = receipt.pipeline.first?.api
+        assert(api?["responseId"] == .string("resp_safe") && api?["usage"]?["cached"] == .number(20))
+        assert(api?["usage"]?["input"] == .number(42) && api?["usage"]?["reasoning"] == .number(3))
+        let encodedReceipt = try JSONEncoder().encode(receipt.pipeline)
+        assert(!String(decoding:encodedReceipt,as:UTF8.self).contains("secret") && !String(decoding:encodedReceipt,as:UTF8.self).contains("private prompt"))
+        let decodedReceipt = try JSONDecoder().decode([ExecutionStage].self,from:encodedReceipt)
+        assert(decodedReceipt == receipt.pipeline)
+        var invalidReceipt = ExecutionObservation()
+        invalidReceipt.stage("model:response",name:"request",status:"running")
+        invalidReceipt.apiReceipt(["id":"bad id", "usage":["input_tokens":true,"output_tokens":-1,"total_tokens":1.5]],transport:"chat-completions")
+        assert(invalidReceipt.pipeline[0].api?["usage"] == nil && invalidReceipt.pipeline[0].api?["responseId"] == nil)
+        invalidReceipt.apiReceipt(["usage":["input_tokens":5,"cache_read_input_tokens":10,"cache_creation_input_tokens":3]],transport:"anthropic",finishReason:"end_turn")
+        assert(invalidReceipt.pipeline[0].api?["usage"]?["input"] == .number(18))
+        assert(invalidReceipt.pipeline[0].api?["finishReason"] == .string("end_turn"))
         var summary = ExecutionObservation()
         func delta(_ text: String, part: Int = 0, sequence: Int) -> [String: Any] {
             ["type": "response.reasoning_summary_text.delta", "item_id": "rs-1", "summary_index": part, "sequence_number": sequence, "delta": text]
