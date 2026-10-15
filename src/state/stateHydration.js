@@ -509,6 +509,10 @@ export function createDefaultState() {
 
 export function hydrateState(parsed = {}) {
   const defaults = createDefaultState();
+  // Split tables are a disk representation, consumed exactly once below.
+  // Keeping them beside the writable runtime profiles would let stale values
+  // overwrite a later channel/voice edit when the committed cache is hydrated.
+  const { agentChannelBindings, agentVoiceSettings, ...runtimeFields } = parsed;
   const connectorPresetVersion = Number(parsed?.settings?.connectorPresetVersion || 0);
   const skillPresetVersion = Number(parsed?.settings?.skillPresetVersion || 0);
 
@@ -573,7 +577,7 @@ export function hydrateState(parsed = {}) {
 
   return {
     ...defaults,
-    ...parsed,
+    ...runtimeFields,
     settings: {
       ...defaults.settings,
       ...parsed.settings,

@@ -4,7 +4,7 @@ import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js'
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
-import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion } from './localSettings.js';
+import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
@@ -12261,7 +12261,13 @@ document.addEventListener('click', async event => {
         break;
       case 'export-agent-document': {
         const draft = agentDraftFor(agentProfileById(trigger.dataset.agentId));
-        const url = URL.createObjectURL(new Blob([draft?.instructions ?? ''], {type:'text/markdown;charset=utf-8'}));
+        const text = draft?.instructions ?? '';
+        if (window.webkit?.messageHandlers?.meloVoice) {
+          const result = await nativeSettings('savePortableArchive', {text, name:'AGENT.md'});
+          showFlashToast(result.cancelled ? t('已取消导出。') : t('已导出 Markdown。'));
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([text], {type:'text/markdown;charset=utf-8'}));
         const link = document.createElement('a'); link.href=url; link.download='AGENT.md'; link.click();
         setTimeout(()=>URL.revokeObjectURL(url),1000);
         return;

@@ -543,6 +543,7 @@ const rows = [
 ["人设与工作要求", "Persona and working instructions", "人格と作業指示", "페르소나 및 작업 지침", "Personalidad e instrucciones de trabajo"],
 ["可分节填写身份、风格和补充要求。", "Use sections for identity, style and additional requirements.", "身份、スタイル、追加要件をセクションに分けて記入できます。", "정체성, 스타일, 추가 요구 사항을 섹션으로 작성하세요.", "Usa secciones para identidad, estilo y requisitos adicionales."],
 ["导入 Markdown", "Import Markdown", "Markdown を読み込む", "Markdown 가져오기", "Importar Markdown"],
+["已导出 Markdown。", "Markdown exported.", "Markdown を書き出しました。", "Markdown을 내보냈습니다.", "Markdown exportado."],
 ["导出 Markdown", "Export Markdown", "Markdown を書き出す", "Markdown 내보내기", "Exportar Markdown"],
 ["导入后先预览，点击保存修改生效。", "Review the import, then save to apply it.", "読み込み後に確認し、保存して適用します。", "가져온 내용을 검토한 후 저장하여 적용하세요.", "Revisa lo importado y guarda para aplicarlo."],
 ["Markdown 文件过大，请控制在 1 MB 内。", "Keep the Markdown file within 1 MB.", "Markdown ファイルは 1 MB 以下にしてください。", "Markdown 파일은 1 MB 이하여야 합니다.", "El archivo Markdown debe ser de 1 MB o menos."],

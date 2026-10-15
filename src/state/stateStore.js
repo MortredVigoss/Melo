@@ -235,7 +235,11 @@ export async function persistStateAtomically(state, { ctx = null, capturedStateP
   state._storageFormat = next._storageFormat;
   state._revision = next._revision;
   state[snapshotSource] = { home: ctx.home, fingerprint: fingerprint(`${JSON.stringify(next, null, 2)}\n`), requiresRepair: false, committedRuns: structuredClone(state.chatRuns || []) };
-  const published = publishCommitted(ctx, state, await manifestStamp(ctx), unchanged);
+  // Publish the same Agent representation that reached disk, while retaining
+  // full runtime transcripts (the manifest contains checkpoint references only).
+  const published = publishCommitted(ctx, {
+    ...next, chats: state.chats, [snapshotSource]: state[snapshotSource],
+  }, await manifestStamp(ctx), unchanged);
   state[snapshotSource] = published.source;
   try {
     if (!dispatchDerivedCommit(ctx.home, next._revision)) measureStageSync('memory.index', () => syncDerivedSnapshot(published.state, ctx));

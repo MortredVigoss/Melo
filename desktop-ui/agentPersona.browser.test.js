@@ -47,6 +47,25 @@ test('built-in Agent persona saves once, failed saves retain drafts, and Markdow
   assert.equal((await saved()).instructions,before);
   const download=page.waitForEvent('download');await form.locator('[data-action=export-agent-document]').click();
   assert.equal(await readFile(await (await download).path(),'utf8'),'导入的人设\n保留换行');
+  // Exercise the real app handler and nativeSettings correlation protocol.
+  await page.evaluate(()=>{
+    window.agentExportRequests=[];
+    window.webkit={messageHandlers:{meloVoice:{postMessage:payload=>window.agentExportRequests.push(payload)}}};
+  });
+  for (const outcome of [{}, {cancelled:true}, {error:'fixture save failed'}]) {
+    await page.evaluate(()=>{window.agentExportRequests=[];});
+    await form.locator('[data-action=export-agent-document]').click();
+    await page.waitForFunction(()=>window.agentExportRequests.some(r=>r.action==='savePortableArchive'));
+    const request=await page.evaluate(()=>window.agentExportRequests.find(r=>r.action==='savePortableArchive'));
+    assert.equal(request.name,'AGENT.md');
+    assert.equal(request.text,'导入的人设\n保留换行');
+    await page.evaluate(({request,outcome})=>window.dispatchEvent(new CustomEvent('melo-local-settings',{detail:{requestID:request.requestID,...outcome}})),{request,outcome});
+    const notice=outcome.error || (outcome.cancelled ? '已取消导出。' : '已导出 Markdown。');
+    await page.getByText(notice,{exact:true}).waitFor();
+    assert.equal(await form.locator('[name=instructions]').inputValue(),'导入的人设\n保留换行');
+    assert.equal((await saved()).instructions,before);
+  }
+  await page.evaluate(()=>{delete window.webkit;});
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   await page.reload();assert.equal(await form.locator('[name=instructions]').inputValue(),'导入的人设\n保留换行');
   await form.locator('[data-action=form-settings-edit]').click();await form.locator('[name=instructions]').fill('');
