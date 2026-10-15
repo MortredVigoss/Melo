@@ -264,6 +264,7 @@ export async function generateImageViaCodex({
   model = DEFAULT_MODEL,
   background,
   inputFidelity,
+  quality = 'auto',
   onPreview,
   signal,
   timeoutMs = GEN_TIMEOUT_MS,
@@ -298,6 +299,8 @@ export async function generateImageViaCodex({
   // Keep the tool config minimal — only forward keys the user actually set,
   // so we don't accidentally pin a default that upstream may want to evolve.
   const imageTool = { type: 'image_generation' };
+  if (!['auto', 'low', 'medium', 'high'].includes(quality)) throw new Error('Invalid image quality.');
+  if (quality !== 'auto') imageTool.quality = quality;
   if (background) imageTool.background = String(background);
   if (inputFidelity) imageTool.input_fidelity = String(inputFidelity);
 
@@ -511,7 +514,7 @@ function bytesFromItem(item, model) {
     );
   }
 
-  return { buffer, mimeType, model };
+  return { buffer, mimeType, model, reportedQuality: ['low','medium','high','auto'].includes(item.quality) ? item.quality : '' };
 }
 
 /**
@@ -520,7 +523,7 @@ function bytesFromItem(item, model) {
  */
 export async function generateAndSaveImageViaCodex({ outputPath, ...rest }) {
   if (!outputPath) throw new Error('generateAndSaveImageViaCodex: outputPath required');
-  const { buffer, mimeType, model, reportedModel } = await generateImageViaCodex(rest);
+  const { buffer, mimeType, model, reportedModel, reportedQuality } = await generateImageViaCodex(rest);
   await writeFile(outputPath, buffer);
   return {
     path: outputPath,
@@ -528,6 +531,8 @@ export async function generateAndSaveImageViaCodex({ outputPath, ...rest }) {
     mimeType,
     model,
     reportedModel,
+    requestedQuality: rest.quality || 'auto',
+    reportedQuality,
     sourceUrl: null,
   };
 }
@@ -719,6 +724,7 @@ async function runCodexResponsesImageRequest({
   onPreview,
   instructions,
   input,
+  quality,
   model,
   credential,
   sessionId,
@@ -734,7 +740,7 @@ async function runCodexResponsesImageRequest({
     store: false,
     instructions,
     input,
-    tools: [{ type: 'image_generation' }],
+    tools: [{ type: 'image_generation', ...(quality !== 'auto' ? { quality } : {}) }],
     tool_choice: 'auto',
   };
 
@@ -863,6 +869,7 @@ export async function editImageViaCodex({
   referenceImages = [],
   referenceRoles = [],
   action = 'edit',
+  quality = 'auto',
   onPreview,
   onStage,
   model = DEFAULT_MODEL,
@@ -885,6 +892,7 @@ export async function editImageViaCodex({
   }
 
   validateImagePrompt(prompt);
+  if (!['auto', 'low', 'medium', 'high'].includes(quality)) throw new Error('Invalid image quality.');
   const credential = await credentialProvider();
   if (!credential?.loggedIn) {
     const err = new Error(
@@ -975,6 +983,7 @@ export async function editImageViaCodex({
     onPreview,
     instructions: action === 'edit' ? EDIT_IMAGE_INSTRUCTIONS : `You create a new image from assigned references. ${IMAGE_INTENT_RULES} Call image_generation exactly once. Return the image, not code or text.`,
     input: editInput,
+    quality,
     model,
     credential,
     sessionId,
@@ -1005,6 +1014,8 @@ export async function editAndSaveImageViaCodex({ outputPath, ...rest }) {
     mimeType: result.mimeType,
     model: result.model,
     reportedModel: result.reportedModel,
+    requestedQuality: rest.quality || 'auto',
+    reportedQuality: result.reportedQuality,
     editSpec: result.editSpec,
     sourceUrl: null,
   };

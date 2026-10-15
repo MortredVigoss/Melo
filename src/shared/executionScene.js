@@ -176,6 +176,7 @@ export function applyExecutionEvent(scene, event) {
   scene.events.push({ sequence, at, kind: event.kind, id: event.id || '', status: event.status || '' });
   return true;
 }
+    for (const key of ['requestedQuality','reportedQuality']) if (['auto','low','medium','high'].includes(raw[key])) artifact[key]=raw[key];
 export function finishExecutionScene(scene, { status = 'completed', message, citedUrls = [], at = new Date().toISOString() } = {}) {
   if (!scene || sceneFinished(scene)) return scene;
   scene.status = status;

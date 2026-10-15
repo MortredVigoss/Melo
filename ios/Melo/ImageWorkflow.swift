@@ -37,7 +37,7 @@ struct ImageTaskPlan: Codable, Equatable {
     var references: [ImageReference] = []
     var model = "gpt-image-2"
     var size = "auto"
-    var quality = "auto"
+    var quality = "high"
     // Local connection ID only; credentials stay in Keychain. Missing in older drafts.
     var connectionID: String?
     var makesImage: Bool { action == .generate || action == .edit }

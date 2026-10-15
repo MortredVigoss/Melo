@@ -1,3 +1,4 @@
+import { imageSettings } from '../../images/imageSettings.js';
 // Image-edit fast-path for the Codex chat 流.
 //
 // Why this module exists
@@ -300,6 +301,7 @@ export async function tryImageEditFastPath({
       sourceImageBytes: resolved.bytes,
       sourceImageMime: resolved.mime,
       model: config.model,
+      quality: imageSettings(config).quality,
       signal,
     });
   } catch {
@@ -318,7 +320,11 @@ export async function tryImageEditFastPath({
     observe('failed', { errorCode: 'IMAGE_SAVE_FAILED' });
     return null;
   }
-  observe('completed', { artifacts: [{ id: `artifact-${operationId}`, kind: 'image', title: '编辑后的图片', path: result.path, url }] });
+  observe('completed', {
+    output: `请求质量：${result.requestedQuality || imageSettings(config).quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
+    artifacts: [{ id: `artifact-${operationId}`, kind: 'image', title: '编辑后的图片', path: result.path, url,
+      requestedQuality: result.requestedQuality || imageSettings(config).quality, reportedQuality: result.reportedQuality || '' }],
+  });
 
   // Bracket the URL with blank lines so it never glues to surrounding
   // prose ("Here's a cat:![cat](http…)" would render but reads worse)

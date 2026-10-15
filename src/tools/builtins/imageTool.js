@@ -341,6 +341,7 @@ export const imageTool = {
               const result = await generateAndSaveImageViaCodex({
                 prompt,
                 model: imageSettings(config).codexModel,
+                quality: imageSettings(config).quality,
                 outputPath: outPath,
                 signal,
               });
@@ -349,7 +350,7 @@ export const imageTool = {
                 ok: true,
                 output:
                   `Generated image: ${url}\n` +
-                  `(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.mimeType}, engine=codex-oauth, model=${result.model})`,
+                  `(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.mimeType}, engine=codex-oauth, model=${result.model})\nRequested quality: ${result.requestedQuality}; reported quality: ${result.reportedQuality || 'not reported'}`,
                 meta: {
                   path: result.path,
                   url,
@@ -358,6 +359,7 @@ export const imageTool = {
                   prompt,
                   engine: 'codex-oauth',
                   model: result.model, reportedModel: result.reportedModel,
+                  requestedQuality: result.requestedQuality, reportedQuality: result.reportedQuality,
                 },
               };
             } catch (e) {

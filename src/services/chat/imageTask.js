@@ -215,6 +215,7 @@ export async function runImageTask({
             referenceRoles,
             action: task.action,
             model: requestModel,
+            quality: settings.quality,
             signal,
             onPreview,
             onStage: (e) => emit({ kind: 'pipeline', ...e, id: `${id}:${e.id}` }),
@@ -223,6 +224,7 @@ export async function runImageTask({
           result = await (dependencies.generate || generateImageViaCodex)({
             prompt,
             model: requestModel,
+            quality: settings.quality,
             signal,
             onPreview,
           });
@@ -256,13 +258,15 @@ export async function runImageTask({
         engine,
         requestedModel: requestModel,
         reportedModel: result.reportedModel || '',
+        requestedQuality: settings.quality,
+        reportedQuality: result.reportedQuality || '',
         ...(before ? { beforeUrl: before.url, beforePath: before.path } : {}),
       };
       generated = true;
       artifacts.push(artifact);
       links.push(`![${artifact.title}](${saved.url})`);
       observe('completed', {
-        output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'}`,
+        output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'} · 请求质量：${settings.quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
         artifacts: [artifact],
       });
       await onImageProgress?.({artifacts:[...artifacts],count:task.count});

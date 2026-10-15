@@ -13,7 +13,7 @@ export function imageSettings(config = {}) {
       source.codexModel || (config.authMode === 'codex' ? config.model : '') || DEFAULT_CHAT_MODEL,
     visionProfileId: source.visionProfileId || '',
     detail: ['auto', 'high', 'original'].includes(source.detail) ? source.detail : 'auto',
-    quality: ['auto', 'low', 'medium', 'high'].includes(source.quality) ? source.quality : 'auto',
+    quality: ['auto', 'low', 'medium', 'high'].includes(source.quality) ? source.quality : 'high',
     size: ['auto', '1024x1024', '1536x1024', '1024x1536'].includes(source.size)
       ? source.size
       : 'auto',

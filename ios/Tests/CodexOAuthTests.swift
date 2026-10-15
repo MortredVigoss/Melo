@@ -155,7 +155,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         let task=ImageTaskPlan(action:.edit,references:[.init(id:"original")])
         let body=CodexRequest.imageBody(messages:[ChatMessage(role:"user",content:"换成黑色背景")],inputs:[input],task:task,model:"gpt-6.1-sol",instructions:"")
         assert(body["model"] as? String=="gpt-6.1-sol")
-        assert((body["tools"] as? [[String:String]])==[["type":"image_generation"]] && body["tool_choice"] as? String=="auto")
+        assert((body["tools"] as? [[String:String]])==[["type":"image_generation","quality":"high"]] && body["tool_choice"] as? String=="auto")
         let rows=body["input"] as! [[String:Any]], content=rows[0]["content"] as! [[String:Any]]
         assert(content[1]["image_url"] as? String==input.dataURL)
         request.httpBody=try json(body)

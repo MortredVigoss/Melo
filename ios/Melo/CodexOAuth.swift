@@ -207,8 +207,8 @@ enum CodexRequest {
     static func imageBody(messages: [ChatMessage], inputs: [ImageInput], task: ImageTaskPlan, model: String, instructions: String) -> [String:Any] {
         var body=ImageRequestBody.responses(messages:messages,inputs:inputs,task:task,model:model,instructions:instructions)
         // Match the proven desktop Codex contract. The service chooses the image
-        // engine; do not send unsupported public Images API model/size fields.
-        body["tools"]=[["type":"image_generation"]]
+        // engine; keep model/size server-selected, but forward the requested quality.
+        body["tools"]=[["type":"image_generation"].merging(task.quality == "auto" ? [:] : ["quality":task.quality]) { _, new in new }]
         body["tool_choice"]="auto"
         if task.size != "auto" || task.quality != "auto", var input=body["input"] as? [[String:Any]], !input.isEmpty,
            var content=input[input.count-1]["content"] as? [[String:Any]], !content.isEmpty {

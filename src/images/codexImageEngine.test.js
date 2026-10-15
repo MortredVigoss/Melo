@@ -877,3 +877,39 @@ test('both edit stages retain late requirements and reference generation does no
   assert.match(bodies[1].instructions,/create a new image/);
   assert.doesNotMatch(bodies[1].instructions,/Preserve composition/);
 });
+
+test('explicit high image quality reaches Codex generation and edit requests', async () => {
+  const bodies = [];
+  const options = {
+    prompt: 'A simple gold circle', quality: 'high',
+    credentialProvider: async () => loggedInCredential(),
+    fetchImpl: async (_url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return mockResponseFromEvents([sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(4096),output_format:'png',quality:'high'}})]);
+    },
+  };
+  const generated = await generateImageViaCodex(options);
+  const edited = await editImageViaCodex({...options,sourceImageBytes:Buffer.from(fakePngBase64(4096),'base64'),sourceImageMime:'image/png',skipVisionAnalysis:true});
+  assert.equal(bodies.length, 2);
+  for (const body of bodies) assert.deepEqual(body.tools, [{type:'image_generation',quality:'high'}]);
+  assert.equal(generated.reportedQuality, 'high');
+  assert.equal(edited.reportedQuality, 'high');
+});
+
+test('saving an image preserves lower service quality without upgrading or regenerating it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'melo-image-quality-'));
+  let calls = 0;
+  const options = {
+    prompt: 'A circle', quality: 'high', credentialProvider: async () => loggedInCredential(),
+    fetchImpl: async () => { calls++; return mockResponseFromEvents([sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(4096),output_format:'png',quality:'low'}})]); },
+  };
+  try {
+    const generated = await generateAndSaveImageViaCodex({...options, outputPath:join(dir,'generated.png')});
+    const edited = await editAndSaveImageViaCodex({...options, outputPath:join(dir,'edited.png'), sourceImageBytes:Buffer.from(fakePngBase64(4096),'base64'), sourceImageMime:'image/png', skipVisionAnalysis:true});
+    for (const result of [generated,edited]) {
+      assert.equal(result.requestedQuality,'high'); assert.equal(result.reportedQuality,'low');
+      assert.equal((await readFile(result.path)).length,4096);
+    }
+    assert.equal(calls,2);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
