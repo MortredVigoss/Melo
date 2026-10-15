@@ -23,6 +23,7 @@
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
+| 项目边界 | 10-15 复核仍有创建接口读取 UI 选择、APP_ROOT 默认工作区及上下文开关不一致；新项目已分配独立目录，同步已使用 goal/agentOverrides | [核对与重构计划](docs/project-architecture-plan-20261015.md)已补现行差异、审批快照、移动/删除/资产边界；仅方案，未实施或迁移 |
 
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
@@ -55,6 +56,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 传输 / 路由 | `src/server.js`、`src/http/` | HTTP/SSE、来源检查、声明式路由与生命周期；不承载新增领域业务 |
 | 请求运行边界 | `src/runtime/requestContext.js`、`requestScope.js`、`processOwnership.js` | 入口捕获 home、环境、身份、路径和取消信号；异步执行不重读可变全局 home |
 | 领域服务 | `src/services/`；`src/desktopStore.js` 为兼容入口 | chat / task / settings / agent / workspace 等业务；新增业务放领域服务 |
+| 项目 / 工作区边界 | `src/services/project/`、`src/services/workspace/`、`src/domain/project/`、`src/services/chat/portableWorkspace.js` | 当前配置、选用资料、角色覆盖与工作区解析分散；已有统一同步 schema。计划统一领域解析、保留本机路径/授权及稳定资产身份，详见项目专项，未实施 |
 | 纯领域 / 持久化辅助 | `src/domain/`、`src/persistence/` | 纯实体与可复用持久化辅助；保持依赖方向，抽模块先逐字节移植 |
 | 状态与检查点 | `src/state/stateStore.js`、`chatPersistence.js`、`chatManifest.js`、`statePayload.js` | 原子事务；规范化 home 隔离；不可变消息 checkpoint 与单调清单修订 |
 | 对话执行 | `src/services/chat/`、`src/agents/` | 入队、上下文/预算、模型请求、工具续接、取消与落盘；同聊天串行，不同聊天可并行 |
@@ -205,3 +207,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 文件：`src/images/imageSettings.js` / `codexImageEngine.js`、`src/services/chat/imageTask.js` / `imageEditFastPath.js`、`src/tools/builtins/imageTool.js`，桌面 `imageControls.js`、手机 `ImageWorkflow.swift` / `CodexOAuth.swift`。回执保留请求和实际质量，禁止把请求值当成服务结果。
 - 验证：72 项图像协议测试通过；一次合成图真实请求确认工具参数 high、HTTP 200，但 Codex 服务回报 low。证据 `.tmp/language-20261015/quality-live.json` 与 PNG；未换付费通道、未自动重生成。
 - 未完：上游没有按 high 执行，不能声称实际高质量已实现。当前桌面服务已重启加载并回读 high（PID 59032，`desktop-live.json`）；手机仅装独立模拟器，未覆盖实体机。`git pp` 因本机预审可执行文件缺失 ENOENT 停止，未推送或绕过。
+
+### 2026-10-15 — melo主线 — 项目边界与图片治理对齐
+
+- 状态：用户提供项目审计后完成当前源码核对；[项目专项](docs/project-architecture-plan-20261015.md)为待实施计划，未改产品或迁移数据。
+- 核对：后端 UI 选中值回退、无项目 APP_ROOT、上下文分流仍在；首页通常显式 null，新项目已有独立目录，共享同步协议已有 goal/agentOverrides；用户编辑与自动重建记忆的移动行为不同。
+- 建议：项目配置统一解析，本机工作区/授权独立绑定，运行/审批捕获目标快照；无项目按需持久目录，原图走稳定资产引用。图片预览 P0 独立修，原件自动回收等生命周期规则稳定；详见两份计划的依赖顺序。
+- 证据：`.tmp/project-architecture-audit-20261015/source-manifest.json` 的27份源码散列（HEAD 2cae1cd 加共享WIP）；验证为静态调用路径、文档链接与diff，未运行产品gate/原生操作或模型请求。保留全部其他线程WIP。
