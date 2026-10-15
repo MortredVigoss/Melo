@@ -24011,6 +24011,41 @@
         }
       }
     },
+    "最多 8 份；长资料按预算选取，全文保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 8 份；长资料按预算选取，全文保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to 8 documents. Long documents are excerpted to fit the context; originals are retained."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大8件。長い資料は予算に合わせて抜粋し、原文は保持します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대 8개. 긴 문서는 문맥 한도에 맞춰 발췌하며 원문은 보존됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hasta 8 documentos. Los textos largos se extractan según el límite; se conservan los originales."
+          }
+        }
+      }
+    },
     "本机人设恢复副本": {
       "extractionState": "manual",
       "localizations": {

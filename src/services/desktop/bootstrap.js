@@ -281,7 +281,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   // predicate so a tombstoned row can't leak via a missed call site.
   const visibleArtifactRows = visibleArtifacts(state.artifacts);
 
-  const projectArtifacts = visibleArtifactRows
+  const projectArtifacts = visibleArtifactRows.filter(a=>a.kind!=='result')
     .filter(artifact => activeProject && (artifact.projectId === activeProject.id || activeProject.knowledgeIds?.includes(artifact.id)))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
@@ -368,7 +368,8 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
     activeProject,
-    artifacts: [...visibleArtifactRows]
+    results: visibleArtifactRows.filter(a=>a.kind==='result').map(summarizeArtifact),
+    artifacts: visibleArtifactRows.filter(a=>a.kind!=='result')
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       .map(summarizeArtifact),
     projectArtifacts,

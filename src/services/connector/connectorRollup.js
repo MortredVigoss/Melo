@@ -84,7 +84,7 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
         // Counts must match the bootstrap-visible row set so the UI
         // doesn't display "5 artifacts" while the panel only shows 4
         // live ones (Codex 2026-04-27 audit).
-        const live = visibleArtifacts(state.artifacts);
+        const live = visibleArtifacts(state.artifacts).filter(a=>a.kind!=='result');
         connectorConfig = {
           totalArtifacts: live.length,
           projectArtifacts: live.filter(artifact => artifact.projectId === project?.id).length,

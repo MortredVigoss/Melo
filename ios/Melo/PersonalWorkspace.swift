@@ -39,8 +39,8 @@ struct ProjectEditor: View {
     var body: some View {
         EditableDocument("项目设置", value: project, isNew: store.preferences.projects?.contains { $0.id == project.id } != true, read: { store.preferences.projects?.first { $0.id == project.id } }, commit: { value in
             guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.goal.count <= 12000, (value.instructions?.count ?? 0) <= 12000 else { throw MeloError.message("请填写项目名称，目标与要求各不超过 12000 字。") }
-            let notes = (store.preferences.knowledge ?? []).filter { value.knowledgeIds?.contains($0.id) == true && $0.deleted != true }
-            guard notes.count <= 8, notes.reduce(0, { $0 + $1.content.count }) <= 24000 else { throw MeloError.message("项目资料最多 8 份、合计 24000 字。") }
+            let notes = (store.preferences.knowledge ?? []).filter { value.knowledgeIds?.contains($0.id) == true && $0.deleted != true && $0.kind != "result" }
+            guard notes.count <= 8 else { throw MeloError.message("项目资料最多 8 份、合计 24000 字。") }
             guard store.updatePreferences({ p in var items = p.projects ?? []; if let i = items.firstIndex(where: { $0.id == value.id }) { items[i] = value } else { items.append(value) }; p.projects = items }, reportFailure: false) else { throw MeloError.message("保存失败，草稿已保留。") }
             return value
         }) { value in
@@ -48,12 +48,12 @@ struct ProjectEditor: View {
             Section("目标与背景") { TextEditor(text: value.goal).frame(minHeight: 140) }
             Section("项目要求") { TextEditor(text: Binding(get: { value.wrappedValue.instructions ?? "" }, set: { value.wrappedValue.instructions = $0 })).frame(minHeight: 120) }
             Section("项目共享资料") {
-                ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true }) { note in
+                ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" }) { note in
                     Toggle(note.title, isOn: Binding(get: { value.wrappedValue.knowledgeIds?.contains(note.id) == true }, set: { enabled in
                         var ids = value.wrappedValue.knowledgeIds ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; value.wrappedValue.knowledgeIds = ids
                     }))
                 }
-                Text("最多 8 份、24000 字；保存后用于项目内对话。").font(.caption)
+                Text("最多 8 份；长资料按预算选取，全文保留。").font(.caption)
             }
         }
     }
@@ -65,7 +65,7 @@ struct KnowledgeView: View {
     @State private var tab = 0
     @State private var importing = false
     @State private var showDeleted = false
-    private var notes: [KnowledgeNote] { (store.preferences.knowledge ?? []).filter { ($0.deleted == true) == showDeleted && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) } }
+    private var notes: [KnowledgeNote] { (store.preferences.knowledge ?? []).filter { ($0.deleted == true) == showDeleted && $0.kind != "result" && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) } }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {

@@ -29,6 +29,7 @@ export function normalizeArtifact(artifact) {
     projectId: artifact?.projectId || null,
     title: artifact?.title || 'Untitled artifact',
     kind: artifact?.kind || 'note',
+    origin: artifact?.origin || (artifact?.kind === 'result' ? 'assistant-code' : 'user'),
     language: artifact?.language || 'text',
     content: typeof artifact?.content === 'string' ? artifact.content : '',
     createdAt: coerceIso(artifact?.createdAt),
@@ -101,7 +102,8 @@ export function extractArtifacts(reply, chat) {
       chatId: chat.id,
       projectId: chat.projectId || null,
       title: `${chat.title || 'Untitled chat'} snippet ${index}`,
-      kind: 'code',
+      kind: 'result',
+      origin: 'assistant-code',
       language,
       content: trimmed,
       createdAt: nowIso(),
@@ -110,4 +112,14 @@ export function extractArtifacts(reply, chat) {
   }
 
   return results;
+}
+
+export function isKnowledgeArtifact(artifact) { return isLiveArtifact(artifact) && artifact.kind !== 'result'; }
+export function migrateLegacyResults(artifacts=[],chats=[]) {
+  return artifacts.map(raw=>{
+    if (raw.origin || raw.kind!=='code' || !raw.chatId || !/ snippet \d+$/.test(raw.title || '')) return normalizeArtifact(raw);
+    const chat=chats.find(c=>c.id===raw.chatId);
+    const matches=(chat?.messages || []).filter(m=>m.role==='assistant').some(m=>extractArtifacts(m.content || '',chat).some(a=>a.content===raw.content&&a.language===(raw.language||'text')));
+    return normalizeArtifact(matches?{...raw,kind:'result',origin:'assistant-code'}:raw);
+  });
 }

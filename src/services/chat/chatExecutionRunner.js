@@ -430,7 +430,7 @@ export async function runChatAgentExecutionGraph({
           profile: activeAgentProfile,
           modePrompt: modeDef.prompt,
           projectContext,
-          selectedMaterials: isRemoteChannel ? '' : selectedMaterials(state, chat),
+          selectedMaterials: isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : selectedMaterials(state, chat),
           channelPrompt,
           memoryContext,
           toolRoutingPrompt,

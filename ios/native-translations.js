@@ -1,6 +1,7 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["最多 8 份；长资料按预算选取，全文保留。", "Up to 8 documents. Long documents are excerpted to fit the context; originals are retained.", "最大8件。長い資料は予算に合わせて抜粋し、原文は保持します。", "최대 8개. 긴 문서는 문맥 한도에 맞춰 발췌하며 원문은 보존됩니다.", "Hasta 8 documentos. Los textos largos se extractan según el límite; se conservan los originales."],
 ["本机人设恢复副本", "Local persona recovery copy", "端末内の人設定義の復元用コピー", "로컬 페르소나 복구 사본", "Copia local de recuperación del perfil"],
 ["图片模式", "Image mode", "画像モード", "이미지 모드", "Modo de imagen"],
 ["生成图片", "Generate image", "画像を生成", "이미지 생성", "Generar imagen"],

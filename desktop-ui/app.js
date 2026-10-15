@@ -1955,8 +1955,9 @@ function selectedCustomizeItem() {
   );
 }
 
+function artifactShelfRows() { return (uiState.artifactCollection==='results' ? uiState.bootstrap?.results : uiState.bootstrap?.artifacts) || []; }
 function selectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   return (
     artifacts.find(artifact => artifact.id === uiState.selectedArtifactId) ||
     artifacts[0] ||
@@ -2333,6 +2334,7 @@ async function handleOpenSearchResult(result) {
       });
       break;
     case 'open-artifact':
+      uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===result.artifactId)?'results':'knowledge';
       uiState.selectedArtifactId = result.artifactId;
       await patchSettings({
         activeView: 'artifacts',
@@ -2404,7 +2406,7 @@ function approvalQueue() {
 }
 
 function syncSelectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   if (!artifacts.some(artifact => artifact.id === uiState.selectedArtifactId)) {
     uiState.selectedArtifactId = artifacts[0]?.id || null;
   }
@@ -4884,7 +4886,7 @@ async function handleCreateArtifact() {
 }
 
 function handleStartEditArtifact(artifactId) {
-  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
   uiState.selectedArtifactId = artifactId;
   uiState.editingArtifactId = artifactId;
@@ -4951,7 +4953,7 @@ async function handleUpdateArtifact() {
  */
 async function handleDeleteArtifact(artifactId) {
   if (!artifactId) return;
-  const artifact = uiState.bootstrap?.artifacts?.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
 
   // Clear current selection / edit-buffer pre-emptively so the detail
@@ -7097,7 +7099,7 @@ function renderThreadArtifactStrip(artifacts) {
     <section class="surface-card thread-artifact-strip">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Artifacts from this thread</h2>
+          <h2 class="pane-title">本对话成果</h2>
         </div>
         <button class="small-button" data-action="open-view" data-view="artifacts">
           Open shelf
@@ -10476,7 +10478,7 @@ function renderCustomizePage() {
 }
 
 function renderArtifactsPage() {
-  const artifacts = uiState.bootstrap.artifacts;
+  const artifacts = artifactShelfRows();
   const active = selectedArtifact();
   const project = activeProject();
 
@@ -10485,7 +10487,7 @@ function renderArtifactsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">资料与成果</h1><p class="page-kicker">保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。</p>
+            <h1 class="page-title compact">${uiState.artifactCollection==='results'?'成果':'知识库'}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果</button></div>
           </div>
 
           <div class="inline-actions">
@@ -10577,7 +10579,7 @@ function renderArtifactsPage() {
                         `,
                       )
                       .join('')
-                  : '<div class="empty-state compact">No artifacts yet. Code fences from replies will land here automatically.</div>'
+                  : '<div class="empty-state compact">此分类暂时没有内容。</div>'
               }
             </div>
           </section>
@@ -12765,7 +12767,10 @@ document.addEventListener('click', async event => {
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         render();
         break;
+      case 'artifact-collection':
+        uiState.artifactCollection=trigger.dataset.collection;uiState.selectedArtifactId=null;render();break;
       case 'open-artifact':
+        uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===trigger.dataset.artifactId)?'results':'knowledge';
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         await patchSettings({ activeView: 'artifacts' });
         break;

@@ -1,3 +1,4 @@
+import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { recommendedCapabilities } from '../domain/agent/capabilities.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -593,7 +594,7 @@ export function hydrateState(parsed = {}) {
     chats: Array.isArray(parsed.chats) ? parsed.chats.map(normalizeChat) : defaults.chats,
     projects,
     artifacts: Array.isArray(parsed.artifacts)
-      ? parsed.artifacts.map(normalizeArtifact)
+      ? migrateLegacyResults(parsed.artifacts,parsed.chats || [])
       : defaults.artifacts,
     commandRuns: normalizeCommandRuns(parsed.commandRuns),
     externalConnectors: Array.isArray(parsed.externalConnectors)

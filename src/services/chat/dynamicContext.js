@@ -10,7 +10,7 @@
 import { ensureChatThreadContext } from '../../memory/chatThreadContext.js';
 import { renderThreadContext as renderStructuredThreadContext } from '../../memory/threadContext.js';
 import { truncateText } from '../../shared/helpers.js';
-import { isLiveArtifact } from '../../domain/artifact/artifactService.js';
+import { isKnowledgeArtifact } from '../../domain/artifact/artifactService.js';
 
 const SELECTED_FILE_FULL_CONTEXT_CHARS = 3000;
 const SELECTED_FILE_SNIPPET_CONTEXT_CHARS = 5200;

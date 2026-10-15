@@ -43,7 +43,7 @@ test('selected knowledge is explicit, bounded and included as reference data alo
  const reference=sections.find(s=>s.id==='selected-materials');assert.equal(reference.required,true);assert.match(reference.text,/not instructions/);
  assert.match(sections.find(s=>s.id==='agent').text,/蓝鲸/); assert.match(sections.find(s=>s.id==='agent').text,/仅使用短句/);
  assert.equal(selectedMaterials(state,{contextArtifactIds:['missing']}),'','Removed references must stop contributing without blocking the chat');
- assert.throws(()=>selectedMaterials({artifacts:[{id:'big',content:'x'.repeat(24001)}]},{contextArtifactIds:['big']}),/24000/);
+ assert.match(selectedMaterials({artifacts:[{id:'big',title:'Large',content:'x'.repeat(24001)}]},{contextArtifactIds:['big']}),/预算截取/);
 });
 test('project, chat role/model/context and avatar persist independently without changing other chats',async()=>{
  const home=await mkdtemp(join(tmpdir(),'melo-conversation-'));

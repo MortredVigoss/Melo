@@ -1,5 +1,5 @@
 import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
-import { isLiveArtifact } from '../../domain/artifact/artifactService.js';
+import { isKnowledgeArtifact } from '../../domain/artifact/artifactService.js';
 import { importModelSelection } from './portableWorkspace.js';
 export function validateConversationSelection(patch, state, config) {
   const result = {};
@@ -26,9 +26,9 @@ export function validateConversationSelection(patch, state, config) {
   if (Object.hasOwn(patch, 'contextArtifactIds')) {
     if (!Array.isArray(patch.contextArtifactIds)) throw new Error('资料选择无效。');
     const ids = [...new Set(patch.contextArtifactIds)];
-    const notes = ids.map(id=>state.artifacts.find(a=>a.id===id && isLiveArtifact(a)));
+    const notes = ids.map(id=>state.artifacts.find(a=>a.id===id && isKnowledgeArtifact(a)));
     if (notes.some(n=>!n)) throw new Error('资料已不存在，请重新选择。');
-    if (notes.length > 8 || notes.reduce((sum,n)=>sum+n.content.length,0) > 24000) throw new Error('每个对话最多选用 8 份、合计 24000 字资料；请选取相关内容。');
+    if (notes.length > 8) throw new Error('每个对话最多选用 8 份资料。');
     result.contextArtifactIds = ids;
   }
   return result;
@@ -47,7 +47,14 @@ export function selectedMaterials(state, chat) {
   const project = (state.projects || []).find(p=>p.id===chat.projectId);
   if (chat.projectId && !project) throw new Error('本对话所属项目尚未同步完成，请同步或重新选择项目。');
   const ids = [...new Set([...(project?.knowledgeIds || []), ...(chat.contextArtifactIds || [])])];
-  const notes = ids.map(id=>state.artifacts.find(a=>a.id===id)).filter(isLiveArtifact);
-  if (notes.length > 8 || notes.reduce((sum,n)=>sum+n.content.length,0) > 24000) throw new Error('选用的资料超出 24000 字，请减少资料或摘取相关内容。');
-  return notes.map(n=>`资料：${n.title}\n${n.content}`).join('\n\n');
+  const notes = ids.map(id=>state.artifacts.find(a=>a.id===id)).filter(isKnowledgeArtifact);
+  const budget=12000;let remaining=budget;
+  const text=notes.slice(0,8).map((n,index)=>{
+    const prefix=`资料：${n.title}\n`;
+    const allowance=Math.max(0,Math.floor(remaining/(Math.min(8,notes.length)-index))-prefix.length-2);
+    const content=n.content.slice(0,allowance);remaining-=prefix.length+content.length+2;
+    return prefix+content;
+  }).join('\n\n');
+  const truncated=notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length+n.title?.length+5,0)>budget;
+  return (truncated?'[资料按上下文预算截取，全文保留；未展示的部分不能视为已经读取。]\n':'')+text;
 }
