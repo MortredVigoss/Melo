@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_mkdir
  *
@@ -62,9 +63,12 @@ export const fileMkdirTool = {
       return { ok: false, output: 'path must be a non-empty string.', error: 'INVALID_PATH' };
     }
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const absPath = isAbsolute(dirPath)
       ? dirPath
-      : resolve(workspacePath || process.cwd(), dirPath);
+      : resolve(workspacePath, dirPath);
 
     // ── 1. Sensitivity pre-check ───────────────────────────────────────
     const precheck = await precheckHardBlockedWrite(absPath);

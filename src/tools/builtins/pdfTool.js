@@ -702,7 +702,8 @@ export const pdfTool = {
           ? maybePath
           : workspacePath
             ? resolve(workspacePath, maybePath)
-            : resolve(maybePath);
+            : null;
+        if (!abs) return {error:'此操作需要明确的工作目录。',errorCode:'WORKSPACE_REQUIRED'};
         return { path: abs };
       }
       if (!workspacePath) {
@@ -733,7 +734,7 @@ export const pdfTool = {
       if (typeof p !== 'string' || !p.trim()) return null;
       if (isAbsolute(p)) return p;
       if (workspacePath) return resolve(workspacePath, p);
-      return resolve(p);
+      return null;
     }
 
     // Phase 2C (2026-05-04): every source PDF read goes through the
@@ -814,7 +815,8 @@ export const pdfTool = {
           // returned by gatedReadIntoBuffer is what pdf-parse consumes,
           // so the underlying library never re-opens the path (no
           // post-approval TOCTOU window).
-          const absPath = isAbsolute(path) ? path : resolve(workspacePath || process.cwd(), path);
+          const absPath = resolveInputPdfPath(path);
+          if (!absPath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
           const gated = await gatedReadIntoBuffer(absPath, { workspacePath, sseEmitter, signal, chatId }, {
             maxBytes: MAX_PDF_BYTES,
             toolName: 'pdf:read',

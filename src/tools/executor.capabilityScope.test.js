@@ -11,7 +11,7 @@ const context = capabilityScope => ({...createRequestContext({home:'/tmp/melo-ca
 async function probe(requestContext,options={}) {
  let executed=0,permissions=0;
  const tool={id:'file_write',requiresPermission:true,run:async()=>{executed++;return{ok:true,output:'executed'};}};
- const call=()=>executeTool(tool,{path:'test.txt',content:'test'},{...options,sseEmitter:(type,payload)=>{if(type==='tool_permission'){permissions++;resolvePermission(payload.requestId,true);}}});
+ const call=()=>executeTool(tool,{path:'test.txt',content:'test'},{workspacePath:'/tmp/melo-capability-scope-fixture',...options,sseEmitter:(type,payload)=>{if(type==='tool_permission'){permissions++;resolvePermission(payload.requestId,true);}}});
  const result=await (requestContext?runWithRequestContext(requestContext,call):call());
  return {result,executed,permissions};
 }

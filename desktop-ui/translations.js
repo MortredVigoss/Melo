@@ -1,6 +1,7 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。", "Allow this project to use the Melo application folder, or choose another folder.", "このプロジェクトで Melo のアプリフォルダの使用を許可するか、別のフォルダを選択してください。", "이 프로젝트에서 Melo 앱 폴더 사용을 허용하거나 다른 폴더를 선택하세요.", "Permite que este proyecto use la carpeta de Melo o elige otra carpeta."],
 ["同步权限变更待桌面确认", "Synced permission changes await desktop confirmation", "同期された権限変更はデスクトップでの確認待ちです", "동기화된 권한 변경은 데스크톱 확인을 기다립니다", "Los cambios de permisos sincronizados requieren confirmación en el escritorio"],
 ["收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：", "Restrictions are active. The following capability, collaboration and context additions are still pending:", "制限は適用済みです。次の機能・協働・コンテキストの追加はまだ適用されていません：", "제한은 적용되었습니다. 다음 기능, 협업 및 컨텍스트 추가는 아직 적용되지 않았습니다:", "Las restricciones ya están activas. Estas ampliaciones de capacidades, colaboración y contexto siguen pendientes:"],
 ["确认应用同步设置", "Confirm and apply synced settings", "同期設定を確認して適用", "동기화 설정 확인 및 적용", "Confirmar y aplicar ajustes sincronizados"],

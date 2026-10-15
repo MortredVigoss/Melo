@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: glob
  *
@@ -243,9 +244,12 @@ export const globTool = {
       return { ok: false, output: 'pattern must be a non-empty string.', error: 'INVALID_ARGS' };
     }
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const baseDir = isAbsolute(cwd || '')
       ? cwd
-      : resolve(workspacePath || process.cwd(), cwd || '.');
+      : resolve(workspacePath, cwd || '.');
 
     const maxResults = Math.min(Math.max(1, max_results), 1000);
 

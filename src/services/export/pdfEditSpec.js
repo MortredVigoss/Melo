@@ -421,5 +421,5 @@ export function resolveSpecInputPath(p, workspacePath) {
   if (workspacePath && typeof workspacePath === 'string' && workspacePath.startsWith('/')) {
     return resolvePath(workspacePath, p);
   }
-  return resolvePath(p);
+  return null;
 }

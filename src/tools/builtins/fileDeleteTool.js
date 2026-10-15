@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_delete
  *
@@ -82,8 +83,11 @@ export const fileDeleteTool = {
       };
     }
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const absPaths = paths.map(p =>
-      isAbsolute(p) ? p : resolve(workspacePath || process.cwd(), p),
+      isAbsolute(p) ? p : resolve(workspacePath, p),
     );
 
     // ── FileSafetyGate two-stage approval ──────────────────────────────

@@ -6,6 +6,7 @@ export function serializeChatForPersistence(chat) {
     title: chat.title,
     mode: chat.mode,
     projectId: chat.projectId || null,
+    ...(chat.workspacePath ? {workspacePath:chat.workspacePath} : {}),
     agentId: chat.agentId || 'main',
     modelSelection: chat.modelSelection || null,
     contextArtifactIds: chat.contextArtifactIds || [],

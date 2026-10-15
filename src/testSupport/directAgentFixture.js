@@ -13,8 +13,8 @@ export function withLegacyAgentFixture(work,explicit) {
  const turnBinding=context.turnBinding || {role:'main',project:null,taskId:null};
  return runWithRequestContext(Object.freeze({...context,turnBinding,capabilityScope:Object.freeze({agentId:turnBinding.role,legacy:true,capabilities:null,source:'legacy-unit-fixture'})}),work);
 }
-export const executeTool=(tool,args,options={})=>withLegacyAgentFixture(()=>rawExecuteTool(tool,args,options),options.requestContext);
-export const executeToolCalls=(calls,options={})=>withLegacyAgentFixture(()=>rawExecuteToolCalls(calls,options),options.requestContext);
+export const executeTool=(tool,args,options={})=>withLegacyAgentFixture(()=>rawExecuteTool(tool,args,{workspacePath:currentRequestContext()?.home,...options}),options.requestContext);
+export const executeToolCalls=(calls,options={})=>withLegacyAgentFixture(()=>rawExecuteToolCalls(calls,{workspacePath:currentRequestContext()?.home,...options}),options.requestContext);
 export const runSubAgent=options=>withLegacyAgentFixture(()=>rawSubAgent(options));
 export const runSkill=options=>withLegacyAgentFixture(()=>rawSkill(options));
 export const runAgentTeam=options=>withLegacyAgentFixture(()=>rawTeam(options));

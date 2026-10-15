@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_read
  *
@@ -113,9 +114,12 @@ export const fileReadTool = {
       return { ok: false, output: 'path must be a non-empty string.', error: 'INVALID_ARGS' };
     }
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const absPath = isAbsolute(filePath)
       ? filePath
-      : resolve(workspacePath || process.cwd(), filePath);
+      : resolve(workspacePath, filePath);
 
     // ── 1. Gate ────────────────────────────────────────────────────────
     let approved;

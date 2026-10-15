@@ -140,6 +140,7 @@ test('sendChatMessage remote background path: imports + workspace fallback resol
   });
 
   assert.ok(result, 'sendChatMessage must return a result');
+  assert.equal(existsSync(join(TEST_HOME,'workspaces','chats','tg-chat-1')),false,'Remote approval without file execution must not create a workspace');
   assert.ok(result.assistantMessage, 'assistantMessage must be present');
   // background+skipBootstrap = no bootstrap payload.
   assert.equal(result.bootstrap, null);

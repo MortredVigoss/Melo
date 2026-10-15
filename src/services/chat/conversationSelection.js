@@ -20,7 +20,7 @@ export function validateConversationSelection(patch, state, config) {
     }
   }
   if (Object.hasOwn(patch, 'projectId')) {
-    if (patch.projectId != null && !state.projects.some(p=>p.id===patch.projectId)) throw new Error('项目不存在。');
+    if (patch.projectId != null && !state.projects.some(p=>p.id===patch.projectId && !p.deletedAt && !p.deleted)) throw new Error('项目不存在。');
     result.projectId = patch.projectId || null;
   }
   if (Object.hasOwn(patch, 'contextArtifactIds')) {

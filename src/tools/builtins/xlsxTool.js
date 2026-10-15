@@ -83,6 +83,8 @@ export const xlsxTool = {
   async run(args, context = {}) {
     const { workspacePath } = context;
     const path = args?.path;
+    if (path && !isAbsolute(path) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+
 
     // Resolve output path.
     let outPath;
@@ -90,7 +92,7 @@ export const xlsxTool = {
       if (!String(path).toLowerCase().endsWith('.xlsx')) {
         return { ok: false, output: 'Output path must end in .xlsx', error: 'INVALID_PARAMS' };
       }
-      outPath = isAbsolute(path) ? path : (workspacePath ? resolve(workspacePath, path) : resolve(path));
+      outPath = isAbsolute(path) ? path : resolve(workspacePath, path);
     } else if (workspacePath) {
       const ts = Date.now().toString(36);
       const rand = randomBytes(4).toString('hex');

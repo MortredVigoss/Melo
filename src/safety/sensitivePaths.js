@@ -1,3 +1,4 @@
+import {currentRequestContext} from '../runtime/requestScope.js';
 /**
  * sensitivePaths.js — classify file paths into safety categories.
  *
@@ -107,7 +108,11 @@ export function classifyPath(absPath) {
   }
   // MELO_HOME is read fresh — see header notes about test friendliness.
   const meloHome = norm(getMeloHome());
-  if (meloHome && startsWithDir(p, meloHome)) {
+  const owned=currentRequestContext()?.ownedWorkspace;
+  if (meloHome && (startsWithDir(p, meloHome) || owned?.home && startsWithDir(p,norm(owned.home)))) {
+    // Only this operation's validated chat directory is writable. Its root,
+    // sibling chats, app state and real targets outside it remain protected.
+    if (owned && [owned.path,owned.canonical].some(root => p !== norm(root) && startsWithDir(p,norm(root)))) return PATH_CATEGORY.SAFE;
     return PATH_CATEGORY.MELO_INTERNAL;
   }
   return PATH_CATEGORY.SAFE;

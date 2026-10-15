@@ -1,3 +1,4 @@
+import {creationProjectId} from '../../domain/project/projectMembership.js';
 import { assertTaskAcceptable } from './taskAcceptance.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
@@ -24,8 +25,8 @@ export async function createTask({ title, summary, owner, projectId, chatId, kin
       title: String(title || '').trim() || 'Untitled task',
       summary: String(summary || '').trim(),
       owner,
-      projectId: projectId || state.settings.selectedProjectId,
-      chatId: chatId || state.settings.selectedChatId,
+      projectId: creationProjectId(state,{projectId,chatId,operation:'task'}),
+      chatId: chatId || null,
       status: 'todo',
       createdAt: nowIso(),
       updatedAt: nowIso(),

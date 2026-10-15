@@ -698,11 +698,8 @@ test('resolveSpecInputPath: relative path resolves against workspace', () => {
   assert.equal(resolveSpecInputPath('sub/y.pdf', '/ws'), '/ws/sub/y.pdf');
 });
 
-test('resolveSpecInputPath: relative path with no workspace falls back to cwd', () => {
-  const result = resolveSpecInputPath('x.pdf', null);
-  // resolve(p) against cwd. We just check the path ends with x.pdf and is absolute.
-  assert.match(result, /\/x\.pdf$/);
-  assert.ok(result.startsWith('/'));
+test('resolveSpecInputPath: relative path without a workspace is unresolved', () => {
+  assert.equal(resolveSpecInputPath('x.pdf', null), null);
 });
 
 test('resolveSpecInputPath: bad input returns null', () => {

@@ -1,3 +1,4 @@
+import {projectText} from '../../domain/project/projectService.js';
 import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
 import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
 import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
@@ -363,7 +364,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     agentSettingsConflicts: (state.agentSettingsSync?.records || []).filter(r=>r.versions.length>1),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
-    activeProject,
+    activeProject:activeProject?{...activeProject,summary:projectText(activeProject.summary),instructions:projectText(activeProject.instructions),workspaceNeedsConfirmation:workspace.requiresConfirmation===true}:null,
     results: visibleArtifactRows.filter(a=>a.kind==='result').map(summarizeArtifact),
     artifacts: visibleArtifactRows.filter(a=>a.kind!=='result')
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())

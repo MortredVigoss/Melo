@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow this project to use the Melo application folder, or choose another folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトで Melo のアプリフォルダの使用を許可するか、別のフォルダを選択してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프로젝트에서 Melo 앱 폴더 사용을 허용하거나 다른 폴더를 선택하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite que este proyecto use la carpeta de Melo o elige otra carpeta."
+          }
+        }
+      }
+    },
     "同步权限变更待桌面确认": {
       "extractionState": "manual",
       "localizations": {
