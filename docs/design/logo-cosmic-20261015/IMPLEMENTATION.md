@@ -11,7 +11,7 @@
 | 3 | 两个旧 Swift 脚本会重建旧 Logo | 共用导出脚本，保留旧入口转发 | 使用现有 sharp 与 macOS iconutil | 分别调用两入口，核对散列稳定 |
 | 4 | 打包实际引用不同文件 | 更新 ICNS/PNG 以及现有预览资产 | 不改 bundle、签名或用户数据 | 桌面包和 iOS 模拟器包资源检查 |
 
-当前为图标替换范围；应用内神经场景、功能、同步协议与共享 WIP 保留。构建与实际安装/真机验收分开记录，不因图标变更重启正在使用的应用。
+当前为图标替换范围；应用内神经场景、功能、同步协议与共享 WIP 保留。构建与实际安装/真机验收分开记录。上一轮未安装；用户反馈电脑未变化后，已按下文执行电脑补安装。
 
 ## 母版来源
 
@@ -28,7 +28,7 @@
 - 17 个资源散列、13 个 PNG 尺寸/alpha 检查通过；两个旧 Swift 入口均成功生成相同资源；64px 图标人工查看通过。
 - 桌面构建/签名通过，实际包 ICNS 与源资源逐字节一致；iOS 模拟器构建通过，三个优化后 PNG 经 pngcrush 解码后像素完全一致。首次直接比较 PNG 字节失败源于 Apple CgBI 优化，保留失败边界并改用正确的解码核对。
 - 证据：.tmp/logo-icons-20261015/ 中 export-verification.json、bundle-verification.json、desktop-build.log、ios-build.log。当前共享源码构建包含他线程 WIP，不能把图标检查当作整库功能回归。
-- 未覆盖安装/重启桌面或实体手机，未更改 bundle、签名团队、账号或用户数据；真机图标与安装后缓存刷新待下一次正常安装。
+- 上述为上一轮资源/构建层验证；电脑已按下文补安装，实体手机仍未覆盖安装。
 
 ## 维护命令
 
@@ -39,3 +39,12 @@ swift ios/scripts/draw-icon.swift ios/Melo
 ```
 
 主命令同时导出两端；旧 Swift 入口分别转发到同一脚本。SVG 兼容文件嵌入同一 PNG，不是可编辑矢量母版。图标为静态资源，不增加运行中的粒子动画。
+
+## 电脑补安装（2026-10-15）
+
+- 原因：正在运行的 `/Users/mortred/Applications/Melo.app` 仍含旧 ICNS；`/Users/mortred/Desktop/melo/Melo.app` 是指向它的符号链接。上一轮构建不等于安装。
+- 操作：复制当前已安装包，仅替换 `Contents/Resources/melo.icns`，保留签名元数据并重新 ad hoc 签名；正常退出后换入，再注册该包的 LaunchServices 并重新打开。去签名后的可执行文件 SHA-256 前后一致，其他资源逐字节保留。
+- 安装验证：严格签名检查通过；安装后 ICNS SHA-256 为 `a35eb6aa542bac69f18d4cab39e4dc7de786a02928b0818bbfcc81dd603893af`，与批准资源相同。Finder 列表与简介均已实际显示黑金 B 图标；Dock 工具读取超时，不宣称单独 Dock 实看通过。
+- 数据边界：43 项保护文件中 42 项（含账号配置、聊天与 Agent 文件）散列未变；`desktop/state.json` 在正常退出后改变，现仍 14 对话/1 项目/6 Agent，不宣称此文件逐字节一致。未恢复、覆盖或清理用户资料。
+- 启动阻塞：macOS 在重新签名后发起 `kTCCServiceSystemPolicyDesktopFolder` 授权，Node 等待打开桌面目录中的 package.json。电脑工具拒绝操作 UserNotificationCenter 系统授权窗口，已请用户手动允许；当前工作空间启动未通过，需授权后检查健康接口和原生 UI。
+- 证据与恢复：`.tmp/logo-desktop-install-20261015/installation-verification.json`、`server-sample.txt`；旧安装包保留为同目录 `previous.bundle`，不进入 LaunchServices 应用索引。未推送，未更新手机，不重跑全库 gate。
