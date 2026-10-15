@@ -12,11 +12,11 @@
 | D | 深空负形 | [方案图](D-cosmic-negative-space.png) |
 | E | 冰晶星轨 | [方案图](E-crystal-star-trails.png) |
 
-每张包含主标志与 iOS/macOS 图标概念预览。两端采用同一标志；这些是概念图，尚未替换应用、导出正式图标或验收小尺寸。
+每张包含主标志与 iOS/macOS 图标概念预览。用户最终选择 B「黑冰星窗」，正式母版与双端图标资源已统一；细节见 [实施与验证](IMPLEMENTATION.md)。
 
-用户已说“用 3”。生成展示顺序是 A、C、B、D、E，正在核对其指第 3 张 B 还是方案 C；确认前不改生产图标。
+用户已明确确认“第 3 张 B：圆润厚玻璃 M”。母版由内置 image_gen 从 B 编辑，完整编辑提示词见 [selected-master-prompt.txt](selected-master-prompt.txt)。
 
 完整提示词、原始生成路径与元数据见 [prompts.json](prompts.json)。材质参考 [Apple Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) 的折射和透光方向；本次图标为原创静态概念，不宣称系统动态材质已实现。
 
-后续：确认方案 → 用相同母版制作无文字、无展示布局的图标 → 按 iOS/macOS 遮罩与尺寸导出 → 核对两端实际资源入口与小尺寸 → 记录源码/打包/安装各自的验收边界。保留账号与用户数据。
+资源与两端构建/包内图标检查已通过；未覆盖安装或重启设备。下一次正常安装后核对系统图标缓存及真机视觉。
 

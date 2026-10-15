@@ -1,7 +1,7 @@
 {
   "created": "2026-10-15",
   "generator": "built-in image_gen",
-  "status": "selection clarification pending: displayed third image B versus proposal C",
+  "status": "B selected by user; shared master and native resources exported; desktop and simulator bundle verification passed; not installed",
   "reference": "https://developer.apple.com/videos/play/wwdc2025/219/",
   "concepts": [
     {
@@ -49,5 +49,8 @@
       "source": "/Users/mortred/.codex/generated_images/01a10bf3-d7b9-7832-a351-8b0f78e9c552/exec-b402c85b-28c1-4f79-91f7-2200ed5e7526.png",
       "file": "E-crystal-star-trails.png"
     }
-  ]
+  ],
+  "selected": "B",
+  "selectedMaster": "assets/brand/melo-black-ice-master.png",
+  "selectedMasterPrompt": "selected-master-prompt.txt"
 }

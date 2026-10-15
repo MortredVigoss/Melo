@@ -1,0 +1,65 @@
+{
+  "design": "B - Black Ice Window",
+  "master": "assets/brand/melo-black-ice-master.png",
+  "masterSha256": "36b2e4be11ee949d7403e52051b711ed74cf6440ea241095ced37a7bebe41ffe",
+  "platform": "macos",
+  "geometry": "1024 canvas; 840 tile at 92,92; corner radius 188; transparent outer margin",
+  "files": [
+    {
+      "path": "assets/melo-icon.png",
+      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+    },
+    {
+      "path": "assets/melo-icon.svg.png",
+      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+    },
+    {
+      "path": "assets/melo-icon.svg",
+      "sha256": "656e6ff22b0ef061b947dc4780ff58ee121933a3c6ab1b57896d1d218eafe15d"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_16x16.png",
+      "sha256": "5ffb7e25c9df3c3ae8372c650c6bba2c8d758db958ede65021f422ef69a37785"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_16x16@2x.png",
+      "sha256": "80318ef837c0551500a10f8cb8d147a378cd87602739ffc14d2de5e42869dba2"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_32x32.png",
+      "sha256": "80318ef837c0551500a10f8cb8d147a378cd87602739ffc14d2de5e42869dba2"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_32x32@2x.png",
+      "sha256": "ace4463bd4d9a80779b8839a3db5902509ab821b23fcb767b2d76d97eccba2ee"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_128x128.png",
+      "sha256": "473ef26420080e64351feb5fff247a3b0116eee68f7b47b46c152ddc9502529d"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_128x128@2x.png",
+      "sha256": "e85634c5c2fde3cd910ebce10b06b82d7db176d9d4efa664a7207c5b51a23370"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_256x256.png",
+      "sha256": "e85634c5c2fde3cd910ebce10b06b82d7db176d9d4efa664a7207c5b51a23370"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_256x256@2x.png",
+      "sha256": "98f3c92308f1335797c605f2dac8368052b9077c4dc4a8fe0ff12cf87cb17d91"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_512x512.png",
+      "sha256": "98f3c92308f1335797c605f2dac8368052b9077c4dc4a8fe0ff12cf87cb17d91"
+    },
+    {
+      "path": "assets/Melo.iconset/icon_512x512@2x.png",
+      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+    },
+    {
+      "path": "assets/melo.icns",
+      "sha256": "a35eb6aa542bac69f18d4cab39e4dc7de786a02928b0818bbfcc81dd603893af"
+    }
+  ]
+}

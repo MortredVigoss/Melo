@@ -20,6 +20,7 @@
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
+| 双端 Logo | 用户已选 B「黑冰星窗」；黑金星空厚玻璃 M 已统一母版与双端正式图标资源 | 17 个资源散列、13 个尺寸/alpha、双端构建及包内图标检查通过；未覆盖安装/真机验收，见 [交接](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 桌面神经总览 | 放大、五区分段图标和中枢加密已在 `b96c48a`；当前核心 JS 无未提交差异 | 347 项是 10-10 历史 UI 回归；加密后的 GPU/功耗、现安装包和用户最终验收未复验；样式后续 WIP 见设计线程 |
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
@@ -107,7 +108,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-08 分段五色神经图标/纵深与启动专项；10-10 总览放大、图片浮层及中心加密；10-15 只补历史交接 | UI 核心已收进 `b96c48a`；现样式另有设计线程 WIP。历史 347 项与原生截图非当前验收；[核对与失败边界](docs/handoffs/melo-ui-20261015.md) |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-15 B 黑冰星窗正式 Logo，手机/电脑同母版导出与打包验证 | 图标资源和旧生成入口已统一；未覆盖安装。历史神经 UI 见 [交接](docs/handoffs/melo-ui-20261015.md)；[本轮 Logo 证据](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
@@ -167,7 +168,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | --- | --- |
 | melo主线（历史·2026-10-15） | [登录交付及生命周期](docs/handoffs/melo-thread-backfill-20261015.md#historical) |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
-| melo ui | [神经场景交接](docs/handoffs/melo-ui-20261015.md)、[原始回执](docs/handoffs/melo-thread-backfill-20261015.md#ui) |
+| melo ui | [神经场景交接](docs/handoffs/melo-ui-20261015.md)、[原始回执](docs/handoffs/melo-thread-backfill-20261015.md#ui)、[B 图标落地](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | [派发、历史测试与 Library 截图](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | [文件权限接入与本次复核](docs/handoffs/melo-thread-backfill-20261015.md#iphone) |
 | melo副线 | [统计口径、评估协议与桌宠](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
@@ -278,3 +279,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 英文 README 增加模型/接口/MCP 兼容表，Claude 作为支持服务正常介绍；同时写清能力按端点/账号而异、旧版同步服务继续同步聊天、新能力同步需升级私人服务。GitHub About 已采用相同中性定位。
 - 推送前在干净实施树合并当前 master，仅文档追加位置发生冲突，双方记录均保留；源码合并后运行日常回归。本轮未替换用户安装包或再次迁移数据。
 - 本轮日常检查 GREEN：3528/3528 JS、21 Swift 组、824 文件语法及两组浏览器检查；112.9 秒，`/tmp/melo-agent-push-daily-20261015.log`。完整安装 gate 沿用上轮集成证据，不标成本轮重跑。
+
+## UI Logo 探索交接（2026-10-15）
+
+- 用户明确选择第 3 张 B「黑冰星窗」：圆润厚玻璃 M、黑金星空；神经网络 Logo 已舍弃，应用内神经场景继续保留。
+- 母版：`assets/brand/melo-black-ice-master.png`（1254×1254，内置 image_gen 从已选 B 编辑）；提示词、方案与实施边界在 [Logo 交接](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md)。五方案提交 `4f4048b`，本轮为正式资源与共用导出改动。
+- 实际入口：`scripts/render-app-icons.mjs` 统一生成 macOS ICNS/iconset/预览与 iOS 120/180/1024 PNG；两个旧 Swift 入口转发，避免重新生成旧 Logo。iOS 保持不透明正方形，Mac 应用平台圆角和透明边距；SVG 为同图嵌入兼容文件，非手绘矢量。
+- 已验证：17 个导出文件散列、13 个 PNG 尺寸/alpha；两个 Swift 入口；64px 实看。桌面构建与签名通过，包内 ICNS SHA 一致；iOS 模拟器构建通过，三个包内 PNG 解码后的像素完全一致。最初字节比较因 Apple CgBI 优化不同，已改为解码比较，并非图像损坏。
+- 证据：`.tmp/logo-icons-20261015/{export-verification,bundle-verification}.json` 与双端构建日志。基于当前共享源码构建，不将图标专项称为全库功能回归。
+- 未安装或重启桌面/实体手机，未碰账号和用户数据；手机签名包/设备桌面图标及系统缓存刷新待下次安装验收。正式资源已统一，可随下次正常构建交付。
