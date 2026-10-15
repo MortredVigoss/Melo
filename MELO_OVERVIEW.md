@@ -331,7 +331,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 已修复渠道切换后另一侧草稿未提交；全局新建、双击防重、失败重试、权限保留、五语及三种宽度验收通过。共享日常 GREEN：3573 JS、845 语法、两组浏览器、23 Swift，175.9 秒；日志/截图 `.tmp/agent-settings-20261015/`。
 - 实际桌面重启 PID 61208，新入口及清理后的 UI 已原生核对；14 聊天/6 Agent/1 项目保留，42 个配置/正文文件散列不变，主状态只发生设置/修订/频道绑定变化。独立暂存树补验 27 JS / 21 Swift 通过，源码本地提交 `dc67fa0`，未推送；未重新安装手机，未做真实远端模型或渠道调用。
 
-### 2026-10-16 — melo主线 — Telegram 归档实施
+### 2026-10-16 — melo主线 — Telegram 归档实施（本地提交 `538f745`）
 - 用户决定暂时归档 Telegram；按 [实施记录](docs/telegram-archive-20261016.md) 停用轮询、连接测试、外发、提醒重试及设置入口，保留配置/历史/源实现。Discord 和共用语音设置仍可用。
 - 在 `codex/telegram-archive-20261016` 实施，已合入统一 Agent 设置提交 `7bb8180`，保留他线程 WIP。后端专项 13 项、真实 HTTP 与浏览器归档验收通过；日志 `/tmp/melo-telegram-archive-focused2.log`、`/tmp/melo-telegram-archive-browser3.log`。
 - 源码已整合共享树，日常 GREEN：3575 JS、848 文件语法、两组浏览器、23 Swift，168.4 秒；日志 `/tmp/melo-telegram-archive-daily2.log`。首次回归暴露旧 Telegram prompt 断言及新增语言资源未生成，均已修正。未运行 git pp 或推送。
