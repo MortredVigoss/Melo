@@ -43,3 +43,16 @@ test('token budget prevents a provider request when required context is already 
  let calls=0;const result=await runSubAgent({task:'work',agentProfile:profile('member'),maxTokens:1,config:{model:'fixture'},replyFn:async()=>{calls++;return 'should not run';}});
  assert.equal(calls,0);assert.equal(result.meta.budgetExceeded,true);
 });
+
+test('a cancelled executor keeps its workspace writer lease until the real tool settles',async()=>{
+ const {withWorkspaceWriter}=await import('./workspaceScheduling.js');
+ const {executeTool}=await import('../tools/executor.js');
+ const controller=new AbortController();let release,started,second=false;
+ const ready=new Promise(resolve=>{started=resolve;});
+ const work=new Promise(resolve=>{release=resolve;});
+ const first=withWorkspaceWriter('/tmp/melo-writer-drain-fixture',controller.signal,()=>executeTool({id:'file_write',requiresPermission:false,run:async()=>{started();await work;return{ok:true,output:'done'};}},{},{signal:controller.signal}));
+ await ready;controller.abort();
+ const next=withWorkspaceWriter('/tmp/melo-writer-drain-fixture',undefined,async()=>{second=true;});
+ await new Promise(resolve=>setTimeout(resolve,25));assert.equal(second,false);
+ release();await Promise.all([first,next]);assert.equal(second,true);
+});

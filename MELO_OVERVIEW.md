@@ -260,3 +260,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 共享源码保留原有 MCP 启动、图片/文件权限、阅读密度与执行摘要 WIP；仅解决本阶段合并冲突。原共享文件备份在 `.tmp/agent-evolution-20261015/shared-before-integration/`。
 - 最新本地功能提交：`cf8128c`（P3/P4）、`908c74a`（checkpoint 迁移/媒体输出权限）、`4704985`（独立同步服务协议）、`ca1803a`（验收适配/手机翻译）。未运行新的 git pp、未推送。
 - 合并后的 iOS 模拟器编译通过，Melo-Agent-QA-20261015 原生界面核对 Agent 页面、只读详情及“能力设置尚未从电脑同步”的真实状态。首次启动出现模拟器后台凭证准备提示，关闭后可浏览；未登录真实账号、不代表真机同步验收。
+
+### Agent 最终集成验收（2026-10-15）
+完整 `npm run test:full` 为 GREEN：3536/3536 JS、23 Swift 组、语法、设置/快速浏览器、桌面打包安装、Desktop 与 Launchpad 启动、桌面流程、运行时浏览器、人设契约全部通过。日志 `/tmp/melo-agent-integrated-full3.log`。随后加强取消后的写锁排空：即使执行器已返回取消，底层工具未结束也不释放工作区；41/41 协作/取消/子 Agent/技能/依赖回归通过（`/tmp/melo-writer-drain.log`），16/16 状态/能力回归见 `/tmp/melo-integrated-post-migration-regression.log`。
+实际数据迁移已完成，不再等待批准或 git pp。手机可选能力同步的服务代码已交付，尚未部署用户远端同步服务或验证实体手机；不把模拟器/HTTP 夹具称为真机或真实模型团队验收。

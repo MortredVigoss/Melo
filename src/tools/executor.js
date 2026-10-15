@@ -1,3 +1,4 @@
+import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
 import { toolCapabilityAllowed } from '../domain/agent/capabilities.js';
 import { recordTaskApproval } from '../services/task/taskApprovalCheckpoint.js';
 import { operationScope } from '../safety/permissionContext.js';
@@ -175,11 +176,11 @@ async function runObservedTool(tool, args, options = {}) {
 
   try {
     const rawResult = await Promise.race([
-      Promise.resolve().then(() => {
+      trackWorkspaceWork(Promise.resolve().then(() => {
         if (controller.signal.aborted) throw cancelError;
         if (!tool.observesOwnLifecycle) options.observe?.('running');
         return tool.run(args, context);
-      }),
+      })),
       cancelled,
     ]);
     if (cancelError) throw cancelError;
