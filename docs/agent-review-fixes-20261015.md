@@ -28,4 +28,6 @@
 
 共享树保留其他线程阅读/图片/执行详情和手机改动；两个冲突保留旧顶栏删除，并同时保留手机知识/成果与人设围栏测试。共享资源按合并后的源文件重新生成。
 `npm test` 单次完整日常检查 GREEN（181.3 秒）：3554/3554 JS、834 文件语法、设置与加速浏览器、23 Swift 组及共享渲染。证据 `/tmp/melo-agent-audit-shared-daily.log`；这不是完整发布 gate 或真实账号协作验收。
-本机运行后端重启前备份在 `.tmp/agent-review-fixes-20261015/runtime-restart/`，含 43 文件原件及散列，确认没有活跃任务。重启回执后补；本轮没有替换手机安装包。
+本机运行后端重启前备份在 `.tmp/agent-review-fixes-20261015/runtime-restart/`，含 43 文件原件及散列，确认没有活跃任务。本轮没有替换手机安装包。
+
+本地修正提交 `4680530`。正常退出时旧后端成为孤立进程，重开受 home 独占锁阻止；核对 PID/home 后对旧后端发送 SIGTERM，确认退出再启动。新 PID 71003 / revision `468053099f93`，原生工作空间正常，拒绝无来源确认请求（403）。14 聊天、6 Agent、26 成果、1 项目保留；42 个配置/正文/Agent 文件散列完全一致。主状态差异逐字段核对仅有频道 `lastCheckedAt` / `lastPolledAt` 与 `_revision`，人设、权限、频道配置、语音、项目、聊天和成果内容不变。证据 `runtime-restart/before.json` / `after.json`；不将状态文件称为逐字节一致。
