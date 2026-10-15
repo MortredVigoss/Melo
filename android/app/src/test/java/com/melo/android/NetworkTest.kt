@@ -11,6 +11,20 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class NetworkTest {
+    @Test fun missingConfigurationStopsBeforeHttpAndIdentifiesTheSelectedConnection() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val connection = Connection(name = "Selected proxy", endpoint = server.url("/v1/chat/completions").toString(), model = "fixture")
+            for ((candidate, key, missing) in listOf(Triple(connection, "", "API 凭证"), Triple(connection.copy(model = ""), "fixture-secret", "模型名称"))) {
+                val error = runCatching { ModelClient(true).reply(candidate, key, listOf(Message(role = "user", content = "hello")), "", { "" }) { } }.exceptionOrNull()
+                assertNotNull(error)
+                assertTrue(error!!.message.orEmpty().contains("Selected proxy"))
+                assertTrue(error.message.orEmpty().contains(missing))
+                assertFalse(error.message.orEmpty().contains("fixture-secret"))
+            }
+            assertEquals(0, server.requestCount)
+        }
+    }
     @Test fun productionEndpointsRejectCleartextCredentialsAndFragments() {
         listOf("http://localhost/v1", "https://user:pass@example.com/v1", "https://example.com/v1#token", "file:///tmp/key", "https://example.com.evil@localhost/v1").forEach {
             assertTrue(it, runCatching { EndpointPolicy.validate(it) }.isFailure)

@@ -37,7 +37,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 val connection = state.settings.connections.find { it.id == connectionId } ?: error("请先在「系统 → 模型连接」配置服务，或在 Debug 中添加本地 Fixture。")
                 val instructions = repository.instructions(chat, state)
                 val key = if (connection.protocol == "fixture") "" else repository.credential(connection.id)
-                if (connection.protocol != "fixture") { EndpointPolicy.validate(connection.endpoint, BuildConfig.DEBUG); require(connection.model.isNotBlank() && key.isNotBlank()) { "请先完善模型名称和凭证。" } }
+                ConnectionPolicy.validate(connection, key, BuildConfig.DEBUG)
                 val message = if (retry) chat.messages.lastOrNull { it.role == "user" } ?: error("没有可重试的提问。") else Message(role = "user", content = text.trim(), attachments = attachments)
                 require(message.content.isNotBlank() || message.attachments.isNotEmpty()) { "请输入内容或选择图片。" }
                 record = RunRecord(chatId = chatId, prompt = message.content, requestedModel = connection.model, simulated = connection.protocol == "fixture")

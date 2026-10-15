@@ -31,15 +31,13 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
     .readTimeout(90, TimeUnit.SECONDS).callTimeout(15, TimeUnit.MINUTES).build()) {
     suspend fun reply(connection: Connection, key: String, messages: List<Message>, instructions: String,
                       imageData: (Attachment) -> String, onDelta: (String) -> Unit): ModelReply {
+        ConnectionPolicy.validate(connection, key, debug)
         if (connection.protocol == "fixture") {
-            check(debug) { "Fixture 仅用于 Debug 版本。" }
             val answer = "这是本地 Fixture 回复，用于验证 Melo Android 的聊天、取消、存储和后台恢复。\n\n收到：${messages.lastOrNull { it.role == "user" }?.content.orEmpty()}\n\n没有调用真实模型服务。"
             var text = ""
             for (chunk in answer.chunked(5)) { delay(70); text += chunk; onDelta(text) }
             return ModelReply(text, "local-fixture", true)
         }
-        require(key.isNotBlank()) { "请先在模型连接中保存 API 凭证。" }
-        require(connection.model.isNotBlank()) { "请填写该服务实际提供的模型名称。" }
         val url = EndpointPolicy.validate(connection.endpoint, debug)
         val context = messages.takeLast(60).dropWhile { it.role != "user" }
         require(context.sumOf { it.content.length } + instructions.length <= 200_000) { "本次对话与资料过长，请减少资料或新建对话；原记录已保留。" }

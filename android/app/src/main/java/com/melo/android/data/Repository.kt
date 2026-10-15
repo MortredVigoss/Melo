@@ -6,6 +6,8 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.util.Base64
 import com.melo.android.network.ModelClient
+import com.melo.android.network.ConnectionPolicy
+import com.melo.android.BuildConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -23,7 +25,8 @@ class Repository(private val context: Context) {
     suspend fun initialize() = mutex.withLock {
         if (loaded) return@withLock
         val saved = storage.load()
-        val recovered = saved.copy(runs = saved.runs.map { if (it.status == "running") it.copy(status = "interrupted", finishedAt = now(), error = "上次运行被系统终止，提问和部分内容已保留。") else it })
+        val recovered = saved.copy(runs = saved.runs.map { if (it.status == "running") it.copy(status = "interrupted", finishedAt = now(), error = "上次运行被系统终止，提问和部分内容已保留。") else it },
+            deviceRuns = saved.deviceRuns.map { if (it.status == "running") it.copy(status = "interrupted", finishedAt = now(), error = "上次手机操作被系统中断；不会自动恢复执行。") else it })
         if (saved != recovered) storage.save(recovered)
         mutable.value = recovered; loaded = true
     }
@@ -96,7 +99,10 @@ class Repository(private val context: Context) {
             notes.joinToString("\n\n") { "参考资料：${it.title}\n${it.content}" }, memories.joinToString("\n") { "用户保存的记忆：${it.text}" }).filter(String::isNotBlank).joinToString("\n\n")
     }
     suspend fun saveConnection(connection: Connection, newKey: String?) {
-        if (newKey != null) saveCredential(connection.id, newKey)
+        val replacement = newKey?.trim()?.takeIf(String::isNotBlank)
+        val key = replacement ?: if (connection.protocol == "fixture") "" else credential(connection.id)
+        ConnectionPolicy.validate(connection, key, BuildConfig.DEBUG)
+        if (replacement != null) saveCredential(connection.id, replacement)
         change { current -> current.copy(settings = current.settings.copy(connections = current.settings.connections.filterNot { it.id == connection.id } + connection, activeConnection = current.settings.activeConnection ?: connection.id)) }
     }
     fun snapshot(state: AppData = data.value): Snapshot = Snapshot(

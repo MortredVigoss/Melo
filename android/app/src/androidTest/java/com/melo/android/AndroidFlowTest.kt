@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,6 +27,53 @@ class AndroidFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
     private fun ready() = runBlocking { withTimeout(10_000) { app.engine.runtime.first { it.initialized } } }
+    @Test fun connectionEditorRequiresALocalCredentialAndBlankEditsPreserveIt() {
+        ready()
+        val connectionName = "Credential regression ${newId().take(8)}"
+        compose.onAllNodesWithText("系统").onFirst().performClick()
+        compose.onNodeWithText("添加模型连接").performScrollTo().performClick()
+        compose.onNodeWithText("连接名称").performTextReplacement(connectionName)
+        compose.onNodeWithText("模型名称").performTextInput("fixture-model")
+        compose.onNodeWithText("保存").performClick()
+        compose.onNodeWithText("连接「$connectionName」缺少本机 API 凭证，请在「系统 → 模型连接」中填写并保存。").assertExists()
+        assertFalse(app.repository.data.value.settings.connections.any { it.name == connectionName })
+        compose.onNodeWithText("知道了").performClick()
+        compose.onNodeWithTag("connection-key").performScrollTo().performTextInput("local-fixture-secret-only")
+        compose.onNodeWithText("保存").performClick()
+        compose.waitUntil(5000) { app.repository.data.value.settings.connections.any { it.name == connectionName } }
+        compose.onNode(hasText(connectionName) and hasText("本机凭证已保存 · 服务需发送请求验证", substring = true)).assertExists()
+        val connection = app.repository.data.value.settings.connections.first { it.name == connectionName }
+        compose.onNodeWithText(connectionName).performScrollTo().performClick()
+        assertEquals("", compose.onNodeWithTag("connection-key").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        compose.onNodeWithText("保存").performClick()
+        runBlocking {
+            val reopened = Repository(app)
+            reopened.initialize()
+            assertEquals("local-fixture-secret-only", reopened.credential(connection.id))
+            assertTrue(reopened.data.value.settings.connections.any { it.id == connection.id })
+        }
+        assertTrue(app.repository.data.value.runs.none { it.requestedModel == "fixture-model" })
+    }
+    @Test fun chatOverrideWithMissingCredentialPreservesDraftWithoutCreatingARun() {
+        ready()
+        val missing = Connection(name = "Old chat override", model = "fixture-model")
+        val id = runBlocking {
+            val global = Connection(name = "Available global", model = "fixture-model")
+            app.repository.saveConnection(global, "fixture-global-key")
+            app.repository.change { it.copy(settings = it.settings.copy(connections = it.settings.connections + missing, activeConnection = global.id)) }
+            app.repository.newChat().also { chat ->
+                app.repository.editChat(chat) { it.copy(connectionId = missing.id) }
+                app.repository.draft(chat, "keep this draft")
+            }
+        }
+        compose.runOnIdle { app.engine.send(id, "keep this draft") }
+        compose.waitUntil(5000) { app.engine.runtime.value.error?.contains("Old chat override") == true }
+        assertTrue(app.engine.runtime.value.error!!.contains("API 凭证"))
+        assertEquals("keep this draft", app.repository.data.value.drafts[id])
+        assertTrue(app.repository.data.value.chats.first { it.id == id }.messages.isEmpty())
+        assertTrue(app.repository.data.value.runs.none { it.chatId == id })
+        compose.runOnIdle { app.engine.dismissError() }
+    }
     @Test fun fixtureChatCancellationRetryAndActivityRecreation() {
         ready()
         runBlocking {

@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.melo.android.chat.ChatRuntime
@@ -140,7 +141,12 @@ import kotlinx.serialization.json.*
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 30.dp)) {
         item { SectionLabel("模型连接"); Text("凭证仅在这台设备加密保存，不进入资料同步或导出。", color = MeloMuted) }
         items(data.settings.connections, key = { it.id }) { connection ->
-            ListItem(headlineContent = { Text(connection.name) }, supportingContent = { Text("${connection.model.ifBlank { "待填写模型" }} · ${connection.protocol}") }, modifier = Modifier.clickable { editing = connection }, leadingContent = {
+            val credentialStatus by produceState("正在检查本机凭证…", connection.id, editing) {
+                value = if (connection.protocol == "fixture") "本地 Fixture · 不需要凭证" else try {
+                    if (vm.repository.credential(connection.id).isNotBlank()) "本机凭证已保存 · 服务需发送请求验证" else "缺少本机 API 凭证 · 点此填写"
+                } catch (_: Exception) { "本机凭证无法读取 · 点此重新填写" }
+            }
+            ListItem(headlineContent = { Text(connection.name) }, supportingContent = { Text("${connection.model.ifBlank { "待填写模型" }} · ${connection.protocol}\n$credentialStatus") }, modifier = Modifier.clickable { editing = connection }, leadingContent = {
                 RadioButton(selected = data.settings.activeConnection == connection.id, onClick = { vm.engine.work { vm.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) } } })
             }, trailingContent = { IconButton(onClick = { editing = connection }) { Icon(Icons.Outlined.Edit, "编辑连接") } })
         }
@@ -173,21 +179,24 @@ import kotlinx.serialization.json.*
     editing?.let { original ->
         var name by remember(original.id) { mutableStateOf(original.name) }; var endpoint by remember(original.id) { mutableStateOf(original.endpoint) }; var model by remember(original.id) { mutableStateOf(original.model) }
         var protocol by remember(original.id) { mutableStateOf(original.protocol) }; var stream by remember(original.id) { mutableStateOf(original.stream) }; var key by remember(original.id) { mutableStateOf("") }
+        val hasCredential by produceState<Boolean?>(null, original.id) { value = runCatching { vm.repository.credential(original.id).isNotBlank() }.getOrDefault(false) }
         var probe by remember(original.id) { mutableStateOf<String?>(null) }; var probing by remember { mutableStateOf(false) }
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
-            require(name.isNotBlank()); if (protocol != "fixture") { EndpointPolicy.validate(endpoint, BuildConfig.DEBUG); require(model.isNotBlank()) { "请输入模型名称。" } }
             vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream), key.takeIf(String::isNotBlank)); editing = null
         } }) {
-            Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it }); Field("模型名称", model, { model = it })
+            Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it })
+            Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
+            Field("模型名称", model, { model = it })
             Text("接口协议"); listOf("chat-completions", "responses", "anthropic").forEach { choice -> FilterChip(selected = protocol == choice, onClick = { protocol = choice }, label = { Text(choice) }) }
             if (original.protocol == "fixture") Text("此连接只用于 Debug Fixture，不会联网。", color = MeloGold)
-            OutlinedTextField(key, { key = it }, label = { Text("新的 API 凭证（留空保留）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(key, { key = it }, label = { Text(if (hasCredential == true) "新的 API 凭证（留空保留已保存凭证）" else "API 凭证（此设备尚未保存，必填）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("connection-key"), singleLine = true)
+            Text(if (hasCredential == true) "本机已有凭证。保存配置不会发送模型请求。" else "凭证只在此设备保存；已有订阅仍需填写此服务的 API Key。", color = MeloMuted)
             Row(verticalAlignment = Alignment.CenterVertically) { Text("流式回复", Modifier.weight(1f)); Switch(stream, { stream = it }) }
             TextButton(enabled = !probing, onClick = { vm.engine.work {
                 probing = true
                 try {
                     val connection = original.copy(name = name, endpoint = endpoint, model = model, protocol = protocol, stream = stream)
-                    val result = vm.engine.client.reply(connection, key.ifBlank { vm.repository.credential(original.id) }, listOf(Message(role = "user", content = "Reply with OK.")), "Answer briefly.", { "" }) { }
+                    val result = vm.engine.client.reply(connection, key.trim().ifBlank { vm.repository.credential(original.id) }, listOf(Message(role = "user", content = "Reply with OK.")), "Answer briefly.", { "" }) { }
                     probe = if (result.simulated) "Fixture 测试通过；没有调用真实模型。" else "本次测试成功 · 服务返回模型：${result.model ?: "未报告"}"
                 } finally { probing = false }
             } }) { Text(if (probing) "测试中…" else "发送测试请求") }

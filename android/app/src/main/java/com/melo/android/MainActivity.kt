@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.melo.android.chat.*
 import com.melo.android.data.*
+import com.melo.android.device.DeviceAgentScreen
 import com.melo.android.ui.*
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
@@ -51,7 +52,7 @@ class MeloViewModel(application: Application) : AndroidViewModel(application) {
     val repository = engine.repository
 }
 
-private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks }
+private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device }
 private data class NavItem(val page: Page, val label: String, val icon: ImageVector)
 private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
 
@@ -82,12 +83,12 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
             navigation.forEach { item -> NavigationBarItem(selected = page == item.page, onClick = { pageName = item.page.name }, icon = { Icon(item.icon, null) }, label = { Text(item.label) }) }
         } },
         topBar = { if (page != Page.Home) TopAppBar(title = { Text(if (executionChat != null) "任务空间" else when (page) {
-            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; else -> "Melo"
+            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; Page.Device -> "手机助手"; else -> "Melo"
         }, maxLines = 1) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MeloBackground), navigationIcon = {
             IconButton(onClick = { if (executionChat != null) executionChat = null else if (page == Page.Chats) showHistory = !showHistory else pageName = Page.Home.name }) {
                 Icon(if (page == Page.Chats && executionChat == null) Icons.Outlined.History else Icons.AutoMirrored.Outlined.ArrowBack, "返回或历史")
             }
-        }, actions = { if (page == Page.Chats) { IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
+        }, actions = { if (page == Page.Chats) { IconButton(onClick = { pageName = Page.Device.name }) { Icon(Icons.Outlined.TouchApp, "手机助手") }; IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
     ) { padding ->
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, LocalDensity.current.fontScale * data.settings.fontScale)) {
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
@@ -107,6 +108,7 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
                     Page.Agents -> AgentsScreen(data, vm, onChat = { newChat(it) })
                     Page.Workspace -> WorkspaceScreen(data, vm, onChat = { newChat(projectId = it) })
                     Page.Settings -> SettingsScreen(data, runtime, vm)
+                    Page.Device -> DeviceAgentScreen(data)
                     Page.Tasks -> TasksScreen(data, vm, onChat = { chatId = it; pageName = Page.Chats.name }, onExecution = { executionChat = it })
                 }
                 runtime.error?.let { message -> AlertDialog(onDismissRequest = vm.engine::dismissError, title = { Text("未完成") }, text = { Text(message) }, confirmButton = { TextButton(onClick = vm.engine::dismissError) { Text("知道了") } }) }
@@ -122,6 +124,7 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
         item { Spacer(Modifier.height(20.dp)); Text("Melo", style = MaterialTheme.typography.headlineLarge, color = MeloGold); Text("想法在这里连接", color = MeloMuted) }
         item { SharedScene(buildJsonObject { put("selected", 0); put("compact", false); put("still", data.settings.reduceMotion); put("transmitting", runtime.busyChatId != null) }, Modifier.fillMaxWidth().height(300.dp), onSelect = { id -> onPage(when (id) { 1 -> Page.Chats; 4 -> Page.Agents; 2 -> Page.Workspace; 5 -> Page.Tasks; else -> Page.Settings }) }) }
         item { FilledTonalButton(onClick = onNewChat, modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("开始新对话") }; Spacer(Modifier.height(16.dp)) }
+        item { OutlinedButton(onClick = { onPage(Page.Device) }, modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)) { Icon(Icons.Outlined.TouchApp, null); Spacer(Modifier.width(8.dp)); Text("手机助手") }; Spacer(Modifier.height(12.dp)) }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { onPage(Page.Agents) }) { Text("角色") }; TextButton(onClick = { onPage(Page.Workspace) }) { Text("工作区") }; TextButton(onClick = { onPage(Page.Tasks) }) { Text("任务空间") }; TextButton(onClick = { onPage(Page.Settings) }) { Text("系统") } } }
         item { Text("${data.chats.size} 段对话 · ${data.agents.size} 个角色 · 保存在本机", color = MeloMuted, style = MaterialTheme.typography.bodySmall) }
         if (data.settings.connections.isEmpty()) item { TextButton(onClick = { onPage(Page.Settings) }) { Text("配置模型连接") } }

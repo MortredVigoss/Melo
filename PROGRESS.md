@@ -1,3 +1,11 @@
+## 2026-10-15 — 让手机按自然语言目标执行并核对真实屏幕操作
+
+用户已自行解决模型连接问题，转而认可原生 AccessibilityService + Tool Calling，并明确要求立即实现；Codex 沿用已认可路线，不再要求重复设计或凭证确认。
+用户需要根据当前屏幕动态决策，故将助手与普通聊天分开，让模型依据每次实际执行的回执继续；不把固定脚本或模型结束语当作任务成功证据。
+开发只用隔离 HTTP / Android Fixture，不读取现有 Proxy Key；Fold6 当前未连接，保留原连接与开发证书用于覆盖更新，新增能力的实机和真实订阅验收仍独立记录。
+背景窗口导致 observation 误失效的问题通过实际多步循环暴露后修复；息屏即取消且唤醒不自动恢复，避免延后执行旧指令。
+28 项 JVM 与 14 项 Android runtime、Lint、优化 Release 和 APK signature / 16 KiB alignment 验证通过；未运行 macOS 桌面专属 gate，未发布或推送。
+
 ## 2026-10-15 — 为 Samsung 提供可独立使用的 Android 客户端
 
 Codex 按用户确认采用 Kotlin / Jetpack Compose，模型凭证在 App 内配置，开发与验证只使用 Fixture。

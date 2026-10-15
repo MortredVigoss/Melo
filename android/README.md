@@ -38,6 +38,18 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
+## 手机助手（0.2.0）
+
+首页「手机助手」，或聊天页顶部的手势图标进入。先用页面按钮打开 Android 辅助功能设置，在已安装服务中启用「Melo 手机助手」，返回后输入自然语言目标并点击「开始执行」。例如：`打开设置，搜索蓝牙，停在搜索结果页面`。若系统提示 App 的设置受限制，请按系统提示在该 App 的信息页面允许相应设置；App 不会自行启用辅助功能。
+
+复用全局模型连接；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait，工具执行后回传新屏幕。模型根据实际观察选择下一步，不录制固定脚本。
+
+官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
+
+开始前页面明确告知界面文字与可选截图会发给当前模型服务。截图仅保留在运行中的内存，不写入相册、日志、Room 或 sync；密码节点不导出，系统禁止的截图不会绕过。API 30 起支持截图，API 28/29 只提供节点观察；API 34 起优先窗口截图以排除停止浮层。可选择 Display；节点与图片坐标属于同一窗口，窗口变化后旧操作会被拒绝。back/home 是系统全局动作，只在主 Display 提供。
+
+任务期间有悬浮「停止 Melo」，也可以回到页面停止。最多 30 次工具调用 / 10 分钟，连续三次失败停止；进程或服务中断后不会自动恢复操作。执行记录保存在本机，只记录目标、工具名、简短结果及模型结束语，不保存原始界面、截图或输入字段内容；不进入 portable export/sync。模型结束语需结合真实步骤核对，不视为任意 App 的任务成功保证。
+
 开发只用 Fixture：Debug 的「系统 → 添加本地 Fixture」会明确显示模拟回复，不访问模型服务。Release 禁用 Fixture。不会从环境变量或桌面目录读取现有账户或凭证。
 
 生产连接要求 HTTPS，认证请求不跟随 Redirect。Credentials 仅保存在设备本地 Keystore AES-256-GCM 中，不进入 Room 文档、sync、export 或 WebView。Android backup 和 device transfer 均排除本机数据；使用显式文字资料 export/import 迁移，凭证需要重新配置。
@@ -52,7 +64,7 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 ## Samsung / Fold 验证边界
 
-目标机型：Galaxy Z Fold6，One UI 8.5。用户于 2026-10-15 指定今天只完成代码，暂不连接真机。Android 16 Emulator 验证不能代替 Samsung firmware 验收。
+目标机型：Galaxy Z Fold6，One UI 8.5。0.1.0 已在实际 SM-F956B（Android 16 / API 36，One UI property 80500）安装并冷启动；0.2.0 开发时手机未连接，新增 AccessibilityService 操作仍需实机验收。Android 16 Emulator 验证不能代替 Samsung firmware 验收。
 
 小于 600 dp 使用 bottom navigation，展开至 600 dp 以上使用 NavigationRail。无固定 orientation 或 aspect ratio；使用 system bar / IME insets，scene viewport 随窗口更新；页面、所选对话和文字草稿随 Activity recreation 保留。
 
