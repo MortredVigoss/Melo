@@ -22,3 +22,5 @@
 - 独立暂存树额外验证 27/27 JS（含真实浏览器创建/持久化）及 21 Swift 组通过；生成资源只纳入本次翻译，不纳入其他线程 WIP。初次独立启动因未链接本机原生 addon 失败，补齐既有 build 依赖后通过。日志 `staged-focused-second.log`、`staged-ios.log`。
 - 共享树其他线程 WIP 保留，编辑前副本 `.tmp/agent-settings-20261015/before/`。本轮不运行 git pp 或推送。
 - 手机源码只同步停用 mood 注入；本轮不代表实体手机覆盖安装。
+
+源码本地提交：`dc67fa0`。以上日常、独立暂存树及原生桌面验证均完成；本轮未运行 git pp 或推送。
