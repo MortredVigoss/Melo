@@ -20,7 +20,7 @@
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
-| 双端 Logo | 10-16 用户否定 B 的星空厚玻璃，改为普通低饱和黑金；[简洁 M 新稿](docs/design/logo-muted-20261016/README.md)已生成，正式资源/安装包暂仍 B | 17 个资源散列、13 个尺寸/alpha、双端构建及包内图标检查通过；电脑已安装并在 Finder 确认新图标，用户完成系统授权后原生工作空间/健康接口通过；手机未安装，见 [交接](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
+| 双端 Logo | 10-16 简洁低饱和黑金 M 已替换双端正式资源；电脑已实际安装 | 17 个资源散列、尺寸/alpha、安装包签名、Finder 新图标、原生启动及资料核对通过；手机资源已更新但实体包未安装，见 [交接](docs/design/logo-muted-20261016/README.md) |
 | 桌面神经总览 | 放大、五区分段图标和中枢加密已在 `b96c48a`；当前核心 JS 无未提交差异 | 347 项是 10-10 历史 UI 回归；加密后的 GPU/功耗、现安装包和用户最终验收未复验；样式后续 WIP 见设计线程 |
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 新稿；此前 B 已完成桌面安装 | 图标资源和旧生成入口已统一；电脑安装/Finder 图标及授权后的原生启动已验。历史神经 UI 见 [交接](docs/handoffs/melo-ui-20261015.md)；[本轮 Logo 证据](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 已替换双端资源并安装电脑 | 原程序字节保留，Finder 图标、原生启动与资料验证通过；[本轮图标证据](docs/design/logo-muted-20261016/README.md)，[历史神经 UI](docs/handoffs/melo-ui-20261015.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
@@ -323,7 +323,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 - 用户最新反馈：B 黑冰星空仍太复杂，改成普通低饱和黑金；最新设计要求覆盖此前星空/厚玻璃方向，仅限品牌 Logo。
 - 本轮交付：[简洁 M 设计稿、完整提示词与验证边界](docs/design/logo-muted-20261016/README.md)，内置 image_gen 编辑并复制实际 PNG 入项目；炭黑背景、香槟金几何 M，视觉核对无星空/神经纹理/厚玻璃。
-- 状态：设计稿已交付；未覆盖双端正式资源或安装包，当前电脑实际安装仍 B，不把预览称为安装成功。未改运行代码或用户数据，无产品测试/签名/安装验收。下一步同源导出和安装时独立检查系统图标。
+- 10-16 用户确认“去换了吧”：`assets/brand/melo-muted-gold-master.png` 作为正式母版，共用导出器与两端资源已更新；17 个资源散列、PNG 尺寸/alpha 和小尺寸视觉通过。
+- 电脑已覆盖图标并重签名：基于当前安装包，只变更图标及签名，去签名后的可执行文件字节一致；桌面快捷方式继续指向 `/Users/mortred/Applications/Melo.app`。Finder 列表/简介实际显示低饱和黑金 M。
+- 运行验收：健康接口正常；启动页一度等待超时，点击原生“重新打开”后进入同一 home。14 对话/1 项目/6 Agent 保留；42 项配置/聊天/Agent 文件逐字节一致，主状态文件仅活动页、渠道轮询时间与修订号变化。
+- 证据：`.tmp/logo-muted-install-20261016/{export-verification,installation-verification}.json`；旧包为同目录 `previous.bundle`，Finder 与原生 UI 实看在本线程回执。仅图标专项，无完整功能 gate；手机 PNG 资源已同步，未覆盖安装实体手机。
 
 ### 2026-10-16 — 设计 Melo — Agent 设置统一完成
 - 用户要求清除 Sharp/Warm 等情绪残留、补齐新增 Agent、消除旧版设置样式。确认新增按钮被神经布局隐藏，两套旧编辑器并存；本轮统一为一个编辑页与页头新增入口。

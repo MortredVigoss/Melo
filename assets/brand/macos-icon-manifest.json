@@ -1,65 +1,65 @@
 {
-  "design": "B - Black Ice Window",
-  "master": "assets/brand/melo-black-ice-master.png",
-  "masterSha256": "36b2e4be11ee949d7403e52051b711ed74cf6440ea241095ced37a7bebe41ffe",
+  "design": "Muted Black and Gold",
+  "master": "assets/brand/melo-muted-gold-master.png",
+  "masterSha256": "fbd8e1f70698668b75138dd77c439c3dcfc668511f8a27f6140344a86542aaf5",
   "platform": "macos",
   "geometry": "1024 canvas; 840 tile at 92,92; corner radius 188; transparent outer margin",
   "files": [
     {
       "path": "assets/melo-icon.png",
-      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+      "sha256": "2c49342c2e257e5827238751827ca18137ede5aca19536612dd57750c795a181"
     },
     {
       "path": "assets/melo-icon.svg.png",
-      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+      "sha256": "2c49342c2e257e5827238751827ca18137ede5aca19536612dd57750c795a181"
     },
     {
       "path": "assets/melo-icon.svg",
-      "sha256": "656e6ff22b0ef061b947dc4780ff58ee121933a3c6ab1b57896d1d218eafe15d"
+      "sha256": "41339e90d82bd7de0b450e577329d4c04548f47120a840e1cc7041e0f441b834"
     },
     {
       "path": "assets/Melo.iconset/icon_16x16.png",
-      "sha256": "5ffb7e25c9df3c3ae8372c650c6bba2c8d758db958ede65021f422ef69a37785"
+      "sha256": "a16f6f0c922b1251cf8414de8a07b37e50dfab02713ac33bcaaa470716fa2be6"
     },
     {
       "path": "assets/Melo.iconset/icon_16x16@2x.png",
-      "sha256": "80318ef837c0551500a10f8cb8d147a378cd87602739ffc14d2de5e42869dba2"
+      "sha256": "a500f12acd28a1ea6466ebfa0f4cc8830de19fa1146c224f9141df2ddf240dbc"
     },
     {
       "path": "assets/Melo.iconset/icon_32x32.png",
-      "sha256": "80318ef837c0551500a10f8cb8d147a378cd87602739ffc14d2de5e42869dba2"
+      "sha256": "a500f12acd28a1ea6466ebfa0f4cc8830de19fa1146c224f9141df2ddf240dbc"
     },
     {
       "path": "assets/Melo.iconset/icon_32x32@2x.png",
-      "sha256": "ace4463bd4d9a80779b8839a3db5902509ab821b23fcb767b2d76d97eccba2ee"
+      "sha256": "ee96d55a498c7c5ad391502ed137e20dd94046bd823689e3d6678f890e728038"
     },
     {
       "path": "assets/Melo.iconset/icon_128x128.png",
-      "sha256": "473ef26420080e64351feb5fff247a3b0116eee68f7b47b46c152ddc9502529d"
+      "sha256": "22a5cbd41b958cc68bac1b7af6c5e1159185ae7e2bedb0307f1a4520a5411483"
     },
     {
       "path": "assets/Melo.iconset/icon_128x128@2x.png",
-      "sha256": "e85634c5c2fde3cd910ebce10b06b82d7db176d9d4efa664a7207c5b51a23370"
+      "sha256": "473bf2abe4d0c907f11341da99e6e737eddc3fd244dbae7d0303187b1aba4bb6"
     },
     {
       "path": "assets/Melo.iconset/icon_256x256.png",
-      "sha256": "e85634c5c2fde3cd910ebce10b06b82d7db176d9d4efa664a7207c5b51a23370"
+      "sha256": "473bf2abe4d0c907f11341da99e6e737eddc3fd244dbae7d0303187b1aba4bb6"
     },
     {
       "path": "assets/Melo.iconset/icon_256x256@2x.png",
-      "sha256": "98f3c92308f1335797c605f2dac8368052b9077c4dc4a8fe0ff12cf87cb17d91"
+      "sha256": "d7c7dc9f8f95362db0176ea465bb7033dfe1a150b2e902e9e9c678e627773813"
     },
     {
       "path": "assets/Melo.iconset/icon_512x512.png",
-      "sha256": "98f3c92308f1335797c605f2dac8368052b9077c4dc4a8fe0ff12cf87cb17d91"
+      "sha256": "d7c7dc9f8f95362db0176ea465bb7033dfe1a150b2e902e9e9c678e627773813"
     },
     {
       "path": "assets/Melo.iconset/icon_512x512@2x.png",
-      "sha256": "063c0edcce5f04d38d1a8ef64d1b87908111a12554dc424b4251ea70adcfe4c9"
+      "sha256": "2c49342c2e257e5827238751827ca18137ede5aca19536612dd57750c795a181"
     },
     {
       "path": "assets/melo.icns",
-      "sha256": "a35eb6aa542bac69f18d4cab39e4dc7de786a02928b0818bbfcc81dd603893af"
+      "sha256": "e844c96e88d7171227d573eb5f6ba2b0ae9496a026b684deac455de813fb928a"
     }
   ]
 }

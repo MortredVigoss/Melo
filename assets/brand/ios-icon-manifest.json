@@ -1,21 +1,21 @@
 {
-  "design": "B - Black Ice Window",
-  "master": "assets/brand/melo-black-ice-master.png",
-  "masterSha256": "36b2e4be11ee949d7403e52051b711ed74cf6440ea241095ced37a7bebe41ffe",
+  "design": "Muted Black and Gold",
+  "master": "assets/brand/melo-muted-gold-master.png",
+  "masterSha256": "fbd8e1f70698668b75138dd77c439c3dcfc668511f8a27f6140344a86542aaf5",
   "platform": "ios",
   "geometry": "opaque square; system applies the corner mask",
   "files": [
     {
       "path": "ios/Melo/Icon-60@2x.png",
-      "sha256": "7e9e63fa39622291c43cfbb997f3012c46d591342de97277325a19d7fa1e7292"
+      "sha256": "2282e0cfd0e33e01bf49c88b666ced8a7d2349c40196dc1e474b3d2c2032c341"
     },
     {
       "path": "ios/Melo/Icon-60@3x.png",
-      "sha256": "ded00e3f6f5aeefa7678ef9e67c68d52653936a3397de80c268531c2c6aa6184"
+      "sha256": "fb67e14e27077cb587c7ee14de60ed001090369548a62bd261d95f14b570831d"
     },
     {
       "path": "ios/Melo/Icon-1024.png",
-      "sha256": "171e7fbb1334a130316eb820d80bc87ec0d84395306ded3bec8448246cfe67e5"
+      "sha256": "eab810e3e5b373879caaae890d242d5ddc055ee18476850ddeac954897d8ef9d"
     }
   ]
 }

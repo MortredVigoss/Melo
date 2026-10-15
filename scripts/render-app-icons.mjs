@@ -22,7 +22,7 @@ if (!['all', 'macos', 'ios'].includes(options.target)) throw new Error('Unknown 
 if (options.iosOutput && options.target !== 'ios') throw new Error('--ios-output requires --target ios');
 if (options.target !== 'ios' && process.platform !== 'darwin') throw new Error('macOS icon export requires iconutil on macOS');
 
-const master = await readFile(join(projectRoot, 'assets/brand/melo-black-ice-master.png'));
+const master = await readFile(join(projectRoot, 'assets/brand/melo-muted-gold-master.png'));
 const metadata = await sharp(master).metadata();
 if (metadata.width !== metadata.height || metadata.width < 1024) {
   throw new Error('The approved icon master must be square and at least 1024 pixels');
@@ -40,8 +40,8 @@ async function emit(relativePath, bytes, destination = join(options.outputRoot, 
 async function manifest(platform) {
   const files = exports.filter(item => platform === 'ios' ? item.relativePath.startsWith('ios/') : item.relativePath.startsWith('assets/') && !item.relativePath.startsWith('assets/brand/'));
   const value = {
-    design: 'B - Black Ice Window',
-    master: 'assets/brand/melo-black-ice-master.png',
+    design: 'Muted Black and Gold',
+    master: 'assets/brand/melo-muted-gold-master.png',
     masterSha256: masterHash,
     platform,
     geometry: platform === 'ios' ? 'opaque square; system applies the corner mask' : '1024 canvas; 840 tile at 92,92; corner radius 188; transparent outer margin',
@@ -69,7 +69,7 @@ try {
     await emit('assets/melo-icon.png', desktop);
     await emit('assets/melo-icon.svg.png', desktop);
     // Legacy SVG consumers use the same raster artwork, not the old teal vector.
-    await emit('assets/melo-icon.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024"><title>Melo Black Ice Window</title><image width="1024" height="1024" xlink:href="data:image/png;base64,' + desktop.toString('base64') + '"/></svg>\n'));
+    await emit('assets/melo-icon.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024"><title>Melo Muted Gold</title><image width="1024" height="1024" xlink:href="data:image/png;base64,' + desktop.toString('base64') + '"/></svg>\n'));
     for (const points of [16, 32, 128, 256, 512]) {
       for (const scale of [1, 2]) {
         const name = 'icon_' + points + 'x' + points + (scale === 2 ? '@2x' : '') + '.png';
@@ -87,7 +87,7 @@ try {
     await mkdir(dirname(item.destination), { recursive: true });
     await copyFile(item.stagedPath, item.destination);
   }
-  console.log('Exported ' + exports.length + ' files from the approved B master (' + options.target + ').');
+  console.log('Exported ' + exports.length + ' files from the approved muted-gold master (' + options.target + ').');
 } finally {
   await rm(stage, { recursive: true, force: true });
 }
