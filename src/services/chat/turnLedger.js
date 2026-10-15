@@ -1,3 +1,4 @@
+import {captureWorkspaceBinding} from '../workspace/toolWorkspace.js';
 import {capabilityScopeFromState} from '../agent/capabilityContext.js';
 import { findArchivedRun } from '../../persistence/turnArchive.js';
 import { beginTaskRun, finishTaskRun } from '../task/taskRunLifecycle.js';
@@ -30,7 +31,7 @@ export async function beginChatRun(input, context) {
       taskId: state.tasks?.find(t => t.execution?.runId === context.runId && t.execution.status === 'running')?.id || null };
     const capabilityScope=capabilityScopeFromState(state,binding);
     if (!capabilityScope) throw requestError('CAPABILITY_SCOPE_MISSING','Cannot determine the executing Agent.',400);
-    turnBinding=Object.freeze({...binding,capabilityScope});
+    turnBinding=Object.freeze({...binding,capabilityScope,workspace:captureWorkspaceBinding(state,chat,binding.project)});
     state.chatRuns.push(record);
     fresh = true;
   }, { home: context.home });

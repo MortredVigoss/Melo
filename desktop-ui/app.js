@@ -3514,7 +3514,7 @@ async function patchSettings(patch) {
 
 async function handleCreateChat({
   mode = uiState.bootstrap.settings.activeMode,
-  projectId = uiState.newChatProjectId,
+  projectId = uiState.newChatProjectId ?? null,
   agentId = uiState.activeChatAgentId || 'main',
 } = {}) {
   const payload = await api('/api/chats', {
@@ -3734,11 +3734,6 @@ function showTranscriptToast(text) {
 }
 
 async function startProjectSession(projectId, mode) {
-  await patchSettings({
-    selectedProjectId: projectId,
-    activeMode: mode,
-    activeView: 'chat',
-  });
   await handleCreateChat({ projectId, mode });
 }
 
@@ -4851,6 +4846,7 @@ async function handleUpdateProject(form) {
         summary: String(formData.get('summary') || ''),
         instructions: String(formData.get('instructions') || ''),
         workspacePath: String(formData.get('workspacePath') || ''),
+        confirmWorkspace: formData.get('confirmWorkspace') === 'on',
         knowledgeIds: formData.getAll('knowledgeIds').map(String),
       },
     },
@@ -4872,7 +4868,7 @@ async function handleCreateArtifact() {
       content,
       language,
       kind,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 
@@ -5741,6 +5737,14 @@ async function handlePingExternalConnector(connectorId) {
   applyBootstrap(payload);
 }
 
+function creationContext() {
+  const view=uiState.bootstrap?.settings?.activeView;
+  if (uiState.neuralOverview) return {projectId:null,chatId:null};
+  if (view==='projects') return {projectId:activeProject()?.id || null,chatId:null};
+  const chat=view==='chat' ? activeChat() : null;
+  return {projectId:chat?.projectId || null,chatId:chat?.id || null};
+}
+
 async function handleCreateTask() {
   const title = uiState.draftTask.title.trim();
   if (!title) {
@@ -5755,8 +5759,8 @@ async function handleCreateTask() {
       summary: uiState.draftTask.summary.trim(),
       owner: uiState.draftTask.owner,
       kind: uiState.draftTask.kind,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-      chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+      projectId: creationContext().projectId,
+      chatId: creationContext().chatId,
     },
   });
 
@@ -6178,12 +6182,12 @@ async function handleComposerCommand() {
         kind: 'command',
         title: `Run ${templateId}`,
         description: `Command requested from the command workbench.`,
-        projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-        chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+        projectId: creationContext().projectId,
+        chatId: creationContext().chatId,
         payload: {
           templateId,
           query: queryParts.join(' ').trim(),
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+          projectId: creationContext().projectId,
         },
       });
       break;
@@ -6196,8 +6200,8 @@ async function handleComposerCommand() {
           summary: 'Created from the command workbench.',
           owner: 'builder',
           kind: 'task',
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-          chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+          projectId: creationContext().projectId,
+          chatId: creationContext().chatId,
         },
       }).then(applyBootstrap);
       break;
@@ -6210,8 +6214,8 @@ async function handleComposerCommand() {
           summary: `Assigned to ${owner}.`,
           owner,
           kind: 'agent',
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-          chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+          projectId: creationContext().projectId,
+          chatId: creationContext().chatId,
         },
       }).then(applyBootstrap);
       break;
@@ -6242,12 +6246,12 @@ async function handleRunCommand(form) {
     kind: 'command',
     title: `Run ${form.dataset.templateId}`,
     description: 'Run a curated local command inside the active project.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       templateId: form.dataset.templateId,
       query: String(formData.get('query') || '').trim(),
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
@@ -6279,12 +6283,12 @@ async function handleSaveWorkspaceFile() {
     kind: 'file-save',
     title: `Save ${filePath}`,
     description: 'Write the current editor draft back into the workspace.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       filePath,
       content: uiState.fileDraftContent,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
@@ -6300,12 +6304,12 @@ async function handleApplyArtifactToSelectedFile(artifactId) {
     kind: 'artifact-apply',
     title: `Apply artifact to ${selectedFilePath}`,
     description: 'Write the selected artifact into the currently selected workspace file.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       artifactId,
       filePath: selectedFilePath,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
@@ -7940,6 +7944,7 @@ function renderProjectsDetailView(project) {
                   placeholder="可选；留空将创建独立项目文件夹"
                 />
               </label>
+              ${project.workspaceNeedsConfirmation ? ui`<label class="label"><input type="checkbox" name="confirmWorkspace" />确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。</label>` : ''}
               <label class="label">
                 项目目标
                 <input

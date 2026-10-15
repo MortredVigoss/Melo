@@ -1,3 +1,4 @@
+import {requireProjectWorkspace} from './workspacePolicy.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Workspace mutation handlers — sub-phase 7d-5ε commit 3 of the
@@ -8,25 +9,14 @@ import { currentRequestContext, runWithRequestContext } from '../../runtime/requ
 // reads, artifact creation + workspace-application, and the curated
 // `runLocalCommand` template runner.
 //
-// Mechanical adaptation (same pattern as Phase 7d-5α-A1 commit 7's
-// stateHydration.js + commit 3's workspaceSnapshot.js): APP_ROOT is
-// recomputed via four dirname() calls so the module observes the same
-// project-root directory desktopStore did, and the local 1-arg
-// `sanitizeWorkspacePath` wrapper is duplicated byte-identically.
-
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile as execFileCallback } from 'node:child_process';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { nowIso } from '../../shared/helpers.js';
 import { loadState, updateStateAtomically } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findProjectById } from '../../state/stateLookups.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
-import {
-  sanitizeWorkspacePath as sanitizeWorkspacePathRaw,
-} from './workspaceFiles.js';
 import {
   readWorkspaceFilePreview as readWorkspaceFilePreviewService,
   saveWorkspaceFileContent as saveWorkspaceFileContentService,
@@ -36,12 +26,7 @@ import { normalizeArtifact } from '../../domain/artifact/artifactService.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
 import { MAX_COMMAND_RUNS } from '../../domain/activity/activityLog.js';
 
-const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 const execFile = promisify(execFileCallback);
-
-function sanitizeWorkspacePath(rawPath) {
-  return sanitizeWorkspacePathRaw(rawPath, APP_ROOT);
-}
 
 export async function selectWorkspaceFile(filePath) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => selectWorkspaceFile(...arguments));
@@ -55,8 +40,11 @@ export async function selectWorkspaceFile(filePath) {
 }
 
 function buildWorkspaceProjectResolver(state) {
-  return async projectId =>
-    findProjectById(state, projectId || state.settings.selectedProjectId);
+  return async projectId => {
+    const project=findProjectById(state,projectId);
+    if (project) await requireProjectWorkspace(project);
+    return project;
+  };
 }
 
 export async function readWorkspaceFilePreview(params = {}) {
@@ -100,7 +88,7 @@ export async function createArtifact({ title, content, language, projectId, kind
       content: trimmedContent,
       language: language?.trim() || 'text',
       kind,
-      projectId: projectId || state.settings.selectedProjectId,
+      projectId: projectId,
       createdAt: nowIso(),
     });
 
@@ -321,8 +309,7 @@ export async function applyArtifactToWorkspaceFile({ artifactId, filePath, proje
     throw new Error('Artifact not found.');
   }
 
-  // Resolve the caller's projectId chain (explicit → artifact's project →
-  // selected project) before handing off to the service. The "target path
+  // Resolve explicit project membership before handing off to the service. The "target path
   // empty? fall back to selected file" rule is also a state-machine call.
   const { project, targetPath } = await applyArtifactContentToWorkspaceService(
     {
@@ -347,12 +334,12 @@ export async function applyArtifactToWorkspaceFile({ artifactId, filePath, proje
 export async function runLocalCommand({ templateId, query, projectId }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => runLocalCommand(...arguments));
   const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
+  const project = findProjectById(state, projectId);
   if (!project) {
     throw new Error('Project not found.');
   }
 
-  const workspacePath = sanitizeWorkspacePath(project.workspacePath);
+  const workspacePath = await requireProjectWorkspace(project);
   const template = COMMAND_TEMPLATES.find(entry => entry.id === templateId);
   if (!template) {
     throw new Error('Unknown command template.');

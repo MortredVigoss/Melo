@@ -1,3 +1,4 @@
+import {workspaceForTool,ownedWorkspaceSafety} from '../services/workspace/toolWorkspace.js';
 import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
 import {narrowCapabilityScope,scopeAllowsTool,missingCapabilityScope} from '../domain/agent/capabilityScope.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
@@ -49,9 +50,13 @@ export async function executeTool(tool, args, options = {}) {
   if (!scopeAllowsTool(capabilityScope,tool.id,args)) {
     return {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}};
   }
-  const permissionScope=await operationScope(resolved,options.workspacePath,capabilityScope.agentId);
-  const requestContext=Object.freeze({...resolved,capabilityScope,permissionScope});
-  const scopedOptions={...options,requestContext,capabilities:capabilityScope.capabilities,agentId:capabilityScope.agentId,
+  let workspacePath;
+  try {workspacePath=await workspaceForTool(resolved,tool,args,options.workspacePath);}
+  catch(error) {return {ok:false,error:error.code || 'WORKSPACE_UNAVAILABLE',output:error.message,meta:{denied:true,executionStarted:false}};}
+  const ownedWorkspace=await ownedWorkspaceSafety(resolved,workspacePath);
+  const permissionScope=await operationScope(resolved,workspacePath,capabilityScope.agentId);
+  const requestContext=Object.freeze({...resolved,workspacePath,ownedWorkspace,capabilityScope,permissionScope});
+  const scopedOptions={...options,workspacePath,requestContext,capabilities:capabilityScope.capabilities,agentId:capabilityScope.agentId,
     allowedToolIds:capabilityScope.allowedToolIds,taskId:resolved.turnBinding?.taskId || null};
   return runWithRequestContext(requestContext,()=>executeScopedTool(tool,args,scopedOptions));
 }

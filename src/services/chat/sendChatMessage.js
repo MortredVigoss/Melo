@@ -1,3 +1,4 @@
+import {chatWorkspacePath} from '../workspace/toolWorkspace.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
 import { conversationConfig, selectedMaterials } from './conversationSelection.js';
 import { visionConnection } from '../../images/imageSettings.js';
@@ -32,8 +33,7 @@ import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, 
 import { randomUUID } from 'node:crypto';
 import { scheduleChatTurn } from './turnScheduler.js';
 import { schedulePostTurnTask } from '../../runtime/postTurnTasks.js';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { getMeloHome, getResolvedConfig } from '../../config.js';
 import {
   loadState,
@@ -80,14 +80,6 @@ import {
   nowIso,
   normalizeMessageAttachments,
 } from '../../shared/helpers.js';
-
-// APP_ROOT — original desktopStore.js: `dirname(dirname(fileURLToPath(import.meta.url)))`.
-// This module sits two levels deeper at `src/services/chat/`, so the formula
-// needs two extra `dirname()` calls to resolve to the same project-root
-// directory. Used by the remote-background workspace fallback below (the
-// `if (shouldUseBackgroundWorkspace)` branch synthesizes an empty workspace
-// rooted at APP_ROOT). Same precedent as workspaceSnapshot.js / connectorRollup.js.
-const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
 function extractUrlAttachmentsFromText(content = '') {
   return normalizeMessageAttachments(promoteTextUrlsToAttachments(content, []));
@@ -204,7 +196,7 @@ async function executeChatTurn({
   const shouldUseBackgroundWorkspace = background && Boolean(channelContext?.channelId);
   const workspace = shouldUseBackgroundWorkspace
     ? {
-        rootPath: APP_ROOT,
+        rootPath: null,
         exists: false,
         entries: [],
         filePaths: [],
@@ -215,6 +207,7 @@ async function executeChatTurn({
         commandRuns: [],
       }
     : await buildWorkspaceSnapshot(state, activeProject);
+  if (!activeProject && chat.workspacePath === chatWorkspacePath(context.home,chat.id)) workspace.rootPath=chat.workspacePath;
   const activeAgentProfile = effectiveAgentProfile(
     state,
     effectiveAgentId,

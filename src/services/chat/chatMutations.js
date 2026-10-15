@@ -1,3 +1,4 @@
+import {creationProjectId} from '../../domain/project/projectMembership.js';
 import { mergeDeletedChats } from '../../../mobile-sync/protocol.js';
 import { assertChatDeletable, stageChatDeletion, finishChatDeletions } from './chatDeletion.js';
 import { getResolvedConfig } from '../../config.js';
@@ -18,7 +19,7 @@ export async function createChat({ mode, projectId, agentId, modelSelection, con
     const state = ensureSelectedEntities(latestState);
     const chat = createChatRecord({
       mode: mode || state.settings.activeMode,
-      projectId: projectId === undefined ? state.settings.selectedProjectId : projectId,
+      projectId: creationProjectId(state,{projectId,operation:'chat'}),
       agentId: agentId || null,
     });
     if (state.projects.find(p=>p.id===chat.projectId)?.archived) throw new Error('请先恢复此项目，再创建新的项目对话。');

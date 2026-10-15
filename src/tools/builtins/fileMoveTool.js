@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_move
  *
@@ -126,8 +127,11 @@ export const fileMoveTool = {
       };
     }
 
-    const absSrc = isAbsolute(src) ? src : resolve(workspacePath || process.cwd(), src);
-    const absDst = isAbsolute(dst) ? dst : resolve(workspacePath || process.cwd(), dst);
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
+    const absSrc = isAbsolute(src) ? src : resolve(workspacePath, src);
+    const absDst = isAbsolute(dst) ? dst : resolve(workspacePath, dst);
 
     const [srcParent, srcLeaf] = splitParentLeaf(absSrc);
     const [dstParent, dstLeaf] = splitParentLeaf(absDst);

@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_write
  *
@@ -185,9 +186,12 @@ export const fileWriteTool = {
       return { ok: false, output: 'content must be a string.', error: 'INVALID_CONTENT' };
     }
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const absPath = isAbsolute(filePath)
       ? filePath
-      : resolve(workspacePath || process.cwd(), filePath);
+      : resolve(workspacePath, filePath);
 
     // ── 1. Sensitivity pre-check ───────────────────────────────────────
     const precheck = await precheckHardBlockedWrite(absPath);

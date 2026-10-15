@@ -1,3 +1,5 @@
+import {resolve as resolveWorkspaceCwd} from 'node:path';
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: bash
  *
@@ -206,6 +208,9 @@ export const bashTool = {
   async run(args, context = {}) {
     const { command, timeout = 30_000, cwd: cwdOverride } = args;
     const { workspacePath, onOutput, signal, sseEmitter, chatId } = context;
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const childEnv = { ...process.env };
 
     if (typeof command !== 'string' || !command.trim()) {
@@ -227,7 +232,7 @@ export const bashTool = {
     const risks = parsed.risks;
     // Pre-compute cwd here so isInAllowlist can validate it sits
     // inside workspacePath (Phase 2D follow-up #3).
-    const effectiveCwd = cwdOverride || workspacePath || process.cwd();
+    const effectiveCwd = cwdOverride ? resolveWorkspaceCwd(workspacePath, cwdOverride) : workspacePath;
     const allowlisted = risks.length === 0 && isInAllowlist(command, effectiveCwd, workspacePath);
 
     if (!allowlisted) {

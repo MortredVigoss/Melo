@@ -42,7 +42,7 @@ export async function runTaskAgentExecutionGraph({
       // compose-task-prompt nodes. The only real async work is the workspace
       // snapshot; everything else is sync and runs immediately after.
       async 'prepare-task'() {
-        const project = findProjectById(state, task.projectId || state.settings.selectedProjectId);
+        const project = findProjectById(state, task.projectId);
         const workspace = await buildWorkspaceSnapshot(state, project);
         const profile = effectiveAgentProfile(state, task.owner, project?.id || null);
         const taskPrompt = taskExecutionPrompt(task, project, workspace, profile);

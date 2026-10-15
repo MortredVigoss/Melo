@@ -1,3 +1,4 @@
+import {creationProjectId} from '../../domain/project/projectMembership.js';
 import {effectiveAgentProfile} from '../../state/agentProfiles.js';
 import {hasCapability} from '../../domain/agent/capabilities.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
@@ -41,14 +42,16 @@ export async function createApproval({
 }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createApproval(...arguments));
   await updateStateAtomically(state => {
+    const inheritedProjectId=creationProjectId(state,{projectId,chatId,operation:'approval'});
+    const boundPayload=['command','file-save','artifact-apply'].includes(kind) ? {...payload,projectId:inheritedProjectId} : payload;
     const approval = normalizeApproval({
       id: randomUUID(),
       kind,
       title: String(title || '').trim() || 'Pending approval',
       description: String(description || '').trim(),
-      payload,
-      projectId: projectId || state.settings.selectedProjectId,
-      chatId: chatId || state.settings.selectedChatId,
+      payload: boundPayload,
+      projectId: inheritedProjectId,
+      chatId: chatId || null,
       status: 'pending',
       createdAt: nowIso(),
       updatedAt: nowIso(),

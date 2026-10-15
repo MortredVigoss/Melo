@@ -302,3 +302,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - A 在 turnLedger 事务捕获冻结能力，执行器自行解析且仅允许收窄；委派/技能/团队与原生能力共用上下文，未知身份拒绝，旧版使用显式 legacy。
 - 新验收先红（3 失败 / 1 通过）后绿；69 项专项、11 项作用域/真实 HTTP 验收，日常 3553 JS / 21 Swift / 831 语法及浏览器通过（144.3 秒）。首次日常遇到旧 Markdown 测试固定事件循环等待的时序误报，改为等待现有完成 Promise 后全绿。日志 `/tmp/melo-hardening-a-{red2,acceptance,focused,daily2}.log`。
 - B 将按需创建聊天目录，旧程序目录需用户明确确认；不迁移真实数据，不运行 git pp 或推送。
+
+### 2026-10-15 — melo主线 — 架构加固 B 实现与边界验证
+- B 明确创建归属；任务/审批从显式聊天继承，执行载荷同样绑定。项目对话单请求；旧占位文本仅在显示/prompt 隐藏，不改旧记录。
+- turnLedger 冻结工作区；首次文件操作分配 `workspaces/chats/<id>` 并写入聊天 manifest，0700、冷进程重读与真实 pwd/file_write 验证。旧程序目录须在项目设置明确勾选确认，确认绑定 canonical 路径及设备/inode。
+- 文件、bash、图片、PDF/XLSX 不再回退 cwd。安全例外仅覆盖当前已验证的生成目录内容，配置、目录根、兄弟聊天及逃逸链接仍受保护；既有权限继续匹配工作区。
+- 主要入口：`projectMembership.js`、`toolWorkspace.js`、`workspacePolicy.js`、`executor.js`、`chatManifest.js` 与项目界面。先红 5 项；浏览器/安全 34 项、冷启动/PDF 边界 69 项通过。日常 JS 3563/3563、837 文件语法、两组浏览器及 21 Swift 全部通过（143.1 秒）；共享整合待完成。日志 `/tmp/melo-hardening-b-{red,acceptance3,boundary-final2,daily3}.log`。
+- 本轮不迁移真实数据，不自动确认程序目录；未运行 git pp 或推送。
