@@ -490,7 +490,7 @@ import SwiftUI
             if !confirmed.isEmpty { updatePreferences { $0.taskHandoffReceipts = ($0.taskHandoffReceipts ?? []).union(confirmed) } }
             migrateLegacyReferences()
             let conflicts = preferences.workspaceSync?.conflicts.count ?? 0
-            syncStatus = remote.workspace == nil ? "正文已同步 · 服务尚未支持角色、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、角色、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
+            syncStatus = remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
         } catch { syncStatus = "同步未完成 · " + error.localizedDescription; if reportErrors { self.error = error.localizedDescription } }
     }
     private var syncDevice: String {

@@ -1,3 +1,4 @@
+import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
 import { isDeepStrictEqual } from 'node:util';
 import { serializeChatForPersistence } from './chatManifest.js';
 import { normalizeLocalPreferences } from '../domain/settings/localPreferences.js';
@@ -594,10 +595,10 @@ export function hydrateState(parsed = {}) {
       ? parsed.externalConnectors.map(normalizeExternalConnector)
       : defaults.externalConnectors,
     externalToolRuns: normalizeExternalToolRuns(parsed.externalToolRuns),
-    agentProfiles: normalizeAgentProfiles(parsed.agentProfiles),
+    agentProfiles: normalizeAgentProfiles(hydrateAgentRecords(parsed)),
     projectAgentOverrides: normalizeProjectAgentOverrides(
-      parsed.projectAgentOverrides,
-      parsed.agentProfiles,
+      hydrateProjectAgentRecords(parsed),
+      hydrateAgentRecords(parsed),
     ),
     tasks: normalizeTasks(parsed.tasks),
     mobileTaskSync: parsed.mobileTaskSync || null,

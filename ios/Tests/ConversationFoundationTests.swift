@@ -4,6 +4,14 @@ import Foundation
     let old = Data(#"{"agents":[{"id":"custom","name":"蓝鲸","subtitle":"只使用短句","symbol":"star","instructions":"先说收到"}],"chatAgents":{"a":"custom"},"pinnedChats":[],"archivedChats":[]}"#.utf8)
     var preferences = try JSONDecoder().decode(MobilePreferences.self, from: old)
     assert(preferences.agents[0].avatarData == nil && preferences.chatModels == nil)
+    let legacyPersona = Data(#"{"id":"legacy","name":"Legacy","subtitle":"Purpose","symbol":"star","instructions":"work","identity":"identity-content","soul":"style-content","systemPrompt":"extra-content"}"#.utf8)
+    let migrated = try JSONDecoder().decode(AgentProfile.self, from: legacyPersona)
+    for text in ["work", "identity-content", "style-content", "extra-content"] { assert(migrated.prompt.components(separatedBy:text).count == 2) }
+    let encoded = try JSONEncoder().encode(migrated)
+    let canonical = try JSONDecoder().decode(SyncValue.self, from: encoded)
+    assert(canonical["description"].string == "Purpose" && canonical["identity"] == .null && canonical["subtitle"] == .null)
+    let decodedAgain = try JSONDecoder().decode(AgentProfile.self, from: encoded)
+    assert(decodedAgain == migrated)
     preferences.agents[0].avatarData = Data([1,2,3])
     preferences.chatModels = ["a":.init(connectionID:"api-a",model:"selected"),"b":.init(connectionID:"chatgpt",model:"sol")]
     preferences.projects = [.init(id:"project",name:"旅行",goal:"旅行目标")]

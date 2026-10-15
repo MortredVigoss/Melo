@@ -67,6 +67,9 @@ import { normalizeAgentProfile } from '../../state/agentProfiles.js';
 export function normalizeAgentUpdatePatch(patch = {}) {
   const safePatch = patch && typeof patch === 'object' ? patch : {};
   const nextPatch = { ...safePatch };
+  if (Object.hasOwn(safePatch,'instructions') && (typeof safePatch.instructions !== 'string' || safePatch.instructions.length > 200100)) {
+    throw new Error('Agent instructions must be text within 200100 characters.');
+  }
 
   // identity/identify aliases — pick the first string-valued one.
   const resolvedIdentity =

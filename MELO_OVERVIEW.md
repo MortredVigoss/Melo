@@ -214,3 +214,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 核对：后端 UI 选中值回退、无项目 APP_ROOT、上下文分流仍在；首页通常显式 null，新项目已有独立目录，共享同步协议已有 goal/agentOverrides；用户编辑与自动重建记忆的移动行为不同。
 - 建议：项目配置统一解析，本机工作区/授权独立绑定，运行/审批捕获目标快照；无项目按需持久目录，原图走稳定资产引用。图片预览 P0 独立修，原件自动回收等生命周期规则稳定；详见两份计划的依赖顺序。
 - 证据：`.tmp/project-architecture-audit-20261015/source-manifest.json` 的27份源码散列（HEAD 2cae1cd 加共享WIP）；验证为静态调用路径、文档链接与diff，未运行产品gate/原生操作或模型请求。保留全部其他线程WIP。
+
+### 2026-10-15 — melo主线 — Agent 演进 P0 开发中
+
+- 用户已批准 Agent/能力/协作/知识成果方案并授权实施；[阶段记录](docs/agent-evolution-20261015.md)。代码在 `.tmp/agent-evolution-20261015/worktree` 的 `codex/agent-evolution-20261015`，从 b51a390 带入共享 WIP 验证，尚未合回或替换当前运行版本。
+- P0 已接统一人设、内置编辑、事务后 Markdown 导出、本机频道/语音分表、桌面与手机字段及文案；新增迁移/故障/真实浏览器证据通过，23 Swift 组通过。日常完整 JS 首轮尚有继承的图片预览 focus 失败，原树亦复现；详见阶段记录。
+- P1 权限迁移仍需产品内实际影响预览与确认，P2–P4 待实施；不得据此宣称多 Agent 或能力约束已交付。原项目架构和图片承载计划保持独立。

@@ -29,7 +29,7 @@ struct LocalProfileSettings: View {
                 AvatarPicker(agent: Binding(get: { AgentProfile(name: value.wrappedValue.name, subtitle: "", symbol: "person.crop.circle", instructions: "", avatarData: value.wrappedValue.avatar) }, set: { value.wrappedValue.avatar = $0.avatarData }))
                 TextField("你的昵称", text: value.name).textContentType(.nickname).meloInput()
             } else { HStack { LocalProfileBadge(size: 56); Text(value.wrappedValue.name).font(.title3) } }
-            Text("头像与昵称保存在此 iPhone，与你的角色独立。无需 Melo 账号。").font(.caption).foregroundStyle(.secondary)
+            Text("头像与昵称保存在此 iPhone，与你的Agent独立。无需 Melo 账号。").font(.caption).foregroundStyle(.secondary)
         }.meloPanel()
     }
 }
@@ -136,8 +136,8 @@ struct LocalDataSettings: View {
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 14) {
-                Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色").font(.subheadline)
-                Text("可导出对话、角色、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
+                Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent").font(.subheadline)
+                Text("可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
                 Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.sendingID != nil || store.syncing)
                 Button("导入资料文件") { importing = true }.disabled(store.sendingID != nil || store.syncing)
                 if let value = pending {

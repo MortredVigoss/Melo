@@ -1,7 +1,7 @@
 import { t, ui } from './i18n.js';
 import { renderEditActions, EditSession } from './settingsEdit.js';
 const escape=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const scopes={chat:'仅原对话',project:'此项目的本地对话',agent:'此角色的本地对话',personal:'我的全部本地对话'};
+const scopes={chat:'仅原对话',project:'此项目的本地对话',agent:'此Agent的本地对话',personal:'我的全部本地对话'};
 const statuses={active:'使用中',historical:'已失效',forgotten:'已停止使用',unconfirmed:'来源待确认'};
 export function renderMemoryFacts(data,{query='',editing=null,busy=false,draft=null,session=null,feedback=null}={}) {
   return ui`<section class="quality-details memory-facts"><h3>记住的事实</h3>

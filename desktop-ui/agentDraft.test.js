@@ -192,3 +192,14 @@ test('normalizeChannelsForDraft returns {} for null / undefined input', () => {
   assert.deepEqual(normalizeChannelsForDraft(null), {});
   assert.deepEqual(normalizeChannelsForDraft(undefined), {});
 });
+
+
+test('preset replaces its persona sections without duplicating or discarding user requirements', async () => {
+  const { agentDocumentWithPreset } = await import('./agentDraft.js');
+  const document='## 工作要求\nKeep work\n\n## 身份\nOld identity\n\n## 风格\nOld style\n\n## 补充要求\nKeep extra';
+  const next=agentDocumentWithPreset(document,{identity:'New identity',soulMd:'New style'});
+  assert.match(next,/Keep work/); assert.match(next,/Keep extra/);
+  assert.doesNotMatch(next,/Old identity|Old style/);
+  assert.equal(next.split('## 身份').length,2);
+  assert.equal(agentDocumentWithPreset(next,{identity:'New identity',soulMd:'New style'}),next);
+});

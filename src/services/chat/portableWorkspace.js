@@ -8,7 +8,7 @@ import { createExecutionScene } from '../../shared/executionScene.js';
 
 export const connectionBase = value => String(value || '').replace(/\/(?:chat\/completions|messages)\/?$/, '').replace(/\/+$/, '');
 function agentValue(profile) {
-  return portableAgent({name:profile.name,subtitle:profile.description,instructions:profile.rolePrompt,symbol:profile.symbol || 'person.crop.square',avatarData:profile.avatarData?.split(',')[1] || '',identity:profile.identity,soul:profile.soulMd,systemPrompt:profile.systemPrompt,mood:profile.mood,model:profile.model});
+  return portableAgent({name:profile.name,description:profile.description,instructions:profile.instructions,personaVersion:1,symbol:profile.symbol || 'person.crop.square',avatarData:profile.avatarData?.split(',')[1] || '',identity:profile.identity,soul:profile.soulMd,systemPrompt:profile.systemPrompt,mood:profile.mood,model:profile.model});
 }
 export function exportModelSelection(choice, config) {
   if(!choice)return null;
@@ -51,7 +51,7 @@ export function refreshPortableWorkspace(state,{config={},scenes=new Map()}={}) 
   return state.mobileWorkspaceSync;
 }
 function importedAgent(id,value,old) {
-  return normalizeAgentProfile(id,{...(old || {tools:['projects','artifacts'],enabledConnectorIds:[],enabledSkillIds:[],enabledMcpServerIds:[]}),portableIdentity:true,name:value.name,description:value.subtitle,rolePrompt:value.instructions,avatarData:value.avatarData?'data:image/jpeg;base64,'+value.avatarData:'',identity:value.identity,soulMd:value.soul,systemPrompt:value.systemPrompt,mood:value.mood,model:value.model,symbol:value.symbol});
+  return normalizeAgentProfile(id,{...(old || {tools:['projects','artifacts'],enabledConnectorIds:[],enabledSkillIds:[],enabledMcpServerIds:[]}),portableIdentity:true,name:value.name,description:value.description,instructions:value.instructions,avatarData:value.avatarData?'data:image/jpeg;base64,'+value.avatarData:'',identity:value.identity,soulMd:value.soul,systemPrompt:value.systemPrompt,mood:value.mood,model:value.model,symbol:value.symbol});
 }
 export function sceneFromPortable(value,chatId,messageId) {
   if(!value)return null;
@@ -70,7 +70,7 @@ export function applyPortableWorkspace(state,workspace,{config={},home}={}) {
       const update={name:v.name,summary:v.goal,instructions:v.instructions,archived:v.archived,knowledgeIds:v.knowledgeIds};
       if(stableJSON(Object.fromEntries(Object.keys(update).map(key=>[key,p[key]])))!==stableJSON(update))p.updatedAt=now;
       Object.assign(p,update);
-      state.projectAgentOverrides[r.id]=Object.fromEntries(Object.entries(v.agentOverrides).map(([id,a])=>[id,{...state.projectAgentOverrides[r.id]?.[id],portableIdentity:true,name:a.name,description:a.subtitle,rolePrompt:a.instructions,identity:a.identity,soulMd:a.soul,systemPrompt:a.systemPrompt,mood:a.mood,model:a.model,symbol:a.symbol,avatarData:a.avatarData?'data:image/jpeg;base64,'+a.avatarData:''}]));
+      state.projectAgentOverrides[r.id]=Object.fromEntries(Object.entries(v.agentOverrides).map(([id,a])=>[id,{...state.projectAgentOverrides[r.id]?.[id],portableIdentity:true,name:a.name,description:a.description,instructions:a.instructions,identity:a.identity,soulMd:a.soul,systemPrompt:a.systemPrompt,mood:a.mood,model:a.model,symbol:a.symbol,avatarData:a.avatarData?'data:image/jpeg;base64,'+a.avatarData:''}]));
     }
     if(r.kind==='knowledge') {
       let note=state.artifacts.find(n=>n.id===r.id);

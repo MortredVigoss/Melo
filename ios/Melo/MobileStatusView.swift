@@ -28,7 +28,7 @@ struct MobileConnectionStatus: View {
                 }
             }
             Text(status).font(.caption).foregroundStyle(MeloTheme.soft)
-            Text("模型提供推理；对话、角色和执行记录由 Melo 管理。").font(.caption).foregroundStyle(MeloTheme.muted)
+            Text("模型提供推理；对话、Agent和执行记录由 Melo 管理。").font(.caption).foregroundStyle(MeloTheme.muted)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var status: String {

@@ -1,3 +1,5 @@
+import { serializeAgentState } from '../domain/agent/agentState.js';
+import { backupAgentState } from './storageMigration.js';
 import { measureStage, measureStageSync, startStage } from '../runtime/performanceTrace.js';
 import { compactChatRuns } from '../persistence/turnArchive.js';
 import { backupLegacyState } from './storageMigration.js';
@@ -90,10 +92,10 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
     const raw = await measureStage('state.manifest.read', () => readFile(stateFilePath, 'utf8'));
     manifestFound = true;
     const { parsed, repaired } = parseStatePayload(raw);
-    if (Number(parsed._storageFormat) > 2) throw Object.assign(new Error('This state was written by a newer Melo storage version.'), { code: 'STATE_VERSION_UNSUPPORTED' });
+    if (Number(parsed._storageFormat) > 3) throw Object.assign(new Error('This state was written by a newer Melo storage version.'), { code: 'STATE_VERSION_UNSUPPORTED' });
     const state = measureStageSync('state.normalize', () => hydrateState(parsed));
     const alreadySyncedThisHome = isMarkdownSyncedFor(home);
-    const markdownImported = alreadySyncedThisHome
+    const markdownImported = Number(parsed._storageFormat) >= 3 || alreadySyncedThisHome
       ? false
       : await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
     if (!alreadySyncedThisHome) {
@@ -220,11 +222,12 @@ export async function persistStateAtomically(state, { ctx = null, capturedStateP
     state.chatRuns = state.chatRuns.filter(run => chatIds.has(run.chatId));
   }
   compactChatRuns(state, state[snapshotSource]?.committedRuns, ctx.home);
-  if (state._storageFormat !== 2) await backupLegacyState(ctx);
-  const unchanged = state._storageFormat === 2 && !state[snapshotSource]?.requiresRepair
+  if (!(Number(state._storageFormat) >= 2)) await backupLegacyState(ctx);
+  if (state._storageFormat !== 3) await backupAgentState(ctx);
+  const unchanged = Number(state._storageFormat) >= 2 && !state[snapshotSource]?.requiresRepair
     ? unchangedChats(state, state[snapshotSource]?.base) : new Set();
   const { keepThreadIds } = await measureStage('state.threads.persist', () => persistChatThreads(state.chats, { threadsDir: ctx.threadsDir, unchanged }));
-  const next = { ...state, _storageFormat: 2, _revision: (Number(state._revision) || 0) + 1,
+  const next = { ...state, ...serializeAgentState(state), _storageFormat: 3, _revision: (Number(state._revision) || 0) + 1,
     chats: state.chats.map(serializeChatForPersistence) };
   // The manifest is the commit point: a failed write cannot publish staged
   // message files, and the previous committed checkpoints still exist.
@@ -290,16 +293,13 @@ export async function updateStateAtomically(mutator, { home = getMeloHome() } = 
     const latestState = ensureSelectedEntities(
       ownCommitted(await readCommitted(ctx)),
     );
-    if (!isMarkdownSyncedFor(ctx.home)) {
-      markSyncedFor(ctx.home);
-      await queueAgentMarkdownPrime(latestState, ctx.home, ctx.getAgentMarkdownPaths);
-    }
+    if (!isMarkdownSyncedFor(ctx.home)) markSyncedFor(ctx.home);
     const before = measureStageSync('state.compare.before', () => metadataJson(latestState));
     const candidateState = await mutator(latestState);
     const nextState = ensureSelectedEntities(candidateState || latestState);
     // No-op commands (retries, empty cleanup, identical settings) do not
     // rewrite the manifest or rebuild derived indexes.
-    if (nextState._storageFormat !== 2 || latestState[snapshotSource]?.requiresRepair || measureStageSync('state.compare.after', () => metadataJson(nextState)) !== before || unchangedChats(nextState, latestState[snapshotSource]?.base).size !== nextState.chats.length) {
+    if (nextState._storageFormat !== 3 || latestState[snapshotSource]?.requiresRepair || measureStageSync('state.compare.after', () => metadataJson(nextState)) !== before || unchangedChats(nextState, latestState[snapshotSource]?.base).size !== nextState.chats.length) {
       await persistStateAtomically(nextState, { ctx });
     }
     return nextState;

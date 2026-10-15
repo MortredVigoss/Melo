@@ -33,7 +33,7 @@ struct SettingsContent: View {
                     DisclosureGroup("同步服务配置") {
                         SyncSettingsSection()
                     }.font(.subheadline)
-                    Text("同步对话、角色头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
                     ForEach(store.preferences.workspaceSync?.conflicts ?? [], id: \.key) { conflict in
                         DisclosureGroup("同步冲突 · \(conflict.label)") {
                             Text("各版本均已保留，选择要继续使用的版本。").font(.caption)
@@ -53,7 +53,7 @@ struct SettingsContent: View {
                     capability("文字对话与历史", "已接入", "bubble.left.and.bubble.right")
                     capability("三维任务空间与历史回看", "实际调用记录", "atom")
                     capability("分析与计算详情", "展示服务公开摘要", "text.alignleft")
-                    capability("角色创建与指令", "本机可用", "person.crop.square")
+                    capability("Agent创建与指令", "本机可用", "person.crop.square")
                     capability("任务检查点与接力", "项目中查看", "arrow.triangle.branch")
                     capability("电脑工具、权限与任务验收", "在执行设备处理", "desktopcomputer")
                     capability("记忆来源、范围与停用", "本机可用 · 可同步", "brain")

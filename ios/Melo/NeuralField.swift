@@ -11,7 +11,7 @@ struct NeuralModule: Identifiable {
     static let all = [
         NeuralModule(id: 1, name: "对话", english: "CONVERSATIONS", symbol: "bubble.left", x: 0.20, y: 0.22),
         NeuralModule(id: 4, name: "项目", english: "PROJECTS", symbol: "square.stack.3d.up", x: 0.78, y: 0.24),
-        NeuralModule(id: 2, name: "角色", english: "AGENTS", symbol: "sparkles", x: 0.85, y: 0.48),
+        NeuralModule(id: 2, name: "Agent", english: "AGENTS", symbol: "sparkles", x: 0.85, y: 0.48),
         NeuralModule(id: 5, name: "知识", english: "KNOWLEDGE", symbol: "point.3.connected.trianglepath.dotted", x: 0.68, y: 0.72),
         NeuralModule(id: 3, name: "系统", english: "SYSTEM", symbol: "slider.horizontal.3", x: 0.18, y: 0.66)
     ]

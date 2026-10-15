@@ -30,7 +30,7 @@ import Foundation
                 prompts.append(instructions)
                 return ModelReply(text: "fixture response", sources: [], searched: false)
             })
-            var custom = AgentProfile(id: "custom", name: "自定义角色", subtitle: "", symbol: "star", instructions: "CUSTOM_ROLE_REQUEST")
+            var custom = AgentProfile(id: "custom", name: "自定义Agent", subtitle: "", symbol: "star", instructions: "CUSTOM_ROLE_REQUEST")
             custom.identity = "IDENTITY_REQUEST"; custom.soul = "SOUL_REQUEST"; custom.mood = "MOOD_REQUEST"
             actual.updatePreferences { $0.agents.append(custom) }
             let customChat = actual.newChat(agentID: custom.id)!

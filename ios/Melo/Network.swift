@@ -55,7 +55,7 @@ enum Network {
     static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], session: URLSession = Network.session, onObservation: ((ExecutionObservation) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
-        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": "你运行在 Melo 中，使用用户选择的角色身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: apiProtocol == "anthropic", instructions: instructions)]
+        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: apiProtocol == "anthropic", instructions: instructions)]
         var headers: [String: String] = [:]
         if apiProtocol == "anthropic" {
             let original = body["messages"] as! [[String: Any]]

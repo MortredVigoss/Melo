@@ -13,7 +13,7 @@ enum WorkspaceProjection {
         return result
     }
     static func agent(_ a: AgentProfile) -> [String: Any] {
-        ["name": a.name, "subtitle": a.subtitle, "instructions": a.instructions, "symbol": a.symbol, "avatarData": a.avatarData?.base64EncodedString() ?? "", "identity": a.identity ?? "", "soul": a.soul ?? "", "systemPrompt": a.systemPrompt ?? "", "mood": a.mood ?? "warm", "model": a.model ?? ""]
+        ["name": a.name, "description": a.description, "subtitle": a.description, "personaVersion": 1, "instructions": a.instructions, "symbol": a.symbol, "avatarData": a.avatarData?.base64EncodedString() ?? "", "identity": "", "soul": "", "systemPrompt": "", "mood": a.mood ?? "warm", "model": a.model ?? ""]
     }
     static func model(_ selection: ConversationModel?, connections: [PortableConnection]) -> Any {
         guard let selection else { return NSNull() }
@@ -65,7 +65,9 @@ enum WorkspaceProjection {
         return workspace
     }
     static func readAgent(_ id: String, _ v: SyncValue) -> AgentProfile {
-        .init(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:v["instructions"].string,avatarData:Data(base64Encoded:v["avatarData"].string),identity:v["identity"].string,soul:v["soul"].string,systemPrompt:v["systemPrompt"].string,mood:v["mood"].string,model:v["model"].string)
+        let canonical = v["personaVersion"] == .number(1) || [v["identity"],v["soul"],v["systemPrompt"]].allSatisfy { $0.string.isEmpty }
+        let instructions = canonical ? v["instructions"].string : AgentProfile.document(v["instructions"].string, identity:v["identity"].string, soul:v["soul"].string, systemPrompt:v["systemPrompt"].string)
+        return .init(id:id,name:v["name"].string,subtitle:(v["description"] == .null ? v["subtitle"] : v["description"]).string,symbol:v["symbol"].string,instructions:instructions,avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
     }
     static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection]) throws {
         _ = try workspace.validated()

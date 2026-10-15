@@ -3501,13 +3501,13 @@
         }
       }
     },
-    "%lld 段对话 · %lld 个角色": {
+    "%lld 段对话 · %lld 个Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 段对话 · %lld 个角色"
+            "value": "%lld 段对话 · %lld 个Agent"
           }
         },
         "en": {
@@ -3641,13 +3641,13 @@
         }
       }
     },
-    "每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。": {
+    "每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。"
+            "value": "每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。"
           }
         },
         "en": {
@@ -3921,13 +3921,13 @@
         }
       }
     },
-    "补充角色背景；具体回复方式优先采用上方设定。": {
+    "补充Agent背景；具体回复方式优先采用上方设定。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "补充角色背景；具体回复方式优先采用上方设定。"
+            "value": "补充Agent背景；具体回复方式优先采用上方设定。"
           }
         },
         "en": {
@@ -3956,13 +3956,13 @@
         }
       }
     },
-    "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。": {
+    "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。"
+            "value": "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。"
           }
         },
         "en": {
@@ -4376,13 +4376,13 @@
         }
       }
     },
-    "Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。": {
+    "Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。"
+            "value": "Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。"
           }
         },
         "en": {
@@ -4866,13 +4866,13 @@
         }
       }
     },
-    "沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；角色或对话已指定的模型保留。": {
+    "沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；Agent或对话已指定的模型保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；角色或对话已指定的模型保留。"
+            "value": "沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；Agent或对话已指定的模型保留。"
           }
         },
         "en": {
@@ -4936,13 +4936,13 @@
         }
       }
     },
-    "这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按角色权限执行，所需服务未配置时不会自动获得能力。": {
+    "这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按Agent权限执行，所需服务未配置时不会自动获得能力。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按角色权限执行，所需服务未配置时不会自动获得能力。"
+            "value": "这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按Agent权限执行，所需服务未配置时不会自动获得能力。"
           }
         },
         "en": {
@@ -5671,13 +5671,13 @@
         }
       }
     },
-    "角色": {
+    "Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "角色"
+            "value": "Agent"
           }
         },
         "en": {
@@ -6301,13 +6301,13 @@
         }
       }
     },
-    "角色管理": {
+    "Agent管理": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "角色管理"
+            "value": "Agent管理"
           }
         },
         "en": {
@@ -6336,13 +6336,13 @@
         }
       }
     },
-    "创建、导入与管理角色": {
+    "创建、导入与管理Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "创建、导入与管理角色"
+            "value": "创建、导入与管理Agent"
           }
         },
         "en": {
@@ -6371,13 +6371,13 @@
         }
       }
     },
-    "配置角色": {
+    "配置Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配置角色"
+            "value": "配置Agent"
           }
         },
         "en": {
@@ -7946,13 +7946,13 @@
         }
       }
     },
-    "这是你的个人资料，与你创建的角色各自独立。目前无需注册或登录。": {
+    "这是你的个人资料，与你创建的Agent各自独立。目前无需注册或登录。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这是你的个人资料，与你创建的角色各自独立。目前无需注册或登录。"
+            "value": "这是你的个人资料，与你创建的Agent各自独立。目前无需注册或登录。"
           }
         },
         "en": {
@@ -9241,13 +9241,13 @@
         }
       }
     },
-    "导出普通对话、角色、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。": {
+    "导出普通对话、Agent、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导出普通对话、角色、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。"
+            "value": "导出普通对话、Agent、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。"
           }
         },
         "en": {
@@ -12181,13 +12181,13 @@
         }
       }
     },
-    "沿用角色 / 系统默认": {
+    "沿用Agent / 系统默认": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "沿用角色 / 系统默认"
+            "value": "沿用Agent / 系统默认"
           }
         },
         "en": {
@@ -15016,13 +15016,13 @@
         }
       }
     },
-    "角色名称": {
+    "Agent名称": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "角色名称"
+            "value": "Agent名称"
           }
         },
         "en": {
@@ -15996,13 +15996,13 @@
         }
       }
     },
-    "执行角色": {
+    "执行Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "执行角色"
+            "value": "执行Agent"
           }
         },
         "en": {
@@ -16101,13 +16101,13 @@
         }
       }
     },
-    "角色任务": {
+    "Agent任务": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "角色任务"
+            "value": "Agent任务"
           }
         },
         "en": {
@@ -16766,13 +16766,13 @@
         }
       }
     },
-    "{0} 段对话 · {1} 个项目 · {2} 个角色": {
+    "{0} 段对话 · {1} 个项目 · {2} 个Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "{0} 段对话 · {1} 个项目 · {2} 个角色"
+            "value": "{0} 段对话 · {1} 个项目 · {2} 个Agent"
           }
         },
         "en": {
@@ -16801,13 +16801,13 @@
         }
       }
     },
-    "{0} 段对话 · {1} 个角色": {
+    "{0} 段对话 · {1} 个Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "{0} 段对话 · {1} 个角色"
+            "value": "{0} 段对话 · {1} 个Agent"
           }
         },
         "en": {
@@ -17151,13 +17151,13 @@
         }
       }
     },
-    "创建你的角色": {
+    "创建你的Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "创建你的角色"
+            "value": "创建你的Agent"
           }
         },
         "en": {
@@ -18061,13 +18061,13 @@
         }
       }
     },
-    "头像与昵称保存在此 iPhone，与你的角色独立。无需 Melo 账号。": {
+    "头像与昵称保存在此 iPhone，与你的Agent独立。无需 Melo 账号。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "头像与昵称保存在此 iPhone，与你的角色独立。无需 Melo 账号。"
+            "value": "头像与昵称保存在此 iPhone，与你的Agent独立。无需 Melo 账号。"
           }
         },
         "en": {
@@ -18376,13 +18376,13 @@
         }
       }
     },
-    "选择对话角色": {
+    "选择对话Agent": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择对话角色"
+            "value": "选择对话Agent"
           }
         },
         "en": {
@@ -18411,13 +18411,13 @@
         }
       }
     },
-    "沿用角色或系统默认": {
+    "沿用Agent或系统默认": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "沿用角色或系统默认"
+            "value": "沿用Agent或系统默认"
           }
         },
         "en": {
@@ -18516,13 +18516,13 @@
         }
       }
     },
-    "切换只影响之后的回复；历史消息保持原角色。": {
+    "切换只影响之后的回复；历史消息保持原Agent。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换只影响之后的回复；历史消息保持原角色。"
+            "value": "切换只影响之后的回复；历史消息保持原Agent。"
           }
         },
         "en": {
@@ -19426,13 +19426,13 @@
         }
       }
     },
-    "多角色协作 · 职责与费用": {
+    "多Agent协作 · 职责与费用": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "多角色协作 · 职责与费用"
+            "value": "多Agent协作 · 职责与费用"
           }
         },
         "en": {
@@ -19566,13 +19566,13 @@
         }
       }
     },
-    "各角色结果与成本": {
+    "各成员结果与成本": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "各角色结果与成本"
+            "value": "各成员结果与成本"
           }
         },
         "en": {
@@ -20336,13 +20336,13 @@
         }
       }
     },
-    "正在切换角色…": {
+    "正在切换Agent…": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在切换角色…"
+            "value": "正在切换Agent…"
           }
         },
         "en": {
@@ -20406,13 +20406,13 @@
         }
       }
     },
-    "默认角色和你创建的角色都在这里。切换只影响后续回复。": {
+    "默认Agent和你创建的Agent都在这里。切换只影响后续回复。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "默认角色和你创建的角色都在这里。切换只影响后续回复。"
+            "value": "默认Agent和你创建的Agent都在这里。切换只影响后续回复。"
           }
         },
         "en": {
@@ -21036,13 +21036,13 @@
         }
       }
     },
-    "上传角色头像": {
+    "上传Agent头像": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上传角色头像"
+            "value": "上传Agent头像"
           }
         },
         "en": {
@@ -21106,13 +21106,13 @@
         }
       }
     },
-    "一句话说明这个角色的身份与用途。": {
+    "一句话说明这个Agent的身份与用途。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一句话说明这个角色的身份与用途。"
+            "value": "一句话说明这个Agent的身份与用途。"
           }
         },
         "en": {
@@ -23552,6 +23552,321 @@
           "stringUnit": {
             "state": "translated",
             "value": "Las nuevas respuestas aparecerán aquí."
+          }
+        }
+      }
+    },
+    "Agent 名称": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 名称"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 名"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 이름"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre del Agent"
+          }
+        }
+      }
+    },
+    "人设与工作要求": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人设与工作要求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Persona and working instructions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人格と作業指示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페르소나 및 작업 지침"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalidad e instrucciones de trabajo"
+          }
+        }
+      }
+    },
+    "可分节填写身份、风格和补充要求。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可分节填写身份、风格和补充要求。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use sections for identity, style and additional requirements."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份、スタイル、追加要件をセクションに分けて記入できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정체성, 스타일, 추가 요구 사항을 섹션으로 작성하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa secciones para identidad, estilo y requisitos adicionales."
+          }
+        }
+      }
+    },
+    "导入 Markdown": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入 Markdown"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Markdown"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown を読み込む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 가져오기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar Markdown"
+          }
+        }
+      }
+    },
+    "导出 Markdown": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出 Markdown"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Markdown"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown を書き出す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 내보내기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exportar Markdown"
+          }
+        }
+      }
+    },
+    "导入后先预览，点击保存修改生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入后先预览，点击保存修改生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review the import, then save to apply it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込み後に確認し、保存して適用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가져온 내용을 검토한 후 저장하여 적용하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa lo importado y guarda para aplicarlo."
+          }
+        }
+      }
+    },
+    "Markdown 文件过大，请控制在 1 MB 内。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 文件过大，请控制在 1 MB 内。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep the Markdown file within 1 MB."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown ファイルは 1 MB 以下にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 파일은 1 MB 이하여야 합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El archivo Markdown debe ser de 1 MB o menos."
+          }
+        }
+      }
+    },
+    "Agent 人设文档超过 200100 字符。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 人设文档超过 200100 字符。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Agent document exceeds 200100 characters."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 文書が 200100 文字を超えています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 문서가 200100자를 초과합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El documento del Agent supera los 200100 caracteres."
+          }
+        }
+      }
+    },
+    "Agent 已保存；Markdown 导出未完成，可稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 已保存；Markdown 导出未完成，可稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent saved. Markdown export failed; retry later."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent は保存されました。Markdown の書き出しを後で再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent가 저장되었습니다. Markdown 내보내기를 나중에 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent guardado. Falló la exportación Markdown; inténtalo más tarde."
           }
         }
       }

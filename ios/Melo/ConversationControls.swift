@@ -70,10 +70,10 @@ struct ConversationControls: View {
                     ForEach(store.preferences.agents) { agent in
                         Button { store.selectAgent(agent.id, chatID: chatID) } label: { Label(agent.name, systemImage: store.agent(for: chatID).id == agent.id ? "checkmark" : agent.symbol) }
                     }
-                    Text("切换只影响之后的回复；历史消息保持原角色。")
-                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("角色 · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话角色")
+                    Text("切换只影响之后的回复；历史消息保持原Agent。")
+                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
                 Menu {
-                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用角色或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
+                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     if account.signedIn {
                         Section("Codex（ChatGPT 账号）") {
                             ForEach(models, id: \.self) { model in Button { store.selectModel(.init(connectionID: "chatgpt", model: model), chatID: chatID) } label: { Label(model, systemImage: current?.connectionID == "chatgpt" && current?.model == model ? "checkmark" : "cpu") } }

@@ -19,7 +19,6 @@ struct AgentEditSession: Codable, Equatable {
     var canSave: Bool {
         isEditing && (isNew || hasChanges)
         && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && !draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     mutating func begin(current: AgentProfile) {
         original = current; draft = current; isEditing = true; didSave = false; error = nil; conflict = nil
@@ -46,7 +45,7 @@ struct AgentEditSession: Codable, Equatable {
         guard canSave else { return false }
         guard isNew ? current == nil : current == original else {
             conflict = true
-            error = current == nil ? "角色已删除，草稿已保留，可存为新角色。" : "角色已在其他地方更新。可合并最新内容后检查并保存，草稿不会丢失。"
+            error = current == nil ? "Agent已删除，草稿已保留，可存为新Agent。" : "Agent已在其他地方更新。可合并最新内容后检查并保存，草稿不会丢失。"
             return false
         }
         guard persist(draft) else {

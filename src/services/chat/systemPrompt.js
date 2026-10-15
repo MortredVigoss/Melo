@@ -49,10 +49,12 @@ export function summarizeAgentPrompt(profile) {
   return [
     `User-selected role: ${profile.name || "Melo"}\nRole purpose: ${profile.description || ""}`,
     "Apply this role on every turn. User-defined response requirements take precedence over default mood and generic persona text; current user instructions and permission boundaries remain controlling.",
-    profile.rolePrompt,
-    `IDENTITY.md:\n${profile.identity || profile.identify}`,
-    `SOUL.md:\n${profile.soulMd}`,
-    profile.systemPrompt ? `Agent system prompt:\n${profile.systemPrompt}` : '',
+    ...(typeof profile.instructions === 'string' ? [profile.instructions] : [
+      profile.rolePrompt,
+      `IDENTITY.md:\n${profile.identity || profile.identify}`,
+      `SOUL.md:\n${profile.soulMd}`,
+      profile.systemPrompt ? `Agent system prompt:\n${profile.systemPrompt}` : '',
+    ]),
     toolSummary ? `Enabled agent tools: ${toolSummary}` : '',
     channelSummary ? `Linked channels: ${channelSummary}` : '',
     `Current mood (${mood.label}): ${mood.prompt}`,

@@ -19,6 +19,7 @@ export function buildAgentProfilePatch(form, formData) {
   assignString('name');
   assignString('laneLabel');
   assignString('description');
+  if (hasFormField('instructions')) patch.instructions = String(formData.get('instructions') ?? '');
   assignString('rolePrompt');
   assignString('identity');
   assignString('soul.md');

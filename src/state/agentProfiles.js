@@ -1,3 +1,4 @@
+import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // ─── Agent profile state normalizers ─────────────────────────────────────────
 // Pure normalization layer for the persisted agent state slice. Given whatever
 // the JSON blob looks like on disk (possibly stale, possibly missing fields,
@@ -85,8 +86,8 @@ const VOICE_REPLY_MODES = new Set(['summary', 'full', 'off']);
 
 export function normalizeAgentProfile(agentId, profile) {
   const definition = agentDefinitionFor(agentId, profile);
-  const identity = profile?.portableIdentity && typeof profile.identity === 'string' ? profile.identity : readAgentIdentityValue(profile, definition.defaultIdentity);
-  const soulMd = profile?.portableIdentity && typeof profile.soulMd === 'string' ? profile.soulMd : readAgentSoulValue(profile, definition.defaultSoul);
+  const legacyIdentity = profile?.portableIdentity && typeof profile.identity === 'string' ? profile.identity : readAgentIdentityValue(profile, definition.defaultIdentity);
+  const legacySoulMd = profile?.portableIdentity && typeof profile.soulMd === 'string' ? profile.soulMd : readAgentSoulValue(profile, definition.defaultSoul);
   const tools = normalizeAgentTools(profile?.tools);
   const model =
     typeof profile?.model === 'string' && profile.model.trim()
@@ -96,6 +97,12 @@ export function normalizeAgentProfile(agentId, profile) {
     typeof profile?.systemPrompt === 'string' && profile.systemPrompt.trim()
       ? profile.systemPrompt.trim()
       : '';
+  const instructions = typeof profile?.instructions === 'string' ? profile.instructions : composeAgentInstructions({
+    rolePrompt: typeof profile?.rolePrompt === 'string' ? profile.rolePrompt : definition.rolePrompt,
+    identity: legacyIdentity, soulMd: legacySoulMd, systemPrompt,
+  });
+  const persona = agentInstructionFields(instructions);
+  const { identity, soulMd } = persona;
   const channels = normalizeAgentChannels(profile?.channels);
   const enabledSkillIds = normalizeIdWhitelist(profile?.enabledSkillIds);
   const enabledConnectorIds = normalizeIdWhitelist(profile?.enabledConnectorIds);
@@ -126,18 +133,19 @@ export function normalizeAgentProfile(agentId, profile) {
   return withLegacyAgentAliases(
     {
       id: definition.id,
-      name: profile?.portableIdentity && typeof profile.name === 'string' ? profile.name : definition.name,
+      name: typeof profile?.name === 'string' && (profile.portableIdentity || profile.name.trim()) ? profile.name : definition.name,
       portableIdentity: profile?.portableIdentity === true,
       symbol: typeof profile?.symbol === 'string' ? profile.symbol : 'person.crop.square',
       avatarData: typeof profile?.avatarData === 'string' && profile.avatarData.length < 500000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(profile.avatarData) ? profile.avatarData : '',
       laneLabel: definition.laneLabel,
-      description: profile?.portableIdentity && typeof profile.description === 'string' ? profile.description : definition.description,
-      rolePrompt: profile?.portableIdentity && typeof profile.rolePrompt === 'string' ? profile.rolePrompt : definition.rolePrompt,
+      description: typeof profile?.description === 'string' && (profile.portableIdentity || profile.description.trim()) ? profile.description : definition.description,
+      instructions,
+      rolePrompt: persona.rolePrompt,
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,
       tools,
       model,
-      systemPrompt,
+      systemPrompt: persona.systemPrompt,
       channels,
       enabledSkillIds,
       enabledConnectorIds,
@@ -172,6 +180,7 @@ export function normalizeAgentOverride(agentId, profile) {
   }
 
   const normalized = {};
+  if (typeof profile.instructions === 'string') normalized.instructions = profile.instructions;
   const identity = readAgentIdentityValue(profile);
   const soulMd = readAgentSoulValue(profile);
 
@@ -215,6 +224,10 @@ export function normalizeAgentOverride(agentId, profile) {
   if (profile.enabledMcpServerIds !== undefined) {
     normalized.enabledMcpServerIds = normalizeMcpServerWhitelist(profile.enabledMcpServerIds);
   }
+  for (const key of ['minimaxVoiceId','voicePersonality','edgeTtsVoice']) {
+    if (typeof profile[key] === 'string') normalized[key] = profile[key].trim();
+  }
+  if (VOICE_REPLY_MODES.has(profile.voiceReplyMode)) normalized.voiceReplyMode = profile.voiceReplyMode;
   const ttsSpeed = normalizeOptionalNumber(profile?.ttsSpeed, { min: 0.5, max: 2.0 });
   const ttsPitch = normalizeOptionalNumber(profile?.ttsPitch, { min: -12, max: 12 });
   const ttsVol = normalizeOptionalNumber(profile?.ttsVol, { min: 0.1, max: 10.0 });
@@ -331,6 +344,7 @@ export function effectiveAgentProfile(state, agentId, projectId = null) {
     ...normalizeAgentProfile(agentId, {
       ...globalProfile,
       ...projectOverride,
+      instructions: mergeAgentInstructions(globalProfile, projectOverride),
     }),
     scopeSource: 'project',
     hasProjectOverride: true,

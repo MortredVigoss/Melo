@@ -1,7 +1,7 @@
 export function renderAgentAvatar(agent, escape, size=32) {
   const data=agent?.avatarData;
   return typeof data==='string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data) && data.length<500000
-    ? `<img class="agent-photo" src="${escape(data)}" width="${size}" height="${size}" alt="${escape(agent.name||'角色')}头像">`
+    ? `<img class="agent-photo" src="${escape(data)}" width="${size}" height="${size}" alt="${escape(agent.name||'Agent')}头像">`
     : `<span class="agent-photo agent-photo-fallback" style="width:${size}px;height:${size}px" aria-hidden="true">${escape((agent?.name||'M').slice(0,1))}</span>`;
 }
 export async function readAgentAvatar(file) {

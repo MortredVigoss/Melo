@@ -136,7 +136,7 @@ struct LLMConnectionsView: View {
                     Text(probe.testedAt).foregroundStyle(MeloTheme.soft)
                 }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(12).background(MeloTheme.inset, in: RoundedRectangle(cornerRadius: MeloTheme.controlRadius))
             } else { Text("当前配置尚未通过实际请求测试").font(.caption).foregroundStyle(MeloTheme.soft) }
-            Text("连接测试会发送一次简短请求。模型只提供回答，Melo 保留自己的角色、记忆与执行逻辑。API 模式暂未接入手机搜索工具。").font(.caption).foregroundStyle(.secondary)
+            Text("连接测试会发送一次简短请求。模型只提供回答，Melo 保留自己的Agent、记忆与执行逻辑。API 模式暂未接入手机搜索工具。").font(.caption).foregroundStyle(.secondary)
         }.disabled(busy || oauth.busy)
         .overlay(alignment: .bottom) { if oauth.busy { Button("取消登录") { oauth.cancel() }.buttonStyle(.borderedProminent) } }
         .onAppear { restoreDraft() }

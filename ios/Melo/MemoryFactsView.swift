@@ -56,7 +56,7 @@ struct MemoryFactsView: View {
                     Picker("共享范围", selection: value.scope) {
                         Text("仅原对话").tag("chat")
                         if !fact.projectId.isEmpty { Text("同项目").tag("project") }
-                        Text("同角色").tag("agent"); Text("我的全部本机对话").tag("personal")
+                        Text("同Agent").tag("agent"); Text("我的全部本机对话").tag("personal")
                     }
                     Picker("状态", selection: value.status) { Text("启用").tag("active"); Text("停用").tag("forgotten"); if !["active","forgotten"].contains(fact.status) { Text(statusName(fact.effectiveStatus)).tag(fact.status) } }
                 }
@@ -69,6 +69,6 @@ struct MemoryFactsView: View {
             }
         }
     }
-    private func scopeName(_ scope: String) -> String { ["chat":"原对话", "project":"同项目", "agent":"同角色", "personal":"本机共享"][scope] ?? "原对话" }
+    private func scopeName(_ scope: String) -> String { ["chat":"原对话", "project":"同项目", "agent":"同Agent", "personal":"本机共享"][scope] ?? "原对话" }
     private func statusName(_ status: String) -> String { ["active":"启用", "forgotten":"停用", "historical":"历史", "unconfirmed":"待确认"][status] ?? status }
 }
