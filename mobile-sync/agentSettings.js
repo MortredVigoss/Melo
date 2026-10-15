@@ -1,22 +1,9 @@
-// Optional transport, separate from v1 workspace/persona and user knowledge.
-// Reuse its multi-value registers; payloads have their own strict shared schema.
-import {createHash,randomUUID} from 'node:crypto';
-import {syncSchema} from './syncContract.generated.js';
-import {validateSchema} from './schemaValidator.js';
-import {validateWorkspace,putWorkspace,stableJSON} from './workspaceProtocol.js';
+// Desktop projection for the independent Agent capability sync channel.
+import {randomUUID} from 'node:crypto';
+import {putWorkspace,stableJSON} from './workspaceProtocol.js';
 import {normalizeCapabilities,normalizeCollaboration} from '../src/domain/agent/capabilities.js';
-export const settingsID=(projectId,agentId)=>'settings-'+createHash('sha256').update(JSON.stringify([projectId||null,agentId])).digest('hex');
-export function settingsPayload(value) {validateSchema(value,syncSchema.$defs.agentSettings,syncSchema);return value;}
-export function validateAgentSettings(workspace) {
- const result=validateWorkspace(workspace);if(!result)throw new Error('Missing Agent settings');
- for(const row of result.records)for(const version of row.versions){
-  const v=version.value;
-  if(row.kind!=='knowledge'||v.kind!=='agent-settings-v1'||v.deleted||v.projectId!==null)throw new Error('Invalid Agent settings envelope');
-  const payload=settingsPayload(JSON.parse(v.content));
-  if(row.id!==settingsID(payload.projectId,payload.agentId))throw new Error('Agent settings identity mismatch');
- }
- return result;
-}
+import {settingsID,settingsPayload,validateAgentSettings} from './agentSettingsProtocol.js';
+export {settingsID,settingsPayload,validateAgentSettings} from './agentSettingsProtocol.js';
 export function refreshAgentSettings(state) {
  const workspace=validateAgentSettings(state.agentSettingsSync||{version:1,records:[]});
  state.mobileWorkspaceDevice ||= randomUUID();

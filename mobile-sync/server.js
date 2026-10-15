@@ -1,4 +1,4 @@
-import {validateAgentSettings} from './agentSettings.js';
+import {validateAgentSettings} from './agentSettingsProtocol.js';
 import {mergeWorkspaces} from './workspaceProtocol.js';
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
