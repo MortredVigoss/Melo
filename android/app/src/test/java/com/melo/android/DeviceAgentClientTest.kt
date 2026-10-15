@@ -10,6 +10,16 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class DeviceAgentClientTest {
+    @Test fun appDiscoveryToolSupportsSearchingAndCompletePagination() {
+        val properties = DeviceTools.schema["properties"]!!.jsonObject
+        for (name in listOf("query", "offset", "limit")) assertTrue("Missing discovery argument $name", name in properties)
+        DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "炉石"); put("offset", 200); put("limit", 100) })
+        for (value in listOf(-1, 0, 201)) assertTrue(runCatching {
+            DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("limit", value) })
+        }.isFailure)
+        assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("offset", -1) }) }.isFailure)
+        assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "x".repeat(161)) }) }.isFailure)
+    }
     @Test fun proxyFinalReplyWithExplicitNullToolCallsIsACompletedAnswer() {
         val value = MeloJson.parseToJsonElement("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"已打开设置。","reasoning_content":"","tool_calls":null}}]}""").jsonObject
         val result = DeviceAgentClient.decode(value, "chat-completions")

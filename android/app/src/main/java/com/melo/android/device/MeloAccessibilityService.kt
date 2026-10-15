@@ -49,6 +49,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private val nodes = mutableMapOf<String, AccessibilityNodeInfo>()
     private var overlay: Button? = null
     private var overlayManager: WindowManager? = null
+    private var sessionApps: AppCatalog? = null
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (authorized && intent?.action == Intent.ACTION_SCREEN_OFF) { (application as MeloApplication).deviceAgent.cancel(); end() }
@@ -92,10 +93,10 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             title = "Melo device assistant stop"
         }
         wm.addView(stop, params); overlayManager = wm; overlay = stop
-        authorized = true; invalidateObservation()
+        sessionApps = null; authorized = true; invalidateObservation()
     }
     override fun end() {
-        authorized = false; invalidateObservation()
+        authorized = false; sessionApps = null; invalidateObservation()
         overlay?.let { runCatching { overlayManager?.removeView(it) } }; overlay = null; overlayManager = null
     }
     private fun invalidateObservation() {
@@ -121,15 +122,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         try {
             checkSession(); DeviceTools.validate(arguments)
             val action = arguments.text("action")
-            if (action == "list_apps") return@withContext DeviceToolResult(buildJsonObject {
-                put("ok", true); put("apps", buildJsonArray { launchables().take(200).forEach { add(buildJsonObject { put("package_name", it.first); put("name", it.second) }) } })
-            })
+            if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", 100)))
             if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments)
             when (action) {
                 "open_app" -> {
-                    val candidates = launchables().filter { if (arguments.text("package_name").isNotBlank()) it.first == arguments.text("package_name") else it.second.equals(arguments.text("app_name"), true) }
-                    require(candidates.size == 1) { "找不到唯一 App，请先 list_apps 并使用 package_name。" }
-                    val intent = packageManager.getLaunchIntentForPackage(candidates.single().first) ?: error("该 App 没有可启动入口。")
+                    val apps = catalog()
+                    val candidates = if (arguments.text("package_name").isNotBlank()) apps.exactPackage(arguments.text("package_name")) else apps.exactName(arguments.text("app_name"))
+                    if (candidates.size != 1) return@withContext apps.openFailure(arguments.text("package_name"), arguments.text("app_name"), candidates.size > 1)
+                    val intent = packageManager.getLaunchIntentForPackage(candidates.single().packageName) ?: error("该 App 没有可启动入口。")
                     val options = android.app.ActivityOptions.makeBasic().apply { if (Build.VERSION.SDK_INT >= 26) launchDisplayId = selectedDisplay }
                     startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options.toBundle())
                 }
@@ -165,8 +165,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { DeviceToolResult.error(e.message ?: "设备操作失败。") }
     }
-    private fun launchables(): List<Pair<String, String>> = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-        .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }.distinctBy { it.first }.sortedBy { it.second }
+    private fun catalog(): AppCatalog = sessionApps ?: AppCatalog(packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+        .map { LaunchableApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString(), listOf(it.activityInfo.applicationInfo.loadLabel(packageManager).toString())) })
+        .also { sessionApps = it }
     private fun number(arguments: JsonObject, name: String, default: Int? = null): Int = arguments[name]?.jsonPrimitive?.intOrNull ?: default ?: error("缺少整数参数 $name。")
     private fun point(arguments: JsonObject, x: String, y: String): Pair<Float, Float> {
         val px = number(arguments, x); val py = number(arguments, y)

@@ -78,13 +78,102 @@ class DeviceAgentTest {
     @Test fun launchableAppsAreDiscoverableAndOpenOnTheSelectedDisplay() = runBlocking {
         val service = DeviceAccess.service!!
         service.begin(0, false)
-        val apps = service.execute(buildJsonObject { put("action", "list_apps") })
+        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1) })
+        assertTrue(page.ok); assertEquals(1, page.data["apps"]!!.jsonArray.size)
+        assertTrue(page.data["has_more"]!!.jsonPrimitive.boolean)
+        val next = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1); put("offset", page.data["next_offset"]!!.jsonPrimitive.int) })
+        assertNotEquals(page.data["apps"], next.data["apps"])
+        val apps = service.execute(buildJsonObject { put("action", "list_apps"); put("query", "com.android.sett") })
         assertTrue(apps.ok)
         assertTrue(apps.data["apps"]!!.jsonArray.any { it.jsonObject.text("package_name") == "com.android.settings" })
+        val miss = service.execute(buildJsonObject { put("action", "open_app"); put("app_name", "Setings") })
+        assertFalse(miss.ok); assertEquals("app_not_found", miss.data.text("code"))
+        assertTrue(miss.data["apps"]!!.jsonArray.any { it.jsonObject.text("package_name") == "com.android.settings" })
         val opened = service.execute(buildJsonObject { put("action", "open_app"); put("package_name", "com.android.settings") })
         assertTrue(opened.data.toString(), opened.ok)
         assertEquals("com.android.settings", opened.data.text("package_name"))
         service.end()
+    }
+    private fun fixtureCall(id: String, arguments: JsonObject) = MockResponse().setBody(buildJsonObject {
+        put("choices", buildJsonArray { add(buildJsonObject {
+            put("finish_reason", "tool_calls"); put("message", buildJsonObject {
+                put("role", "assistant"); put("content", JsonNull); put("tool_calls", buildJsonArray { add(buildJsonObject {
+                    put("id", id); put("type", "function"); put("function", buildJsonObject { put("name", "android_device"); put("arguments", arguments.toString()) })
+                }) })
+            })
+        }) })
+    }.toString())
+    private fun fixtureFinal(text: String) = MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {
+        put("finish_reason", "stop"); put("message", buildJsonObject { put("role", "assistant"); put("content", text); put("tool_calls", JsonNull) })
+    }) }) }.toString())
+    private suspend fun waitForAgent(goal: String): DeviceRun {
+        withTimeout(15_000) { while (app.repository.data.value.deviceRuns.none { it.goal == goal && it.status != "running" } || app.deviceAgent.runtime.value.running) delay(50) }
+        return app.repository.data.value.deviceRuns.last { it.goal == goal }
+    }
+    @Test fun prematureAppFailureReplyCanRecoverThroughSearchAndVerifiedLaunch() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(fixtureCall("observe", buildJsonObject { put("action", "observe") }))
+            server.enqueue(fixtureCall("wrong", buildJsonObject { put("action", "open_app"); put("app_name", "Setings") }))
+            server.enqueue(fixtureFinal("未安装，停止。"))
+            server.enqueue(fixtureCall("search", buildJsonObject { put("action", "list_apps"); put("query", "sett") }))
+            server.enqueue(fixtureCall("right", buildJsonObject { put("action", "open_app"); put("package_name", "fixture.settings") }))
+            server.enqueue(fixtureFinal("根据工具回执已打开 Settings。")); server.start()
+            val connection = Connection(name = "Discovery recovery fixture", endpoint = server.url("/tools").toString(), model = "device-fixture")
+            app.repository.saveConnection(connection, "fixture-key"); app.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) }
+            val catalog = AppCatalog(listOf(LaunchableApp("fixture.settings", "Settings")))
+            val actions = mutableListOf<String>()
+            val executor = object : DeviceExecutor {
+                override suspend fun begin(displayId: Int, screenshots: Boolean) { }
+                override suspend fun execute(arguments: JsonObject): DeviceToolResult {
+                    actions += arguments.text("action")
+                    return when {
+                        arguments.text("action") == "list_apps" -> DeviceToolResult(catalog.page(arguments.text("query")))
+                        arguments.text("app_name") == "Setings" -> catalog.openFailure("", "Setings", false)
+                        else -> DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "fixture-screen"); put("package_name", "fixture.settings") })
+                    }
+                }
+                override fun end() { }
+            }
+            val goal = "Recover discovery ${newId()}"
+            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor) }
+            val run = waitForAgent(goal)
+            assertEquals("completed", run.status)
+            assertEquals(listOf("observe", "open_app", "list_apps", "open_app"), actions)
+            assertEquals(1, run.steps.count { !it.ok })
+            assertTrue(run.steps.first { it.action == "list_apps" }.detail.contains("匹配 1"))
+            repeat(3) { assertNotNull(server.takeRequest(1, TimeUnit.SECONDS)) }
+            val recovery = server.takeRequest(1, TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(recovery.contains("Before concluding the app is unavailable"))
+            assertTrue(recovery.contains("app_not_found"))
+            assertEquals(6, server.requestCount)
+        }
+    }
+    @Test fun discoveryRecoveryIsBoundedAndAmbiguityDoesNotForceAnotherAttempt() = runBlocking {
+        for (code in listOf("app_not_found", "app_ambiguous")) MockWebServer().use { server ->
+            server.enqueue(fixtureCall("observe", buildJsonObject { put("action", "observe") }))
+            server.enqueue(fixtureCall("wrong", buildJsonObject { put("action", "open_app"); put("app_name", "Unknown") }))
+            server.enqueue(fixtureFinal("无法确认目标 App，已停止。"))
+            if (code == "app_not_found") server.enqueue(fixtureFinal("已经检查，仍受阻。"))
+            server.start()
+            val connection = Connection(name = "Bounded discovery fixture", endpoint = server.url("/tools").toString(), model = "device-fixture")
+            app.repository.saveConnection(connection, "fixture-key"); app.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) }
+            val actions = mutableListOf<String>()
+            val executor = object : DeviceExecutor {
+                override suspend fun begin(displayId: Int, screenshots: Boolean) { }
+                override suspend fun execute(arguments: JsonObject): DeviceToolResult {
+                    actions += arguments.text("action")
+                    return DeviceToolResult(buildJsonObject { put("ok", arguments.text("action") == "observe"); put("code", if (arguments.text("action") == "open_app") code else ""); put("error", "Fixture unavailable") })
+                }
+                override fun end() { }
+            }
+            val goal = "Bounded discovery $code ${newId()}"
+            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor) }
+            val run = waitForAgent(goal)
+            assertEquals("blocked", run.status)
+            assertEquals(listOf("observe", "open_app"), actions)
+            assertEquals(if (code == "app_not_found") 4 else 3, server.requestCount)
+            assertTrue(run.answer.isNotBlank())
+        }
     }
     @Test fun modelDrivenHttpLoopExecutesARealScreenToolAndPersistsOnlyStepSummaries() = runBlocking {
         MockWebServer().use { server ->

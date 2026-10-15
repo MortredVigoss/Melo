@@ -1,5 +1,17 @@
 # Android verification — 2026-10-15
 
+## 0.2.2 App discovery 与失败后的恢复
+
+用户的真实记录为 observe 成功 → list_apps 成功 → open_app 找不到唯一名称 → 模型结束并报告列表没有该游戏。当前用户主 Profile 的 Launcher 查询有 265 个 package，旧工具只返回排序后的前 200 个，既无搜索也无分页信息；因此该记录不足以证明目标游戏未安装。用户确认平时由独立图标打开。
+
+改为对当前 session 的完整可启动 App catalog 先搜索、后分页。支持完整 / 部分名称、Activity / application label aliases、包名片段、Unicode / 大小写 / 标点 normalization，以及有界 edit distance 的相似候选。空 query 可通过 next_offset / has_more 遍历全部结果；没有静默截断。相似候选不自动启动，仍要求确认唯一名称或确切 package。返回明确的 current-profile scope，Launcher shortcut、cloud game 和其他 Profile 不能被当成未安装。
+
+open_app 失败返回候选与结构化原因。若模型紧接着过早结束，只为 app_not_found 增加一次恢复机会，提示改用搜索或 Launcher UI；不会无限续跑。名称歧义、登录 / 权限等不触发这次补充。最后一个 Tool 仍失败时保存 blocked，结束提示为未完成；原有安全规则、30 步 / 10 分钟上限和取消机制继续生效。list_apps 的本地执行摘要增加总数、匹配数、本页数与剩余分页，不保存完整 App 列表、UI tree 或截图。
+
+新增 schema 回归先 RED（缺 query / offset / limit），修复后 36 项 JVM tests 全部通过，含 265 条完整遍历、首屏之后的直接搜索、英文 / 中文 typo、重复入口与 aliases、歧义不代选和分页参数边界。16 项完整 Android runtime tests 通过：实际 PackageManager 分页 / 模糊候选 / 搜索并打开 Settings、HTTP 驱动的失败后搜索恢复、补充次数上限与歧义停止；保留原截图、点击、输入、取消、息屏、聊天和同步检查。Lint 零 errors、Debug 构建通过。开发只用 Fixture；真实游戏入口验证独立记录。
+
+优化后的 Release APK 0.2.2（versionCode 5）构建成功，沿用同一 development certificate 签名，APK signature / 四 ABI 16 KiB alignment 检查通过。SHA-256：784ad91e3b570999a8b6a9d4b9a7b05e981efcf548603190faac90f0e8020da9。
+
 ## 0.2.1 Modal Proxy 结束回执兼容修复
 
 Fold6 的实际记录显示 observe / open_app / observe 均成功，随后报 Tool Calling 回执错误；App 无 ANR。使用已授权 Proxy Key 和纯合成上下文进行两次最小协议检查，确认 HTTP 200 / application/json、finish_reason=stop、非空文字回答，且 message.tool_calls 显式为 null。仅保存字段类型和数量，不输出凭证、回答正文或手机界面内容。

@@ -39,6 +39,8 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 mutable.value = DeviceRuntime(true, id, "正在观察屏幕…")
                 val history = DeviceAgentClient.initial(connection.protocol, goal.trim())
                 var errors = 0
+                var previousResult: DeviceToolResult? = null
+                var discoveryRecoveryOffered = false
                 withTimeout(10 * 60 * 1000L) {
                     for (step in 1..30) {
                         ensureActive()
@@ -46,15 +48,26 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         val turn = client.next(connection, key, history)
                         ensureActive(); history += turn.wire
                         if (turn.calls.isEmpty()) {
+                            if (previousResult?.data?.text("code") == "app_not_found" && !discoveryRecoveryOffered) {
+                                discoveryRecoveryOffered = true
+                                history += buildJsonObject {
+                                    put("role", "user")
+                                    put("content", "The last open_app failed to find an exact launchable match. Before concluding the app is unavailable, revise your strategy: search ALL apps with list_apps(query=shorter name/known alternate name/package fragment); inspect candidates and pagination. If needed use home + observe to inspect launcher search/icons or game launchers. Do not repeat the same failing arguments, open unrelated candidates, install apps, switch profiles or change permissions. If ambiguous or blocked, explain and stop. Keep the original goal and safety constraints.")
+                                }
+                                continue
+                            }
                             require(run!!.steps.any { it.ok }) { "模型未执行任何工具；请确认连接支持 Tool Calling。" }
-                            run = run!!.copy(status = "completed", answer = turn.text.take(8000), finishedAt = now())
+                            run = run!!.copy(status = if (previousResult?.ok == false) "blocked" else "completed", answer = turn.text.take(8000), finishedAt = now())
                             save(run!!); return@withTimeout
                         }
                         val call = turn.calls.single()
                         mutable.update { it.copy(phase = "第 $step 步 · ${call.arguments.text("action")}") }
                         val result = device.execute(call.arguments)
+                        previousResult = result
                         ensureActive()
-                        val detail = if (result.ok) "执行回执已返回" + if (result.data["screenshot_available"]?.jsonPrimitive?.booleanOrNull == true) " · 已截图" else "" else result.data.text("error").take(300)
+                        val detail = if (!result.ok) result.data.text("error").take(300) else if (call.arguments.text("action") == "list_apps") {
+                            "检索 ${result.data["total_apps"]} 个 App，匹配 ${result.data["matched_apps"]} 个，本页 ${result.data["apps"]?.jsonArray?.size ?: 0} 个" + if (result.data["has_more"]?.jsonPrimitive?.booleanOrNull == true) "，还有下一页" else ""
+                        } else "执行回执已返回" + if (result.data["screenshot_available"]?.jsonPrimitive?.booleanOrNull == true) " · 已截图" else ""
                         // Deliberately omit typed text, raw UI trees and screenshots from disk/sync.
                         run = run!!.copy(steps = run!!.steps + DeviceStep(call.arguments.text("action"), result.ok, detail))
                         save(run!!)
@@ -77,7 +90,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 val status = repository.data.value.deviceRuns.find { it.id == run?.id }?.status
                 val notice = when (status) {
                     "completed" -> "Melo 任务已结束，可返回查看结果"
-                    "failed" -> "Melo 未完成任务，请返回查看原因"
+                    "failed", "blocked" -> "Melo 未完成任务，请返回查看原因"
                     "cancelled" -> "Melo 已停止"
                     else -> null
                 }
