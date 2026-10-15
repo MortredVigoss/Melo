@@ -192,3 +192,16 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户确认电脑端报错；原生点击复现，旧地址403/过期，原文件2,090,093字节存在，任务回看同文件重签200且SHA一致。当前仅调查/计划，未修产品实现。
 - [方案](docs/image-capacity-plan-20261015.md)：P0访问恢复→资源盘点→原件可靠保存→缩略图/内存→磁盘缓存回收→大历史/排队→双端验收。已核对生成目录漏统计、预览文件生命周期、Base64/解码峰值与分散限额；尚未压测容量上限。
 - 证据：`.tmp/image-capacity-audit-20261015/` 的签名状态、存储快照、源码散列；没有生成模型请求、清数据或安装。其他线程语言/质量/OAuth WIP保留。
+
+### 2026-10-15 — 设计 Melo — 五语界面系统
+- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：实现与验证完成，正在本地提交；远端预审环境缺失。范围：中/英/韩/日/西班牙语；系统设置及左下快捷入口；手机同步接入。
+- 已核对：当前没有语言层，`localSettings.js` 仅写固定中文；本机偏好由 `src/domain/settings/localPreferences.js` 校验，手机使用 UserDefaults。保留已有共享 WIP。
+- 实现：`desktop-ui/i18n.js` / `translations.js` 显式静态词条、`languageControls.js` 左下入口，偏好 `interfaceLanguage`；手机同词条生成 `Localizable.xcstrings`、原生菜单及本机设置。用户文本与模型提示不翻译，保存失败保留原语言与草稿。
+- 验证：语言浏览器及单元 7/7（五语、刷新保持、草稿、保存失败重试）；当前共享树 `npm test` 3496 JS + 23 Swift、语法/设置浏览器通过；独立 UI 370/370。实际桌面原生切换中→英→中与模拟器英文主页检查通过，修正手机按钮重叠。证据 `.tmp/language-20261015/`。
+- 隔离提交树：367 UI、73 图像、21 Swift/共享渲染与模拟器构建通过；只提交本次语言变更，旧设计和其他线程 WIP 保留。入口 `docs/interface-languages-20261015.md`；未更改用户默认中文、手机账号或聊天资料。原生设置日语预览遇到模拟器既有凭据错误，菜单触控/其他子页与实体机仍待验。
+
+### 2026-10-15 — 设计 Melo — 默认高质量与真实回执
+- 状态：质量链路已本地提交 `fcb52d7`，界面与隔离暂存修正随语言提交；用户明确要求生成质量改高。桌面默认/设置、生图和编辑链路及手机请求均传 `quality: high`；运行中用户 imageSettings 已只修改质量为 high，保留原引擎和账号。
+- 文件：`src/images/imageSettings.js` / `codexImageEngine.js`、`src/services/chat/imageTask.js` / `imageEditFastPath.js`、`src/tools/builtins/imageTool.js`，桌面 `imageControls.js`、手机 `ImageWorkflow.swift` / `CodexOAuth.swift`。回执保留请求和实际质量，禁止把请求值当成服务结果。
+- 验证：72 项图像协议测试通过；一次合成图真实请求确认工具参数 high、HTTP 200，但 Codex 服务回报 low。证据 `.tmp/language-20261015/quality-live.json` 与 PNG；未换付费通道、未自动重生成。
+- 未完：上游没有按 high 执行，不能声称实际高质量已实现。当前桌面服务已重启加载并回读 high（PID 59032，`desktop-live.json`）；手机仅装独立模拟器，未覆盖实体机。`git pp` 因本机预审可执行文件缺失 ENOENT 停止，未推送或绕过。

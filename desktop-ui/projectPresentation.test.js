@@ -1,9 +1,11 @@
+import { t, ui } from './i18n.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 const source=readFileSync(new URL('./app.js',import.meta.url),'utf8');
 function renderer(name,bindings) {
+ bindings={t,ui,...bindings};
  const start=source.indexOf(`function ${name}(`),end=source.indexOf('\nfunction ',start+1);
  return new Function(...Object.keys(bindings), source.slice(start,end)+';return '+name)(...Object.values(bindings));
 }

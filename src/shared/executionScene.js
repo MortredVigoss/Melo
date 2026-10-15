@@ -170,13 +170,13 @@ export function applyExecutionEvent(scene, event) {
       kind: raw.kind === 'image' ? 'image' : 'file', title: sceneText(raw.title || '已生成成果', 200),
       ...(raw.path ? { path: sceneText(raw.path, 2000) } : {}), operationId: event.id || '', createdAt: at };
     for (const key of ['engine','requestedModel','reportedModel']) if(raw[key]) artifact[key]=sceneText(raw[key],200);
+    for (const key of ['requestedQuality','reportedQuality']) if (['auto','low','medium','high'].includes(raw[key])) artifact[key]=raw[key];
     if(sceneUrl(raw.beforeUrl) && raw.beforePath) {artifact.beforeUrl=sceneUrl(raw.beforeUrl);artifact.beforePath=sceneText(raw.beforePath,2000);}
     scene.artifacts.push(artifact);
   }
   scene.events.push({ sequence, at, kind: event.kind, id: event.id || '', status: event.status || '' });
   return true;
 }
-    for (const key of ['requestedQuality','reportedQuality']) if (['auto','low','medium','high'].includes(raw[key])) artifact[key]=raw[key];
 export function finishExecutionScene(scene, { status = 'completed', message, citedUrls = [], at = new Date().toISOString() } = {}) {
   if (!scene || sceneFinished(scene)) return scene;
   scene.status = status;

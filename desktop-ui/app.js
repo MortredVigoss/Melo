@@ -1,3 +1,5 @@
+import { t, ui } from './i18n.js';
+import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
@@ -585,7 +587,7 @@ function renderRichText(value = '') {
   return parseRenderableMessageBlocks(value)
     .map(block => {
       if (block.type === 'code') {
-        return `
+        return ui`
           <div
             class="message-code-block"
             data-copyable-surface
@@ -593,7 +595,7 @@ function renderRichText(value = '') {
           >
             ${
               block.language
-                ? `<div class="message-code-label">${escapeHtml(block.language)}</div>`
+                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
                 : ''
             }
             <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(block.value)}</code></pre>
@@ -640,7 +642,7 @@ function formatRuntimeTimestamp(value, fallback = 'Not yet') {
 }
 
 function renderChannelRuntimeMetric(label, value) {
-  return `
+  return ui`
     <div class="agent-runtime-metric">
       <div class="agent-runtime-metric-label">${escapeHtml(label)}</div>
       <div class="agent-runtime-metric-value">${escapeHtml(value || '—')}</div>
@@ -652,7 +654,7 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
   const incomingPreview = channel?.lastIncomingPreview || '';
   const replyPreview = channel?.lastReplyPreview || '';
 
-  return `
+  return ui`
     <div class="agent-channel-runtime">
       <div class="agent-editor-header">
         <div class="agent-editor-heading">
@@ -678,11 +680,11 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
       </div>
       ${
         incomingPreview || replyPreview
-          ? `
+          ? ui`
             <div class="agent-runtime-preview-stack">
               ${
                 incomingPreview
-                  ? `
+                  ? ui`
                     <div class="agent-runtime-preview-card">
                       <div class="agent-runtime-preview-label">Last incoming</div>
                       <div class="agent-runtime-preview-copy">${escapeHtml(incomingPreview)}</div>
@@ -692,7 +694,7 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
               }
               ${
                 replyPreview
-                  ? `
+                  ? ui`
                     <div class="agent-runtime-preview-card">
                       <div class="agent-runtime-preview-label">Last reply</div>
                       <div class="agent-runtime-preview-copy">${escapeHtml(replyPreview)}</div>
@@ -769,7 +771,7 @@ function renderMessageBlocks(message) {
   const renderedBlocks = blocks
     .map(block => {
       if (block.type === 'code') {
-        return `
+        return ui`
           <div
             class="message-code-block"
             data-copyable-surface
@@ -777,7 +779,7 @@ function renderMessageBlocks(message) {
           >
             ${
               block.language
-                ? `<div class="message-code-label">${escapeHtml(block.language)}</div>`
+                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
                 : ''
             }
             <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(
@@ -799,7 +801,7 @@ function renderMessageBlocks(message) {
         return '';
       }
 
-      return `
+      return ui`
         <div
           class="message-bubble"
           data-copyable-surface
@@ -811,7 +813,7 @@ function renderMessageBlocks(message) {
     })
     .join('');
 
-  return `
+  return ui`
     <div class="message-block-stack">
       ${renderedBlocks}
       ${isAssistant ? renderSourceCitationCards(allCitations) : ''}
@@ -833,7 +835,7 @@ function renderInlineText(value = '') {
     html += renderInlineSegmentWithCites(value.slice(cursor, match.index), escapeHtml);
     const url = extractTextUrls(match[2] || match[3])[0];
     const label = match[1] || url;
-    html += `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(
+    html += ui`<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(
       label,
     )}</a>${renderCopyLinkButton(url, escapeHtml)}`;
     cursor = match.index + (match[2] ? match[0].length : url.length);
@@ -881,9 +883,9 @@ function citationHostname(url) {
  */
 function renderSourceCitationCards(citations) {
   if (!citations.length) return '';
-  return `
+  return ui`
     <div class="source-citation-strip">
-      ${citations.map(({ url, via }) => `
+      ${citations.map(({ url, via }) => ui`
         <a
           class="source-citation-card"
           href="${escapeHtml(url)}"
@@ -893,7 +895,7 @@ function renderSourceCitationCards(citations) {
         >
           <span class="citation-icon">🔗</span>
           <span class="citation-host">${escapeHtml(citationHostname(url))}</span>
-          ${via ? `<span class="citation-via">${escapeHtml(via)}</span>` : ''}
+          ${via ? ui`<span class="citation-via">${escapeHtml(via)}</span>` : ''}
         </a>
       `).join('')}
     </div>
@@ -1014,7 +1016,7 @@ function buildPatchPreview(filePath, beforeText = '', afterText = '') {
 function renderPatchPreviewBlock(title, filePath, beforeText, afterText) {
   const preview = buildPatchPreview(filePath, beforeText, afterText);
 
-  return `
+  return ui`
     <div class="patch-preview-card">
       <div class="header-row">
         <h3 class="subsection-title">${escapeHtml(title)}</h3>
@@ -1030,7 +1032,7 @@ function renderPatchPreviewBlock(title, filePath, beforeText, afterText) {
                 : line.startsWith('@@')
                   ? 'is-meta'
                   : '';
-            return `<span class="diff-line ${klass}">${escapeHtml(line)}</span>`;
+            return ui`<span class="diff-line ${klass}">${escapeHtml(line)}</span>`;
           })
           .join('')}
       </div>
@@ -1043,17 +1045,17 @@ function renderAttachmentPreviewList(attachments = []) {
     return '';
   }
 
-  return `
+  return ui`
     <div class="composer-attachment-list">
       ${attachments
         .map(
-          attachment => `
+          attachment => ui`
             <div class="composer-attachment-chip">
               <span class="chip-icon">${attachmentIcon(attachment.kind, attachment)}</span>
               <span class="composer-attachment-label">${escapeHtml(attachmentLabel(attachment))}</span>
               ${
                 attachment.sizeLabel
-                  ? `<span class="meta-label">${escapeHtml(attachment.sizeLabel)}</span>`
+                  ? ui`<span class="meta-label">${escapeHtml(attachment.sizeLabel)}</span>`
                   : ''
               }
               <button
@@ -1078,7 +1080,7 @@ function renderComposerAttachmentMenu() {
     return '';
   }
 
-  return `
+  return ui`
     <div class="composer-attachment-menu">
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="image/*">
         <span class="chip-icon">${icon.image}</span>
@@ -1129,22 +1131,22 @@ function renderTtsVoicePanel() {
   const otherVoices = browserVoices.filter(v => !v.lang.startsWith('en'));
 
   const browserVoiceOptions = [
-    `<option value="">System default</option>`,
+    ui`<option value="">System default</option>`,
     ...enVoices.map(v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
     ),
-    otherVoices.length ? `<option disabled>──────────</option>` : '',
+    otherVoices.length ? ui`<option disabled>──────────</option>` : '',
     ...otherVoices.map(v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
     ),
   ].join('');
 
-  const radioRow = (label, hint, isActive, action, dataAttrs = '') => `
+  const radioRow = (label, hint, isActive, action, dataAttrs = '') => ui`
     <button class="tts-radio-row ${isActive ? 'is-active' : ''}" ${action} ${dataAttrs}>
       <span class="tts-radio-dot">${isActive ? '●' : '○'}</span>
       <span class="tts-radio-body">
         <span class="tts-radio-label">${label}</span>
-        ${hint ? `<span class="tts-radio-hint">${hint}</span>` : ''}
+        ${hint ? ui`<span class="tts-radio-hint">${hint}</span>` : ''}
       </span>
     </button>
   `;
@@ -1155,10 +1157,10 @@ function renderTtsVoicePanel() {
   const macosVoices = uiState.ttsMacosVoices;
   const macosVoiceOptions = (() => {
     if (!uiState.ttsMacosVoicesLoaded) {
-      return `<option value="">Loading…</option>`;
+      return ui`<option value="">Loading…</option>`;
     }
     if (macosVoices.length === 0) {
-      return `<option value="">(no /usr/bin/say voices found)</option>`;
+      return ui`<option value="">(no /usr/bin/say voices found)</option>`;
     }
     // Group by language family — en first (most users), then everything
     // else alphabetised by lang code.
@@ -1166,16 +1168,16 @@ function renderTtsVoicePanel() {
     const otherMac = macosVoices.filter(v => !v.lang.startsWith('en'))
       .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
     const opt = v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsMacosVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsMacosVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
     return [
-      `<option value="">Auto-detect by language</option>`,
+      ui`<option value="">Auto-detect by language</option>`,
       ...enMac.map(opt),
-      otherMac.length ? `<option disabled>──────────</option>` : '',
+      otherMac.length ? ui`<option disabled>──────────</option>` : '',
       ...otherMac.map(opt),
     ].join('');
   })();
 
-  return `
+  return ui`
     <div class="tts-voice-panel">
       <div class="tts-panel-header">
         <span class="toolbar-icon" style="width:14px;height:14px">${icon.speak}</span>
@@ -1204,7 +1206,7 @@ function renderTtsVoicePanel() {
         'data-action="set-tts-engine"', 'data-engine="macos"'
       )}
 
-      ${engine === 'macos' ? `
+      ${engine === 'macos' ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-macos-voice">
             ${macosVoiceOptions}
@@ -1232,7 +1234,7 @@ function renderTtsVoicePanel() {
         );
       })()}
 
-      ${engine === 'browser' && browserVoices.length > 0 ? `
+      ${engine === 'browser' && browserVoices.length > 0 ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-browser-voice"
                   ${window.webkit?.messageHandlers?.meloVoice ? 'disabled title="Voice picker only applies in actual browsers — desktop app routes to system AVSpeechSynthesizer"' : ''}>
@@ -1248,12 +1250,12 @@ function renderTtsVoicePanel() {
         'data-action="activate-edge-tts"', ''
       )}
 
-      ${isEdgeTtsActive ? `
+      ${isEdgeTtsActive ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-edge-voice">
             <option value="">Auto-detect by language</option>
             ${EDGE_TTS_VOICES.map(v =>
-              `<option value="${escapeHtml(v.id)}" ${uiState.ttsEdgeVoice === v.id ? 'selected' : ''}>${escapeHtml(v.label)} — ${escapeHtml(v.desc)}</option>`
+              ui`<option value="${escapeHtml(v.id)}" ${uiState.ttsEdgeVoice === v.id ? 'selected' : ''}>${escapeHtml(v.label)} — ${escapeHtml(v.desc)}</option>`
             ).join('')}
           </select>
         </div>
@@ -1266,11 +1268,11 @@ function renderTtsVoicePanel() {
         'data-action="set-tts-engine"', 'data-engine="api"'
       )}
 
-      ${isApiVoiceActive ? `
+      ${isApiVoiceActive ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-api-voice">
             ${TTS_API_VOICES.map(v =>
-              `<option value="${v.id}" ${uiState.ttsApiVoice === v.id ? 'selected' : ''}>${v.label} — ${v.desc}</option>`
+              ui`<option value="${v.id}" ${uiState.ttsApiVoice === v.id ? 'selected' : ''}>${v.label} — ${v.desc}</option>`
             ).join('')}
           </select>
         </div>
@@ -1295,16 +1297,16 @@ function renderTtsVoicePanel() {
           ${radioRow(
             '自定义语音',
             isMinimaxActive
-              ? `Active — ${customVoices.find(v => v.id === uiState.ttsCustomVoiceId)?.label || '自定义'}`
+              ? `Active — ${customVoices.find(v => v.id === uiState.ttsCustomVoiceId)?.label || t("自定义")}`
               : 'MiniMax 克隆音色 · 需要 API Key',
             isMinimaxActive,
             'data-action="activate-minimax-voice"', ''
           )}
-          ${isMinimaxActive && customVoices.length > 1 ? `
+          ${isMinimaxActive && customVoices.length > 1 ? ui`
             <div class="tts-panel-sub">
               <select class="tts-voice-select" data-action="select-tts-custom-voice">
                 ${customVoices.map(v =>
-                  `<option value="${escapeHtml(v.id)}" ${uiState.ttsCustomVoiceId === v.id ? 'selected' : ''}>${escapeHtml(v.label)}</option>`
+                  ui`<option value="${escapeHtml(v.id)}" ${uiState.ttsCustomVoiceId === v.id ? 'selected' : ''}>${escapeHtml(v.label)}</option>`
                 ).join('')}
               </select>
             </div>
@@ -1453,10 +1455,10 @@ function renderStreamingAssistantMessage(chat) {
   const { citations: streamCitations, cleanText: streamCleanText } =
     extractSourceCitations(displayText);
 
-  return `
+  return ui`
     ${toolStrip}
     <article class="message assistant is-streaming">
-      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:'助手'}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || '助手')}</div>
+      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:t("助手")}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || t("助手"))}</div>
       <div
         class="message-bubble"
         data-copyable-surface
@@ -2902,7 +2904,7 @@ function syncComposerTextareaHeight() {
 }
 
 function renderEditContextMenu() {
-  return `
+  return ui`
     <div id="edit-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="editable-undo">Undo</button>
       <button class="edit-context-item" type="button" data-action="editable-redo">Redo</button>
@@ -2916,7 +2918,7 @@ function renderEditContextMenu() {
 }
 
 function renderCopyContextMenu() {
-  return `
+  return ui`
     <div id="copy-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="copy-surface-selection">Copy</button>
       <button class="edit-context-item" type="button" data-action="copy-surface-all">Copy all</button>
@@ -2928,7 +2930,7 @@ function renderCopyContextMenu() {
 function renderRecentContextMenu() {
   const recent = (uiState.bootstrap?.recents || []).find(chat => chat.id === activeRecentContextChatId);
   const isLocked = Boolean(recent?.locked);
-  return `
+  return ui`
     <div id="recent-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="toggle-chat-lock">
         ${isLocked ? 'Unlock' : 'Lock'}
@@ -2942,7 +2944,7 @@ function renderRecentContextMenu() {
 }
 
 function renderAudioContextMenu() {
-  return `
+  return ui`
     <div id="audio-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="transcribe-audio-message">Transcribe</button>
     </div>
@@ -3656,7 +3658,7 @@ function showUndoToast({ message = '', onUndo, ms = UNDO_TOAST_DEFAULT_MS } = {}
   // Undo button.  innerHTML stays here because the message has already
   // been built by the caller from trusted state (no user-supplied
   // markup).
-  toast.innerHTML = `
+  toast.innerHTML = ui`
     <span class="undo-toast-label" data-role="label"></span>
     <button class="undo-toast-button" type="button" data-role="undo">Undo</button>
   `;
@@ -3708,7 +3710,7 @@ function showTranscriptToast(text) {
   const toast = document.createElement('div');
   toast.id = 'transcript-toast';
   toast.className = 'transcript-toast';
-  toast.innerHTML = `
+  toast.innerHTML = ui`
     <div class="transcript-toast-header">
       <span>Transcript</span>
       <button class="transcript-toast-close" type="button" aria-label="Close">&#x2715;</button>
@@ -4129,9 +4131,9 @@ function minimaxTtsConfigPatchForVoice(voiceId) {
 }
 
 function renderMinimaxTtsParameterInputs(draft, selected) {
-  return `
+  return ui`
     <div class="minimax-param-list">
-      ${MINIMAX_TTS_PARAMS.map(def => `
+      ${MINIMAX_TTS_PARAMS.map(def => ui`
         <label class="minimax-param-row">
           <input
             class="config-input minimax-param-input"
@@ -6300,12 +6302,12 @@ async function handleApplyArtifactToSelectedFile(artifactId) {
 
 function navItem(action, iconMarkup, label, view, subtitle = '') {
   const isActive = uiState.bootstrap?.settings.activeView === view;
-  return `
+  return ui`
     <button class="nav-item ${isActive ? 'is-active' : ''}" data-action="${action}" data-view="${view}">
       <span class="nav-icon">${iconMarkup}</span>
       <span class="nav-copy">
         <span class="nav-title">${label}</span>
-        ${subtitle ? `<span class="nav-subtitle">${subtitle}</span>` : ''}
+        ${subtitle ? ui`<span class="nav-subtitle">${subtitle}</span>` : ''}
       </span>
     </button>
   `;
@@ -6318,7 +6320,7 @@ function renderSidebar() {
   const isNewChatActive =
     data.settings.activeView === 'chat' && !data.settings.selectedChatId;
 
-  return `
+  return ui`
     <aside class="sidebar">
       <div class="sidebar-nav">
         <div class="nav-group">
@@ -6345,7 +6347,7 @@ function renderSidebar() {
             data.recents.length
               ? data.recents
                   .map(
-                    recent => `
+                    recent => ui`
                       <button
                         class="recent-item ${
                           data.settings.selectedChatId === recent.id &&
@@ -6358,13 +6360,13 @@ function renderSidebar() {
                       >
                         <div class="recent-item-row">
                           <div class="recent-item-title">
-                            ${recent.locked ? `<span class="recent-lock-badge" aria-label="Locked">${icon.lock}</span>` : ''}
+                            ${recent.locked ? ui`<span class="recent-lock-badge" aria-label="Locked">${icon.lock}</span>` : ''}
                             <span>${escapeHtml(recent.title)}</span>
                           </div>
                           ${
                             data.settings.selectedChatId === recent.id &&
                             data.settings.activeView === 'chat'
-                              ? `<span class="recent-item-more">${icon.dots}</span>`
+                              ? ui`<span class="recent-item-more">${icon.dots}</span>`
                               : ''
                           }
                         </div>
@@ -6405,7 +6407,7 @@ function renderTopbar() {
   const project = activeProject();
   const currentAgent = conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
-  return `
+  return ui`
     <header class="topbar">
       <div class="topbar-left">
         <button class="pill-button" data-action="open-command-palette">
@@ -6423,7 +6425,7 @@ function renderTopbar() {
             // we decide what those pages should actually be.
             .filter(mode => mode.id === 'chat')
             .map(
-              mode => `
+              mode => ui`
                 <button
                   class="mode-button ${
                     data.settings.activeMode === mode.id ? 'is-active' : ''
@@ -6442,12 +6444,12 @@ function renderTopbar() {
       <div class="topbar-right status-group">
         ${
           currentAgent
-            ? `<div class="status-pill">${escapeHtml(currentAgent.name)}${currentAgent.moodLabel ? ' · ' + escapeHtml(currentAgent.moodLabel) : ''}</div>`
+            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}${currentAgent.moodLabel ? ' · ' + escapeHtml(currentAgent.moodLabel) : ''}</div>`
             : ''
         }
         <div class="status-pill">
           <span class="status-dot"></span>
-          ${!uiState.neuralOverview && activeChat()?.modelSelection ? '本对话' : currentAgent?.model ? '角色默认' : '默认'} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
+          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? '角色默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
         </div>
       </div>
     </header>
@@ -6468,7 +6470,7 @@ window.addEventListener('resize', syncModelPickerPosition);
 
 function composerPlaceholder() {
   if (!activeChat()) {
-    return 'Ask Melo anything, or type / for Melo commands...';
+    return t("问问 Melo，或输入 / 使用命令…");
   }
 
   switch (uiState.bootstrap?.settings.activeMode) {
@@ -6478,7 +6480,7 @@ function composerPlaceholder() {
       return 'Ask about files, builds, code changes, or your workspace...';
     case 'chat':
     default:
-      return 'How can I help you today?';
+      return t("今天有什么可以帮你？");
   }
 }
 
@@ -6489,7 +6491,7 @@ function renderSlashPalette() {
   if (!uiState.slashPalette.open) return '';
   const matches = slashPaletteMatches();
   if (!matches.length) {
-    return `
+    return ui`
       <div class="slash-palette" role="listbox">
         <div class="slash-palette-empty">No skills match /${escapeHtml(uiState.slashPalette.query)}</div>
       </div>
@@ -6499,10 +6501,10 @@ function renderSlashPalette() {
     Math.max(0, uiState.slashPalette.selectedIndex | 0),
     matches.length - 1,
   );
-  return `
+  return ui`
     <div class="slash-palette" role="listbox">
       ${matches
-        .map((skill, i) => `
+        .map((skill, i) => ui`
           <button
             type="button"
             class="slash-palette-item ${i === selectedIndex ? 'is-active' : ''}"
@@ -6513,7 +6515,7 @@ function renderSlashPalette() {
             <span class="slash-palette-id">/${escapeHtml(skill.id)}</span>
             <span class="slash-palette-name">${escapeHtml(skill.name)}</span>
             ${skill.description
-              ? `<span class="slash-palette-desc">${escapeHtml(skill.description)}</span>`
+              ? ui`<span class="slash-palette-desc">${escapeHtml(skill.description)}</span>`
               : ''}
           </button>
         `)
@@ -6563,15 +6565,15 @@ function renderComposerCommandDeck({ inline = false } = {}) {
     return '';
   }
 
-  return `
+  return ui`
     <div class="command-deck ${inline ? 'is-inline' : ''}">
       ${
         inline
           ? ''
-          : `
+          : ui`
             <div class="chip-row command-chip-row">
               ${HOME_PROMPT_PRESETS.map(
-                preset => `
+                preset => ui`
                   <button
                     class="chip chip-button"
                     type="button"
@@ -6587,11 +6589,11 @@ function renderComposerCommandDeck({ inline = false } = {}) {
       }
       ${
         showSuggestions
-          ? `
+          ? ui`
             <div class="command-suggestions">
               ${suggestions
                 .map(
-                  item => `
+                  item => ui`
                     <button class="command-suggestion" type="button" data-action="insert-command" data-command="${escapeHtml(
                       item.command,
                     )}">
@@ -6619,16 +6621,16 @@ function renderTaskPanel({ compact = false } = {}) {
   const tasks = activeTasks();
   const config = uiState.bootstrap?.settings?.config || {};
 
-  return `
+  return ui`
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
           <h2 class="pane-title">任务</h2>
-          <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
-          ${uiState.taskRestore ? `<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
+          <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>ui`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
+          ${uiState.taskRestore ? ui`<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
         </div>
         <button class="small-button" data-action="toggle-task-form">
-          ${uiState.showTaskForm ? '收起' : '新建任务'}
+          ${uiState.showTaskForm ? t("收起") : t("新建任务")}
         </button>
       </div>
       ${(() => {
@@ -6641,7 +6643,7 @@ function renderTaskPanel({ compact = false } = {}) {
         const overflow = lanes.slice(1);
         const primaryProfile = agentProfileById(primary);
         const overflowOpen = uiState.taskLaneOverflowOpen;
-        return `
+        return ui`
           <div class="chip-row task-lane-row task-lane-overflow-anchor">
             <button class="chip chip-button" data-action="run-task-lane" data-owner="${primary}">
               执行下一项 · ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
@@ -6654,11 +6656,11 @@ function renderTaskPanel({ compact = false } = {}) {
                     title="Run other agents">
               ⋯
             </button>
-            ${overflowOpen ? `
+            ${overflowOpen ? ui`
               <div class="task-lane-overflow-menu">
                 ${overflow.map(owner => {
                   const ownerProfile = agentProfileById(owner);
-                  return `
+                  return ui`
                     <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
                       执行下一项 · ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
                     </button>
@@ -6671,7 +6673,7 @@ function renderTaskPanel({ compact = false } = {}) {
       })()}
       ${
         uiState.showTaskForm
-          ? `
+          ? ui`
             <form class="config-form" data-form="task-create">
               <label class="label">
                 任务名称
@@ -6687,7 +6689,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   <select class="config-select" name="owner">
                     ${['main', 'research', 'builder', 'reviewer']
                       .map(
-                        owner => `
+                        owner => ui`
                           <option value="${owner}" ${uiState.draftTask.owner === owner ? 'selected' : ''}>
                             ${owner}
                           </option>
@@ -6701,7 +6703,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   <select class="config-select" name="kind">
                     ${['task', 'agent']
                       .map(
-                        kind => `
+                        kind => ui`
                           <option value="${kind}" ${uiState.draftTask.kind === kind ? 'selected' : ''}>
                             ${kind}
                           </option>
@@ -6724,61 +6726,61 @@ function renderTaskPanel({ compact = false } = {}) {
                 .map(
                   task => {
                     const ownerProfile = agentProfileById(task.owner);
-                    return `
+                    return ui`
                     <article class="run-card">
                       <div class="thread-meta">
-                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? '角色任务' : '任务')}</span>
+                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? t("角色任务") : t("任务"))}</span>
                         <span class="chip">${escapeHtml(task.ownerLabel)}</span>
                         ${
                           ownerProfile
-                            ? `<span class="chip">${escapeHtml(ownerProfile.moodLabel)}</span>`
+                            ? ui`<span class="chip">${escapeHtml(ownerProfile.moodLabel)}</span>`
                             : ''
                         }
                         <span class="chip">${escapeHtml(task.statusLabel)}</span>
                         <span class="meta-label">${escapeHtml(task.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(task.title)}</div>
-                      ${task.handoff && task.handoff.revision === task.syncRevision ? `<p class="alert compact-alert">收到手机接力请求。检查现有结果后点击“继续 / 修复”；工具权限仍在本机确认。</p>` : ""}
+                      ${task.handoff && task.handoff.revision === task.syncRevision ? ui`<p class="alert compact-alert">收到手机接力请求。检查现有结果后点击“继续 / 修复”；工具权限仍在本机确认。</p>` : ""}
                       ${
                         task.summary
-                          ? `<div class="list-row-meta">${escapeHtml(task.summary)}</div>`
+                          ? ui`<div class="list-row-meta">${escapeHtml(task.summary)}</div>`
                           : ''
                       }
                       ${
                         task.latestNotePreview
-                          ? `<div class="workspace-root">${escapeHtml(task.latestNotePreview)}</div>`
+                          ? ui`<div class="workspace-root">${escapeHtml(task.latestNotePreview)}</div>`
                           : ''
                       }
                       <div class="thread-meta">
                         <span class="meta-label">${escapeHtml(task.lastRunLabel)}</span>
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
-                      ${task.status === 'blocked' ? `<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? `<details class="quality-details"><summary>多角色协作 · 职责与费用</summary><p>每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
-                      ${task.acceptance?.team ? `<details class="quality-details" open><summary>各角色结果与成本</summary>${task.acceptance.team.results.map(r=>`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : '失败'} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
-                      ${task.runHistory?.length ? `<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
-                      ${task.acceptance ? `<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
-                      ${(task.acceptance.failures || []).map(f => `<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
-                      ${(task.acceptance.criteria || []).map(c => `<label class="toggle-row"><input type="checkbox" data-task-check="${escapeHtml(task.id)}" data-criterion="${escapeHtml(c.id)}" ${(uiState.taskChecks?.[task.id]?.runId === task.execution?.runId ? uiState.taskChecks[task.id][c.id] : c.checked) ? 'checked' : ''} ${task.status !== 'review' ? 'disabled' : ''} />${escapeHtml(c.label)}</label>`).join('')}
-                      ${(task.acceptance.tools || []).map(t => `<p>${escapeHtml(t.toolName)} · ${t.ok ? '成功' : '失败'}${t.exitCode != null ? ` · 退出码 ${t.exitCode}` : ''} ${escapeHtml(t.path || '')}${t.backupOperationId ? `<button class="small-button" data-action="preview-task-backup" data-operation-id="${escapeHtml(t.backupOperationId)}">预览恢复</button>` : ''}</p>`).join('')}
-                      ${task.status === 'review' ? `<label>验收评分<select id="quality-score-${task.id}"><option value="">暂不评分</option><option value="5">5 · 满足要求</option><option value="4">4 · 小幅改善</option><option value="3">3 · 部分满足</option><option value="2">2 · 明显不足</option><option value="1">1 · 不可用</option></select></label>` : ''}
+                      ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
+                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多角色协作 · 职责与费用</summary><p>每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
+                      ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各角色结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
+                      ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
+                      ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
+                      ${(task.acceptance.failures || []).map(f => ui`<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
+                      ${(task.acceptance.criteria || []).map(c => ui`<label class="toggle-row"><input type="checkbox" data-task-check="${escapeHtml(task.id)}" data-criterion="${escapeHtml(c.id)}" ${(uiState.taskChecks?.[task.id]?.runId === task.execution?.runId ? uiState.taskChecks[task.id][c.id] : c.checked) ? 'checked' : ''} ${task.status !== 'review' ? 'disabled' : ''} />${escapeHtml(c.label)}</label>`).join('')}
+                      ${(task.acceptance.tools || []).map(t => ui`<p>${escapeHtml(t.toolName)} · ${t.ok ? t("成功") : t("失败")}${t.exitCode != null ? ` · 退出码 ${t.exitCode}` : ''} ${escapeHtml(t.path || '')}${t.backupOperationId ? ui`<button class="small-button" data-action="preview-task-backup" data-operation-id="${escapeHtml(t.backupOperationId)}">预览恢复</button>` : ''}</p>`).join('')}
+                      ${task.status === 'review' ? ui`<label>验收评分<select id="quality-score-${task.id}"><option value="">暂不评分</option><option value="5">5 · 满足要求</option><option value="4">4 · 小幅改善</option><option value="3">3 · 部分满足</option><option value="2">2 · 明显不足</option><option value="1">1 · 不可用</option></select></label>` : ''}
                       </details>` : ''}
                       <div class="inline-actions">
                         ${
                           task.status !== 'running'
-                            ? `<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? '继续 / 修复' : '开始执行'}</button>`
-                            : '<span class="meta-label">在对话中查看进度或停止</span>'
+                            ? ui`<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? t("继续 / 修复") : t("开始执行")}</button>`
+                            : ui`<span class="meta-label">在对话中查看进度或停止</span>`
                         }
-                        ${task.execution?.chatId ? `<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
-                        ${task.status === 'review' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="done">验收完成</button>` : ''}
-                        ${task.status === 'done' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="todo">重新打开</button>` : ''}
+                        ${task.execution?.chatId ? ui`<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
+                        ${task.status === 'review' ? ui`<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="done">验收完成</button>` : ''}
+                        ${task.status === 'done' ? ui`<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="todo">重新打开</button>` : ''}
                       </div>
                     </article>
                   `;
                   },
                 )
                 .join('')
-            : '<div class="empty-state compact">还没有任务。创建后可执行、查看记录并验收。</div>'
+            : ui`<div class="empty-state compact">还没有任务。创建后可执行、查看记录并验收。</div>`
         }
       </div>
     </section>
@@ -6790,7 +6792,7 @@ function renderApprovalPanel({ compact = false } = {}) {
   let displayedCompleted = 0;
   const visibleApprovals = approvals.filter(item => ['pending', 'running', 'uncertain'].includes(item.status) || displayedCompleted++ < (compact ? 4 : 24));
 
-  return `
+  return ui`
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
@@ -6804,27 +6806,27 @@ function renderApprovalPanel({ compact = false } = {}) {
           approvals.length
             ? visibleApprovals
                 .map(
-                  approval => `
+                  approval => ui`
                     <article class="run-card">
                       <div class="thread-meta">
                         <span class="chip is-accent">${escapeHtml(approval.kind)}</span>
-                        <span class="chip">${escapeHtml(({pending:'等待确认',running:'执行中',uncertain:'结果待核对',approved:'已执行',rejected:'已关闭'})[approval.status] || approval.status)}</span>
+                        <span class="chip">${escapeHtml(({pending:t("等待确认"),running:t("执行中"),uncertain:'结果待核对',approved:t("已执行"),rejected:t("已关闭")})[approval.status] || approval.status)}</span>
                         <span class="meta-label">${escapeHtml(approval.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(approval.title)}</div>
                       ${
                         approval.description
-                          ? `<div class="list-row-meta">${escapeHtml(approval.description)}</div>`
+                          ? ui`<div class="list-row-meta">${escapeHtml(approval.description)}</div>`
                           : ''
                       }
                       ${
                         approval.resultSummary
-                          ? `<div class="workspace-root">${escapeHtml(approval.resultSummary)}</div>`
+                          ? ui`<div class="workspace-root">${escapeHtml(approval.resultSummary)}</div>`
                           : ''
                       }
                       ${
                         approval.status === 'pending'
-                          ? `
+                          ? ui`
                             <div class="inline-actions">
                               <button class="small-button is-primary" data-action="execute-approval" data-approval-id="${approval.id}">
                                 同意并执行
@@ -6834,13 +6836,13 @@ function renderApprovalPanel({ compact = false } = {}) {
                               </button>
                             </div>
                           `
-                          : approval.status === 'uncertain' ? `<div class="inline-actions"><button class="small-button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}">已核对，关闭记录</button></div>` : ''
+                          : approval.status === 'uncertain' ? ui`<div class="inline-actions"><button class="small-button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}">已核对，关闭记录</button></div>` : ''
                       }
                     </article>
                   `,
                 )
                 .join('')
-            : '<div class="empty-state compact">暂无审批记录。</div>'
+            : ui`<div class="empty-state compact">暂无审批记录。</div>`
         }
       </div>
     </section>
@@ -6858,28 +6860,28 @@ function renderComposerCard({ inline = false } = {}) {
   const voicePreviewMarkup = renderVoiceInput(uiState.voice, escapeHtml);
   const footerMarkup =
     isHomeComposer || selectedFile
-      ? `
+      ? ui`
         <div class="composer-footer">
           <div class="composer-footer-copy">
             ${project ? `Project: ${escapeHtml(project.name)}` : 'Local-first Melo chat is ready.'}
           </div>
           ${
             selectedFile
-              ? `<div class="composer-footer-copy is-secondary">Selected file: ${escapeHtml(selectedFile.path)}</div>`
+              ? ui`<div class="composer-footer-copy is-secondary">Selected file: ${escapeHtml(selectedFile.path)}</div>`
               : ''
           }
         </div>
       `
       : '';
 
-  return `
+  return ui`
     <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?'<span class="list-row-meta" role="status">正在切换角色…</span>':''}</div>
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换角色…</span>`:''}</div>
       ${renderExecutionPanel()}
-      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? `<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
+      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
         !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : uiState.newChatModel)
-          ? `
+          ? ui`
             <div class="alert">
               ${
                 data.settings.config.authMode === 'codex'
@@ -6893,7 +6895,7 @@ function renderComposerCard({ inline = false } = {}) {
           : ''
       }
 
-      ${uiState.sending ? `<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
+      ${uiState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
 
       <div class="composer-card ${inline ? 'is-thread' : ''}">
         <form data-form="composer" class="composer-form">
@@ -6905,7 +6907,7 @@ function renderComposerCard({ inline = false } = {}) {
                   class="composer-icon-button"
                   type="button"
                   data-action="toggle-composer-attachment-menu"
-                  title="Add attachment"
+                  title="添加附件"
                 >
                   <span class="toolbar-icon">${icon.plus}</span>
                 </button>
@@ -6930,7 +6932,7 @@ function renderComposerCard({ inline = false } = {}) {
                 </div>
 
                 <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
-                  ${[['zh-CN', '中文'], ['en-US', 'English'], ['system', '系统语言']].map(([value, label]) => `<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
                 <button
                   class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
@@ -6946,13 +6948,13 @@ function renderComposerCard({ inline = false } = {}) {
 
                 ${
                   uiState.sending
-                    ? `
-                      <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="Stop generating">
+                    ? ui`
+                      <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="停止生成">
                         <span class="toolbar-icon">${icon.stop}</span>
                       </button>
                     `
-                    : `
-                      <button class="composer-icon-button is-primary" type="submit" title="Send message" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
+                    : ui`
+                      <button class="composer-icon-button is-primary" type="submit" title="发送消息" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
                         <span class="toolbar-icon">${icon.send}</span>
                       </button>
                     `
@@ -6971,8 +6973,8 @@ function renderComposerCard({ inline = false } = {}) {
               <textarea
                 id="composer"
                 class="composer-textarea"
-                placeholder="${escapeHtml(inline ? 'Reply…' : composerPlaceholder())}"
-                aria-label="Message composer"
+                placeholder="${escapeHtml(inline ? t("回复…") : composerPlaceholder())}"
+                aria-label="消息输入框"
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
 
@@ -6980,7 +6982,7 @@ function renderComposerCard({ inline = false } = {}) {
             ${renderAttachmentPreviewList(uiState.composerAttachments)}
             ${
               uiState.composerDragActive
-                ? `
+                ? ui`
                   <div class="composer-drop-banner">
                     Drop image, audio, video, or PDF here. Media extraction runs best-effort before the model sees it.
                   </div>
@@ -7026,7 +7028,7 @@ function renderMessageActions(message) {
   if (message.role !== 'assistant') return '';
   const isSpeaking = uiState.ttsSpeakingMessageId === message.id;
   const isLoading = !isSpeaking && uiState.ttsSpeakingLoadingId === message.id;
-  return `
+  return ui`
     <div class="message-actions">
       <button
         class="message-action-btn ${isSpeaking ? 'is-speaking' : ''} ${isLoading ? 'is-tts-loading' : ''}"
@@ -7051,12 +7053,12 @@ function renderMessageToolResults(message) {
 }
 
 function renderMessageList(chat) {
-  return `
+  return ui`
     <div class="message-list">
       ${chat.messages
         .map(selectedMessagePresentation)
         .map(
-          message => `
+          message => ui`
             <article class="message ${message.role} ${
               uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             }" data-message-id="${escapeHtml(message.id)}">
@@ -7084,7 +7086,7 @@ function renderThreadArtifactStrip(artifacts) {
     return '';
   }
 
-  return `
+  return ui`
     <section class="surface-card thread-artifact-strip">
       <div class="header-row">
         <div>
@@ -7099,7 +7101,7 @@ function renderThreadArtifactStrip(artifacts) {
         ${artifacts
           .slice(0, 3)
           .map(
-            artifact => `
+            artifact => ui`
               <button
                 class="artifact-card artifact-mini-card"
                 data-action="open-artifact"
@@ -7124,7 +7126,7 @@ function renderThreadArtifactStrip(artifacts) {
 function renderAgentSelectorChip() {
   const agent = activeChatAgentProfile();
   if (!agent) return '';
-  return `
+  return ui`
     <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
@@ -7139,16 +7141,16 @@ function renderAgentSelectorDropdown() {
   if (!uiState.agentSelectorOpen) return '';
   const agents = allChatAgentProfiles();
   if (!agents.length) return '';
-  return `
+  return ui`
     <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话角色">
       <header><strong>选择对话 Agent</strong><p>默认角色和你创建的角色都在这里。切换只影响后续回复。</p></header>
-      ${agents.map(agent => `
+      ${agents.map(agent => ui`
         <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
                 data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
                 data-agent-id="${escapeHtml(agent.id)}">
           ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
-          ${agent.moodLabel ? `<span class="agent-selector-mood">${escapeHtml(agent.moodLabel)}</span>` : ''}
-          ${agent.id === 'main' ? `<span class="agent-selector-tag">默认</span>` : agent.isCustom ? `<span class="agent-selector-tag">自定义</span>` : ''}
+          ${agent.moodLabel ? ui`<span class="agent-selector-mood">${escapeHtml(agent.moodLabel)}</span>` : ''}
+          ${agent.id === 'main' ? ui`<span class="agent-selector-tag">默认</span>` : agent.isCustom ? ui`<span class="agent-selector-tag">自定义</span>` : ''}
         </button>
       `).join('')}
     </div>
@@ -7161,10 +7163,10 @@ function renderRegularChatPage() {
   const chatAgent = conversationAgent(uiState.bootstrap, { newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
   if (!chat) {
-    return `<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
+    return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
   }
 
-  return `
+  return ui`
     <section class="page is-chat">
       <div class="chat-thread">
         <div class="thread-header">
@@ -7175,7 +7177,7 @@ function renderRegularChatPage() {
             </h1>
             <div class="thread-meta">
               ${
-                project ? `<span class="chip">${escapeHtml(project.name)}</span>` : ''
+                project ? ui`<span class="chip">${escapeHtml(project.name)}</span>` : ''
               }
             </div>
           </div>
@@ -7210,7 +7212,7 @@ function renderRegularChatPage() {
             // footer) regardless of how tall the composer grows when the user
             // types multi-line, opens the slash palette, attaches files, etc.
             !uiState.threadAutoFollow && chat.messages.length
-              ? `
+              ? ui`
                 <button
                   class="thread-scroll-jump-button"
                   type="button"
@@ -7238,21 +7240,21 @@ function renderWorkspaceExplorer() {
   }
 
   if (!workspace.exists) {
-    return `
+    return ui`
       <div class="empty-state compact">
         Workspace path is unavailable. Update the project workspace path to start browsing files.
       </div>
     `;
   }
 
-  return `
+  return ui`
     <div class="workspace-root mono">${escapeHtml(workspace.rootPath)}</div>
     <div class="file-tree">
       ${workspace.entries
         .map(entry => {
           const indent = 14 + entry.depth * 18;
           if (entry.type === 'directory') {
-            return `
+            return ui`
               <div class="tree-row is-directory" style="padding-left:${indent}px">
                 <span class="tree-icon">${icon.folder}</span>
                 <span>${escapeHtml(entry.name)}</span>
@@ -7260,7 +7262,7 @@ function renderWorkspaceExplorer() {
             `;
           }
 
-          return `
+          return ui`
             <button
               class="tree-row is-file ${
                 workspace.selectedFilePath === entry.path ? 'is-active' : ''
@@ -7291,7 +7293,7 @@ function renderCodePreviewLines(content = '') {
   return lines
     .map(
       (line, index) =>
-        `<span class="code-line" data-line-number="${index + 1}">${escapeHtml(
+        ui`<span class="code-line" data-line-number="${index + 1}">${escapeHtml(
           line,
         )}</span>`,
     )
@@ -7313,7 +7315,7 @@ function renderSelectedFilePreview() {
   const isEditing =
     uiState.fileEditMode && uiState.fileDraftPath === selectedFile.path;
 
-  return `
+  return ui`
     <div class="selected-file-card">
       <div class="thread-meta selected-file-meta">
         <span class="chip is-accent">${escapeHtml(selectedFile.language)}</span>
@@ -7333,7 +7335,7 @@ function renderSelectedFilePreview() {
       <div class="inline-actions">
         ${
           isEditing
-            ? `
+            ? ui`
               <button class="small-button is-primary" type="submit" form="file-save-form">
                 Queue save
               </button>
@@ -7341,7 +7343,7 @@ function renderSelectedFilePreview() {
                 Discard
               </button>
             `
-            : `
+            : ui`
               <button class="small-button is-primary" data-action="start-edit-file">
                 Edit file
               </button>
@@ -7350,7 +7352,7 @@ function renderSelectedFilePreview() {
       </div>
       ${
         isEditing
-          ? `
+          ? ui`
             <form id="file-save-form" data-form="file-save">
               <textarea class="textarea code-editor" id="selected-file-editor">${escapeHtml(
                 uiState.fileDraftContent,
@@ -7363,7 +7365,7 @@ function renderSelectedFilePreview() {
               uiState.fileDraftContent,
             )}
           `
-          : `<pre class="code-preview" data-copyable-surface><code>${renderCodePreviewLines(
+          : ui`<pre class="code-preview" data-copyable-surface><code>${renderCodePreviewLines(
               selectedFile.content,
             )}</code></pre>`
       }
@@ -7378,17 +7380,17 @@ function renderCommandRunner() {
     return '<div class="empty-state compact">Local Command is disabled.</div>';
   }
 
-  return `
+  return ui`
     <div class="command-stack">
       ${workspace.commandTemplates
         .map(
-          template => `
+          template => ui`
             <form class="command-card" data-form="command-run" data-template-id="${template.id}">
               <div class="list-row-title">${escapeHtml(template.label)}</div>
               <div class="list-row-meta">${escapeHtml(template.description)}</div>
               ${
                 template.requiresInput
-                  ? `
+                  ? ui`
                     <input
                       class="input slim"
                       name="query"
@@ -7410,7 +7412,7 @@ function renderCommandRunner() {
       ${(workspace.commandRuns || []).length
         ? workspace.commandRuns
             .map(
-              run => `
+              run => ui`
                 <article class="run-card">
                   <div class="thread-meta">
                     <span class="chip ${run.success ? 'is-accent' : ''}">${escapeHtml(
@@ -7441,12 +7443,12 @@ function renderProjectArtifactShelf() {
     return '<div class="empty-state compact">No project artifacts yet. Save one from Artifacts to reuse it here.</div>';
   }
 
-  return `
+  return ui`
     <div class="mini-list">
       ${artifacts
         .slice(0, 4)
         .map(
-          artifact => `
+          artifact => ui`
             <button
               class="mini-list-item"
               data-action="open-artifact"
@@ -7469,7 +7471,7 @@ function renderCodePage() {
   const chat = activeChat();
   const workspace = uiState.bootstrap.workspace;
 
-  return `
+  return ui`
     <section class="page page-code">
       <div class="code-layout">
         <div class="code-main">
@@ -7482,7 +7484,7 @@ function renderCodePage() {
                 <div class="thread-meta">
                   <span class="chip is-accent">CODE</span>
                   ${
-                    project ? `<span class="chip">${escapeHtml(project.name)}</span>` : ''
+                    project ? ui`<span class="chip">${escapeHtml(project.name)}</span>` : ''
                   }
                   <span class="chip">${workspace.fileCount || 0} files indexed</span>
                 </div>
@@ -7501,7 +7503,7 @@ function renderCodePage() {
             ${
               chat && chat.messages.length
                 ? renderMessageList(chat)
-                : `
+                : ui`
                   <div class="code-empty">
                     <h2 class="card-title">Ready to work in code mode</h2>
                     <p class="card-summary">
@@ -7534,7 +7536,7 @@ function renderCodePage() {
 
             ${
               project
-                ? `
+                ? ui`
                   <p class="inspector-copy">${escapeHtml(project.summary)}</p>
                   <div class="chip-row">
                     <span class="chip is-accent">${escapeHtml(project.tag)}</span>
@@ -7605,7 +7607,7 @@ function renderCodePage() {
 
 function renderChatsPage() {
   const chats = filteredChats();
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row">
@@ -7627,7 +7629,7 @@ function renderChatsPage() {
             chats.length
               ? chats
                   .map(
-                    chat => `
+                    chat => ui`
                       <button class="chat-row" data-action="open-chat" data-chat-id="${chat.id}">
                         <div class="chat-row__body">
                           <h2 class="chat-row__title">${escapeHtml(chat.title)}</h2>
@@ -7636,7 +7638,7 @@ function renderChatsPage() {
                         <div class="chat-row__meta">
                           ${
                             chat.projectId
-                              ? `<span class="chip is-muted">${escapeHtml(
+                              ? ui`<span class="chip is-muted">${escapeHtml(
                                   uiState.bootstrap.projects.find(
                                     project => project.id === chat.projectId,
                                   )?.name || 'Project',
@@ -7685,7 +7687,7 @@ function renderProjectsOverview() {
 
   // Zero projects + no active form → full empty state with a primary CTA.
   if (totalProjects === 0 && !uiState.showProjectForm) {
-    return `
+    return ui`
       <section class="page">
         <div class="page-grid">
           <div class="header-row">
@@ -7711,7 +7713,7 @@ function renderProjectsOverview() {
     `;
   }
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row project-overview-header">
@@ -7745,12 +7747,12 @@ function renderProjectsOverview() {
 
         ${
           projects.length
-            ? `
+            ? ui`
               <div class="project-grid">
                 ${projects.map(renderProjectCard).join('')}
               </div>
             `
-            : `
+            : ui`
               <div class="surface-card empty-state compact">
                 ${
                   searchActive
@@ -7769,7 +7771,7 @@ function renderProjectCard(item) {
   // A single project card in the overview grid. Clicking anywhere on the
   // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
   // stop propagation so they don't also trigger the card click.
-  return `
+  return ui`
     <button
       class="project-card"
       data-action="focus-project"
@@ -7796,7 +7798,7 @@ function renderProjectCard(item) {
 }
 
 function renderProjectCreateForm() {
-  return `
+  return ui`
     <form class="project-form-card surface-card" data-form="project-create">
       <div class="project-form-grid">
         <label class="label">
@@ -7846,7 +7848,7 @@ function renderProjectsDetailView(project) {
   const relatedChats = activeProjectChats();
   const relatedArtifacts = activeProjectArtifacts();
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid project-detail-layout">
         <div class="header-row project-detail-header">
@@ -7862,7 +7864,7 @@ function renderProjectsDetailView(project) {
             <h1 class="page-title compact">${escapeHtml(project.name)}</h1>
             ${
               project.summary
-                ? `<p class="page-kicker">${escapeHtml(project.summary)}</p>`
+                ? ui`<p class="page-kicker">${escapeHtml(project.summary)}</p>`
                 : ''
             }
           </div>
@@ -7884,18 +7886,18 @@ function renderProjectsDetailView(project) {
             >
               处理项目代码
             </button>
-            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?'恢复项目':'归档项目'}</button>
+            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?t("恢复项目"):t("归档项目")}</button>
           </div>
         </div>
 
         <div class="chip-row">
           <span class="chip is-accent">${escapeHtml(project.tag)}</span>
-          ${project.archived?'<span class="chip">已归档 · 对话与资料保留</span>':''}
+          ${project.archived?ui`<span class="chip">已归档 · 对话与资料保留</span>`:''}
           <span class="chip">${project.chatCount ?? relatedChats.length} 段对话</span>
           <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份资料与成果</span>
           ${
             project.workspacePath
-              ? `<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
+              ? ui`<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
               : '<span class="chip mono is-muted">No workspace set</span>'
           }
         </div>
@@ -7942,7 +7944,7 @@ function renderProjectsDetailView(project) {
                 )}</textarea>
               </label>
               <fieldset class="context-materials"><legend>项目共享资料</legend><p>这些资料用于项目内所有对话，与对话单独选用的资料去重后合计最多 8 份、24000 字。</p>
-                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || '<p>先在知识分支保存资料。</p>'}
+                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
               </fieldset>
               <div class="inline-actions">
                 <button class="small-button is-primary" type="submit">
@@ -7965,7 +7967,7 @@ function renderProjectsDetailView(project) {
                     ? relatedChats
                         .slice(0, 6)
                         .map(
-                          chat => `
+                          chat => ui`
                             <button
                               class="mini-list-item"
                               data-action="open-chat"
@@ -7977,7 +7979,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>'
+                    : ui`<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>`
                 }
               </div>
             </section>
@@ -7993,7 +7995,7 @@ function renderProjectsDetailView(project) {
                     ? relatedArtifacts
                         .slice(0, 6)
                         .map(
-                          artifact => `
+                          artifact => ui`
                             <button
                               class="mini-list-item"
                               data-action="open-artifact"
@@ -8007,7 +8009,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">还没有保存的资料或成果。</div>'
+                    : ui`<div class="empty-state compact">还没有保存的资料或成果。</div>`
                 }
               </div>
             </section>
@@ -8019,11 +8021,11 @@ function renderProjectsDetailView(project) {
 }
 
 function renderAgentList(selectedId) {
-  return `
+  return ui`
     <div class="list-stack">
       ${(uiState.bootstrap?.customize?.agents || [])
         .map(
-          agent => `
+          agent => ui`
             <button
               class="list-row ${selectedId === agent.id ? 'is-active' : ''}"
               data-action="select-agent-profile"
@@ -8111,7 +8113,7 @@ function renderAgentWorkbench(selected) {
     },
   ];
 
-  return `
+  return ui`
     <section class="surface-card agent-workbench-card">
       <div class="header-row">
         <div>
@@ -8121,7 +8123,7 @@ function renderAgentWorkbench(selected) {
         <div class="inline-actions">
           ${
             uiState.bootstrap?.settings?.selectedChatId
-              ? `
+              ? ui`
                 <button
                   class="small-button is-outline"
                   type="button"
@@ -8132,7 +8134,7 @@ function renderAgentWorkbench(selected) {
                   Save as skill
                 </button>
               `
-              : `
+              : ui`
                 <button
                   class="small-button is-outline"
                   type="button"
@@ -8199,10 +8201,10 @@ function renderAgentWorkbench(selected) {
         data-form="agent-profile-update"
         data-agent-id="${selected.id}"
       >
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${
           selected.isCustom
-            ? `
+            ? ui`
               <label class="label">
                 角色名称
                 <input
@@ -8223,7 +8225,7 @@ function renderAgentWorkbench(selected) {
                 <textarea class="textarea agent-control-editor" name="rolePrompt" placeholder="例如：先给结论，用两三句短句解释；不确定时明确说明。">${escapeHtml(draft?.rolePrompt ?? selected.rolePrompt ?? '')}</textarea>
               </label>
             `
-            : `
+            : ui`
               <div class="agent-compact-note">
                 Built-in lanes keep their source-inspired names. Use Customize to add a new agent you can rename.
               </div>
@@ -8269,10 +8271,10 @@ function renderAgentWorkbench(selected) {
 
         ${
           uiState.agentEditorTab === 'soul'
-            ? `<input type="hidden" name="identity" value="${escapeHtml(
+            ? ui`<input type="hidden" name="identity" value="${escapeHtml(
                 draft?.identity || draft?.identify || '',
               )}" />`
-            : `<input type="hidden" name="soul.md" value="${escapeHtml(
+            : ui`<input type="hidden" name="soul.md" value="${escapeHtml(
                 draft?.['soul.md'] || '',
               )}" />`
         }
@@ -8310,7 +8312,7 @@ function renderAgentWorkbench(selected) {
         <div class="chip-row">
           ${toolOptions
             .map(
-              option => `
+              option => ui`
                 <button
                   class="chip chip-button ${selectedTools.has(option.id) ? 'is-accent' : ''}"
                   type="button"
@@ -8332,7 +8334,7 @@ function renderAgentWorkbench(selected) {
                   ? new Set(draft.enabledSkillIds)
                   : null; // null = all allowed
                 const noRestriction = whitelistIds === null;
-                return `
+                return ui`
                   <input type="hidden" name="enabledSkillIds" value="${
                     noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
                   }" />
@@ -8348,7 +8350,7 @@ function renderAgentWorkbench(selected) {
                       data-agent-id="${selected.id}"
                     >All skills</button>
                     ${allSkills
-                      .map(skill => `
+                      .map(skill => ui`
                         <button
                           class="chip chip-button ${!noRestriction && whitelistIds.has(skill.id) ? 'is-accent' : ''}"
                           type="button"
@@ -8371,7 +8373,7 @@ function renderAgentWorkbench(selected) {
                   ? new Set(draft.enabledConnectorIds)
                   : null;
                 const noRestriction = whitelistIds === null;
-                return `
+                return ui`
                   <input type="hidden" name="enabledConnectorIds" value="${
                     noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
                   }" />
@@ -8387,7 +8389,7 @@ function renderAgentWorkbench(selected) {
                       data-agent-id="${selected.id}"
                     >All connectors</button>
                     ${externalMcpConnectors
-                      .map(c => `
+                      .map(c => ui`
                         <button
                           class="chip chip-button ${!noRestriction && whitelistIds.has(c.id) ? 'is-accent' : ''}"
                           type="button"
@@ -8418,7 +8420,7 @@ function renderAgentWorkbench(selected) {
           const whitelist = new Set(
             Array.isArray(draft?.enabledMcpServerIds) ? draft.enabledMcpServerIds : [],
           );
-          return `
+          return ui`
             <input type="hidden" name="enabledMcpServerIds" value="${escapeHtml([...whitelist].join(','))}" />
             <div class="detail-meta">
               <div class="meta-block-label">Stdio MCP servers</div>
@@ -8457,7 +8459,7 @@ function renderAgentWorkbench(selected) {
                       : stale
                         ? 'Server disabled globally — click to revoke the stale authorisation'
                         : 'Server disabled globally — enable in Advanced first');
-                return `
+                return ui`
                   <button
                     class="chip chip-button${allowed ? ' is-accent' : ''}${(!enabled || unpinned) ? ' is-disabled-preset' : ''}"
                     type="button"
@@ -8482,7 +8484,7 @@ function renderAgentWorkbench(selected) {
         <div class="chip-row">
           ${moodOptions
             .map(
-              option => `
+              option => ui`
                 <button
                   class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
                   type="button"
@@ -8502,7 +8504,7 @@ function renderAgentWorkbench(selected) {
           <select class="config-select" name="mood">
             ${moodOptions
               .map(
-                option => `
+                option => ui`
                   <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
                     ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
                   </option>
@@ -8520,7 +8522,7 @@ function renderAgentWorkbench(selected) {
         <div class="agent-channel-tabs" role="tablist">
           ${channelTabDefs
             .map(
-              tab => `
+              tab => ui`
                 <button
                   type="button"
                   role="tab"
@@ -8541,7 +8543,7 @@ function renderAgentWorkbench(selected) {
         <div class="agent-channel-panel">
           ${
             activeChannelTab === 'telegram'
-              ? `
+              ? ui`
                 <section class="selected-file-card agent-channel-card">
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -8607,7 +8609,7 @@ function renderAgentWorkbench(selected) {
                   </label>
                   ${
                     telegramChannel.lastError
-                      ? `<div class="list-row-meta danger-copy">${escapeHtml(telegramChannel.lastError)}</div>`
+                      ? ui`<div class="list-row-meta danger-copy">${escapeHtml(telegramChannel.lastError)}</div>`
                       : ''
                   }
                   ${renderChannelRuntimeCard(telegramChannel, { showRoute: true })}
@@ -8622,7 +8624,7 @@ function renderAgentWorkbench(selected) {
           }
           ${
             activeChannelTab === 'discord'
-              ? `
+              ? ui`
                 <section class="selected-file-card agent-channel-card">
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -8678,7 +8680,7 @@ function renderAgentWorkbench(selected) {
                   </label>
                   ${
                     discordChannel.lastError
-                      ? `<div class="list-row-meta danger-copy">${escapeHtml(discordChannel.lastError)}</div>`
+                      ? ui`<div class="list-row-meta danger-copy">${escapeHtml(discordChannel.lastError)}</div>`
                       : ''
                   }
                   ${renderChannelRuntimeCard(discordChannel)}
@@ -8693,7 +8695,7 @@ function renderAgentWorkbench(selected) {
           }
           ${
             activeChannelTab === 'lark'
-              ? `
+              ? ui`
                 <section class="selected-file-card agent-channel-card">
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -8723,7 +8725,7 @@ function renderAgentWorkbench(selected) {
           </button>
           ${
             scope === 'project' && selected.hasProjectOverride
-              ? `
+              ? ui`
                 <button
                   class="small-button"
                   type="button"
@@ -8744,7 +8746,7 @@ function renderAgentWorkbench(selected) {
 function renderAgentPage() {
   const selected = selectedAgentProfile();
 
-  return `
+  return ui`
     <section class="page agent-page">
       <div class="page-grid agent-page-grid">
         <div class="header-row">
@@ -8757,7 +8759,7 @@ function renderAgentPage() {
             <select class="config-select" data-action="select-agent-profile">
               ${(uiState.bootstrap?.customize?.agents || [])
                 .map(
-                  agent => `
+                  agent => ui`
                     <option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>
                       ${escapeHtml(agent.name)}
                     </option>
@@ -8788,7 +8790,7 @@ function renderAgentPage() {
 function renderModelPage() {
   const config = uiState.bootstrap.settings.config;
   const draft = effectiveModelSetupDraft();
-  return `
+  return ui`
     <section class="page page-model">
       <div class="model-page-titlebar">
         <h1 class="page-title compact">模型与连接</h1>
@@ -8829,7 +8831,7 @@ function renderAgentDetails(selected) {
   const activeEditorPath =
     uiState.agentEditorTab === 'soul' ? selected.soulPath : selected.identityPath;
 
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -8891,10 +8893,10 @@ function renderAgentDetails(selected) {
       </div>
 
       <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${
           selected.isCustom
-            ? `
+            ? ui`
               <div class="selected-file-card">
                 <div class="agent-editor-header">
                   <div class="agent-editor-heading">
@@ -8926,7 +8928,7 @@ function renderAgentDetails(selected) {
                 </label>
               </div>
             `
-            : `
+            : ui`
               <div class="detail-meta">
                 <div class="meta-block-label">Role prompt</div>
                 <div>${escapeHtml(selected.rolePrompt)}</div>
@@ -8942,7 +8944,7 @@ function renderAgentDetails(selected) {
         <div class="card-grid compact-grid preset-grid">
           ${presets
             .map(
-              preset => `
+              preset => ui`
                 <article class="artifact-card preset-card">
                   <div class="thread-meta">
                     <span class="chip is-accent">${escapeHtml(preset.mood)}</span>
@@ -8999,10 +9001,10 @@ function renderAgentDetails(selected) {
 
         ${
           uiState.agentEditorTab === 'soul'
-            ? `<input type="hidden" name="identity" value="${escapeHtml(
+            ? ui`<input type="hidden" name="identity" value="${escapeHtml(
                 draft?.identity || draft?.identify || '',
               )}" />`
-            : `<input type="hidden" name="soul.md" value="${escapeHtml(
+            : ui`<input type="hidden" name="soul.md" value="${escapeHtml(
                 draft?.['soul.md'] || '',
               )}" />`
         }
@@ -9015,7 +9017,7 @@ function renderAgentDetails(selected) {
         <div class="chip-row">
           ${moodOptions
             .map(
-              option => `
+              option => ui`
                 <button
                   class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
                   type="button"
@@ -9035,7 +9037,7 @@ function renderAgentDetails(selected) {
           <select class="config-select" name="mood">
             ${moodOptions
               .map(
-                option => `
+                option => ui`
                   <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
                     ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
                   </option>
@@ -9076,7 +9078,7 @@ function renderAgentDetails(selected) {
           <button class="small-button is-primary" type="submit">Save agent profile</button>
           ${
             scope === 'project' && selected.hasProjectOverride
-              ? `
+              ? ui`
                 <button
                   class="small-button"
                   type="button"
@@ -9114,7 +9116,7 @@ function renderConnectorDetails(selected) {
     if (activeTab === 'markdown') {
       return renderSkillMarkdownTab(selected);
     }
-    return `
+    return ui`
       <div class="detail-card">
         <div class="header-row">
           <div>
@@ -9154,15 +9156,15 @@ function renderConnectorDetails(selected) {
           <div>${escapeHtml(selected.systemPrompt)}</div>
           <div class="chip-row">
             ${(selected.folders || [])
-              .map(folder => `<span class="chip">${escapeHtml(folder)}</span>`)
+              .map(folder => ui`<span class="chip">${escapeHtml(folder)}</span>`)
               .join('')}
           </div>
           ${
             !isGlobalSkill
-              ? `<div class="chip-row">
+              ? ui`<div class="chip-row">
                    <span class="meta-label">Only visible to:</span>
                    ${allowedAgentIds
-                     .map(aid => `<span class="chip">${escapeHtml(aid)}</span>`)
+                     .map(aid => ui`<span class="chip">${escapeHtml(aid)}</span>`)
                      .join('')}
                  </div>`
               : ''
@@ -9181,7 +9183,7 @@ function renderConnectorDetails(selected) {
           ></button>
         </div>
 
-        ${isCustomSkill ? `
+        ${isCustomSkill ? ui`
           <form id="skill-custom-update-form-${selected.id}" class="config-form" data-form="skill-custom-update" data-skill-id="${selected.id}">
             <div class="detail-meta">
               <div class="meta-block-label">Edit custom skill</div>
@@ -9252,7 +9254,7 @@ function renderConnectorDetails(selected) {
     // The list filter on Customize → Connectors hides them, but a stale
     // selectedConnectorId can still point here — render a redirect notice
     // instead of the legacy edit form (Codex audit / config edits deferred).
-    return `
+    return ui`
       <div class="detail-card">
         <div class="header-row">
           <div>
@@ -9291,14 +9293,14 @@ function renderConnectorDetails(selected) {
         selected.config,
       );
       if (state === 'pending') {
-        return `<span class="chip is-warning is-tiny">● 待保存（点击保存后生效）</span>`;
+        return ui`<span class="chip is-warning is-tiny">● 待保存（点击保存后生效）</span>`;
       }
       if (state === 'saved') {
-        return `<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(masked)}</span>`;
+        return ui`<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(masked)}</span>`;
       }
-      return `<span class="chip is-tiny">● 未配置</span>`;
+      return ui`<span class="chip is-tiny">● 未配置</span>`;
     };
-    extra = `
+    extra = ui`
       <p>模型地址、密钥和登录授权在模型连接中统一管理。</p>
       <button type="button" class="small-button" data-action="open-view" data-view="model">打开模型连接</button>
       <form id="connector-config-form" class="config-form" data-form="connector-config">
@@ -9394,7 +9396,7 @@ function renderConnectorDetails(selected) {
       </form>
     `;
   } else if (selected.id === 'local-files') {
-    extra = `
+    extra = ui`
       <div class="detail-meta">
         <div class="meta-block-label">Workspace root</div>
         <div class="mono">${escapeHtml(selected.config.workspaceRoot || '(none)')}</div>
@@ -9404,18 +9406,18 @@ function renderConnectorDetails(selected) {
         <span class="chip">${selected.config.exists ? 'Available' : 'Unavailable'}</span>
         ${
           selected.config.selectedFilePath
-            ? `<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
+            ? ui`<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
             : ''
         }
       </div>
       ${workspace.selectedFile ? renderSelectedFilePreview() : ''}
     `;
   } else if (selected.id === 'local-command') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         ${(workspace.commandTemplates || [])
           .map(
-            template => `
+            template => ui`
               <span class="chip">${escapeHtml(template.label)}</span>
             `,
           )
@@ -9424,7 +9426,7 @@ function renderConnectorDetails(selected) {
       ${(workspace.commandRuns || []).length ? renderCommandRunner() : '<div class="empty-state compact">No command runs yet.</div>'}
     `;
   } else if (selected.id === 'artifacts') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         <span class="chip is-accent">${selected.config.totalArtifacts} total</span>
         <span class="chip">${selected.config.projectArtifacts} in active project</span>
@@ -9432,7 +9434,7 @@ function renderConnectorDetails(selected) {
       ${renderProjectArtifactShelf()}
     `;
   } else if (selected.id === 'projects') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         <span class="chip is-accent">${escapeHtml(
           selected.config.activeProject || '(none)',
@@ -9442,7 +9444,7 @@ function renderConnectorDetails(selected) {
     `;
   }
 
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -9482,7 +9484,7 @@ function renderSkillFilterBar() {
   const filteredCount = filteredSkills().length;
   const isFiltering = Boolean(query || tag || state !== 'all');
 
-  return `
+  return ui`
     <div class="skill-filter-bar">
       <div class="skill-filter-row">
         <input
@@ -9502,7 +9504,7 @@ function renderSkillFilterBar() {
         </select>
       </div>
       ${tags.length
-        ? `
+        ? ui`
           <div class="skill-filter-tags">
             <button
               type="button"
@@ -9512,7 +9514,7 @@ function renderSkillFilterBar() {
             >All tags</button>
             ${tags
               .map(
-                t => `
+                t => ui`
                   <button
                     type="button"
                     class="chip chip-button ${tag === t ? 'is-accent' : ''}"
@@ -9527,7 +9529,7 @@ function renderSkillFilterBar() {
         : ''}
       <div class="skill-filter-status">
         ${isFiltering
-          ? `Showing ${filteredCount} of ${totalCount} skills · <button type="button" class="link-button" data-action="reset-skill-filter">reset</button>`
+          ? ui`Showing ${filteredCount} of ${totalCount} skills · <button type="button" class="link-button" data-action="reset-skill-filter">reset</button>`
           : `${totalCount} skills`}
       </div>
     </div>
@@ -9535,7 +9537,7 @@ function renderSkillFilterBar() {
 }
 
 function renderCustomSkillCreateCard() {
-  return `
+  return ui`
     <div class="detail-card create-connector-card">
       <div class="header-row">
         <div>
@@ -9751,7 +9753,7 @@ async function handleMemoryFactAction(action, id) {
   if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
   const patch=action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
   uiState.memoryFactBusy=true; bgRender();
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?'已保存':action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
 }
@@ -9949,9 +9951,9 @@ function renderSafetyPane() {
   }
 
   const opLabel = (op, scope) => {
-    if (scope === 'tool') return op === 'allow' ? '始终允许此工具' : '拒绝此工具';
-    const opPart = op === 'read' ? '读取' : op === 'write' ? '写入' : op === 'edit' ? '编辑' : op;
-    const scopePart = scope === 'dir' ? '整个目录' : '当前文件';
+    if (scope === 'tool') return op === 'allow' ? t("始终允许此工具") : t("拒绝此工具");
+    const opPart = op === 'read' ? t("读取") : op === 'write' ? t("写入") : op === 'edit' ? t("编辑") : op;
+    const scopePart = scope === 'dir' ? t("整个目录") : t("当前文件");
     return `${opPart} — ${scopePart}`;
   };
 
@@ -9966,22 +9968,22 @@ function renderSafetyPane() {
 
   const body = (() => {
     if (loading && !loaded) {
-      return `<div class="empty-state compact">正在读取授权…</div>`;
+      return ui`<div class="empty-state compact">正在读取授权…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!rules.length) {
-      return `
+      return ui`
         <div class="empty-state compact">
           还没有长期授权。
           点击权限弹窗中的 <strong>Always allow</strong> 后，可在这里查看和撤销。
         </div>
       `;
     }
-    return `
+    return ui`
       <div class="safety-rule-list">
-        ${rules.map(rule => `
+        ${rules.map(rule => ui`
           <div class="safety-rule-row">
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(opLabel(rule.operation, rule.scope))}</div>
@@ -9992,7 +9994,7 @@ function renderSafetyPane() {
               data-action="safety-allowlist-remove"
               data-rule-id="${escapeHtml(rule.id)}"
               ${pendingRemoveId === rule.id ? 'disabled' : ''}>
-              ${pendingRemoveId === rule.id ? '撤销中…' : '撤销'}
+              ${pendingRemoveId === rule.id ? '撤销中…' : t("撤销")}
             </button>
           </div>
         `).join('')}
@@ -10000,7 +10002,7 @@ function renderSafetyPane() {
     `;
   })();
 
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -10013,9 +10015,9 @@ function renderSafetyPane() {
           <button class="small-button" data-action="refresh-safety-allowlist">刷新</button>
         </div>
       </div>
-      <div class="inline-actions">${[['role','角色',r=>r.permissionScope?.role || r.role || 'global'],['project','项目',r=>r.permissionScope?.project || r.project || 'none'],['operation','操作',r=>r.operation]].map(([key,label,get])=>`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
+      <div class="inline-actions">${[['role',t("角色"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
-      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定角色')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || '<p>尚无记录。</p>'}</details>
+      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定角色')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
       <p class="list-row-meta" style="margin-top: 16px;">
         Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
         — the dialog only offers Allow once / Deny for them. Move and delete operations are
@@ -10035,27 +10037,27 @@ function renderDomainCookiesPane() {
 
   const list = (() => {
     if (loading && !loaded) {
-      return `<div class="empty-state compact">Loading…</div>`;
+      return ui`<div class="empty-state compact">Loading…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!hosts.length) {
-      return `
+      return ui`
         <div class="empty-state compact">
           No domain cookies configured. Add one for sites that need an authenticated session
           (Xiaohongshu, Douyin, Bilibili, …) — yt-dlp / fetch_url will pick it up automatically.
         </div>
       `;
     }
-    return `
+    return ui`
       <div class="safety-rule-list">
-        ${hosts.map(entry => `
+        ${hosts.map(entry => ui`
           <div class="safety-rule-row">
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(entry.host)}</div>
               <div class="list-row-meta">
-                Cookie length: ${entry.length}${entry.fingerprint ? ` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
+                Cookie length: ${entry.length}${entry.fingerprint ? ui` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
               </div>
             </div>
             <button class="small-button is-danger"
@@ -10070,7 +10072,7 @@ function renderDomainCookiesPane() {
     `;
   })();
 
-  return `
+  return ui`
     <div class="meta-block-label" style="margin-top: 24px;">Web-fetch cookies</div>
     <p class="list-row-meta" style="margin-bottom: 8px;">
       Per-domain Cookie strings sent with web-fetch (fetch_url) and platform extractors
@@ -10107,7 +10109,7 @@ function renderDomainCookiesPane() {
         </button>
         <button class="small-button" data-action="refresh-domain-cookies">Refresh list</button>
       </div>
-      ${addError ? `<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
+      ${addError ? ui`<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
     </div>
 
     ${list}
@@ -10122,13 +10124,13 @@ function renderMemoryPane() {
   }
   const content = (() => {
     if (loading && !snapshot) {
-      return `<div class="empty-state compact">正在检查记忆…</div>`;
+      return ui`<div class="empty-state compact">正在检查记忆…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!snapshot) {
-      return `<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
+      return ui`<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
     }
     const s = snapshot;
     const drift = s.embedding?.drift || {};
@@ -10137,10 +10139,10 @@ function renderMemoryPane() {
     const semanticStatus = diagnosis?.available === false ? '暂不可用' : needsRebuild ? '需要重建' : diagnosis?.available ? '检测通过' : drift.inferredProvider ? '已配置 · 待检测' : drift.probeAttempted ? '暂不可用' : '未检测';
     const metaRows = s.meta
       ? Object.entries(s.meta)
-          .map(([k, v]) => `<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
+          .map(([k, v]) => ui`<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
           .join('')
       : '<div class="list-row-meta">(not yet populated)</div>';
-    return `
+    return ui`
       <div class="detail-card memory-card">
         <div class="header-row">
           <div>
@@ -10152,8 +10154,8 @@ function renderMemoryPane() {
           </div>
         </div>
 
-        ${s.derivedIndex ? `<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
-        ${drift.hasDrift ? `
+        ${s.derivedIndex ? ui`<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
+        ${drift.hasDrift ? ui`
           <div class="alert compact-alert">
             <strong>Embedding model drift detected.</strong>
             Stored vectors were written by <span class="mono">${escapeHtml(drift.stored || '?')}</span>
@@ -10172,9 +10174,9 @@ function renderMemoryPane() {
           <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
           <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
           <button class="small-button" data-action="memory-repair" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
-          ${uiState.memoryStatus.repairBusy ? '<button class="small-button" data-action="memory-pause">本批完成后暂停</button>' : ''}</div>
-          ${s.repair ? `<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
-          ${uiState.memoryStatus.diagnosis ? `<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
+          ${uiState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
+          ${s.repair ? ui`<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
+          ${uiState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
           <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
         </section>
         ${renderMemoryFacts(uiState.memoryFacts,{query:uiState.memoryFactQuery,editing:uiState.memoryFactEditing,busy:uiState.memoryFactBusy,draft:uiState.memoryFactDraft,session:memoryFactEdit,feedback:uiState.memoryFactFeedback})}
@@ -10232,7 +10234,7 @@ function renderMemoryPane() {
               Wipe embeddings…
             </button>
           </div>
-          ${wipeConfirmOpen ? `
+          ${wipeConfirmOpen ? ui`
             <div class="alert compact-alert">
               <div><strong>This clears every stored vector.</strong> Memory rows and settings are untouched.</div>
               <div class="inline-actions" style="margin-top: 8px;">
@@ -10243,7 +10245,7 @@ function renderMemoryPane() {
               </div>
             </div>
           ` : ''}
-          ${wipeResult ? `<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
+          ${wipeResult ? ui`<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
         </div>
 
         <div class="subsection">
@@ -10254,7 +10256,7 @@ function renderMemoryPane() {
       </div>
     `;
   })();
-  return `<div class="customize-pane">${content}</div>`;
+  return ui`<div class="customize-pane">${content}</div>`;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -10262,7 +10264,7 @@ function renderMemoryPane() {
 // ───────────────────────────────────────────────────────────────────────
 
 function renderSkillDetailTabs(selected, activeTab) {
-  return `
+  return ui`
     <div class="skill-tab-strip">
       <button
         class="skill-tab ${activeTab === 'overview' ? 'is-active' : ''}"
@@ -10308,16 +10310,16 @@ function renderSkillMarkdownTab(selected) {
   const activeTab = 'markdown';
   const cached = uiState.skillMarkdown[selected.id] || {};
   const body = (() => {
-    if (cached.loading) return `<div class="empty-state compact">Loading SKILL.md…</div>`;
-    if (cached.error) return `<div class="alert compact-alert">${escapeHtml(cached.error)}</div>`;
+    if (cached.loading) return ui`<div class="empty-state compact">Loading SKILL.md…</div>`;
+    if (cached.error) return ui`<div class="alert compact-alert">${escapeHtml(cached.error)}</div>`;
     if (!cached.markdown) {
       // Kick off initial load when rendered for the first time.
       Promise.resolve().then(() => refreshSkillMarkdown(selected.id));
-      return `<div class="empty-state compact">Loading SKILL.md…</div>`;
+      return ui`<div class="empty-state compact">Loading SKILL.md…</div>`;
     }
-    return `<pre class="skill-markdown-block">${escapeHtml(cached.markdown)}</pre>`;
+    return ui`<pre class="skill-markdown-block">${escapeHtml(cached.markdown)}</pre>`;
   })();
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -10344,7 +10346,7 @@ function renderSkillHealthPanel() {
     const found = (uiState.bootstrap?.customize?.skills || []).find(s => s.id === id);
     return found?.name || id;
   };
-  return `
+  return ui`
     <div class="detail-card skill-health-card">
       <div class="header-row">
         <div>
@@ -10355,13 +10357,13 @@ function renderSkillHealthPanel() {
           ${loading ? 'Loading…' : loaded ? 'Refresh' : 'Load'}
         </button>
       </div>
-      ${error ? `<div class="banner is-warning">${escapeHtml(error)}</div>` : ''}
+      ${error ? ui`<div class="banner is-warning">${escapeHtml(error)}</div>` : ''}
       ${
         !loaded && !loading
-          ? `<div class="empty-state compact">Click "Load" to see run statistics.</div>`
+          ? ui`<div class="empty-state compact">Click "Load" to see run statistics.</div>`
           : skills.length === 0 && loaded
-            ? `<div class="empty-state compact">No skill runs recorded yet.</div>`
-            : `
+            ? ui`<div class="empty-state compact">No skill runs recorded yet.</div>`
+            : ui`
               <div class="list-stack">
                 ${skills
                   .map(row => {
@@ -10371,7 +10373,7 @@ function renderSkillHealthPanel() {
                     const metaLabel = `${row.runs} runs • ${rate} ok • p50 ${durLabel} • last ${lastAt}`;
                     const errHtml = (row.recentErrors || [])
                       .slice(0, 3)
-                      .map(e => `
+                      .map(e => ui`
                         <div class="skill-health-error">
                           <span class="meta-label">${escapeHtml(e.errorType || 'error')}</span>
                           <span>${escapeHtml((e.errorMessage || '').slice(0, 160))}</span>
@@ -10379,12 +10381,12 @@ function renderSkillHealthPanel() {
                       `)
                       .join('');
                     const isDegraded = typeof row.successRate === 'number' && row.successRate < 0.7 && row.runs >= 3;
-                    return `
+                    return ui`
                       <div class="list-row skill-health-row ${isDegraded ? 'is-degraded' : ''}">
                         <div>
                           <div class="list-row-title">${escapeHtml(nameFor(row.skillId))}</div>
                           <div class="list-row-meta">${escapeHtml(metaLabel)}</div>
-                          ${errHtml ? `<div class="skill-health-errors">${errHtml}</div>` : ''}
+                          ${errHtml ? ui`<div class="skill-health-errors">${errHtml}</div>` : ''}
                         </div>
                       </div>
                     `;
@@ -10400,7 +10402,7 @@ function renderSkillHealthPanel() {
 function renderSkillProposalsPanel() {
   const proposals = uiState.bootstrap?.customize?.skillProposals || [];
   if (proposals.length === 0) return '';
-  return `
+  return ui`
     <div class="detail-card skill-proposals-card">
       <div class="header-row">
         <div>
@@ -10411,7 +10413,7 @@ function renderSkillProposalsPanel() {
       </div>
       <div class="list-stack">
         ${proposals
-          .map(p => `
+          .map(p => ui`
             <div class="list-row">
               <div>
                 <div class="list-row-title">${escapeHtml(p.summary || '(workflow)')}</div>
@@ -10463,7 +10465,7 @@ function renderCustomizePage() {
   const rawSection = data.settings.selectedCustomizeSection;
   const section = rawSection === 'runtime' ? 'advanced' : rawSection;
 
-  return `
+  return ui`
     <section class="page page-customize">
       <div class="customize-layout">
         <div class="customize-pane">
@@ -10541,7 +10543,7 @@ function renderCustomizePage() {
               ? renderMemoryPane()
             : section === 'safety'
               ? renderSafetyPane()
-              : `
+              : ui`
         <div class="customize-pane">
           <div class="customize-pane-header">
             <h2 class="pane-title">${
@@ -10564,7 +10566,7 @@ function renderCustomizePage() {
                     : section === 'agents'
                       ? data.settings.selectedAgentId === item.id
                       : data.settings.selectedConnectorId === item.id;
-                return `
+                return ui`
                   <button
                     class="list-row ${isActive ? 'is-active' : ''}"
                     data-action="select-customize-item"
@@ -10575,7 +10577,7 @@ function renderCustomizePage() {
                       ${escapeHtml(item.name)}
                       ${
                         section === 'agents'
-                          ? `<span class="meta-label">${escapeHtml(item.moodLabel)}</span>`
+                          ? ui`<span class="meta-label">${escapeHtml(item.moodLabel)}</span>`
                           : ''
                       }
                     </div>
@@ -10587,7 +10589,7 @@ function renderCustomizePage() {
               })
               .join('')}
             ${section === 'skills' && filteredSkills().length === 0
-              ? `<div class="empty-state compact">No skills match the current filter.</div>`
+              ? ui`<div class="empty-state compact">No skills match the current filter.</div>`
               : ''}
           </div>
         </div>
@@ -10596,7 +10598,7 @@ function renderCustomizePage() {
           ${renderConnectorDetails(selected)}
           ${
             section === 'skills'
-              ? `
+              ? ui`
                 ${renderSkillHealthPanel()}
                 ${renderSkillProposalsPanel()}
                 <div class="subsection">${renderCustomSkillCreateCard()}</div>
@@ -10616,7 +10618,7 @@ function renderArtifactsPage() {
   const active = selectedArtifact();
   const project = activeProject();
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row">
@@ -10634,7 +10636,7 @@ function renderArtifactsPage() {
 
         ${
           uiState.showArtifactForm
-            ? `
+            ? ui`
               <form class="project-form-card surface-card" data-form="artifact-create">
                 <div class="project-form-grid">
                   <label class="label">
@@ -10668,7 +10670,7 @@ function renderArtifactsPage() {
                     Cancel
                   </button>
                   ${
-                    project ? `<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
+                    project ? ui`<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
                   }
                 </div>
               </form>
@@ -10683,7 +10685,7 @@ function renderArtifactsPage() {
                 artifacts.length
                   ? artifacts
                       .map(
-                        artifact => `
+                        artifact => ui`
                           <button
                             class="artifact-card ${
                               active?.id === artifact.id ? 'is-active' : ''
@@ -10697,7 +10699,7 @@ function renderArtifactsPage() {
                               )}</span>
                               ${
                                 artifact.projectId
-                                  ? `<span class="chip">${escapeHtml(
+                                  ? ui`<span class="chip">${escapeHtml(
                                       uiState.bootstrap.projects.find(
                                         item => item.id === artifact.projectId,
                                       )?.name || 'Project',
@@ -10722,7 +10724,7 @@ function renderArtifactsPage() {
             ${
               active
                 ? uiState.editingArtifactId === active.id
-                  ? `
+                  ? ui`
                     <form class="project-form-card surface-card" data-form="artifact-update">
                       <div class="project-form-grid">
                         <label class="label">
@@ -10758,7 +10760,7 @@ function renderArtifactsPage() {
                       </div>
                     </form>
                   `
-                  : `
+                  : ui`
                     <div class="header-row">
                       <div>
                         <h2 class="pane-title">${escapeHtml(active.title)}</h2>
@@ -10767,7 +10769,7 @@ function renderArtifactsPage() {
                           <span class="chip">${escapeHtml(active.kind)}</span>
                           ${
                             active.projectId
-                              ? `<span class="chip">${escapeHtml(
+                              ? ui`<span class="chip">${escapeHtml(
                                   uiState.bootstrap.projects.find(
                                     item => item.id === active.projectId,
                                   )?.name || 'Project',
@@ -10794,7 +10796,7 @@ function renderArtifactsPage() {
                         </button>
                         ${
                           uiState.bootstrap.workspace?.selectedFilePath
-                            ? `
+                            ? ui`
                               <button
                                 class="small-button is-primary"
                                 data-action="apply-artifact-to-selected-file"
@@ -10821,9 +10823,9 @@ function renderArtifactsPage() {
                         : ''
                     }
 
-                    ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? `<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : `<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
+                    ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? ui`<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : ui`<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
                   `
-                : '<div class="empty-state">选择一份资料查看或编辑。</div>'
+                : ui`<div class="empty-state">选择一份资料查看或编辑。</div>`
             }
           </section>
         </div>
@@ -10878,7 +10880,7 @@ function renderCommandPalette() {
     Math.max(commands.length - 1, 0),
   );
 
-  return `
+  return ui`
     <div class="palette-backdrop" data-action="close-command-palette">
       <div class="palette-shell" onclick="event.stopPropagation()">
         <div class="palette-header">
@@ -10895,7 +10897,7 @@ function renderCommandPalette() {
             commands.length
               ? commands
                   .map(
-                    (command, index) => `
+                    (command, index) => ui`
                       <button
                         class="palette-item ${index === selectedIndex ? 'is-active' : ''}"
                         data-action="select-palette-command"
@@ -10931,7 +10933,7 @@ function renderToolPermissionDialog() {
     ? JSON.stringify(args, null, 2)
     : '(no arguments)';
 
-  return `
+  return ui`
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="Tool permission request">
       <div class="tool-permission-shell">
         <div class="tool-permission-header">
@@ -10943,7 +10945,7 @@ function renderToolPermissionDialog() {
         </div>
         <div class="tool-permission-body">
           <div class="tool-permission-tool-name">${escapeHtml(toolId)}</div>
-          ${entry.confirmError ? `<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
+          ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
           <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
         </div>
@@ -11006,50 +11008,50 @@ function _fileSafetyTitle(operation, payload) {
 
 function _fileSafetyBody(operation, payload) {
   const wsBadge = payload?.withinWorkspace
-    ? `<span class="file-safety-badge is-ok">workspace</span>`
-    : `<span class="file-safety-badge is-warn">outside workspace</span>`;
+    ? ui`<span class="file-safety-badge is-ok">workspace</span>`
+    : ui`<span class="file-safety-badge is-warn">outside workspace</span>`;
   const symlinkWarn = (flag, real) => flag
-    ? `<div class="file-safety-warn">⚠ symlink chain — real target: <code>${escapeHtml(real || '?')}</code></div>`
+    ? ui`<div class="file-safety-warn">⚠ symlink chain — real target: <code>${escapeHtml(real || '?')}</code></div>`
     : '';
   const sensitiveWarn = payload?.sensitive
-    ? `<div class="file-safety-warn">⚠ sensitive path (category: ${escapeHtml(payload?.category || 'unknown')}). Approval is one-shot — no session-wide grant.</div>`
+    ? ui`<div class="file-safety-warn">⚠ sensitive path (category: ${escapeHtml(payload?.category || 'unknown')}). Approval is one-shot — no session-wide grant.</div>`
     : '';
 
   switch (operation) {
     case 'read':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
         ${sensitiveWarn}
-        ${payload.size != null ? `<div class="file-safety-row"><strong>Size:</strong> ${payload.size} bytes</div>` : ''}
-        ${payload.exists === false ? `<div class="file-safety-warn">File does not exist yet — read will fail.</div>` : ''}
+        ${payload.size != null ? ui`<div class="file-safety-row"><strong>Size:</strong> ${payload.size} bytes</div>` : ''}
+        ${payload.exists === false ? ui`<div class="file-safety-warn">File does not exist yet — read will fail.</div>` : ''}
       `;
     case 'read_batch':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Files:</strong> ${payload.fileCount || 0} ${wsBadge}</div>
-        ${payload.dir ? `<div class="file-safety-row"><strong>Dir:</strong> <code>${escapeHtml(payload.dir)}</code></div>` : ''}
-        ${payload.byteRange ? `<div class="file-safety-row"><strong>Bytes:</strong> ${escapeHtml(JSON.stringify(payload.byteRange))}</div>` : ''}
-        ${Array.isArray(payload.extensions) && payload.extensions.length ? `<div class="file-safety-row"><strong>Extensions:</strong> ${escapeHtml(payload.extensions.join(', '))}</div>` : ''}
-        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ batch contains symlink-traversed paths.</div>` : ''}
-        ${Array.isArray(payload.sample) && payload.sample.length ? `<details class="file-safety-details"><summary>Sample (${payload.sample.length})</summary><pre class="tool-permission-args">${escapeHtml(payload.sample.map(s => s.lexicalPath + (s.realPath !== s.lexicalPath ? ` → ${s.realPath}` : '')).join('\n'))}</pre></details>` : ''}
+        ${payload.dir ? ui`<div class="file-safety-row"><strong>Dir:</strong> <code>${escapeHtml(payload.dir)}</code></div>` : ''}
+        ${payload.byteRange ? ui`<div class="file-safety-row"><strong>Bytes:</strong> ${escapeHtml(JSON.stringify(payload.byteRange))}</div>` : ''}
+        ${Array.isArray(payload.extensions) && payload.extensions.length ? ui`<div class="file-safety-row"><strong>Extensions:</strong> ${escapeHtml(payload.extensions.join(', '))}</div>` : ''}
+        ${payload.hasSymlinks ? ui`<div class="file-safety-warn">⚠ batch contains symlink-traversed paths.</div>` : ''}
+        ${Array.isArray(payload.sample) && payload.sample.length ? ui`<details class="file-safety-details"><summary>Sample (${payload.sample.length})</summary><pre class="tool-permission-args">${escapeHtml(payload.sample.map(s => s.lexicalPath + (s.realPath !== s.lexicalPath ? ` → ${s.realPath}` : '')).join('\n'))}</pre></details>` : ''}
       `;
     case 'write_new':
     case 'write_overwrite':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
-        ${payload.contentSize != null ? `<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
-        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? `<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
+        ${payload.contentSize != null ? ui`<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? ui`<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
       `;
     case 'edit':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
-        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
-        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? `<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
+        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? ui`<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
       `;
     case 'move':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>From:</strong> <code>${escapeHtml(payload.src || '')}</code></div>
         <div class="file-safety-row"><strong>To:</strong> <code>${escapeHtml(payload.dst || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.srcHasSymlinkInChain, payload.srcRealPath)}
@@ -11058,36 +11060,36 @@ function _fileSafetyBody(operation, payload) {
     case 'delete': {
       const intent = payload.stage !== 'confirm';
       const paths = Array.isArray(payload.paths) ? payload.paths : [];
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Targets:</strong> ${paths.length} ${wsBadge}</div>
         <pre class="tool-permission-args">${escapeHtml(paths.join('\n'))}</pre>
-        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ at least one path traverses a symlink.</div>` : ''}
-        ${payload.reason ? `<div class="file-safety-row"><strong>Reason:</strong> ${escapeHtml(payload.reason)}</div>` : ''}
+        ${payload.hasSymlinks ? ui`<div class="file-safety-warn">⚠ at least one path traverses a symlink.</div>` : ''}
+        ${payload.reason ? ui`<div class="file-safety-row"><strong>Reason:</strong> ${escapeHtml(payload.reason)}</div>` : ''}
         ${intent
-          ? `<div class="file-safety-row">Files will be moved to <code>.melo-trash/</code> (recoverable). Confirm to proceed to type-to-confirm step.</div>`
-          : `<div class="file-safety-row">Type <code>${escapeHtml(payload.expectedConfirmation || '')}</code> to confirm:</div>
+          ? ui`<div class="file-safety-row">Files will be moved to <code>.melo-trash/</code> (recoverable). Confirm to proceed to type-to-confirm step.</div>`
+          : ui`<div class="file-safety-row">Type <code>${escapeHtml(payload.expectedConfirmation || '')}</code> to confirm:</div>
              <input type="text" class="file-safety-confirm-input" data-file-safety-confirm-input placeholder="${escapeHtml(payload.expectedConfirmation || '')}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />`}
       `;
     }
     case 'bash': {
       const risks = Array.isArray(payload.risks) ? payload.risks : [];
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Command:</strong></div>
         <pre class="tool-permission-args">${escapeHtml(payload.command || '')}</pre>
-        ${risks.length ? `<div class="file-safety-warn">⚠ ${risks.length} risk${risks.length > 1 ? 's' : ''} detected: ${escapeHtml(risks.map(r => r.kind).join(', '))}</div>` : ''}
-        ${payload.workspacePath ? `<div class="file-safety-row"><strong>Workspace:</strong> <code>${escapeHtml(payload.workspacePath)}</code></div>` : ''}
-        ${payload.effectiveCwd ? `<div class="file-safety-row"><strong>Cwd:</strong> <code>${escapeHtml(payload.effectiveCwd)}</code> ${payload.cwdInsideWorkspace === false ? '<span class="file-safety-badge is-warn">outside workspace</span>' : ''}</div>` : ''}
+        ${risks.length ? ui`<div class="file-safety-warn">⚠ ${risks.length} risk${risks.length > 1 ? 's' : ''} detected: ${escapeHtml(risks.map(r => r.kind).join(', '))}</div>` : ''}
+        ${payload.workspacePath ? ui`<div class="file-safety-row"><strong>Workspace:</strong> <code>${escapeHtml(payload.workspacePath)}</code></div>` : ''}
+        ${payload.effectiveCwd ? ui`<div class="file-safety-row"><strong>Cwd:</strong> <code>${escapeHtml(payload.effectiveCwd)}</code> ${payload.cwdInsideWorkspace === false ? '<span class="file-safety-badge is-warn">outside workspace</span>' : ''}</div>` : ''}
       `;
     }
     default:
-      return `<pre class="tool-permission-args">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
+      return ui`<pre class="tool-permission-args">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
   }
 }
 
 function _fileSafetyButtons(operation, payload, requestId) {
   const confirm = operation === 'delete' && payload?.stage === 'confirm';
   const persistent = payload?.persistentAllowed === true;
-  return `
+  return ui`
     <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">Allow once</button>
     <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">Deny</button>
     <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>Always allow</button>
@@ -11103,9 +11105,9 @@ function renderFileSafetyDialog(entry) {
   // a recoverable mismatch on delete stage 2 — the dialog stays open and
   // surfaces the message instead of disappearing silently.
   const errorBanner = confirmError
-    ? `<div class="file-safety-warn">${escapeHtml(confirmError)}</div>`
+    ? ui`<div class="file-safety-warn">${escapeHtml(confirmError)}</div>`
     : '';
-  return `
+  return ui`
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="File operation approval">
       <div class="tool-permission-shell file-safety-shell">
         <div class="tool-permission-header">
@@ -11155,7 +11157,7 @@ function renderProductivityMcpConsentModal() {
   if (uiState.pendingToolPermissions?.length) {
     return '';
   }
-  return `
+  return ui`
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="Productivity MCP consent">
       <div class="tool-permission-shell">
         <div class="tool-permission-header">
@@ -11431,18 +11433,18 @@ function render({ background = false, changedSections = null } = {}) {
   const keepPage = background && changedSections && !uiState.neuralOverview && !uiState.sending &&
     !pageAffected(uiState.bootstrap.settings.activeView, changedSections) && currentPage;
   const pageHtml = keepPage ? preserveNeuralRegion(currentPage) :
-    `<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
-  updateNeuralWorkspace(app, `
+    ui`<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
+  updateNeuralWorkspace(app, ui`
     <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${uiState.sending}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
       <div class="neural-cosmos" aria-hidden="true"></div>
       <div class="neural-core-anchor" aria-hidden="true"></div>
       ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
-      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : '本地工作空间'}</div>
+      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
-        <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?'返回分支':'返回总览'} ↗</button></div>
+        <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           ${pageHtml}
           <div class="content-scrollbar" aria-hidden="true">
@@ -11460,7 +11462,7 @@ function render({ background = false, changedSections = null } = {}) {
     ${renderAudioContextMenu()}
     ${renderToolPermissionDialog()}
     ${renderProductivityMcpConsentModal()}
-    ${uiState.error ? `<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
+    ${uiState.error ? ui`<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
   `);
 
   settingsFormEditors.decorate(app);
@@ -13250,7 +13252,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -13481,7 +13483,7 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (target.dataset?.chatContext) {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
@@ -14166,6 +14168,7 @@ function retryMissingImages({ chatId, query, task }) {
   handleSendMessage({ chatId, content: query || '继续图片任务', imageTask: task });
 }
 
+installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
 window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));

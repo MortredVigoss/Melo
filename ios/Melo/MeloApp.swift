@@ -2,6 +2,7 @@ import SwiftUI
 
 @main struct MeloApp: App {
     @Environment(\.dynamicTypeSize) private var systemTextSize
+    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = "zh-CN"
     @AppStorage("melo.textSize") private var textSize = "system"
     private var effectiveTextSize: DynamicTypeSize { textSize == "large" ? max(systemTextSize,.xLarge) : textSize == "larger" ? max(systemTextSize,.xxxLarge) : systemTextSize }
     @StateObject private var store = ChatStore()
@@ -10,6 +11,7 @@ import SwiftUI
         WindowGroup {
             ContentView().environmentObject(store).environmentObject(store.account).preferredColorScheme(.dark)
                 .environment(\.dynamicTypeSize,effectiveTextSize)
+                .environment(\.locale, Locale(identifier: InterfaceLanguage.resolve(interfaceLanguage).localeID))
                 .tint(meloAccent).foregroundStyle(MeloTheme.text)
                 .task {
                     RuntimeDiagnostics.journal.record("launch", requestActive: store.sendingID != nil)

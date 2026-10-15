@@ -58,6 +58,7 @@ struct ExecutionWorkspace: View {
 }
 
 struct ExecutionWebView: UIViewRepresentable {
+    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = "zh-CN"
     let chatID: String
     let runID: String?
     let records: [ExecutionRecord]
@@ -92,7 +93,7 @@ struct ExecutionWebView: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(records), let array = try? JSONSerialization.jsonObject(with: data) else { return }
-        var value: [String: Any] = ["chat": ["id": chatID, "messages": []], "scenes": array, "runId": runID as Any? ?? NSNull(), "still": still]
+        var value: [String: Any] = ["interfaceLanguage": InterfaceLanguage.resolve(interfaceLanguage).rawValue, "chat": ["id": chatID, "messages": []], "scenes": array, "runId": runID as Any? ?? NSNull(), "still": still]
         if let viewData = try? encoder.encode(views), let saved = try? JSONSerialization.jsonObject(with: viewData) { value["views"] = saved }
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-melo-preview-execution") { value["preview"] = ProcessInfo.processInfo.arguments.contains("-melo-preview-sources") ? "sources" : "overview" }

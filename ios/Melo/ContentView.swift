@@ -66,11 +66,11 @@ struct ContentView: View {
                                     Button { selectModule(module.id) } label: {
                                         VStack(spacing: 5) {
                                             NeuralGlyphAnchor(module: module, size: 28)
-                                            Text(module.name).font(.system(size: 11, weight: selected == module.id ? .semibold : .regular))
+                                            Text(LocalizedStringKey(module.name)).font(.system(size: 11, weight: selected == module.id ? .semibold : .regular))
                                         }.foregroundStyle(module.color.opacity(selected == module.id ? 1 : 0.8))
                                             .frame(maxWidth: .infinity).frame(height: 54).contentShape(Rectangle())
                                     }.buttonStyle(NeuralPressStyle(id: module.id, hover: { hoveredModule = $0 }))
-                                        .accessibilityLabel(module.name).accessibilityAddTraits(selected == module.id ? .isSelected : [])
+                                        .accessibilityLabel(LocalizedStringKey(module.name)).accessibilityAddTraits(selected == module.id ? .isSelected : [])
                                 }
                             }.padding(.horizontal, 10)
                             Spacer(minLength: 0)
@@ -92,7 +92,8 @@ struct ContentView: View {
                 }
                 .alert("Melo", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("知道了") { store.error = nil } } message: { Text(store.error ?? "") }
             }
-        }.coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)
+        }
+        .coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)
             .onDisappear { openingTask?.cancel() }
             .onChange(of: path) { _, value in if !value.isEmpty { openingTask?.cancel(); openingModule = -1 } }
             .onChange(of: scenePhase) { _, value in if value != .active { openingTask?.cancel(); openingModule = -1; hoveredModule = -1; coreTap = nil } }
@@ -121,8 +122,8 @@ struct PageHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text(eyebrow).font(.system(size: 10, weight: .semibold)).tracking(3).foregroundStyle(meloAccent)
-            Text(title).font(.system(size: 28, weight: .medium, design: .rounded))
-            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            Text(LocalizedStringKey(title)).font(.system(size: 28, weight: .medium, design: .rounded))
+            Text(LocalizedStringKey(detail)).font(.subheadline).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -141,17 +142,17 @@ struct HomeView: View {
                     Button { select(module.id) } label: {
                         VStack(spacing: 7) {
                             NeuralGlyphAnchor(module: module, size: 60)
-                            Text(module.name).font(.system(size: 15, weight: .medium)).foregroundStyle(module.color)
+                            Text(LocalizedStringKey(module.name)).font(.system(size: 15, weight: .medium)).foregroundStyle(module.color)
                             if geometry.size.height >= 600 { Text(module.english).font(.system(size: 7)).tracking(1).foregroundStyle(module.color.opacity(0.66)) }
                         }.frame(width: 94).contentShape(Rectangle())
-                    }.buttonStyle(NeuralPressStyle(id: module.id, hover: hover)).accessibilityLabel(module.name)
+                    }.buttonStyle(NeuralPressStyle(id: module.id, hover: hover)).accessibilityLabel(LocalizedStringKey(module.name))
                         .position(x: geometry.size.width * module.x, y: geometry.size.height < 600 ? min(max(128, geometry.size.height * module.y), geometry.size.height - 165) : geometry.size.height * module.y)
                 }
                 VStack {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) { HStack(spacing: 8) { Image(systemName: "asterisk").font(.system(size: 20, weight: .ultraLight)).foregroundStyle(meloGold); Text("melo").font(.system(size: 27, weight: .light, design: .serif)) }; Text("NEURAL WORKSPACE").font(.system(size: 8)).tracking(2.4).foregroundStyle(meloGold) }
                         Spacer()
-                        Button { select(3) } label: { LocalProfileBadge(size: 26); Circle().fill((authMode == "api" ? !apiModel.isEmpty : account.signedIn) ? meloGold : Color.secondary).frame(width: 5, height: 5); Text(authMode == "api" ? (apiModel.isEmpty ? "选择模型" : "API 模型") : account.signedIn ? "ChatGPT" : "连接账号").font(.caption2).foregroundStyle(.secondary) }
+                        Button { select(3) } label: { LocalProfileBadge(size: 26); Circle().fill((authMode == "api" ? !apiModel.isEmpty : account.signedIn) ? meloGold : Color.secondary).frame(width: 5, height: 5); Text(LocalizedStringKey(authMode == "api" ? (apiModel.isEmpty ? "选择模型" : "API 模型") : account.signedIn ? "ChatGPT" : "连接账号")).font(.caption2).foregroundStyle(.secondary) }
                     }.padding(.horizontal, 26).padding(.top, 14)
                     Spacer()
                     VStack(spacing: 13) {
@@ -159,7 +160,7 @@ struct HomeView: View {
                         Button { if let id = store.newChat() { open(id) } } label: {
                             HStack { Text("从一个想法开始…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Image(systemName: "arrow.up.right").font(.callout).foregroundStyle(meloAccent) }.padding(19).background(meloBackground.opacity(0.42), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(meloGold.opacity(0.3), lineWidth: 0.6))
                         }.disabled(!store.storageReady)
-                        HStack { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色"); Spacer(); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7))
+                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色"); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7)) }
                     }.padding(.horizontal, 26).padding(.bottom, 22)
                 }
             }

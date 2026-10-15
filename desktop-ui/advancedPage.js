@@ -1,3 +1,4 @@
+import { t, ui } from './i18n.js';
 /**
  * Advanced page renderer (Customize → Advanced).
  *
@@ -63,7 +64,7 @@ export function renderAdvancedPage({
 
   const externalMcpRows = externalMcps.length === 0
     ? '<div class="empty-state compact">No external MCP connectors configured. Configuration UI is deferred — for now, manage via the connector config files directly.</div>'
-    : externalMcps.map(c => `
+    : externalMcps.map(c => ui`
         <div class="list-row">
           <div class="thread-meta">
             <span class="chip ${c.config?.lastStatus === 'ok' ? 'is-accent' : ''}">${escapeHtml(c.config?.lastStatus || 'idle')}</span>
@@ -84,7 +85,7 @@ export function renderAdvancedPage({
 
   const cliServerRows = adv.cliServers.length === 0
     ? '<div class="empty-state compact">No active CLI / stdio MCP servers.</div>'
-    : adv.cliServers.map(name => `
+    : adv.cliServers.map(name => ui`
         <div class="list-row">
           <div class="list-row-title mono">${escapeHtml(name)}</div>
           <div class="list-row-meta">stdio-launched MCP server</div>
@@ -98,7 +99,7 @@ export function renderAdvancedPage({
 
   const pluginRows = adv.plugins.length === 0
     ? '<div class="empty-state compact">No plugins registered.</div>'
-    : adv.plugins.map(p => `
+    : adv.plugins.map(p => ui`
         <div class="list-row">
           <div class="list-row-title mono">${escapeHtml(p.id || '(unnamed)')}</div>
           <div class="list-row-meta">${escapeHtml((Array.isArray(p.hooks) ? p.hooks : []).join(', ') || 'no hooks')}</div>
@@ -110,16 +111,16 @@ export function renderAdvancedPage({
     : adv.tasks.map(t => {
         const isRunning = t.status === 'running';
         const fmt = t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '—';
-        return `
+        return ui`
           <div class="list-row">
             <div class="thread-meta">
               <span class="chip ${isRunning ? 'is-accent' : ''}">${escapeHtml(t.status || 'unknown')}</span>
-              ${t.exitCode != null ? `<span class="chip">exit ${Number(t.exitCode)}</span>` : ''}
+              ${t.exitCode != null ? ui`<span class="chip">exit ${Number(t.exitCode)}</span>` : ''}
               <span class="meta-label">started ${escapeHtml(fmt)}</span>
             </div>
             <div class="list-row-title mono">${escapeHtml(t.command || '(no command)')}</div>
             ${isRunning
-              ? `<div class="inline-actions">
+              ? ui`<div class="inline-actions">
                   <button class="small-button is-danger" type="button" data-action="kill-background-task" data-run-id="${escapeHtml(t.runId)}">
                     Kill
                   </button>
@@ -130,7 +131,7 @@ export function renderAdvancedPage({
       }).join('');
 
   const errorBlock = adv.error
-    ? `<div class="alert compact-alert">${escapeHtml(adv.error)}</div>`
+    ? ui`<div class="alert compact-alert">${escapeHtml(adv.error)}</div>`
     : '';
 
   // Built-in MCP server presets (browser automation + AntV chart +
@@ -158,9 +159,9 @@ export function renderAdvancedPage({
         const isLegacyEnableOnUnpinned = unpinned && enabled;
         const stateChip = unpinned
           ? (isLegacyEnableOnUnpinned
-              ? `<span class="chip is-warning">假启用 · 未锁定版本</span>`
-              : `<span class="chip">unavailable · 未锁定版本</span>`)
-          : `<span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? 'enabled' : 'disabled'}</span>`;
+              ? ui`<span class="chip is-warning">假启用 · 未锁定版本</span>`
+              : ui`<span class="chip">unavailable · 未锁定版本</span>`)
+          : ui`<span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? 'enabled' : 'disabled'}</span>`;
         const buttonLabel = unpinned
           ? (isLegacyEnableOnUnpinned ? 'Disable (清理假启用)' : 'Unavailable')
           : (enabled ? 'Disable' : 'Enable');
@@ -168,7 +169,7 @@ export function renderAdvancedPage({
           ? (isLegacyEnableOnUnpinned ? 'small-button is-danger' : 'small-button')
           : `small-button${enabled ? ' is-danger' : ' is-primary'}`;
         const buttonDisabled = unpinned && !isLegacyEnableOnUnpinned;
-        return `
+        return ui`
           <div class="list-row${unpinned && !isLegacyEnableOnUnpinned ? ' is-disabled-preset' : ''}">
             <div class="thread-meta">
               ${stateChip}
@@ -178,7 +179,7 @@ export function renderAdvancedPage({
             <div class="list-row-meta">${escapeHtml(preset?.description || '')}</div>
             <div class="list-row-meta mono">${escapeHtml(cmdSummary)}</div>
             ${unpinned
-              ? `<div class="list-row-meta" style="opacity: 0.78;">npm package not yet pinned to an exact version — ${
+              ? ui`<div class="list-row-meta" style="opacity: 0.78;">npm package not yet pinned to an exact version — ${
                   isLegacyEnableOnUnpinned
                     ? 'click <strong>Disable</strong> to clear the legacy <code>enable*Mcp:true</code> config flag.'
                     : 'toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.'
@@ -199,7 +200,7 @@ export function renderAdvancedPage({
         `;
       }).join('');
 
-  return `
+  return ui`
     <div class="customize-pane page-advanced">
       <div class="detail-card">
         <div class="header-row">
@@ -283,7 +284,7 @@ export function renderAdvancedPage({
         </div>
         </details>
         <details class="quality-details"><summary>技术详情</summary>            <p class="page-kicker page-kicker-tip">
-              ${statePathHint ? `Model configuration: <code>${escapeHtml(statePathHint)}</code>.
+              ${statePathHint ? ui`Model configuration: <code>${escapeHtml(statePathHint)}</code>.
               <button class="ghost-link" type="button"
                       data-action="copy-melo-state-path"
                       data-path="${escapeHtml(statePathHint)}">

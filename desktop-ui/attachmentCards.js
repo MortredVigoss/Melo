@@ -1,3 +1,4 @@
+import { t, ui } from './i18n.js';
 export function renderAttachmentCards(message, { escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls = () => [] }) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
   if (!attachments.length) {
@@ -75,7 +76,7 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
       ? 'Melo has not extracted readable text for this link yet. Click to open it in your browser.'
       : 'Melo has this local attachment, but no readable text was extracted yet.';
 
-    return `
+    return ui`
       <div class="message-attachment-card link-card" data-copyable-surface${cardOpenAttrs}>
         <div class="link-card-main">
           <span class="chip-icon">${cardIcon}</span>
@@ -85,16 +86,16 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
           </span>
         </div>
         ${renderCopyLinkButton(attachment.url, escapeHtml)}
-        ${preview ? `
+        ${preview ? ui`
           <div class="link-preview">
-            ${imageUrl ? `<img class="link-preview-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ''}
+            ${imageUrl ? ui`<img class="link-preview-image" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ''}
             <div class="link-preview-copy">
-              ${metaLine ? `<div class="link-preview-meta">${escapeHtml(metaLine)}</div>` : ''}
+              ${metaLine ? ui`<div class="link-preview-meta">${escapeHtml(metaLine)}</div>` : ''}
               <div class="link-preview-text">${escapeHtml(truncate(previewText, 360))}</div>
               <div class="link-preview-action">${escapeHtml(cardAction)}</div>
             </div>
           </div>
-        ` : `
+        ` : ui`
           <div class="link-preview is-empty">
             <div class="link-preview-copy">
               <div class="link-preview-meta">${escapeHtml(previewStatus)}</div>
@@ -124,12 +125,12 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
     }
   };
 
-  return `
+  return ui`
     <div class="message-attachments">
       ${attachments
         .map(attachment => {
           if (attachment.kind === 'image') {
-            return `
+            return ui`
               <figure class="message-attachment-card media-card image-card">
                 <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
                 <figcaption>${escapeHtml(attachmentLabel(attachment))}</figcaption>
@@ -142,7 +143,7 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
               return renderLinkAttachmentCard(attachment);
             }
             const status = describeVideoExtractionStatus(message, attachment);
-            return `
+            return ui`
               <div class="message-attachment-card media-card">
                 <video class="message-video" controls src="${escapeHtml(attachment.url)}"></video>
                 <div class="media-caption">
@@ -155,7 +156,7 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
 
           if (attachment.kind === 'audio') {
             const status = describeAudioExtractionStatus(message, attachment);
-            return `
+            return ui`
               <div class="message-attachment-card audio-card" data-audio-url="${escapeHtml(attachment.url)}">
                 <div class="audio-card-title">
                   <span class="chip-icon">${icon.audio}</span>

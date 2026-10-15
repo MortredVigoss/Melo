@@ -27,6 +27,10 @@ for resource in sorted((root/'Melo').glob('Icon-*.png')):
     ref = obj(resource.name, f'isa = PBXFileReference; lastKnownFileType = image.png; path = "{resource.name}"; sourceTree = "<group>";')
     refs.append(ref)
     resourcebuilds.append(obj('build'+resource.name, f'isa = PBXBuildFile; fileRef = {ref};'))
+for resource in sorted((root/'Melo').glob('*.xcstrings')):
+    ref = obj(resource.name, f'isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "{resource.name}"; sourceTree = "<group>";')
+    refs.append(ref)
+    resourcebuilds.append(obj('build'+resource.name, f'isa = PBXBuildFile; fileRef = {ref};'))
 scene = obj('sceneFolder', 'isa = PBXFileReference; lastKnownFileType = folder; path = Scene; sourceTree = "<group>";')
 refs.append(scene)
 resourcebuilds.append(obj('buildScene', f'isa = PBXBuildFile; fileRef = {scene};'))
@@ -48,5 +52,5 @@ for configuration in ['Debug','Release']:
 def configs(key, values): return obj(key, f'isa = XCConfigurationList; buildConfigurations = ({",".join(values)},); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 pc = configs('pc',projectconfigs); tc = configs('tc',targetconfigs)
 target = obj('target',f'isa = PBXNativeTarget; buildConfigurationList = {tc}; buildPhases = ({srcphase},{frameworks},{resources},); buildRules = (); dependencies = (); name = Melo; productName = Melo; productReference = {app}; productType = "com.apple.product-type.application";')
-project = obj('project', f'isa = PBXProject; attributes = {{ LastUpgradeCheck = 2600; }}; buildConfigurationList = {pc}; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en,Base,"zh-Hans"); mainGroup = {main}; productRefGroup = {products}; projectDirPath = ""; projectRoot = ""; targets = ({target},);')
+project = obj('project', f'isa = PBXProject; attributes = {{ LastUpgradeCheck = 2600; }}; buildConfigurationList = {pc}; compatibilityVersion = "Xcode 14.0"; developmentRegion = "zh-Hans"; knownRegions = (en,Base,"zh-Hans",ja,ko,es); mainGroup = {main}; productRefGroup = {products}; projectDirPath = ""; projectRoot = ""; targets = ({target},);')
 (root/'Melo.xcodeproj/project.pbxproj').write_text('// !$*UTF8*$!\n{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {\n'+'\n'.join(objects)+f'\n}}; rootObject = {project}; }}\n')

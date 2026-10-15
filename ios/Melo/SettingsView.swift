@@ -75,6 +75,6 @@ struct SettingsContent: View {
         .alert("Melo 设置", isPresented: Binding(get: { error != nil || account.error != nil }, set: { if !$0 { error = nil; account.error = nil } })) { Button("知道了") { error = nil; account.error = nil } } message: { Text(error ?? account.error ?? "") }
     }
     private func capability(_ name: String, _ status: String, _ symbol: String) -> some View {
-        HStack { Label(name, systemImage: symbol).font(.caption); Spacer(); Text(status).font(.caption2).foregroundStyle(.secondary) }
+        HStack { Label(LocalizedStringKey(name), systemImage: symbol).font(.caption); Spacer(); Text(LocalizedStringKey(status)).font(.caption2).foregroundStyle(.secondary) }
     }
 }

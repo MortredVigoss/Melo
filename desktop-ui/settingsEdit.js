@@ -1,3 +1,4 @@
+import { t, ui } from './i18n.js';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const pendingEdits = new Set();
@@ -26,9 +27,9 @@ export class EditSession {
 
 export function renderEditActions(session, {prefix='settings', key='', submit=false, disabled=false, saveDisabled=false}={}) {
   const s = session.status, editing = session.editing || s === 'saving';
-  const message = s === 'saved' ? '✓ 已保存' : s === 'saving' ? '正在保存，请稍候…' : s === 'error' ? `${session.appliedLabels?.length ? '部分已保存，剩余保存失败' : '保存失败'}：${session.error}` : session.dirty ? '有未保存的修改' : editing ? '编辑中 · 修改后点击保存' : '只读 · 点击编辑后修改';
+  const message = s === 'saved' ? t("✓ 已保存") : s === 'saving' ? t("正在保存，请稍候…") : s === 'error' ? `${session.appliedLabels?.length ? t("部分已保存，剩余保存失败") : t("保存失败")}：${session.error}` : session.dirty ? t("有未保存的修改") : editing ? t("编辑中 · 修改后点击保存") : t("只读 · 点击编辑后修改");
   const common = `data-edit-key="${escape(key)}"`;
-  return `<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escape(message)}</span><div class="inline-actions">${editing ? `<button type="${submit?'submit':'button'}" class="small-button settings-save-button" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?'保存中…':s==='error'?'重试保存':'保存修改'}</button><button type="button" class="small-button" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? '放弃未保存部分' : '取消'}</button>` : `<button type="button" class="small-button settings-edit-button" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
+  return ui`<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escape(message)}</span><div class="inline-actions">${editing ? ui`<button type="${submit?'submit':'button'}" class="small-button settings-save-button" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?t("保存中…"):s==='error'?t("重试保存"):t("保存修改")}</button><button type="button" class="small-button" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? t("放弃未保存部分") : t("取消")}</button>` : ui`<button type="button" class="small-button settings-edit-button" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
 }
 
 // Keep the save button mounted while a field's blur/change event fires.

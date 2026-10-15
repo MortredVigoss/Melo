@@ -1,6 +1,7 @@
+import { t, ui } from './i18n.js';
 export function createSearchPageRenderer({ uiState, escapeHtml, truncate, icon, searchResultIcon, searchBucketsForRender, currentSearchItems }) {
 function renderSearchBucket(title, itemsHtml, count) {
-  return `
+  return ui`
     <section class="surface-card search-bucket">
       <div class="search-bucket-header">
         <h2 class="pane-title">${title}</h2>
@@ -21,7 +22,7 @@ function renderSearchResultButton(item) {
     Array.isArray(item.hits) && item.hits.length > 0 && item.filePath;
 
   if (!hasSubHits) {
-    return `
+    return ui`
     <button
       class="search-action-button"
       data-action="open-search-result"
@@ -33,19 +34,19 @@ function renderSearchResultButton(item) {
           <span class="search-action-title">${escapeHtml(item.title)}</span>
           ${
             item.badge
-              ? `<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
+              ? ui`<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
               : ''
           }
         </span>
         ${
           item.subtitle
-            ? `<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
+            ? ui`<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
             : ''
         }
       </span>
       ${
         item.meta
-          ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
+          ? ui`<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
           : ''
       }
     </button>
@@ -58,7 +59,7 @@ function renderSearchResultButton(item) {
     ? `Hide ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`
     : `Show ${subHitCount} match${subHitCount === 1 ? '' : 'es'}`;
 
-  return `
+  return ui`
     <div class="search-action-row search-action-row--file-group${
       isExpanded ? ' is-expanded' : ''
     }">
@@ -74,19 +75,19 @@ function renderSearchResultButton(item) {
               <span class="search-action-title">${escapeHtml(item.title)}</span>
               ${
                 item.badge
-                  ? `<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
+                  ? ui`<span class="search-action-badge">${escapeHtml(item.badge)}</span>`
                   : ''
               }
             </span>
             ${
               item.subtitle
-                ? `<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
+                ? ui`<span class="search-action-subtitle">${escapeHtml(item.subtitle)}</span>`
                 : ''
             }
           </span>
           ${
             item.meta
-              ? `<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
+              ? ui`<span class="search-action-meta">${escapeHtml(item.meta)}</span>`
               : ''
           }
         </button>
@@ -104,7 +105,7 @@ function renderSearchResultButton(item) {
       </div>
       ${
         isExpanded
-          ? `<div class="search-action-sublist" role="list">${item.hits
+          ? ui`<div class="search-action-sublist" role="list">${item.hits
               .map(hit => renderSearchResultSubHit(item, hit))
               .join('')}</div>`
           : ''
@@ -123,7 +124,7 @@ function renderSearchResultSubHit(parent, hit) {
   const rawLine = Number(hit?.lineNumber) || 0;
   const previewText = hit?.lineText || hit?.subtitle || '';
   const preview = truncate(String(previewText).trim(), 160);
-  return `
+  return ui`
     <button
       type="button"
       class="search-action-subhit"
@@ -151,7 +152,7 @@ function renderSearchPage() {
     item => item.kind === 'chat-thread' || item.kind === 'chat-hit',
   ).length;
 
-  return `
+  return ui`
     <section class="page search-page">
       <div class="search-stage">
         <div class="search-panel">
@@ -178,7 +179,7 @@ function renderSearchPage() {
             <div class="search-panel-meta">
               ${
                 query
-                  ? `
+                  ? ui`
                     <span class="chip">${total} result${total === 1 ? '' : 's'}</span>
                     <span class="chip">${functionCount} functions</span>
                     <span class="chip">${chatCount} chat matches</span>
@@ -199,7 +200,7 @@ function renderSearchPage() {
 
             ${
               total
-                ? `
+                ? ui`
                   <div class="search-buckets">
                     ${buckets
                       .map(bucket =>
@@ -213,7 +214,7 @@ function renderSearchPage() {
                   </div>
                 `
                 : query
-                  ? `<div class="empty-state">
+                  ? ui`<div class="empty-state">
                       <div class="empty-state-title">No matches for "${escapeHtml(query)}".</div>
                       <div class="empty-state-meta">
                         Search covers <strong>chats &amp; messages</strong>,
@@ -225,7 +226,7 @@ function renderSearchPage() {
                         <strong>workspace files</strong>. Try simpler keywords, an exact phrase, or check spelling.
                       </div>
                     </div>`
-                  : `<div class="empty-state">
+                  : ui`<div class="empty-state">
                       <div class="empty-state-title">Start typing to search.</div>
                       <div class="empty-state-meta">
                         Looks across chats, messages, memory, artifacts, projects, and workspace files.
