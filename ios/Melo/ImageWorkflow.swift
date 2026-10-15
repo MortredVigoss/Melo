@@ -53,7 +53,8 @@ struct ImageTaskPlan: Codable, Equatable {
             return object.isEmpty || object.range(of: #"^(?:了|出来|任何图片|(?:这|那|原)?(?:张)?(?:图片|图像|照片|海报|插画|图))(?:了|出来)?$|^(?:(?:an?|any|the|this|that)\s+)?(?:images?|pictures?|photos?|posters?)(?:\s+at all)?\.?$"#, options: [.regularExpression,.caseInsensitive]) != nil
         }
         let discussion = masked.range(of: #"(?:生成|绘制|编辑|生图|修改|换背景|改背景)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|修改|改|换|generate|edit|draw|change|replace|retouch)"#, options: [.regularExpression,.caseInsensitive]) != nil
-        let negated = declined || discussion
+        let explanation = masked.range(of: #"^(?:请|帮我)?(?:解释|说明|讲讲)|^(?:如何|怎么|为什么)|(?:对比度|饱和度|曝光|亮度).{0,16}(?:有什么|会怎样|会怎么样|的原理)|(?:画|绘制|生成|做).{0,60}(?:的代码|的提示词)|\b(?:how|why)\b.{0,50}\b(?:contrast|saturation|exposure|brightness)|\b(?:in|as)\s+(?:svg|css|html)(?:\s+code)?\b"#, options: [.regularExpression,.caseInsensitive]) != nil
+        let negated = declined || discussion || explanation
         if negated { result.action = .analyze }
         else if action == .auto {
             // A local constraint ("不要改人物，只换背景") is not an edit request itself.
@@ -62,7 +63,9 @@ struct ImageTaskPlan: Codable, Equatable {
             }.joined(separator: "，")
             let edits = affirmative.range(of: #"(?:修改|编辑|改成|改为|改一下|再改|改色|改白|改黑|改蓝|换成|换个|换一下|换背景|换掉|去掉|移除|抠图|变成|刷成|加上|加个|调亮|调暗|调浅|调深|压低.{0,8}曝光)|\b(?:edit|modify|remove|replace|change|retouch|recolor|crop|brighten|darken)\b|\bmake\s+(?:the|this)\s+(?:background|wall|image|photo)\b"#, options: [.regularExpression,.caseInsensitive]) != nil
             let generates = masked.range(of: #"^(?:请|帮我|给我|麻烦|请帮我)*\s*(?:生成|画|绘制|制作|做)[^。！？\n]{0,100}(?:图片|图像|插画|海报|照片|张图|幅图)|^(?:please\s+)?(?:generate|draw|create)\s+(?:an?\s+|\d+\s+)?(?:image|picture|illustration|photo)"#, options: [.regularExpression,.caseInsensitive]) != nil
-            result.action = edits && (!references.isEmpty || !previousImages.isEmpty) ? .edit : generates ? .generate : .analyze
+            let adjustments = affirmative.range(of: #"(?:增加|提高|降低|减少|增强|减弱|调整|调高|调低|加|减)[^，。；!?;\n]{0,10}(?:对比度|饱和度|曝光|亮度|锐度|清晰度)|(?:对比度|饱和度|曝光|亮度)[^，。；!?;\n]{0,10}(?:高|低|强|弱|加|减|多|少|一点)|(?:粉|蓝|红|绿|黄|白|黑|紫)(?:色)?更(?:粉|蓝|红|绿|黄|白|黑|紫)|(?:颜色|色彩).{0,8}(?:鲜艳|饱和|淡|浓)|\b(?:increase|decrease|boost|reduce|adjust)\b.{0,25}\b(?:contrast|saturation|exposure|brightness|sharpness)\b|\b(?:more|less)\s+(?:contrast|saturation)|\b(?:pinker|bluer|redder|brighter|darker)\b"#, options: [.regularExpression,.caseInsensitive]) != nil
+            let naturalGeneration = affirmative.range(of: #"^(?:请|帮我|给我|麻烦|你|再|直接|请帮我)*\s*(?:(?:画|绘制)(?:一(?:个|只|张|幅|条|匹)?|个|只|张|幅|图)|(?:生成|制作|做|设计|出|来)\s*(?:一|几|两|三|\d+)?\s*(?:张|个|幅)?\s*(?:图(?:片|像|标)?|海报|封面|插图|插画|壁纸|头像|logo|banner))|^(?:please\s+)?(?:(?:draw|sketch|paint|illustrate)\s+(?:me\s+)?(?:a|an|the)\s+\w+|(?:generate|create|make|design|render)\s+(?:me\s+)?(?:a|an|the|some)?\s*(?:\w+\s+){0,2}(?:images?|pictures?|photos?|posters?|logos?|icons?|illustrations?|wallpapers?|banners?)\b)"#, options: [.regularExpression,.caseInsensitive]) != nil
+            result.action = (edits || adjustments) && (!references.isEmpty || !previousImages.isEmpty) ? .edit : (generates || naturalGeneration) ? .generate : .analyze
         }
         if result.action == .edit && result.references.isEmpty { result.references = previousImages.map { ImageReference(id: $0) } }
         if result.action == .analyze && result.references.isEmpty && masked.range(of: "这张|这幅|图中|上图|图里的|in this image|in the picture", options: [.regularExpression,.caseInsensitive]) != nil {

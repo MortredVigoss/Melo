@@ -52,17 +52,14 @@ struct ImageComposerBar: View {
                 PhotosPicker(selection:$photos,maxSelectionCount:4,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.sendingID != nil)
                 Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.sendingID != nil)
                 Menu {
-                    ForEach(ImageAction.allCases,id:\.self) { action in Button(LocalizedStringKey(action.title)) { plan.action=action } }
-                    Divider();Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
+                    Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
                         do { imageConnections = try LLMConnection.saved().filter { !$0.key.isEmpty && $0.apiProtocol != "anthropic" }; options=true }
                         catch { store.error="模型连接无法读取，请先在系统设置中检查连接。" }
                     }
-                } label: { Label(LocalizedStringKey(plan.action == .auto ? "图片模式" : plan.action.title),systemImage:"wand.and.stars").font(.caption) }.disabled(loading || store.sendingID != nil)
+                } label: { Label("图片选项",systemImage:"ellipsis").font(.caption) }.disabled(loading || store.sendingID != nil)
                 Spacer(minLength:0)
                 if loading { ProgressView().controlSize(.small) }
-                else if plan.references.isEmpty && plan.action == .auto { Button("生图") { plan.action = .generate }.font(.caption).disabled(store.sendingID != nil) }
             }.foregroundStyle(meloGold)
-            if plan.action == .generate || plan.action == .edit { Text("\(plan.action.title) · 图片保存在此 iPhone").font(.system(size:10)).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }
         }
         .onChange(of:photos) { _,items in
             guard !items.isEmpty else { return }; let target=chatID; let token=UUID()
@@ -92,7 +89,7 @@ struct ImageComposerBar: View {
                 };plan.references=refs
             } catch { store.error=error.localizedDescription }
         }
-        .sheet(isPresented:$gallery) { ImageGallery { image in plan.references=[ImageReference(id:image.id)]; plan.action = .edit } }
+        .sheet(isPresented:$gallery) { ImageGallery { image in plan.references=[ImageReference(id:image.id)]; plan.action = .auto } }
         .sheet(isPresented:$options) {
             NavigationStack {
                 Form {
@@ -108,7 +105,6 @@ struct ImageComposerBar: View {
                         NavigationLink("Codex 登录与账号") { ScrollView { CodexLoginCard().padding(20) }.navigationTitle("Codex 登录") }
                     }
                     Section("图片任务") {
-                        Picker("处理方式",selection:$plan.action) { ForEach(ImageAction.allCases,id:\.self){Text(LocalizedStringKey($0.title)).tag($0)} }
                         TextField("API 图片模型",text:$plan.model).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Text("Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。").font(.footnote).foregroundStyle(.secondary)
                         Picker("尺寸",selection:$plan.size) { Text("自动").tag("auto");Text("正方形").tag("1024x1024");Text("竖图").tag("1024x1536");Text("横图").tag("1536x1024") }
@@ -145,8 +141,6 @@ struct ImagePreview: View {
     var chatID: String? = nil
     @State private var reviewing=false
     @State private var showOriginal=false
-    @State private var zoom:CGFloat=1
-    @State private var savedZoom:CGFloat=1
     @State private var status=""
     @State private var busy=false
     @State private var recognized=""
@@ -157,13 +151,11 @@ struct ImagePreview: View {
         NavigationStack {
             VStack(spacing:14) {
                 if original != nil { Picker("图片对照",selection:$showOriginal) { Text("结果").tag(false);Text("原图").tag(true) }.pickerStyle(.segmented).padding(.horizontal).disabled(busy) }
-                GeometryReader { geo in
-                    ScrollView([.horizontal,.vertical]) {
-                        if let previewBitmap {
-                            Image(uiImage:previewBitmap).resizable().scaledToFit().frame(width:geo.size.width*zoom,height:geo.size.height*zoom)
-                        }
-                    }.gesture(MagnifyGesture().onChanged{zoom=min(5,max(1,savedZoom*$0.magnification))}.onEnded{_ in savedZoom=zoom}).clipped()
-                }.frame(minHeight:180,maxHeight:.infinity)
+                Group {
+                    if let previewBitmap {
+                        ImageZoomView(image: previewBitmap, imageID: displayed.id)
+                    } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+                }.frame(minHeight:180,maxHeight:.infinity).clipped()
                 Text("\(displayed.width) × \(displayed.height) · 双指缩放").font(.caption).foregroundStyle(.secondary)
                 if !displayed.reportedModel.isEmpty { Text("服务返回：\(displayed.reportedModel)").font(.caption2).foregroundStyle(.secondary) }
                 ScrollView(.horizontal) {
@@ -189,7 +181,7 @@ struct ImagePreview: View {
         }.preferredColorScheme(.dark)
         .sheet(isPresented: $reviewing) { if let chatID { ImageReviewView(image: displayed, chatID: chatID, completed: { reviewing = false; dismiss() }) } }
         .task(id:displayed.id) {
-            previewBitmap=nil;recognized="";zoom=1;savedZoom=1
+            previewBitmap=nil;recognized=""
             if status.contains("文字") { status="" }
             do { let data=try store.imageLibrary.data(displayed)
                 let cg=try await Task.detached(priority:.userInitiated){try ImageLibrary.decoded(data)}.value
@@ -198,7 +190,7 @@ struct ImagePreview: View {
         }
     }
     private func transform(_ operation:String) {
-        do { image=try store.transformImage(displayed,operation:operation);showOriginal=false;zoom=1;savedZoom=1;status="已另存新图，可继续修改或保存" }
+        do { image=try store.transformImage(displayed,operation:operation);showOriginal=false;status="已另存新图，可继续修改或保存" }
         catch { status=error.localizedDescription }
     }
     private func recognize() {

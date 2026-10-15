@@ -203,7 +203,7 @@ struct ChatGPTModel: Decodable, Identifiable {
         let mustSearch = webSearch && ChatGPTRequest.requiresSearch(messages)
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
-            if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持生图。要求和参考图已保留。") }
+            if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
             if mustSearch && !stream.searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
             if !stream.images.isEmpty {
                 defaults.set(true, forKey: "codexImageVerified:" + account.id)

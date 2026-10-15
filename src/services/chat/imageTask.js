@@ -1,5 +1,6 @@
 import { validateImagePrompt, IMAGE_REVIEW_INSTRUCTIONS, parseImageReview, formatImageReview } from '../../images/imagePrompts.js';
 import sharp from 'sharp';
+import { requestsPhotoAdjustment, requestsNaturalImage } from '../../shared/imageRequestIntent.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -26,11 +27,12 @@ export function inferImageTask(text, messages, explicit) {
   // An explicit analysis route also bypasses the legacy edit shortcut.
   if (
     imageExecutionDeclined(instruction) ||
+    /^(?:请|帮我)?(?:解释|说明|讲讲)|^(?:如何|怎么|为什么)|(?:对比度|饱和度|曝光|亮度).{0,16}(?:有什么|会怎样|会怎么样|的原理)|(?:画|绘制|生成|做).{0,60}(?:的代码|的提示词)|\b(?:how|why)\b.{0,50}\b(?:contrast|saturation|exposure|brightness)|\b(?:in|as)\s+(?:svg|css|html)(?:\s+code)?\b/iu.test(instruction) ||
     /(?:生成|绘制|编辑|生图)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|generate|edit|draw)/iu.test(instruction)
   ) {
     return validateImageTask({ action: 'analyze' });
   }
-  if (explicit)
+  if (explicit && explicit.action !== 'auto')
     return validateImageTask({ ...explicit, count: explicit.count ?? requestedImageCount(text) });
   const hasImage = messages.some(
     (m) =>
@@ -38,15 +40,17 @@ export function inferImageTask(text, messages, explicit) {
       Array.isArray(m.content) &&
       m.content.some((p) => p.type === 'image_url'),
   );
-  if (hasImage && detectImageEditIntent(instruction) && IMAGE_FOLLOW_UP_PATTERN.test(instruction))
-    return { action: 'edit', count: requestedImageCount(text), references: [] };
-  if (
+  const affirmative = instruction.split(/[，。；！？,;!?\n]/).filter(clause => !/(?:不要|不用|不必|无需|禁止|别)|\b(?:do not|don't|never)\b/iu.test(clause)).join('，');
+  const taskFor = action => validateImageTask({ ...explicit, action, count: explicit?.count ?? requestedImageCount(text), references: explicit?.references ?? [] });
+  if (hasImage && ((detectImageEditIntent(affirmative) && IMAGE_FOLLOW_UP_PATTERN.test(affirmative)) || requestsPhotoAdjustment(affirmative)))
+    return taskFor('edit');
+  if (requestsNaturalImage(affirmative) ||
     /^(?:请|帮我|给我|麻烦|你|请帮我)*\s*(?:生成|画|绘制|制作|做)[^。！？\n]{0,100}(?:图片|图像|插画|海报|照片|张图|幅图)|^(?:please\s+)?(?:generate|draw|create)\s+(?:an?\s+|\d+\s+)?(?:images?|pictures?|illustrations?|photos?)\b/i.test(
       instruction,
     )
   )
-    return { action: 'generate', count: requestedImageCount(text), references: [] };
-  return null;
+    return taskFor('generate');
+  return explicit?.action === 'auto' ? taskFor('analyze') : null;
 }
 
 function imageExecutionDeclined(instruction) {

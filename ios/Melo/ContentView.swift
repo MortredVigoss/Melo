@@ -266,7 +266,11 @@ struct ChatView: View {
         nonmutating set { store.composerDrafts[chatID, default: ConversationDraft()].text = newValue }
     }
     private var imagePlan: ImageTaskPlan {
-        get { store.composerDrafts[chatID]?.imagePlan ?? ImageTaskPlan() }
+        get {
+            var plan = store.composerDrafts[chatID]?.imagePlan ?? ImageTaskPlan()
+            plan.action = .auto // Legacy drafts must not retain an invisible mode.
+            return plan
+        }
         nonmutating set { store.composerDrafts[chatID, default: ConversationDraft()].imagePlan = newValue }
     }
     @State private var imagePreview: LocalImage?
@@ -449,7 +453,7 @@ struct ChatView: View {
             }
         }
     }
-    private func useImage(_ image: LocalImage) { imagePlan.action = .edit; imagePlan.references = [ImageReference(id: image.id)] }
+    private func useImage(_ image: LocalImage) { imagePlan.action = .auto; imagePlan.references = [ImageReference(id: image.id)] }
     @ViewBuilder private var voiceInputPanel: some View {
         let state = voiceInput.state
         if state.active || !state.error.isEmpty || !state.notice.isEmpty {

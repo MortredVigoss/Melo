@@ -1,6 +1,7 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["直接描述图片要求", "Describe what you want in the conversation", "会話で画像の要望を伝える", "대화에서 이미지 요청 설명", "Describe la imagen en la conversación"],
 ["这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。", "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer.", "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。", "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다.", "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."],
 ["最多 8 份；长资料按预算选取，全文保留。", "Up to 8 documents. Long documents are excerpted to fit the context; originals are retained.", "最大8件。長い資料は予算に合わせて抜粋し、原文は保持します。", "최대 8개. 긴 문서는 문맥 한도에 맞춰 발췌하며 원문은 보존됩니다.", "Hasta 8 documentos. Los textos largos se extractan según el límite; se conservan los originales."],
 ["本机人设恢复副本", "Local persona recovery copy", "端末内の人設定義の復元用コピー", "로컬 페르소나 복구 사본", "Copia local de recuperación del perfil"],

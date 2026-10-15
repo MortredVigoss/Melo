@@ -1367,7 +1367,7 @@ select option {
 }
 
 .chat-thread {
-  width: min(860px, 100%);
+  width: min(980px, 100%);
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

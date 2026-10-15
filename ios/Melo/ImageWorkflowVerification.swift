@@ -59,7 +59,36 @@ import UIKit
             let second=restored.newChat()!
             restored.send("把它改蓝",chatID:second,imageTask:ImageTaskPlan(action:.edit))
             guard restored.chats.first(where:{$0.id==second})?.messages.isEmpty==true,restored.sendingID==nil else{throw MeloError.message("串用其他对话图片")}
-            result=["passed":true,"realProvider":false,"requests":calls,"messagesAfterRetry":2,"referencePersisted":true,"outputPersisted":true,"restartRestored":true,"crossChatRejected":true,"emptyEditRejected":true,"unsignedCodexRejectedBeforeSend":true,"draftRetained":true,"automaticEditResolved":true,"failureRecorded":true,"retryConnectionPersisted":true]
+            var naturalCalls = 0
+            let natural = ChatStore(directory:root.appendingPathComponent("natural"),replyLoader:{ _, instructions in
+                naturalCalls += 1
+                return ModelReply(text:"Fixture",images:[ImagePayload(data:blue,mimeType:"image/png")])
+            })
+            let naturalChat = natural.newChat()!, naturalInput = try natural.importImage(orange)
+            natural.send("增加一些对比度 粉色更粉 蓝色更蓝一点点",chatID:naturalChat,imageTask:ImageTaskPlan(references:[ImageReference(id:naturalInput.id)]))
+            for _ in 0..<100 { if natural.sendingID == nil { break }; try await Task.sleep(for:.milliseconds(20)) }
+            guard naturalCalls == 1, let naturalAnswer = natural.chats.first?.messages.last,
+                  naturalAnswer.role == "assistant", natural.imageLibrary.images(for:naturalAnswer.id).count == 1,
+                  natural.imageLibrary.index.requests[natural.chats.first!.messages.first!.id]?.action == .edit else { throw MeloError.message("Natural edit needed a second request") }
+            let zoom = ImageZoomScrollView()
+            zoom.frame = CGRect(x:0,y:0,width:390,height:500)
+            let bitmap = UIImage(data:orange)!
+            zoom.display(bitmap,id:"first");zoom.layoutIfNeeded()
+            zoom.setZoomScale(1.7,animated:false);zoom.layoutIfNeeded()
+            zoom.display(bitmap,id:"first");zoom.layoutIfNeeded()
+            guard abs(zoom.zoomScale - 1.7) < 0.001 else { throw MeloError.message("View update reset zoom") }
+            zoom.setZoomScale(zoom.zoomScale * 1.4,animated:false);zoom.layoutIfNeeded()
+            guard abs(zoom.zoomScale - 2.38) < 0.001,zoom.bouncesZoom,zoom.maximumZoomScale == 4,
+                  zoom.contentSize.width > zoom.bounds.width else {throw MeloError.message("Zoom must accumulate with elastic limits and pannable content")}
+            zoom.contentOffset.x += 30
+            let panned = zoom.contentOffset.x
+            zoom.layoutIfNeeded()
+            guard abs(zoom.contentOffset.x - panned) < 0.01, zoom.isScrollEnabled else { throw MeloError.message("Layout reset the image pan") }
+            zoom.frame.size = CGSize(width:500,height:390);zoom.layoutIfNeeded()
+            guard abs(zoom.zoomScale - 2.38) < 0.001 else {throw MeloError.message("Resize reset zoom")}
+            zoom.display(bitmap,id:"second");zoom.layoutIfNeeded()
+            guard zoom.zoomScale == 1 else {throw MeloError.message("New image did not reset fit")}
+            result=["passed":true,"realProvider":false,"naturalEditFirstRequest":true,"nativeCumulativeZoom":true,"nativeElasticLimit":true,"zoomSurvivesViewUpdate":true,"requests":calls,"messagesAfterRetry":2,"referencePersisted":true,"outputPersisted":true,"restartRestored":true,"crossChatRejected":true,"emptyEditRejected":true,"unsignedCodexRejectedBeforeSend":true,"draftRetained":true,"automaticEditResolved":true,"failureRecorded":true,"retryConnectionPersisted":true]
         } catch {result["error"]=error.localizedDescription}
         try? FileManager.default.createDirectory(at:parent,withIntermediateDirectories:true)
         if let data=try? JSONSerialization.data(withJSONObject:result,options:[.sortedKeys,.prettyPrinted]) {try? data.write(to:parent.appendingPathComponent("image-verification.json"),options:.atomic)}

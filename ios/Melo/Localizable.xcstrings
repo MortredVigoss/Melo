@@ -1,6 +1,111 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "图片生成服务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片生成服务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image generation service"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像生成サービス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 생성 서비스"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio de generación de imágenes"
+          }
+        }
+      }
+    },
+    "图片请求使用的语言模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片请求使用的语言模型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language model for image requests"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像リクエストの言語モデル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 요청 언어 모델"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo de lenguaje para imágenes"
+          }
+        }
+      }
+    },
+    "识图连接与图片生成服务独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识图连接与图片生成服务独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose image understanding and generation services separately. APIs use the selected account quota; unsupported permissions or parameters are reported."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像認識と生成のサービスを個別に選択します。API は選択したアカウントの枠を使い、権限やパラメータの問題は通知します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 이해와 생성 서비스를 별도로 선택합니다. API는 선택한 계정의 할당량을 사용하며 권한이나 매개변수 문제는 알립니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige por separado los servicios de análisis y generación. Las API usan la cuota de la cuenta elegida; se informan problemas de permisos o parámetros."
+          }
+        }
+      }
+    },
     "Telegram 已归档，原有配置与历史对话保留。": {
       "extractionState": "manual",
       "localizations": {
@@ -26321,6 +26426,76 @@
         }
       }
     },
+    "直接描述图片要求": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接描述图片要求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Describe what you want in the conversation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話で画像の要望を伝える"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화에서 이미지 요청 설명"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Describe la imagen en la conversación"
+          }
+        }
+      }
+    },
+    "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."
+          }
+        }
+      }
+    },
     "最多 8 份；长资料按预算选取，全文保留。": {
       "extractionState": "manual",
       "localizations": {
@@ -34857,41 +35032,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accede a los elementos seleccionados mediante Archivos. Puedes recordar carpetas concretas o quitar el acceso cuando quieras; los datos privados de otras apps son inaccesibles."
-          }
-        }
-      }
-    },
-    "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."
           }
         }
       }

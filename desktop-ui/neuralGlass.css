@@ -399,3 +399,6 @@
  .neural-home-composer .composer-card {padding:8px 10px;}
 }
 .neural-shell[data-neural-stage=overview] .neural-core-anchor:after {display:none;}
+
+/* Let an opened conversation use more of its existing work surface. */
+.neural-dashboard .page:has(>.chat-thread) {padding-inline:16px;padding-block:14px;}

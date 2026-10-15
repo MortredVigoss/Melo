@@ -24,6 +24,16 @@ import CoreGraphics
         let library=ImageLibrary(directory:root)
         let original=try library.store(data,title:"fixture")
         let uploaded = ImageTaskPlan(references:[ImageReference(id:original.id)])
+        let fixtures = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "ios/Tests/Fixtures/image-natural-intent.json"))) as! [[String:Any]]
+        for fixture in fixtures {
+            let prompt = fixture["prompt"] as! String
+            let attached = fixture["hasImage"] as! Bool
+            let automatic = ImageTaskPlan(references: attached ? uploaded.references : [])
+            let route = try automatic.resolved(prompt: prompt, previousImages: [])
+            try check(route.action.rawValue == fixture["action"] as! String, "Natural request misrouted: \(prompt)")
+            let request = ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:attached ? try library.inputs(route.references) : [],task:route,model:"fixture",instructions:"")
+            try check((request["tools"] != nil) == route.makesImage, "First turn must include the required image tool")
+        }
         for prompt in ["帮我把转盘掉漆的处理干净，背景墙换成黑色木纹，压低一点曝光", "改一下背景墙，其他保持不变", "换背景", "把后面的墙换一下", "把墙改白", "把背景墙刷成奶油色", "给背景墙加上木饰面", "把背景墙颜色调浅一点", "make the background wall white", "retouch the background"] {
             let routed = try uploaded.resolved(prompt:prompt,previousImages:[])
             try check(routed.action == .edit, "Uploaded image edit misrouted to analysis: \(prompt)")

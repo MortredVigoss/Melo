@@ -47,9 +47,9 @@ const settingsFor = (config) => ({
 });
 export function renderImageSettings(config) {
   const value = settingsDraft || settingsFor(config);
-  return ui`<section class="surface-card image-settings"><h2 class="pane-title">图片能力</h2><p class="page-kicker">识图连接与生图引擎独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。</p><div class="config-form">${renderEditActions(settingsEdit,{prefix:'image-settings'})}<fieldset class="settings-connection-fields" ${!settingsEdit.editing||busy?'disabled':''}>
+  return ui`<section class="surface-card image-settings"><h2 class="pane-title">图片能力</h2><p class="page-kicker">识图连接与图片生成服务独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。</p><div class="config-form">${renderEditActions(settingsEdit,{prefix:'image-settings'})}<fieldset class="settings-connection-fields" ${!settingsEdit.editing||busy?'disabled':''}>
     <label class="label">视觉模型<select class="config-select" data-image-setting="visionProfileId">${opts([['', t("沿用当前聊天模型")], ...profiles(config)], value.visionProfileId)}</select></label>
-    <label class="label">生图引擎<select class="config-select" data-image-setting="engine">${opts(
+    <label class="label">图片生成服务<select class="config-select" data-image-setting="engine">${opts(
       [
         ['codex-oauth', 'ChatGPT / Codex OAuth'],
         ['openai-api', t("OpenAI Images 兼容 API")],
@@ -67,7 +67,7 @@ export function renderImageSettings(config) {
             ],
             value.quality,
           )}</select></label>` : ''}
-    ${value.engine === 'codex-oauth' ? ui`<label class="label">生图通道语言模型<input class="config-input" data-image-setting="codexModel" value="${esc(value.codexModel)}" placeholder="gpt-6.1-sol / gpt-6-astra"></label>` : ''}
+    ${value.engine === 'codex-oauth' ? ui`<label class="label">图片请求使用的语言模型<input class="config-input" data-image-setting="codexModel" value="${esc(value.codexModel)}" placeholder="gpt-6.1-sol / gpt-6-astra"></label>` : ''}
     ${
       value.engine === 'openai-api'
         ? ui`<label class="label">图像 API 连接<select class="config-select" data-image-setting="profileId">${opts([['', t("请选择已保存的 API 连接")], ...profiles(config, true)], value.profileId)}</select></label><label class="label">图像模型 ID<input class="config-input" data-image-setting="model" value="${esc(value.model)}"></label><label class="label">尺寸<select class="config-select" data-image-setting="size">${opts(
@@ -97,26 +97,15 @@ export function renderImageTaskControls(attachments = []) {
   return ui`<div class="image-task-options"><button type="button" class="small-button" data-action="image-task-toggle">${draft ? t("收起图片选项") : t("图片选项")}</button>${
     draft
       ? ui`<div class="image-task-fields">
-    <label>本次任务<select data-image-task="action">${opts(
-      [
-        ['analyze', t("查看 / 分析图片")],
-        ['generate', t("生成新图片")],
-        ['edit', t("编辑参考图片")],
-      ],
-      draft.action,
-    )}</select></label>
-    ${
-      draft.action !== 'analyze'
-        ? ui`<label>数量<input type="number" min="1" max="20" data-image-task="count" placeholder="按要求，默认 1" value="${esc(draft.count || '')}"></label>`
-        : ui`<label>输入精度<select data-image-task="detail">${opts(
+    <label>数量<input type="number" min="1" max="20" data-image-task="count" placeholder="按要求，默认 1" value="${esc(draft.count || '')}"></label>
+    <label>输入精度<select data-image-task="detail">${opts(
             [
               ['auto', t("模型默认")],
               ['high', t("高清")],
               ['original', t("原图细节（模型需支持）")],
             ],
             draft.detail,
-          )}</select></label><label><input type="checkbox" data-image-task="ocr" ${draft.ocr ? 'checked' : ''}> OCR 交叉核对文字</label>`
-    }
+          )}</select></label><label><input type="checkbox" data-image-task="ocr" ${draft.ocr ? 'checked' : ''}> OCR 交叉核对文字</label>
     ${images
       .map((a) => {
         const ref = draft.references.find((r) => r.attachmentId === a.id) || { role: 'reference' };
@@ -128,10 +117,10 @@ export function renderImageTaskControls(attachments = []) {
             ['composition', t("构图")],
           ],
           ref.role,
-        )}</select>${draft.action === 'analyze' ? ui`<details><summary>只查看指定区域（百分比）</summary>${['x', 'y', 'width', 'height'].map((k, i) => ui`<label>${[t("左"), t("上"), t("宽"), t("高")][i]}<input type="number" min="0" max="100" data-image-crop="${k}" data-image-reference-id="${esc(a.id)}" value="${ref.crop?.[k] ?? (i < 2 ? 0 : 100)}"></label>`).join('')}</details>` : ''}</div>`;
+        )}</select>${images.length ? ui`<details><summary>只查看指定区域（百分比）</summary>${['x', 'y', 'width', 'height'].map((k, i) => ui`<label>${[t("左"), t("上"), t("宽"), t("高")][i]}<input type="number" min="0" max="100" data-image-crop="${k}" data-image-reference-id="${esc(a.id)}" value="${ref.crop?.[k] ?? (i < 2 ? 0 : 100)}"></label>`).join('')}</details>` : ''}</div>`;
       })
       .join('')}
-    ${draft.action === 'edit' ? ui`<div class="inline-actions"><button type="button" class="small-button" data-action="image-mask">${draft.mask ? t("重画局部遮罩") : t("绘制局部遮罩")}</button>${draft.mask ? ui`<button class="small-button" data-action="image-mask-clear">移除遮罩</button><span>仅修改透明区域</span>` : ''}</div>` : ''}
+    ${images.length ? ui`<div class="inline-actions"><button type="button" class="small-button" data-action="image-mask">${draft.mask ? t("重画局部遮罩") : t("绘制局部遮罩")}</button>${draft.mask ? ui`<button class="small-button" data-action="image-mask-clear">移除遮罩</button><span>仅修改透明区域</span>` : ''}</div>` : ''}
     ${draft.action !== 'analyze' ? ui`<label><input type="checkbox" data-image-task="inspect" ${draft.inspect ? 'checked' : ''}> 核对生成结果（每张额外一次视觉请求，不自动重生成）</label>` : ''}
     <p class="list-row-meta">${draft.action === 'analyze' ? t("原图保留，裁切只用于本次识别。") : '保留你的完整要求，区分修改目标与保留项。核对是模型判断，结果会随图片显示；不自动重生成或跨平台重试。'}</p>
   </div>`
@@ -144,7 +133,7 @@ export function consumeImageTask() {
   return value;
 }
 export function restoreImageTask(value) {
-  draft = value ? structuredClone(value) : null;
+  draft = value ? { ...structuredClone(value), action: 'auto' } : null;
 }
 export function clearImageTask() {
   draft = null;
@@ -193,7 +182,7 @@ export async function handleImageAction(action, { config, attachments, api, rend
     draft = draft
       ? null
       : {
-          action: attachments.some((a) => a.kind === 'image') ? 'analyze' : 'generate',
+          action: 'auto',
           references: [],
           detail: 'auto',
         };

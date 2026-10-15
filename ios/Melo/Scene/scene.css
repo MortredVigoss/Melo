@@ -539,6 +539,9 @@
 }
 .neural-shell[data-neural-stage=overview] .neural-core-anchor:after {display:none;}
 
+/* Let an opened conversation use more of its existing work surface. */
+.neural-dashboard .page:has(>.chat-thread) {padding-inline:16px;padding-block:14px;}
+
 /* Desktop materials are shared; these rules only adapt the phone viewport. */
 :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:var(--space-text);background:transparent}
 *{box-sizing:border-box}html,body,#app{margin:0;width:100%;height:100%;overflow:hidden}button,a,select{-webkit-tap-highlight-color:transparent}

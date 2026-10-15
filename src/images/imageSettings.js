@@ -47,7 +47,7 @@ export function validateImageTask(value) {
   if (
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    !['analyze', 'generate', 'edit'].includes(value.action)
+    !['auto', 'analyze', 'generate', 'edit'].includes(value.action)
   )
     throw new Error('图片任务类型无效。');
   const count = value.count == null ? 1 : Number(value.count);
@@ -83,7 +83,7 @@ export function validateImageTask(value) {
   if (references.length > 16) throw new Error('最多支持 16 张参考图。');
   return {
     action: value.action,
-    count,
+    ...(value.action === 'auto' && value.count == null ? {} : { count }),
     references,
     detail: ['auto', 'high', 'original'].includes(value.detail) ? value.detail : 'auto',
     ocr: value.ocr === true,

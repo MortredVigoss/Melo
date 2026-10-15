@@ -1,6 +1,10 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["图片生成服务", "Image generation service", "画像生成サービス", "이미지 생성 서비스", "Servicio de generación de imágenes"],
+["图片请求使用的语言模型", "Language model for image requests", "画像リクエストの言語モデル", "이미지 요청 언어 모델", "Modelo de lenguaje para imágenes"],
+["识图连接与图片生成服务独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。", "Choose image understanding and generation services separately. APIs use the selected account quota; unsupported permissions or parameters are reported.", "画像認識と生成のサービスを個別に選択します。API は選択したアカウントの枠を使い、権限やパラメータの問題は通知します。", "이미지 이해와 생성 서비스를 별도로 선택합니다. API는 선택한 계정의 할당량을 사용하며 권한이나 매개변수 문제는 알립니다.", "Elige por separado los servicios de análisis y generación. Las API usan la cuota de la cuenta elegida; se informan problemas de permisos o parámetros."],
+
 ["Telegram 已归档，原有配置与历史对话保留。","Telegram is archived. Existing configuration and conversations are preserved.","Telegram はアーカイブ済みです。設定と会話履歴は保持されます。","Telegram은 보관되었습니다. 기존 설정과 대화 기록은 유지됩니다.","Telegram está archivado. Se conservan la configuración y las conversaciones."],
 ["上方语音设置应用于此 Agent。","The voice settings above apply to this Agent.","上の音声設定はこの Agent に適用されます。","위 음성 설정은 이 Agent에 적용됩니다.","Los ajustes de voz anteriores se aplican a este Agent."],
 ["此 Agent 的实时轮询与近期频道活动。","Live polling and recent channel activity for this agent.","この Agent のポーリングと最近のチャネル活動。","이 Agent의 실시간 폴링 및 최근 채널 활동입니다.","Sondeo en directo y actividad reciente del canal de este Agent."],

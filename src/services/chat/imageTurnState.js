@@ -10,17 +10,20 @@ import { requestIdentity } from '../../runtime/requestContext.js';
 import { normalizeMessageBlocks } from '../../domain/message/messageBlocks.js';
 import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
 import { inferImageTask } from './imageTask.js';
+import { requestsPhotoAdjustment } from '../../shared/imageRequestIntent.js';
 
 export async function imageFollowUpAttachments({ chat, content, attachments, imageTask, home }) {
   if (attachments.some(a => a.kind === 'image') || imageTask?.action === 'generate' || imageTask?.retryOf) return attachments;
   if (inferImageTask(content, [], imageTask)?.action === 'generate') return attachments;
-  if (imageTask?.action !== 'edit' && !IMAGE_FOLLOW_UP_PATTERN.test(content || '')) return attachments;
+  const adjustment = requestsPhotoAdjustment(content || '') && inferImageTask(content,
+    [{role:'user',content:[{type:'image_url'}]}],imageTask)?.action === 'edit';
+  if (imageTask?.action !== 'edit' && !adjustment && !IMAGE_FOLLOW_UP_PATTERN.test(content || '')) return attachments;
   const recent = (chat.messages || []).slice(-4);
   for (let i = recent.length - 1; i >= 0; i--) {
     const message = recent[i];
     if (message.role === 'user' && message.attachments?.some(a => a.kind === 'image')) {
       // A newer upload takes precedence over older generated results.
-      return shouldCarryForwardRecentMedia([...recent, {role:'user',content}], recent.length, i) || imageTask?.action === 'edit'
+      return shouldCarryForwardRecentMedia([...recent, {role:'user',content}], recent.length, i) || imageTask?.action === 'edit' || adjustment
         ? [...attachments, ...message.attachments.filter(a => a.kind === 'image')]
         : attachments;
     }

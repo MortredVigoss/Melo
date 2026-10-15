@@ -77,7 +77,7 @@ struct SettingsContent: View {
                     capability("任务检查点与接力", "项目中查看", "arrow.triangle.branch")
                     capability("电脑工具、权限与任务验收", "在执行设备处理", "desktopcomputer")
                     capability("记忆来源、范围与停用", "本机可用 · 可同步", "brain")
-                    capability("看图、生成与修改图片", "对话图片模式", "photo.on.rectangle")
+                    capability("看图、生成与修改图片", "直接描述图片要求", "photo.on.rectangle")
                     capability("本机 OCR、旋转与格式转换", "图片预览中", "viewfinder")
                     capability("画笔遮罩与批量图片", "桌面可用", "paintbrush.pointed")
                     capability("实时搜索与天气", authMode == "chatgpt" && account.signedIn && webSearchEnabled ? "已开启 · 按账号权限" : "未开启", "globe")
