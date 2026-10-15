@@ -1,3 +1,4 @@
+import { normalizeCapabilities, normalizeCollaboration } from '../domain/agent/capabilities.js';
 import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // ─── Agent profile state normalizers ─────────────────────────────────────────
 // Pure normalization layer for the persisted agent state slice. Given whatever
@@ -144,6 +145,9 @@ export function normalizeAgentProfile(agentId, profile) {
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,
       tools,
+      capabilities: normalizeCapabilities(profile?.capabilities),
+      collaboration: normalizeCollaboration(profile?.collaboration),
+      contextSources: profile?.contextSources && typeof profile.contextSources === 'object' ? {projects:profile.contextSources.projects!==false,knowledge:profile.contextSources.knowledge!==false,memory:profile.contextSources.memory!==false} : {projects:true,knowledge:true,memory:true},
       model,
       systemPrompt: persona.systemPrompt,
       channels,
@@ -180,6 +184,9 @@ export function normalizeAgentOverride(agentId, profile) {
   }
 
   const normalized = {};
+  if (profile.capabilities !== undefined) normalized.capabilities = normalizeCapabilities(profile.capabilities);
+  if (profile.collaboration !== undefined) normalized.collaboration = normalizeCollaboration(profile.collaboration);
+  if (profile.contextSources !== undefined) normalized.contextSources = {projects:profile.contextSources.projects!==false,knowledge:profile.contextSources.knowledge!==false,memory:profile.contextSources.memory!==false};
   if (typeof profile.instructions === 'string') normalized.instructions = profile.instructions;
   const identity = readAgentIdentityValue(profile);
   const soulMd = readAgentSoulValue(profile);

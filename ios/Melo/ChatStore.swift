@@ -506,12 +506,15 @@ import SwiftUI
     private func portableConnections() throws -> [PortableConnection] {
         try LLMConnection.saved().map { .init(id:$0.id,name:$0.name,baseURL:$0.baseURL,apiProtocol:$0.apiProtocol) }
     }
-    func resolveSyncConflict(_ key: String, choice: Int) {
+    func resolveSyncConflict(_ key: String, choice: Int, expected: SyncVersion? = nil) {
         guard storageReady, executionReady, !syncing else { return }
         do {
             var next = preferences, records = executionRecords, workspace = preferences.workspaceSync ?? .init()
+            if let expected {
+                guard let row = workspace.records.first(where: { $0.key == key }), row.versions.indices.contains(choice), row.versions[choice] == expected else { throw MeloError.message("同步冲突已变化，请刷新后重新选择。") }
+            }
             try workspace.resolve(key:key,choice:choice,device:syncDevice)
-            try WorkspaceProjection.apply(workspace,preferences:&next,records:&records,connections:portableConnections())
+            try WorkspaceProjection.apply(workspace,preferences:&next,records:&records,connections:portableConnections(),resolvedKeys:[key])
             try commitSync(.init(snapshot:SyncSnapshot(chats:chats,tasks:taskCheckpoints,handoffs:taskHandoffs,deletedChats:deletedChats),preferences:next,records:records))
             preferences=next; executionRecords=records
             syncStatus="冲突选择已保存 · 下次同步会发送所选版本"

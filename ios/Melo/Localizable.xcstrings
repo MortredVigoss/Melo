@@ -24011,6 +24011,41 @@
         }
       }
     },
+    "本机人设恢复副本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机人设恢复副本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local persona recovery copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内の人設定義の復元用コピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 페르소나 복구 사본"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia local de recuperación del perfil"
+          }
+        }
+      }
+    },
     "图片模式": {
       "extractionState": "manual",
       "localizations": {

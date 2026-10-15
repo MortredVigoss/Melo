@@ -89,3 +89,24 @@ test('project voice settings survive a persona-only update and disk reload', asy
     assert.equal(state.projectAgentOverrides.p.main.instructions,'Project persona');
   });
 });
+
+test('legacy capability migration requires matching preview and persists after cold hydration', async t=>{
+ const {capabilityMigrationPreview,migrationOptions}=await import('./capabilityMigration.js');
+ const {effectiveAgentProfile}=await import('../../state/agentProfiles.js');
+ const {emptyCapabilities}=await import('../../domain/agent/capabilities.js');
+ const home=await mkdtemp(join(tmpdir(),'melo-capability-migration-'));t.after(()=>rm(home,{recursive:true,force:true}));
+ await mkdir(join(home,'desktop'),{recursive:true});
+ await writeFile(join(home,'desktop','state.json'),JSON.stringify({_storageFormat:3,agentProfiles:{main:{instructions:'Keep',tools:['local-files']}}}));
+ await runWithRequestContext(createRequestContext({home}),async()=>{
+  let state=await loadState({home});const preview=capabilityMigrationPreview(effectiveAgentProfile(state,'main'),migrationOptions(state));
+  await assert.rejects(updateAgentProfile('main',{capabilities:emptyCapabilities()}),/预览/);
+  await assert.rejects(updateAgentProfile('main',{capabilities:emptyCapabilities(),capabilityMigrationExpected:'stale'}),/预览/);
+  assert.equal((await loadState({home})).agentProfiles.main.capabilities,null);
+  await updateAgentProfile('main',{capabilities:preview.proposed,capabilityMigrationExpected:preview.fingerprint});
+  const disk=JSON.parse(await readFile(join(home,'desktop','state.json'),'utf8'));
+  await writeFile(join(home,'desktop','state.json'),JSON.stringify(disk));state=await loadState({home});
+  assert.equal(state.agentProfiles.main.capabilities.runCommands,false);assert.equal(state.agentProfiles.main.capabilities.readFiles,true);
+  await assert.rejects(updateAgentProfile('main',{capabilities:null}),/explicit object/);
+  assert.equal(state.agentProfiles.main.instructions,'Keep');
+ });
+});

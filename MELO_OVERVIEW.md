@@ -117,7 +117,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ## 5. 保留的产品决定
 
 - 副线统计沿用 `src`、`desktop-ui`、`desktop-app`、`scripts` 下 `js/mjs/cjs/ts/tsx/jsx/swift/sh/applescript/json/html/css` 文件的 `wc -l` 合计，含注释和空行，不含 `ios/` 及目录外内容；不是全平台总代码量，历史结果不代替实时统计。
-- `git pp` 在 push 前评估，C/D 或无法解析评级时阻止 push；C/D 后 Claude 先按意见重提方案交用户判断。现行依据为 `EVALUATION.md`、`CLAUDE.md` 与 `scripts/codex-review.sh`；后续修复以 Git 和现源码为准。
+- 2026-10-15 用户最新决定：仅用户明确要求才运行 `git pp` 或等价脚本；不自动审查、重审或推送。测试、本地提交、已授权修复持续推进。被要求运行时仍保留推送门禁。
 - 保持现有暗色神经网络语言；“太空”增加内部密度与深度。导航悬停原位放大约 3–5% 并变亮，不偏移出屏。
 - 任务空间由真实执行事件驱动，支持并行、独立折叠和历史回看，及时展示结果。细线发光神经突触、深紫活动区、轻透来源卡片；未逐项验收的视觉目标不能写成已完成。
 - 搜索来源网站默认最相关 5 个，展开最多 10 个；引用是额外标记，不先排除被引用网站。区分搜索命中、实际读取、最终引用，不编造淘汰理由。
@@ -238,3 +238,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 当前实施分支已转到干净的 `.tmp/agent-evolution-20261015/p0-verification`；旧 `worktree` 停在 detached 99937f7，保留带入的其他线程 WIP，不再用于实施。
 - 修正提交 c2b7f33：冻结旧服务的 HTTP 往返、桌面冷启动、待同步期间并发修改、Swift 长人设/UTF-16/项目覆盖通过。日常 gate 3505 JS / 21 Swift 组通过，英文 Agent / 图片入口模拟器点验通过；第三次预审待完成，不代表已发布。
 - P1–P4 仍按原授权等待 P0 重审通过后继续；用户应用、账号、真实数据未替换。
+
+### 2026-10-15 — melo主线 — 按需审查与能力约束实施
+- 用户已要求自主完成 P1–P4，取消自动 git pp 及 C/D 重复确认流程；规则已同步 CLAUDE.md、AGENTS.md、EVALUATION.md。
+- 第三次旧流程预审为 C，发现显式冲突选择被待同步人设挡住；正在实施恢复副本及明确选择优先，保留旧协议。未推送。
+- 当前实现树为 `.tmp/agent-evolution-20261015/p0-verification`，分支 `codex/agent-evolution-20261015`；P1 能力模块/迁移预览/执行约束已写入，正在回归；P2–P4 继续实施。共享产品源文件与用户安装包尚未替换。

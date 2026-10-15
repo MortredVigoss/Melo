@@ -8054,9 +8054,29 @@ function renderAgentList(selectedId) {
   `;
 }
 
+function renderAgentCapabilities(selected,draft) {
+  const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
+  if (!c) return '';
+  const value=k=>draft?.['cap_'+k] ?? c[k];
+  const checked=k=>value(k)===true||value(k)==='on';
+  const collaboration=draft?.collaboration || selected.collaboration || {};
+  return `<details class="agent-capabilities"><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+    <input type="hidden" name="capabilityVersion" value="1">
+    ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
+    ${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(label)}</label>`).join('')}
+    ${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>`<label class="label">${label}<input class="config-input" name="cap_${key}" value="${escapeHtml(Array.isArray(value(key))?value(key).join(','):value(key)||'')}" placeholder="ID，逗号分隔；空表示不允许"></label>`).join('')}
+    <p>可用技能：${escapeHtml((selected.capabilityOptions||[]).map(s=>s.id).join(', '))}</p>
+    <label class="label"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate ?? collaboration.canDelegate)?'checked':''}>允许委派</label>
+    <label class="label">目标 Agent ID<input class="config-input" name="delegateTargets" value="${escapeHtml(draft?.delegateTargets ?? (collaboration.delegateTargets||[]).join(','))}"></label>
+    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${label}<input type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    <p>上下文来源</p>${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${label}</label>`).join('')}
+  </details>`;
+}
+
 function renderAgentPersonaFields(selected, draft) {
   return ui`
     ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${renderAgentCapabilities(selected,draft)}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
     <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
     <label class="label">人设与工作要求<textarea class="textarea code-editor agent-content-editor" name="instructions" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
@@ -11286,6 +11306,7 @@ function render({ background = false, changedSections = null } = {}) {
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
+        ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
         <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           ${pageHtml}
@@ -13294,14 +13315,14 @@ document.addEventListener('input', event => {
     // agent drafts.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       // Settings are committed only by the explicit Save action.
       return;
     }
 
     const nextDraft = mergeAgentDraft(agentId, {
-      [target.name]: target.value,
+      [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
     });
     if (target.name === 'identity') {
       nextDraft.identify = target.value;
@@ -13572,7 +13593,7 @@ document.addEventListener('change', async event => {
       // button.
       if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
         mergeAgentDraft(agentId, {
-          [target.name]: target.value,
+          [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
         render();
@@ -13580,7 +13601,7 @@ document.addEventListener('change', async event => {
       }
 
       const nextDraft = mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       if (target.name === 'identity') {
         nextDraft.identify = target.value;

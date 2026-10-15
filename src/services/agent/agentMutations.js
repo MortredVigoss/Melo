@@ -1,3 +1,4 @@
+import {capabilityMigrationPreview,migrationOptions} from './capabilityMigration.js';
 import { normalizeAgentAvatar } from './agentAvatar.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
@@ -30,6 +31,10 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
 
   const committed = await updateStateAtomically(latestState => {
     const state = ensureSelectedEntities(latestState);
+    if (nextPatch?.capabilities) {
+      const current = effectiveAgentProfile(state,normalizedAgentId,projectId);
+      if (!current.capabilities && patch.capabilityMigrationExpected !== capabilityMigrationPreview(current,migrationOptions(state)).fingerprint) throw Object.assign(new Error('请先预览并确认能力迁移；配置变化后需重新预览。'),{statusCode:409});
+    }
     if (scope === 'project') {
       const overrides = normalizeProjectAgentOverrides(state.projectAgentOverrides,state.agentProfiles);
       if (options.clearProjectOverride) {

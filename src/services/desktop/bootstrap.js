@@ -1,3 +1,5 @@
+import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
+import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
 import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { startStage } from '../../runtime/performanceTrace.js';
 import { imageSettings as resolvedImageSettings } from '../../images/imageSettings.js';
@@ -199,6 +201,9 @@ function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}, 
 
     return {
       ...summarizeAgentProfile(profile),
+      capabilityLabels: CAPABILITY_LABELS,
+      capabilityMigration: profile.capabilities ? null : capabilityMigrationPreview(profile,migrationOptions(state)),
+      capabilityOptions: migrationOptions(state).skills.map(s=>({id:s.id,name:s.name})),
       identityPath: paths.identityPath,
       soulPath: paths.soulPath,
       editingScope,
@@ -359,6 +364,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
     syncPendingPersonas: pendingPersonaRecords(state),
+    agentPersonaRecoveries: state.agentPersonaRecoveries || [],
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
     activeProject,

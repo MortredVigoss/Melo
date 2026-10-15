@@ -14,7 +14,7 @@ export function validateTeamPlan(plan) {
   if(!roles.length || roles.length>3 || roles.some(r=>!TEAM_ROLES[r])) throw new Error('协作角色必须为调查、执行或复核，最多三个。');
   return {roles,concurrency:roles.includes('builder') ? 1 : Math.max(1,Math.min(2,Math.floor(Number(plan.concurrency)||1)))};
 }
-export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,run=runSubAgent}) {
+export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,run=runSubAgent}) {
   config=delegatedConfig(config);
   plan=validateTeamPlan(plan);
   const parent=currentRequestContext();
@@ -28,7 +28,7 @@ export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmi
       emit('execution_event',{kind:'pipeline',id:'role',name:TEAM_ROLES[role],status:'running'});
       const receipts=[];
       try {
-        const invoke=()=>run({task,instructions:TEAM_ROLES[role]+(plan.concurrency===1 && i>0 ? `\n前序角色记录（需独立核对）：${results.slice(0,i).map(r=>`${r.role}: ${r.output}`).join('\n').slice(0,16000)}` : ''),config,workspacePath,signal,sseEmitter:emit,chatId,depth:1,allowedToolIds:roleToolIds(role,allowedToolIds),roleId:role,onProviderResponse:r=>receipts.push(r)});
+        const invoke=()=>run({task,instructions:TEAM_ROLES[role]+(plan.concurrency===1 && i>0 ? `\n前序角色记录（需独立核对）：${results.slice(0,i).map(r=>`${r.role}: ${r.output}`).join('\n').slice(0,16000)}` : ''),config,workspacePath,signal,sseEmitter:emit,chatId,depth:1,allowedToolIds:roleToolIds(role,allowedToolIds),capabilities,roleId:role,onProviderResponse:r=>receipts.push(r)});
         const outcome=parent ? await runWithRequestContext(Object.freeze({...parent,agentId:role}),invoke) : await invoke();
         results[i]={role,...outcome,receipts,durationMs:Date.now()-began,usage:summarizePricedUsage(receipts,prices)};
       } catch(error) { results[i]={role,ok:false,output:signal?.aborted?'已取消':error.message,cancelled:!!signal?.aborted,receipts,durationMs:Date.now()-began,usage:summarizePricedUsage(receipts,prices)}; }

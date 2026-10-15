@@ -141,9 +141,19 @@ enum WorkspaceProjection {
         .init(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
     }
 
-    static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection]) throws {
+    static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection], resolvedKeys: Set<String> = []) throws {
         _ = try workspace.validated()
-        let held = pending(preferences)
+        var held = pending(preferences)
+        for key in resolvedKeys where held.contains(key) {
+            guard let row = workspace.records.first(where: { $0.key == key && $0.versions.count == 1 }) else { continue }
+            let agents = row.kind == "agent" ? Dictionary(uniqueKeysWithValues: preferences.agents.filter { $0.id == row.id }.map { ($0.id, $0) }) : row.kind == "project" ? preferences.projectAgents?[row.id] ?? [:] : [:]
+            if !agents.isEmpty {
+                if preferences.personaRecoveries == nil { preferences.personaRecoveries = [] }
+                preferences.personaRecoveries?.append(.init(id:UUID().uuidString,key:key,createdAt:ISO8601DateFormatter().string(from:Date()),agents:agents))
+            }
+            preferences.personaSyncHolds?.removeValue(forKey:key)
+            held.remove(key)
+        }
         for row in workspace.records where row.versions.count == 1 && !held.contains(row.key) {
             let v = row.versions[0].value
             switch row.kind {

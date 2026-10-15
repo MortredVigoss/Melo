@@ -1,3 +1,4 @@
+import { filterToolsByCapabilities, hasCapability } from '../../domain/agent/capabilities.js';
 import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
 import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
@@ -381,7 +382,7 @@ export async function runChatAgentExecutionGraph({
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = [...routedTools, ...skillTools];
+          promptTools = filterToolsByCapabilities([...routedTools, ...skillTools],activeAgentProfile.capabilities);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
@@ -394,7 +395,7 @@ export async function runChatAgentExecutionGraph({
 
         // Standalone greetings need no retrieval or embedding. A short confirmation
         // in an ongoing task ("好" / "ok") still keeps its full context.
-        const skipMemory = classification.riskLevel === 'normal' && intent === 'casual' &&
+        const skipMemory = activeAgentProfile.contextSources?.memory === false || classification.riskLevel === 'normal' && intent === 'casual' &&
           !(chat.messages?.at(-1)?.attachments?.length) &&
           /^(?:hi|hello|hey|thanks|thank you|你好|嗨|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
         const sessionFacts = skipMemory ? [] : selectSessionMemoryFacts(resolveSessionFacts(chat,activeAgentProfile?.id));
@@ -484,7 +485,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask) {
-          const team = await runAgentTeam({plan:teamTask.execution.teamPlan,task:teamTask.execution.content,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || []});
+          const team = await runAgentTeam({plan:teamTask.execution.teamPlan,task:teamTask.execution.content,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:graphState.activeAgentProfile.capabilities});
           modelResponses.push(...team.results.flatMap(r=>r.receipts));
           return {reply:team.results.map(r=>`${r.role} · ${r.ok ? '已交付，待核对' : '需要修复'}\n${r.output}`).join('\n\n'),team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}`,toolName:`角色 ${r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
         }
@@ -510,6 +511,7 @@ export async function runChatAgentExecutionGraph({
           taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
           await onImageTaskResolved?.(task);
         }
+        if (task && task.action !== 'analyze' && !hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia')) return {reply:'此 Agent 未开启生成媒体能力。请在 Agent 设置中开启后重试。',next:'finalize'};
         if (task && task.action !== 'analyze') {
           const reply = await runImageTask({task,config,messages:graphState.modelMessages,attachments,workspace,signal,sseEmitter,onDelta,onImageProgress,selectedModel,home});
           return {reply,next:'finalize'};
@@ -526,7 +528,7 @@ export async function runChatAgentExecutionGraph({
         }
         const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
         const vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
-        const fastPathReply = task?.action === 'analyze' ? null : await tryImageEditFastPath({
+        const fastPathReply = task?.action === 'analyze' || !hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia') ? null : await tryImageEditFastPath({
           config: { ...config, model:selectedModel },
           messages: graphState.modelMessages,
           workspace,
@@ -605,8 +607,8 @@ export async function runChatAgentExecutionGraph({
             // privilege bypass; the override is recorded in subAgent.js's
             // matching block.
             workspacePath: workspace?.rootPath || null,
-            nativeWebSearchEnabled: graphState.searchPlan?.nativeWebSearchEnabled === true,
-            nativeImageGenerationEnabled: imageSettings(config).engine === 'codex-oauth',
+            nativeWebSearchEnabled: hasCapability(graphState.activeAgentProfile.capabilities,'network') && graphState.searchPlan?.nativeWebSearchEnabled === true,
+            nativeImageGenerationEnabled: hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia') && imageSettings(config).engine === 'codex-oauth',
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
@@ -680,6 +682,10 @@ export async function runChatAgentExecutionGraph({
               config: delegatedModelConfig,
               allowedToolIds: [...visibleToolIds],
               agentDepth: 0,
+              capabilities: graphState.activeAgentProfile.capabilities,
+              collaboration: graphState.activeAgentProfile.collaboration,
+              agentProfiles: Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),
+              projectId: chat.projectId,
               agentId: graphState.activeAgentProfile?.id || agentId,
               onOutput: typeof sseEmitter === 'function'
                 ? chunk => sseEmitter('tool_output', { chunk })

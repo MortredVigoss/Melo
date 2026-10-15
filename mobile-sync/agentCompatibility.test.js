@@ -69,3 +69,28 @@ test('deleted conversations do not leave pending context holds behind',()=>{
   assert.ok(local.mobilePersonaSyncHolds['conversation:gone']);local.chats=[];refreshPortableWorkspace(local);
   assert.equal(local.mobilePersonaSyncHolds['conversation:gone'],undefined);
 });
+
+test('explicit conflict choice replaces held global/project personas and retains local recovery through restart', async()=>{
+  const {resolveWorkspace}=await import('./workspaceProtocol.js');
+  for (const kind of ['agent','project']) {
+    let local=state();local.agentProfiles.custom={name:'Local',instructions:'Before',channels:{telegram:{botToken:'must-not-be-copied'}}};
+    local.projects=[{id:'p',name:'P'}];local.projectAgentOverrides={p:{custom:{instructions:'Before project'}}};
+    refreshPortableWorkspace(local);const remote=structuredClone(local.mobileWorkspaceSync), id=kind==='agent'?'custom':'p';
+    const value=kind==='agent'?legacy({instructions:'Chosen remote'}):{name:'Remote project',agentOverrides:{custom:legacy({instructions:'Chosen remote'})}};
+    putWorkspace(remote,kind,id,value,'phone');
+    if(kind==='agent')local.agentProfiles.custom.instructions='Concurrent';else local.projectAgentOverrides.p.custom.instructions='Concurrent';
+    refreshPortableWorkspace(local);local.mobileWorkspaceSync=mergeWorkspaces(local.mobileWorkspaceSync,remote);
+    if(kind==='agent')local.agentProfiles.custom.instructions='x'.repeat(50001);else local.projectAgentOverrides.p.custom.instructions='x'.repeat(50001);
+    refreshPortableWorkspace(local);
+    const row=local.mobileWorkspaceSync.records.find(r=>r.kind===kind&&r.id===id);
+    const index=row.versions.findIndex(v=>(kind==='agent'?v.value.instructions:v.value.agentOverrides.custom.instructions)==='Chosen remote');
+    const chosen=resolveWorkspace(local.mobileWorkspaceSync,kind,id,index,'desktop');
+    applyPortableWorkspace(local,chosen,{resolvedKeys:[`${kind}:${id}`]});
+    local=JSON.parse(JSON.stringify(local));refreshPortableWorkspace(local);applyPortableWorkspace(local,local.mobileWorkspaceSync);
+    assert.equal(kind==='agent'?local.agentProfiles.custom.instructions:local.projectAgentOverrides.p.custom.instructions,'Chosen remote');
+    assert.equal(local.agentPersonaRecoveries.at(-1).agents.custom.instructions,'x'.repeat(50001));
+    assert.ok(!JSON.stringify(local.agentPersonaRecoveries).includes('must-not-be-copied'));
+    assert.ok(!pendingPersonaRecords(local).some(r=>r.kind===kind&&r.id===id));
+    assert.equal(local.mobileWorkspaceSync.records.find(r=>r.kind===kind&&r.id===id).versions.length,1);
+  }
+});

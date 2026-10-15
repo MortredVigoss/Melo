@@ -38,6 +38,14 @@ struct SettingsContent: View {
                         SyncSettingsSection()
                     }.font(.subheadline)
                     Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    ForEach(store.preferences.personaRecoveries ?? []) { recovery in
+                        DisclosureGroup("本机人设恢复副本") {
+                            Text(recovery.key + " · " + recovery.createdAt).font(.caption)
+                            ForEach(recovery.agents.keys.sorted(), id: \.self) { id in
+                                Text(recovery.agents[id]?.instructions ?? "").font(.caption).textSelection(.enabled)
+                            }
+                        }
+                    }
                     ForEach(store.preferences.workspaceSync?.conflicts ?? [], id: \.key) { conflict in
                         DisclosureGroup("同步冲突 · \(conflict.label)") {
                             Text("各版本均已保留，选择要继续使用的版本。").font(.caption)
@@ -46,7 +54,7 @@ struct SettingsContent: View {
                                     Text("版本 \(index + 1)").font(.headline)
                                     if let data = Data(base64Encoded: version.value["avatarData"].string), let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().frame(width: 56, height: 56) }
                                     Text(version.value.preview).font(.caption).textSelection(.enabled)
-                                    Button("采用版本 \(index + 1)") { store.resolveSyncConflict(conflict.key, choice:index) }.disabled(store.syncing)
+                                    Button("采用版本 \(index + 1)") { store.resolveSyncConflict(conflict.key, choice:index, expected:version) }.disabled(store.syncing)
                                 }.padding(.vertical,8)
                             }
                         }

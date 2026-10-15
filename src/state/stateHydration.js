@@ -1,3 +1,4 @@
+import { recommendedCapabilities } from '../domain/agent/capabilities.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
 import { isDeepStrictEqual } from 'node:util';
 import { serializeChatForPersistence } from './chatManifest.js';
@@ -500,7 +501,7 @@ export function createDefaultState() {
     commandRuns: [],
     externalConnectors: [],
     externalToolRuns: [],
-    agentProfiles: normalizeAgentProfiles(),
+    agentProfiles: Object.fromEntries(Object.entries(normalizeAgentProfiles()).map(([id,p])=>[id,{...p,capabilities:recommendedCapabilities(id),collaboration:{...p.collaboration,canDelegate:id==='main',delegateTargets:id==='main'?['research','builder','reviewer']:[]}}])),
     projectAgentOverrides: {},
     tasks: [],
     approvals: [],

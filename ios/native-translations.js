@@ -1,6 +1,7 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["本机人设恢复副本", "Local persona recovery copy", "端末内の人設定義の復元用コピー", "로컬 페르소나 복구 사본", "Copia local de recuperación del perfil"],
 ["图片模式", "Image mode", "画像モード", "이미지 모드", "Modo de imagen"],
 ["生成图片", "Generate image", "画像を生成", "이미지 생성", "Generar imagen"],
 ["修改图片", "Edit image", "画像を編集", "이미지 편집", "Editar imagen"],

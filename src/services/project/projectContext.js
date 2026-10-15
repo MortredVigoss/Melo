@@ -6,7 +6,7 @@
 import { agentUsesTool } from '../../domain/agent/agentTools.js';
 
 export function buildProjectContextSection(project, activeAgentProfile) {
-  return project && agentUsesTool(activeAgentProfile, 'projects')
+  return project && activeAgentProfile?.contextSources?.projects !== false
     ? `Active project: ${project.name}\nSummary: ${project.summary}\nWorkspace: ${project.workspacePath}\nInstructions: ${project.instructions}`
     : '';
 }

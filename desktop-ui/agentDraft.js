@@ -73,6 +73,9 @@ export function agentDraftFromProfile(agent) {
       ? agent.tools.map(tool => tool?.id).filter(Boolean)
       : [];
   return {
+    capabilities: agent?.capabilities ? cloneChannel(agent.capabilities) : null,
+    collaboration: cloneChannel(agent?.collaboration),
+    contextSources: cloneChannel(agent?.contextSources),
     name: agent?.name || '',
     avatarData: agent?.avatarData || '',
     laneLabel: agent?.laneLabel || '',

@@ -1,3 +1,4 @@
+import {emptyCapabilities} from '../../domain/agent/capabilities.js';
 import { encodeV1Persona, decodeV1Persona } from '../../../mobile-sync/agentCompatibility.js';
 import { withoutDeletedChatContext } from '../../../mobile-sync/protocol.js';
 import { randomUUID } from 'node:crypto';
@@ -116,17 +117,26 @@ export function refreshPortableWorkspace(state,{config={},scenes=new Map()}={}) 
   return state.mobileWorkspaceSync;
 }
 function importedAgent(id,value,old) {
-  return normalizeAgentProfile(id,{...(old || {tools:['projects','artifacts'],enabledConnectorIds:[],enabledSkillIds:[],enabledMcpServerIds:[]}),portableIdentity:true,name:value.name,description:value.subtitle,instructions:decodeV1Persona(value),avatarData:value.avatarData?'data:image/jpeg;base64,'+value.avatarData:'',identity:value.identity,soulMd:value.soul,systemPrompt:value.systemPrompt,mood:value.mood,model:value.model,symbol:value.symbol});
+  return normalizeAgentProfile(id,{...(old || {capabilities:emptyCapabilities(),tools:['projects','artifacts'],enabledConnectorIds:[],enabledSkillIds:[],enabledMcpServerIds:[]}),portableIdentity:true,name:value.name,description:value.subtitle,instructions:decodeV1Persona(value),avatarData:value.avatarData?'data:image/jpeg;base64,'+value.avatarData:'',identity:value.identity,soulMd:value.soul,systemPrompt:value.systemPrompt,mood:value.mood,model:value.model,symbol:value.symbol});
 }
 export function sceneFromPortable(value,chatId,messageId) {
   if(!value)return null;
   return {...createExecutionScene({runId:value.runId,chatId,query:value.query,startedAt:value.startedAt}),...value,artifacts:[],previews:[],events:[],messageId,observationVersion:2,observationNote:'跨设备同步的真实执行与来源记录；本机未重新执行。'};
 }
-export function applyPortableWorkspace(state,workspace,{config={},home}={}) {
+export function applyPortableWorkspace(state,workspace,{config={},home,resolvedKeys=[]}={}) {
   workspace=validateWorkspace(workspace);
   if(!workspace)return state;
   state.agentProfiles ||= {};state.projects ||= [];state.artifacts ||= [];state.projectAgentOverrides ||= {};
   const held = new Set(pendingPersonaRecords(state).map(row => `${row.kind}:${row.id}`));
+  for (const key of resolvedKeys) {
+    const row = workspace.records.find(row => `${row.kind}:${row.id}` === key && row.versions.length === 1);
+    if (!row || !held.has(key)) continue;
+    const persona = profile => Object.fromEntries(['name','description','instructions','symbol','avatarData','mood','model'].map(field=>[field,profile[field] ?? '']));
+    const agents = row.kind === 'agent' ? {[row.id]:persona(effectiveAgentProfile(state,row.id))} : row.kind === 'project' ? Object.fromEntries(Object.keys(state.projectAgentOverrides[row.id] || {}).map(id=>[id,persona(effectiveAgentProfile(state,id,row.id))])) : {};
+    if (Object.keys(agents).length) (state.agentPersonaRecoveries ||= []).push({id:randomUUID(),key,createdAt:new Date().toISOString(),agents});
+    delete state.mobilePersonaSyncHolds?.[key];
+    held.delete(key);
+  }
   const records=workspace.records.filter(r=>r.versions.length===1 && !held.has(`${r.kind}:${r.id}`)),now=new Date().toISOString();
   for(const r of records) {const v=r.versions[0].value;
     if(r.kind==='agent')state.agentProfiles[r.id]=importedAgent(r.id,v,state.agentProfiles[r.id]);

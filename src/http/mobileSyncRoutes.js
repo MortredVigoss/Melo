@@ -76,7 +76,7 @@ export async function handleMobileSyncRoute(request, response, url) {
       const row=s.mobileWorkspaceSync?.records.find(r=>r.kind===body.kind&&r.id===body.id);
       if(!body.expected||stableJSON(row?.versions?.[body.index])!==stableJSON(body.expected))throw Object.assign(new Error('同步冲突已变化，请刷新后重新选择。'),{statusCode:409});
       s.mobileWorkspaceSync=resolveWorkspace(s.mobileWorkspaceSync,body.kind,body.id,body.index,s.mobileWorkspaceDevice);
-      applyPortableWorkspace(s,s.mobileWorkspaceSync,{config,home});
+      applyPortableWorkspace(s,s.mobileWorkspaceSync,{config,home,resolvedKeys:[`${body.kind}:${body.id}`]});
       await persistPortableFiles(s,getPaths);
       stagePortableMemory(s, expectedMemories, baseline);
       return s;

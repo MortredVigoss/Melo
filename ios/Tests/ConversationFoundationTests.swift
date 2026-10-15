@@ -105,6 +105,18 @@ import Foundation
     let versions = released.workspace.records.first { $0.id == "held" }!.versions
     assert(versions.count == 2)
     assert(Set(versions.map { WorkspaceProjection.document($0.value) }) == ["Remote edit", "Local shortened intentionally"])
+    heldPreferences.workspaceSync = released.workspace
+    heldPreferences.agents[0].instructions = String(repeating:"x",count:50001)
+    let pendingChoice = try WorkspaceProjection.prepared(heldPreferences,chats:[],records:[],connections:[],device:"newPhone")
+    heldPreferences.personaSyncHolds = pendingChoice.holds
+    var personaResolved = pendingChoice.workspace
+    let selectedIndex = personaResolved.records.first { $0.key == "agent:held" }!.versions.firstIndex { WorkspaceProjection.document($0.value) == "Remote edit" }!
+    try personaResolved.resolve(key:"agent:held",choice:selectedIndex,device:"newPhone")
+    try WorkspaceProjection.apply(personaResolved,preferences:&heldPreferences,records:&heldRecords,connections:[],resolvedKeys:["agent:held"])
+    heldPreferences = try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(heldPreferences))
+    assert(heldPreferences.agents[0].instructions == "Remote edit")
+    assert(heldPreferences.personaRecoveries?.last?.agents["held"]?.instructions.count == 50001)
+    assert(!WorkspaceProjection.pending(heldPreferences).contains("agent:held"))
     print("Conversation foundations passed: legacy preferences, avatar/selection persistence, role/project/reference prompts, history attribution and readable tables/code")
  }
 }

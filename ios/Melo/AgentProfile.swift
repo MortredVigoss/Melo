@@ -63,6 +63,12 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         AgentProfile(id: "analyst", name: "分析助手", subtitle: "拆解问题 · 比较选择", symbol: "chart.xyaxis.line", instructions: "帮助用户拆解问题和比较选项，明确事实、假设和不确定性，不编造数据或来源。")
     ]
 }
+struct PersonaRecovery: Codable, Identifiable {
+    var id: String
+    var key: String
+    var createdAt: String
+    var agents: [String: AgentProfile]
+}
 struct PersonaSyncHold: Codable {
     var kind: String
     var id: String
@@ -71,6 +77,7 @@ struct PersonaSyncHold: Codable {
 }
 struct MobilePreferences: Codable {
     var personaSyncHolds: [String: PersonaSyncHold]?
+    var personaRecoveries: [PersonaRecovery]?
 
     var memoryFacts: [MobileMemoryFact]?
     var memoryUsage: [String: [MobileMemoryUse]]?
