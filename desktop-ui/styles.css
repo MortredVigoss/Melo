@@ -1316,11 +1316,6 @@ select option {
   font-weight: 500;
 }
 
-.agent-selector-mood {
-  font-size: 11px;
-  opacity: 0.55;
-}
-
 .agent-selector-tag {
   font-size: 10px;
   padding: 2px 6px;

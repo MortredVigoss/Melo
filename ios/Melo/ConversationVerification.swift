@@ -39,7 +39,7 @@ import Foundation
                 guard actual.sendingID == nil, actual.chats.first(where: { $0.id == customChat })?.messages.last?.role == "assistant" else { throw MeloError.message("fixture reply did not finish") }
             }
             actual.send("我不喜欢咖啡", chatID: customChat); try await finish()
-            guard prompts.last?.contains("CUSTOM_ROLE_REQUEST") == true, prompts.last?.contains("MOOD_REQUEST") == true,
+            guard prompts.last?.contains("CUSTOM_ROLE_REQUEST") == true, prompts.last?.contains("MOOD_REQUEST") == false,
                   let fact = actual.preferences.memoryFacts?.first(where: { $0.text == "User dislikes 咖啡" }),
                   prompts.last?.contains(fact.text) == true else { throw MeloError.message("role or extracted memory missing from actual transport instructions") }
             actual.updatePreferences { p in p.memoryFacts = p.memoryFacts?.map { var f = $0; f.status = "forgotten"; f.userEdited = true; return f } }

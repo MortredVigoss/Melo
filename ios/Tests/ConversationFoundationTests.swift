@@ -1,6 +1,14 @@
 import Foundation
 @main struct ConversationFoundationTests {
  static func main() throws {
+    var moodCompatibility = AgentProfile(name:"Test",subtitle:"Purpose",symbol:"star",instructions:"User instructions")
+    let promptWithoutMood = moodCompatibility.prompt
+    for legacyMood in ["calm", "warm", "sharp", "focused", "cold", "playful", "intense"] {
+        moodCompatibility.mood = legacyMood
+        assert(moodCompatibility.prompt == promptWithoutMood)
+        let restored = try JSONDecoder().decode(AgentProfile.self, from: JSONEncoder().encode(moodCompatibility))
+        assert(restored.mood == legacyMood && restored.prompt == promptWithoutMood)
+    }
     let fencedIdentity = "Actual identity\n\n```md\n## 风格\nLiteral style heading\n```\n\n~~~~\n## 补充要求\nLiteral extra heading\n~~~~"
     var fencedAgent = AgentProfile(name:"Fenced",subtitle:"",symbol:"star",instructions:"",identity:fencedIdentity,soul:"Actual style")
     assert(fencedAgent.identity == fencedIdentity && fencedAgent.soul == "Actual style")

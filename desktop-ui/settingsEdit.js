@@ -115,6 +115,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
     },true);
   }
   return {decorate,install,
+    begin(form) { get(keyFor(form)).begin(); },
     editToken(form) { const session=get(keyFor(form)), revision=session.revision; return ()=>session.editing && session.revision===revision; },
     start(form) { if(!form.matches(selector)) return null; const key=keyFor(form); return get(key).start()?key:false; },
     finish(key,error) { if(!key) return; if(error)get(key).failed(error);else{get(key).saved();drafts.delete(key);} render(); },

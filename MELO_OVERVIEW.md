@@ -1,6 +1,6 @@
 # Melo 总览：架构、线程改动与接手入口
 
-更新时间：2026-10-15（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
+更新时间：2026-10-16（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
 
 ## 1. 先看这里
 
@@ -62,6 +62,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 项目 / 工作区边界 | `src/services/project/`、`src/services/workspace/`、`src/domain/project/`、`src/services/chat/portableWorkspace.js` | 当前配置、选用资料、角色覆盖与工作区解析分散；已有统一同步 schema。计划统一领域解析、保留本机路径/授权及稳定资产身份，详见项目专项，未实施 |
 | 纯领域 / 持久化辅助 | `src/domain/`、`src/persistence/` | 纯实体与可复用持久化辅助；保持依赖方向，抽模块先逐字节移植 |
 | 状态与检查点 | `src/state/stateStore.js`、`chatPersistence.js`、`chatManifest.js`、`statePayload.js` | 原子事务；规范化 home 隔离；不可变消息 checkpoint 与单调清单修订 |
+| Agent 设置 | `desktop-ui/app.js`、`agentSettings.css`、`settingsEdit.js`、`src/services/agent/agentMutations.js` | 单一编辑页、页头新增、全局新建、跨渠道显式保存；旧 Mood UI/双端提示注入已停用，旧数据兼容；见 [设置验收](docs/agent-settings-20261016.md) |
 | 对话执行 | `src/services/chat/`、`src/agents/` | 入队、上下文/预算、模型请求、工具续接、取消与落盘；同聊天串行，不同聊天可并行 |
 | 供应商 | `src/openai.js`、`src/providers/` | Codex / API / Anthropic 协议与流解析；原生 function calling 接入 Melo 自身执行器 |
 | 工具 / 授权 | `src/tools/`、`src/safety/`、`src/services/approval/` | 校验参数、权限、工作区与执行身份；外部副作用不因网络失败盲重放 |
@@ -107,7 +108,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | --- | --- | --- | --- |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
-| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
+| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 新稿；此前 B 已完成桌面安装 | 图标资源和旧生成入口已统一；电脑安装/Finder 图标及授权后的原生启动已验。历史神经 UI 见 [交接](docs/handoffs/melo-ui-20261015.md)；[本轮 Logo 证据](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
@@ -321,3 +322,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户最新反馈：B 黑冰星空仍太复杂，改成普通低饱和黑金；最新设计要求覆盖此前星空/厚玻璃方向，仅限品牌 Logo。
 - 本轮交付：[简洁 M 设计稿、完整提示词与验证边界](docs/design/logo-muted-20261016/README.md)，内置 image_gen 编辑并复制实际 PNG 入项目；炭黑背景、香槟金几何 M，视觉核对无星空/神经纹理/厚玻璃。
 - 状态：设计稿已交付；未覆盖双端正式资源或安装包，当前电脑实际安装仍 B，不把预览称为安装成功。未改运行代码或用户数据，无产品测试/签名/安装验收。下一步同源导出和安装时独立检查系统图标。
+
+### 2026-10-16 — 设计 Melo — Agent 设置统一完成
+- 用户要求清除 Sharp/Warm 等情绪残留、补齐新增 Agent、消除旧版设置样式。确认新增按钮被神经布局隐藏，两套旧编辑器并存；本轮统一为一个编辑页与页头新增入口。
+- 实际入口 `desktop-ui/app.js` / `agentSettings.css`、`agentMutations.js`、双端 Agent prompt；存量 mood 字段保留兼容、停止注入，不改用户人设和账号数据。功能与范围见 [Agent 设置交接](docs/agent-settings-20261016.md)。
+- 已修复渠道切换后另一侧草稿未提交；全局新建、双击防重、失败重试、权限保留、五语及三种宽度验收通过。共享日常 GREEN：3573 JS、845 语法、两组浏览器、23 Swift，175.9 秒；日志/截图 `.tmp/agent-settings-20261015/`。
+- 实际桌面重启 PID 61208，新入口及清理后的 UI 已原生核对；14 聊天/6 Agent/1 项目保留，42 个配置/正文文件散列不变，主状态只发生设置/修订/频道绑定变化。独立暂存树补验 27 JS / 21 Swift 通过，仅本地提交；未重新安装手机，未做真实远端模型或渠道调用。

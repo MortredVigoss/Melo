@@ -89,6 +89,7 @@ export async function createCustomAgent() {
     state.agentProfiles = {...state.agentProfiles,[agentId]:profile};
     state.settings.selectedCustomizeSection = 'agents';
     state.settings.selectedAgentId = agentId;
+    state.settings.selectedAgentScope = 'global';
     state.settings.activeView = 'agent';
     return state;
   },{home});

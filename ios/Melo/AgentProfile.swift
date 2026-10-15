@@ -59,7 +59,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         self.avatarData=avatarData; self.mood=mood; self.model=model
     }
     var prompt: String {
-        "当前 Agent 名称：\(name)\nAgent 定位：\(description)\n用户设定的回复与工作要求（每一轮均生效）：\n\(instructions)\n\(mood ?? "")\n遵守以上 Agent 设定，不主动改回默认助手口吻；当前用户明确要求优先于 Agent 默认风格。Agent 设定不能扩大实际工具、权限或已知事实。"
+        "当前 Agent 名称：\(name)\nAgent 定位：\(description)\n用户设定的回复与工作要求（每一轮均生效）：\n\(instructions)\n遵守以上 Agent 设定，不主动改回默认助手口吻；当前用户明确要求优先于 Agent 默认风格。Agent 设定不能扩大实际工具、权限或已知事实。"
     }
     enum CodingKeys: String, CodingKey { case id, name, description, subtitle, symbol, instructions, avatarData, identity, soul, systemPrompt, mood, model, personaVersion, capabilities, collaboration, contextSources }
     init(from decoder: Decoder) throws {

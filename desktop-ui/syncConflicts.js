@@ -1,6 +1,6 @@
 import { t, ui } from './i18n.js';
 const labels={agent:'Agent',project:'项目',knowledge:'资料',conversation:'对话设置',message:'回复来源'};
-const fields={name:'名称',title:'标题',subtitle:'一句话描述',content:'内容',instructions:'回复要求 / 项目指引',goal:'目标',identity:'身份',soul:'回复风格',systemPrompt:'补充要求',mood:'语气',symbol:'图标',model:'模型',agentId:'Agent',projectId:'项目',chatId:'对话'};
+const fields={name:'名称',title:'标题',subtitle:'一句话描述',content:'内容',instructions:'回复要求 / 项目指引',goal:'目标',identity:'身份',soul:'回复风格',systemPrompt:'补充要求',symbol:'图标',model:'模型',agentId:'Agent',projectId:'项目',chatId:'对话'};
 export function describeSyncVersion(value) {
   const lines=[];
   for(const [key,label] of Object.entries(fields))if(typeof value[key]==='string'&&value[key])lines.push(`${label}：${value[key]}`);

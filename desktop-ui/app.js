@@ -73,6 +73,10 @@ const settingsFormEditors = createSettingsFormEditors({render,
   },
 });
 settingsFormEditors.install(document);
+document.addEventListener('toggle', event => {
+  const key = event.target.dataset?.agentSection;
+  if (key) uiState.agentOpenSections[key] = event.target.open;
+}, true);
 installUnsavedSettingsGuard(window);
 
 
@@ -235,6 +239,8 @@ const uiState = {
   // show one channel at a time filling the full panel width.
   agentChannelTab: {},
   agentDrafts: {},
+  agentCreating: false,
+  agentOpenSections: {},
   agentSaveStates: {},
   agentSecretVisibility: {},
   commandInputs: {},
@@ -1719,7 +1725,7 @@ function updateAgentChannelDraft(agentId, channelId, patch) {
 }
 
 function currentAgentScrollKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -1732,7 +1738,7 @@ function currentAgentScrollKey() {
 }
 
 function currentAgentEditorStateKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -1747,7 +1753,7 @@ function currentAgentEditorStateKey() {
 }
 
 function captureAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -1766,7 +1772,7 @@ function captureAgentEditorState() {
 }
 
 function captureAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -1783,7 +1789,7 @@ function captureAgentScrollState() {
 }
 
 function restoreAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -5089,11 +5095,21 @@ async function handleRefreshModelStatus() {
 }
 
 async function handleCreateCustomAgent() {
-  const payload = await api('/api/agents/create-custom', {
-    method: 'POST',
-    body: {},
-  });
-  applyBootstrap(payload);
+  if (uiState.agentCreating) return;
+  uiState.agentCreating = true;
+  render();
+  try {
+    const payload = await api('/api/agents/create-custom', { method: 'POST', body: {} });
+    applyBootstrap(payload);
+    const form = app.querySelector('form[data-form="agent-profile-update"]');
+    if (form) settingsFormEditors.begin(form);
+    render();
+    app.querySelector('form[data-form="agent-profile-update"] [name="name"]')?.select();
+  } finally {
+    uiState.agentCreating = false;
+    const button = app.querySelector('[data-action="create-custom-agent"]');
+    if (button) { button.disabled = false; button.textContent = t('新增 Agent'); }
+  }
 }
 
 async function handleUpdateAgentProfile(form) {
@@ -5626,7 +5642,6 @@ async function handleImportAgentPreset(agentId, presetId) {
     instructions,
     identity: preset.identity || preset.identify,
     'soul.md': preset.soulMd,
-    mood: preset.mood,
   });
   render();
 }
@@ -5958,8 +5973,8 @@ function paletteCommands() {
     {
       id: 'palette-open-agents',
       title: 'Open Agent',
-      subtitle: 'Tune IDENTITY.md, SOUL.md, and mood for each agent lane',
-      keywords: 'agent agents identity soul mood persona',
+      subtitle: t('设置 Agent 的人设、能力与消息渠道'),
+      keywords: 'agent agents persona capabilities channels',
       action: 'open-agents',
     },
     {
@@ -6405,11 +6420,7 @@ function renderSidebar() {
 
         <div class="profile-hint">
           ${escapeHtml(currentMode?.label || 'Chat')} mode is ready for the current workspace.
-          ${
-            mainAgent
-              ? ` Main agent mood: ${escapeHtml(mainAgent.moodLabel)}.`
-              : ''
-          }
+
         </div>
       </div>
     </aside>
@@ -6458,7 +6469,7 @@ function renderTopbar() {
       <div class="topbar-right status-group">
         ${
           currentAgent
-            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}${currentAgent.moodLabel ? ' · ' + escapeHtml(currentAgent.moodLabel) : ''}</div>`
+            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}</div>`
             : ''
         }
         <div class="status-pill">
@@ -6660,7 +6671,7 @@ function renderTaskPanel({ compact = false } = {}) {
         return ui`
           <div class="chip-row task-lane-row task-lane-overflow-anchor">
             <button class="chip chip-button" data-action="run-task-lane" data-owner="${primary}">
-              执行下一项 · ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
+              执行下一项 · ${primary}
             </button>
             <button class="chip chip-button task-lane-overflow-toggle"
                     type="button"
@@ -6676,7 +6687,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   const ownerProfile = agentProfileById(owner);
                   return ui`
                     <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
-                      执行下一项 · ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
+                      执行下一项 · ${owner}
                     </button>
                   `;
                 }).join('')}
@@ -6745,11 +6756,7 @@ function renderTaskPanel({ compact = false } = {}) {
                       <div class="thread-meta">
                         <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? t("Agent任务") : t("任务"))}</span>
                         <span class="chip">${escapeHtml(task.ownerLabel)}</span>
-                        ${
-                          ownerProfile
-                            ? ui`<span class="chip">${escapeHtml(ownerProfile.moodLabel)}</span>`
-                            : ''
-                        }
+
                         <span class="chip">${escapeHtml(task.statusLabel)}</span>
                         <span class="meta-label">${escapeHtml(task.updatedLabel)}</span>
                       </div>
@@ -7146,7 +7153,7 @@ function renderAgentSelectorChip() {
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
             title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
-      <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
+      <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
   `;
@@ -7164,7 +7171,7 @@ function renderAgentSelectorDropdown() {
                 data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
                 data-agent-id="${escapeHtml(agent.id)}">
           ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
-          ${agent.moodLabel ? ui`<span class="agent-selector-mood">${escapeHtml(agent.moodLabel)}</span>` : ''}
+
           ${agent.id === 'main' ? ui`<span class="agent-selector-tag">默认</span>` : agent.isCustom ? ui`<span class="agent-selector-tag">自定义</span>` : ''}
         </button>
       `).join('')}
@@ -8036,33 +8043,6 @@ function renderProjectsDetailView(project) {
   `;
 }
 
-function renderAgentList(selectedId) {
-  return ui`
-    <div class="list-stack">
-      ${(uiState.bootstrap?.customize?.agents || [])
-        .map(
-          agent => ui`
-            <button
-              class="list-row ${selectedId === agent.id ? 'is-active' : ''}"
-              data-action="select-agent-profile"
-              data-agent-id="${agent.id}"
-            >
-              <div class="list-row-title">
-                ${escapeHtml(agent.name)}
-                <span class="meta-label">${escapeHtml(agent.moodLabel)}</span>
-              </div>
-              <div class="list-row-meta">${escapeHtml(agent.laneLabel)}</div>
-            </button>
-          `,
-        )
-        .join('')}
-      <button class="small-button agent-create-button" type="button" data-action="create-custom-agent">
-        Customize
-      </button>
-    </div>
-  `;
-}
-
 function renderAgentCapabilities(selected,draft) {
   const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
   if (!c) return '';
@@ -8077,30 +8057,29 @@ function renderAgentCapabilities(selected,draft) {
     ...[['canDelegate','允许委派'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return `<details class="agent-capabilities" ${pending?'open':''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
     ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
-    ${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(label)}</label>`).join('')}
-    ${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>`<label class="label">${label}<input class="config-input" name="cap_${key}" value="${escapeHtml(Array.isArray(value(key))?value(key).join(','):value(key)||'')}" placeholder="ID，逗号分隔；空表示不允许"></label>`).join('')}
-    <p>可用技能：${escapeHtml((selected.capabilityOptions||[]).map(s=>s.id).join(', '))}</p>
-    <label class="label"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate ?? collaboration.canDelegate)?'checked':''}>允许委派</label>
+    <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
+    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" name="cap_${key}" value="${escapeHtml(Array.isArray(value(key))?value(key).join(','):value(key)||'')}" placeholder="${escapeHtml(t('ID，逗号分隔；空表示不允许'))}"></label>`).join('')}
+    </div><p>可用技能：${escapeHtml((selected.capabilityOptions||[]).map(s=>s.id).join(', '))}</p>
+    <div class="agent-settings-grid"><label class="checkbox-row"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate !== undefined ? draft.canDelegate === 'on' : collaboration.canDelegate)?'checked':''}>允许委派</label>
     <label class="label">目标 Agent ID<input class="config-input" name="delegateTargets" value="${escapeHtml(draft?.delegateTargets ?? (collaboration.delegateTargets||[]).join(','))}"></label>
-    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${label}<input type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
-    <p>上下文来源</p>${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${label}</label>`).join('')}
-  </details>`;
+    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
+  </div></details>`;
 }
 
 function renderAgentPersonaFields(selected, draft) {
   return ui`
     ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
-    ${renderAgentCapabilities(selected,draft)}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
-    <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
-    <label class="label">人设与工作要求<textarea class="textarea code-editor agent-content-editor" name="instructions" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
-    <div class="inline-actions">
-      <label class="small-button">导入 Markdown<input type="file" accept=".md,.txt,text/markdown,text/plain" data-agent-document="${escapeHtml(selected.id)}" /></label>
+    <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
+    <label class="label">人设与工作要求<textarea class="textarea agent-content-editor" name="instructions" rows="7" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
+    <div class="inline-actions agent-document-actions">
+      <label class="small-button agent-file-button">导入 Markdown<input type="file" accept=".md,.txt,text/markdown,text/plain" data-agent-document="${escapeHtml(selected.id)}" /></label>
       <button class="small-button" type="button" data-action="export-agent-document" data-agent-id="${escapeHtml(selected.id)}">导出 Markdown</button>
       <span class="meta-label">导入后先预览，点击保存修改生效。</span>
     </div>`;
@@ -8108,23 +8087,13 @@ function renderAgentPersonaFields(selected, draft) {
 
 function renderAgentWorkbench(selected) {
   if (!selected) {
-    return '<section class="surface-card"><div class="empty-state">Select an agent to inspect it.</div></section>';
+    return ui`<section class="surface-card"><div class="empty-state">新增 Agent，设置它的人设与能力。</div></section>`;
   }
 
-  const moodOptions = uiState.bootstrap?.customize?.moods || [];
-  const toolOptions = agentToolOptions();
   const project = activeProject();
   const scope = selectedAgentScope();
   const draft = agentDraftFor(selected);
-  const allSkills = uiState.bootstrap?.customize?.skills || [];
-  const externalMcpConnectors = (uiState.bootstrap?.customize?.connectors || []).filter(
-    c => c.type === 'external-mcp',
-  );
   const formId = `agent-profile-form-${selected.id}`;
-  const selectedTools = new Set(draft?.tools || []);
-  const saveKey = agentSaveKey(selected.id, scope, scope === 'project' ? project?.id || 'global' : 'global');
-  const saveButtonLabel = uiState.agentSaveStates[saveKey] ? 'Saving' : 'Save';
-  const saveButtonStateClass = uiState.agentSaveStates[saveKey] ? ' is-saving' : '';
   const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
   const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
   const telegramSecretVisible = Boolean(
@@ -8133,11 +8102,9 @@ function renderAgentWorkbench(selected) {
   const discordSecretVisible = Boolean(
     uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
-  // Active channel tab controls which single channel panel is rendered. The
-  // three tabs (Telegram / Discord / Lark) sit above a full-width panel so
-  // that the detail form uses the entire right-column width instead of being
-  // crammed into a 2-column grid.
-  const VALID_CHANNEL_TABS = ['telegram', 'discord', 'lark'];
+  // Keep both channel panels mounted so saving includes edits made on either tab.
+  // Only the active panel is visible; all fields share the explicit save boundary.
+  const VALID_CHANNEL_TABS = ['telegram', 'discord'];
   const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
     ? uiState.agentChannelTab[selected.id]
     : 'telegram';
@@ -8156,95 +8123,16 @@ function renderAgentWorkbench(selected) {
       connected: discordChannel.lastStatus === 'connected',
       enabled: Boolean(discordChannel.enabled),
     },
-    {
-      id: 'lark',
-      label: 'Lark',
-      status: 'coming soon',
-      connected: false,
-      enabled: false,
-    },
   ];
 
   return ui`
     <section class="surface-card agent-workbench-card">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-          <p class="page-kicker">${escapeHtml(selected.description)}</p>
-        </div>
-        <div class="inline-actions">
-          ${
-            uiState.bootstrap?.settings?.selectedChatId
-              ? ui`
-                <button
-                  class="small-button is-outline"
-                  type="button"
-                  data-action="save-chat-as-skill"
-                  data-chat-id="${uiState.bootstrap.settings.selectedChatId}"
-                  title="Draft a reusable skill from the active chat. You confirm before it saves."
-                >
-                  Save as skill
-                </button>
-              `
-              : ui`
-                <button
-                  class="small-button is-outline"
-                  type="button"
-                  disabled
-                  title="Open a chat first to enable this. The drafter needs a conversation to learn from."
-                >
-                  Save as skill
-                </button>
-              `
-          }
-          <button
-            class="chip chip-button is-accent agent-save-button${saveButtonStateClass}"
-            type="button"
-            data-action="submit-agent-profile"
-            data-form-id="${formId}"
-            ${uiState.agentSaveStates[saveKey] ? 'disabled' : ''}
-          >
-            ${saveButtonLabel}
-          </button>
-        </div>
-      </div>
-
-      <div class="toggle-row">
-        <div>
-          <div class="list-row-title">Persona scope</div>
-          <div class="list-row-meta">
-            ${
-              project
-                ? `Switch between global defaults and a project override for ${escapeHtml(
-                    project.name,
-                  )}.`
-                : 'Global defaults are active because no project override target is selected.'
-            }
-          </div>
-        </div>
+      <div class="agent-scope-row">
+        <span class="meta-label">设置范围</span>
         <div class="chip-row">
-          <button
-            class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="global"
-          >
-            Global
-          </button>
-          <button
-            class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="project"
-            ${project ? '' : 'disabled'}
-          >
-            ${project ? escapeHtml(project.name) : 'Project override'}
-          </button>
+          <button class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="global">全局默认</button>
+          ${project ? ui`<button class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="project">${escapeHtml(project.name)}</button>` : ''}
         </div>
-      </div>
-
-      <div class="agent-compact-note">
-        身份与背景、回复与工作要求都会用于每次请求；编辑后对下一轮生效。
       </div>
 
       <form
@@ -8253,242 +8141,27 @@ function renderAgentWorkbench(selected) {
         data-form="agent-profile-update"
         data-agent-id="${selected.id}"
       >
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        <section class="agent-settings-section agent-identity-section">
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...draft}, escapeHtml, 40)}<label class="small-button agent-file-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${renderAgentPersonaFields(selected, draft)}
 
-        <div class="detail-meta">
-          <div class="meta-block-label">Agent controls</div>
-          <div>These fields follow the source-code agent idea: tools, model, and system prompt shape how this lane actually runs.</div>
-        </div>
-
         <label class="label">
-          Model override
+          模型覆盖
           <input
             class="config-input"
             type="text"
             name="model"
             value="${escapeHtml(draft?.model || '')}"
-            placeholder="Inherit global model"
+            placeholder="留空使用全局模型"
           />
         </label>
 
-        <input type="hidden" name="tools" value="${escapeHtml((draft?.tools || []).join(','))}" />
+        </section>
+        ${renderAgentCapabilities(selected, draft)}
 
-        <div class="detail-meta">
-          <div class="meta-block-label">Tools</div>
-          <div>Select which source-inspired capabilities this agent can pull into its live prompt and task context.</div>
-        </div>
-
-        <div class="chip-row">
-          ${toolOptions
-            .map(
-              option => ui`
-                <button
-                  class="chip chip-button ${selectedTools.has(option.id) ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="toggle-agent-tool"
-                  data-agent-id="${selected.id}"
-                  data-tool-id="${option.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        ${
-          selectedTools.has('skills') && allSkills.length
-            ? (() => {
-                const whitelistIds = Array.isArray(draft?.enabledSkillIds)
-                  ? new Set(draft.enabledSkillIds)
-                  : null; // null = all allowed
-                const noRestriction = whitelistIds === null;
-                return ui`
-                  <input type="hidden" name="enabledSkillIds" value="${
-                    noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
-                  }" />
-                  <div class="detail-meta">
-                    <div class="meta-block-label">Skill access</div>
-                    <div>Choose which skills this agent can use. Leave all unchecked to allow all enabled skills.</div>
-                  </div>
-                  <div class="chip-row">
-                    <button
-                      class="chip chip-button ${noRestriction ? 'is-accent' : ''}"
-                      type="button"
-                      data-action="reset-agent-skill-whitelist"
-                      data-agent-id="${selected.id}"
-                    >All skills</button>
-                    ${allSkills
-                      .map(skill => ui`
-                        <button
-                          class="chip chip-button ${!noRestriction && whitelistIds.has(skill.id) ? 'is-accent' : ''}"
-                          type="button"
-                          data-action="toggle-agent-skill"
-                          data-agent-id="${selected.id}"
-                          data-skill-id="${skill.id}"
-                        >${escapeHtml(skill.name)}</button>
-                      `)
-                      .join('')}
-                  </div>
-                `;
-              })()
-            : '<input type="hidden" name="enabledSkillIds" value="__all__" />'
-        }
-
-        ${
-          selectedTools.has('external-connectors') && externalMcpConnectors.length
-            ? (() => {
-                const whitelistIds = Array.isArray(draft?.enabledConnectorIds)
-                  ? new Set(draft.enabledConnectorIds)
-                  : null;
-                const noRestriction = whitelistIds === null;
-                return ui`
-                  <input type="hidden" name="enabledConnectorIds" value="${
-                    noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
-                  }" />
-                  <div class="detail-meta">
-                    <div class="meta-block-label">Connector access</div>
-                    <div>Choose which external MCP connectors this agent can reach. Leave all unchecked to allow all.</div>
-                  </div>
-                  <div class="chip-row">
-                    <button
-                      class="chip chip-button ${noRestriction ? 'is-accent' : ''}"
-                      type="button"
-                      data-action="reset-agent-connector-whitelist"
-                      data-agent-id="${selected.id}"
-                    >All connectors</button>
-                    ${externalMcpConnectors
-                      .map(c => ui`
-                        <button
-                          class="chip chip-button ${!noRestriction && whitelistIds.has(c.id) ? 'is-accent' : ''}"
-                          type="button"
-                          data-action="toggle-agent-connector"
-                          data-agent-id="${selected.id}"
-                          data-connector-id="${c.id}"
-                        >${escapeHtml(c.name)}</button>
-                      `)
-                      .join('')}
-                  </div>
-                `;
-              })()
-            : '<input type="hidden" name="enabledConnectorIds" value="__all__" />'
-        }
-
-        ${(() => {
-          // Stdio MCP server whitelist — unified across built-in presets
-          // and user-configured `mcpServers`. Without this surface the
-          // user's own MCP entries would register tools but never be
-          // reachable via the per-agent whitelist (Codex 🔴 audit
-          // 2026-04-28). Defaults to deny-all per agent.
-          const presets = uiState.bootstrap?.customize?.mcpAuthSurface
-            || uiState.bootstrap?.customize?.mcpPresets // legacy fallback
-            || [];
-          if (!presets.length) {
-            return '<input type="hidden" name="enabledMcpServerIds" value="" />';
-          }
-          const whitelist = new Set(
-            Array.isArray(draft?.enabledMcpServerIds) ? draft.enabledMcpServerIds : [],
-          );
-          return ui`
-            <input type="hidden" name="enabledMcpServerIds" value="${escapeHtml([...whitelist].join(','))}" />
-            <div class="detail-meta">
-              <div class="meta-block-label">Stdio MCP servers</div>
-              <div>Pick which built-in MCP servers this agent may call. Empty = no MCP access (default — these run local processes, opt-in per agent).</div>
-            </div>
-            <div class="chip-row">
-              ${presets.map(preset => {
-                const enabled = Boolean(preset?.enabled);
-                const allowed = whitelist.has(preset.id);
-                const unpinned = Boolean(preset?.unpinned);
-                // Globally-disabled servers stay clickable when the agent
-                // has them in its whitelist, so the user can always REMOVE
-                // a stale authorisation. Adding a new authorisation for a
-                // disabled server is rejected by the action handler with
-                // a toast pointing at Advanced. The `is-disabled-preset`
-                // class greys the chip without using the HTML disabled
-                // attribute (which would block click entirely).
-                //
-                // Codex 四轮 audit 2026-04-29: a preset can also be
-                // `unpinned: true` — runtime refuses to spawn it, so the
-                // chip says "(unavailable)" even when global enabled is
-                // true (legacy `enableBrowserlessMcp:true` config). Stale
-                // authorisations on unpinned presets stay clickable for
-                // revoke; new authorisations are blocked by the handler
-                // with a toast pointing at Advanced.
-                const stale = (!enabled || unpinned) && allowed;
-                const tagSuffix = unpinned
-                  ? ' (unavailable)'
-                  : (!enabled ? ' (off)' : '');
-                const titleText = unpinned
-                  ? (stale
-                      ? 'Preset unpinned — click to revoke the stale authorisation'
-                      : 'Preset unpinned — agents cannot authorise it until a version is locked in PINNED_VERSIONS')
-                  : (enabled
-                      ? 'Server enabled globally'
-                      : stale
-                        ? 'Server disabled globally — click to revoke the stale authorisation'
-                        : 'Server disabled globally — enable in Advanced first');
-                return ui`
-                  <button
-                    class="chip chip-button${allowed ? ' is-accent' : ''}${(!enabled || unpinned) ? ' is-disabled-preset' : ''}"
-                    type="button"
-                    data-action="toggle-agent-mcp-server"
-                    data-agent-id="${selected.id}"
-                    data-mcp-server-id="${escapeHtml(preset.id)}"
-                    data-preset-enabled="${enabled ? '1' : '0'}"
-                    data-preset-unpinned="${unpinned ? '1' : '0'}"
-                    title="${titleText}"
-                  >${escapeHtml(preset.id)}${tagSuffix}</button>
-                `;
-              }).join('')}
-            </div>
-          `;
-        })()}
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Mood</div>
-          <div>${escapeHtml(selected.moodDescription)}</div>
-        </div>
-
-        <div class="chip-row">
-          ${moodOptions
-            .map(
-              option => ui`
-                <button
-                  class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="set-agent-mood"
-                  data-mood="${option.id}"
-                  data-agent-id="${selected.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        <label class="label">
-          Mood
-          <select class="config-select" name="mood">
-            ${moodOptions
-              .map(
-                option => ui`
-                  <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
-                    ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
-                  </option>
-                `,
-              )
-              .join('')}
-          </select>
-        </label>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Channels</div>
-          <div>Link Telegram, Discord, or Lark for this agent and test the saved credentials from here.</div>
-        </div>
-
+        <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
+          <summary>消息渠道</summary>
+          <p class="agent-section-note">连接 Telegram 或 Discord，使用已保存的配置测试连接。</p>
         <div class="agent-channel-tabs" role="tablist">
           ${channelTabDefs
             .map(
@@ -8511,14 +8184,12 @@ function renderAgentWorkbench(selected) {
         </div>
 
         <div class="agent-channel-panel">
-          ${
-            activeChannelTab === 'telegram'
-              ? ui`
-                <section class="selected-file-card agent-channel-card">
+          ${ui`
+                <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'telegram' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
                       <div class="meta-block-label">Telegram</div>
-                      <div class="list-row-meta">Attach a Telegram bot to this agent with its bot token.</div>
+                      <div class="list-row-meta">通过 Bot token 连接此 Agent。</div>
                     </div>
                     <span class="chip ${telegramChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
                       ${escapeHtml(telegramChannel.statusLabel || telegramChannel.lastStatus || 'idle')}
@@ -8526,29 +8197,29 @@ function renderAgentWorkbench(selected) {
                   </div>
                   <label class="checkbox-row">
                     <input type="checkbox" name="telegramEnabled" ${telegramChannel.enabled ? 'checked' : ''} />
-                    <span>Enable Telegram for this agent</span>
+                    <span>启用 Telegram</span>
                   </label>
                   <label class="checkbox-row">
                     <input type="checkbox" name="telegramVoiceReply" ${telegramChannel.voiceReply ? 'checked' : ''} />
-                    <span>Send voice reply (TTS audio after each text reply)</span>
+                    <span>文字回复后发送语音</span>
                   </label>
                   <label class="label">
-                    Voice reply mode
+                    语音回复模式
                     <select class="config-select" name="voiceReplyMode">
-                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>Summary — concise oral summary (default)</option>
-                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>Full — read entire reply as-is</option>
-                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>Off — never send voice reply</option>
+                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
+                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
+                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
                     </select>
                   </label>
                   <label class="label">
-                    Edge TTS voice
+                    Edge TTS 音色
                     <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
                       draft?.edgeTtsVoice || '',
-                    )}" placeholder="Auto-detect (e.g. ko-KR-SunHiNeural, zh-CN-XiaoxiaoNeural)" />
+                    )}" placeholder="自动选择音色" />
                   </label>
                   <label class="label">
-                    Voice personality
-                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="Optional: personality instructions for voice rewrite (e.g. tone, catchphrases, language mixing rules)">${escapeHtml(
+                    语音风格要求
+                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="可选：语气、常用表达或语言要求">${escapeHtml(
                       draft?.voicePersonality || '',
                     )}</textarea>
                   </label>
@@ -8564,18 +8235,18 @@ function renderAgentWorkbench(selected) {
                         data-action="toggle-agent-secret"
                         data-agent-id="${selected.id}"
                         data-channel-id="telegram"
-                        aria-label="${telegramSecretVisible ? 'Hide Telegram bot token' : 'Show Telegram bot token'}"
-                        title="${telegramSecretVisible ? 'Hide Telegram bot token' : 'Show Telegram bot token'}"
+                        aria-label="${telegramSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
+                        title="${telegramSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
                       >
                         ${telegramSecretVisible ? icon.eyeOff : icon.eye}
                       </button>
                     </div>
                   </label>
                   <label class="label">
-                    Default chat ID (optional)
+                    默认聊天 ID（可选）
                     <input class="config-input" type="text" name="telegramChatId" value="${escapeHtml(
                       telegramChannel.chatId || '',
-                    )}" placeholder="Optional: Telegram chat id for default routing" />
+                    )}" placeholder="默认消息发送目标" />
                   </label>
                   ${
                     telegramChannel.lastError
@@ -8585,21 +8256,17 @@ function renderAgentWorkbench(selected) {
                   ${renderChannelRuntimeCard(telegramChannel, { showRoute: true })}
                   <div class="inline-actions">
                     <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="telegram">
-                      Test Telegram
+                      测试 Telegram
                     </button>
                   </div>
                 </section>
-              `
-              : ''
-          }
-          ${
-            activeChannelTab === 'discord'
-              ? ui`
-                <section class="selected-file-card agent-channel-card">
+          `}
+          ${ui`
+                <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
                       <div class="meta-block-label">Discord</div>
-                      <div class="list-row-meta">Attach a Discord bot workspace to this agent.</div>
+                      <div class="list-row-meta">通过 Bot token 连接此 Agent。</div>
                     </div>
                     <span class="chip ${discordChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
                       ${escapeHtml(discordChannel.statusLabel || discordChannel.lastStatus || 'idle')}
@@ -8607,15 +8274,14 @@ function renderAgentWorkbench(selected) {
                   </div>
                   <label class="checkbox-row">
                     <input type="checkbox" name="discordEnabled" ${discordChannel.enabled ? 'checked' : ''} />
-                    <span>Enable Discord for this agent</span>
+                    <span>启用 Discord</span>
                   </label>
                   <label class="checkbox-row">
                     <input type="checkbox" name="discordVoiceReply" ${discordChannel.voiceReply ? 'checked' : ''} />
-                    <span>Send voice reply (TTS audio after each text reply)</span>
+                    <span>文字回复后发送语音</span>
                   </label>
                   <div class="list-row-meta" style="margin:0 0 8px 0;">
-                    Voice reply mode, Edge TTS voice and voice personality are agent-level and
-                    apply to both Telegram and Discord — configure them on the Telegram tab.
+                    语音设置由 Telegram 和 Discord 共用，可在 Telegram 标签页修改。
                   </div>
                   <label class="label">
                     Bot token
@@ -8629,21 +8295,21 @@ function renderAgentWorkbench(selected) {
                         data-action="toggle-agent-secret"
                         data-agent-id="${selected.id}"
                         data-channel-id="discord"
-                        aria-label="${discordSecretVisible ? 'Hide Discord bot token' : 'Show Discord bot token'}"
-                        title="${discordSecretVisible ? 'Hide Discord bot token' : 'Show Discord bot token'}"
+                        aria-label="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
+                        title="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
                       >
                         ${discordSecretVisible ? icon.eyeOff : icon.eye}
                       </button>
                     </div>
                   </label>
                   <label class="label">
-                    Guild ID
+                    Discord 服务器 ID
                     <input class="config-input" type="text" name="discordGuildId" value="${escapeHtml(
                       discordChannel.guildId || '',
                     )}" placeholder="Discord guild id" />
                   </label>
                   <label class="label">
-                    Channel ID
+                    Discord 频道 ID
                     <input class="config-input" type="text" name="discordChannelId" value="${escapeHtml(
                       discordChannel.channelId || '',
                     )}" placeholder="Discord channel id" />
@@ -8656,43 +8322,16 @@ function renderAgentWorkbench(selected) {
                   ${renderChannelRuntimeCard(discordChannel)}
                   <div class="inline-actions">
                     <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="discord">
-                      Test Discord
+                      测试 Discord
                     </button>
                   </div>
                 </section>
-              `
-              : ''
-          }
-          ${
-            activeChannelTab === 'lark'
-              ? ui`
-                <section class="selected-file-card agent-channel-card">
-                  <div class="agent-editor-header">
-                    <div class="agent-editor-heading">
-                      <div class="meta-block-label">Lark</div>
-                      <div class="list-row-meta">Attach a Lark (Feishu) bot workspace to this agent.</div>
-                    </div>
-                    <span class="chip">coming soon</span>
-                  </div>
-                  <div class="list-row-meta">
-                    Lark channel support is coming soon. The backend adapter is being wired up — you'll
-                    be able to paste a Lark bot App ID / App Secret here once the channel is live.
-                  </div>
-                </section>
-              `
-              : ''
-          }
+          `}
+
         </div>
 
+        </details>
         <div class="inline-actions">
-          <button
-            class="small-button"
-            type="button"
-            data-action="reset-agent-draft"
-            data-agent-id="${selected.id}"
-          >
-            Reset
-          </button>
           ${
             scope === 'project' && selected.hasProjectOverride
               ? ui`
@@ -8702,7 +8341,7 @@ function renderAgentWorkbench(selected) {
                   data-action="reset-project-agent-override"
                   data-agent-id="${selected.id}"
                 >
-                  Reset project override
+                  恢复全局设置
                 </button>
               `
               : ''
@@ -8715,43 +8354,19 @@ function renderAgentWorkbench(selected) {
 
 function renderAgentPage() {
   const selected = selectedAgentProfile();
-
   return ui`
     <section class="page agent-page">
       <div class="page-grid agent-page-grid">
-        <div class="header-row">
-          <div>
-            <h1 class="page-title compact">Agent</h1>
-          </div>
-
-          <label class="label agent-select-label">
-            Agent
-            <select class="config-select" data-action="select-agent-profile">
-              ${(uiState.bootstrap?.customize?.agents || [])
-                .map(
-                  agent => ui`
-                    <option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>
-                      ${escapeHtml(agent.name)}
-                    </option>
-                  `,
-                )
-                .join('')}
+        <div class="header-row agent-page-header">
+          <h1 class="page-title compact">Agent</h1>
+          <div class="inline-actions">
+            <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
+              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
             </select>
-          </label>
-        </div>
-
-        <div class="customize-layout agent-layout">
-          <div class="customize-pane agent-list-pane">
-            <div class="customize-pane-header">
-              <h2 class="pane-title">Lanes</h2>
-            </div>
-            ${renderAgentList(selected?.id || 'main')}
-          </div>
-
-          <div class="agent-detail-column">
-            ${renderAgentWorkbench(selected)}
+            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${uiState.agentCreating ? 'disabled' : ''}>${uiState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
           </div>
         </div>
+        <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>
       </div>
     </section>
   `;
@@ -8787,203 +8402,13 @@ function renderModelPage() {
   `;
 }
 
-function renderAgentDetails(selected) {
-  const moodOptions = uiState.bootstrap?.customize?.moods || [];
-  const presets = uiState.bootstrap?.customize?.agentPresets || [];
-  const project = activeProject();
-  const scope = selectedAgentScope();
-  const draft = agentDraftFor(selected);
-
-  return ui`
-    <div class="detail-card">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-          <p class="page-kicker">${escapeHtml(selected.description)}</p>
-        </div>
-        <span class="chip is-accent">${escapeHtml(selected.moodLabel)}</span>
-      </div>
-
-      <div class="toggle-row">
-        <div>
-          <div class="list-row-title">Persona scope</div>
-          <div class="list-row-meta">
-            ${
-              project
-                ? `Switch between global defaults and a project override for ${escapeHtml(
-                    project.name,
-                  )}.`
-                : 'Global defaults apply because no project override target is active.'
-            }
-          </div>
-        </div>
-        <div class="chip-row">
-          <button
-            class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="global"
-          >
-            Global
-          </button>
-          <button
-            class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="project"
-            ${project ? '' : 'disabled'}
-          >
-            ${project ? escapeHtml(project.name) : 'Project override'}
-          </button>
-        </div>
-      </div>
-
-      <div class="meta-grid">
-        <div>
-          <div class="meta-block-label">Lane</div>
-          <div>${escapeHtml(selected.laneLabel)}</div>
-        </div>
-        <div>
-          <div class="meta-block-label">Source</div>
-          <div>
-            ${
-              selected.scopeSource === 'project'
-                ? `Project override${project ? ` · ${escapeHtml(project.name)}` : ''}`
-                : 'Global default'
-            }
-          </div>
-        </div>
-      </div>
-
-      <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${renderAgentPersonaFields(selected, draft)}
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Preset import</h3>
-          <span class="meta-label">Import a mood/persona baseline into the current scope</span>
-        </div>
-        <div class="card-grid compact-grid preset-grid">
-          ${presets
-            .map(
-              preset => ui`
-                <article class="artifact-card preset-card">
-                  <div class="thread-meta">
-                    <span class="chip is-accent">${escapeHtml(preset.mood)}</span>
-                  </div>
-                  <h3 class="card-title">${escapeHtml(preset.name)}</h3>
-                  <p class="card-summary">${escapeHtml(preset.description)}</p>
-                  <button
-                    class="small-button is-primary"
-                    type="button"
-                    data-action="import-agent-preset"
-                    data-agent-id="${selected.id}"
-                    data-preset-id="${preset.id}"
-                  >
-                    Import preset
-                  </button>
-                </article>
-              `,
-            )
-            .join('')}
-        </div>
-      </div>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Current mood</div>
-          <div>${escapeHtml(selected.moodDescription)}</div>
-        </div>
-
-        <div class="chip-row">
-          ${moodOptions
-            .map(
-              option => ui`
-                <button
-                  class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="set-agent-mood"
-                  data-mood="${option.id}"
-                  data-agent-id="${selected.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        <label class="label">
-          Mood
-          <select class="config-select" name="mood">
-            ${moodOptions
-              .map(
-                option => ui`
-                  <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
-                    ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
-                  </option>
-                `,
-              )
-              .join('')}
-          </select>
-        </label>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Mood instruction</div>
-          <div>${escapeHtml(
-            moodOptions.find(option => option.id === draft?.mood)?.prompt || selected.moodPrompt,
-          )}</div>
-        </div>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">MiniMax voice (optional)</div>
-          <div>
-            Bind this agent to a MiniMax cloned voice — the TTS panel's "自定义语音"
-            list shows every agent that has a voice id set, so this is what
-            controls which agents appear there. Configure your MiniMax key
-            in Settings → Connector → API key.
-          </div>
-        </div>
-        <label class="label">
-          MiniMax voice ID
-          <input
-            class="input"
-            name="minimaxVoiceId"
-            value="${escapeHtml(draft?.minimaxVoiceId ?? selected.minimaxVoiceId ?? '')}"
-            placeholder="moss_audio_… or any cloned voice id (leave blank to unbind)"
-          />
-        </label>
-        ${renderMinimaxTtsParameterInputs(draft, selected)}
-
-        <div class="inline-actions">
-          <button class="small-button is-primary" type="submit">Save agent profile</button>
-          ${
-            scope === 'project' && selected.hasProjectOverride
-              ? ui`
-                <button
-                  class="small-button"
-                  type="button"
-                  data-action="reset-project-agent-override"
-                  data-agent-id="${selected.id}"
-                >
-                  Reset project override
-                </button>
-              `
-              : ''
-          }
-        </div>
-      </form>
-    </div>
-  `;
-}
-
 function renderConnectorDetails(selected) {
   if (!selected) {
     return '<div class="empty-state">Select a skill, agent, or connector to inspect it.</div>';
   }
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
-    return renderAgentDetails(selected);
+    return renderAgentWorkbench(selected);
   }
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'skills') {
@@ -10345,6 +9770,7 @@ function renderCustomizePage() {
   // new section without an extra click.
   const rawSection = data.settings.selectedCustomizeSection;
   const section = rawSection === 'runtime' ? 'advanced' : rawSection;
+  if (section === 'agents') return renderAgentPage();
 
   return ui`
     <section class="page page-customize">
@@ -10369,7 +9795,7 @@ function renderCustomizePage() {
               data-section="agents"
             >
               <div class="list-row-title">Agents</div>
-              <div class="list-row-meta">IDENTITY.md, SOUL.md, and mood for the main chat agent and worker lanes.</div>
+              <div class="list-row-meta">设置 Agent 的人设、能力与消息渠道</div>
             </button>
             <button
               class="section-button ${section === 'connectors' ? 'is-active' : ''}"
@@ -10456,11 +9882,7 @@ function renderCustomizePage() {
                   >
                     <div class="list-row-title">
                       ${escapeHtml(item.name)}
-                      ${
-                        section === 'agents'
-                          ? ui`<span class="meta-label">${escapeHtml(item.moodLabel)}</span>`
-                          : ''
-                      }
+
                     </div>
                     <div class="list-row-meta">${escapeHtml(
                       section === 'agents' ? item.laneLabel : item.description,
@@ -12275,16 +11697,6 @@ document.addEventListener('click', async event => {
       case 'reset-project-agent-override':
         await handleResetProjectAgentOverride(trigger.dataset.agentId);
         break;
-      case 'set-agent-mood': {
-        const agentId = trigger.dataset.agentId;
-        const draftKey = agentDraftKey(agentId);
-        uiState.agentDrafts[draftKey] = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-          mood: trigger.dataset.mood,
-        };
-        render();
-        break;
-      }
       case 'toggle-agent-tool': {
         const agentId = trigger.dataset.agentId;
         const toolId = trigger.dataset.toolId;

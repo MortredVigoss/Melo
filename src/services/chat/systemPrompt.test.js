@@ -121,7 +121,7 @@ test('buildOutputHardConstraints: remote channel adds the length cap + repeat su
 // summarizeAgentPrompt
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('summarizeAgentPrompt: includes role + identity + soul + mood', () => {
+test('summarizeAgentPrompt: includes role + identity + soul without legacy mood', () => {
   const profile = {
     rolePrompt: 'You are a coding assistant.',
     identity: 'I am Aida.',
@@ -134,7 +134,10 @@ test('summarizeAgentPrompt: includes role + identity + soul + mood', () => {
   assert.match(out, /You are a coding assistant\./);
   assert.match(out, /IDENTITY\.md:\nI am Aida\./);
   assert.match(out, /SOUL\.md:\nStay calm\./);
-  assert.match(out, /Current mood/);
+  assert.doesNotMatch(out, /Current mood/);
+  for (const mood of ['calm','warm','sharp','focused','cold','playful','intense']) {
+    assert.equal(summarizeAgentPrompt({...profile,mood}),out);
+  }
 });
 
 test('summarizeAgentPrompt: falls back to `identify` when `identity` is missing', () => {
