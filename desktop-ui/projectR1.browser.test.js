@@ -22,7 +22,7 @@ test('project launch uses one POST; returning home clears membership; source-fol
  await page.locator('[data-action=chat-from-project]').click();await page.waitForFunction(()=>!!document.querySelector('[data-action=new-chat]'));
  await page.waitForTimeout(200);let boot=await api('/api/bootstrap');assert.equal(boot.activeChat.projectId,id);assert.deepEqual(posts,['/api/chats']);
  await page.locator('[data-action=new-chat]').first().click();await page.waitForTimeout(200);
- await page.locator('[data-action=open-command-palette]').click();
+ await page.keyboard.press('Meta+k');
  const newChatResponse=page.waitForResponse(r=>r.url().endsWith('/api/chats') && r.request().method()==='POST');
  await page.locator('#command-palette-input').press('Enter');
  assert.equal((await newChatResponse).status(),200);boot=await api('/api/bootstrap');assert.ok(boot.activeChat);assert.equal(boot.activeChat.projectId,null);
