@@ -1,9 +1,9 @@
 import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
-import { toolCapabilityAllowed } from '../domain/agent/capabilities.js';
+import {narrowCapabilityScope,scopeAllowsTool,missingCapabilityScope} from '../domain/agent/capabilityScope.js';
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import { recordTaskApproval } from '../services/task/taskApprovalCheckpoint.js';
 import { operationScope } from '../safety/permissionContext.js';
 import { reserveTaskOperation } from '../services/task/operationLedger.js';
-import { loadState } from '../state/stateStore.js';
 import { randomUUID } from 'node:crypto';
 import { observeTool } from './executionObservation.js';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
@@ -40,23 +40,24 @@ const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
  * @returns {Promise<import('./tool.js').ToolResult>}
  */
 export async function executeTool(tool, args, options = {}) {
-  let requestContext = options.requestContext || currentRequestContext();
-  if ((Array.isArray(options.allowedToolIds) && !options.allowedToolIds.includes(tool.id)) || !toolCapabilityAllowed(tool.id,options.capabilities,args)) {
-    return {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${options.agentId || 'current'} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}};
+  // Ambient authority cannot be replaced by an options bag. Options may only
+  // narrow it; the scoped implementation is private so callers cannot skip it.
+  const ambient=currentRequestContext();
+  const resolved=await resolveCapabilityContext(ambient || options.requestContext);
+  if (!resolved) return missingCapabilityScope();
+  const capabilityScope=narrowCapabilityScope(resolved.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
+  if (!scopeAllowsTool(capabilityScope,tool.id,args)) {
+    return {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}};
   }
-  if (requestContext && !options.scopeResolved) {
-    const home = requestContext.home;
-    const state = requestContext.turnBinding ? null : await loadState({ home });
-    const chat = state?.chats.find(c => c.id === requestContext.chatId);
-    const turnBinding = requestContext.turnBinding || {
-      role: chat?.agentId || 'main', project: chat?.projectId || null,
-      taskId: state?.tasks.find(t => t.execution?.runId === requestContext.runId && t.execution.status === 'running')?.id || null,
-    };
-    const permissionScope = await operationScope({ ...requestContext, turnBinding }, options.workspacePath, options.agentId);
-    const taskId = turnBinding.taskId;
-    requestContext = Object.freeze({...requestContext, permissionScope});
-    return runWithRequestContext(requestContext, () => executeTool(tool,args,{...options,requestContext,scopeResolved:true,taskId}));
-  }
+  const permissionScope=await operationScope(resolved,options.workspacePath,capabilityScope.agentId);
+  const requestContext=Object.freeze({...resolved,capabilityScope,permissionScope});
+  const scopedOptions={...options,requestContext,capabilities:capabilityScope.capabilities,agentId:capabilityScope.agentId,
+    allowedToolIds:capabilityScope.allowedToolIds,taskId:resolved.turnBinding?.taskId || null};
+  return runWithRequestContext(requestContext,()=>executeScopedTool(tool,args,scopedOptions));
+}
+
+async function executeScopedTool(tool,args,options) {
+  const requestContext=options.requestContext;
   const id = options.toolCallId || randomUUID();
   let executionStarted = false;
   const observe = (status, result) => {
@@ -154,6 +155,7 @@ async function runObservedTool(tool, args, options = {}) {
     agentDepth: agentDepth || 0,
     agentId: options.agentId,
     capabilities: options.capabilities,
+    capabilityScope: requestContext.capabilityScope,
     collaboration: options.collaboration,
     agentProfiles: options.agentProfiles,
     extraTools: options.extraTools,

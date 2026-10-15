@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdtemp, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { executeTool } from './executor.js';
+import {executeTool} from '../testSupport/directAgentFixture.js';
 import { bashTool } from './builtins/bashTool.js';
 import { resolveFileSafety } from '../safety/fileSafetyGate.js';
 

@@ -12,7 +12,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runSkill, buildSkillTool } from './skillExecutor.js';
+import {buildSkillTool} from './skillExecutor.js';
+import {runSkill} from '../testSupport/directAgentFixture.js';
 import { registerTool, unregisterTool } from '../tools/registry.js';
 
 function makeFakeReply() {

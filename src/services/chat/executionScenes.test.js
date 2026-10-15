@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, visibleSceneSources, moduleActivity, sourceReadingLabel, moduleForOperation, requestedImageCount } from '../../shared/executionScene.js';
-import { executeToolCalls } from '../../tools/executor.js';
+import {executeToolCalls} from '../../testSupport/directAgentFixture.js';
 import { calculatorTool } from '../../tools/builtins/calculatorTool.js';
 import { observeTool, observeNativeItem } from '../../tools/executionObservation.js';
 import { createExecutionRecorder, readExecutionScene, selectSceneImage, saveExecutionScene, recoverSceneObservations } from './executionScenes.js';

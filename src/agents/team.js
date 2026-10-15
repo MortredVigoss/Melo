@@ -1,3 +1,6 @@
+import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {narrowCapabilityScope,missingCapabilityScope} from '../domain/agent/capabilityScope.js';
 import {delegatedConfig} from './delegatedConfig.js';
 import {runSubAgent} from './subAgent.js';
 import {runConfiguredMember} from './delegate.js';
@@ -22,7 +25,13 @@ export function validateTeamPlan(plan) {
  if(mode==='review-loop'&&members.length!==2)throw new Error('复核循环需要实施和复核两个成员。');
  return {members,roles:members,mode,concurrency:mode==='parallel'?Math.max(1,Math.min(4,Math.floor(Number(plan.concurrency)||2))):1,maxRounds:Math.max(1,Math.min(5,Math.floor(Number(plan.maxRounds)||2)))};
 }
-export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent}) {
+export async function runAgentTeam(options) {
+ const parent=await resolveCapabilityContext(currentRequestContext());
+ if(!parent)throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
+ const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
+ return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runAgentTeamScoped({...options,capabilities:capabilityScope.capabilities}));
+}
+async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
  if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
  if(capabilities&&!capabilities.delegate)throw Object.assign(new Error('主 Agent 未开启委派能力，无法启动团队。'),{code:'CAPABILITY_DENIED'});

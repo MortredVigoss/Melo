@@ -13,7 +13,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runSubAgent, agentTool } from './subAgent.js';
+import {agentTool} from './subAgent.js';
+import {runSubAgent} from '../testSupport/directAgentFixture.js';
 import { registerTool, unregisterTool } from '../tools/registry.js';
 
 // ─── Test harness ─────────────────────────────────────────────────────────────

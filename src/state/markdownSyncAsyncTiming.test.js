@@ -44,14 +44,6 @@ function fakeState() {
 }
 
 // Wait for the in-flight prime microtask + its multiple awaits to settle.
-async function waitForPrimeFlush() {
-  // The prime body is `Promise.resolve().then(...)` and itself contains
-  // ~4 awaits over disk I/O. Two macrotask ticks + a few microtask flushes
-  // should be enough on any host that lets local writeFile resolve quickly.
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise(r => setImmediate(r));
-  }
-}
 
 test('queueAgentMarkdownPrime: prime body writes to the home captured at queue time, even after env flip', async () => {
   const homeA = freshHome();
@@ -59,13 +51,13 @@ test('queueAgentMarkdownPrime: prime body writes to the home captured at queue t
   try {
     // Schedule a prime under home A.
     process.env.MELO_HOME = homeA;
-    queueAgentMarkdownPrime(fakeState());
+    const priming=queueAgentMarkdownPrime(fakeState());
 
     // IMMEDIATELY flip env to home B before the microtask runs.
     process.env.MELO_HOME = homeB;
 
     // Let the in-flight prime body complete.
-    await waitForPrimeFlush();
+    await priming;
 
     // Assert: home A got the markdown files. The buggy code would write
     // to home B because the prime body's lazy resolver would read
