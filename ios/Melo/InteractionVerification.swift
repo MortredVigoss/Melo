@@ -19,6 +19,19 @@ import Foundation
             guard !session.save(current: session.original, persist: { value in store.updatePreferences { $0.agents[0] = value } }),
                   session.isEditing, session.draft.name == "不能丢的草稿", store.preferences.agents[0].name == "已保存Agent" else { throw MeloError.message("failed save lost draft or mutated stored role") }
             store.storageReady = true
+            guard session.save(current: store.preferences.agents[0], persist: { value in store.updatePreferences { $0.agents[0] = value } }),
+                  !session.isEditing, session.didSave, store.preferences.agents[0].name == "不能丢的草稿" else { throw MeloError.message("save retry did not persist the retained draft") }
+            session.begin(current: store.preferences.agents[0]); session.draft.name = "discard this change"; session.cancel()
+            guard session.draft.name == "不能丢的草稿", store.preferences.agents[0].name == "不能丢的草稿" else { throw MeloError.message("cancel modified the saved role") }
+            result["saveRetryAndCancel"] = true
+            store.updatePreferences { $0.projects = [PersonalProject(id:"active-project", name:"Project", goal:""), PersonalProject(id:"archived-project", name:"Archived", goal:"", archived:true)] }
+            let originalChatIDs = store.chats.map(\.id)
+            guard store.newChat(projectID:"missing-project") == nil, store.newChat(projectID:"archived-project") == nil,
+                  store.chats.map(\.id) == originalChatIDs else { throw MeloError.message("invalid project created a conversation") }
+            guard let projectChat = store.newChat(projectID:"active-project"), let independentChat = store.newChat(),
+                  store.preferences.chatProjects?[projectChat] == "active-project", store.preferences.chatProjects?[independentChat] == nil else { throw MeloError.message("project membership leaked between new conversations") }
+            result["explicitProjectMembership"] = true
+            store.error = nil
             let a = store.newChat()!, b = store.newChat()!
             let ref = ImageReference(id: UUID().uuidString)
             store.composerDrafts[a] = ConversationDraft(text: "第一段草稿", imagePlan: ImageTaskPlan(action: .edit, references: [ref]))

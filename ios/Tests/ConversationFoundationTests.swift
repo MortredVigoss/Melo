@@ -9,6 +9,22 @@ import Foundation
         let restored = try JSONDecoder().decode(AgentProfile.self, from: JSONEncoder().encode(moodCompatibility))
         assert(restored.mood == legacyMood && restored.prompt == promptWithoutMood)
     }
+    let legacyProject = PersonalProject(id:"legacy-project",name:"Original",goal:"归拢相关对话、资料与目标。",instructions:"Keep this project focused, actionable, and easy to continue later.")
+    let projectPrompt = ConversationContext.instructions(agent:moodCompatibility,project:legacyProject,notes:[])
+    assert(!projectPrompt.contains(legacyProject.goal) && !projectPrompt.contains(legacyProject.instructions!), "legacy placeholder must not enter the prompt")
+    let restoredProject = try JSONDecoder().decode(PersonalProject.self,from:JSONEncoder().encode(legacyProject))
+    assert(restoredProject == legacyProject, "presentation cleanup must not migrate stored project text")
+    var authoredProject = legacyProject; authoredProject.goal += " "
+    assert(ConversationContext.instructions(agent:moodCompatibility,project:authoredProject,notes:[]).contains(authoredProject.goal), "only exact old placeholders are hidden")
+    var projectPreferences = MobilePreferences()
+    projectPreferences.projects = [legacyProject, PersonalProject(id:"archived",name:"Archived",goal:"",archived:true)]
+    try ConversationContext.validateNewProject(nil,preferences:projectPreferences)
+    try ConversationContext.validateNewProject("legacy-project",preferences:projectPreferences)
+    for id in ["missing", "archived"] {
+        do { try ConversationContext.validateNewProject(id,preferences:projectPreferences); assertionFailure("invalid project accepted") } catch { }
+    }
+    let legacyPreview: SyncValue = .object(["name":.string("Original"),"mood":.string("sharp"),"symbol":.string("star")])
+    assert(!legacyPreview.preview.contains("sharp") && legacyPreview.preview.contains("star"), "retired mood must not appear in conflict previews")
     let fencedIdentity = "Actual identity\n\n```md\n## 风格\nLiteral style heading\n```\n\n~~~~\n## 补充要求\nLiteral extra heading\n~~~~"
     var fencedAgent = AgentProfile(name:"Fenced",subtitle:"",symbol:"star",instructions:"",identity:fencedIdentity,soul:"Actual style")
     assert(fencedAgent.identity == fencedIdentity && fencedAgent.soul == "Actual style")

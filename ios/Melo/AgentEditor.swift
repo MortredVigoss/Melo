@@ -90,7 +90,7 @@ struct AgentEditor: View {
     }
     @ViewBuilder private var capabilityDetails: some View {
         Section("电脑执行能力") {
-            Text("能力范围与电脑同步；请在电脑编辑。手机不执行多 Agent 协作。").font(.caption).foregroundStyle(.secondary)
+            Text("这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。").font(.caption).foregroundStyle(.secondary)
             if let caps=session.draft.capabilities {
                 ForEach(["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"],id: \.self) { key in
                     HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }
@@ -106,9 +106,9 @@ struct AgentEditor: View {
             HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semibold)); Group { if session.draft.subtitle.isEmpty { Text("未填写介绍") } else { Text(verbatim: session.draft.subtitle) } }.foregroundStyle(.secondary) } }
         }
         Section("人设与工作要求") { Text(session.draft.instructions).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-        if [session.draft.mood, session.draft.model].contains(where: { $0?.isEmpty == false }) {
+        if session.draft.model?.isEmpty == false {
             Section("更多Agent设定") {
-                detail("语气", session.draft.mood); detail("默认模型", session.draft.model)
+                detail("默认模型", session.draft.model)
             }
         }
     }
@@ -126,7 +126,6 @@ struct AgentEditor: View {
             Text("保存后，对已绑定此Agent的对话下一轮生效。").font(.caption).foregroundStyle(.secondary)
         }
         Section("高级Agent设定") {
-            TextField("语气", text: optional(\.mood))
             TextField("默认模型 ID（留空沿用系统）", text: optional(\.model)).textInputAutocapitalization(.never).autocorrectionDisabled()
         }
         Section("图标") {

@@ -34860,6 +34860,41 @@
           }
         }
       }
+    },
+    "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

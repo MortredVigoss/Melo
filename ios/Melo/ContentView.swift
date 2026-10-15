@@ -216,6 +216,8 @@ struct AgentsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeading(eyebrow: "AGENTS", title: "不同Agent，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
+                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
+                    .accessibilityIdentifier("agents.create")
                 ForEach(store.preferences.agents) { agent in
                     VStack(alignment: .leading, spacing: 18) {
                         HStack { AgentAvatar(agent: agent, size: 48); Spacer(); Button { editing = agent } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary).padding(8) }.accessibilityLabel("查看\(agent.name)") }
@@ -223,7 +225,6 @@ struct AgentsView: View {
                         Button { if let id = store.newChat(agentID: agent.id) { open(id) } } label: { HStack { Text("与\(agent.name)对话"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline.weight(.medium)).foregroundStyle(meloAccent) }
                     }.meloPanel()
                 }
-                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
                 Text("Agent名称、定位和回复要求会随每轮消息生效。可直接在对话中切换Agent；配置与头像保存在本机。").font(.caption).foregroundStyle(.secondary)
             }.padding(20)
         }.sheet(item: $editing) { agent in AgentEditor(agent: agent, isNew: !store.preferences.agents.contains { $0.id == agent.id }).presentationBackground(MeloTheme.dialog) }

@@ -150,6 +150,11 @@ struct PersonalProject: Codable, Identifiable, Equatable {
     var instructions: String?
     var knowledgeIds: Set<String>?
     var archived: Bool?
+    // Match desktop projectText: hide only exact historical placeholders.
+    // Keep stored/synchronized text intact, including user-authored variants.
+    private static let legacyText: Set<String> = ["归拢相关对话、资料与目标。", "A local Melo project.", "Keep this project focused, actionable, and easy to continue later."]
+    var contextGoal: String { Self.legacyText.contains(goal) ? "" : goal }
+    var contextInstructions: String { let value = instructions ?? ""; return Self.legacyText.contains(value) ? "" : value }
 }
 struct KnowledgeNote: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
@@ -168,6 +173,11 @@ struct PortableModelReceipt: Codable, Equatable {
     var purpose: String?
 }
 enum ConversationContext {
+    static func validateNewProject(_ id: String?, preferences: MobilePreferences) throws {
+        guard let id else { return }
+        guard let project = preferences.projects?.first(where: { $0.id == id }) else { throw MeloError.message("本对话所属项目未同步完成，请同步或重新选择项目。") }
+        guard project.archived != true else { throw MeloError.message("请先恢复此项目，再创建对话。") }
+    }
     static func notes(preferences: MobilePreferences, chatID: String) -> [KnowledgeNote] {
         let project = preferences.projects?.first { $0.id == preferences.chatProjects?[chatID] }
         let ids = (preferences.chatKnowledge?[chatID] ?? []).union(project?.knowledgeIds ?? [])
@@ -181,7 +191,12 @@ enum ConversationContext {
     }
     static func instructions(agent: AgentProfile, project: PersonalProject?, notes: [KnowledgeNote]) -> String {
         var parts = [agent.prompt, "回复面向阅读：优先自然段落，不输出装饰性标题或分隔线。需要列表、表格和代码时保持完整、标准格式；不要把整段回答包进 Markdown 代码块。"]
-        if let project, agent.contextSources?["projects"].bool != false { parts.append("当前项目：\(project.name)\n项目目标：\(project.goal)\n\(project.instructions ?? "")") }
+        if let project, agent.contextSources?["projects"].bool != false {
+            var context = ["当前项目：\(project.name)"]
+            if !project.contextGoal.isEmpty { context.append("项目目标：\(project.contextGoal)") }
+            if !project.contextInstructions.isEmpty { context.append(project.contextInstructions) }
+            parts.append(context.joined(separator: "\n"))
+        }
         if !notes.isEmpty, agent.contextSources?["knowledge"].bool != false {
             var remaining = 12000
             let selected = Array(notes.prefix(8))

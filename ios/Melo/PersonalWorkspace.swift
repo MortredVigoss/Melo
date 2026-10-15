@@ -17,7 +17,7 @@ struct ProjectsView: View {
                 ForEach((store.preferences.projects ?? []).filter { ($0.archived == true) == showArchived }) { project in
                     VStack(alignment: .leading, spacing: 14) {
                         HStack { Text(project.name).font(.title3); Spacer(); Button("查看") { editing = project }.font(.caption) }
-                        if !project.goal.isEmpty { Text(project.goal).font(.subheadline).foregroundStyle(.secondary) }
+                        if !project.contextGoal.isEmpty { Text(project.contextGoal).font(.subheadline).foregroundStyle(.secondary) }
                         let chats = store.chats.filter { store.preferences.chatProjects?[$0.id] == project.id }
                         Text("\(chats.count) 段对话 · \(project.knowledgeIds?.count ?? 0) 份共享资料\(project.archived == true ? " · 已归档" : "")").font(.caption).foregroundStyle(meloGold)
                         ForEach(chats) { chat in Button { open(chat.id) } label: { Label(chat.title, systemImage: "bubble.left").font(.subheadline).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5) } }

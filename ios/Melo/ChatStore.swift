@@ -189,7 +189,8 @@ import SwiftUI
         do { try save() } catch { chats[index] = original; self.error = error.localizedDescription }
     }
     func newChat(agentID: String = "melo", projectID: String? = nil) -> String? {
-        if preferences.projects?.first(where: { $0.id == projectID })?.archived == true { error = "请先恢复此项目，再创建对话。"; return nil }
+        do { try ConversationContext.validateNewProject(projectID, preferences: preferences) }
+        catch { self.error = error.localizedDescription; return nil }
         let chat = Conversation()
         chats.insert(chat, at: 0)
         do { try save(); guard updatePreferences({ $0.chatAgents[chat.id] = agentID; if let projectID { if $0.chatProjects == nil { $0.chatProjects = [:] }; $0.chatProjects?[chat.id] = projectID } }) else { chats.removeAll { $0.id == chat.id }; try save(); return nil }; return chat.id } catch { chats.removeAll { $0.id == chat.id }; self.error = error.localizedDescription; return nil }

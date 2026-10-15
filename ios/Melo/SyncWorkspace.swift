@@ -36,7 +36,7 @@ indirect enum SyncValue: Codable, Equatable {
         if object["archived"] != nil { lines.append("项目状态：" + (self["archived"].bool ? "已归档" : "进行中")) }
         if !self["knowledgeIds"].array.isEmpty { lines.append("选用资料：" + self["knowledgeIds"].array.map(\.string).joined(separator: "、")) }
         if !self["model"].object.isEmpty { lines.append("连接：" + self["model"]["name"].string + "\n模型：" + self["model"]["model"].string) }
-        for key in ["mood", "symbol"] where !self[key].string.isEmpty { lines.append((key == "mood" ? "语气：" : "图标：") + self[key].string) }
+        if !self["symbol"].string.isEmpty { lines.append("图标：" + self["symbol"].string) }
         for (id, agent) in self["agentOverrides"].object.sorted(by: { $0.key < $1.key }) { lines.append("项目Agent · " + id + "\n" + agent.preview) }
         for model in self["models"].array { lines.append("请求模型：" + model["requestedModel"].string + "\n服务返回：" + model["reportedModel"].string) }
         for source in self["scene"]["sources"].array { lines.append(source["title"].string + " · " + source["url"].string) }
