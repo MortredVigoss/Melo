@@ -253,21 +253,17 @@ function assertAgentPersonaShape(bootstrap) {
   }
 
   for (const agent of agents) {
-    if (!agent.identity?.trim()) {
-      throw new Error(`Agent ${agent.id} is missing identity.`);
+    for (const field of ['name','description','instructions','identity','soulMd','soul.md','mood']) {
+      if (typeof agent[field] !== 'string') throw new Error(`Agent ${agent.id} is missing string field ${field}.`);
     }
-    if (!agent.soulMd?.trim()) {
-      throw new Error(`Agent ${agent.id} is missing soulMd.`);
-    }
-    if (!agent['soul.md']?.trim()) {
-      throw new Error(`Agent ${agent.id} is missing soul.md.`);
-    }
-    if (!agent.mood?.trim()) {
-      throw new Error(`Agent ${agent.id} is missing mood.`);
-    }
-    if (!Array.isArray(agent.toolIds) || !agent.toolIds.length) {
-      throw new Error(`Agent ${agent.id} is missing enabled tool ids.`);
-    }
+    // Empty sections and a deny-all custom Agent are valid user choices.
+    if (!Array.isArray(agent.toolIds)) throw new Error(`Agent ${agent.id} is missing tool ids.`);
+    if (agent.capabilities) {
+      if (agent.capabilities.version !== 1) throw new Error(`Agent ${agent.id} has an invalid capability version.`);
+      for (const key of ['readFiles','writeFiles','runCommands','network','knowledgeMemory','generateMedia','delegate']) {
+        if (typeof agent.capabilities[key] !== 'boolean') throw new Error(`Agent ${agent.id} has invalid capability ${key}.`);
+      }
+    } else if (!agent.capabilityMigration?.fingerprint) throw new Error(`Legacy Agent ${agent.id} lacks a migration preview.`);
     if (!Object.prototype.hasOwnProperty.call(agent, 'model')) {
       throw new Error(`Agent ${agent.id} is missing model.`);
     }
@@ -762,7 +758,7 @@ async function main() {
       await runStep('Bootstrap agent persona contract', async () => {
         const bootstrap = await fetchBootstrap();
         assertAgentPersonaShape(bootstrap);
-        return 'Agents expose identify, soul.md, soulMd, and mood.';
+        return 'Agents expose canonical instructions/description, compatible persona sections and explicit capabilities or a migration preview.';
       }),
     );
   } finally {
