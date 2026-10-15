@@ -22,13 +22,14 @@ import {
   collectKnownTelegramParticipants,
 } from './groupRelationship.js';
 import { normalizeConversationSnippet } from '../../memory/heuristics.js';
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 
 export function buildChannelRoutePrompt({ chat, channelContext, profile }) {
   const channelId =
     channelContext?.channelId ||
     (chat?.source === 'telegram' || chat?.source === 'discord' ? chat.source : '');
 
-  if (!channelId) {
+  if (!channelId || !isAgentChannelAvailable(channelId)) {
     return '';
   }
 

@@ -1,6 +1,111 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "Telegram 已归档，原有配置与历史对话保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram 已归档，原有配置与历史对话保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram is archived. Existing configuration and conversations are preserved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram はアーカイブ済みです。設定と会話履歴は保持されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram은 보관되었습니다. 기존 설정과 대화 기록은 유지됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram está archivado. Se conservan la configuración y las conversaciones."
+          }
+        }
+      }
+    },
+    "上方语音设置应用于此 Agent。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上方语音设置应用于此 Agent。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The voice settings above apply to this Agent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上の音声設定はこの Agent に適用されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 음성 설정은 이 Agent에 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los ajustes de voz anteriores se aplican a este Agent."
+          }
+        }
+      }
+    },
+    "此 Agent 的实时轮询与近期频道活动。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Agent 的实时轮询与近期频道活动。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live polling and recent channel activity for this agent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Agent のポーリングと最近のチャネル活動。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Agent의 실시간 폴링 및 최근 채널 활동입니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sondeo en directo y actividad reciente del canal de este Agent."
+          }
+        }
+      }
+    },
     "读取文件": {
       "extractionState": "manual",
       "localizations": {

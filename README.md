@@ -36,7 +36,7 @@ Melo works alongside the model and tool ecosystems you already use. Choose a pro
 | **OpenRouter** | API key or supported browser authorization, with the models available to that account. |
 | **Other hosted providers** | OpenAI-compatible Chat Completions endpoints, including configured connections for DeepSeek, Gemini, Kimi, Qwen, and Doubao. |
 | **Local and custom models** | A reachable endpoint implementing a supported Chat Completions or Anthropic Messages protocol. |
-| **Tools and services** | MCP servers, reusable skills, and configured Telegram or Discord channels, subject to Agent capabilities and permissions. |
+| **Tools and services** | MCP servers, reusable skills, and configured Discord channels, subject to Agent capabilities and permissions. |
 
 Protocol compatibility is the starting point: model access, attachments, tool calling, and image generation depend on the selected endpoint and account. Use the connection tests in Melo to check your setup. API credentials, supported OAuth access, and consumer subscriptions have their own access requirements. See [model connections](docs/llm-connections.md) for implementation and validation details.
 
@@ -45,7 +45,7 @@ Protocol compatibility is the starting point: model access, attachments, tool ca
 - **macOS:** a native Swift shell around the local workspace, with a JavaScript UI, neural navigation, and the Node.js execution core.
 - **iPhone:** a native SwiftUI client for conversations, model connections, Agents, drafts, image workflows, and optional workspace synchronization. Independent chat can use its own model connection while the Mac is off; desktop tool execution still needs the desktop runtime.
 - **CLI:** interactive chat, single prompts, history search, memory status, and runtime diagnostics through the same local codebase.
-- **Connected channels:** Telegram and Discord integrations can route configured channels into Melo. They require explicit setup and a running runtime.
+- **Connected channels:** Discord can route configured channels into Melo. It requires explicit setup and a running runtime. Telegram is temporarily archived; its saved configuration and conversation history are preserved.
 
 Synchronization is configured separately from model access. It is not an automatic hosted service, and mobile does not have every desktop tool.
 

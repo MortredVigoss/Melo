@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
@@ -664,7 +665,7 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
       <div class="agent-editor-header">
         <div class="agent-editor-heading">
           <div class="meta-block-label">Runtime</div>
-          <div class="list-row-meta">Live polling and recent Telegram activity for this agent.</div>
+          <div class="list-row-meta">Live polling and recent channel activity for this agent.</div>
         </div>
         <span class="chip ${channel?.statusLabel === 'Polling live' ? 'is-accent' : ''}">
           ${escapeHtml(channel?.runtimeLabel || 'Disabled')}
@@ -2731,14 +2732,11 @@ function selectedAgentNeedsRuntimeRefresh() {
     return false;
   }
 
-  const telegramChannel =
-    selected.channels?.find?.(channel => channel.id === 'telegram') ||
-    selected.channels?.telegram;
   const discordChannel =
     selected.channels?.find?.(channel => channel.id === 'discord') ||
     selected.channels?.discord;
 
-  return Boolean(telegramChannel?.enabled || discordChannel?.enabled);
+  return Boolean(discordChannel?.enabled);
 }
 
 function syncAgentRuntimeRefresh() {
@@ -5240,7 +5238,7 @@ async function saveAgentChannelSnapshot(snapshot) {
   uiState.agentSaveStates[saveKey] = true;
 
   // Channel autosave also carries the three voice settings edited on the
-  // Telegram panel (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
+  // channel voice section (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
   // agent-level, not nested under channels, but they share the same autosave
   // trigger so the user never has to hit a separate save button. Only include
   // them when they are present on the snapshot to avoid overwriting a saved
@@ -5298,7 +5296,7 @@ function scheduleAgentChannelAutosave(agentId) {
   }
 
   // Capture the current draft including agent-level voice fields edited on the
-  // Telegram panel so saveAgentChannelSnapshot can forward them. Using draft
+  // channel voice section so saveAgentChannelSnapshot can forward them. Using draft
   // values (not DOM reads) avoids losing in-flight edits when the autosave
   // timer fires after the user has moved focus.
   pendingAgentChannelAutosave = {
@@ -8096,18 +8094,14 @@ function renderAgentWorkbench(selected) {
   const formId = `agent-profile-form-${selected.id}`;
   const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
   const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
-  const telegramSecretVisible = Boolean(
-    uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'telegram')],
-  );
   const discordSecretVisible = Boolean(
     uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
-  // Keep both channel panels mounted so saving includes edits made on either tab.
-  // Only the active panel is visible; all fields share the explicit save boundary.
-  const VALID_CHANNEL_TABS = ['telegram', 'discord'];
+  // Archived channels have no controls; their saved configuration stays in the draft.
+  const VALID_CHANNEL_TABS = ['discord'];
   const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
     ? uiState.agentChannelTab[selected.id]
-    : 'telegram';
+    : 'discord';
   const channelTabDefs = [
     {
       id: 'telegram',
@@ -8161,9 +8155,33 @@ function renderAgentWorkbench(selected) {
 
         <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
           <summary>消息渠道</summary>
-          <p class="agent-section-note">连接 Telegram 或 Discord，使用已保存的配置测试连接。</p>
+          <p class="agent-section-note">Telegram 已归档，原有配置与历史对话保留。</p>
+        <section class="selected-file-card agent-channel-voice">
+                  <label class="label">
+                    语音回复模式
+                    <select class="config-select" name="voiceReplyMode">
+                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
+                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
+                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
+                    </select>
+                  </label>
+                  <label class="label">
+                    Edge TTS 音色
+                    <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
+                      draft?.edgeTtsVoice || '',
+                    )}" placeholder="自动选择音色" />
+                  </label>
+                  <label class="label">
+                    语音风格要求
+                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="可选：语气、常用表达或语言要求">${escapeHtml(
+                      draft?.voicePersonality || '',
+                    )}</textarea>
+                  </label>
+        </section>
+
         <div class="agent-channel-tabs" role="tablist">
           ${channelTabDefs
+            .filter(tab => isAgentChannelAvailable(tab.id))
             .map(
               tab => ui`
                 <button
@@ -8185,83 +8203,6 @@ function renderAgentWorkbench(selected) {
 
         <div class="agent-channel-panel">
           ${ui`
-                <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'telegram' ? '' : 'hidden'}>
-                  <div class="agent-editor-header">
-                    <div class="agent-editor-heading">
-                      <div class="meta-block-label">Telegram</div>
-                      <div class="list-row-meta">通过 Bot token 连接此 Agent。</div>
-                    </div>
-                    <span class="chip ${telegramChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
-                      ${escapeHtml(telegramChannel.statusLabel || telegramChannel.lastStatus || 'idle')}
-                    </span>
-                  </div>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="telegramEnabled" ${telegramChannel.enabled ? 'checked' : ''} />
-                    <span>启用 Telegram</span>
-                  </label>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="telegramVoiceReply" ${telegramChannel.voiceReply ? 'checked' : ''} />
-                    <span>文字回复后发送语音</span>
-                  </label>
-                  <label class="label">
-                    语音回复模式
-                    <select class="config-select" name="voiceReplyMode">
-                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
-                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
-                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
-                    </select>
-                  </label>
-                  <label class="label">
-                    Edge TTS 音色
-                    <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
-                      draft?.edgeTtsVoice || '',
-                    )}" placeholder="自动选择音色" />
-                  </label>
-                  <label class="label">
-                    语音风格要求
-                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="可选：语气、常用表达或语言要求">${escapeHtml(
-                      draft?.voicePersonality || '',
-                    )}</textarea>
-                  </label>
-                  <label class="label">
-                    Bot token
-                    <div class="secure-input-row">
-                      <input class="config-input" type="${telegramSecretVisible ? 'text' : 'password'}" name="telegramBotToken" value="${escapeHtml(
-                        telegramChannel.botToken || '',
-                      )}" placeholder="123456:telegram-bot-token" />
-                      <button
-                        class="icon-toggle-button"
-                        type="button"
-                        data-action="toggle-agent-secret"
-                        data-agent-id="${selected.id}"
-                        data-channel-id="telegram"
-                        aria-label="${telegramSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
-                        title="${telegramSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
-                      >
-                        ${telegramSecretVisible ? icon.eyeOff : icon.eye}
-                      </button>
-                    </div>
-                  </label>
-                  <label class="label">
-                    默认聊天 ID（可选）
-                    <input class="config-input" type="text" name="telegramChatId" value="${escapeHtml(
-                      telegramChannel.chatId || '',
-                    )}" placeholder="默认消息发送目标" />
-                  </label>
-                  ${
-                    telegramChannel.lastError
-                      ? ui`<div class="list-row-meta danger-copy">${escapeHtml(telegramChannel.lastError)}</div>`
-                      : ''
-                  }
-                  ${renderChannelRuntimeCard(telegramChannel, { showRoute: true })}
-                  <div class="inline-actions">
-                    <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="telegram">
-                      测试 Telegram
-                    </button>
-                  </div>
-                </section>
-          `}
-          ${ui`
                 <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -8281,7 +8222,7 @@ function renderAgentWorkbench(selected) {
                     <span>文字回复后发送语音</span>
                   </label>
                   <div class="list-row-meta" style="margin:0 0 8px 0;">
-                    语音设置由 Telegram 和 Discord 共用，可在 Telegram 标签页修改。
+                    上方语音设置应用于此 Agent。
                   </div>
                   <label class="label">
                     Bot token
@@ -11861,7 +11802,7 @@ document.addEventListener('click', async event => {
       case 'switch-agent-channel-tab': {
         const agentId = trigger.dataset.agentId;
         const channelId = trigger.dataset.channelId;
-        const VALID_TABS = ['telegram', 'discord', 'lark'];
+        const VALID_TABS = ['discord'];
         if (agentId && VALID_TABS.includes(channelId)) {
           // Flush any pending debounced autosave before switching tabs so
           // in-flight edits (e.g. a bot token typed <350ms ago) are not lost

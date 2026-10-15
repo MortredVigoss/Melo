@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Telegram polling cluster — sub-phase 7d-5ζ commit 1 of the desktopStore
@@ -293,6 +294,9 @@ async function recordTelegramMessageWithoutReply(agentId, incoming, existingChat
 }
 
 export async function processTelegramPollingCycle() {
+  if (!isAgentChannelAvailable('telegram')) {
+    return { archived: true, hasActiveChannel: false, processedUpdateCount: 0, encounteredError: false };
+  }
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => processTelegramPollingCycle(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const agentIds = allAgentIdsFromProfiles(state.agentProfiles);

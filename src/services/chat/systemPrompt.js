@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 // System-prompt assembly — extracted from desktopStore in Phase 7d-2.
 //
 // The original extraction preserved behavior; prompt-policy changes now have
@@ -35,7 +36,7 @@ export function summarizeAgentPrompt(profile) {
     .map(tool => tool.label)
     .join(', ');
   const channelSummary = Object.values(normalizeAgentChannels(profile.channels))
-    .filter(channel => channel.enabled)
+    .filter(channel => channel.enabled && isAgentChannelAvailable(channel.id))
     .map(channel =>
       channel.id === 'telegram'
         ? `Telegram(bot linked${channel.chatId ? `, default chat ${channel.chatId}` : ''})`

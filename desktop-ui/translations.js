@@ -1,6 +1,9 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["Telegram 已归档，原有配置与历史对话保留。","Telegram is archived. Existing configuration and conversations are preserved.","Telegram はアーカイブ済みです。設定と会話履歴は保持されます。","Telegram은 보관되었습니다. 기존 설정과 대화 기록은 유지됩니다.","Telegram está archivado. Se conservan la configuración y las conversaciones."],
+["上方语音设置应用于此 Agent。","The voice settings above apply to this Agent.","上の音声設定はこの Agent に適用されます。","위 음성 설정은 이 Agent에 적용됩니다.","Los ajustes de voz anteriores se aplican a este Agent."],
+["此 Agent 的实时轮询与近期频道活动。","Live polling and recent channel activity for this agent.","この Agent のポーリングと最近のチャネル活動。","이 Agent의 실시간 폴링 및 최근 채널 활동입니다.","Sondeo en directo y actividad reciente del canal de este Agent."],
 ["读取文件","Read files","ファイルを読む","파일 읽기","Leer archivos"],
 ["修改文件","Modify files","ファイルを編集","파일 수정","Modificar archivos"],
 ["运行命令","Run commands","コマンドを実行","명령 실행","Ejecutar comandos"],

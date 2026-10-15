@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from './shared/channelAvailability.js';
 import { createRouteRegistry } from './http/routeRegistry.js';
 import { reconcileLegacyFacts } from './memory/factRecords.js';
 import { startDerivedIndexing } from './runtime/derivedIndexing.js';
@@ -99,7 +100,7 @@ const telegramPollIntervalMs = Math.max(
   Number(getArgValue('--telegram-poll-ms', process.env.MELO_TELEGRAM_POLL_MS || '3500')) || 3500,
 );
 let telegramPollTimer = null;
-let telegramPollingStopped = false;
+let telegramPollingStopped = !isAgentChannelAvailable('telegram');
 
 const discordPollIntervalMs = Math.max(
   1500,
@@ -412,7 +413,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);
@@ -1128,7 +1129,7 @@ async function runTelegramPollLoop() {
 
 // Acquire singleton lock before starting Telegram polling.
 // If another live server process already holds the lock, skip polling entirely.
-_acquireTelegramLock().then(acquired => {
+if (isAgentChannelAvailable('telegram')) _acquireTelegramLock().then(acquired => {
   if (acquired) {
     scheduleTelegramPoll(0);
   } else {
@@ -1251,7 +1252,7 @@ function shutdown() {
     .then(m => m.getDiscordVoiceRuntime().shutdown())
     .catch(() => {});
   Promise.allSettled([
-    _releaseTelegramLock(),
+    isAgentChannelAvailable('telegram') ? _releaseTelegramLock() : Promise.resolve(),
     _releaseDiscordLock(),
     voiceShutdown,
     pageRegistryShutdown,
