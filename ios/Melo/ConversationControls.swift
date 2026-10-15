@@ -70,10 +70,10 @@ struct ConversationControls: View {
                     ForEach(store.preferences.agents) { agent in
                         Button { store.selectAgent(agent.id, chatID: chatID) } label: { Label(agent.name, systemImage: store.agent(for: chatID).id == agent.id ? "checkmark" : agent.symbol) }
                     }
-                    Text("切换只影响之后的回复；历史消息保持原角色。")
-                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("角色 · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话角色")
+                    Text("切换只影响之后的回复；历史消息保持原Agent。")
+                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
                 Menu {
-                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用角色或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
+                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     if account.signedIn {
                         Section("Codex（ChatGPT 账号）") {
                             ForEach(models, id: \.self) { model in Button { store.selectModel(.init(connectionID: "chatgpt", model: model), chatID: chatID) } label: { Label(model, systemImage: current?.connectionID == "chatgpt" && current?.model == model ? "checkmark" : "cpu") } }
@@ -126,14 +126,14 @@ struct ConversationContextPicker: View {
                 }
                 Section("本次对话可用的知识资料") {
                     if (store.preferences.knowledge ?? []).isEmpty { Text("先在知识分支添加资料，再在这里选用。").foregroundStyle(.secondary) }
-                    ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true }) { note in
+                    ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" }) { note in
                         if store.project(for: chatID)?.knowledgeIds?.contains(note.id) == true {
                             Label("\(note.title) · 项目共享", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
                         } else {
-                        Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in store.updatePreferences { if $0.chatKnowledge == nil { $0.chatKnowledge = [:] }; var ids = $0.chatKnowledge?[chatID] ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; let inherited = ($0.projects ?? []).first { $0.id == store.preferences.chatProjects?[chatID] }?.knowledgeIds ?? []; let selected = ($0.knowledge ?? []).filter { $0.deleted != true && ids.union(inherited).contains($0.id) }; guard selected.count <= 8 && selected.reduce(0, { $0 + $1.content.count }) <= 24000 else { store.error = "最多选用 8 份、合计 24000 字资料。"; return }; $0.chatKnowledge?[chatID] = ids } }))
+                        Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in store.updatePreferences { if $0.chatKnowledge == nil { $0.chatKnowledge = [:] }; var ids = $0.chatKnowledge?[chatID] ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; let inherited = ($0.projects ?? []).first { $0.id == store.preferences.chatProjects?[chatID] }?.knowledgeIds ?? []; let selected = ($0.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" && ids.union(inherited).contains($0.id) }; guard selected.count <= 8 else { store.error = "最多选用 8 份、合计 24000 字资料。"; return }; $0.chatKnowledge?[chatID] = ids } }))
                         }
                     }
-                    Text("项目共享与本对话选中的资料会随下一次消息发送，合计最多 8 份、24000 字。已删除资料不会加入。").font(.caption).foregroundStyle(.secondary)
+                    Text("最多 8 份；长资料按预算选取，全文保留。").font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("项目与资料").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.presentationBackground(MeloTheme.dialog)

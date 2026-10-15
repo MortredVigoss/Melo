@@ -111,7 +111,7 @@ test('source-level guard: agent mutations do NOT re-introduce `const DESKTOP_DIR
     false,
     'AGENTS_DIR must not be a module-load-time const',
   );
-  // The extracted domain module resolves the factory root at call time.
-  assert.match(source, /const\s+agentsDir\s*=\s*\(\)\s*=>\s*join\(getMeloHome\(\)/);
-  assert.match(source, /createAgentMarkdownFileHelpers\(\{ agentsDir \}\)/);
+  // Mutation captures the home before awaiting and exports only after commit.
+  assert.match(source, /const home = currentRequestContext\(\)\.home/);
+  assert.doesNotMatch(source, /await writeMarkdownFile|await ensureMarkdownFile|await syncAgentMarkdownFiles/);
 });

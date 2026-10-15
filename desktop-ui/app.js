@@ -4,7 +4,7 @@ import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js'
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
-import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion } from './localSettings.js';
+import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
@@ -51,7 +51,7 @@ import {
   formatUndoToastLabel,
   nextCountdownTickMs,
 } from './undoToast.js';
-import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
+import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
@@ -1880,11 +1880,14 @@ function restoreAgentEditorState() {
 
   window.requestAnimationFrame(() => {
     const editor = document.querySelector('.agent-content-editor');
-    if (!(editor instanceof HTMLTextAreaElement)) {
+    if (!(editor instanceof HTMLTextAreaElement) || stateKey !== currentAgentEditorStateKey()) {
       return;
     }
+    // A user may focus/select text between render and this animation frame.
+    // Never replace that newer selection with the previous render's caret.
+    if (document.activeElement === editor) return;
 
-    if (editorState) {
+    if (editorState?.focused) {
       // CRITICAL: in WKWebView, calling textarea.setSelectionRange(...) has
       // the side-effect of implicitly focusing the textarea — even though
       // we're only trying to "remember" where the caret was. That means the
@@ -1951,8 +1954,9 @@ function selectedCustomizeItem() {
   );
 }
 
+function artifactShelfRows() { return (uiState.artifactCollection==='results' ? uiState.bootstrap?.results : uiState.bootstrap?.artifacts) || []; }
 function selectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   return (
     artifacts.find(artifact => artifact.id === uiState.selectedArtifactId) ||
     artifacts[0] ||
@@ -2329,6 +2333,7 @@ async function handleOpenSearchResult(result) {
       });
       break;
     case 'open-artifact':
+      uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===result.artifactId)?'results':'knowledge';
       uiState.selectedArtifactId = result.artifactId;
       await patchSettings({
         activeView: 'artifacts',
@@ -2400,7 +2405,7 @@ function approvalQueue() {
 }
 
 function syncSelectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   if (!artifacts.some(artifact => artifact.id === uiState.selectedArtifactId)) {
     uiState.selectedArtifactId = artifacts[0]?.id || null;
   }
@@ -3755,6 +3760,7 @@ async function handleSendMessage(prepared = null) {
   // dropping it (aborted run — a half-finished sentence would otherwise
   // play seconds after the Stop click).
   const imageTask = prepared?.imageTask || consumeImageTask();
+  const teamPlan = prepared?.teamPlan || null;
   let sendWasAborted = false;
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
@@ -3768,7 +3774,7 @@ async function handleSendMessage(prepared = null) {
   if (!prepared) uiState.composerVoiceAttachmentId = null;
 
   let chatId = prepared?.chatId || (fromOverview ? null : uiState.bootstrap?.settings?.selectedChatId || null);
-  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask,
+  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
     voiceTranscript, voiceAttachmentId, mode: uiState.bootstrap?.settings?.activeMode,
     agentId: activeChat()?.agentId || uiState.bootstrap?.settings?.selectedAgentId,
     modelSelection: activeChat()?.modelSelection || null });
@@ -3822,6 +3828,7 @@ async function handleSendMessage(prepared = null) {
         content,
         attachments,
         ...(imageTask ? { imageTask } : {}),
+        ...(teamPlan ? {teamPlan} : {}),
         ...(voiceTranscript
           ? {
               extractedMedia: [
@@ -4880,7 +4887,7 @@ async function handleCreateArtifact() {
 }
 
 function handleStartEditArtifact(artifactId) {
-  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
   uiState.selectedArtifactId = artifactId;
   uiState.editingArtifactId = artifactId;
@@ -4947,7 +4954,7 @@ async function handleUpdateArtifact() {
  */
 async function handleDeleteArtifact(artifactId) {
   if (!artifactId) return;
-  const artifact = uiState.bootstrap?.artifacts?.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
 
   // Clear current selection / edit-buffer pre-emptively so the detail
@@ -5124,6 +5131,7 @@ async function handleUpdateAgentProfile(form) {
     await waitForMinimumVisibleState;
     delete uiState.agentDrafts[draftKey];
     applyBootstrap(payload);
+    if (payload.agentExportWarning) showError(payload.agentExportWarning);
     const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
     if (
@@ -5616,7 +5624,10 @@ async function handleImportAgentPreset(agentId, presetId) {
     return;
   }
 
+  const previous = agentDraftFor(agentProfileById(agentId));
+  const instructions = agentDocumentWithPreset(previous?.instructions, preset);
   mergeAgentDraft(agentId, {
+    instructions,
     identity: preset.identity || preset.identify,
     'soul.md': preset.soulMd,
     mood: preset.mood,
@@ -6684,7 +6695,7 @@ function renderTaskPanel({ compact = false } = {}) {
               </label>
               <div class="project-form-grid">
                 <label class="label">
-                  执行角色
+                  执行Agent
                   <select class="config-select" name="owner">
                     ${['main', 'research', 'builder', 'reviewer']
                       .map(
@@ -6728,7 +6739,7 @@ function renderTaskPanel({ compact = false } = {}) {
                     return ui`
                     <article class="run-card">
                       <div class="thread-meta">
-                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? t("角色任务") : t("任务"))}</span>
+                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? t("Agent任务") : t("任务"))}</span>
                         <span class="chip">${escapeHtml(task.ownerLabel)}</span>
                         ${
                           ownerProfile
@@ -6755,8 +6766,8 @@ function renderTaskPanel({ compact = false } = {}) {
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
                       ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多角色协作 · 职责与费用</summary><p>每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
-                      ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各角色结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
+                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多Agent协作 · 职责与费用</summary><p>每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。</p><select id="team-plan-${task.id}"><option value="parallel-research">并行调研</option><option value="research-build-review">调研 → 实施 → 复核</option><option value="review-loop">实施 / 复核循环（最多 2 轮）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
+                      ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各成员结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
                       ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
                       ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
                       ${(task.acceptance.failures || []).map(f => ui`<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
@@ -6875,7 +6886,7 @@ function renderComposerCard({ inline = false } = {}) {
 
   return ui`
     <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换角色…</span>`:''}</div>
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
       ${renderExecutionPanel()}
       ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
@@ -6915,6 +6926,7 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
+                <details class="conversation-context"><summary>多 Agent 协作</summary><input class="input" id="chat-team-members" placeholder="成员 Agent ID，逗号分隔；空为默认成员"><select id="chat-team-template"><option value="research-build-review">调研 → 实施 → 复核</option><option value="parallel-research">并行调研</option><option value="review-loop">实施 / 复核循环</option></select><button type="button" class="small-button" data-action="run-chat-team" ${uiState.sending?'disabled':''}>执行输入框中的团队任务</button></details>
                 ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
@@ -7089,7 +7101,7 @@ function renderThreadArtifactStrip(artifacts) {
     <section class="surface-card thread-artifact-strip">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Artifacts from this thread</h2>
+          <h2 class="pane-title">本对话成果</h2>
         </div>
         <button class="small-button" data-action="open-view" data-view="artifacts">
           Open shelf
@@ -7129,8 +7141,8 @@ function renderAgentSelectorChip() {
     <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话角色" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
-      <span class="agent-selector-caption">角色</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
+            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
+      <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
   `;
@@ -7141,8 +7153,8 @@ function renderAgentSelectorDropdown() {
   const agents = allChatAgentProfiles();
   if (!agents.length) return '';
   return ui`
-    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话角色">
-      <header><strong>选择对话 Agent</strong><p>默认角色和你创建的角色都在这里。切换只影响后续回复。</p></header>
+    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话Agent">
+      <header><strong>选择对话 Agent</strong><p>默认Agent和你创建的Agent都在这里。切换只影响后续回复。</p></header>
       ${agents.map(agent => ui`
         <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
                 data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
@@ -8046,6 +8058,39 @@ function renderAgentList(selectedId) {
   `;
 }
 
+function renderAgentCapabilities(selected,draft) {
+  const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
+  if (!c) return '';
+  const value=k=>draft?.['cap_'+k] ?? c[k];
+  const checked=k=>value(k)===true||value(k)==='on';
+  const collaboration=draft?.collaboration || selected.collaboration || {};
+  return `<details class="agent-capabilities"><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+    <input type="hidden" name="capabilityVersion" value="1">
+    ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
+    ${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(label)}</label>`).join('')}
+    ${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>`<label class="label">${label}<input class="config-input" name="cap_${key}" value="${escapeHtml(Array.isArray(value(key))?value(key).join(','):value(key)||'')}" placeholder="ID，逗号分隔；空表示不允许"></label>`).join('')}
+    <p>可用技能：${escapeHtml((selected.capabilityOptions||[]).map(s=>s.id).join(', '))}</p>
+    <label class="label"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate ?? collaboration.canDelegate)?'checked':''}>允许委派</label>
+    <label class="label">目标 Agent ID<input class="config-input" name="delegateTargets" value="${escapeHtml(draft?.delegateTargets ?? (collaboration.delegateTargets||[]).join(','))}"></label>
+    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${label}<input type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    <p>上下文来源</p>${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${label}</label>`).join('')}
+  </details>`;
+}
+
+function renderAgentPersonaFields(selected, draft) {
+  return ui`
+    ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${renderAgentCapabilities(selected,draft)}
+    <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
+    <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
+    <label class="label">人设与工作要求<textarea class="textarea code-editor agent-content-editor" name="instructions" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
+    <div class="inline-actions">
+      <label class="small-button">导入 Markdown<input type="file" accept=".md,.txt,text/markdown,text/plain" data-agent-document="${escapeHtml(selected.id)}" /></label>
+      <button class="small-button" type="button" data-action="export-agent-document" data-agent-id="${escapeHtml(selected.id)}">导出 Markdown</button>
+      <span class="meta-label">导入后先预览，点击保存修改生效。</span>
+    </div>`;
+}
+
 function renderAgentWorkbench(selected) {
   if (!selected) {
     return '<section class="surface-card"><div class="empty-state">Select an agent to inspect it.</div></section>';
@@ -8065,13 +8110,6 @@ function renderAgentWorkbench(selected) {
   const saveKey = agentSaveKey(selected.id, scope, scope === 'project' ? project?.id || 'global' : 'global');
   const saveButtonLabel = uiState.agentSaveStates[saveKey] ? 'Saving' : 'Save';
   const saveButtonStateClass = uiState.agentSaveStates[saveKey] ? ' is-saving' : '';
-  const activeEditorFile = uiState.agentEditorTab === 'soul' ? 'SOUL.md' : 'IDENTITY.md';
-  const activeEditorValue =
-    uiState.agentEditorTab === 'soul'
-      ? draft?.['soul.md'] || ''
-      : draft?.identity || draft?.identify || '';
-  const activeEditorPath =
-    uiState.agentEditorTab === 'soul' ? selected.soulPath : selected.identityPath;
   const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
   const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
   const telegramSecretVisible = Boolean(
@@ -8200,83 +8238,8 @@ function renderAgentWorkbench(selected) {
         data-form="agent-profile-update"
         data-agent-id="${selected.id}"
       >
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${
-          selected.isCustom
-            ? ui`
-              <label class="label">
-                角色名称
-                <input
-                  class="config-input"
-                  type="text"
-                  name="name"
-                  value="${escapeHtml(draft?.name || selected.name || '')}"
-                  placeholder="Custom agent"
-                />
-              </label>
-              <label class="label">
-                一句话定位
-                <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="一句话说明这个角色的身份与用途。">${escapeHtml(
-                  draft?.description || selected.description || '',
-                )}</textarea>
-              </label>
-              <label class="label">思考与回复方式
-                <textarea class="textarea agent-control-editor" name="rolePrompt" placeholder="例如：先给结论，用两三句短句解释；不确定时明确说明。">${escapeHtml(draft?.rolePrompt ?? selected.rolePrompt ?? '')}</textarea>
-              </label>
-            `
-            : ui`
-              <div class="agent-compact-note">
-                Built-in lanes keep their source-inspired names. Use Customize to add a new agent you can rename.
-              </div>
-            `
-        }
-
-        <div class="editor-tab-row">
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'identity' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="identity"
-          >
-            身份与背景
-          </button>
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'soul' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="soul"
-          >
-            长期行为偏好
-          </button>
-        </div>
-
-        <div class="selected-file-card agent-file-editor">
-          <div class="agent-editor-header">
-            <div class="agent-editor-heading">
-              <div class="meta-block-label">Content</div>
-              <div class="list-row-meta">补充角色背景；具体回复方式优先采用上方设定。</div>
-            </div>
-          </div>
-          <div class="agent-editor-path">
-            ${escapeHtml(activeEditorPath || activeEditorFile)}
-          </div>
-          <label class="label">
-            <textarea
-              class="textarea code-editor agent-content-editor"
-              name="${uiState.agentEditorTab === 'soul' ? 'soul.md' : 'identity'}"
-            >${escapeHtml(activeEditorValue)}</textarea>
-          </label>
-        </div>
-
-        ${
-          uiState.agentEditorTab === 'soul'
-            ? ui`<input type="hidden" name="identity" value="${escapeHtml(
-                draft?.identity || draft?.identify || '',
-              )}" />`
-            : ui`<input type="hidden" name="soul.md" value="${escapeHtml(
-                draft?.['soul.md'] || '',
-              )}" />`
-        }
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        ${renderAgentPersonaFields(selected, draft)}
 
         <div class="detail-meta">
           <div class="meta-block-label">Agent controls</div>
@@ -8292,13 +8255,6 @@ function renderAgentWorkbench(selected) {
             value="${escapeHtml(draft?.model || '')}"
             placeholder="Inherit global model"
           />
-        </label>
-
-        <label class="label">
-          补充系统要求
-          <textarea class="textarea code-editor agent-control-editor" name="systemPrompt" placeholder="Optional lane-specific system prompt.">${escapeHtml(
-            draft?.systemPrompt || '',
-          )}</textarea>
         </label>
 
         <input type="hidden" name="tools" value="${escapeHtml((draft?.tools || []).join(','))}" />
@@ -8796,7 +8752,7 @@ function renderModelPage() {
       </div>
       <div class="model-connection-summary">
         <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
-        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
+        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
       </div>
       ${renderDefaultModelSettings(config, escapeHtml)}
       ${renderLlmConnections(config)}
@@ -8822,13 +8778,6 @@ function renderAgentDetails(selected) {
   const project = activeProject();
   const scope = selectedAgentScope();
   const draft = agentDraftFor(selected);
-  const activeEditorFile = uiState.agentEditorTab === 'soul' ? 'SOUL.md' : 'IDENTITY.md';
-  const activeEditorValue =
-    uiState.agentEditorTab === 'soul'
-      ? draft?.['soul.md'] || ''
-      : draft?.identity || draft?.identify || '';
-  const activeEditorPath =
-    uiState.agentEditorTab === 'soul' ? selected.soulPath : selected.identityPath;
 
   return ui`
     <div class="detail-card">
@@ -8892,48 +8841,8 @@ function renderAgentDetails(selected) {
       </div>
 
       <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${
-          selected.isCustom
-            ? ui`
-              <div class="selected-file-card">
-                <div class="agent-editor-header">
-                  <div class="agent-editor-heading">
-                    <div class="meta-block-label">Agent basics</div>
-                    <div class="list-row-meta">Rename this custom agent and edit the role prompt used at runtime.</div>
-                  </div>
-                </div>
-                <label class="label">
-                  Agent name
-                  <input
-                    class="config-input"
-                    type="text"
-                    name="name"
-                    value="${escapeHtml(draft?.name || selected.name || '')}"
-                    placeholder="Custom agent"
-                  />
-                </label>
-                <label class="label">
-                  Description
-                  <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="What this custom agent is for.">${escapeHtml(
-                    draft?.description || selected.description || '',
-                  )}</textarea>
-                </label>
-                <label class="label">
-                  Role prompt
-                  <textarea class="textarea code-editor agent-control-editor" name="rolePrompt" placeholder="Runtime role instruction for this custom agent.">${escapeHtml(
-                    draft?.rolePrompt || selected.rolePrompt || '',
-                  )}</textarea>
-                </label>
-              </div>
-            `
-            : ui`
-              <div class="detail-meta">
-                <div class="meta-block-label">Role prompt</div>
-                <div>${escapeHtml(selected.rolePrompt)}</div>
-              </div>
-            `
-        }
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        ${renderAgentPersonaFields(selected, draft)}
 
       <div class="subsection">
         <div class="header-row">
@@ -8965,48 +8874,6 @@ function renderAgentDetails(selected) {
             .join('')}
         </div>
       </div>
-
-        <div class="editor-tab-row">
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'identity' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="identity"
-          >
-            IDENTITY.md
-          </button>
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'soul' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="soul"
-          >
-            SOUL.md
-          </button>
-        </div>
-
-        <div class="selected-file-card agent-file-editor">
-          <div class="thread-meta selected-file-meta">
-            <span class="chip is-accent">${escapeHtml(activeEditorFile)}</span>
-            <span class="chip">${escapeHtml(selected.name)}</span>
-            <span class="chip">${scope === 'project' && project ? escapeHtml(project.name) : 'Global'}</span>
-          </div>
-          <div class="workspace-root">${escapeHtml(activeEditorPath || activeEditorFile)}</div>
-          <textarea
-            class="textarea code-editor"
-            name="${uiState.agentEditorTab === 'soul' ? 'soul.md' : 'identity'}"
-          >${escapeHtml(activeEditorValue)}</textarea>
-        </div>
-
-        ${
-          uiState.agentEditorTab === 'soul'
-            ? ui`<input type="hidden" name="identity" value="${escapeHtml(
-                draft?.identity || draft?.identify || '',
-              )}" />`
-            : ui`<input type="hidden" name="soul.md" value="${escapeHtml(
-                draft?.['soul.md'] || '',
-              )}" />`
-        }
 
         <div class="detail-meta">
           <div class="meta-block-label">Current mood</div>
@@ -9987,7 +9854,7 @@ function renderSafetyPane() {
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(opLabel(rule.operation, rule.scope))}</div>
               <div class="safety-rule-path mono small">${escapeHtml(rule.realPath)}</div>
-<div class="list-row-meta">${escapeHtml(rule.permissionScope ? `角色 ${rule.permissionScope.role} · 项目 ${rule.permissionScope.project || "无"} · ${rule.permissionScope.workspace?.path || "无工作目录"}` : "原有全局授权")} · 保存于 ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
+<div class="list-row-meta">${escapeHtml(rule.permissionScope ? `Agent ${rule.permissionScope.role} · 项目 ${rule.permissionScope.project || "无"} · ${rule.permissionScope.workspace?.path || "无工作目录"}` : "原有全局授权")} · 保存于 ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
             </div>
             <button class="small-button is-danger"
               data-action="safety-allowlist-remove"
@@ -10014,9 +9881,9 @@ function renderSafetyPane() {
           <button class="small-button" data-action="refresh-safety-allowlist">刷新</button>
         </div>
       </div>
-      <div class="inline-actions">${[['role',t("角色"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
+      <div class="inline-actions">${[['role',t("Agent"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
-      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定角色')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
+      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定Agent')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
       <p class="list-row-meta" style="margin-top: 16px;">
         Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
         — the dialog only offers Allow once / Deny for them. Move and delete operations are
@@ -10613,7 +10480,7 @@ function renderCustomizePage() {
 }
 
 function renderArtifactsPage() {
-  const artifacts = uiState.bootstrap.artifacts;
+  const artifacts = artifactShelfRows();
   const active = selectedArtifact();
   const project = activeProject();
 
@@ -10622,7 +10489,7 @@ function renderArtifactsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">资料与成果</h1><p class="page-kicker">保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。</p>
+            <h1 class="page-title compact">${uiState.artifactCollection==='results'?'成果':'知识库'}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果</button></div>
           </div>
 
           <div class="inline-actions">
@@ -10714,7 +10581,7 @@ function renderArtifactsPage() {
                         `,
                       )
                       .join('')
-                  : '<div class="empty-state compact">No artifacts yet. Code fences from replies will land here automatically.</div>'
+                  : '<div class="empty-state compact">此分类暂时没有内容。</div>'
               }
             </div>
           </section>
@@ -10943,9 +10810,9 @@ function renderToolPermissionDialog() {
           </div>
         </div>
         <div class="tool-permission-body">
-          <div class="tool-permission-tool-name">${escapeHtml(toolId)}</div>
+          <div class="tool-permission-tool-name">${escapeHtml(entry.agentId || 'Agent')} · ${escapeHtml(toolId)}</div>
           ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
-          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
+          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
         </div>
         <div class="tool-permission-footer">
@@ -11092,7 +10959,7 @@ function _fileSafetyButtons(operation, payload, requestId) {
     <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">Allow once</button>
     <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">Deny</button>
     <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>Always allow</button>
-    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、角色与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、角色与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
+    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、Agent与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、Agent与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
 }
 
 function renderFileSafetyDialog(entry) {
@@ -11117,6 +10984,7 @@ function renderFileSafetyDialog(entry) {
           </div>
         </div>
         <div class="tool-permission-body">
+          <p>${escapeHtml(entry.agentId || 'Agent')}</p>
           ${errorBanner}
           ${body}
         </div>
@@ -11378,6 +11246,8 @@ function render({ background = false, changedSections = null } = {}) {
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
+        ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
+        ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
         <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           ${pageHtml}
@@ -12212,9 +12082,10 @@ document.addEventListener('click', async event => {
         await startProjectSession(trigger.dataset.projectId, 'code');
         break;
       case 'resolve-sync-conflict': {
-        const row=uiState.bootstrap.syncConflicts.find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
+        const settings=trigger.dataset.settings==='true';
+        const row=(settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
         const index=Number(trigger.dataset.index);
-        await api('/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
+        await api(settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
         applyBootstrap(await api('/api/bootstrap')); break;
       }
       case 'toggle-project-form':
@@ -12351,6 +12222,19 @@ document.addEventListener('click', async event => {
           selectedAgentScope: trigger.dataset.scope === 'project' ? 'project' : 'global',
         });
         break;
+      case 'export-agent-document': {
+        const draft = agentDraftFor(agentProfileById(trigger.dataset.agentId));
+        const text = draft?.instructions ?? '';
+        if (window.webkit?.messageHandlers?.meloVoice) {
+          const result = await nativeSettings('savePortableArchive', {text, name:'AGENT.md'});
+          showFlashToast(result.cancelled ? t('已取消导出。') : t('已导出 Markdown。'));
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([text], {type:'text/markdown;charset=utf-8'}));
+        const link = document.createElement('a'); link.href=url; link.download='AGENT.md'; link.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        return;
+      }
       case 'select-agent-editor-tab':
         await flushPendingAgentMarkdownAutosave();
         await flushPendingAgentChannelAutosave();
@@ -12799,7 +12683,10 @@ document.addEventListener('click', async event => {
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         render();
         break;
+      case 'artifact-collection':
+        uiState.artifactCollection=trigger.dataset.collection;uiState.selectedArtifactId=null;render();break;
       case 'open-artifact':
+        uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===trigger.dataset.artifactId)?'results':'knowledge';
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         await patchSettings({ activeView: 'artifacts' });
         break;
@@ -12921,8 +12808,13 @@ document.addEventListener('click', async event => {
       case 'task-operation-retry':
         try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
         break;
+      case 'run-chat-team': {
+        const chat=activeChat(), content=uiState.composer.trim();
+        if(!content) {showError('请先在输入框写下团队任务。');break;}
+        await handleSendMessage({chatId:chat?.id,content,teamPlan:{templateId:document.getElementById('chat-team-template')?.value || 'research-build-review',...(document.getElementById('chat-team-members')?.value?.trim()?{members:document.getElementById('chat-team-members').value.split(',').map(s=>s.trim()).filter(Boolean)}:{})}});break;
+      }
       case 'run-task-team':
-        await handleRunTask(trigger.dataset.taskId, {roles:(document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research,reviewer').split(','),concurrency:2});
+        await handleRunTask(trigger.dataset.taskId, {templateId:document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research-build-review'});
         break;
       case 'run-task':
         await handleRunTask(trigger.dataset.taskId);
@@ -13349,20 +13241,20 @@ document.addEventListener('input', event => {
     // agent drafts.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       // Settings are committed only by the explicit Save action.
       return;
     }
 
     const nextDraft = mergeAgentDraft(agentId, {
-      [target.name]: target.value,
+      [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
     });
     if (target.name === 'identity') {
       nextDraft.identify = target.value;
       captureAgentEditorState();
       // Settings are committed only by the explicit Save action.
-    } else if (target.name === 'soul.md') {
+    } else if (target.name === 'soul.md' || target.name === 'instructions') {
       captureAgentEditorState();
       // Settings are committed only by the explicit Save action.
     }
@@ -13408,6 +13300,21 @@ document.addEventListener('change', async event => {
       }
     } catch(error) { showError(error.message); }
     render(); return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.agentDocument) {
+    const agentId = target.dataset.agentDocument;
+    const editIsCurrent = settingsFormEditors.editToken(target.form);
+    const key = agentDraftKey(agentId);
+    try {
+      const file=target.files?.[0]; if(!file) return;
+      if(file.size > 1000000) throw new Error('Markdown 文件过大，请控制在 1 MB 内。');
+      const instructions=await file.text();
+      if(instructions.length > 200100) throw new Error('Agent 人设文档超过 200100 字符。');
+      if(!editIsCurrent()) return;
+      uiState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
+      render();
+    } catch(error) { showError(error.message); }
+    return;
   }
   if (target instanceof HTMLInputElement && target.dataset.agentAvatar) {
     const isCurrentEdit=settingsFormEditors.editToken(target.form);
@@ -13612,7 +13519,7 @@ document.addEventListener('change', async event => {
       // button.
       if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
         mergeAgentDraft(agentId, {
-          [target.name]: target.value,
+          [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
         render();
@@ -13620,7 +13527,7 @@ document.addEventListener('change', async event => {
       }
 
       const nextDraft = mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       if (target.name === 'identity') {
         nextDraft.identify = target.value;

@@ -9,6 +9,11 @@
 import { resolve, extname, basename, relative, join } from 'node:path';
 import { fstatSync, readSync } from 'node:fs';
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { getMeloHome } from '../../config.js';
+import { loadState } from '../../state/stateStore.js';
+import { selectedKnowledge } from '../../services/chat/knowledgeContext.js';
+import { searchKnowledge,pruneKnowledgeIndex } from '../../memory/knowledgeIndex.js';
 import { requestRead } from '../../safety/fileSafetyGate.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';
 import {
@@ -25,7 +30,9 @@ const MAX_CHUNK_CHARS = 1500;
 const CHUNK_OVERLAP = 200;
 
 // In-memory index: { chunks: [{ file, text, tokens }], idf: Map }
-let _index = { chunks: [], idf: new Map(), indexed: 0, dirs: [] };
+const indexes=new Map(), activeIndex=new AsyncLocalStorage();
+const emptyIndex=()=>({chunks:[],idf:new Map(),indexed:0,dirs:[],documents:[]});
+function scope(context){return JSON.stringify([context.meloHome,context.chatId||'',context.workspacePath||'']);}
 
 // ─── Tokenizer (CJK-aware) ──────────────────────────────────────────────────
 
@@ -223,13 +230,15 @@ async function indexDirectory(dir, ctx = {}) {
     await walkDirfdCollect(baseFd, '', approvedReal, files, 0, MAX_FILES, skipped);
   } finally { try { dirfdRaw.closeFd(baseFd); } catch {} }
 
-  const chunks = [];
+  const chunks = [], documents=[];let textBytes=0;
   for (const filePath of files) {
     const buffer = await readFileSafe(filePath, MAX_FILE_SIZE);
     if (!buffer) continue;  // skip oversize / non-regular / open-failed
     const ext = extname(filePath).toLowerCase();
     const text = await readTextFromBuffer(buffer, ext);
     if (!text || text.length < 20) continue;
+    const size=Buffer.byteLength(text);if(textBytes+size>8*1024*1024)break;textBytes+=size;
+    documents.push({id:filePath,title:relative(approvedReal,filePath)||basename(filePath),content:text});
     const textChunks = chunkText(text);
     for (const chunk of textChunks) {
       const tokens = tokenize(chunk);
@@ -256,13 +265,18 @@ async function indexDirectory(dir, ctx = {}) {
     idf.set(term, Math.log(N / df));
   }
 
-  _index = { chunks, idf, indexed: files.length, dirs: [approvedReal] };
+  const key=activeIndex.getStore();
+  indexes.delete(key);indexes.set(key, { chunks, idf, indexed: documents.length, dirs: [approvedReal], documents });
+  const home=JSON.parse(key)[0];
+  pruneKnowledgeIndex({home,namespace:'files:'+key,keepIds:documents.map(d=>d.id)});
+  while(indexes.size>4){const oldest=indexes.keys().next().value;indexes.delete(oldest);pruneKnowledgeIndex({home:JSON.parse(oldest)[0],namespace:'files:'+oldest,keepIds:[]});}
   return { files: files.length, chunks: chunks.length, skippedSensitive: skipped.sensitive };
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
 function search(query, topK = 5) {
+  const _index=indexes.get(activeIndex.getStore())||emptyIndex();
   const queryTokens = tokenize(query);
   if (!queryTokens.length || !_index.chunks.length) return [];
 
@@ -288,7 +302,7 @@ export const knowledgeTool = {
   description:
     'Local document knowledge base. ' +
     'Index: scan a directory and build searchable index of text files (txt, md, pdf, json, code files). ' +
-    'Search: find most relevant document chunks matching a query using TF-IDF scoring. ' +
+    'Search: find most relevant document chunks matching a query using scoped full-text and local vector retrieval. ' +
     'Status: show current index stats.',
   category: 'utility',
   isConcurrencySafe: true,
@@ -317,12 +331,19 @@ export const knowledgeTool = {
     required: ['action'],
   },
   examples: [
-    { action: 'ingest', path: '~/Documents/handbook.pdf' },
+    { action: 'index', path: '~/Documents' },
     { action: 'search', query: 'expense reimbursement policy', top_k: 5 },
-    { action: 'list' },
+    { action: 'status' },
   ],
 
   async run(args = {}, context = {}) {
+    const bound={...context,meloHome:context.meloHome||getMeloHome()};
+    const key=scope(bound);
+    return activeIndex.run(key,()=>runKnowledge(args,bound));
+  },
+};
+async function runKnowledge(args = {}, context = {}) {
+    const _index=context.capabilities?.readFiles===false?emptyIndex():indexes.get(activeIndex.getStore())||emptyIndex();
     const { action, path, query, top_k = 5 } = args;
     const { workspacePath, sseEmitter, signal, chatId } = context;
     if (action === 'index') {
@@ -334,7 +355,7 @@ export const knowledgeTool = {
           : '';
         return {
           ok: true,
-          output: `Indexed ${result.files} files → ${result.chunks} searchable chunks${skipNote}`,
+          output: `Indexed ${result.files} files → ${result.chunks} searchable chunks${skipNote}. Local index is limited to 500 files / 8 MiB of text per scope.`,
           meta: result,
         };
       } catch (e) {
@@ -344,10 +365,18 @@ export const knowledgeTool = {
 
     if (action === 'search') {
       if (!query) return { ok: false, output: 'Missing "query".', error: 'INVALID_PARAMS' };
-      if (!_index.chunks.length) {
+      const state=await loadState({home:context.meloHome});
+      const chat=state.chats?.find(c=>c.id===chatId);
+      const saved=chat?selectedKnowledge(state,chat):[];
+      const local=context.capabilities?.readFiles===false?[]:_index.documents;
+      if (!local.length&&!saved.length) {
         return { ok: false, output: 'No documents indexed yet. Run with action="index" first.', error: 'NO_INDEX' };
       }
-      const results = search(query, top_k);
+      const [fileRows,savedRows]=await Promise.all([
+        searchKnowledge({home:context.meloHome,namespace:'files:'+activeIndex.getStore(),documents:local,query,limit:top_k,signal}),
+        searchKnowledge({home:context.meloHome,documents:saved,query,limit:top_k,signal}),
+      ]);
+      const results=[...fileRows,...savedRows].sort((a,b)=>b.score-a.score).slice(0,Math.max(1,Math.min(20,top_k))).map(r=>({...r,file:r.title,absPath:r.documentId}));
       if (!results.length) return { ok: true, output: 'No relevant results found.', meta: { count: 0 } };
 
       const formatted = results.map((r, i) => {
@@ -373,5 +402,4 @@ export const knowledgeTool = {
     }
 
     return { ok: false, output: `Unknown action "${action}".`, error: 'INVALID_ACTION' };
-  },
-};
+}

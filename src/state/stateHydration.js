@@ -1,3 +1,7 @@
+import {normalizeHandoff} from '../agents/handoff.js';
+import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
+import { recommendedCapabilities } from '../domain/agent/capabilities.js';
+import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
 import { isDeepStrictEqual } from 'node:util';
 import { serializeChatForPersistence } from './chatManifest.js';
 import { normalizeLocalPreferences } from '../domain/settings/localPreferences.js';
@@ -130,6 +134,8 @@ function normalizeToolResultsForHydration(rawList) {
       entry.errorCode = item.errorCode;
     }
     if (typeof item.backupOperationId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(item.backupOperationId)) entry.backupOperationId = item.backupOperationId;
+    if (item.handoff) entry.handoff=normalizeHandoff(item.handoff);
+    if (item.member) entry.member={agentId:String(item.member.agentId),name:String(item.member.name),memberId:String(item.member.memberId),durationMs:Number(item.member.durationMs)||0};
     if (typeof item.path === 'string') entry.path = item.path;
     if (Number.isInteger(item.exitCode)) entry.exitCode = item.exitCode;
     if (item.replayed === true) entry.replayed = true;
@@ -499,7 +505,7 @@ export function createDefaultState() {
     commandRuns: [],
     externalConnectors: [],
     externalToolRuns: [],
-    agentProfiles: normalizeAgentProfiles(),
+    agentProfiles: Object.fromEntries(Object.entries(normalizeAgentProfiles()).map(([id,p])=>[id,{...p,capabilities:recommendedCapabilities(id),collaboration:{...p.collaboration,canDelegate:id==='main',delegateTargets:id==='main'?['research','builder','reviewer']:[]}}])),
     projectAgentOverrides: {},
     tasks: [],
     approvals: [],
@@ -508,6 +514,10 @@ export function createDefaultState() {
 
 export function hydrateState(parsed = {}) {
   const defaults = createDefaultState();
+  // Split tables are a disk representation, consumed exactly once below.
+  // Keeping them beside the writable runtime profiles would let stale values
+  // overwrite a later channel/voice edit when the committed cache is hydrated.
+  const { agentChannelBindings, agentVoiceSettings, ...runtimeFields } = parsed;
   const connectorPresetVersion = Number(parsed?.settings?.connectorPresetVersion || 0);
   const skillPresetVersion = Number(parsed?.settings?.skillPresetVersion || 0);
 
@@ -572,7 +582,7 @@ export function hydrateState(parsed = {}) {
 
   return {
     ...defaults,
-    ...parsed,
+    ...runtimeFields,
     settings: {
       ...defaults.settings,
       ...parsed.settings,
@@ -587,17 +597,17 @@ export function hydrateState(parsed = {}) {
     chats: Array.isArray(parsed.chats) ? parsed.chats.map(normalizeChat) : defaults.chats,
     projects,
     artifacts: Array.isArray(parsed.artifacts)
-      ? parsed.artifacts.map(normalizeArtifact)
+      ? migrateLegacyResults(parsed.artifacts,parsed.chats || [])
       : defaults.artifacts,
     commandRuns: normalizeCommandRuns(parsed.commandRuns),
     externalConnectors: Array.isArray(parsed.externalConnectors)
       ? parsed.externalConnectors.map(normalizeExternalConnector)
       : defaults.externalConnectors,
     externalToolRuns: normalizeExternalToolRuns(parsed.externalToolRuns),
-    agentProfiles: normalizeAgentProfiles(parsed.agentProfiles),
+    agentProfiles: normalizeAgentProfiles(hydrateAgentRecords(parsed)),
     projectAgentOverrides: normalizeProjectAgentOverrides(
-      parsed.projectAgentOverrides,
-      parsed.agentProfiles,
+      hydrateProjectAgentRecords(parsed),
+      hydrateAgentRecords(parsed),
     ),
     tasks: normalizeTasks(parsed.tasks),
     mobileTaskSync: parsed.mobileTaskSync || null,

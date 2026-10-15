@@ -1,3 +1,4 @@
+import {delegateTool,delegateTask} from '../agents/delegate.js';
 /**
  * Tool registry.
  *
@@ -55,5 +56,5 @@ let _bootstrapped = false;
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, agentTool, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
+  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, mediaInfoTool, mediaApiTool, searchHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
 }

@@ -17,7 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   importAgentMarkdownFiles,
@@ -137,7 +137,7 @@ test('readStateSnapshot wraps the entire load chain in a single home capture', a
   // repair-save through saveState all read getMeloHome() independently.
   // This test verifies the unified-capture refactor: schedule a
   // readStateSnapshot under home A, flip to home B, and assert the
-  // background prime + repair save all land in home A.
+  // repair save lands in home A; persona files are now post-save exports only.
   const { readStateSnapshot } = await import('./stateStore.js');
   const homeA = freshHome();
   const homeB = freshHome();
@@ -162,11 +162,9 @@ test('readStateSnapshot wraps the entire load chain in a single home capture', a
       await new Promise(r => setImmediate(r));
     }
 
-    // Home A: prime should have created agent markdown files.
-    assert.ok(
-      existsSync(join(homeA, 'desktop', 'agents', 'global', 'main', 'IDENTITY.md')),
-      'home A (the captured home) must receive prime writes from the load chain',
-    );
+    // Loading/migrating state must not write persona exports before a save.
+    assert.equal(existsSync(join(homeA, 'desktop', 'agents')), false);
+    assert.equal(JSON.parse(readFileSync(join(homeA,'desktop','state.json'),'utf8'))._storageFormat,3);
     // Home B: nothing should have leaked here.
     assert.equal(
       existsSync(join(homeB, 'desktop', 'agents')),

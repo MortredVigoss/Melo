@@ -10,14 +10,14 @@ import Foundation
             let store = ChatStore(directory: directory)
             let before = store.preferences.agents[0]
             var session = AgentEditSession(agent: before)
-            session.begin(current: before); session.draft.name = "已保存角色"
+            session.begin(current: before); session.draft.name = "已保存Agent"
             guard session.save(current: before, persist: { value in store.updatePreferences { $0.agents[0] = value } }) else { throw MeloError.message("save failed") }
             let reloaded = ChatStore(directory: directory)
-            guard reloaded.preferences.agents[0].name == "已保存角色" else { throw MeloError.message("role not durable") }
+            guard reloaded.preferences.agents[0].name == "已保存Agent" else { throw MeloError.message("role not durable") }
             session.begin(current: session.original); session.draft.name = "不能丢的草稿"
             store.storageReady = false
             guard !session.save(current: session.original, persist: { value in store.updatePreferences { $0.agents[0] = value } }),
-                  session.isEditing, session.draft.name == "不能丢的草稿", store.preferences.agents[0].name == "已保存角色" else { throw MeloError.message("failed save lost draft or mutated stored role") }
+                  session.isEditing, session.draft.name == "不能丢的草稿", store.preferences.agents[0].name == "已保存Agent" else { throw MeloError.message("failed save lost draft or mutated stored role") }
             store.storageReady = true
             let a = store.newChat()!, b = store.newChat()!
             let ref = ImageReference(id: UUID().uuidString)
@@ -53,7 +53,7 @@ import Foundation
         let messages = (0..<12).map { ChatMessage(role: $0 % 2 == 0 ? "user" : "assistant", content: "界面验收第 \($0 + 1) 条消息。\n滚动内容应始终留在消息区域，不能穿过透明标题栏。") }
         store.chats = [Conversation(id: "interaction-qa-a", title: "键盘与草稿测试", messages: messages), Conversation(id: "interaction-qa-b", title: "历史切换测试", messages: [ChatMessage(role: "user", content: "这是另一段历史对话")])]
         try? store.save()
-        store.updatePreferences { $0.agents.append(AgentProfile(id: "qa-role", name: "测试角色", subtitle: "仅用于本轮隔离验收", symbol: "sparkles", instructions: "保留角色原始内容。")) }
+        store.updatePreferences { $0.agents.append(AgentProfile(id: "qa-role", name: "测试Agent", subtitle: "仅用于本轮隔离验收", symbol: "sparkles", instructions: "保留Agent原始内容。")) }
     }
 }
 #endif

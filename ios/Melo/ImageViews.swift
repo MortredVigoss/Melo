@@ -40,7 +40,7 @@ struct ImageComposerBar: View {
                             if let image = store.imageLibrary.index.assets[ref.id] {
                                 VStack(spacing:4) {
                                     Button { onPreview(image) } label: { LocalImageThumbnail(image:image,library:store.imageLibrary).frame(width:72,height:60) }.accessibilityLabel("预览参考图")
-                                    Menu { ForEach(ImageReference.roles,id:\.self) { role in Button(ImageReference.title(role)) { if let i=plan.references.firstIndex(where:{$0.id==ref.id}) { plan.references[i].role=role } } } } label: { Text(ImageReference.title(ref.role)).font(.caption2) }
+                                    Menu { ForEach(ImageReference.roles,id:\.self) { role in Button(LocalizedStringKey(ImageReference.title(role))) { if let i=plan.references.firstIndex(where:{$0.id==ref.id}) { plan.references[i].role=role } } } } label: { Text(LocalizedStringKey(ImageReference.title(ref.role))).font(.caption2) }
                                 }.padding(8).background(meloGold.opacity(0.07),in:RoundedRectangle(cornerRadius:12))
                                 .overlay(alignment:.topTrailing) { Button { plan.references.removeAll{$0.id==ref.id} } label:{ Image(systemName:"xmark.circle.fill").font(.system(size:18)).padding(4) }.accessibilityLabel("移除参考图") }
                             }
@@ -52,12 +52,12 @@ struct ImageComposerBar: View {
                 PhotosPicker(selection:$photos,maxSelectionCount:4,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.sendingID != nil)
                 Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.sendingID != nil)
                 Menu {
-                    ForEach(ImageAction.allCases,id:\.self) { action in Button(action.title) { plan.action=action } }
+                    ForEach(ImageAction.allCases,id:\.self) { action in Button(LocalizedStringKey(action.title)) { plan.action=action } }
                     Divider();Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
                         do { imageConnections = try LLMConnection.saved().filter { !$0.key.isEmpty && $0.apiProtocol != "anthropic" }; options=true }
                         catch { store.error="模型连接无法读取，请先在系统设置中检查连接。" }
                     }
-                } label: { Label(plan.action == .auto ? "图片模式" : plan.action.title,systemImage:"wand.and.stars").font(.caption) }.disabled(loading || store.sendingID != nil)
+                } label: { Label(LocalizedStringKey(plan.action == .auto ? "图片模式" : plan.action.title),systemImage:"wand.and.stars").font(.caption) }.disabled(loading || store.sendingID != nil)
                 Spacer(minLength:0)
                 if loading { ProgressView().controlSize(.small) }
                 else if plan.references.isEmpty && plan.action == .auto { Button("生图") { plan.action = .generate }.font(.caption).disabled(store.sendingID != nil) }
@@ -108,7 +108,7 @@ struct ImageComposerBar: View {
                         NavigationLink("Codex 登录与账号") { ScrollView { CodexLoginCard().padding(20) }.navigationTitle("Codex 登录") }
                     }
                     Section("图片任务") {
-                        Picker("处理方式",selection:$plan.action) { ForEach(ImageAction.allCases,id:\.self){Text($0.title).tag($0)} }
+                        Picker("处理方式",selection:$plan.action) { ForEach(ImageAction.allCases,id:\.self){Text(LocalizedStringKey($0.title)).tag($0)} }
                         TextField("API 图片模型",text:$plan.model).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Text("Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。").font(.footnote).foregroundStyle(.secondary)
                         Picker("尺寸",selection:$plan.size) { Text("自动").tag("auto");Text("正方形").tag("1024x1024");Text("竖图").tag("1024x1536");Text("横图").tag("1536x1024") }

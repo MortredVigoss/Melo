@@ -1,3 +1,5 @@
+import {effectiveAgentProfile} from '../../state/agentProfiles.js';
+import {hasCapability} from '../../domain/agent/capabilities.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Approval mutation handlers — sub-phase 7d-5ε commit 3 of the
@@ -88,6 +90,12 @@ export async function executeApproval(approvalId) {
     if (approval.status === 'approved') { replayed = true; return; }
     if (approval.status !== 'pending') {
       throw Object.assign(new Error('Approval is no longer pending.'), { code: 'APPROVAL_NOT_PENDING', statusCode: 409 });
+    }
+    const chat=latestState.chats.find(c=>c.id===approval.chatId);
+    if (chat) {
+      const profile=effectiveAgentProfile(latestState,chat.agentId || 'main',chat.projectId), caps=profile.capabilities;
+      const required=approval.kind==='command'?'runCommands':['file-save','artifact-apply'].includes(approval.kind)?'writeFiles':null;
+      if ((required&&!hasCapability(caps,required)) || (approval.kind==='external-tool'&&caps&&!caps.connectors.includes(approval.payload.connectorId))) throw Object.assign(new Error('Agent capability no longer permits this action.'),{code:'CAPABILITY_DENIED',statusCode:403});
     }
     approval.status = 'running';
     approval.updatedAt = nowIso();

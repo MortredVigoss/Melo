@@ -547,6 +547,7 @@ async function main() {
           'soul.md': mainAgent.soulMd,
           mood: mainAgent.mood,
           tools: graphToolIds,
+          ...(mainAgent.capabilities ? {capabilities:{...mainAgent.capabilities,connectors:externalConnector?[externalConnector.id]:[]}} : {}),
           model: mainAgent.model || '',
           systemPrompt: mainAgent.systemPrompt || '',
         },

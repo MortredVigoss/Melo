@@ -27,6 +27,8 @@ function url(v, {endpoint=false}={}) {
 export function portableAgent(v) {
   const avatarData = text(v.avatarData,500000);
   if (avatarData && !/^[A-Za-z0-9+/]+={0,2}$/.test(avatarData)) throw new Error('Invalid avatar');
+  // v1 is intentionally unchanged: old services and phones validate each
+  // legacy field independently, before decoding the complete snapshot.
   return {name:text(v.name,200),subtitle:text(v.subtitle),instructions:text(v.instructions,50000),symbol:text(v.symbol,100)||'person.crop.square',avatarData,identity:text(v.identity,50000),soul:text(v.soul,50000),systemPrompt:text(v.systemPrompt,50000),mood:text(v.mood,100)||'warm',model:text(v.model,180)};
 }
 export function portableModel(v) {
@@ -38,7 +40,7 @@ export function portableScene(v) {
   if (!object(v)) return null;
   if (!safeID(v.runId) || !['completed','failed','cancelled','interrupted'].includes(v.status)) throw new Error('Only terminal execution records can sync');
   const list = (a,n) => { if (!Array.isArray(a || []) || (a || []).length>n) throw new Error('Execution record exceeds limit'); return a || []; };
-  const stage = x => ({id:text(x.id,200),module:['search','compute','files','tools','create'].includes(x.module)?x.module:'tools',name:text(x.name,200),status:['queued','running','completed','failed','cancelled','interrupted'].includes(x.status)?x.status:'interrupted',provider:text(x.provider,200),input:text(x.input,2200),output:text(x.output,12000),query:text(x.query,2200),resultSummary:text(x.resultSummary,2200),model:text(x.model,180),returnedModel:text(x.returnedModel,180),channel:text(x.channel,100),startedAt:text(x.startedAt,50),finishedAt:text(x.finishedAt,50)});
+  const stage = x => ({id:text(x.id,200),module:['search','compute','files','tools','create'].includes(x.module)?x.module:'tools',name:text(x.name,200),status:['queued','running','completed','failed','cancelled','interrupted'].includes(x.status)?x.status:'interrupted',provider:text(x.provider,200),input:text(x.input,2200),output:text(x.handoff?JSON.stringify(x.handoff):x.output,12000),query:text(x.query,2200),resultSummary:text(x.resultSummary,2200),model:text(x.model,180),returnedModel:text(x.returnedModel,180),channel:text(x.channel,100),startedAt:text(x.startedAt,50),finishedAt:text(x.finishedAt,50)});
   return {runId:v.runId,status:v.status,query:text(v.query,12000),startedAt:text(v.startedAt,50),finishedAt:text(v.finishedAt,50),lastModule:text(v.lastModule,50),requestedModel:text(v.requestedModel,180),returnedModel:text(v.returnedModel,180),sourceDevice:text(v.sourceDevice,200),operations:list(v.operations,500).map(stage),pipeline:list(v.pipeline,500).map(stage),sources:list(v.sources,2000).map((s,i)=>({id:text(s.id,200)||`source-${i}`,url:url(s.url),title:text(s.title,1000),titleProvided:s.titleProvided===true,order:Number.isSafeInteger(s.order)?s.order:i,rank:Number.isSafeInteger(s.rank)?s.rank:i,reading:['unknown','snippet','partial','range-unknown','extracted','full'].includes(s.reading)?s.reading:'unknown',appeared:s.appeared===true,accessed:s.accessed===true,opened:s.opened===true,cited:s.cited===true,providers:list(s.providers,30).map(x=>text(x,200)),queries:list(s.queries,100).map(x=>text(x,2200))}))};
 }
 export function portableValue(kind,v) {

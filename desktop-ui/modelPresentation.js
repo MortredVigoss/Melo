@@ -28,7 +28,7 @@ export function connectionModelOptions(config, profile = null) {
 export function renderDefaultModelSettings(config, escape) {
   return ui`<section class="surface-card default-model-settings">
     <h2 class="pane-title">默认回答模型</h2>
-    <p class="page-kicker">沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；角色或对话已指定的模型保留。</p>
+    <p class="page-kicker">沿用当前连接的账号与密钥。未单独指定模型的对话使用这里的选择；Agent或对话已指定的模型保留。</p>
     <form class="config-form" data-form="default-model-config">
       <label class="label">选择模型<select class="config-select" name="model" required aria-label="系统默认回答模型">
         ${connectionModelOptions(config).map(model => ui`<option value="${escape(model)}" ${model === config.model ? 'selected' : ''}>${escape(modelLabel(model))} · ${escape(model)}</option>`).join('')}
@@ -74,9 +74,9 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
     ${open ? ui`<section id="model-picker-panel" class="model-picker-panel" popover="manual" aria-label="对话模型选择">
       <header><div><small>MODEL / CONNECTION</small><h3>选择本对话的模型</h3></div></header>
       <p class="model-picker-context">${agent?.model ? `${escape(agent.name)} 单独指定了 ${escape(modelLabel(agent.model))}。` : t("未单独选择时沿用默认模型。")} 更改只影响本对话之后的请求。</p>
-      <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按角色权限执行，所需服务未配置时不会自动获得能力。</p>
+      <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按Agent权限执行，所需服务未配置时不会自动获得能力。</p>
       <div class="model-picker-options" role="group" aria-label="可选模型">
-        <button type="button" class="model-picker-option ${!selection?'is-selected':''}" data-action="pick-default-model" data-model="" aria-pressed="${!selection}" ${saving?'disabled':''}>沿用角色 / 系统默认</button>
+        <button type="button" class="model-picker-option ${!selection?'is-selected':''}" data-action="pick-default-model" data-model="" aria-pressed="${!selection}" ${saving?'disabled':''}>沿用Agent / 系统默认</button>
         ${choices.map(profile=>ui`<small>${escape(profile.name)}</small>${profile.models.map(model=>ui`<button type="button" class="model-picker-option ${selection?.model===model&&selection?.profileId===profile.id?'is-selected':''}" data-action="pick-default-model" data-model="${escape(model)}" data-profile-id="${escape(profile.id)}" aria-pressed="${selection?.model===model&&selection?.profileId===profile.id}" ${saving?'disabled':''}><span><strong>${escape(modelLabel(model))}</strong><small>${escape(model)}</small></span></button>`).join('')}`).join('')}
       </div><footer><span>${saving?t("正在保存…"):'其他对话和系统默认不变；实际返回模型仍在每条回复下记录。'}</span><button type="button" data-action="open-view" data-view="model">管理连接 ↗</button></footer>
     </section>` : ''}

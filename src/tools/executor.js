@@ -1,3 +1,5 @@
+import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
+import { toolCapabilityAllowed } from '../domain/agent/capabilities.js';
 import { recordTaskApproval } from '../services/task/taskApprovalCheckpoint.js';
 import { operationScope } from '../safety/permissionContext.js';
 import { reserveTaskOperation } from '../services/task/operationLedger.js';
@@ -39,6 +41,9 @@ const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
  */
 export async function executeTool(tool, args, options = {}) {
   let requestContext = options.requestContext || currentRequestContext();
+  if ((Array.isArray(options.allowedToolIds) && !options.allowedToolIds.includes(tool.id)) || !toolCapabilityAllowed(tool.id,options.capabilities,args)) {
+    return {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${options.agentId || 'current'} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}};
+  }
   if (requestContext && !options.scopeResolved) {
     const home = requestContext.home;
     const state = requestContext.turnBinding ? null : await loadState({ home });
@@ -64,7 +69,7 @@ export async function executeTool(tool, args, options = {}) {
       waiting = true;
       recordTaskApproval(requestContext,options.taskId,id,payload.operation || tool.id,true).catch(()=>{});
     }
-    options.sseEmitter?.(type,payload);
+    options.sseEmitter?.(type,{...payload,agentId:options.agentId || requestContext?.turnBinding?.role});
   };
   observe('queued');
   try {
@@ -147,6 +152,14 @@ async function runObservedTool(tool, args, options = {}) {
       if (!controller.signal.aborted) sseEmitter(...values);
     } : sseEmitter,
     agentDepth: agentDepth || 0,
+    agentId: options.agentId,
+    capabilities: options.capabilities,
+    collaboration: options.collaboration,
+    agentProfiles: options.agentProfiles,
+    extraTools: options.extraTools,
+    projectId: options.projectId,
+    ancestry: options.ancestry,
+    maxDelegationDepth: options.maxDelegationDepth,
     // Null is the legacy unrestricted caller; an array (including []) means the sub-agent
     // must stay within this whitelist. Tools like `agent` propagate this downward.
     allowedToolIds: Array.isArray(allowedToolIds) ? allowedToolIds : null,
@@ -163,11 +176,11 @@ async function runObservedTool(tool, args, options = {}) {
 
   try {
     const rawResult = await Promise.race([
-      Promise.resolve().then(() => {
+      trackWorkspaceWork(Promise.resolve().then(() => {
         if (controller.signal.aborted) throw cancelError;
         if (!tool.observesOwnLifecycle) options.observe?.('running');
         return tool.run(args, context);
-      }),
+      })),
       cancelled,
     ]);
     if (cancelError) throw cancelError;

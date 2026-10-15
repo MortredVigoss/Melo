@@ -15,7 +15,7 @@ struct AgentEditor: View {
             _session = State(initialValue: try EditDraftStorage.shared.restore(AgentEditSession.self, key: draftKey) ?? AgentEditSession(agent: agent, isNew: isNew))
         } catch {
             _session = State(initialValue: AgentEditSession(agent: agent, isNew: isNew))
-            _draftError = State(initialValue: "无法恢复上次草稿，已保存角色未改变。")
+            _draftError = State(initialValue: "无法恢复上次草稿，已保存Agent未改变。")
         }
     }
     private var current: AgentProfile? { store.preferences.agents.first { $0.id == session.draft.id } }
@@ -26,16 +26,17 @@ struct AgentEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    Label(statusText, systemImage: statusIcon)
+                    Label(LocalizedStringKey(statusText), systemImage: statusIcon)
                         .font(.subheadline.weight(.medium)).foregroundStyle(statusColor)
                         .accessibilityIdentifier("role.status")
+                    if WorkspaceProjection.pending(store.preferences).contains("agent:" + session.draft.id) { Text("此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
                     if let error = session.error { Text(error).font(.caption).foregroundStyle(.red) }
                     if session.hasConflict {
                         if let current {
                             Text("未修改的字段跟随最新值；同一字段有冲突时保留你的修改。合并后请检查并保存。").font(.caption).foregroundStyle(.secondary)
                             Button("合并最新内容，保留我的修改") { session.rebase(current: current); _ = preserveDraft() }.accessibilityIdentifier("role.mergeDraft")
                         } else {
-                            Button("保留草稿，改为创建新角色") { session.keepAsNew(); _ = preserveDraft() }
+                            Button("保留草稿，改为创建新Agent") { session.keepAsNew(); _ = preserveDraft() }
                         }
                     }
                     if let draftError { Text(draftError).font(.caption).foregroundStyle(.red) }
@@ -45,9 +46,10 @@ struct AgentEditor: View {
                     }
                 }
                 if session.isEditing { editableFields } else { details }
+                capabilityDetails
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(session.isNew ? "创建角色" : "角色详情")
+            .navigationTitle(LocalizedStringKey(session.isNew ? "创建Agent" : "Agent详情"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -79,42 +81,51 @@ struct AgentEditor: View {
                     if wasNew { dismiss() } else if let current { session.refresh(current) }
                 }
                 Button("继续编辑", role: .cancel) {}
-            } message: { Text("已保存的角色不会改变。") }
+            } message: { Text("已保存的Agent不会改变。") }
         }
         .interactiveDismissDisabled(session.needsDiscardConfirmation)
         .onChange(of: current) { _, value in if let value { session.refresh(value) } }
         .onChange(of: session) { _, _ in _ = preserveDraft() }
         .onDisappear { _ = preserveDraft() }
     }
+    @ViewBuilder private var capabilityDetails: some View {
+        Section("电脑执行能力") {
+            Text("能力范围与电脑同步；请在电脑编辑。手机不执行多 Agent 协作。").font(.caption).foregroundStyle(.secondary)
+            if let caps=session.draft.capabilities {
+                ForEach(["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"],id: \.self) { key in
+                    HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }
+                }
+                ForEach(["mcpServers","skills","connectors"],id: \.self) { key in
+                    if !caps[key].array.isEmpty { Text(key + ": " + caps[key].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
+                }
+            } else { Text("能力设置尚未从电脑同步") }
+        }
+    }
     @ViewBuilder private var details: some View {
         Section {
-            HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semibold)); Text(session.draft.subtitle.isEmpty ? "未填写介绍" : session.draft.subtitle).foregroundStyle(.secondary) } }
+            HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semibold)); Group { if session.draft.subtitle.isEmpty { Text("未填写介绍") } else { Text(verbatim: session.draft.subtitle) } }.foregroundStyle(.secondary) } }
         }
-        Section("思考与回复方式") { Text(session.draft.instructions).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-        if [session.draft.identity, session.draft.soul, session.draft.systemPrompt, session.draft.mood, session.draft.model].contains(where: { $0?.isEmpty == false }) {
-            Section("更多角色设定") {
-                detail("身份", session.draft.identity); detail("性格", session.draft.soul)
-                detail("系统要求", session.draft.systemPrompt); detail("语气", session.draft.mood); detail("默认模型", session.draft.model)
+        Section("人设与工作要求") { Text(session.draft.instructions).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+        if [session.draft.mood, session.draft.model].contains(where: { $0?.isEmpty == false }) {
+            Section("更多Agent设定") {
+                detail("语气", session.draft.mood); detail("默认模型", session.draft.model)
             }
         }
     }
-    @ViewBuilder private func detail(_ title: String, _ value: String?) -> some View {
+    @ViewBuilder private func detail(_ title: LocalizedStringKey, _ value: String?) -> some View {
         if let value, !value.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).textSelection(.enabled) } }
     }
     @ViewBuilder private var editableFields: some View {
         Section("头像") { AvatarPicker(agent: draft) }
-        Section("角色身份") {
-            TextField("角色名称", text: draft.name).focused($fieldFocused).accessibilityIdentifier("role.name")
+        Section("Agent身份") {
+            TextField("Agent名称", text: draft.name).focused($fieldFocused).accessibilityIdentifier("role.name")
             TextField("一句话介绍", text: draft.subtitle).focused($fieldFocused)
         }
-        Section("思考与回复方式") {
+        Section("人设与工作要求") {
             TextEditor(text: draft.instructions).frame(minHeight: 180).focused($fieldFocused).accessibilityIdentifier("role.instructions")
-            Text("保存后，对已绑定此角色的对话下一轮生效。").font(.caption).foregroundStyle(.secondary)
+            Text("保存后，对已绑定此Agent的对话下一轮生效。").font(.caption).foregroundStyle(.secondary)
         }
-        Section("高级角色设定") {
-            TextField("身份", text: optional(\.identity), axis: .vertical).lineLimit(2...5)
-            TextField("性格与风格", text: optional(\.soul), axis: .vertical).lineLimit(2...6)
-            TextField("系统要求", text: optional(\.systemPrompt), axis: .vertical).lineLimit(2...6)
+        Section("高级Agent设定") {
             TextField("语气", text: optional(\.mood))
             TextField("默认模型 ID（留空沿用系统）", text: optional(\.model)).textInputAutocapitalization(.never).autocorrectionDisabled()
         }

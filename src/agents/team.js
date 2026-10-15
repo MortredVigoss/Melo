@@ -1,40 +1,55 @@
-import { delegatedConfig } from './delegatedConfig.js';
-import { runSubAgent } from './subAgent.js';
-import { summarizePricedUsage } from '../runtime/usage.js';
-import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
-export const TEAM_ROLES = Object.freeze({ research:'通过读取与检索调查事实和来源，列出证据和不确定项。', builder:'按已确认目标实施最小改动，验证结果；不要重复已完成操作。', reviewer:'通过读取与检索独立检查任务结果、已有测试记录和遗漏，明确风险和未完成项。' });
-const READ_TOOLS = ['file_read', 'glob', 'grep', 'web_search', 'fetch_url', 'calculator', 'media_info', 'search_history'];
-function roleToolIds(role, parentIds) {
-  if (role === 'builder') return parentIds;
-  return READ_TOOLS.filter(id => !Array.isArray(parentIds) || parentIds.includes(id));
-}
+import {delegatedConfig} from './delegatedConfig.js';
+import {runSubAgent} from './subAgent.js';
+import {runConfiguredMember} from './delegate.js';
+import {summarizePricedUsage} from '../runtime/usage.js';
+import {normalizeAgentProfile} from '../state/agentProfiles.js';
+import {recommendedCapabilities} from '../domain/agent/capabilities.js';
+export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
+export const TEAM_TEMPLATES = Object.freeze([
+ {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
+ {id:'parallel-research',name:'并行调研',members:['research','reviewer'],mode:'parallel'},
+ {id:'review-loop',name:'实施 / 复核循环',members:['builder','reviewer'],mode:'review-loop',maxRounds:2},
+]);
+const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','calculator','media_info','search_history'];
 export function validateTeamPlan(plan) {
-  if(!plan) return null;
-  const roles=[...new Set(plan.roles || [])];
-  if(!roles.length || roles.length>3 || roles.some(r=>!TEAM_ROLES[r])) throw new Error('协作角色必须为调查、执行或复核，最多三个。');
-  return {roles,concurrency:roles.includes('builder') ? 1 : Math.max(1,Math.min(2,Math.floor(Number(plan.concurrency)||1)))};
+ if(!plan)return null;
+ if(typeof plan!=='object'||Array.isArray(plan))throw new Error('Invalid team plan');
+ if(plan.templateId) {const template=TEAM_TEMPLATES.find(t=>t.id===plan.templateId);if(!template)throw new Error('Unknown team template');plan={...template,...plan};}
+ const members=[...(plan.members || plan.roles || [])];
+ if(!members.length||members.length>8||members.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(id))||new Set(members).size!==members.length)throw new Error('团队需包含 1–8 个不同的 Agent ID。');
+ const mode=plan.mode || (Number(plan.concurrency)>1&&!members.includes('builder')?'parallel':'sequential');
+ if(!['sequential','parallel','review-loop'].includes(mode))throw new Error('Unknown orchestration mode');
+ if(mode==='review-loop'&&members.length!==2)throw new Error('复核循环需要实施和复核两个成员。');
+ return {members,roles:members,mode,concurrency:mode==='parallel'?Math.max(1,Math.min(4,Math.floor(Number(plan.concurrency)||2))):1,maxRounds:Math.max(1,Math.min(5,Math.floor(Number(plan.maxRounds)||2)))};
 }
-export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,run=runSubAgent}) {
-  config=delegatedConfig(config);
-  plan=validateTeamPlan(plan);
-  const parent=currentRequestContext();
-  const started=Date.now(), results=new Array(plan.roles.length); let cursor=0;
-  const prices=config.modelPricing || {};
-  async function worker() {
-    while(cursor<plan.roles.length) {
-      const i=cursor++, role=plan.roles[i], began=Date.now();
-      if(signal?.aborted) {results[i]={role,ok:false,output:'已取消，未启动此角色。',cancelled:true,durationMs:0,receipts:[]};continue;}
-      const emit=(type,payload)=>sseEmitter?.(type,type==='execution_event' ? {...payload,id:`team:${role}:${payload.id}`,name:`${role} · ${payload.name}`} : payload);
-      emit('execution_event',{kind:'pipeline',id:'role',name:TEAM_ROLES[role],status:'running'});
-      const receipts=[];
-      try {
-        const invoke=()=>run({task,instructions:TEAM_ROLES[role]+(plan.concurrency===1 && i>0 ? `\n前序角色记录（需独立核对）：${results.slice(0,i).map(r=>`${r.role}: ${r.output}`).join('\n').slice(0,16000)}` : ''),config,workspacePath,signal,sseEmitter:emit,chatId,depth:1,allowedToolIds:roleToolIds(role,allowedToolIds),roleId:role,onProviderResponse:r=>receipts.push(r)});
-        const outcome=parent ? await runWithRequestContext(Object.freeze({...parent,agentId:role}),invoke) : await invoke();
-        results[i]={role,...outcome,receipts,durationMs:Date.now()-began,usage:summarizePricedUsage(receipts,prices)};
-      } catch(error) { results[i]={role,ok:false,output:signal?.aborted?'已取消':error.message,cancelled:!!signal?.aborted,receipts,durationMs:Date.now()-began,usage:summarizePricedUsage(receipts,prices)}; }
-      emit('execution_event',{kind:'pipeline',id:'role',name:TEAM_ROLES[role],status:results[i].cancelled?'cancelled':results[i].ok?'completed':'failed',output:results[i].output.slice(0,1000)});
-    }
+export async function runAgentTeam({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent}) {
+ plan=validateTeamPlan(plan);config=delegatedConfig(config);
+ if(capabilities&&!capabilities.delegate)throw Object.assign(new Error('主 Agent 未开启委派能力，无法启动团队。'),{code:'CAPABILITY_DENIED'});
+ const started=Date.now(), results=[];
+ const profiles=agentProfiles || Object.fromEntries(plan.members.map(id=>[id,{...normalizeAgentProfile(id,{}),capabilities:recommendedCapabilities(id)}]));
+ for(const id of plan.members)if(!profiles[id])throw new Error(`团队成员 Agent 不存在：${id}`);
+ async function member(id,prior,round=1) {
+  if(signal?.aborted){const r={role:id,agentId:id,name:profiles[id].name,ok:false,output:'已取消，未启动此成员。',cancelled:true,receipts:[],durationMs:0};results.push(r);return r;}
+  // Old plans without a profile map are supported for callers predating Agent definitions.
+  const inherited=!agentProfiles&&id!=='builder'?READ_TOOLS.filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
+  const r=await runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',workspacePath,signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run});
+  r.round=round;results.push(r);return r;
+ }
+ let accepted=plan.mode!=='review-loop';
+ if(plan.mode==='parallel') {
+  let cursor=0;const ordered=new Array(plan.members.length);
+  await Promise.all(Array.from({length:Math.min(plan.concurrency,plan.members.length)},async()=>{while(cursor<plan.members.length){const index=cursor++;ordered[index]=await member(plan.members[index],[]);}}));
+  results.splice(0,results.length,...ordered);
+ } else if(plan.mode==='review-loop') {
+  let feedback=[];
+  for(let round=1;round<=plan.maxRounds&&!signal?.aborted;round++) {
+   const build=await member(plan.members[0],feedback,round);
+   const review=await member(plan.members[1],build.handoff?[build.handoff]:[],round);
+   accepted=build.ok&&review.ok&&review.handoff?.review==='approve';
+   if(accepted)break;feedback=review.handoff?[review.handoff]:[];
   }
-  await Promise.all(Array.from({length:plan.concurrency},worker));
-  return {ok:results.every(r=>r.ok),results,durationMs:Date.now()-started,concurrency:plan.concurrency,usage:summarizePricedUsage(results.flatMap(r=>r.receipts),prices)};
+ } else {
+  const prior=[];for(const id of plan.members){const r=await member(id,prior);if(r.handoff)prior.push(r.handoff);}
+ }
+ return {ok:accepted&&results.length>0&&results.every(r=>r.ok),accepted,mode:plan.mode,results,durationMs:Date.now()-started,concurrency:plan.concurrency,usage:summarizePricedUsage(results.flatMap(r=>r.receipts),config.modelPricing || {})};
 }

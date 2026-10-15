@@ -1,3 +1,4 @@
+import { filterToolsByCapabilities, hasCapability } from '../domain/agent/capabilities.js';
 import { delegatedConfig } from './delegatedConfig.js';
 /**
  * Skill executor.
@@ -137,6 +138,7 @@ export async function runSkill({
   chatId,
   depth = 0,
   allowedToolIds = null,
+  capabilities = null,
   replyFn = createOpenAICompatibleReply,
 }) {
   const runStartedAt = Date.now();
@@ -179,7 +181,7 @@ export async function runSkill({
   }
 
   const providerConfig = delegatedConfig(config);
-  const allowedTools = resolveSkillTools(skill, allowedToolIds);
+  const allowedTools = filterToolsByCapabilities(resolveSkillTools(skill, allowedToolIds),capabilities);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
   const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native });
@@ -229,6 +231,8 @@ export async function runSkill({
       model: providerConfig.model,
       systemPrompt,
       messages: request.messages,
+      nativeWebSearchEnabled: hasCapability(capabilities,'network'),
+      nativeImageGenerationEnabled: hasCapability(capabilities,'generateMedia'),
       signal,
     });
 
@@ -279,6 +283,7 @@ export async function runSkill({
         agentDepth: (depth || 0) + 1,
         // Downstream nested tool calls cannot widen the skill's whitelist.
         allowedToolIds: allowedTools.map(t => t.id),
+        capabilities,
       },
     );
 
@@ -360,6 +365,7 @@ export function buildSkillTool(skill) {
         ? `[Skill] ${skill.description.trim()}`
         : `[Skill] Run the "${skill.name}" skill.`,
     category: 'skill',
+    allowedAgentIds: skill.allowedAgentIds || [],
     requiresPermission: false,
     // Skills run their own tool loop and can do side-effectful things;
     // never run two in parallel under the same caller.
@@ -379,6 +385,7 @@ export function buildSkillTool(skill) {
         chatId: context.chatId,
         depth: context.agentDepth || 0,
         allowedToolIds: context.allowedToolIds || null,
+      capabilities: context.capabilities,
       });
     },
   };

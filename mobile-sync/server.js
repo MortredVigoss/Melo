@@ -1,3 +1,5 @@
+import {validateAgentSettings} from './agentSettingsProtocol.js';
+import {mergeWorkspaces} from './workspaceProtocol.js';
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
@@ -19,7 +21,9 @@ export function createSyncServer({ token, directory }) {
   };
   return createServer(async (request, response) => {
     const reply = (status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
-    if (request.url !== '/v1/sync' || request.method !== 'POST') return reply(404, { error: 'Not found' });
+    const settings=request.url==='/v1/agent-settings';
+    const targetFile=settings?join(directory,'agent-settings.json'):file;
+    if ((!settings && request.url !== '/v1/sync') || request.method !== 'POST') return reply(404, { error: 'Not found' });
     if (!authorized(request, token)) return reply(401, { error: 'Unauthorized' });
     try {
       let size = 0; const chunks = [];
@@ -29,15 +33,17 @@ export function createSyncServer({ token, directory }) {
         chunks.push(chunk);
       }
       let incoming;
-      try { incoming = validateSnapshot(JSON.parse(Buffer.concat(chunks).toString())); }
+      try { incoming = (settings?validateAgentSettings:validateSnapshot)(JSON.parse(Buffer.concat(chunks).toString())); }
       catch { return reply(400, { error: 'Invalid snapshot' }); }
       const transaction = queue.then(async () => {
-        const merged = mergeSnapshots(await read(), incoming);
+        let stored;
+        if(settings){try{stored=validateAgentSettings(JSON.parse(await readFile(targetFile,'utf8')));}catch(e){if(e.code!=='ENOENT')throw e;stored={version:1,records:[]};}}
+        const merged = settings?validateAgentSettings(mergeWorkspaces(stored,incoming)):mergeSnapshots(await read(), incoming);
         const serialized = JSON.stringify(merged);
         if (Buffer.byteLength(serialized) > 8 * 1024 * 1024) throw Object.assign(new Error('Storage limit'), { status: 413 });
         await mkdir(directory, { recursive: true, mode: 0o700 });
-        await writeFile(file + '.tmp', serialized, { mode: 0o600 });
-        await rename(file + '.tmp', file);
+        await writeFile(targetFile + '.tmp', serialized, { mode: 0o600 });
+        await rename(targetFile + '.tmp', targetFile);
         return merged;
       });
       queue = transaction.catch(() => {});

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "kind": "knowledge",
+      "id": "settings-198ac9f18b286c5732064225d433b6b52d7754a1a59c3b18dc8fe5a1321c8288",
+      "versions": [
+        {
+          "clock": {
+            "desktop": 1
+          },
+          "value": {
+            "title": "global / portable",
+            "content": "{\"agentId\":\"portable\",\"capabilities\":{\"connectors\":[],\"delegate\":false,\"generateMedia\":false,\"knowledgeMemory\":false,\"mcpServers\":[],\"network\":true,\"readFiles\":false,\"runCommands\":false,\"skills\":[],\"version\":1,\"writeFiles\":false},\"collaboration\":{\"canDelegate\":true,\"delegateTargets\":[\"reviewer\"],\"maxDelegationDepth\":1,\"maxIterations\":8,\"maxTokens\":32000,\"timeoutMs\":180000},\"contextSources\":{\"knowledge\":true,\"memory\":true,\"projects\":true},\"projectId\":null}",
+            "deleted": false,
+            "kind": "agent-settings-v1",
+            "language": "json",
+            "projectId": null
+          }
+        }
+      ]
+    },
+    {
+      "kind": "knowledge",
+      "id": "settings-d873c56599da41b408cc44f93d30ed679722a193a9b2347196057e6c03d9a2f3",
+      "versions": [
+        {
+          "clock": {
+            "desktop": 1
+          },
+          "value": {
+            "title": "p / portable",
+            "content": "{\"agentId\":\"portable\",\"capabilities\":{\"connectors\":[],\"delegate\":false,\"generateMedia\":false,\"knowledgeMemory\":false,\"mcpServers\":[],\"network\":false,\"readFiles\":false,\"runCommands\":false,\"skills\":[],\"version\":1,\"writeFiles\":false},\"collaboration\":{\"canDelegate\":false,\"delegateTargets\":[],\"maxDelegationDepth\":1,\"maxIterations\":8,\"maxTokens\":32000,\"timeoutMs\":180000},\"contextSources\":{\"knowledge\":true,\"memory\":true,\"projects\":true},\"projectId\":\"p\"}",
+            "deleted": false,
+            "kind": "agent-settings-v1",
+            "language": "json",
+            "projectId": null
+          }
+        }
+      ]
+    }
+  ]
+}

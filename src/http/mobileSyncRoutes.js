@@ -1,3 +1,5 @@
+import {validateAgentSettings,refreshAgentSettings,applyAgentSettings} from '../../mobile-sync/agentSettings.js';
+import {mergeWorkspaces} from '../../mobile-sync/workspaceProtocol.js';
 import { assertChatDeletable, stageChatDeletion, finishChatDeletions } from '../services/chat/chatDeletion.js';
 import { refreshPortableMemory, stagePortableMemory, replayPortableMemory } from '../services/chat/portableMemory.js';
 import { loadState, updateStateAtomically } from '../state/stateStore.js';
@@ -63,9 +65,26 @@ export function importMobileSnapshot(state, incoming, options = {}) {
   return state;
 }
 export async function handleMobileSyncRoute(request, response, url) {
-  if (!['/api/mobile-sync','/api/mobile-sync/resolve'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
+  if (!['/api/mobile-sync','/api/mobile-sync/resolve','/api/agent-settings-sync','/api/agent-settings-sync/resolve'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
   // Capture home before any asynchronous work; all imported files remain here.
   const home=getMeloHome();
+  if(url.pathname.startsWith('/api/agent-settings-sync')) {
+    const resolving=url.pathname.endsWith('/resolve');
+    if(!resolving&&!authorized(request,token)){sendJson(response,401,{error:'Unauthorized'});return true;}
+    if(resolving&&request.method!=='POST'){sendJson(response,405,{error:'POST required'});return true;}
+    const incoming=request.method==='POST'?await readJsonBody(request,{maxBytes:8*1024*1024}):null;
+    const result=await updateStateAtomically(state=>{
+      let workspace=refreshAgentSettings(state);
+      if(resolving){
+        const row=workspace.records.find(r=>r.id===incoming.id);
+        if(!incoming.expected||stableJSON(row?.versions[incoming.index])!==stableJSON(incoming.expected))throw Object.assign(new Error('同步冲突已变化，请刷新后重新选择。'),{statusCode:409});
+        workspace=resolveWorkspace(workspace,'knowledge',incoming.id,incoming.index,state.mobileWorkspaceDevice);
+      }else if(incoming)workspace=mergeWorkspaces(workspace,validateAgentSettings(incoming));
+      if(Buffer.byteLength(JSON.stringify(workspace))>8*1024*1024)throw Object.assign(new Error('Agent settings exceed capacity'),{statusCode:413});
+      applyAgentSettings(state,workspace);return state;
+    },{home});
+    sendJson(response,200,result.agentSettingsSync);return true;
+  }
   const getPaths=createAgentMarkdownFileHelpers({agentsDir:join(home,'desktop','agents')}).getAgentMarkdownPaths;
   if(url.pathname.endsWith('/resolve')) {
     if(request.method!=='POST'){sendJson(response,405,{error:'POST required'});return true;}
@@ -76,7 +95,7 @@ export async function handleMobileSyncRoute(request, response, url) {
       const row=s.mobileWorkspaceSync?.records.find(r=>r.kind===body.kind&&r.id===body.id);
       if(!body.expected||stableJSON(row?.versions?.[body.index])!==stableJSON(body.expected))throw Object.assign(new Error('同步冲突已变化，请刷新后重新选择。'),{statusCode:409});
       s.mobileWorkspaceSync=resolveWorkspace(s.mobileWorkspaceSync,body.kind,body.id,body.index,s.mobileWorkspaceDevice);
-      applyPortableWorkspace(s,s.mobileWorkspaceSync,{config,home});
+      applyPortableWorkspace(s,s.mobileWorkspaceSync,{config,home,resolvedKeys:[`${body.kind}:${body.id}`]});
       await persistPortableFiles(s,getPaths);
       stagePortableMemory(s, expectedMemories, baseline);
       return s;

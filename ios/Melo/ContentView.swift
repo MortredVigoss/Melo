@@ -160,7 +160,7 @@ struct HomeView: View {
                         Button { if let id = store.newChat() { open(id) } } label: {
                             HStack { Text("从一个想法开始…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Image(systemName: "arrow.up.right").font(.callout).foregroundStyle(meloAccent) }.padding(19).background(meloBackground.opacity(0.42), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(meloGold.opacity(0.3), lineWidth: 0.6))
                         }.disabled(!store.storageReady)
-                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色"); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7)) }
+                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent"); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7)) }
                     }.padding(.horizontal, 26).padding(.bottom, 22)
                 }
             }
@@ -215,7 +215,7 @@ struct AgentsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PageHeading(eyebrow: "AGENTS", title: "不同角色，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
+                PageHeading(eyebrow: "AGENTS", title: "不同Agent，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
                 ForEach(store.preferences.agents) { agent in
                     VStack(alignment: .leading, spacing: 18) {
                         HStack { AgentAvatar(agent: agent, size: 48); Spacer(); Button { editing = agent } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary).padding(8) }.accessibilityLabel("查看\(agent.name)") }
@@ -223,8 +223,8 @@ struct AgentsView: View {
                         Button { if let id = store.newChat(agentID: agent.id) { open(id) } } label: { HStack { Text("与\(agent.name)对话"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline.weight(.medium)).foregroundStyle(meloAccent) }
                     }.meloPanel()
                 }
-                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的角色", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
-                Text("角色名称、定位和回复要求会随每轮消息生效。可直接在对话中切换角色；配置与头像保存在本机。").font(.caption).foregroundStyle(.secondary)
+                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
+                Text("Agent名称、定位和回复要求会随每轮消息生效。可直接在对话中切换Agent；配置与头像保存在本机。").font(.caption).foregroundStyle(.secondary)
             }.padding(20)
         }.sheet(item: $editing) { agent in AgentEditor(agent: agent, isNew: !store.preferences.agents.contains { $0.id == agent.id }).presentationBackground(MeloTheme.dialog) }
     }
@@ -498,7 +498,7 @@ struct TaskHandoffView: View {
                             Button { Task { await store.requestHandoff(task) } } label: { Label(store.taskHandoffs.contains { $0.taskId == task.id && $0.revision == task.revision } ? "再次同步请求" : "请求桌面继续 / 修复", systemImage: "arrow.right.circle").frame(minHeight: 44) }.disabled(store.syncing)
                         }
                         DisclosureGroup("检查点详情") {
-                            VStack(alignment: .leading, spacing: 6) { Text("角色：\(task.owner)"); Text("版本：\(task.revision)"); Text("更新时间：\(task.updatedAt)"); Text("执行设备：\(task.sourceDevice)") }.font(.caption2).foregroundStyle(MeloTheme.soft).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                            VStack(alignment: .leading, spacing: 6) { Text("Agent：\(task.owner)"); Text("版本：\(task.revision)"); Text("更新时间：\(task.updatedAt)"); Text("执行设备：\(task.sourceDevice)") }.font(.caption2).foregroundStyle(MeloTheme.soft).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                         }.font(.caption)
                     }.meloPanel()
                 }

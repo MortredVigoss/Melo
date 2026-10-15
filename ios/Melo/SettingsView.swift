@@ -29,11 +29,31 @@ struct SettingsContent: View {
                 ModelSettingsSection()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Label("数据与同步", systemImage: "arrow.triangle.2.circlepath").font(.headline); Spacer(); Text("\(store.chats.count) 段对话").font(.caption).foregroundStyle(meloGold) }
-                    Text(store.syncStatus).font(.subheadline).foregroundStyle(.secondary)
+                    if !WorkspaceProjection.pending(store.preferences).isEmpty { Text("部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
+                    Group {
+                        if store.syncStatus == "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" { Text("聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机") }
+                        else { Text(store.syncStatus) }
+                    }.font(.subheadline).foregroundStyle(.secondary)
                     DisclosureGroup("同步服务配置") {
                         SyncSettingsSection()
                     }.font(.subheadline)
-                    Text("同步对话、角色头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    ForEach(store.preferences.personaRecoveries ?? []) { recovery in
+                        DisclosureGroup("本机人设恢复副本") {
+                            Text(recovery.key + " · " + recovery.createdAt).font(.caption)
+                            ForEach(recovery.agents.keys.sorted(), id: \.self) { id in
+                                Text(recovery.agents[id]?.instructions ?? "").font(.caption).textSelection(.enabled)
+                            }
+                        }
+                    }
+                    ForEach(store.preferences.agentSettingsSync?.conflicts ?? [], id: \.key) { conflict in
+                        DisclosureGroup("Agent 能力冲突 · \(conflict.label)") {
+                            ForEach(Array(conflict.versions.enumerated()),id: \.offset) { index,version in
+                                Text(version.value["content"].string).font(.caption).textSelection(.enabled)
+                                Button("采用版本 \(index + 1)") { store.resolveAgentSettingsConflict(conflict.key,choice:index,expected:version) }.disabled(store.syncing)
+                            }
+                        }
+                    }
                     ForEach(store.preferences.workspaceSync?.conflicts ?? [], id: \.key) { conflict in
                         DisclosureGroup("同步冲突 · \(conflict.label)") {
                             Text("各版本均已保留，选择要继续使用的版本。").font(.caption)
@@ -42,7 +62,7 @@ struct SettingsContent: View {
                                     Text("版本 \(index + 1)").font(.headline)
                                     if let data = Data(base64Encoded: version.value["avatarData"].string), let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().frame(width: 56, height: 56) }
                                     Text(version.value.preview).font(.caption).textSelection(.enabled)
-                                    Button("采用版本 \(index + 1)") { store.resolveSyncConflict(conflict.key, choice:index) }.disabled(store.syncing)
+                                    Button("采用版本 \(index + 1)") { store.resolveSyncConflict(conflict.key, choice:index, expected:version) }.disabled(store.syncing)
                                 }.padding(.vertical,8)
                             }
                         }
@@ -53,7 +73,7 @@ struct SettingsContent: View {
                     capability("文字对话与历史", "已接入", "bubble.left.and.bubble.right")
                     capability("三维任务空间与历史回看", "实际调用记录", "atom")
                     capability("分析与计算详情", "展示服务公开摘要", "text.alignleft")
-                    capability("角色创建与指令", "本机可用", "person.crop.square")
+                    capability("Agent创建与指令", "本机可用", "person.crop.square")
                     capability("任务检查点与接力", "项目中查看", "arrow.triangle.branch")
                     capability("电脑工具、权限与任务验收", "在执行设备处理", "desktopcomputer")
                     capability("记忆来源、范围与停用", "本机可用 · 可同步", "brain")

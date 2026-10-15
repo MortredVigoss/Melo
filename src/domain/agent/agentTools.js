@@ -1,3 +1,4 @@
+import { hasCapability } from './capabilities.js';
 import { parseMcpToolId } from '../../mcp/toolId.js';
 
 // ─── Agent tool whitelist + skill/connector filter helpers ───────────────────
@@ -114,6 +115,14 @@ export function summarizeAgentTools(toolIds = []) {
 }
 
 export function agentUsesTool(profile, toolId) {
+  if (profile?.capabilities) {
+    const keys={'local-files':'readFiles','local-command':'runCommands',search:'network'};
+    if (keys[toolId]) return hasCapability(profile.capabilities,keys[toolId]);
+    if (toolId==='projects') return profile.contextSources?.projects!==false;
+    if (toolId==='artifacts') return profile.contextSources?.knowledge!==false;
+    if (toolId==='skills') return profile.capabilities.skills.length>0;
+    if (toolId==='external-connectors') return profile.capabilities.connectors.length>0||profile.capabilities.mcpServers.length>0;
+  }
   return normalizeAgentTools(profile?.tools).includes(toolId);
 }
 
@@ -157,7 +166,7 @@ export function normalizeMcpServerWhitelist(value) {
  * @returns {Array} filtered tools
  */
 export function filterMcpToolsForAgent(tools, profile) {
-  const whitelist = new Set(normalizeMcpServerWhitelist(profile?.enabledMcpServerIds));
+  const whitelist = new Set(profile?.capabilities?.mcpServers || normalizeMcpServerWhitelist(profile?.enabledMcpServerIds));
   return (Array.isArray(tools) ? tools : []).filter(tool => {
     const id = tool?.id || '';
     if (!id.startsWith('mcp:')) return true;
@@ -173,21 +182,22 @@ export function filterConnectorsForAgent(connectors, profile) {
   const allowedConnectorIds = normalizeIdWhitelist(profile?.enabledConnectorIds);
   return connectors.filter(connector => {
     if (connector.type === 'external-mcp') {
+      if (profile?.capabilities) return profile.capabilities.connectors.includes(connector.id);
       if (!allowedToolIds.has('external-connectors')) return false;
       if (allowedConnectorIds !== null && !allowedConnectorIds.includes(connector.id)) return false;
       return true;
     }
     if (connector.id === 'projects') {
-      return allowedToolIds.has('projects');
+      return profile?.contextSources?.projects !== false;
     }
     if (connector.id === 'artifacts') {
-      return allowedToolIds.has('artifacts');
+      return profile?.contextSources?.knowledge !== false && (profile?.capabilities || allowedToolIds.has('artifacts'));
     }
     if (connector.id === 'local-files') {
-      return allowedToolIds.has('local-files');
+      return agentUsesTool(profile,'local-files');
     }
     if (connector.id === 'local-command') {
-      return allowedToolIds.has('local-command');
+      return agentUsesTool(profile,'local-command');
     }
     return true;
   });
@@ -205,6 +215,7 @@ export function filterSkillsForAgent(skills, profile) {
   const profileSkillIds = normalizeIdWhitelist(profile?.enabledSkillIds);
   const agentId = profile?.id || null;
   return skills.filter(skill => {
+    if (profile?.capabilities && !profile.capabilities.skills.includes(skill.id)) return false;
     if (profileSkillIds !== null && !profileSkillIds.includes(skill.id)) return false;
     if (Array.isArray(skill.allowedAgentIds) && skill.allowedAgentIds.length > 0) {
       if (!agentId || !skill.allowedAgentIds.includes(agentId)) return false;

@@ -1,28 +1,20 @@
 # Melo 工作协议（Working Protocol）
 
-本文件是本仓库对 Claude 的强制工作规则，优先级高于默认行为。下面三条在每个会话里都要主动执行，不需用户反复提醒。
+本文件是本仓库对 Claude 的强制工作规则，优先级高于默认行为。按以下规则执行；用户最新指示优先。
 
 ## 0. 跨线程共用总览
 
 用户于 2026-10-15 指定：所有 Melo 线程先读 `MELO_OVERVIEW.md`，每个可验证步骤或改动后更新当前模块、线程交接、验证边界及下一步，再按下文维护短进度。正常接手先核对总览与实际 diff，记录缺失/过期/冲突时才定向补读相关线程；不再默认回读全部对话。总览人工维护，不由快照生成器覆盖。
 
-## 1. 阶段性提交 + 推送（每满 1 小时）
+## 1. 阶段性本地提交；仅用户要求时运行 git pp
 
-- 从第一次写盘开始计时。只要当前阶段累计工作时长 **≥ 60 分钟**，就必须：
-  1. `git add` 本阶段改动的相关文件（按文件名点名，不要用 `-A` / `.`）。
-  2. `git commit`，用一句话描述 "为什么" 而非 "改了什么"，按仓库现有风格写 message。
-  3. **`git pp`**（= push + Codex 自动审查；等价于 `./scripts/codex-review.sh`）。
-     - 如果本轮修改量小、不想耗 Codex 额度，可以退回 `git push`，但任何超过 1h 的批次必须跑 `git pp`。
-     - `git pp` 会先在 push 前运行 Codex evaluation；只有质量评级为 `S / A / B` 才允许继续 push。
-     - push 成功 **之后** 会再跑一次 Codex review 作为兜底复查；后审不会阻断已经完成的 push。
-     - Review 用中文输出，阶段总评 + D/C/B/A/S 质量评级 + 风险等级 + 按优先级列出的发现，格式由 `scripts/codex-review.sh` 内嵌的 prompt 约束。
-     - 如果 Codex review 评级为 `C` 或 `D`，Claude 必须停止继续改写，先按 Codex 意见重新给出方案，让用户判断后再动代码。
-     - **`git pp` 适用范围**（脚本在不满足时直接报错，避免 gate 静默漏审）：
-       - 当前分支必须有 tracking upstream（首次推送先用 `git push -u origin <branch>` 设置一次）。
-       - 不接受任何额外参数（不支持自定义 refspec / `--force-with-lease` / 多 ref fan-out）；这些边角场景请用原生 `git push` 并手动跑 `codex review`。
-- 中途如果到了一个天然节点（feature 完成、测试全绿、bug 定位到根因修好），即便不满 1 小时也应该提交，不必死等整点。
-- 永远 **新建 commit**，不要 `--amend` 已经 push 出去的 commit。
-- 永远不要带 `--no-verify` / `--no-gpg-sign` 绕过钩子，除非用户明确要求。
+用户于 2026-10-15 明确指定：**只有用户明确要求运行 git pp 时，才运行 git pp 或等价的 scripts/codex-review.sh。不得因工作时长、阶段完成、评级或历史流程自行触发。** 不自动启动 Codex CLI 审查，也不以 git push 替代此规则自行发布。
+
+- 完成可验证阶段后本地提交；累计工作超过 60 分钟时选择稳定节点提交。
+- 只按文件名暂存本阶段相关改动，保留其他线程 WIP。
+- 测试、修复、文档和本地提交照常进行，不需要为常规修正反复请求批准。
+- 用户要求 git pp 时，保留脚本的推送前质量门禁；C/D 阻止该次推送，但不阻止已授权范围内继续修复和测试。不得自行再次运行 git pp。
+- 永远新建 commit，不 amend 已推送提交，不绕过验证或签名钩子。
 
 ### 新克隆的仓库如何启用 `git pp`
 
@@ -71,15 +63,13 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 - 压缩是 **幂等** 的——每次触发都只压旧条目，最新的永远是完整格式。
 - 压缩后要和正文改动一起进入同一个 commit，message 前缀加 `progress: `。
 
-## 4. D/C/B/A/S 质量评估（git pp 前置 gate + 后置复查）
+## 4. 按需质量评估
 
-- `EVALUATION.md` 是每次 `git pp` 前置 evaluation 和后置 review 的评分依据。
-- `git pp` 必须先评估本地即将 push 的 commit range；如果评级为 `C` 或 `D`，脚本必须停止，不允许 push。
-- push 成功后再跑一次同范围 review，作为远端落盘后的兜底复查。
-- `S / A / B`：可以继续推进；其中 `B` 的建议要记录并安排修。
-- `C`：方向或实现已有明显风险。Claude 不允许直接继续重写，必须先把 Codex 的整改意见整理成新方案，交给用户判断。
-- `D`：停止当前实现路线。Claude 必须重新界定问题、风险和验证方式，经用户确认后再改。
-- 对于抽服务 / 搬代码，第一刀必须是 byte-for-byte 移植；如果移植 commit 出现未解释的逻辑差异，默认至少按 `C` 处理。
+- EVALUATION.md 保留质量评分标准，供自查及用户明确要求的 git pp 使用。
+- 自动测试不等于 Codex CLI 审查；正常开发继续运行适当测试。
+- C/D 发现应核对证据、修复并补齐验证；用户已授权的范围内自主推进，不自动停下要求用户再次确认。
+- 只有实质超出用户授权或需要新的产品决定时才询问；报告实际风险及未验证边界。
+- 用户要求 git pp 时，脚本仍只允许 S/A/B 推送；推送失败或被门禁阻止不得宣称已发布。
 
 ## 5. 抽服务 = byte-for-byte 移植，不允许顺手"简化"
 
@@ -98,7 +88,7 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 1. **Step 1 — 移植**：纯粹 cut + paste，按需调整 import 路径，**绝不改一个字符的代码本身**。这一步的 commit message 必须明示 "byte-for-byte port"，方便 review 时只看 import 变化。
 2. **Step 2 — 写测试**：基于移植版本写单元测试。如果发现某个边界没法用现有 API 覆盖，**记录下来但不要改代码**——抽取阶段的覆盖缺口是 Step 3 之后的事。
 3. **Step 3 — 删原位 + 接好上下游**：删 desktopStore 里被搬走的代码，加 import / re-export 让公共 API 不变。
-4. **Step 4 — 跑回归 + push**：所有测试绿才算移植成功。
+4. **Step 4 — 跑回归 + 本地提交**：所有测试绿才算移植成功。
 5. **Step 5（可选，独立 commit）— 简化**：移植成功后才能动逻辑，且每条改动都要单独写测试覆盖。这一步的 commit message 必须独立，写清"基于已绿测试，简化 X 为 Y"，便于回滚。
 
 **Codex review 的角色：** review prompt 已经强制走完整 `git show` 每个 commit。把"逐字节移植"作为约定后，review 看到的差异越少越好——任何 `-` 行 + `+` 行的代码逻辑差（不是 path/import 调整）都应被高亮为可疑。

@@ -4,6 +4,14 @@ import Foundation
     let old = Data(#"{"agents":[{"id":"custom","name":"蓝鲸","subtitle":"只使用短句","symbol":"star","instructions":"先说收到"}],"chatAgents":{"a":"custom"},"pinnedChats":[],"archivedChats":[]}"#.utf8)
     var preferences = try JSONDecoder().decode(MobilePreferences.self, from: old)
     assert(preferences.agents[0].avatarData == nil && preferences.chatModels == nil)
+    let legacyPersona = Data(#"{"id":"legacy","name":"Legacy","subtitle":"Purpose","symbol":"star","instructions":"work","identity":"identity-content","soul":"style-content","systemPrompt":"extra-content"}"#.utf8)
+    let migrated = try JSONDecoder().decode(AgentProfile.self, from: legacyPersona)
+    for text in ["work", "identity-content", "style-content", "extra-content"] { assert(migrated.prompt.components(separatedBy:text).count == 2) }
+    let encoded = try JSONEncoder().encode(migrated)
+    let canonical = try JSONDecoder().decode(SyncValue.self, from: encoded)
+    assert(canonical["description"].string == "Purpose" && canonical["identity"] == .null && canonical["subtitle"] == .null)
+    let decodedAgain = try JSONDecoder().decode(AgentProfile.self, from: encoded)
+    assert(decodedAgain == migrated)
     preferences.agents[0].avatarData = Data([1,2,3])
     preferences.chatModels = ["a":.init(connectionID:"api-a",model:"selected"),"b":.init(connectionID:"chatgpt",model:"sol")]
     preferences.projects = [.init(id:"project",name:"旅行",goal:"旅行目标")]
@@ -63,6 +71,77 @@ import Foundation
     assert(ConversationContext.notes(preferences:imported,chatID:"chat").isEmpty)
     imported.chatAgents["chat"]="missing"
     do { try ConversationContext.validate(preferences:imported,chatID:"chat"); fatalError("Missing agent passed preflight") } catch {}
+    for count in [30000, 50000] {
+        let fields: [String: Any] = ["name":"Old", "subtitle":"Purpose", "symbol":"star", "avatarData":"", "mood":"warm", "model":"", "instructions":String(repeating:"a",count:count), "identity":String(repeating:"b",count:count), "soul":String(repeating:"c",count:count), "systemPrompt":String(repeating:"d",count:count)]
+        var oldWire = SyncWorkspace()
+        oldWire.put(kind:"agent",id:"legacy",value:try .from(fields),device:"oldPhone")
+        oldWire.put(kind:"project",id:"legacyProject",value:try .from(["name":"Project","goal":"","instructions":"","archived":false,"knowledgeIds":[],"agentOverrides":["legacy":fields]]),device:"oldPhone")
+        var p = MobilePreferences(), r: [ExecutionRecord] = []
+        try WorkspaceProjection.apply(oldWire,preferences:&p,records:&r,connections:[])
+        let round = try WorkspaceProjection.refreshed(p,chats:[],records:[],connections:[],device:"newPhone")
+        for row in oldWire.records { assert(round.records.first { $0.key == row.key }?.versions == row.versions) }
+    }
+    assert(WorkspaceProjection.persona(String(repeating:"🧪",count:25000)) != nil)
+    assert(WorkspaceProjection.persona(String(repeating:"🧪",count:25001)) == nil)
+    var heldPreferences = MobilePreferences()
+    heldPreferences.agents = [.init(id:"held",name:"Held",subtitle:"",symbol:"star",instructions:"Before")]
+    let beforeHold = try WorkspaceProjection.prepared(heldPreferences,chats:[],records:[],connections:[],device:"newPhone")
+    heldPreferences.workspaceSync = beforeHold.workspace
+    heldPreferences.agents[0].instructions = String(repeating:"x",count:50001)
+    let held = try WorkspaceProjection.prepared(heldPreferences,chats:[],records:[],connections:[],device:"newPhone")
+    heldPreferences.personaSyncHolds = held.holds
+    heldPreferences.workspaceSync = held.workspace
+    heldPreferences = try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(heldPreferences))
+    assert(WorkspaceProjection.pending(heldPreferences).contains("agent:held"))
+    var remoteEdit = beforeHold.workspace
+    let remoteAgent = AgentProfile(id:"held",name:"Held",subtitle:"",symbol:"star",instructions:"Remote edit")
+    remoteEdit.put(kind:"agent",id:"held",value:try .from(WorkspaceProjection.agent(remoteAgent)!),device:"oldPhone")
+    var heldRecords: [ExecutionRecord] = []
+    try WorkspaceProjection.apply(try held.workspace.merging(remoteEdit),preferences:&heldPreferences,records:&heldRecords,connections:[])
+    assert(heldPreferences.agents[0].instructions.count == 50001)
+    heldPreferences.agents[0].instructions = "Local shortened intentionally"
+    let released = try WorkspaceProjection.prepared(heldPreferences,chats:[],records:[],connections:[],device:"newPhone")
+    assert(released.holds.isEmpty)
+    let versions = released.workspace.records.first { $0.id == "held" }!.versions
+    assert(versions.count == 2)
+    assert(Set(versions.map { WorkspaceProjection.document($0.value) }) == ["Remote edit", "Local shortened intentionally"])
+    heldPreferences.workspaceSync = released.workspace
+    heldPreferences.agents[0].instructions = String(repeating:"x",count:50001)
+    let pendingChoice = try WorkspaceProjection.prepared(heldPreferences,chats:[],records:[],connections:[],device:"newPhone")
+    heldPreferences.personaSyncHolds = pendingChoice.holds
+    var personaResolved = pendingChoice.workspace
+    let selectedIndex = personaResolved.records.first { $0.key == "agent:held" }!.versions.firstIndex { WorkspaceProjection.document($0.value) == "Remote edit" }!
+    try personaResolved.resolve(key:"agent:held",choice:selectedIndex,device:"newPhone")
+    try WorkspaceProjection.apply(personaResolved,preferences:&heldPreferences,records:&heldRecords,connections:[],resolvedKeys:["agent:held"])
+    heldPreferences = try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(heldPreferences))
+    assert(heldPreferences.agents[0].instructions == "Remote edit")
+    assert(heldPreferences.personaRecoveries?.last?.agents["held"]?.instructions.count == 50001)
+    assert(!WorkspaceProjection.pending(heldPreferences).contains("agent:held"))
+    var capPreferences=MobilePreferences()
+    capPreferences.agents=[AgentProfile(id:"portable",name:"Test",subtitle:"",symbol:"star",instructions:"keep persona")]
+    capPreferences.agents[0].capabilities=nil
+    capPreferences.projects=[.init(id:"p",name:"Project",goal:"")]
+    capPreferences.projectAgents=["p":["portable":capPreferences.agents[0]]]
+    let capWire=try JSONDecoder().decode(SyncWorkspace.self,from:Data(contentsOf:URL(fileURLWithPath:"mobile-sync/fixtures/agent-settings.json")))
+    try AgentSettingsProjection.apply(capWire,preferences:&capPreferences)
+    assert(capPreferences.agents[0].capabilities?["network"].bool == true)
+    assert(capPreferences.projectAgents?["p"]?["portable"]?.capabilities?["network"].bool == false)
+    assert(capPreferences.agents[0].instructions == "keep persona")
+    let capAgain=try AgentSettingsProjection.refreshed(capPreferences,device:"phone")
+    assert(capAgain == capWire)
+    var other=capPreferences
+    let otherCaps=other.agents[0].capabilities?.object ?? [:]
+    other.agents[0].capabilities = .object(otherCaps.merging(["writeFiles":.bool(true)]) { _,v in v })
+    let localCaps=capPreferences.agents[0].capabilities?.object ?? [:]
+    capPreferences.agents[0].capabilities = .object(localCaps.merging(["runCommands":.bool(true)]) { _,v in v })
+    let mergedCaps=try AgentSettingsProjection.refreshed(other,device:"second").merging(AgentSettingsProjection.refreshed(capPreferences,device:"phone"))
+    assert(mergedCaps.conflicts.count == 1)
+    try AgentSettingsProjection.apply(mergedCaps,preferences:&capPreferences)
+    assert(capPreferences.agents[0].capabilities?["runCommands"].bool == true)
+    let capSaved=try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(capPreferences))
+    assert(capSaved.agentSettingsSync?.conflicts.count == 1)
+    let legacyUpdate=WorkspaceProjection.readAgent("portable",.object(["name":.string("New"),"instructions":.string("new persona")]),previous:capSaved.agents[0])
+    assert(legacyUpdate.capabilities == capSaved.agents[0].capabilities)
     print("Conversation foundations passed: legacy preferences, avatar/selection persistence, role/project/reference prompts, history attribution and readable tables/code")
  }
 }

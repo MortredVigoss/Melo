@@ -1,3 +1,6 @@
+import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
+import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
+import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { startStage } from '../../runtime/performanceTrace.js';
 import { imageSettings as resolvedImageSettings } from '../../images/imageSettings.js';
 import { publicExtraFast } from '../../judge/fastJudge.js';
@@ -198,6 +201,9 @@ function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}, 
 
     return {
       ...summarizeAgentProfile(profile),
+      capabilityLabels: CAPABILITY_LABELS,
+      capabilityMigration: profile.capabilities ? null : capabilityMigrationPreview(profile,migrationOptions(state)),
+      capabilityOptions: migrationOptions(state).skills.map(s=>({id:s.id,name:s.name})),
       identityPath: paths.identityPath,
       soulPath: paths.soulPath,
       editingScope,
@@ -275,7 +281,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   // predicate so a tombstoned row can't leak via a missed call site.
   const visibleArtifactRows = visibleArtifacts(state.artifacts);
 
-  const projectArtifacts = visibleArtifactRows
+  const projectArtifacts = visibleArtifactRows.filter(a=>a.kind!=='result')
     .filter(artifact => activeProject && (artifact.projectId === activeProject.id || activeProject.knowledgeIds?.includes(artifact.id)))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
@@ -351,10 +357,14 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
+    syncPendingPersonas: pendingPersonaRecords(state),
+    agentPersonaRecoveries: state.agentPersonaRecoveries || [],
+    agentSettingsConflicts: (state.agentSettingsSync?.records || []).filter(r=>r.versions.length>1),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
     activeProject,
-    artifacts: [...visibleArtifactRows]
+    results: visibleArtifactRows.filter(a=>a.kind==='result').map(summarizeArtifact),
+    artifacts: visibleArtifactRows.filter(a=>a.kind!=='result')
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       .map(summarizeArtifact),
     projectArtifacts,

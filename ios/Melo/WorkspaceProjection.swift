@@ -12,8 +12,49 @@ enum WorkspaceProjection {
         for suffix in ["/chat/completions", "/messages"] where result.hasSuffix(suffix) { result = String(result.dropLast(suffix.count)) }
         return result
     }
-    static func agent(_ a: AgentProfile) -> [String: Any] {
-        ["name": a.name, "subtitle": a.subtitle, "instructions": a.instructions, "symbol": a.symbol, "avatarData": a.avatarData?.base64EncodedString() ?? "", "identity": a.identity ?? "", "soul": a.soul ?? "", "systemPrompt": a.systemPrompt ?? "", "mood": a.mood ?? "warm", "model": a.model ?? ""]
+    static func document(_ value: SyncValue) -> String {
+        let extra = ["identity", "soul", "systemPrompt"].contains { !value[$0].string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return extra ? AgentProfile.document(value["instructions"].string, identity:value["identity"].string, soul:value["soul"].string, systemPrompt:value["systemPrompt"].string) : value["instructions"].string
+    }
+    static func persona(_ document: String, previous: SyncValue = .null) -> [String: String]? {
+        let keys = ["instructions", "identity", "soul", "systemPrompt"]
+        func valid(_ fields: [String: String]) -> Bool {
+            fields.values.allSatisfy { $0.utf16.count <= 50000 } &&
+                (try? Self.document(.from(fields))) == document
+        }
+        let old = Dictionary(uniqueKeysWithValues: keys.map { ($0, previous[$0].string) })
+        if previous != .null && valid(old) { return old }
+        let single = ["instructions":document, "identity":"", "soul":"", "systemPrompt":""]
+        if valid(single) { return single }
+        let headings = ["工作要求":"instructions", "身份":"identity", "风格":"soul", "补充要求":"systemPrompt"]
+        var fields = Dictionary(uniqueKeysWithValues: keys.map { ($0, "") }), current = "instructions"
+        for line in document.components(separatedBy: "\n") {
+            if line.hasPrefix("## "), let field = headings[String(line.dropFirst(3))] { current = field }
+            else { fields[current, default: ""] += line + "\n" }
+        }
+        fields = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return valid(fields) ? fields : nil
+    }
+    static func agent(_ a: AgentProfile, previous: SyncValue = .null) -> [String: Any]? {
+        guard let fields = persona(a.instructions, previous:previous) else { return nil }
+        var value: [String: Any] = ["name":a.name,"subtitle":a.description,"symbol":a.symbol,"avatarData":a.avatarData?.base64EncodedString() ?? "","mood":a.mood ?? "warm","model":a.model ?? ""]
+        for (key, text) in fields { value[key] = text }
+        return value
+    }
+    static func previous(_ preferences: MobilePreferences, _ kind: String, _ id: String) -> SyncValue {
+        guard let row = preferences.workspaceSync?.records.first(where: { $0.kind == kind && $0.id == id }), row.versions.count == 1 else { return .null }
+        return row.versions[0].value
+    }
+    static func pending(_ preferences: MobilePreferences) -> Set<String> {
+        var held = Set((preferences.personaSyncHolds ?? [:]).keys)
+        for a in preferences.agents where agent(a,previous:previous(preferences,"agent",a.id)) == nil { held.insert("agent:" + a.id) }
+        for p in preferences.projects ?? [] {
+            let before = previous(preferences,"project",p.id)
+            if (preferences.projectAgents?[p.id] ?? [:]).contains(where: { agent($0.value,previous:before["agentOverrides"][$0.key]) == nil }) { held.insert("project:" + p.id) }
+        }
+        for (id, agent) in preferences.chatAgents where held.contains("agent:" + agent) && previous(preferences,"agent",agent) == .null { held.insert("conversation:" + id) }
+        for (id, project) in preferences.chatProjects ?? [:] where held.contains("project:" + project) && previous(preferences,"project",project) == .null { held.insert("conversation:" + id) }
+        return held
     }
     static func model(_ selection: ConversationModel?, connections: [PortableConnection]) -> Any {
         guard let selection else { return NSNull() }
@@ -36,21 +77,53 @@ enum WorkspaceProjection {
         return ["runId":r.runId,"status":r.status,"query":r.query,"startedAt":r.startedAt,"finishedAt":r.finishedAt ?? "","lastModule":r.lastModule ?? "","requestedModel":r.requestedModel,"returnedModel":r.returnedModel ?? "","sourceDevice":r.sourceDevice ?? device,"operations":operations,"pipeline":(r.pipeline ?? []).map(stage),"sources":sources]
     }
     static func refreshed(_ preferences: MobilePreferences, chats: [Conversation], records: [ExecutionRecord], connections: [PortableConnection], device: String) throws -> SyncWorkspace {
+        try prepared(preferences,chats:chats,records:records,connections:connections,device:device).workspace
+    }
+    static func prepared(_ preferences: MobilePreferences, chats: [Conversation], records: [ExecutionRecord], connections: [PortableConnection], device: String) throws -> (workspace: SyncWorkspace, holds: [String: PersonaSyncHold]) {
         var workspace = try (preferences.workspaceSync ?? SyncWorkspace()).validated()
-        func put(_ kind: String, _ id: String, _ value: [String: Any]) throws { workspace.put(kind: kind, id: id, value: try .from(value), device: device) }
+        var holds = preferences.personaSyncHolds ?? [:]
+        func hold(_ kind: String, _ id: String, _ name: String) {
+            let key = kind + ":" + id
+            if holds[key] == nil { holds[key] = .init(kind:kind,id:id,name:name,base:workspace.records.first { $0.key == key }) }
+        }
+        func put(_ kind: String, _ id: String, _ value: [String: Any]) throws {
+            let value = try SyncValue.from(value), key = kind + ":" + id
+            guard let held = holds[key] else { workspace.put(kind:kind,id:id,value:value,device:device); return }
+            let clocks = (held.base?.versions ?? []).map(\.clock)
+            var clock: [String: Int] = [:]
+            for key in Set(clocks.flatMap { $0.keys }) {
+                let count = clocks.map { $0[key, default:0] }.min() ?? 0
+                if count > 0 { clock[key] = count }
+            }
+            clock[device] = (clocks.map { $0[device, default:0] }.max() ?? 0) + 1
+            workspace = try workspace.merging(SyncWorkspace(records:[.init(kind:kind,id:id,versions:[.init(clock:clock,value:value)])]))
+            holds.removeValue(forKey:key)
+        }
         let live = Set(chats.map(\.id))
+        holds = holds.filter { $0.value.kind != "conversation" || live.contains($0.value.id) }
         for fact in preferences.memoryFacts ?? [] where live.contains(fact.chatId) {
             let data = try JSONEncoder().encode(fact)
             workspace.put(kind: "memory", id: fact.id, value: try JSONDecoder().decode(SyncValue.self, from: data), device: device)
         }
-        for a in preferences.agents { try put("agent", a.id, agent(a)) }
+        var unavailableAgents = Set<String>(), unavailableProjects = Set<String>()
+        for a in preferences.agents {
+            let before = previous(preferences,"agent",a.id)
+            if let value = agent(a,previous:before) { try put("agent",a.id,value) }
+            else { hold("agent",a.id,a.name); if before == .null { unavailableAgents.insert(a.id) } }
+        }
         for p in preferences.projects ?? [] {
-            let overrides = (preferences.projectAgents?[p.id] ?? [:]).mapValues(agent)
-            try put("project", p.id, ["name":p.name,"goal":p.goal,"instructions":p.instructions ?? "","archived":p.archived == true,"knowledgeIds":(p.knowledgeIds ?? []).sorted(),"agentOverrides":overrides])
+            let before = previous(preferences,"project",p.id)
+            var overrides: [String: Any] = [:], blocked = false
+            for (id,a) in preferences.projectAgents?[p.id] ?? [:] {
+                if let value = agent(a,previous:before["agentOverrides"][id]) { overrides[id] = value } else { blocked = true }
+            }
+            if blocked { hold("project",p.id,p.name); if before == .null { unavailableProjects.insert(p.id) } }
+            else { try put("project", p.id, ["name":p.name,"goal":p.goal,"instructions":p.instructions ?? "","archived":p.archived == true,"knowledgeIds":(p.knowledgeIds ?? []).sorted(),"agentOverrides":overrides]) }
         }
         for n in preferences.knowledge ?? [] { try put("knowledge",n.id,["title":n.title,"content":n.content,"deleted":n.deleted == true,"kind":n.kind ?? "note","language":n.language ?? "text","projectId":n.projectId as Any? ?? NSNull()]) }
         for chat in chats {
-            try put("conversation",chat.id,["agentId":preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo","projectId":preferences.chatProjects?[chat.id] as Any? ?? NSNull(),"knowledgeIds":(preferences.chatKnowledge?[chat.id] ?? []).sorted(),"model":model(preferences.chatModels?[chat.id],connections:connections)])
+            if unavailableAgents.contains(preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo") || unavailableProjects.contains(preferences.chatProjects?[chat.id] ?? "") { hold("conversation",chat.id,chat.title) }
+            else { try put("conversation",chat.id,["agentId":preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo","projectId":preferences.chatProjects?[chat.id] as Any? ?? NSNull(),"knowledgeIds":(preferences.chatKnowledge?[chat.id] ?? []).sorted(),"model":model(preferences.chatModels?[chat.id],connections:connections)]) }
             for message in chat.messages where message.role == "assistant" {
                 let persona = preferences.messageAgents?[message.id]
                 let record = records.last { $0.messageId == message.id && $0.terminal }
@@ -62,14 +135,28 @@ enum WorkspaceProjection {
                 try put("message",message.id,["chatId":chat.id,"agent":persona.map { ["agentID":$0.agentID,"name":$0.name,"symbol":$0.symbol] } as Any? ?? NSNull(),"models":models,"scene":record.map { scene($0,device:device) } as Any? ?? NSNull()])
             }
         }
-        return workspace
+        return (try workspace.validated(), holds)
     }
-    static func readAgent(_ id: String, _ v: SyncValue) -> AgentProfile {
-        .init(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:v["instructions"].string,avatarData:Data(base64Encoded:v["avatarData"].string),identity:v["identity"].string,soul:v["soul"].string,systemPrompt:v["systemPrompt"].string,mood:v["mood"].string,model:v["model"].string)
+    static func readAgent(_ id: String, _ v: SyncValue, previous: AgentProfile? = nil) -> AgentProfile {
+        var result = AgentProfile(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
+        result.capabilities=previous?.capabilities; result.collaboration=previous?.collaboration; result.contextSources=previous?.contextSources
+        return result
     }
-    static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection]) throws {
+
+    static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection], resolvedKeys: Set<String> = []) throws {
         _ = try workspace.validated()
-        for row in workspace.records where row.versions.count == 1 {
+        var held = pending(preferences)
+        for key in resolvedKeys where held.contains(key) {
+            guard let row = workspace.records.first(where: { $0.key == key && $0.versions.count == 1 }) else { continue }
+            let agents = row.kind == "agent" ? Dictionary(uniqueKeysWithValues: preferences.agents.filter { $0.id == row.id }.map { ($0.id, $0) }) : row.kind == "project" ? preferences.projectAgents?[row.id] ?? [:] : [:]
+            if !agents.isEmpty {
+                if preferences.personaRecoveries == nil { preferences.personaRecoveries = [] }
+                preferences.personaRecoveries?.append(.init(id:UUID().uuidString,key:key,createdAt:ISO8601DateFormatter().string(from:Date()),agents:agents))
+            }
+            preferences.personaSyncHolds?.removeValue(forKey:key)
+            held.remove(key)
+        }
+        for row in workspace.records where row.versions.count == 1 && !held.contains(row.key) {
             let v = row.versions[0].value
             switch row.kind {
             case "memory":
@@ -78,13 +165,14 @@ enum WorkspaceProjection {
                 if let index = facts.firstIndex(where: { $0.id == fact.id }) { facts[index] = fact } else { facts.append(fact) }
                 preferences.memoryFacts = facts
             case "agent":
-                let a = readAgent(row.id,v)
+                let a = readAgent(row.id,v,previous:preferences.agents.first { $0.id == row.id })
                 if let index = preferences.agents.firstIndex(where: { $0.id == row.id }) { preferences.agents[index] = a } else { preferences.agents.append(a) }
             case "project":
                 let p = PersonalProject(id:row.id,name:v["name"].string,goal:v["goal"].string,instructions:v["instructions"].string,knowledgeIds:Set(v["knowledgeIds"].array.map(\.string)),archived:v["archived"].bool)
                 var projects = preferences.projects ?? []; if let index = projects.firstIndex(where: { $0.id == row.id }) { projects[index] = p } else { projects.append(p) }; preferences.projects = projects
                 if preferences.projectAgents == nil { preferences.projectAgents = [:] }
-                preferences.projectAgents?[row.id] = v["agentOverrides"].object.mapValues { readAgent("",$0) }
+                let previousAgents=preferences.projectAgents?[row.id] ?? [:]
+                preferences.projectAgents?[row.id] = Dictionary(uniqueKeysWithValues:v["agentOverrides"].object.map { id,value in (id,readAgent(id,value,previous:previousAgents[id])) })
                 for id in preferences.projectAgents?[row.id]?.keys.map({$0}) ?? [] { preferences.projectAgents?[row.id]?[id]?.id = id }
             case "knowledge":
                 let n = KnowledgeNote(id:row.id,title:v["title"].string,content:v["content"].string,deleted:v["deleted"].bool,kind:v["kind"].string,language:v["language"].string,projectId:v["projectId"] == .null ? nil : v["projectId"].string)

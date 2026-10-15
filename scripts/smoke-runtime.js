@@ -33,7 +33,7 @@ const createdAgent = await request('/api/agents/create-custom', {});
 const agentId = createdAgent.settings.selectedAgentId;
 await request('/api/agents/update', {
   agentId, scope: 'global', patch: {
-    name: 'Runtime regression agent', rolePrompt: 'Preserve this role during voice-only edits.', minimaxVoiceId: 'smoke-voice-before',
+    name: 'Runtime regression agent', instructions: 'Preserve this role during voice-only edits.', minimaxVoiceId: 'smoke-voice-before',
   },
 });
 await request('/api/settings', { activeView: 'customize', selectedCustomizeSection: 'agents', selectedAgentId: agentId });
@@ -62,7 +62,7 @@ try {
   await page.reload();
   await form.waitFor();
   assert.equal(await form.locator('[name="name"]').inputValue(), 'Runtime regression agent');
-  assert.equal(await form.locator('[name="rolePrompt"]').inputValue(), 'Preserve this role during voice-only edits.');
+  assert.equal(await form.locator('[name="instructions"]').inputValue(), 'Preserve this role during voice-only edits.');
   assert.equal(await form.locator('[name="minimaxVoiceId"]').inputValue(), 'smoke-voice-after');
   assert.equal(Number(await form.locator('[name="ttsSpeed"]').inputValue()), 1.1);
 
