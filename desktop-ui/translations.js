@@ -1,6 +1,9 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+['此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。','This Agent’s updated instructions are pending sync. The full text is saved on this device; other chats continue syncing.','この Agent の新しい指示は同期待ちです。全文はこの端末に保存され、他の会話は同期を続けます。','이 Agent의 새 지침은 동기화 대기 중입니다. 전체 내용은 이 기기에 저장되며 다른 대화는 계속 동기화됩니다.','Las nuevas instrucciones de este Agent están pendientes de sincronización. El texto completo está guardado aquí; los demás chats siguen sincronizándose.'],
+['部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。','Some Agent instructions or related settings are pending sync because the older protocol cannot preserve them exactly. Full text is saved locally; other chats continue syncing.','旧プロトコルでは完全に表現できないため、一部の Agent 指示や関連設定は同期待ちです。全文は端末に保存され、他の会話は同期を続けます。','이전 프로토콜이 내용을 완전히 보존할 수 없어 일부 Agent 지침이나 설정이 동기화 대기 중입니다. 전체 내용은 로컬에 저장되며 다른 대화는 계속 동기화됩니다.','Algunas instrucciones o ajustes de Agent están pendientes porque el protocolo anterior no puede preservarlos exactamente. El texto íntegro está guardado localmente; los demás chats siguen sincronizándose.'],
+['聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机','Chats synced · Some Agent instructions or settings are pending; full text is saved locally','会話を同期済み · 一部の Agent 指示や設定は同期待ちで、全文は端末に保存されています','대화 동기화 완료 · 일부 Agent 지침이나 설정은 대기 중이며 전체 내용은 로컬에 저장됨','Chats sincronizados · Algunas instrucciones o ajustes de Agent están pendientes; texto íntegro guardado localmente'],
 ["连接账号", "Connect account", "アカウントを接続", "계정 연결", "Conectar cuenta"],
 ["API 模型", "API model", "API モデル", "API 모델", "Modelo API"],
 ["任务动画 · 查看真实执行与来源", "Task animation · View execution and sources", "タスクアニメーション · 実行と出典を確認", "작업 애니메이션 · 실행과 출처 보기", "Animación · Ver ejecución y fuentes"],

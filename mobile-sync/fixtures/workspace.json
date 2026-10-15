@@ -11,14 +11,12 @@
           },
           "value": {
             "name": "蓝鲸",
-            "description": "简短",
             "subtitle": "简短",
-            "instructions": "## 工作要求\n先说收到\n\n## 身份\n身份\n\n## 风格\n风格",
-            "personaVersion": 1,
+            "instructions": "先说收到",
             "symbol": "sparkles",
             "avatarData": "",
-            "identity": "",
-            "soul": "",
+            "identity": "身份",
+            "soul": "风格",
             "systemPrompt": "",
             "mood": "warm",
             "model": ""

@@ -76,7 +76,7 @@ export const syncSchema = {
             "string",
             "null"
           ],
-          "x-maxUtf16Length": 200100
+          "x-maxUtf16Length": 50000
         },
         "symbol": {
           "type": [
@@ -127,16 +127,6 @@ export const syncSchema = {
           ],
           "pattern": "^(?:[A-Za-z0-9+/]+={0,2})?$",
           "x-maxUtf16Length": 500000
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "x-maxUtf16Length": 12000
-        },
-        "personaVersion": {
-          "const": 1
         }
       }
     },

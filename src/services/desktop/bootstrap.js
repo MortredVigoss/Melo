@@ -1,3 +1,4 @@
+import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { startStage } from '../../runtime/performanceTrace.js';
 import { imageSettings as resolvedImageSettings } from '../../images/imageSettings.js';
 import { publicExtraFast } from '../../judge/fastJudge.js';
@@ -357,6 +358,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
+    syncPendingPersonas: pendingPersonaRecords(state),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
     activeProject,

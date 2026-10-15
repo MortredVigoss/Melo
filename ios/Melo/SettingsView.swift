@@ -29,7 +29,11 @@ struct SettingsContent: View {
                 ModelSettingsSection()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Label("数据与同步", systemImage: "arrow.triangle.2.circlepath").font(.headline); Spacer(); Text("\(store.chats.count) 段对话").font(.caption).foregroundStyle(meloGold) }
-                    Text(store.syncStatus).font(.subheadline).foregroundStyle(.secondary)
+                    if !WorkspaceProjection.pending(store.preferences).isEmpty { Text("部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
+                    Group {
+                        if store.syncStatus == "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" { Text("聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机") }
+                        else { Text(store.syncStatus) }
+                    }.font(.subheadline).foregroundStyle(.secondary)
                     DisclosureGroup("同步服务配置") {
                         SyncSettingsSection()
                     }.font(.subheadline)

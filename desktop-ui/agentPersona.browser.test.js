@@ -71,6 +71,13 @@ test('built-in Agent persona saves once, failed saves retain drafts, and Markdow
   await form.locator('[data-action=form-settings-edit]').click();await form.locator('[name=instructions]').fill('');
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   assert.equal((await saved()).instructions,'');
+  const pendingText='此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。';
+  const longDocument='不可拆分的新文档'.repeat(8000);
+  await form.locator('[data-action=form-settings-edit]').click();await form.locator('[name=instructions]').fill(longDocument);
+  await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
+  await page.getByText(pendingText,{exact:true}).first().waitFor();
+  await page.reload();await form.waitFor();assert.equal(await form.locator('[name=instructions]').inputValue(),longDocument);
+  await page.getByText(pendingText,{exact:true}).first().waitFor();
   const proof=resolve('.tmp/agent-evolution-proof');await mkdir(proof,{recursive:true});await page.screenshot({path:join(proof,'builtin-persona.png')});
   assert.deepEqual(errors,[]);
 });

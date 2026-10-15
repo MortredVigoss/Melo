@@ -8056,6 +8056,7 @@ function renderAgentList(selectedId) {
 
 function renderAgentPersonaFields(selected, draft) {
   return ui`
+    ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
     <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
     <label class="label">人设与工作要求<textarea class="textarea code-editor agent-content-editor" name="instructions" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>

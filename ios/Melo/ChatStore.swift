@@ -386,6 +386,7 @@ import SwiftUI
         guard storageReady, executionReady, sendingID == nil, !syncing else { throw MeloError.message("请等待当前任务结束后再导出。") }
         let connections = try portableConnections()
         let workspace = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+        guard WorkspaceProjection.pending(preferences).isEmpty else { throw MeloError.message("部分人设暂不能完整导出为兼容资料，请先单独备份人设全文。") }
         let data = try JSONEncoder().encode(PortableArchive(snapshot: SyncSnapshot(chats: chats, tasks: taskCheckpoints, handoffs: taskHandoffs, workspace: workspace, deletedChats: deletedChats)))
         guard data.count <= 16 * 1024 * 1024 else { throw MeloError.message("资料超过 16 MB 导出上限。") }
         return data
@@ -398,7 +399,9 @@ import SwiftUI
         let nextChats = try merge(chats,remote.chats, deletedChats: nextDeleted)
         var nextPreferences = preferences, nextRecords = executionRecords
         if let incoming = remote.workspace {
-            let current = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+            let prepared = try WorkspaceProjection.prepared(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+            nextPreferences.personaSyncHolds = prepared.holds
+            let current = prepared.workspace
             try WorkspaceProjection.apply(current.excluding(nextDeleted).merging(incoming.excluding(nextDeleted)),preferences:&nextPreferences,records:&nextRecords,connections:connections)
         }
         let nextTasks = try mergeTaskCheckpoints(taskCheckpoints,remote.tasks ?? []), nextHandoffs = try mergeHandoffs(taskHandoffs,remote.handoffs ?? [])
@@ -455,8 +458,9 @@ import SwiftUI
         }
         do {
             let connections = try portableConnections()
-            let workspace = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
-            guard updatePreferences({ $0.workspaceSync = workspace }) else { return }
+            let prepared = try WorkspaceProjection.prepared(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+            let workspace = prepared.workspace
+            guard updatePreferences({ $0.workspaceSync = workspace; $0.personaSyncHolds = prepared.holds }) else { return }
             let sentDeletions = deletedChats
             let payload = try JSONEncoder().encode(SyncSnapshot(chats: chats, tasks: taskCheckpoints, handoffs: taskHandoffs, workspace: workspace, deletedChats: sentDeletions))
             guard payload.count <= 8 * 1024 * 1024 else { throw MeloError.message("聊天记录超过当前同步容量。") }
@@ -474,7 +478,9 @@ import SwiftUI
             var nextPreferences = preferences, nextRecords = executionRecords
             if let remoteWorkspace = remote.workspace {
                 // Include edits made while the HTTP request was in flight.
-                let current = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+                let prepared = try WorkspaceProjection.prepared(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
+                nextPreferences.personaSyncHolds = prepared.holds
+                let current = prepared.workspace
                 let merged = try current.excluding(nextDeleted).merging(remoteWorkspace.excluding(nextDeleted))
                 try WorkspaceProjection.apply(merged, preferences: &nextPreferences, records: &nextRecords, connections: connections)
             }
@@ -490,7 +496,7 @@ import SwiftUI
             if !confirmed.isEmpty { updatePreferences { $0.taskHandoffReceipts = ($0.taskHandoffReceipts ?? []).union(confirmed) } }
             migrateLegacyReferences()
             let conflicts = preferences.workspaceSync?.conflicts.count ?? 0
-            syncStatus = remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
+            syncStatus = !WorkspaceProjection.pending(preferences).isEmpty ? "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" : remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
         } catch { syncStatus = "同步未完成 · " + error.localizedDescription; if reportErrors { self.error = error.localizedDescription } }
     }
     private var syncDevice: String {

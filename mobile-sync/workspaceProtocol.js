@@ -1,4 +1,3 @@
-import { composeAgentInstructions } from '../src/domain/agent/agentDocument.js';
 import { validMessageID } from './identifiers.js';
 import { syncSchema } from './syncContract.generated.js';
 import { validateSchema } from './schemaValidator.js';
@@ -28,13 +27,9 @@ function url(v, {endpoint=false}={}) {
 export function portableAgent(v) {
   const avatarData = text(v.avatarData,500000);
   if (avatarData && !/^[A-Za-z0-9+/]+={0,2}$/.test(avatarData)) throw new Error('Invalid avatar');
-  const description = text(v.description ?? v.subtitle);
-  const instructions = v.personaVersion === 1
-    ? text(v.instructions,200100)
-    : [v.identity,v.soul,v.systemPrompt].some(value => typeof value === 'string' && value.trim())
-      ? composeAgentInstructions({rolePrompt:text(v.instructions,50000),identity:text(v.identity,50000),soulMd:text(v.soul,50000),systemPrompt:text(v.systemPrompt,50000)})
-      : text(v.instructions,200100);
-  return {name:text(v.name,200),description,subtitle:description,instructions,personaVersion:1,symbol:text(v.symbol,100)||'person.crop.square',avatarData,identity:'',soul:'',systemPrompt:'',mood:text(v.mood,100)||'warm',model:text(v.model,180)};
+  // v1 is intentionally unchanged: old services and phones validate each
+  // legacy field independently, before decoding the complete snapshot.
+  return {name:text(v.name,200),subtitle:text(v.subtitle),instructions:text(v.instructions,50000),symbol:text(v.symbol,100)||'person.crop.square',avatarData,identity:text(v.identity,50000),soul:text(v.soul,50000),systemPrompt:text(v.systemPrompt,50000),mood:text(v.mood,100)||'warm',model:text(v.model,180)};
 }
 export function portableModel(v) {
   if (v == null) return null;

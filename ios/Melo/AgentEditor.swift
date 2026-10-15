@@ -26,9 +26,10 @@ struct AgentEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    Label(statusText, systemImage: statusIcon)
+                    Label(LocalizedStringKey(statusText), systemImage: statusIcon)
                         .font(.subheadline.weight(.medium)).foregroundStyle(statusColor)
                         .accessibilityIdentifier("role.status")
+                    if WorkspaceProjection.pending(store.preferences).contains("agent:" + session.draft.id) { Text("此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
                     if let error = session.error { Text(error).font(.caption).foregroundStyle(.red) }
                     if session.hasConflict {
                         if let current {
@@ -47,7 +48,7 @@ struct AgentEditor: View {
                 if session.isEditing { editableFields } else { details }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(session.isNew ? "创建Agent" : "Agent详情")
+            .navigationTitle(LocalizedStringKey(session.isNew ? "创建Agent" : "Agent详情"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -88,7 +89,7 @@ struct AgentEditor: View {
     }
     @ViewBuilder private var details: some View {
         Section {
-            HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semibold)); Text(session.draft.subtitle.isEmpty ? "未填写介绍" : session.draft.subtitle).foregroundStyle(.secondary) } }
+            HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semibold)); Group { if session.draft.subtitle.isEmpty { Text("未填写介绍") } else { Text(verbatim: session.draft.subtitle) } }.foregroundStyle(.secondary) } }
         }
         Section("人设与工作要求") { Text(session.draft.instructions).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
         if [session.draft.mood, session.draft.model].contains(where: { $0?.isEmpty == false }) {
@@ -97,7 +98,7 @@ struct AgentEditor: View {
             }
         }
     }
-    @ViewBuilder private func detail(_ title: String, _ value: String?) -> some View {
+    @ViewBuilder private func detail(_ title: LocalizedStringKey, _ value: String?) -> some View {
         if let value, !value.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).textSelection(.enabled) } }
     }
     @ViewBuilder private var editableFields: some View {
