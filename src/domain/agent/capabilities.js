@@ -45,7 +45,7 @@ export function toolCapabilityAllowed(id, capabilities, args) {
   }
   if (id==='image') {
     if (!args) return c.readFiles||c.generateMedia;
-    return ['info','ocr'].includes(args.action)?c.readFiles: c.generateMedia && (args.action!=='process'||c.readFiles&&c.writeFiles);
+    return ['info','ocr'].includes(args.action)?c.readFiles: c.generateMedia && (!args.output||c.writeFiles) && (args.action!=='process'||c.readFiles&&c.writeFiles);
   }
   return false; // New/plugin tool identifiers need an explicit mapping, never trust self-declared permissions.
 }

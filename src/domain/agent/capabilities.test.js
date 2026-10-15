@@ -32,6 +32,9 @@ test('mixed file tools check actual actions, URL reads and skill index access',(
  assert.equal(toolCapabilityAllowed('pdf',c,{action:'write'}),false);
  assert.equal(toolCapabilityAllowed('image',c,{action:'generate'}),false);
  assert.equal(toolCapabilityAllowed('clipboard',c,{action:'write'}),false);
+ const media=normalizeCapabilities({generateMedia:true});
+ assert.ok(toolCapabilityAllowed('image',media,{action:'generate'}));
+ assert.equal(toolCapabilityAllowed('image',media,{action:'generate',output:'/tmp/a.png'}),false);
  assert.equal(toolCapabilityAllowed('knowledge',emptyCapabilities(),{action:'index'}),false);
 });
 test('migration preview is stable, literal, and changes when permissions change',()=>{

@@ -1,3 +1,4 @@
+import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { serializeAgentState } from '../domain/agent/agentState.js';
 import { backupAgentState } from './storageMigration.js';
 import { measureStage, measureStageSync, startStage } from '../runtime/performanceTrace.js';
@@ -105,16 +106,20 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
       }
     }
     const threadRepaired = await measureStage('state.threads.hydrate', () => hydrateChatThreads(state, { threadsDir, previousChats }));
+    // Legacy manifests store messages in checkpoints. Classify generated
+    // snippets only after their source replies have actually been hydrated.
+    if(Array.isArray(parsed.artifacts))state.artifacts=migrateLegacyResults(parsed.artifacts,state.chats);
+    const resultsMigrated=Array.isArray(parsed.artifacts)&&parsed.artifacts.some((a,i)=>a.kind!==state.artifacts[i]?.kind);
     await measureStage('state.skills.scan', () => mergeDiskSkillsIntoState(state));
 
-    if ((repaired || markdownImported || threadRepaired) && persistRepair) {
+    if ((repaired || markdownImported || threadRepaired || resultsMigrated) && persistRepair) {
       // Pass the entire captured ctx so the repair save also writes
       // state.json + thread checkpoints to the home we read from,
       // regardless of any env flip during this load chain.
       await persistStateAtomically(state, { ctx });
     }
 
-    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired, committedRuns: structuredClone(state.chatRuns || []) };
+    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired || resultsMigrated, committedRuns: structuredClone(state.chatRuns || []) };
     return state;
   } catch (error) {
     if (!manifestFound && error && typeof error === 'object' && error.code === 'ENOENT') {
