@@ -272,3 +272,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 实际文件：`src/config.js` 新默认及旧未答复标记迁移；`src/mcp/init.js` 保留启动接线并隔离测试外部进程；`desktop-ui/app.js` 删除弹窗和选择回调，旧 dispatcher 删除。后续手动关闭持久保留；角色授权与单次调用审批不变。
 - 验证：新迁移及极简 PATH 冷进程回归先红后绿；MCP 63/63，浏览器启动/刷新/服务重启专项 1/1。原生真实启动发现 NVM Node 所在目录没进 PATH，四服务均未连接；已在 `src/mcp/client.js` 补本 Node 安装目录并保留显式服务 PATH。重启后四服务全部连接，Browserless 关闭，无启动弹窗；14 对话/1项目/6角色保留。
 - 证据：`.tmp/mcp-startup-20261015/desktop-path-fixed.json`（PID 79771）及 red/green/browser 日志。共享树日常 JS 3493/3494，已有图片预览焦点断言失败，独立复跑同样失败（主线也已记录）；不改无关 WIP。隔离暂存树 `npm test` 通过：3485 JS / 1 项未复制打包模型而跳过、语法、设置/加速浏览器、21 Swift/共享渲染；179.6 秒。第二次原生冷启动 PID 86552 四项已连接，退出旧进程已清理。没有模型/生图/真实业务工具调用；详见 `docs/mcp-startup-20261015.md`。
+
+### 2026-10-15 — 用户授权直接推送与兼容性介绍
+- 用户明确要求 git push，不运行 git pp 或额外 Codex 审计；发布范围为已提交主线与本线程 Agent P0–P4，保留其他线程未提交 WIP。
+- 英文 README 增加模型/接口/MCP 兼容表，Claude 作为支持服务正常介绍；同时写清能力按端点/账号而异、旧版同步服务继续同步聊天、新能力同步需升级私人服务。GitHub About 已采用相同中性定位。
+- 推送前在干净实施树合并当前 master，仅文档追加位置发生冲突，双方记录均保留；源码合并后运行日常回归。本轮未替换用户安装包或再次迁移数据。
+- 本轮日常检查 GREEN：3528/3528 JS、21 Swift 组、824 文件语法及两组浏览器检查；112.9 秒，`/tmp/melo-agent-push-daily-20261015.log`。完整安装 gate 沿用上轮集成证据，不标成本轮重跑。
