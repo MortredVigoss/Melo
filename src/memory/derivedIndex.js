@@ -6,8 +6,11 @@ import { enabledTiers } from './attic.js';
 import { reconcileChatFacts } from './factRecords.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
+import {indexKnowledgeDocuments} from './knowledgeIndex.js';
+import {isKnowledgeArtifact} from '../domain/artifact/artifactService.js';
 
 const indexed = new Map();
+const knowledgeRevisions=new Map();
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 // Persisted checkpoints already hash message bodies, extraction and media. Reuse
@@ -16,6 +19,12 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 // considers every cached source sharing that namespace (including other chats).
 export function syncDerivedSnapshot(state, ctx, { throwOnError = false } = {}) {
   if (ctx.home && currentRequestContext()?.home !== ctx.home) return runWithRequestContext(createRequestContext({...currentRequestContext(),home:ctx.home}), () => syncDerivedSnapshot(state,ctx,{throwOnError}));
+  const documents=(state.artifacts||[]).filter(isKnowledgeArtifact),knowledgeRevision=hash(documents.map(d=>[d.id,d.title,d.content]));
+  const home=ctx.home;
+  if(home&&knowledgeRevisions.get(home)!==knowledgeRevision) {
+    try {indexKnowledgeDocuments({home,documents,prune:true});knowledgeRevisions.set(home,knowledgeRevision);}
+    catch(error){if(throwOnError)throw error;console.warn(`Knowledge index deferred: ${error.message}`);}
+  }
   const old = indexed.get(ctx.storePath), segments = new Map(), affected = new Set(), changedChats = [], factSignatures = new Map();
   const tiers = [...enabledTiers()].sort().join(',');
   let changed = !old;
@@ -65,4 +74,4 @@ export function syncDerivedSnapshot(state, ctx, { throwOnError = false } = {}) {
     return false;
   }
 }
-export function resetDerivedMemoryCacheForTests() { indexed.clear(); }
+export function resetDerivedMemoryCacheForTests() { indexed.clear();knowledgeRevisions.clear(); }

@@ -20,6 +20,11 @@ export function normalizeCollaboration(value={}) {
   const bounded=(v,f,max)=>Number.isInteger(v)&&v>=1?Math.min(v,max):f;
   return {canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,8,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
 }
+export function intersectCollaboration(a,b) {
+  a=normalizeCollaboration(a);b=normalizeCollaboration(b);
+  return {canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
+    ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])]))};
+}
 const READ=new Set(['file_read','glob','grep','media_info']);
 const WRITE=new Set(['file_write','file_edit','file_delete','file_move','file_mkdir','xlsx']);
 const NETWORK=new Set(['web_search','fetch_url','media_api','translate','browser_open','browser_snapshot','browser_click','browser_fill','browser_wait_for','browser_close']);
@@ -49,7 +54,7 @@ export function toolCapabilityAllowed(id, capabilities, args) {
   }
   return false; // New/plugin tool identifiers need an explicit mapping, never trust self-declared permissions.
 }
-export const filterToolsByCapabilities = (tools,capabilities) => tools.filter(t=>toolCapabilityAllowed(t.id,capabilities));
+export const filterToolsByCapabilities = (tools,capabilities) => tools.filter(t=>t.id!=='agent' && (t.id!=='delegate'||capabilities?.delegate===true) && toolCapabilityAllowed(t.id,capabilities));
 export function migrateLegacyCapabilities(profile, {skills=[],connectors=[]}={}) {
   const tools=new Set(profile.tools || []), local=tools.has('local-files');
   return normalizeCapabilities({readFiles:local,writeFiles:local,runCommands:tools.has('local-command'),network:tools.has('search'),knowledgeMemory:tools.has('artifacts')||tools.has('search'),

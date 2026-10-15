@@ -53,7 +53,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
   const sessions = new Map();
   const drafts = new Map();
   const selector = ['agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
-  const savedActions = new Set(['test-agent-channel']);
+  const savedActions = new Set(['test-agent-channel','confirm-agent-settings']);
   const safeActions = new Set(['select-agent-editor-tab','switch-agent-channel-tab','toggle-agent-secret']);
   const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || ''}:${scope(form)}`;
   const get = key => { if(!sessions.has(key)) sessions.set(key,new EditSession()); return sessions.get(key); };

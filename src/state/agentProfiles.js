@@ -1,4 +1,4 @@
-import { normalizeCapabilities, normalizeCollaboration } from '../domain/agent/capabilities.js';
+import { normalizeCapabilities, normalizeCollaboration, intersectCapabilities, intersectCollaboration } from '../domain/agent/capabilities.js';
 import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // ─── Agent profile state normalizers ─────────────────────────────────────────
 // Pure normalization layer for the persisted agent state slice. Given whatever
@@ -352,6 +352,8 @@ export function effectiveAgentProfile(state, agentId, projectId = null) {
       ...globalProfile,
       ...projectOverride,
       instructions: mergeAgentInstructions(globalProfile, projectOverride),
+      capabilities: intersectCapabilities(globalProfile.capabilities,projectOverride.capabilities),
+      collaboration: projectOverride.collaboration ? intersectCollaboration(globalProfile.collaboration,projectOverride.collaboration) : globalProfile.collaboration,
     }),
     scopeSource: 'project',
     hasProjectOverride: true,

@@ -146,7 +146,10 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
       const update={name:v.name,summary:v.goal,instructions:v.instructions,archived:v.archived,knowledgeIds:v.knowledgeIds};
       if(stableJSON(Object.fromEntries(Object.keys(update).map(key=>[key,p[key]])))!==stableJSON(update))p.updatedAt=now;
       Object.assign(p,update);
-      state.projectAgentOverrides[r.id]=Object.fromEntries(Object.entries(v.agentOverrides).map(([id,a])=>[id,{...state.projectAgentOverrides[r.id]?.[id],portableIdentity:true,name:a.name,description:a.subtitle,instructions:decodeV1Persona(a),identity:a.identity,soulMd:a.soul,systemPrompt:a.systemPrompt,mood:a.mood,model:a.model,symbol:a.symbol,avatarData:a.avatarData?'data:image/jpeg;base64,'+a.avatarData:''}]));
+      // Persona synchronization cannot remove a desktop capability restriction
+      // merely by omitting its Agent from the remote override list.
+      const restrictions=Object.fromEntries(Object.entries(state.projectAgentOverrides[r.id]||{}).map(([id,profile])=>[id,Object.fromEntries(['capabilities','collaboration','contextSources'].filter(key=>Object.hasOwn(profile,key)).map(key=>[key,profile[key]]))]).filter(([,profile])=>Object.keys(profile).length));
+      state.projectAgentOverrides[r.id]={...restrictions,...Object.fromEntries(Object.entries(v.agentOverrides).map(([id,a])=>[id,{...state.projectAgentOverrides[r.id]?.[id],portableIdentity:true,name:a.name,description:a.subtitle,instructions:decodeV1Persona(a),identity:a.identity,soulMd:a.soul,systemPrompt:a.systemPrompt,mood:a.mood,model:a.model,symbol:a.symbol,avatarData:a.avatarData?'data:image/jpeg;base64,'+a.avatarData:''}]))};
     }
     if(r.kind==='knowledge') {
       let note=state.artifacts.find(n=>n.id===r.id);

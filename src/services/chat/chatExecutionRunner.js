@@ -385,7 +385,7 @@ export async function runChatAgentExecutionGraph({
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = filterToolsByCapabilities([...routedTools, ...skillTools],activeAgentProfile.capabilities);
+          promptTools = filterToolsByCapabilities([...routedTools, ...skillTools],activeAgentProfile.capabilities).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,

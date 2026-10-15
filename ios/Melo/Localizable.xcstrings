@@ -1,6 +1,286 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "同步权限变更待桌面确认": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步权限变更待桌面确认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced permission changes await desktop confirmation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期された権限変更はデスクトップでの確認待ちです"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화된 권한 변경은 데스크톱 확인을 기다립니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los cambios de permisos sincronizados requieren confirmación en el escritorio"
+          }
+        }
+      }
+    },
+    "收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收紧部分已生效。以下新增能力及协作、上下文变更尚未生效："
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restrictions are active. The following capability, collaboration and context additions are still pending:"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "制限は適用済みです。次の機能・協働・コンテキストの追加はまだ適用されていません："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제한은 적용되었습니다. 다음 기능, 협업 및 컨텍스트 추가는 아직 적용되지 않았습니다:"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las restricciones ya están activas. Estas ampliaciones de capacidades, colaboración y contexto siguen pendientes:"
+          }
+        }
+      }
+    },
+    "确认应用同步设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认应用同步设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm and apply synced settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期設定を確認して適用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화 설정 확인 및 적용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar y aplicar ajustes sincronizados"
+          }
+        }
+      }
+    },
+    "拒绝放宽，保留当前权限": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝放宽，保留当前权限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reject expansion and keep current permissions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡張を拒否して現在の権限を維持"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권한 확대 거부 및 현재 권한 유지"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechazar ampliación y conservar permisos actuales"
+          }
+        }
+      }
+    },
+    "项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project capabilities and collaboration can only restrict global settings. Edit this Agent’s global settings to allow more capabilities."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトの機能と協働設定は全体設定を制限する場合のみ適用されます。機能を追加するには Agent の全体設定を編集してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 기능과 협업은 전역 설정을 제한할 수만 있습니다. 기능을 추가하려면 이 Agent의 전역 설정을 편집하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las capacidades y la colaboración del proyecto solo pueden restringir los ajustes globales. Edita los ajustes globales del Agent para permitir más capacidades."
+          }
+        }
+      }
+    },
+    "委派对象": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "委派对象"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegation targets"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "委任先"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위임 대상"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destinatarios de delegación"
+          }
+        }
+      }
+    },
+    "协作或上下文设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "协作或上下文设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collaboration or context settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "協働またはコンテキスト設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "협업 또는 컨텍스트 설정"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustes de colaboración o contexto"
+          }
+        }
+      }
+    },
+    "Agent 默认": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 默认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent default"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent の既定値"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 기본값"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Predeterminado del Agent"
+          }
+        }
+      }
+    },
     "此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。": {
       "extractionState": "manual",
       "localizations": {

@@ -290,3 +290,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 电脑补安装：用户反馈电脑未变化后，确认 `/Users/mortred/Applications/Melo.app` 仍含旧 ICNS；基于已安装包只替换图标并重签名，去签名后的可执行字节一致，旧包保存在 `.tmp/logo-desktop-install-20261015/previous.bundle`。桌面快捷方式仍指向主安装包；Finder 列表/简介实际显示 B 图标。
 - 本轮边界：签名/ICNS 散列通过，42 项配置/聊天/Agent 文件散列未变；退出后 `desktop/state.json` 散列改变，不宣称该文件逐字节一致。用户已手动允许重签名触发的 macOS 桌面目录授权；健康接口正常，点击原生“重新打开”后进入工作空间，UI 与存储均确认 14 对话/1 项目/6 Agent，运行 home 保持原路径。
 - 本轮证据：`.tmp/logo-desktop-install-20261015/installation-verification.json` 与 `server-sample.txt`，Finder 实看在本线程工具回执。本轮电脑图标安装与启动验收完成；未覆盖安装手机，未跑产品全库 gate。下一步手机正常安装时验证相同母版图标。
+
+### 2026-10-15 — melo主线 — Agent 审查修正完成集成
+- 审查中的发布/迁移状态已过期：远端 master=`5b2d9f7`，真实迁移已完成。本轮确认同步越权等源码问题后修正，未运行 git pp 或推送。
+- 修正范围及逐项依据见 [审查修正](docs/agent-review-fixes-20261015.md)：远端加权待桌面确认、全局权限上限、团队迁移预检、回复预算、只读知识检索、围栏解析及复核循环；保留用户拥有的内置人设。
+- 隔离实现 `51882bd` / `f4546c5` 已整合共享源码，保留其他线程顶栏删除、手机新增测试及生成资源。共享树 `npm test` GREEN：3554 JS、834 文件语法、两组浏览器、23 Swift / 共享渲染，181.3 秒；证据 `/tmp/melo-agent-audit-shared-daily.log`。
+- 真实 home 重启前备份 43 文件，14 聊天 / 6 Agent / 26 成果 / 1 项目，无活跃任务；运行后端重启及数据核对待完成。本轮未做完整发布 gate、真机重新安装或真实模型协作。

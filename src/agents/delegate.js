@@ -8,6 +8,7 @@ import {withWorkspaceWriter} from './workspaceScheduling.js';
 import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
 
 export async function runConfiguredMember({profile,parentCapabilities,allowedToolIds,config,task,instructions='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent}) {
+ if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
  const capabilities=intersectCapabilities(normalizeCapabilities(profile.capabilities) || emptyCapabilities(),parentCapabilities);
  const settings=normalizeCollaboration(profile.collaboration);
  const parent=currentRequestContext();
@@ -41,6 +42,7 @@ export async function delegateTask(args,context={}) {
  const depth=(context.agentDepth || 0)+1, maxDepth=Math.min(context.maxDelegationDepth ?? settings.maxDelegationDepth,settings.maxDelegationDepth);
  if(!settings.canDelegate || !context.capabilities?.delegate || !settings.delegateTargets.includes(args.agentId) || !target || depth>maxDepth || (context.ancestry || [context.agentId]).includes(args.agentId)) return {ok:false,error:'DELEGATION_DENIED',output:'目标 Agent 未授权、已在调用链中或超过委派深度。'};
  const result=await runConfiguredMember({extraTools:context.extraTools,profile:target,parentCapabilities:context.capabilities,allowedToolIds:context.allowedToolIds,config:context.config,task:args.task,instructions:args.instructions,workspacePath:context.workspacePath,signal:context.signal,sseEmitter:context.sseEmitter,chatId:context.chatId,depth,maxDepth,agentProfiles:context.agentProfiles,ancestry:context.ancestry || [context.agentId]});
+ if(result.error)return result;
  return {...result,output:JSON.stringify(result.handoff),meta:{...result.meta,handoff:result.handoff,member:{agentId:result.agentId,name:result.name,memberId:result.memberId,durationMs:result.durationMs},receipts:result.receipts}};
 }
 export const delegateTool={id:'delegate',name:'Delegate',description:'Delegate a focused task to an authorized configured Agent. The member uses its own persona/model and the intersection of both capability sets. Returns a structured handoff.',category:'agent',examples:[{agentId:'research',task:'Inspect relevant sources and return findings with evidence.'}],requiresPermission:false,isConcurrencySafe:false,timeout:920000,parametersSchema:{type:'object',properties:{agentId:{type:'string'},task:{type:'string'},instructions:{type:'string'}},required:['agentId','task']},run:delegateTask};

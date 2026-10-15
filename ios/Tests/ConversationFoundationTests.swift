@@ -1,6 +1,11 @@
 import Foundation
 @main struct ConversationFoundationTests {
  static func main() throws {
+    let fencedIdentity = "Actual identity\n\n```md\n## 风格\nLiteral style heading\n```\n\n~~~~\n## 补充要求\nLiteral extra heading\n~~~~"
+    var fencedAgent = AgentProfile(name:"Fenced",subtitle:"",symbol:"star",instructions:"",identity:fencedIdentity,soul:"Actual style")
+    assert(fencedAgent.identity == fencedIdentity && fencedAgent.soul == "Actual style")
+    fencedAgent.soul = "Changed style"
+    assert(fencedAgent.identity == fencedIdentity && fencedAgent.soul == "Changed style")
     let old = Data(#"{"agents":[{"id":"custom","name":"蓝鲸","subtitle":"只使用短句","symbol":"star","instructions":"先说收到"}],"chatAgents":{"a":"custom"},"pinnedChats":[],"archivedChats":[]}"#.utf8)
     var preferences = try JSONDecoder().decode(MobilePreferences.self, from: old)
     assert(preferences.agents[0].avatarData == nil && preferences.chatModels == nil)

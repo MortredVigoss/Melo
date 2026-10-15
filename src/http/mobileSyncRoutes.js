@@ -1,4 +1,4 @@
-import {validateAgentSettings,refreshAgentSettings,applyAgentSettings} from '../../mobile-sync/agentSettings.js';
+import {validateAgentSettings,refreshAgentSettings,applyAgentSettings,confirmAgentSettings} from '../../mobile-sync/agentSettings.js';
 import {mergeWorkspaces} from '../../mobile-sync/workspaceProtocol.js';
 import { assertChatDeletable, stageChatDeletion, finishChatDeletions } from '../services/chat/chatDeletion.js';
 import { refreshPortableMemory, stagePortableMemory, replayPortableMemory } from '../services/chat/portableMemory.js';
@@ -65,10 +65,22 @@ export function importMobileSnapshot(state, incoming, options = {}) {
   return state;
 }
 export async function handleMobileSyncRoute(request, response, url) {
-  if (!['/api/mobile-sync','/api/mobile-sync/resolve','/api/agent-settings-sync','/api/agent-settings-sync/resolve'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
+  if (!['/api/mobile-sync','/api/mobile-sync/resolve','/api/agent-settings-sync','/api/agent-settings-sync/resolve','/api/agent-settings-sync/confirm'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
   // Capture home before any asynchronous work; all imported files remain here.
   const home=getMeloHome();
   if(url.pathname.startsWith('/api/agent-settings-sync')) {
+    if(url.pathname.endsWith('/confirm')) {
+      // Sync bearer credentials cannot be used at the desktop approval entry.
+      // Require a same-origin desktop browser on the loopback socket.
+      const address=request.socket?.remoteAddress;
+      const origins=new Set(['localhost','127.0.0.1','[::1]'].map(host=>`http://${host}:${request.socket?.localPort}`));
+      if(request.method!=='POST'||request.headers.authorization||!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address)||!origins.has(request.headers.origin)) {
+        sendJson(response,403,{error:'能力放宽只能在本机桌面设置中确认。'});return true;
+      }
+      const body=await readJsonBody(request);
+      await updateStateAtomically(state=>confirmAgentSettings(state,body),{home});
+      sendJson(response,200,{ok:true});return true;
+    }
     const resolving=url.pathname.endsWith('/resolve');
     if(!resolving&&!authorized(request,token)){sendJson(response,401,{error:'Unauthorized'});return true;}
     if(resolving&&request.method!=='POST'){sendJson(response,405,{error:'POST required'});return true;}
