@@ -84,7 +84,8 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                     require(choice.text("finish_reason") in setOf("stop", "tool_calls")) { "模型请求被截断。" }
                     val message = choice["message"]?.jsonObject ?: error("缺少模型消息。")
                     wire = listOf(message); text = message.text("content")
-                    calls = message["tool_calls"]?.jsonArray.orEmpty().map { val c = it.jsonObject; val f = c["function"]?.jsonObject ?: error("缺少工具函数。"); DeviceCall(c.text("id"), f.text("name"), arguments(f.text("arguments"))) }
+                    // OpenAI-compatible proxies may explicitly return null on a final answer.
+                    calls = message["tool_calls"]?.takeUnless { it == JsonNull }?.jsonArray.orEmpty().map { val c = it.jsonObject; val f = c["function"]?.jsonObject ?: error("缺少工具函数。"); DeviceCall(c.text("id"), f.text("name"), arguments(f.text("arguments"))) }
                     require((choice.text("finish_reason") == "tool_calls") == calls.isNotEmpty()) { "工具回执不完整。" }
                 }
             }

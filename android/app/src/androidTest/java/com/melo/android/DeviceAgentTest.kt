@@ -41,6 +41,9 @@ class DeviceAgentTest {
         if (!::automation.isInitialized) return
         runBlocking { withContext(Dispatchers.Main) { app.deviceAgent.cancel(); DeviceAccess.service?.end() } }
         if (enabledBefore.isBlank()) shell("settings delete secure enabled_accessibility_services") else shell("settings put secure enabled_accessibility_services $enabledBefore")
+        // Settings observers and Service teardown are asynchronous. Do not re-enable
+        // the next test's service while the previous binding is still being removed.
+        if (serviceName !in enabledBefore.split(':')) waitFor { DeviceAccess.service == null }
     }
     private suspend fun observe(service: DeviceExecutor): DeviceToolResult = service.execute(buildJsonObject { put("action", "observe") })
     private fun node(observation: DeviceToolResult, label: String): JsonObject = observation.data["nodes"]!!.jsonArray.map { it.jsonObject }.firstOrNull { it.text("text") == label || it.text("description") == label } ?: error("Missing $label in ${observation.data}")
@@ -90,7 +93,7 @@ class DeviceAgentTest {
                     val messages = MeloJson.parseToJsonElement(request.body.clone().readUtf8()).jsonObject["messages"]!!.jsonArray.map { it.jsonObject }
                     val previous = messages.lastOrNull { it.text("role") == "tool" }?.text("content")?.let { MeloJson.parseToJsonElement(it).jsonObject }
                     val nodes = previous?.get("nodes")?.jsonArray.orEmpty().map { it.jsonObject }
-                    if (nodes.any { it.text("text") == "Count 1" }) return MockResponse().setBody("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Fixture 已确认按钮点击一次"}}]}""")
+                    if (nodes.any { it.text("text") == "Count 1" }) return MockResponse().setBody("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Fixture 已确认按钮点击一次","tool_calls":null}}]}""")
                     val arguments = if (previous == null || previous["ok"]?.jsonPrimitive?.booleanOrNull != true) buildJsonObject { put("action", "observe") } else buildJsonObject {
                         put("action", "tap"); put("screen_id", previous.text("screen_id")); put("node_id", nodes.first { it.text("text") == "Target button" }.text("node_id"))
                     }

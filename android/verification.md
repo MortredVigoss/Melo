@@ -1,5 +1,17 @@
 # Android verification — 2026-10-15
 
+## 0.2.1 Modal Proxy 结束回执兼容修复
+
+Fold6 的实际记录显示 observe / open_app / observe 均成功，随后报 Tool Calling 回执错误；App 无 ANR。使用已授权 Proxy Key 和纯合成上下文进行两次最小协议检查，确认 HTTP 200 / application/json、finish_reason=stop、非空文字回答，且 message.tool_calls 显式为 null。仅保存字段类型和数量，不输出凭证、回答正文或手机界面内容。
+
+旧代码对 JsonNull 调用 jsonArray，新增回归先复现失败，再将显式 null 与字段省略统一作为“没有工具调用”；仍拒绝缺失调用的 tool_calls 终态、未知工具和并行操作。HTTP Fixture 与真实 Android 多步循环的最终回执都采用同样的 null 形式。结束时增加系统文字提示，让用户停留在其他 App 时也能知道任务已结束或失败。
+
+回归过程中修复两处测试环境时序：辅助服务 teardown 等待真实解绑完成；Compose test rule 采用 v2 的 StandardTestDispatcher，避免 v1 UnconfinedTestDispatcher 在网络工作线程触发 WebView 重组。生产聊天与 renderer 未改动。依据：[Compose v2 migration](https://developer.android.com/develop/ui/compose/testing/migrate-v2)。
+
+最终 29 项 JVM tests、14 项完整 Android runtime suite、Lint（零 errors）、R8 Release 构建及签名 / 四 ABI 的 16 KiB alignment 检查通过。APK 为 0.2.1（versionCode 4），沿用 development certificate 覆盖安装，未卸载或清除数据。
+
+用户明确同意短暂控制 Fold6 后，用 App 内已有 Modal 连接及已启用的 AccessibilityService 实测 `Open Android Settings and stop.`。Melo 完成 observe → open_app 两次成功工具操作（均有截图），实际 Samsung Settings 前台画面停留在“连接”页面，未修改设置。任务正常显示“模型已结束任务”，总结为“已打开 Android 设置，停留在‘连接’页面，未进行其他操作。”，并在 Settings 前台出现结束 Toast；停止浮层已移除。返回 Melo 后核对保存记录，原失败记录仍保留。此结果证明该连接的最小任务和结束回执已通过，不代表复杂任务、折叠切换或省电行为全面验收。
+
 ## 0.2.0 手机助手增量
 
 用户在已认可 AccessibilityService + Tool Calling 方案后要求立即实现。开发仍使用隔离 Fixture；不读取或注入现有 Proxy Key，不调用真实订阅。本轮手机未连接 ADB，未替用户切换 Fold6 的辅助功能权限。

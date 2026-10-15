@@ -1,6 +1,7 @@
 package com.melo.android.device
 
 import android.content.Context
+import android.widget.Toast
 import com.melo.android.BuildConfig
 import com.melo.android.data.*
 import com.melo.android.network.ConnectionPolicy
@@ -73,6 +74,14 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
             } finally {
                 if (begun) executor?.end()
                 mutable.update { it.copy(running = false, phase = "") }
+                val status = repository.data.value.deviceRuns.find { it.id == run?.id }?.status
+                val notice = when (status) {
+                    "completed" -> "Melo 任务已结束，可返回查看结果"
+                    "failed" -> "Melo 未完成任务，请返回查看原因"
+                    "cancelled" -> "Melo 已停止"
+                    else -> null
+                }
+                if (notice != null) Toast.makeText(context, notice, Toast.LENGTH_LONG).show()
             }
         }
     }

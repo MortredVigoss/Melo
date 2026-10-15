@@ -10,6 +10,12 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class DeviceAgentClientTest {
+    @Test fun proxyFinalReplyWithExplicitNullToolCallsIsACompletedAnswer() {
+        val value = MeloJson.parseToJsonElement("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"已打开设置。","reasoning_content":"","tool_calls":null}}]}""").jsonObject
+        val result = DeviceAgentClient.decode(value, "chat-completions")
+        assertEquals("已打开设置。", result.text)
+        assertTrue(result.calls.isEmpty())
+    }
     private val protocols = listOf("chat-completions", "responses", "anthropic")
     private fun call(protocol: String, action: String = "observe") = when (protocol) {
         "responses" -> """{"status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"android_device","arguments":"{\"action\":\"$action\"}"}]}"""
@@ -19,7 +25,7 @@ class DeviceAgentClientTest {
     private fun final(protocol: String) = when (protocol) {
         "responses" -> """{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"已完成"}]}]}"""
         "anthropic" -> """{"stop_reason":"end_turn","content":[{"type":"text","text":"已完成"}]}"""
-        else -> """{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"已完成"}}]}"""
+        else -> """{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"已完成","tool_calls":null}}]}"""
     }
     @Test fun eachNativeProtocolPerformsARealHttpToolRoundTripWithScreenshot() = runBlocking {
         for (protocol in protocols) MockWebServer().use { server ->
@@ -59,6 +65,7 @@ class DeviceAgentClientTest {
         }
     }
     @Test fun unknownToolsParallelActionsAndIncompleteReceiptsAreRejected() {
+        assertTrue(runCatching { DeviceAgentClient.decode(MeloJson.parseToJsonElement(final("chat-completions").replace("\"finish_reason\":\"stop\"", "\"finish_reason\":\"tool_calls\"")).jsonObject, "chat-completions") }.isFailure)
         val unknown = call("chat-completions").replace("android_device", "shell")
         assertTrue(runCatching { DeviceAgentClient.decode(MeloJson.parseToJsonElement(unknown).jsonObject, "chat-completions") }.isFailure)
         val parallel = """{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"a","function":{"name":"android_device","arguments":"{}"}},{"id":"b","function":{"name":"android_device","arguments":"{}"}}]}}]}"""
