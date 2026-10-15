@@ -46,5 +46,5 @@ swift ios/scripts/draw-icon.swift ios/Melo
 - 操作：复制当前已安装包，仅替换 `Contents/Resources/melo.icns`，保留签名元数据并重新 ad hoc 签名；正常退出后换入，再注册该包的 LaunchServices 并重新打开。去签名后的可执行文件 SHA-256 前后一致，其他资源逐字节保留。
 - 安装验证：严格签名检查通过；安装后 ICNS SHA-256 为 `a35eb6aa542bac69f18d4cab39e4dc7de786a02928b0818bbfcc81dd603893af`，与批准资源相同。Finder 列表与简介均已实际显示黑金 B 图标；Dock 工具读取超时，不宣称单独 Dock 实看通过。
 - 数据边界：43 项保护文件中 42 项（含账号配置、聊天与 Agent 文件）散列未变；`desktop/state.json` 在正常退出后改变，现仍 14 对话/1 项目/6 Agent，不宣称此文件逐字节一致。未恢复、覆盖或清理用户资料。
-- 启动阻塞：macOS 在重新签名后发起 `kTCCServiceSystemPolicyDesktopFolder` 授权，Node 等待打开桌面目录中的 package.json。电脑工具拒绝操作 UserNotificationCenter 系统授权窗口，已请用户手动允许；当前工作空间启动未通过，需授权后检查健康接口和原生 UI。
+- 启动与授权：macOS 在重新签名后发起 `kTCCServiceSystemPolicyDesktopFolder` 授权，Node 曾等待打开桌面目录中的 package.json。电脑工具拒绝操作 UserNotificationCenter 系统窗口；用户已亲自点击允许。随后 `/api/health` 返回正常，实际 home 与此前一致；点击原生“重新打开”后成功进入工作空间，UI 显示 14 段对话、1 项目、6 Agent。安装图标散列、严格签名和 42 项保护文件散列再次核对通过。
 - 证据与恢复：`.tmp/logo-desktop-install-20261015/installation-verification.json`、`server-sample.txt`；旧安装包保留为同目录 `previous.bundle`，不进入 LaunchServices 应用索引。未推送，未更新手机，不重跑全库 gate。

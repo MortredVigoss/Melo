@@ -20,7 +20,7 @@
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
-| 双端 Logo | 用户已选 B「黑冰星窗」；黑金星空厚玻璃 M 已统一母版与双端正式图标资源 | 17 个资源散列、13 个尺寸/alpha、双端构建及包内图标检查通过；电脑已安装并在 Finder 确认新图标，重启待系统桌面目录授权；手机未安装，见 [交接](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
+| 双端 Logo | 用户已选 B「黑冰星窗」；黑金星空厚玻璃 M 已统一母版与双端正式图标资源 | 17 个资源散列、13 个尺寸/alpha、双端构建及包内图标检查通过；电脑已安装并在 Finder 确认新图标，用户完成系统授权后原生工作空间/健康接口通过；手机未安装，见 [交接](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 桌面神经总览 | 放大、五区分段图标和中枢加密已在 `b96c48a`；当前核心 JS 无未提交差异 | 347 项是 10-10 历史 UI 回归；加密后的 GPU/功耗、现安装包和用户最终验收未复验；样式后续 WIP 见设计线程 |
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
@@ -108,7 +108,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-15 B 黑冰星窗正式 Logo，手机/电脑同母版导出与打包验证 | 图标资源和旧生成入口已统一；电脑安装/Finder 图标已验，启动等待 macOS 文件授权。历史神经 UI 见 [交接](docs/handoffs/melo-ui-20261015.md)；[本轮 Logo 证据](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-15 B 黑冰星窗正式 Logo，手机/电脑同母版导出与打包验证 | 图标资源和旧生成入口已统一；电脑安装/Finder 图标及授权后的原生启动已验。历史神经 UI 见 [交接](docs/handoffs/melo-ui-20261015.md)；[本轮 Logo 证据](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
@@ -288,5 +288,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 已验证：17 个导出文件散列、13 个 PNG 尺寸/alpha；两个 Swift 入口；64px 实看。桌面构建与签名通过，包内 ICNS SHA 一致；iOS 模拟器构建通过，三个包内 PNG 解码后的像素完全一致。最初字节比较因 Apple CgBI 优化不同，已改为解码比较，并非图像损坏。
 - 证据：`.tmp/logo-icons-20261015/{export-verification,bundle-verification}.json` 与双端构建日志。基于当前共享源码构建，不将图标专项称为全库功能回归。
 - 电脑补安装：用户反馈电脑未变化后，确认 `/Users/mortred/Applications/Melo.app` 仍含旧 ICNS；基于已安装包只替换图标并重签名，去签名后的可执行字节一致，旧包保存在 `.tmp/logo-desktop-install-20261015/previous.bundle`。桌面快捷方式仍指向主安装包；Finder 列表/简介实际显示 B 图标。
-- 本轮边界：签名/ICNS 散列通过，42 项配置/聊天/Agent 文件散列未变；退出导致 `desktop/state.json` 散列改变，重启前计数仍 14 对话/1 项目/6 Agent，不宣称该文件逐字节一致。重签名触发 macOS 桌面目录授权，Node 等待文件打开；CUA 禁止操作系统授权窗口，已请用户手动允许，尚不能称工作空间启动通过。
-- 本轮证据：`.tmp/logo-desktop-install-20261015/installation-verification.json` 与 `server-sample.txt`，Finder 实看在本线程工具回执。未覆盖安装手机；未跑产品全库 gate。下一步收到系统授权后检查实际端口/工作空间和资料。
+- 本轮边界：签名/ICNS 散列通过，42 项配置/聊天/Agent 文件散列未变；退出后 `desktop/state.json` 散列改变，不宣称该文件逐字节一致。用户已手动允许重签名触发的 macOS 桌面目录授权；健康接口正常，点击原生“重新打开”后进入工作空间，UI 与存储均确认 14 对话/1 项目/6 Agent，运行 home 保持原路径。
+- 本轮证据：`.tmp/logo-desktop-install-20261015/installation-verification.json` 与 `server-sample.txt`，Finder 实看在本线程工具回执。本轮电脑图标安装与启动验收完成；未覆盖安装手机，未跑产品全库 gate。下一步手机正常安装时验证相同母版图标。
