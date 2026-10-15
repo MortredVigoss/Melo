@@ -24,12 +24,15 @@ test('local delivery appends exactly once in the originating chat without any mo
   assert.equal(calls.length, 0);
 });
 
-test('Telegram reminders use the original remote chat and forum topic, not channel defaults', async () => {
-  const { delivery, calls } = fixture('telegram');
-  await delivery({ id: 'r1', chatId: 'origin', text: 'Coffee' });
-  assert.equal(calls[0][1], 'sendMessage');
-  assert.equal(calls[0][2].body.chat_id, '-100123');
-  assert.equal(calls[0][2].body.message_thread_id, 42);
+test('archived Telegram keeps the local reminder and permanently stops remote delivery', async () => {
+  const { delivery, calls, chat } = fixture('telegram');
+  let sends = 0;
+  await assert.rejects(delivery({ id: 'r1', chatId: 'origin', text: 'Coffee' }, {
+    beforeExternalSend: async () => { sends++; },
+  }), error => error.code === 'CHANNEL_ARCHIVED' && error.permanent === true);
+  assert.equal(calls.length, 0);
+  assert.equal(sends, 0);
+  assert.match(chat.messages[0].content, /Coffee/);
 });
 
 test('Discord reminders preserve the originating channel and cannot mass-mention users', async () => {
@@ -40,8 +43,8 @@ test('Discord reminders preserve the originating channel and cannot mass-mention
 });
 
 test('missing chats and disconnected channels fail instead of silently losing the reminder', async () => {
-  const { delivery, state } = fixture('telegram');
+  const { delivery, state } = fixture('discord');
   await assert.rejects(delivery({ id: 'r1', chatId: 'missing', text: 'Coffee' }), /no longer exists/);
-  state.agentProfiles.main.channels.telegram.enabled = false;
+  state.agentProfiles.main.channels.discord.enabled = false;
   await assert.rejects(delivery({ id: 'r1', chatId: 'origin', text: 'Coffee' }), /disconnected/);
 });

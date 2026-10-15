@@ -1,3 +1,4 @@
+import { assertAgentChannelAvailable } from '../../shared/channelAvailability.js';
 // ─── Telegram Bot API — HTTP layer ──────────────────────────────────────────
 // Thin wrappers around fetch() for the Telegram Bot API. No state here; these
 // functions all take a `channel` record (which must carry botToken) and talk
@@ -54,6 +55,7 @@ export async function telegramApiRequest(
   method,
   { searchParams = {}, body = null, timeoutMs = 15000, baseUrl } = {},
 ) {
+  assertAgentChannelAvailable('telegram');
   const url = buildTelegramMethodUrl(channel, method, searchParams, baseUrl);
   const response = await fetch(url, {
     method: body ? 'POST' : 'GET',
@@ -74,6 +76,7 @@ export async function telegramApiRequest(
 
 // Multipart FormData variant — used for file uploads (sendAudio, sendVoice).
 export async function telegramApiFormRequest(channel, method, formData, timeoutMs = 45000) {
+  assertAgentChannelAvailable('telegram');
   const url = buildTelegramMethodUrl(channel, method);
   const response = await fetch(url, {
     method: 'POST',
@@ -123,6 +126,7 @@ export async function convertToOggOpus(inputBuffer, inputMime) {
  * Converts TTS output to OGG/OPUS (required by Telegram) via ffmpeg.
  */
 export async function sendTelegramAudioReply(telegramChannel, incoming, audioBuffer, mimeType = 'audio/mpeg') {
+  assertAgentChannelAvailable('telegram');
   let oggBuffer;
   try {
     oggBuffer = await convertToOggOpus(audioBuffer, mimeType);

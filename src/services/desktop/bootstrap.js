@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import {projectText} from '../../domain/project/projectService.js';
 import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
 import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
@@ -115,8 +116,9 @@ function summarizeAgentProfile(profile) {
   const now = Date.now();
   const channels = Object.values(normalizeAgentChannels(profile.channels)).map(channel => ({
     ...channel,
+    archived: !isAgentChannelAvailable(channel.id),
     statusLabel:
-      channel.lastStatus === 'error'
+      !isAgentChannelAvailable(channel.id) ? 'Archived' : channel.lastStatus === 'error'
         ? 'Error'
         : channel.enabled &&
             channel.lastStatus === 'connected' &&
@@ -127,7 +129,7 @@ function summarizeAgentProfile(profile) {
             ? 'Connected'
             : 'Not checked',
     runtimeLabel:
-      channel.lastStatus === 'error'
+      !isAgentChannelAvailable(channel.id) ? 'Archived' : channel.lastStatus === 'error'
         ? 'Attention needed'
         : channel.enabled &&
             channel.lastStatus === 'connected' &&

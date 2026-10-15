@@ -1,4 +1,5 @@
 import { updateStateAtomically } from '../state/stateStore.js';
+import { assertAgentChannelAvailable } from '../shared/channelAvailability.js';
 import { telegramApiBase, telegramApiRequest } from '../services/remote/telegramApi.js';
 import { discordApiBase, discordApiRequest } from '../services/remote/discordApi.js';
 
@@ -28,6 +29,7 @@ export function createReminderDelivery({ home, update = updateStateAtomically,
     }, { home });
 
     if (!['telegram', 'discord'].includes(target.source)) return;
+    assertAgentChannelAvailable(target.source);
     if (!target.channel?.enabled || !target.channel?.botToken) throw new Error('Reminder channel is disconnected.');
     if (target.source === 'telegram') {
       const remoteId = target.parts[2];

@@ -153,7 +153,7 @@ test('summarizeAgentPrompt: falls back to `identify` when `identity` is missing'
   assert.match(out, /IDENTITY\.md:\nfallback identity/);
 });
 
-test('summarizeAgentPrompt: surfaces enabled telegram channel with chatId', () => {
+test('summarizeAgentPrompt: archived Telegram is absent even with a saved enabled flag', () => {
   const profile = {
     rolePrompt: 'r',
     identity: 'i',
@@ -166,7 +166,7 @@ test('summarizeAgentPrompt: surfaces enabled telegram channel with chatId', () =
     },
   };
   const out = summarizeAgentPrompt(profile);
-  assert.match(out, /Linked channels: Telegram\(bot linked, default chat CHAT123\)/);
+  assert.doesNotMatch(out, /Linked channels:|CHAT123/);
 });
 
 test('summarizeAgentPrompt: omits channels line when no channel is enabled', () => {

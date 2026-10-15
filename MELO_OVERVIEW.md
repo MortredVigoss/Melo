@@ -34,6 +34,8 @@
 
 保留模块化单体。桌面/CLI/远程渠道共用 Node 业务核心；iPhone 有独立 Swift 聊天与模型通道，通过共享同步协议交换工作区数据。网站和基准工具独立于产品运行时。
 
+Telegram 于 2026-10-16 按用户决定暂时归档：关闭设置入口、轮询和外发，原有配置与历史对话保留；Discord 继续使用。政策入口 `src/shared/channelAvailability.js`，行为、恢复条件与验证见 [Telegram 归档](docs/telegram-archive-20261016.md)。
+
 ```text
 桌面 Swift 壳 → desktop-ui → HTTP / SSE ┐
 CLI / 远程消息渠道 ─────────────────────┤
@@ -328,3 +330,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 实际入口 `desktop-ui/app.js` / `agentSettings.css`、`agentMutations.js`、双端 Agent prompt；存量 mood 字段保留兼容、停止注入，不改用户人设和账号数据。功能与范围见 [Agent 设置交接](docs/agent-settings-20261016.md)。
 - 已修复渠道切换后另一侧草稿未提交；全局新建、双击防重、失败重试、权限保留、五语及三种宽度验收通过。共享日常 GREEN：3573 JS、845 语法、两组浏览器、23 Swift，175.9 秒；日志/截图 `.tmp/agent-settings-20261015/`。
 - 实际桌面重启 PID 61208，新入口及清理后的 UI 已原生核对；14 聊天/6 Agent/1 项目保留，42 个配置/正文文件散列不变，主状态只发生设置/修订/频道绑定变化。独立暂存树补验 27 JS / 21 Swift 通过，源码本地提交 `dc67fa0`，未推送；未重新安装手机，未做真实远端模型或渠道调用。
+
+### 2026-10-16 — melo主线 — Telegram 归档实施
+- 用户决定暂时归档 Telegram；按 [实施记录](docs/telegram-archive-20261016.md) 停用轮询、连接测试、外发、提醒重试及设置入口，保留配置/历史/源实现。Discord 和共用语音设置仍可用。
+- 在 `codex/telegram-archive-20261016` 实施，已合入统一 Agent 设置提交 `7bb8180`，保留他线程 WIP。后端专项 13 项、真实 HTTP 与浏览器归档验收通过；日志 `/tmp/melo-telegram-archive-focused2.log`、`/tmp/melo-telegram-archive-browser3.log`。
+- 源码已整合共享树，日常 GREEN：3575 JS、848 文件语法、两组浏览器、23 Swift，168.4 秒；日志 `/tmp/melo-telegram-archive-daily2.log`。首次回归暴露旧 Telegram prompt 断言及新增语言资源未生成，均已修正。未运行 git pp 或推送。
+- 实际应用已重启，健康接口 PID 87776、原生首页正常；6 个 Agent 均显示频道归档，无 Telegram 轮询锁。清理了已退出 PID 61208 留下的旧锁。14 聊天 / 6 Agent / 26 成果 / 1 项目保留，42 个配置与正文文件散列一致，频道配置一致；证据 `.tmp/telegram-archive-20261016/runtime/{before,after}.json`。本轮不重新安装手机、不测试真实 Bot 外发。
