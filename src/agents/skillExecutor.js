@@ -1,4 +1,6 @@
-import { filterToolsByCapabilities, hasCapability } from '../domain/agent/capabilities.js';
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
+import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import { delegatedConfig } from './delegatedConfig.js';
 /**
  * Skill executor.
@@ -127,7 +129,16 @@ function buildSkillSystemPrompt(skill, allowedTools, options = {}) {
  * @param {Function} [options.replyFn]           - test-only injection seam for the LLM reply function
  * @returns {Promise<{ ok: boolean, output: string, error?: string, meta?: Object }>}
  */
-export async function runSkill({
+export async function runSkill(options) {
+  if (!options.skill || options.skill.type!=='executable' || !options.config) return runSkillLoop(options);
+  const parent=await resolveCapabilityContext(currentRequestContext());
+  if (!parent) return missingCapabilityScope();
+  const ids=resolveSkillTools(options.skill,options.allowedToolIds).map(tool=>tool.id);
+  const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:ids,source:'skill'});
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSkillLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+}
+
+async function runSkillLoop({
   skill,
   args = {},
   task = '',
@@ -181,7 +192,7 @@ export async function runSkill({
   }
 
   const providerConfig = delegatedConfig(config);
-  const allowedTools = filterToolsByCapabilities(resolveSkillTools(skill, allowedToolIds),capabilities);
+  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds),currentRequestContext().capabilityScope);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
   const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native });
@@ -231,8 +242,8 @@ export async function runSkill({
       model: providerConfig.model,
       systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: hasCapability(capabilities,'network'),
-      nativeImageGenerationEnabled: hasCapability(capabilities,'generateMedia'),
+      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
       signal,
     });
 

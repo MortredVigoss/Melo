@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runAgentTeam,validateTeamPlan } from './team.js';
+import {validateTeamPlan} from './team.js';
+import {runAgentTeam} from '../testSupport/directAgentFixture.js';
 import { summarizeUsage } from '../runtime/usage.js';
 test('bounded concurrency, isolated role failures and reported cost',async()=>{
   let running=0, peak=0;

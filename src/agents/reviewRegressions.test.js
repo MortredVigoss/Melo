@@ -7,9 +7,9 @@ import {emptyCapabilities,recommendedCapabilities,filterToolsByCapabilities} fro
 import {hydrateState} from '../state/stateHydration.js';
 import {readStateSnapshot} from '../state/stateStore.js';
 import {effectiveAgentProfile} from '../state/agentProfiles.js';
-import {runAgentTeam} from './team.js';
-import {runConfiguredMember} from './delegate.js';
-import {runSubAgent} from './subAgent.js';
+import {runAgentTeam} from '../testSupport/directAgentFixture.js';
+import {runConfiguredMember} from '../testSupport/directAgentFixture.js';
+import {runSubAgent} from '../testSupport/directAgentFixture.js';
 const member=id=>({id,name:id,capabilities:recommendedCapabilities(id)});
 test('fresh disk and empty manifest have recommended capabilities; real legacy records keep migration preview',async()=>{
  const home=await mkdtemp(join(tmpdir(),'melo-agent-fresh-'));

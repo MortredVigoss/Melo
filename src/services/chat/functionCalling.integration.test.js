@@ -107,3 +107,12 @@ test('manual chat team reaches real member HTTP requests with own models, person
  assert.equal(h.events.filter(e=>e.event.handoff).length,2);
  assert.match(result.normalizedReply.content,/result/);
 });
+
+
+test('disabled native capabilities are absent from the actual main-turn provider request body',async t=>{
+ const profiles={main:{id:'main',name:'Main',instructions:'parent',capabilities:emptyCapabilities()}};
+ const h=await harness(t,()=>done([message]),{profiles,text:'请联网搜索并核对本地文件中的结论'});
+ await h.run();assert.ok(h.requests.length>0);
+ for(const {body} of h.requests)assert.ok(!(body.tools||[]).some(tool=>['web_search','web_search_preview','image_generation'].includes(tool.type)));
+ assert.equal(h.executions.length,0);assert.equal(h.permissions.length,0);
+});

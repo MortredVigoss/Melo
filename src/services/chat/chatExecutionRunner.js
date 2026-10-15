@@ -1,5 +1,6 @@
+import {resolveCapabilityContext} from '../agent/capabilityContext.js';
+import {scopeAllowsTool,toolsForCapabilityScope,nativeFeaturesForScope,missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
 import {retrieveKnowledgeContext} from './knowledgeContext.js';
-import { filterToolsByCapabilities, hasCapability } from '../../domain/agent/capabilities.js';
 import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
 import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
@@ -151,6 +152,10 @@ export async function runChatAgentExecutionGraph({
   _dependencies = {},
 }) {
   context ||= createRequestContext({ home, chatId: chat.id, signal, config, workspacePath: workspace?.rootPath });
+  if (!context.capabilityScope) {
+    context=await resolveCapabilityContext(context,{state,chat,agentId});
+    if (!context) throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
+  }
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
   const env = context.env;
@@ -385,7 +390,7 @@ export async function runChatAgentExecutionGraph({
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = filterToolsByCapabilities([...routedTools, ...skillTools],activeAgentProfile.capabilities).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
+          promptTools = toolsForCapabilityScope([...routedTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
@@ -488,7 +493,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask || teamPlan) {
-          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:graphState.activeAgentProfile.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]))});
+          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]))});
           modelResponses.push(...team.results.flatMap(r=>r.receipts));
           return {reply:team.results.map(r=>`${r.role} · ${r.ok ? '已交付，待核对' : '需要修复'}\n${r.output}`).join('\n\n'),team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}`,toolName:`成员 ${r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
         }
@@ -514,7 +519,7 @@ export async function runChatAgentExecutionGraph({
           taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
           await onImageTaskResolved?.(task);
         }
-        if (task && task.action !== 'analyze' && !hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia')) return {reply:'此 Agent 未开启生成媒体能力。请在 Agent 设置中开启后重试。',next:'finalize'};
+        if (task && task.action !== 'analyze' && !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'})) return {reply:'此 Agent 未开启生成媒体能力。请在 Agent 设置中开启后重试。',next:'finalize'};
         if (task && task.action !== 'analyze') {
           const reply = await runImageTask({task,config,messages:graphState.modelMessages,attachments,workspace,signal,sseEmitter,onDelta,onImageProgress,selectedModel,home});
           return {reply,next:'finalize'};
@@ -531,7 +536,7 @@ export async function runChatAgentExecutionGraph({
         }
         const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
         const vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
-        const fastPathReply = task?.action === 'analyze' || !hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia') ? null : await tryImageEditFastPath({
+        const fastPathReply = task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
           config: { ...config, model:selectedModel },
           messages: graphState.modelMessages,
           workspace,
@@ -603,8 +608,8 @@ export async function runChatAgentExecutionGraph({
             //
             // Native provider features obey the Agent capability snapshot.
             workspacePath: workspace?.rootPath || null,
-            nativeWebSearchEnabled: hasCapability(graphState.activeAgentProfile.capabilities,'network') && graphState.searchPlan?.nativeWebSearchEnabled === true,
-            nativeImageGenerationEnabled: hasCapability(graphState.activeAgentProfile.capabilities,'generateMedia') && imageSettings(config).engine === 'codex-oauth',
+            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+            nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
@@ -678,7 +683,7 @@ export async function runChatAgentExecutionGraph({
               config: delegatedModelConfig,
               allowedToolIds: [...visibleToolIds],
               agentDepth: 0,
-              capabilities: graphState.activeAgentProfile.capabilities,
+              capabilities: context.capabilityScope.capabilities,
               extraTools: graphState.skillTools,
               collaboration: graphState.activeAgentProfile.collaboration,
               agentProfiles: Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),

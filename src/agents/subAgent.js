@@ -1,6 +1,8 @@
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
+import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import {estimateTextTokens} from '../memory/tokenEstimate.js';
 import {HANDOFF_INSTRUCTION} from './handoff.js';
-import { filterToolsByCapabilities, hasCapability } from '../domain/agent/capabilities.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
 /**
@@ -86,7 +88,15 @@ function cleanReplyForParent(rawReply) {
  * @param {Function} [options.replyFn]           - test-only injection seam for the LLM reply function
  * @returns {Promise<{ ok: boolean, output: string, meta?: Object }>}
  */
-export async function runSubAgent({
+export async function runSubAgent(options) {
+  if (!options.config || !options.task?.trim() || (options.depth || 0) > (options.agentProfile ? options.maxDepth ?? 1 : SUB_AGENT_MAX_DEPTH-1)) return runSubAgentLoop(options);
+  const parent=await resolveCapabilityContext(currentRequestContext());
+  if (!parent) return missingCapabilityScope();
+  const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSubAgentLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+}
+
+async function runSubAgentLoop({
   task,
   instructions = '',
   config,
@@ -123,7 +133,7 @@ export async function runSubAgent({
     return { ok: false, output: 'Sub-agent task cannot be empty.' };
   }
 
-  const allowedTools = filterToolsByCapabilities(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),capabilities).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
+  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
   const providerConfig = delegatedConfig(config);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
@@ -188,8 +198,8 @@ export async function runSubAgent({
       model: providerConfig.model,
       systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: hasCapability(capabilities,'network'),
-      nativeImageGenerationEnabled: hasCapability(capabilities,'generateMedia'),
+      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
       workspacePath,

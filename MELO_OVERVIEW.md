@@ -296,3 +296,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 修正范围及逐项依据见 [审查修正](docs/agent-review-fixes-20261015.md)：远端加权待桌面确认、全局权限上限、团队迁移预检、回复预算、只读知识检索、围栏解析及复核循环；保留用户拥有的内置人设。
 - 隔离实现 `51882bd` / `f4546c5` 已整合共享源码，保留其他线程顶栏删除、手机新增测试及生成资源。共享树 `npm test` GREEN：3554 JS、834 文件语法、两组浏览器、23 Swift / 共享渲染，181.3 秒；证据 `/tmp/melo-agent-audit-shared-daily.log`。
 - 本地修正提交 `4680530`；后端已重启到该版本（PID 71003），原生窗口正常、确认接口拒绝无来源请求。14 聊天 / 6 Agent / 26 成果 / 1 项目保留；42 个配置/正文/Agent 文件散列一致，主状态仅频道轮询时间及修订变化。证据 `.tmp/agent-review-fixes-20261015/runtime-restart/{before,after}.json`。本轮未做完整发布 gate、真机重新安装或真实模型协作。
+
+### 2026-10-15 — melo主线 — 架构加固 A 完成，B 继续
+- 用户已批准 `docs/arch-hardening-20261015.md`；实施在现有隔离树 `codex/arch-hardening-20261015`，共享运行源码尚未替换。
+- A 在 turnLedger 事务捕获冻结能力，执行器自行解析且仅允许收窄；委派/技能/团队与原生能力共用上下文，未知身份拒绝，旧版使用显式 legacy。
+- 新验收先红（3 失败 / 1 通过）后绿；69 项专项、11 项作用域/真实 HTTP 验收，日常 3553 JS / 21 Swift / 831 语法及浏览器通过（144.3 秒）。首次日常遇到旧 Markdown 测试固定事件循环等待的时序误报，改为等待现有完成 Promise 后全绿。日志 `/tmp/melo-hardening-a-{red2,acceptance,focused,daily2}.log`。
+- B 将按需创建聊天目录，旧程序目录需用户明确确认；不迁移真实数据，不运行 git pp 或推送。

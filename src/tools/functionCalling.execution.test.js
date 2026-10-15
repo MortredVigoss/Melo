@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { executeToolCalls } from './executor.js';
+import {executeToolCalls} from '../testSupport/directAgentFixture.js';
 import { compileFunctionTool } from './functionSchema.js';
 import { bootstrapBuiltinTools, getAllTools } from './registry.js';
 

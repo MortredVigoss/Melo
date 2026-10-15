@@ -22,7 +22,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { executeTool } from './executor.js';
+import {executeTool} from '../testSupport/directAgentFixture.js';
 
 // Minimal tool shape — `requiresPermission: false` skips the permission
 // gate so the test stays pure.  `isConcurrencySafe: true` is irrelevant

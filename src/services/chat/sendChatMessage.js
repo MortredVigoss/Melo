@@ -125,12 +125,13 @@ export function sendChatMessage(options) {
       const emit = (event, data) => options.sseEmitter?.(event, { ...identity, ...data });
       const executionRecorder = createExecutionRecorder(context, options.content, emit);
       try {
-        const result = await executeChatTurn({ ...options, home: context.home, context: Object.freeze({ ...context, turnBinding }), configPromise, executionRecorder,
+        const turnContext=Object.freeze({ ...context, turnBinding, capabilityScope:turnBinding.capabilityScope });
+        const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
             if (event === 'execution_event') executionRecorder.event(data);
             emit(event, data);
           },
-        });
+        }));
         return { ...result, requestId: context.requestId, runId: context.runId };
       } catch (error) {
         const status = context.signal?.aborted ? 'cancelled' : 'failed';

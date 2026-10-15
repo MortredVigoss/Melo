@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {runConfiguredMember,delegateTask} from './delegate.js';
-import {runAgentTeam,validateTeamPlan} from './team.js';
+import {delegateTask} from './delegate.js';
+import {runConfiguredMember} from '../testSupport/directAgentFixture.js';
+import {validateTeamPlan} from './team.js';
+import {runAgentTeam} from '../testSupport/directAgentFixture.js';
 import {emptyCapabilities,normalizeCapabilities} from '../domain/agent/capabilities.js';
-import {runSubAgent} from './subAgent.js';
+import {runSubAgent} from '../testSupport/directAgentFixture.js';
 const caps=normalizeCapabilities({readFiles:true,writeFiles:true,runCommands:true,delegate:true});
 const profile=(id,extra={})=>({id,name:id,instructions:`Identity of ${id}`,model:`model-${id}`,capabilities:caps,collaboration:{maxTokens:32000,...extra}});
 
@@ -46,7 +48,7 @@ test('token budget prevents a provider request when required context is already 
 
 test('a cancelled executor keeps its workspace writer lease until the real tool settles',async()=>{
  const {withWorkspaceWriter}=await import('./workspaceScheduling.js');
- const {executeTool}=await import('../tools/executor.js');
+ const {executeTool}=await import('../testSupport/directAgentFixture.js');
  const controller=new AbortController();let release,started,second=false;
  const ready=new Promise(resolve=>{started=resolve;});
  const work=new Promise(resolve=>{release=resolve;});

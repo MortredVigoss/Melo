@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bashTool } from './builtins/bashTool.js';
-import { executeToolCalls } from './executor.js';
+import {executeToolCalls} from '../testSupport/directAgentFixture.js';
 import { resolveFileSafety } from '../safety/fileSafetyGate.js';
 import { createExecutionRecorder, readExecutionScene } from '../services/chat/executionScenes.js';
 
