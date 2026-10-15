@@ -113,7 +113,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 已替换双端资源并安装电脑 | 原程序字节保留，Finder 图标、原生启动与资料验证通过；[本轮图标证据](docs/design/logo-muted-20261016/README.md)，[历史神经 UI](docs/handoffs/melo-ui-20261015.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
-| melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 权限与文件访问、目录书签、预览、确认导入文本/PDF；10-15 按用户澄清复核当前接入 | WIP；当前 21 组 Swift / 共享渲染与模拟器编译通过；`docs/ios-permissions-files-20261014.md`；实体文件授权待验 |
+| melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
 | melo网站 | `019dce6e-faae-7850-a8bb-db48b737b928` | 2026-10-15 核对神经网络四区、外放标签和连续镜头源码/快照差异；首页有界轴向转动，非各层无限自转 | 独立本地 WIP，无 Git 元数据/可核实提交；历史 13 单元/22 浏览器未重跑；本轮静态核对旧站 9/9 散列与桌面副本一致；详见[网站交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>)，Safari/用户验收/发布待验 |
 | Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF |
@@ -173,7 +173,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
 | melo ui | [神经场景交接](docs/handoffs/melo-ui-20261015.md)、[原始回执](docs/handoffs/melo-thread-backfill-20261015.md#ui)、[B 图标落地](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | [派发、历史测试与 Library 截图](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
-| melo iphone | [文件权限接入与本次复核](docs/handoffs/melo-thread-backfill-20261015.md#iphone) |
+| melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | [统计口径、评估协议与桌宠](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
 | melo网站 | [原型与版本边界](docs/handoffs/melo-thread-backfill-20261015.md#website)、[项目专项交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>) |
 | Benchmark Melo on a major platform | [历史跑分边界](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)、[项目专项交接](</Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/HANDOFF-20261015.md>) |
@@ -339,3 +339,17 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 在 `codex/telegram-archive-20261016` 实施，已合入统一 Agent 设置提交 `7bb8180`，保留他线程 WIP。后端专项 13 项、真实 HTTP 与浏览器归档验收通过；日志 `/tmp/melo-telegram-archive-focused2.log`、`/tmp/melo-telegram-archive-browser3.log`。
 - 源码已整合共享树，日常 GREEN：3575 JS、848 文件语法、两组浏览器、23 Swift，168.4 秒；日志 `/tmp/melo-telegram-archive-daily2.log`。首次回归暴露旧 Telegram prompt 断言及新增语言资源未生成，均已修正。未运行 git pp 或推送。
 - 实际应用已重启，健康接口 PID 87776、原生首页正常；6 个 Agent 均显示频道归档，无 Telegram 轮询锁。清理了已退出 PID 61208 留下的旧锁。14 聊天 / 6 Agent / 26 成果 / 1 项目保留，42 个配置与正文文件散列一致，频道配置一致；证据 `.tmp/telegram-archive-20261016/runtime/{before,after}.json`。本轮不重新安装手机、不测试真实 Bot 外发。
+
+### 2026-10-16 — melo iphone — 对齐计划与基线
+- 已核对主线/设计/UI 实际 diff，基线 `.tmp/ios-align-install-20261016/`；计划见 [本轮对齐](docs/ios-align-install-20261016.md)。发现手机 Mood 控件、项目默认占位提示及创建校验需补齐；其余主线执行器加固为桌面职责。
+- UI 总览的“仍为设计稿”已过期：定向读最新 melo ui 回执确认用户已要求替换，当前正式资源为低饱和黑金 M；本轮手机一起带入。尚未测试/构建/覆盖安装。
+
+### 2026-10-16 — melo iphone — 原生差距修正与构建
+- 已补 Agent 首屏新建、去除旧语气 UI/冲突摘要、项目显式归属验证与旧占位隐藏；实际文件及测试见 [本轮记录](docs/ios-align-install-20261016.md)。共享 WIP 保留。
+- Debug/签名 Release 初版通过，模拟器 Agent 编辑/保存已查看，私有备份完成；当前整库日常有桌面超时，定向排查中，尚未覆盖手机。真实模型/远端能力服务/长后台仍独立待验。
+
+### 2026-10-16 — melo iphone — 0.5.19 (25) 覆盖完成
+- Agent/项目/图标对齐独立提交 `5c975aa`，共享 WIP 保留；功能、实际文件和边界见 [安装回执](docs/ios-align-install-20261016.md)。按本次当前源码构建，不以历史测试代替验收。
+- 日常最终 GREEN：3575 JS、848 语法、两组浏览器、23 Swift；90 项专项与模拟器实际交互/神经首页/任务空间通过。前两轮计时失败已定向和完整复跑通过，原日志保留，无放宽阈值。
+- Mortred (3) 已覆盖 0.5.19 (25)、启动 PID 27434；9 聊天/5 Agent/3 图片及配置保留，草稿/执行记录 JSON 相同。实体 UI 查看时用户已在其他 App，未再次打断，未称实体画面验收。
+- 本机基线 `.tmp/ios-align-install-20261016/after`；IPA 与 build.json 在 `ios/dist`。真实模型、远端能力服务、实体权限和长后台仍待专项；桌面执行工具/协作并未移植到手机。
