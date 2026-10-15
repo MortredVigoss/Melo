@@ -20,6 +20,7 @@
 // the empty-map case must run so the reconciler can reap whatever's
 // still active in `_clients`.
 
+import { requestEnvironment } from '../runtime/requestScope.js';
 import { getResolvedConfig as defaultGetConfig } from '../config.js';
 import { bootstrapMcpServers as defaultBootstrap } from './manager.js';
 
@@ -49,6 +50,9 @@ export function buildMcpFlags(config = {}) {
  *   error short-circuits the run; the error is logged but never thrown).
  */
 export async function initMcpServers(opts = {}) {
+  // Disposable test servers must not download/start third-party npm packages.
+  // Injected bootstraps still exercise configuration and lifecycle contracts.
+  if (requestEnvironment().MELO_TEST_MODE === '1' && typeof opts.bootstrap !== 'function') return {};
   const getConfig = typeof opts.getConfig === 'function' ? opts.getConfig : defaultGetConfig;
   const bootstrap = typeof opts.bootstrap === 'function' ? opts.bootstrap : defaultBootstrap;
   const log = typeof opts.log === 'function' ? opts.log : msg => {

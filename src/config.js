@@ -64,43 +64,16 @@ export const DEFAULT_CONFIG = Object.freeze({
   lastFmApiKey: '',    // https://www.last.fm/api/account/create
   tavilyApiKey: '',    // https://tavily.com (web search)
   serpApiKey: '',      // https://serpapi.com (web search)
-  // Browser MCP flags — set to true to auto-launch browser automation servers
-  enablePlaywrightMcp:  false,  // @playwright/mcp (brew install playwright required)
-  enableBrowserlessMcp: false,  // @browserless/mcp (cloud browser, needs BROWSERLESS_TOKEN)
-  // Productivity MCP flags — chart generation + document conversion.
-  // ALL THREE default to false (Codex C 2026-04-29 二轮 audit):
-  // even though the per-agent whitelist gates tool *call*, it does
-  // NOT gate the npm download / install scripts / server startup
-  // code that run as soon as `initMcpServers` spawns these stdio
-  // children. Default-true would mean every fresh install executes
-  // three external npm packages with zero user click, opening a
-  // supply-chain attack surface that no in-melo gate can close.
-  //
-  // The product still recommends turning these on — that lives in
-  // the first-boot consent modal (see `productivityMcpsConsented`
-  // below) which lists the exact pinned versions and lets the user
-  // either accept all three or skip with one click. Once accepted,
-  // they ride through every later boot without a prompt.
-  //
-  // 4-layer security model (see docs/MCP-SECURITY.md):
-  //   1. installed (npx can pull the package)
-  //   2. globally enabled (this flag) — first-boot consent modal sets it
-  //   3. agent authorised (agent.enabledMcpServerIds, deny-all default)
-  //   4. per-call approval (tools/permissions.js modal)
-  //
-  // Browser MCPs (playwright/browserless) stay default-off too —
-  // they ship browser automation that can read any URL (file://,
-  // intranet) and need a different consent surface than the chart
-  // / markdown ones bundled into the consent modal.
-  enableAntvChartMcp:    false, // @antv/mcp-server-chart (25+ chart types)
-  enableMarkdown2PdfMcp: false, // @99xio/markdown2pdf-mcp (md → PDF, local — does NOT render mermaid blocks)
-  enableMermaidMcp:      false, // mcp-mermaid (hustcc / antv-team author, mermaid-isomorphic + playwright)
-  // First-boot consent gate for the three productivity MCPs above.
-  // Stays false until the user dismisses the consent modal in either
-  // direction (Enable all / Skip). Once true, the modal is never
-  // shown again on this MELO_HOME. Toggling the underlying flags
-  // afterwards happens through Customize → Advanced as usual.
-  productivityMcpsConsented: false,
+  // Built-in no-fee MCPs start automatically (user policy, 2026-10-15).
+  // Exact package versions remain pinned by mcp/manager.js. Enabling a
+  // server does not grant an agent access or bypass per-call permissions.
+  enablePlaywrightMcp:   true,  // local browser automation
+  enableBrowserlessMcp: false,  // cloud service; never enabled by this default
+  enableAntvChartMcp:    true,  // AntV's free rendering endpoint
+  enableMarkdown2PdfMcp: true,  // local Markdown → PDF
+  enableMermaidMcp:      true,  // local Mermaid → PNG
+  // Compatibility marker for old clients. No startup consent dialog remains.
+  productivityMcpsConsented: true,
   // Extra web-search triggers (additive to built-in heuristics). Each item:
   //   { pattern: "regex source", flags?: "iu", weight: 2 }
   // Example:
@@ -252,6 +225,19 @@ function normalizeWebSearchTriggers(raw) {
     .filter(Boolean);
 }
 
+// Only the old unanswered productivity prompt is migrated. Completed choices,
+// later manual disables, browser choices and custom server configs are preserved.
+function normalizeMcpStartup(config) {
+  return {
+    ...(config.productivityMcpsConsented === false ? {
+      enableAntvChartMcp: true,
+      enableMarkdown2PdfMcp: true,
+      enableMermaidMcp: true,
+    } : {}),
+    productivityMcpsConsented: true,
+  };
+}
+
 function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) {
   const authMode = normalizeAuthMode(config.authMode || DEFAULT_CONFIG.authMode);
   const modelCatalogs = normalizeModelCatalogs(config?.modelCatalogs);
@@ -278,6 +264,7 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
   return {
     ...DEFAULT_CONFIG,
     ...config,
+    ...normalizeMcpStartup(config),
     authMode,
     baseUrl: String(config.baseUrl || DEFAULT_CONFIG.baseUrl).trim(),
     model: resolvedModel,

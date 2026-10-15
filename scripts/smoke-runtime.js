@@ -48,9 +48,7 @@ try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseUrl);
-  if (!createdAgent.settings.config?.productivityMcpsConsented) {
-    await page.getByRole('button', { name: '暂不启用', exact: true }).click();
-  }
+  assert.equal(await page.getByRole('dialog', { name: 'Productivity MCP consent' }).count(), 0);
   const form = page.locator(`form[data-form="agent-profile-update"][data-agent-id="${agentId}"]`);
   assert.equal(await form.locator('[name="minimaxVoiceId"]').isDisabled(),true,'Role settings start read-only');
   await form.locator('[data-action="form-settings-edit"]').click();
