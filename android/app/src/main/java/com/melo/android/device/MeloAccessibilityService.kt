@@ -47,8 +47,10 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private var imageWidth = 0
     private var imageHeight = 0
     private val nodes = mutableMapOf<String, AccessibilityNodeInfo>()
+    private val targets = mutableMapOf<String, DeviceTarget>()
     private var overlay: Button? = null
     private var overlayManager: WindowManager? = null
+    private var confirmationButton: Button? = null
     private var sessionApps: AppCatalog? = null
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -97,10 +99,11 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     override fun end() {
         authorized = false; sessionApps = null; invalidateObservation()
+        confirmationButton?.let { runCatching { overlayManager?.removeView(it) } }; confirmationButton = null
         overlay?.let { runCatching { overlayManager?.removeView(it) } }; overlay = null; overlayManager = null
     }
     private fun invalidateObservation() {
-        screenId = ""; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear()
+        screenId = ""; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
     }
     private fun checkSession() {
         check(authorized) { "手机助手尚未开始，或已停止。" }
@@ -114,18 +117,56 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             ?: error("无法读取此 Display 的窗口，请让目标 App 保持可见。")
     }
     private fun requireFresh(arguments: JsonObject, contentSensitive: Boolean = true) {
-        require(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000) { "屏幕已变化或 observation 已过期，请重新 observe。" }
+        if (!(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000)) throw DeviceExecutionException("stale_screen", "屏幕已变化或 observation 已过期，请重新 observe。")
         val current = activeWindow(); val currentBounds = Rect().also(current::getBoundsInScreen)
-        require(current.id == windowId && currentBounds == bounds) { "窗口或尺寸已改变，请重新 observe。" }
+        if (current.id != windowId || currentBounds != bounds) throw DeviceExecutionException("stale_screen", "窗口或尺寸已改变，请重新 observe。")
+    }
+    private fun target(node: AccessibilityNodeInfo): DeviceTarget {
+        val rect = Rect().also(node::getBoundsInScreen)
+        return DeviceTarget(node.windowId, node.viewIdResourceName.orEmpty(), node.className?.toString().orEmpty(), node.text?.toString().orEmpty(), node.contentDescription?.toString().orEmpty(),
+            listOf(rect.left, rect.top, rect.right, rect.bottom), node.isClickable, node.isEditable, node.isEnabled, node.isVisibleToUser, node.isPassword)
+    }
+    private fun freshNode(arguments: JsonObject): AccessibilityNodeInfo {
+        val id = arguments.text("node_id")
+        val node = nodes[id] ?: throw DeviceExecutionException("stale_target", "节点不存在，请重新 observe。")
+        if (!node.refresh() || !DeviceTargetPolicy.unchanged(targets[id], target(node))) throw DeviceExecutionException("stale_target", "目标节点已改变，请重新观察并定位；不会点击替代节点。")
+        return node
+    }
+    private suspend fun confirm(arguments: JsonObject, node: AccessibilityNodeInfo?): Boolean {
+        if (!DeviceTargetPolicy.needsConfirmation(arguments.text("action"), node?.let(::target))) return true
+        val agent = (application as MeloApplication).deviceAgent
+        val label = node?.let { it.text?.toString()?.takeIf(String::isNotBlank) ?: it.contentDescription?.toString()?.takeIf(String::isNotBlank) ?: it.viewIdResourceName.orEmpty() }
+            ?.filterNot(Char::isISOControl)?.take(60)
+        val actionDescription = if (node == null) "点击坐标 (${arguments.text("x")}, ${arguments.text("y")}) / ${imageWidth}×${imageHeight}"
+            else "点击「${label.orEmpty()}」"
+        return coroutineScope {
+            val reply = async(start = CoroutineStart.UNDISPATCHED) { agent.requestApproval(actionDescription) }
+            val pending = agent.runtime.value.approval ?: error("确认请求无法创建。")
+            val button = Button(overlay!!.context).apply {
+                text = "允许本步${pending.action}"; isAllCaps = false; maxLines = 2
+                setOnClickListener { agent.confirmApproval(pending.id, true) }
+            }
+            val manager = overlayManager!!
+            confirmationButton = button
+            try {
+                manager.addView(button, WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT).apply {
+                    gravity = Gravity.TOP or Gravity.END; x = 8; y = (140 * resources.displayMetrics.density).toInt(); title = "Melo action confirmation"
+                })
+                reply.await()
+            } finally { runCatching { manager.removeView(button) }; if (confirmationButton === button) confirmationButton = null; reply.cancel() }
+        }
     }
     override suspend fun execute(arguments: JsonObject): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
         try {
             checkSession(); DeviceTools.validate(arguments)
             val action = arguments.text("action")
+            require(action != "finish") { "finish 由任务循环校验，不能直接操作设备。" }
             if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", 100)))
             // Home never targets content. Melo's own progress updates must not
             // prevent leaving its window; keep screen identity/age/window checks.
-            if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive = action != "home")
+            val contentSensitive = action == "swipe" || action == "tap" && arguments.text("node_id").isBlank()
+            if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive)
             when (action) {
                 "open_app" -> {
                     val apps = catalog()
@@ -138,22 +179,29 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 "tap" -> {
                     val nodeId = arguments.text("node_id")
                     if (nodeId.isNotBlank()) {
-                        val node = nodes[nodeId] ?: error("节点不存在，请重新 observe。")
-                        require(node.refresh() && node.windowId == windowId && node.isVisibleToUser && node.isEnabled && !node.isPassword) { "节点已改变、被隐藏或受保护，请重新 observe。" }
+                        var node = freshNode(arguments)
+                        if (!confirm(arguments, node)) return@withContext DeviceToolResult.error("本步操作未获允许，已停止。", "user_declined")
+                        checkSession(); requireFresh(arguments, false); node = freshNode(arguments)
                         if (!node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                             val rect = Rect().also(node::getBoundsInScreen)
-                            require(rect.intersect(bounds)) { "节点不在当前窗口内。" }; gesture(rect.exactCenterX(), rect.exactCenterY())
+                            require(rect.intersect(bounds)) { "节点不在当前窗口内。" }; gesture(rect.exactCenterX(), rect.exactCenterY(), verify = { checkSession(); requireFresh(arguments, false); freshNode(arguments) })
                         }
-                    } else { val (x, y) = point(arguments, "x", "y"); gesture(x, y) }
+                    } else {
+                        // Validate coordinates before asking; approval never bypasses freshness.
+                        point(arguments, "x", "y")
+                        if (!confirm(arguments, null)) return@withContext DeviceToolResult.error("本步操作未获允许，已停止。", "user_declined")
+                        checkSession(); requireFresh(arguments)
+                        val (x, y) = point(arguments, "x", "y"); gesture(x, y, verify = { checkSession(); requireFresh(arguments) })
+                    }
                 }
                 "type_text" -> {
-                    val node = nodes[arguments.text("node_id")] ?: error("输入节点不存在，请重新 observe。")
-                    require(node.refresh() && node.windowId == windowId && node.isEditable && node.isVisibleToUser && node.isEnabled && !node.isPassword) { "该节点不可编辑或是密码字段。" }
+                    val node = freshNode(arguments)
+                    require(node.isEditable) { "该节点不可编辑。" }
                     require(node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, arguments.text("text")) })) { "此 App 不支持节点输入。" }
                 }
                 "swipe" -> {
                     val start = point(arguments, "x", "y"); val end = point(arguments, "end_x", "end_y")
-                    gesture(start.first, start.second, end.first, end.second, number(arguments, "duration_ms", 400).coerceIn(100, 1500).toLong())
+                    gesture(start.first, start.second, end.first, end.second, number(arguments, "duration_ms", 400).coerceIn(100, 1500).toLong(), verify = { checkSession(); requireFresh(arguments) })
                 }
                 "back", "home" -> {
                     require(selectedDisplay == android.view.Display.DEFAULT_DISPLAY) { "系统 back/home 仅支持主 Display；虚拟 Display 请使用页面节点。" }
@@ -165,6 +213,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             val observation = observe()
             DeviceToolResult(JsonObject(observation.data + ("ok" to JsonPrimitive(true)) + ("action" to action.jp())), observation.jpeg)
         } catch (e: CancellationException) { throw e }
+        catch (e: DeviceExecutionException) { DeviceToolResult.error(e.message.orEmpty(), e.code) }
         catch (e: Exception) { DeviceToolResult.error(e.message ?: "设备操作失败。") }
     }
     private fun catalog(): AppCatalog = sessionApps ?: AppCatalog(packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
@@ -176,14 +225,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         require(px in 0 until imageWidth && py in 0 until imageHeight) { "坐标超出最近 screenshot 的范围。" }
         return (bounds.left + px.toFloat() * bounds.width() / imageWidth) to (bounds.top + py.toFloat() * bounds.height() / imageHeight)
     }
-    private suspend fun gesture(x: Float, y: Float, endX: Float = x, endY: Float = y, duration: Long = 60) {
+    private suspend fun gesture(x: Float, y: Float, endX: Float = x, endY: Float = y, duration: Long = 60, verify: () -> Unit) {
         val path = Path().apply { moveTo(x, y); lineTo(endX, endY) }
         val builder = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration))
         if (Build.VERSION.SDK_INT >= 30) builder.setDisplayId(selectedDisplay)
         // The window screenshot excludes our overlay; let injected coordinates reach
         // the underlying app even when its target is underneath the stop button.
         overlay?.visibility = View.INVISIBLE
-        val success = try { delay(80); currentCoroutineContext().ensureActive(); suspendCancellableCoroutine { continuation ->
+        val success = try { delay(80); currentCoroutineContext().ensureActive(); verify(); suspendCancellableCoroutine { continuation ->
             val accepted = dispatchGesture(builder.build(), object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) { if (continuation.isActive) continuation.resume(true) }
                 override fun onCancelled(gestureDescription: GestureDescription?) { if (continuation.isActive) continuation.resume(false) }
@@ -193,13 +242,17 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         check(success) { "手势被取消或系统拒绝。" }
     }
     private suspend fun observe(): DeviceObservation {
-        checkSession(); delay(250); checkSession(); invalidateObservation()
+        checkSession()
+        // Bounded quiet wait: animated pages remain usable through node validation.
+        for (attempt in 0 until 5) { val before = generation; delay(120); if (generation == before) break }
+        checkSession(); invalidateObservation()
         val window = activeWindow(); val root = window.root ?: error("窗口内容不可读。")
         windowId = window.id; bounds = Rect().also(window::getBoundsInScreen)
         require(bounds.width() > 0 && bounds.height() > 0) { "窗口没有可见内容。" }
         val scale = minOf(1f, 1280f / maxOf(bounds.width(), bounds.height()))
         imageWidth = (bounds.width() * scale).toInt().coerceAtLeast(1); imageHeight = (bounds.height() * scale).toInt().coerceAtLeast(1)
         var visited = 0
+        val before = generation
         val entries = buildJsonArray {
             fun visit(node: AccessibilityNodeInfo, depth: Int) {
                 if (++visited > 1000 || nodes.size >= 160 || depth > 24 || !node.isVisibleToUser || node.isPassword) return
@@ -208,7 +261,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 val label = node.text?.toString().orEmpty().take(300)
                 val description = node.contentDescription?.toString().orEmpty().take(200)
                 if (label.isNotBlank() || description.isNotBlank() || node.isClickable || node.isEditable || node.isScrollable) {
-                    val id = "n${nodes.size + 1}"; nodes[id] = AccessibilityNodeInfo.obtain(node)
+                    val id = "n${nodes.size + 1}"; nodes[id] = AccessibilityNodeInfo.obtain(node); targets[id] = target(node)
                     add(buildJsonObject {
                         put("node_id", id); put("text", label); put("description", description); put("view_id", node.viewIdResourceName.orEmpty().take(200))
                         put("clickable", node.isClickable); put("editable", node.isEditable); put("scrollable", node.isScrollable); put("enabled", node.isEnabled)
@@ -222,7 +275,6 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             }
             visit(root, 0)
         }
-        val before = generation
         var screenshotError: String? = null
         val jpeg = if (screenshots) try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (e: Exception) { screenshotError = e.message ?: "截图不可用。"; null } else null
         screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime()
@@ -230,6 +282,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             put("screen_id", screenId); put("display_id", selectedDisplay); put("window_id", windowId); put("package_name", root.packageName?.toString().orEmpty())
             put("image_width", imageWidth); put("image_height", imageHeight); put("nodes", entries)
             put("screenshot_available", jpeg != null); screenshotError?.let { put("screenshot_error", it) }
+            put("stable", generation == before)
             put("coordinate_space", "window screenshot pixels; top-left=(0,0)")
         }, jpeg)
     }
@@ -261,3 +314,5 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         } } finally { bitmap.recycle() }
     }
 }
+
+private class DeviceExecutionException(val code: String, message: String) : IllegalStateException(message)

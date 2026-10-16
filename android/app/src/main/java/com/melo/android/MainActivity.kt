@@ -35,7 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.melo.android.chat.*
 import com.melo.android.data.*
-import com.melo.android.device.DeviceAgentScreen
+import com.melo.android.device.*
 import com.melo.android.ui.*
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
@@ -55,11 +55,14 @@ class MeloViewModel(application: Application) : AndroidViewModel(application) {
 private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device }
 private data class NavItem(val page: Page, val label: String, val icon: ImageVector)
 private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
+private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MeloApp(vm: MeloViewModel = viewModel()) {
     val data by vm.repository.data.collectAsStateWithLifecycle()
     val runtime by vm.engine.runtime.collectAsStateWithLifecycle()
+    val deviceAgent = (LocalContext.current.applicationContext as MeloApplication).deviceAgent
+    val deviceRuntime by deviceAgent.runtime.collectAsStateWithLifecycle()
     var pageName by rememberSaveable { mutableStateOf(Page.Home.name) }
     val page = Page.valueOf(pageName)
     var chatId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -112,6 +115,8 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
                     Page.Tasks -> TasksScreen(data, vm, onChat = { chatId = it; pageName = Page.Chats.name }, onExecution = { executionChat = it })
                 }
                 runtime.error?.let { message -> AlertDialog(onDismissRequest = vm.engine::dismissError, title = { Text("未完成") }, text = { Text(message) }, confirmButton = { TextButton(onClick = vm.engine::dismissError) { Text("知道了") } }) }
+                deviceRuntime.error?.let { message -> AlertDialog(onDismissRequest = deviceAgent::dismissError, title = { Text("手机助手未完成") }, text = { Text(message) }, confirmButton = { TextButton(onClick = deviceAgent::dismissError) { Text("知道了") } }) }
+                deviceRuntime.approval?.let { pending -> AlertDialog(onDismissRequest = { deviceAgent.confirmApproval(pending.id, false) }, title = { Text("确认本步${pending.action}") }, text = { Text("请核对当前屏幕和你的目标。允许只用于这一步；屏幕或目标改变后需要重新观察。也可在目标 App 上使用 Melo 悬浮按钮确认。") }, confirmButton = { TextButton(onClick = { deviceAgent.confirmApproval(pending.id, true) }) { Text("允许本步") } }, dismissButton = { TextButton(onClick = { deviceAgent.confirmApproval(pending.id, false) }) { Text("拒绝并停止") } }) }
             }
             }
         }
@@ -157,7 +162,18 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
     var options by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
-    val busy = runtime.busyChatId == chat.id
+    val turn = runtime.turns[chat.id]
+    val deviceAgent = (context.applicationContext as MeloApplication).deviceAgent
+    val deviceRuntime by deviceAgent.runtime.collectAsStateWithLifecycle()
+    val deviceRuns = data.deviceRuns.filter { it.taskContext?.chatId == chat.id }
+    val timeline = remember(chat.messages, deviceRuns) {
+        (chat.messages.map { ChatTimelineItem("message-${it.id}", it.createdAt, message = it) } + deviceRuns.map { ChatTimelineItem("device-${it.id}", it.startedAt, device = it) })
+            .sortedBy { runCatching { java.time.Instant.parse(it.at).toEpochMilli() }.getOrDefault(0L) }
+    }
+    val deviceBusy = deviceRuntime.running && deviceRuntime.chatId == chat.id
+    val busy = turn != null || deviceBusy
+    var deviceMode by rememberSaveable(chat.id) { mutableStateOf(false) }
+    var screenshots by rememberSaveable(chat.id) { mutableStateOf(true) }
     val list = rememberLazyListState()
     var speech by remember { mutableStateOf<TextToSpeech?>(null) }
     DisposableEffect(context) { val instance = TextToSpeech(context) { }; speech = instance; onDispose { instance.stop(); instance.shutdown() } }
@@ -166,8 +182,9 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
     }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris -> vm.engine.work { images = (images + uris.map { vm.repository.importImage(it) }).take(4) } }
     LaunchedEffect(chat.id, draft) { delay(350); vm.engine.work { vm.repository.draft(chat.id, draft) } }
-    LaunchedEffect(runtime.runId) { if (runtime.busyChatId == chat.id) { draft = ""; images = emptyList(); focus.clearFocus() } }
-    LaunchedEffect(chat.messages.size, runtime.partial.length) { if (list.layoutInfo.totalItemsCount > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1) }
+    LaunchedEffect(turn?.runId) { if (turn?.runId != null) { draft = ""; images = emptyList(); focus.clearFocus() } }
+    LaunchedEffect(deviceRuntime.runId) { if (deviceBusy && deviceRuntime.runId != null) { draft = ""; focus.clearFocus() } }
+    LaunchedEffect(chat.messages.size, turn?.partial?.length, deviceRuns.lastOrNull()?.steps?.size) { if (list.layoutInfo.totalItemsCount > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             val agent = data.agents.find { it.id == chat.agentId }
@@ -176,8 +193,12 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
             IconButton(onClick = { options = true }, enabled = !busy) { Icon(Icons.Outlined.Tune, "对话设置") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
-            if (chat.messages.isEmpty()) item { EmptyPage("开始这段对话", "消息与草稿保存在这台设备；模型服务需要网络。") }
-            items(chat.messages, key = { it.id }) { message ->
+            if (chat.messages.isEmpty() && deviceRuns.isEmpty()) item { EmptyPage("开始这段对话", "消息与草稿保存在这台设备；模型服务需要网络。") }
+            items(timeline, key = { it.id }) { row ->
+                val deviceRun = row.device
+                if (deviceRun != null) DeviceTaskCard(deviceRun, active = deviceRuntime.running && deviceRuntime.runId == deviceRun.id, phase = deviceRuntime.phase, onCancel = deviceAgent::cancel)
+                else {
+                val message = row.message!!
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.role == "user") Alignment.End else Alignment.Start) {
                     Text(if (message.role == "user") "你" else agentName(data, chat), color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                     Surface(color = if (message.role == "user") MeloGold.copy(alpha = .10f) else MeloSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 760.dp)) {
@@ -189,19 +210,34 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
                         if (message.runId != null) TextButton(onClick = onExecution) { Text("执行记录") }
                     }
                 }
+                }
             }
-            if (busy) item { Column { Text(if (runtime.partial.isBlank()) "正在等待服务…" else runtime.partial); Text("生成中 · 尚未保存为完整回复", color = MeloMuted, style = MaterialTheme.typography.labelSmall) } }
+            if (turn != null) item { Column { Text(if (turn.partial.isBlank()) "正在等待服务…" else turn.partial); Text("生成中 · 尚未保存为完整回复", color = MeloMuted, style = MaterialTheme.typography.labelSmall) } }
             val failed = data.runs.lastOrNull { it.chatId == chat.id && it.status in setOf("failed", "cancelled", "interrupted") }
             if (!busy && failed != null && chat.messages.lastOrNull()?.role == "user") item {
                 Column { Text(failed.error ?: "上次请求未完成。", color = MaterialTheme.colorScheme.error); if (failed.partial.isNotBlank()) Text(failed.partial, color = MeloMuted); TextButton(onClick = { vm.engine.send(chat.id, "", retry = true) }) { Text("重试这次提问") } }
             }
         }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(selected = !deviceMode, onClick = { deviceMode = false }, label = { Text("对话") }, enabled = !busy)
+            Spacer(Modifier.width(8.dp))
+            FilterChip(selected = deviceMode, onClick = { deviceMode = true }, label = { Text("操作手机") }, enabled = !busy, modifier = Modifier.testTag("device-mode"))
+            if (deviceMode) { Spacer(Modifier.weight(1f)); Text("截图", color = MeloMuted); Switch(screenshots, { screenshots = it }, enabled = !busy) }
+        }
+        if (deviceMode) Text("本次目标和主 Display 的界面文字${if (screenshots) "、截图" else ""}将发送给此对话所选模型。操作记录仅保存在本机。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
         if (images.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) { Text("已选 ${images.size} 张图片", color = MeloGold); TextButton(onClick = { images = emptyList() }) { Text("移除") } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
-            OutlinedTextField(draft, { draft = it }, placeholder = { Text("输入消息…") }, modifier = Modifier.weight(1f).testTag("composer"), maxLines = 6, shape = RoundedCornerShape(20.dp))
+            IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy && !deviceMode) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
+            OutlinedTextField(draft, { draft = it }, placeholder = { Text(if (deviceMode) "希望手机帮你做什么？" else "输入消息…") }, modifier = Modifier.weight(1f).testTag("composer"), maxLines = 6, shape = RoundedCornerShape(20.dp))
             IconButton(onClick = { try { dictation.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)) } catch (_: Exception) { vm.engine.work { error("此设备没有可用的系统语音输入服务，可使用键盘麦克风。") } } }, enabled = !busy) { Icon(Icons.Outlined.MicNone, "语音输入") }
-            IconButton(onClick = { if (busy) vm.engine.cancel() else onSend(draft, images) }, enabled = busy || draft.isNotBlank() || images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
+            IconButton(onClick = {
+                when {
+                    deviceBusy -> deviceAgent.cancel()
+                    turn != null -> vm.engine.cancel(chat.id)
+                    deviceMode -> if (images.isNotEmpty()) vm.engine.work { error("操作手机使用实时屏幕，请先移除已选参考图片。") } else deviceAgent.start(draft, 0, screenshots, chatId = chat.id)
+                    else -> onSend(draft, images)
+                }
+            }, enabled = busy || draft.isNotBlank() || !deviceMode && images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
         }
     }
     if (options) ChatOptions(chat, data, vm) { options = false }

@@ -1,3 +1,9 @@
+## 2026-10-16 — 用可见证据完成手机任务，并接入当前 Chat
+
+用户认可优先级并要求开始；Codex 先补结果证据、动态目标与有界恢复，再接 Chat，保留当前模型、账号与用户数据。
+最终 59 JVM、24 Emulator runtime、2 viewport UI 与 9 项工程 tests 通过；Lint / 双变体 / signature / 16 KiB alignment 已验。修正旧 Fixture 固定 Prompt 匹配历史 Run 的串线，未增加 Timeout 或跳过断言。
+真实模型、Fold6 与远端 CI 未运行；Node WSL identity 失败不属于 Android runtime，仍保留为独立待修边界。未自动推送或启动 git pp。
+
 ## 2026-10-16 — 用实际执行边界和失败证据决定 Mobile Use 下一阶段
 
 用户要求全面审视 repo 并给出下一步；Codex 以当前源码、关键链路及临时 Fixture 形成审视，未开始新产品实现或操作手机。

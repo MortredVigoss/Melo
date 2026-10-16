@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fixtureEmulator } from './android-target.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tasks = {
@@ -30,6 +31,9 @@ const adb = sdk ? resolve(sdk, 'platform-tools', windows ? 'adb.exe' : 'adb') : 
 let status = 1;
 try {
   if (process.argv[2] === 'connected') {
+    const devices = spawnSync(adb, ['devices'], {env, encoding: 'utf8'});
+    if (devices.status !== 0) throw new Error('Unable to inspect ADB targets; no runtime fixtures were launched.');
+    env.ANDROID_SERIAL = fixtureEmulator(devices.stdout, env.ANDROID_SERIAL);
     const { createSyncServer } = await import('../mobile-sync/server.js');
     const scratch = resolve(root, '.tmp');
     await mkdir(scratch, { recursive: true });

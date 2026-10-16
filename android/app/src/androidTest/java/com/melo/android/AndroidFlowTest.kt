@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melo.android.data.*
+import com.melo.android.device.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
@@ -27,6 +28,35 @@ class AndroidFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
     private fun ready() = runBlocking { withTimeout(10_000) { app.engine.runtime.first { it.initialized } } }
+    @Test fun deviceModeAndTaskCardsAreEmbeddedInChatAndSurviveRecreation() {
+        ready()
+        compose.onNodeWithText("开始新对话").performClick()
+        compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
+        val chat = app.repository.data.value.chats.first()
+        val run = DeviceRun(goal = "打开设置并检查页面", connectionName = "Local UI Fixture", status = "blocked", answer = "Fixture：需要登录，未执行后续操作。",
+            steps = listOf(DeviceStep("observe", true, "Fixture 观察回执", callId = "fixture-ui")), taskContext = DeviceTaskContext(chat.id, chat.agentId, chat.projectId, "fixture-ui-connection"))
+        runBlocking { app.repository.change { it.copy(deviceRuns = it.deviceRuns + run) } }
+        compose.onNodeWithTag("device-mode").performClick()
+        compose.onNodeWithText("希望手机帮你做什么？").assertExists()
+        compose.onNodeWithTag("device-task-${run.id}").assertExists()
+        compose.onNodeWithText("查看操作步骤").performScrollTo().performClick()
+        compose.onNodeWithText("Fixture：需要登录，未执行后续操作。").assertExists()
+        compose.onNodeWithTag("composer").performTextInput("保留下一次操作草稿")
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("composer").assertTextContains("保留下一次操作草稿")
+        compose.onNodeWithTag("device-mode").assertIsSelected()
+        compose.onNodeWithTag("device-task-${run.id}").assertExists()
+        assertFalse(MeloJson.encodeToString(app.repository.snapshot()).contains("Local UI Fixture"))
+        compose.runOnIdle { if (android.os.Build.VERSION.SDK_INT >= 30) compose.activity.window.decorView.windowInsetsController?.hide(android.view.WindowInsets.Type.ime()) }
+        compose.waitForIdle()
+        runBlocking { app.repository.editChat(chat.id) { it.copy(messages = it.messages + Message(role = "assistant", content = "Fixture 后续回复", createdAt = java.time.Instant.parse(run.startedAt).plusSeconds(1).toString())) } }
+        compose.onNodeWithText("Fixture 后续回复").performScrollTo().assertExists()
+        assertTrue("Follow-up replies must appear after the device task", compose.onNodeWithText("Fixture 后续回复").fetchSemanticsNode().boundsInRoot.top > compose.onNodeWithTag("device-task-${run.id}").fetchSemanticsNode().boundsInRoot.top)
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+            java.io.File(app.cacheDir, "mobile-use-chat-ui.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+    }
     @Test fun connectionEditorRequiresALocalCredentialAndBlankEditsPreserveIt() {
         ready()
         val connectionName = "Credential regression ${newId().take(8)}"
@@ -83,25 +113,29 @@ class AndroidFlowTest {
         }
         compose.onNodeWithText("开始新对话").performClick()
         compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("composer").performTextInput("Android fixture lifecycle check")
+        val chatId = app.repository.data.value.chats.first().id
+        val prompt = "Android fixture lifecycle check ${newId().take(8)}"
+        val retryPrompt = "cancel and retry fixture ${newId().take(8)}"
+        compose.onNodeWithTag("composer").performTextInput(prompt)
         compose.onNodeWithContentDescription("发送").performClick()
-        compose.waitUntil(15_000) { app.repository.data.value.runs.any { it.prompt == "Android fixture lifecycle check" && it.status == "completed" } }
-        val chat = app.repository.data.value.chats.first { it.messages.any { message -> message.content == "Android fixture lifecycle check" } }
+        try { compose.waitUntil(15_000) { app.repository.data.value.runs.any { it.chatId == chatId && it.prompt == prompt && it.status == "completed" } } }
+        catch (e: androidx.compose.ui.test.ComposeTimeoutException) { error("Fixture send did not complete: runtime=${app.engine.runtime.value}, runs=${app.repository.data.value.runs.map { Triple(it.prompt, it.status, it.error) }}") }
+        val chat = app.repository.data.value.chats.first { it.id == chatId }
         assertTrue(chat.messages.last().content.contains("没有调用真实模型服务"))
-        assertTrue(app.repository.data.value.runs.last().simulated)
+        assertTrue(app.repository.data.value.runs.last { it.chatId == chatId }.simulated)
         SyncProtocol.validate(app.repository.snapshot(), app.repository.schema)
         compose.activityRule.scenario.recreate()
         compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("composer").performTextInput("cancel and retry fixture")
+        compose.onNodeWithTag("composer").performTextInput(retryPrompt)
         compose.onNodeWithContentDescription("发送").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("停止生成").performClick()
-        compose.waitUntil(5000) { app.repository.data.value.runs.last().status == "cancelled" }
-        assertEquals(1, app.repository.data.value.chats.first { it.id == chat.id }.messages.count { it.content == "cancel and retry fixture" })
+        compose.waitUntil(5000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "cancelled" }
+        assertEquals(1, app.repository.data.value.chats.first { it.id == chat.id }.messages.count { it.content == retryPrompt })
         compose.onNodeWithText("重试这次提问").performScrollTo().performClick()
-        compose.waitUntil(15_000) { app.repository.data.value.runs.last().status == "completed" }
+        compose.waitUntil(15_000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "completed" }
         val final = app.repository.data.value.chats.first { it.id == chat.id }
-        assertEquals(1, final.messages.count { it.content == "cancel and retry fixture" })
+        assertEquals(1, final.messages.count { it.content == retryPrompt })
         assertEquals(2, final.messages.count { it.role == "assistant" })
     }
     @Test fun credentialsAreEncryptedAndExcludedFromPortableState() {

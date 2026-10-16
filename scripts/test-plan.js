@@ -4,12 +4,13 @@ import { execFileSync } from 'node:child_process';
 // registration, generated assets and source-reading tests have implicit edges.
 export function planTests(changed, files) {
   const paths = [...new Set(changed)].sort();
-  const docsOnly = path => /^docs\/.*\.md$/.test(path) || ['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md'].includes(path);
+  const docsOnly = path => /^docs\/.*\.md$/.test(path) || ['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md','MELO_OVERVIEW.md'].includes(path);
   const code = paths.filter(path => !docsOnly(path));
   const testsOnly = code.length > 0 && code.every(path => path.endsWith('.test.js'));
   const ui = code.some(path => path.startsWith('desktop-ui/'));
   const ios = code.some(path => path.startsWith('ios/'));
-  const scoped = code.every(path => /^(desktop-ui|ios\/(Melo|Tests))\//.test(path));
+  const android = code.some(path => /^(android\/|scripts\/android(?:\.mjs|-target(?:\.test)?\.js)$|shared\/protocol\/|ios\/Melo\/Scene\/|\.github\/workflows\/android\.yml$)/.test(path));
+  const scoped = code.every(path => /^(desktop-ui|ios\/(Melo|Tests)|android)\//.test(path));
   const fullUnit = code.length > 0 && !testsOnly && !scoped;
   const selected = fullUnit ? files : testsOnly ? files.filter(path => code.includes(path)) :
     files.filter(path => ui && path.startsWith('desktop-ui/') || (ui || ios) && path.startsWith('ios/Tests/'));
@@ -23,6 +24,7 @@ export function planTests(changed, files) {
     browsers: !testsOnly && (fullUnit || ui),
     ios: !testsOnly && (fullUnit || ui || ios),
     swift: !testsOnly && (fullUnit || ios),
+    android,
     syntax: fullUnit ? null : code.filter(path => /\.[cm]?js$/.test(path) && !path.endsWith('.test.js')),
   };
 }

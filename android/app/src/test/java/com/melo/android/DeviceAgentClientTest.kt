@@ -10,6 +10,10 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class DeviceAgentClientTest {
+    @Test fun oversizedAgentContextIsRejectedBeforeMakingAProviderRequest() {
+        val error = runCatching { DeviceAgentClient.payload(Connection(model = "fixture"), DeviceAgentClient.initial("chat-completions", "goal"), "x".repeat(32_001)) }.exceptionOrNull()
+        assertNotNull(error); assertTrue(error!!.message.orEmpty().contains("预算"))
+    }
     @Test fun appDiscoveryToolSupportsSearchingAndCompletePagination() {
         val properties = DeviceTools.schema["properties"]!!.jsonObject
         for (name in listOf("query", "offset", "limit")) assertTrue("Missing discovery argument $name", name in properties)

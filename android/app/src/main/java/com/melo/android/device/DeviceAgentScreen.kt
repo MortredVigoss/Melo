@@ -53,12 +53,36 @@ import com.melo.android.ui.*
         items(data.deviceRuns.asReversed(), key = { it.id }) { run ->
             ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(run.goal, style = MaterialTheme.typography.titleMedium)
-                Text("${when (run.status) { "running" -> "执行中"; "completed" -> "模型已结束任务"; "cancelled" -> "已停止"; "interrupted" -> "系统中断"; else -> "未完成" }} · ${run.connectionName} · ${run.steps.size} 步", color = MeloMuted)
+                Text("${deviceStatus(run.status)} · ${run.connectionName} · ${run.steps.size} 步", color = MeloMuted)
                 run.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.action} · ${if (step.ok) "成功" else "失败"} · ${step.detail}", style = MaterialTheme.typography.bodySmall) }
                 if (run.answer.isNotBlank()) Text(run.answer)
                 run.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } }
         }
     }
-    runtime.error?.let { AlertDialog(onDismissRequest = agent::dismissError, title = { Text("手机助手未完成") }, text = { Text(it) }, confirmButton = { TextButton(onClick = agent::dismissError) { Text("知道了") } }) }
+}
+
+fun deviceStatus(status: String) = when (status) {
+    "running" -> "执行中"; "achieved" -> "已验证可见结果"; "completed" -> "历史记录：模型已结束"; "needs_user" -> "需要你继续或确认"
+    "cancelled" -> "已停止"; "interrupted" -> "系统中断"; "blocked" -> "任务受阻"; else -> "执行失败"
+}
+
+@Composable fun DeviceTaskCard(run: DeviceRun, active: Boolean, phase: String, onCancel: () -> Unit) {
+    var expanded by rememberSaveable(run.id) { mutableStateOf(false) }
+    ElevatedCard(Modifier.fillMaxWidth().testTag("device-task-${run.id}")) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("手机操作 · ${deviceStatus(run.status)}", color = MeloGold, style = MaterialTheme.typography.titleSmall)
+            Text(run.goal)
+            Text("${run.connectionName} · ${run.steps.size} 步 · 仅本机记录", color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+            if (active) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(phase); TextButton(onClick = onCancel) { Text("停止手机操作") } }
+            if (run.answer.isNotBlank()) Text(run.answer)
+            run.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (run.verification == "visible_facts") Text("已重新检查声明的页面文字或 App；其他业务效果仍以实际页面为准。", color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+            if (run.steps.isNotEmpty()) {
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起步骤" else "查看操作步骤") }
+                val visible = if (expanded) run.steps else run.steps.takeLast(1)
+                visible.forEach { step -> Text("${step.action} · ${if (step.ok) "已执行" else "受阻"} · ${step.detail} · ${step.durationMs} ms${if (step.code.isBlank()) "" else " · ${step.code}"}", style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
 }

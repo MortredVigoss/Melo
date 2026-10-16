@@ -8,21 +8,23 @@ data class DeviceObservation(val data: JsonObject, val jpeg: String? = null)
 data class DeviceToolResult(val data: JsonObject, val jpeg: String? = null) {
     val ok get() = data["ok"]?.jsonPrimitive?.booleanOrNull == true
     companion object {
-        fun error(message: String) = DeviceToolResult(buildJsonObject { put("ok", false); put("error", message.take(500)) })
+        fun error(message: String, code: String = "execution_error") = DeviceToolResult(buildJsonObject { put("ok", false); put("code", code); put("error", message.take(500)) })
     }
 }
 data class DeviceCall(val id: String, val name: String, val arguments: JsonObject)
 data class DeviceTurn(val text: String, val calls: List<DeviceCall>, val wire: List<JsonObject>)
-@Serializable data class DeviceStep(val action: String, val ok: Boolean, val detail: String, val at: String = now())
-@Serializable data class DeviceRun(val id: String = newId(), val goal: String, val connectionName: String, val status: String = "running", val startedAt: String = now(), val finishedAt: String? = null, val steps: List<DeviceStep> = emptyList(), val answer: String = "", val error: String? = null)
+@Serializable data class DeviceStep(val action: String, val ok: Boolean, val detail: String, val at: String = now(), val callId: String = "", val durationMs: Long = 0, val code: String = "", val recoveryCount: Int = 0)
+@Serializable data class DeviceTaskContext(val chatId: String, val agentId: String, val projectId: String? = null, val connectionId: String)
+@Serializable data class DeviceRun(val id: String = newId(), val goal: String, val connectionName: String, val status: String = "running", val startedAt: String = now(), val finishedAt: String? = null, val steps: List<DeviceStep> = emptyList(), val answer: String = "", val error: String? = null, val taskContext: DeviceTaskContext? = null, val verification: String? = null)
 
 object DeviceTools {
-    val actions = setOf("observe", "list_apps", "open_app", "tap", "type_text", "swipe", "back", "home", "wait")
+    const val completionInstructions = "End every task using android_device action=finish, outcome=achieved/blocked/needs_user and a concise Chinese summary. achieved requires latest screen_id plus expected_package and/or visible_text (an EXACT text/description from returned nodes). The host re-observes and verifies these visible facts; a dispatched gesture or plain final prose is not proof. For complex goals, verify the final requested page/state with visible_text, not just an incidental package. If screenshots suggest success but no checkable fact exists, use needs_user. A native confirmation may be required for coordinate clicks or commit controls; never evade it via another target, gesture, or app. On stale_screen/stale_target re-observe and relocate, never blindly replay. On repeated errors or no progress change strategy or finish blocked."
+    val actions = setOf("observe", "list_apps", "open_app", "tap", "type_text", "swipe", "back", "home", "wait", "finish")
     val schema = buildJsonObject {
         put("type", "object"); put("additionalProperties", false)
         put("properties", buildJsonObject {
             put("action", buildJsonObject { put("type", "string"); put("enum", JsonArray(actions.map(::JsonPrimitive))) })
-            for (name in listOf("screen_id", "node_id", "text", "package_name", "app_name", "query")) put(name, buildJsonObject { put("type", "string") })
+            for (name in listOf("screen_id", "node_id", "text", "package_name", "app_name", "query", "outcome", "summary", "expected_package", "visible_text")) put(name, buildJsonObject { put("type", "string") })
             for (name in listOf("x", "y", "end_x", "end_y", "duration_ms")) put(name, buildJsonObject { put("type", "integer") })
             put("offset", buildJsonObject { put("type", "integer"); put("minimum", 0) })
             put("limit", buildJsonObject { put("type", "integer"); put("minimum", 1); put("maximum", 200) })
@@ -35,8 +37,17 @@ Do not enter password fields or read secrets. For an irreversible final action s
     fun validate(arguments: JsonObject) {
         val action = arguments.text("action")
         require(action in actions) { "未知设备操作。" }
-        require(arguments.keys.all { it in setOf("action", "screen_id", "node_id", "text", "package_name", "app_name", "query", "offset", "limit", "x", "y", "end_x", "end_y", "duration_ms") }) { "设备参数包含未知字段。" }
+        require(arguments.keys.all { it in setOf("action", "screen_id", "node_id", "text", "package_name", "app_name", "query", "offset", "limit", "x", "y", "end_x", "end_y", "duration_ms", "outcome", "summary", "expected_package", "visible_text") }) { "设备参数包含未知字段。" }
         require(arguments.toString().length <= 12_000) { "设备参数过长。" }
+        if (action == "finish") {
+            require(arguments.text("outcome") in setOf("achieved", "blocked", "needs_user")) { "finish 需要明确 outcome。" }
+            require(arguments.text("summary").isNotBlank() && arguments.text("summary").length <= 2000) { "finish 需要不超过 2000 字符的 summary。" }
+            if (arguments.text("outcome") == "achieved") {
+                require(arguments.text("screen_id").isNotBlank()) { "完成校验需要最近 screen_id。" }
+                require(arguments.text("expected_package").isNotBlank() || arguments.text("visible_text").isNotBlank()) { "请提供 expected_package 或 visible_text 作为可检查证据。" }
+                require(arguments.text("expected_package").length <= 160 && arguments.text("visible_text").length <= 300) { "完成证据过长。" }
+            }
+        }
         if (action == "list_apps") {
             arguments["query"]?.let { require(it is JsonPrimitive && it.isString && it.content.length <= 160) { "query 必须是不超过 160 字符的名称或包名。" } }
             for (name in listOf("offset", "limit")) arguments[name]?.let {
@@ -46,6 +57,15 @@ Do not enter password fields or read secrets. For an irreversible final action s
         }
         if (action == "open_app") require(arguments.text("package_name").length <= 160 && arguments.text("app_name").length <= 160) { "App 名称或包名过长。" }
         if (action in setOf("tap", "type_text", "swipe", "back", "home")) require(arguments.text("screen_id").isNotBlank()) { "请先 observe 并提供 screen_id。" }
+        if (action == "swipe") {
+            val points = listOf("x", "y", "end_x", "end_y").map { key ->
+                val value = arguments[key] as? JsonPrimitive
+                require(value != null && !value.isString && value.intOrNull != null) { "swipe 需要整数起点和终点。" }
+                value.int.toDouble()
+            }
+            val dx = points[2] - points[0]; val dy = points[3] - points[1]
+            require(dx * dx + dy * dy >= 48.0 * 48.0) { "swipe 至少移动 48 个画面像素；点击必须使用 tap 并经过本步确认。" }
+        }
         if (action == "type_text") {
             require(arguments.text("node_id").isNotBlank()) { "输入需要 editable node_id。" }
             require(arguments["text"] is JsonPrimitive && arguments.getValue("text").jsonPrimitive.isString && arguments.text("text").length <= 4000) { "请输入不超过 4000 字符的 text。" }

@@ -14,10 +14,10 @@ import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = ""): DeviceTurn {
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
-        val payload = payload(connection, history)
+        val payload = payload(connection, history, taskInstructions)
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
             .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", "application/json")
             .apply { if (connection.protocol == "anthropic") { header("x-api-key", key); header("anthropic-version", "2023-06-01") } else header("Authorization", "Bearer $key") }.build()
@@ -42,20 +42,22 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
     }
     companion object {
         fun initial(protocol: String, goal: String) = mutableListOf(buildJsonObject { put("role", "user"); put("content", goal) })
-        fun payload(connection: Connection, history: List<JsonObject>): JsonObject = buildJsonObject {
+        fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = ""): JsonObject = buildJsonObject {
+            require(taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
             put("model", connection.model); put("stream", false)
+            val instructions = taskInstructions + "\n\n" + DeviceTools.instructions + "\n" + DeviceTools.completionInstructions + "\nSwipes must move at least 48 image pixels. Use tap for clicks; do not emulate clicks using stationary or tiny swipes."
             val function = buildJsonObject { put("name", "android_device"); put("description", DeviceTools.description); put("parameters", DeviceTools.schema); put("strict", false) }
             when (connection.protocol) {
                 "responses" -> {
-                    put("instructions", DeviceTools.instructions); put("store", false); put("input", JsonArray(history))
+                    put("instructions", instructions); put("store", false); put("input", JsonArray(history))
                     put("parallel_tool_calls", false); put("tools", buildJsonArray { add(JsonObject(function + ("type" to "function".jp()))) })
                 }
                 "anthropic" -> {
-                    put("system", DeviceTools.instructions); put("max_tokens", 4096); put("messages", JsonArray(history))
+                    put("system", instructions); put("max_tokens", 4096); put("messages", JsonArray(history))
                     put("tools", buildJsonArray { add(buildJsonObject { put("name", "android_device"); put("description", DeviceTools.description); put("input_schema", DeviceTools.schema) }) })
                 }
                 else -> {
-                    put("messages", JsonArray(listOf(buildJsonObject { put("role", "system"); put("content", DeviceTools.instructions) }) + history))
+                    put("messages", JsonArray(listOf(buildJsonObject { put("role", "system"); put("content", instructions) }) + history))
                     put("parallel_tool_calls", false); put("tools", buildJsonArray { add(buildJsonObject { put("type", "function"); put("function", function) }) })
                 }
             }

@@ -38,11 +38,19 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## 手机助手（0.2.0）
+## 手机助手（0.3.0）
+
+聊天输入框上方切换「操作手机」，直接发送操作目标，当前对话内会显示任务卡片、步骤、结果和停止按钮。使用此对话选择的模型、角色和项目指令；屏幕仍是整台设备共享，一次只允许一个操作任务。普通文字聊天可跨对话并发，停止按钮只取消当前对话。首页独立助手页仍提供权限、Display 与全部本机历史入口。
+
+完成必须调用 `finish`，声明 achieved / blocked / needs_user；achieved 要求最近 screen_id 和明确的 App / 精确页面文字，执行器重新观察后校验。它验证可见事实，不保证付款到账等不可见业务效果。模型只返回结束文字时不会自动标记完成；历史 completed 记录保留原语义。
+
+同一窗口中其他节点更新不会阻止已重新校验的 Node 操作；目标本身、窗口、尺寸或有效期改变仍拒绝。坐标点击需在目标 App 的 Melo 悬浮按钮确认，明确的发送 / 删除 / 付款等节点也要求本步确认；确认后再次校验屏幕。此风险分类不覆盖所有自绘或未知按钮语义。随时可点击「停止 Melo」。
+
+默认记录只包含目标、模型连接名称、关联会话和步骤摘要 / call ID / 耗时 / 错误码；不保存或同步屏幕、UI tree、输入参数和凭证。长任务按完整 Tool Call / Result 对裁剪，保留最近观察、当前搜索结果与截图；超过字符预算明确停止。
 
 首页「手机助手」，或聊天页顶部的手势图标进入。先用页面按钮打开 Android 辅助功能设置，在已安装服务中启用「Melo 手机助手」，返回后输入自然语言目标并点击「开始执行」。例如：`打开设置，搜索蓝牙，停在搜索结果页面`。若系统提示 App 的设置受限制，请按系统提示在该 App 的信息页面允许相应设置；App 不会自行启用辅助功能。
 
-复用全局模型连接；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait，工具执行后回传新屏幕。模型根据实际观察选择下一步，不录制固定脚本。
+独立助手页使用全局模型，Chat 内使用该对话选择；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait、finish，屏幕操作后回传新画面。模型根据实际观察选择下一步，不录制固定脚本。
 
 官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
 

@@ -8,6 +8,14 @@ import {fileURLToPath} from 'node:url';
 import {planTests, changedPaths, currentTestPlan} from './test-plan.js';
 
 const tests = ['src/server.test.js','desktop-ui/one.test.js','desktop-ui/new.test.js','mobile-sync/one.test.js','ios/Tests/Scene.test.js'];
+test('Android changes run the native gate and shared assets cover both consumers', () => {
+  const native = planTests(['android/app/src/main/java/com/melo/android/device/DeviceAgent.kt'], tests);
+  assert.equal(native.android, true); assert.deepEqual(native.files, []);
+  assert.equal(native.browsers, false); assert.equal(native.swift, false);
+  for (const path of ['shared/protocol/sync.schema.json', 'ios/Melo/Scene/scene.js', 'scripts/android.mjs', '.github/workflows/android.yml']) assert.equal(planTests([path], tests).android, true, path);
+  assert.equal(planTests(['src/server.js'], tests).android, false);
+  assert.deepEqual(planTests(['MELO_OVERVIEW.md'], tests).files, []);
+});
 test('daily selection keeps complete UI groups, falls back for cross-boundary changes, and never silently drops deleted tests', () => {
   const ui = planTests(['desktop-ui/one.js'], tests);
   assert.deepEqual(ui.files, tests.filter(f => !f.startsWith('src/') && !f.startsWith('mobile-sync/')));
@@ -42,6 +50,7 @@ test('full gate remains all-tests and daily gate is explicit about release cover
   assert.equal(pkg.scripts['test:full'],pkg.scripts['verify:red-green']);
   const full=await readFile(new URL('./verify-red-green.js',import.meta.url),'utf8');
   assert.match(full,/runCommand\('npm', \['run', 'test:unit'\]\)/);
+  assert.match(full,/runCommand\('npm', \['run', 'check:android'\]\)/);
   assert.doesNotMatch(await readFile(new URL('./run-unit-tests.js',import.meta.url),'utf8'),/currentTestPlan/);
 });
 

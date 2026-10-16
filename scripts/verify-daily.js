@@ -27,6 +27,7 @@ if (args.includes('--plan')) {
   }
   try {
     for (const [path, entry] of Object.entries(excluded)) console.log(`QUARANTINED ${path}: ${entry.reason} (expires ${entry.expires})`);
+    if (plan.android) await run('Android JVM / Lint / Debug / Release', process.execPath, ['scripts/android.mjs', 'check']);
     if (plan.files.length) await run('JS 回归', process.execPath, ['--test', '--test-concurrency=4', '--test-timeout=120000', ...plan.files]);
     if (plan.syntax === null || plan.syntax.length) await run('语法检查', process.execPath, ['scripts/check-syntax.js', ...(plan.syntax === null ? [] : ['--files', ...plan.syntax])]);
     if (plan.browsers) {

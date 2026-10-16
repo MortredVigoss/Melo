@@ -61,10 +61,11 @@ class Repository(private val context: Context) {
     }
     suspend fun deleteChat(id: String) = change { current ->
         require(current.runs.none { it.chatId == id && it.status == "running" }) { "请先停止当前请求。" }
+        require(current.deviceRuns.none { it.taskContext?.chatId == id && it.status == "running" }) { "请先停止这段对话的手机操作任务。" }
         val deletions = current.deletedChats.filterNot { it.id == id } + Deletion(id)
         current.copy(chats = current.chats.filterNot { it.id == id }, deletedChats = deletions,
             drafts = current.drafts - id, runs = current.runs.filterNot { it.chatId == id },
-            memories = current.memories.filterNot { it.chatId == id }, workspace = SyncProtocol.mergeWorkspace(current.workspace, Workspace(), setOf(id)))
+            memories = current.memories.filterNot { it.chatId == id }, deviceRuns = current.deviceRuns.filterNot { it.taskContext?.chatId == id }, workspace = SyncProtocol.mergeWorkspace(current.workspace, Workspace(), setOf(id)))
     }
     suspend fun draft(chatId: String, text: String) = change { it.copy(drafts = it.drafts + (chatId to text)) }
     suspend fun saveAgent(agent: Agent) = change { current ->

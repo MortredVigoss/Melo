@@ -1,4 +1,15 @@
-# Android verification — 2026-10-15
+# Android verification — 2026-10-16
+
+## 0.3.0 Mobile Use Core 与聊天内嵌
+
+- 当前源码通过 59 项 JVM tests、Lint（0 errors）、Debug 与优化 Release 构建；24 项 Android 16 Emulator runtime tests 全部通过，无 skip。另有 9 项工程 gate tests 与 856 个 JS 文件语法检查通过。
+- 新增验收包括：显式完成 / 可见事实重查、无关动态节点可点击 / 改名目标和旧坐标拒绝、原生坐标 / 提交按钮确认、拒绝 / 取消 / 确认期间变屏零误点、双 Chat 并发和取消隔离、捕获角色 / 项目 / 模型、关联 Chat 同步删除后零设备动作、Chat 卡片时间顺序 / Activity recreation / 草稿恢复。新 Context 测试验证三种协议完整配对、保留当前搜索和截图、字符预算及游戏空 tree / 变化画面的进展判断。
+- cover 968×2376、unfolded 1856×2160 / 420 dpi 的独立 UI 检查均通过，截图人工确认布局与任务 / 回复顺序；它们是 Emulator viewport，不等同实际折叠硬件或 One UI。
+- Preview APK 3,794,157 bytes，证书与 0.2.3 相同；APK signature、ZIP 16 KiB alignment 和四 ABI 的 ELF LOAD alignment 通过。本轮源码、证据与边界见 [`docs/mobile-use-core-20261016.md`](../docs/mobile-use-core-20261016.md)。
+- 优化签名包已在 Emulator 覆盖安装、冷启动，并保持本机测试聊天 / 角色计数；未将其表述为真实手机迁移验收。
+- 仅使用本地 HTTP / 本机 Fixture，没有使用真实订阅、操作或覆盖 Fold6；真实模型任务完成率、One UI 8.5、Samsung 电池策略仍待验。远端 CI 未推送 / 执行；原 Node WSL identity 六项失败未修复，本轮不声称整个 repo 或完整发布 gate 通过。
+
+日志 `.tmp/mobile-use-core-check.log`、`.tmp/mobile-use-core-connected.log`、`.tmp/mobile-use-layout-{cover,unfolded}.log` 与 Gradle reports；交付在本会话 outputs 的 `Melo-Android-0.3.0-*`。
 
 ## 2026-10-16 主线合并后的检查
 

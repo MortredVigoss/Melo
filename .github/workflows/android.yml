@@ -1,0 +1,52 @@
+name: Android
+on:
+  pull_request:
+    paths: ['android/**', 'scripts/android*', 'shared/protocol/**', 'ios/Melo/Scene/**', 'mobile-sync/**', 'package*.json', '.github/workflows/android.yml']
+  push:
+    branches: [master, 'codex/mobile-use-features']
+    paths: ['android/**', 'scripts/android*', 'shared/protocol/**', 'ios/Melo/Scene/**', 'mobile-sync/**', 'package*.json', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - name: JVM, Lint and both APK variants
+        run: npm run check:android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Isolated Android 16 runtime fixtures
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: npm run test:android:connected
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-verification
+          path: |
+            android/app/build/reports/
+            android/app/build/outputs/apk/debug/*.apk

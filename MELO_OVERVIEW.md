@@ -16,7 +16,7 @@
 
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
-| Android / Mobile Use | Kotlin / Compose 客户端与原生 AccessibilityService Agent 已实现；0.2.3 上轮已覆盖 Fold6。本地 `554776b` 保存 Home 修复，`7c2fe6f` 合入 `origin/master`（`2e8b533`），当前 `codex/mobile-use-features` | 合并基线 36 JVM / Debug / 90 sync / 41 contract 已过；最新审视另跑全 JS：3608 pass / 15 fail / 19 skip，不能称全绿。执行结果语义、动态 UI、恢复与聊天会话关联为下一阶段重点；见 [审视与路线](docs/mobile-use-repo-review-20261016.md) |
+| Android / Mobile Use | `codex/mobile-use-features` 已完成 0.3.0 Core 与 Chat 内嵌：显式结果校验、动态 Node、原生本步确认、恢复 / Context 限制、per-Chat Job 和设备独占；Fold6 仍是上轮 0.2.3 | 当前 59 JVM / 24 Emulator runtime / 2 viewport UI / 9 工程 tests、Lint / Debug / Release 通过；同证书 Preview 已生成，未使用真实模型或实体机。6 个 Node WSL identity 失败仍单列，见[交付与验证](docs/mobile-use-core-20261016.md) |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -74,7 +74,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 记忆 / 检索 | `src/memory/`、`src/retrieval/`、`src/runtime/derivedIndexing.js` | 内置 ONNX 多语 embedding worker、本地 SQLite/FTS/向量、事实作用域与增量派生；使用记录只计实际进入 prompt |
 | 执行事件 | `src/shared/executionScene.js`、`executionMetadata.js`、`src/services/chat/executionPipeline.js` | 真实工具/模型轮次、公开摘要、结果、token/耗时白名单；未知保持未知，历史查看不重跑 |
 | 手机原生 | `ios/Melo/ChatStore.swift`、`ContentView.swift`、`SettingsView.swift`、`MeloApp.swift` | 本机聊天、角色、草稿、设置、图片和前后台；桌面关机不应阻断独立聊天 |
-| Android 原生 / 手机操作 | `android/app/src/main/java/com/melo/android/`；`device/DeviceAgent.kt`、`MeloAccessibilityService.kt`、`AppCatalog.kt` | Kotlin / Compose 独立聊天；模型按观察与真实回执循环操作。完整 catalog 搜索后分页、相似候选不代选；取消 / 息屏停止；凭证用本机 Keystore，原始屏幕与 App 列表不落盘同步。Android 与 iPhone 功能边界分别验收 |
+| Android 原生 / 手机操作 | `android/app/src/main/java/com/melo/android/`；`device/DeviceAgent.kt`、`DeviceTaskLoop.kt`、`DeviceContextBudget.kt`、`MeloAccessibilityService.kt`、`AppCatalog.kt` | per-Chat 文字 Job；Chat 内显式进入手机操作并捕获角色 / 项目 / 模型，设备独占。完整 App 搜索、有界恢复、原生本步确认、重观察后验证可见结果；取消 / 息屏停止。凭证用本机 Keystore，原始屏幕与 App 列表不落盘同步；各平台分别验收 |
 | 手机授权 | `CodexOAuth.swift`、`ChatGPTAccount.swift`、`CodexLoginView.swift`、`Keychain.swift` | 设备码 / PKCE / 身份签名 / 刷新；新键 `codexAccounts`，连接 ID 保留 `chatgpt`；不复制桌面 token |
 | 手机同步 / 共享渲染 | `mobile-sync/`、`ios/Melo/SyncWorkspace.swift`、`ios/Melo/Scene/`、`ios/scripts/build-scene.py` | schema 生成 JS/Swift 约束与共用样例；共享资源 manifest/hash；同步不是模型登录 |
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 当前 `codex/mobile-use-features`；已完成基于 `964bc7b` 的跨模块源码 / 测试审视，只增加审视与交接文档 | 全 JS 3642 项：3608 pass / 15 fail / 19 skip；6 个 WSL 文件身份测试独立复现失败，另 9 个为 Chrome / Ruby 环境缺口。13 项发现及分阶段验收见 [审视](docs/mobile-use-repo-review-20261016.md)；尚未开始新产品实现 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.3.0 Core / Chat 内嵌与 Android gate 已实现并完成本机 Fixture 验证；未推送 | 59 JVM / 24 Emulator runtime / 2 viewport UI / 9 工程 tests 与 Lint / 双变体 / alignment 通过；见 [交付](docs/mobile-use-core-20261016.md)。真实模型 / Fold6 / 远端 CI 与原 Node identity 基线单列 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -454,3 +454,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 新跑 `npm run test:unit`：3642 tests，3608 pass / 15 fail / 19 skip。8 个浏览器失败缺 Chrome 默认路径，1 项缺 Ruby；6 个文件身份替换检查在单独重跑也失败。临时目录对照：未持有 FD 20/20 复用编号，持有 FD 0/20；仅本机 WSL 证据，不外推 macOS 或 Android 点击执行器。
 - [详细审视](docs/mobile-use-repo-review-20261016.md) 含 13 项发现、源码行号、重现入口和验收边界。建议先补 Mobile Use TaskOutcome / 动态目标校验 / 有界恢复，再处理按对话 Job 和聊天内嵌；并行修本地测试基线、Android gate、Kotlin 行为契约。存储与 UI 热点先按基准/变更边界治理。
 - 本轮产品源码、用户数据、凭证与实机保持；只增加审视和交接文档。报告不将成功 Tool、模型结束语、代码量或旧测试计数当作当前真实任务完成率；下一阶段实现尚未开始。
+
+### 2026-10-16 — Android / Mobile Use — Core v1 与聊天内嵌
+
+- 线程 ID：`01a13a56-c8c5-7d21-a108-d761aee8c657`；用户认可审视优先级并要求开始，当前 `codex/mobile-use-features`。新增 `DeviceTaskLoop` / `DeviceContextBudget` / `DeviceTargetPolicy`，接回 `DeviceAgent` / `MeloAccessibilityService`；ChatEngine 按 Chat 管理 Job，MainActivity 内嵌本机设备任务时间线。
+- 旧“模型停止即可完成”改为显式 finish 与可见事实重查；Node 重新校验、坐标 / 提交按钮本步确认、无进展 / 错误恢复和 Context 限制。任务捕获角色 / 项目 / 模型且设备独占，删除所属 Chat 后停止动作；步骤原始参数 / 截图不入本机持久化或 portable sync。新字段兼容旧资料，Keystore / package id 保留。
+- 当前 59 JVM、24 Emulator runtime、2 viewport UI、9 工程 tests、Lint 0 errors、Debug / R8 Release 与 856 文件语法检查通过；签名 / 四 ABI 16 KiB alignment 已验。同证书 Preview 在 Emulator 覆盖安装 / 冷启动通过，保留其测试聊天 / 角色计数。详细命令和边界见 [交付](docs/mobile-use-core-20261016.md)；证据 `.tmp/mobile-use-*` / Gradle reports / 本会话 outputs。
+- Android daily / full gate 与独立 CI 定义已接入，runtime runner 在修改前拒绝个人手机或多个 ADB 设备。没有推送、运行远端 CI、使用真实模型或操作 Fold6；原 Node WSL identity 六项、Kotlin 新团队行为契约和存储 benchmark 后续单列。
