@@ -26,7 +26,7 @@
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
-| 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；本轮补文件面板/删除确认/遗留文件管理（隔离树待合入） | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
+| 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
@@ -108,7 +108,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 统一架构和集成、模型/工具、登录与图片；本次建立共用文档 | 当前承接；build23 待用户登录反馈 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 已替换双端资源并安装电脑 | 原程序字节保留，Finder 图标、原生启动与资料验证通过；[本轮图标证据](docs/design/logo-muted-20261016/README.md)，[历史神经 UI](docs/handoffs/melo-ui-20261015.md) |
@@ -381,3 +381,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-16 — melo UI 功能对齐 — 隔离验收完成
 - 四组实现完成，日常 GREEN：3604 JS / 21 Swift、语法及浏览器，182.6 秒。实际文件、API、专项、失败修正与边界见 [实施回执](docs/ui-function-alignment-20261016.md#隔离树最终验收)。
 - 文件浏览与每次删除选择框截图已实看；真实 HTTP 夹具覆盖保留/清理/取消、外部连接器操作、技能落盘与单聊天授权撤销。正在保留共享 WIP 整合，尚未重启安装、git pp 或推送。
+
+### 2026-10-16 — melo主线 — UI 功能对齐已合入
+- 实现本地提交 `7ae2292`，隔离实施 `ecd9ce9`；暂存树与隔离验证树一致，其他线程的阅读/图片预览/执行摘要/手机文件 WIP 保留。历史“待整合”阶段由本条完成。
+- 电脑每次删聊天询问文件去留；文件面板跟随聊天，可预览/打开 Finder。手机同步删除保留本机文件，在存储管理待处理；项目目录不会被聊天删除连带清理。能力白名单、迁移标记和连接器/MCP/会话授权/技能管理同步完成。
+- 共享 `npm test` GREEN：3613 JS、859 文件语法、设置/快速浏览器、23 Swift，113.3 秒。日志 `/tmp/melo-ui-alignment-shared-daily.log`；三方备份、截图和 `verification.json` 在 `.tmp/ui-function-alignment-20261016/`。实现与失败修复详见 [回执](docs/ui-function-alignment-20261016.md#共享整合回执)。
+- 尚未重启或覆盖安装应用，未 git pp/推送；真实模型、远端连接器/MCP、原生 Finder、手机文件去留界面与完整发布 gate 不在本轮验收内。
