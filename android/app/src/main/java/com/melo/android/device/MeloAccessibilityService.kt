@@ -115,8 +115,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     private fun readableWindows(): List<AccessibilityWindowInfo> {
         val windows = if (Build.VERSION.SDK_INT >= 30) windowsOnAllDisplays[selectedDisplay].orEmpty() else windows
-        return windows.filter { it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY && it.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD && it.root?.isVisibleToUser == true }
-            .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive }.thenByDescending { it.isFocused }.thenByDescending { it.layer })
+        val states = windows.map { window ->
+            val root = window.root
+            val visible = try { root?.isVisibleToUser == true } finally { @Suppress("DEPRECATION") root?.recycle() }
+            DeviceWindowState(window.id, window.isFocused, window.isActive, window.layer, visible,
+                window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY || window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD)
+        }
+        val byId = windows.associateBy { it.id }
+        return DeviceWindowPolicy.observationOrder(states).mapNotNull(byId::get)
     }
     private fun activeWindow(): AccessibilityWindowInfo = readableWindows().firstOrNull()
             ?: error("无法读取此 Display 的窗口，请让目标 App 保持可见。")

@@ -8,6 +8,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceTaskLoopTest {
+    @Test fun persistedObservationSummaryIdentifiesTheCapturedWindowWithoutSavingItsContents() = runBlocking {
+        for (available in listOf(true, false)) {
+            val turns = ArrayDeque(listOf(turn("observe", args("observe")), turn("stop", finish("blocked"))))
+            val steps = mutableListOf<DeviceStep>()
+            val result = screen(text = "private-fixture-label", pkg = "com.tencent.mm")
+            val receipt = DeviceToolResult(JsonObject(result.data + buildJsonObject {
+                put("image_width", 521); put("image_height", 1280); put("screenshot_available", available)
+                if (!available) put("screenshot_error", "系统禁止截图")
+            }))
+            DeviceTaskLoop("chat-completions", { turns.removeFirst() }, { receipt }, { steps += it }).run("Inspect only")
+            val detail = steps.first().detail
+            assertTrue(detail, detail.contains("com.tencent.mm") && detail.contains("521×1280") && detail.contains("1 个节点"))
+            assertTrue(detail, detail.contains(if (available) "已截图" else "截图不可用：系统禁止截图"))
+            assertFalse(detail.contains("private-fixture-label"))
+        }
+    }
     private fun args(action: String, vararg fields: Pair<String, String>) = buildJsonObject { put("action", action); fields.forEach { put(it.first, it.second) } }
     private fun screen(id: String = "s1", text: String = "Ready", pkg: String = "fixture.app") = DeviceToolResult(buildJsonObject {
         put("ok", true); put("screen_id", id); put("package_name", pkg); put("stable", true)

@@ -121,7 +121,11 @@ class DeviceTaskLoop(
                 !result.ok -> result.data.text("error").take(300)
                 action == "list_apps" -> "检索 ${result.data["total_apps"]} 个 App，匹配 ${result.data["matched_apps"]} 个，本页 ${result.data["apps"]?.jsonArray?.size ?: 0} 个" + if (result.data["has_more"]?.jsonPrimitive?.booleanOrNull == true) "，还有下一页" else ""
                 action == "finish" -> "已记录明确任务结果" + if (result.data.text("verification").isNotBlank()) " · 已重新检查可见证据" else ""
-                else -> "执行回执已返回" + if (result.data["screenshot_available"]?.jsonPrimitive?.booleanOrNull == true) " · 已截图" else ""
+                else -> "执行回执已返回" + if (result.data.text("screen_id").isNotBlank()) {
+                    " · ${result.data.text("package_name").ifBlank { "未知窗口" }} · ${result.data["image_width"]}×${result.data["image_height"]} · ${result.data["nodes"]?.jsonArray?.size ?: 0} 个节点" +
+                        if (result.data["screenshot_available"]?.jsonPrimitive?.booleanOrNull == true) " · 已截图"
+                        else result.data.text("screenshot_error").takeIf(String::isNotBlank)?.let { " · 截图不可用：${it.take(120)}" }.orEmpty()
+                } else ""
             }
             onStep(DeviceStep(action, result.ok, detail, callId = call.id, durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code"), recoveryCount = recovery))
             DeviceAgentClient.appendResult(history, protocol, call, result)

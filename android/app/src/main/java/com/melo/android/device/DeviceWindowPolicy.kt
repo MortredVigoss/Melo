@@ -1,8 +1,17 @@
 package com.melo.android.device
 
 data class DeviceWindowIdentity(val id: Int, val packageName: String, val bounds: List<Int> = emptyList())
+data class DeviceWindowState(val id: Int, val focused: Boolean, val active: Boolean, val layer: Int, val rootVisible: Boolean, val excluded: Boolean = false)
 
 object DeviceWindowPolicy {
+    /** A redacted Accessibility root is not evidence that its focused window is hidden.
+     * Touch-active edge/gesture decorations must not replace the input-focused app.
+     * Focused system dialogs stay eligible even when their own tree is unavailable. */
+    fun observationOrder(windows: List<DeviceWindowState>): List<Int> = windows
+        .filter { !it.excluded && (it.rootVisible || it.focused || it.active) }
+        .sortedWith(compareByDescending<DeviceWindowState> { it.focused }.thenByDescending { it.active }.thenByDescending { it.layer })
+        .map { it.id }
+
     /** Called only with visible windows on the selected Display; no hidden task APIs. */
     fun sameApp(active: DeviceWindowIdentity, candidate: DeviceWindowIdentity): Boolean {
         if (active.id == candidate.id) return true

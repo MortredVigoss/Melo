@@ -162,6 +162,27 @@ class DeviceAgentTest {
             service.end()
         }
     }
+    @Test fun focusedWindowWithHiddenAccessibilityLabelsStillProvidesItsOwnPixels() = runBlocking {
+        ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
+            scenario.onActivity {
+                it.window.decorView.accessibilityDelegate = object : android.view.View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(host: android.view.View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        info.isVisibleToUser = false
+                    }
+                }
+            }
+            delay(600)
+            val service = DeviceAccess.service!!
+            service.begin(0, true)
+            val screen = observe(service)
+            assertTrue(screen.data.toString(), screen.ok)
+            assertEquals("com.melo.android", screen.data.text("package_name"))
+            assertNotNull(screen.jpeg)
+            assertTrue(screen.data["nodes"]!!.jsonArray.isEmpty())
+            service.end()
+        }
+    }
     @Test fun changingTheActiveWindowRejectsEvenAnOtherwiseValidNode() = runBlocking {
         val service = DeviceAccess.service!!
         service.begin(0, false)
