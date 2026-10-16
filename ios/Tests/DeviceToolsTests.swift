@@ -183,6 +183,15 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let output = next[3] as? [String: Any]
         assert(output?["type"] as? String == "function_call_output" && output?["call_id"] as? String == "call_1" && output?["output"] as? String == #"{"ok":true}"#)
 
+        // Reading permissions must never infer a grant from a device switch.
+        let freshReadName = "melo.phone-perms.read-only.\(UUID().uuidString)"
+        let freshRead = UserDefaults(suiteName: freshReadName)!
+        defer { freshRead.removePersistentDomain(forName: freshReadName) }
+        DeviceToolPolicy(enabled: [.contacts]).save(freshRead)
+        let readOnly = PhoneAgentPermissions.load(freshRead)
+        assert(!readOnly.allows("melo", .contacts), "reading new device settings must not grant personal data to an Agent")
+        assert(freshRead.object(forKey: PhoneAgentPermissions.migratedKey) == nil, "read must not mark a migration completed")
+
         // Per-Agent phone permissions: baseline keeps search/images, never data.
         let perms = UserDefaults(suiteName: "melo.phone-perms.test.\(UUID().uuidString)")!
         var phone = PhoneAgentPermissions.load(perms)
@@ -200,11 +209,53 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         // Migration: legacy device-wide kinds go to the default Agent only, once.
         let legacy = UserDefaults(suiteName: "melo.phone-perms.legacy.\(UUID().uuidString)")!
         DeviceToolPolicy(enabled: [.calendar, .location]).save(legacy)
+        PhoneAgentPermissions.initializeAtLaunch(legacy)
         let migrated = PhoneAgentPermissions.load(legacy)
         assert(migrated.allowed("melo") == [.network, .generateMedia, .calendar, .location])
         assert(migrated.devicePolicy(for: "writer", device: DeviceToolPolicy(enabled: [.calendar, .location])).enabled.isEmpty)
         var revoked = migrated; revoked.set("melo", .calendar, false); revoked.save(legacy)
         assert(!PhoneAgentPermissions.load(legacy).allows("melo", .calendar), "migration never re-grants after the user revokes")
+
+        // Both first-use orders after application launch must leave new data
+        // access denied, including after relaunch and repeated policy reads.
+        for readFirst in [false, true] {
+            let name = "melo.phone-perms.startup.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: name)!
+            defer { defaults.removePersistentDomain(forName: name) }
+            PhoneAgentPermissions.initializeAtLaunch(defaults)
+            if readFirst { _ = PhoneAgentPermissions.load(defaults) }
+            DeviceToolPolicy(enabled: [.contacts]).save(defaults)
+            PhoneAgentPermissions.initializeAtLaunch(defaults)
+            let effective = PhoneAgentPermissions.load(defaults).devicePolicy(for: "melo", device: DeviceToolPolicy.load(defaults))
+            source = FakeSource(); prompts = 0
+            out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"fixture"}"#), policy: effective, source: source, approve: approveYes)
+            assert(json(out)["error"] as? String == "NOT_ENABLED" && source.reads == 0 && prompts == 0)
+        }
+        // Existing explicit revocations survive an unfinished migration and
+        // subsequent launches; a device-level grant cannot overwrite them.
+        let existingName = "melo.phone-perms.existing.\(UUID().uuidString)"
+        let existing = UserDefaults(suiteName: existingName)!
+        defer { existing.removePersistentDomain(forName: existingName) }
+        DeviceToolPolicy(enabled: [.contacts]).save(existing)
+        var explicit = PhoneAgentPermissions(); explicit.set("melo", .contacts, false); explicit.save(existing)
+        PhoneAgentPermissions.initializeAtLaunch(existing)
+        assert(!PhoneAgentPermissions.load(existing).allows("melo", .contacts))
+        PhoneAgentPermissions.initializeAtLaunch(legacy)
+        assert(!PhoneAgentPermissions.load(legacy).allows("melo", .calendar))
+
+        // The actual UI gate must permit revocation while the device kind is
+        // off. Persist it and re-enable the device: the source still cannot run.
+        var removable = PhoneAgentPermissions(); removable.set("writer", .contacts, true)
+        assert(removable.canEdit("writer", .contacts, device: DeviceToolPolicy()))
+        assert(!removable.canEdit("analyst", .contacts, device: DeviceToolPolicy()))
+        removable.set("writer", .contacts, false); removable.save(existing)
+        let afterRevoke = PhoneAgentPermissions.load(existing)
+        let reenabled = afterRevoke.devicePolicy(for: "writer", device: DeviceToolPolicy(enabled: [.contacts]))
+        source = FakeSource(); prompts = 0
+        out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"fixture"}"#), policy: reenabled, source: source, approve: approveYes)
+        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.reads == 0 && prompts == 0)
+        assert(afterRevoke.canEdit("writer", .contacts, device: DeviceToolPolicy(enabled: [.contacts])))
+        assert(afterRevoke.canEdit("writer", .network, device: DeviceToolPolicy()))
 
         // A grant revoked mid-reply stops the next call before the data source.
         source = FakeSource(); prompts = 0

@@ -81,6 +81,10 @@ struct PhoneAgentPermissions: Equatable {
 
     func allowed(_ agentID: String) -> Set<PhoneCapability> { grants[agentID] ?? Self.baseline }
     func allows(_ agentID: String, _ capability: PhoneCapability) -> Bool { allowed(agentID).contains(capability) }
+    /// A disabled device kind prevents new grants, never revocation.
+    func canEdit(_ agentID: String, _ capability: PhoneCapability, device: DeviceToolPolicy) -> Bool {
+        allows(agentID, capability) || capability.deviceKind.map { device.enabled.contains($0) } ?? true
+    }
     mutating func set(_ agentID: String, _ capability: PhoneCapability, _ on: Bool) {
         var current = allowed(agentID)
         if on { current.insert(capability) } else { current.remove(capability) }
@@ -92,17 +96,22 @@ struct PhoneAgentPermissions: Equatable {
         if let raw = defaults.dictionary(forKey: defaultsKey) as? [String: [String]] {
             result.grants = raw.mapValues { Set($0.compactMap(PhoneCapability.init(rawValue:))) }
         }
+        return result
+    }
+
+    /// Run before showing any settings. Only the pre-launch device policy is
+    /// legacy data; ordinary reads and later device changes cannot grant access.
+    static func initializeAtLaunch(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: migratedKey) else { return }
+        var result = load(defaults)
         // Phone data used to be device-wide. Keep it working for the default
         // Agent only; every other Agent must be granted explicitly.
-        if !defaults.bool(forKey: migratedKey) {
-            let legacy = DeviceToolPolicy.load(defaults).enabled
-            if !legacy.isEmpty, result.grants["melo"] == nil {
-                result.grants["melo"] = baseline.union(legacy.compactMap { PhoneCapability(rawValue: $0.rawValue) })
-            }
-            defaults.set(true, forKey: migratedKey)
-            result.save(defaults)
+        let legacy = DeviceToolPolicy.load(defaults).enabled
+        if !legacy.isEmpty, result.grants["melo"] == nil {
+            result.grants["melo"] = baseline.union(legacy.compactMap { PhoneCapability(rawValue: $0.rawValue) })
         }
-        return result
+        result.save(defaults)
+        defaults.set(true, forKey: migratedKey)
     }
     func save(_ defaults: UserDefaults = .standard) {
         defaults.set(grants.mapValues { $0.map(\.rawValue).sorted() }, forKey: Self.defaultsKey)

@@ -75,7 +75,9 @@ struct PhoneAgentPermissionsSection: View {
                         Label(LocalizedStringKey(capability.label), systemImage: capability.symbol)
                         if unavailable { Text("设置中尚未开启").font(.caption).foregroundStyle(.secondary) }
                     }
-                }.disabled(unavailable)
+                }
+                .disabled(!permissions.canEdit(agentID, capability, device: device))
+                .accessibilityIdentifier("phone-permission." + capability.rawValue)
             }
         }
         .onAppear { permissions = PhoneAgentPermissions.load(); device = DeviceToolPolicy.load() }

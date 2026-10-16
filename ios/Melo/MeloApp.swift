@@ -1,6 +1,10 @@
 import SwiftUI
 
 @main struct MeloApp: App {
+    init() {
+        PhoneAgentPermissions.initializeAtLaunch()
+    }
+
     @Environment(\.dynamicTypeSize) private var systemTextSize
     @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = "zh-CN"
     @AppStorage("melo.textSize") private var textSize = "system"
