@@ -30,6 +30,7 @@ object DeviceAccess {
 interface DeviceExecutor {
     suspend fun begin(displayId: Int, screenshots: Boolean)
     suspend fun execute(arguments: JsonObject): DeviceToolResult
+    fun configureScreenshots(enabled: Boolean) { }
     fun end()
 }
 
@@ -103,6 +104,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         confirmationButton?.let { runCatching { overlayManager?.removeView(it) } }; confirmationButton = null
         overlay?.let { runCatching { overlayManager?.removeView(it) } }; overlay = null; overlayManager = null
     }
+    override fun configureScreenshots(enabled: Boolean) { checkSession(); screenshots = enabled; invalidateObservation() }
     private fun invalidateObservation() {
         screenId = ""; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
     }
@@ -184,7 +186,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive)
             when (action) {
                 "open_app" -> {
-                    val apps = catalog()
+                    val requestedPackage = arguments.text("package_name")
+                    // An exact cached package needs only a scoped launcher query.
+                    // Never store this subset as the session's full app catalog.
+                    val apps = if (sessionApps == null && requestedPackage.matches(Regex("[A-Za-z0-9_.]+"))) {
+                        val scoped = AppCatalog(packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(requestedPackage), 0)
+                            .map { LaunchableApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString(), listOf(it.activityInfo.applicationInfo.loadLabel(packageManager).toString())) })
+                        if (scoped.exactPackage(requestedPackage).isNotEmpty()) scoped else catalog()
+                    } else catalog()
                     val candidates = if (arguments.text("package_name").isNotBlank()) apps.exactPackage(arguments.text("package_name")) else apps.exactName(arguments.text("app_name"))
                     if (candidates.size != 1) return@withContext apps.openFailure(arguments.text("package_name"), arguments.text("app_name"), candidates.size > 1)
                     launchTarget = candidates.single().packageName

@@ -23,8 +23,8 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
     private var approvalReply: CompletableDeferred<Boolean>? = null
     fun dismissError() { mutable.update { it.copy(error = null) } }
     fun cancel() { job?.cancel() }
-    suspend fun editScript(original: DeviceScript, edited: DeviceScript) { repository.editDeviceScript(original, edited) }
-    suspend fun deleteScript(id: String) {
+    suspend fun editScript(original: DeviceScript, edited: DeviceScript) = withContext(NonCancellable) { repository.editDeviceScript(original, edited) }
+    suspend fun deleteScript(id: String) = withContext(NonCancellable) {
         if (mutable.value.running && mutable.value.scriptId == id) job?.cancelAndJoin()
         repository.deleteDeviceScript(id)
     }
@@ -73,6 +73,12 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 }
                 val device = executor ?: error("请先在 Android 设置中启用 Melo 手机助手的 Accessibility Service。")
                 val lookup = if (manualScript != null) CacheLookup(exact = CacheMatch(manualScript, supplied)) else if (forceProbe) CacheLookup() else TaskCacheRouter.lookup(trimmed, state.deviceScripts, cacheScope)
+                // A miss needs valid model access before clearing the user's draft;
+                // an exact/manual hit must never read credentials at all.
+                val modelAccess = if (lookup.exact == null) {
+                    require(instructions.length <= 32_000) { "角色或项目指令超过任务预算，请减少资料后重试。" }
+                    credentials()
+                } else null
                 val source = lookup.exact?.script ?: lookup.similar.firstOrNull()
                 val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
                 val started = DeviceRun(goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
@@ -83,7 +89,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     current.copy(deviceRuns = (current.deviceRuns + started).takeLast(50), drafts = if (chatId == null) current.drafts else current.drafts - chatId)
                 }
                 mutable.update { it.copy(running = true, runId = started.id, phase = "正在检查操作缓存…", chatId = chatId, scriptId = source?.id) }
-                device.begin(displayId, screenshots); begun = true
+                device.begin(displayId, screenshots && lookup.exact == null && lookup.similar.isEmpty()); begun = true
                 val outcome = withTimeout(10 * 60 * 1000L) {
                     val executeDevice: suspend (JsonObject) -> DeviceToolResult = { arguments ->
                         check(chatId == null || repository.data.value.chats.any { it.id == chatId }) { "关联对话已被删除，手机操作已停止。" }
@@ -91,14 +97,13 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     }
                     val trace: suspend (DeviceStep) -> Unit = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) }
                     val phase: (String) -> Unit = { text -> mutable.update { it.copy(phase = text) } }
-                    suspend fun countRequest() { run = run!!.copy(modelRequests = (run!!.modelRequests ?: 0) + 1); save(run!!) }
+                    fun countRequest() { run = run!!.copy(modelRequests = (run!!.modelRequests ?: 0) + 1) }
                     var recipe = lookup.exact
                     var adapted = false
                     if (recipe == null && lookup.similar.isNotEmpty()) {
                         phase("Similar Hit · 正在精简改写候选脚本…")
-                        val (selected, key) = credentials()
-                        countRequest()
-                        val plan = ScriptPlanner(ModelClient(BuildConfig.DEBUG)).adapt(selected, key, trimmed, lookup.similar, cacheScope, instructions)
+                        val (selected, key) = modelAccess ?: credentials()
+                        val plan = ScriptPlanner(ModelClient(BuildConfig.DEBUG)).adapt(selected, key, trimmed, lookup.similar, cacheScope, instructions, ::countRequest)
                         if (plan != null) { recipe = CacheMatch(plan.script, plan.parameters); adapted = true }
                         else { run = run!!.copy(cacheNote = "相似脚本无法可靠改写，已转入 Probe。"); save(run!!) }
                     }
@@ -120,7 +125,9 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         run = run!!.copy(cacheNote = "缓存失效，已保留 ${replay.completedSteps} 个成功步骤，从当前页面转入 Probe。")
                     }
                     run = run!!.copy(executionMode = "probe", connectionName = connection?.name ?: "未配置模型"); save(run!!)
-                    val (selected, key) = credentials()
+                    val (selected, key) = modelAccess ?: credentials()
+                    currentCoroutineContext().ensureActive()
+                    device.configureScreenshots(screenshots)
                     val recorder = ScriptRecorder(trimmed, prefix, prefixValues)
                     val probeGoal = if (prefix.isEmpty()) trimmed else trimmed + "\nHost recovery: ${prefix.size} script steps have ALREADY executed (${prefix.joinToString { it.action }}). Continue only from the current observed page. Do not replay prior effects or restart the script. Verify before finishing."
                     val result = DeviceTaskLoop(selected.protocol,

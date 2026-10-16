@@ -1,5 +1,13 @@
 # Android verification — 2026-10-16
 
+## 0.4.0 Task Cache
+
+Exact / 参数模板 Hit 在本机重新定位和校验终态，零模型；Similar 用一次受约束 plan，再本机执行；Miss 才 Probe。可验证成功后自动写入，仅本机保存；Chat 内可运行、编辑名称 / JSON、删除和强制 Probe。
+
+当前包通过 91 JVM tests、33 Android 16 runtime tests（无失败 / skip）、cover / unfolded 各两项 UI flow、Lint（零 errors）、Debug / R8 Release 与签名 / 四 ABI 16 KiB alignment。Fold6 / One UI 8.5 已同证书覆盖：首轮 Probe 自动写回、入口变化安全回退、Exact 0 模型 1.182 秒、Similar 1 模型 7.169 秒、Miss Probe、冷启动保留、编辑待验证 / 手动运行及删除均实测；保留原聊天 / 角色和模型 Key。JSON 步骤编辑以 Emulator UI 验证。
+
+APK SHA-256 `180949a7334378c407250899e23e699a19d45c32027f85ff23e9e513d05e3cde`。详细分层证据、真实入口失效回退、限制见 [Task Cache 验证](../docs/android-task-cache-20261016.md)；未运行远端 CI 或整个 repo 发布 gate。
+
 ## 0.3.1 Fold6 实机循环修复
 
 真实 Fold6 的 0.3.0 已打开设置，却重复 launch 并耗尽 30 步；这次失败推翻“Fixture 已通过就等于实机完成”的推断。0.3.1 增加独立 launch 限制、already_foreground、新的并列 pane 观察 / 选择和所选窗口完成重查。

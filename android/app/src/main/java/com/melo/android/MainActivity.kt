@@ -231,7 +231,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 FilterChip(selected = forceProbe, onClick = { forceProbe = !forceProbe }, label = { Text("强制 Probe") }, enabled = !busy, modifier = Modifier.testTag("force-probe"))
                 Spacer(Modifier.weight(1f)); Text("截图", color = MeloMuted); Switch(screenshots, { screenshots = it }, enabled = !busy)
             }
-            Text("优先匹配本机缓存；Similar / Probe 会将目标和界面文字${if (screenshots) "、截图" else ""}发送给所选模型。验证成功的可重放步骤自动缓存，输入默认参数化。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+            Text("命中缓存在本机执行；Similar 改写发送目标与候选脚本，Probe 再提供界面文字${if (screenshots) "、截图" else ""}。成功步骤自动缓存，输入默认参数化。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
         }
         if (images.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) { Text("已选 ${images.size} 张图片", color = MeloGold); TextButton(onClick = { images = emptyList() }) { Text("移除") } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {

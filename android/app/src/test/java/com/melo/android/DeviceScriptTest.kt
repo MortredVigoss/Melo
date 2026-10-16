@@ -40,7 +40,10 @@ class DeviceScriptTest {
         assertNull(similar.exact); assertEquals(1, similar.similar.size)
         assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(verified = false)), "scope").exact)
         assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope").exact)
+        assertTrue(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope").similar.isEmpty())
         assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(enabled = false)), "scope").exact)
+        val bilingual = script("Open Android Settings").copy(steps = listOf(ScriptStep("open_app", "com.android.settings")), completion = ScriptAssertion("com.android.settings", "设置", "设置"))
+        assertEquals(bilingual.id, TaskCacheRouter.lookup("打开设置", listOf(bilingual), "scope").similar.single().id)
     }
     @Test fun ambiguousExactMatchesRequirePlanningInsteadOfPickingTheFirst() {
         assertNull(TaskCacheRouter.lookup("Open fixture", listOf(script(), script()), "scope").exact)
@@ -118,5 +121,37 @@ class DeviceScriptTest {
         val recipe = script().copy(completion = ScriptAssertion("fixture.app", "Main", "Not actually visible"))
         val result = ScriptRunner({ screen() }, completionTimeoutMs = 100).run(recipe, emptyMap())
         assertEquals("blocked", result.outcome.status)
+    }
+    @Test fun recordedLabelsProtectAgainstARepurposedResourceId() = runBlocking {
+        val recorder = ScriptRecorder("Tap Target")
+        recorder.record(args("observe"), screen())
+        recorder.record(args("tap", "node_id" to "fresh-node"), screen())
+        recorder.record(done(), verified())
+        val cached = recorder.compile("scope", "run")!!
+        var clicks = 0
+        val result = ScriptRunner({ if (it.text("action") == "tap") clicks++; screen(nodes = listOf(node(text = "Different action"))) })
+            .run(cached.copy(steps = cached.steps.map { it.copy(timeoutMs = 100) }), emptyMap())
+        assertEquals("blocked", result.outcome.status); assertEquals(0, clicks)
+    }
+    @Test fun goalParametersCannotTurnAFixedScriptIntoAnArbitraryTaskWildcard() {
+        val input = ScriptStep("type_text", "fixture.app", selector = NodeSelector(viewId = "fixture:id/input", editable = true), parameter = "query")
+        assertTrue(runCatching { ScriptValidator.validate(script("{{query}}", listOf(input)).copy(parameters = listOf("query"))) }.isFailure)
+        assertTrue(runCatching { ScriptValidator.validate(script("Search {{query}}").copy(parameters = listOf("query"))) }.isFailure)
+    }
+    @Test fun parameterRenderingAndRecordingNeverInterpretInsertedValuesAsTemplates() {
+        assertEquals("{{second}}/value", GoalTemplate.render("{{first}}/{{second}}", mapOf("first" to "{{second}}", "second" to "value")))
+        assertEquals("{{input_1}} {{input_2}}", GoalTemplate.parameterize("Alpha 1", mapOf("input_1" to "Alpha", "input_2" to "1")))
+    }
+    @Test fun repeatedGoalValuesDoNotProduceAnAmbiguousOrLeakingTemplate() {
+        val recorder = ScriptRecorder("Search PrivateValue then PrivateValue")
+        recorder.record(args("observe"), screen(nodes = listOf(node("input", "", true))))
+        recorder.record(args("type_text", "node_id" to "input", "text" to "PrivateValue"), screen())
+        recorder.record(done(), verified())
+        assertNull(recorder.compile("scope", "run"))
+    }
+    @Test fun exactMatchingCannotFoldEntityNamesOrFixedContentIntoAnotherValue() {
+        assertNull(GoalTemplate.bind("Send to Bob: {{body}}", "Send to BOB: Hello"))
+        assertNull(GoalTemplate.bind("打开Ａ", "打开A"))
+        assertNull(GoalTemplate.bind("Send Hello  world", "Send Hello world"))
     }
 }

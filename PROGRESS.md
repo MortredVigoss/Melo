@@ -1,3 +1,10 @@
+## 2026-10-16 — 用真实 Cache 命中减少手机操作模型往返
+
+用户确认 Similar 允许自动改写；Codex 完成 Task Cache，保留旧 Run 无法还原与不稳定目标不能盲录的边界。修改后必须验证，不能直接恢复自动信任。
+91 JVM / 33 Android runtime / 4 viewport UI 与 Lint、Debug、R8、签名 / alignment 通过；Android ICU 专项缺陷由 Native 回归发现并修正。
+Fold6 原资料和 Key 保留；真实入口变化触发安全 Probe 更新后，Exact 0 请求 1.182 秒、Similar 1 请求 7.169 秒，另验 Miss、冷启动、编辑待验证 / 手动运行及删除。首次路径失效明确保留为反例，不算零模型成功。
+JSON 动作修改属 Emulator 证据；实机只读系统导航。未推送、未运行 git pp 或整个 repo 发布 gate，Node WSL 基线另列。
+
 ## 2026-10-16 — 将成功操作作为 Task Cache 自动复用
 
 用户明确新目标先查相同 / 相似脚本，未命中才 Probe，成功自动缓存；并确认 Similar Hit 可由 LLM 精简改写，不以只做手动宏替代此意图。缓存仍可编辑 / 删除。

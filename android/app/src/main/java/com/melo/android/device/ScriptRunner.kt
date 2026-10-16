@@ -12,9 +12,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
     init { require(completionTimeoutMs in 100..10_000) }
     private class ReplayFailure(val code: String, override val message: String) : Exception(message)
     private fun expand(text: String, values: Map<String, String>): String {
-        var result = text
-        for (name in GoalTemplate.names(text)) result = result.replace("{{$name}}", values[name] ?: throw ReplayFailure("missing_parameter", "请填写脚本输入参数。"))
-        return result
+        return GoalTemplate.render(text, values)
     }
     private suspend fun observe(window: Int? = null): DeviceToolResult = execute(buildJsonObject {
         put("action", "observe"); window?.let { put("window_id", it) }

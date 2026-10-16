@@ -49,6 +49,14 @@ object ScriptValidator {
         require(script.completion.parameter.isBlank() || script.completion.visibleText.isBlank()) { "终态文字与参数不能同时填写。" }
         val fields = script.steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + listOf(script.goalTemplate, script.completion.windowTitle, script.completion.visibleText)
         require(fields.flatMap(GoalTemplate::names).all { it in script.parameters }) { "脚本模板引用了未声明参数。" }
+        val used = script.steps.map { it.parameter }.filter(String::isNotBlank) + script.completion.parameter.takeIf(String::isNotBlank).orEmpty().let { if (it.isBlank()) emptyList() else listOf(it) } + fields.dropLast(3).flatMap(GoalTemplate::names) + GoalTemplate.names(script.completion.windowTitle) + GoalTemplate.names(script.completion.visibleText)
+        require(script.parameters.all { it in used }) { "每个参数必须用于实际动作或终态，不能只作为目标通配符。" }
+        val slots = GoalTemplate.names(script.goalTemplate)
+        require(slots.distinct().size == slots.size) { "目标模板中每个参数只能出现一次。" }
+        if (slots.isNotEmpty()) {
+            val anchor = GoalTemplate.literalText(script.goalTemplate)
+            require(anchor.count { it in '㐀'..'䶿' || it in '一'..'鿿' } >= 2 || anchor.count(Char::isLetter) >= 4) { "目标模板需要固定的任务意图，不能匹配任意目标。" }
+        }
     }
     fun parse(raw: String): DeviceScript {
         require(raw.toByteArray().size <= MAX_BYTES) { "脚本超过 96 KiB。" }
@@ -58,20 +66,30 @@ object ScriptValidator {
 }
 
 object GoalTemplate {
-    private val slot = Regex("\\{\\{([A-Za-z][A-Za-z0-9_]{0,39})}}")
-    fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC).trim().replace(Regex("\\s+"), " ")
+    private val slot = Regex("\\{\\{([A-Za-z][A-Za-z0-9_]{0,39})\\}\\}")
+    fun literalText(template: String) = slot.replace(template, "")
+    fun render(template: String, values: Map<String, String>): String = slot.replace(template) { values[it.groupValues[1]] ?: error("缺少脚本输入参数。") }
+    fun parameterize(text: String, values: Map<String, String>): String {
+        val entries = values.entries.filter { it.value.isNotBlank() }.sortedByDescending { it.value.length }
+        if (entries.isEmpty()) return text
+        val literal = Regex(entries.joinToString("|") { Regex.escape(it.value) })
+        return literal.replace(text) { match -> "{{${entries.singleOrNull { it.value == match.value }?.key ?: error("输入值相同，无法确定参数角色。")}}}" }
+    }
+    // Entity names, fixed text and input values are case/Unicode sensitive.
+    // Aggressive normalization belongs only in candidate retrieval, never execution.
+    fun normalize(value: String): String = value.trim()
     fun names(template: String) = slot.findAll(template).map { it.groupValues[1] }.toList()
     fun bind(template: String, goal: String): Map<String, String>? {
         val source = normalize(template)
         val matches = slot.findAll(source).toList()
         // Normalize cache keys, never the user's bound input value.
         val target = if (matches.isEmpty()) normalize(goal) else goal.trim()
-        if (matches.isEmpty()) return if (source.equals(target, true)) emptyMap() else null
+        if (matches.isEmpty()) return if (source == target) emptyMap() else null
         if (matches.size > 12 || matches.map { it.groupValues[1] }.distinct().size != matches.size) return null
         val regex = StringBuilder("^"); var end = 0
         for (match in matches) { if (match.range.first == end && end != 0) return null; regex.append(Regex.escape(source.substring(end, match.range.first))).append("(.{1,4000}?)"); end = match.range.last + 1 }
         regex.append(Regex.escape(source.substring(end))).append("$")
-        val found = Regex(regex.toString(), RegexOption.IGNORE_CASE).matchEntire(target) ?: return null
+        val found = Regex(regex.toString()).matchEntire(target) ?: return null
         val values = matches.mapIndexed { index, match -> match.groupValues[1] to found.groupValues[index + 1] }.toMap()
         // Conservative: an extended goal must not be swallowed as a text parameter.
         if (values.values.any { Regex("[;,\\n，。！？]|然后|并|同时|接着|再|另外|顺便|之后|随后|还要|以及|\\b(?:then|and|delete|send|purchase)\\b", RegexOption.IGNORE_CASE).containsMatchIn(it) }) return null
@@ -83,14 +101,16 @@ data class CacheMatch(val script: DeviceScript, val parameters: Map<String, Stri
 data class CacheLookup(val exact: CacheMatch? = null, val similar: List<DeviceScript> = emptyList())
 object TaskCacheRouter {
     private fun tokens(text: String): Set<String> {
-        val normalized = GoalTemplate.normalize(text).lowercase()
-        val words = Regex("[a-z0-9_.]+|[\\p{IsHan}]+").findAll(normalized).flatMap { match ->
-            if (match.value.any { it.code > 127 }) match.value.windowed(2, 1).asSequence() else sequenceOf(match.value)
-        }.toSet()
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase().replace(Regex("打开|启动|进入|帮我|麻烦|手机|系统|应用|页面|一下|请"), " ")
+        // Explicit Han ranges work on both Android ICU and the desktop JDK.
+        val stopWords = setOf("open", "please", "the", "app", "android", "go", "to", "in", "a", "com", "id")
+        val words = Regex("[a-z0-9]+|[㐀-䶿一-鿿]+").findAll(normalized).flatMap { match ->
+            if (match.value.any { it.code > 127 } && match.value.length > 1) match.value.windowed(2, 1).asSequence() else sequenceOf(match.value)
+        }.filterNot { it in stopWords }.toSet()
         return words
     }
     fun lookup(goal: String, scripts: List<DeviceScript>, scope: String): CacheLookup {
-        val eligible = scripts.filter { it.enabled && it.verified && it.scope == scope && runCatching { ScriptValidator.validate(it) }.isSuccess }
+        val eligible = scripts.filter { it.enabled && it.verified && !it.invalidated && it.scope == scope && runCatching { ScriptValidator.validate(it) }.isSuccess }
         val exact = eligible.filterNot { it.invalidated }.mapNotNull { script ->
             GoalTemplate.bind(script.goalTemplate, goal)?.takeIf { bindings -> script.parameters.all { it in bindings } }?.let { CacheMatch(script, it) }
         }
@@ -98,7 +118,10 @@ object TaskCacheRouter {
         val wanted = tokens(goal)
         val ranked = eligible.map { script ->
             val other = tokens(script.goalTemplate)
-            script to if (wanted.isEmpty() || other.isEmpty()) 0.0 else wanted.intersect(other).size.toDouble() / wanted.union(other).size
+            val keywords = tokens(script.completion.windowTitle + " " + script.steps.joinToString(" ") { it.packageName.substringAfterLast('.') + " " + it.windowTitle + " " + it.selector?.text.orEmpty() + " " + it.selector?.description.orEmpty() + " " + it.selector?.viewId?.substringAfterLast('/').orEmpty() })
+            val goalScore = if (wanted.isEmpty() || other.isEmpty()) 0.0 else wanted.intersect(other).size.toDouble() / wanted.union(other).size
+            val targetScore = if (wanted.isEmpty()) 0.0 else 0.6 * wanted.intersect(keywords).size / wanted.size
+            script to maxOf(goalScore, targetScore)
         }.filter { it.second >= 0.2 }.sortedByDescending { it.second }.take(3).map { it.first }
         return CacheLookup(similar = ranked)
     }

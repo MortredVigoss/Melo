@@ -34,7 +34,7 @@ class MobileUseFlowTest {
                     override fun end() { ended = true }
                 }
                 val goal = "Deleted context ${newId()}"
-                withContext(Dispatchers.Main) { assertTrue(app.deviceAgent.start(goal, 0, false, executor, id)) }
+                withContext(Dispatchers.Main) { assertTrue(app.deviceAgent.start(goal, 0, false, executor, id, forceProbe = true)) }
                 withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(5, TimeUnit.SECONDS)) }
                 val snapshot = app.repository.snapshot()
                 app.repository.acceptSnapshot(snapshot.copy(chats = snapshot.chats.filterNot { it.id == id }, deletedChats = snapshot.deletedChats + Deletion(id)))
@@ -101,8 +101,8 @@ class MobileUseFlowTest {
                 }
                 val goal = "Device context isolation ${newId()}"
                 withContext(Dispatchers.Main) {
-                    assertTrue(app.deviceAgent.start(goal, 0, false, executor, a))
-                    assertFalse(app.deviceAgent.start("second owner", 0, false, executor, b))
+                    assertTrue(app.deviceAgent.start(goal, 0, false, executor, a, forceProbe = true))
+                    assertFalse(app.deviceAgent.start("second owner", 0, false, executor, b, forceProbe = true))
                     assertFalse(app.engine.send(a, "must not overlap device task"))
                     app.engine.dismissError(); app.deviceAgent.dismissError()
                 }

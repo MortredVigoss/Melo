@@ -59,6 +59,12 @@ class DeviceAgentTest {
         val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         assertEquals(screen.data["image_width"]!!.jsonPrimitive.int, bitmap.width)
         assertEquals(screen.data["image_height"]!!.jsonPrimitive.int, bitmap.height); bitmap.recycle()
+        service.configureScreenshots(false)
+        screen = observe(service)
+        assertTrue(screen.ok); assertNull(screen.jpeg); assertFalse(screen.data["screenshot_available"]!!.jsonPrimitive.boolean)
+        service.configureScreenshots(true); delay(400)
+        screen = observe(service)
+        assertTrue(screen.ok); assertNotNull(screen.jpeg)
         assertFalse(screen.data.toString().contains("fixture-password-hidden"))
         val old = screen.data.text("screen_id")
         screen = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", old); put("node_id", node(screen, "Target button").text("node_id")) })
@@ -120,6 +126,17 @@ class DeviceAgentTest {
             assertNotEquals("com.melo.android", home.data.text("package_name"))
             service.end()
         }
+    }
+    @Test fun exactCachedPackageLaunchDoesNotNarrowSubsequentAppDiscovery() = runBlocking {
+        val service = DeviceAccess.service!!
+        service.begin(0, false)
+        val opened = service.execute(buildJsonObject { put("action", "open_app"); put("package_name", "com.android.settings") })
+        assertTrue(opened.data.toString(), opened.ok)
+        assertEquals("com.android.settings", opened.data.text("package_name"))
+        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1) })
+        assertTrue(page.ok); assertTrue(page.data["total_apps"]!!.jsonPrimitive.int > 1)
+        assertTrue(page.data["has_more"]!!.jsonPrimitive.boolean)
+        service.end()
     }
     @Test fun changingSiblingDoesNotInvalidateNodeButRelabelingTargetDoes() = runBlocking {
         ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
@@ -210,7 +227,7 @@ class DeviceAgentTest {
                 override fun end() { }
             }
             val goal = "Recover discovery ${newId()}"
-            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor) }
+            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor, forceProbe = true) }
             val run = waitForAgent(goal)
             assertEquals("achieved", run.status)
             assertEquals(listOf("observe", "open_app", "list_apps", "open_app", "observe"), actions)
@@ -242,7 +259,7 @@ class DeviceAgentTest {
                 override fun end() { }
             }
             val goal = "Bounded discovery $code ${newId()}"
-            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor) }
+            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, executor, forceProbe = true) }
             val run = waitForAgent(goal)
             assertEquals("blocked", run.status)
             assertEquals(listOf("observe", "open_app"), actions)
@@ -272,7 +289,7 @@ class DeviceAgentTest {
             app.repository.saveConnection(connection, "device-fixture-key")
             app.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) }
             val goal = "点击测试按钮一次 ${newId().take(8)}"
-            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, true) }
+            withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, true, forceProbe = true) }
             try { withTimeout(15_000) { while (app.repository.data.value.deviceRuns.none { it.goal == goal && it.status == "achieved" }) delay(100) } }
             catch (e: TimeoutCancellationException) { error("Agent runtime=${app.deviceAgent.runtime.value}; run=${app.repository.data.value.deviceRuns.last()}") }
             val run = app.repository.data.value.deviceRuns.last()
@@ -297,7 +314,7 @@ class DeviceAgentTest {
                 override suspend fun execute(arguments: JsonObject): DeviceToolResult { executed++; return DeviceToolResult.error("Should not run") }
                 override fun end() { ended = true }
             }
-            withContext(Dispatchers.Main) { app.deviceAgent.start("cancel fixture", 0, false, executor) }
+            withContext(Dispatchers.Main) { app.deviceAgent.start("cancel fixture", 0, false, executor, forceProbe = true) }
             withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(5, TimeUnit.SECONDS)) }
             withContext(Dispatchers.Main) { app.deviceAgent.cancel() }
             withTimeout(5000) { while (app.deviceAgent.runtime.value.running) delay(50) }
@@ -330,7 +347,7 @@ class DeviceAgentTest {
                 val connection = Connection(name = "Native approval fixture", endpoint = server.url("/tools").toString(), model = "device-fixture")
                 app.repository.saveConnection(connection, "fixture-key"); app.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) }
                 val goal = "Coordinate approval $decision ${newId()}"
-                withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false) }
+                withContext(Dispatchers.Main) { app.deviceAgent.start(goal, 0, false, forceProbe = true) }
                 val approval = withTimeout(10_000) { app.deviceAgent.runtime.first { it.approval != null }.approval!! }
                 fun assertCount(expected: String) { scenario.onActivity { activity ->
                     val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
@@ -360,7 +377,7 @@ class DeviceAgentTest {
             server.enqueue(MockResponse().setBody("{}").setBodyDelay(5, TimeUnit.SECONDS)); server.start()
             val connection = Connection(name = "Screen off fixture", endpoint = server.url("/tools").toString(), model = "device-fixture")
             app.repository.saveConnection(connection, "device-fixture-key"); app.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) }
-            withContext(Dispatchers.Main) { app.deviceAgent.start("screen off fixture", 0, false) }
+            withContext(Dispatchers.Main) { app.deviceAgent.start("screen off fixture", 0, false, forceProbe = true) }
             withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(5, TimeUnit.SECONDS)) }
             try {
                 shell("input keyevent 223")

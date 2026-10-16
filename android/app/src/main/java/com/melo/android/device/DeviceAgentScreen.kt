@@ -47,7 +47,7 @@ import com.melo.android.ui.*
             OutlinedTextField(goal, { goal = it }, label = { Text("希望手机帮你做什么？") }, placeholder = { Text("例如：打开设置，搜索蓝牙，停在搜索结果页面") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("device-goal"), enabled = !runtime.running)
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Text("向模型提供截图", Modifier.weight(1f)); Switch(screenshots, { screenshots = it }, enabled = !runtime.running) }
             FilterChip(forceProbe, { forceProbe = !forceProbe }, label = { Text("强制 Probe") }, enabled = !runtime.running)
-            Text("点击开始后，当前 Display 的界面文字${if (screenshots) "和截图" else ""}会发送给上述模型服务。只在本次任务期间操作，可随时点击悬浮「停止 Melo」。每次最多 30 步 / 10 分钟。", color = MeloMuted)
+            Text("缓存命中使用本机步骤。Similar 发送目标和候选脚本；Probe 才提供当前 Display 的界面文字${if (screenshots) "和截图" else ""}。可随时点击悬浮「停止 Melo」。Probe 最多 30 步、脚本最多 60 步，每次 10 分钟。", color = MeloMuted)
             Button(onClick = { if (runtime.running) agent.cancel() else agent.start(goal, displayId, screenshots, forceProbe = forceProbe) }, enabled = runtime.running || connected && goal.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                 Text(if (runtime.running) "停止执行" else "开始执行")
             }

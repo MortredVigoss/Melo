@@ -11,11 +11,7 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
     private val values = seedValues.toMutableMap()
     private var completion: ScriptAssertion? = null
     var unsupported: String = ""; private set
-    private fun mask(text: String): String {
-        var masked = text
-        for ((key, value) in values.entries.sortedByDescending { it.value.length }) if (value.isNotBlank()) masked = masked.replace(value, "{{$key}}")
-        return masked
-    }
+    private fun mask(text: String): String = GoalTemplate.parameterize(text, values)
     private fun selector(node: JsonObject): NodeSelector {
         val editable = node["editable"]?.jsonPrimitive?.booleanOrNull == true
         return NodeSelector(node.text("view_id"), if (editable) "" else node.text("text"), node.text("description"), node.text("class_name"),
@@ -23,11 +19,7 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
     }
     private fun select(data: JsonObject, id: String): JsonObject? = if (id.isBlank()) null else data["nodes"]?.jsonArray?.map { it.jsonObject }?.singleOrNull { it.text("node_id") == id }
     private fun stable(node: JsonObject, data: JsonObject): NodeSelector {
-        var target = selector(node)
-        if (target.viewId.isNotBlank()) {
-            val minimal = target.copy(text = "", description = "")
-            if (data["nodes"]!!.jsonArray.count { minimal.matches(it.jsonObject) } == 1) target = minimal
-        }
+        val target = selector(node)
         require(listOf(target.viewId, target.text, target.description).any(String::isNotBlank)) { "目标缺少稳定 selector。" }
         require(data["nodes"]!!.jsonArray.count { target.matches(it.jsonObject) } == 1) { "目标 selector 不唯一。" }
         return target.copy(text = mask(target.text), description = mask(target.description))
@@ -87,9 +79,9 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
             val assertion = completion ?: error("没有通过验证的终态。")
             val fields = steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + listOf(assertion.windowTitle, assertion.visibleText)
             val used = (steps.map { it.parameter } + assertion.parameter + fields.flatMap(GoalTemplate::names)).filter(String::isNotBlank).distinct()
-            var template = goal.trim()
-            for ((key, value) in values.entries.sortedByDescending { it.value.length }) if (key in used && value.isNotBlank() && template.windowed(value.length).count { it == value } == 1) template = template.replace(value, "{{$key}}")
-            template = GoalTemplate.normalize(template)
+            val activeValues = values.filterKeys { it in used }
+            require(activeValues.values.filter(String::isNotBlank).all { value -> goal.windowed(value.length).count { it == value } <= 1 }) { "目标中的输入值重复，无法无歧义参数化；未缓存。" }
+            val template = GoalTemplate.normalize(GoalTemplate.parameterize(goal.trim(), activeValues))
             DeviceScript(name = template.take(100), goalTemplate = template, steps = steps.toList(), completion = assertion,
                 parameters = used, scope = scope, sourceRunId = runId, verified = true, successes = 1).also(ScriptValidator::validate)
         } catch (e: Exception) { unsupported = e.message ?: "脚本不完整，未缓存。"; null }

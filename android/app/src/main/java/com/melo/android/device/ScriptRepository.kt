@@ -41,7 +41,7 @@ suspend fun Repository.commitDeviceOutcome(run: DeviceRun, learned: DeviceScript
         }
         if (run.status == "achieved" && learned != null) {
             ScriptValidator.validate(learned)
-            fun sameGoal(other: DeviceScript) = other.scope == learned.scope && GoalTemplate.normalize(other.goalTemplate).equals(GoalTemplate.normalize(learned.goalTemplate), true)
+            fun sameGoal(other: DeviceScript) = other.scope == learned.scope && GoalTemplate.normalize(other.goalTemplate) == GoalTemplate.normalize(learned.goalTemplate)
             val expected = initial.firstOrNull(::sameGoal)
             val current = scripts.firstOrNull(::sameGoal)
             if (current?.id == expected?.id && current?.revision == expected?.revision && (current != null || scripts.size < 100)) {

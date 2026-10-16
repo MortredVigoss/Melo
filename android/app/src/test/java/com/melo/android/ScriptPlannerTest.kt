@@ -49,4 +49,24 @@ class ScriptPlannerTest {
             assertNull(ScriptPlanner(ModelClient(true)).adapt(connection, "fixture-key", "Search WiFi", listOf(cached), "scope", ""))
         }
     }
+    @Test fun runtimeValuesCannotBecomeSavedNamesOrNewParameterIdentifiers() = runBlocking {
+        MockWebServer().use { server ->
+            val source = source().copy(goalTemplate = "Search {{query}}", parameters = listOf("query"), steps = listOf(ScriptStep("type_text", "com.android.settings", selector = NodeSelector(viewId = "android:id/search_src_text", editable = true), parameter = "query")))
+            server.enqueue(MockResponse().setBody(response(source.copy(name = "WiFi"), mapOf("query" to "WiFi"))))
+            server.enqueue(MockResponse().setBody(response(source.copy(goalTemplate = "Search {{WiFi}}", parameters = listOf("WiFi"), steps = source.steps.map { it.copy(parameter = "WiFi") }), mapOf("WiFi" to "WiFi"))))
+            server.start()
+            val planner = ScriptPlanner(ModelClient(true)); val connection = Connection(endpoint = server.url("/chat").toString(), model = "fixture", stream = false)
+            val adapted = planner.adapt(connection, "fixture-key", "Search WiFi", listOf(source), "scope", "")!!
+            assertEquals("Search {{query}}", adapted.script.name)
+            assertNull(planner.adapt(connection, "fixture-key", "Search WiFi", listOf(source), "scope", ""))
+        }
+    }
+    @Test fun oversizedReferenceDoesNotConsumeAReportedModelRequest() = runBlocking {
+        val large = source().copy(steps = List(60) { ScriptStep("tap", "com.android.settings", selector = NodeSelector(viewId = "fixture:id/target$it", text = "t".repeat(300), description = "d".repeat(300), className = "c".repeat(100))) })
+        ScriptValidator.validate(large)
+        var requests = 0
+        val connection = Connection(endpoint = "http://127.0.0.1:9/model", model = "fixture", stream = false)
+        assertNull(ScriptPlanner(ModelClient(true)).adapt(connection, "fixture-key", "Open settings", listOf(large), "scope", "", { requests++ }))
+        assertEquals(0, requests)
+    }
 }
