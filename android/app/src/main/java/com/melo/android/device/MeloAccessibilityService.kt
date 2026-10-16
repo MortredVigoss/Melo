@@ -292,7 +292,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 if (label.isNotBlank() || description.isNotBlank() || node.isClickable || node.isEditable || node.isScrollable) {
                     val id = "n${nodes.size + 1}"; nodes[id] = AccessibilityNodeInfo.obtain(node); targets[id] = target(node)
                     add(buildJsonObject {
-                        put("node_id", id); put("text", label); put("description", description); put("view_id", node.viewIdResourceName.orEmpty().take(200))
+                        put("node_id", id); put("text", label); put("description", description); put("view_id", node.viewIdResourceName.orEmpty().take(200)); put("class_name", node.className?.toString().orEmpty().take(200))
                         put("clickable", node.isClickable); put("editable", node.isEditable); put("scrollable", node.isScrollable); put("enabled", node.isEnabled)
                         put("bounds", buildJsonArray { add(((rect.left - bounds.left) * scale).toInt()); add(((rect.top - bounds.top) * scale).toInt()); add(((rect.right - bounds.left) * scale).toInt()); add(((rect.bottom - bounds.top) * scale).toInt()) })
                     })

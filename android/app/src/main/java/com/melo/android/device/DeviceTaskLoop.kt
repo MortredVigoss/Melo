@@ -63,6 +63,7 @@ class DeviceTaskLoop(
     private val onStep: suspend (DeviceStep) -> Unit,
     private val onPhase: (String) -> Unit = {},
     private val maxSteps: Int = 30,
+    private val onResult: (JsonObject, DeviceToolResult) -> Unit = { _, _ -> },
 ) {
     suspend fun run(goal: String): DeviceOutcome {
         val history = DeviceAgentClient.initial(protocol, goal)
@@ -124,6 +125,7 @@ class DeviceTaskLoop(
             }
             onStep(DeviceStep(action, result.ok, detail, callId = call.id, durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code"), recoveryCount = recovery))
             DeviceAgentClient.appendResult(history, protocol, call, result)
+            onResult(call.arguments, result)
             launches.record(call.arguments, result)
             if (repeatedLaunch) return DeviceOutcome("blocked", error = result.data.text("error"))
             if (action == "open_app" && launches.count(call.arguments) >= 2) history += message("You have already requested this same app twice. Do not call open_app for it again without a meaningful navigation action. Inspect the returned package_name, window_title and related_windows. A foldable app can show a main navigation pane and a different detail pane simultaneously; use observe(window_id=...) for a related pane. If the requested visible goal is already satisfied, call finish with evidence now. Otherwise navigate toward the remaining goal or finish blocked; repeatedly launching is not progress.")

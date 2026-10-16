@@ -174,6 +174,8 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     val busy = turn != null || deviceBusy
     var deviceMode by rememberSaveable(chat.id) { mutableStateOf(false) }
     var screenshots by rememberSaveable(chat.id) { mutableStateOf(true) }
+    var forceProbe by rememberSaveable(chat.id) { mutableStateOf(false) }
+    var scriptLibrary by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     var speech by remember { mutableStateOf<TextToSpeech?>(null) }
     DisposableEffect(context) { val instance = TextToSpeech(context) { }; speech = instance; onDispose { instance.stop(); instance.shutdown() } }
@@ -222,9 +224,15 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             FilterChip(selected = !deviceMode, onClick = { deviceMode = false }, label = { Text("对话") }, enabled = !busy)
             Spacer(Modifier.width(8.dp))
             FilterChip(selected = deviceMode, onClick = { deviceMode = true }, label = { Text("操作手机") }, enabled = !busy, modifier = Modifier.testTag("device-mode"))
-            if (deviceMode) { Spacer(Modifier.weight(1f)); Text("截图", color = MeloMuted); Switch(screenshots, { screenshots = it }, enabled = !busy) }
+            if (deviceMode) { Spacer(Modifier.weight(1f)); TextButton(onClick = { scriptLibrary = true }, modifier = Modifier.testTag("chat-cache-open")) { Text("操作缓存") } }
         }
-        if (deviceMode) Text("本次目标和主 Display 的界面文字${if (screenshots) "、截图" else ""}将发送给此对话所选模型。操作记录仅保存在本机。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+        if (deviceMode) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = forceProbe, onClick = { forceProbe = !forceProbe }, label = { Text("强制 Probe") }, enabled = !busy, modifier = Modifier.testTag("force-probe"))
+                Spacer(Modifier.weight(1f)); Text("截图", color = MeloMuted); Switch(screenshots, { screenshots = it }, enabled = !busy)
+            }
+            Text("优先匹配本机缓存；Similar / Probe 会将目标和界面文字${if (screenshots) "、截图" else ""}发送给所选模型。验证成功的可重放步骤自动缓存，输入默认参数化。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+        }
         if (images.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) { Text("已选 ${images.size} 张图片", color = MeloGold); TextButton(onClick = { images = emptyList() }) { Text("移除") } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
             IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy && !deviceMode) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
@@ -234,13 +242,16 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 when {
                     deviceBusy -> deviceAgent.cancel()
                     turn != null -> vm.engine.cancel(chat.id)
-                    deviceMode -> if (images.isNotEmpty()) vm.engine.work { error("操作手机使用实时屏幕，请先移除已选参考图片。") } else deviceAgent.start(draft, 0, screenshots, chatId = chat.id)
+                    deviceMode -> if (images.isNotEmpty()) vm.engine.work { error("操作手机使用实时屏幕，请先移除已选参考图片。") } else deviceAgent.start(draft, 0, screenshots, chatId = chat.id, forceProbe = forceProbe)
                     else -> onSend(draft, images)
                 }
             }, enabled = busy || draft.isNotBlank() || !deviceMode && images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
         }
     }
     if (options) ChatOptions(chat, data, vm) { options = false }
+    if (scriptLibrary) DeviceScriptLibrary(data, deviceAgent, { scriptLibrary = false }) { script, values ->
+        deviceAgent.start(script.goalTemplate, 0, screenshots, chatId = chat.id, scriptId = script.id, parameters = values)
+    }
 }
 
 private fun agentName(data: AppData, chat: Conversation) = data.agents.find { it.id == chat.agentId }?.name ?: "Melo"

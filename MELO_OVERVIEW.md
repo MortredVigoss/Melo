@@ -16,7 +16,7 @@
 
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
-| Android / Mobile Use | 0.3.1 已修同目标重复 launch 与 Fold6 并列 pane 观察；真实模型“打开设置”5 步、“进入 Bluetooth 页面”10 步均 finish 成功。用户进一步确认 Task Cache：Exact Hit 本机、Similar Hit 精简改写、Miss Probe、成功自动缓存，编辑 / 删除 | 当前 67 JVM / 25 Emulator runtime / Lint / Debug / R8 Release 通过；实机首份包与后续 modal 防护 gate 分层，见[实机证据](docs/mobile-use-fold6-20261016.md)。Task Cache 已认可规格、尚未接生产；Node WSL identity 基线仍单列 |
+| Android / Mobile Use | 0.3.1 loop / pane 修复已单独提交；Task Cache 0.4.0 生产接线 WIP：本地匹配、参数化录制、零模型 Runner、Similar planner、Probe 自动写回和 Chat 编辑 / 删除入口已写入 | Cache 首轮 84 JVM 通过，端到端 / 新 APK / Fold6 尚待验；不能沿用 0.3.1 的 67 JVM / 25 runtime / 双变体验收。真实 0.3.1 的 5 / 10 步任务和包 hash 见[实机证据](docs/mobile-use-fold6-20261016.md)；原 Node WSL 基线独立 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.3.1 loop / pane 修复已有本机 gate 与真实只读任务证据；Task Cache 规格获用户认可，接续实现 | 当前 67 JVM / 25 runtime；首份 0.3.1 实机 5 / 10 步 finish，与最终 modal hardening 的 Emulator gate 分开。见[实机记录](docs/mobile-use-fold6-20261016.md)与[Cache 规格](docs/specs/2026-10-16-android-device-scripts-design.md)；未推送 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.3.1 独立修复 `1296aac`；Cache 规格 `fee951d` 已认可；0.4.0 Router / Recorder / Runner / Planner / Chat 管理生产 WIP | 首轮 84 JVM 通过，Cache 端到端、新签名包与 Fold6 待验，不称完整交付；见[Cache 规格](docs/specs/2026-10-16-android-device-scripts-design.md)。未推送 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -467,3 +467,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 线程 `01a13a56-c8c5-7d21-a108-d761aee8c657`；用户授权实测后，0.3.0 暴露“设置已打开却重复启动到 30 步”的失败。0.3.1 独立限制同目标启动，返回 already_foreground，并支持同 App 可见并列 pane 选择 / 同窗 finish；覆盖式 modal 仍使旧窗口失效。
 - 最终 67 JVM / 25 Android 16 Emulator runtime、Lint 0 errors、Debug / R8 Release、签名 / 四 ABI alignment 通过。首份 0.3.1 实机 5 步打开设置、10 步进入 Bluetooth，均 finish 重查成功；手机 Key / 资料保留。后加 modal guard 属最终 Emulator gate，APK hash 和验证层级见 [实机记录](docs/mobile-use-fold6-20261016.md)。
 - 用户明确新功能应为 Task Cache，认可 Exact / 模板 Hit 零 LLM、Similar Hit 自动精简改写、Miss Probe、成功自动写回及编辑 / 删除；[已认可规格](docs/specs/2026-10-16-android-device-scripts-design.md)。旧 Run 没有原始目标参数，不能伪造脚本；当前生产尚未实现 Cache，下一步先录制 / 验证 / 本机 Runner，再接路由和 Chat 管理。
+
+### 2026-10-16 — Android / Task Cache — 首轮生产接线
+
+- 用户将需求明确为类似 Cache 的自动路由，而非仅手动保存：Exact / 参数模板 Hit 本机；Similar Hit 允许一次精简模型改写；Miss Probe，成功后自动写回。规格 `fee951d` 已获明确认可，不再重复问许可。
+- 已写 Recorder / Validator / Router / Runner / Planner、本地 AppData 字段和 Chat 管理入口；暂时 ID / 原始参数不入脚本，编辑后待验证，覆盖式 modal 和 selector 不匹配停止。相似计划不能发明新 selector、弱化完成条件或篡改绑定参数；否则 Probe。完成结果与可信 Cache 通过同一 Room document 更新，避免取消或并行编辑复活条目。
+- 首轮 84 JVM tests 通过（含 3 项 MockWebServer planner checks）；当前仅本机 JVM 层，UI / Native Cache 端到端、Lint / R8 / 签名包和 Fold6 待验。原 0.3.1 结果是历史边界；下一步做 Probe → Cache → 无连接 Exact Hit、Similar 改写、编辑 / 删除 / 重启和失败不重放的实际链路。
