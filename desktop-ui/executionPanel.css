@@ -136,3 +136,11 @@
 .execution-panel .execution-inspector { max-height:calc(100% - 60px); }
 .chat-thread .execution-panel:has(.execution-panel-stage[data-focus=create][data-wide=false]) .execution-panel-viewport { max-height:clamp(250px,calc(100dvh - 360px),440px); }
 .chat-thread .execution-panel .execution-panel-stage[data-focus=create][data-wide=false] { height:clamp(250px,calc(100dvh - 360px),440px); }
+
+.execution-timing {font-size:11px;line-height:1.6;color:#a4b3be;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0;}
+.execution-timing-host {padding:0 13px 9px;}
+.execution-timing-host:empty {display:none;}
+.execution-image-progress {display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;}
+.execution-image-progress progress {width:90px;height:5px;accent-color:#e4c9a0;}
+.execution-image-progress small {flex-basis:100%;font-size:10px;color:#8f9da9;}
+[data-execution-timing-run] {flex-basis:100%;min-width:0;}

@@ -1,5 +1,5 @@
 import { t, ui, currentLanguage } from './i18n.js';
-import { renderExecutionDetail } from './executionDetails.js';
+import { renderExecutionDetail, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, moduleActivity, sceneFinished, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
@@ -30,7 +30,7 @@ function cancelCollapse() { clearTimeout(collapseTimer); closingRun = null; }
 export const renderExecutionPanel = () => ui`<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>`;
 export function renderSceneReplay(message) {
   const id = message.role === 'assistant' && message.metadata?.runId;
-  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button>` : '';
+  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button><div data-execution-timing-run="${escape(id)}">${renderExecutionTiming(scenes.get(id))}</div>` : '';
 }
 const selectedScene = () => {
   const scene = scenes.get(currentRun); if (!scene) return null;
@@ -191,6 +191,16 @@ function renderCandidates(scene) {
   </article>`).join('')}</div></div>`;
 }
 let inspectedOperation = '';
+function paintTiming(liveOnly = false) {
+  if (document.hidden) return;
+  const update = (node, scene) => {
+    if (!node || liveOnly && (!scene || sceneFinished(scene))) return;
+    const html = renderExecutionTiming(scene);
+    if (node.innerHTML !== html) node.innerHTML = html;
+  };
+  update(host?.querySelector('.execution-timing-host'), selectedScene());
+  for (const node of document.querySelectorAll('[data-execution-timing-run]')) update(node, scenes.get(node.dataset.executionTimingRun));
+}
 function paint() {
   if (!host?.isConnected) return;
   const scene = selectedScene(), items = detailsFor(scene);
@@ -224,7 +234,7 @@ function paint() {
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
   const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · 图片 ${images.length}/${scene.requestedImages} 张成功` : '';
   host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? '执行已停止 · 神经脉冲是低强度氛围动画' : scene ? '只展示已记录的执行 · 不代表模型内部思维' : '准备就绪 · 尚未搜索、计算或调用工具'))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
-  updateButtons(); syncZoomControls();
+  updateButtons(); syncZoomControls(); paintTiming();
   if (opened && !gpu && !loading) {
     loading = true;
     const currentHost = host;
@@ -288,7 +298,7 @@ export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAu
   const next = document.querySelector('#execution-panel');
   if (next !== host) {
     releaseZoom?.(); releaseZoom = null; layoutObserver?.disconnect(); layoutObserver = null; clearTimeout(zoomSaveTimer); gpu?.dispose(); gpu = null; host = next; lastSignature = '';
-    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><footer class="execution-panel-footer"></footer>`;
+    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><footer class="execution-panel-footer"></footer>`;
   }
   if (host && !releaseZoom) {
     const stage = host.querySelector('.execution-panel-stage');
@@ -382,7 +392,10 @@ document.addEventListener('change', event => {
   if (event.target.matches('[data-execution-history]')) { cancelCollapse(); chooseRun(event.target.value); setOpen(true); }
   if (event.target.matches('[data-execution-slot]')) { slot = Number(event.target.value); rememberView(); paint(); }
 });
-document.addEventListener('visibilitychange', () => { document.documentElement.dataset.executionHidden = String(document.hidden); });
+document.addEventListener('visibilitychange', () => { document.documentElement.dataset.executionHidden = String(document.hidden); paintTiming(); });
 setInterval(() => {
   if (!document.hidden && host?.isConnected && currentChat && Date.now() - lastPoll > 3500 && [...scenes.values()].some(s => s.chatId === currentChat && !sceneFinished(s))) { lastPoll = Date.now(); void loadScenes(currentChat); }
 }, 4000);
+
+// Refresh only text/progress, preserving images, reading position and WebGL.
+setInterval(() => { if (!document.hidden && host?.isConnected) paintTiming(true); }, 1000);

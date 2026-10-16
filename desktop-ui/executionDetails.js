@@ -1,3 +1,4 @@
+export { renderExecutionTiming } from './executionTiming.js';
 import { t, ui } from './i18n.js';
 const escape = (value) =>
   String(value ?? '').replace(

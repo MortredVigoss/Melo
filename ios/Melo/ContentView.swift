@@ -316,6 +316,7 @@ struct ChatView: View {
                             ReplyContentView(content: message.content)
                             MessageImages(messageID: message.id, preview: { imagePreview = $0 }, edit: useImage)
                             if let run = store.execution(for: message.id) {
+                                ExecutionTimingView(record: run)
                                 HStack {
                                     Button { executionRunID = run.runId; showExecution = true } label: { Label("回看任务空间", systemImage: "atom").font(.caption) }
                                     Spacer()
@@ -352,7 +353,10 @@ struct ChatView: View {
                         }.id(message.id)
                         .onAppear { if message.role == "assistant" { store.markRendered(message.id) } }
                     }
-                    if store.isSending(chatID) { HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }.padding() }
+                    if store.isSending(chatID) { VStack(alignment: .leading, spacing: 6) {
+                        HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }
+                        if let run = store.scenes(for: chatID).last { ExecutionTimingView(record: run) }
+                    }.padding() }
                     else if chat?.messages.last?.role == "user" {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
                         Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)

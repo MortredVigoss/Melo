@@ -1,6 +1,14 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["本轮用时 %@", "Total time %@", "今回の所要時間 %@", "전체 소요 시간 %@", "Tiempo total %@"],
+["已用时 %@", "Elapsed %@", "経過 %@", "경과 %@", "Transcurrido %@"],
+["思考与回复 %@", "Thinking and response %@", "思考と応答 %@", "생각 및 응답 %@", "Razonamiento y respuesta %@"],
+["完成于 %@", "Completed at %@", "完了日時 %@", "완료 시각 %@", "Completado a las %@"],
+["停止于 %@", "Stopped at %@", "停止日時 %@", "중지 시각 %@", "Detenido a las %@"],
+["图片成果 %lld% · 已保存 %lld/%lld 张", "Image results %lld% · Saved %lld/%lld", "画像成果 %lld% · 保存済み %lld/%lld 枚", "이미지 결과 %lld% · 저장 %lld/%lld장", "Imágenes %lld% · Guardadas %lld/%lld"],
+["图片处理 %@", "Image processing %@", "画像処理 %@", "이미지 처리 %@", "Procesamiento de imagen %@"],
+["图片保存于 %@", "Image saved at %@", "画像保存日時 %@", "이미지 저장 시각 %@", "Imagen guardada a las %@"],
 ["从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。", "Synced from the computer and limits only what this Agent does on the computer; increases need confirmation there. Search, images and phone data on this iPhone are set under “On this iPhone”.", "コンピュータから同期され、この Agent のコンピュータ上の実行だけを制限します。拡大はコンピュータでの確認が必要です。iPhone での検索、画像、iPhone データは「この iPhone」で設定します。", "컴퓨터에서 동기화되며 이 Agent의 컴퓨터 실행만 제한합니다. 권한 확대는 컴퓨터에서 확인해야 합니다. iPhone의 검색, 이미지, iPhone 데이터는 '이 iPhone에서'에서 설정합니다.", "Sincronizado desde el ordenador; solo limita lo que este Agent hace en el ordenador y las ampliaciones se confirman allí. Búsqueda, imágenes y datos del iPhone se configuran en «En este iPhone»."],
 ["还需要在 Agent 页的“这台手机上”为每个 Agent 单独授权。", "Each Agent also needs its own permission under “On this iPhone” on its Agent page.", "各 Agent ごとに、Agent ページの「この iPhone」で許可も必要です。", "각 Agent 페이지의 '이 iPhone에서'에서 Agent별로 허용해야 합니다.", "Cada Agent también necesita permiso propio en «En este iPhone» de su página."],
 ["这台手机上", "On this iPhone", "この iPhone", "이 iPhone에서", "En este iPhone"],

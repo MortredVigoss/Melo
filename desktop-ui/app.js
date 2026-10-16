@@ -524,7 +524,7 @@ function thinkingLabel() {
     0,
     Math.floor((Date.now() - uiState.thinkingSince) / 1000),
   );
-  return elapsedSeconds > 0 ? `${label} · ${elapsedSeconds}s` : label;
+  return `${label} · ${t('已用时 {time}', { time: t('{seconds} 秒', { seconds: elapsedSeconds }) })}`;
 }
 
 function parseRenderableMessageBlocks(value = '') {
@@ -13445,3 +13445,9 @@ installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
 window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));
+
+// A silent provider must still advance the visible wait timer.
+setInterval(() => {
+  if (!uiState.sending || document.hidden) return;
+  for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = thinkingLabel();
+}, 1000);

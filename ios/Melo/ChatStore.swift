@@ -346,7 +346,8 @@ import SwiftUI
         instructions += MobileMemoryRecall.instructions(recalled.facts)
         let history = chats[index].messages
         guard history.last?.role == "user" else { return }
-        let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
+        var record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
+        if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
         executionRecords.append(record); saveExecutionRecords()
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
         if teamPlan != nil { pendingTeams[chatID] = nil }
@@ -396,6 +397,12 @@ import SwiftUI
                 if !reply.images.isEmpty {
                     let assets = try reply.images.map { try imageLibrary.store($0.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: plan.references.map(\.id), reportedModel: $0.reportedModel, revisedPrompt: $0.revisedPrompt) }
                     try imageLibrary.bind(assets, to: message.id); imageRevision += 1
+                    if let runIndex = executionRecords.firstIndex(where: { $0.runId == record.runId }) {
+                        var progress = executionRecords[runIndex].imageProgress ?? ExecutionImageProgress(startedAt: record.startedAt)
+                        progress.saved = assets.count; progress.finishedAt = timestamp()
+                        executionRecords[runIndex].imageProgress = progress
+                        saveExecutionRecords()
+                    }
                 }
                 stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机聊天记录")
                 let original = chats[position]
