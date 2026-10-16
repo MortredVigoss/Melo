@@ -12,6 +12,7 @@ import SwiftUI
     @StateObject private var store: ChatStore = {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-melo-preview-device-approval") { return DeviceDataVerification.approvalStore() }
+        if ProcessInfo.processInfo.arguments.contains("-melo-preview-team") { return TeamVerification.previewStore() }
         #endif
         return ChatStore()
     }()
@@ -34,6 +35,7 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-conversation") { await ConversationVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-background") { await ReplyBackgroundVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-device-data") { await DeviceDataVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-verify-team") { await TeamVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-preview-device-approval") { DeviceDataVerification.startApproval(store) }
                     #endif
                     #if DEBUG

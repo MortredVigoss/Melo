@@ -34,3 +34,40 @@ test('tool-call replay appends output items verbatim, then one output per call i
   const outputs = tail.slice(output.length);
   assert.deepEqual(outputs.map(item => [item.type, item.call_id, typeof item.output]), results.map(r => ['function_call_output', r.call_id, 'string']));
 });
+
+test('team handoff parsing matches the shared contract', async () => {
+  const { createHandoff } = await import('../src/agents/handoff.js');
+  assert.ok(contract.teamHandoff.length >= 6);
+  for (const { task, output, ok, expected } of contract.teamHandoff) {
+    const h = createHandoff(task, { ok, output }, null);
+    assert.deepEqual({ conclusion: h.conclusion, evidence: h.evidence, changedFiles: h.changedFiles, unfinished: h.unfinished, status: h.status, review: h.review }, expected, output.slice(0, 60));
+  }
+});
+
+test('team plan validation matches the shared contract', async () => {
+  const { validateTeamPlan } = await import('../src/agents/team.js');
+  for (const row of contract.teamPlans) {
+    if (row.error) { assert.throws(() => validateTeamPlan(row.plan), undefined, JSON.stringify(row.plan)); continue; }
+    const plan = validateTeamPlan(row.plan);
+    assert.deepEqual([plan.mode, plan.members], [row.mode, row.members]);
+  }
+});
+
+test('team execution order, inputs and acceptance match the shared contract', async () => {
+  const { runAgentTeam } = await import('../src/testSupport/directAgentFixture.js');
+  const marker = '前序交接记录（需要独立核对）：\n';
+  for (const row of contract.teamSchedule) {
+    const calls = [], rounds = {};
+    const team = await runAgentTeam({ plan: row.plan, task: 't', config: {}, run: async ({ roleId, instructions }) => {
+      const round = rounds[roleId] = (rounds[roleId] || 0) + 1;
+      calls.push({ member: roleId, round, prior: instructions.startsWith(marker) ? JSON.parse(instructions.slice(marker.length)).map(h => h.conclusion) : [] });
+      const reviewer = row.plan.templateId === 'review-loop' && roleId === row.plan.members[1];
+      return { ok: true, output: JSON.stringify({ conclusion: `${roleId} r${round}`, evidence: [], changedFiles: [], unfinished: [], ...(reviewer ? { review: row.approveRound && round >= row.approveRound ? 'approve' : 'revise' } : {}) }) };
+    } });
+    const key = call => `${call.member}${call.round}:${call.prior.join('|')}`;
+    const prefix = row.parallelPrefix;
+    assert.deepEqual(calls.slice(0, prefix).map(key).sort(), row.calls.slice(0, prefix).map(key).sort(), JSON.stringify(row.plan));
+    assert.deepEqual(calls.slice(prefix).map(key), row.calls.slice(prefix).map(key), JSON.stringify(row.plan));
+    assert.deepEqual([team.accepted, team.ok], [row.accepted, row.ok]);
+  }
+});

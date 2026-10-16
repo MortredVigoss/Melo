@@ -39200,6 +39200,251 @@
           }
         }
       }
+    },
+    "团队": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equipo"
+          }
+        }
+      }
+    },
+    "成员": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Members"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구성원"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Miembros"
+          }
+        }
+      }
+    },
+    "执行顺序：": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行顺序："
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Order: "
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行順："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 순서: "
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orden: "
+          }
+        }
+      }
+    },
+    "用于下一条消息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于下一条消息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use for next message"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のメッセージに使う"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 메시지에 사용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar en el próximo mensaje"
+          }
+        }
+      }
+    },
+    "不用团队": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不用团队"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No team"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チームを使わない"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 사용 안 함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin equipo"
+          }
+        }
+      }
+    },
+    "只作用于下一条消息，发送后自动取消。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只作用于下一条消息，发送后自动取消。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to the next message only and is cleared once it is sent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のメッセージにだけ適用され、送信後に自動で解除されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 메시지에만 적용되며 보내면 자동으로 해제됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se aplica al próximo mensaje y se quita al enviarlo."
+          }
+        }
+      }
+    },
+    "每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each member calls the model once on this iPhone, text only. Web search needs both the lead and that member to have it on under “On this iPhone”. The whole team has at most 15 minutes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各メンバーはこの iPhone で一度ずつモデルを呼び出し、テキストのみを扱います。Web 検索には、開始した Agent とそのメンバーの両方で「この iPhone」の設定がオンである必要があります。チーム全体で最大 15 分です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 구성원은 이 iPhone에서 모델을 한 번씩 호출하며 텍스트만 처리합니다. 웹 검색은 시작한 Agent와 해당 구성원 모두 ‘이 iPhone에서’ 설정이 켜져 있어야 합니다. 팀 전체는 최대 15분입니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

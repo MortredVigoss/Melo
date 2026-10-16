@@ -37,6 +37,48 @@ import Foundation
         assert(outputs.map { $0["call_id"] as? String } == results.map(\.callID))
         assert(outputs.allSatisfy { $0["output"] is String })
 
-        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay")
+        let handoffs = contract["teamHandoff"] as! [[String: Any]]
+        assert(handoffs.count >= 6)
+        for row in handoffs {
+            let expected = row["expected"] as! [String: Any]
+            let h = AgentTeam.handoff(task: row["task"] as! String, output: row["output"] as! String, ok: row["ok"] as! Bool)
+            assert(h.conclusion == expected["conclusion"] as! String, "conclusion differs for \((row["output"] as! String).prefix(60))")
+            assert(h.evidence == expected["evidence"] as! [String] && h.changedFiles == expected["changedFiles"] as! [String] && h.unfinished == expected["unfinished"] as! [String], "lists differ for \((row["output"] as! String).prefix(60))")
+            assert(h.status == expected["status"] as! String && h.review == expected["review"] as? String, "status/review differ for \((row["output"] as! String).prefix(60))")
+        }
+
+        let plans = contract["teamPlans"] as! [[String: Any]]
+        for row in plans {
+            let plan = row["plan"] as! [String: Any]
+            let result = try? AgentTeam.validate(templateID: plan["templateId"] as! String, members: plan["members"] as! [String])
+            if row["error"] as? Bool == true { assert(result == nil, "plan should be rejected: \(plan)"); continue }
+            assert(result?.mode.rawValue == row["mode"] as? String && result?.members == row["members"] as? [String], "plan differs: \(plan)")
+        }
+
+        let schedules = contract["teamSchedule"] as! [[String: Any]]
+        let wait = DispatchSemaphore(value: 0)
+        Task.detached {
+            for row in schedules {
+                let planValue = row["plan"] as! [String: Any], approveRound = row["approveRound"] as! Int
+                let plan = try! AgentTeam.validate(templateID: planValue["templateId"] as! String, members: planValue["members"] as! [String])
+                final class Log: @unchecked Sendable { var calls: [String] = []; let lock = NSLock() }
+                let log = Log()
+                let outcome = await AgentTeam.run(plan, task: "t") { call in
+                    log.lock.lock(); log.calls.append("\(call.memberID)\(call.round):" + call.prior.map(\.conclusion).joined(separator: "|")); log.lock.unlock()
+                    let reviewer = plan.mode == .reviewLoop && call.memberID == plan.members[1]
+                    var body: [String: Any] = ["conclusion": "\(call.memberID) r\(call.round)", "evidence": [], "changedFiles": [], "unfinished": []]
+                    if reviewer { body["review"] = approveRound > 0 && call.round >= approveRound ? "approve" : "revise" }
+                    return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+                }
+                let expected = (row["calls"] as! [[String: Any]]).map { "\($0["member"]!)\($0["round"]!):" + ($0["prior"] as! [String]).joined(separator: "|") }
+                let prefix = row["parallelPrefix"] as! Int
+                assert(log.calls.prefix(prefix).sorted() == expected.prefix(prefix).sorted() && Array(log.calls.dropFirst(prefix)) == Array(expected.dropFirst(prefix)), "team order differs for \(planValue): \(log.calls) vs \(expected)")
+                assert(outcome.accepted == row["accepted"] as! Bool && outcome.ok == row["ok"] as! Bool, "team acceptance differs for \(planValue)")
+            }
+            wait.signal()
+        }
+        wait.wait()
+
+        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay, \(handoffs.count) handoffs, \(plans.count) team plans, \(schedules.count) team schedules")
     }
 }

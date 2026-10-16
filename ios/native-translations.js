@@ -273,6 +273,13 @@ const rows = [
   ["导入文件","Import files","ファイルを取り込む","파일 가져오기","Importar archivos"],
   ["通过系统“文件”选择器访问你选中的内容。可记住指定文件夹，也可随时移除授权；无法读取其他 App 的私有数据。","Access selected items through the system Files picker. You can remember specific folders or remove access anytime; other apps’ private data is inaccessible.","システムのファイルピッカーで選択した内容にアクセスします。指定したフォルダを記憶し、いつでも許可を削除できます。他のアプリの非公開データにはアクセスできません。","시스템 파일 선택기에서 선택한 항목에 접근합니다. 지정 폴더를 기억하거나 언제든 권한을 제거할 수 있습니다. 다른 앱의 비공개 데이터에는 접근할 수 없습니다.","Accede a los elementos seleccionados mediante Archivos. Puedes recordar carpetas concretas o quitar el acceso cuando quieras; los datos privados de otras apps son inaccesibles."],
   ["读取结果会随本次请求发送给当前模型服务；关闭开关可停止后续访问。", "Results are sent to the current model service with this request. Turn off a switch to stop further access.", "読み取った結果は今回のリクエストとともに現在のモデルサービスに送信されます。スイッチをオフにすると以後のアクセスを停止できます。", "읽은 결과는 이번 요청과 함께 현재 모델 서비스로 전송됩니다. 스위치를 끄면 이후 접근을 중단할 수 있습니다.", "Los resultados se envían al servicio de modelos actual con esta solicitud. Desactiva el interruptor para detener el acceso posterior."],
+["团队", "Team", "チーム", "팀", "Equipo"],
+["成员", "Members", "メンバー", "구성원", "Miembros"],
+["执行顺序：", "Order: ", "実行順：", "실행 순서: ", "Orden: "],
+["用于下一条消息", "Use for next message", "次のメッセージに使う", "다음 메시지에 사용", "Usar en el próximo mensaje"],
+["不用团队", "No team", "チームを使わない", "팀 사용 안 함", "Sin equipo"],
+["只作用于下一条消息，发送后自动取消。", "Applies to the next message only and is cleared once it is sent.", "次のメッセージにだけ適用され、送信後に自動で解除されます。", "다음 메시지에만 적용되며 보내면 자동으로 해제됩니다.", "Solo se aplica al próximo mensaje y se quita al enviarlo."],
+["每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。", "Each member calls the model once on this iPhone, text only. Web search needs both the lead and that member to have it on under “On this iPhone”. The whole team has at most 15 minutes.", "各メンバーはこの iPhone で一度ずつモデルを呼び出し、テキストのみを扱います。Web 検索には、開始した Agent とそのメンバーの両方で「この iPhone」の設定がオンである必要があります。チーム全体で最大 15 分です。", "각 구성원은 이 iPhone에서 모델을 한 번씩 호출하며 텍스트만 처리합니다. 웹 검색은 시작한 Agent와 해당 구성원 모두 ‘이 iPhone에서’ 설정이 켜져 있어야 합니다. 팀 전체는 최대 15분입니다.", "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."]
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

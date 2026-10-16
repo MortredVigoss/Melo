@@ -50,6 +50,7 @@ struct ConversationControls: View {
     var settings: () -> Void
     @State private var connections: [LLMConnection] = []
     @State private var context = false
+    @State private var team = false
     @AppStorage("chatgptModel") private var defaultGPT = ""
     @AppStorage("modelName") private var defaultAPI = ""
     @AppStorage("modelAuthMode") private var defaultMode = "chatgpt"
@@ -72,6 +73,9 @@ struct ConversationControls: View {
                     }
                     Text("切换只影响之后的回复；历史消息保持原Agent。")
                 } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
+                Button { team = true } label: { Label(store.pendingTeams[chatID].map { "团队 · \($0.members.count) 人" } ?? "团队", systemImage: "person.3").font(.caption).padding(11).background(store.pendingTeams[chatID] == nil ? MeloTheme.inset : meloGold.opacity(0.18), in: Capsule()) }.accessibilityLabel(store.pendingTeams[chatID] == nil ? "选择团队协作" : "下一条消息将由团队执行，点按修改")
+                    // Its own presentation anchor: two sheets on one view do not both present.
+                    .sheet(isPresented: $team) { TeamSheet(chatID: chatID) }
                 Menu {
                     Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     if account.signedIn {
