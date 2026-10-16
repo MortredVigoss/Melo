@@ -33,6 +33,7 @@ suites['InterfaceLanguageTests']=['ios/Melo/InterfaceLanguage.swift']
 suites['DeviceToolsTests']=shared
 suites['SharedContractTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # reads shared/protocol/contracts.json, same as the JS half
 suites['AgentTeamTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']
+suites['VideoStudyTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/VideoStudy.swift']
 toolchain = [platform.machine()]
 swift_started = time.monotonic()
 cached = 0

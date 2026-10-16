@@ -279,6 +279,11 @@ const rows = [
 ["不用团队", "No team", "チームを使わない", "팀 사용 안 함", "Sin equipo"],
 ["只作用于下一条消息，发送后自动取消。", "Applies to the next message only and is cleared once it is sent.", "次のメッセージにだけ適用され、送信後に自動で解除されます。", "다음 메시지에만 적용되며 보내면 자동으로 해제됩니다.", "Solo se aplica al próximo mensaje y se quita al enviarlo."],
 ["每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。", "Each member calls the model once on this iPhone, text only. Web search needs both the lead and that member to have it on under “On this iPhone”. The whole team has at most 15 minutes.", "各メンバーはこの iPhone で一度ずつモデルを呼び出し、テキストのみを扱います。Web 検索には、開始した Agent とそのメンバーの両方で「この iPhone」の設定がオンである必要があります。チーム全体で最大 15 分です。", "각 구성원은 이 iPhone에서 모델을 한 번씩 호출하며 텍스트만 처리합니다. 웹 검색은 시작한 Agent와 해당 구성원 모두 ‘이 iPhone에서’ 설정이 켜져 있어야 합니다. 팀 전체는 최대 15분입니다.", "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."],
+["存为知识", "Save as knowledge", "ナレッジに保存", "지식으로 저장", "Guardar en conocimiento"],
+["移除视频", "Remove video", "動画を外す", "동영상 제거", "Quitar vídeo"],
+["视频", "Video", "動画", "동영상", "Vídeo"],
+["选择视频，10 分钟以内在手机上抽取画面和文字稿", "Choose a video; up to 10 minutes, frames and a transcript are made on this phone", "動画を選択。10 分以内ならこの iPhone で画面と文字起こしを作成します", "동영상 선택. 10분 이내면 이 iPhone에서 장면과 텍스트를 만듭니다", "Elige un vídeo; hasta 10 minutos, los fotogramas y la transcripción se hacen en este teléfono"],
+["正在处理视频…", "Processing video…", "動画を処理中…", "동영상 처리 중…", "Procesando vídeo…"],
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

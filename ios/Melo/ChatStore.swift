@@ -18,6 +18,8 @@ import SwiftUI
     /// A team chosen for the next message of a chat. One-shot and local: it is
     /// cleared once that message is accepted, so a team never runs by surprise.
     @Published var pendingTeams: [String: PhoneTeamPlan] = [:]
+    /// A video studied on this iPhone (frames + transcript) for the next message of a chat.
+    @Published var pendingVideos: [String: VideoDigest] = [:]
     @Published private(set) var pendingDeviceAction: DeviceActionRequest?
     @Published private(set) var activeImageActions: [String: ImageAction] = [:]
     func activeImageAction(for chatID: String) -> ImageAction? { activeImageActions[chatID] }
@@ -238,6 +240,8 @@ import SwiftUI
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
             clean = "请分析这些图片。"
         }
+        let video = retry ? nil : pendingVideos[chatID]
+        if video != nil && clean.isEmpty { clean = "请看这段视频，总结主要内容。" }
         guard retry || !clean.isEmpty else { return }
         var plan: ImageTaskPlan
         let imageInputs: [ImageInput]
@@ -257,6 +261,7 @@ import SwiftUI
         } catch { fail(error.localizedDescription); return }
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
+        if video != nil && (plan.makesImage || !plan.references.isEmpty) { fail("视频和图片请分开发送：先发视频提问，或移除视频后再处理图片。"); return }
         let selectedAgent = agent(for: chatID)
         // Phone execution is governed by this iPhone's per-Agent permissions;
         // desktop capability settings govern desktop execution only.
@@ -322,7 +327,7 @@ import SwiftUI
         }
         if !retry {
             let original = chats[index]
-            let question = ChatMessage(role: "user", content: clean)
+            let question = ChatMessage(role: "user", content: video.map { clean + "\n" + VideoStudy.chatLine($0) } ?? clean)
             if plan.makesImage || !plan.references.isEmpty {
                 do { try imageLibrary.bind(plan.references.compactMap { imageLibrary.index.assets[$0.id] }, to: question.id, request: plan); imageRevision += 1 }
                 catch { fail(error.localizedDescription); return }
@@ -347,11 +352,15 @@ import SwiftUI
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
         instructions += MobileMemoryRecall.instructions(recalled.facts)
         let history = chats[index].messages
+        // The model sees the video as frames plus its transcript; the chat keeps a short line.
+        let modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
+        let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
         let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
         executionRecords.append(record); saveExecutionRecords()
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
         if teamPlan != nil { pendingTeams[chatID] = nil }
+        if video != nil { pendingVideos[chatID] = nil }
         sendingChats.insert(chatID)
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel, explicitModel = choice != nil
         let loader = replyLoader, chatAccount = account
@@ -382,15 +391,16 @@ import SwiftUI
             }
             do {
                 try Task.checkCancellation()
+                if let video { stage(record.runId, id: "video:study", name: "视频画面与文字稿", status: "completed", output: "\(video.frames.count) 帧 · " + (video.transcript.isEmpty ? video.transcriptNote : "文字稿 \(video.transcript.count) 字")) }
                 let reply: ModelReply
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: history, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
-                else if let replyLoader { reply = try await replyLoader(history, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
-                    reply = try await Network.reply(messages: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: imageInputs, onObservation: { observation in self.observe(observation, runID: record.runId) })
+                    reply = try await Network.reply(messages: modelHistory, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, onObservation: { observation in self.observe(observation, runID: record.runId) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
@@ -476,6 +486,10 @@ import SwiftUI
         return ModelReply(text: summary, images: images, imageReferences: owners)
     }
     func armTeam(_ team: PhoneTeamPlan?, chatID: String) { pendingTeams[chatID] = team }
+    /// Keeps a studied video as a knowledge note any Agent can use later.
+    @discardableResult func saveVideoKnowledge(_ digest: VideoDigest) -> Bool {
+        updatePreferences { p in p.knowledge = (p.knowledge ?? []) + [VideoStudy.knowledge(digest)] }
+    }
     func teamState(for chatID: String) -> AgentTeam.LeadState { AgentTeam.leadState(agent(for: chatID), agents: preferences.agents) }
     /// Same orchestration as the desktop: members in tick order, then the lead
     /// writes the reply. Members use text and, when both the lead and the member
