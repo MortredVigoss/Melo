@@ -532,3 +532,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户授权的全部产品 WIP 已提交 `8cd3eff`；0.5.24 (30) 签名 Release 同包覆盖实体手机并启动 PID 31417。11 聊天/6 Agent/图片/草稿/配置保留，仅运行日志更新，未改账号或权限。
 - 桌面原生 app 已构建、覆盖并正常重启，健康接口源码 `8cd3eff0af9a`、干净树、PID 26309；原 home、14 聊天/1 项目/6 Agent 与连接配置保留。神经首页、团队浮层实看通过。
 - 安装及逐文件对比见 [双端回执](docs/dual-platform-align-20261017.md#双端安装回执)。日常 3663 JS / 26 Swift 与原生夹具通过；真实模型/远端同步/长后台未重验。最终英文 README 和回执随文档提交推送，不发布私有备份或签名包。
+
+### 2026-10-17 — melo iphone — 完整版本已推送 GitHub
+- `2e8b533..063fd11` 推送 master 成功，远端 SHA 与 README blob 已核实一致；全部产品 WIP 收入 `8cd3eff`，两端已安装该源码，工作树干净。完整 [回执](docs/dual-platform-align-20261017.md#github-发布回执) 含验证边界。
+- 本条为最终文档回执，随文档提交继续推送；没有运行 git pp、发布签名包或上传私有备份。用户可直接使用已覆盖的手机 0.5.24 (30) 和桌面版。

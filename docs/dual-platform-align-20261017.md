@@ -41,3 +41,7 @@
 - 桌面 113 份业务/配置文件中 110 份字节一致；其余仅运行实例/索引元数据、轮询时间与当前视图状态更新，聊天/Agent/项目/连接配置不变。实际界面保留 14 对话、1 项目、6 Agent，神经首页和团队浮层实看正常；未替当前 Agent 开启委派。
 - 证据：`release-build.log`、`install.json`、`launch.json`、`apps-after.json`、`phone-preservation.json`、`desktop-build.log`、`desktop-install.log`、`desktop-preservation.json`，均在本轮 `.tmp` 证据目录。IPA 留在 `ios/dist/`，私有数据备份留在 Application Support，均不推送。
 - 验证边界：日常 gate、定向回归、模拟器功能/视觉、签名构建、双端安装启动/数据保留已通过；未运行会自动操控桌面窗口的完整发布脚本，未重新发真实模型请求、验证远端同步或长时间后台。主线循环审计其余独立待修问题仍按原文保留，不宣称完整产品无缺陷。
+
+## GitHub 发布回执
+
+`git push origin master` 已成功推送 `2e8b533..063fd11`，包含此前未推送的计时实现、全部产品 WIP `8cd3eff` 和双端安装/英文 README `063fd11`。远端 master SHA 与本地一致，GitHub README blob 与本地逐一核对一致；工作树干净。本回执随最后的纯文档提交继续推送，不改变已安装源码。
