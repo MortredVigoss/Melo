@@ -34,6 +34,17 @@ import CoreGraphics
             let request = ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:attached ? try library.inputs(route.references) : [],task:route,model:"fixture",instructions:"")
             try check((request["tools"] != nil) == route.makesImage, "First turn must include the required image tool")
         }
+        // Several photos: edit each on its own unless the wording combines them (shared with the desktop).
+        let batch = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "ios/Tests/Fixtures/image-batch-intent.json"))) as! [[String:Any]]
+        for fixture in batch {
+            let prompt = fixture["prompt"] as! String, photos = fixture["photos"] as! Int
+            let refs = (0..<photos).map { _ in ImageReference(id: UUID().uuidString) }
+            let route = try ImageTaskPlan(references: refs).resolved(prompt: prompt, previousImages: [])
+            try check(route.action == .edit, "Several photos not edited: \(prompt)")
+            try check((route.separately == true) == (fixture["separately"] as! Bool), "Each-vs-combine misrouted: \(prompt) (\(photos))")
+            if route.separately == true { try check(route.single(refs[1]).references == [refs[1]] && route.single(refs[1]).separately == nil) }
+        }
+        try check((try? ImageTaskPlan(references: (0..<9).map { _ in ImageReference(id: UUID().uuidString) }).resolved(prompt: "都调亮", previousImages: [])) == nil, "more than eight photos accepted")
         for prompt in ["帮我把转盘掉漆的处理干净，背景墙换成黑色木纹，压低一点曝光", "改一下背景墙，其他保持不变", "换背景", "把后面的墙换一下", "把墙改白", "把背景墙刷成奶油色", "给背景墙加上木饰面", "把背景墙颜色调浅一点", "make the background wall white", "retouch the background"] {
             let routed = try uploaded.resolved(prompt:prompt,previousImages:[])
             try check(routed.action == .edit, "Uploaded image edit misrouted to analysis: \(prompt)")

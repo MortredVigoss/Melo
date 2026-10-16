@@ -37,6 +37,7 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-device-data") { await DeviceDataVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-team") { await TeamVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-concurrency") { await ConcurrencyVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-verify-media") { await MediaVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-preview-device-approval") { DeviceDataVerification.startApproval(store) }
                     #endif
                     #if DEBUG

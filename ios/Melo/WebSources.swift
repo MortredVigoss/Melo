@@ -53,6 +53,8 @@ struct ModelReply {
     var sources: [WebSource] = []
     var searched = false
     var images: [ImagePayload] = []
+    /// For per-photo edits: the original each returned image belongs to (same order as images).
+    var imageReferences: [[String]]? = nil
 }
 
 enum WebReplyFormatter {

@@ -1,6 +1,6 @@
 import { validateImagePrompt, IMAGE_REVIEW_INSTRUCTIONS, parseImageReview, formatImageReview } from '../../images/imagePrompts.js';
 import sharp from 'sharp';
-import { requestsPhotoAdjustment, requestsNaturalImage, asksAboutImage, instructsImageChange, requestsReferenceImage } from '../../shared/imageRequestIntent.js';
+import { requestsPhotoAdjustment, requestsNaturalImage, asksAboutImage, instructsImageChange, requestsReferenceImage, combinesImages } from '../../shared/imageRequestIntent.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -50,8 +50,11 @@ export function inferImageTask(text, messages, explicit) {
   const latestUser = [...messages].reverse().find(m => m.role === 'user');
   const attachedNow = Array.isArray(latestUser?.content) && latestUser.content.some(p => p.type === 'image_url');
   const uploadedInstruction = attachedNow && !asksAboutImage(instruction) && instructsImageChange(affirmative) && !generationRequested;
-  if (hasImage && ((detectImageEditIntent(affirmative) && IMAGE_FOLLOW_UP_PATTERN.test(affirmative)) || requestsPhotoAdjustment(affirmative) || uploadedInstruction))
-    return taskFor('edit');
+  if (hasImage && ((detectImageEditIntent(affirmative) && IMAGE_FOLLOW_UP_PATTERN.test(affirmative)) || requestsPhotoAdjustment(affirmative) || uploadedInstruction)) {
+    const photos = Array.isArray(latestUser?.content) ? latestUser.content.filter(p => p.type === 'image_url').length : 0;
+    const edit = taskFor('edit');
+    return photos > 1 && !combinesImages(instruction) ? { ...edit, separately: true } : edit;
+  }
   if (generationRequested)
     return taskFor('generate');
   return explicit?.action === 'auto' ? taskFor('analyze') : null;
@@ -169,7 +172,13 @@ export async function runImageTask({
     artifacts = [],
     failures = [],
     reviews = [];
-  for (let index = 0; index < task.count; index++) {
+  // Several photos + an edit request edit each photo on its own (one job per photo);
+  // otherwise the first photo is the base and the rest are references, repeated count times.
+  const separately = task.separately === true && task.action === 'edit' && images.length > 1;
+  const jobs = separately ? images.map(image => [image]) : Array.from({ length: task.count }, () => images);
+  for (let index = 0; index < jobs.length; index++) {
+    const jobImages = jobs[index];
+    const jobBefore = separately ? await saveImageArtifact(workspace.rootPath, jobImages[0].buffer, { prefix: 'reference', signal }) : before;
     signal?.throwIfAborted();
     const id = `image-${randomUUID()}`;
     const observe = (status, extra = {}) =>
@@ -180,7 +189,7 @@ export async function runImageTask({
         name: task.action === 'edit' ? 'image_edit' : 'image',
         provider: engine,
         status,
-        input: `第 ${index + 1}/${task.count} 张 · 请求模型：${requestModel}`,
+        input: `第 ${index + 1}/${jobs.length} 张 · 请求模型：${requestModel}`,
         ...extra,
       });
     const onPreview = async (encoded, frame) => {
@@ -203,9 +212,9 @@ export async function runImageTask({
         result = await (dependencies.api || generateApiImage)({
           connection: api,
           action: task.action,
-          referenceRoles,
+          referenceRoles: jobImages.map(image => image.role),
           prompt,
-          images,
+          images: jobImages,
           mask: task.mask ? Buffer.from(task.mask.split(',')[1], 'base64') : null,
           quality: settings.quality,
           size: settings.size,
@@ -214,13 +223,13 @@ export async function runImageTask({
           onPreview,
         });
       else if (engine === 'codex-oauth') {
-        if (images.length)
+        if (jobImages.length)
           result = await (dependencies.edit || editImageViaCodex)({
             prompt,
-            sourceImageBytes: images[0].buffer,
-            sourceImageMime: images[0].mimeType,
-            referenceImages: images.slice(1),
-            referenceRoles,
+            sourceImageBytes: jobImages[0].buffer,
+            sourceImageMime: jobImages[0].mimeType,
+            referenceImages: jobImages.slice(1),
+            referenceRoles: jobImages.map(image => image.role),
             action: task.action,
             model: requestModel,
             quality: settings.quality,
@@ -268,7 +277,7 @@ export async function runImageTask({
         reportedModel: result.reportedModel || '',
         requestedQuality: settings.quality,
         reportedQuality: result.reportedQuality || '',
-        ...(before ? { beforeUrl: before.url, beforePath: before.path } : {}),
+        ...(jobBefore ? { beforeUrl: jobBefore.url, beforePath: jobBefore.path } : {}),
       };
       generated = true;
       artifacts.push(artifact);
@@ -277,7 +286,7 @@ export async function runImageTask({
         output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'} · 请求质量：${settings.quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
         artifacts: [artifact],
       });
-      await onImageProgress?.({artifacts:[...artifacts],count:task.count});
+      await onImageProgress?.({artifacts:[...artifacts],count:jobs.length});
       if (typeof onDelta === 'function')
         try {
           await onDelta({ delta: `\n\n${links.at(-1)}\n\n`, text: links.join('\n\n') });
@@ -314,7 +323,7 @@ export async function runImageTask({
                 role: 'user',
                 content: [
                   { type: 'text', text: `${task.action === 'edit' ? '编辑' : '生成'}要求：${prompt}` },
-                  ...images.flatMap((image, i) => [
+                  ...jobImages.flatMap((image, i) => [
                     {type:'text',text:`参考图 ${i + 1}，用途：${image.role}${i === 0 && task.action === 'edit' ? '（编辑原图）' : ''}`},
                     {type:'image_url',image_url:{url:`data:image/png;base64,${image.buffer.toString('base64')}`}},
                   ]),
@@ -356,7 +365,7 @@ export async function runImageTask({
       observe('failed', { output: message, errorCode: 'IMAGE_GENERATION_FAILED' });
     }
   }
-  const reply = [...links, `已成功生成 ${links.length}/${task.count} 张。`, ...reviews, ...failures].join(
+  const reply = [...links, separately ? `已逐张修改 ${links.length}/${jobs.length} 张。` : `已成功生成 ${links.length}/${task.count} 张。`, ...reviews, ...failures].join(
     '\n\n',
   );
   sseEmitter?.('reply_text', { text: reply, final: true });

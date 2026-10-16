@@ -49,7 +49,7 @@ struct ImageComposerBar: View {
                 }.frame(height:100)
             }
             HStack(spacing:14) {
-                PhotosPicker(selection:$photos,maxSelectionCount:4,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.isSending(chatID))
+                PhotosPicker(selection:$photos,maxSelectionCount:ImageTaskPlan.maxReferences,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.isSending(chatID))
                 Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.isSending(chatID))
                 Menu {
                     Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
@@ -81,7 +81,7 @@ struct ImageComposerBar: View {
         .onDisappear { loadTask?.cancel() }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.image],allowsMultipleSelection:true) { result in
             do {
-                let urls=try result.get();guard urls.count<=4 else{throw MeloError.message("一次最多选择四张参考图。")}
+                let urls=try result.get();guard urls.count<=ImageTaskPlan.maxReferences else{throw MeloError.message("一次最多选择八张图片。")}
                 let refs=try urls.map { url -> ImageReference in
                     let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
                     guard (try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max)<=24*1024*1024 else{throw MeloError.message("单张图片不能超过 24 MB。")}

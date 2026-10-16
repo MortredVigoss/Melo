@@ -251,7 +251,8 @@ import SwiftUI
             } else { plan = try (imageTask ?? ImageTaskPlan()).resolved(prompt: clean, previousImages: previousImages) }
             // A deliberate retry may choose a new image connection; keep the original input and other parameters.
             if retry, let connectionID = imageTask?.connectionID { plan.connectionID = connectionID }
-            imageInputs = try imageLibrary.inputs(plan.references)
+            // Per-photo edits read each photo when its own request starts.
+            imageInputs = plan.separately == true ? [] : try imageLibrary.inputs(plan.references)
         } catch { fail(error.localizedDescription); return }
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
@@ -381,7 +382,8 @@ import SwiftUI
             do {
                 try Task.checkCancellation()
                 let reply: ModelReply
-                if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
+                if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: history, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
+                else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(history, instructions) }
                 else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
@@ -394,7 +396,7 @@ import SwiftUI
                 guard let position = chats.firstIndex(where: { $0.id == chatID }) else { finishRun(record.runId, state: "interrupted"); return }
                 let message = ChatMessage(role: "assistant", content: reply.text)
                 if !reply.images.isEmpty {
-                    let assets = try reply.images.map { try imageLibrary.store($0.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: plan.references.map(\.id), reportedModel: $0.reportedModel, revisedPrompt: $0.revisedPrompt) }
+                    let assets = try reply.images.enumerated().map { index, payload in try imageLibrary.store(payload.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: reply.imageReferences.flatMap { index < $0.count ? $0[index] : nil } ?? plan.references.map(\.id), reportedModel: payload.reportedModel, revisedPrompt: payload.revisedPrompt) }
                     try imageLibrary.bind(assets, to: message.id); imageRevision += 1
                 }
                 stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机聊天记录")
@@ -425,6 +427,52 @@ import SwiftUI
                 finishRun(record.runId, state: "failed"); self.error = error.localizedDescription
             } }
         }
+    }
+    /// Several photos + an edit request: one request per photo, two at a time, each
+    /// result linked to its own original. One failed photo does not drop the others.
+    private func editEachPhoto(_ plan: ImageTaskPlan, prompt: String, history: [ChatMessage], instructions: String, runID: String, useChatGPT: Bool, codexModel: String, endpoint: String, key: String) async throws -> ModelReply {
+        let references = plan.references, total = references.count
+        let library = imageLibrary, loader = replyLoader, chatAccount = account
+        var outcomes = [Result<ModelReply, Error>?](repeating: nil, count: total)
+        let attempt: (Int) async -> Result<ModelReply, Error> = { index in
+            do {
+                let single = plan.single(references[index])
+                let inputs = try library.inputs(single.references)
+                if let loader { return .success(try await loader(history, single.instructions(instructions))) }
+                if useChatGPT { return .success(try await chatAccount.reply(messages: history, model: codexModel, instructions: instructions, imageInputs: inputs, imageTask: single)) }
+                return .success(try await ImageNetwork.reply(prompt: prompt, task: single, inputs: inputs, endpoint: endpoint, token: key))
+            } catch { return .failure(error) }
+        }
+        for start in stride(from: 0, to: total, by: 2) {
+            try Task.checkCancellation()
+            let batch = Array(start..<min(start + 2, total))
+            for index in batch { stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: "running", output: "正在修改") }
+            await withTaskGroup(of: (Int, Result<ModelReply, Error>).self) { group in
+                for index in batch { group.addTask { (index, await attempt(index)) } }
+                for await (index, outcome) in group { outcomes[index] = outcome }
+            }
+            try Task.checkCancellation()
+            for index in batch {
+                switch outcomes[index] {
+                case .success(let reply)?: stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: reply.images.isEmpty ? "failed" : "completed", output: reply.images.isEmpty ? "服务没有返回图片" : "已收到修改后的图片")
+                case .failure(let error)?: stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: "failed", output: String(error.localizedDescription.prefix(300)))
+                case nil: break
+                }
+            }
+        }
+        var images: [ImagePayload] = [], owners: [[String]] = [], failures: [String] = []
+        for (index, outcome) in outcomes.enumerated() {
+            switch outcome {
+            case .success(let reply)? where !reply.images.isEmpty:
+                images.append(contentsOf: reply.images); owners.append(contentsOf: reply.images.map { _ in [references[index].id] })
+            case .failure(let error)?: failures.append("第 \(index + 1) 张未完成：\(error.localizedDescription)")
+            default: failures.append("第 \(index + 1) 张未完成：服务没有返回图片。")
+            }
+        }
+        if images.isEmpty, case .failure(let error)? = outcomes.first { throw error }
+        if images.isEmpty { throw MeloError.message("这几张图片都没有修改成功，要求和原图已保留。") }
+        let summary = (["已逐张修改 \(total - failures.count)/\(total) 张。"] + failures).joined(separator: "\n")
+        return ModelReply(text: summary, images: images, imageReferences: owners)
     }
     func armTeam(_ team: PhoneTeamPlan?, chatID: String) { pendingTeams[chatID] = team }
     func teamState(for chatID: String) -> AgentTeam.LeadState { AgentTeam.leadState(agent(for: chatID), agents: preferences.agents) }

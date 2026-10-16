@@ -88,6 +88,7 @@ export function validateImageTask(value) {
     detail: ['auto', 'high', 'original'].includes(value.detail) ? value.detail : 'auto',
     ocr: value.ocr === true,
     inspect: value.inspect === true,
+    ...(value.separately === true ? { separately: true } : {}),
     ...(value.mask ? { mask: value.mask } : {}),
     ...(typeof value.retryOf === 'string' ? { retryOf: value.retryOf.slice(0, 128) } : {}),
   };
