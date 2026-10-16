@@ -28771,6 +28771,636 @@
         }
       }
     },
+    "手机数据": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机数据"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone data"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone のデータ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 데이터"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datos del iPhone"
+          }
+        }
+      }
+    },
+    "开启后，Melo 在回答需要时读取这些数据。新建或修改数据前每次都会请你确认。设置只保存在这台 iPhone，不会同步。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，Melo 在回答需要时读取这些数据。新建或修改数据前每次都会请你确认。设置只保存在这台 iPhone，不会同步。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When on, Melo reads this data only when a reply needs it. You confirm every time before anything is created or changed. These settings stay on this iPhone and are not synced."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、Melo は回答に必要なときだけこのデータを読み取ります。作成や変更の前には毎回確認します。設定はこの iPhone にのみ保存され、同期されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 Melo는 답변에 필요할 때만 이 데이터를 읽습니다. 생성하거나 변경하기 전에는 매번 확인합니다. 설정은 이 iPhone에만 저장되며 동기화되지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al activarlo, Melo lee estos datos solo cuando una respuesta los necesita. Confirmarás cada vez antes de crear o cambiar algo. Estos ajustes se quedan en este iPhone y no se sincronizan."
+          }
+        }
+      }
+    },
+    "目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available in conversations using Codex sign-in. API connections do not use phone data yet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex ログインの会話で利用できます。API 接続ではまだ iPhone のデータを使いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 로그인 대화에서 사용할 수 있습니다. API 연결은 아직 iPhone 데이터를 사용하지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disponible en conversaciones con inicio de sesión de Codex. Las conexiones API aún no usan los datos del iPhone."
+          }
+        }
+      }
+    },
+    "日历": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "캘린더"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendario"
+          }
+        }
+      }
+    },
+    "提醒事项": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提醒事项"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reminders"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorios"
+          }
+        }
+      }
+    },
+    "通讯录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通讯录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연락처"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contactos"
+          }
+        }
+      }
+    },
+    "当前位置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前位置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current location"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在地"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 위치"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ubicación actual"
+          }
+        }
+      }
+    },
+    "查看日程；新建日程前会请你确认。包括已添加到 iPhone 的 Google、iCloud 等日历。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看日程；新建日程前会请你确认。包括已添加到 iPhone 的 Google、iCloud 等日历。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View events; asks before creating one. Includes Google, iCloud and other calendars added to this iPhone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定を表示します。作成前に確認します。iPhone に追加した Google や iCloud などのカレンダーを含みます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일정을 확인합니다. 새 일정 생성 전 확인합니다. iPhone에 추가된 Google, iCloud 등 캘린더를 포함합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver eventos; pregunta antes de crear uno. Incluye Google, iCloud y otros calendarios añadidos al iPhone."
+          }
+        }
+      }
+    },
+    "查看提醒；新建或完成提醒前会请你确认。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看提醒；新建或完成提醒前会请你确认。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View reminders; asks before creating or completing one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダーを表示します。作成や完了の前に確認します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림을 확인합니다. 생성하거나 완료하기 전 확인합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver recordatorios; pregunta antes de crear o completar uno."
+          }
+        }
+      }
+    },
+    "按姓名查找联系人的电话、邮箱和公司。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按姓名查找联系人的电话、邮箱和公司。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find a contact's phone, email and company by name."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前から連絡先の電話番号、メール、会社を探します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름으로 연락처의 전화번호, 이메일, 회사를 찾습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busca por nombre el teléfono, correo y empresa de un contacto."
+          }
+        }
+      }
+    },
+    "需要时读取一次当前位置，用于“附近”“我在哪”这类问题。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要时读取一次当前位置，用于“附近”“我在哪”这类问题。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads your location once when needed, for questions like “nearby” or “where am I”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必要なときに一度だけ現在地を読み取り、「近く」「今どこ」などの質問に使います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필요할 때 한 번 현재 위치를 읽어 '근처', '여기가 어디' 같은 질문에 사용합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lee tu ubicación una vez cuando hace falta, para preguntas como «cerca» o «dónde estoy»."
+          }
+        }
+      }
+    },
+    "iOS 未授予%@权限。可在 iPhone 设置中允许 Melo 后再开启。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 未授予%@权限。可在 iPhone 设置中允许 Melo 后再开启。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS did not grant %@ access. Allow Melo in iPhone Settings, then turn this on again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS が %@ へのアクセスを許可していません。iPhone の設定で Melo を許可してから再度オンにしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS에서 %@ 권한을 허용하지 않았습니다. iPhone 설정에서 Melo를 허용한 후 다시 켜세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS no concedió acceso a %@. Permite Melo en Ajustes del iPhone y vuelve a activarlo."
+          }
+        }
+      }
+    },
+    "确认手机数据操作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认手机数据操作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm phone data action"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone データの操作を確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 데이터 작업 확인"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar acción en datos del iPhone"
+          }
+        }
+      }
+    },
+    "新建日程": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建日程"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create event"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定を作成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일정 만들기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear evento"
+          }
+        }
+      }
+    },
+    "新建提醒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建提醒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create reminder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダーを作成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림 만들기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear recordatorio"
+          }
+        }
+      }
+    },
+    "完成提醒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成提醒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete reminder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダーを完了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림 완료"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completar recordatorio"
+          }
+        }
+      }
+    },
+    "允许": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir"
+          }
+        }
+      }
+    },
+    "Melo 请求在你的 iPhone 上执行这项操作。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo 请求在你的 iPhone 上执行这项操作。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo is asking to do this on your iPhone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo がこの操作を iPhone で実行しようとしています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo가 iPhone에서 이 작업을 하려고 합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo quiere hacer esto en tu iPhone."
+          }
+        }
+      }
+    },
     "直接描述图片要求": {
       "extractionState": "manual",
       "localizations": {
@@ -37377,6 +38007,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accede a los elementos seleccionados mediante Archivos. Puedes recordar carpetas concretas o quitar el acceso cuando quieras; los datos privados de otras apps son inaccesibles."
+          }
+        }
+      }
+    },
+    "读取结果会随本次请求发送给当前模型服务；关闭开关可停止后续访问。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取结果会随本次请求发送给当前模型服务；关闭开关可停止后续访问。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results are sent to the current model service with this request. Turn off a switch to stop further access."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取った結果は今回のリクエストとともに現在のモデルサービスに送信されます。スイッチをオフにすると以後のアクセスを停止できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽은 결과는 이번 요청과 함께 현재 모델 서비스로 전송됩니다. 스위치를 끄면 이후 접근을 중단할 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los resultados se envían al servicio de modelos actual con esta solicitud. Desactiva el interruptor para detener el acceso posterior."
           }
         }
       }

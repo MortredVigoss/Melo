@@ -91,6 +91,10 @@ struct ContentView: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity).background(expanded ? meloBackground : .clear)
                 }
                 .alert("Melo", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("知道了") { store.error = nil } } message: { Text(store.error ?? "") }
+                .alert(LocalizedStringKey(store.pendingDeviceAction?.title ?? "确认手机数据操作"), isPresented: Binding(get: { store.pendingDeviceAction != nil }, set: { if !$0 { store.resolveDeviceAction(false) } }), presenting: store.pendingDeviceAction) { _ in
+                    Button("允许") { store.resolveDeviceAction(true) }
+                    Button("拒绝", role: .cancel) { store.resolveDeviceAction(false) }
+                } message: { request in Text(verbatim: request.detail + "\n\n") + Text("Melo 请求在你的 iPhone 上执行这项操作。") }
             }
         }
         .coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)

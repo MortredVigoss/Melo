@@ -22,6 +22,7 @@ struct SettingsContent: View {
                 LocalProfileSettings()
                 LocalGeneralSettings()
                 LocalVoiceSettings()
+                DeviceDataSettings()
                 LocalDataSettings()
                 Button { diagnostics = true } label: { Label("运行记录与退出排查", systemImage: "waveform.path.ecg").font(.subheadline).frame(minHeight: 44) }
                 MobileConnectionStatus().meloPanel()

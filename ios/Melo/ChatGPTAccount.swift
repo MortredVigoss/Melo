@@ -163,7 +163,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         replyStatus = "正在思考…"
@@ -171,10 +171,7 @@ struct ChatGPTModel: Decodable, Identifiable {
         let account = try await credentials()
         try Task.checkCancellation()
         guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 Codex 模型。") }
-        var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
-        request.timeoutInterval = imageTask?.makesImage == true ? 180 : 120
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue(UUID().uuidString, forHTTPHeaderField: "session_id")
+        let sessionID = UUID().uuidString
         let webSearch = imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
         var body = ChatGPTRequest.body(messages: messages, model: model, instructions: instructions, webSearch: webSearch)
         if !imageInputs.isEmpty || imageTask?.makesImage == true {
@@ -182,56 +179,100 @@ struct ChatGPTModel: Decodable, Identifiable {
             body["input"] = imageBody["input"]
             if imageTask?.makesImage == true { body = CodexRequest.imageBody(messages: messages, inputs: imageInputs, task: imageTask!, model: model, instructions: instructions) }
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        var requestObservation = ExecutionObservation()
-        requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        onObservation?(requestObservation)
-        let requestStarted = ProcessInfo.processInfo.systemUptime
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
-        guard http.statusCode == 200 else {
-            if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
-            if [400, 413, 422].contains(http.statusCode) {
-                var errorBody = Data()
-                for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
-                if let contextError = Network.contextLimitError(errorBody) { throw contextError }
-                throw MeloError.message("当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）\(Network.rejectionDetail(errorBody))；本次要求和图片已保留。")
-            }
-            if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
-            throw MeloError.message("模型服务暂时不可用，请稍后重试。")
+        // Phone data tools are offered only for ordinary replies, never image generation.
+        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.policy.tools ?? [])
+        if !phoneTools.isEmpty, let deviceTools {
+            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
+            body["tool_choice"] = "auto" // Allow phone data before a web lookup (e.g. nearby weather).
+            let include = (body["include"] as? [String]) ?? []
+            body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + DeviceToolLoop.instructions(deviceTools.policy)
         }
-        let mustSearch = webSearch && ChatGPTRequest.requiresSearch(messages)
+        let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
+        var priorSources: [WebSource] = []
+        var searchedEarlier = false
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
+            let searched = searchedEarlier || stream.searched
             if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
-            if mustSearch && !stream.searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
+            if mustSearch && !searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
             if !stream.images.isEmpty {
                 defaults.set(true, forKey: "codexImageVerified:" + account.id)
                 imageVerified = true
             }
-            return ModelReply(text: text, sources: stream.sources, searched: stream.searched, images: stream.images)
+            let sources = WebReplyFormatter.references(in: "", annotations: priorSources + stream.sources)
+            return ModelReply(text: text, sources: sources, searched: searched, images: stream.images)
         }
-        var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageTask?.makesImage == true, requestStarted: requestStarted)
-        var revision = -1
-        var receivedText = false
-        var consumedBytes = 0
-        for try await byte in bytes {
-            consumedBytes += 1
-            if consumedBytes.isMultiple(of: 32768) { await Task.yield() }
+        func streamOnce(_ body: [String: Any]) async throws -> ChatGPTStream {
             try Task.checkCancellation()
             guard epoch == expectedEpoch else { throw CancellationError() }
-            do { try parser.accept(byte) }
-            catch { onObservation?(parser.stream.observation); throw error }
-            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; onReceiving?() }
-            if parser.stream.observation.revision != revision {
-                revision = parser.stream.observation.revision
-                onObservation?(parser.stream.observation)
+            var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
+            request.timeoutInterval = imageTask?.makesImage == true ? 180 : 120
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue(sessionID, forHTTPHeaderField: "session_id")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            var requestObservation = ExecutionObservation()
+            requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+            onObservation?(requestObservation)
+            let requestStarted = ProcessInfo.processInfo.systemUptime
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
+            guard http.statusCode == 200 else {
+                if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
+                if [400, 413, 422].contains(http.statusCode) {
+                    var errorBody = Data()
+                    for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
+                    if let contextError = Network.contextLimitError(errorBody) { throw contextError }
+                    throw MeloError.message("当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）\(Network.rejectionDetail(errorBody))；本次要求和图片已保留。")
+                }
+                if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
+                throw MeloError.message("模型服务暂时不可用，请稍后重试。")
             }
-            let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
-            if replyStatus != nextStatus { replyStatus = nextStatus }
-            if parser.stream.completed { return try replyResult(parser.stream) }
+            var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageTask?.makesImage == true, requestStarted: requestStarted)
+            var revision = -1
+            var receivedText = false
+            var consumedBytes = 0
+            for try await byte in bytes {
+                consumedBytes += 1
+                if consumedBytes.isMultiple(of: 32768) { await Task.yield() }
+                try Task.checkCancellation()
+                guard epoch == expectedEpoch else { throw CancellationError() }
+                do { try parser.accept(byte) }
+                catch { onObservation?(parser.stream.observation); throw error }
+                if !receivedText && !parser.stream.text.isEmpty { receivedText = true; onReceiving?() }
+                if parser.stream.observation.revision != revision {
+                    revision = parser.stream.observation.revision
+                    onObservation?(parser.stream.observation)
+                }
+                let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
+                if replyStatus != nextStatus { replyStatus = nextStatus }
+                if parser.stream.completed { return parser.stream }
+            }
+            // Reaching here means no completion event: finish() reports truncation.
+            _ = try parser.finish()
+            return parser.stream
         }
-        _ = try parser.finish()
-        return try replyResult(parser.stream)
+        for _ in 0..<DeviceToolLoop.maxRounds {
+            let stream = try await streamOnce(body)
+            let calls = phoneTools.isEmpty ? [] : stream.functionCalls
+            guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
+            // Validate the whole batch before any side effect, then run sequentially.
+            try DeviceToolLoop.validateBatch(calls)
+            var results: [(callID: String, output: String)] = []
+            for call in calls {
+                try Task.checkCancellation()
+                guard epoch == expectedEpoch else { throw CancellationError() }
+                replyStatus = "正在读取手机数据…"
+                let output = await deviceTools.execute(call)
+                deviceTools.onCall?(call, output)
+                try Task.checkCancellation()
+                guard epoch == expectedEpoch else { throw CancellationError() }
+                results.append((call.callID, output))
+            }
+            priorSources += stream.sources
+            searchedEarlier = searchedEarlier || stream.searched
+            body["input"] = DeviceToolLoop.followUpInput(previous: (body["input"] as? [Any]) ?? [], output: stream.outputItems, results: results)
+        }
+        throw MeloError.message("手机数据操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
     }
 }

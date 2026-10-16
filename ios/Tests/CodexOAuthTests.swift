@@ -245,6 +245,53 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={_ in imageRequests+=1;return (400,try json(["error":["code":"unsupported_tool"]]))}
         do { _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"改背景")],model:"gpt-6.1-sol",instructions:"",imageInputs:[input],imageTask:task);fatalError("400 admitted") } catch { assert(error.localizedDescription.contains("unsupported_tool")) }
         assert(imageRequests==2) // No automatic regeneration or API fallback.
+        // Phone data tool loop: round 1 asks for a function call; Melo executes it
+        // once and replays reasoning + call + output; round 2 answers in text.
+        func sse(_ output: [[String:Any]]) throws -> Data {
+            Data(("data: " + String(decoding:try json(["type":"response.completed","response":["status":"completed","output":output]]),as:UTF8.self) + "\n\n").utf8)
+        }
+        let toolCall:[String:Any]=["type":"function_call","id":"fc_1","call_id":"call_cal","name":"calendar_list_events","arguments":"{\"start\":\"2026-10-17T00:00:00+11:00\",\"end\":\"2026-10-18T00:00:00+11:00\"}","status":"completed"]
+        let thinking:[String:Any]=["type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"]
+        var toolRounds=0, executed=0, recorded=0
+        CodexFixture.handler={ request in
+            toolRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            let tools=body["tools"] as? [[String:Any]] ?? []
+            assert(tools.contains { $0["name"] as? String=="calendar_list_events" } && !tools.contains { $0["name"] as? String=="contacts_search" })
+            assert((body["include"] as? [String])?.contains("reasoning.encrypted_content")==true)
+            assert(body["tool_choice"] as? String == "auto", "A local calendar lookup must not be forced to web search")
+            let input=body["input"] as? [[String:Any]] ?? []
+            if toolRounds==1 {
+                assert(!input.contains { $0["type"] as? String=="function_call_output" })
+                return (200,try sse([thinking,toolCall]))
+            }
+            assert(input.contains { $0["type"] as? String=="reasoning" && $0["encrypted_content"] as? String=="opaque" })
+            assert(input.contains { $0["type"] as? String=="function_call" && $0["call_id"] as? String=="call_cal" })
+            assert(input.contains { $0["type"] as? String=="function_call_output" && $0["call_id"] as? String=="call_cal" && ($0["output"] as? String)?.contains("牙医")==true })
+            return (200,try sse([["type":"message","content":[["type":"output_text","text":"明天 9 点看牙医。","annotations":[]]]]]))
+        }
+        let phone=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ call in
+            executed+=1; assert(call.callID=="call_cal")
+            return "{\"ok\":true,\"count\":1,\"events\":[{\"title\":\"牙医\"}]}"
+        },onCall:{ _,_ in recorded+=1 })
+        let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone)
+        assert(answered.text=="明天 9 点看牙医。" && toolRounds==2 && executed==1 && recorded==1)
+        // A model that never stops calling tools is cut off at the round limit.
+        toolRounds=0; executed=0
+        CodexFixture.handler={ _ in toolRounds+=1; return (200,try sse([["type":"function_call","call_id":"call_\(toolRounds)","name":"calendar_list_events","arguments":"{}","status":"completed"]])) }
+        let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true}" })
+        do { _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping);fatalError("unbounded loop") } catch {}
+        assert(toolRounds==DeviceToolLoop.maxRounds && executed==DeviceToolLoop.maxRounds)
+        // Without an enabled policy, no function tools are offered at all.
+        toolRounds=0
+        CodexFixture.handler={ request in
+            toolRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="function" })
+            return (200,try sse([["type":"message","content":[["type":"output_text","text":"好的","annotations":[]]]]]))
+        }
+        _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"你好")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(),execute:{ _ in fatalError("disabled tools executed") }))
+        assert(toolRounds==1)
         print("Codex OAuth tests passed: background pause/resume, transport recovery, explicit cancellation, expiry, single-use exchange, PKCE, signed identity, account binding, refresh and image delivery; no live login")
     }
 }

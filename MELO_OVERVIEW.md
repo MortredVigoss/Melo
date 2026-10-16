@@ -387,3 +387,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 电脑每次删聊天询问文件去留；文件面板跟随聊天，可预览/打开 Finder。手机同步删除保留本机文件，在存储管理待处理；项目目录不会被聊天删除连带清理。能力白名单、迁移标记和连接器/MCP/会话授权/技能管理同步完成。
 - 共享 `npm test` GREEN：3613 JS、859 文件语法、设置/快速浏览器、23 Swift，113.3 秒。日志 `/tmp/melo-ui-alignment-shared-daily.log`；三方备份、截图和 `verification.json` 在 `.tmp/ui-function-alignment-20261016/`。实现与失败修复详见 [回执](docs/ui-function-alignment-20261016.md#共享整合回执)。
 - 尚未重启或覆盖安装应用，未 git pp/推送；真实模型、远端连接器/MCP、原生 Finder、手机文件去留界面与完整发布 gate 不在本轮验收内。
+
+### 2026-10-16 — melo iphone — Claude 系统数据整合与安装计划
+- 用户要求检查 Claude 改动、写 MD、覆盖安装及 git push。核对 `8165a3c` 相对 `411cb42` 的 18 个文件；当前共享 WIP 55 项完整保留，基线 `.tmp/claude-device-review-20261016/`。
+- 顺序：审读及修正结果截断/授权撤回/记录隐私 → 分支整合及回归 → 签名构建 → 私有备份及覆盖启动/数据比对 → 文档和已确认提交推送。不执行 git pp。
+- 已修正截断 JSON、权限撤回/取消、定位摘要留存、确认备注及本地查询被强制联网五项。当前树 3613 JS/24 Swift/859 语法/浏览器日常 GREEN；Debug、确认弹窗允许/拒绝与模拟器系统 API 通过。详情见 [复核记录](docs/ios-device-data-20261016.md)。最终签名/覆盖及推送进行中。

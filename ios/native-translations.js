@@ -1,6 +1,24 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["手机数据", "Phone data", "iPhone のデータ", "iPhone 데이터", "Datos del iPhone"],
+["开启后，Melo 在回答需要时读取这些数据。新建或修改数据前每次都会请你确认。设置只保存在这台 iPhone，不会同步。", "When on, Melo reads this data only when a reply needs it. You confirm every time before anything is created or changed. These settings stay on this iPhone and are not synced.", "オンにすると、Melo は回答に必要なときだけこのデータを読み取ります。作成や変更の前には毎回確認します。設定はこの iPhone にのみ保存され、同期されません。", "켜면 Melo는 답변에 필요할 때만 이 데이터를 읽습니다. 생성하거나 변경하기 전에는 매번 확인합니다. 설정은 이 iPhone에만 저장되며 동기화되지 않습니다.", "Al activarlo, Melo lee estos datos solo cuando una respuesta los necesita. Confirmarás cada vez antes de crear o cambiar algo. Estos ajustes se quedan en este iPhone y no se sincronizan."],
+["目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。", "Available in conversations using Codex sign-in. API connections do not use phone data yet.", "Codex ログインの会話で利用できます。API 接続ではまだ iPhone のデータを使いません。", "Codex 로그인 대화에서 사용할 수 있습니다. API 연결은 아직 iPhone 데이터를 사용하지 않습니다.", "Disponible en conversaciones con inicio de sesión de Codex. Las conexiones API aún no usan los datos del iPhone."],
+["日历", "Calendar", "カレンダー", "캘린더", "Calendario"],
+["提醒事项", "Reminders", "リマインダー", "미리 알림", "Recordatorios"],
+["通讯录", "Contacts", "連絡先", "연락처", "Contactos"],
+["当前位置", "Current location", "現在地", "현재 위치", "Ubicación actual"],
+["查看日程；新建日程前会请你确认。包括已添加到 iPhone 的 Google、iCloud 等日历。", "View events; asks before creating one. Includes Google, iCloud and other calendars added to this iPhone.", "予定を表示します。作成前に確認します。iPhone に追加した Google や iCloud などのカレンダーを含みます。", "일정을 확인합니다. 새 일정 생성 전 확인합니다. iPhone에 추가된 Google, iCloud 등 캘린더를 포함합니다.", "Ver eventos; pregunta antes de crear uno. Incluye Google, iCloud y otros calendarios añadidos al iPhone."],
+["查看提醒；新建或完成提醒前会请你确认。", "View reminders; asks before creating or completing one.", "リマインダーを表示します。作成や完了の前に確認します。", "미리 알림을 확인합니다. 생성하거나 완료하기 전 확인합니다.", "Ver recordatorios; pregunta antes de crear o completar uno."],
+["按姓名查找联系人的电话、邮箱和公司。", "Find a contact's phone, email and company by name.", "名前から連絡先の電話番号、メール、会社を探します。", "이름으로 연락처의 전화번호, 이메일, 회사를 찾습니다.", "Busca por nombre el teléfono, correo y empresa de un contacto."],
+["需要时读取一次当前位置，用于“附近”“我在哪”这类问题。", "Reads your location once when needed, for questions like “nearby” or “where am I”.", "必要なときに一度だけ現在地を読み取り、「近く」「今どこ」などの質問に使います。", "필요할 때 한 번 현재 위치를 읽어 '근처', '여기가 어디' 같은 질문에 사용합니다.", "Lee tu ubicación una vez cuando hace falta, para preguntas como «cerca» o «dónde estoy»."],
+["iOS 未授予%@权限。可在 iPhone 设置中允许 Melo 后再开启。", "iOS did not grant %@ access. Allow Melo in iPhone Settings, then turn this on again.", "iOS が %@ へのアクセスを許可していません。iPhone の設定で Melo を許可してから再度オンにしてください。", "iOS에서 %@ 권한을 허용하지 않았습니다. iPhone 설정에서 Melo를 허용한 후 다시 켜세요.", "iOS no concedió acceso a %@. Permite Melo en Ajustes del iPhone y vuelve a activarlo."],
+["确认手机数据操作", "Confirm phone data action", "iPhone データの操作を確認", "iPhone 데이터 작업 확인", "Confirmar acción en datos del iPhone"],
+["新建日程", "Create event", "予定を作成", "일정 만들기", "Crear evento"],
+["新建提醒", "Create reminder", "リマインダーを作成", "미리 알림 만들기", "Crear recordatorio"],
+["完成提醒", "Complete reminder", "リマインダーを完了", "미리 알림 완료", "Completar recordatorio"],
+["允许", "Allow", "許可", "허용", "Permitir"],
+["Melo 请求在你的 iPhone 上执行这项操作。", "Melo is asking to do this on your iPhone.", "Melo がこの操作を iPhone で実行しようとしています。", "Melo가 iPhone에서 이 작업을 하려고 합니다.", "Melo quiere hacer esto en tu iPhone."],
 ["直接描述图片要求", "Describe what you want in the conversation", "会話で画像の要望を伝える", "대화에서 이미지 요청 설명", "Describe la imagen en la conversación"],
 ["这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。", "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer.", "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。", "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다.", "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."],
 ["最多 8 份；长资料按预算选取，全文保留。", "Up to 8 documents. Long documents are excerpted to fit the context; originals are retained.", "最大8件。長い資料は予算に合わせて抜粋し、原文は保持します。", "최대 8개. 긴 문서는 문맥 한도에 맞춰 발췌하며 원문은 보존됩니다.", "Hasta 8 documentos. Los textos largos se extractan según el límite; se conservan los originales."],
@@ -248,6 +266,7 @@ const rows = [
   ["权限设置","Permission settings","権限設定","권한 설정","Ajustes de permisos"],
   ["导入文件","Import files","ファイルを取り込む","파일 가져오기","Importar archivos"],
   ["通过系统“文件”选择器访问你选中的内容。可记住指定文件夹，也可随时移除授权；无法读取其他 App 的私有数据。","Access selected items through the system Files picker. You can remember specific folders or remove access anytime; other apps’ private data is inaccessible.","システムのファイルピッカーで選択した内容にアクセスします。指定したフォルダを記憶し、いつでも許可を削除できます。他のアプリの非公開データにはアクセスできません。","시스템 파일 선택기에서 선택한 항목에 접근합니다. 지정 폴더를 기억하거나 언제든 권한을 제거할 수 있습니다. 다른 앱의 비공개 데이터에는 접근할 수 없습니다.","Accede a los elementos seleccionados mediante Archivos. Puedes recordar carpetas concretas o quitar el acceso cuando quieras; los datos privados de otras apps son inaccesibles."],
+  ["读取结果会随本次请求发送给当前模型服务；关闭开关可停止后续访问。", "Results are sent to the current model service with this request. Turn off a switch to stop further access.", "読み取った結果は今回のリクエストとともに現在のモデルサービスに送信されます。スイッチをオフにすると以後のアクセスを停止できます。", "읽은 결과는 이번 요청과 함께 현재 모델 서비스로 전송됩니다. 스위치를 끄면 이후 접근을 중단할 수 있습니다.", "Los resultados se envían al servicio de modelos actual con esta solicitud. Desactiva el interruptor para detener el acceso posterior."],
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

@@ -11,6 +11,8 @@ import SwiftUI
     private var draftsReady = false
     private var draftsFile: URL { file.deletingLastPathComponent().appendingPathComponent("composer-drafts.json") }
     @Published var sendingID: String?
+    @Published private(set) var pendingDeviceAction: DeviceActionRequest?
+    private var deviceApproval: CheckedContinuation<Bool, Never>?
     @Published private(set) var activeImageAction: ImageAction?
     @Published private(set) var replyBackgroundStatus = ""
     @Published var syncing = false
@@ -321,6 +323,7 @@ import SwiftUI
             guard let self else { return }
             self.expiredRunID = record.runId
             self.finishRun(record.runId, state: "interrupted")
+            self.resolveDeviceAction(false)
             self.sendTask?.cancel()
         }
         sendTask = Task {
@@ -334,7 +337,7 @@ import SwiftUI
                 try Task.checkCancellation()
                 let reply: ModelReply
                 if let replyLoader { reply = try await replyLoader(history, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { self.replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId), onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { self.replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
@@ -412,7 +415,37 @@ import SwiftUI
         try commitSync(SyncRecovery(snapshot:SyncSnapshot(chats:nextChats,tasks:nextTasks,handoffs:nextHandoffs,deletedChats:nextDeleted),preferences:nextPreferences,records:nextRecords))
         deletedChats = nextDeleted; chats = nextChats; preferences = nextPreferences; executionRecords = nextRecords; taskCheckpoints = nextTasks; taskHandoffs = nextHandoffs
     }
-    func cancel() { sendTask?.cancel(); LocalDeviceServices.shared.stopSpeech() }
+    func cancel() { resolveDeviceAction(false); sendTask?.cancel(); LocalDeviceServices.shared.stopSpeech() }
+    // Phone data tools: reads run directly once the user enabled the kind;
+    // every write waits here for an explicit tap in the confirmation alert.
+    private func deviceToolContext(runID: String) -> DeviceToolContext? {
+        let policy = DeviceToolPolicy.load()
+        guard !policy.enabled.isEmpty else { return nil }
+        return DeviceToolContext(policy: policy, execute: { [weak self] call in
+            guard let self else { return #"{"ok":false,"error":"CANCELLED"}"# }
+            return await DeviceToolRunner.run(call, policy: policy, source: SystemDeviceData.shared,
+                                             approve: { await self.requestDeviceApproval($0) }, isAllowed: {
+                guard let kind = DeviceToolSpec.named(call.name)?.kind else { return false }
+                return DeviceToolPolicy.load().enabled.contains(kind)
+            })
+        }, onCall: { [weak self] call, output in
+            let summary = DeviceToolSummary.of(output)
+            let name = DeviceToolSpec.named(call.name).map { "手机数据 · \($0.actionLabel)" } ?? "手机数据 · \(call.name)"
+            self?.stage(runID, id: "device:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
+        })
+    }
+    func requestDeviceApproval(_ request: DeviceActionRequest) async -> Bool {
+        guard deviceApproval == nil, sendTask != nil, !Task.isCancelled else { return false }
+        return await withCheckedContinuation { continuation in
+            deviceApproval = continuation
+            pendingDeviceAction = request
+        }
+    }
+    func resolveDeviceAction(_ allowed: Bool) {
+        guard let continuation = deviceApproval else { pendingDeviceAction = nil; return }
+        deviceApproval = nil; pendingDeviceAction = nil
+        continuation.resume(returning: allowed)
+    }
     func enteredBackground() {
         isBackground = true
         flushDrafts()
