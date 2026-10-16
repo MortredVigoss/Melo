@@ -10,7 +10,10 @@ export async function acquireServerHomeLock(home) {
   const readPid = async () => Number.parseInt(await readFile(pidPath, 'utf8').catch(() => ''), 10) || null;
   let db;
   try {
-    db = new DatabaseSync(join(home, 'melo-desktop-server-lock.sqlite'));
+    // Without a busy timeout two simultaneous starters can each catch the
+    // other mid-acquisition (SHARED vs PENDING) and both give up, leaving the
+    // home with no owner. Waiting briefly lets one of them finish.
+    db = new DatabaseSync(join(home, 'melo-desktop-server-lock.sqlite'), { timeout: 250 });
     db.exec('BEGIN EXCLUSIVE');
   } catch (error) {
     db?.close();
