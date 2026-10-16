@@ -17,7 +17,7 @@
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
-| Android / Samsung 窗口 | 0.4.1 focused / root 筛选及捕获 package / 尺寸日志已安装；95 JVM / 34 runtime / Lint / R8 / 签名通过 | 展开微信截图可读但 0 节点；外屏仍截到 sidegesturepad，不能称修复完成；[真实正反例](docs/wechat-window-capture-20261016.md)。下一步检查启动窗口转移；Fold Cache 布局隔离未完成 |
+| Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -112,7 +112,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.3.1 修复 `1296aac`；Cache 设计 `fee951d`、首轮实现 `6f1275e`，0.4.0 最终 Native / 签名包 / Fold6 验证通过 | 91 JVM / 33 runtime / 4 viewport UI；真实 Exact / Similar / Miss、入口失效恢复、重启及编辑 / 删除见 [Cache 交接](docs/android-task-cache-20261016.md)。本地提交，未推送 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | Cache 0.4.0 已验证；0.4.1 `d2df321` 保留外屏反例，0.4.2 最终包已完成微信双屏只读验证 | 99 JVM / 34 runtime / Lint / R8 / 签名；[截图诊断与实机回执](docs/wechat-window-capture-20261016.md)、[Cache 交接](docs/android-task-cache-20261016.md)。视觉输入仅外部 ADB 可行性测试，Fold Cache 分区待做；本地提交，未推送 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -487,3 +487,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 线程 `01a13a56-c8c5-7d21-a108-d761aee8c657`；用户要求看最新微信失败，并明确需考虑 Fold 两种模式。原记录 cancelled / 20 steps / 21 model requests，旧摘要只说明得到图像，不保证窗口正确。
 - 0.4.1 95 JVM / 34 Android runtime、Lint / Debug / R8 / signature / alignment 通过；同证书安装保留 6 Chat / 1 角色。展开模式微信窗口和截图正确，外屏仍选中 Samsung 手势层，已保存正反例，不能按自动化测试通过就称实机全修复。
 - [诊断](docs/wechat-window-capture-20261016.md) / [脱敏回执](docs/evidence/wechat-window-041-20261017.json)。下一步补启动窗口时序与不可观察时停止；仍无证据证明微信针对 Melo 限制，输入 / 发送未测。用户提出参考 AutoInput，讨论视觉坐标 + 独立输入 Backend；尚未安装新插件 / IME / Shizuku。未推送 / git pp。
+
+### 2026-10-17 — Android / Samsung 微信截图 — 0.4.2 双屏最终验证
+
+- 线程 `01a13a56-c8c5-7d21-a108-d761aee8c657`；补充有界的启动窗口交接检查，获取不到目标立即停止，防止把 Samsung 手势层误当微信继续循环。保留 0.4.1 外屏失败证据。
+- 99 JVM / 34 Android runtime、Lint / Debug / R8 / signature / alignment 通过；同证书覆盖安装保留 7 Chat / 1 角色与其他辅助服务。安装 APK SHA 与交付一致。
+- 最终 0.4.2 同包 folded 968×2376、unfolded 1856×2160 均强制 Probe，均 3 steps / 3 model requests、com.tencent.mm / 0 节点，模型明确确认画面可读，finish 重查通过。只读，原消息发送任务未重跑；[详细证据](docs/evidence/wechat-window-042-20261017.json)。
+- 参考 AutoInput 的讨论另用外部 Windows ADB 验证微信搜索字段“新截图 → 坐标点击 → ASCII 输入 → 截图核对 → 清除”可行，0 消息发送。它不是 Melo 生产输入功能，中文 / 新 IME / Shizuku / MediaProjection 未接入；Fold Cache 布局隔离仍待做。没有私聊截图入仓库，没有推送 / git pp 或整个 repo gate。

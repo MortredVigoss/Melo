@@ -1,9 +1,24 @@
 package com.melo.android.device
 
+import kotlinx.coroutines.delay
+
 data class DeviceWindowIdentity(val id: Int, val packageName: String, val bounds: List<Int> = emptyList())
 data class DeviceWindowState(val id: Int, val focused: Boolean, val active: Boolean, val layer: Int, val rootVisible: Boolean, val excluded: Boolean = false)
+data class DeviceForegroundWindow(val packageName: String, val blockingSystem: Boolean = false)
 
 object DeviceWindowPolicy {
+    /** Wait for window delivery, never relaunch or dismiss a foreground system dialog. */
+    suspend fun settleLaunch(expectedPackage: String, current: () -> DeviceForegroundWindow,
+                             pause: suspend () -> Unit = { delay(150) }): Boolean {
+        repeat(20) { attempt ->
+            val window = current()
+            if (window.packageName == expectedPackage) return true
+            if (window.blockingSystem) return false
+            if (attempt < 19) pause()
+        }
+        return false
+    }
+
     /** A redacted Accessibility root is not evidence that its focused window is hidden.
      * Touch-active edge/gesture decorations must not replace the input-focused app.
      * Focused system dialogs stay eligible even when their own tree is unavailable. */

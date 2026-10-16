@@ -1,11 +1,31 @@
 package com.melo.android
 
 import com.melo.android.device.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceWindowPolicyTest {
+    @Test fun launchWaitsForDelayedAppWindowWithoutRetryingTheLaunch() = runBlocking {
+        var checks = 0; var pauses = 0
+        assertTrue(DeviceWindowPolicy.settleLaunch("com.tencent.mm", {
+            DeviceForegroundWindow(if (++checks < 3) "com.samsung.android.sidegesturepad" else "com.tencent.mm")
+        }, { pauses++ }))
+        assertEquals(3, checks); assertEquals(2, pauses)
+    }
+    @Test fun launchWaitDoesNotSkipAFocusedSystemDialog() = runBlocking {
+        var checks = 0
+        assertFalse(DeviceWindowPolicy.settleLaunch("com.tencent.mm", {
+            checks++; DeviceForegroundWindow("com.android.permissioncontroller", blockingSystem = true)
+        }, { fail("Must not wait through a foreground dialog") }))
+        assertEquals(1, checks)
+    }
+    @Test fun unavailableAppWindowHasABoundedWait() = runBlocking {
+        var checks = 0; var pauses = 0
+        assertFalse(DeviceWindowPolicy.settleLaunch("com.tencent.mm", { checks++; DeviceForegroundWindow("com.samsung.android.sidegesturepad") }, { pauses++ }))
+        assertEquals(20, checks); assertEquals(19, pauses)
+    }
     @Test fun focusedAppWithRedactedTreeWinsOverSamsungGestureDecoration() {
         val app = DeviceWindowState(1, focused = true, active = false, layer = 0, rootVisible = false)
         val edge = DeviceWindowState(2, focused = false, active = true, layer = 5, rootVisible = true)

@@ -248,7 +248,21 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             }
             if (action in setOf("tap", "type_text", "swipe", "back", "home")) lastLaunchTarget = ""
             if (action != "observe") { invalidateObservation(); delay(650); checkSession() }
+            if (launchTarget != null) {
+                var foreground = DeviceForegroundWindow("")
+                val ready = DeviceWindowPolicy.settleLaunch(launchTarget, current = {
+                    checkSession()
+                    val current = readableWindows().firstOrNull()
+                    foreground = DeviceForegroundWindow(current?.root?.packageName?.toString().orEmpty(),
+                        current?.isFocused == true && current.type == AccessibilityWindowInfo.TYPE_SYSTEM)
+                    foreground
+                })
+                if (!ready) return@withContext DeviceToolResult.error(
+                    "已请求打开 $launchTarget，但 Accessibility 未提供目标前台窗口；当前窗口为 ${foreground.packageName.ifBlank { "未知" }}。目标可能已经显示，不能据此认定未安装。已停止，不会操作替代窗口。", "foreground_window_unavailable")
+            }
             val observation = observe(if (action == "observe") arguments["window_id"]?.jsonPrimitive?.intOrNull else null)
+            if (launchTarget != null && observation.data.text("package_name") != launchTarget) return@withContext DeviceToolResult.error(
+                "启动后窗口发生变化，当前为 ${observation.data.text("package_name")}，未取得目标 $launchTarget 的窗口。已停止，不会操作替代窗口。", "foreground_window_unavailable")
             DeviceToolResult(buildJsonObject {
                 observation.data.forEach { (key, value) -> put(key, value) }; put("ok", true); put("action", action)
                 launchTarget?.let {

@@ -8,6 +8,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceTaskLoopTest {
+    @Test fun inaccessibleLaunchedWindowStopsBeforeAnotherModelCallOrDeviceAction() = runBlocking {
+        var requests = 0; var actions = 0
+        val traces = mutableListOf<DeviceStep>()
+        val result = DeviceTaskLoop("chat-completions", {
+            requests++; check(requests == 1)
+            turn("open", args("open_app", "package_name" to "com.tencent.mm"))
+        }, { actions++; DeviceToolResult.error("Target window unavailable", "foreground_window_unavailable") }, { traces += it }).run("Open WeChat")
+        assertEquals("needs_user", result.status); assertEquals(1, requests); assertEquals(1, actions)
+        assertEquals("foreground_window_unavailable", traces.single().code)
+    }
     @Test fun persistedObservationSummaryIdentifiesTheCapturedWindowWithoutSavingItsContents() = runBlocking {
         for (available in listOf(true, false)) {
             val turns = ArrayDeque(listOf(turn("observe", args("observe")), turn("stop", finish("blocked"))))

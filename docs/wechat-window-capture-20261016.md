@@ -33,3 +33,25 @@
 - 脱敏回执：[0.4.1 Fold6 evidence](evidence/wechat-window-041-20261017.json)。未重跑原微信消息发送，未声称输入 / 发送可用；微信是否主动限制仍无充分证据。
 
 当前外屏失败需进一步检查启动后窗口转移与服务能见范围。Task Cache 仍仅按 Display 绑定 scope，尚未完成折叠 / 展开布局分区；两项均不可当成已验收。0.4.1 只是验证中的中间版本，后续包与回执须单独记录。
+
+## 0.4.2 最终包：启动窗口交接与双屏复测（2026-10-17）
+
+0.4.1 外屏反例保留。仅调整 focused 排序不够：启动后 Accessibility 目标窗口可能尚未交付，不能立即把手势层当作成功的 open_app 回执。
+
+0.4.2 在已有启动等待后，有界等待目标 package 出现在首选窗口（最多 20 次检查 / 19 次 150 ms 等待）；不重复 launch，不跨过 focused 系统 dialog。观察后再次检查目标 package。拿不到目标窗口则立即 needs_user，不再发下一轮模型请求或操作替代窗口，也不误报 App 未安装。
+
+- 最终同一 APK / versionCode 11，99 JVM、34 Android 16 Emulator runtime 全通过，零失败 / skip；Lint 零 errors、Debug / R8 Release、同证书签名与四 ABI 16 KiB alignment 通过。日志 `.tmp/wechat-042-check.log`、`.tmp/wechat-042-connected.log`。
+- 同证书覆盖 Fold6，升级前后均 7 Chat / 1 角色，其他 Accessibility Services 保留；安装后的 base APK SHA 与最终交付一致。
+- folded 968×2376：强制 Probe，3 steps / 3 model requests；com.tencent.mm，521×1280 JPEG、0 节点。模型明确“屏幕图像清晰可读，不是黑屏”，finish 重查可见证据。
+- unfolded 1856×2160：同一最终 APK，强制 Probe，3 steps / 3 model requests；com.tencent.mm，550×1280 JPEG、0 节点。模型明确“截图清晰可读，非黑屏”，finish 重查可见证据。
+- 两次均只打开与观察，未点击、输入或发送。原始私人截图、联系人 / 消息正文未入仓库；[脱敏回执](evidence/wechat-window-042-20261017.json) 保留实际摘要。
+
+这证明本机本次两种模式的截图链可用，不证明微信所有页面、输入或发送都可用，也不能判断微信是否有意限制 Accessibility。当前空 tree 与可读截图同时存在。
+
+### 视觉坐标输入的独立可行性验证
+
+在 folded 外屏以 Windows ADB 取得最新截图，按当前图像定位微信搜索入口，坐标点击后向已确认的搜索字段输入 ASCII 测试串 `MELOINPUTPROBE`；再次截图人工核对输入成功，清除并返回。没有 Enter / Send、没有发送消息，也没有在聊天输入框测试。
+
+该测试是外部 ADB 可行性证据，尚未接入 Melo，也未验证中文。可选后续链路为 `当前截图 → 视觉定位 → 按截图/窗口 bounds 换算坐标 → 点击 → IME 输入 → 新截图验证`。IME 是 Android 键盘输入通道，可用于研究中文输入；不是对所有自定义控件可用性的承诺。AutoInput 同样依赖 Accessibility，其[官方 FAQ](https://joaoapps.com/autoinput/faq/) 明确存在不可操作的 App；不能把安装插件当成必然绕过限制。Shizuku / MediaProjection / 自定义 IME 均未安装或集成。
+
+切换 folded / unfolded 后必须重新观察，不能复用固定坐标。Task Cache 目前只有 Display scope，尚未完成按折叠布局分区；坐标输入与 Fold Cache 隔离是后续工作，不包含在 0.4.2 截图修复交付中。

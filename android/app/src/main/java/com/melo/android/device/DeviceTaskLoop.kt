@@ -131,6 +131,7 @@ class DeviceTaskLoop(
             DeviceAgentClient.appendResult(history, protocol, call, result)
             onResult(call.arguments, result)
             launches.record(call.arguments, result)
+            if (result.data.text("code") == "foreground_window_unavailable") return DeviceOutcome("needs_user", error = result.data.text("error"))
             if (repeatedLaunch) return DeviceOutcome("blocked", error = result.data.text("error"))
             if (action == "open_app" && launches.count(call.arguments) >= 2) history += message("You have already requested this same app twice. Do not call open_app for it again without a meaningful navigation action. Inspect the returned package_name, window_title and related_windows. A foldable app can show a main navigation pane and a different detail pane simultaneously; use observe(window_id=...) for a related pane. If the requested visible goal is already satisfied, call finish with evidence now. Otherwise navigate toward the remaining goal or finish blocked; repeatedly launching is not progress.")
             previous = result

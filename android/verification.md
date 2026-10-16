@@ -1,5 +1,15 @@
 # Android verification — 2026-10-16
 
+## 0.4.2 WeChat 启动窗口与双屏截图（2026-10-17）
+
+0.4.1 在 unfolded 成功、folded 仍捕获 sidegesturepad 的反例推动本次修复。0.4.2 有界等待目标窗口交付，前台系统 dialog 或目标不可见时停止；不会继续让模型对替代窗口操作。
+
+99 JVM / 34 Android 16 runtime tests 全部通过、无失败 / skip；Lint 零 errors、Debug / R8 Release、同证书签名与四 ABI 16 KiB alignment 通过。同证书安装 Fold6 / One UI 8.5，7 Chat / 1 角色及其他辅助服务保留。
+
+同一最终 APK 的 folded 968×2376、unfolded 1856×2160 各一次强制 Probe（均 3 steps / 3 requests），captured package 均 com.tencent.mm，模型明确确认截图清晰而非黑屏；tree 均 0 节点，finish 可见证据重查通过。只读，没有重跑原微信发送任务。
+
+APK SHA-256 `8cfc8231026b522ec628b4b6311c6ff1cadd7b7d380e44ff1660ca9b3b44f06a`，已安装包散列一致。[诊断及分层边界](../docs/wechat-window-capture-20261016.md) / [脱敏证据](../docs/evidence/wechat-window-042-20261017.json)。外部 ADB 仅验证搜索框坐标点击与 ASCII 输入，未接 Melo / 中文 IME；Fold Cache 布局隔离仍未完成。未运行远端 CI 或整个 repo 发布 gate。
+
 ## 0.4.0 Task Cache
 
 Exact / 参数模板 Hit 在本机重新定位和校验终态，零模型；Similar 用一次受约束 plan，再本机执行；Miss 才 Probe。可验证成功后自动写入，仅本机保存；Chat 内可运行、编辑名称 / JSON、删除和强制 Probe。
