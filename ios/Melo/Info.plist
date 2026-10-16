@@ -8,6 +8,14 @@
 	<string>点击语音输入时使用麦克风，将说话内容转为可编辑文字；由你确认后发送。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>将语音识别为输入框中的文字，识别服务可能需要联网。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>在你开启“日历”后，Melo 读取日程来回答你的问题；新建日程前会请你确认。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>在你开启“提醒事项”后，Melo 读取提醒；新建或完成提醒前会请你确认。</string>
+	<key>NSContactsUsageDescription</key>
+	<string>在你开启“通讯录”后，Melo 按姓名查找联系人的电话和邮箱。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>在你开启“当前位置”并提问需要时，Melo 读取一次大致位置。</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array><string>$(PRODUCT_BUNDLE_IDENTIFIER).reply.*</string></array>
 	<key>UIBackgroundModes</key>

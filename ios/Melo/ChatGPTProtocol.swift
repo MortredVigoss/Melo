@@ -81,6 +81,16 @@ struct ChatGPTStream {
     private(set) var searching = false
     private(set) var images: [ImagePayload] = []
     private(set) var generatingImage = false
+    // Function calls are executed only after the response completes; the
+    // canonical output (or finished streamed items) is replayed next round.
+    private(set) var outputItems: [[String: Any]] = []
+    private var streamedItems: [Int: [String: Any]] = [:]
+    var functionCalls: [ResponsesFunctionCall] {
+        outputItems.compactMap { item in
+            guard item["type"] as? String == "function_call", let name = item["name"] as? String, let callID = item["call_id"] as? String else { return nil }
+            return ResponsesFunctionCall(callID: callID, name: name, arguments: item["arguments"] as? String ?? "{}")
+        }
+    }
     mutating func accept(_ json: String) throws {
         if json == "[DONE]" { return }
         guard let data = json.data(using: .utf8), let event = try JSONSerialization.jsonObject(with: data) as? [String: Any], let type = event["type"] as? String else { throw MeloError.message("模型响应格式无效。") }
@@ -100,6 +110,7 @@ struct ChatGPTStream {
         }
         if type.hasPrefix("response.web_search_call.") { searching = !type.hasSuffix("completed"); if type.hasSuffix("completed") { searched = true } }
         if type == "response.output_text.delta", let delta = event["delta"] as? String { text += delta }
+        if type == "response.output_item.done", let index = event["output_index"] as? Int, let item = event["item"] as? [String: Any] { streamedItems[index] = item }
         // Codex can deliver the complete image before the response tail. Only a
         // completed image tool item qualifies; partial images/text never do.
         if acceptImageCompletion, type == "response.output_item.done", let item = event["item"] as? [String:Any],
@@ -142,6 +153,13 @@ struct ChatGPTStream {
                 }
                 let final = pieces.joined(separator: "\n")
                 if !final.isEmpty { text = final }
+                outputItems = output
+            }
+            // Some transports omit the canonical output; fall back to items that
+            // finished streaming, in output order.
+            if outputItems.isEmpty { outputItems = streamedItems.keys.sorted().compactMap { streamedItems[$0] } }
+            if outputItems.contains(where: { $0["type"] as? String == "function_call" && ($0["status"] as? String).map { $0 != "completed" } == true }) {
+                throw MeloError.message("模型返回了未完成的工具调用，未执行任何操作。")
             }
             observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "回答格式与引用整理完成")
             completed = true

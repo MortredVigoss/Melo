@@ -24,6 +24,7 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-local-settings") { await LocalSettingsVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-conversation") { await ConversationVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-background") { await ReplyBackgroundVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-verify-device-data") { await DeviceDataVerification.run() }
                     #endif
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-search") {
