@@ -1,0 +1,233 @@
+{
+  "_comment": "Cross-platform behaviour contract. Desktop (JS) is canonical; mobile-sync/crossPlatformContracts.test.js and ios/Tests/SharedContractTests.swift both run every case. Change behaviour on both sides together.",
+  "proseUrls": [
+    {
+      "text": "见 https://example.com/a。还有 https://example.com/b，结束",
+      "urls": [
+        "https://example.com/a",
+        "https://example.com/b"
+      ]
+    },
+    {
+      "text": "[文档](https://example.com/doc?q=1)后面紧跟文字",
+      "urls": [
+        "https://example.com/doc?q=1"
+      ]
+    },
+    {
+      "text": "维基 https://en.wikipedia.org/wiki/Foo_(bar) 很好",
+      "urls": [
+        "https://en.wikipedia.org/wiki/Foo_(bar)"
+      ]
+    },
+    {
+      "text": "IPv6 http://[2001:db8::1]:8080/path 可用",
+      "urls": [
+        "http://[2001:db8::1]:8080/path"
+      ]
+    },
+    {
+      "text": "引号“https://example.com/q”里",
+      "urls": [
+        "https://example.com/q"
+      ]
+    },
+    {
+      "text": "重复 https://example.com/a https://example.com/a!",
+      "urls": [
+        "https://example.com/a"
+      ]
+    },
+    {
+      "text": "结尾标点 https://example.com/x?y=1&z=2.",
+      "urls": [
+        "https://example.com/x?y=1&z=2"
+      ]
+    },
+    {
+      "text": "中文书名号《https://example.com/book》",
+      "urls": [
+        "https://example.com/book"
+      ]
+    },
+    {
+      "text": "无协议 www.example.com 不算",
+      "urls": []
+    },
+    {
+      "text": "https://example.com/%E4%B8%AD%E6%96%87?k=v#frag",
+      "urls": [
+        "https://example.com/%E4%B8%AD%E6%96%87?k=v#frag"
+      ]
+    },
+    {
+      "text": "打开 https://例子.测试/路径 看看",
+      "urls": [
+        "https://例子.测试/路径"
+      ]
+    },
+    {
+      "text": "HTTPS://EXAMPLE.com/X 大写",
+      "urls": [
+        "HTTPS://EXAMPLE.com/X"
+      ]
+    },
+    {
+      "text": "链接https://example.com/a)后",
+      "urls": [
+        "https://example.com/a"
+      ]
+    },
+    {
+      "text": "https://example.com/a?q=中文",
+      "urls": [
+        "https://example.com/a?q=中文"
+      ]
+    }
+  ],
+  "sourceIdentity": [
+    {
+      "url": "https://Example.COM/Path?utm_source=x&b=2&a=1#frag",
+      "identity": "https://example.com/Path?b=2&a=1#frag"
+    },
+    {
+      "url": "http://example.com:80/",
+      "identity": "http://example.com/"
+    },
+    {
+      "url": "https://example.com",
+      "identity": "https://example.com/"
+    },
+    {
+      "url": "https://example.com/a?gclid=1",
+      "identity": "https://example.com/a"
+    },
+    {
+      "url": "https://example.com/a?q=a+b",
+      "identity": "https://example.com/a?q=a+b"
+    },
+    {
+      "url": "https://example.com/a?q=%E4%B8%AD",
+      "identity": "https://example.com/a?q=%E4%B8%AD"
+    },
+    {
+      "url": "https://example.com/a?utm_medium=1&fbclid=2",
+      "identity": "https://example.com/a"
+    },
+    {
+      "url": "ftp://example.com/file",
+      "identity": ""
+    },
+    {
+      "url": "https://user:pw@example.com/",
+      "identity": ""
+    },
+    {
+      "url": "HTTPS://EXAMPLE.com:443/x",
+      "identity": "https://example.com/x"
+    },
+    {
+      "url": "https://example.com/a?q=中",
+      "identity": "https://example.com/a?q=%E4%B8%AD"
+    },
+    {
+      "url": "https://example.com/a?",
+      "identity": "https://example.com/a"
+    },
+    {
+      "url": "https://例子.测试/路径",
+      "identity": "https://xn--fsqu00a.xn--0zwm56d/%E8%B7%AF%E5%BE%84"
+    },
+    {
+      "url": "https://example.com/a?b=2&utm_source=1&a=1",
+      "identity": "https://example.com/a?b=2&a=1"
+    },
+    {
+      "url": "https://example.com/a#",
+      "identity": "https://example.com/a#"
+    },
+    {
+      "url": "https://example.com/a?q=a%20b",
+      "identity": "https://example.com/a?q=a+b"
+    },
+    {
+      "url": "https://example.com:8443/a",
+      "identity": "https://example.com:8443/a"
+    },
+    {
+      "url": "https://example.com/a?flag",
+      "identity": "https://example.com/a?flag="
+    },
+    {
+      "url": "https://example.com/a?a=1&&b=2",
+      "identity": "https://example.com/a?a=1&b=2"
+    },
+    {
+      "url": "https://example.com/a?q=a~b!",
+      "identity": "https://example.com/a?q=a%7Eb%21"
+    },
+    {
+      "url": "https://example.com/a?q=%ZZ",
+      "identity": "https://example.com/a?q=%25ZZ"
+    },
+    {
+      "url": "https://example.com/a?q=a%2Bb",
+      "identity": "https://example.com/a?q=a%2Bb"
+    },
+    {
+      "url": "https://example.com/a?q=1;2",
+      "identity": "https://example.com/a?q=1%3B2"
+    },
+    {
+      "url": "https://example.com/a?UTM_SOURCE=x&k=1",
+      "identity": "https://example.com/a?k=1"
+    }
+  ],
+  "toolLoopReplay": {
+    "output": [
+      {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [],
+        "encrypted_content": "opaque"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "我查一下",
+            "annotations": []
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "id": "fc_1",
+        "call_id": "call_a",
+        "name": "lookup",
+        "arguments": "{\"q\":\"x\"}",
+        "status": "completed"
+      },
+      {
+        "type": "function_call",
+        "id": "fc_2",
+        "call_id": "call_b",
+        "name": "lookup",
+        "arguments": "{}",
+        "status": "completed"
+      }
+    ],
+    "results": [
+      {
+        "call_id": "call_a",
+        "output": "{\"ok\":true}"
+      },
+      {
+        "call_id": "call_b",
+        "output": "{\"ok\":false}"
+      }
+    ]
+  }
+}

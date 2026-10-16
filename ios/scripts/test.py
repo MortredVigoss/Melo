@@ -31,6 +31,7 @@ suites['CodexOAuthTests']=shared+['ios/Melo/CodexOAuth.swift','ios/Melo/ChatGPTA
 suites['ConversationHistoryTests']=['ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift']
 suites['InterfaceLanguageTests']=['ios/Melo/InterfaceLanguage.swift']
 suites['DeviceToolsTests']=shared
+suites['SharedContractTests']=shared  # reads shared/protocol/contracts.json, same as the JS half
 toolchain = [platform.machine()]
 swift_started = time.monotonic()
 cached = 0
