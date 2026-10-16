@@ -26,9 +26,9 @@ struct ImageReviewView: View {
                         focused = false
                         let request = ImageReviewRequest(imageID: image.id, requirements: requirements)
                         store.send(request.prompt, chatID: chatID, imageTask: request.plan, onPreflightFailure: { failure = $0 })
-                        if store.sendingID == chatID { completed() }
+                        if store.isSending(chatID) { completed() }
                         else if failure == nil { failure = "尚未开始检查，请确认模型连接后重试。" }
-                    }.disabled(store.sendingID != nil || !store.storageReady)
+                    }.disabled(store.isSending(chatID) || !store.storageReady)
                         .buttonStyle(.borderedProminent).tint(meloAccent).foregroundStyle(.black)
                 }
             }.navigationTitle("检查图片").navigationBarTitleDisplayMode(.inline)

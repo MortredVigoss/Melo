@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt } from './modelPresentation.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 
 test('conversation role resolution ignores editor scope and follows existing or draft project',()=>{
  const global=[{id:'main',name:'Global',model:'global-model'}],project=[{id:'main',name:'Project',model:'project-model'}];
@@ -13,6 +13,17 @@ test('conversation role resolution ignores editor scope and follows existing or 
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dom = html => new JSDOM(html).window.document;
+
+test('system and connection model choices reuse the active catalog without leaking it to another API provider', () => {
+  const config = {authMode:'codex', model:'gpt-6.1-sol', modelCatalogs:{codex:['gpt-6.1-sol','gpt-6-astra']}, availableModels:['gpt-6-astra','custom-model']};
+  assert.deepEqual(connectionModelOptions(config),['gpt-6.1-sol','gpt-6-astra','custom-model']);
+  const document=dom(renderDefaultModelSettings(config,escape));
+  assert.equal(document.querySelector('select').value,'gpt-6.1-sol');
+  assert.match(document.querySelector('select').textContent,/Astra 6/);
+  const api={authMode:'api-key',baseUrl:'https://a.invalid',model:'a-model',availableModels:['a-2'],modelCatalogs:{'api-key':['a-3']},llmConnections:{activeId:'a'}};
+  assert.deepEqual(connectionModelOptions(api,{id:'b',authMode:'api-key',baseUrl:'https://b.invalid',model:'b-model',models:['b-2']}),['b-2','b-model']);
+  assert.deepEqual(connectionModelOptions({...api,modelCatalogs:{codex:config.modelCatalogs.codex}},{id:'chatgpt',authMode:'codex',model:'gpt-6.1-sol'}),['gpt-6.1-sol','gpt-6-astra']);
+});
 
 test('model names are concise without substituting custom IDs', () => {
   assert.equal(modelLabel('gpt-6.1-sol'), 'Sol 6.1');

@@ -37,7 +37,7 @@ struct EditableSection<Value: Equatable & Codable, Fields: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(title).font(.headline); Spacer()
+                Text(LocalizedStringKey(title)).font(.headline); Spacer()
                 if edit.editing {
                     Button("取消") { if edit.dirty { discard = true } else { edit.cancel() } }.disabled(edit.saving)
                     Button(edit.saving ? "保存中…" : edit.error == nil ? "保存" : "重试保存") { save() }

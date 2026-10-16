@@ -50,6 +50,7 @@ struct ConversationControls: View {
     var settings: () -> Void
     @State private var connections: [LLMConnection] = []
     @State private var context = false
+    @State private var team = false
     @AppStorage("chatgptModel") private var defaultGPT = ""
     @AppStorage("modelName") private var defaultAPI = ""
     @AppStorage("modelAuthMode") private var defaultMode = "chatgpt"
@@ -58,7 +59,7 @@ struct ConversationControls: View {
     private var models: [String] { Array(Set(account.models.map(\.slug) + [defaultGPT, current?.connectionID == "chatgpt" ? current?.model ?? "" : ""])).filter { !$0.isEmpty }.sorted() }
     private var usesChatGPT: Bool { current.map { $0.connectionID == "chatgpt" } ?? (defaultMode == "chatgpt") }
     private var capability: String {
-        if usesChatGPT { return account.signedIn ? "ChatGPT · 文字与网页检索" : "ChatGPT 尚未登录 · 请先配置连接" }
+        if usesChatGPT { return account.signedIn ? "Codex · 文字、网页与图片" : "Codex 尚未登录 · 请先配置连接" }
         if let current, LLMConnection.resolve(current, in: connections)?.key.isEmpty != false { return "\(current.name ?? "所选连接")尚未配置 · 请先连接或重新选择" }
         return "API · 文字对话 · 本机尚未接入联网和电脑工具"
     }
@@ -70,12 +71,15 @@ struct ConversationControls: View {
                     ForEach(store.preferences.agents) { agent in
                         Button { store.selectAgent(agent.id, chatID: chatID) } label: { Label(agent.name, systemImage: store.agent(for: chatID).id == agent.id ? "checkmark" : agent.symbol) }
                     }
-                    Text("切换只影响之后的回复；历史消息保持原角色。")
-                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("角色 · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话角色")
+                    Text("切换只影响之后的回复；历史消息保持原Agent。")
+                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
+                Button { team = true } label: { Label(store.pendingTeams[chatID].map { "团队 · \($0.members.count) 人" } ?? "团队", systemImage: "person.3").font(.caption).padding(11).background(store.pendingTeams[chatID] == nil ? MeloTheme.inset : meloGold.opacity(0.18), in: Capsule()) }.accessibilityLabel(store.pendingTeams[chatID] == nil ? "选择团队协作" : "下一条消息将由团队执行，点按修改")
+                    // Its own presentation anchor: two sheets on one view do not both present.
+                    .sheet(isPresented: $team) { TeamSheet(chatID: chatID) }
                 Menu {
-                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用角色或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
+                    Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     if account.signedIn {
-                        Section("ChatGPT") {
+                        Section("Codex（ChatGPT 账号）") {
                             ForEach(models, id: \.self) { model in Button { store.selectModel(.init(connectionID: "chatgpt", model: model), chatID: chatID) } label: { Label(model, systemImage: current?.connectionID == "chatgpt" && current?.model == model ? "checkmark" : "cpu") } }
                         }
                     }
@@ -90,7 +94,7 @@ struct ConversationControls: View {
                 } label: { Label(modelLabel.isEmpty ? "选择模型" : modelLabel, systemImage: "cpu").font(.caption).lineLimit(1).padding(11).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话模型")
                 Button { context = true } label: { Label("项目与资料\(store.knowledge(for: chatID).isEmpty ? "" : " · \(store.knowledge(for: chatID).count)")", systemImage: "paperclip").font(.caption).padding(11).background(MeloTheme.inset, in: Capsule()) }
             }.padding(.horizontal, 16).padding(.vertical, 6)
-        }.disabled(store.sendingID == chatID).onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }
+        }.disabled(store.isSending(chatID)).onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }
         .task { if account.signedIn && account.models.isEmpty { await account.loadModels() } }
         .sheet(isPresented: $context) { ConversationContextPicker(chatID: chatID) }
         Text(capability).font(.caption2).foregroundStyle(MeloTheme.soft).padding(.horizontal, 18).padding(.bottom, 3)
@@ -126,14 +130,14 @@ struct ConversationContextPicker: View {
                 }
                 Section("本次对话可用的知识资料") {
                     if (store.preferences.knowledge ?? []).isEmpty { Text("先在知识分支添加资料，再在这里选用。").foregroundStyle(.secondary) }
-                    ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true }) { note in
+                    ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" }) { note in
                         if store.project(for: chatID)?.knowledgeIds?.contains(note.id) == true {
                             Label("\(note.title) · 项目共享", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
                         } else {
-                        Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in store.updatePreferences { if $0.chatKnowledge == nil { $0.chatKnowledge = [:] }; var ids = $0.chatKnowledge?[chatID] ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; let inherited = ($0.projects ?? []).first { $0.id == store.preferences.chatProjects?[chatID] }?.knowledgeIds ?? []; let selected = ($0.knowledge ?? []).filter { $0.deleted != true && ids.union(inherited).contains($0.id) }; guard selected.count <= 8 && selected.reduce(0, { $0 + $1.content.count }) <= 24000 else { store.error = "最多选用 8 份、合计 24000 字资料。"; return }; $0.chatKnowledge?[chatID] = ids } }))
+                        Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in store.updatePreferences { if $0.chatKnowledge == nil { $0.chatKnowledge = [:] }; var ids = $0.chatKnowledge?[chatID] ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; let inherited = ($0.projects ?? []).first { $0.id == store.preferences.chatProjects?[chatID] }?.knowledgeIds ?? []; let selected = ($0.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" && ids.union(inherited).contains($0.id) }; guard selected.count <= 8 else { store.error = "最多选用 8 份、合计 24000 字资料。"; return }; $0.chatKnowledge?[chatID] = ids } }))
                         }
                     }
-                    Text("项目共享与本对话选中的资料会随下一次消息发送，合计最多 8 份、24000 字。已删除资料不会加入。").font(.caption).foregroundStyle(.secondary)
+                    Text("最多 8 份；长资料按预算选取，全文保留。").font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("项目与资料").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.presentationBackground(MeloTheme.dialog)

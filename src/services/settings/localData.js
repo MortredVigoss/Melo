@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getMeloHome, getResolvedConfig } from '../../config.js';
 import { loadState, updateStateAtomically } from '../../state/stateStore.js';
 import { exportMobileSnapshot, importMobileSnapshot, preloadMobileScenes } from '../../http/mobileSyncRoutes.js';
-import { refreshPortableWorkspace } from '../chat/portableWorkspace.js';
+import { refreshPortableWorkspace, pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { validateSnapshot } from '../../../mobile-sync/protocol.js';
 import { persistPortableFiles } from '../../http/mobileSyncRoutes.js';
 import { createAgentMarkdownFileHelpers } from '../../persistence/agentMarkdownFiles.js';
@@ -19,6 +19,7 @@ export async function exportLocalArchive() {
   const prepared = await preloadMobileScenes(state,home);
   const scenes = new Map([...prepared.values()].map(e=>[e.scene.runId,e.scene]));
   refreshPortableWorkspace(state,{config,scenes});
+  if (pendingPersonaRecords(state).length) throw new Error('部分人设暂不能完整导出为兼容资料，请先单独导出 Agent Markdown。');
   return {format:'melo-portable-workspace',version:1,exportedAt:new Date().toISOString(),snapshot:exportMobileSnapshot(state,{workspace:true})};
 }
 export async function importLocalArchive(value) {

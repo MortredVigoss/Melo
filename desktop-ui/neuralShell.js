@@ -1,3 +1,5 @@
+import { t, ui } from './i18n.js';
+import { renderLanguageControl } from './languageControls.js';
 import { renderAgentAvatar } from './agentAvatar.js';
 import { createRouteSampler } from './neuralSampling.js';
 import { neuralIdentities } from './neuralSatellite.js';
@@ -5,11 +7,11 @@ import { neuralIdentities } from './neuralSatellite.js';
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const identityStyle=id=>{const c=neuralIdentities.find(v=>v.id===id)||neuralIdentities[0];return `--neural-color:${c.color};--neural-light:${c.light};--neural-rgb:${c.rgb}`;};
 export const neuralGroups = [
- {id:'chat',name:'对话',en:'CONVERSATIONS',symbol:'◌',description:'想法从一段对话开始。'},
- {id:'projects',name:'项目',en:'PROJECTS',symbol:'◇',description:'把相关的工作与资料，连接在一起。'},
- {id:'agents',name:'角色',en:'AGENTS',symbol:'✧',description:'为不同的工作，找到合适的思考方式。'},
- {id:'knowledge',name:'知识',en:'KNOWLEDGE',symbol:'△',description:'资料由你保存并选用；记忆自动召回；技能提供工作方法。'},
- {id:'system',name:'系统',en:'SYSTEM',symbol:'⬡',description:'连接模型、工具与本地工作环境。'},
+ {id:'chat',get name(){return t('对话');},en:'CONVERSATIONS',symbol:'◌',get description(){return t('想法从一段对话开始。');}},
+ {id:'projects',get name(){return t('项目');},en:'PROJECTS',symbol:'◇',get description(){return t('把相关的工作与资料，连接在一起。');}},
+ {id:'agents',get name(){return t('Agent');},en:'AGENTS',symbol:'✧',get description(){return t('为不同的工作，找到合适的思考方式。');}},
+ {id:'knowledge',get name(){return t('知识');},en:'KNOWLEDGE',symbol:'△',get description(){return t('资料由你保存并选用；记忆自动召回；技能提供工作方法。');}},
+ {id:'system',get name(){return t('系统');},en:'SYSTEM',symbol:'⬡',get description(){return t('连接模型、工具与本地工作环境。');}},
 ];
 export function groupForSettings(settings={}) {
  if(settings.activeView==='projects')return 'projects';
@@ -22,29 +24,29 @@ export function groupForSettings(settings={}) {
 export function neuralEntries(data,group) {
  const view=(name,id,description)=>({name,description,selected:data.settings?.activeView===id,action:'open-view',attrs:`data-view="${id}"`});
  const section=(name,id,description)=>({name,description,selected:data.settings?.activeView==='customize'&&data.settings?.selectedCustomizeSection===id,action:'open-customize-section',attrs:`data-section="${id}"`});
- if(group==='chat')return [{name:'新对话',description:'开始新的思考',selected:data.settings?.activeView==='chat'&&!data.settings?.selectedChatId,action:'new-chat',attrs:''},view('所有对话','chats','浏览完整历史'),view('搜索','search','查找消息、资料与功能'),...(data.chats||[]).slice(0,10).map(c=>({name:c.title,description:c.preview||'继续对话',action:'open-chat',attrs:`data-chat-id="${esc(c.id)}"`,id:c.id}))];
- if(group==='projects')return [view('项目总览','projects','创建项目与管理工作区'),...(data.projects||[]).slice(0,12).map(p=>({name:p.name,description:p.summary||'打开项目',action:'focus-project',attrs:`data-project-id="${esc(p.id)}"`,id:p.id}))];
- if(group==='agents')return [section('角色管理','agents','创建、导入与管理角色'),...(data.customize?.agents||[]).map(a=>({name:a.name,description:a.laneLabel||a.description||'配置角色',action:'select-agent-profile',attrs:`data-agent-id="${esc(a.id)}"`,id:a.id}))];
- if(group==='knowledge')return [view('资料与成果','artifacts','添加资料、保存成果，在对话中选用'),section('记忆','memory','长期记忆与检索状态'),section('技能','skills','可复用的工作方法')];
- return [view('系统设置','settings','个人资料、外观、语音与数据'),view('模型','model','模型连接与用量'),section('连接器','connectors','应用与工作区连接'),section('工具与任务','advanced','MCP、后台任务与运行状态'),section('安全','safety','查看文件权限与授权规则')];
+ if(group==='chat')return [{name:t("新对话"),description:t("开始新的思考"),selected:data.settings?.activeView==='chat'&&!data.settings?.selectedChatId,action:'new-chat',attrs:''},view(t("所有对话"),'chats',t("浏览完整历史")),view(t("搜索"),'search',t("查找消息、资料与功能")),...(data.chats||[]).slice(0,10).map(c=>({name:c.title,description:c.preview||t("继续对话"),action:'open-chat',attrs:`data-chat-id="${esc(c.id)}"`,id:c.id}))];
+ if(group==='projects')return [view(t("项目总览"),'projects',t("创建项目与管理工作区")),...(data.projects||[]).slice(0,12).map(p=>({name:p.name,description:p.summary||t("打开项目"),action:'focus-project',attrs:`data-project-id="${esc(p.id)}"`,id:p.id}))];
+ if(group==='agents')return [section(t("Agent管理"),'agents',t("创建、导入与管理Agent")),...(data.customize?.agents||[]).map(a=>({name:a.name,description:a.description||t("配置Agent"),action:'select-agent-profile',attrs:`data-agent-id="${esc(a.id)}"`,id:a.id}))];
+ if(group==='knowledge')return [view(t("资料与成果"),'artifacts',t("添加资料、保存成果，在对话中选用")),section(t("记忆"),'memory',t("长期记忆与检索状态")),section(t("技能"),'skills',t("可复用的工作方法"))];
+ return [view(t("系统设置"),'settings',t("个人资料、外观、语音与数据")),view(t("模型"),'model',t("模型连接与用量")),section(t("连接器"),'connectors',t("应用与工作区连接")),section(t("工具与任务"),'advanced',t("MCP、后台任务与运行状态")),section(t("安全"),'safety',t("查看文件权限与授权规则"))];
 }
 function entryButton(entry,index,selectedId) {
- return `<button class="neural-branch ${(entry.selected||(entry.id&&entry.id===selectedId))?'is-active':''}" data-neural-key="${esc(entry.action+':'+(entry.id||entry.attrs))}" data-action="${entry.action}" ${entry.attrs}><i></i><span class="neural-branch-text"><strong>${esc(entry.name)}</strong><small>${esc(String(entry.description).slice(0,70))}</small></span><span class="neural-branch-arrow">↗</span></button>`;
+ return ui`<button class="neural-branch ${(entry.selected||(entry.id&&entry.id===selectedId))?'is-active':''}" data-neural-key="${esc(entry.action+':'+(entry.id||entry.attrs))}" data-action="${entry.action}" ${entry.attrs}><i></i><span class="neural-branch-text"><strong>${esc(entry.name)}</strong><small>${esc(String(entry.description).slice(0,70))}</small></span><span class="neural-branch-arrow">↗</span></button>`;
 }
 export function renderNeuralNavigation(data,group,{overview=false,still=false}={}) {
  const selected=neuralGroups.find(g=>g.id===group)||neuralGroups[0];
  const entries=neuralEntries(data,selected.id);
  const selectedId=group==='chat'?data.settings.selectedChatId:group==='projects'?data.settings.selectedProjectId:group==='agents'?data.settings.selectedAgentId:null;
- return `<nav class="neural-navigation" aria-label="功能星团">
+ return ui`<nav class="neural-navigation" aria-label="功能星团">
     <button class="neural-brand" data-action="neural-overview" aria-label="返回星图总览"><span class="neural-brand-mark">✳</span><span>melo<small>NEURAL WORKSPACE</small></span></button>
-    <div class="neural-primary">${neuralGroups.map((g,i)=>`<button class="neural-cluster ${g.id===group?'is-active':''}" data-neural-key="group-${g.id}" data-action="neural-group" data-group="${g.id}" aria-pressed="${g.id===group}" style="--cluster-shift:${[0,21,35,19,0][i]}px;${identityStyle(g.id)}"><span class="neural-orb" aria-hidden="true"><span>${g.symbol}</span></span><span class="neural-cluster-copy"><strong>${g.name}</strong><small>${g.en}</small></span></button>`).join('')}</div>
-    <div class="neural-nav-footer"><button data-action="neural-motion" aria-pressed="${still}" title="切换持续动效与静态模式">${still?'◈ 静态模式':'◈ 星空流动'}</button><button class="local-profile-trigger" data-action="settings-open" title="个人资料与设置">${renderAgentAvatar(data.profile,esc,28)}<span>${esc(data.profile?.name||'本机用户')}</span></button></div>
+    <div class="neural-primary">${neuralGroups.map((g,i)=>ui`<button class="neural-cluster ${g.id===group?'is-active':''}" data-neural-key="group-${g.id}" data-action="neural-group" data-group="${g.id}" aria-pressed="${g.id===group}" style="--cluster-shift:${[0,21,35,19,0][i]}px;${identityStyle(g.id)}"><span class="neural-orb" aria-hidden="true"><span>${g.symbol}</span></span><span class="neural-cluster-copy"><strong>${g.name}</strong><small>${g.en}</small></span></button>`).join('')}</div>
+    <div class="neural-nav-footer">${renderLanguageControl()}<button data-action="neural-motion" aria-pressed="${still}" title="切换持续动效与静态模式">${still?t("◈ 静态模式"):t("◈ 星空流动")}</button><button class="local-profile-trigger" data-action="settings-open" title="个人资料与设置">${renderAgentAvatar(data.profile,esc,28)}<span>${esc(data.profile?.name||t("本机用户"))}</span></button></div>
   </nav>
   <aside class="neural-branches" style="${identityStyle(selected.id)}" aria-label="${selected.name}功能分支"><div class="neural-branches-heading"><span>0${neuralGroups.indexOf(selected)+1} / ${selected.en}</span><h2>${selected.name}<small>${entries.length}</small></h2><p>${selected.description}</p></div><div class="neural-branch-list">${entries.map((e,i)=>entryButton(overview?{...e,selected:false}:e,i,overview?null:selectedId)).join('')}</div><span class="neural-branch-caption">选择分支，展开工作内容</span></aside>`;
 }
 export function renderNeuralOverview(data,group,{composer=''}={}) {
  const selected=neuralGroups.find(g=>g.id===group)||neuralGroups[0];
- return `<section class="neural-overview"><div class="neural-home-caption"><span>MELO / YOUR CONNECTED WORKSPACE</span><p>从一个想法，连接整个工作空间。</p></div><div class="neural-module-summary"><small>正在探索</small><h1>${selected.name}</h1><p>${selected.description}</p><span>选择分支，进入工作内容。</span></div><div class="neural-home-composer">${composer}</div><div class="neural-overview-note">${data.chats?.length||0} 段对话 · ${data.projects?.length||0} 个项目 · ${data.customize?.agents?.length||0} 个角色</div></section>`;
+ return ui`<section class="neural-overview"><div class="neural-home-caption"><span>MELO / YOUR CONNECTED WORKSPACE</span><p>从一个想法，连接整个工作空间。</p></div><div class="neural-module-summary"><small>正在探索</small><h1>${selected.name}</h1><p>${selected.description}</p><span>选择分支，进入工作内容。</span></div><div class="neural-home-composer">${composer}</div><div class="neural-overview-note">${data.chats?.length||0} 段对话 · ${data.projects?.length||0} 个项目 · ${data.customize?.agents?.length||0} 个Agent</div></section>`;
 }
 let scene=null,pending=false,host=null,wantStill=false;
 const boundRoots=new WeakSet(),boundLists=new WeakSet();

@@ -1,9 +1,10 @@
 // Device-local preferences. Deliberately excluded from portable workspace sync.
 export const LOCAL_PREFERENCE_DEFAULTS = Object.freeze({
-  textSize: 'standard', motion: 'system', autoCollapse: true,
+  interfaceLanguage: 'zh-CN', textSize: 'standard', motion: 'system', autoCollapse: true,
   sendShortcut: 'enter', voiceLanguage: 'zh-CN', restoreSession: false,
 });
 const choices = {
+  interfaceLanguage: ['zh-CN', 'en', 'ko', 'ja', 'es'],
   textSize: ['small', 'standard', 'large', 'larger'],
   motion: ['system', 'reduced'], sendShortcut: ['enter', 'command-enter'],
   voiceLanguage: ['zh-CN', 'en-US', 'system'],

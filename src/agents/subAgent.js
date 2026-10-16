@@ -1,3 +1,8 @@
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
+import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
+import {estimateTextTokens} from '../memory/tokenEstimate.js';
+import {HANDOFF_INSTRUCTION} from './handoff.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
 /**
@@ -37,8 +42,8 @@ const SUB_AGENT_MAX_DEPTH = 2;
  *
  * Always excludes `agent` at depth >= SUB_AGENT_MAX_DEPTH - 1 to hard-stop recursion.
  */
-function resolveAllowedTools(allowedToolIds, depth) {
-  const all = getAllTools();
+function resolveAllowedTools(allowedToolIds, depth, extraTools=[]) {
+  const all = [...getAllTools(),...extraTools];
   const atDepthCap = depth >= SUB_AGENT_MAX_DEPTH - 1;
 
   if (Array.isArray(allowedToolIds)) {
@@ -83,7 +88,15 @@ function cleanReplyForParent(rawReply) {
  * @param {Function} [options.replyFn]           - test-only injection seam for the LLM reply function
  * @returns {Promise<{ ok: boolean, output: string, meta?: Object }>}
  */
-export async function runSubAgent({
+export async function runSubAgent(options) {
+  if (!options.config || !options.task?.trim() || (options.depth || 0) > (options.agentProfile ? options.maxDepth ?? 1 : SUB_AGENT_MAX_DEPTH-1)) return runSubAgentLoop(options);
+  const parent=await resolveCapabilityContext(currentRequestContext());
+  if (!parent) return missingCapabilityScope();
+  const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSubAgentLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+}
+
+async function runSubAgentLoop({
   task,
   instructions = '',
   config,
@@ -93,11 +106,14 @@ export async function runSubAgent({
   chatId,
   depth = 0,
   allowedToolIds = null,
+  capabilities = null,
   replyFn = createOpenAICompatibleReply,
   roleId = null,
   onProviderResponse,
+  extraTools=[], agentProfile, agentProfiles, collaboration, ancestry=[], maxDepth=1,
+  maxIterations=MAX_SUB_AGENT_ITERATIONS, maxTokens=32000,
 }) {
-  if (depth >= SUB_AGENT_MAX_DEPTH) {
+  if (depth > (agentProfile ? maxDepth : SUB_AGENT_MAX_DEPTH-1)) {
     return {
       ok: false,
       output: `Sub-agent recursion limit reached (max depth: ${SUB_AGENT_MAX_DEPTH}). Cannot spawn further agents.`,
@@ -117,7 +133,7 @@ export async function runSubAgent({
     return { ok: false, output: 'Sub-agent task cannot be empty.' };
   }
 
-  const allowedTools = resolveAllowedTools(allowedToolIds, depth);
+  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
   const providerConfig = delegatedConfig(config);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
@@ -131,6 +147,8 @@ export async function runSubAgent({
   // instead, so the LLM still sees them but cannot have its system contract
   // rewritten by a prompt-injected parent.
   const systemPrompt = [
+    agentProfile?.instructions,
+    agentProfile ? HANDOFF_INSTRUCTION : '',
     'You are a focused sub-agent. Your job is to complete the specific task assigned to you.',
     'Be concise and action-oriented. Use tools when needed.',
     'When you have finished the task, provide a clear summary of what you did and the result.',
@@ -152,8 +170,9 @@ export async function runSubAgent({
   let iterations = 0;
   let failedTools = 0;
   const toolResults = [];
+  let usedTokens=0;
 
-  for (let iteration = 0; iteration < MAX_SUB_AGENT_ITERATIONS; iteration++) {
+  for (let iteration = 0; iteration < Math.min(20,maxIterations); iteration++) {
     if (signal?.aborted) {
       return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration } };
     }
@@ -161,9 +180,17 @@ export async function runSubAgent({
     iterations++;
     const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
+    const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
+    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults}};
+    const tokensBefore=usedTokens;
+    const remaining=maxTokens-usedTokens-estimatedInput;
+    const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
+    const outputLimit=Math.max(1,Math.floor(Math.min(remaining,Math.max(1,contextBudget.totalTokens-estimatedInput),Number.isFinite(configuredLimit)&&configuredLimit>0?configuredLimit:remaining)));
+    let responseUsage=null;
     const rawReply = await replyFn({
       ...functionSession.requestOptions(),
-      onProviderResponse,
+      maxTokens:outputLimit,
+      onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;onProviderResponse?.(receipt);},
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -171,34 +198,16 @@ export async function runSubAgent({
       model: providerConfig.model,
       systemPrompt,
       messages: request.messages,
+      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
       signal,
-      // Sub-agents inherit the parent's workspace, so any inline image
-      // generated by the Codex chat stream (via image_generation tool)
-      // is written into the same `<workspace>/generated/` folder the
-      // parent and other tools use, then surfaces in the sub-agent's
-      // tool-result text as a signed-URL markdown link.
-      //
-      // DESIGN INTENT (user 2026-04-29): inline image is treated as a
-      // free server-side capability of Codex Plus (parallel to
-      // web_search), NOT as a melo `image` builtin call subject to the
-      // sub-agent's `allowedToolIds` whitelist. Concretely:
-      //   • a sub-agent whose allowed tools EXCLUDE `image` may still
-      //     ask Codex to inline an image — same as it can still benefit
-      //     from web_search;
-      //   • the resulting bytes land in `<workspace>/generated/`, which
-      //     the sub-agent already has read/write reach through every
-      //     other workspace-writing tool;
-      //   • when melo grows other models (or other Codex tiers) where
-      //     this assumption is wrong, gating moves into createCodex...
-      //     itself rather than here.
-      // Codex review 2026-04-29 flagged this as a privilege-escalation
-      // risk; the user explicitly overrode that finding because the
-      // capability is a paid-bucket-bound model feature, not a melo
-      // tool we own.
+      // Native tools obey the same inherited capability snapshot as local tools.
       workspacePath,
       // No onDelta for sub-agents — output goes through tool result
     });
 
+    const measured=responseUsage&&Number(responseUsage.input)+Number(responseUsage.output);
+    usedTokens=tokensBefore+(Number.isFinite(measured)&&measured>0?measured:estimatedInput+Math.ceil(estimateTextTokens(typeof rawReply==='string'?rawReply:JSON.stringify(rawReply))*4/3));
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
 
@@ -224,7 +233,7 @@ export async function runSubAgent({
       if (!allowSet.has(tc.name)) {
         return { id: tc.id, tool: null, args: tc.arguments, callRef: tc, denied: true };
       }
-      const tool = getTool(tc.name);
+      const tool = allowedTools.find(tool=>tool.id===tc.name);
       return { id: tc.id, tool, args: tc.arguments, callRef: tc };
     });
 
@@ -242,10 +251,12 @@ export async function runSubAgent({
         // observe the SUB_AGENT_MAX_DEPTH guard.
         agentDepth: depth,
         agentId: roleId,
+        extraTools, agentProfiles, collaboration, ancestry, maxDelegationDepth:maxDepth,
         executionPrefix: `role:${roleId || depth}:${iteration}:`,
         // Also propagate the allowed-tool whitelist so nested sub-agents
         // cannot widen privileges.
         allowedToolIds: allowedTools.map(t => t.id),
+        capabilities,
       },
     );
 
@@ -354,6 +365,7 @@ export const agentTool = {
   ],
 
   async run(args, context = {}) {
+    if (context.agentProfiles || context.capabilities) { const {delegateTask}=await import('./delegate.js');return delegateTask(args,context); }
     return runSubAgent({
       task: args.task,
       instructions: args.instructions,
@@ -364,6 +376,7 @@ export const agentTool = {
       chatId: context.chatId,
       depth: (context.agentDepth || 0) + 1,
       allowedToolIds: context.allowedToolIds || null,
+      capabilities: context.capabilities,
     });
   },
 };

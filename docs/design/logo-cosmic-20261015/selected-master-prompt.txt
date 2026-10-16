@@ -1,0 +1,8 @@
+Use case: precise-object-edit
+Asset type: production master artwork for the Melo app icon, a square PNG.
+Input image: the supplied B concept sheet is the exact approved identity. Use the LARGE M ON THE LEFT as the edit source, not the letters or the small mockup icons.
+Task: Extract and reframe that approved M into a single clean square app-icon master. Preserve the same rounded, thick, translucent smoked black glass M; the same broad upright stems, softened upper corners, deep V valley, inner bevels; and the same warm gold galactic dust band crossing from upper-left through the central valley toward lower-right. Keep the dense fine stars, dark space pockets, champagne edge refractions and rich optical glass thickness. Do not redesign or replace the mark.
+Composition: square 1:1 output, front-on, M centered horizontally and vertically, M occupies about 76% of canvas width and 63% of canvas height; generous equal optical margins. Entire canvas filled with continuous near-black charcoal (#070809) background, very subtle soft light behind the letter. Background extends fully to all four square corners.
+Remove all presentation-sheet text, "MELO", "B", iOS/macOS labels, divider, smaller comparison icons and their icon containers.
+No outside rounded-square icon frame, no outer border, no phone hardware, no grid, no added symbols. Only the single approved M on the plain dark square canvas. The OS will mask the corners later.
+Material: maintain BLACK ICE / thick smoked transparent glass with internal warm gold stars, not gold metal. Preserve restrained gray-white rim reflections. Crisp antialiased contours and high detail. Same letterform as reference. Output opaque square image, NOT a transparent cutout.

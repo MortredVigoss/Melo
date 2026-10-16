@@ -1,3 +1,6 @@
+import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
+import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import { delegatedConfig } from './delegatedConfig.js';
 /**
  * Skill executor.
@@ -126,7 +129,16 @@ function buildSkillSystemPrompt(skill, allowedTools, options = {}) {
  * @param {Function} [options.replyFn]           - test-only injection seam for the LLM reply function
  * @returns {Promise<{ ok: boolean, output: string, error?: string, meta?: Object }>}
  */
-export async function runSkill({
+export async function runSkill(options) {
+  if (!options.skill || options.skill.type!=='executable' || !options.config) return runSkillLoop(options);
+  const parent=await resolveCapabilityContext(currentRequestContext());
+  if (!parent) return missingCapabilityScope();
+  const ids=resolveSkillTools(options.skill,options.allowedToolIds).map(tool=>tool.id);
+  const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:ids,source:'skill'});
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSkillLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+}
+
+async function runSkillLoop({
   skill,
   args = {},
   task = '',
@@ -137,6 +149,7 @@ export async function runSkill({
   chatId,
   depth = 0,
   allowedToolIds = null,
+  capabilities = null,
   replyFn = createOpenAICompatibleReply,
 }) {
   const runStartedAt = Date.now();
@@ -179,7 +192,7 @@ export async function runSkill({
   }
 
   const providerConfig = delegatedConfig(config);
-  const allowedTools = resolveSkillTools(skill, allowedToolIds);
+  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds),currentRequestContext().capabilityScope);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
   const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native });
@@ -229,6 +242,8 @@ export async function runSkill({
       model: providerConfig.model,
       systemPrompt,
       messages: request.messages,
+      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
       signal,
     });
 
@@ -279,6 +294,7 @@ export async function runSkill({
         agentDepth: (depth || 0) + 1,
         // Downstream nested tool calls cannot widen the skill's whitelist.
         allowedToolIds: allowedTools.map(t => t.id),
+        capabilities,
       },
     );
 
@@ -360,6 +376,7 @@ export function buildSkillTool(skill) {
         ? `[Skill] ${skill.description.trim()}`
         : `[Skill] Run the "${skill.name}" skill.`,
     category: 'skill',
+    allowedAgentIds: skill.allowedAgentIds || [],
     requiresPermission: false,
     // Skills run their own tool loop and can do side-effectful things;
     // never run two in parallel under the same caller.
@@ -379,6 +396,7 @@ export function buildSkillTool(skill) {
         chatId: context.chatId,
         depth: context.agentDepth || 0,
         allowedToolIds: context.allowedToolIds || null,
+      capabilities: context.capabilities,
       });
     },
   };

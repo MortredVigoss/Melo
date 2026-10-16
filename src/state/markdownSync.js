@@ -1,3 +1,4 @@
+import { mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // Agent markdown-file sync — Phase 7d-5α-A1 (commit 8/9).
 //
 // On state load (readStateSnapshot, now in stateStore.js), Melo:
@@ -78,6 +79,7 @@ export async function importAgentMarkdownFiles(state, providedGetAgentMarkdownPa
       ...profile,
       identity: identityFromDisk,
       soulMd: soulFromDisk,
+      instructions: mergeAgentInstructions(profile, {identity:identityFromDisk,soulMd:soulFromDisk}),
     });
   }
 
@@ -103,6 +105,7 @@ export async function importAgentMarkdownFiles(state, providedGetAgentMarkdownPa
         ...profile,
         identity: identityFromDisk,
         soulMd: soulFromDisk,
+        instructions: mergeAgentInstructions(profile, {identity:identityFromDisk,soulMd:soulFromDisk}),
       });
       if (normalizedOverride) {
         state.projectAgentOverrides[projectId][agentId] = normalizedOverride;

@@ -47,7 +47,7 @@ import Foundation
         var newRole = AgentEditSession(agent: AgentProfile(name: "", subtitle: "", symbol: "sparkles", instructions: ""), isNew: true)
         assert(newRole.isEditing && !newRole.canSave)
         newRole.draft.name = "New"; newRole.draft.instructions = "   "
-        assert(!newRole.canSave)
+        assert(newRole.canSave) // An empty persona is an explicit choice.
         newRole.draft.instructions = "Be concise"
         assert(newRole.save(current: nil) { _ in true })
         assert(!newRole.isNew && newRole.didSave)

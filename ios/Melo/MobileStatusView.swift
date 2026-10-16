@@ -23,12 +23,12 @@ struct MobileConnectionStatus: View {
             HStack(alignment: .top) {
                 Image(systemName: "cpu").foregroundStyle(meloGold)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(authMode == "chatgpt" ? "ChatGPT 授权" : selected?.name ?? "API 连接").font(.headline)
+                    Text(authMode == "chatgpt" ? "Codex 登录" : selected?.name ?? "API 连接").font(.headline)
                     Text(authMode == "chatgpt" ? (chatGPTModel.isEmpty ? "尚未选择模型" : chatGPTModel) : (model.isEmpty ? "尚未选择模型" : model)).font(.subheadline).foregroundStyle(MeloTheme.muted).textSelection(.enabled)
                 }
             }
             Text(status).font(.caption).foregroundStyle(MeloTheme.soft)
-            Text("模型提供推理；对话、角色和执行记录由 Melo 管理。").font(.caption).foregroundStyle(MeloTheme.muted)
+            Text("模型提供推理；对话、Agent和执行记录由 Melo 管理。").font(.caption).foregroundStyle(MeloTheme.muted)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var status: String {

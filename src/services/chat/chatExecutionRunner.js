@@ -1,3 +1,6 @@
+import {resolveCapabilityContext} from '../agent/capabilityContext.js';
+import {scopeAllowsTool,toolsForCapabilityScope,nativeFeaturesForScope,missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
+import {retrieveKnowledgeContext} from './knowledgeContext.js';
 import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
 import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
@@ -135,6 +138,7 @@ export async function runChatAgentExecutionGraph({
   skills,
   latestUserMessage,
   imageTask = null,
+  teamPlan = null,
   onImageTaskResolved,
   onImageProgress,
   agentId,
@@ -148,6 +152,10 @@ export async function runChatAgentExecutionGraph({
   _dependencies = {},
 }) {
   context ||= createRequestContext({ home, chatId: chat.id, signal, config, workspacePath: workspace?.rootPath });
+  if (!context.capabilityScope) {
+    context=await resolveCapabilityContext(context,{state,chat,agentId});
+    if (!context) throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
+  }
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
   const env = context.env;
@@ -266,7 +274,7 @@ export async function runChatAgentExecutionGraph({
           })),
           isRemoteChannel
             ? Promise.resolve('')
-            : buildDynamicContext(state, chat, workspace, agentConnectors, latestUserMessage),
+            : buildDynamicContext(state, chat, workspace, agentConnectors.filter(c=>c.id!=="artifacts"), latestUserMessage),
         ]);
         const intent = classification.taskType;
         const allowLiveSpeech = classification.riskLevel === 'normal' && intent === 'casual' &&
@@ -371,7 +379,8 @@ export async function runChatAgentExecutionGraph({
         let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
         let visibleToolIds = new Set();
         let promptTools = [];
-        const toolContextPolicy = selectToolContextPolicy({
+        const explicitTeam=teamPlan || state.tasks?.find(t=>t.execution?.requestId===context.requestId)?.execution?.teamPlan;
+        const toolContextPolicy = explicitTeam ? {mode:"full",reason:"explicit-team"} : selectToolContextPolicy({
           text: latestUserMessage, chat, searchPlan,
           hasExecutableSkills: requiresSkillToolContext(listExecutableSkills(enabledSkills), latestUserMessage),
           highRisk: classification.riskLevel === 'high',
@@ -381,7 +390,7 @@ export async function runChatAgentExecutionGraph({
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
           const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = [...routedTools, ...skillTools];
+          promptTools = toolsForCapabilityScope([...routedTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
@@ -394,7 +403,7 @@ export async function runChatAgentExecutionGraph({
 
         // Standalone greetings need no retrieval or embedding. A short confirmation
         // in an ongoing task ("好" / "ok") still keeps its full context.
-        const skipMemory = classification.riskLevel === 'normal' && intent === 'casual' &&
+        const skipMemory = activeAgentProfile.contextSources?.memory === false || classification.riskLevel === 'normal' && intent === 'casual' &&
           !(chat.messages?.at(-1)?.attachments?.length) &&
           /^(?:hi|hello|hey|thanks|thank you|你好|嗨|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
         const sessionFacts = skipMemory ? [] : selectSessionMemoryFacts(resolveSessionFacts(chat,activeAgentProfile?.id));
@@ -429,7 +438,7 @@ export async function runChatAgentExecutionGraph({
           profile: activeAgentProfile,
           modePrompt: modeDef.prompt,
           projectContext,
-          selectedMaterials: isRemoteChannel ? '' : selectedMaterials(state, chat),
+          selectedMaterials: isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',name:'知识片段检索',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})}),
           channelPrompt,
           memoryContext,
           toolRoutingPrompt,
@@ -483,10 +492,11 @@ export async function runChatAgentExecutionGraph({
         const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true,
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
-        if (teamTask) {
-          const team = await runAgentTeam({plan:teamTask.execution.teamPlan,task:teamTask.execution.content,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || []});
-          modelResponses.push(...team.results.flatMap(r=>r.receipts));
-          return {reply:team.results.map(r=>`${r.role} · ${r.ok ? '已交付，待核对' : '需要修复'}\n${r.output}`).join('\n\n'),team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}`,toolName:`角色 ${r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
+        if (teamTask || teamPlan) {
+          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile});
+          modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
+          // The lead's summary is the reply; member handoffs stay in the execution record.
+          return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
         }
         if (env.MELO_DEBUG_VISION === '1') {
           for (const [index, message] of graphState.modelMessages.entries()) {
@@ -510,6 +520,7 @@ export async function runChatAgentExecutionGraph({
           taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
           await onImageTaskResolved?.(task);
         }
+        if (task && task.action !== 'analyze' && !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'})) return {reply:'此 Agent 未开启生成媒体能力。请在 Agent 设置中开启后重试。',next:'finalize'};
         if (task && task.action !== 'analyze') {
           const reply = await runImageTask({task,config,messages:graphState.modelMessages,attachments,workspace,signal,sseEmitter,onDelta,onImageProgress,selectedModel,home});
           return {reply,next:'finalize'};
@@ -526,7 +537,7 @@ export async function runChatAgentExecutionGraph({
         }
         const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
         const vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
-        const fastPathReply = task?.action === 'analyze' ? null : await tryImageEditFastPath({
+        const fastPathReply = task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
           config: { ...config, model:selectedModel },
           messages: graphState.modelMessages,
           workspace,
@@ -596,17 +607,10 @@ export async function runChatAgentExecutionGraph({
             // resulting bytes into <workspace>/generated/). For non-Codex
             // providers this parameter is currently ignored.
             //
-            // DESIGN INTENT (user 2026-04-29): always-on for every chat /
-            // every agent profile when the workspace exists. We intentionally
-            // do NOT gate this on the agent's `image` allowedTools entry —
-            // Codex inline image is a free Plus-bucket server capability
-            // (same model as native web_search), not a melo-owned tool.
-            // Codex review of the first cut flagged this as a possible
-            // privilege bypass; the override is recorded in subAgent.js's
-            // matching block.
+            // Native provider features obey the Agent capability snapshot.
             workspacePath: workspace?.rootPath || null,
-            nativeWebSearchEnabled: graphState.searchPlan?.nativeWebSearchEnabled === true,
-            nativeImageGenerationEnabled: imageSettings(config).engine === 'codex-oauth',
+            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+            nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
@@ -680,6 +684,11 @@ export async function runChatAgentExecutionGraph({
               config: delegatedModelConfig,
               allowedToolIds: [...visibleToolIds],
               agentDepth: 0,
+              capabilities: context.capabilityScope.capabilities,
+              extraTools: graphState.skillTools,
+              collaboration: graphState.activeAgentProfile.collaboration,
+              agentProfiles: Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),
+              projectId: chat.projectId,
               agentId: graphState.activeAgentProfile?.id || agentId,
               onOutput: typeof sseEmitter === 'function'
                 ? chunk => sseEmitter('tool_output', { chunk })
@@ -687,6 +696,7 @@ export async function runChatAgentExecutionGraph({
             },
           );
 
+          for(const execution of execResults) if(execution.result?.meta?.receipts) modelResponses.push(...execution.result.meta.receipts);
           // Also handle unresolved tool names (not in registry)
           const allResults = toolCalls.map(tc => {
             if (tc.rejectedResult) return { call: tc, result: tc.rejectedResult };

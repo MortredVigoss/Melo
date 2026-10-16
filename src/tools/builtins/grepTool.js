@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: grep
  *
@@ -293,7 +294,10 @@ export const grepTool = {
       return { ok: false, output: 'pattern must be a non-empty string.', error: 'INVALID_ARGS' };
     }
 
-    const workspaceRoot = resolve(workspacePath || process.cwd());
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
+    const workspaceRoot = resolve(workspacePath);
     const targetPath = isAbsolute(searchPath || '')
       ? searchPath
       : resolve(workspaceRoot, searchPath || '.');

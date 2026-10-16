@@ -76,7 +76,7 @@ export function ensureSelectedEntities(state) {
   const selectedAgentId = availableAgentIds.includes(state.settings.selectedAgentId)
     ? state.settings.selectedAgentId
     : 'main';
-  const selectedSkillId = BUILTIN_SKILLS.some(skill => skill.id === state.settings.selectedSkillId)
+  const selectedSkillId = [...BUILTIN_SKILLS,...(state.settings.customSkills || [])].some(skill => skill.id === state.settings.selectedSkillId)
     ? state.settings.selectedSkillId
     : BUILTIN_SKILLS[0].id;
   const selectedConnectorId = [

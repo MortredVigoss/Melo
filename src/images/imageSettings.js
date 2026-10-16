@@ -13,7 +13,7 @@ export function imageSettings(config = {}) {
       source.codexModel || (config.authMode === 'codex' ? config.model : '') || DEFAULT_CHAT_MODEL,
     visionProfileId: source.visionProfileId || '',
     detail: ['auto', 'high', 'original'].includes(source.detail) ? source.detail : 'auto',
-    quality: ['auto', 'low', 'medium', 'high'].includes(source.quality) ? source.quality : 'auto',
+    quality: ['auto', 'low', 'medium', 'high'].includes(source.quality) ? source.quality : 'high',
     size: ['auto', '1024x1024', '1536x1024', '1024x1536'].includes(source.size)
       ? source.size
       : 'auto',
@@ -47,7 +47,7 @@ export function validateImageTask(value) {
   if (
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    !['analyze', 'generate', 'edit'].includes(value.action)
+    !['auto', 'analyze', 'generate', 'edit'].includes(value.action)
   )
     throw new Error('图片任务类型无效。');
   const count = value.count == null ? 1 : Number(value.count);
@@ -83,7 +83,7 @@ export function validateImageTask(value) {
   if (references.length > 16) throw new Error('最多支持 16 张参考图。');
   return {
     action: value.action,
-    count,
+    ...(value.action === 'auto' && value.count == null ? {} : { count }),
     references,
     detail: ['auto', 'high', 'original'].includes(value.detail) ? value.detail : 'auto',
     ocr: value.ocr === true,

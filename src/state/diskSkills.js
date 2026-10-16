@@ -35,7 +35,7 @@ export async function mergeDiskSkillsIntoState(state) {
   }
   const jsonById = new Map(
     state.settings.customSkills
-      .filter(s => s && s.id && s.origin !== 'disk')
+      .filter(s => s && s.id)
       .map(s => [s.id, s]),
   );
   const merged = [];
@@ -55,7 +55,8 @@ export async function mergeDiskSkillsIntoState(state) {
     merged.push(normalized);
     seen.add(normalized.id);
   }
-  // Keep JSON skills whose ids don't collide.
+  // Keep saved records whose IDs do not collide, including legacy disk
+  // records from the former shared directory. Reload never deletes user data.
   for (const [id, skill] of jsonById) {
     if (!seen.has(id)) merged.push(skill);
   }

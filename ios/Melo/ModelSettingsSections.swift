@@ -25,7 +25,7 @@ struct ModelSettingsSection: View {
                 UserDefaults.standard.set(value.webSearch, forKey: "webSearchEnabled")
                 return value
             }) { value, _ in
-                Picker("连接方式", selection: value.authMode) { Text("ChatGPT 授权").tag("chatgpt"); Text("其他模型平台").tag("api") }.pickerStyle(.segmented)
+                Picker("连接方式", selection: value.authMode) { Text("Codex 登录").tag("chatgpt"); Text("其他模型平台").tag("api") }.pickerStyle(.segmented)
                 if value.wrappedValue.authMode == "chatgpt" {
                     Picker("对话模型", selection: value.model) {
                         if !account.models.contains(where: { $0.slug == value.wrappedValue.model }) { Text(value.wrappedValue.model.isEmpty ? "尚未选择" : value.wrappedValue.model).tag(value.wrappedValue.model) }

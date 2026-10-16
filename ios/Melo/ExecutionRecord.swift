@@ -12,6 +12,8 @@ struct ExecutionStage: Codable, Equatable, Identifiable {
     var returnedModel: String?
     var startedAt: String?
     var finishedAt: String?
+    // Local API receipt; omitted from the frozen v1 sync projection.
+    var api: [String: SyncValue]?
 }
 
 struct ExecutionOperation: Codable, Equatable, Identifiable {
@@ -68,6 +70,39 @@ struct ExecutionObservation: Equatable {
     var pipeline: [ExecutionStage] = []
     private var summaryParts: [String: [Int: String]] = [:]
     private var summarySequences: [String: Int] = [:]
+    private var requestStarted: TimeInterval
+    init(requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.requestStarted = requestStarted }
+    mutating func apiReceipt(_ response: [String: Any], transport: String, finishReason: String? = nil) {
+        guard let index = pipeline.firstIndex(where: { $0.id == "model:response" }) else { return }
+        var api = pipeline[index].api ?? [:]
+        func identifier(_ value: Any?) -> SyncValue? {
+            guard let value = value as? String, value.range(of: #"^[A-Za-z0-9._:/-]{1,200}$"#, options: .regularExpression) != nil else { return nil }
+            return .string(value)
+        }
+        func count(_ value: Any?) -> Double? {
+            guard let n = value as? NSNumber, String(cString: n.objCType) != "c" else { return nil }
+            let value = n.doubleValue
+            return value.isFinite && value >= 0 && value <= 9007199254740991 && value.rounded() == value ? value : nil
+        }
+        for (key, value) in [("responseId", response["id"]), ("reportedModel", response["model"]), ("responseStatus", response["status"]), ("transport", transport as Any?), ("finishReason", finishReason as Any?)] {
+            if let value = identifier(value) { api[key] = value }
+        }
+        let elapsed = max(0, ((ProcessInfo.processInfo.systemUptime - requestStarted) * 1000).rounded())
+        api["durationMs"] = .number(elapsed)
+        if api["firstEventMs"] == nil { api["firstEventMs"] = .number(elapsed) }
+        if let raw = response["usage"] as? [String: Any] {
+            let inputDetails = (raw["input_tokens_details"] ?? raw["prompt_tokens_details"]) as? [String: Any] ?? [:]
+            let outputDetails = (raw["output_tokens_details"] ?? raw["completion_tokens_details"]) as? [String: Any] ?? [:]
+            var values: [String: Any?] = ["input":raw["input_tokens"] ?? raw["prompt_tokens"], "output":raw["output_tokens"] ?? raw["completion_tokens"], "total":raw["total_tokens"], "cached":inputDetails["cached_tokens"] ?? raw["cache_read_input_tokens"], "cacheWrite":inputDetails["cache_write_tokens"] ?? raw["cache_creation_input_tokens"], "reasoning":outputDetails["reasoning_tokens"]]
+            if transport == "anthropic", raw["cache_read_input_tokens"] != nil || raw["cache_creation_input_tokens"] != nil {
+                if let input = count(raw["input_tokens"]), let read = count(raw["cache_read_input_tokens"] ?? 0), let write = count(raw["cache_creation_input_tokens"] ?? 0) { values["input"] = input + read + write }
+                else { values.removeValue(forKey: "input") }
+            }
+            let usage = values.compactMapValues { count($0).map(SyncValue.number) }
+            if !usage.isEmpty { api["usage"] = .object(usage) }
+        }
+        if api != pipeline[index].api { pipeline[index].api = api; revision += 1 }
+    }
     mutating func stage(_ id: String, name: String, status: String, output: String = "", model: String? = nil) {
         if let index = pipeline.firstIndex(where: { $0.id == id }) {
             guard !["completed", "failed", "cancelled", "interrupted"].contains(pipeline[index].status) else { return }
@@ -198,6 +233,7 @@ struct ExecutionObservation: Equatable {
             let status = type.hasSuffix("completed") ? "completed" : type.hasSuffix("failed") ? "failed" : "running"
             setStatus(status, at: index); revision += 1
         }
+        if let response = event["response"] as? [String: Any] { apiReceipt(response, transport: "responses") }
     }
 }
 struct ExecutionRecord: Codable, Identifiable, Equatable {

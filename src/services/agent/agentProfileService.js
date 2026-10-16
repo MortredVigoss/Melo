@@ -1,3 +1,4 @@
+import { emptyCapabilities, normalizeCapabilities, normalizeCollaboration } from '../../domain/agent/capabilities.js';
 // Agent-profile orchestration — pure functional core.
 //
 // Complements the data-layer modules around it:
@@ -67,6 +68,15 @@ import { normalizeAgentProfile } from '../../state/agentProfiles.js';
 export function normalizeAgentUpdatePatch(patch = {}) {
   const safePatch = patch && typeof patch === 'object' ? patch : {};
   const nextPatch = { ...safePatch };
+  delete nextPatch.capabilityMigrationExpected;
+  if (Object.hasOwn(safePatch,'capabilities')) {
+    if (!normalizeCapabilities(safePatch.capabilities)) throw new Error('Capabilities must be an explicit object; cannot restore legacy unrestricted mode.');
+    nextPatch.capabilities=normalizeCapabilities(safePatch.capabilities);
+  }
+  if (Object.hasOwn(safePatch,'collaboration')) nextPatch.collaboration=normalizeCollaboration(safePatch.collaboration);
+  if (Object.hasOwn(safePatch,'instructions') && (typeof safePatch.instructions !== 'string' || safePatch.instructions.length > 200100)) {
+    throw new Error('Agent instructions must be text within 200100 characters.');
+  }
 
   // identity/identify aliases — pick the first string-valued one.
   const resolvedIdentity =
@@ -209,6 +219,7 @@ export function buildNewCustomAgent(existingProfiles = {}) {
     'Stay adaptive, clear, and dependable. Use the configured tools and channels deliberately, and keep collaboration smooth.';
   const profile = normalizeAgentProfile(agentId, {
     isCustom: true,
+    capabilities: emptyCapabilities(),
     name: displayName,
     laneLabel: 'Custom lane',
     description:

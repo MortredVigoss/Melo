@@ -1,3 +1,4 @@
+import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_edit
  *
@@ -146,9 +147,12 @@ export const fileEditTool = {
     const { path: filePath, old_string, new_string, replace_all = false } = args;
     const { workspacePath, sseEmitter, signal, chatId } = context;
 
+    const missingWorkspace = missingWorkspaceResult(workspacePath);
+    if (missingWorkspace) return missingWorkspace;
+
     const absPath = isAbsolute(filePath)
       ? filePath
-      : resolve(workspacePath || process.cwd(), filePath);
+      : resolve(workspacePath, filePath);
 
     // ── 1. Sensitivity pre-check ───────────────────────────────────────
     const precheck = await precheckHardBlockedWrite(absPath);

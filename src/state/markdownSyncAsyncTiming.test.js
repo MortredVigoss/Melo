@@ -17,7 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   importAgentMarkdownFiles,
@@ -44,14 +44,6 @@ function fakeState() {
 }
 
 // Wait for the in-flight prime microtask + its multiple awaits to settle.
-async function waitForPrimeFlush() {
-  // The prime body is `Promise.resolve().then(...)` and itself contains
-  // ~4 awaits over disk I/O. Two macrotask ticks + a few microtask flushes
-  // should be enough on any host that lets local writeFile resolve quickly.
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise(r => setImmediate(r));
-  }
-}
 
 test('queueAgentMarkdownPrime: prime body writes to the home captured at queue time, even after env flip', async () => {
   const homeA = freshHome();
@@ -59,13 +51,13 @@ test('queueAgentMarkdownPrime: prime body writes to the home captured at queue t
   try {
     // Schedule a prime under home A.
     process.env.MELO_HOME = homeA;
-    queueAgentMarkdownPrime(fakeState());
+    const priming=queueAgentMarkdownPrime(fakeState());
 
     // IMMEDIATELY flip env to home B before the microtask runs.
     process.env.MELO_HOME = homeB;
 
     // Let the in-flight prime body complete.
-    await waitForPrimeFlush();
+    await priming;
 
     // Assert: home A got the markdown files. The buggy code would write
     // to home B because the prime body's lazy resolver would read
@@ -137,7 +129,7 @@ test('readStateSnapshot wraps the entire load chain in a single home capture', a
   // repair-save through saveState all read getMeloHome() independently.
   // This test verifies the unified-capture refactor: schedule a
   // readStateSnapshot under home A, flip to home B, and assert the
-  // background prime + repair save all land in home A.
+  // repair save lands in home A; persona files are now post-save exports only.
   const { readStateSnapshot } = await import('./stateStore.js');
   const homeA = freshHome();
   const homeB = freshHome();
@@ -162,11 +154,9 @@ test('readStateSnapshot wraps the entire load chain in a single home capture', a
       await new Promise(r => setImmediate(r));
     }
 
-    // Home A: prime should have created agent markdown files.
-    assert.ok(
-      existsSync(join(homeA, 'desktop', 'agents', 'global', 'main', 'IDENTITY.md')),
-      'home A (the captured home) must receive prime writes from the load chain',
-    );
+    // Loading/migrating state must not write persona exports before a save.
+    assert.equal(existsSync(join(homeA, 'desktop', 'agents')), false);
+    assert.equal(JSON.parse(readFileSync(join(homeA,'desktop','state.json'),'utf8'))._storageFormat,3);
     // Home B: nothing should have leaked here.
     assert.equal(
       existsSync(join(homeB, 'desktop', 'agents')),

@@ -15,6 +15,7 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   install('fetch', async url => { calls.push(url); return { ok: true, json: async () => ({ scenes: [] }) }; });
   t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
   const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
+    .replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
     .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
     .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));

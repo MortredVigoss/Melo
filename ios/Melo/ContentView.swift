@@ -50,7 +50,7 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                NeuralField(selected: selected, transmitting: store.sendingID != nil, compact: expanded, moduleFrames: moduleFrames, hover: openingModule >= 0 ? openingModule : hoveredModule, tap: coreTap, select: selectModule)
+                NeuralField(selected: selected, transmitting: store.anySending, compact: expanded, moduleFrames: moduleFrames, hover: openingModule >= 0 ? openingModule : hoveredModule, tap: coreTap, select: selectModule)
                     .frame(height: geometry.size.height)
                     .mask(alignment: .top) { Rectangle().frame(height: expanded ? 138 : geometry.size.height) }
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: expanded)
@@ -66,11 +66,11 @@ struct ContentView: View {
                                     Button { selectModule(module.id) } label: {
                                         VStack(spacing: 5) {
                                             NeuralGlyphAnchor(module: module, size: 28)
-                                            Text(module.name).font(.system(size: 11, weight: selected == module.id ? .semibold : .regular))
+                                            Text(LocalizedStringKey(module.name)).font(.system(size: 11, weight: selected == module.id ? .semibold : .regular))
                                         }.foregroundStyle(module.color.opacity(selected == module.id ? 1 : 0.8))
                                             .frame(maxWidth: .infinity).frame(height: 54).contentShape(Rectangle())
                                     }.buttonStyle(NeuralPressStyle(id: module.id, hover: { hoveredModule = $0 }))
-                                        .accessibilityLabel(module.name).accessibilityAddTraits(selected == module.id ? .isSelected : [])
+                                        .accessibilityLabel(LocalizedStringKey(module.name)).accessibilityAddTraits(selected == module.id ? .isSelected : [])
                                 }
                             }.padding(.horizontal, 10)
                             Spacer(minLength: 0)
@@ -91,8 +91,13 @@ struct ContentView: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity).background(expanded ? meloBackground : .clear)
                 }
                 .alert("Melo", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("知道了") { store.error = nil } } message: { Text(store.error ?? "") }
+                .alert(LocalizedStringKey(store.pendingDeviceAction?.title ?? "确认手机数据操作"), isPresented: Binding(get: { store.pendingDeviceAction != nil }, set: { if !$0 { store.resolveDeviceAction(false) } }), presenting: store.pendingDeviceAction) { _ in
+                    Button("允许") { store.resolveDeviceAction(true) }
+                    Button("拒绝", role: .cancel) { store.resolveDeviceAction(false) }
+                } message: { request in Text(verbatim: request.detail + "\n\n") + Text("Melo 请求在你的 iPhone 上执行这项操作。") }
             }
-        }.coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)
+        }
+        .coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)
             .onDisappear { openingTask?.cancel() }
             .onChange(of: path) { _, value in if !value.isEmpty { openingTask?.cancel(); openingModule = -1 } }
             .onChange(of: scenePhase) { _, value in if value != .active { openingTask?.cancel(); openingModule = -1; hoveredModule = -1; coreTap = nil } }
@@ -121,8 +126,8 @@ struct PageHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text(eyebrow).font(.system(size: 10, weight: .semibold)).tracking(3).foregroundStyle(meloAccent)
-            Text(title).font(.system(size: 28, weight: .medium, design: .rounded))
-            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            Text(LocalizedStringKey(title)).font(.system(size: 28, weight: .medium, design: .rounded))
+            Text(LocalizedStringKey(detail)).font(.subheadline).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -141,17 +146,17 @@ struct HomeView: View {
                     Button { select(module.id) } label: {
                         VStack(spacing: 7) {
                             NeuralGlyphAnchor(module: module, size: 60)
-                            Text(module.name).font(.system(size: 15, weight: .medium)).foregroundStyle(module.color)
+                            Text(LocalizedStringKey(module.name)).font(.system(size: 15, weight: .medium)).foregroundStyle(module.color)
                             if geometry.size.height >= 600 { Text(module.english).font(.system(size: 7)).tracking(1).foregroundStyle(module.color.opacity(0.66)) }
                         }.frame(width: 94).contentShape(Rectangle())
-                    }.buttonStyle(NeuralPressStyle(id: module.id, hover: hover)).accessibilityLabel(module.name)
+                    }.buttonStyle(NeuralPressStyle(id: module.id, hover: hover)).accessibilityLabel(LocalizedStringKey(module.name))
                         .position(x: geometry.size.width * module.x, y: geometry.size.height < 600 ? min(max(128, geometry.size.height * module.y), geometry.size.height - 165) : geometry.size.height * module.y)
                 }
                 VStack {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) { HStack(spacing: 8) { Image(systemName: "asterisk").font(.system(size: 20, weight: .ultraLight)).foregroundStyle(meloGold); Text("melo").font(.system(size: 27, weight: .light, design: .serif)) }; Text("NEURAL WORKSPACE").font(.system(size: 8)).tracking(2.4).foregroundStyle(meloGold) }
                         Spacer()
-                        Button { select(3) } label: { LocalProfileBadge(size: 26); Circle().fill((authMode == "api" ? !apiModel.isEmpty : account.signedIn) ? meloGold : Color.secondary).frame(width: 5, height: 5); Text(authMode == "api" ? (apiModel.isEmpty ? "选择模型" : "API 模型") : account.signedIn ? "ChatGPT" : "连接账号").font(.caption2).foregroundStyle(.secondary) }
+                        Button { select(3) } label: { LocalProfileBadge(size: 26); Circle().fill((authMode == "api" ? !apiModel.isEmpty : account.signedIn) ? meloGold : Color.secondary).frame(width: 5, height: 5); Text(LocalizedStringKey(authMode == "api" ? (apiModel.isEmpty ? "选择模型" : "API 模型") : account.signedIn ? "ChatGPT" : "连接账号")).font(.caption2).foregroundStyle(.secondary) }
                     }.padding(.horizontal, 26).padding(.top, 14)
                     Spacer()
                     VStack(spacing: 13) {
@@ -159,7 +164,7 @@ struct HomeView: View {
                         Button { if let id = store.newChat() { open(id) } } label: {
                             HStack { Text("从一个想法开始…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Image(systemName: "arrow.up.right").font(.callout).foregroundStyle(meloAccent) }.padding(19).background(meloBackground.opacity(0.42), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(meloGold.opacity(0.3), lineWidth: 0.6))
                         }.disabled(!store.storageReady)
-                        HStack { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色"); Spacer(); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7))
+                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent"); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7)) }
                     }.padding(.horizontal, 26).padding(.bottom, 22)
                 }
             }
@@ -214,7 +219,9 @@ struct AgentsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PageHeading(eyebrow: "AGENTS", title: "不同角色，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
+                PageHeading(eyebrow: "AGENTS", title: "不同Agent，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
+                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
+                    .accessibilityIdentifier("agents.create")
                 ForEach(store.preferences.agents) { agent in
                     VStack(alignment: .leading, spacing: 18) {
                         HStack { AgentAvatar(agent: agent, size: 48); Spacer(); Button { editing = agent } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary).padding(8) }.accessibilityLabel("查看\(agent.name)") }
@@ -222,8 +229,7 @@ struct AgentsView: View {
                         Button { if let id = store.newChat(agentID: agent.id) { open(id) } } label: { HStack { Text("与\(agent.name)对话"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline.weight(.medium)).foregroundStyle(meloAccent) }
                     }.meloPanel()
                 }
-                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的角色", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
-                Text("角色名称、定位和回复要求会随每轮消息生效。可直接在对话中切换角色；配置与头像保存在本机。").font(.caption).foregroundStyle(.secondary)
+                Text("Agent名称、定位和回复要求会随每轮消息生效。可直接在对话中切换Agent；配置与头像保存在本机。").font(.caption).foregroundStyle(.secondary)
             }.padding(20)
         }.sheet(item: $editing) { agent in AgentEditor(agent: agent, isNew: !store.preferences.agents.contains { $0.id == agent.id }).presentationBackground(MeloTheme.dialog) }
     }
@@ -264,7 +270,11 @@ struct ChatView: View {
         nonmutating set { store.composerDrafts[chatID, default: ConversationDraft()].text = newValue }
     }
     private var imagePlan: ImageTaskPlan {
-        get { store.composerDrafts[chatID]?.imagePlan ?? ImageTaskPlan() }
+        get {
+            var plan = store.composerDrafts[chatID]?.imagePlan ?? ImageTaskPlan()
+            plan.action = .auto // Legacy drafts must not retain an invisible mode.
+            return plan
+        }
         nonmutating set { store.composerDrafts[chatID, default: ConversationDraft()].imagePlan = newValue }
     }
     @State private var imagePreview: LocalImage?
@@ -342,10 +352,10 @@ struct ChatView: View {
                         }.id(message.id)
                         .onAppear { if message.role == "assistant" { store.markRendered(message.id) } }
                     }
-                    if store.sendingID == chatID { HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction.map { $0.title + "…" } ?? account.replyStatus).font(.subheadline).foregroundStyle(.secondary); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel() } }.padding() }
+                    if store.isSending(chatID) { HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }.padding() }
                     else if chat?.messages.last?.role == "user" {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
-                        Button { store.send("", chatID: chatID, retry: true) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
+                        Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding(16)
@@ -363,7 +373,7 @@ struct ChatView: View {
                 HStack(alignment: .bottom, spacing: 8) {
                     if deviceSpeech.speechFailed { Text(deviceSpeech.speechStatus).font(.caption2).foregroundStyle(.red) }
                     if deviceSpeech.speechActive { Button { LocalDeviceServices.shared.stopSpeech() } label: { Image(systemName: "speaker.slash") }.accessibilityLabel("停止朗读") }
-                    AtomicButton(busy: store.sendingID == chatID) { executionRunID = nil; showExecution = true }
+                    AtomicButton(busy: store.isSending(chatID)) { executionRunID = nil; showExecution = true }
                     TextField("给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").lineLimit(1...6).padding(13).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
                     Button {
                         composerFocused = false
@@ -379,9 +389,9 @@ struct ChatView: View {
                         Image(systemName: voiceInput.state.recording ? "stop.fill" : "mic.fill")
                             .font(.system(size: 18)).foregroundStyle(voiceInput.state.active ? meloGold : meloAccent)
                             .frame(width: 44, height: 44).background(.white.opacity(0.05), in: Circle())
-                    }.disabled(store.sendingID != nil || voiceInput.state.status == "stopping")
+                    }.disabled(store.isSending(chatID) || voiceInput.state.status == "stopping")
                      .accessibilityLabel(voiceInput.state.active ? "停止语音输入" : "语音输入，转为文字后确认发送")
-                    Button { let text = draft; store.send(text, chatID: chatID, imageTask: imagePlan); if store.sendingID == chatID { composerFocused = false; draft = ""; imagePlan = ImageTaskPlan(model: imagePlan.model, size: imagePlan.size, quality: imagePlan.quality) } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 44, height: 44).background(meloAccent, in: Circle()).foregroundStyle(.black) }.disabled(chat == nil || imageImportID != nil || voiceInput.state.active || store.sendingID != nil || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (imagePlan.references.isEmpty || imagePlan.makesImage)) || !store.storageReady).accessibilityLabel("发送消息")
+                    Button { let text = draft; store.send(text, chatID: chatID, imageTask: imagePlan); if store.isSending(chatID) { composerFocused = false; draft = ""; imagePlan = ImageTaskPlan(model: imagePlan.model, size: imagePlan.size, quality: imagePlan.quality, connectionID: imagePlan.connectionID) } } label: { Image(systemName: "arrow.up").font(.headline).frame(width: 44, height: 44).background(meloAccent, in: Circle()).foregroundStyle(.black) }.disabled(chat == nil || imageImportID != nil || voiceInput.state.active || store.anySending || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (imagePlan.references.isEmpty || imagePlan.makesImage)) || !store.storageReady).accessibilityLabel("发送消息")
                 }
                 HStack {
                     if composerFocused {
@@ -447,7 +457,7 @@ struct ChatView: View {
             }
         }
     }
-    private func useImage(_ image: LocalImage) { imagePlan.action = .edit; imagePlan.references = [ImageReference(id: image.id)] }
+    private func useImage(_ image: LocalImage) { imagePlan.action = .auto; imagePlan.references = [ImageReference(id: image.id)] }
     @ViewBuilder private var voiceInputPanel: some View {
         let state = voiceInput.state
         if state.active || !state.error.isEmpty || !state.notice.isEmpty {
@@ -497,7 +507,7 @@ struct TaskHandoffView: View {
                             Button { Task { await store.requestHandoff(task) } } label: { Label(store.taskHandoffs.contains { $0.taskId == task.id && $0.revision == task.revision } ? "再次同步请求" : "请求桌面继续 / 修复", systemImage: "arrow.right.circle").frame(minHeight: 44) }.disabled(store.syncing)
                         }
                         DisclosureGroup("检查点详情") {
-                            VStack(alignment: .leading, spacing: 6) { Text("角色：\(task.owner)"); Text("版本：\(task.revision)"); Text("更新时间：\(task.updatedAt)"); Text("执行设备：\(task.sourceDevice)") }.font(.caption2).foregroundStyle(MeloTheme.soft).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                            VStack(alignment: .leading, spacing: 6) { Text("Agent：\(task.owner)"); Text("版本：\(task.revision)"); Text("更新时间：\(task.updatedAt)"); Text("执行设备：\(task.sourceDevice)") }.font(.caption2).foregroundStyle(MeloTheme.soft).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                         }.font(.caption)
                     }.meloPanel()
                 }

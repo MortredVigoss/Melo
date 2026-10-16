@@ -77,14 +77,14 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
       case 'projects':
         connectorConfig = {
           activeProject: project?.name || '(none)',
-          workspacePath: project?.workspacePath || APP_ROOT,
+          workspacePath: workspace.rootPath || null,
         };
         break;
       case 'artifacts': {
         // Counts must match the bootstrap-visible row set so the UI
         // doesn't display "5 artifacts" while the panel only shows 4
         // live ones (Codex 2026-04-27 audit).
-        const live = visibleArtifacts(state.artifacts);
+        const live = visibleArtifacts(state.artifacts).filter(a=>a.kind!=='result');
         connectorConfig = {
           totalArtifacts: live.length,
           projectArtifacts: live.filter(artifact => artifact.projectId === project?.id).length,
@@ -117,7 +117,7 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
 
     return {
       ...connector,
-      enabled: enabledIds.includes(connector.id),
+      enabled: ['local-files','local-command'].includes(connector.id) || enabledIds.includes(connector.id),
       config: connectorConfig,
     };
   });

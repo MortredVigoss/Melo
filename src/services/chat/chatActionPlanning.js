@@ -64,7 +64,7 @@ function extractSearchQueryFromMessage(message = '') {
 }
 
 function planCommandAction({ latestUserMessage = '', activeAgentProfile, chat }) {
-  if (!agentUsesTool(activeAgentProfile, 'local-command')) {
+  if (activeAgentProfile?.capabilities && !activeAgentProfile.capabilities.runCommands) {
     return null;
   }
 

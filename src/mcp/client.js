@@ -20,6 +20,7 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { delimiter, dirname } from 'node:path';
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 const CONNECT_TIMEOUT_MS   = 15_000;
@@ -68,7 +69,12 @@ export class McpStdioClient {
     if (this._connected) return;
 
     const spawnOptions = {
-      env: { ...process.env, ...this.envVars },
+      // Native app launches may find Node through NVM while inheriting only
+      // system PATH entries. Its sibling npm/npx and node shebangs must also
+      // resolve. An explicit per-server PATH still takes precedence.
+      env: { ...process.env,
+        PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
+        ...this.envVars },
       stdio: ['pipe', 'pipe', 'pipe'],
     };
     if (this.cwd) spawnOptions.cwd = this.cwd;

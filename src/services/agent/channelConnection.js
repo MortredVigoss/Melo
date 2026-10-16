@@ -1,3 +1,4 @@
+import { assertAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 import { loadState } from '../../state/stateStore.js';
@@ -10,6 +11,7 @@ import { pingDiscordChannel } from '../remote/discordApi.js';
 import { updateAgentProfile } from './agentMutations.js';
 
 export async function testAgentChannelConnection(agentId, channelId, patch = {}, options = {}) {
+  assertAgentChannelAvailable(channelId);
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => testAgentChannelConnection(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const normalizedAgentId = normalizeAgentStorageId(agentId) || 'main';

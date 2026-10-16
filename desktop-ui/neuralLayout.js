@@ -9,7 +9,8 @@ export function workspaceLayout(width,height,stage='overview',dockHeight=260) {
  // Short windows keep a usable input; large windows no longer freeze at 310px.
  const fieldH=Math.max(220,h-dockHeight-64),cx=w*.5,cy=fieldH*.53+10;
  const rx=Math.min(w*.34,fieldH*.9,650,w/2-82),ry=Math.min(fieldH*.37,300);
- const core=home?[cx,cy]:[compact?40:detail?78:125,h*.47];
+ // Leave room above the upper lobe for its hover lift and slow depth drift.
+ const core=home?[cx,cy+Math.min(30,fieldH*.06)]:[compact?40:detail?78:125,h*.47];
  const ports=home?
    [[cx-rx,cy-ry*.23],[cx,Math.max(88,cy-ry-15)],[cx+rx,cy-ry*.23],[cx+rx*.79,cy+ry*.72],[cx-rx*.79,cy+ry*.72]]:
    Array.from({length:5},(_,i)=>[compact?58:detail?146:216,132+i*Math.min(100,(h-255)/4)]);

@@ -1,3 +1,5 @@
+import {loadConfig} from './config.js';
+import { isAgentChannelAvailable } from './shared/channelAvailability.js';
 import { createRouteRegistry } from './http/routeRegistry.js';
 import { reconcileLegacyFacts } from './memory/factRecords.js';
 import { startDerivedIndexing } from './runtime/derivedIndexing.js';
@@ -38,7 +40,7 @@ import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDele
 import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, updateModelConfig, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
 import { resolveFileSafety } from './safety/fileSafetyGate.js';
-import { connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
+import { buildEffectiveMcpServers, connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
 import { backgroundRunner } from './tasks/backgroundRunner.js';
 import { startApprovedBackgroundTask } from './tasks/approvedBackgroundTask.js';
 import { getReminderScheduler } from './reminders/scheduler.js';
@@ -99,7 +101,7 @@ const telegramPollIntervalMs = Math.max(
   Number(getArgValue('--telegram-poll-ms', process.env.MELO_TELEGRAM_POLL_MS || '3500')) || 3500,
 );
 let telegramPollTimer = null;
-let telegramPollingStopped = false;
+let telegramPollingStopped = !isAgentChannelAvailable('telegram');
 
 const discordPollIntervalMs = Math.max(
   1500,
@@ -412,7 +414,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);
@@ -511,7 +513,7 @@ await finishChatDeletions(runtimePaths.home);
     } },
   { method: 'POST', paths: ["/api/chats/delete"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await deleteChat(body.chatId));
+      sendJson(response, 200, await deleteChat(body.chatId,body));
       return;
     } },
   { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
@@ -706,7 +708,11 @@ await finishChatDeletions(runtimePaths.home);
     } },
   { method: 'POST', paths: ["/api/mcp/connect"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       const body = await readJsonBody(request);
-      const { name, command, args, env } = body;
+      const {name}=body;
+      const config=await loadConfig();
+      const saved=buildEffectiveMcpServers(config.mcpServers,config)[name];
+      if(!body.command && (!saved || saved.disabled)) {sendJson(response,400,{error:'MCP server is not enabled in saved settings.'});return;}
+      const {command,args,env}=body.command?body:saved;
       if (!name || !command) {
         sendJson(response, 400, { ok: false, error: 'name and command are required.' });
         return;
@@ -1128,7 +1134,7 @@ async function runTelegramPollLoop() {
 
 // Acquire singleton lock before starting Telegram polling.
 // If another live server process already holds the lock, skip polling entirely.
-_acquireTelegramLock().then(acquired => {
+if (isAgentChannelAvailable('telegram')) _acquireTelegramLock().then(acquired => {
   if (acquired) {
     scheduleTelegramPoll(0);
   } else {
@@ -1251,7 +1257,7 @@ function shutdown() {
     .then(m => m.getDiscordVoiceRuntime().shutdown())
     .catch(() => {});
   Promise.allSettled([
-    _releaseTelegramLock(),
+    isAgentChannelAvailable('telegram') ? _releaseTelegramLock() : Promise.resolve(),
     _releaseDiscordLock(),
     voiceShutdown,
     pageRegistryShutdown,

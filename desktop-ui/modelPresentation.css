@@ -49,7 +49,9 @@
 .model-receipt-run {display:block;margin-top:8px;overflow-wrap:anywhere;font:8px monospace;color:#807e76;}
 @media(max-width:900px){.model-connection-summary{align-items:flex-start;flex-direction:column;gap:12px;}.model-picker-trigger{max-width:175px;}}
 
-.llm-connections, .extra-fast-settings { margin: 0 0 20px; padding: 22px; }
+.llm-connections, .extra-fast-settings, .default-model-settings { margin: 0 0 20px; padding: 22px; }
+.default-model-settings .page-kicker {font-size:13px;line-height:1.65;}
+.default-model-settings .config-form {max-width:760px;}
 .extra-fast-settings .page-kicker { font-size: 13px; line-height: 1.65; }
 .llm-connections .config-form { max-width: 760px; }
 .llm-connections .inline-actions { flex-wrap: wrap; gap: 8px; }

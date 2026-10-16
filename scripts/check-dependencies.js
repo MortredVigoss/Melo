@@ -52,12 +52,8 @@ export async function checkDependencies(root=resolve('src')) {
   return {modules:graph.size,cycles:0};
 }
 export function checkLayerDirections(graph, root) {
-  // Former public paths remain tiny re-export facades for extensions. They
-  // contain no state implementation and are deliberately excluded here.
-  const compatibility = new Set(['state/desktopBootstrap.js','state/skillProposalScan.js']);
   for (const [file, imports] of graph) {
     const source = relative(root,file);
-    if (compatibility.has(source)) continue;
     for (const dependency of imports) {
       const target = relative(root,dependency);
       if (source.startsWith('state/') && target.startsWith('services/')) throw Error(`Persistence depends on application service: ${source} -> ${target}`);

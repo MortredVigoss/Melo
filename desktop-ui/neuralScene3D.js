@@ -27,13 +27,15 @@ function createGpuScene(T,initialHost,onLost) {
  const moduleColors=neuralIdentities.map(v=>new T.Color(v.color)),moduleLights=neuralIdentities.map(v=>new T.Color(v.light));
  const vertex=`attribute float aSize;attribute float aAlpha;attribute float aModule;uniform float uDpr;uniform float uTime;uniform float uFocus;uniform float uActivity;uniform float uStellar;varying vec3 vColor;varying float vAlpha;varying float vSpark;
  void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;float selected=1.0-step(.4,abs(aModule-uFocus));float pulse=.92+.08*sin(uTime*.65+position.x*.05);vColor=color;vSpark=uStellar*smoothstep(3.5,7.0,aSize);vAlpha=aAlpha*pulse*clamp(1100.0/-mv.z,.58,1.12)*(aModule<0.0?1.0:(.64+selected*.48+uActivity*.12));gl_PointSize=clamp(aSize*uDpr*900.0/-mv.z,1.0,100.0);}`;
- const fragment=`varying vec3 vColor;varying float vAlpha;varying float vSpark;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0)discard;float glow=exp(-r*5.0);glow+=vSpark*.22*(exp(-abs(p.x)*65.0-abs(p.y)*3.0)+exp(-abs(p.y)*65.0-abs(p.x)*3.0));gl_FragColor=vec4(pow(vColor,vec3(.4545)),vAlpha*glow);}`;
- function points(items,{additive=true,dynamic=false,stellar=false}={}){
+ // Stars have a compact, readable core; clouds keep the soft kernel. This
+ // separates detail from haze without a higher render resolution or bloom pass.
+ const fragment=`uniform float uCrisp;varying vec3 vColor;varying float vAlpha;varying float vSpark;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0)discard;float halo=exp(-r*5.0);float core=1.0-smoothstep(.04,.30,r);float glow=mix(halo,min(1.0,.45*halo+.95*core),uCrisp);glow+=vSpark*.16*(exp(-abs(p.x)*65.0-abs(p.y)*3.0)+exp(-abs(p.y)*65.0-abs(p.x)*3.0));gl_FragColor=vec4(pow(vColor,vec3(.4545)),vAlpha*glow);}`;
+ function points(items,{additive=true,dynamic=false,stellar=false,crisp=stellar}={}){
    const g=new T.BufferGeometry(),pos=new Float32Array(items.length*3),colors=new Float32Array(items.length*3),sizes=new Float32Array(items.length),alphas=new Float32Array(items.length),modules=new Float32Array(items.length);
    items.forEach((p,i)=>{pos.set(p.pos,i*3);(p.color||palette[0]).toArray(colors,i*3);sizes[i]=p.size;alphas[i]=p.alpha;modules[i]=p.module??-1;});
    g.setAttribute('position',new T.BufferAttribute(pos,3).setUsage(dynamic?T.DynamicDrawUsage:T.StaticDrawUsage));
    g.setAttribute('color',new T.BufferAttribute(colors,3));g.setAttribute('aSize',new T.BufferAttribute(sizes,1));g.setAttribute('aAlpha',new T.BufferAttribute(alphas,1));g.setAttribute('aModule',new T.BufferAttribute(modules,1));
-   const m=new T.ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,uniforms:{uDpr:{value:1},uTime:{value:0},uFocus:{value:0},uActivity:{value:0},uStellar:{value:stellar?1:0}},vertexColors:true,transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending});
+   const m=new T.ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,uniforms:{uDpr:{value:1},uTime:{value:0},uFocus:{value:0},uActivity:{value:0},uStellar:{value:stellar?1:0},uCrisp:{value:crisp?1:0}},vertexColors:true,transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending});
    const mesh=new T.Points(g,m);mesh.frustumCulled=false;disposables.push(g,m);return mesh;
  }
  // Three independent depth populations, with a curved dust lane and dark gaps.
@@ -41,21 +43,21 @@ function createGpuScene(T,initialHost,onLost) {
  const atmosphere=[];
  for(let i=0;i<16000;i++){
    const lane=i<11000,t=rand(),x=lane?(t-.5)*2.4:(rand()-.5)*3.8;
-   const ridge=x*.40+.12*Math.sin(x*3.4),spread=(rand()+rand()+rand()-1.5)*(.10+.16*(1-Math.abs(t-.5)*2));
+   const ridge=x*.40+.12*Math.sin(x*3.4),spread=(rand()+rand()+rand()-1.5)*(.09+.14*(1-Math.abs(t-.5)*2));
    const y=lane?ridge+spread+(i%3===0?.105:-.045):(rand()-.5)*3.1;
    const distance=lane?350+rand()*650:900+rand()*700;
    const rare=rand();
-   atmosphere.push({pos:[x,y,-distance],size:lane?.7+rand()*1.9:rare>.985?5+rand()*3:1.1+rand()*2.6,alpha:lane?.16+rand()*.45:.3+rand()*.46,color:i%17===0?palette[1]:i%7===0?palette[0]:i%3===0?silver:palette[3]});
+   atmosphere.push({pos:[x,y,-distance],size:lane?.7+rand()*1.9:rare>.985?5+rand()*3:1.1+rand()*2.6,alpha:lane?.20+rand()*.48:.3+rand()*.46,color:i%17===0?palette[1]:i%7===0?palette[0]:i%3===0?silver:palette[3]});
  }
  const stars=points(atmosphere,{stellar:true});world.add(stars);
  const cloudItems=Array.from({length:190},(_,i)=>{
    const t=rand(),x=(t-.5)*2.4,y=x*.4+.12*Math.sin(x*3.4)+(rand()-.5)*.17;
-   return {pos:[x,y,-450-rand()*350],size:45+rand()*85,alpha:.028+rand()*.032,color:i%7===0?palette[1]:i%4===0?palette[0]:silver};
+   return {pos:[x,y,-450-rand()*350],size:38+rand()*68,alpha:.022+rand()*.026,color:i%7===0?palette[1]:i%4===0?palette[0]:silver};
  });
  const clouds=points(cloudItems);world.add(clouds);
  // A sparse near plane moves further under the pointer than distant stars.
  const foreground=points(Array.from({length:150},(_,i)=>({pos:[(rand()-.5)*2.0,(rand()-.5)*1.9,-40-rand()*240],size:i%19===0?7+rand()*3:1.4+rand()*2,alpha:.20+rand()*.32,color:i%4===0?palette[4]:silver})),{stellar:true});world.add(foreground);
- const dust=points(Array.from({length:100},()=>{const x=(rand()-.5)*2.3;return {pos:[x,x*.4+.12*Math.sin(x*3.4)-.025+(rand()-.5)*.045,-200-rand()*150],size:45+rand()*60,alpha:.08+rand()*.09,color:shadow};}),{additive:false});world.add(dust);
+ const dust=points(Array.from({length:100},()=>{const x=(rand()-.5)*2.3;return {pos:[x,x*.4+.12*Math.sin(x*3.4)-.025+(rand()-.5)*.045,-200-rand()*150],size:34+rand()*48,alpha:.10+rand()*.12,color:shadow};}),{additive:false});world.add(dust);
  const brain=new T.Group();world.add(brain);
  const neurons=[],lobes=[];
  for(let i=0;i<5;i++){const a=[2.85,Math.PI/2,.30,-.90,-2.24][i];lobes.push(new T.Vector3(Math.cos(a)*.62,Math.sin(a)*.58,(i%2-.5)*.55));}
@@ -70,7 +72,7 @@ function createGpuScene(T,initialHost,onLost) {
    if(inner)cortex[cortex.length-1].alpha*=.72;
    if(i<420)neurons.push({p,group});
  }
- const cortexPoints=points(cortex,{dynamic:true});brain.add(cortexPoints);
+ const cortexPoints=points(cortex,{dynamic:true,crisp:true});brain.add(cortexPoints);
  const tissue=points(Array.from({length:100},(_,i)=>{const c=lobes[i%5];return {pos:[c.x+(rand()-.5)*.7,c.y+(rand()-.5)*.65,c.z+(rand()-.5)*.55],size:18+rand()*36,alpha:.025+rand()*.04,color:moduleColors[i%5],module:i%5};}),{dynamic:true});brain.add(tissue);
  // A compact luminous interior gives the tissue volume without a screen-wide glow.
  const innerLight=points([
@@ -78,7 +80,7 @@ function createGpuScene(T,initialHost,onLost) {
    {pos:[.04,-.03,.16],size:44,alpha:.20,color:palette[4]},
    ...lobes.map((p,i)=>({pos:[p.x*.68,p.y*.68,p.z],size:48,alpha:.10,color:moduleColors[i],module:i})),
  ],{dynamic:true});brain.add(innerLight);
- const nucleus=points(Array.from({length:400},()=>{const a=rand()*Math.PI*2,z=(rand()-.5)*.3,r=rand()*.22;return {pos:[Math.cos(a)*r,Math.sin(a)*r,z],size:1+rand()*3.5,alpha:.55,color:palette[0]};}));brain.add(nucleus);
+ const nucleus=points(Array.from({length:400},()=>{const a=rand()*Math.PI*2,z=(rand()-.5)*.3,r=rand()*.22;return {pos:[Math.cos(a)*r,Math.sin(a)*r,z],size:1+rand()*3.5,alpha:.55,color:palette[0]};}),{crisp:true});brain.add(nucleus);
  const edges=[];
  neurons.forEach((n,i)=>{
    const candidates=neurons.map((m,j)=>({j,d:n.p.distanceToSquared(m.p)})).filter(v=>v.j!==i&&neurons[v.j].group===n.group).sort((a,b)=>a.d-b.d).slice(0,3);

@@ -1,280 +1,321 @@
 import Foundation
 import SwiftUI
-import AuthenticationServices
-import CryptoKit
 
-struct ChatGPTRegistration: Codable, Identifiable {
-    var id: String { clientID }
-    var clientID: String
-    var subject: String
-    var email: String
-    var accessToken: String
-    var refreshToken: String
-    var idToken: String
-    var expiresAt: Date
-    var scopes: String
-}
 struct ChatGPTModel: Decodable, Identifiable {
     var id: String { slug }
     let slug: String
     let display_name: String
     let visibility: String?
 }
-
-@MainActor final class ChatGPTAccount: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
-    @Published private(set) var registrations: [ChatGPTRegistration] = []
+// Keep the existing connection identifier so conversation selections survive migration.
+// Credentials are exclusively Codex grants in a NEW Keychain entry; SIWC is never reused.
+@MainActor final class ChatGPTAccount: ObservableObject {
+    @Published private(set) var registrations: [CodexRegistration] = []
     @Published private(set) var activeID: String?
     @Published private(set) var models: [ChatGPTModel] = []
     @Published private(set) var busy = false
-    @Published var status = "尚未登录"
+    @Published private(set) var deviceCode: CodexDeviceCode?
+    @Published var status = "尚未登录 Codex"
     @Published var error: String?
     @Published private(set) var replyStatus = "正在思考…"
-    private var browser: ASWebAuthenticationSession?
-    private var loopback: OAuthLoopback?
-    private var timeout: Task<Void, Never>?
+    /// Status per conversation, so two replies running at once each show their own.
+    @Published private(set) var replyStatuses: [String: String] = [:]
+    func replyStatus(for key: String) -> String { replyStatuses[key] ?? "正在思考…" }
+    @Published private(set) var imageVerified = false
+    private var loginTask: Task<Void,Never>?
     private var attemptID: UUID?
-    private var refreshing: Task<ChatGPTRegistration, Error>?
+    private var applicationActive = true
+    private var refreshing: Task<CodexRegistration,Error>?
     private var epoch = UUID()
-    private var window: ASPresentationAnchor?
-    var active: ChatGPTRegistration? { registrations.first { $0.clientID == activeID } }
+    private let session: URLSession
+    private let defaults: UserDefaults
+    private let persistCredentials: (String) throws -> Void
+    var active: CodexRegistration? { registrations.first { $0.id == activeID } }
     var signedIn: Bool { !(active?.refreshToken.isEmpty ?? true) }
-    override init() {
-        super.init()
-        do { try Secrets.prepareBackgroundRefresh() } catch { self.error = error.localizedDescription }
-        if let data = Secrets.read("chatgptAccounts").data(using: .utf8), let saved = try? JSONDecoder().decode([ChatGPTRegistration].self, from: data) { registrations = saved }
-        activeID = UserDefaults.standard.string(forKey: "chatgptActiveID")
-        if signedIn { status = "已登录 · 手机独立连接" }
+    init(session: URLSession = CodexOAuth.session, defaults: UserDefaults = .standard,
+         readCredentials: () -> String = { Secrets.read("codexAccounts") },
+         persistCredentials: @escaping (String) throws -> Void = { try Secrets.write($0,key:"codexAccounts") },
+         prepareStorage: () throws -> Void = Secrets.prepareBackgroundRefresh) {
+        self.session=session; self.defaults=defaults; self.persistCredentials=persistCredentials
+        do { try prepareStorage() } catch { self.error = error.localizedDescription }
+        let saved = readCredentials()
+        if !saved.isEmpty {
+            do { registrations = try JSONDecoder().decode([CodexRegistration].self,from:Data(saved.utf8)) }
+            catch { self.error = "Codex 登录记录无法读取，原数据已保留。" }
+        }
+        activeID = defaults.string(forKey:"codexActiveID")
+        updateStatus()
     }
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window! }
-    private func save(_ registration: ChatGPTRegistration) throws {
-        var next = registrations.filter { $0.clientID != registration.clientID }; next.append(registration)
-        try persist(next)
-        activeID = registration.clientID; UserDefaults.standard.set(activeID, forKey: "chatgptActiveID")
+    private func updateStatus() {
+        imageVerified = activeID.map { defaults.bool(forKey:"codexImageVerified:" + $0) } ?? false
+        status = signedIn ? "Codex 已登录 · 手机独立连接" : "尚未登录 Codex · 原 ChatGPT 授权需重新登录"
     }
-    private func persist(_ next: [ChatGPTRegistration]) throws {
+    private func save(_ account: CodexRegistration) throws {
+        var next = registrations.filter { $0.id != account.id }; next.append(account)
         let data = try JSONEncoder().encode(next)
-        try Secrets.write(String(decoding: data, as: UTF8.self), key: "chatgptAccounts")
-        registrations = next
+        try persistCredentials(String(decoding:data,as:UTF8.self))
+        registrations = next; activeID = account.id
+        defaults.set(account.id,forKey:"codexActiveID")
     }
     func select(_ id: String) {
-        guard !busy, registrations.contains(where: { $0.clientID == id }) else { return }
+        guard !busy, registrations.contains(where: { $0.id == id }) else { return }
         epoch = UUID(); refreshing?.cancel(); refreshing = nil
-        activeID = id; UserDefaults.standard.set(id, forKey: "chatgptActiveID"); models = []
-        status = signedIn ? "已登录 · 手机独立连接" : "请重新授权"
-        Task { await loadModels() }
+        activeID=id; defaults.set(id,forKey:"codexActiveID"); models=[]; error=nil
+        updateStatus(); Task { await loadModels() }
     }
     func signIn(existingID: String? = nil) async {
         guard !busy else { return }
-        guard let anchor = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).filter({ $0.activationState == .foregroundActive }).flatMap(\.windows).first(where: \.isKeyWindow) else { error = "请回到 Melo 页面再登录。"; return }
-        window = anchor
-        busy = true; error = nil; status = "等待官方页面授权"
-        let attempt = UUID(); attemptID = attempt
-        let old = registrations.first { $0.clientID == existingID }
+        busy=true; error=nil; deviceCode=nil; status="正在申请官方验证码…"
+        let attempt=UUID(); attemptID=attempt
+        let old=registrations.first { $0.id == existingID }
         do {
-            let state = try ChatGPTProtocol.random(), nonce = try ChatGPTProtocol.random(), verifier = try ChatGPTProtocol.random()
-            var hostID = Secrets.read("chatgptHostID")
-            if hostID.isEmpty { hostID = "urn:uuid:" + UUID().uuidString.lowercased(); try Secrets.write(hostID, key: "chatgptHostID") }
-            let listener = OAuthLoopback(); loopback = listener
-            var redirectURL: URL?
-            let redirect = try await listener.start { [weak self] url in
-                guard let self, let redirectURL, self.attemptID == attempt else { return }
-                Task { await self.complete(url: url, redirect: redirectURL, state: state, nonce: nonce, verifier: verifier, old: old, attempt: attempt) }
-            }
-            redirectURL = redirect
-            var values = ["client_id": old?.clientID ?? "dynamic_agent_client", "ext_agent_host_id": hostID, "response_type": "code", "redirect_uri": redirect.absoluteString, "scope": ChatGPTProtocol.scopes, "resource": ChatGPTProtocol.resource, "state": state, "nonce": nonce, "code_challenge_method": "S256", "code_challenge": ChatGPTProtocol.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))]
-            if let old { if !old.idToken.isEmpty { values["id_token_hint"] = old.idToken } } else { values["agent_name_hint"] = "Melo" }
-            var url = URLComponents(string: ChatGPTProtocol.issuer + "/api/accounts/authorize")!
-            url.queryItems = values.map { URLQueryItem(name: $0.key, value: $0.value) }
-            let browser = ASWebAuthenticationSession(url: url.url!, callbackURLScheme: nil) { [weak self] _, _ in
-                Task { @MainActor in
-                    guard let self, self.attemptID == attempt else { return }
-                    self.cancelLogin(); self.status = "登录已取消，可以重试"
+            let code=try await CodexOAuth.begin(session:session)
+            guard attemptID == attempt else { return }
+            deviceCode=code; status="等待官方网页授权 · 切换应用后可继续"
+            loginTask=Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let token=try await CodexOAuth.poll(code,session:self.session,beforeRequest:{
+                        try await self.waitForActive(until:code.expiresAt)
+                    },onRetry:{
+                        self.status="连接暂时中断，验证码已保留 · 返回 Melo 后自动继续"
+                    })
+                    let account=try await CodexOAuth.registration(token,previous:old,session:self.session,beforeRequest:{
+                        try await self.waitForActive(until:code.expiresAt)
+                    })
+                    try Task.checkCancellation()
+                    guard self.attemptID == attempt else { return }
+                    try self.save(account)
+                    self.epoch=UUID(); self.refreshing?.cancel(); self.refreshing=nil
+                    self.attemptID=nil; self.deviceCode=nil; self.busy=false; self.loginTask=nil; self.models=[]
+                    defaults.set("chatgpt",forKey:"modelAuthMode")
+                    self.updateStatus()
+                    await self.loadModels()
+                } catch {
+                    guard self.attemptID == attempt else { return }
+                    self.attemptID=nil; self.deviceCode=nil; self.busy=false; self.loginTask=nil
+                    self.updateStatus(); self.error=CodexOAuth.loginError(error)
                 }
             }
-            self.browser = browser; browser.presentationContextProvider = self
-            browser.prefersEphemeralWebBrowserSession = false
-            guard browser.start() else { throw MeloError.message("无法打开官方登录窗口。") }
-            timeout = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(300)) } catch { return }
-                guard let self, self.attemptID == attempt else { return }
-                self.cancelLogin(); self.error = "登录等待超时，请重试。"
-            }
-        } catch { cancelLogin(); self.error = error.localizedDescription }
-    }
-    func cancelLogin() {
-        attemptID = nil; timeout?.cancel(); timeout = nil
-        loopback?.stop(); loopback = nil; browser?.cancel(); browser = nil; busy = false
-    }
-    private func complete(url: URL, redirect: URL, state: String, nonce: String, verifier: String, old: ChatGPTRegistration?, attempt: UUID) async {
-        guard attemptID == attempt else { return }
-        // Consume the callback once before awaiting any network work.
-        attemptID = nil; timeout?.cancel(); timeout = nil; loopback?.stop(); loopback = nil; browser?.cancel(); browser = nil
-        status = "正在验证登录身份"
-        defer { busy = false }
-        do {
-            let result = try ChatGPTProtocol.callback(url, redirect: redirect, state: state, clientID: old?.clientID)
-            let response = try await Self.token(["grant_type": "authorization_code", "client_id": result.clientID, "code": result.code, "code_verifier": verifier, "redirect_uri": redirect.absoluteString, "resource": ChatGPTProtocol.resource])
-            let jwks = try await Self.get(ChatGPTProtocol.issuer + "/.well-known/jwks.json")
-            guard let idToken = response.id_token else { throw MeloError.message("登录未返回身份凭证。") }
-            let identity = try ChatGPTProtocol.validateIDToken(idToken, jwks: jwks, clientID: result.clientID, nonce: nonce)
-            guard old == nil || old?.subject == identity.subject else { throw MeloError.message("返回账号与所选账号不一致，原登录已保留。") }
-            let grant = try response.registration(clientID: result.clientID, subject: identity.subject, email: identity.email, previous: nil)
-            epoch = UUID(); refreshing?.cancel(); refreshing = nil
-            try save(grant); models = []; UserDefaults.standard.set("chatgpt", forKey: "modelAuthMode")
-            status = "已登录 · 手机独立连接"
-            await loadModels()
-        } catch { self.error = error.localizedDescription; status = "授权未完成，原有记录已保留" }
-    }
-    private struct Token: Decodable {
-        let access_token: String
-        let refresh_token: String?
-        let id_token: String?
-        let expires_in: Double
-        let scope: String?
-        let token_type: String
-        func registration(clientID: String, subject: String, email: String, previous: ChatGPTRegistration?) throws -> ChatGPTRegistration {
-            let granted = scope ?? previous?.scopes ?? ""
-            guard granted.split(separator: " ").contains("chatgpt.tokens.use.direct"), token_type.lowercased() == "bearer", !access_token.isEmpty, expires_in > 0,
-                  let refresh = refresh_token ?? previous?.refreshToken, !refresh.isEmpty else { throw MeloError.message("尚未允许使用 ChatGPT 计划，请重新登录并在官方页面授权。") }
-            return ChatGPTRegistration(clientID: clientID, subject: subject, email: email, accessToken: access_token, refreshToken: refresh, idToken: id_token ?? previous?.idToken ?? "", expiresAt: Date().addingTimeInterval(expires_in), scopes: granted)
+        } catch {
+            guard attemptID == attempt else { return }
+            attemptID=nil; busy=false; updateStatus(); self.error=CodexOAuth.loginError(error)
         }
     }
-    private static func token(_ values: [String: String]) async throws -> Token {
-        var request = URLRequest(url: URL(string: ChatGPTProtocol.issuer + "/api/accounts/oauth/token")!)
-        request.httpMethod = "POST"; request.timeoutInterval = 30
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = ChatGPTProtocol.form(values)
-        let (data, response) = try await Network.session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count < 128_000 else { throw MeloError.message("登录凭证未能更新，请重新授权。") }
-        return try JSONDecoder().decode(Token.self, from: data)
+    func setApplicationActive(_ active: Bool) { applicationActive=active }
+    private func waitForActive(until deadline: Date) async throws {
+        while !applicationActive {
+            try Task.checkCancellation()
+            guard Date() < deadline else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
+            try await Task.sleep(for:.milliseconds(200))
+        }
+        try Task.checkCancellation()
+        guard Date() < deadline else { throw MeloError.message("Codex 验证码已过期，请重新获取。") }
     }
-    private static func get(_ url: String, token: String? = nil) async throws -> Data {
-        var request = URLRequest(url: URL(string: url)!); request.timeoutInterval = 30
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        let (data, response) = try await Network.session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count < 2_000_000 else { throw MeloError.message("无法获取官方账号信息，请检查网络或重新登录。") }
-        return data
+    func cancelLogin() {
+        guard attemptID != nil else { return }
+        attemptID=nil; loginTask?.cancel(); loginTask=nil; deviceCode=nil; busy=false; updateStatus()
     }
-    private func credentials() async throws -> ChatGPTRegistration {
-        guard let account = active, !account.refreshToken.isEmpty else { throw MeloError.message("请到设置中点 Continue with ChatGPT 完成授权登录。") }
+    private func credentials() async throws -> CodexRegistration {
+        guard let account=active, !account.refreshToken.isEmpty else { throw MeloError.message(CodexOAuth.loginRequired) }
         if account.expiresAt.timeIntervalSinceNow > 90 { return account }
         if let refreshing { return try await refreshing.value }
-        let expectedEpoch = epoch
-        let task = Task<ChatGPTRegistration, Error> {
-            let response = try await Self.token(["grant_type": "refresh_token", "client_id": account.clientID, "refresh_token": account.refreshToken, "resource": ChatGPTProtocol.resource])
-            if let token = response.id_token {
-                let jwks = try await Self.get(ChatGPTProtocol.issuer + "/.well-known/jwks.json")
-                let identity = try ChatGPTProtocol.validateIDToken(token, jwks: jwks, clientID: account.clientID, nonce: nil)
-                guard identity.subject == account.subject else { throw MeloError.message("账号校验失败，请重新授权。") }
-            }
-            let updated = try response.registration(clientID: account.clientID, subject: account.subject, email: account.email, previous: account)
+        let expectedEpoch=epoch
+        let task=Task<CodexRegistration,Error> {
+            let token=try await CodexOAuth.refresh(account,session:self.session)
+            let updated=try await CodexOAuth.registration(token,previous:account,session:self.session)
             try Task.checkCancellation()
-            guard self.epoch == expectedEpoch, self.activeID == account.clientID else { throw CancellationError() }
+            guard self.epoch == expectedEpoch, self.activeID == account.id else { throw CancellationError() }
             try self.save(updated)
             return updated
         }
-        refreshing = task
-        defer { if epoch == expectedEpoch { refreshing = nil } }
+        refreshing=task
+        defer { if epoch == expectedEpoch { refreshing=nil } }
         return try await task.value
     }
     func loadModels() async {
         guard signedIn else { return }
-        let expectedEpoch = epoch
+        let expectedEpoch=epoch
         do {
-            let account = try await credentials()
-            let data = try await Self.get(ChatGPTProtocol.resource + "/models", token: account.accessToken)
+            let account=try await credentials()
+            // Protocol compatibility version, not Melo's application version.
+            let request=CodexOAuth.request(path:"/models?client_version=0.180.0",account:account)
+            let (data,status)=try await CodexOAuth.data(request,session:session,limit:2_000_000)
+            guard status == 200 else { throw MeloError.message("Codex 模型列表读取失败（\(status)）。原模型选择已保留，可稍后刷新。") }
             struct Catalog: Decodable { let models: [ChatGPTModel] }
-            let available = try JSONDecoder().decode(Catalog.self, from: data).models.filter { $0.visibility == "list" }
+            let available=try JSONDecoder().decode(Catalog.self,from:data).models.filter { $0.visibility == nil || $0.visibility == "list" }
             guard epoch == expectedEpoch else { return }
-            models = available
-            // Refreshing a catalog must not silently replace the user's saved model.
-            // A missing selection is resolved explicitly in the model editor.
-            if available.isEmpty { throw MeloError.message("此账号暂未提供可用模型，请检查计划授权。") }
-        } catch { if epoch == expectedEpoch { self.error = error.localizedDescription } }
+            guard !available.isEmpty else { throw MeloError.message("此 Codex 账号暂未提供可用模型，请检查订阅或工作区权限。") }
+            models=available
+            if (defaults.string(forKey:"chatgptModel") ?? "").isEmpty {
+                let initial=available.first(where: { $0.slug == "gpt-6.1-sol" }) ?? available[0]
+                defaults.set(initial.slug,forKey:"chatgptModel")
+            }
+        } catch { if epoch == expectedEpoch { self.error=error.localizedDescription } }
     }
     func signOut() async {
-        guard !busy, let account = active else { return }
-        busy = true; epoch = UUID(); refreshing?.cancel(); refreshing = nil
-        defer { busy = false }
-        var revoked = account.refreshToken.isEmpty
-        if !account.refreshToken.isEmpty {
-            var request = URLRequest(url: URL(string: ChatGPTProtocol.issuer + "/api/accounts/oauth/revoke")!)
-            request.httpMethod = "POST"; request.timeoutInterval = 15
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.httpBody = ChatGPTProtocol.form(["token": account.refreshToken, "token_type_hint": "refresh_token", "client_id": account.clientID])
-            if let (_, response) = try? await Network.session.data(for: request) { revoked = (response as? HTTPURLResponse)?.statusCode == 200 }
-        }
+        guard !busy, let account=active else { return }
+        busy=true; epoch=UUID(); refreshing?.cancel(); refreshing=nil
+        defer { busy=false }
+        let revoked=await CodexOAuth.revoke(account,session:session)
         do {
-            var cleared = account; cleared.accessToken = ""; cleared.refreshToken = ""; cleared.idToken = ""; cleared.expiresAt = .distantPast
-            try save(cleared); models = []; status = "已退出登录"
-            if !revoked { error = "已退出此手机，但未确认远端撤销。你可以在 ChatGPT 设置里断开 Melo。" }
-        } catch { self.error = error.localizedDescription }
+            var cleared=account; cleared.accessToken=""; cleared.refreshToken=""; cleared.idToken=""; cleared.expiresAt = .distantPast
+            try save(cleared); models=[]
+            defaults.removeObject(forKey:"codexImageVerified:" + account.id)
+            updateStatus()
+            if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
+        } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
-        replyStatus = "正在思考…"
-        defer { replyStatus = "正在思考…" }
+        func setStatus(_ value: String) {
+            if replyStatus != value { replyStatus = value }
+            if let statusKey, replyStatuses[statusKey] != value { replyStatuses[statusKey] = value }
+        }
+        setStatus("正在思考…")
+        defer { replyStatus = "正在思考…"; if let statusKey { replyStatuses[statusKey] = nil } }
         let account = try await credentials()
         try Task.checkCancellation()
-        guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 ChatGPT 模型。") }
-        var request = URLRequest(url: URL(string: ChatGPTProtocol.resource + "/responses")!)
-        request.httpMethod = "POST"; request.timeoutInterval = imageTask?.makesImage == true ? 180 : 120
-        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let webSearch = imageTask?.makesImage != true && (UserDefaults.standard.object(forKey: "webSearchEnabled") as? Bool ?? true)
+        guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 Codex 模型。") }
+        let sessionID = UUID().uuidString
+        // The device-wide switch and this Agent's phone permission must both allow search.
+        let webSearch = allowWebSearch && imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
         var body = ChatGPTRequest.body(messages: messages, model: model, instructions: instructions, webSearch: webSearch)
         if !imageInputs.isEmpty || imageTask?.makesImage == true {
             let imageBody = ImageRequestBody.responses(messages: messages, inputs: imageInputs, task: imageTask ?? ImageTaskPlan(action: .analyze), model: model, instructions: instructions)
             body["input"] = imageBody["input"]
-            if imageTask?.makesImage == true { body = imageBody }
+            if imageTask?.makesImage == true { body = CodexRequest.imageBody(messages: messages, inputs: imageInputs, task: imageTask!, model: model, instructions: instructions) }
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        var requestObservation = ExecutionObservation()
-        requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        onObservation?(requestObservation)
-        let (bytes, response) = try await Network.session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
-        guard http.statusCode == 200 else {
-            if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("登录已失效或未授权计划用量，请回设置重新授权。") }
-            if [400, 413, 422].contains(http.statusCode) {
-                var errorBody = Data()
-                for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
-                if let contextError = Network.contextLimitError(errorBody) { throw contextError }
-                throw MeloError.message("当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）；本次要求和图片已保留。")
-            }
-            if http.statusCode == 429 { throw MeloError.message("已达到使用限额，请检查 ChatGPT 中 Melo 的计划额度。") }
-            throw MeloError.message("模型服务暂时不可用，请稍后重试。")
+        // Ordinary replies may still make or edit an image when the wording was not
+        // recognised up front: the model decides, instead of saying the tool is missing.
+        let offersImageTool = allowImageTool && imageTask?.makesImage != true
+        if offersImageTool {
+            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": (imageTask ?? ImageTaskPlan()).model]]
+            if body["tool_choice"] == nil { body["tool_choice"] = "auto" }
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。"
         }
-        let mustSearch = webSearch && ChatGPTRequest.requiresSearch(messages)
+        let imageMode = imageTask?.makesImage == true || offersImageTool
+        // Phone data tools are offered only for ordinary replies, never image generation.
+        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.policy.tools ?? [])
+        if !phoneTools.isEmpty, let deviceTools {
+            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
+            body["tool_choice"] = "auto" // Allow phone data before a web lookup (e.g. nearby weather).
+            let include = (body["include"] as? [String]) ?? []
+            body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + DeviceToolLoop.instructions(deviceTools.policy)
+        }
+        let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
+        var priorSources: [WebSource] = []
+        var searchedEarlier = false
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
-            if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持生图。要求和参考图已保留。") }
-            if mustSearch && !stream.searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
-            return ModelReply(text: text, sources: stream.sources, searched: stream.searched, images: stream.images)
+            let searched = searchedEarlier || stream.searched
+            if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
+            if mustSearch && !searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
+            if !stream.images.isEmpty {
+                defaults.set(true, forKey: "codexImageVerified:" + account.id)
+                imageVerified = true
+            }
+            let sources = WebReplyFormatter.references(in: "", annotations: priorSources + stream.sources)
+            return ModelReply(text: text, sources: sources, searched: searched, images: stream.images)
         }
-        var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024)
-        var revision = -1
-        var receivedText = false
-        var consumedBytes = 0
-        for try await byte in bytes {
-            consumedBytes += 1
-            if consumedBytes.isMultiple(of: 32768) { await Task.yield() }
+        func streamOnce(_ body: [String: Any]) async throws -> ChatGPTStream {
             try Task.checkCancellation()
             guard epoch == expectedEpoch else { throw CancellationError() }
-            do { try parser.accept(byte) }
-            catch { onObservation?(parser.stream.observation); throw error }
-            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; onReceiving?() }
-            if parser.stream.observation.revision != revision {
-                revision = parser.stream.observation.revision
-                onObservation?(parser.stream.observation)
+            var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
+            request.timeoutInterval = imageMode ? 180 : 120
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue(sessionID, forHTTPHeaderField: "session_id")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            var requestObservation = ExecutionObservation()
+            requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+            onObservation?(requestObservation)
+            let requestStarted = ProcessInfo.processInfo.systemUptime
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
+            guard http.statusCode == 200 else {
+                if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
+                if [400, 413, 422].contains(http.statusCode) {
+                    var errorBody = Data()
+                    for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
+                    if let contextError = Network.contextLimitError(errorBody) { throw contextError }
+                    throw MeloError.message("当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）\(Network.rejectionDetail(errorBody))；本次要求和图片已保留。")
+                }
+                if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
+                throw MeloError.message("模型服务暂时不可用，请稍后重试。")
             }
-            let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
-            if replyStatus != nextStatus { replyStatus = nextStatus }
-            if parser.stream.completed { return try replyResult(parser.stream) }
+            // Read and parse off the main thread: an image reply is megabytes of
+            // base64, and byte-by-byte work here would stall the interface.
+            let updates = StreamUpdates(onObservation: onObservation, onReceiving: onReceiving, setStatus: setStatus)
+            let stream = try await Self.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, updates: updates)
+            try Task.checkCancellation()
+            guard epoch == expectedEpoch else { throw CancellationError() }
+            return stream
         }
-        _ = try parser.finish()
-        return try replyResult(parser.stream)
+        for _ in 0..<DeviceToolLoop.maxRounds {
+            let stream = try await streamOnce(body)
+            let calls = phoneTools.isEmpty ? [] : stream.functionCalls
+            guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
+            // Validate the whole batch before any side effect, then run sequentially.
+            try DeviceToolLoop.validateBatch(calls)
+            var results: [(callID: String, output: String)] = []
+            for call in calls {
+                try Task.checkCancellation()
+                guard epoch == expectedEpoch else { throw CancellationError() }
+                setStatus("正在读取手机数据…")
+                let output = await deviceTools.execute(call)
+                deviceTools.onCall?(call, output)
+                try Task.checkCancellation()
+                guard epoch == expectedEpoch else { throw CancellationError() }
+                results.append((call.callID, output))
+            }
+            priorSources += stream.sources
+            searchedEarlier = searchedEarlier || stream.searched
+            body["input"] = DeviceToolLoop.followUpInput(previous: (body["input"] as? [Any]) ?? [], output: stream.outputItems, results: results)
+        }
+        throw MeloError.message("手机数据操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
     }
+    /// Hands parser progress to the main actor at most every 150 ms (and always for the first text and the end).
+    final class StreamUpdates: @unchecked Sendable {
+        let onObservation: ((ExecutionObservation) -> Void)?
+        let onReceiving: (() -> Void)?
+        let setStatus: (String) -> Void
+        init(onObservation: ((ExecutionObservation) -> Void)?, onReceiving: (() -> Void)?, setStatus: @escaping (String) -> Void) {
+            self.onObservation = onObservation; self.onReceiving = onReceiving; self.setStatus = setStatus
+        }
+    }
+    nonisolated static func readStream(_ bytes: URLSession.AsyncBytes, maxBytes: Int, acceptImageCompletion: Bool, requestStarted: TimeInterval, updates: StreamUpdates) async throws -> ChatGPTStream {
+        var parser = ChatGPTSSE(maxBytes: maxBytes, acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted)
+        var revision = -1, receivedText = false, status = "正在思考…", lastSent = Date.distantPast
+        func publish(force: Bool) async {
+            let now = Date()
+            guard force || now.timeIntervalSince(lastSent) >= 0.15 else { return }
+            lastSent = now
+            let observation = parser.stream.observation
+            let changed = observation.revision != revision
+            revision = observation.revision
+            let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
+            let statusChanged = nextStatus != status
+            status = nextStatus
+            guard changed || statusChanged else { return }
+            await MainActor.run {
+                if changed { updates.onObservation?(observation) }
+                if statusChanged { updates.setStatus(nextStatus) }
+            }
+        }
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            do { try parser.accept(byte) }
+            catch { let observation = parser.stream.observation; await MainActor.run { updates.onObservation?(observation) }; throw error }
+            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; await MainActor.run { updates.onReceiving?() } }
+            if parser.stream.completed { await publish(force: true); return parser.stream }
+            if byte == 10 { await publish(force: false) }
+        }
+        // Reaching here means no completion event: finish() reports truncation.
+        _ = try parser.finish()
+        await publish(force: true)
+        return parser.stream
+    }
+
 }

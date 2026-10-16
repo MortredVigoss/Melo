@@ -23,6 +23,44 @@ import CoreGraphics
         let data=try ImageLibrary.encoded(context.makeImage()!)
         let library=ImageLibrary(directory:root)
         let original=try library.store(data,title:"fixture")
+        let uploaded = ImageTaskPlan(references:[ImageReference(id:original.id)])
+        let fixtures = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "ios/Tests/Fixtures/image-natural-intent.json"))) as! [[String:Any]]
+        for fixture in fixtures {
+            let prompt = fixture["prompt"] as! String
+            let attached = fixture["hasImage"] as! Bool
+            let automatic = ImageTaskPlan(references: attached ? uploaded.references : [])
+            let route = try automatic.resolved(prompt: prompt, previousImages: [])
+            try check(route.action.rawValue == fixture["action"] as! String, "Natural request misrouted: \(prompt)")
+            let request = ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:attached ? try library.inputs(route.references) : [],task:route,model:"fixture",instructions:"")
+            try check((request["tools"] != nil) == route.makesImage, "First turn must include the required image tool")
+        }
+        for prompt in ["帮我把转盘掉漆的处理干净，背景墙换成黑色木纹，压低一点曝光", "改一下背景墙，其他保持不变", "换背景", "把后面的墙换一下", "把墙改白", "把背景墙刷成奶油色", "给背景墙加上木饰面", "把背景墙颜色调浅一点", "make the background wall white", "retouch the background"] {
+            let routed = try uploaded.resolved(prompt:prompt,previousImages:[])
+            try check(routed.action == .edit, "Uploaded image edit misrouted to analysis: \(prompt)")
+            let request = ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:try library.inputs(routed.references),task:routed,model:"account-model",instructions:"")
+            try check((request["tools"] as? [[String:String]])?.first?["action"] == "edit")
+            try check((request["tool_choice"] as? [String:String])?["type"] == "image_generation")
+            let blocks=(request["input"] as! [[String:Any]])[0]["content"] as! [[String:Any]]
+            try check(blocks.last?["image_url"] as? String == "data:"+original.mimeType+";base64,"+(try library.data(original)).base64EncodedString(), "Edit request must carry the stored input bytes")
+        }
+        for prompt in ["不要换背景，只分析", "别改这张图，只讲怎么改", "换背景的教程是什么", "请写一段换背景的提示词", "这张图不用改，只分析一下背景墙", "他说“改一下背景墙”是什么意思", "不要改背景墙的颜色", "Do not change the background", "How can I change the wall color?", "这张图的背景墙有什么问题"] {
+            let routed = try uploaded.resolved(prompt:prompt,previousImages:[])
+            try check(!routed.makesImage, "Discussion or prohibition must not generate: \(prompt)")
+            let request=ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:try library.inputs(routed.references),task:routed,model:"account-model",instructions:"")
+            try check(request["tools"] == nil && request["tool_choice"] == nil)
+        }
+        try check(try uploaded.resolved(prompt:"不要修改人物的脸，只改一下背景墙",previousImages:[]).action == .edit)
+        try check(try ImageTaskPlan(action:.analyze,references:uploaded.references).resolved(prompt:"改一下背景墙",previousImages:[]).action == .analyze)
+        for action in [ImageAction.edit, .generate] {
+            try ImageTaskPlan(action:action).validateRoute(useChatGPT:true,apiProtocol:"responses")
+            do { try ImageTaskPlan(action:action).validateRoute(useChatGPT:false,apiProtocol:"anthropic"); fatalError("Anthropic image tool admitted") } catch {}
+            try ImageTaskPlan(action:action).validateRoute(useChatGPT:false,apiProtocol:"chat-completions")
+        }
+        try ImageTaskPlan(action:.analyze).validateRoute(useChatGPT:true,apiProtocol:"responses")
+        let legacy = Data(#"{"action":"edit","references":[],"model":"gpt-image-2","size":"auto","quality":"auto"}"#.utf8)
+        try check(try JSONDecoder().decode(ImageTaskPlan.self,from:legacy).connectionID == nil)
+        let selected = ImageTaskPlan(action:.edit,references:uploaded.references,connectionID:"image-api-fixture")
+        try check(try JSONDecoder().decode(ImageTaskPlan.self,from:JSONEncoder().encode(selected)) == selected)
         let plan=try ImageTaskPlan(action:.edit,references:[ImageReference(id:original.id,role:"subject")]).resolved(prompt:"把橙色改成蓝色，其余不变",previousImages:[])
         try library.bind([original],to:"question",request:plan)
         let restored=ImageLibrary(directory:root)
@@ -104,9 +142,22 @@ import CoreGraphics
         ImageHTTPFixture.payload=try JSONSerialization.data(withJSONObject:["model":"image-provider-model","data":[["b64_json":encoded]]])
         let generated=try await ImageNetwork.reply(prompt:"Generate an image",task:ImageTaskPlan(action:.generate),inputs:[],endpoint:"https://fixture.invalid/v1/chat/completions",token:"fixture-key",session:session)
         try check(generated.images.count==1 && generated.images[0].reportedModel=="image-provider-model")
+        ImageHTTPFixture.expectedPath="/v1/images/edits"
+        ImageHTTPFixture.expectedInput=inputs[0].data
+        let edited=try await ImageNetwork.reply(prompt:"背景墙换成黑色木纹，压低一点曝光",task:plan,inputs:inputs,endpoint:"https://fixture.invalid/v1/chat/completions",token:"fixture-key",session:session)
+        try check(edited.images.first?.data == data && ImageHTTPFixture.calls==2)
+        ImageHTTPFixture.expectedPath="/v1/images/generations"; ImageHTTPFixture.expectedInput=nil
         ImageHTTPFixture.status=403
         do{_=try await ImageNetwork.reply(prompt:"Generate",task:ImageTaskPlan(action:.generate),inputs:[],endpoint:"https://fixture.invalid/v1/chat/completions",token:"fixture-key",session:session);fatalError("Unauthorized image response accepted")}catch{}
-        try check(ImageHTTPFixture.calls==2,"A failed image request must not silently retry")
+        try check(ImageHTTPFixture.calls==3,"A failed image request must not silently retry")
+        ImageHTTPFixture.status=400
+        ImageHTTPFixture.payload=Data(#"{"error":{"code":"unsupported_tool","param":"tools[0].type","message":"private prompt and sk-fixture-secret"}}"#.utf8)
+        do { _=try await ImageNetwork.reply(prompt:"Generate",task:ImageTaskPlan(action:.generate),inputs:[],endpoint:"https://fixture.invalid/v1",token:"fixture-key",session:session);fatalError("HTTP 400 accepted") }
+        catch { try check(error.localizedDescription.contains("unsupported_tool") && !error.localizedDescription.contains("private prompt") && !error.localizedDescription.contains("sk-fixture")) }
+        try check(ImageHTTPFixture.calls==4,"Rejection must not cause an automatic retry")
+        var failedStream=ChatGPTStream()
+        do { try failedStream.accept(#"{"type":"response.failed","response":{"error":{"code":"unsupported_tool","param":"tools[0].type"}}}"#); fatalError("failed stream accepted") }
+        catch { try check(error.localizedDescription.contains("unsupported_tool")) }
         // A damaged image index must not disable ordinary text chat.
         try Data("broken".utf8).write(to:root.appendingPathComponent("index.json"))
         let broken=ImageLibrary(directory:root);try check(!broken.ready && (try broken.inputs([])).isEmpty)
@@ -126,12 +177,23 @@ final class ImageHTTPFixture: URLProtocol {
     static var payload=Data()
     static var status=200
     static var calls=0
+    static var expectedPath="/v1/images/generations"
+    static var expectedInput: Data?
     override class func canInit(with request: URLRequest)->Bool{true}
     override class func canonicalRequest(for request: URLRequest)->URLRequest{request}
     override func startLoading(){
         Self.calls += 1
-        assert(request.url?.path=="/v1/images/generations" && request.httpMethod=="POST")
+        assert(request.url?.path==Self.expectedPath && request.httpMethod=="POST")
         assert(request.value(forHTTPHeaderField:"Authorization")=="Bearer fixture-key")
+        if let input=Self.expectedInput {
+            var body=request.httpBody ?? Data()
+            if let stream=request.httpBodyStream {
+                stream.open();defer{stream.close()};var buffer=[UInt8](repeating:0,count:8192)
+                while stream.hasBytesAvailable { let count=stream.read(&buffer,maxLength:buffer.count);if count<=0{break};body.append(contentsOf:buffer.prefix(count)) }
+            }
+            assert(request.value(forHTTPHeaderField:"Content-Type")?.contains("multipart/form-data")==true)
+            assert(body.range(of:input) != nil && String(decoding:body,as:UTF8.self).contains("gpt-image-2"))
+        }
         let response=HTTPURLResponse(url:request.url!,statusCode:Self.status,httpVersion:"HTTP/1.1",headerFields:["Content-Type":"application/json"])!
         client?.urlProtocol(self,didReceive:response,cacheStoragePolicy:.notAllowed)
         client?.urlProtocol(self,didLoad:Self.payload);client?.urlProtocolDidFinishLoading(self)

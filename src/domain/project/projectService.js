@@ -21,6 +21,15 @@
 import { randomUUID } from 'node:crypto';
 import { coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
 
+const AGENT_ID = /^[A-Za-z0-9_-]{1,100}$/;
+const PROJECT_TEAM_TEMPLATES = new Set(['research-build-review', 'parallel-research', 'review-loop']);
+// Shape only; membership and authorization are checked when saving and again when running.
+export function normalizeProjectTeamPlan(plan) {
+  if (!plan || typeof plan !== 'object' || !PROJECT_TEAM_TEMPLATES.has(plan.templateId)) return null;
+  const members = Array.isArray(plan.members) ? [...new Set(plan.members.filter(id => typeof id === 'string' && AGENT_ID.test(id)))].slice(0, 8) : [];
+  return members.length ? { templateId: plan.templateId, members } : null;
+}
+
 /**
  * Canonicalize a raw project record.
  *
@@ -35,18 +44,24 @@ import { coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
  *   "one day ago" so new blobs sort below existing projects.
  */
 export function normalizeProject(project, deps) {
-  const { sanitizeWorkspacePath, fallbackWorkspaceRoot, defaultProjectTime } = deps;
+  const { sanitizeWorkspacePath, defaultProjectTime } = deps;
   return {
     id: project?.id || randomUUID(),
     name: project?.name || 'Untitled project',
     archived: project?.archived === true,
     knowledgeIds: Array.isArray(project?.knowledgeIds) ? [...new Set(project.knowledgeIds.filter(id=>typeof id==='string'))] : [],
-    summary: typeof project?.summary === 'string' ? project.summary : 'A local Melo project.',
+    summary: typeof project?.summary === 'string' ? project.summary : '',
     tag: project?.tag || 'Project',
     instructions:
       typeof project?.instructions === 'string' ? project.instructions :
-      'Keep this project focused, actionable, and easy to continue later.',
-    workspacePath: sanitizeWorkspacePath(project?.workspacePath || fallbackWorkspaceRoot),
+      '',
+    workspacePath: project?.workspacePath ? sanitizeWorkspacePath(project.workspacePath) : '',
+    // Desktop-only defaults; not part of the sync payload.
+    defaultAgentId: typeof project?.defaultAgentId === 'string' && AGENT_ID.test(project.defaultAgentId) ? project.defaultAgentId : '',
+    teamPlan: normalizeProjectTeamPlan(project?.teamPlan),
+    ...(project?.deleted === true ? {deleted:true} : {}),
+    ...(project?.deletedAt ? {deletedAt:project.deletedAt} : {}),
+    ...(project?.workspaceConfirmation?.path ? {workspaceConfirmation:{...project.workspaceConfirmation}} : {}),
     createdAt: coerceIso(project?.createdAt, defaultProjectTime),
     updatedAt: coerceIso(project?.updatedAt, defaultProjectTime),
   };
@@ -71,8 +86,13 @@ export function summarizeProject(project, chats, artifacts) {
 
   return {
     ...project,
+    summary: projectText(project.summary),
+    instructions: projectText(project.instructions),
     updatedLabel: formatUpdatedAt(latestActivity),
     chatCount: relatedChats.length,
     artifactCount: relatedArtifacts.length,
   };
 }
+
+const LEGACY_PROJECT_TEXT=new Set(['归拢相关对话、资料与目标。','A local Melo project.','Keep this project focused, actionable, and easy to continue later.']);
+export const projectText=value=>typeof value==='string' && !LEGACY_PROJECT_TEXT.has(value)?value:'';

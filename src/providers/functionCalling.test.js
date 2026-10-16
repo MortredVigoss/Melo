@@ -11,8 +11,8 @@ import { createFunctionCallingSession } from '../tools/functionCalling.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { runWithRequestContext } from '../runtime/requestScope.js';
 import { registerTool, unregisterTool } from '../tools/registryCore.js';
-import { runSubAgent } from '../agents/subAgent.js';
-import { runSkill } from '../agents/skillExecutor.js';
+import {runSubAgent} from '../testSupport/directAgentFixture.js';
+import {runSkill} from '../testSupport/directAgentFixture.js';
 
 const fn = { type: 'function', name: 'lookup', description: 'Read a fixture', strict: true,
   parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false } };

@@ -128,7 +128,7 @@ function resolveOutputPath(outputArg, workspacePath) {
   if (!outputArg) return null;
   if (isAbsolute(outputArg)) return outputArg;
   if (workspacePath) return resolve(workspacePath, outputArg);
-  return resolve(outputArg);
+  return null;
 }
 
 // Honour the selected image service. Failed calls never switch billing accounts.
@@ -245,6 +245,8 @@ export const imageTool = {
       return { ok: false, output: 'Missing required: action.', error: 'INVALID_PARAMS' };
     }
 
+    if (output && !isAbsolute(output) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+
     // ── generate (no input file required) ─────────────────────────────────
     if (action === 'generate') {
       const prompt = String(args?.prompt || '').trim();
@@ -341,6 +343,7 @@ export const imageTool = {
               const result = await generateAndSaveImageViaCodex({
                 prompt,
                 model: imageSettings(config).codexModel,
+                quality: imageSettings(config).quality,
                 outputPath: outPath,
                 signal,
               });
@@ -349,7 +352,7 @@ export const imageTool = {
                 ok: true,
                 output:
                   `Generated image: ${url}\n` +
-                  `(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.mimeType}, engine=codex-oauth, model=${result.model})`,
+                  `(saved to ${result.path}, ${(result.bytes / 1024).toFixed(1)} KB, ${result.mimeType}, engine=codex-oauth, model=${result.model})\nRequested quality: ${result.requestedQuality}; reported quality: ${result.reportedQuality || 'not reported'}`,
                 meta: {
                   path: result.path,
                   url,
@@ -358,6 +361,7 @@ export const imageTool = {
                   prompt,
                   engine: 'codex-oauth',
                   model: result.model, reportedModel: result.reportedModel,
+                  requestedQuality: result.requestedQuality, reportedQuality: result.reportedQuality,
                 },
               };
             } catch (e) {
@@ -482,7 +486,8 @@ export const imageTool = {
     if (!inputPath) {
       return { ok: false, output: 'Missing required: path.', error: 'INVALID_PARAMS' };
     }
-    const absPath = resolve(inputPath);
+    if (!isAbsolute(inputPath) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+    const absPath = isAbsolute(inputPath) ? inputPath : resolve(workspacePath, inputPath);
 
     // Gate the input image read once. atomicOpenLeaf+S_ISREG+size
     // cap all happen inside gatedReadIntoBuffer; the Buffer is what

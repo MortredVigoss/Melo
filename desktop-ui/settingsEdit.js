@@ -1,3 +1,4 @@
+import { t, ui } from './i18n.js';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const pendingEdits = new Set();
@@ -26,9 +27,9 @@ export class EditSession {
 
 export function renderEditActions(session, {prefix='settings', key='', submit=false, disabled=false, saveDisabled=false}={}) {
   const s = session.status, editing = session.editing || s === 'saving';
-  const message = s === 'saved' ? '✓ 已保存' : s === 'saving' ? '正在保存，请稍候…' : s === 'error' ? `${session.appliedLabels?.length ? '部分已保存，剩余保存失败' : '保存失败'}：${session.error}` : session.dirty ? '有未保存的修改' : editing ? '编辑中 · 修改后点击保存' : '只读 · 点击编辑后修改';
+  const message = s === 'saved' ? t("✓ 已保存") : s === 'saving' ? t("正在保存，请稍候…") : s === 'error' ? `${session.appliedLabels?.length ? t("部分已保存，剩余保存失败") : t("保存失败")}：${session.error}` : session.dirty ? t("有未保存的修改") : editing ? t("编辑中 · 修改后点击保存") : t("只读 · 点击编辑后修改");
   const common = `data-edit-key="${escape(key)}"`;
-  return `<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escape(message)}</span><div class="inline-actions">${editing ? `<button type="${submit?'submit':'button'}" class="small-button settings-save-button" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?'保存中…':s==='error'?'重试保存':'保存修改'}</button><button type="button" class="small-button" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? '放弃未保存部分' : '取消'}</button>` : `<button type="button" class="small-button settings-edit-button" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
+  return ui`<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escape(message)}</span><div class="inline-actions">${editing ? ui`<button type="${submit?'submit':'button'}" class="small-button settings-save-button" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?t("保存中…"):s==='error'?t("重试保存"):t("保存修改")}</button><button type="button" class="small-button" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? t("放弃未保存部分") : t("取消")}</button>` : ui`<button type="button" class="small-button settings-edit-button" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
 }
 
 // Keep the save button mounted while a field's blur/change event fires.
@@ -51,8 +52,8 @@ export function paintEditActions(bar, session, options={}) {
 export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsDraft=()=>false}) {
   const sessions = new Map();
   const drafts = new Map();
-  const selector = ['agent-profile-update','connector-config','model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
-  const savedActions = new Set(['test-agent-channel']);
+  const selector = ['agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
+  const savedActions = new Set(['test-agent-channel','confirm-agent-settings']);
   const safeActions = new Set(['select-agent-editor-tab','switch-agent-channel-tab','toggle-agent-secret']);
   const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || ''}:${scope(form)}`;
   const get = key => { if(!sessions.has(key)) sessions.set(key,new EditSession()); return sessions.get(key); };
@@ -106,7 +107,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
       if(action==='form-settings-edit' || action==='form-settings-cancel') {
         event.preventDefault(); event.stopImmediatePropagation();
         if(get(key).status==='saving') return;
-        if(action.endsWith('-edit')) get(key).begin(); else {get(key).cancel();drafts.delete(key);const form=button.closest('form');onCancel(form);form.remove();}
+        if(action.endsWith('-edit')) get(key).begin(); else {get(key).cancel();drafts.delete(key);const form=button.closest('form');onCancel(form);form.reset();}
         render(); return;
       }
       const form=button.closest(selector);
@@ -114,6 +115,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
     },true);
   }
   return {decorate,install,
+    begin(form) { get(keyFor(form)).begin(); },
     editToken(form) { const session=get(keyFor(form)), revision=session.revision; return ()=>session.editing && session.revision===revision; },
     start(form) { if(!form.matches(selector)) return null; const key=keyFor(form); return get(key).start()?key:false; },
     finish(key,error) { if(!key) return; if(error)get(key).failed(error);else{get(key).saved();drafts.delete(key);} render(); },

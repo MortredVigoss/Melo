@@ -32,8 +32,7 @@ import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, 
 import { randomUUID } from 'node:crypto';
 import { scheduleChatTurn } from './turnScheduler.js';
 import { schedulePostTurnTask } from '../../runtime/postTurnTasks.js';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { getMeloHome, getResolvedConfig } from '../../config.js';
 import {
   loadState,
@@ -81,14 +80,6 @@ import {
   normalizeMessageAttachments,
 } from '../../shared/helpers.js';
 
-// APP_ROOT — original desktopStore.js: `dirname(dirname(fileURLToPath(import.meta.url)))`.
-// This module sits two levels deeper at `src/services/chat/`, so the formula
-// needs two extra `dirname()` calls to resolve to the same project-root
-// directory. Used by the remote-background workspace fallback below (the
-// `if (shouldUseBackgroundWorkspace)` branch synthesizes an empty workspace
-// rooted at APP_ROOT). Same precedent as workspaceSnapshot.js / connectorRollup.js.
-const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
-
 function extractUrlAttachmentsFromText(content = '') {
   return normalizeMessageAttachments(promoteTextUrlsToAttachments(content, []));
 }
@@ -125,12 +116,13 @@ export function sendChatMessage(options) {
       const emit = (event, data) => options.sseEmitter?.(event, { ...identity, ...data });
       const executionRecorder = createExecutionRecorder(context, options.content, emit);
       try {
-        const result = await executeChatTurn({ ...options, home: context.home, context: Object.freeze({ ...context, turnBinding }), configPromise, executionRecorder,
+        const turnContext=Object.freeze({ ...context, turnBinding, capabilityScope:turnBinding.capabilityScope });
+        const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
             if (event === 'execution_event') executionRecorder.event(data);
             emit(event, data);
           },
-        });
+        }));
         return { ...result, requestId: context.requestId, runId: context.runId };
       } catch (error) {
         const status = context.signal?.aborted ? 'cancelled' : 'failed';
@@ -153,6 +145,7 @@ async function executeChatTurn({
   mode,
   attachments = [],
   imageTask = null,
+  teamPlan = null,
   extractedMedia = [],
   signal,
   onDelta,
@@ -202,7 +195,7 @@ async function executeChatTurn({
   const shouldUseBackgroundWorkspace = background && Boolean(channelContext?.channelId);
   const workspace = shouldUseBackgroundWorkspace
     ? {
-        rootPath: APP_ROOT,
+        rootPath: null,
         exists: false,
         entries: [],
         filePaths: [],
@@ -212,7 +205,7 @@ async function executeChatTurn({
         commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
         commandRuns: [],
       }
-    : await buildWorkspaceSnapshot(state, activeProject);
+    : await buildWorkspaceSnapshot(state, activeProject,{chat,home:context.home});
   const activeAgentProfile = effectiveAgentProfile(
     state,
     effectiveAgentId,
@@ -321,6 +314,7 @@ async function executeChatTurn({
       skills,
       latestUserMessage: trimmed,
       imageTask,
+      teamPlan,
       onImageTaskResolved: task => persistResolvedImageTask(context, task),
       onImageProgress: async progress => {
         partialImageMessage = await persistImageProgress(context, progress, {id:effectiveAgentId,name:activeAgentProfile.name});

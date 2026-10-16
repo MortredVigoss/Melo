@@ -1,3 +1,6 @@
+import {creationProjectId} from '../../domain/project/projectMembership.js';
+import {effectiveAgentProfile} from '../../state/agentProfiles.js';
+import {hasCapability} from '../../domain/agent/capabilities.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Approval mutation handlers — sub-phase 7d-5ε commit 3 of the
@@ -39,14 +42,16 @@ export async function createApproval({
 }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createApproval(...arguments));
   await updateStateAtomically(state => {
+    const inheritedProjectId=creationProjectId(state,{projectId,chatId,operation:'approval'});
+    const boundPayload=['command','file-save','artifact-apply'].includes(kind) ? {...payload,projectId:inheritedProjectId,chatId:chatId || null} : payload;
     const approval = normalizeApproval({
       id: randomUUID(),
       kind,
       title: String(title || '').trim() || 'Pending approval',
       description: String(description || '').trim(),
-      payload,
-      projectId: projectId || state.settings.selectedProjectId,
-      chatId: chatId || state.settings.selectedChatId,
+      payload: boundPayload,
+      projectId: inheritedProjectId,
+      chatId: chatId || null,
       status: 'pending',
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -88,6 +93,14 @@ export async function executeApproval(approvalId) {
     if (approval.status === 'approved') { replayed = true; return; }
     if (approval.status !== 'pending') {
       throw Object.assign(new Error('Approval is no longer pending.'), { code: 'APPROVAL_NOT_PENDING', statusCode: 409 });
+    }
+    const chat=latestState.chats.find(c=>c.id===approval.chatId);
+    if(approval.chatId && !chat) throw Object.assign(new Error('对话已删除，不能执行此审批。'),{code:'CHAT_NOT_FOUND',statusCode:409});
+    if(chat && (chat.projectId || null)!==(approval.projectId || null)) throw Object.assign(new Error('对话项目已变化，请重新发起审批。'),{code:'WORKSPACE_CHANGED',statusCode:409});
+    if (chat) {
+      const profile=effectiveAgentProfile(latestState,chat.agentId || 'main',chat.projectId), caps=profile.capabilities;
+      const required=approval.kind==='command'?'runCommands':['file-save','artifact-apply'].includes(approval.kind)?'writeFiles':null;
+      if ((required&&!hasCapability(caps,required)) || (approval.kind==='external-tool'&&caps&&!caps.connectors.includes(approval.payload.connectorId))) throw Object.assign(new Error('Agent capability no longer permits this action.'),{code:'CAPABILITY_DENIED',statusCode:403});
     }
     approval.status = 'running';
     approval.updatedAt = nowIso();

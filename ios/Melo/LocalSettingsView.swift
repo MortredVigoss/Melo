@@ -29,15 +29,29 @@ struct LocalProfileSettings: View {
                 AvatarPicker(agent: Binding(get: { AgentProfile(name: value.wrappedValue.name, subtitle: "", symbol: "person.crop.circle", instructions: "", avatarData: value.wrappedValue.avatar) }, set: { value.wrappedValue.avatar = $0.avatarData }))
                 TextField("你的昵称", text: value.name).textContentType(.nickname).meloInput()
             } else { HStack { LocalProfileBadge(size: 56); Text(value.wrappedValue.name).font(.title3) } }
-            Text("头像与昵称保存在此 iPhone，与你的角色独立。无需 Melo 账号。").font(.caption).foregroundStyle(.secondary)
+            Text("头像与昵称保存在此 iPhone，与你的Agent独立。无需 Melo 账号。").font(.caption).foregroundStyle(.secondary)
         }.meloPanel()
     }
 }
 struct GeneralSettingsValue: Equatable, Codable {
+    var interfaceLanguage = "zh-CN"
     var textSize = "system"
     var reduceMotion = false
     var notifications = false
-    static func read() -> Self { .init(textSize: UserDefaults.standard.string(forKey: "melo.textSize") ?? "system", reduceMotion: UserDefaults.standard.bool(forKey: "melo.reduceMotion"), notifications: UserDefaults.standard.bool(forKey: "melo.notifications")) }
+    init(interfaceLanguage: String = "zh-CN", textSize: String = "system", reduceMotion: Bool = false, notifications: Bool = false) {
+        self.interfaceLanguage = interfaceLanguage; self.textSize = textSize
+        self.reduceMotion = reduceMotion; self.notifications = notifications
+    }
+    enum CodingKeys: String, CodingKey { case interfaceLanguage, textSize, reduceMotion, notifications }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // Existing saved edit drafts predate the interface language preference.
+        interfaceLanguage = InterfaceLanguage.resolve(try values.decodeIfPresent(String.self, forKey: .interfaceLanguage)).rawValue
+        textSize = try values.decodeIfPresent(String.self, forKey: .textSize) ?? "system"
+        reduceMotion = try values.decodeIfPresent(Bool.self, forKey: .reduceMotion) ?? false
+        notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? false
+    }
+    static func read() -> Self { .init(interfaceLanguage: InterfaceLanguage.resolve(UserDefaults.standard.string(forKey: "melo.interfaceLanguage")).rawValue, textSize: UserDefaults.standard.string(forKey: "melo.textSize") ?? "system", reduceMotion: UserDefaults.standard.bool(forKey: "melo.reduceMotion"), notifications: UserDefaults.standard.bool(forKey: "melo.notifications")) }
 }
 struct LocalGeneralSettings: View {
     var body: some View {
@@ -47,11 +61,14 @@ struct LocalGeneralSettings: View {
                     let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                     guard allowed else { throw MeloError.message("系统未允许通知，其他修改尚未保存。可关闭通知选项后保存，或到系统设置开启权限。") }
                 }
+                UserDefaults.standard.set(value.interfaceLanguage, forKey: "melo.interfaceLanguage")
                 UserDefaults.standard.set(value.textSize, forKey: "melo.textSize")
                 UserDefaults.standard.set(value.reduceMotion, forKey: "melo.reduceMotion")
                 UserDefaults.standard.set(value.notifications, forKey: "melo.notifications")
                 return value
             }) { value, _ in
+                Picker("界面语言", selection: value.interfaceLanguage) { ForEach(InterfaceLanguage.allCases) { language in Text(verbatim: language.name).tag(language.rawValue) } }
+                Text("仅改变界面文字，聊天内容与模型回复语言不受影响。").font(.caption).foregroundStyle(.secondary)
                 Picker("文字大小", selection: value.textSize) { Text("跟随系统").tag("system"); Text("大").tag("large"); Text("更大").tag("larger") }
                 Toggle("减少动态效果", isOn: value.reduceMotion)
                 Toggle("后台回复完成通知", isOn: value.notifications)
@@ -119,13 +136,13 @@ struct LocalDataSettings: View {
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 14) {
-                Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个角色").font(.subheadline)
-                Text("可导出对话、角色、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
-                Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.sendingID != nil || store.syncing)
-                Button("导入资料文件") { importing = true }.disabled(store.sendingID != nil || store.syncing)
+                Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent").font(.subheadline)
+                Text("可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
+                Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
+                Button("导入资料文件") { importing = true }.disabled(store.anySending || store.syncing)
                 if let value = pending {
                     Text("将合并 \(value.snapshot.chats.count) 段对话，保留当前资料与模型连接。").font(.caption)
-                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "资料已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.sendingID != nil || store.syncing)
+                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "资料已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
                     Button("取消") { pending = nil }
                 }
                 Button("清理网页临时缓存") { Task { await LocalDeviceServices.clearWebCache(); status = "网页临时缓存已清理，聊天与登录凭据保留。" } }

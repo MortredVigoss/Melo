@@ -121,7 +121,7 @@ test('buildOutputHardConstraints: remote channel adds the length cap + repeat su
 // summarizeAgentPrompt
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('summarizeAgentPrompt: includes role + identity + soul + mood', () => {
+test('summarizeAgentPrompt: includes role + identity + soul without legacy mood', () => {
   const profile = {
     rolePrompt: 'You are a coding assistant.',
     identity: 'I am Aida.',
@@ -134,7 +134,10 @@ test('summarizeAgentPrompt: includes role + identity + soul + mood', () => {
   assert.match(out, /You are a coding assistant\./);
   assert.match(out, /IDENTITY\.md:\nI am Aida\./);
   assert.match(out, /SOUL\.md:\nStay calm\./);
-  assert.match(out, /Current mood/);
+  assert.doesNotMatch(out, /Current mood/);
+  for (const mood of ['calm','warm','sharp','focused','cold','playful','intense']) {
+    assert.equal(summarizeAgentPrompt({...profile,mood}),out);
+  }
 });
 
 test('summarizeAgentPrompt: falls back to `identify` when `identity` is missing', () => {
@@ -150,7 +153,7 @@ test('summarizeAgentPrompt: falls back to `identify` when `identity` is missing'
   assert.match(out, /IDENTITY\.md:\nfallback identity/);
 });
 
-test('summarizeAgentPrompt: surfaces enabled telegram channel with chatId', () => {
+test('summarizeAgentPrompt: archived Telegram is absent even with a saved enabled flag', () => {
   const profile = {
     rolePrompt: 'r',
     identity: 'i',
@@ -163,7 +166,7 @@ test('summarizeAgentPrompt: surfaces enabled telegram channel with chatId', () =
     },
   };
   const out = summarizeAgentPrompt(profile);
-  assert.match(out, /Linked channels: Telegram\(bot linked, default chat CHAT123\)/);
+  assert.doesNotMatch(out, /Linked channels:|CHAT123/);
 });
 
 test('summarizeAgentPrompt: omits channels line when no channel is enabled', () => {

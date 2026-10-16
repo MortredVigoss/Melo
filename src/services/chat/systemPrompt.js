@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 // System-prompt assembly — extracted from desktopStore in Phase 7d-2.
 //
 // The original extraction preserved behavior; prompt-policy changes now have
@@ -24,9 +25,6 @@ import { buildReActOperatingInstructions } from '../../prompts.js';
 import { DEFAULT_CONFIG } from '../../config.js';
 import { renderPromptSections } from './contextBudget.js';
 import {
-  moodOptionById,
-} from '../../domain/agent/agentLibrary.js';
-import {
   summarizeAgentTools,
 } from '../../domain/agent/agentTools.js';
 import {
@@ -34,12 +32,11 @@ import {
 } from '../../domain/agent/agentChannels.js';
 
 export function summarizeAgentPrompt(profile) {
-  const mood = moodOptionById(profile.mood);
   const toolSummary = summarizeAgentTools(profile.tools)
     .map(tool => tool.label)
     .join(', ');
   const channelSummary = Object.values(normalizeAgentChannels(profile.channels))
-    .filter(channel => channel.enabled)
+    .filter(channel => channel.enabled && isAgentChannelAvailable(channel.id))
     .map(channel =>
       channel.id === 'telegram'
         ? `Telegram(bot linked${channel.chatId ? `, default chat ${channel.chatId}` : ''})`
@@ -48,14 +45,15 @@ export function summarizeAgentPrompt(profile) {
     .join(', ');
   return [
     `User-selected role: ${profile.name || "Melo"}\nRole purpose: ${profile.description || ""}`,
-    "Apply this role on every turn. User-defined response requirements take precedence over default mood and generic persona text; current user instructions and permission boundaries remain controlling.",
-    profile.rolePrompt,
-    `IDENTITY.md:\n${profile.identity || profile.identify}`,
-    `SOUL.md:\n${profile.soulMd}`,
-    profile.systemPrompt ? `Agent system prompt:\n${profile.systemPrompt}` : '',
+    "Apply this role on every turn. User-defined response requirements take precedence over generic persona text; current user instructions and permission boundaries remain controlling.",
+    ...(typeof profile.instructions === 'string' ? [profile.instructions] : [
+      profile.rolePrompt,
+      `IDENTITY.md:\n${profile.identity || profile.identify}`,
+      `SOUL.md:\n${profile.soulMd}`,
+      profile.systemPrompt ? `Agent system prompt:\n${profile.systemPrompt}` : '',
+    ]),
     toolSummary ? `Enabled agent tools: ${toolSummary}` : '',
     channelSummary ? `Linked channels: ${channelSummary}` : '',
-    `Current mood (${mood.label}): ${mood.prompt}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -86,7 +84,7 @@ export function buildOutputHardConstraints({ isRemoteChannel = false } = {}) {
   return [
     'Final output hard constraints:',
     '- Safety, file-access approval and tool permission boundaries always apply; style requests never override them.',
-    '- Follow the user\'s explicit language, translation, format and length requests for this turn. Persona, mood and normal-chat style are defaults, not conflicting commands.',
+    '- Follow the user\'s explicit language, translation, format and length requests for this turn. Persona and normal-chat style are defaults, not conflicting commands.',
     '- For exact excerpts or fixed-count output, return only the requested unit: "first sentence" means one complete source sentence, not the first paragraph. Preserve the source wording and do not add surrounding sentences.',
     '- Without an explicit format request, prefer concise natural prose; use code, tables or lists when they improve clarity.',
     '- Never present a tool attempt as a successful read. Titles, tags, previews and failed requests do not establish the contents of a page, image or video.',

@@ -1,3 +1,5 @@
+import {chatWorkspaceStatus} from './chatWorkspaceFiles.js';
+import {projectWorkspaceStatus} from './workspacePolicy.js';
 // Workspace snapshot builder — sub-phase 7d-5δ commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -9,25 +11,9 @@
 //   • the desktop bootstrap loader
 //   • the workspace UI tabs (server.js routes)
 //
-// Mechanical adaptation (same pattern as Phase 7d-5α-A1 commit 7's
-// stateHydration.js): this module lives at `src/services/workspace/`
-// (3 levels deep), so APP_ROOT — computed from `import.meta.url` — needs
-// FOUR `dirname()` calls to resolve to the same project-root directory
-// that desktopStore (1 level deep) gets with two. Output is identical;
-// only the formula differs by file depth.
-//
-// `sanitizeWorkspacePath` is the local 1-arg wrapper that binds
-// APP_ROOT to the 2-arg `sanitizeWorkspacePathRaw` from workspaceFiles —
-// kept byte-identical to the desktopStore version for the same reason
-// stateHydration kept its own copy: the wrapper IS the byte-for-byte
-// surface that the function expects to call.
-
 import { stat } from 'node:fs/promises';
 import { cachedWorkspaceTree } from './workspaceTreeCache.js';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
-  sanitizeWorkspacePath as sanitizeWorkspacePathRaw,
   readWorkspaceFile,
   listWorkspaceEntries,
 } from './workspaceFiles.js';
@@ -36,20 +22,10 @@ import {
   commandTemplateDescriptor,
 } from '../command/commandTemplates.js';
 
-// APP_ROOT — original desktopStore.js: `dirname(dirname(fileURLToPath(import.meta.url)))`.
-// This module lives two levels deeper than desktopStore (`src/services/workspace/`),
-// so we need two extra `dirname()` calls for the resolved path to be identical.
-// The output is the same project-root directory; only the formula differs.
-const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
-
-function sanitizeWorkspacePath(rawPath) {
-  return sanitizeWorkspacePathRaw(rawPath, APP_ROOT);
-}
-
-export async function buildWorkspaceSnapshot(state, project) {
-  if (!project) {
+export async function buildWorkspaceSnapshot(state, project, {chat,home}={}) {
+  if (!project && !chat) {
     return {
-      rootPath: APP_ROOT,
+      rootPath: null,
       exists: false,
       entries: [],
       filePaths: [],
@@ -61,11 +37,15 @@ export async function buildWorkspaceSnapshot(state, project) {
     };
   }
 
-  const rootPath = sanitizeWorkspacePath(project.workspacePath);
-  const rootStat = await stat(rootPath).catch(() => null);
+  const status=chat?await chatWorkspaceStatus(state,chat,home):await projectWorkspaceStatus(project);
+  const rootPath=status.rootPath;
+  const rootStat=rootPath?await stat(rootPath).catch(()=>null):null;
   if (!rootStat || !rootStat.isDirectory()) {
     return {
       rootPath,
+      requiresConfirmation:status.requiresConfirmation===true,
+      projectId:project?.id || null,
+      chatId:chat?.id || null,
       exists: false,
       entries: [],
       filePaths: [],
@@ -73,7 +53,7 @@ export async function buildWorkspaceSnapshot(state, project) {
       selectedFilePath: null,
       selectedFile: null,
       commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-      commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
+      commandRuns: state.commandRuns.filter(run => chat ? run.chatId === chat.id : run.projectId === project?.id).slice(0, 6),
     };
   }
 
@@ -88,6 +68,8 @@ export async function buildWorkspaceSnapshot(state, project) {
 
   return {
     rootPath,
+    chatId:chat?.id || null,
+    projectId:chat ? chat.projectId || null : project?.id || null,
     exists: true,
     entries,
     filePaths,
@@ -95,6 +77,6 @@ export async function buildWorkspaceSnapshot(state, project) {
     selectedFilePath,
     selectedFile,
     commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-    commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
+    commandRuns: state.commandRuns.filter(run => chat ? run.chatId === chat.id : run.projectId === project?.id).slice(0, 6),
   };
 }

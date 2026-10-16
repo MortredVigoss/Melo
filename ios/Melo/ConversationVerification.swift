@@ -19,9 +19,7 @@ import Foundation
             store.send("must remain draft", chatID: chatID)
             guard store.chats.first?.messages.isEmpty == true, requests == 0 else { throw MeloError.message("missing connection appended a message") }
             store.selectModel(nil, chatID: chatID)
-            let note = KnowledgeNote(id: "large", title: "Large", content: String(repeating: "x", count: 24001))
-            store.updatePreferences { $0.knowledge = [note]; $0.chatKnowledge = [chatID: ["large"]] }
-            store.send("must remain draft", chatID: chatID)
+            store.send(String(repeating: "x", count: ConversationHistory.textByteBudget + 1), chatID: chatID)
             guard store.chats.first?.messages.isEmpty == true, requests == 0 else { throw MeloError.message("oversized context appended a message") }
             result["preflight"] = "missing role, missing connection and oversized context leave zero messages and zero requests"
             var prompts: [String] = []
@@ -30,16 +28,16 @@ import Foundation
                 prompts.append(instructions)
                 return ModelReply(text: "fixture response", sources: [], searched: false)
             })
-            var custom = AgentProfile(id: "custom", name: "自定义角色", subtitle: "", symbol: "star", instructions: "CUSTOM_ROLE_REQUEST")
+            var custom = AgentProfile(id: "custom", name: "自定义Agent", subtitle: "", symbol: "star", instructions: "CUSTOM_ROLE_REQUEST")
             custom.identity = "IDENTITY_REQUEST"; custom.soul = "SOUL_REQUEST"; custom.mood = "MOOD_REQUEST"
             actual.updatePreferences { $0.agents.append(custom) }
             let customChat = actual.newChat(agentID: custom.id)!
             func finish() async throws {
-                for _ in 0..<400 where actual.sendingID != nil { try await Task.sleep(for: .milliseconds(25)) }
-                guard actual.sendingID == nil, actual.chats.first(where: { $0.id == customChat })?.messages.last?.role == "assistant" else { throw MeloError.message("fixture reply did not finish") }
+                for _ in 0..<400 where actual.anySending { try await Task.sleep(for: .milliseconds(25)) }
+                guard !actual.anySending, actual.chats.first(where: { $0.id == customChat })?.messages.last?.role == "assistant" else { throw MeloError.message("fixture reply did not finish") }
             }
             actual.send("我不喜欢咖啡", chatID: customChat); try await finish()
-            guard prompts.last?.contains("CUSTOM_ROLE_REQUEST") == true, prompts.last?.contains("MOOD_REQUEST") == true,
+            guard prompts.last?.contains("CUSTOM_ROLE_REQUEST") == true, prompts.last?.contains("MOOD_REQUEST") == false,
                   let fact = actual.preferences.memoryFacts?.first(where: { $0.text == "User dislikes 咖啡" }),
                   prompts.last?.contains(fact.text) == true else { throw MeloError.message("role or extracted memory missing from actual transport instructions") }
             actual.updatePreferences { p in p.memoryFacts = p.memoryFacts?.map { var f = $0; f.status = "forgotten"; f.userEdited = true; return f } }
@@ -63,6 +61,12 @@ import Foundation
             let reload = ChatStore(directory: actualRoot)
             guard reload.preferences.agents.first(where: { $0.id == custom.id }) == custom,
                   reload.agent(for: customChat).id == "melo", reload.agent(for: otherChat).id == custom.id else { throw MeloError.message("role selection or advanced fields lost on restart") }
+            let note = KnowledgeNote(id: "large", title: "Large", content: String(repeating: "x", count: 24001))
+            actual.updatePreferences { $0.knowledge = [note]; $0.chatKnowledge = [customChat: ["large"]] }
+            actual.send("阅读选用资料", chatID: customChat); try await finish()
+            guard let excerpt = prompts.last, excerpt.contains("资料：Large"), !excerpt.contains(note.content),
+                  actual.preferences.knowledge?.first?.content == note.content else { throw MeloError.message("long knowledge was not excerpted or its original changed") }
+            result["knowledgeBudget"] = "long knowledge is excerpted at transport; full original remains stored"
             result["requestContext"] = "actual send transport observes selected role, advanced fields, scoped memory; forgotten extraction stays forgotten; restart preserves selections"
             result["recallAlignment"] = "greeting has no injected memory or usage receipt; task continuation keeps memory; merged facts are excluded"
             let journalRoot = root.appendingPathComponent("recovery")

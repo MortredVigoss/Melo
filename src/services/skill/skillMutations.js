@@ -39,7 +39,7 @@ import {
   normalizeCustomSkill,
 } from '../../domain/skill/skillService.js';
 import {
-  SKILLS_DISK_ROOT,
+  getSkillsDiskRoot,
   saveSkillToDisk,
   removeSkillFromDisk,
   parseSkillMarkdown,
@@ -254,7 +254,7 @@ export async function applySkillProposal(seedId, {
   _saveStateFn = null,
   _writeFileFn = writeFile,
   _mkdirFn = mkdir,
-  _diskRoot = SKILLS_DISK_ROOT,
+  _diskRoot = getSkillsDiskRoot(),
   nowFn = () => Date.now(),
 } = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => applySkillProposal(...arguments));

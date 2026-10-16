@@ -1,3 +1,6 @@
+import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
+import { serializeAgentState } from '../domain/agent/agentState.js';
+import { backupAgentState } from './storageMigration.js';
 import { measureStage, measureStageSync, startStage } from '../runtime/performanceTrace.js';
 import { compactChatRuns } from '../persistence/turnArchive.js';
 import { backupLegacyState } from './storageMigration.js';
@@ -90,10 +93,10 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
     const raw = await measureStage('state.manifest.read', () => readFile(stateFilePath, 'utf8'));
     manifestFound = true;
     const { parsed, repaired } = parseStatePayload(raw);
-    if (Number(parsed._storageFormat) > 2) throw Object.assign(new Error('This state was written by a newer Melo storage version.'), { code: 'STATE_VERSION_UNSUPPORTED' });
+    if (Number(parsed._storageFormat) > 3) throw Object.assign(new Error('This state was written by a newer Melo storage version.'), { code: 'STATE_VERSION_UNSUPPORTED' });
     const state = measureStageSync('state.normalize', () => hydrateState(parsed));
     const alreadySyncedThisHome = isMarkdownSyncedFor(home);
-    const markdownImported = alreadySyncedThisHome
+    const markdownImported = Number(parsed._storageFormat) >= 3 || alreadySyncedThisHome
       ? false
       : await importAgentMarkdownFiles(state, getAgentMarkdownPaths);
     if (!alreadySyncedThisHome) {
@@ -103,16 +106,20 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
       }
     }
     const threadRepaired = await measureStage('state.threads.hydrate', () => hydrateChatThreads(state, { threadsDir, previousChats }));
+    // Legacy manifests store messages in checkpoints. Classify generated
+    // snippets only after their source replies have actually been hydrated.
+    if(Array.isArray(parsed.artifacts))state.artifacts=migrateLegacyResults(parsed.artifacts,state.chats);
+    const resultsMigrated=Array.isArray(parsed.artifacts)&&parsed.artifacts.some((a,i)=>a.kind!==state.artifacts[i]?.kind);
     await measureStage('state.skills.scan', () => mergeDiskSkillsIntoState(state));
 
-    if ((repaired || markdownImported || threadRepaired) && persistRepair) {
+    if ((repaired || markdownImported || threadRepaired || resultsMigrated) && persistRepair) {
       // Pass the entire captured ctx so the repair save also writes
       // state.json + thread checkpoints to the home we read from,
       // regardless of any env flip during this load chain.
       await persistStateAtomically(state, { ctx });
     }
 
-    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired, committedRuns: structuredClone(state.chatRuns || []) };
+    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired || resultsMigrated, committedRuns: structuredClone(state.chatRuns || []) };
     return state;
   } catch (error) {
     if (!manifestFound && error && typeof error === 'object' && error.code === 'ENOENT') {
@@ -220,11 +227,12 @@ export async function persistStateAtomically(state, { ctx = null, capturedStateP
     state.chatRuns = state.chatRuns.filter(run => chatIds.has(run.chatId));
   }
   compactChatRuns(state, state[snapshotSource]?.committedRuns, ctx.home);
-  if (state._storageFormat !== 2) await backupLegacyState(ctx);
-  const unchanged = state._storageFormat === 2 && !state[snapshotSource]?.requiresRepair
+  if (!(Number(state._storageFormat) >= 2)) await backupLegacyState(ctx);
+  if (state._storageFormat !== 3) await backupAgentState(ctx);
+  const unchanged = Number(state._storageFormat) >= 2 && !state[snapshotSource]?.requiresRepair
     ? unchangedChats(state, state[snapshotSource]?.base) : new Set();
   const { keepThreadIds } = await measureStage('state.threads.persist', () => persistChatThreads(state.chats, { threadsDir: ctx.threadsDir, unchanged }));
-  const next = { ...state, _storageFormat: 2, _revision: (Number(state._revision) || 0) + 1,
+  const next = { ...state, ...serializeAgentState(state), _storageFormat: 3, _revision: (Number(state._revision) || 0) + 1,
     chats: state.chats.map(serializeChatForPersistence) };
   // The manifest is the commit point: a failed write cannot publish staged
   // message files, and the previous committed checkpoints still exist.
@@ -232,7 +240,11 @@ export async function persistStateAtomically(state, { ctx = null, capturedStateP
   state._storageFormat = next._storageFormat;
   state._revision = next._revision;
   state[snapshotSource] = { home: ctx.home, fingerprint: fingerprint(`${JSON.stringify(next, null, 2)}\n`), requiresRepair: false, committedRuns: structuredClone(state.chatRuns || []) };
-  const published = publishCommitted(ctx, state, await manifestStamp(ctx), unchanged);
+  // Publish the same Agent representation that reached disk, while retaining
+  // full runtime transcripts (the manifest contains checkpoint references only).
+  const published = publishCommitted(ctx, {
+    ...next, chats: state.chats, [snapshotSource]: state[snapshotSource],
+  }, await manifestStamp(ctx), unchanged);
   state[snapshotSource] = published.source;
   try {
     if (!dispatchDerivedCommit(ctx.home, next._revision)) measureStageSync('memory.index', () => syncDerivedSnapshot(published.state, ctx));
@@ -290,16 +302,13 @@ export async function updateStateAtomically(mutator, { home = getMeloHome() } = 
     const latestState = ensureSelectedEntities(
       ownCommitted(await readCommitted(ctx)),
     );
-    if (!isMarkdownSyncedFor(ctx.home)) {
-      markSyncedFor(ctx.home);
-      await queueAgentMarkdownPrime(latestState, ctx.home, ctx.getAgentMarkdownPaths);
-    }
+    if (!isMarkdownSyncedFor(ctx.home)) markSyncedFor(ctx.home);
     const before = measureStageSync('state.compare.before', () => metadataJson(latestState));
     const candidateState = await mutator(latestState);
     const nextState = ensureSelectedEntities(candidateState || latestState);
     // No-op commands (retries, empty cleanup, identical settings) do not
     // rewrite the manifest or rebuild derived indexes.
-    if (nextState._storageFormat !== 2 || latestState[snapshotSource]?.requiresRepair || measureStageSync('state.compare.after', () => metadataJson(nextState)) !== before || unchangedChats(nextState, latestState[snapshotSource]?.base).size !== nextState.chats.length) {
+    if (nextState._storageFormat !== 3 || latestState[snapshotSource]?.requiresRepair || measureStageSync('state.compare.after', () => metadataJson(nextState)) !== before || unchangedChats(nextState, latestState[snapshotSource]?.base).size !== nextState.chats.length) {
       await persistStateAtomically(nextState, { ctx });
     }
     return nextState;

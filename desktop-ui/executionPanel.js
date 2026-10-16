@@ -1,10 +1,11 @@
+import { t, ui, currentLanguage } from './i18n.js';
 import { renderExecutionDetail } from './executionDetails.js';
 import { EXECUTION_MODULES, moduleActivity, sceneFinished, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const statusNames = { idle: '无调用记录', recorded: '仅引用记录', queued: '排队', running: '执行中', waiting: '等待许可', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断' };
+const statusNames = { get idle() { return t('无调用记录'); }, get recorded() { return t('仅引用记录'); }, get queued() { return t('排队'); }, get running() { return t('执行中'); }, get waiting() { return t('等待许可'); }, get completed() { return t('已完成'); }, get failed() { return t('失败'); }, get cancelled() { return t('已取消'); }, get interrupted() { return t('已中断'); } };
 const scenes = new Map(), views = new Map(), delivered = new Set();
 const presentations = new Map();
 const historyCursors = new Map();
@@ -26,10 +27,10 @@ function scheduleCollapse(runId) {
 }
 function cancelCollapse() { clearTimeout(collapseTimer); closingRun = null; }
 
-export const renderExecutionPanel = () => '<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>';
+export const renderExecutionPanel = () => ui`<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>`;
 export function renderSceneReplay(message) {
   const id = message.role === 'assistant' && message.metadata?.runId;
-  return id ? `<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button>` : '';
+  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button>` : '';
 }
 const selectedScene = () => {
   const scene = scenes.get(currentRun); if (!scene) return null;
@@ -126,20 +127,20 @@ function setOpen(value) {
 function updateButtons() {
   document.querySelectorAll('.atomic-button').forEach(button => {
     button.setAttribute('aria-expanded', String(opened));
-    button.setAttribute('aria-label', opened ? '收起任务动画' : '展开任务动画');
+    button.setAttribute('aria-label', opened ? t("收起任务动画") : t("展开任务动画"));
     button.dataset.busy = String(!!selectedScene() && !sceneFinished(selectedScene()));
   });
 }
 function headerStatus(scene) {
-  if (!scene) return '待机 · 氛围动画';
+  if (!scene) return t("待机 · 氛围动画");
   if (sceneFinished(scene)) return `${statusNames[scene.status]} · 回看记录，未在执行`;
   const running = scene.operations.filter(op => op.status === 'running');
   if (running.length > 1) return `${running.length} 项真实调用并行执行`;
   if (running.length === 1) return `${EXECUTION_MODULES.find(m => m.id === running[0].module)?.name} · 执行中`;
-  if (scene.operations.some(op => op.status === 'waiting')) return '等待许可 · 尚未执行';
+  if (scene.operations.some(op => op.status === 'waiting')) return t("等待许可 · 尚未执行");
   const stage = (scene.pipeline || []).filter(item => item.status === 'running').at(-1);
-  if (stage) return `${stage.name} · ${stage.output || '执行中'}`;
-  return scene.operations.length ? '调用已返回 · 等待回答' : '请求处理中 · 等待可观测工具事件';
+  if (stage) return `${stage.name} · ${stage.output || t("执行中")}`;
+  return scene.operations.length ? t("调用已返回 · 等待回答") : t("请求处理中 · 等待可观测工具事件");
 }
 function detailsFor(scene) {
   if (focus === 'search') return visibleSceneSources(scene, more);
@@ -160,32 +161,33 @@ function renderDetails(scene, items) {
     const sourceUrl = new URL(linkUrl);
     const title = source.titleProvided ? source.title : source.citationLabel || (sourceUrl.pathname === '/' ? sourceUrl.hostname : sourceUrl.pathname.split('/').filter(Boolean).slice(-2).join('/'));
     const reading = sourceReadingLabel(source), citation = source.cited ? '已被最终引用' : '未被最终引用';
-    return `<a class="execution-label execution-source" data-node-id="${escape(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escape(linkUrl)}" data-external-url="${escape(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escape(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escape(title)}</strong><small>${escape(new URL(source.url).hostname)}</small><small>${escape(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
+    return ui`<a class="execution-label execution-source" data-node-id="${escape(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escape(linkUrl)}" data-external-url="${escape(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escape(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escape(title)}</strong><small>${escape(new URL(source.url).hostname)}</small><small>${escape(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
   }).join('');
-  return items.map(op => `<button class="execution-label execution-source execution-operation" data-node-id="${escape(op.id)}" data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.output || ''}`)}"><strong>${escape(op.result ?? op.expression ?? op.name)}</strong><small>${escape(op.channel === 'reasoning-summary' ? (op.output || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || '工具调用'} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escape(statusNames[op.status])}</small></button>`).join('');
+  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escape(op.id)}" data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.output || ''}`)}"><strong>${escape(op.result ?? op.expression ?? op.name)}</strong><small>${escape(op.channel === 'reasoning-summary' ? (op.output || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || t("工具调用")} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escape(statusNames[op.status])}</small></button>`).join('');
 }
 function renderSearchTrail(scene) {
   if (focus !== 'search') return '';
   const ops = (scene?.operations || []).filter(op => op.module === 'search');
-  return `<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => `<button data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escape(op.provider || op.name)}</b> · ${escape(op.resultSummary || statusNames[op.status])}</button>`).join('')}</div>`;
+  return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escape(op.provider || op.name)}</b> · ${escape(op.resultSummary || statusNames[op.status])}</button>`).join('')}</div>`;
 }
 function renderCandidates(scene) {
   if (focus !== 'create') return '';
   const artifacts = scene?.artifacts || [];
   const stages = moduleActivity(scene, 'create').operations;
-  const delivery = `<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => `<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(stage.name)}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(stage.output || stage.input || '等待返回')}</small></button>`).join('')}</div>`;
+  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(stage.name)}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(stage.output || stage.input || t("等待返回"))}</small></button>`).join('')}</div>`;
   const previews = (scene?.previews || []).filter(p => !artifacts.some(a=>a.operationId===p.operationId));
-  const previewCards = previews.map(p => `<article class="execution-candidate execution-preview"><img src="${escape(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
+  const previewCards = previews.map(p => ui`<article class="execution-candidate execution-preview"><img src="${escape(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
   const missing = Math.max(0,(scene?.imageTask?.count || 0)-artifacts.filter(a=>a.kind==='image').length);
-  const retry = imageRetryHandler && sceneFinished(scene) && missing ? `<button class="execution-image-retry" data-execution-action="retry-images">重试缺少的 ${missing} 张 · 发起新请求</button>` : '';
-  if (!artifacts.length) return stages.length || previews.length ? `<div class="execution-outcomes">${delivery}<div class="execution-candidates">${previewCards}</div>${retry}</div>` : '<div class="execution-empty"><strong>暂无模型与交付记录</strong>旧任务未记录的接收、整理与保存过程不会补造</div>';
+  const retry = imageRetryHandler && sceneFinished(scene) && missing ? ui`<button class="execution-image-retry" data-execution-action="retry-images">重试缺少的 ${missing} 张 · 发起新请求</button>` : '';
+  if (!artifacts.length) return stages.length || previews.length ? ui`<div class="execution-outcomes">${delivery}<div class="execution-candidates">${previewCards}</div>${retry}</div>` : ui`<div class="execution-empty"><strong>暂无模型与交付记录</strong>旧任务未记录的接收、整理与保存过程不会补造</div>`;
   const images = artifacts.filter(a => a.kind === 'image'), selected = scene.selectedImageIds || [];
-  return `<div class="execution-outcomes"><details class="execution-delivery-details"><summary>查看 ${stages.length} 条执行记录</summary>${delivery}</details>${retry}<div class="execution-candidates">${previewCards}${artifacts.map(artifact => `<article class="execution-candidate" data-selected="${selected.includes(artifact.id)}">
-    <a href="${escape(artifact.url)}" data-external-url="${escape(artifact.url)}" target="_blank" rel="noopener noreferrer">${artifact.kind === 'image' ? `<img src="${escape(artifact.url)}" alt="${escape(artifact.title)}" loading="lazy">` : escape(artifact.title)}</a>
+  return ui`<div class="execution-outcomes"><details class="execution-delivery-details"><summary>查看 ${stages.length} 条执行记录</summary>${delivery}</details>${retry}<div class="execution-candidates">${previewCards}${artifacts.map(artifact => ui`<article class="execution-candidate" data-selected="${selected.includes(artifact.id)}">
+    <a href="${escape(artifact.url)}" data-external-url="${escape(artifact.url)}" target="_blank" rel="noopener noreferrer">${artifact.kind === 'image' ? ui`<img src="${escape(artifact.url)}" alt="${escape(artifact.title)}" loading="lazy">` : escape(artifact.title)}</a>
     <p>${escape(artifact.title)} ${selected.includes(artifact.id) ? `· 展示第 ${selected.indexOf(artifact.id) + 1} 张` : '· 可检查候选'}</p>
-    ${artifact.requestedModel ? `<small>${escape(artifact.engine)} · 请求 ${escape(artifact.requestedModel)} · 返回 ${escape(artifact.reportedModel || '服务未报告')}</small>` : ''}
-    ${artifact.beforeUrl ? `<details class="execution-comparison"><summary>查看修改前后</summary><div><figure><img src="${escape(artifact.beforeUrl)}" alt="修改前" loading="lazy"><figcaption>修改前</figcaption></figure><figure><img src="${escape(artifact.url)}" alt="修改后" loading="lazy"><figcaption>修改后</figcaption></figure></div></details>` : ''}
-    ${artifact.kind === 'image' && sceneFinished(scene) ? `<div class="execution-candidate-controls"><select aria-label="替换图片位置" data-execution-slot>${Array.from({ length: Math.min(scene.requestedImages, images.length) }, (_, i) => `<option value="${i}" ${i === slot ? 'selected' : ''}>第 ${i + 1} 张</option>`).join('')}</select><button data-execution-action="select-image" data-artifact="${escape(artifact.id)}" ${selectionBusy ? 'disabled' : ''}>${selected.includes(artifact.id) ? '已选中' : '选为展示'}</button></div>` : ''}
+    ${artifact.requestedModel ? ui`<small>${escape(artifact.engine)} · 请求 ${escape(artifact.requestedModel)} · 返回 ${escape(artifact.reportedModel || t("服务未报告"))}</small>` : ''}
+    ${artifact.requestedQuality ? ui`<small aria-label="查看图片质量">质量：请求 ${escape(artifact.requestedQuality)} · 返回 ${escape(artifact.reportedQuality || t("服务未报告"))}</small>` : ''}
+    ${artifact.beforeUrl ? ui`<details class="execution-comparison"><summary>查看修改前后</summary><div><figure><img src="${escape(artifact.beforeUrl)}" alt="修改前" loading="lazy"><figcaption>修改前</figcaption></figure><figure><img src="${escape(artifact.url)}" alt="修改后" loading="lazy"><figcaption>修改后</figcaption></figure></div></details>` : ''}
+    ${artifact.kind === 'image' && sceneFinished(scene) ? ui`<div class="execution-candidate-controls"><select aria-label="替换图片位置" data-execution-slot>${Array.from({ length: Math.min(scene.requestedImages, images.length) }, (_, i) => ui`<option value="${i}" ${i === slot ? 'selected' : ''}>第 ${i + 1} 张</option>`).join('')}</select><button data-execution-action="select-image" data-artifact="${escape(artifact.id)}" ${selectionBusy ? 'disabled' : ''}>${selected.includes(artifact.id) ? t("已选中") : t("选为展示")}</button></div>` : ''}
   </article>`).join('')}</div></div>`;
 }
 let inspectedOperation = '';
@@ -200,28 +202,28 @@ function paint() {
   host.hidden = !opened && !scene;
   host.classList.toggle('is-collapsed', !opened);
   const history = [...scenes.values()].filter(s => s.chatId === currentChat).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  host.querySelector('.execution-panel-header').innerHTML = `<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status">${escape(headerStatus(scene))}</span>
-    ${history.length > 1 ? `<select aria-label="选择历史任务" data-execution-history>${history.map(s => `<option value="${escape(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escape(s.query.slice(0, 24) || '任务')}</option>`).join('')}</select>` : ''}
-    ${historyCursors.get(currentChat) ? '<button data-execution-action="older-scenes">更早的任务</button>' : ''}
+  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status">${escape(headerStatus(scene))}</span>
+    ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escape(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escape(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
+    ${historyCursors.get(currentChat) ? ui`<button data-execution-action="older-scenes">更早的任务</button>` : ''}
     <button class="execution-voice" data-action="toggle-tts-autoplay" title="朗读设置">朗读设置</button>
-    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? '收起' : '展开回看'} ↗</button>`;
+    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("收起") : t("展开回看")} ↗</button>`;
   const stage = host.querySelector('.execution-panel-stage'); stage.dataset.focus = focus || '';
   sizeDetails();
-  const signature = JSON.stringify([scene?.runId, scene?.sequence, scene?.pipeline, scene?.selectionChangedAt, scene?.artifacts.map(a => a.url), focus, more, slot, selectionBusy, zoom]);
+  const signature = JSON.stringify([currentLanguage(), scene?.runId, scene?.sequence, scene?.pipeline, scene?.selectionChangedAt, scene?.artifacts.map(a => a.url), focus, more, slot, selectionBusy, zoom]);
   if (signature !== lastSignature) {
     lastSignature = signature;
     host.querySelector('.execution-labels').innerHTML = EXECUTION_MODULES.map(module => {
       const activity = moduleActivity(scene, module.id);
-      return `<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" style="--module-color:${module.color}" aria-label="进入${module.name}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${module.name}</strong><small>${escape(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${scene.sources.length} 条来源 ↗` : module.id === 'tools' ? ` · ${activity.operations.length} 次工具调用` : module.id === 'create' ? ` · ${activity.operations.length} 条记录` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
+      return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" style="--module-color:${module.color}" aria-label="进入${escape(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escape(t(module.name))}</strong><small>${escape(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${scene.sources.length} 条来源 ↗` : module.id === 'tools' ? ` · ${activity.operations.length} 次工具调用` : module.id === 'create' ? ` · ${activity.operations.length} 条记录` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
     }).join('') + renderDetails(scene, items);
-    host.querySelector('.execution-focus-tools').innerHTML = focus ? `<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escape(EXECUTION_MODULES.find(m => m.id === focus)?.name)}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? `<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
-    host.querySelector('.execution-extra').innerHTML = renderSearchTrail(scene) + (renderCandidates(scene) || (!scene || focus && !items.length ? `<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域暂无执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
+    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escape(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
+    host.querySelector('.execution-extra').innerHTML = renderSearchTrail(scene) + (renderCandidates(scene) || (!scene || focus && !items.length ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域暂无执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
     host.querySelector('.execution-inspector').hidden = !inspectedOperation;
     gpu?.update(scene, focus, items, zoom);
   }
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
   const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · 图片 ${images.length}/${scene.requestedImages} 张成功` : '';
-  host.querySelector('.execution-panel-footer').innerHTML = `<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? '执行已停止 · 神经脉冲是低强度氛围动画' : scene ? '只展示已记录的执行 · 不代表模型内部思维' : '准备就绪 · 尚未搜索、计算或调用工具'))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
+  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? '执行已停止 · 神经脉冲是低强度氛围动画' : scene ? '只展示已记录的执行 · 不代表模型内部思维' : '准备就绪 · 尚未搜索、计算或调用工具'))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
   updateButtons(); syncZoomControls();
   if (opened && !gpu && !loading) {
     loading = true;
@@ -286,7 +288,7 @@ export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAu
   const next = document.querySelector('#execution-panel');
   if (next !== host) {
     releaseZoom?.(); releaseZoom = null; layoutObserver?.disconnect(); layoutObserver = null; clearTimeout(zoomSaveTimer); gpu?.dispose(); gpu = null; host = next; lastSignature = '';
-    if (host) host.innerHTML = '<header class="execution-panel-header"></header><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><footer class="execution-panel-footer"></footer>';
+    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><footer class="execution-panel-footer"></footer>`;
   }
   if (host && !releaseZoom) {
     const stage = host.querySelector('.execution-panel-stage');

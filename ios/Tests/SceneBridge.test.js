@@ -18,11 +18,13 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   // WebGL itself is checked in the simulator; here only the GPU is stubbed.
   const renderer = moduleURL('export const createExecutionScene3D=()=>({update(){},setStill(){},setOpen(){},setZoom(){},dispose(){}})');
   const panelCode = (await readFile(new URL('../../desktop-ui/executionPanel.js',import.meta.url),'utf8'))
+    .replace("'./i18n.js'",JSON.stringify(new URL('../../desktop-ui/i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'",JSON.stringify(new URL('../../src/shared/executionScene.js',import.meta.url).href))
     .replace("'./executionDetails.js'",JSON.stringify(new URL('../../desktop-ui/executionDetails.js',import.meta.url).href))
     .replace("'./executionViewport.js'",JSON.stringify(new URL('../../desktop-ui/executionViewport.js',import.meta.url).href))
     .replace("'./executionScene3D.js'",JSON.stringify(renderer));
   const bridgeCode = (await readFile(new URL('../SceneSource/mobile.js',import.meta.url),'utf8'))
+    .replace("'./desktop-ui/i18n.js'",JSON.stringify(new URL('../../desktop-ui/i18n.js',import.meta.url).href))
     .replace("'./desktop-ui/executionPanel.js'",JSON.stringify(moduleURL(panelCode)))
     .replace("'./desktop-ui/executionScene3D.js'",JSON.stringify(renderer));
   await import(moduleURL(bridgeCode));

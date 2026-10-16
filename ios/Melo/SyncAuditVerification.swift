@@ -33,10 +33,10 @@ import AVFoundation
             })
             let id = store.newChat()!
             store.send("第一条", chatID: id)
-            try await waitFor { syncCalls == 1 && store.sendingID == nil }
+            try await waitFor { syncCalls == 1 && !store.anySending }
             try check(store.syncing, "Slow sync fixture did not stay pending")
             store.send("第二条", chatID: id)
-            try await waitFor { store.chats.first?.messages.count == 4 && store.sendingID == nil }
+            try await waitFor { store.chats.first?.messages.count == 4 && !store.anySending }
             try check(syncCalls == 1, "Automatic sync overlapped")
             store.cancel() // must not cancel a finished reply's separate sync
             gate.release()
@@ -72,10 +72,10 @@ import AVFoundation
             let cleanup = ChatStore(directory: cleanupRoot, replyLoader: { _, _ in ModelReply(text: "完成", sources: []) }, syncLoader: { $0 })
             let sourceID = cleanup.newChat()!, keptID = cleanup.newChat()!
             cleanup.send("我喜欢茶", chatID: sourceID)
-            try await waitFor { cleanup.sendingID == nil && !cleanup.scenes(for: sourceID).isEmpty && !cleanup.syncing }
+            try await waitFor { !cleanup.anySending && !cleanup.scenes(for: sourceID).isEmpty && !cleanup.syncing }
             let sourceMessage = cleanup.chats.first { $0.id == sourceID }!.messages.last!.id
             cleanup.send("保留这段", chatID: keptID)
-            try await waitFor { cleanup.sendingID == nil && !cleanup.scenes(for: keptID).isEmpty && !cleanup.syncing }
+            try await waitFor { !cleanup.anySending && !cleanup.scenes(for: keptID).isEmpty && !cleanup.syncing }
             let keptMessage = cleanup.chats.first { $0.id == keptID }!.messages.last!.id
             let png = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).pngData { c in UIColor.purple.setFill(); c.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
             let exclusive = try cleanup.importImage(png), shared = try cleanup.importImage(png)
@@ -99,7 +99,7 @@ import AVFoundation
             let failingID = failing.newChat()!
             failing.send("问题", chatID: failingID)
             try await waitFor { failing.syncStatus.contains("同步未完成") }
-            try check(failing.sendingID == nil && failing.error == nil && failing.chats.first?.messages.count == 2, "Auto-sync error contaminated completed reply")
+            try check(!failing.anySending && failing.error == nil && failing.chats.first?.messages.count == 2, "Auto-sync error contaminated completed reply")
             await failing.sync()
             try check(failing.error != nil, "Manual sync hid its error")
             result["syncErrors"] = "passed: automatic status only, manual error retained"
@@ -107,7 +107,7 @@ import AVFoundation
             let bounded = ChatStore(directory: root.appendingPathComponent("budget"), replyLoader: { _, _ in throw MeloError.message("Unexpected transport call") })
             let boundedID = bounded.newChat()!
             bounded.send(String(repeating: "汉", count: 20000), chatID: boundedID)
-            try check(bounded.sendingID == nil && bounded.chats.first?.messages.isEmpty == true && bounded.error?.contains("太长") == true, "Oversized draft was sent or persisted as a failed turn")
+            try check(!bounded.anySending && bounded.chats.first?.messages.isEmpty == true && bounded.error?.contains("太长") == true, "Oversized draft was sent or persisted as a failed turn")
             result["inputBudget"] = "passed: preflight before network/persistence"
 
             for (kind, expected) in [(AVAudioSession.InterruptionType.began, true), (.ended, false)] {

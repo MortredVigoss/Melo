@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -27,7 +27,7 @@ async function collectJavaScriptFiles(dirPath) {
       continue;
     }
 
-    if (entry.isFile() && entry.name.endsWith('.js')) {
+    if (entry.isFile() && /\.[cm]?js$/.test(entry.name)) {
       files.push(fullPath);
     }
   }
@@ -38,17 +38,30 @@ async function collectJavaScriptFiles(dirPath) {
 async function main() {
   const allFiles = [];
 
-  for (const targetDir of TARGET_DIRS) {
+  if (process.argv[2] === '--files') {
+    for (const file of process.argv.slice(3)) {
+      const path = join(ROOT, file);
+      try { if ((await stat(path)).isFile()) allFiles.push(path); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  } else for (const targetDir of TARGET_DIRS) {
     allFiles.push(...(await collectJavaScriptFiles(join(ROOT, targetDir))));
   }
 
   allFiles.sort();
 
-  for (const filePath of allFiles) {
-    const displayPath = relative(ROOT, filePath) || filePath;
-    process.stdout.write(`Checking ${displayPath}\n`);
-    await run(process.execPath, ['--check', filePath]);
+  let index = 0;
+  const errors = [];
+  async function worker() {
+    while (index < allFiles.length) {
+      const path = allFiles[index++];
+      try { await run(process.execPath, ['--check', path]); }
+      catch (error) { errors.push(`${relative(ROOT, path)}\n${error.stderr || error.message}`); }
+    }
   }
+  await Promise.all(Array.from({length: 4}, worker));
+  if (errors.length) throw new Error(errors.join('\n'));
+  console.log(`Syntax checked ${allFiles.length} files (4 workers)`);
 }
 
 main().catch(error => {

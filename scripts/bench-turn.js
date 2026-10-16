@@ -9,7 +9,7 @@ import { createRequestContext } from '../src/runtime/requestContext.js';
 import { runWithRequestContext } from '../src/runtime/requestScope.js';
 import { withPerformanceTrace, measureStage } from '../src/runtime/performanceTrace.js';
 import { updateStateAtomically, loadState } from '../src/state/stateStore.js';
-import { getDesktopBootstrap } from '../src/state/desktopBootstrap.js';
+import { getDesktopBootstrap } from '../src/services/desktop/bootstrap.js';
 import { runChatAgentExecutionGraph } from '../src/services/chat/chatExecutionRunner.js';
 import { startDerivedIndexing } from '../src/runtime/derivedIndexing.js';
 

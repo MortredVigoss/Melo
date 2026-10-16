@@ -1,5 +1,6 @@
 import { validateImagePrompt, IMAGE_REVIEW_INSTRUCTIONS, parseImageReview, formatImageReview } from '../../images/imagePrompts.js';
 import sharp from 'sharp';
+import { requestsPhotoAdjustment, requestsNaturalImage, asksAboutImage, instructsImageChange, requestsReferenceImage } from '../../shared/imageRequestIntent.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -26,11 +27,12 @@ export function inferImageTask(text, messages, explicit) {
   // An explicit analysis route also bypasses the legacy edit shortcut.
   if (
     imageExecutionDeclined(instruction) ||
+    /^(?:请|帮我)?(?:解释|说明|讲讲)|^(?:如何|怎么|为什么)|(?:对比度|饱和度|曝光|亮度).{0,16}(?:有什么|会怎样|会怎么样|的原理)|(?:画|绘制|生成|做).{0,60}(?:的代码|的提示词)|\b(?:how|why)\b.{0,50}\b(?:contrast|saturation|exposure|brightness)|\b(?:in|as)\s+(?:svg|css|html)(?:\s+code)?\b/iu.test(instruction) ||
     /(?:生成|绘制|编辑|生图)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|generate|edit|draw)/iu.test(instruction)
   ) {
     return validateImageTask({ action: 'analyze' });
   }
-  if (explicit)
+  if (explicit && explicit.action !== 'auto')
     return validateImageTask({ ...explicit, count: explicit.count ?? requestedImageCount(text) });
   const hasImage = messages.some(
     (m) =>
@@ -38,15 +40,21 @@ export function inferImageTask(text, messages, explicit) {
       Array.isArray(m.content) &&
       m.content.some((p) => p.type === 'image_url'),
   );
-  if (hasImage && detectImageEditIntent(instruction) && IMAGE_FOLLOW_UP_PATTERN.test(instruction))
-    return { action: 'edit', count: requestedImageCount(text), references: [] };
-  if (
+  const affirmative = instruction.split(/[，。；！？,;!?\n]/).filter(clause => !/(?:不要|不用|不必|无需|禁止|别)|\b(?:do not|don't|never)\b/iu.test(clause)).join('，');
+  const taskFor = action => validateImageTask({ ...explicit, action, count: explicit?.count ?? requestedImageCount(text), references: explicit?.references ?? [] });
+  const generationRequested = requestsNaturalImage(affirmative) || requestsReferenceImage(affirmative) ||
     /^(?:请|帮我|给我|麻烦|你|请帮我)*\s*(?:生成|画|绘制|制作|做)[^。！？\n]{0,100}(?:图片|图像|插画|海报|照片|张图|幅图)|^(?:please\s+)?(?:generate|draw|create)\s+(?:an?\s+|\d+\s+)?(?:images?|pictures?|illustrations?|photos?)\b/i.test(
       instruction,
-    )
-  )
-    return { action: 'generate', count: requestedImageCount(text), references: [] };
-  return null;
+    );
+  // A photo on this message plus an instruction is an edit however it is phrased.
+  const latestUser = [...messages].reverse().find(m => m.role === 'user');
+  const attachedNow = Array.isArray(latestUser?.content) && latestUser.content.some(p => p.type === 'image_url');
+  const uploadedInstruction = attachedNow && !asksAboutImage(instruction) && instructsImageChange(affirmative) && !generationRequested;
+  if (hasImage && ((detectImageEditIntent(affirmative) && IMAGE_FOLLOW_UP_PATTERN.test(affirmative)) || requestsPhotoAdjustment(affirmative) || uploadedInstruction))
+    return taskFor('edit');
+  if (generationRequested)
+    return taskFor('generate');
+  return explicit?.action === 'auto' ? taskFor('analyze') : null;
 }
 
 function imageExecutionDeclined(instruction) {
@@ -215,6 +223,7 @@ export async function runImageTask({
             referenceRoles,
             action: task.action,
             model: requestModel,
+            quality: settings.quality,
             signal,
             onPreview,
             onStage: (e) => emit({ kind: 'pipeline', ...e, id: `${id}:${e.id}` }),
@@ -223,6 +232,7 @@ export async function runImageTask({
           result = await (dependencies.generate || generateImageViaCodex)({
             prompt,
             model: requestModel,
+            quality: settings.quality,
             signal,
             onPreview,
           });
@@ -256,13 +266,15 @@ export async function runImageTask({
         engine,
         requestedModel: requestModel,
         reportedModel: result.reportedModel || '',
+        requestedQuality: settings.quality,
+        reportedQuality: result.reportedQuality || '',
         ...(before ? { beforeUrl: before.url, beforePath: before.path } : {}),
       };
       generated = true;
       artifacts.push(artifact);
       links.push(`![${artifact.title}](${saved.url})`);
       observe('completed', {
-        output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'}`,
+        output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'} · 请求质量：${settings.quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
         artifacts: [artifact],
       });
       await onImageProgress?.({artifacts:[...artifacts],count:task.count});

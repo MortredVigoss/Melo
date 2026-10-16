@@ -40,7 +40,7 @@ enum ImageNetwork {
             observation.stage("image:generate",name:task.action.title,status:"completed",output:"已收到 \(images.count) 张完整图片",model:task.model);onObservation?(observation)
             return ModelReply(text:task.action == .edit ? "图片已修改。" : "图片已生成。",images:images)
         } catch {
-            observation.stage("image:generate",name:task.action.title,status:error is CancellationError ? "cancelled" : "failed",output:"未取得完整图片");onObservation?(observation);throw error
+            observation.stage("image:generate",name:task.action.title,status:(error is CancellationError || (error as? URLError)?.code == .cancelled) ? "cancelled" : "failed",output:String(error.localizedDescription.prefix(1000)));onObservation?(observation);throw error
         }
     }
 }

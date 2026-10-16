@@ -1,3 +1,4 @@
+import {buildProjectContextSection} from '../project/projectContext.js';
 // Task execution prompt builder — sub-phase 7d-5δ commit 4 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -14,7 +15,7 @@ export function taskExecutionPrompt(task, project, workspace, profile) {
     `Task title: ${task.title}`,
     task.summary ? `Task summary: ${task.summary}` : '',
     project && agentUsesTool(profile, 'projects')
-      ? `Project: ${project.name}\nSummary: ${project.summary}\nInstructions: ${project.instructions}\nWorkspace: ${project.workspacePath}`
+      ? buildProjectContextSection(project, profile)
       : 'Project: (none)',
     workspace.selectedFile && agentUsesTool(profile, 'local-files')
       ? [

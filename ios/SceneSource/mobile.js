@@ -1,3 +1,4 @@
+import { setLanguage } from './desktop-ui/i18n.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene } from './desktop-ui/executionPanel.js';
 import './desktop-ui/executionScene3D.js';
 let previewStarted=false;
@@ -55,6 +56,7 @@ Storage.prototype.setItem=function(key,value) {
 };
 document.querySelector('#app').innerHTML = renderExecutionPanel();
 window.meloReceive = value => {
+  setLanguage(value.interfaceLanguage);
   if(snapshot.chat.id!==value.chat.id) loadedSceneIDs.clear();
   snapshot = value;
   restoring=true;

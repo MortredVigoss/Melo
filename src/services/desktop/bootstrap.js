@@ -1,3 +1,9 @@
+import {projectWorkspaceStatus} from '../workspace/workspacePolicy.js';
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
+import {projectText} from '../../domain/project/projectService.js';
+import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
+import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
+import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { startStage } from '../../runtime/performanceTrace.js';
 import { imageSettings as resolvedImageSettings } from '../../images/imageSettings.js';
 import { publicExtraFast } from '../../judge/fastJudge.js';
@@ -111,8 +117,9 @@ function summarizeAgentProfile(profile) {
   const now = Date.now();
   const channels = Object.values(normalizeAgentChannels(profile.channels)).map(channel => ({
     ...channel,
+    archived: !isAgentChannelAvailable(channel.id),
     statusLabel:
-      channel.lastStatus === 'error'
+      !isAgentChannelAvailable(channel.id) ? 'Archived' : channel.lastStatus === 'error'
         ? 'Error'
         : channel.enabled &&
             channel.lastStatus === 'connected' &&
@@ -123,7 +130,7 @@ function summarizeAgentProfile(profile) {
             ? 'Connected'
             : 'Not checked',
     runtimeLabel:
-      channel.lastStatus === 'error'
+      !isAgentChannelAvailable(channel.id) ? 'Archived' : channel.lastStatus === 'error'
         ? 'Attention needed'
         : channel.enabled &&
             channel.lastStatus === 'connected' &&
@@ -198,6 +205,10 @@ function buildAgentProfiles(state, { projectId = null, scope = 'global' } = {}, 
 
     return {
       ...summarizeAgentProfile(profile),
+      capabilityLabels: CAPABILITY_LABELS,
+      pendingCapabilityChange: Object.values(state.agentSettingsPending||{}).find(p=>p.agentId===agentId&&p.projectId===(editingScope==='project'?projectId:null))||null,
+      capabilityMigration: profile.capabilities ? null : capabilityMigrationPreview(profile,migrationOptions(state)),
+      capabilityOptions: migrationOptions(state).skills.map(s=>({id:s.id,name:s.name})),
       identityPath: paths.identityPath,
       soulPath: paths.soulPath,
       editingScope,
@@ -240,7 +251,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   const chats = sortChats(state.chats);
   const selectedChat = chats.find(chat => chat.id === state.settings.selectedChatId) || null;
   const activeProject = findProjectById(state, state.settings.selectedProjectId);
-  const workspace = await buildWorkspaceSnapshot(state, activeProject);
+  const workspace = await buildWorkspaceSnapshot(state, selectedChat ? findProjectById(state, selectedChat.projectId) : activeProject, {chat:selectedChat,home:ctx.home});
   const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
 
   if (state.settings.selectedFilePath !== workspace.selectedFilePath) {
@@ -275,7 +286,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   // predicate so a tombstoned row can't leak via a missed call site.
   const visibleArtifactRows = visibleArtifacts(state.artifacts);
 
-  const projectArtifacts = visibleArtifactRows
+  const projectArtifacts = visibleArtifactRows.filter(a=>a.kind!=='result')
     .filter(artifact => activeProject && (artifact.projectId === activeProject.id || activeProject.knowledgeIds?.includes(artifact.id)))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .map(summarizeArtifact);
@@ -344,23 +355,21 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         codexAuth: config.codexAuth || null,
         availableModels: availableModelsForConfig(config),
         modelCatalogs: normalizeModelCatalogs(config.modelCatalogs || DEFAULT_MODEL_CATALOGS),
-        // First-boot productivity-MCP consent gate. Stays false until
-        // the user dismisses the consent modal (Enable all / Skip).
-        // The frontend reads this off `bootstrap.settings.config` and
-        // shows the modal exactly once per MELO_HOME. Codex audit
-        // 2026-04-29 — DEFAULT_CONFIG cannot auto-spawn 3rd-party
-        // npm packages without a consent click, even with deny-all
-        // per-agent whitelist active.
+        // Retained for older frontends; startup no longer asks for consent.
         productivityMcpsConsented: Boolean(config.productivityMcpsConsented),
       },
     },
     recents: chats.slice(0, MAX_RECENT_CHATS).map(summarizeChat),
     chats: chats.map(summarizeChat),
     activeChat: selectedChat,
+    syncPendingPersonas: pendingPersonaRecords(state),
+    agentPersonaRecoveries: state.agentPersonaRecoveries || [],
+    agentSettingsConflicts: (state.agentSettingsSync?.records || []).filter(r=>r.versions.length>1),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
-    activeProject,
-    artifacts: [...visibleArtifactRows]
+    activeProject:activeProject?{...activeProject,summary:projectText(activeProject.summary),instructions:projectText(activeProject.instructions),workspaceNeedsConfirmation:(await projectWorkspaceStatus(activeProject)).requiresConfirmation===true}:null,
+    results: visibleArtifactRows.filter(a=>a.kind==='result').map(summarizeArtifact),
+    artifacts: visibleArtifactRows.filter(a=>a.kind!=='result')
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       .map(summarizeArtifact),
     projectArtifacts,

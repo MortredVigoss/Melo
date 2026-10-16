@@ -76,7 +76,7 @@ test('legacy inline messages migrate with an intact original backup before publi
   await updateStateAtomically(s => { s.settings.migrated = true; }, { home });
   assert.equal(await readFile(join(home, 'desktop/backups/before-checkpoint-v2/state.json'), 'utf8'), original);
   const saved = JSON.parse(await readFile(path, 'utf8'));
-  assert.equal(saved._storageFormat, 2);
+  assert.equal(saved._storageFormat, 3);
   assert.ok(saved.chats[0].checkpointId);
   invalidateThreadCheckpointCache(null, { threadsDir: join(home, 'desktop/threads') });
   assert.equal((await loadState({ home })).chats[0].messages[0].id, 'legacy-message');

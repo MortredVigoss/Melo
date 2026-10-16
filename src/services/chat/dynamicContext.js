@@ -1,3 +1,4 @@
+import {effectiveAgentProfile} from '../../state/agentProfiles.js';
 // Dynamic-context block assembly — sub-phase 7d-5β commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -10,7 +11,7 @@
 import { ensureChatThreadContext } from '../../memory/chatThreadContext.js';
 import { renderThreadContext as renderStructuredThreadContext } from '../../memory/threadContext.js';
 import { truncateText } from '../../shared/helpers.js';
-import { isLiveArtifact } from '../../domain/artifact/artifactService.js';
+import { isKnowledgeArtifact } from '../../domain/artifact/artifactService.js';
 
 const SELECTED_FILE_FULL_CONTEXT_CHARS = 3000;
 const SELECTED_FILE_SNIPPET_CONTEXT_CHARS = 5200;
@@ -173,6 +174,7 @@ export function buildSelectedFileContextBlock(selectedFile, latestUserMessage = 
 }
 
 export async function buildDynamicContext(state, chat, workspace, connectors, latestUserMessage = '') {
+  const capabilities=effectiveAgentProfile(state,chat.agentId || 'main',chat.projectId)?.capabilities;
   const blocks = [];
   const threadContext = ensureChatThreadContext(chat, latestUserMessage);
   const renderedThreadContext = renderStructuredThreadContext(threadContext);
@@ -181,7 +183,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
     blocks.push(renderedThreadContext);
   }
 
-  if (connectors.some(connector => connector.id === 'local-files' && connector.enabled)) {
+  if ((!capabilities || capabilities.readFiles)) {
     if (workspace.selectedFile) {
       blocks.push(buildSelectedFileContextBlock(workspace.selectedFile, latestUserMessage));
     }
@@ -196,7 +198,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
     }
   }
 
-  if (connectors.some(connector => connector.id === 'local-command' && connector.enabled)) {
+  if ((!capabilities || capabilities.runCommands)) {
     const projectRuns = state.commandRuns
       .filter(run => run.chatId === chat.id || (Boolean(chat.projectId) && run.projectId === chat.projectId))
       .slice(0, 3);
@@ -212,14 +214,14 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
 
   if (connectors.some(connector => connector.id === 'artifacts' && connector.enabled)) {
     // Soft-deleted artifacts must not bleed into the model's prompt
-    // context.  isLiveArtifact gates that boundary; without it, an
+    // context.  isKnowledgeArtifact gates that boundary; without it, an
     // artifact the user just deleted (and whose row is hidden in the
     // UI) would still show up in the next turn's "recent artifacts"
     // block — privacy regression flagged in the 2026-04-27 Codex C
     // post-push review.
     const relatedArtifacts = state.artifacts
       .filter(artifact =>
-        isLiveArtifact(artifact) &&
+        isKnowledgeArtifact(artifact) &&
         (artifact.chatId === chat.id || (Boolean(chat.projectId) && artifact.projectId === chat.projectId)),
       )
       .slice(0, 4);

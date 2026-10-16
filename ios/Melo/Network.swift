@@ -4,6 +4,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 enum Network {
+    struct ExtensionUnavailable: Error {}
     static func contextLimitError(_ data: Data) -> MeloError? {
         guard data.count <= 16_384, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let error = json["error"] as? [String: Any] else { return nil }
         let code = (error["code"] as? String ?? "").lowercased()
@@ -11,12 +12,24 @@ enum Network {
         guard ["context_length_exceeded", "max_tokens_exceeded", "prompt_too_long"].contains(code) || ["maximum context length", "context window", "prompt is too long", "input is too long"].contains(where: { message.contains($0) }) else { return nil }
         return .message("对话或引用资料超出此模型的上下文上限。请减少资料、缩短本次输入，或新建对话；原记录已保留。")
     }
+    // Keep diagnostic codes, not the provider's arbitrary message or echoed request data.
+    static func rejectionDetail(_ data: Data) -> String {
+        guard data.count <= 16_384, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = object["error"] as? [String: Any] else { return "" }
+        let fields = ["code", "param"].compactMap { field -> String? in
+            guard let value = error[field] as? String, value.count <= 100,
+                  value.range(of: #"^[A-Za-z][A-Za-z0-9_.\[\]-]*$"#, options: .regularExpression) != nil,
+                  !value.hasPrefix("sk-"), !value.hasPrefix("eyJ") else { return nil }
+            return "\(field)=\(value)"
+        }
+        return fields.isEmpty ? "" : "（" + fields.joined(separator: "，") + "）"
+    }
     static let session = URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
     static func endpoint(_ value: String) throws -> URL {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.fragment == nil else { throw MeloError.message("请输入完整的 HTTPS 服务地址。") }
         return url
     }
-    static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120) async throws -> Data {
+    static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120, optionalExtension: Bool = false) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = timeout
@@ -26,10 +39,11 @@ enum Network {
         request.httpBody = body
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
+        if optionalExtension && http.statusCode == 404 { throw ExtensionUnavailable() }
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
             switch http.statusCode {
-            case 400: throw MeloError.message("服务拒绝了本次请求（400），请检查所选模型、工具或输入内容；原记录已保留。")
+            case 400, 422: throw MeloError.message("服务拒绝了本次请求（\(http.statusCode)）\(rejectionDetail(data))，请检查所选模型、工具或输入内容；原记录已保留。")
             case 413: throw MeloError.message("资料超过服务容量限制（413），原记录已保留。请先导出备份，再减少同步资料或本次输入。")
             case 401, 403: throw MeloError.message("服务拒绝了登录凭证，请检查设置中的密钥。")
             case 409: throw MeloError.message("同步内容发生冲突，原有记录已保留。")
@@ -43,7 +57,7 @@ enum Network {
     static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], session: URLSession = Network.session, onObservation: ((ExecutionObservation) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
-        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": "你运行在 Melo 中，使用用户选择的角色身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: apiProtocol == "anthropic", instructions: instructions)]
+        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: apiProtocol == "anthropic", instructions: instructions)]
         var headers: [String: String] = [:]
         if apiProtocol == "anthropic" {
             let original = body["messages"] as! [[String: Any]]
@@ -57,6 +71,11 @@ enum Network {
         do {
             let data = try await post(url, token: token, body: payload, session: session, headers: headers)
             try Task.checkCancellation()
+            if let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let choices = receipt["choices"] as? [[String: Any]]
+                observation.apiReceipt(receipt, transport: apiProtocol, finishReason: receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String)
+                onObservation?(observation)
+            }
             struct Response: Decodable {
                 struct Choice: Decodable {
                     struct Message: Decodable { var content: String? }

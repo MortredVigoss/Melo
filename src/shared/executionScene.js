@@ -137,6 +137,7 @@ export function applyExecutionEvent(scene, event) {
       for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel']) {
         if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 12000 : 1000);
       }
+      if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
       if (event.status === 'running' && !stage.startedAt) stage.startedAt = at;
       if (TERMINAL_SCENE_STATUSES.includes(event.status)) stage.finishedAt = at;
       if (event.channel === 'reasoning-summary') stage.channel = 'reasoning-summary';
@@ -170,6 +171,7 @@ export function applyExecutionEvent(scene, event) {
       kind: raw.kind === 'image' ? 'image' : 'file', title: sceneText(raw.title || '已生成成果', 200),
       ...(raw.path ? { path: sceneText(raw.path, 2000) } : {}), operationId: event.id || '', createdAt: at };
     for (const key of ['engine','requestedModel','reportedModel']) if(raw[key]) artifact[key]=sceneText(raw[key],200);
+    for (const key of ['requestedQuality','reportedQuality']) if (['auto','low','medium','high'].includes(raw[key])) artifact[key]=raw[key];
     if(sceneUrl(raw.beforeUrl) && raw.beforePath) {artifact.beforeUrl=sceneUrl(raw.beforeUrl);artifact.beforePath=sceneText(raw.beforePath,2000);}
     scene.artifacts.push(artifact);
   }

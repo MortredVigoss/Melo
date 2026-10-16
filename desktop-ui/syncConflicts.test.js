@@ -10,4 +10,5 @@ test('conflict choices retain content and literal text without executing it or e
  assert.equal(document.querySelectorAll('img[onerror]').length,0);assert.equal(document.querySelectorAll('button').length,2);
  assert.match(document.body.textContent,/已删除/);assert.match(document.body.textContent,/Other version/);assert.ok(!document.querySelector('pre').textContent.includes('base64-data')); 
  assert.match(describeSyncVersion({model:{model:'chosen',name:'Provider'}}),/chosen/);
+ assert.equal(describeSyncVersion({name:'Agent',mood:'sharp'}),describeSyncVersion({name:'Agent'}));
 });

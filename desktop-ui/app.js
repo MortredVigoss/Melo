@@ -1,8 +1,14 @@
+import {handleManagementAction,renderSkillManagement} from './managementActions.js';
+import {renderCapabilityChoices} from './capabilityChoices.js';
+import {askFileDecision} from './chatFiles.js';
+import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
+import { t, ui } from './i18n.js';
+import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
-import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion } from './localSettings.js';
+import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
@@ -13,7 +19,7 @@ import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './
 import { renderAtomicButton } from './atomicButton.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation } from './executionPanel.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
-import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt } from './modelPresentation.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
 import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from './neuralDom.js';
 import { resolveWorkspaceStage } from './neuralLayout.js';
@@ -39,6 +45,7 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
@@ -49,11 +56,10 @@ import {
   formatUndoToastLabel,
   nextCountdownTickMs,
 } from './undoToast.js';
-import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
+import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
-import { runProductivityMcpsConsentChoice } from './productivityMcpConsent.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import {
   decideFileSafetyPreflight,
@@ -72,6 +78,10 @@ const settingsFormEditors = createSettingsFormEditors({render,
   },
 });
 settingsFormEditors.install(document);
+document.addEventListener('toggle', event => {
+  const key = event.target.dataset?.agentSection;
+  if (key) uiState.agentOpenSections[key] = event.target.open;
+}, true);
 installUnsavedSettingsGuard(window);
 
 
@@ -234,6 +244,8 @@ const uiState = {
   // show one channel at a time filling the full panel width.
   agentChannelTab: {},
   agentDrafts: {},
+  agentCreating: false,
+  agentOpenSections: {},
   agentSaveStates: {},
   agentSecretVisibility: {},
   commandInputs: {},
@@ -585,7 +597,7 @@ function renderRichText(value = '') {
   return parseRenderableMessageBlocks(value)
     .map(block => {
       if (block.type === 'code') {
-        return `
+        return ui`
           <div
             class="message-code-block"
             data-copyable-surface
@@ -593,7 +605,7 @@ function renderRichText(value = '') {
           >
             ${
               block.language
-                ? `<div class="message-code-label">${escapeHtml(block.language)}</div>`
+                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
                 : ''
             }
             <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(block.value)}</code></pre>
@@ -640,7 +652,7 @@ function formatRuntimeTimestamp(value, fallback = 'Not yet') {
 }
 
 function renderChannelRuntimeMetric(label, value) {
-  return `
+  return ui`
     <div class="agent-runtime-metric">
       <div class="agent-runtime-metric-label">${escapeHtml(label)}</div>
       <div class="agent-runtime-metric-value">${escapeHtml(value || '—')}</div>
@@ -652,12 +664,12 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
   const incomingPreview = channel?.lastIncomingPreview || '';
   const replyPreview = channel?.lastReplyPreview || '';
 
-  return `
+  return ui`
     <div class="agent-channel-runtime">
       <div class="agent-editor-header">
         <div class="agent-editor-heading">
           <div class="meta-block-label">Runtime</div>
-          <div class="list-row-meta">Live polling and recent Telegram activity for this agent.</div>
+          <div class="list-row-meta">Live polling and recent channel activity for this agent.</div>
         </div>
         <span class="chip ${channel?.statusLabel === 'Polling live' ? 'is-accent' : ''}">
           ${escapeHtml(channel?.runtimeLabel || 'Disabled')}
@@ -678,11 +690,11 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
       </div>
       ${
         incomingPreview || replyPreview
-          ? `
+          ? ui`
             <div class="agent-runtime-preview-stack">
               ${
                 incomingPreview
-                  ? `
+                  ? ui`
                     <div class="agent-runtime-preview-card">
                       <div class="agent-runtime-preview-label">Last incoming</div>
                       <div class="agent-runtime-preview-copy">${escapeHtml(incomingPreview)}</div>
@@ -692,7 +704,7 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
               }
               ${
                 replyPreview
-                  ? `
+                  ? ui`
                     <div class="agent-runtime-preview-card">
                       <div class="agent-runtime-preview-label">Last reply</div>
                       <div class="agent-runtime-preview-copy">${escapeHtml(replyPreview)}</div>
@@ -769,7 +781,7 @@ function renderMessageBlocks(message) {
   const renderedBlocks = blocks
     .map(block => {
       if (block.type === 'code') {
-        return `
+        return ui`
           <div
             class="message-code-block"
             data-copyable-surface
@@ -777,7 +789,7 @@ function renderMessageBlocks(message) {
           >
             ${
               block.language
-                ? `<div class="message-code-label">${escapeHtml(block.language)}</div>`
+                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
                 : ''
             }
             <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(
@@ -799,7 +811,7 @@ function renderMessageBlocks(message) {
         return '';
       }
 
-      return `
+      return ui`
         <div
           class="message-bubble"
           data-copyable-surface
@@ -811,7 +823,7 @@ function renderMessageBlocks(message) {
     })
     .join('');
 
-  return `
+  return ui`
     <div class="message-block-stack">
       ${renderedBlocks}
       ${isAssistant ? renderSourceCitationCards(allCitations) : ''}
@@ -833,7 +845,7 @@ function renderInlineText(value = '') {
     html += renderInlineSegmentWithCites(value.slice(cursor, match.index), escapeHtml);
     const url = extractTextUrls(match[2] || match[3])[0];
     const label = match[1] || url;
-    html += `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(
+    html += ui`<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(
       label,
     )}</a>${renderCopyLinkButton(url, escapeHtml)}`;
     cursor = match.index + (match[2] ? match[0].length : url.length);
@@ -881,9 +893,9 @@ function citationHostname(url) {
  */
 function renderSourceCitationCards(citations) {
   if (!citations.length) return '';
-  return `
+  return ui`
     <div class="source-citation-strip">
-      ${citations.map(({ url, via }) => `
+      ${citations.map(({ url, via }) => ui`
         <a
           class="source-citation-card"
           href="${escapeHtml(url)}"
@@ -893,7 +905,7 @@ function renderSourceCitationCards(citations) {
         >
           <span class="citation-icon">🔗</span>
           <span class="citation-host">${escapeHtml(citationHostname(url))}</span>
-          ${via ? `<span class="citation-via">${escapeHtml(via)}</span>` : ''}
+          ${via ? ui`<span class="citation-via">${escapeHtml(via)}</span>` : ''}
         </a>
       `).join('')}
     </div>
@@ -1014,7 +1026,7 @@ function buildPatchPreview(filePath, beforeText = '', afterText = '') {
 function renderPatchPreviewBlock(title, filePath, beforeText, afterText) {
   const preview = buildPatchPreview(filePath, beforeText, afterText);
 
-  return `
+  return ui`
     <div class="patch-preview-card">
       <div class="header-row">
         <h3 class="subsection-title">${escapeHtml(title)}</h3>
@@ -1030,7 +1042,7 @@ function renderPatchPreviewBlock(title, filePath, beforeText, afterText) {
                 : line.startsWith('@@')
                   ? 'is-meta'
                   : '';
-            return `<span class="diff-line ${klass}">${escapeHtml(line)}</span>`;
+            return ui`<span class="diff-line ${klass}">${escapeHtml(line)}</span>`;
           })
           .join('')}
       </div>
@@ -1043,17 +1055,17 @@ function renderAttachmentPreviewList(attachments = []) {
     return '';
   }
 
-  return `
+  return ui`
     <div class="composer-attachment-list">
       ${attachments
         .map(
-          attachment => `
+          attachment => ui`
             <div class="composer-attachment-chip">
               <span class="chip-icon">${attachmentIcon(attachment.kind, attachment)}</span>
               <span class="composer-attachment-label">${escapeHtml(attachmentLabel(attachment))}</span>
               ${
                 attachment.sizeLabel
-                  ? `<span class="meta-label">${escapeHtml(attachment.sizeLabel)}</span>`
+                  ? ui`<span class="meta-label">${escapeHtml(attachment.sizeLabel)}</span>`
                   : ''
               }
               <button
@@ -1078,7 +1090,7 @@ function renderComposerAttachmentMenu() {
     return '';
   }
 
-  return `
+  return ui`
     <div class="composer-attachment-menu">
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="image/*">
         <span class="chip-icon">${icon.image}</span>
@@ -1129,22 +1141,22 @@ function renderTtsVoicePanel() {
   const otherVoices = browserVoices.filter(v => !v.lang.startsWith('en'));
 
   const browserVoiceOptions = [
-    `<option value="">System default</option>`,
+    ui`<option value="">System default</option>`,
     ...enVoices.map(v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
     ),
-    otherVoices.length ? `<option disabled>──────────</option>` : '',
+    otherVoices.length ? ui`<option disabled>──────────</option>` : '',
     ...otherVoices.map(v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
     ),
   ].join('');
 
-  const radioRow = (label, hint, isActive, action, dataAttrs = '') => `
+  const radioRow = (label, hint, isActive, action, dataAttrs = '') => ui`
     <button class="tts-radio-row ${isActive ? 'is-active' : ''}" ${action} ${dataAttrs}>
       <span class="tts-radio-dot">${isActive ? '●' : '○'}</span>
       <span class="tts-radio-body">
         <span class="tts-radio-label">${label}</span>
-        ${hint ? `<span class="tts-radio-hint">${hint}</span>` : ''}
+        ${hint ? ui`<span class="tts-radio-hint">${hint}</span>` : ''}
       </span>
     </button>
   `;
@@ -1155,10 +1167,10 @@ function renderTtsVoicePanel() {
   const macosVoices = uiState.ttsMacosVoices;
   const macosVoiceOptions = (() => {
     if (!uiState.ttsMacosVoicesLoaded) {
-      return `<option value="">Loading…</option>`;
+      return ui`<option value="">Loading…</option>`;
     }
     if (macosVoices.length === 0) {
-      return `<option value="">(no /usr/bin/say voices found)</option>`;
+      return ui`<option value="">(no /usr/bin/say voices found)</option>`;
     }
     // Group by language family — en first (most users), then everything
     // else alphabetised by lang code.
@@ -1166,16 +1178,16 @@ function renderTtsVoicePanel() {
     const otherMac = macosVoices.filter(v => !v.lang.startsWith('en'))
       .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
     const opt = v =>
-      `<option value="${escapeHtml(v.name)}" ${uiState.ttsMacosVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
+      ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsMacosVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
     return [
-      `<option value="">Auto-detect by language</option>`,
+      ui`<option value="">Auto-detect by language</option>`,
       ...enMac.map(opt),
-      otherMac.length ? `<option disabled>──────────</option>` : '',
+      otherMac.length ? ui`<option disabled>──────────</option>` : '',
       ...otherMac.map(opt),
     ].join('');
   })();
 
-  return `
+  return ui`
     <div class="tts-voice-panel">
       <div class="tts-panel-header">
         <span class="toolbar-icon" style="width:14px;height:14px">${icon.speak}</span>
@@ -1204,7 +1216,7 @@ function renderTtsVoicePanel() {
         'data-action="set-tts-engine"', 'data-engine="macos"'
       )}
 
-      ${engine === 'macos' ? `
+      ${engine === 'macos' ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-macos-voice">
             ${macosVoiceOptions}
@@ -1232,7 +1244,7 @@ function renderTtsVoicePanel() {
         );
       })()}
 
-      ${engine === 'browser' && browserVoices.length > 0 ? `
+      ${engine === 'browser' && browserVoices.length > 0 ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-browser-voice"
                   ${window.webkit?.messageHandlers?.meloVoice ? 'disabled title="Voice picker only applies in actual browsers — desktop app routes to system AVSpeechSynthesizer"' : ''}>
@@ -1248,12 +1260,12 @@ function renderTtsVoicePanel() {
         'data-action="activate-edge-tts"', ''
       )}
 
-      ${isEdgeTtsActive ? `
+      ${isEdgeTtsActive ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-edge-voice">
             <option value="">Auto-detect by language</option>
             ${EDGE_TTS_VOICES.map(v =>
-              `<option value="${escapeHtml(v.id)}" ${uiState.ttsEdgeVoice === v.id ? 'selected' : ''}>${escapeHtml(v.label)} — ${escapeHtml(v.desc)}</option>`
+              ui`<option value="${escapeHtml(v.id)}" ${uiState.ttsEdgeVoice === v.id ? 'selected' : ''}>${escapeHtml(v.label)} — ${escapeHtml(v.desc)}</option>`
             ).join('')}
           </select>
         </div>
@@ -1266,11 +1278,11 @@ function renderTtsVoicePanel() {
         'data-action="set-tts-engine"', 'data-engine="api"'
       )}
 
-      ${isApiVoiceActive ? `
+      ${isApiVoiceActive ? ui`
         <div class="tts-panel-sub">
           <select class="tts-voice-select" data-action="select-tts-api-voice">
             ${TTS_API_VOICES.map(v =>
-              `<option value="${v.id}" ${uiState.ttsApiVoice === v.id ? 'selected' : ''}>${v.label} — ${v.desc}</option>`
+              ui`<option value="${v.id}" ${uiState.ttsApiVoice === v.id ? 'selected' : ''}>${v.label} — ${v.desc}</option>`
             ).join('')}
           </select>
         </div>
@@ -1295,16 +1307,16 @@ function renderTtsVoicePanel() {
           ${radioRow(
             '自定义语音',
             isMinimaxActive
-              ? `Active — ${customVoices.find(v => v.id === uiState.ttsCustomVoiceId)?.label || '自定义'}`
+              ? `Active — ${customVoices.find(v => v.id === uiState.ttsCustomVoiceId)?.label || t("自定义")}`
               : 'MiniMax 克隆音色 · 需要 API Key',
             isMinimaxActive,
             'data-action="activate-minimax-voice"', ''
           )}
-          ${isMinimaxActive && customVoices.length > 1 ? `
+          ${isMinimaxActive && customVoices.length > 1 ? ui`
             <div class="tts-panel-sub">
               <select class="tts-voice-select" data-action="select-tts-custom-voice">
                 ${customVoices.map(v =>
-                  `<option value="${escapeHtml(v.id)}" ${uiState.ttsCustomVoiceId === v.id ? 'selected' : ''}>${escapeHtml(v.label)}</option>`
+                  ui`<option value="${escapeHtml(v.id)}" ${uiState.ttsCustomVoiceId === v.id ? 'selected' : ''}>${escapeHtml(v.label)}</option>`
                 ).join('')}
               </select>
             </div>
@@ -1453,10 +1465,10 @@ function renderStreamingAssistantMessage(chat) {
   const { citations: streamCitations, cleanText: streamCleanText } =
     extractSourceCitations(displayText);
 
-  return `
+  return ui`
     ${toolStrip}
     <article class="message assistant is-streaming">
-      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:'助手'}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || '助手')}</div>
+      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:t("助手")}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || t("助手"))}</div>
       <div
         class="message-bubble"
         data-copyable-surface
@@ -1630,6 +1642,24 @@ function mainAgentProfile() {
   return agentProfileById('main');
 }
 
+// A task runs in a chat owned by the task's Agent inside the task's project,
+// so its team is led by that Agent with the project's overrides applied.
+function taskTeamLead(task) {
+  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:task.projectId || null});
+  return agents.find(agent => agent.id === (task.owner || 'main')) || null;
+}
+
+// Inside a project the composer starts from the project's saved team.
+function composerTeamPlan() {
+  const projectId = !uiState.neuralOverview && activeChat() ? activeChat().projectId : uiState.newChatProjectId;
+  return uiState.bootstrap?.projects?.find(project => project.id === projectId)?.teamPlan || null;
+}
+
+function projectDefaultAgentId(projectId) {
+  const id = uiState.bootstrap?.projects?.find(project => project.id === projectId)?.defaultAgentId;
+  return id && conversationAgents(uiState.bootstrap).some(agent => agent.id === id) ? id : '';
+}
+
 function activeChatAgentProfile() {
   return conversationAgent(uiState.bootstrap, {overview:uiState.neuralOverview, newAgentId:uiState.activeChatAgentId,newProjectId:uiState.newChatProjectId});
 }
@@ -1718,7 +1748,7 @@ function updateAgentChannelDraft(agentId, channelId, patch) {
 }
 
 function currentAgentScrollKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -1731,7 +1761,7 @@ function currentAgentScrollKey() {
 }
 
 function currentAgentEditorStateKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -1746,7 +1776,7 @@ function currentAgentEditorStateKey() {
 }
 
 function captureAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -1765,7 +1795,7 @@ function captureAgentEditorState() {
 }
 
 function captureAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -1782,7 +1812,7 @@ function captureAgentScrollState() {
 }
 
 function restoreAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -1879,11 +1909,14 @@ function restoreAgentEditorState() {
 
   window.requestAnimationFrame(() => {
     const editor = document.querySelector('.agent-content-editor');
-    if (!(editor instanceof HTMLTextAreaElement)) {
+    if (!(editor instanceof HTMLTextAreaElement) || stateKey !== currentAgentEditorStateKey()) {
       return;
     }
+    // A user may focus/select text between render and this animation frame.
+    // Never replace that newer selection with the previous render's caret.
+    if (document.activeElement === editor) return;
 
-    if (editorState) {
+    if (editorState?.focused) {
       // CRITICAL: in WKWebView, calling textarea.setSelectionRange(...) has
       // the side-effect of implicitly focusing the textarea — even though
       // we're only trying to "remember" where the caret was. That means the
@@ -1950,8 +1983,9 @@ function selectedCustomizeItem() {
   );
 }
 
+function artifactShelfRows() { return (uiState.artifactCollection==='results' ? uiState.bootstrap?.results : uiState.bootstrap?.artifacts) || []; }
 function selectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   return (
     artifacts.find(artifact => artifact.id === uiState.selectedArtifactId) ||
     artifacts[0] ||
@@ -2328,6 +2362,7 @@ async function handleOpenSearchResult(result) {
       });
       break;
     case 'open-artifact':
+      uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===result.artifactId)?'results':'knowledge';
       uiState.selectedArtifactId = result.artifactId;
       await patchSettings({
         activeView: 'artifacts',
@@ -2399,7 +2434,7 @@ function approvalQueue() {
 }
 
 function syncSelectedArtifact() {
-  const artifacts = uiState.bootstrap?.artifacts || [];
+  const artifacts = artifactShelfRows();
   if (!artifacts.some(artifact => artifact.id === uiState.selectedArtifactId)) {
     uiState.selectedArtifactId = artifacts[0]?.id || null;
   }
@@ -2719,14 +2754,11 @@ function selectedAgentNeedsRuntimeRefresh() {
     return false;
   }
 
-  const telegramChannel =
-    selected.channels?.find?.(channel => channel.id === 'telegram') ||
-    selected.channels?.telegram;
   const discordChannel =
     selected.channels?.find?.(channel => channel.id === 'discord') ||
     selected.channels?.discord;
 
-  return Boolean(telegramChannel?.enabled || discordChannel?.enabled);
+  return Boolean(discordChannel?.enabled);
 }
 
 function syncAgentRuntimeRefresh() {
@@ -2902,7 +2934,7 @@ function syncComposerTextareaHeight() {
 }
 
 function renderEditContextMenu() {
-  return `
+  return ui`
     <div id="edit-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="editable-undo">Undo</button>
       <button class="edit-context-item" type="button" data-action="editable-redo">Redo</button>
@@ -2916,7 +2948,7 @@ function renderEditContextMenu() {
 }
 
 function renderCopyContextMenu() {
-  return `
+  return ui`
     <div id="copy-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="copy-surface-selection">Copy</button>
       <button class="edit-context-item" type="button" data-action="copy-surface-all">Copy all</button>
@@ -2928,7 +2960,7 @@ function renderCopyContextMenu() {
 function renderRecentContextMenu() {
   const recent = (uiState.bootstrap?.recents || []).find(chat => chat.id === activeRecentContextChatId);
   const isLocked = Boolean(recent?.locked);
-  return `
+  return ui`
     <div id="recent-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="toggle-chat-lock">
         ${isLocked ? 'Unlock' : 'Lock'}
@@ -2942,7 +2974,7 @@ function renderRecentContextMenu() {
 }
 
 function renderAudioContextMenu() {
-  return `
+  return ui`
     <div id="audio-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="transcribe-audio-message">Transcribe</button>
     </div>
@@ -3508,7 +3540,7 @@ async function patchSettings(patch) {
 
 async function handleCreateChat({
   mode = uiState.bootstrap.settings.activeMode,
-  projectId = uiState.newChatProjectId,
+  projectId = uiState.newChatProjectId ?? null,
   agentId = uiState.activeChatAgentId || 'main',
 } = {}) {
   const payload = await api('/api/chats', {
@@ -3583,14 +3615,22 @@ async function handleToggleChatLock(chatId) {
   closeRecentContextMenu();
 }
 
+let chatDeletionPending=false;
 async function handleDeleteChat(chatId) {
+  if(chatDeletionPending)return;
+  chatDeletionPending=true;
+  try {
+  const preview=await api('/api/chats/delete-preview',{method:'POST',body:{chatId}});
+  const fileDecision=await askFileDecision(preview);
+  if(fileDecision==='cancel') return;
   applyBootstrap(
     await api('/api/chats/delete', {
       method: 'POST',
-      body: { chatId },
+      body: { chatId, fileDecision, workspaceToken:preview.token },
     }),
   );
   closeRecentContextMenu();
+  } finally {chatDeletionPending=false;}
 }
 
 async function handleTranscribeAudio() {
@@ -3656,7 +3696,7 @@ function showUndoToast({ message = '', onUndo, ms = UNDO_TOAST_DEFAULT_MS } = {}
   // Undo button.  innerHTML stays here because the message has already
   // been built by the caller from trusted state (no user-supplied
   // markup).
-  toast.innerHTML = `
+  toast.innerHTML = ui`
     <span class="undo-toast-label" data-role="label"></span>
     <button class="undo-toast-button" type="button" data-role="undo">Undo</button>
   `;
@@ -3708,7 +3748,7 @@ function showTranscriptToast(text) {
   const toast = document.createElement('div');
   toast.id = 'transcript-toast';
   toast.className = 'transcript-toast';
-  toast.innerHTML = `
+  toast.innerHTML = ui`
     <div class="transcript-toast-header">
       <span>Transcript</span>
       <button class="transcript-toast-close" type="button" aria-label="Close">&#x2715;</button>
@@ -3728,12 +3768,7 @@ function showTranscriptToast(text) {
 }
 
 async function startProjectSession(projectId, mode) {
-  await patchSettings({
-    selectedProjectId: projectId,
-    activeMode: mode,
-    activeView: 'chat',
-  });
-  await handleCreateChat({ projectId, mode });
+  await handleCreateChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
 }
 
 async function handleSendMessage(prepared = null) {
@@ -3754,6 +3789,7 @@ async function handleSendMessage(prepared = null) {
   // dropping it (aborted run — a half-finished sentence would otherwise
   // play seconds after the Stop click).
   const imageTask = prepared?.imageTask || consumeImageTask();
+  const teamPlan = prepared?.teamPlan || null;
   let sendWasAborted = false;
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
@@ -3767,7 +3803,7 @@ async function handleSendMessage(prepared = null) {
   if (!prepared) uiState.composerVoiceAttachmentId = null;
 
   let chatId = prepared?.chatId || (fromOverview ? null : uiState.bootstrap?.settings?.selectedChatId || null);
-  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask,
+  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
     voiceTranscript, voiceAttachmentId, mode: uiState.bootstrap?.settings?.activeMode,
     agentId: activeChat()?.agentId || uiState.bootstrap?.settings?.selectedAgentId,
     modelSelection: activeChat()?.modelSelection || null });
@@ -3821,6 +3857,7 @@ async function handleSendMessage(prepared = null) {
         content,
         attachments,
         ...(imageTask ? { imageTask } : {}),
+        ...(teamPlan ? {teamPlan} : {}),
         ...(voiceTranscript
           ? {
               extractedMedia: [
@@ -4129,9 +4166,9 @@ function minimaxTtsConfigPatchForVoice(voiceId) {
 }
 
 function renderMinimaxTtsParameterInputs(draft, selected) {
-  return `
+  return ui`
     <div class="minimax-param-list">
-      ${MINIMAX_TTS_PARAMS.map(def => `
+      ${MINIMAX_TTS_PARAMS.map(def => ui`
         <label class="minimax-param-row">
           <input
             class="config-input minimax-param-input"
@@ -4843,6 +4880,7 @@ async function handleUpdateProject(form) {
         summary: String(formData.get('summary') || ''),
         instructions: String(formData.get('instructions') || ''),
         workspacePath: String(formData.get('workspacePath') || ''),
+        confirmWorkspace: formData.get('confirmWorkspace') === 'on',
         knowledgeIds: formData.getAll('knowledgeIds').map(String),
       },
     },
@@ -4864,7 +4902,7 @@ async function handleCreateArtifact() {
       content,
       language,
       kind,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 
@@ -4879,7 +4917,7 @@ async function handleCreateArtifact() {
 }
 
 function handleStartEditArtifact(artifactId) {
-  const artifact = uiState.bootstrap.artifacts.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
   uiState.selectedArtifactId = artifactId;
   uiState.editingArtifactId = artifactId;
@@ -4946,7 +4984,7 @@ async function handleUpdateArtifact() {
  */
 async function handleDeleteArtifact(artifactId) {
   if (!artifactId) return;
-  const artifact = uiState.bootstrap?.artifacts?.find(item => item.id === artifactId);
+  const artifact = artifactShelfRows().find(item => item.id === artifactId);
   if (!artifact) return;
 
   // Clear current selection / edit-buffer pre-emptively so the detail
@@ -5085,11 +5123,21 @@ async function handleRefreshModelStatus() {
 }
 
 async function handleCreateCustomAgent() {
-  const payload = await api('/api/agents/create-custom', {
-    method: 'POST',
-    body: {},
-  });
-  applyBootstrap(payload);
+  if (uiState.agentCreating) return;
+  uiState.agentCreating = true;
+  render();
+  try {
+    const payload = await api('/api/agents/create-custom', { method: 'POST', body: {} });
+    applyBootstrap(payload);
+    const form = app.querySelector('form[data-form="agent-profile-update"]');
+    if (form) settingsFormEditors.begin(form);
+    render();
+    app.querySelector('form[data-form="agent-profile-update"] [name="name"]')?.select();
+  } finally {
+    uiState.agentCreating = false;
+    const button = app.querySelector('[data-action="create-custom-agent"]');
+    if (button) { button.disabled = false; button.textContent = t('新增 Agent'); }
+  }
 }
 
 async function handleUpdateAgentProfile(form) {
@@ -5123,6 +5171,7 @@ async function handleUpdateAgentProfile(form) {
     await waitForMinimumVisibleState;
     delete uiState.agentDrafts[draftKey];
     applyBootstrap(payload);
+    if (payload.agentExportWarning) showError(payload.agentExportWarning);
     const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
     if (
@@ -5219,7 +5268,7 @@ async function saveAgentChannelSnapshot(snapshot) {
   uiState.agentSaveStates[saveKey] = true;
 
   // Channel autosave also carries the three voice settings edited on the
-  // Telegram panel (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
+  // channel voice section (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
   // agent-level, not nested under channels, but they share the same autosave
   // trigger so the user never has to hit a separate save button. Only include
   // them when they are present on the snapshot to avoid overwriting a saved
@@ -5277,7 +5326,7 @@ function scheduleAgentChannelAutosave(agentId) {
   }
 
   // Capture the current draft including agent-level voice fields edited on the
-  // Telegram panel so saveAgentChannelSnapshot can forward them. Using draft
+  // channel voice section so saveAgentChannelSnapshot can forward them. Using draft
   // values (not DOM reads) avoids losing in-flight edits when the autosave
   // timer fires after the user has moved focus.
   pendingAgentChannelAutosave = {
@@ -5615,10 +5664,12 @@ async function handleImportAgentPreset(agentId, presetId) {
     return;
   }
 
+  const previous = agentDraftFor(agentProfileById(agentId));
+  const instructions = agentDocumentWithPreset(previous?.instructions, preset);
   mergeAgentDraft(agentId, {
+    instructions,
     identity: preset.identity || preset.identify,
     'soul.md': preset.soulMd,
-    mood: preset.mood,
   });
   render();
 }
@@ -5729,6 +5780,14 @@ async function handlePingExternalConnector(connectorId) {
   applyBootstrap(payload);
 }
 
+function creationContext() {
+  const view=uiState.bootstrap?.settings?.activeView;
+  if (uiState.neuralOverview) return {projectId:null,chatId:null};
+  if (view==='projects') return {projectId:activeProject()?.id || null,chatId:null};
+  const chat=view==='chat' ? activeChat() : null;
+  return {projectId:chat?.projectId || null,chatId:chat?.id || null};
+}
+
 async function handleCreateTask() {
   const title = uiState.draftTask.title.trim();
   if (!title) {
@@ -5743,8 +5802,8 @@ async function handleCreateTask() {
       summary: uiState.draftTask.summary.trim(),
       owner: uiState.draftTask.owner,
       kind: uiState.draftTask.kind,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-      chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+      projectId: creationContext().projectId,
+      chatId: creationContext().chatId,
     },
   });
 
@@ -5942,8 +6001,8 @@ function paletteCommands() {
     {
       id: 'palette-open-agents',
       title: 'Open Agent',
-      subtitle: 'Tune IDENTITY.md, SOUL.md, and mood for each agent lane',
-      keywords: 'agent agents identity soul mood persona',
+      subtitle: t('设置 Agent 的人设、能力与消息渠道'),
+      keywords: 'agent agents persona capabilities channels',
       action: 'open-agents',
     },
     {
@@ -6166,12 +6225,12 @@ async function handleComposerCommand() {
         kind: 'command',
         title: `Run ${templateId}`,
         description: `Command requested from the command workbench.`,
-        projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-        chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+        projectId: creationContext().projectId,
+        chatId: creationContext().chatId,
         payload: {
           templateId,
           query: queryParts.join(' ').trim(),
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+          projectId: creationContext().projectId,
         },
       });
       break;
@@ -6184,8 +6243,8 @@ async function handleComposerCommand() {
           summary: 'Created from the command workbench.',
           owner: 'builder',
           kind: 'task',
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-          chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+          projectId: creationContext().projectId,
+          chatId: creationContext().chatId,
         },
       }).then(applyBootstrap);
       break;
@@ -6198,8 +6257,8 @@ async function handleComposerCommand() {
           summary: `Assigned to ${owner}.`,
           owner,
           kind: 'agent',
-          projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-          chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+          projectId: creationContext().projectId,
+          chatId: creationContext().chatId,
         },
       }).then(applyBootstrap);
       break;
@@ -6230,12 +6289,12 @@ async function handleRunCommand(form) {
     kind: 'command',
     title: `Run ${form.dataset.templateId}`,
     description: 'Run a curated local command inside the active project.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       templateId: form.dataset.templateId,
       query: String(formData.get('query') || '').trim(),
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
@@ -6243,7 +6302,7 @@ async function handleRunCommand(form) {
 async function handleSelectWorkspaceFile(filePath, { lineNumber = null } = {}) {
   const payload = await api('/api/workspace/select-file', {
     method: 'POST',
-    body: { filePath },
+    body: { filePath, chatId:activeChat()?.id },
   });
   resetFileEditor();
   applyBootstrap(payload);
@@ -6267,12 +6326,12 @@ async function handleSaveWorkspaceFile() {
     kind: 'file-save',
     title: `Save ${filePath}`,
     description: 'Write the current editor draft back into the workspace.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       filePath,
       content: uiState.fileDraftContent,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
@@ -6288,24 +6347,24 @@ async function handleApplyArtifactToSelectedFile(artifactId) {
     kind: 'artifact-apply',
     title: `Apply artifact to ${selectedFilePath}`,
     description: 'Write the selected artifact into the currently selected workspace file.',
-    projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
-    chatId: activeChat()?.id || uiState.bootstrap.settings.selectedChatId,
+    projectId: creationContext().projectId,
+    chatId: creationContext().chatId,
     payload: {
       artifactId,
       filePath: selectedFilePath,
-      projectId: activeProject()?.id || uiState.bootstrap.settings.selectedProjectId,
+      projectId: creationContext().projectId,
     },
   });
 }
 
 function navItem(action, iconMarkup, label, view, subtitle = '') {
   const isActive = uiState.bootstrap?.settings.activeView === view;
-  return `
+  return ui`
     <button class="nav-item ${isActive ? 'is-active' : ''}" data-action="${action}" data-view="${view}">
       <span class="nav-icon">${iconMarkup}</span>
       <span class="nav-copy">
         <span class="nav-title">${label}</span>
-        ${subtitle ? `<span class="nav-subtitle">${subtitle}</span>` : ''}
+        ${subtitle ? ui`<span class="nav-subtitle">${subtitle}</span>` : ''}
       </span>
     </button>
   `;
@@ -6318,7 +6377,7 @@ function renderSidebar() {
   const isNewChatActive =
     data.settings.activeView === 'chat' && !data.settings.selectedChatId;
 
-  return `
+  return ui`
     <aside class="sidebar">
       <div class="sidebar-nav">
         <div class="nav-group">
@@ -6345,7 +6404,7 @@ function renderSidebar() {
             data.recents.length
               ? data.recents
                   .map(
-                    recent => `
+                    recent => ui`
                       <button
                         class="recent-item ${
                           data.settings.selectedChatId === recent.id &&
@@ -6358,13 +6417,13 @@ function renderSidebar() {
                       >
                         <div class="recent-item-row">
                           <div class="recent-item-title">
-                            ${recent.locked ? `<span class="recent-lock-badge" aria-label="Locked">${icon.lock}</span>` : ''}
+                            ${recent.locked ? ui`<span class="recent-lock-badge" aria-label="Locked">${icon.lock}</span>` : ''}
                             <span>${escapeHtml(recent.title)}</span>
                           </div>
                           ${
                             data.settings.selectedChatId === recent.id &&
                             data.settings.activeView === 'chat'
-                              ? `<span class="recent-item-more">${icon.dots}</span>`
+                              ? ui`<span class="recent-item-more">${icon.dots}</span>`
                               : ''
                           }
                         </div>
@@ -6373,7 +6432,7 @@ function renderSidebar() {
                     `,
                   )
                   .join('')
-              : '<div class="empty-state compact">No threads yet. Start one from New chat.</div>'
+              : ui`<div class="empty-state compact">还没有对话，从新对话开始。</div>`
           }
         </div>
       </div>
@@ -6389,11 +6448,7 @@ function renderSidebar() {
 
         <div class="profile-hint">
           ${escapeHtml(currentMode?.label || 'Chat')} mode is ready for the current workspace.
-          ${
-            mainAgent
-              ? ` Main agent mood: ${escapeHtml(mainAgent.moodLabel)}.`
-              : ''
-          }
+
         </div>
       </div>
     </aside>
@@ -6405,7 +6460,7 @@ function renderTopbar() {
   const project = activeProject();
   const currentAgent = conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
-  return `
+  return ui`
     <header class="topbar">
       <div class="topbar-left">
         <button class="pill-button" data-action="open-command-palette">
@@ -6423,7 +6478,7 @@ function renderTopbar() {
             // we decide what those pages should actually be.
             .filter(mode => mode.id === 'chat')
             .map(
-              mode => `
+              mode => ui`
                 <button
                   class="mode-button ${
                     data.settings.activeMode === mode.id ? 'is-active' : ''
@@ -6442,12 +6497,12 @@ function renderTopbar() {
       <div class="topbar-right status-group">
         ${
           currentAgent
-            ? `<div class="status-pill">${escapeHtml(currentAgent.name)}${currentAgent.moodLabel ? ' · ' + escapeHtml(currentAgent.moodLabel) : ''}</div>`
+            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}</div>`
             : ''
         }
         <div class="status-pill">
           <span class="status-dot"></span>
-          ${!uiState.neuralOverview && activeChat()?.modelSelection ? '本对话' : currentAgent?.model ? '角色默认' : '默认'} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
+          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? 'Agent 默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
         </div>
       </div>
     </header>
@@ -6468,7 +6523,7 @@ window.addEventListener('resize', syncModelPickerPosition);
 
 function composerPlaceholder() {
   if (!activeChat()) {
-    return 'Ask Melo anything, or type / for Melo commands...';
+    return t("问问 Melo，或输入 / 使用命令…");
   }
 
   switch (uiState.bootstrap?.settings.activeMode) {
@@ -6478,7 +6533,7 @@ function composerPlaceholder() {
       return 'Ask about files, builds, code changes, or your workspace...';
     case 'chat':
     default:
-      return 'How can I help you today?';
+      return t("今天有什么可以帮你？");
   }
 }
 
@@ -6489,7 +6544,7 @@ function renderSlashPalette() {
   if (!uiState.slashPalette.open) return '';
   const matches = slashPaletteMatches();
   if (!matches.length) {
-    return `
+    return ui`
       <div class="slash-palette" role="listbox">
         <div class="slash-palette-empty">No skills match /${escapeHtml(uiState.slashPalette.query)}</div>
       </div>
@@ -6499,10 +6554,10 @@ function renderSlashPalette() {
     Math.max(0, uiState.slashPalette.selectedIndex | 0),
     matches.length - 1,
   );
-  return `
+  return ui`
     <div class="slash-palette" role="listbox">
       ${matches
-        .map((skill, i) => `
+        .map((skill, i) => ui`
           <button
             type="button"
             class="slash-palette-item ${i === selectedIndex ? 'is-active' : ''}"
@@ -6513,7 +6568,7 @@ function renderSlashPalette() {
             <span class="slash-palette-id">/${escapeHtml(skill.id)}</span>
             <span class="slash-palette-name">${escapeHtml(skill.name)}</span>
             ${skill.description
-              ? `<span class="slash-palette-desc">${escapeHtml(skill.description)}</span>`
+              ? ui`<span class="slash-palette-desc">${escapeHtml(skill.description)}</span>`
               : ''}
           </button>
         `)
@@ -6539,6 +6594,7 @@ function modelDefaultsForAuthMode(authMode) {
 
 function modelOptionsForAuthMode(authMode) {
   const config = uiState.bootstrap?.settings?.config || {};
+  if (!authMode || authMode === config.authMode) return connectionModelOptions(config);
   const catalogs = config.modelCatalogs || {};
   const mode = authMode || config.authMode || 'codex';
   const selectedModel =
@@ -6562,15 +6618,15 @@ function renderComposerCommandDeck({ inline = false } = {}) {
     return '';
   }
 
-  return `
+  return ui`
     <div class="command-deck ${inline ? 'is-inline' : ''}">
       ${
         inline
           ? ''
-          : `
+          : ui`
             <div class="chip-row command-chip-row">
               ${HOME_PROMPT_PRESETS.map(
-                preset => `
+                preset => ui`
                   <button
                     class="chip chip-button"
                     type="button"
@@ -6586,11 +6642,11 @@ function renderComposerCommandDeck({ inline = false } = {}) {
       }
       ${
         showSuggestions
-          ? `
+          ? ui`
             <div class="command-suggestions">
               ${suggestions
                 .map(
-                  item => `
+                  item => ui`
                     <button class="command-suggestion" type="button" data-action="insert-command" data-command="${escapeHtml(
                       item.command,
                     )}">
@@ -6618,16 +6674,16 @@ function renderTaskPanel({ compact = false } = {}) {
   const tasks = activeTasks();
   const config = uiState.bootstrap?.settings?.config || {};
 
-  return `
+  return ui`
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
           <h2 class="pane-title">任务</h2>
-          <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
-          ${uiState.taskRestore ? `<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
+          <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>ui`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
+          ${uiState.taskRestore ? ui`<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
         </div>
         <button class="small-button" data-action="toggle-task-form">
-          ${uiState.showTaskForm ? '收起' : '新建任务'}
+          ${uiState.showTaskForm ? t("收起") : t("新建任务")}
         </button>
       </div>
       ${(() => {
@@ -6640,10 +6696,10 @@ function renderTaskPanel({ compact = false } = {}) {
         const overflow = lanes.slice(1);
         const primaryProfile = agentProfileById(primary);
         const overflowOpen = uiState.taskLaneOverflowOpen;
-        return `
+        return ui`
           <div class="chip-row task-lane-row task-lane-overflow-anchor">
             <button class="chip chip-button" data-action="run-task-lane" data-owner="${primary}">
-              执行下一项 · ${primary}${primaryProfile ? ` · ${escapeHtml(primaryProfile.moodLabel)}` : ''}
+              执行下一项 · ${primary}
             </button>
             <button class="chip chip-button task-lane-overflow-toggle"
                     type="button"
@@ -6653,13 +6709,13 @@ function renderTaskPanel({ compact = false } = {}) {
                     title="Run other agents">
               ⋯
             </button>
-            ${overflowOpen ? `
+            ${overflowOpen ? ui`
               <div class="task-lane-overflow-menu">
                 ${overflow.map(owner => {
                   const ownerProfile = agentProfileById(owner);
-                  return `
+                  return ui`
                     <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
-                      执行下一项 · ${owner}${ownerProfile ? ` · ${escapeHtml(ownerProfile.moodLabel)}` : ''}
+                      执行下一项 · ${owner}
                     </button>
                   `;
                 }).join('')}
@@ -6670,7 +6726,7 @@ function renderTaskPanel({ compact = false } = {}) {
       })()}
       ${
         uiState.showTaskForm
-          ? `
+          ? ui`
             <form class="config-form" data-form="task-create">
               <label class="label">
                 任务名称
@@ -6682,11 +6738,11 @@ function renderTaskPanel({ compact = false } = {}) {
               </label>
               <div class="project-form-grid">
                 <label class="label">
-                  执行角色
+                  执行Agent
                   <select class="config-select" name="owner">
                     ${['main', 'research', 'builder', 'reviewer']
                       .map(
-                        owner => `
+                        owner => ui`
                           <option value="${owner}" ${uiState.draftTask.owner === owner ? 'selected' : ''}>
                             ${owner}
                           </option>
@@ -6700,7 +6756,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   <select class="config-select" name="kind">
                     ${['task', 'agent']
                       .map(
-                        kind => `
+                        kind => ui`
                           <option value="${kind}" ${uiState.draftTask.kind === kind ? 'selected' : ''}>
                             ${kind}
                           </option>
@@ -6723,61 +6779,57 @@ function renderTaskPanel({ compact = false } = {}) {
                 .map(
                   task => {
                     const ownerProfile = agentProfileById(task.owner);
-                    return `
+                    return ui`
                     <article class="run-card">
                       <div class="thread-meta">
-                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? '角色任务' : '任务')}</span>
+                        <span class="chip is-accent">${escapeHtml(task.kind === 'agent' ? t("Agent任务") : t("任务"))}</span>
                         <span class="chip">${escapeHtml(task.ownerLabel)}</span>
-                        ${
-                          ownerProfile
-                            ? `<span class="chip">${escapeHtml(ownerProfile.moodLabel)}</span>`
-                            : ''
-                        }
+
                         <span class="chip">${escapeHtml(task.statusLabel)}</span>
                         <span class="meta-label">${escapeHtml(task.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(task.title)}</div>
-                      ${task.handoff && task.handoff.revision === task.syncRevision ? `<p class="alert compact-alert">收到手机接力请求。检查现有结果后点击“继续 / 修复”；工具权限仍在本机确认。</p>` : ""}
+                      ${task.handoff && task.handoff.revision === task.syncRevision ? ui`<p class="alert compact-alert">收到手机接力请求。检查现有结果后点击“继续 / 修复”；工具权限仍在本机确认。</p>` : ""}
                       ${
                         task.summary
-                          ? `<div class="list-row-meta">${escapeHtml(task.summary)}</div>`
+                          ? ui`<div class="list-row-meta">${escapeHtml(task.summary)}</div>`
                           : ''
                       }
                       ${
                         task.latestNotePreview
-                          ? `<div class="workspace-root">${escapeHtml(task.latestNotePreview)}</div>`
+                          ? ui`<div class="workspace-root">${escapeHtml(task.latestNotePreview)}</div>`
                           : ''
                       }
                       <div class="thread-meta">
                         <span class="meta-label">${escapeHtml(task.lastRunLabel)}</span>
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
-                      ${task.status === 'blocked' ? `<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? `<details class="quality-details"><summary>多角色协作 · 职责与费用</summary><p>每个角色都会独立调用模型；仅服务报告用量时计数。含执行角色时串行运行，调查与复核最多并发 2 个。停止对话会取消所有角色。</p><select id="team-plan-${task.id}"><option value="research,reviewer">调查 + 复核（并发 2）</option><option value="research,builder,reviewer">调查 → 执行 → 复核（串行）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
-                      ${task.acceptance?.team ? `<details class="quality-details" open><summary>各角色结果与成本</summary>${task.acceptance.team.results.map(r=>`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : '失败'} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
-                      ${task.runHistory?.length ? `<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
-                      ${task.acceptance ? `<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
-                      ${(task.acceptance.failures || []).map(f => `<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
-                      ${(task.acceptance.criteria || []).map(c => `<label class="toggle-row"><input type="checkbox" data-task-check="${escapeHtml(task.id)}" data-criterion="${escapeHtml(c.id)}" ${(uiState.taskChecks?.[task.id]?.runId === task.execution?.runId ? uiState.taskChecks[task.id][c.id] : c.checked) ? 'checked' : ''} ${task.status !== 'review' ? 'disabled' : ''} />${escapeHtml(c.label)}</label>`).join('')}
-                      ${(task.acceptance.tools || []).map(t => `<p>${escapeHtml(t.toolName)} · ${t.ok ? '成功' : '失败'}${t.exitCode != null ? ` · 退出码 ${t.exitCode}` : ''} ${escapeHtml(t.path || '')}${t.backupOperationId ? `<button class="small-button" data-action="preview-task-backup" data-operation-id="${escapeHtml(t.backupOperationId)}">预览恢复</button>` : ''}</p>`).join('')}
-                      ${task.status === 'review' ? `<label>验收评分<select id="quality-score-${task.id}"><option value="">暂不评分</option><option value="5">5 · 满足要求</option><option value="4">4 · 小幅改善</option><option value="3">3 · 部分满足</option><option value="2">2 · 明显不足</option><option value="1">1 · 不可用</option></select></label>` : ''}
+                      ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
+                      ${task.status !== 'running' ? renderTeamPanel({scope:'task',target:task.id,lead:taskTeamLead(task),agents:conversationAgents(uiState.bootstrap,{overview:true,newProjectId:task.projectId || null}),disabled:uiState.sending,escapeHtml}) : ''}
+                      ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各成员结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
+                      ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
+                      ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
+                      ${(task.acceptance.failures || []).map(f => ui`<p class="alert compact-alert">${escapeHtml(f.name)} · ${escapeHtml(f.error)}</p>`).join('')}
+                      ${(task.acceptance.criteria || []).map(c => ui`<label class="toggle-row"><input type="checkbox" data-task-check="${escapeHtml(task.id)}" data-criterion="${escapeHtml(c.id)}" ${(uiState.taskChecks?.[task.id]?.runId === task.execution?.runId ? uiState.taskChecks[task.id][c.id] : c.checked) ? 'checked' : ''} ${task.status !== 'review' ? 'disabled' : ''} />${escapeHtml(c.label)}</label>`).join('')}
+                      ${(task.acceptance.tools || []).map(t => ui`<p>${escapeHtml(t.toolName)} · ${t.ok ? t("成功") : t("失败")}${t.exitCode != null ? ` · 退出码 ${t.exitCode}` : ''} ${escapeHtml(t.path || '')}${t.backupOperationId ? ui`<button class="small-button" data-action="preview-task-backup" data-operation-id="${escapeHtml(t.backupOperationId)}">预览恢复</button>` : ''}</p>`).join('')}
+                      ${task.status === 'review' ? ui`<label>验收评分<select id="quality-score-${task.id}"><option value="">暂不评分</option><option value="5">5 · 满足要求</option><option value="4">4 · 小幅改善</option><option value="3">3 · 部分满足</option><option value="2">2 · 明显不足</option><option value="1">1 · 不可用</option></select></label>` : ''}
                       </details>` : ''}
                       <div class="inline-actions">
                         ${
                           task.status !== 'running'
-                            ? `<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? '继续 / 修复' : '开始执行'}</button>`
-                            : '<span class="meta-label">在对话中查看进度或停止</span>'
+                            ? ui`<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? t("继续 / 修复") : t("开始执行")}</button>`
+                            : ui`<span class="meta-label">在对话中查看进度或停止</span>`
                         }
-                        ${task.execution?.chatId ? `<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
-                        ${task.status === 'review' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="done">验收完成</button>` : ''}
-                        ${task.status === 'done' ? `<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="todo">重新打开</button>` : ''}
+                        ${task.execution?.chatId ? ui`<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
+                        ${task.status === 'review' ? ui`<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="done">验收完成</button>` : ''}
+                        ${task.status === 'done' ? ui`<button class="small-button" data-action="set-task-status" data-task-id="${task.id}" data-status="todo">重新打开</button>` : ''}
                       </div>
                     </article>
                   `;
                   },
                 )
                 .join('')
-            : '<div class="empty-state compact">还没有任务。创建后可执行、查看记录并验收。</div>'
+            : ui`<div class="empty-state compact">还没有任务。创建后可执行、查看记录并验收。</div>`
         }
       </div>
     </section>
@@ -6789,7 +6841,7 @@ function renderApprovalPanel({ compact = false } = {}) {
   let displayedCompleted = 0;
   const visibleApprovals = approvals.filter(item => ['pending', 'running', 'uncertain'].includes(item.status) || displayedCompleted++ < (compact ? 4 : 24));
 
-  return `
+  return ui`
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
@@ -6803,27 +6855,27 @@ function renderApprovalPanel({ compact = false } = {}) {
           approvals.length
             ? visibleApprovals
                 .map(
-                  approval => `
+                  approval => ui`
                     <article class="run-card">
                       <div class="thread-meta">
                         <span class="chip is-accent">${escapeHtml(approval.kind)}</span>
-                        <span class="chip">${escapeHtml(({pending:'等待确认',running:'执行中',uncertain:'结果待核对',approved:'已执行',rejected:'已关闭'})[approval.status] || approval.status)}</span>
+                        <span class="chip">${escapeHtml(({pending:t("等待确认"),running:t("执行中"),uncertain:'结果待核对',approved:t("已执行"),rejected:t("已关闭")})[approval.status] || approval.status)}</span>
                         <span class="meta-label">${escapeHtml(approval.updatedLabel)}</span>
                       </div>
                       <div class="list-row-title">${escapeHtml(approval.title)}</div>
                       ${
                         approval.description
-                          ? `<div class="list-row-meta">${escapeHtml(approval.description)}</div>`
+                          ? ui`<div class="list-row-meta">${escapeHtml(approval.description)}</div>`
                           : ''
                       }
                       ${
                         approval.resultSummary
-                          ? `<div class="workspace-root">${escapeHtml(approval.resultSummary)}</div>`
+                          ? ui`<div class="workspace-root">${escapeHtml(approval.resultSummary)}</div>`
                           : ''
                       }
                       ${
                         approval.status === 'pending'
-                          ? `
+                          ? ui`
                             <div class="inline-actions">
                               <button class="small-button is-primary" data-action="execute-approval" data-approval-id="${approval.id}">
                                 同意并执行
@@ -6833,13 +6885,13 @@ function renderApprovalPanel({ compact = false } = {}) {
                               </button>
                             </div>
                           `
-                          : approval.status === 'uncertain' ? `<div class="inline-actions"><button class="small-button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}">已核对，关闭记录</button></div>` : ''
+                          : approval.status === 'uncertain' ? ui`<div class="inline-actions"><button class="small-button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}">已核对，关闭记录</button></div>` : ''
                       }
                     </article>
                   `,
                 )
                 .join('')
-            : '<div class="empty-state compact">暂无审批记录。</div>'
+            : ui`<div class="empty-state compact">暂无审批记录。</div>`
         }
       </div>
     </section>
@@ -6857,28 +6909,28 @@ function renderComposerCard({ inline = false } = {}) {
   const voicePreviewMarkup = renderVoiceInput(uiState.voice, escapeHtml);
   const footerMarkup =
     isHomeComposer || selectedFile
-      ? `
+      ? ui`
         <div class="composer-footer">
           <div class="composer-footer-copy">
             ${project ? `Project: ${escapeHtml(project.name)}` : 'Local-first Melo chat is ready.'}
           </div>
           ${
             selectedFile
-              ? `<div class="composer-footer-copy is-secondary">Selected file: ${escapeHtml(selectedFile.path)}</div>`
+              ? ui`<div class="composer-footer-copy is-secondary">Selected file: ${escapeHtml(selectedFile.path)}</div>`
               : ''
           }
         </div>
       `
       : '';
 
-  return `
+  return ui`
     <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?'<span class="list-row-meta" role="status">正在切换角色…</span>':''}</div>
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
       ${renderExecutionPanel()}
-      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? `<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
+      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
         !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : uiState.newChatModel)
-          ? `
+          ? ui`
             <div class="alert">
               ${
                 data.settings.config.authMode === 'codex'
@@ -6892,7 +6944,7 @@ function renderComposerCard({ inline = false } = {}) {
           : ''
       }
 
-      ${uiState.sending ? `<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
+      ${uiState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
 
       <div class="composer-card ${inline ? 'is-thread' : ''}">
         <form data-form="composer" class="composer-form">
@@ -6904,7 +6956,7 @@ function renderComposerCard({ inline = false } = {}) {
                   class="composer-icon-button"
                   type="button"
                   data-action="toggle-composer-attachment-menu"
-                  title="Add attachment"
+                  title="添加附件"
                 >
                   <span class="toolbar-icon">${icon.plus}</span>
                 </button>
@@ -6913,6 +6965,7 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
+                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:uiState.sending,escapeHtml})}
                 ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
@@ -6929,7 +6982,7 @@ function renderComposerCard({ inline = false } = {}) {
                 </div>
 
                 <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
-                  ${[['zh-CN', '中文'], ['en-US', 'English'], ['system', '系统语言']].map(([value, label]) => `<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
                 <button
                   class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
@@ -6945,13 +6998,13 @@ function renderComposerCard({ inline = false } = {}) {
 
                 ${
                   uiState.sending
-                    ? `
-                      <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="Stop generating">
+                    ? ui`
+                      <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="停止生成">
                         <span class="toolbar-icon">${icon.stop}</span>
                       </button>
                     `
-                    : `
-                      <button class="composer-icon-button is-primary" type="submit" title="Send message" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
+                    : ui`
+                      <button class="composer-icon-button is-primary" type="submit" title="发送消息" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
                         <span class="toolbar-icon">${icon.send}</span>
                       </button>
                     `
@@ -6970,8 +7023,8 @@ function renderComposerCard({ inline = false } = {}) {
               <textarea
                 id="composer"
                 class="composer-textarea"
-                placeholder="${escapeHtml(inline ? 'Reply…' : composerPlaceholder())}"
-                aria-label="Message composer"
+                placeholder="${escapeHtml(inline ? t("回复…") : composerPlaceholder())}"
+                aria-label="消息输入框"
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
 
@@ -6979,7 +7032,7 @@ function renderComposerCard({ inline = false } = {}) {
             ${renderAttachmentPreviewList(uiState.composerAttachments)}
             ${
               uiState.composerDragActive
-                ? `
+                ? ui`
                   <div class="composer-drop-banner">
                     Drop image, audio, video, or PDF here. Media extraction runs best-effort before the model sees it.
                   </div>
@@ -7025,7 +7078,7 @@ function renderMessageActions(message) {
   if (message.role !== 'assistant') return '';
   const isSpeaking = uiState.ttsSpeakingMessageId === message.id;
   const isLoading = !isSpeaking && uiState.ttsSpeakingLoadingId === message.id;
-  return `
+  return ui`
     <div class="message-actions">
       <button
         class="message-action-btn ${isSpeaking ? 'is-speaking' : ''} ${isLoading ? 'is-tts-loading' : ''}"
@@ -7050,12 +7103,12 @@ function renderMessageToolResults(message) {
 }
 
 function renderMessageList(chat) {
-  return `
+  return ui`
     <div class="message-list">
       ${chat.messages
         .map(selectedMessagePresentation)
         .map(
-          message => `
+          message => ui`
             <article class="message ${message.role} ${
               uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             }" data-message-id="${escapeHtml(message.id)}">
@@ -7083,11 +7136,11 @@ function renderThreadArtifactStrip(artifacts) {
     return '';
   }
 
-  return `
+  return ui`
     <section class="surface-card thread-artifact-strip">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Artifacts from this thread</h2>
+          <h2 class="pane-title">本对话成果</h2>
         </div>
         <button class="small-button" data-action="open-view" data-view="artifacts">
           Open shelf
@@ -7098,7 +7151,7 @@ function renderThreadArtifactStrip(artifacts) {
         ${artifacts
           .slice(0, 3)
           .map(
-            artifact => `
+            artifact => ui`
               <button
                 class="artifact-card artifact-mini-card"
                 data-action="open-artifact"
@@ -7123,12 +7176,12 @@ function renderThreadArtifactStrip(artifacts) {
 function renderAgentSelectorChip() {
   const agent = activeChatAgentProfile();
   if (!agent) return '';
-  return `
+  return ui`
     <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话角色" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
-      <span class="agent-selector-caption">角色</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}${agent.moodLabel ? ` · ${escapeHtml(agent.moodLabel)}` : ''}
+            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
+      <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
   `;
@@ -7138,16 +7191,16 @@ function renderAgentSelectorDropdown() {
   if (!uiState.agentSelectorOpen) return '';
   const agents = allChatAgentProfiles();
   if (!agents.length) return '';
-  return `
-    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话角色">
-      <header><strong>选择对话 Agent</strong><p>默认角色和你创建的角色都在这里。切换只影响后续回复。</p></header>
-      ${agents.map(agent => `
+  return ui`
+    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话Agent">
+      <header><strong>选择对话 Agent</strong><p>默认Agent和你创建的Agent都在这里。切换只影响后续回复。</p></header>
+      ${agents.map(agent => ui`
         <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
                 data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
                 data-agent-id="${escapeHtml(agent.id)}">
           ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
-          ${agent.moodLabel ? `<span class="agent-selector-mood">${escapeHtml(agent.moodLabel)}</span>` : ''}
-          ${agent.id === 'main' ? `<span class="agent-selector-tag">默认</span>` : agent.isCustom ? `<span class="agent-selector-tag">自定义</span>` : ''}
+
+          ${agent.id === 'main' ? ui`<span class="agent-selector-tag">默认</span>` : agent.isCustom ? ui`<span class="agent-selector-tag">自定义</span>` : ''}
         </button>
       `).join('')}
     </div>
@@ -7160,10 +7213,10 @@ function renderRegularChatPage() {
   const chatAgent = conversationAgent(uiState.bootstrap, { newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
 
   if (!chat) {
-    return `<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
+    return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
   }
 
-  return `
+  return ui`
     <section class="page is-chat">
       <div class="chat-thread">
         <div class="thread-header">
@@ -7174,11 +7227,12 @@ function renderRegularChatPage() {
             </h1>
             <div class="thread-meta">
               ${
-                project ? `<span class="chip">${escapeHtml(project.name)}</span>` : ''
+                project ? ui`<span class="chip">${escapeHtml(project.name)}</span>` : ''
               }
             </div>
           </div>
           <div class="inline-actions">
+            <button class="small-button" type="button" data-action="delete-active-chat">删除对话</button>
             <button
               class="small-button is-outline"
               type="button"
@@ -7191,6 +7245,7 @@ function renderRegularChatPage() {
           </div>
         </div>
 
+        <details class="chat-files-panel" ${uiState.chatFilesOpen ? 'open' : ''}><summary data-action="toggle-chat-files">对话文件</summary>${renderWorkspaceExplorer()}${uiState.bootstrap.workspace.selectedFile ? ui`<pre>${escapeHtml(uiState.bootstrap.workspace.selectedFile.content)}</pre>` : ''}</details>
         <div class="thread-scroll-region">
           ${renderMessageList(chat)}
         </div>
@@ -7209,7 +7264,7 @@ function renderRegularChatPage() {
             // footer) regardless of how tall the composer grows when the user
             // types multi-line, opens the slash palette, attaches files, etc.
             !uiState.threadAutoFollow && chat.messages.length
-              ? `
+              ? ui`
                 <button
                   class="thread-scroll-jump-button"
                   type="button"
@@ -7232,26 +7287,24 @@ function renderRegularChatPage() {
 function renderWorkspaceExplorer() {
   const workspace = uiState.bootstrap.workspace;
 
-  if (!connectorEnabled('local-files')) {
-    return '<div class="empty-state compact">Local Files connector is disabled.</div>';
-  }
 
   if (!workspace.exists) {
-    return `
+    return ui`
       <div class="empty-state compact">
-        Workspace path is unavailable. Update the project workspace path to start browsing files.
+        ${workspace.requiresConfirmation ? t('请先确认项目工作区路径。') : t('这个对话还没有文件，Agent 首次创建文件后会显示在这里。')}
       </div>
     `;
   }
 
-  return `
+  return ui`
     <div class="workspace-root mono">${escapeHtml(workspace.rootPath)}</div>
+    ${workspace.chatId ? ui`<button class="small-button" data-action="open-chat-files" data-chat-id="${escapeHtml(workspace.chatId)}">在 Finder 中打开</button>` : ''}
     <div class="file-tree">
       ${workspace.entries
         .map(entry => {
           const indent = 14 + entry.depth * 18;
           if (entry.type === 'directory') {
-            return `
+            return ui`
               <div class="tree-row is-directory" style="padding-left:${indent}px">
                 <span class="tree-icon">${icon.folder}</span>
                 <span>${escapeHtml(entry.name)}</span>
@@ -7259,7 +7312,7 @@ function renderWorkspaceExplorer() {
             `;
           }
 
-          return `
+          return ui`
             <button
               class="tree-row is-file ${
                 workspace.selectedFilePath === entry.path ? 'is-active' : ''
@@ -7290,7 +7343,7 @@ function renderCodePreviewLines(content = '') {
   return lines
     .map(
       (line, index) =>
-        `<span class="code-line" data-line-number="${index + 1}">${escapeHtml(
+        ui`<span class="code-line" data-line-number="${index + 1}">${escapeHtml(
           line,
         )}</span>`,
     )
@@ -7301,18 +7354,15 @@ function renderSelectedFilePreview() {
   const workspace = uiState.bootstrap.workspace;
   const selectedFile = workspace.selectedFile;
 
-  if (!connectorEnabled('local-files')) {
-    return '<div class="empty-state compact">Enable Local Files to inject file context into code mode.</div>';
-  }
 
   if (!selectedFile) {
-    return '<div class="empty-state compact">Select a file to preview it here.</div>';
+    return ui`<div class="empty-state compact">选择文件以预览内容。</div>`;
   }
 
   const isEditing =
     uiState.fileEditMode && uiState.fileDraftPath === selectedFile.path;
 
-  return `
+  return ui`
     <div class="selected-file-card">
       <div class="thread-meta selected-file-meta">
         <span class="chip is-accent">${escapeHtml(selectedFile.language)}</span>
@@ -7332,7 +7382,7 @@ function renderSelectedFilePreview() {
       <div class="inline-actions">
         ${
           isEditing
-            ? `
+            ? ui`
               <button class="small-button is-primary" type="submit" form="file-save-form">
                 Queue save
               </button>
@@ -7340,7 +7390,7 @@ function renderSelectedFilePreview() {
                 Discard
               </button>
             `
-            : `
+            : ui`
               <button class="small-button is-primary" data-action="start-edit-file">
                 Edit file
               </button>
@@ -7349,7 +7399,7 @@ function renderSelectedFilePreview() {
       </div>
       ${
         isEditing
-          ? `
+          ? ui`
             <form id="file-save-form" data-form="file-save">
               <textarea class="textarea code-editor" id="selected-file-editor">${escapeHtml(
                 uiState.fileDraftContent,
@@ -7362,7 +7412,7 @@ function renderSelectedFilePreview() {
               uiState.fileDraftContent,
             )}
           `
-          : `<pre class="code-preview" data-copyable-surface><code>${renderCodePreviewLines(
+          : ui`<pre class="code-preview" data-copyable-surface><code>${renderCodePreviewLines(
               selectedFile.content,
             )}</code></pre>`
       }
@@ -7373,21 +7423,20 @@ function renderSelectedFilePreview() {
 function renderCommandRunner() {
   const workspace = uiState.bootstrap.workspace;
 
-  if (!connectorEnabled('local-command')) {
-    return '<div class="empty-state compact">Local Command is disabled.</div>';
-  }
+  const agent=conversationAgent(uiState.bootstrap);
+  if(agent?.capabilities && !agent.capabilities.runCommands) return ui`<div class="empty-state compact">此 Agent 未开启运行命令能力。</div>`;
 
-  return `
+  return ui`
     <div class="command-stack">
       ${workspace.commandTemplates
         .map(
-          template => `
+          template => ui`
             <form class="command-card" data-form="command-run" data-template-id="${template.id}">
               <div class="list-row-title">${escapeHtml(template.label)}</div>
               <div class="list-row-meta">${escapeHtml(template.description)}</div>
               ${
                 template.requiresInput
-                  ? `
+                  ? ui`
                     <input
                       class="input slim"
                       name="query"
@@ -7409,7 +7458,7 @@ function renderCommandRunner() {
       ${(workspace.commandRuns || []).length
         ? workspace.commandRuns
             .map(
-              run => `
+              run => ui`
                 <article class="run-card">
                   <div class="thread-meta">
                     <span class="chip ${run.success ? 'is-accent' : ''}">${escapeHtml(
@@ -7440,12 +7489,12 @@ function renderProjectArtifactShelf() {
     return '<div class="empty-state compact">No project artifacts yet. Save one from Artifacts to reuse it here.</div>';
   }
 
-  return `
+  return ui`
     <div class="mini-list">
       ${artifacts
         .slice(0, 4)
         .map(
-          artifact => `
+          artifact => ui`
             <button
               class="mini-list-item"
               data-action="open-artifact"
@@ -7468,7 +7517,7 @@ function renderCodePage() {
   const chat = activeChat();
   const workspace = uiState.bootstrap.workspace;
 
-  return `
+  return ui`
     <section class="page page-code">
       <div class="code-layout">
         <div class="code-main">
@@ -7481,7 +7530,7 @@ function renderCodePage() {
                 <div class="thread-meta">
                   <span class="chip is-accent">CODE</span>
                   ${
-                    project ? `<span class="chip">${escapeHtml(project.name)}</span>` : ''
+                    project ? ui`<span class="chip">${escapeHtml(project.name)}</span>` : ''
                   }
                   <span class="chip">${workspace.fileCount || 0} files indexed</span>
                 </div>
@@ -7500,7 +7549,7 @@ function renderCodePage() {
             ${
               chat && chat.messages.length
                 ? renderMessageList(chat)
-                : `
+                : ui`
                   <div class="code-empty">
                     <h2 class="card-title">Ready to work in code mode</h2>
                     <p class="card-summary">
@@ -7533,7 +7582,7 @@ function renderCodePage() {
 
             ${
               project
-                ? `
+                ? ui`
                   <p class="inspector-copy">${escapeHtml(project.summary)}</p>
                   <div class="chip-row">
                     <span class="chip is-accent">${escapeHtml(project.tag)}</span>
@@ -7545,7 +7594,7 @@ function renderCodePage() {
                     <div class="detail-copy">${escapeHtml(project.instructions)}</div>
                   </div>
                 `
-                : '<div class="empty-state compact">Choose a project to anchor this code session.</div>'
+                : '<div class="empty-state compact">文件和命令使用此对话的工作区。</div>'
             }
           </section>
 
@@ -7604,7 +7653,7 @@ function renderCodePage() {
 
 function renderChatsPage() {
   const chats = filteredChats();
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row">
@@ -7626,7 +7675,7 @@ function renderChatsPage() {
             chats.length
               ? chats
                   .map(
-                    chat => `
+                    chat => ui`
                       <button class="chat-row" data-action="open-chat" data-chat-id="${chat.id}">
                         <div class="chat-row__body">
                           <h2 class="chat-row__title">${escapeHtml(chat.title)}</h2>
@@ -7635,7 +7684,7 @@ function renderChatsPage() {
                         <div class="chat-row__meta">
                           ${
                             chat.projectId
-                              ? `<span class="chip is-muted">${escapeHtml(
+                              ? ui`<span class="chip is-muted">${escapeHtml(
                                   uiState.bootstrap.projects.find(
                                     project => project.id === chat.projectId,
                                   )?.name || 'Project',
@@ -7684,7 +7733,7 @@ function renderProjectsOverview() {
 
   // Zero projects + no active form → full empty state with a primary CTA.
   if (totalProjects === 0 && !uiState.showProjectForm) {
-    return `
+    return ui`
       <section class="page">
         <div class="page-grid">
           <div class="header-row">
@@ -7710,7 +7759,7 @@ function renderProjectsOverview() {
     `;
   }
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row project-overview-header">
@@ -7744,12 +7793,12 @@ function renderProjectsOverview() {
 
         ${
           projects.length
-            ? `
+            ? ui`
               <div class="project-grid">
                 ${projects.map(renderProjectCard).join('')}
               </div>
             `
-            : `
+            : ui`
               <div class="surface-card empty-state compact">
                 ${
                   searchActive
@@ -7768,7 +7817,7 @@ function renderProjectCard(item) {
   // A single project card in the overview grid. Clicking anywhere on the
   // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
   // stop propagation so they don't also trigger the card click.
-  return `
+  return ui`
     <button
       class="project-card"
       data-action="focus-project"
@@ -7795,7 +7844,7 @@ function renderProjectCard(item) {
 }
 
 function renderProjectCreateForm() {
-  return `
+  return ui`
     <form class="project-form-card surface-card" data-form="project-create">
       <div class="project-form-grid">
         <label class="label">
@@ -7841,11 +7890,25 @@ function renderProjectCreateForm() {
   `;
 }
 
+function renderProjectAgentDefaults(project) {
+  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:project.id});
+  const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
+  const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
+  return ui`<section class="surface-card project-detail-panel project-agent-defaults">
+    <h2 class="subsection-title">Agent 与协作</h2>
+    <label class="label">默认 Agent<select class="input" data-project-default-agent="${escapeHtml(project.id)}" ${project.archived ? 'disabled' : ''}><option value="">不指定（沿用当前选择）</option>${options}</select></label>
+    <p class="meta-label">在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。</p>
+    <h3 class="subsection-title">默认团队</h3>
+    ${renderTeamPanel({scope:'project',target:project.id,lead,agents,plan:project.teamPlan,disabled:project.archived,escapeHtml,open:true})}
+    ${project.teamPlan ? ui`<p class="meta-label">已保存默认团队：${escapeHtml(project.teamPlan.members.map(id => agents.find(agent => agent.id === id)?.name || id).join('、'))}</p><button type="button" class="small-button is-outline" data-action="clear-project-team" data-project-id="${escapeHtml(project.id)}">清除默认团队</button>` : ''}
+  </section>`;
+}
+
 function renderProjectsDetailView(project) {
   const relatedChats = activeProjectChats();
   const relatedArtifacts = activeProjectArtifacts();
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid project-detail-layout">
         <div class="header-row project-detail-header">
@@ -7861,7 +7924,7 @@ function renderProjectsDetailView(project) {
             <h1 class="page-title compact">${escapeHtml(project.name)}</h1>
             ${
               project.summary
-                ? `<p class="page-kicker">${escapeHtml(project.summary)}</p>`
+                ? ui`<p class="page-kicker">${escapeHtml(project.summary)}</p>`
                 : ''
             }
           </div>
@@ -7883,18 +7946,18 @@ function renderProjectsDetailView(project) {
             >
               处理项目代码
             </button>
-            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?'恢复项目':'归档项目'}</button>
+            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?t("恢复项目"):t("归档项目")}</button>
           </div>
         </div>
 
         <div class="chip-row">
           <span class="chip is-accent">${escapeHtml(project.tag)}</span>
-          ${project.archived?'<span class="chip">已归档 · 对话与资料保留</span>':''}
+          ${project.archived?ui`<span class="chip">已归档 · 对话与资料保留</span>`:''}
           <span class="chip">${project.chatCount ?? relatedChats.length} 段对话</span>
           <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份资料与成果</span>
           ${
             project.workspacePath
-              ? `<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
+              ? ui`<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
               : '<span class="chip mono is-muted">No workspace set</span>'
           }
         </div>
@@ -7926,6 +7989,7 @@ function renderProjectsDetailView(project) {
                   placeholder="可选；留空将创建独立项目文件夹"
                 />
               </label>
+              ${project.workspaceNeedsConfirmation ? ui`<label class="label"><input type="checkbox" name="confirmWorkspace" />确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。</label>` : ''}
               <label class="label">
                 项目目标
                 <input
@@ -7941,7 +8005,7 @@ function renderProjectsDetailView(project) {
                 )}</textarea>
               </label>
               <fieldset class="context-materials"><legend>项目共享资料</legend><p>这些资料用于项目内所有对话，与对话单独选用的资料去重后合计最多 8 份、24000 字。</p>
-                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || '<p>先在知识分支保存资料。</p>'}
+                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
               </fieldset>
               <div class="inline-actions">
                 <button class="small-button is-primary" type="submit">
@@ -7953,6 +8017,7 @@ function renderProjectsDetailView(project) {
           </section>
 
           <aside class="project-detail-aside">
+            ${renderProjectAgentDefaults(project)}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
@@ -7964,7 +8029,7 @@ function renderProjectsDetailView(project) {
                     ? relatedChats
                         .slice(0, 6)
                         .map(
-                          chat => `
+                          chat => ui`
                             <button
                               class="mini-list-item"
                               data-action="open-chat"
@@ -7976,7 +8041,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>'
+                    : ui`<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>`
                 }
               </div>
             </section>
@@ -7992,7 +8057,7 @@ function renderProjectsDetailView(project) {
                     ? relatedArtifacts
                         .slice(0, 6)
                         .map(
-                          artifact => `
+                          artifact => ui`
                             <button
                               class="mini-list-item"
                               data-action="open-artifact"
@@ -8006,7 +8071,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : '<div class="empty-state compact">还没有保存的资料或成果。</div>'
+                    : ui`<div class="empty-state compact">还没有保存的资料或成果。</div>`
                 }
               </div>
             </section>
@@ -8017,75 +8082,70 @@ function renderProjectsDetailView(project) {
   `;
 }
 
-function renderAgentList(selectedId) {
-  return `
-    <div class="list-stack">
-      ${(uiState.bootstrap?.customize?.agents || [])
-        .map(
-          agent => `
-            <button
-              class="list-row ${selectedId === agent.id ? 'is-active' : ''}"
-              data-action="select-agent-profile"
-              data-agent-id="${agent.id}"
-            >
-              <div class="list-row-title">
-                ${escapeHtml(agent.name)}
-                <span class="meta-label">${escapeHtml(agent.moodLabel)}</span>
-              </div>
-              <div class="list-row-meta">${escapeHtml(agent.laneLabel)}</div>
-            </button>
-          `,
-        )
-        .join('')}
-      <button class="small-button agent-create-button" type="button" data-action="create-custom-agent">
-        Customize
-      </button>
-    </div>
-  `;
+function renderAgentCapabilities(selected,draft) {
+  const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
+  if (!c) return '';
+  const value=k=>draft?.['cap_'+k] ?? c[k];
+  const collaboration=draft?.collaboration || selected.collaboration || {};
+  // One visible switch for delegation. Execution requires both stored flags, so
+  // older data where they disagree shows (and behaves) as off.
+  const checked=k=>(value(k)===true||value(k)==='on')&&(k!=='delegate'||draft?.['cap_delegate']!==undefined||collaboration.canDelegate===true);
+  const pending=selected.pendingCapabilityChange;
+  const settingText=value=>typeof value==='boolean'?t(value?'开启':'关闭'):Array.isArray(value)?value.join(', '):String(value);
+  const pendingChanges=pending ? [
+    ...Object.entries(selected.capabilityLabels||{}).filter(([key])=>pending.requested.capabilities[key]&&!selected.capabilities?.[key]).map(([,label])=>label),
+    ...[['mcpServers','MCP 服务'],['skills','技能'],['connectors','连接器']].flatMap(([key,label])=>pending.requested.capabilities[key].filter(id=>!selected.capabilities?.[key]?.includes(id)).map(id=>`${t(label)}: ${id}`)),
+    ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
+    ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
+  ] : [];
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
+    ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
+    ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
+    <input type="hidden" name="capabilityVersion" value="1">
+    ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
+    <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
+    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(uiState.bootstrap.customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):uiState.bootstrap.customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
+    <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
+    <div class="agent-settings-grid">
+    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,uiState.bootstrap.customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
+    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
+  </div></details>`;
+}
+
+function renderAgentPersonaFields(selected, draft) {
+  return ui`
+    ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${!selected.capabilities ? ui`<p role="status">旧版权限待迁移</p>` : ''}
+    <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
+    <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
+    <label class="label">人设与工作要求<textarea class="textarea agent-content-editor" name="instructions" rows="7" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
+    <div class="inline-actions agent-document-actions">
+      <label class="small-button agent-file-button">导入 Markdown<input type="file" accept=".md,.txt,text/markdown,text/plain" data-agent-document="${escapeHtml(selected.id)}" /></label>
+      <button class="small-button" type="button" data-action="export-agent-document" data-agent-id="${escapeHtml(selected.id)}">导出 Markdown</button>
+      <span class="meta-label">导入后先预览，点击保存修改生效。</span>
+    </div>`;
 }
 
 function renderAgentWorkbench(selected) {
   if (!selected) {
-    return '<section class="surface-card"><div class="empty-state">Select an agent to inspect it.</div></section>';
+    return ui`<section class="surface-card"><div class="empty-state">新增 Agent，设置它的人设与能力。</div></section>`;
   }
 
-  const moodOptions = uiState.bootstrap?.customize?.moods || [];
-  const toolOptions = agentToolOptions();
   const project = activeProject();
   const scope = selectedAgentScope();
   const draft = agentDraftFor(selected);
-  const allSkills = uiState.bootstrap?.customize?.skills || [];
-  const externalMcpConnectors = (uiState.bootstrap?.customize?.connectors || []).filter(
-    c => c.type === 'external-mcp',
-  );
   const formId = `agent-profile-form-${selected.id}`;
-  const selectedTools = new Set(draft?.tools || []);
-  const saveKey = agentSaveKey(selected.id, scope, scope === 'project' ? project?.id || 'global' : 'global');
-  const saveButtonLabel = uiState.agentSaveStates[saveKey] ? 'Saving' : 'Save';
-  const saveButtonStateClass = uiState.agentSaveStates[saveKey] ? ' is-saving' : '';
-  const activeEditorFile = uiState.agentEditorTab === 'soul' ? 'SOUL.md' : 'IDENTITY.md';
-  const activeEditorValue =
-    uiState.agentEditorTab === 'soul'
-      ? draft?.['soul.md'] || ''
-      : draft?.identity || draft?.identify || '';
-  const activeEditorPath =
-    uiState.agentEditorTab === 'soul' ? selected.soulPath : selected.identityPath;
   const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
   const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
-  const telegramSecretVisible = Boolean(
-    uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'telegram')],
-  );
   const discordSecretVisible = Boolean(
     uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
-  // Active channel tab controls which single channel panel is rendered. The
-  // three tabs (Telegram / Discord / Lark) sit above a full-width panel so
-  // that the detail form uses the entire right-column width instead of being
-  // crammed into a 2-column grid.
-  const VALID_CHANNEL_TABS = ['telegram', 'discord', 'lark'];
+  // Archived channels have no controls; their saved configuration stays in the draft.
+  const VALID_CHANNEL_TABS = ['discord'];
   const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
     ? uiState.agentChannelTab[selected.id]
-    : 'telegram';
+    : 'discord';
   const channelTabDefs = [
     {
       id: 'telegram',
@@ -8101,95 +8161,16 @@ function renderAgentWorkbench(selected) {
       connected: discordChannel.lastStatus === 'connected',
       enabled: Boolean(discordChannel.enabled),
     },
-    {
-      id: 'lark',
-      label: 'Lark',
-      status: 'coming soon',
-      connected: false,
-      enabled: false,
-    },
   ];
 
-  return `
+  return ui`
     <section class="surface-card agent-workbench-card">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-          <p class="page-kicker">${escapeHtml(selected.description)}</p>
-        </div>
-        <div class="inline-actions">
-          ${
-            uiState.bootstrap?.settings?.selectedChatId
-              ? `
-                <button
-                  class="small-button is-outline"
-                  type="button"
-                  data-action="save-chat-as-skill"
-                  data-chat-id="${uiState.bootstrap.settings.selectedChatId}"
-                  title="Draft a reusable skill from the active chat. You confirm before it saves."
-                >
-                  Save as skill
-                </button>
-              `
-              : `
-                <button
-                  class="small-button is-outline"
-                  type="button"
-                  disabled
-                  title="Open a chat first to enable this. The drafter needs a conversation to learn from."
-                >
-                  Save as skill
-                </button>
-              `
-          }
-          <button
-            class="chip chip-button is-accent agent-save-button${saveButtonStateClass}"
-            type="button"
-            data-action="submit-agent-profile"
-            data-form-id="${formId}"
-            ${uiState.agentSaveStates[saveKey] ? 'disabled' : ''}
-          >
-            ${saveButtonLabel}
-          </button>
-        </div>
-      </div>
-
-      <div class="toggle-row">
-        <div>
-          <div class="list-row-title">Persona scope</div>
-          <div class="list-row-meta">
-            ${
-              project
-                ? `Switch between global defaults and a project override for ${escapeHtml(
-                    project.name,
-                  )}.`
-                : 'Global defaults are active because no project override target is selected.'
-            }
-          </div>
-        </div>
+      <div class="agent-scope-row">
+        <span class="meta-label">设置范围</span>
         <div class="chip-row">
-          <button
-            class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="global"
-          >
-            Global
-          </button>
-          <button
-            class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="project"
-            ${project ? '' : 'disabled'}
-          >
-            ${project ? escapeHtml(project.name) : 'Project override'}
-          </button>
+          <button class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="global">全局默认</button>
+          ${project ? ui`<button class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="project">${escapeHtml(project.name)}</button>` : ''}
         </div>
-      </div>
-
-      <div class="agent-compact-note">
-        身份与背景、回复与工作要求都会用于每次请求；编辑后对下一轮生效。
       </div>
 
       <form
@@ -8198,328 +8179,55 @@ function renderAgentWorkbench(selected) {
         data-form="agent-profile-update"
         data-agent-id="${selected.id}"
       >
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${
-          selected.isCustom
-            ? `
-              <label class="label">
-                角色名称
-                <input
-                  class="config-input"
-                  type="text"
-                  name="name"
-                  value="${escapeHtml(draft?.name || selected.name || '')}"
-                  placeholder="Custom agent"
-                />
-              </label>
-              <label class="label">
-                一句话定位
-                <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="一句话说明这个角色的身份与用途。">${escapeHtml(
-                  draft?.description || selected.description || '',
-                )}</textarea>
-              </label>
-              <label class="label">思考与回复方式
-                <textarea class="textarea agent-control-editor" name="rolePrompt" placeholder="例如：先给结论，用两三句短句解释；不确定时明确说明。">${escapeHtml(draft?.rolePrompt ?? selected.rolePrompt ?? '')}</textarea>
-              </label>
-            `
-            : `
-              <div class="agent-compact-note">
-                Built-in lanes keep their source-inspired names. Use Customize to add a new agent you can rename.
-              </div>
-            `
-        }
-
-        <div class="editor-tab-row">
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'identity' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="identity"
-          >
-            身份与背景
-          </button>
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'soul' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="soul"
-          >
-            长期行为偏好
-          </button>
-        </div>
-
-        <div class="selected-file-card agent-file-editor">
-          <div class="agent-editor-header">
-            <div class="agent-editor-heading">
-              <div class="meta-block-label">Content</div>
-              <div class="list-row-meta">补充角色背景；具体回复方式优先采用上方设定。</div>
-            </div>
-          </div>
-          <div class="agent-editor-path">
-            ${escapeHtml(activeEditorPath || activeEditorFile)}
-          </div>
-          <label class="label">
-            <textarea
-              class="textarea code-editor agent-content-editor"
-              name="${uiState.agentEditorTab === 'soul' ? 'soul.md' : 'identity'}"
-            >${escapeHtml(activeEditorValue)}</textarea>
-          </label>
-        </div>
-
-        ${
-          uiState.agentEditorTab === 'soul'
-            ? `<input type="hidden" name="identity" value="${escapeHtml(
-                draft?.identity || draft?.identify || '',
-              )}" />`
-            : `<input type="hidden" name="soul.md" value="${escapeHtml(
-                draft?.['soul.md'] || '',
-              )}" />`
-        }
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Agent controls</div>
-          <div>These fields follow the source-code agent idea: tools, model, and system prompt shape how this lane actually runs.</div>
-        </div>
+        <section class="agent-settings-section agent-identity-section">
+        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...draft}, escapeHtml, 40)}<label class="small-button agent-file-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
+        ${renderAgentPersonaFields(selected, draft)}
 
         <label class="label">
-          Model override
+          模型覆盖
           <input
             class="config-input"
             type="text"
             name="model"
             value="${escapeHtml(draft?.model || '')}"
-            placeholder="Inherit global model"
+            placeholder="留空使用全局模型"
           />
         </label>
 
-        <label class="label">
-          补充系统要求
-          <textarea class="textarea code-editor agent-control-editor" name="systemPrompt" placeholder="Optional lane-specific system prompt.">${escapeHtml(
-            draft?.systemPrompt || '',
-          )}</textarea>
-        </label>
+        </section>
+        ${renderAgentCapabilities(selected, draft)}
 
-        <input type="hidden" name="tools" value="${escapeHtml((draft?.tools || []).join(','))}" />
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Tools</div>
-          <div>Select which source-inspired capabilities this agent can pull into its live prompt and task context.</div>
-        </div>
-
-        <div class="chip-row">
-          ${toolOptions
-            .map(
-              option => `
-                <button
-                  class="chip chip-button ${selectedTools.has(option.id) ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="toggle-agent-tool"
-                  data-agent-id="${selected.id}"
-                  data-tool-id="${option.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        ${
-          selectedTools.has('skills') && allSkills.length
-            ? (() => {
-                const whitelistIds = Array.isArray(draft?.enabledSkillIds)
-                  ? new Set(draft.enabledSkillIds)
-                  : null; // null = all allowed
-                const noRestriction = whitelistIds === null;
-                return `
-                  <input type="hidden" name="enabledSkillIds" value="${
-                    noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
-                  }" />
-                  <div class="detail-meta">
-                    <div class="meta-block-label">Skill access</div>
-                    <div>Choose which skills this agent can use. Leave all unchecked to allow all enabled skills.</div>
-                  </div>
-                  <div class="chip-row">
-                    <button
-                      class="chip chip-button ${noRestriction ? 'is-accent' : ''}"
-                      type="button"
-                      data-action="reset-agent-skill-whitelist"
-                      data-agent-id="${selected.id}"
-                    >All skills</button>
-                    ${allSkills
-                      .map(skill => `
-                        <button
-                          class="chip chip-button ${!noRestriction && whitelistIds.has(skill.id) ? 'is-accent' : ''}"
-                          type="button"
-                          data-action="toggle-agent-skill"
-                          data-agent-id="${selected.id}"
-                          data-skill-id="${skill.id}"
-                        >${escapeHtml(skill.name)}</button>
-                      `)
-                      .join('')}
-                  </div>
-                `;
-              })()
-            : '<input type="hidden" name="enabledSkillIds" value="__all__" />'
-        }
-
-        ${
-          selectedTools.has('external-connectors') && externalMcpConnectors.length
-            ? (() => {
-                const whitelistIds = Array.isArray(draft?.enabledConnectorIds)
-                  ? new Set(draft.enabledConnectorIds)
-                  : null;
-                const noRestriction = whitelistIds === null;
-                return `
-                  <input type="hidden" name="enabledConnectorIds" value="${
-                    noRestriction ? '__all__' : escapeHtml([...whitelistIds].join(','))
-                  }" />
-                  <div class="detail-meta">
-                    <div class="meta-block-label">Connector access</div>
-                    <div>Choose which external MCP connectors this agent can reach. Leave all unchecked to allow all.</div>
-                  </div>
-                  <div class="chip-row">
-                    <button
-                      class="chip chip-button ${noRestriction ? 'is-accent' : ''}"
-                      type="button"
-                      data-action="reset-agent-connector-whitelist"
-                      data-agent-id="${selected.id}"
-                    >All connectors</button>
-                    ${externalMcpConnectors
-                      .map(c => `
-                        <button
-                          class="chip chip-button ${!noRestriction && whitelistIds.has(c.id) ? 'is-accent' : ''}"
-                          type="button"
-                          data-action="toggle-agent-connector"
-                          data-agent-id="${selected.id}"
-                          data-connector-id="${c.id}"
-                        >${escapeHtml(c.name)}</button>
-                      `)
-                      .join('')}
-                  </div>
-                `;
-              })()
-            : '<input type="hidden" name="enabledConnectorIds" value="__all__" />'
-        }
-
-        ${(() => {
-          // Stdio MCP server whitelist — unified across built-in presets
-          // and user-configured `mcpServers`. Without this surface the
-          // user's own MCP entries would register tools but never be
-          // reachable via the per-agent whitelist (Codex 🔴 audit
-          // 2026-04-28). Defaults to deny-all per agent.
-          const presets = uiState.bootstrap?.customize?.mcpAuthSurface
-            || uiState.bootstrap?.customize?.mcpPresets // legacy fallback
-            || [];
-          if (!presets.length) {
-            return '<input type="hidden" name="enabledMcpServerIds" value="" />';
-          }
-          const whitelist = new Set(
-            Array.isArray(draft?.enabledMcpServerIds) ? draft.enabledMcpServerIds : [],
-          );
-          return `
-            <input type="hidden" name="enabledMcpServerIds" value="${escapeHtml([...whitelist].join(','))}" />
-            <div class="detail-meta">
-              <div class="meta-block-label">Stdio MCP servers</div>
-              <div>Pick which built-in MCP servers this agent may call. Empty = no MCP access (default — these run local processes, opt-in per agent).</div>
-            </div>
-            <div class="chip-row">
-              ${presets.map(preset => {
-                const enabled = Boolean(preset?.enabled);
-                const allowed = whitelist.has(preset.id);
-                const unpinned = Boolean(preset?.unpinned);
-                // Globally-disabled servers stay clickable when the agent
-                // has them in its whitelist, so the user can always REMOVE
-                // a stale authorisation. Adding a new authorisation for a
-                // disabled server is rejected by the action handler with
-                // a toast pointing at Advanced. The `is-disabled-preset`
-                // class greys the chip without using the HTML disabled
-                // attribute (which would block click entirely).
-                //
-                // Codex 四轮 audit 2026-04-29: a preset can also be
-                // `unpinned: true` — runtime refuses to spawn it, so the
-                // chip says "(unavailable)" even when global enabled is
-                // true (legacy `enableBrowserlessMcp:true` config). Stale
-                // authorisations on unpinned presets stay clickable for
-                // revoke; new authorisations are blocked by the handler
-                // with a toast pointing at Advanced.
-                const stale = (!enabled || unpinned) && allowed;
-                const tagSuffix = unpinned
-                  ? ' (unavailable)'
-                  : (!enabled ? ' (off)' : '');
-                const titleText = unpinned
-                  ? (stale
-                      ? 'Preset unpinned — click to revoke the stale authorisation'
-                      : 'Preset unpinned — agents cannot authorise it until a version is locked in PINNED_VERSIONS')
-                  : (enabled
-                      ? 'Server enabled globally'
-                      : stale
-                        ? 'Server disabled globally — click to revoke the stale authorisation'
-                        : 'Server disabled globally — enable in Advanced first');
-                return `
-                  <button
-                    class="chip chip-button${allowed ? ' is-accent' : ''}${(!enabled || unpinned) ? ' is-disabled-preset' : ''}"
-                    type="button"
-                    data-action="toggle-agent-mcp-server"
-                    data-agent-id="${selected.id}"
-                    data-mcp-server-id="${escapeHtml(preset.id)}"
-                    data-preset-enabled="${enabled ? '1' : '0'}"
-                    data-preset-unpinned="${unpinned ? '1' : '0'}"
-                    title="${titleText}"
-                  >${escapeHtml(preset.id)}${tagSuffix}</button>
-                `;
-              }).join('')}
-            </div>
-          `;
-        })()}
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Mood</div>
-          <div>${escapeHtml(selected.moodDescription)}</div>
-        </div>
-
-        <div class="chip-row">
-          ${moodOptions
-            .map(
-              option => `
-                <button
-                  class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="set-agent-mood"
-                  data-mood="${option.id}"
-                  data-agent-id="${selected.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        <label class="label">
-          Mood
-          <select class="config-select" name="mood">
-            ${moodOptions
-              .map(
-                option => `
-                  <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
-                    ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
-                  </option>
-                `,
-              )
-              .join('')}
-          </select>
-        </label>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Channels</div>
-          <div>Link Telegram, Discord, or Lark for this agent and test the saved credentials from here.</div>
-        </div>
+        <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
+          <summary>消息渠道</summary>
+          <p class="agent-section-note">Telegram 已归档，原有配置与历史对话保留。</p>
+        <section class="selected-file-card agent-channel-voice">
+                  <label class="label">
+                    语音回复模式
+                    <select class="config-select" name="voiceReplyMode">
+                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
+                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
+                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
+                    </select>
+                  </label>
+                  <label class="label">
+                    Edge TTS 音色
+                    <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
+                      draft?.edgeTtsVoice || '',
+                    )}" placeholder="自动选择音色" />
+                  </label>
+                  <label class="label">
+                    语音风格要求
+                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="可选：语气、常用表达或语言要求">${escapeHtml(
+                      draft?.voicePersonality || '',
+                    )}</textarea>
+                  </label>
+        </section>
 
         <div class="agent-channel-tabs" role="tablist">
           ${channelTabDefs
+            .filter(tab => isAgentChannelAvailable(tab.id))
             .map(
-              tab => `
+              tab => ui`
                 <button
                   type="button"
                   role="tab"
@@ -8538,95 +8246,12 @@ function renderAgentWorkbench(selected) {
         </div>
 
         <div class="agent-channel-panel">
-          ${
-            activeChannelTab === 'telegram'
-              ? `
-                <section class="selected-file-card agent-channel-card">
-                  <div class="agent-editor-header">
-                    <div class="agent-editor-heading">
-                      <div class="meta-block-label">Telegram</div>
-                      <div class="list-row-meta">Attach a Telegram bot to this agent with its bot token.</div>
-                    </div>
-                    <span class="chip ${telegramChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
-                      ${escapeHtml(telegramChannel.statusLabel || telegramChannel.lastStatus || 'idle')}
-                    </span>
-                  </div>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="telegramEnabled" ${telegramChannel.enabled ? 'checked' : ''} />
-                    <span>Enable Telegram for this agent</span>
-                  </label>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="telegramVoiceReply" ${telegramChannel.voiceReply ? 'checked' : ''} />
-                    <span>Send voice reply (TTS audio after each text reply)</span>
-                  </label>
-                  <label class="label">
-                    Voice reply mode
-                    <select class="config-select" name="voiceReplyMode">
-                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>Summary — concise oral summary (default)</option>
-                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>Full — read entire reply as-is</option>
-                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>Off — never send voice reply</option>
-                    </select>
-                  </label>
-                  <label class="label">
-                    Edge TTS voice
-                    <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
-                      draft?.edgeTtsVoice || '',
-                    )}" placeholder="Auto-detect (e.g. ko-KR-SunHiNeural, zh-CN-XiaoxiaoNeural)" />
-                  </label>
-                  <label class="label">
-                    Voice personality
-                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="Optional: personality instructions for voice rewrite (e.g. tone, catchphrases, language mixing rules)">${escapeHtml(
-                      draft?.voicePersonality || '',
-                    )}</textarea>
-                  </label>
-                  <label class="label">
-                    Bot token
-                    <div class="secure-input-row">
-                      <input class="config-input" type="${telegramSecretVisible ? 'text' : 'password'}" name="telegramBotToken" value="${escapeHtml(
-                        telegramChannel.botToken || '',
-                      )}" placeholder="123456:telegram-bot-token" />
-                      <button
-                        class="icon-toggle-button"
-                        type="button"
-                        data-action="toggle-agent-secret"
-                        data-agent-id="${selected.id}"
-                        data-channel-id="telegram"
-                        aria-label="${telegramSecretVisible ? 'Hide Telegram bot token' : 'Show Telegram bot token'}"
-                        title="${telegramSecretVisible ? 'Hide Telegram bot token' : 'Show Telegram bot token'}"
-                      >
-                        ${telegramSecretVisible ? icon.eyeOff : icon.eye}
-                      </button>
-                    </div>
-                  </label>
-                  <label class="label">
-                    Default chat ID (optional)
-                    <input class="config-input" type="text" name="telegramChatId" value="${escapeHtml(
-                      telegramChannel.chatId || '',
-                    )}" placeholder="Optional: Telegram chat id for default routing" />
-                  </label>
-                  ${
-                    telegramChannel.lastError
-                      ? `<div class="list-row-meta danger-copy">${escapeHtml(telegramChannel.lastError)}</div>`
-                      : ''
-                  }
-                  ${renderChannelRuntimeCard(telegramChannel, { showRoute: true })}
-                  <div class="inline-actions">
-                    <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="telegram">
-                      Test Telegram
-                    </button>
-                  </div>
-                </section>
-              `
-              : ''
-          }
-          ${
-            activeChannelTab === 'discord'
-              ? `
-                <section class="selected-file-card agent-channel-card">
+          ${ui`
+                <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
                       <div class="meta-block-label">Discord</div>
-                      <div class="list-row-meta">Attach a Discord bot workspace to this agent.</div>
+                      <div class="list-row-meta">通过 Bot token 连接此 Agent。</div>
                     </div>
                     <span class="chip ${discordChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
                       ${escapeHtml(discordChannel.statusLabel || discordChannel.lastStatus || 'idle')}
@@ -8634,15 +8259,14 @@ function renderAgentWorkbench(selected) {
                   </div>
                   <label class="checkbox-row">
                     <input type="checkbox" name="discordEnabled" ${discordChannel.enabled ? 'checked' : ''} />
-                    <span>Enable Discord for this agent</span>
+                    <span>启用 Discord</span>
                   </label>
                   <label class="checkbox-row">
                     <input type="checkbox" name="discordVoiceReply" ${discordChannel.voiceReply ? 'checked' : ''} />
-                    <span>Send voice reply (TTS audio after each text reply)</span>
+                    <span>文字回复后发送语音</span>
                   </label>
                   <div class="list-row-meta" style="margin:0 0 8px 0;">
-                    Voice reply mode, Edge TTS voice and voice personality are agent-level and
-                    apply to both Telegram and Discord — configure them on the Telegram tab.
+                    上方语音设置应用于此 Agent。
                   </div>
                   <label class="label">
                     Bot token
@@ -8656,80 +8280,53 @@ function renderAgentWorkbench(selected) {
                         data-action="toggle-agent-secret"
                         data-agent-id="${selected.id}"
                         data-channel-id="discord"
-                        aria-label="${discordSecretVisible ? 'Hide Discord bot token' : 'Show Discord bot token'}"
-                        title="${discordSecretVisible ? 'Hide Discord bot token' : 'Show Discord bot token'}"
+                        aria-label="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
+                        title="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
                       >
                         ${discordSecretVisible ? icon.eyeOff : icon.eye}
                       </button>
                     </div>
                   </label>
                   <label class="label">
-                    Guild ID
+                    Discord 服务器 ID
                     <input class="config-input" type="text" name="discordGuildId" value="${escapeHtml(
                       discordChannel.guildId || '',
                     )}" placeholder="Discord guild id" />
                   </label>
                   <label class="label">
-                    Channel ID
+                    Discord 频道 ID
                     <input class="config-input" type="text" name="discordChannelId" value="${escapeHtml(
                       discordChannel.channelId || '',
                     )}" placeholder="Discord channel id" />
                   </label>
                   ${
                     discordChannel.lastError
-                      ? `<div class="list-row-meta danger-copy">${escapeHtml(discordChannel.lastError)}</div>`
+                      ? ui`<div class="list-row-meta danger-copy">${escapeHtml(discordChannel.lastError)}</div>`
                       : ''
                   }
                   ${renderChannelRuntimeCard(discordChannel)}
                   <div class="inline-actions">
                     <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="discord">
-                      Test Discord
+                      测试 Discord
                     </button>
                   </div>
                 </section>
-              `
-              : ''
-          }
-          ${
-            activeChannelTab === 'lark'
-              ? `
-                <section class="selected-file-card agent-channel-card">
-                  <div class="agent-editor-header">
-                    <div class="agent-editor-heading">
-                      <div class="meta-block-label">Lark</div>
-                      <div class="list-row-meta">Attach a Lark (Feishu) bot workspace to this agent.</div>
-                    </div>
-                    <span class="chip">coming soon</span>
-                  </div>
-                  <div class="list-row-meta">
-                    Lark channel support is coming soon. The backend adapter is being wired up — you'll
-                    be able to paste a Lark bot App ID / App Secret here once the channel is live.
-                  </div>
-                </section>
-              `
-              : ''
-          }
+          `}
+
         </div>
 
+        </details>
         <div class="inline-actions">
-          <button
-            class="small-button"
-            type="button"
-            data-action="reset-agent-draft"
-            data-agent-id="${selected.id}"
-          >
-            Reset
-          </button>
           ${
             scope === 'project' && selected.hasProjectOverride
-              ? `
+              ? ui`
                 <button
                   class="small-button"
                   type="button"
                   data-action="reset-project-agent-override"
                   data-agent-id="${selected.id}"
                 >
-                  Reset project override
+                  恢复全局设置
                 </button>
               `
               : ''
@@ -8742,43 +8339,19 @@ function renderAgentWorkbench(selected) {
 
 function renderAgentPage() {
   const selected = selectedAgentProfile();
-
-  return `
+  return ui`
     <section class="page agent-page">
       <div class="page-grid agent-page-grid">
-        <div class="header-row">
-          <div>
-            <h1 class="page-title compact">Agent</h1>
-          </div>
-
-          <label class="label agent-select-label">
-            Agent
-            <select class="config-select" data-action="select-agent-profile">
-              ${(uiState.bootstrap?.customize?.agents || [])
-                .map(
-                  agent => `
-                    <option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>
-                      ${escapeHtml(agent.name)}
-                    </option>
-                  `,
-                )
-                .join('')}
+        <div class="header-row agent-page-header">
+          <h1 class="page-title compact">Agent</h1>
+          <div class="inline-actions">
+            <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
+              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
             </select>
-          </label>
-        </div>
-
-        <div class="customize-layout agent-layout">
-          <div class="customize-pane agent-list-pane">
-            <div class="customize-pane-header">
-              <h2 class="pane-title">Lanes</h2>
-            </div>
-            ${renderAgentList(selected?.id || 'main')}
-          </div>
-
-          <div class="agent-detail-column">
-            ${renderAgentWorkbench(selected)}
+            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${uiState.agentCreating ? 'disabled' : ''}>${uiState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
           </div>
         </div>
+        <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>
       </div>
     </section>
   `;
@@ -8787,15 +8360,16 @@ function renderAgentPage() {
 function renderModelPage() {
   const config = uiState.bootstrap.settings.config;
   const draft = effectiveModelSetupDraft();
-  return `
+  return ui`
     <section class="page page-model">
       <div class="model-page-titlebar">
         <h1 class="page-title compact">模型与连接</h1>
       </div>
       <div class="model-connection-summary">
         <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
-        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。角色指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
+        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
       </div>
+      ${renderDefaultModelSettings(config, escapeHtml)}
       ${renderLlmConnections(config)}
       ${renderExtraFast(config)}
       ${renderImageSettings(config)}
@@ -8813,292 +8387,15 @@ function renderModelPage() {
   `;
 }
 
-function renderAgentDetails(selected) {
-  const moodOptions = uiState.bootstrap?.customize?.moods || [];
-  const presets = uiState.bootstrap?.customize?.agentPresets || [];
-  const project = activeProject();
-  const scope = selectedAgentScope();
-  const draft = agentDraftFor(selected);
-  const activeEditorFile = uiState.agentEditorTab === 'soul' ? 'SOUL.md' : 'IDENTITY.md';
-  const activeEditorValue =
-    uiState.agentEditorTab === 'soul'
-      ? draft?.['soul.md'] || ''
-      : draft?.identity || draft?.identify || '';
-  const activeEditorPath =
-    uiState.agentEditorTab === 'soul' ? selected.soulPath : selected.identityPath;
-
-  return `
-    <div class="detail-card">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-          <p class="page-kicker">${escapeHtml(selected.description)}</p>
-        </div>
-        <span class="chip is-accent">${escapeHtml(selected.moodLabel)}</span>
-      </div>
-
-      <div class="toggle-row">
-        <div>
-          <div class="list-row-title">Persona scope</div>
-          <div class="list-row-meta">
-            ${
-              project
-                ? `Switch between global defaults and a project override for ${escapeHtml(
-                    project.name,
-                  )}.`
-                : 'Global defaults apply because no project override target is active.'
-            }
-          </div>
-        </div>
-        <div class="chip-row">
-          <button
-            class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="global"
-          >
-            Global
-          </button>
-          <button
-            class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}"
-            type="button"
-            data-action="switch-agent-scope"
-            data-scope="project"
-            ${project ? '' : 'disabled'}
-          >
-            ${project ? escapeHtml(project.name) : 'Project override'}
-          </button>
-        </div>
-      </div>
-
-      <div class="meta-grid">
-        <div>
-          <div class="meta-block-label">Lane</div>
-          <div>${escapeHtml(selected.laneLabel)}</div>
-        </div>
-        <div>
-          <div class="meta-block-label">Source</div>
-          <div>
-            ${
-              selected.scopeSource === 'project'
-                ? `Project override${project ? ` · ${escapeHtml(project.name)}` : ''}`
-                : 'Global default'
-            }
-          </div>
-        </div>
-      </div>
-
-      <form id="agent-profile-editor-form-${selected.id}" class="config-form" data-form="agent-profile-update" data-agent-id="${selected.id}">
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...agentDraftFor(selected)}, escapeHtml, 64)}<label class="small-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传角色头像"></label>${agentDraftFor(selected)?.avatarData?`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${
-          selected.isCustom
-            ? `
-              <div class="selected-file-card">
-                <div class="agent-editor-header">
-                  <div class="agent-editor-heading">
-                    <div class="meta-block-label">Agent basics</div>
-                    <div class="list-row-meta">Rename this custom agent and edit the role prompt used at runtime.</div>
-                  </div>
-                </div>
-                <label class="label">
-                  Agent name
-                  <input
-                    class="config-input"
-                    type="text"
-                    name="name"
-                    value="${escapeHtml(draft?.name || selected.name || '')}"
-                    placeholder="Custom agent"
-                  />
-                </label>
-                <label class="label">
-                  Description
-                  <textarea class="textarea code-editor agent-control-editor" name="description" placeholder="What this custom agent is for.">${escapeHtml(
-                    draft?.description || selected.description || '',
-                  )}</textarea>
-                </label>
-                <label class="label">
-                  Role prompt
-                  <textarea class="textarea code-editor agent-control-editor" name="rolePrompt" placeholder="Runtime role instruction for this custom agent.">${escapeHtml(
-                    draft?.rolePrompt || selected.rolePrompt || '',
-                  )}</textarea>
-                </label>
-              </div>
-            `
-            : `
-              <div class="detail-meta">
-                <div class="meta-block-label">Role prompt</div>
-                <div>${escapeHtml(selected.rolePrompt)}</div>
-              </div>
-            `
-        }
-
-      <div class="subsection">
-        <div class="header-row">
-          <h3 class="subsection-title">Preset import</h3>
-          <span class="meta-label">Import a mood/persona baseline into the current scope</span>
-        </div>
-        <div class="card-grid compact-grid preset-grid">
-          ${presets
-            .map(
-              preset => `
-                <article class="artifact-card preset-card">
-                  <div class="thread-meta">
-                    <span class="chip is-accent">${escapeHtml(preset.mood)}</span>
-                  </div>
-                  <h3 class="card-title">${escapeHtml(preset.name)}</h3>
-                  <p class="card-summary">${escapeHtml(preset.description)}</p>
-                  <button
-                    class="small-button is-primary"
-                    type="button"
-                    data-action="import-agent-preset"
-                    data-agent-id="${selected.id}"
-                    data-preset-id="${preset.id}"
-                  >
-                    Import preset
-                  </button>
-                </article>
-              `,
-            )
-            .join('')}
-        </div>
-      </div>
-
-        <div class="editor-tab-row">
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'identity' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="identity"
-          >
-            IDENTITY.md
-          </button>
-          <button
-            class="chip chip-button ${uiState.agentEditorTab === 'soul' ? 'is-accent' : ''}"
-            type="button"
-            data-action="select-agent-editor-tab"
-            data-tab="soul"
-          >
-            SOUL.md
-          </button>
-        </div>
-
-        <div class="selected-file-card agent-file-editor">
-          <div class="thread-meta selected-file-meta">
-            <span class="chip is-accent">${escapeHtml(activeEditorFile)}</span>
-            <span class="chip">${escapeHtml(selected.name)}</span>
-            <span class="chip">${scope === 'project' && project ? escapeHtml(project.name) : 'Global'}</span>
-          </div>
-          <div class="workspace-root">${escapeHtml(activeEditorPath || activeEditorFile)}</div>
-          <textarea
-            class="textarea code-editor"
-            name="${uiState.agentEditorTab === 'soul' ? 'soul.md' : 'identity'}"
-          >${escapeHtml(activeEditorValue)}</textarea>
-        </div>
-
-        ${
-          uiState.agentEditorTab === 'soul'
-            ? `<input type="hidden" name="identity" value="${escapeHtml(
-                draft?.identity || draft?.identify || '',
-              )}" />`
-            : `<input type="hidden" name="soul.md" value="${escapeHtml(
-                draft?.['soul.md'] || '',
-              )}" />`
-        }
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Current mood</div>
-          <div>${escapeHtml(selected.moodDescription)}</div>
-        </div>
-
-        <div class="chip-row">
-          ${moodOptions
-            .map(
-              option => `
-                <button
-                  class="chip chip-button ${draft?.mood === option.id ? 'is-accent' : ''}"
-                  type="button"
-                  data-action="set-agent-mood"
-                  data-mood="${option.id}"
-                  data-agent-id="${selected.id}"
-                >
-                  ${escapeHtml(option.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        <label class="label">
-          Mood
-          <select class="config-select" name="mood">
-            ${moodOptions
-              .map(
-                option => `
-                  <option value="${option.id}" ${draft?.mood === option.id ? 'selected' : ''}>
-                    ${escapeHtml(option.label)} · ${escapeHtml(option.description)}
-                  </option>
-                `,
-              )
-              .join('')}
-          </select>
-        </label>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">Mood instruction</div>
-          <div>${escapeHtml(
-            moodOptions.find(option => option.id === draft?.mood)?.prompt || selected.moodPrompt,
-          )}</div>
-        </div>
-
-        <div class="detail-meta">
-          <div class="meta-block-label">MiniMax voice (optional)</div>
-          <div>
-            Bind this agent to a MiniMax cloned voice — the TTS panel's "自定义语音"
-            list shows every agent that has a voice id set, so this is what
-            controls which agents appear there. Configure your MiniMax key
-            in Settings → Connector → API key.
-          </div>
-        </div>
-        <label class="label">
-          MiniMax voice ID
-          <input
-            class="input"
-            name="minimaxVoiceId"
-            value="${escapeHtml(draft?.minimaxVoiceId ?? selected.minimaxVoiceId ?? '')}"
-            placeholder="moss_audio_… or any cloned voice id (leave blank to unbind)"
-          />
-        </label>
-        ${renderMinimaxTtsParameterInputs(draft, selected)}
-
-        <div class="inline-actions">
-          <button class="small-button is-primary" type="submit">Save agent profile</button>
-          ${
-            scope === 'project' && selected.hasProjectOverride
-              ? `
-                <button
-                  class="small-button"
-                  type="button"
-                  data-action="reset-project-agent-override"
-                  data-agent-id="${selected.id}"
-                >
-                  Reset project override
-                </button>
-              `
-              : ''
-          }
-        </div>
-      </form>
-    </div>
-  `;
-}
-
 function renderConnectorDetails(selected) {
   if (!selected) {
     return '<div class="empty-state">Select a skill, agent, or connector to inspect it.</div>';
   }
 
+  if (uiState.bootstrap.settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
+
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
-    return renderAgentDetails(selected);
+    return renderAgentWorkbench(selected);
   }
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'skills') {
@@ -9112,7 +8409,7 @@ function renderConnectorDetails(selected) {
     if (activeTab === 'markdown') {
       return renderSkillMarkdownTab(selected);
     }
-    return `
+    return ui`
       <div class="detail-card">
         <div class="header-row">
           <div>
@@ -9152,15 +8449,15 @@ function renderConnectorDetails(selected) {
           <div>${escapeHtml(selected.systemPrompt)}</div>
           <div class="chip-row">
             ${(selected.folders || [])
-              .map(folder => `<span class="chip">${escapeHtml(folder)}</span>`)
+              .map(folder => ui`<span class="chip">${escapeHtml(folder)}</span>`)
               .join('')}
           </div>
           ${
             !isGlobalSkill
-              ? `<div class="chip-row">
+              ? ui`<div class="chip-row">
                    <span class="meta-label">Only visible to:</span>
                    ${allowedAgentIds
-                     .map(aid => `<span class="chip">${escapeHtml(aid)}</span>`)
+                     .map(aid => ui`<span class="chip">${escapeHtml(aid)}</span>`)
                      .join('')}
                  </div>`
               : ''
@@ -9179,7 +8476,7 @@ function renderConnectorDetails(selected) {
           ></button>
         </div>
 
-        ${isCustomSkill ? `
+        ${isCustomSkill ? ui`
           <form id="skill-custom-update-form-${selected.id}" class="config-form" data-form="skill-custom-update" data-skill-id="${selected.id}">
             <div class="detail-meta">
               <div class="meta-block-label">Edit custom skill</div>
@@ -9250,7 +8547,7 @@ function renderConnectorDetails(selected) {
     // The list filter on Customize → Connectors hides them, but a stale
     // selectedConnectorId can still point here — render a redirect notice
     // instead of the legacy edit form (Codex audit / config edits deferred).
-    return `
+    return ui`
       <div class="detail-card">
         <div class="header-row">
           <div>
@@ -9289,14 +8586,14 @@ function renderConnectorDetails(selected) {
         selected.config,
       );
       if (state === 'pending') {
-        return `<span class="chip is-warning is-tiny">● 待保存（点击保存后生效）</span>`;
+        return ui`<span class="chip is-warning is-tiny">● 待保存（点击保存后生效）</span>`;
       }
       if (state === 'saved') {
-        return `<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(masked)}</span>`;
+        return ui`<span class="chip is-success is-tiny">✓ 已保存 · ${escapeHtml(masked)}</span>`;
       }
-      return `<span class="chip is-tiny">● 未配置</span>`;
+      return ui`<span class="chip is-tiny">● 未配置</span>`;
     };
-    extra = `
+    extra = ui`
       <p>模型地址、密钥和登录授权在模型连接中统一管理。</p>
       <button type="button" class="small-button" data-action="open-view" data-view="model">打开模型连接</button>
       <form id="connector-config-form" class="config-form" data-form="connector-config">
@@ -9392,7 +8689,7 @@ function renderConnectorDetails(selected) {
       </form>
     `;
   } else if (selected.id === 'local-files') {
-    extra = `
+    extra = ui`
       <div class="detail-meta">
         <div class="meta-block-label">Workspace root</div>
         <div class="mono">${escapeHtml(selected.config.workspaceRoot || '(none)')}</div>
@@ -9402,18 +8699,18 @@ function renderConnectorDetails(selected) {
         <span class="chip">${selected.config.exists ? 'Available' : 'Unavailable'}</span>
         ${
           selected.config.selectedFilePath
-            ? `<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
+            ? ui`<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
             : ''
         }
       </div>
       ${workspace.selectedFile ? renderSelectedFilePreview() : ''}
     `;
   } else if (selected.id === 'local-command') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         ${(workspace.commandTemplates || [])
           .map(
-            template => `
+            template => ui`
               <span class="chip">${escapeHtml(template.label)}</span>
             `,
           )
@@ -9422,7 +8719,7 @@ function renderConnectorDetails(selected) {
       ${(workspace.commandRuns || []).length ? renderCommandRunner() : '<div class="empty-state compact">No command runs yet.</div>'}
     `;
   } else if (selected.id === 'artifacts') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         <span class="chip is-accent">${selected.config.totalArtifacts} total</span>
         <span class="chip">${selected.config.projectArtifacts} in active project</span>
@@ -9430,7 +8727,7 @@ function renderConnectorDetails(selected) {
       ${renderProjectArtifactShelf()}
     `;
   } else if (selected.id === 'projects') {
-    extra = `
+    extra = ui`
       <div class="chip-row">
         <span class="chip is-accent">${escapeHtml(
           selected.config.activeProject || '(none)',
@@ -9440,7 +8737,7 @@ function renderConnectorDetails(selected) {
     `;
   }
 
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -9480,7 +8777,7 @@ function renderSkillFilterBar() {
   const filteredCount = filteredSkills().length;
   const isFiltering = Boolean(query || tag || state !== 'all');
 
-  return `
+  return ui`
     <div class="skill-filter-bar">
       <div class="skill-filter-row">
         <input
@@ -9500,7 +8797,7 @@ function renderSkillFilterBar() {
         </select>
       </div>
       ${tags.length
-        ? `
+        ? ui`
           <div class="skill-filter-tags">
             <button
               type="button"
@@ -9510,7 +8807,7 @@ function renderSkillFilterBar() {
             >All tags</button>
             ${tags
               .map(
-                t => `
+                t => ui`
                   <button
                     type="button"
                     class="chip chip-button ${tag === t ? 'is-accent' : ''}"
@@ -9525,7 +8822,7 @@ function renderSkillFilterBar() {
         : ''}
       <div class="skill-filter-status">
         ${isFiltering
-          ? `Showing ${filteredCount} of ${totalCount} skills · <button type="button" class="link-button" data-action="reset-skill-filter">reset</button>`
+          ? ui`Showing ${filteredCount} of ${totalCount} skills · <button type="button" class="link-button" data-action="reset-skill-filter">reset</button>`
           : `${totalCount} skills`}
       </div>
     </div>
@@ -9533,7 +8830,7 @@ function renderSkillFilterBar() {
 }
 
 function renderCustomSkillCreateCard() {
-  return `
+  return ui`
     <div class="detail-card create-connector-card">
       <div class="header-row">
         <div>
@@ -9655,22 +8952,24 @@ async function refreshAdvancedStatus() {
   try {
     // Fan out — three independent endpoints, none of which block the
     // others, so a slow one doesn't gate the rest.
-    const [serversResp, pluginsResp, tasksResp, diagnosticsResp] = await Promise.all([
+    const [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp] = await Promise.all([
       api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
       api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
       api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
       api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
+      api('/api/workspace/retained').catch(err=>({_error:err.message})),
     ]);
-    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp]
+    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp]
       .filter(r => r && r._error)
       .map(r => r._error);
-    if (errors.length === 4) {
+    if (errors.length === 5) {
       uiState.advanced.error = errors.join(' · ');
     } else {
       uiState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
       uiState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
       uiState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
       uiState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
+      uiState.advanced.retainedFiles = retainedResp?._error ? null : retainedResp;
       uiState.advanced.loaded = true;
       // Surface partial errors without blanking the panel.
       if (errors.length > 0) {
@@ -9749,7 +9048,7 @@ async function handleMemoryFactAction(action, id) {
   if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
   const patch=action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
   uiState.memoryFactBusy=true; bgRender();
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?'已保存':action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
 }
@@ -9947,9 +9246,9 @@ function renderSafetyPane() {
   }
 
   const opLabel = (op, scope) => {
-    if (scope === 'tool') return op === 'allow' ? '始终允许此工具' : '拒绝此工具';
-    const opPart = op === 'read' ? '读取' : op === 'write' ? '写入' : op === 'edit' ? '编辑' : op;
-    const scopePart = scope === 'dir' ? '整个目录' : '当前文件';
+    if (scope === 'tool') return op === 'allow' ? t("始终允许此工具") : t("拒绝此工具");
+    const opPart = op === 'read' ? t("读取") : op === 'write' ? t("写入") : op === 'edit' ? t("编辑") : op;
+    const scopePart = scope === 'dir' ? t("整个目录") : t("当前文件");
     return `${opPart} — ${scopePart}`;
   };
 
@@ -9964,33 +9263,33 @@ function renderSafetyPane() {
 
   const body = (() => {
     if (loading && !loaded) {
-      return `<div class="empty-state compact">正在读取授权…</div>`;
+      return ui`<div class="empty-state compact">正在读取授权…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!rules.length) {
-      return `
+      return ui`
         <div class="empty-state compact">
           还没有长期授权。
           点击权限弹窗中的 <strong>Always allow</strong> 后，可在这里查看和撤销。
         </div>
       `;
     }
-    return `
+    return ui`
       <div class="safety-rule-list">
-        ${rules.map(rule => `
+        ${rules.map(rule => ui`
           <div class="safety-rule-row">
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(opLabel(rule.operation, rule.scope))}</div>
               <div class="safety-rule-path mono small">${escapeHtml(rule.realPath)}</div>
-<div class="list-row-meta">${escapeHtml(rule.permissionScope ? `角色 ${rule.permissionScope.role} · 项目 ${rule.permissionScope.project || "无"} · ${rule.permissionScope.workspace?.path || "无工作目录"}` : "原有全局授权")} · 保存于 ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
+<div class="list-row-meta">${escapeHtml(rule.permissionScope ? `Agent ${rule.permissionScope.role} · 项目 ${rule.permissionScope.project || "无"} · ${rule.permissionScope.workspace?.path || "无工作目录"}` : "原有全局授权")} · 保存于 ${escapeHtml(fmtTimestamp(rule.createdAt))}</div>
             </div>
             <button class="small-button is-danger"
               data-action="safety-allowlist-remove"
               data-rule-id="${escapeHtml(rule.id)}"
               ${pendingRemoveId === rule.id ? 'disabled' : ''}>
-              ${pendingRemoveId === rule.id ? '撤销中…' : '撤销'}
+              ${pendingRemoveId === rule.id ? '撤销中…' : t("撤销")}
             </button>
           </div>
         `).join('')}
@@ -9998,7 +9297,7 @@ function renderSafetyPane() {
     `;
   })();
 
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -10011,9 +9310,9 @@ function renderSafetyPane() {
           <button class="small-button" data-action="refresh-safety-allowlist">刷新</button>
         </div>
       </div>
-      <div class="inline-actions">${[['role','角色',r=>r.permissionScope?.role || r.role || 'global'],['project','项目',r=>r.permissionScope?.project || r.project || 'none'],['operation','操作',r=>r.operation]].map(([key,label,get])=>`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
+      <div class="inline-actions">${[['role',t("Agent"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
-      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定角色')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || '<p>尚无记录。</p>'}</details>
+      <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定Agent')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
       <p class="list-row-meta" style="margin-top: 16px;">
         Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
         — the dialog only offers Allow once / Deny for them. Move and delete operations are
@@ -10033,27 +9332,27 @@ function renderDomainCookiesPane() {
 
   const list = (() => {
     if (loading && !loaded) {
-      return `<div class="empty-state compact">Loading…</div>`;
+      return ui`<div class="empty-state compact">Loading…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!hosts.length) {
-      return `
+      return ui`
         <div class="empty-state compact">
           No domain cookies configured. Add one for sites that need an authenticated session
           (Xiaohongshu, Douyin, Bilibili, …) — yt-dlp / fetch_url will pick it up automatically.
         </div>
       `;
     }
-    return `
+    return ui`
       <div class="safety-rule-list">
-        ${hosts.map(entry => `
+        ${hosts.map(entry => ui`
           <div class="safety-rule-row">
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(entry.host)}</div>
               <div class="list-row-meta">
-                Cookie length: ${entry.length}${entry.fingerprint ? ` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
+                Cookie length: ${entry.length}${entry.fingerprint ? ui` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
               </div>
             </div>
             <button class="small-button is-danger"
@@ -10068,7 +9367,7 @@ function renderDomainCookiesPane() {
     `;
   })();
 
-  return `
+  return ui`
     <div class="meta-block-label" style="margin-top: 24px;">Web-fetch cookies</div>
     <p class="list-row-meta" style="margin-bottom: 8px;">
       Per-domain Cookie strings sent with web-fetch (fetch_url) and platform extractors
@@ -10105,7 +9404,7 @@ function renderDomainCookiesPane() {
         </button>
         <button class="small-button" data-action="refresh-domain-cookies">Refresh list</button>
       </div>
-      ${addError ? `<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
+      ${addError ? ui`<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
     </div>
 
     ${list}
@@ -10120,13 +9419,13 @@ function renderMemoryPane() {
   }
   const content = (() => {
     if (loading && !snapshot) {
-      return `<div class="empty-state compact">正在检查记忆…</div>`;
+      return ui`<div class="empty-state compact">正在检查记忆…</div>`;
     }
     if (error) {
-      return `<div class="alert compact-alert">${escapeHtml(error)}</div>`;
+      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!snapshot) {
-      return `<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
+      return ui`<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
     }
     const s = snapshot;
     const drift = s.embedding?.drift || {};
@@ -10135,10 +9434,10 @@ function renderMemoryPane() {
     const semanticStatus = diagnosis?.available === false ? '暂不可用' : needsRebuild ? '需要重建' : diagnosis?.available ? '检测通过' : drift.inferredProvider ? '已配置 · 待检测' : drift.probeAttempted ? '暂不可用' : '未检测';
     const metaRows = s.meta
       ? Object.entries(s.meta)
-          .map(([k, v]) => `<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
+          .map(([k, v]) => ui`<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
           .join('')
       : '<div class="list-row-meta">(not yet populated)</div>';
-    return `
+    return ui`
       <div class="detail-card memory-card">
         <div class="header-row">
           <div>
@@ -10150,8 +9449,8 @@ function renderMemoryPane() {
           </div>
         </div>
 
-        ${s.derivedIndex ? `<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
-        ${drift.hasDrift ? `
+        ${s.derivedIndex ? ui`<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
+        ${drift.hasDrift ? ui`
           <div class="alert compact-alert">
             <strong>Embedding model drift detected.</strong>
             Stored vectors were written by <span class="mono">${escapeHtml(drift.stored || '?')}</span>
@@ -10170,9 +9469,9 @@ function renderMemoryPane() {
           <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
           <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
           <button class="small-button" data-action="memory-repair" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
-          ${uiState.memoryStatus.repairBusy ? '<button class="small-button" data-action="memory-pause">本批完成后暂停</button>' : ''}</div>
-          ${s.repair ? `<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
-          ${uiState.memoryStatus.diagnosis ? `<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
+          ${uiState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
+          ${s.repair ? ui`<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
+          ${uiState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
           <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
         </section>
         ${renderMemoryFacts(uiState.memoryFacts,{query:uiState.memoryFactQuery,editing:uiState.memoryFactEditing,busy:uiState.memoryFactBusy,draft:uiState.memoryFactDraft,session:memoryFactEdit,feedback:uiState.memoryFactFeedback})}
@@ -10230,7 +9529,7 @@ function renderMemoryPane() {
               Wipe embeddings…
             </button>
           </div>
-          ${wipeConfirmOpen ? `
+          ${wipeConfirmOpen ? ui`
             <div class="alert compact-alert">
               <div><strong>This clears every stored vector.</strong> Memory rows and settings are untouched.</div>
               <div class="inline-actions" style="margin-top: 8px;">
@@ -10241,7 +9540,7 @@ function renderMemoryPane() {
               </div>
             </div>
           ` : ''}
-          ${wipeResult ? `<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
+          ${wipeResult ? ui`<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
         </div>
 
         <div class="subsection">
@@ -10252,7 +9551,7 @@ function renderMemoryPane() {
       </div>
     `;
   })();
-  return `<div class="customize-pane">${content}</div>`;
+  return ui`<div class="customize-pane">${content}</div>`;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -10260,7 +9559,7 @@ function renderMemoryPane() {
 // ───────────────────────────────────────────────────────────────────────
 
 function renderSkillDetailTabs(selected, activeTab) {
-  return `
+  return ui`
     <div class="skill-tab-strip">
       <button
         class="skill-tab ${activeTab === 'overview' ? 'is-active' : ''}"
@@ -10306,16 +9605,16 @@ function renderSkillMarkdownTab(selected) {
   const activeTab = 'markdown';
   const cached = uiState.skillMarkdown[selected.id] || {};
   const body = (() => {
-    if (cached.loading) return `<div class="empty-state compact">Loading SKILL.md…</div>`;
-    if (cached.error) return `<div class="alert compact-alert">${escapeHtml(cached.error)}</div>`;
+    if (cached.loading) return ui`<div class="empty-state compact">Loading SKILL.md…</div>`;
+    if (cached.error) return ui`<div class="alert compact-alert">${escapeHtml(cached.error)}</div>`;
     if (!cached.markdown) {
       // Kick off initial load when rendered for the first time.
       Promise.resolve().then(() => refreshSkillMarkdown(selected.id));
-      return `<div class="empty-state compact">Loading SKILL.md…</div>`;
+      return ui`<div class="empty-state compact">Loading SKILL.md…</div>`;
     }
-    return `<pre class="skill-markdown-block">${escapeHtml(cached.markdown)}</pre>`;
+    return ui`<pre class="skill-markdown-block">${escapeHtml(cached.markdown)}</pre>`;
   })();
-  return `
+  return ui`
     <div class="detail-card">
       <div class="header-row">
         <div>
@@ -10342,7 +9641,7 @@ function renderSkillHealthPanel() {
     const found = (uiState.bootstrap?.customize?.skills || []).find(s => s.id === id);
     return found?.name || id;
   };
-  return `
+  return ui`
     <div class="detail-card skill-health-card">
       <div class="header-row">
         <div>
@@ -10353,13 +9652,13 @@ function renderSkillHealthPanel() {
           ${loading ? 'Loading…' : loaded ? 'Refresh' : 'Load'}
         </button>
       </div>
-      ${error ? `<div class="banner is-warning">${escapeHtml(error)}</div>` : ''}
+      ${error ? ui`<div class="banner is-warning">${escapeHtml(error)}</div>` : ''}
       ${
         !loaded && !loading
-          ? `<div class="empty-state compact">Click "Load" to see run statistics.</div>`
+          ? ui`<div class="empty-state compact">Click "Load" to see run statistics.</div>`
           : skills.length === 0 && loaded
-            ? `<div class="empty-state compact">No skill runs recorded yet.</div>`
-            : `
+            ? ui`<div class="empty-state compact">No skill runs recorded yet.</div>`
+            : ui`
               <div class="list-stack">
                 ${skills
                   .map(row => {
@@ -10369,7 +9668,7 @@ function renderSkillHealthPanel() {
                     const metaLabel = `${row.runs} runs • ${rate} ok • p50 ${durLabel} • last ${lastAt}`;
                     const errHtml = (row.recentErrors || [])
                       .slice(0, 3)
-                      .map(e => `
+                      .map(e => ui`
                         <div class="skill-health-error">
                           <span class="meta-label">${escapeHtml(e.errorType || 'error')}</span>
                           <span>${escapeHtml((e.errorMessage || '').slice(0, 160))}</span>
@@ -10377,12 +9676,12 @@ function renderSkillHealthPanel() {
                       `)
                       .join('');
                     const isDegraded = typeof row.successRate === 'number' && row.successRate < 0.7 && row.runs >= 3;
-                    return `
+                    return ui`
                       <div class="list-row skill-health-row ${isDegraded ? 'is-degraded' : ''}">
                         <div>
                           <div class="list-row-title">${escapeHtml(nameFor(row.skillId))}</div>
                           <div class="list-row-meta">${escapeHtml(metaLabel)}</div>
-                          ${errHtml ? `<div class="skill-health-errors">${errHtml}</div>` : ''}
+                          ${errHtml ? ui`<div class="skill-health-errors">${errHtml}</div>` : ''}
                         </div>
                       </div>
                     `;
@@ -10398,7 +9697,7 @@ function renderSkillHealthPanel() {
 function renderSkillProposalsPanel() {
   const proposals = uiState.bootstrap?.customize?.skillProposals || [];
   if (proposals.length === 0) return '';
-  return `
+  return ui`
     <div class="detail-card skill-proposals-card">
       <div class="header-row">
         <div>
@@ -10409,7 +9708,7 @@ function renderSkillProposalsPanel() {
       </div>
       <div class="list-stack">
         ${proposals
-          .map(p => `
+          .map(p => ui`
             <div class="list-row">
               <div>
                 <div class="list-row-title">${escapeHtml(p.summary || '(workflow)')}</div>
@@ -10460,8 +9759,9 @@ function renderCustomizePage() {
   // new section without an extra click.
   const rawSection = data.settings.selectedCustomizeSection;
   const section = rawSection === 'runtime' ? 'advanced' : rawSection;
+  if (section === 'agents') return renderAgentPage();
 
-  return `
+  return ui`
     <section class="page page-customize">
       <div class="customize-layout">
         <div class="customize-pane">
@@ -10484,7 +9784,7 @@ function renderCustomizePage() {
               data-section="agents"
             >
               <div class="list-row-title">Agents</div>
-              <div class="list-row-meta">IDENTITY.md, SOUL.md, and mood for the main chat agent and worker lanes.</div>
+              <div class="list-row-meta">设置 Agent 的人设、能力与消息渠道</div>
             </button>
             <button
               class="section-button ${section === 'connectors' ? 'is-active' : ''}"
@@ -10539,7 +9839,7 @@ function renderCustomizePage() {
               ? renderMemoryPane()
             : section === 'safety'
               ? renderSafetyPane()
-              : `
+              : ui`
         <div class="customize-pane">
           <div class="customize-pane-header">
             <h2 class="pane-title">${
@@ -10547,14 +9847,14 @@ function renderCustomizePage() {
             }</h2>
           </div>
 
-          ${section === 'skills' ? renderSkillFilterBar() : ''}
+          ${section === 'skills' ? renderSkillFilterBar()+renderSkillManagement(selected,escapeHtml) : ''}
 
           <div class="list-stack">
             ${(section === 'skills'
               ? filteredSkills()
               : section === 'agents'
                 ? data.customize.agents
-                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp'))
+                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp' && !['local-files','local-command'].includes(c.id)))
               .map(item => {
                 const isActive =
                   section === 'skills'
@@ -10562,7 +9862,7 @@ function renderCustomizePage() {
                     : section === 'agents'
                       ? data.settings.selectedAgentId === item.id
                       : data.settings.selectedConnectorId === item.id;
-                return `
+                return ui`
                   <button
                     class="list-row ${isActive ? 'is-active' : ''}"
                     data-action="select-customize-item"
@@ -10571,11 +9871,7 @@ function renderCustomizePage() {
                   >
                     <div class="list-row-title">
                       ${escapeHtml(item.name)}
-                      ${
-                        section === 'agents'
-                          ? `<span class="meta-label">${escapeHtml(item.moodLabel)}</span>`
-                          : ''
-                      }
+                      ${section==='agents' && !item.capabilities ? ui`<span class="chip">旧版权限待迁移</span>` : ''}
                     </div>
                     <div class="list-row-meta">${escapeHtml(
                       section === 'agents' ? item.laneLabel : item.description,
@@ -10585,7 +9881,7 @@ function renderCustomizePage() {
               })
               .join('')}
             ${section === 'skills' && filteredSkills().length === 0
-              ? `<div class="empty-state compact">No skills match the current filter.</div>`
+              ? ui`<div class="empty-state compact">No skills match the current filter.</div>`
               : ''}
           </div>
         </div>
@@ -10594,7 +9890,7 @@ function renderCustomizePage() {
           ${renderConnectorDetails(selected)}
           ${
             section === 'skills'
-              ? `
+              ? ui`
                 ${renderSkillHealthPanel()}
                 ${renderSkillProposalsPanel()}
                 <div class="subsection">${renderCustomSkillCreateCard()}</div>
@@ -10610,16 +9906,16 @@ function renderCustomizePage() {
 }
 
 function renderArtifactsPage() {
-  const artifacts = uiState.bootstrap.artifacts;
+  const artifacts = artifactShelfRows();
   const active = selectedArtifact();
   const project = activeProject();
 
-  return `
+  return ui`
     <section class="page">
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">资料与成果</h1><p class="page-kicker">保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。</p>
+            <h1 class="page-title compact">${uiState.artifactCollection==='results'?'成果':'知识库'}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果</button></div>
           </div>
 
           <div class="inline-actions">
@@ -10632,7 +9928,7 @@ function renderArtifactsPage() {
 
         ${
           uiState.showArtifactForm
-            ? `
+            ? ui`
               <form class="project-form-card surface-card" data-form="artifact-create">
                 <div class="project-form-grid">
                   <label class="label">
@@ -10666,7 +9962,7 @@ function renderArtifactsPage() {
                     Cancel
                   </button>
                   ${
-                    project ? `<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
+                    project ? ui`<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
                   }
                 </div>
               </form>
@@ -10681,7 +9977,7 @@ function renderArtifactsPage() {
                 artifacts.length
                   ? artifacts
                       .map(
-                        artifact => `
+                        artifact => ui`
                           <button
                             class="artifact-card ${
                               active?.id === artifact.id ? 'is-active' : ''
@@ -10695,7 +9991,7 @@ function renderArtifactsPage() {
                               )}</span>
                               ${
                                 artifact.projectId
-                                  ? `<span class="chip">${escapeHtml(
+                                  ? ui`<span class="chip">${escapeHtml(
                                       uiState.bootstrap.projects.find(
                                         item => item.id === artifact.projectId,
                                       )?.name || 'Project',
@@ -10711,7 +10007,7 @@ function renderArtifactsPage() {
                         `,
                       )
                       .join('')
-                  : '<div class="empty-state compact">No artifacts yet. Code fences from replies will land here automatically.</div>'
+                  : '<div class="empty-state compact">此分类暂时没有内容。</div>'
               }
             </div>
           </section>
@@ -10720,7 +10016,7 @@ function renderArtifactsPage() {
             ${
               active
                 ? uiState.editingArtifactId === active.id
-                  ? `
+                  ? ui`
                     <form class="project-form-card surface-card" data-form="artifact-update">
                       <div class="project-form-grid">
                         <label class="label">
@@ -10756,7 +10052,7 @@ function renderArtifactsPage() {
                       </div>
                     </form>
                   `
-                  : `
+                  : ui`
                     <div class="header-row">
                       <div>
                         <h2 class="pane-title">${escapeHtml(active.title)}</h2>
@@ -10765,7 +10061,7 @@ function renderArtifactsPage() {
                           <span class="chip">${escapeHtml(active.kind)}</span>
                           ${
                             active.projectId
-                              ? `<span class="chip">${escapeHtml(
+                              ? ui`<span class="chip">${escapeHtml(
                                   uiState.bootstrap.projects.find(
                                     item => item.id === active.projectId,
                                   )?.name || 'Project',
@@ -10792,7 +10088,7 @@ function renderArtifactsPage() {
                         </button>
                         ${
                           uiState.bootstrap.workspace?.selectedFilePath
-                            ? `
+                            ? ui`
                               <button
                                 class="small-button is-primary"
                                 data-action="apply-artifact-to-selected-file"
@@ -10819,9 +10115,9 @@ function renderArtifactsPage() {
                         : ''
                     }
 
-                    ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? `<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : `<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
+                    ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? ui`<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : ui`<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
                   `
-                : '<div class="empty-state">选择一份资料查看或编辑。</div>'
+                : ui`<div class="empty-state">选择一份资料查看或编辑。</div>`
             }
           </section>
         </div>
@@ -10876,7 +10172,7 @@ function renderCommandPalette() {
     Math.max(commands.length - 1, 0),
   );
 
-  return `
+  return ui`
     <div class="palette-backdrop" data-action="close-command-palette">
       <div class="palette-shell" onclick="event.stopPropagation()">
         <div class="palette-header">
@@ -10893,7 +10189,7 @@ function renderCommandPalette() {
             commands.length
               ? commands
                   .map(
-                    (command, index) => `
+                    (command, index) => ui`
                       <button
                         class="palette-item ${index === selectedIndex ? 'is-active' : ''}"
                         data-action="select-palette-command"
@@ -10929,7 +10225,7 @@ function renderToolPermissionDialog() {
     ? JSON.stringify(args, null, 2)
     : '(no arguments)';
 
-  return `
+  return ui`
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="Tool permission request">
       <div class="tool-permission-shell">
         <div class="tool-permission-header">
@@ -10940,9 +10236,9 @@ function renderToolPermissionDialog() {
           </div>
         </div>
         <div class="tool-permission-body">
-          <div class="tool-permission-tool-name">${escapeHtml(toolId)}</div>
-          ${entry.confirmError ? `<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
-          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前角色、项目与真实工作目录。无项目时仅限当前角色的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
+          <div class="tool-permission-tool-name">${escapeHtml(entry.agentId || 'Agent')} · ${escapeHtml(toolId)}</div>
+          ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
+          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
         </div>
         <div class="tool-permission-footer">
@@ -11004,50 +10300,50 @@ function _fileSafetyTitle(operation, payload) {
 
 function _fileSafetyBody(operation, payload) {
   const wsBadge = payload?.withinWorkspace
-    ? `<span class="file-safety-badge is-ok">workspace</span>`
-    : `<span class="file-safety-badge is-warn">outside workspace</span>`;
+    ? ui`<span class="file-safety-badge is-ok">workspace</span>`
+    : ui`<span class="file-safety-badge is-warn">outside workspace</span>`;
   const symlinkWarn = (flag, real) => flag
-    ? `<div class="file-safety-warn">⚠ symlink chain — real target: <code>${escapeHtml(real || '?')}</code></div>`
+    ? ui`<div class="file-safety-warn">⚠ symlink chain — real target: <code>${escapeHtml(real || '?')}</code></div>`
     : '';
   const sensitiveWarn = payload?.sensitive
-    ? `<div class="file-safety-warn">⚠ sensitive path (category: ${escapeHtml(payload?.category || 'unknown')}). Approval is one-shot — no session-wide grant.</div>`
+    ? ui`<div class="file-safety-warn">⚠ sensitive path (category: ${escapeHtml(payload?.category || 'unknown')}). Approval is one-shot — no session-wide grant.</div>`
     : '';
 
   switch (operation) {
     case 'read':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
         ${sensitiveWarn}
-        ${payload.size != null ? `<div class="file-safety-row"><strong>Size:</strong> ${payload.size} bytes</div>` : ''}
-        ${payload.exists === false ? `<div class="file-safety-warn">File does not exist yet — read will fail.</div>` : ''}
+        ${payload.size != null ? ui`<div class="file-safety-row"><strong>Size:</strong> ${payload.size} bytes</div>` : ''}
+        ${payload.exists === false ? ui`<div class="file-safety-warn">File does not exist yet — read will fail.</div>` : ''}
       `;
     case 'read_batch':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Files:</strong> ${payload.fileCount || 0} ${wsBadge}</div>
-        ${payload.dir ? `<div class="file-safety-row"><strong>Dir:</strong> <code>${escapeHtml(payload.dir)}</code></div>` : ''}
-        ${payload.byteRange ? `<div class="file-safety-row"><strong>Bytes:</strong> ${escapeHtml(JSON.stringify(payload.byteRange))}</div>` : ''}
-        ${Array.isArray(payload.extensions) && payload.extensions.length ? `<div class="file-safety-row"><strong>Extensions:</strong> ${escapeHtml(payload.extensions.join(', '))}</div>` : ''}
-        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ batch contains symlink-traversed paths.</div>` : ''}
-        ${Array.isArray(payload.sample) && payload.sample.length ? `<details class="file-safety-details"><summary>Sample (${payload.sample.length})</summary><pre class="tool-permission-args">${escapeHtml(payload.sample.map(s => s.lexicalPath + (s.realPath !== s.lexicalPath ? ` → ${s.realPath}` : '')).join('\n'))}</pre></details>` : ''}
+        ${payload.dir ? ui`<div class="file-safety-row"><strong>Dir:</strong> <code>${escapeHtml(payload.dir)}</code></div>` : ''}
+        ${payload.byteRange ? ui`<div class="file-safety-row"><strong>Bytes:</strong> ${escapeHtml(JSON.stringify(payload.byteRange))}</div>` : ''}
+        ${Array.isArray(payload.extensions) && payload.extensions.length ? ui`<div class="file-safety-row"><strong>Extensions:</strong> ${escapeHtml(payload.extensions.join(', '))}</div>` : ''}
+        ${payload.hasSymlinks ? ui`<div class="file-safety-warn">⚠ batch contains symlink-traversed paths.</div>` : ''}
+        ${Array.isArray(payload.sample) && payload.sample.length ? ui`<details class="file-safety-details"><summary>Sample (${payload.sample.length})</summary><pre class="tool-permission-args">${escapeHtml(payload.sample.map(s => s.lexicalPath + (s.realPath !== s.lexicalPath ? ` → ${s.realPath}` : '')).join('\n'))}</pre></details>` : ''}
       `;
     case 'write_new':
     case 'write_overwrite':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
-        ${payload.contentSize != null ? `<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
-        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? `<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
+        ${payload.contentSize != null ? ui`<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? ui`<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
       `;
     case 'edit':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
-        ${payload.diffPreview ? `<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
-        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? `<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
+        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? ui`<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
       `;
     case 'move':
-      return `
+      return ui`
         <div class="file-safety-row"><strong>From:</strong> <code>${escapeHtml(payload.src || '')}</code></div>
         <div class="file-safety-row"><strong>To:</strong> <code>${escapeHtml(payload.dst || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.srcHasSymlinkInChain, payload.srcRealPath)}
@@ -11056,40 +10352,40 @@ function _fileSafetyBody(operation, payload) {
     case 'delete': {
       const intent = payload.stage !== 'confirm';
       const paths = Array.isArray(payload.paths) ? payload.paths : [];
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Targets:</strong> ${paths.length} ${wsBadge}</div>
         <pre class="tool-permission-args">${escapeHtml(paths.join('\n'))}</pre>
-        ${payload.hasSymlinks ? `<div class="file-safety-warn">⚠ at least one path traverses a symlink.</div>` : ''}
-        ${payload.reason ? `<div class="file-safety-row"><strong>Reason:</strong> ${escapeHtml(payload.reason)}</div>` : ''}
+        ${payload.hasSymlinks ? ui`<div class="file-safety-warn">⚠ at least one path traverses a symlink.</div>` : ''}
+        ${payload.reason ? ui`<div class="file-safety-row"><strong>Reason:</strong> ${escapeHtml(payload.reason)}</div>` : ''}
         ${intent
-          ? `<div class="file-safety-row">Files will be moved to <code>.melo-trash/</code> (recoverable). Confirm to proceed to type-to-confirm step.</div>`
-          : `<div class="file-safety-row">Type <code>${escapeHtml(payload.expectedConfirmation || '')}</code> to confirm:</div>
+          ? ui`<div class="file-safety-row">Files will be moved to <code>.melo-trash/</code> (recoverable). Confirm to proceed to type-to-confirm step.</div>`
+          : ui`<div class="file-safety-row">Type <code>${escapeHtml(payload.expectedConfirmation || '')}</code> to confirm:</div>
              <input type="text" class="file-safety-confirm-input" data-file-safety-confirm-input placeholder="${escapeHtml(payload.expectedConfirmation || '')}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />`}
       `;
     }
     case 'bash': {
       const risks = Array.isArray(payload.risks) ? payload.risks : [];
-      return `
+      return ui`
         <div class="file-safety-row"><strong>Command:</strong></div>
         <pre class="tool-permission-args">${escapeHtml(payload.command || '')}</pre>
-        ${risks.length ? `<div class="file-safety-warn">⚠ ${risks.length} risk${risks.length > 1 ? 's' : ''} detected: ${escapeHtml(risks.map(r => r.kind).join(', '))}</div>` : ''}
-        ${payload.workspacePath ? `<div class="file-safety-row"><strong>Workspace:</strong> <code>${escapeHtml(payload.workspacePath)}</code></div>` : ''}
-        ${payload.effectiveCwd ? `<div class="file-safety-row"><strong>Cwd:</strong> <code>${escapeHtml(payload.effectiveCwd)}</code> ${payload.cwdInsideWorkspace === false ? '<span class="file-safety-badge is-warn">outside workspace</span>' : ''}</div>` : ''}
+        ${risks.length ? ui`<div class="file-safety-warn">⚠ ${risks.length} risk${risks.length > 1 ? 's' : ''} detected: ${escapeHtml(risks.map(r => r.kind).join(', '))}</div>` : ''}
+        ${payload.workspacePath ? ui`<div class="file-safety-row"><strong>Workspace:</strong> <code>${escapeHtml(payload.workspacePath)}</code></div>` : ''}
+        ${payload.effectiveCwd ? ui`<div class="file-safety-row"><strong>Cwd:</strong> <code>${escapeHtml(payload.effectiveCwd)}</code> ${payload.cwdInsideWorkspace === false ? '<span class="file-safety-badge is-warn">outside workspace</span>' : ''}</div>` : ''}
       `;
     }
     default:
-      return `<pre class="tool-permission-args">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
+      return ui`<pre class="tool-permission-args">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
   }
 }
 
 function _fileSafetyButtons(operation, payload, requestId) {
   const confirm = operation === 'delete' && payload?.stage === 'confirm';
   const persistent = payload?.persistentAllowed === true;
-  return `
+  return ui`
     <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">Allow once</button>
     <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">Deny</button>
     <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>Always allow</button>
-    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、角色与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、角色与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
+    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、Agent与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、Agent与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
 }
 
 function renderFileSafetyDialog(entry) {
@@ -11101,9 +10397,9 @@ function renderFileSafetyDialog(entry) {
   // a recoverable mismatch on delete stage 2 — the dialog stays open and
   // surfaces the message instead of disappearing silently.
   const errorBanner = confirmError
-    ? `<div class="file-safety-warn">${escapeHtml(confirmError)}</div>`
+    ? ui`<div class="file-safety-warn">${escapeHtml(confirmError)}</div>`
     : '';
-  return `
+  return ui`
     <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="File operation approval">
       <div class="tool-permission-shell file-safety-shell">
         <div class="tool-permission-header">
@@ -11114,6 +10410,7 @@ function renderFileSafetyDialog(entry) {
           </div>
         </div>
         <div class="tool-permission-body">
+          <p>${escapeHtml(entry.agentId || 'Agent')}</p>
           ${errorBanner}
           ${body}
         </div>
@@ -11121,71 +10418,6 @@ function renderFileSafetyDialog(entry) {
           <fieldset class="inline-actions permission-actions" ${entry.submitting ? 'disabled aria-busy="true"' : ''}>
             ${buttons}
           </fieldset>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-// ─── First-boot productivity-MCP consent modal ────────────────────────────────
-//
-// Codex audit 2026-04-29 (二轮): the per-agent whitelist + per-call
-// approval gates only restrict tool *calls* — they do NOT gate the
-// npm download / install scripts / server startup code that runs as
-// soon as `initMcpServers` spawns the stdio child. Default-true on
-// `enableAntvChartMcp / enableMarkdown2PdfMcp / enableMermaidMcp`
-// would therefore execute three external npm packages on every
-// fresh install with zero user click — supply-chain attack surface
-// no in-melo gate can close.
-//
-// Resolution: defaults stay false, but one consent modal at first
-// boot lets the user accept all three (with the exact pinned
-// versions shown) or skip in a single click. Once dismissed, the
-// `productivityMcpsConsented` flag flips true and this modal never
-// shows again on this MELO_HOME.
-function renderProductivityMcpConsentModal() {
-  if (uiState.bootstrap?.settings?.config?.productivityMcpsConsented) {
-    return '';
-  }
-  // Don't stack on top of the tool-permission modal — that one is
-  // higher-priority (mid-conversation request) and the consent
-  // modal can wait one render.
-  if (uiState.pendingToolPermissions?.length) {
-    return '';
-  }
-  return `
-    <div class="tool-permission-backdrop" role="dialog" aria-modal="true" aria-label="Productivity MCP consent">
-      <div class="tool-permission-shell">
-        <div class="tool-permission-header">
-          <span class="tool-permission-icon">${icon.chip}</span>
-          <div>
-            <div class="tool-permission-title">启用本地 productivity MCP？</div>
-            <div class="tool-permission-subtitle">First-boot consent — 仅询问一次</div>
-          </div>
-        </div>
-        <div class="tool-permission-body">
-          <div style="margin-bottom: 12px;">
-            Melo 推荐三个本地 stdio MCP server（无需 API key）：
-          </div>
-          <ul style="margin: 0 0 12px 16px; padding: 0; line-height: 1.7;">
-            <li><code>@antv/mcp-server-chart@0.9.10</code> — 25+ 种图表</li>
-            <li><code>@99xio/markdown2pdf-mcp@2.2.0</code> — Markdown → PDF</li>
-            <li><code>mcp-mermaid@0.4.1</code> — 流程图 / 序列图 → PNG</li>
-          </ul>
-          <div style="font-size: 13px; opacity: 0.78; line-height: 1.6;">
-            版本已锁定 — 启用即信任以上 pinned npm 包在你机器上执行本地代码（包脚本、子进程、文件 / 网络访问 melo 都无法沙箱）。<br>
-            启用后每个 agent 仍需在 Customize → Agents 的 chip-row 里逐个授权才能调用，单次调用还会再问一次。
-          </div>
-        </div>
-        <div class="tool-permission-footer">
-          <div class="inline-actions">
-            <button class="small-button is-primary" data-action="productivity-mcps-enable-all">
-              全部启用
-            </button>
-            <button class="small-button" data-action="productivity-mcps-skip">
-              暂不启用
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -11429,18 +10661,20 @@ function render({ background = false, changedSections = null } = {}) {
   const keepPage = background && changedSections && !uiState.neuralOverview && !uiState.sending &&
     !pageAffected(uiState.bootstrap.settings.activeView, changedSections) && currentPage;
   const pageHtml = keepPage ? preserveNeuralRegion(currentPage) :
-    `<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
-  updateNeuralWorkspace(app, `
+    ui`<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
+  updateNeuralWorkspace(app, ui`
     <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${uiState.sending}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
       <div class="neural-cosmos" aria-hidden="true"></div>
       <div class="neural-core-anchor" aria-hidden="true"></div>
       ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
-      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : '本地工作空间'}</div>
+      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
-        <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?'返回分支':'返回总览'} ↗</button></div>
+        ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
+        ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
+        <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           ${pageHtml}
           <div class="content-scrollbar" aria-hidden="true">
@@ -11457,8 +10691,7 @@ function render({ background = false, changedSections = null } = {}) {
     ${renderRecentContextMenu()}
     ${renderAudioContextMenu()}
     ${renderToolPermissionDialog()}
-    ${renderProductivityMcpConsentModal()}
-    ${uiState.error ? `<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
+    ${uiState.error ? ui`<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
   `);
 
   settingsFormEditors.decorate(app);
@@ -11980,6 +11213,7 @@ document.addEventListener('click', async event => {
   }
 
   const action = trigger.dataset.action;
+  if(action==='toggle-chat-files') {event.preventDefault();uiState.chatFilesOpen=!uiState.chatFilesOpen;trigger.parentElement.open=uiState.chatFilesOpen;return;}
   if (action?.startsWith('image-')) {
     event.preventDefault();
     try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: uiState.composerAttachments, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
@@ -12002,7 +11236,18 @@ document.addEventListener('click', async event => {
   }
 
   try {
+    if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:refreshAdvancedStatus})) return;
     switch (action) {
+      case 'open-chat-files':
+      case 'open-retained-files': await api('/api/workspace/open',{method:'POST',body:{chatId:trigger.dataset.chatId,retained:action==='open-retained-files'}});break;
+      case 'decide-retained-files': {
+        const files=await api('/api/workspace/retained');
+        const record=files.directories.find(r=>r.chatId===trigger.dataset.chatId);
+        if(!record) {await refreshAdvancedStatus();break;}
+        const decision=await askFileDecision({...record,retained:true});
+        if(decision!=='cancel') {await api('/api/workspace/retained',{method:'POST',body:{chatId:record.chatId,decision,token:record.token}});await refreshAdvancedStatus();}
+        break;
+      }
       case 'toggle-model-picker':
         uiState.modelPickerOpen = !uiState.modelPickerOpen;
         uiState.ttsVoicePanelOpen = false;
@@ -12072,6 +11317,7 @@ document.addEventListener('click', async event => {
           await handleToggleChatLock(activeRecentContextChatId);
         }
         break;
+      case 'delete-active-chat': if(activeChat()) await handleDeleteChat(activeChat().id); break;
       case 'delete-chat':
         if (activeRecentContextChatId) {
           await handleDeleteChat(activeRecentContextChatId);
@@ -12268,16 +11514,30 @@ document.addEventListener('click', async event => {
           activeView: 'projects',
         });
         break;
+      case 'save-project-team': {
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:team.plan}}})); } catch(error) { showError(error.message); }
+        break;
+      }
+      case 'clear-project-team':
+        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:null}}})); } catch(error) { showError(error.message); }
+        break;
       case 'chat-from-project':
         await startProjectSession(trigger.dataset.projectId, 'chat');
         break;
       case 'code-from-project':
         await startProjectSession(trigger.dataset.projectId, 'code');
         break;
+      case 'confirm-agent-settings': {
+        await api('/api/agent-settings-sync/confirm',{method:'POST',body:{id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'}});
+        applyBootstrap(await api('/api/bootstrap')); break;
+      }
       case 'resolve-sync-conflict': {
-        const row=uiState.bootstrap.syncConflicts.find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
+        const settings=trigger.dataset.settings==='true';
+        const row=(settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
         const index=Number(trigger.dataset.index);
-        await api('/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
+        await api(settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
         applyBootstrap(await api('/api/bootstrap')); break;
       }
       case 'toggle-project-form':
@@ -12414,6 +11674,19 @@ document.addEventListener('click', async event => {
           selectedAgentScope: trigger.dataset.scope === 'project' ? 'project' : 'global',
         });
         break;
+      case 'export-agent-document': {
+        const draft = agentDraftFor(agentProfileById(trigger.dataset.agentId));
+        const text = draft?.instructions ?? '';
+        if (window.webkit?.messageHandlers?.meloVoice) {
+          const result = await nativeSettings('savePortableArchive', {text, name:'AGENT.md'});
+          showFlashToast(result.cancelled ? t('已取消导出。') : t('已导出 Markdown。'));
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([text], {type:'text/markdown;charset=utf-8'}));
+        const link = document.createElement('a'); link.href=url; link.download='AGENT.md'; link.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        return;
+      }
       case 'select-agent-editor-tab':
         await flushPendingAgentMarkdownAutosave();
         await flushPendingAgentChannelAutosave();
@@ -12435,16 +11708,6 @@ document.addEventListener('click', async event => {
       case 'reset-project-agent-override':
         await handleResetProjectAgentOverride(trigger.dataset.agentId);
         break;
-      case 'set-agent-mood': {
-        const agentId = trigger.dataset.agentId;
-        const draftKey = agentDraftKey(agentId);
-        uiState.agentDrafts[draftKey] = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-          mood: trigger.dataset.mood,
-        };
-        render();
-        break;
-      }
       case 'toggle-agent-tool': {
         const agentId = trigger.dataset.agentId;
         const toolId = trigger.dataset.toolId;
@@ -12596,29 +11859,6 @@ document.addEventListener('click', async event => {
         }
         break;
       }
-      case 'productivity-mcps-enable-all':
-      case 'productivity-mcps-skip': {
-        // First-boot consent modal. Either choice flips
-        // `productivityMcpsConsented` true so the modal never shows
-        // again on this MELO_HOME. "Enable all" additionally turns
-        // on the three flags first via /api/mcp/preset-toggle.
-        // The actual sequence lives in
-        // desktop-ui/productivityMcpConsent.js so node:test can
-        // exercise it without a fake DOM.
-        try {
-          await runProductivityMcpsConsentChoice({
-            enableAll: action === 'productivity-mcps-enable-all',
-            apiFn: api,
-          });
-          uiState.advanced = { ...uiState.advanced, loaded: false };
-          await loadBootstrap(uiState.searchQuery, { quiet: true });
-        } catch (err) {
-          uiState.error = `Consent save failed: ${err?.message || err}`;
-          render();
-          setTimeout(() => { uiState.error = null; render(); }, 4000);
-        }
-        break;
-      }
       case 'toggle-agent-secret': {
         const agentId = trigger.dataset.agentId;
         const channelId = trigger.dataset.channelId;
@@ -12632,7 +11872,7 @@ document.addEventListener('click', async event => {
       case 'switch-agent-channel-tab': {
         const agentId = trigger.dataset.agentId;
         const channelId = trigger.dataset.channelId;
-        const VALID_TABS = ['telegram', 'discord', 'lark'];
+        const VALID_TABS = ['discord'];
         if (agentId && VALID_TABS.includes(channelId)) {
           // Flush any pending debounced autosave before switching tabs so
           // in-flight edits (e.g. a bot token typed <350ms ago) are not lost
@@ -12885,7 +12125,10 @@ document.addEventListener('click', async event => {
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         render();
         break;
+      case 'artifact-collection':
+        uiState.artifactCollection=trigger.dataset.collection;uiState.selectedArtifactId=null;render();break;
       case 'open-artifact':
+        uiState.artifactCollection=uiState.bootstrap.results?.some(a=>a.id===trigger.dataset.artifactId)?'results':'knowledge';
         uiState.selectedArtifactId = trigger.dataset.artifactId;
         await patchSettings({ activeView: 'artifacts' });
         break;
@@ -13007,9 +12250,19 @@ document.addEventListener('click', async event => {
       case 'task-operation-retry':
         try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
         break;
-      case 'run-task-team':
-        await handleRunTask(trigger.dataset.taskId, {roles:(document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research,reviewer').split(','),concurrency:2});
+      case 'run-chat-team': {
+        const chat=activeChat(), content=uiState.composer.trim();
+        if(!content) {showError(t('请先在输入框写下团队任务。'));break;}
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        await handleSendMessage({chatId:chat?.id,content,teamPlan:team.plan});break;
+      }
+      case 'run-task-team': {
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        await handleRunTask(trigger.dataset.taskId, team.plan);
         break;
+      }
       case 'run-task':
         await handleRunTask(trigger.dataset.taskId);
         break;
@@ -13248,7 +12501,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -13435,20 +12688,20 @@ document.addEventListener('input', event => {
     // agent drafts.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       // Settings are committed only by the explicit Save action.
       return;
     }
 
     const nextDraft = mergeAgentDraft(agentId, {
-      [target.name]: target.value,
+      [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
     });
     if (target.name === 'identity') {
       nextDraft.identify = target.value;
       captureAgentEditorState();
       // Settings are committed only by the explicit Save action.
-    } else if (target.name === 'soul.md') {
+    } else if (target.name === 'soul.md' || target.name === 'instructions') {
       captureAgentEditorState();
       // Settings are committed only by the explicit Save action.
     }
@@ -13479,14 +12732,25 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent='有未保存的修改';}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
+  if (target.dataset?.projectDefaultAgent) {
+    try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
+    catch(error) { showError(error.message); }
+    render(); return;
+  }
   if (target.dataset?.chatContext) {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
     try {
       if (uiState.sending) throw new Error('请等待当前回复结束后再修改。');
       if (chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch}}));
-      else if (Object.hasOwn(patch,'projectId')) uiState.newChatProjectId = patch.projectId;
+      else if (Object.hasOwn(patch,'projectId')) {
+        uiState.newChatProjectId = patch.projectId;
+        // Picking a project for a new chat switches to that project's default Agent; the picker can still change it.
+        const projectAgent = projectDefaultAgentId(patch.projectId);
+        if (projectAgent) uiState.activeChatAgentId = projectAgent;
+      }
       else {
         const notes=uiState.bootstrap.artifacts.filter(a=>patch.contextArtifactIds.includes(a.id));
         if(notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length,0)>24000) throw new Error('最多选用 8 份、合计 24000 字资料。');
@@ -13494,6 +12758,21 @@ document.addEventListener('change', async event => {
       }
     } catch(error) { showError(error.message); }
     render(); return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.agentDocument) {
+    const agentId = target.dataset.agentDocument;
+    const editIsCurrent = settingsFormEditors.editToken(target.form);
+    const key = agentDraftKey(agentId);
+    try {
+      const file=target.files?.[0]; if(!file) return;
+      if(file.size > 1000000) throw new Error('Markdown 文件过大，请控制在 1 MB 内。');
+      const instructions=await file.text();
+      if(instructions.length > 200100) throw new Error('Agent 人设文档超过 200100 字符。');
+      if(!editIsCurrent()) return;
+      uiState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
+      render();
+    } catch(error) { showError(error.message); }
+    return;
   }
   if (target instanceof HTMLInputElement && target.dataset.agentAvatar) {
     const isCurrentEdit=settingsFormEditors.editToken(target.form);
@@ -13698,7 +12977,7 @@ document.addEventListener('change', async event => {
       // button.
       if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
         mergeAgentDraft(agentId, {
-          [target.name]: target.value,
+          [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
         render();
@@ -13706,7 +12985,7 @@ document.addEventListener('change', async event => {
       }
 
       const nextDraft = mergeAgentDraft(agentId, {
-        [target.name]: target.value,
+        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       if (target.name === 'identity') {
         nextDraft.identify = target.value;
@@ -13812,6 +13091,9 @@ document.addEventListener('submit', async event => {
         break;
       case 'model-config':
         await handleSaveConnectorConfig(form);
+        break;
+      case 'default-model-config':
+        applyBootstrap(await api('/api/settings/model', {method: 'POST', body: {model: new FormData(form).get('model')}}));
         break;
       case 'skill-custom-create':
         await handleCreateCustomSkill(form);
@@ -14135,10 +13417,8 @@ installCitationDrawer({
       method: 'POST',
       body: {
         filePath,
-        projectId:
-          activeProject()?.id ||
-          uiState.bootstrap?.settings?.selectedProjectId ||
-          null,
+        chatId: activeChat()?.id,
+        projectId: activeChat()?.projectId || null,
       },
     }),
 });
@@ -14161,6 +13441,7 @@ function retryMissingImages({ chatId, query, task }) {
   handleSendMessage({ chatId, content: query || '继续图片任务', imageTask: task });
 }
 
+installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
 window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));
