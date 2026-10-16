@@ -92,7 +92,7 @@ test('all-empty state renders one empty-state per subsection (5 total: presets +
   const matches = html.match(/empty-state/g) || [];
   assert.equal(matches.length, 5);
   assert.match(html, /No built-in MCP server presets registered/);
-  assert.match(html, /No external MCP connectors configured/);
+  assert.match(html, /尚未添加外部连接器/);
   assert.match(html, /No active CLI \/ stdio MCP servers/);
   assert.match(html, /No plugins registered/);
   assert.match(html, /No background runs/);
@@ -262,7 +262,7 @@ test('cliServers render with mono name + Disconnect button', () => {
   assert.match(html, /list-row-title mono">srv-a/);
   assert.match(html, /list-row-title mono">srv-b/);
   assert.match(html, /data-action="disconnect-mcp-server" data-server-name="srv-a"/);
-  assert.match(html, /Disconnect/);
+  assert.match(html, /data-action="disconnect-mcp-server"/);
 });
 
 // ─── Plugins ────────────────────────────────────────────────────────────────

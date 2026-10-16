@@ -1,3 +1,4 @@
+import {effectiveAgentProfile} from '../../state/agentProfiles.js';
 // Dynamic-context block assembly — sub-phase 7d-5β commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -173,6 +174,7 @@ export function buildSelectedFileContextBlock(selectedFile, latestUserMessage = 
 }
 
 export async function buildDynamicContext(state, chat, workspace, connectors, latestUserMessage = '') {
+  const capabilities=effectiveAgentProfile(state,chat.agentId || 'main',chat.projectId)?.capabilities;
   const blocks = [];
   const threadContext = ensureChatThreadContext(chat, latestUserMessage);
   const renderedThreadContext = renderStructuredThreadContext(threadContext);
@@ -181,7 +183,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
     blocks.push(renderedThreadContext);
   }
 
-  if (connectors.some(connector => connector.id === 'local-files' && connector.enabled)) {
+  if ((!capabilities || capabilities.readFiles)) {
     if (workspace.selectedFile) {
       blocks.push(buildSelectedFileContextBlock(workspace.selectedFile, latestUserMessage));
     }
@@ -196,7 +198,7 @@ export async function buildDynamicContext(state, chat, workspace, connectors, la
     }
   }
 
-  if (connectors.some(connector => connector.id === 'local-command' && connector.enabled)) {
+  if ((!capabilities || capabilities.runCommands)) {
     const projectRuns = state.commandRuns
       .filter(run => run.chatId === chat.id || (Boolean(chat.projectId) && run.projectId === chat.projectId))
       .slice(0, 3);

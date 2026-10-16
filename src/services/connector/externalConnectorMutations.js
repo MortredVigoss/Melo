@@ -58,6 +58,7 @@ export async function createExternalConnector({
   contextPath,
   resourcePath,
   promptPath,
+  invokePath,
 }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createExternalConnector(...arguments));
   await updateStateAtomically(state => {
@@ -73,6 +74,7 @@ export async function createExternalConnector({
       contextPath,
       resourcePath,
       promptPath,
+      invokePath,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     });
@@ -201,7 +203,7 @@ export async function readExternalConnectorResource({
     throw new Error('External connector not found.');
   }
 
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
+  const project = findProjectById(state, projectId);
   const workspace = await buildWorkspaceSnapshot(state, project);
   return readExternalConnectorResourcePayload(connector, {
     resourceId,
@@ -228,7 +230,7 @@ export async function previewExternalConnectorPrompt({
     throw new Error('External connector not found.');
   }
 
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
+  const project = findProjectById(state, projectId);
   const workspace = await buildWorkspaceSnapshot(state, project);
   return readExternalConnectorPromptPayload(connector, {
     promptId,
@@ -261,7 +263,7 @@ export async function invokeExternalConnectorTool({
     throw new Error('Tool name is required.');
   }
 
-  const project = findProjectById(state, projectId || state.settings.selectedProjectId);
+  const project = findProjectById(state, projectId);
   const workspace = await buildWorkspaceSnapshot(state, project);
 
   let parsedInput = {};

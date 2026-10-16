@@ -5923,3 +5923,15 @@ select option {
 .sync-conflicts summary { cursor: pointer; color: #d3bd8d; }
 .sync-version-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; padding: 12px 0; }
 .sync-version-grid pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.chat-file-dialog { max-width: min(620px, 90vw); color: var(--text-primary, #eee); background: var(--panel-bg, #18191b); border: 1px solid var(--border, #444); border-radius: 16px; padding: 24px; }
+.chat-file-dialog::backdrop { background: #0009; }
+.chat-file-dialog .mono { overflow-wrap: anywhere; }
+.chat-files-panel { max-height: 40vh; overflow: auto; padding: 12px 20px; border-bottom: 1px solid var(--border, #333); }
+.chat-files-panel summary { cursor: pointer; }
+.chat-files-panel pre { overflow: auto; max-height: 24vh; }
+.capability-choice-list { border: 1px solid var(--border, #333); border-radius: 10px; min-width: 0; padding: 12px; max-height: 240px; overflow: auto; }
+.capability-choice-list .checkbox-row { overflow-wrap: anywhere; }
+.management-dialog { width: 580px; max-height: 85vh; overflow: auto; }
+.management-dialog form { display: grid; gap: 12px; }
+.management-output { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -34,9 +34,11 @@ export async function updateDesktopSettings(patch) {
   // write (e.g. createChat flipping activeView) no longer races to clobber.
   await updateStateAtomically(async latestState => {
     const state = ensureSelectedEntities(latestState);
+    const selectedChat=Object.hasOwn(patch || {},'selectedChatId') ? state.chats.find(chat=>chat.id===patch.selectedChatId) : null;
     state.settings = {
       ...state.settings,
       ...patch,
+      ...(selectedChat ? {selectedProjectId:selectedChat.projectId || null} : {}),
       ...(patch?.promptHistory
         ? { promptHistory: normalizePromptHistory(patch.promptHistory) }
         : {}),

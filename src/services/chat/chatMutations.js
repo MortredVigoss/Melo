@@ -1,3 +1,4 @@
+import {ownedChatDirectory} from '../workspace/chatWorkspaceFiles.js';
 import {creationProjectId} from '../../domain/project/projectMembership.js';
 import { mergeDeletedChats } from '../../../mobile-sync/protocol.js';
 import { assertChatDeletable, stageChatDeletion, finishChatDeletions } from './chatDeletion.js';
@@ -67,7 +68,7 @@ export async function updateChat(chatId, patch = {}) {
   return getDesktopBootstrap();
 }
 
-export async function deleteChat(chatId) {
+export async function deleteChat(chatId, options={}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => deleteChat(...arguments));
   const home = currentRequestContext().home;
   // 2026-05-23 架构 audit #3: filter-and-clear-selection inside the mutator so
@@ -80,7 +81,10 @@ export async function deleteChat(chatId) {
     }
 
     assertChatDeletable(state, existingChat);
-    stageChatDeletion(state, [chatId]);
+    const directory=await ownedChatDirectory(home,chatId);
+    if (!['keep','delete'].includes(options.fileDecision) && directory.exists) throw Object.assign(new Error('请选择是否同时删除对话文件。'),{statusCode:409,code:'FILE_DECISION_REQUIRED'});
+    if(options.fileDecision==='delete' && options.workspaceToken!==directory.token) throw Object.assign(new Error('文件目录已变化，请重新确认。'),{statusCode:409,code:'WORKSPACE_CHANGED'});
+    stageChatDeletion(state, [chatId],options);
     if (!existingChat.externalThreadKey) {
       state.mobileDeletedChats = mergeDeletedChats(state.mobileDeletedChats, [{id:chatId,deletedAt:new Date().toISOString()}]);
     }

@@ -1,3 +1,5 @@
+import {renderConnectorManagement} from './managementActions.js';
+import {renderRetainedFiles} from './chatFiles.js';
 import { t, ui } from './i18n.js';
 /**
  * Advanced page renderer (Customize → Advanced).
@@ -60,10 +62,10 @@ export function renderAdvancedPage({
     scheduleRefresh();
   }
 
-  const externalMcps = (data.connectors || []).filter(c => c.type === 'external-mcp');
+  const externalMcps = (data.customize?.connectors || data.connectors || []).filter(c => c.type === 'external-mcp');
 
   const externalMcpRows = externalMcps.length === 0
-    ? '<div class="empty-state compact">No external MCP connectors configured. Configuration UI is deferred — for now, manage via the connector config files directly.</div>'
+    ? ui`<div class="empty-state compact">尚未添加外部连接器。</div>`
     : externalMcps.map(c => ui`
         <div class="list-row">
           <div class="thread-meta">
@@ -75,6 +77,7 @@ export function renderAdvancedPage({
           </div>
           <div class="list-row-title">${escapeHtml(c.name)}</div>
           <div class="list-row-meta">${escapeHtml(c.config?.endpoint || '')}</div>
+          ${renderConnectorManagement(c,escapeHtml)}
           <div class="inline-actions">
             <button class="small-button" type="button" data-action="ping-connector" data-connector-id="${escapeHtml(c.id)}">
               Ping (refresh)
@@ -83,15 +86,16 @@ export function renderAdvancedPage({
         </div>
       `).join('');
 
-  const cliServerRows = adv.cliServers.length === 0
+  const configuredNames=[...new Set([...adv.cliServers,...(data.customize?.mcpAuthSurface || []).filter(s=>s.enabled && !s.unpinned).map(s=>s.id)])];
+  const cliServerRows = configuredNames.length === 0
     ? '<div class="empty-state compact">No active CLI / stdio MCP servers.</div>'
-    : adv.cliServers.map(name => ui`
+    : configuredNames.map(name => ui`
         <div class="list-row">
           <div class="list-row-title mono">${escapeHtml(name)}</div>
-          <div class="list-row-meta">stdio-launched MCP server</div>
+          <div class="list-row-meta">${adv.cliServers.includes(name)?t('已连接'):t('未连接')}</div>
           <div class="inline-actions">
-            <button class="small-button" type="button" data-action="disconnect-mcp-server" data-server-name="${escapeHtml(name)}">
-              Disconnect
+            <button class="small-button" type="button" data-action="${adv.cliServers.includes(name)?'disconnect-mcp-server':'manage-reconnect-mcp'}" data-server-name="${escapeHtml(name)}">
+              ${adv.cliServers.includes(name)?t('断开连接'):t('重新连接')}
             </button>
           </div>
         </div>
@@ -224,7 +228,9 @@ export function renderAdvancedPage({
         ${errorBlock}
         ${taskPanelHtml}
         ${approvalPanelHtml}
+        <button class="small-button" data-action="manage-session-permissions">会话工具授权</button>
         ${renderRuntimePanel(adv.diagnostics, escapeHtml)}
+        ${renderRetainedFiles(adv.retainedFiles,escapeHtml)}
 
         <details class="quality-details"><summary>扩展与连接管理</summary>
         <div class="subsection">
@@ -242,7 +248,7 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">External MCP connectors</h3>
+            <h3 class="subsection-title">External MCP connectors</h3><button class="small-button" data-action="manage-new-connector">新增连接器</button>
             <span class="meta-label">${externalMcps.length} configured</span>
           </div>
           <div class="list-stack">

@@ -24,7 +24,7 @@ export function pageAffected(view, sections) {
   if (sections.has('settings')) return true;
   const shared = ['conversationProfiles','customize','syncConflicts'];
   const fields = {
-    chat: ['activeChat','activeChatArtifacts','chats','projects','tasks','approvals'],
+    chat: ['workspace','activeChat','activeChatArtifacts','chats','projects','tasks','approvals'],
     settings: ['profile'], model: [], agent: ['activeProject'], customize: ['activeProject'],
     projects: ['projects','activeProject','projectArtifacts','tasks','approvals','workspace'],
     artifacts: ['artifacts','projects','activeChatArtifacts','projectArtifacts'],

@@ -349,3 +349,13 @@ test('buildSelectedFileContextBlock: empty / stop-word-only query falls back to 
   assert.match(out, /1\tconst veryLongIdentifier1 =/);
   assert.doesNotMatch(out, /300\tconst veryLongIdentifier300/);
 });
+
+test('Agent capabilities control local context even when old global connector toggles disagree',async()=>{
+ const state={projects:[],agentProfiles:{main:{capabilities:{version:1,readFiles:false,runCommands:false}}},artifacts:[],commandRuns:[{chatId:'chat-1',label:'command',output:'command-secret'}]};
+ const workspace={...EMPTY_WORKSPACE,selectedFile:{path:'secret.txt',content:'file-secret'},entries:[{type:'file',path:'secret.txt'}]};
+ const connectors=[{id:'local-files',enabled:true},{id:'local-command',enabled:true}];
+ assert.doesNotMatch(await buildDynamicContext(state,chatFixture({projectId:null}),workspace,connectors),/file-secret|command-secret/);
+ state.agentProfiles.main.capabilities.readFiles=true;state.agentProfiles.main.capabilities.runCommands=true;
+ const out=await buildDynamicContext(state,chatFixture({projectId:null}),workspace,connectors.map(c=>({...c,enabled:false})));
+ assert.match(out,/file-secret/);assert.match(out,/command-secret/);
+});

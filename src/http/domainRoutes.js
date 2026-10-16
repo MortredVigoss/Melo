@@ -1,3 +1,4 @@
+import {previewChatDeletion,listChatFiles,decideChatFiles,openChatFiles} from '../services/workspace/chatWorkspaceFiles.js';
 import { createRouteRegistry } from './routeRegistry.js';
 import { saveExtraFast, testExtraFast } from '../services/settings/extraFast.js';
 import { memoryFacts, updateMemoryFact } from '../services/memory/memoryManagement.js';
@@ -24,6 +25,10 @@ import { getEmbeddingProvider } from '../memory/embedProviders/createEmbeddingPr
 
 
 const router = createRouteRegistry([
+    {method:'POST',paths:['/api/chats/delete-preview'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await previewChatDeletion((await readJsonBody(request)).chatId))},
+    {method:'GET',paths:['/api/workspace/retained'],auth:'local-read',handler:async({response})=>sendJson(response,200,await listChatFiles())},
+    {method:'POST',paths:['/api/workspace/retained'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await decideChatFiles(await readJsonBody(request)))},
+    {method:'POST',paths:['/api/workspace/open'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await openChatFiles(await readJsonBody(request)))},
     { method: 'POST', paths: ["/api/settings/extra-fast"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       sendJson(response, 200, await saveExtraFast(await readJsonBody(request))); return;
     } },
@@ -189,14 +194,12 @@ const router = createRouteRegistry([
 
     { method: 'POST', paths: ["/api/workspace/select-file"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await selectWorkspaceFile(body.filePath));
+      sendJson(response, 200, await selectWorkspaceFile(body.filePath,body.chatId));
       return;
     } },
 
     { method: 'POST', paths: ["/api/workspace/save-file"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      const body = await readJsonBody(request);
-      sendJson(response, 200, await saveWorkspaceFile(body));
-      return;
+      sendJson(response,410,{error:"This direct action endpoint is retired. Create and execute an approval instead.",code:"APPROVAL_REQUIRED"});
     } },
 
     // Read-only workspace-file preview for the citation side viewer.
@@ -218,9 +221,7 @@ const router = createRouteRegistry([
     } },
 
     { method: 'POST', paths: ["/api/artifacts/apply"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      const body = await readJsonBody(request);
-      sendJson(response, 200, await applyArtifactToWorkspaceFile(body));
-      return;
+      sendJson(response,410,{error:"This direct action endpoint is retired. Create and execute an approval instead.",code:"APPROVAL_REQUIRED"});
     } },
 
     { method: 'POST', paths: ["/api/artifacts/update"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
@@ -242,9 +243,7 @@ const router = createRouteRegistry([
     } },
 
     { method: 'POST', paths: ["/api/command/run"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      const body = await readJsonBody(request);
-      sendJson(response, 200, await runLocalCommand(body));
-      return;
+      sendJson(response,410,{error:"This direct action endpoint is retired. Create and execute an approval instead.",code:"APPROVAL_REQUIRED"});
     } },
 
     { method: 'POST', paths: ["/api/settings"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {

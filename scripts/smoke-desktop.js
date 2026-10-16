@@ -564,14 +564,15 @@ async function main() {
   });
   const chatId = created.settings.selectedChatId;
 
-  const saved = await request('/api/workspace/save-file', {
-    method: 'POST',
-    body: {
+  const approvedWorkspaceAction=async(kind,payload)=>{
+    const createdApproval=await request('/api/approvals',{method:'POST',body:{kind,title:'Smoke approval',chatId,projectId,payload}});
+    return request('/api/approvals/execute',{method:'POST',body:{approvalId:createdApproval.approvals.find(a=>a.kind===kind&&a.status==='pending').id}});
+  };
+  const saved = await approvedWorkspaceAction('file-save', {
       filePath: smokeFilePath,
       content: '# Smoke file\nSaved from the Melo desktop smoke test.\n',
       projectId,
-    },
-  });
+    });
 
   const selected = await request('/api/workspace/select-file', {
     method: 'POST',
@@ -580,14 +581,11 @@ async function main() {
     },
   });
 
-  const command = await request('/api/command/run', {
-    method: 'POST',
-    body: {
+  const command = await approvedWorkspaceAction('command', {
       templateId: 'search-text',
       query: 'Smoke file',
       projectId,
-    },
-  });
+    });
 
   const artifact = await request('/api/artifacts', {
     method: 'POST',
@@ -600,14 +598,11 @@ async function main() {
     },
   });
 
-  const applied = await request('/api/artifacts/apply', {
-    method: 'POST',
-    body: {
+  const applied = await approvedWorkspaceAction('artifact-apply', {
       artifactId: artifact.artifacts?.[0]?.id,
       filePath: smokeFilePath,
       projectId,
-    },
-  });
+    });
 
   const sentStream = await requestStream('/api/chat/send/stream', {
     method: 'POST',

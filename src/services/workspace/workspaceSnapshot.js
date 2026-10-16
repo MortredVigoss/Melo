@@ -1,3 +1,4 @@
+import {chatWorkspaceStatus} from './chatWorkspaceFiles.js';
 import {projectWorkspaceStatus} from './workspacePolicy.js';
 // Workspace snapshot builder — sub-phase 7d-5δ commit 3 of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
@@ -21,8 +22,8 @@ import {
   commandTemplateDescriptor,
 } from '../command/commandTemplates.js';
 
-export async function buildWorkspaceSnapshot(state, project) {
-  if (!project) {
+export async function buildWorkspaceSnapshot(state, project, {chat,home}={}) {
+  if (!project && !chat) {
     return {
       rootPath: null,
       exists: false,
@@ -36,14 +37,15 @@ export async function buildWorkspaceSnapshot(state, project) {
     };
   }
 
-  const status=await projectWorkspaceStatus(project);
+  const status=chat?await chatWorkspaceStatus(state,chat,home):await projectWorkspaceStatus(project);
   const rootPath=status.rootPath;
   const rootStat=rootPath?await stat(rootPath).catch(()=>null):null;
   if (!rootStat || !rootStat.isDirectory()) {
     return {
       rootPath,
       requiresConfirmation:status.requiresConfirmation===true,
-      projectId:project.id,
+      projectId:project?.id || null,
+      chatId:chat?.id || null,
       exists: false,
       entries: [],
       filePaths: [],
@@ -51,7 +53,7 @@ export async function buildWorkspaceSnapshot(state, project) {
       selectedFilePath: null,
       selectedFile: null,
       commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-      commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
+      commandRuns: state.commandRuns.filter(run => chat ? run.chatId === chat.id : run.projectId === project?.id).slice(0, 6),
     };
   }
 
@@ -66,6 +68,8 @@ export async function buildWorkspaceSnapshot(state, project) {
 
   return {
     rootPath,
+    chatId:chat?.id || null,
+    projectId:chat ? chat.projectId || null : project?.id || null,
     exists: true,
     entries,
     filePaths,
@@ -73,6 +77,6 @@ export async function buildWorkspaceSnapshot(state, project) {
     selectedFilePath,
     selectedFile,
     commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
-    commandRuns: state.commandRuns.filter(run => run.projectId === project.id).slice(0, 6),
+    commandRuns: state.commandRuns.filter(run => chat ? run.chatId === chat.id : run.projectId === project?.id).slice(0, 6),
   };
 }

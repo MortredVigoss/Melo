@@ -1,3 +1,4 @@
+import {projectWorkspaceStatus} from '../workspace/workspacePolicy.js';
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import {projectText} from '../../domain/project/projectService.js';
 import {capabilityMigrationPreview,migrationOptions} from '../agent/capabilityMigration.js';
@@ -250,7 +251,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   const chats = sortChats(state.chats);
   const selectedChat = chats.find(chat => chat.id === state.settings.selectedChatId) || null;
   const activeProject = findProjectById(state, state.settings.selectedProjectId);
-  const workspace = await buildWorkspaceSnapshot(state, activeProject);
+  const workspace = await buildWorkspaceSnapshot(state, selectedChat ? findProjectById(state, selectedChat.projectId) : activeProject, {chat:selectedChat,home:ctx.home});
   const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
 
   if (state.settings.selectedFilePath !== workspace.selectedFilePath) {
@@ -366,7 +367,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     agentSettingsConflicts: (state.agentSettingsSync?.records || []).filter(r=>r.versions.length>1),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
-    activeProject:activeProject?{...activeProject,summary:projectText(activeProject.summary),instructions:projectText(activeProject.instructions),workspaceNeedsConfirmation:workspace.requiresConfirmation===true}:null,
+    activeProject:activeProject?{...activeProject,summary:projectText(activeProject.summary),instructions:projectText(activeProject.instructions),workspaceNeedsConfirmation:(await projectWorkspaceStatus(activeProject)).requiresConfirmation===true}:null,
     results: visibleArtifactRows.filter(a=>a.kind==='result').map(summarizeArtifact),
     artifacts: visibleArtifactRows.filter(a=>a.kind!=='result')
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())

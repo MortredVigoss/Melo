@@ -1,3 +1,4 @@
+import {constants} from 'node:fs';
 // ─── Workspace file service ──────────────────────────────────────────────────
 // Path sanitation + safe read/write/list helpers for a project's workspace
 // directory. Every function that touches the filesystem goes through the
@@ -27,11 +28,10 @@
 // node: modules. Constants are exported so desktopStore can keep its
 // canonical copy too without drift.
 
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, realpath, open, lstat } from 'node:fs/promises';
 import { invalidateWorkspaceTree } from './workspaceTreeCache.js';
 import {
   basename,
-  dirname,
   extname,
   isAbsolute,
   relative,
@@ -121,13 +121,18 @@ export function extensionToLanguage(filePath) {
 
 export async function readWorkspaceFile(rootPath, relativeFilePath) {
   const absolutePath = resolveWorkspaceFilePath(rootPath, relativeFilePath);
-  const fileStat = await stat(absolutePath);
+  const canonicalRoot=await realpath(rootPath), canonicalFile=await realpath(absolutePath);
+  const rel=relative(canonicalRoot,canonicalFile);
+  if(rel==='..' || rel.startsWith('../') || isAbsolute(rel)) throw new Error('File path escapes the workspace root.');
+  const fileStat = await stat(canonicalFile);
 
   if (!fileStat.isFile()) {
     throw new Error('Selected path is not a file.');
   }
 
-  const raw = await readFile(absolutePath);
+  const handle=await open(canonicalFile,'r');
+  let raw;
+  try {const buffer=Buffer.alloc(MAX_FILE_PREVIEW_CHARS*4);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);raw=buffer.subarray(0,bytesRead);} finally {await handle.close();}
   if (raw.includes(0)) {
     return {
       path: relativeFilePath,
@@ -141,7 +146,7 @@ export async function readWorkspaceFile(rootPath, relativeFilePath) {
   }
 
   const text = raw.toString('utf8');
-  const truncated = text.length > MAX_FILE_PREVIEW_CHARS;
+  const truncated = text.length > MAX_FILE_PREVIEW_CHARS || fileStat.size > raw.length;
   return {
     path: relativeFilePath,
     name: basename(relativeFilePath),
@@ -155,8 +160,17 @@ export async function readWorkspaceFile(rootPath, relativeFilePath) {
 
 export async function writeWorkspaceFile(rootPath, relativeFilePath, content) {
   const absolutePath = resolveWorkspaceFilePath(rootPath, relativeFilePath);
-  await mkdir(dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, content, 'utf8');
+  const root=await realpath(rootPath);
+  const parts=relative(resolve(rootPath),absolutePath).split('/');
+  let parent=root;
+  for(const part of parts.slice(0,-1)) {
+    parent=resolve(parent,part);
+    const info=await lstat(parent).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+    if(info?.isSymbolicLink() || info && !info.isDirectory()) throw new Error('Workspace write parent is not a regular directory.');
+    if(!info) await mkdir(parent);
+  }
+  const handle=await open(resolve(parent,parts.at(-1)),constants.O_WRONLY|constants.O_CREAT|constants.O_TRUNC|constants.O_NOFOLLOW,0o600);
+  try {await handle.writeFile(content,'utf8');} finally {await handle.close();}
   invalidateWorkspaceTree(rootPath);
   return readWorkspaceFile(rootPath, relativeFilePath);
 }

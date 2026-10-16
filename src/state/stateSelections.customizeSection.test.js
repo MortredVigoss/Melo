@@ -39,3 +39,5 @@ test('ensureSelectedEntities keeps legacy runtime customize section for UI migra
     'runtime',
   );
 });
+
+test('custom skills remain selected through state normalization',()=>{const state=baseState('skills');state.settings.customSkills=[{id:'custom-fixture'}];state.settings.selectedSkillId='custom-fixture';assert.equal(ensureSelectedEntities(state).settings.selectedSkillId,'custom-fixture');});

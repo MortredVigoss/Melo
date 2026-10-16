@@ -1,4 +1,3 @@
-import {chatWorkspacePath} from '../workspace/toolWorkspace.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
 import { conversationConfig, selectedMaterials } from './conversationSelection.js';
 import { visionConnection } from '../../images/imageSettings.js';
@@ -206,8 +205,7 @@ async function executeChatTurn({
         commandTemplates: COMMAND_TEMPLATES.map(commandTemplateDescriptor),
         commandRuns: [],
       }
-    : await buildWorkspaceSnapshot(state, activeProject);
-  if (!activeProject && chat.workspacePath === chatWorkspacePath(context.home,chat.id)) workspace.rootPath=chat.workspacePath;
+    : await buildWorkspaceSnapshot(state, activeProject,{chat,home:context.home});
   const activeAgentProfile = effectiveAgentProfile(
     state,
     effectiveAgentId,

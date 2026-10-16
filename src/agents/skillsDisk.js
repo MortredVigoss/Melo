@@ -1,7 +1,7 @@
 // Phase 3.1: disk-based skill loader + SKILL.md frontmatter parser.
 //
 // Storage layout:
-//   ~/.melo/desktop/skills/
+//   <MELO_HOME>/desktop/skills/
 //     └── <skill-id>/
 //         ├── SKILL.md           — required. YAML frontmatter + body.
 //         ├── references/        — optional. Arbitrary reference files.
@@ -28,14 +28,12 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import {currentRequestContext} from '../runtime/requestScope.js';
+import {resolveRuntimePaths} from '../runtime/paths.js';
 
-export const SKILLS_DISK_ROOT = path.join(
-  os.homedir(),
-  '.melo',
-  'desktop',
-  'skills',
-);
+export const getSkillsDiskRoot=()=>path.join(currentRequestContext()?.home || resolveRuntimePaths().home,'desktop','skills');
+// Compatibility export; runtime operations capture the current home at entry.
+export const SKILLS_DISK_ROOT=getSkillsDiskRoot();
 
 /**
  * Parse a YAML-frontmatter markdown file into { frontmatter, body }.
@@ -203,10 +201,10 @@ function safeYaml(value) {
 }
 
 /**
- * Scan ~/.melo/desktop/skills/ and load every subdir that has a SKILL.md.
+ * Scan <MELO_HOME>/desktop/skills/ and load every subdir that has a SKILL.md.
  * Silently skips broken entries so one corrupt skill doesn't crash startup.
  */
-export async function loadSkillsFromDisk(root = SKILLS_DISK_ROOT) {
+export async function loadSkillsFromDisk(root = getSkillsDiskRoot()) {
   let entries = [];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
@@ -233,10 +231,10 @@ export async function loadSkillsFromDisk(root = SKILLS_DISK_ROOT) {
 }
 
 /**
- * Export a single skill to ~/.melo/desktop/skills/<id>/SKILL.md.
+ * Export a single skill to <MELO_HOME>/desktop/skills/<id>/SKILL.md.
  * Creates the directory structure if missing.
  */
-export async function saveSkillToDisk(skill, root = SKILLS_DISK_ROOT) {
+export async function saveSkillToDisk(skill, root = getSkillsDiskRoot()) {
   if (!skill || !skill.id) throw new Error('saveSkillToDisk: skill.id required');
   const dir = path.join(root, skill.id);
   await fs.mkdir(dir, { recursive: true });
@@ -249,7 +247,7 @@ export async function saveSkillToDisk(skill, root = SKILLS_DISK_ROOT) {
  * Delete a disk-based skill directory. Guard-railed to refuse if path
  * escapes the skills root.
  */
-export async function removeSkillFromDisk(skillId, root = SKILLS_DISK_ROOT) {
+export async function removeSkillFromDisk(skillId, root = getSkillsDiskRoot()) {
   const dir = path.resolve(root, skillId);
   if (!dir.startsWith(path.resolve(root) + path.sep)) {
     throw new Error('removeSkillFromDisk: refused, path escaped root');
