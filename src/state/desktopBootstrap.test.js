@@ -81,7 +81,7 @@ const homeA = freshHome({
 const homeB = freshHome();
 
 process.env.MELO_HOME = homeA;
-const { getDesktopBootstrap } = await import('./desktopBootstrap.js');
+const { getDesktopBootstrap } = await import('../services/desktop/bootstrap.js');
 
 after(() => {
   try { rmSync(homeA, { recursive: true, force: true }); } catch {}

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { updateLocalProfile } from './localProfile.js';
-import { getDesktopBootstrap } from '../../state/desktopBootstrap.js';
+import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import { loadState, updateStateAtomically } from '../../state/stateStore.js';
 import { prepareDesktopLaunchState } from './desktopSettings.js';
 import { validateLocalPreferencePatch } from './localPreferences.js';

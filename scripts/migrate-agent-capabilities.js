@@ -24,7 +24,10 @@ await updateStateAtomically(async state=>{
  await mkdir(backup,{recursive:true,mode:0o700});
  await writeFile(join(backup,'agent-state.json'),JSON.stringify(serializeAgentState(state),null,2),{mode:0o600,flag:'wx'});
  report=migrateAllCapabilities(state);
- state.agentCapabilityMigration={at:new Date().toISOString(),backup,report};
+ // The full report lives beside the backup; state keeps only a pointer so
+ // every later state write does not carry a one-off migration record.
+ await writeFile(join(backup,'report.json'),JSON.stringify(report,null,2),{mode:0o600,flag:'wx'});
+ state.agentCapabilityMigration={at:new Date().toISOString(),backup,count:report.length};
  return state;
 },{home});
 }finally{await lock.release();}

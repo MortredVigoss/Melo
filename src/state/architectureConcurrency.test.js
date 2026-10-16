@@ -7,7 +7,7 @@ import { loadState, saveState, updateStateAtomically } from './stateStore.js';
 import { createProject, updateProject } from '../services/project/projectMutations.js';
 import { createTask } from '../services/task/taskMutations.js';
 import { createExternalConnector } from '../services/connector/externalConnectorMutations.js';
-import { getDesktopBootstrap } from './desktopBootstrap.js';
+import { getDesktopBootstrap } from '../services/desktop/bootstrap.js';
 
 const home = await mkdtemp(join(tmpdir(), 'melo-domain-concurrency-'));
 process.env.MELO_HOME = home;

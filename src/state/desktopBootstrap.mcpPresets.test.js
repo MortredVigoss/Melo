@@ -14,7 +14,7 @@ import { join } from 'node:path';
 const TEMP_HOME = mkdtempSync(join(tmpdir(), 'melo-mcp-presets-test-'));
 process.env.MELO_HOME = TEMP_HOME;
 
-const { getDesktopBootstrap } = await import('./desktopBootstrap.js');
+const { getDesktopBootstrap } = await import('../services/desktop/bootstrap.js');
 
 test('bootstrap.mcpPresets includes browserless with unpinned: true', async () => {
   const bootstrap = await getDesktopBootstrap();
