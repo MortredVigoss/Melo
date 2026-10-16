@@ -39,3 +39,16 @@ export async function makeTransferCopy(file, env = globalThis) {
     bitmap.close?.();
   }
 }
+
+// Videos are streamed to the local server instead of being base64-encoded into
+// the chat request; the attachment then carries the returned local URL.
+export async function uploadVideoFile(file, fetchImpl = fetch) {
+  const response = await fetchImpl(`/api/media/upload?name=${encodeURIComponent(file.name || 'video')}`, {
+    method: 'POST',
+    headers: { 'content-type': file.type || 'video/mp4' },
+    body: file,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.url) throw new Error(payload.error || '视频上传失败。');
+  return payload;
+}

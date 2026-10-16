@@ -729,5 +729,10 @@ const rows = [
 ["2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。", "2K and 4K are slower and use more allowance; 4K is experimental and may be less consistent. If the channel does not accept the chosen size, the image is made at the service default and the actual pixels are noted.", "2K・4K は時間と使用量が増えます。4K は実験的で結果が安定しない場合があります。接続が選択サイズを受け付けない場合は既定サイズで生成し、実際の画素数を表示します。", "2K·4K는 더 느리고 사용량이 많습니다. 4K는 실험적이라 결과가 불안정할 수 있습니다. 연결이 선택한 크기를 받지 않으면 기본 크기로 생성하고 실제 픽셀을 표시합니다.", "2K y 4K tardan más y gastan más cuota; 4K es experimental y puede ser menos estable. Si el canal no acepta el tamaño elegido, se genera con el tamaño por defecto y se indica el real."],
 ["{name} 超过 {limit} MB，未添加。", "{name} is over {limit} MB and was not added.", "{name} は {limit} MB を超えているため追加していません。", "{name}은(는) {limit}MB를 넘어 추가하지 않았습니다.", "{name} supera {limit} MB y no se añadió."],
 ["{size} · 发送 {width}×{height} 副本", "{size} · sends a {width}×{height} copy", "{size} · {width}×{height} のコピーを送信", "{size} · {width}×{height} 사본 전송", "{size} · envía una copia de {width}×{height}"],
+["{name} 上传失败：{reason}", "Could not upload {name}: {reason}", "{name} をアップロードできませんでした：{reason}", "{name} 업로드 실패: {reason}", "No se pudo subir {name}: {reason}"],
+["正在上传视频「{name}」，完成后可发送。", "Uploading the video “{name}”; you can send once it finishes.", "動画「{name}」をアップロード中です。完了後に送信できます。", "동영상 「{name}」 업로드 중입니다. 완료되면 보낼 수 있습니다.", "Subiendo el vídeo «{name}»; podrás enviarlo al terminar."],
+["这段视频还没有处理结果。", "This video has not been processed yet.", "この動画はまだ処理されていません。", "이 동영상은 아직 처리되지 않았습니다.", "Este vídeo aún no se ha procesado."],
+["存为知识资料", "Save as knowledge", "ナレッジとして保存", "지식으로 저장", "Guardar como conocimiento"],
+["已存入知识", "Saved to knowledge", "ナレッジに保存済み", "지식에 저장됨", "Guardado en conocimiento"],
 ];
 export const translations = Object.freeze(Object.fromEntries(rows.map(([key,en,ja,ko,es]) => [key, Object.freeze({ 'zh-CN':key,en,ja,ko,es })])));

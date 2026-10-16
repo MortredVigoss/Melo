@@ -192,7 +192,17 @@ export function shouldUseLongSocialMediaBudget(attachment = {}) {
   );
 }
 
+// Uploaded videos are studied in full: frames + transcript
+// can take minutes, so they get their own budget instead of the 15 s default.
+let LOCAL_VIDEO_BUDGET_MS = 240000;
+export function _setLocalVideoBudgetForTests(ms) { LOCAL_VIDEO_BUDGET_MS = typeof ms === 'number' && ms > 0 ? ms : 240000; }
+export function isUploadedVideo(attachment = {}) {
+  const url = String(attachment?.url || '');
+  return attachment?.kind === 'video' && url.startsWith('/api/media/uploads/');
+}
+
 function totalBudgetForAttachments(attachments = []) {
+  if (attachments.some(isUploadedVideo)) return Math.max(TOTAL_BUDGET_MS, LOCAL_VIDEO_BUDGET_MS + 10000);
   const hasLongSocialMedia = attachments.some(shouldUseLongSocialMediaBudget);
   return hasLongSocialMedia
     ? Math.max(TOTAL_BUDGET_MS, SOCIAL_DIRECT_TOTAL_BUDGET_MS)
@@ -200,6 +210,7 @@ function totalBudgetForAttachments(attachments = []) {
 }
 
 function perAttachmentBudgetForAttachment(attachment = {}) {
+  if (isUploadedVideo(attachment)) return Math.max(PER_ATTACHMENT_BUDGET_MS, LOCAL_VIDEO_BUDGET_MS);
   return shouldUseLongSocialMediaBudget(attachment)
     ? Math.max(PER_ATTACHMENT_BUDGET_MS, SOCIAL_DIRECT_PER_ATTACHMENT_BUDGET_MS)
     : PER_ATTACHMENT_BUDGET_MS;

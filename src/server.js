@@ -13,6 +13,7 @@ import { handleExecutionRoutes } from './http/executionRoutes.js';
 import { handleMobileSyncRoute } from './http/mobileSyncRoutes.js';
 import { matchesDomainRoute, handleDomainRoutes } from './http/domainRoutes.js';
 import { createTtsRoutes } from './http/ttsRoutes.js';
+import { createMediaRoutes } from './http/mediaRoutes.js';
 import { handleChatRoutes } from './http/chatRoutes.js';
 import { sendJson, startSse, writeSseEvent, readJsonBody } from './http/transport.js';
 import { createRequestContext } from './runtime/requestContext.js';
@@ -305,6 +306,7 @@ function getStaticPath(urlPath) {
 
 
 const ttsRoutes = createTtsRoutes({ startVoicePackServers });
+const mediaRoutes = createMediaRoutes({ home: runtimePaths.home });
 
 // ── Vendored Three.js from node_modules ─────────────────────────────────
 // The Demon 3D renderer (globe-flight, solar-system, …) needs Three.js on
@@ -910,6 +912,10 @@ const server = createServer((request, response) => runWithRequestContext(createR
 
     if (await handleMobileSyncRoute(request, response, url)) return;
     if (await handleExecutionRoutes(request, response, url, runtimePaths.home)) return;
+    if (mediaRoutes.matches(request, url)) {
+      await mediaRoutes.handle(request, response, url, requireLocalOrigin);
+      return;
+    }
     if (ttsRoutes.matches(request, url)) {
       await ttsRoutes.handle(request, response, url);
       return;

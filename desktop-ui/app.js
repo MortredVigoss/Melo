@@ -45,7 +45,8 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
-import { attachmentLimit, makeTransferCopy, MB } from './transferCopy.js';
+import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
+import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
@@ -1346,7 +1347,7 @@ function renderTtsVoicePanel() {
 }
 
 function renderMessageAttachments(message) {
-  return renderAttachmentCards(message, { escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
+  return renderAttachmentCards(message, { savedVideoKnowledge: uiState.savedVideoKnowledge || {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
 }
 
 function getGreeting() {
@@ -2829,6 +2830,9 @@ window.addEventListener('melo-external-link', event => {
 });
 
 function composerHintText({ inline = false } = {}) {
+  if (uiState.attachmentUploading) {
+    return t('正在上传视频「{name}」，完成后可发送。', { name: uiState.attachmentUploading });
+  }
   if (uiState.sending) {
     return 'Working on your message now. Live lookups can take a little longer.';
   }
@@ -3362,14 +3366,21 @@ async function queueComposerFiles(fileList) {
       showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
       continue;
     }
-    // Photos up to 100 MB are accepted and sent as a bounded copy; other files keep 20 MB.
-    const limit = kind === 'image' ? attachmentLimit('image') : 20 * MB;
+    // Photos up to 100 MB are sent as a bounded copy; videos up to 500 MB are uploaded as a file; other files keep 20 MB.
+    const limit = kind === 'image' || kind === 'video' ? attachmentLimit(kind) : 20 * MB;
     if (file.size > limit) {
       showError(t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB }));
       continue;
     }
     const copy = kind === 'image' ? await makeTransferCopy(file).catch(() => null) : null;
-    const url = copy?.url || await readFileAsDataUrl(file);
+    let url = copy?.url;
+    if (kind === 'video') {
+      uiState.attachmentUploading = file.name; render();
+      try { url = (await uploadVideoFile(file)).url; }
+      catch (error) { showError(t('{name} 上传失败：{reason}', { name: file.name, reason: error.message })); continue; }
+      finally { uiState.attachmentUploading = null; }
+    }
+    url ||= await readFileAsDataUrl(file);
     nextAttachments.push({
       id: crypto.randomUUID(),
       kind,
@@ -11516,6 +11527,15 @@ document.addEventListener('click', async event => {
           activeView: 'projects',
         });
         break;
+      case 'save-video-knowledge': {
+        const message = activeChat()?.messages?.find(m => m.id === trigger.dataset.messageId);
+        const attachment = message?.attachments?.find(a => a.id === trigger.dataset.attachmentId);
+        const entry = message && attachment ? videoExtraction(message, attachment) : null;
+        if (!entry) { showError(t('这段视频还没有处理结果。')); break; }
+        try { applyBootstrap(await api('/api/artifacts', { method: 'POST', body: { ...videoKnowledgeNote(attachment, entry), projectId: activeChat()?.projectId || null } })); (uiState.savedVideoKnowledge ||= {})[attachment.id] = true; render(); }
+        catch (error) { showError(error.message); }
+        break;
+      }
       case 'save-project-team': {
         const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
         if(team.error) {showError(t(team.error));break;}

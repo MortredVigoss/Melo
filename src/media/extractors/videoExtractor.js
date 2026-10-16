@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { combineSignals, composeAbortSignals } from '../common.js';
 import { extractAudioContent as _realExtractAudioContent } from './audioExtractor.js';
+import { stat } from 'node:fs/promises';
+import { uploadPath, MAX_UPLOAD_BYTES } from '../uploads.js';
+import { currentRequestContext } from '../../runtime/requestScope.js';
 
 // DI hook so the "audio fails / Whisper unavailable, but keyframes succeed"
 // path can be tested without real Whisper credentials. Tests call
@@ -164,7 +167,10 @@ async function probeDurationSec(videoPath, { signal } = {}) {
   }
 }
 
-export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
+// Uploaded videos are studied, not just glanced at: more and sharper frames.
+export const STUDY_FRAMES = Object.freeze({ maxFrames: 24, width: 768, secondsPerFrame: 15 });
+
+export async function extractKeyframes(videoPath, framesDir, { signal, maxFrames = KEYFRAME_MAX_COUNT, width = KEYFRAME_WIDTH, secondsPerFrame = null, onTimes } = {}) {
   if (signal?.aborted) {
     return [];
   }
@@ -180,7 +186,8 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
   // Even spacing: pick interval so we land ~KEYFRAME_TARGET_COUNT frames.
   // Clamp so very short or very long videos don't degenerate (1 frame for a
   // 0.5s clip, 1 frame every 5 minutes for a feature film).
-  const rawInterval = durationSec / KEYFRAME_TARGET_COUNT;
+  const target = secondsPerFrame ? Math.min(maxFrames, Math.max(KEYFRAME_TARGET_COUNT, Math.round(durationSec / secondsPerFrame))) : KEYFRAME_TARGET_COUNT;
+  const rawInterval = durationSec / target;
   const intervalSec = Math.min(
     KEYFRAME_MAX_INTERVAL_SEC,
     Math.max(KEYFRAME_MIN_INTERVAL_SEC, rawInterval),
@@ -188,8 +195,8 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
 
   await spawnWithAbort('ffmpeg', [
     '-i', videoPath,
-    '-vf', `fps=1/${intervalSec},scale=${KEYFRAME_WIDTH}:-2`,
-    '-frames:v', String(KEYFRAME_MAX_COUNT),
+    '-vf', `fps=1/${intervalSec},scale=${width}:-2`,
+    '-frames:v', String(maxFrames),
     '-q:v', String(KEYFRAME_JPEG_QUALITY),
     '-y',
     join(framesDir, 'frame-%03d.jpg'),
@@ -204,7 +211,8 @@ export async function extractKeyframes(videoPath, framesDir, { signal } = {}) {
     .sort();
 
   const frames = [];
-  for (const name of entries.slice(0, KEYFRAME_MAX_COUNT)) {
+  onTimes?.(entries.slice(0, maxFrames).map((_, index) => Math.round(index * intervalSec)));
+  for (const name of entries.slice(0, maxFrames)) {
     const buf = await readFile(join(framesDir, name));
     frames.push(`data:image/jpeg;base64,${buf.toString('base64')}`);
   }
@@ -347,8 +355,11 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
   // Platform page URLs (bilibili.com, youtube.com, etc.) must be handled by the
   // platform extractor first; fetching them here would download HTML and fail ffmpeg.
   const isDataUrl   = url.startsWith('data:');
-  const isDirectUrl = isLikelyDirectVideoStreamUrl(url);
-  if (!isDataUrl && !isDirectUrl) {
+  // Videos uploaded to this Melo are read straight from disk (no download, no base64).
+  const home = context.home || currentRequestContext()?.home;
+  const localPath = home ? uploadPath(url, home) : null;
+  const isDirectUrl = !localPath && isLikelyDirectVideoStreamUrl(url);
+  if (!isDataUrl && !isDirectUrl && !localPath) {
     return null;
   }
 
@@ -358,13 +369,16 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
   if (signal?.aborted) return null;
 
   const tempDir = await mkdtemp(join(tmpdir(), 'melo-video-'));
-  const videoPath = join(tempDir, 'video.bin');
+  const videoPath = localPath || join(tempDir, 'video.bin');
   const audioPath = join(tempDir, 'audio.ogg');
   const framesDir = join(tempDir, 'frames');
 
   try {
     let videoBuffer;
-    if (isDataUrl) {
+    if (localPath) {
+      const size = (await stat(localPath)).size;
+      if (!size || size > MAX_UPLOAD_BYTES) return null;
+    } else if (isDataUrl) {
       // Parse data URL directly — avoids a round-trip through the network stack
       const base64Part = url.split(',')[1] || '';
       videoBuffer = Buffer.from(base64Part, 'base64');
@@ -376,10 +390,12 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
       if (!response.ok) return null;
       videoBuffer = Buffer.from(await response.arrayBuffer());
     }
-    if (videoBuffer.length > MAX_VIDEO_BYTES) {
-      return null;
+    if (!localPath) {
+      if (videoBuffer.length > MAX_VIDEO_BYTES) {
+        return null;
+      }
+      await writeFile(videoPath, videoBuffer);
     }
-    await writeFile(videoPath, videoBuffer);
 
     // Phase 3: audio + keyframes run in PARALLEL with independent budgets.
     // Each branch's withXBudget always settles to a value (audioResult or
@@ -394,9 +410,11 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
     // also kills the inner audio ffmpeg / Whisper / keyframe ffmpeg
     // children — instead of letting them run their full inner budgets
     // (10s/5s) after the parent already returned null.
+    let keyframeTimes = [];
+    const study = Boolean(localPath);
     const [audioResult, keyframes] = await Promise.all([
-      withAudioBudget(s => audioBranch(videoPath, audioPath, attachment, context, s), undefined, signal),
-      withKeyframeBudget(s => extractKeyframes(videoPath, framesDir, { signal: s }), undefined, signal),
+      withAudioBudget(s => audioBranch(videoPath, audioPath, attachment, context, s), study ? 200000 : undefined, signal),
+      withKeyframeBudget(s => extractKeyframes(videoPath, framesDir, { signal: s, ...(study ? STUDY_FRAMES : {}), onTimes: times => { keyframeTimes = times; } }), study ? 60000 : undefined, signal),
     ]);
 
     if (audioResult) {
@@ -409,6 +427,7 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
           source: 'video-audio-transcript',
           originalKind: 'video',
           keyframes,
+          keyframeTimes,
         },
       };
     }
@@ -427,6 +446,7 @@ export async function extractVideoContent(attachment, context = {}, { signal } =
           fileName: attachment.fileName || '',
           url: String(attachment.url || '').startsWith('data:') ? '' : (attachment.url || ''),
           keyframes,
+          keyframeTimes,
         },
       };
     }
