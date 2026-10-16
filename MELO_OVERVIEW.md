@@ -26,7 +26,7 @@
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
-| 项目边界 | 10-15 复核仍有创建接口读取 UI 选择、APP_ROOT 默认工作区及上下文开关不一致；新项目已分配独立目录，同步已使用 goal/agentOverrides | [核对与重构计划](docs/project-architecture-plan-20261015.md)已补现行差异、审批快照、移动/删除/资产边界；仅方案，未实施或迁移 |
+| 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；本轮补文件面板/删除确认/遗留文件管理（隔离树待合入） | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
@@ -61,7 +61,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 传输 / 路由 | `src/server.js`、`src/http/` | HTTP/SSE、来源检查、声明式路由与生命周期；不承载新增领域业务 |
 | 请求运行边界 | `src/runtime/requestContext.js`、`requestScope.js`、`processOwnership.js` | 入口捕获 home、环境、身份、路径和取消信号；异步执行不重读可变全局 home |
 | 领域服务 | `src/services/`；`src/desktopStore.js` 为兼容入口 | chat / task / settings / agent / workspace 等业务；新增业务放领域服务 |
-| 项目 / 工作区边界 | `src/services/project/`、`src/services/workspace/`、`src/domain/project/`、`src/services/chat/portableWorkspace.js` | 当前配置、选用资料、角色覆盖与工作区解析分散；已有统一同步 schema。计划统一领域解析、保留本机路径/授权及稳定资产身份，详见项目专项，未实施 |
+| 项目 / 工作区边界 | `src/services/project/`、`src/services/workspace/`、`src/domain/project/`、`src/services/chat/portableWorkspace.js` | 项目与聊天工作目录已显式绑定，聊天文件生命周期由 `chatWorkspaceFiles.js` 管理；UI 跟随当前聊天。项目聚合与资产生命周期完整重构仍见专项 |
 | 纯领域 / 持久化辅助 | `src/domain/`、`src/persistence/` | 纯实体与可复用持久化辅助；保持依赖方向，抽模块先逐字节移植 |
 | 状态与检查点 | `src/state/stateStore.js`、`chatPersistence.js`、`chatManifest.js`、`statePayload.js` | 原子事务；规范化 home 隔离；不可变消息 checkpoint 与单调清单修订 |
 | Agent 设置 | `desktop-ui/app.js`、`agentSettings.css`、`settingsEdit.js`、`src/services/agent/agentMutations.js` | 单一编辑页、页头新增、全局新建、跨渠道显式保存；旧 Mood UI/双端提示注入已停用，旧数据兼容；见 [设置验收](docs/agent-settings-20261016.md) |
@@ -361,3 +361,23 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 本轮基线：`.tmp/image-ux-20261016/before/`，共享 WIP 保留。已实现自然修图/做图分流及移除模式，手机 `ImageZoomView.swift` 使用 UIScrollView，桌面 `imageZoom.js` 连续缩放/拖动/弹性上限；对话最大阅读宽 860→980，内部边距缩小。
 - 验证完成：3600 JS/23 Swift 日常 gate、160 图片专项、2 浏览器测试、Debug 模拟器构建及原生首条修图/缩放集成夹具通过。模拟器双击/拖动/复位已实查；修正预览层长按菜单拦截平移。详情和边界见 [`docs/image-ux-20261016.md`](docs/image-ux-20261016.md)。
 - 本轮代码已本地提交 `20c00bb`；已有未跟踪的桌面预览整合继续保留共享 WIP，不混合提交。未覆盖实体手机、未重启桌面应用、未发真实生成请求；手机当前安装仍为 0.5.19 (25)，真机双指触感待新版安装后验证。
+
+### 2026-10-16 — melo UI 功能对齐 — 文件生命周期（实施中）
+- 用户决定删除聊天时每次询问是否同时删文件。方案与范围见 [UI 功能对齐](docs/ui-function-alignment-20261016.md)。隔离分支 `codex/ui-function-alignment-20261016`，尚未合入共享树。
+- 新增 `workspace/chatWorkspaceFiles.js`：只处理 Melo 分配的聊天目录，移动项目后仍保留原目录的归属；手机 tombstone 留下待确认记录，历史孤立目录可发现。`bootstrap/workspaceSnapshot` 跟随聊天；桌面普通聊天提供文件入口，删除弹窗与系统状态提供文件去留入口。
+- 隔离目录验证：工作区/状态已有 13 项、新增生命周期 5 项通过，覆盖无目录不创建、拒绝未确认/旧确认、保留后删除、活动聊天/目录替换/符号链接、历史孤立目录。尚未完成浏览器、五语、整库 gate，不代表真实数据/安装验收。
+- 下一步：浏览器确认交互，白名单与能力开关、管理入口及路由核对；保留共享 WIP，不自动 git pp/推送。
+
+### 2026-10-16 — melo UI 功能对齐 — 配置与入口验证
+- 能力白名单改为名称多选，未知已存 ID 保留并标示不可用；旧版待迁移标记及展开区可见。本地文件/命令全局连接器开关退场，Agent 能力控制自动上下文，用户仍能查看成果。
+- `managementActions.js`/`advancedPage.js` 补外部连接器 CRUD/资源/提示词/工具、MCP 保存配置重连、按聊天撤销临时授权、技能导入/写盘/重载/扫描。实际核对 `/api/tasks/run*` 进入统一聊天执行器，继续保留；三个直接写文件/命令 HTTP 入口返回 410，冒烟改走审批。
+- 文件/审批/能力/页面专项 92 项通过；Agent 编辑与能力同步安全浏览器通过，文件生命周期与连接器 CRUD/实际 loopback 调用通过。后续整合用例发现自定义技能选择被旧校验退回内置，已修正并继续复测。所有浏览器网络仅本机夹具。
+- 增补聊天切换统一项目选中、目录别名、写入符号链接边界及运行中审批阻止聊天删除；最终共享树日常 gate 待完成。未安装、未动真实文件/授权、未推送。
+
+### 2026-10-16 — melo UI 功能对齐 — 技能目录隔离补正
+- 整库暴露 `skillsDisk.js` 硬编码旧全局目录；首次写盘测试的唯一 `ui-fixture-skill/SKILL.md` 已验证内容后移回隔离证据区，未修改已有技能。现按请求 home 捕获 `desktop/skills`，两个 home 并发读写删隔离、旧状态技能保留已补回归。
+- 本机浏览器完整管理流程已通过，包含真实落盘路径断言；技能读写不再回落全局旧目录。细节与失败/修复证据见 [实施说明](docs/ui-function-alignment-20261016.md)。最终日常检查中，未合并、安装、审查或推送。
+
+### 2026-10-16 — melo UI 功能对齐 — 隔离验收完成
+- 四组实现完成，日常 GREEN：3604 JS / 21 Swift、语法及浏览器，182.6 秒。实际文件、API、专项、失败修正与边界见 [实施回执](docs/ui-function-alignment-20261016.md#隔离树最终验收)。
+- 文件浏览与每次删除选择框截图已实看；真实 HTTP 夹具覆盖保留/清理/取消、外部连接器操作、技能落盘与单聊天授权撤销。正在保留共享 WIP 整合，尚未重启安装、git pp 或推送。

@@ -43,7 +43,7 @@ export async function createApproval({
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createApproval(...arguments));
   await updateStateAtomically(state => {
     const inheritedProjectId=creationProjectId(state,{projectId,chatId,operation:'approval'});
-    const boundPayload=['command','file-save','artifact-apply'].includes(kind) ? {...payload,projectId:inheritedProjectId} : payload;
+    const boundPayload=['command','file-save','artifact-apply'].includes(kind) ? {...payload,projectId:inheritedProjectId,chatId:chatId || null} : payload;
     const approval = normalizeApproval({
       id: randomUUID(),
       kind,
@@ -95,6 +95,8 @@ export async function executeApproval(approvalId) {
       throw Object.assign(new Error('Approval is no longer pending.'), { code: 'APPROVAL_NOT_PENDING', statusCode: 409 });
     }
     const chat=latestState.chats.find(c=>c.id===approval.chatId);
+    if(approval.chatId && !chat) throw Object.assign(new Error('对话已删除，不能执行此审批。'),{code:'CHAT_NOT_FOUND',statusCode:409});
+    if(chat && (chat.projectId || null)!==(approval.projectId || null)) throw Object.assign(new Error('对话项目已变化，请重新发起审批。'),{code:'WORKSPACE_CHANGED',statusCode:409});
     if (chat) {
       const profile=effectiveAgentProfile(latestState,chat.agentId || 'main',chat.projectId), caps=profile.capabilities;
       const required=approval.kind==='command'?'runCommands':['file-save','artifact-apply'].includes(approval.kind)?'writeFiles':null;

@@ -59,7 +59,7 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[name=instructions]').fill('My instructions');
   await form.locator('.agent-capabilities>summary').click();
   await form.locator('[name=cap_readFiles]').check();
-  await form.locator('[name=cap_mcpServers]').fill('fixture-mcp');
+  await form.locator('[name=cap_mcpServers][value=playwright]').check();
   await form.locator('[name=canDelegate]').check();
   await form.locator('[name=canDelegate]').uncheck();
   await form.locator('.agent-channels>summary').click();
@@ -71,7 +71,7 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   const saved=(await boot()).customize.agents.find(a=>a.id===id);
   assert.equal(saved.name,'Settings regression');assert.equal(saved.instructions,'My instructions');
-  assert.equal(saved.capabilities.readFiles,true);assert.deepEqual(saved.capabilities.mcpServers,['fixture-mcp']);
+  assert.equal(saved.capabilities.readFiles,true);assert.deepEqual(saved.capabilities.mcpServers,['playwright']);
   assert.equal(saved.collaboration.canDelegate,false);
   assert.equal(saved.channels.find(c=>c.id==='telegram').archived,true);
   assert.equal(saved.channels.find(c=>c.id==='discord').channelId,'fixture-channel');

@@ -19,8 +19,10 @@ export function chatWorkspacePath(home,chatId) {
 }
 async function ensureChatWorkspace(context,binding) {
   const {home}=context,expected=chatWorkspacePath(home,binding.id);
+  const canonicalExpected=chatWorkspacePath(await realpath(home),binding.id);
+  const matches=async path=>!path || [resolve(expected),canonicalExpected].includes(await realpath(path).catch(()=>resolve(path)));
   const state=await loadState({home}),chat=state.chats.find(c=>c.id===binding.id);
-  if (!chat || chat.projectId || chat.workspacePath && resolve(chat.workspacePath)!==resolve(expected)) throw workspaceError('WORKSPACE_CHANGED','对话工作目录已变化，请重新发起操作。');
+  if (!chat || chat.projectId || !await matches(chat.workspacePath)) throw workspaceError('WORKSPACE_CHANGED','对话工作目录已变化，请重新发起操作。');
   // Each owned component is checked before descending. Never follow a user-
   // replaced workspace symlink into another folder when allocating a chat.
   let current=await realpath(home);
@@ -30,9 +32,9 @@ async function ensureChatWorkspace(context,binding) {
     const info=await lstat(current);
     if (info.isSymbolicLink() || !info.isDirectory()) throw workspaceError('WORKSPACE_UNAVAILABLE','对话工作目录被替换，请检查本地目录。');
   }
-  if (!chat.workspacePath) await updateStateAtomically(latest=>{
+  if (!chat.workspacePath) await updateStateAtomically(async latest=>{
     const target=latest.chats.find(c=>c.id===binding.id);
-    if (!target || target.projectId || target.workspacePath && target.workspacePath!==expected) throw workspaceError('WORKSPACE_CHANGED','对话工作目录已变化，请重试。');
+    if (!target || target.projectId || !await matches(target.workspacePath)) throw workspaceError('WORKSPACE_CHANGED','对话工作目录已变化，请重试。');
     target.workspacePath=expected;
   },{home});
   return expected;

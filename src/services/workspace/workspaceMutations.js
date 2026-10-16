@@ -1,3 +1,6 @@
+import {workspaceForTool} from './toolWorkspace.js';
+import {chatWorkspaceStatus} from './chatWorkspaceFiles.js';
+import {readWorkspaceFile} from './workspaceFiles.js';
 import {requireProjectWorkspace} from './workspacePolicy.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
@@ -28,19 +31,28 @@ import { MAX_COMMAND_RUNS } from '../../domain/activity/activityLog.js';
 
 const execFile = promisify(execFileCallback);
 
-export async function selectWorkspaceFile(filePath) {
+export async function selectWorkspaceFile(filePath,chatId) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => selectWorkspaceFile(...arguments));
-  await updateStateAtomically(state => {
+  const home=currentRequestContext().home;
+  await updateStateAtomically(async state => {
+    if(chatId && chatId!==state.settings.selectedChatId) throw new Error('对话已切换，请重新选择文件。');
+    const chat=state.chats.find(c=>c.id===(chatId || state.settings.selectedChatId));
+    if(chat && filePath) {const workspace=await chatWorkspaceStatus(state,chat,home);await readWorkspaceFile(workspace.rootPath,filePath);}
     state.settings.selectedFilePath = filePath || null;
-    state.settings.activeMode = 'code';
     state.settings.activeView = 'chat';
     return state;
   });
   return getDesktopBootstrap();
 }
 
-function buildWorkspaceProjectResolver(state) {
+function buildWorkspaceProjectResolver(state,chatId) {
   return async projectId => {
+    if(chatId) {
+      const chat=state.chats.find(c=>c.id===chatId);
+      if(!chat || (chat.projectId || null)!==(projectId || null)) throw new Error('对话工作区已变化，请重新发起操作。');
+      const workspacePath=await workspaceForTool({...currentRequestContext(),chatId},{id:'file_write'},{},null);
+      return {id:chat.projectId || null,workspacePath};
+    }
     const project=findProjectById(state,projectId);
     if (project) await requireProjectWorkspace(project);
     return project;
@@ -50,17 +62,23 @@ function buildWorkspaceProjectResolver(state) {
 export async function readWorkspaceFilePreview(params = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => readWorkspaceFilePreview(...arguments));
   const state = ensureSelectedEntities(await loadState());
+  if(params.chatId) {
+    const chat=state.chats.find(c=>c.id===params.chatId);
+    if(!chat) throw new Error('对话不存在。');
+    const workspace=await chatWorkspaceStatus(state,chat,currentRequestContext().home);
+    return readWorkspaceFile(workspace.rootPath,params.filePath);
+  }
   return readWorkspaceFilePreviewService(params, {
     resolveProject: buildWorkspaceProjectResolver(state),
   });
 }
 
-export async function saveWorkspaceFile({ filePath, content, projectId } = {}) {
+export async function saveWorkspaceFile({ filePath, content, projectId, chatId } = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => saveWorkspaceFile(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const { project, relativeFilePath } = await saveWorkspaceFileContentService(
     { filePath, content, projectId },
-    { resolveProject: buildWorkspaceProjectResolver(state) },
+    { resolveProject: buildWorkspaceProjectResolver(state,chatId) },
   );
 
   await updateStateAtomically(latest => {
@@ -298,7 +316,7 @@ export async function purgeStaleSoftDeletes({ olderThanDays = 7, nowMs = Date.no
   return { purged };
 }
 
-export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId } = {}) {
+export async function applyArtifactToWorkspaceFile({ artifactId, filePath, projectId, chatId } = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => applyArtifactToWorkspaceFile(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const artifact = state.artifacts.find(entry => entry.id === artifactId);
@@ -315,9 +333,9 @@ export async function applyArtifactToWorkspaceFile({ artifactId, filePath, proje
     {
       artifactContent: artifact.content,
       targetFilePath: filePath || state.settings.selectedFilePath,
-      projectId: projectId || artifact.projectId,
+      projectId: chatId ? projectId : projectId || artifact.projectId,
     },
-    { resolveProject: buildWorkspaceProjectResolver(state) },
+    { resolveProject: buildWorkspaceProjectResolver(state,chatId) },
   );
 
   await updateStateAtomically(latest => {
@@ -331,10 +349,10 @@ export async function applyArtifactToWorkspaceFile({ artifactId, filePath, proje
   return getDesktopBootstrap();
 }
 
-export async function runLocalCommand({ templateId, query, projectId }) {
+export async function runLocalCommand({ templateId, query, projectId, chatId }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => runLocalCommand(...arguments));
   const state = ensureSelectedEntities(await loadState());
-  const project = findProjectById(state, projectId);
+  const project = await buildWorkspaceProjectResolver(state,chatId)(projectId);
   if (!project) {
     throw new Error('Project not found.');
   }
@@ -369,6 +387,7 @@ export async function runLocalCommand({ templateId, query, projectId }) {
   const commandRun = {
     id: randomUUID(),
     projectId: project.id,
+    chatId: chatId || null,
     templateId: template.id,
     label: template.label,
     command: [template.command, ...args].join(' '),

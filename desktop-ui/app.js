@@ -1,3 +1,6 @@
+import {handleManagementAction,renderSkillManagement} from './managementActions.js';
+import {renderCapabilityChoices} from './capabilityChoices.js';
+import {askFileDecision} from './chatFiles.js';
 import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
@@ -3593,14 +3596,22 @@ async function handleToggleChatLock(chatId) {
   closeRecentContextMenu();
 }
 
+let chatDeletionPending=false;
 async function handleDeleteChat(chatId) {
+  if(chatDeletionPending)return;
+  chatDeletionPending=true;
+  try {
+  const preview=await api('/api/chats/delete-preview',{method:'POST',body:{chatId}});
+  const fileDecision=await askFileDecision(preview);
+  if(fileDecision==='cancel') return;
   applyBootstrap(
     await api('/api/chats/delete', {
       method: 'POST',
-      body: { chatId },
+      body: { chatId, fileDecision, workspaceToken:preview.token },
     }),
   );
   closeRecentContextMenu();
+  } finally {chatDeletionPending=false;}
 }
 
 async function handleTranscribeAudio() {
@@ -6272,7 +6283,7 @@ async function handleRunCommand(form) {
 async function handleSelectWorkspaceFile(filePath, { lineNumber = null } = {}) {
   const payload = await api('/api/workspace/select-file', {
     method: 'POST',
-    body: { filePath },
+    body: { filePath, chatId:activeChat()?.id },
   });
   resetFileEditor();
   applyBootstrap(payload);
@@ -6402,7 +6413,7 @@ function renderSidebar() {
                     `,
                   )
                   .join('')
-              : '<div class="empty-state compact">No threads yet. Start one from New chat.</div>'
+              : ui`<div class="empty-state compact">还没有对话，从新对话开始。</div>`
           }
         </div>
       </div>
@@ -7202,6 +7213,7 @@ function renderRegularChatPage() {
             </div>
           </div>
           <div class="inline-actions">
+            <button class="small-button" type="button" data-action="delete-active-chat">删除对话</button>
             <button
               class="small-button is-outline"
               type="button"
@@ -7214,6 +7226,7 @@ function renderRegularChatPage() {
           </div>
         </div>
 
+        <details class="chat-files-panel" ${uiState.chatFilesOpen ? 'open' : ''}><summary data-action="toggle-chat-files">对话文件</summary>${renderWorkspaceExplorer()}${uiState.bootstrap.workspace.selectedFile ? ui`<pre>${escapeHtml(uiState.bootstrap.workspace.selectedFile.content)}</pre>` : ''}</details>
         <div class="thread-scroll-region">
           ${renderMessageList(chat)}
         </div>
@@ -7255,20 +7268,18 @@ function renderRegularChatPage() {
 function renderWorkspaceExplorer() {
   const workspace = uiState.bootstrap.workspace;
 
-  if (!connectorEnabled('local-files')) {
-    return '<div class="empty-state compact">Local Files connector is disabled.</div>';
-  }
 
   if (!workspace.exists) {
     return ui`
       <div class="empty-state compact">
-        Workspace path is unavailable. Update the project workspace path to start browsing files.
+        ${workspace.requiresConfirmation ? t('请先确认项目工作区路径。') : t('这个对话还没有文件，Agent 首次创建文件后会显示在这里。')}
       </div>
     `;
   }
 
   return ui`
     <div class="workspace-root mono">${escapeHtml(workspace.rootPath)}</div>
+    ${workspace.chatId ? ui`<button class="small-button" data-action="open-chat-files" data-chat-id="${escapeHtml(workspace.chatId)}">在 Finder 中打开</button>` : ''}
     <div class="file-tree">
       ${workspace.entries
         .map(entry => {
@@ -7324,12 +7335,9 @@ function renderSelectedFilePreview() {
   const workspace = uiState.bootstrap.workspace;
   const selectedFile = workspace.selectedFile;
 
-  if (!connectorEnabled('local-files')) {
-    return '<div class="empty-state compact">Enable Local Files to inject file context into code mode.</div>';
-  }
 
   if (!selectedFile) {
-    return '<div class="empty-state compact">Select a file to preview it here.</div>';
+    return ui`<div class="empty-state compact">选择文件以预览内容。</div>`;
   }
 
   const isEditing =
@@ -7396,9 +7404,8 @@ function renderSelectedFilePreview() {
 function renderCommandRunner() {
   const workspace = uiState.bootstrap.workspace;
 
-  if (!connectorEnabled('local-command')) {
-    return '<div class="empty-state compact">Local Command is disabled.</div>';
-  }
+  const agent=conversationAgent(uiState.bootstrap);
+  if(agent?.capabilities && !agent.capabilities.runCommands) return ui`<div class="empty-state compact">此 Agent 未开启运行命令能力。</div>`;
 
   return ui`
     <div class="command-stack">
@@ -7568,7 +7575,7 @@ function renderCodePage() {
                     <div class="detail-copy">${escapeHtml(project.instructions)}</div>
                   </div>
                 `
-                : '<div class="empty-state compact">Choose a project to anchor this code session.</div>'
+                : '<div class="empty-state compact">文件和命令使用此对话的工作区。</div>'
             }
           </section>
 
@@ -8055,16 +8062,15 @@ function renderAgentCapabilities(selected,draft) {
     ...[['canDelegate','允许委派'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
     ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
-    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" name="cap_${key}" value="${escapeHtml(Array.isArray(value(key))?value(key).join(','):value(key)||'')}" placeholder="${escapeHtml(t('ID，逗号分隔；空表示不允许'))}"></label>`).join('')}
-    </div><p>可用技能：${escapeHtml((selected.capabilityOptions||[]).map(s=>s.id).join(', '))}</p>
+    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(uiState.bootstrap.customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):uiState.bootstrap.customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
     <div class="agent-settings-grid"><label class="checkbox-row"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate !== undefined ? draft.canDelegate === 'on' : collaboration.canDelegate)?'checked':''}>允许委派</label>
-    <label class="label">目标 Agent ID<input class="config-input" name="delegateTargets" value="${escapeHtml(draft?.delegateTargets ?? (collaboration.delegateTargets||[]).join(','))}"></label>
+    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,uiState.bootstrap.customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
     ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
     </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
@@ -8073,6 +8079,7 @@ function renderAgentCapabilities(selected,draft) {
 function renderAgentPersonaFields(selected, draft) {
   return ui`
     ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${!selected.capabilities ? ui`<p role="status">旧版权限待迁移</p>` : ''}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
     <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
     <label class="label">人设与工作要求<textarea class="textarea agent-content-editor" name="instructions" rows="7" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
@@ -8302,7 +8309,7 @@ function renderAgentPage() {
           <h1 class="page-title compact">Agent</h1>
           <div class="inline-actions">
             <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
-              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
             </select>
             <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${uiState.agentCreating ? 'disabled' : ''}>${uiState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
           </div>
@@ -8347,6 +8354,8 @@ function renderConnectorDetails(selected) {
   if (!selected) {
     return '<div class="empty-state">Select a skill, agent, or connector to inspect it.</div>';
   }
+
+  if (uiState.bootstrap.settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
     return renderAgentWorkbench(selected);
@@ -8906,22 +8915,24 @@ async function refreshAdvancedStatus() {
   try {
     // Fan out — three independent endpoints, none of which block the
     // others, so a slow one doesn't gate the rest.
-    const [serversResp, pluginsResp, tasksResp, diagnosticsResp] = await Promise.all([
+    const [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp] = await Promise.all([
       api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
       api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
       api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
       api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
+      api('/api/workspace/retained').catch(err=>({_error:err.message})),
     ]);
-    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp]
+    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp]
       .filter(r => r && r._error)
       .map(r => r._error);
-    if (errors.length === 4) {
+    if (errors.length === 5) {
       uiState.advanced.error = errors.join(' · ');
     } else {
       uiState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
       uiState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
       uiState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
       uiState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
+      uiState.advanced.retainedFiles = retainedResp?._error ? null : retainedResp;
       uiState.advanced.loaded = true;
       // Surface partial errors without blanking the panel.
       if (errors.length > 0) {
@@ -9799,14 +9810,14 @@ function renderCustomizePage() {
             }</h2>
           </div>
 
-          ${section === 'skills' ? renderSkillFilterBar() : ''}
+          ${section === 'skills' ? renderSkillFilterBar()+renderSkillManagement(selected,escapeHtml) : ''}
 
           <div class="list-stack">
             ${(section === 'skills'
               ? filteredSkills()
               : section === 'agents'
                 ? data.customize.agents
-                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp'))
+                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp' && !['local-files','local-command'].includes(c.id)))
               .map(item => {
                 const isActive =
                   section === 'skills'
@@ -9823,7 +9834,7 @@ function renderCustomizePage() {
                   >
                     <div class="list-row-title">
                       ${escapeHtml(item.name)}
-
+                      ${section==='agents' && !item.capabilities ? ui`<span class="chip">旧版权限待迁移</span>` : ''}
                     </div>
                     <div class="list-row-meta">${escapeHtml(
                       section === 'agents' ? item.laneLabel : item.description,
@@ -11165,6 +11176,7 @@ document.addEventListener('click', async event => {
   }
 
   const action = trigger.dataset.action;
+  if(action==='toggle-chat-files') {event.preventDefault();uiState.chatFilesOpen=!uiState.chatFilesOpen;trigger.parentElement.open=uiState.chatFilesOpen;return;}
   if (action?.startsWith('image-')) {
     event.preventDefault();
     try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: uiState.composerAttachments, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
@@ -11187,7 +11199,18 @@ document.addEventListener('click', async event => {
   }
 
   try {
+    if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:refreshAdvancedStatus})) return;
     switch (action) {
+      case 'open-chat-files':
+      case 'open-retained-files': await api('/api/workspace/open',{method:'POST',body:{chatId:trigger.dataset.chatId,retained:action==='open-retained-files'}});break;
+      case 'decide-retained-files': {
+        const files=await api('/api/workspace/retained');
+        const record=files.directories.find(r=>r.chatId===trigger.dataset.chatId);
+        if(!record) {await refreshAdvancedStatus();break;}
+        const decision=await askFileDecision({...record,retained:true});
+        if(decision!=='cancel') {await api('/api/workspace/retained',{method:'POST',body:{chatId:record.chatId,decision,token:record.token}});await refreshAdvancedStatus();}
+        break;
+      }
       case 'toggle-model-picker':
         uiState.modelPickerOpen = !uiState.modelPickerOpen;
         uiState.ttsVoicePanelOpen = false;
@@ -11257,6 +11280,7 @@ document.addEventListener('click', async event => {
           await handleToggleChatLock(activeRecentContextChatId);
         }
         break;
+      case 'delete-active-chat': if(activeChat()) await handleDeleteChat(activeChat().id); break;
       case 'delete-chat':
         if (activeRecentContextChatId) {
           await handleDeleteChat(activeRecentContextChatId);
@@ -12613,14 +12637,14 @@ document.addEventListener('input', event => {
     // agent drafts.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
-        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
+        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       // Settings are committed only by the explicit Save action.
       return;
     }
 
     const nextDraft = mergeAgentDraft(agentId, {
-      [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
+      [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
     });
     if (target.name === 'identity') {
       nextDraft.identify = target.value;
@@ -12891,7 +12915,7 @@ document.addEventListener('change', async event => {
       // button.
       if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
         mergeAgentDraft(agentId, {
-          [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
+          [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
         render();
@@ -12899,7 +12923,7 @@ document.addEventListener('change', async event => {
       }
 
       const nextDraft = mergeAgentDraft(agentId, {
-        [target.name]: target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
+        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
       });
       if (target.name === 'identity') {
         nextDraft.identify = target.value;
@@ -13331,10 +13355,8 @@ installCitationDrawer({
       method: 'POST',
       body: {
         filePath,
-        projectId:
-          activeProject()?.id ||
-          uiState.bootstrap?.settings?.selectedProjectId ||
-          null,
+        chatId: activeChat()?.id,
+        projectId: activeChat()?.projectId || null,
       },
     }),
 });

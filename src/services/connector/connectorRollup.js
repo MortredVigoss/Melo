@@ -77,7 +77,7 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
       case 'projects':
         connectorConfig = {
           activeProject: project?.name || '(none)',
-          workspacePath: project?.workspacePath || APP_ROOT,
+          workspacePath: workspace.rootPath || null,
         };
         break;
       case 'artifacts': {
@@ -117,7 +117,7 @@ export function buildConnectors(enabledIds, config, workspace, state, project) {
 
     return {
       ...connector,
-      enabled: enabledIds.includes(connector.id),
+      enabled: ['local-files','local-command'].includes(connector.id) || enabledIds.includes(connector.id),
       config: connectorConfig,
     };
   });

@@ -1,3 +1,4 @@
+import {loadConfig} from './config.js';
 import { isAgentChannelAvailable } from './shared/channelAvailability.js';
 import { createRouteRegistry } from './http/routeRegistry.js';
 import { reconcileLegacyFacts } from './memory/factRecords.js';
@@ -39,7 +40,7 @@ import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDele
 import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, updateModelConfig, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
 import { resolveFileSafety } from './safety/fileSafetyGate.js';
-import { connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
+import { buildEffectiveMcpServers, connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
 import { backgroundRunner } from './tasks/backgroundRunner.js';
 import { startApprovedBackgroundTask } from './tasks/approvedBackgroundTask.js';
 import { getReminderScheduler } from './reminders/scheduler.js';
@@ -512,7 +513,7 @@ await finishChatDeletions(runtimePaths.home);
     } },
   { method: 'POST', paths: ["/api/chats/delete"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await deleteChat(body.chatId));
+      sendJson(response, 200, await deleteChat(body.chatId,body));
       return;
     } },
   { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
@@ -707,7 +708,11 @@ await finishChatDeletions(runtimePaths.home);
     } },
   { method: 'POST', paths: ["/api/mcp/connect"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       const body = await readJsonBody(request);
-      const { name, command, args, env } = body;
+      const {name}=body;
+      const config=await loadConfig();
+      const saved=buildEffectiveMcpServers(config.mcpServers,config)[name];
+      if(!body.command && (!saved || saved.disabled)) {sendJson(response,400,{error:'MCP server is not enabled in saved settings.'});return;}
+      const {command,args,env}=body.command?body:saved;
       if (!name || !command) {
         sendJson(response, 400, { ok: false, error: 'name and command are required.' });
         return;
