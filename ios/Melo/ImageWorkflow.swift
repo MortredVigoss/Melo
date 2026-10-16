@@ -85,10 +85,12 @@ struct ImageTaskPlan: Codable, Equatable {
         guard result.action != .edit || !result.references.isEmpty else { throw MeloError.message("先选择要修改的图片，或点已有图片的继续修改。") }
         guard !result.makesImage || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("请先填写图片要求。") }
         guard !result.makesImage || prompt.utf16.count <= 24000 else { throw MeloError.message("图片要求超过 24000 字符，请拆成几次修改；内容没有被截断。") }
-        guard !result.makesImage || (["auto","1024x1024","1024x1536","1536x1024"].contains(size) && ["auto","low","medium","high"].contains(quality) && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { throw MeloError.message("图片尺寸、质量或模型设置无效。") }
+        guard !result.makesImage || (ImageTaskPlan.sizes.contains(where: { $0.id == size }) && ["auto","low","medium","high"].contains(quality) && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { throw MeloError.message("图片尺寸、质量或模型设置无效。") }
         return result
     }
     static let maxReferences = 8
+    /// Same list as IMAGE_SIZES in src/images/imageSettings.js. Above 2560x1440 is experimental.
+    static let sizes: [(id: String, label: String)] = [("auto","自动"),("1024x1024","标准 · 正方形"),("1536x1024","标准 · 横向"),("1024x1536","标准 · 纵向"),("2048x2048","2K · 正方形"),("2560x1440","2K · 横向"),("1440x2560","2K · 纵向"),("2816x2816","4K 实验 · 正方形"),("3824x2144","4K 实验 · 横向"),("2144x3824","4K 实验 · 纵向")]
     /// Same rule as combinesImages in src/shared/imageRequestIntent.js.
     static func combinesImages(_ text: String) -> Bool {
         text.range(of: #"合成|拼接|拼成|拼在|拼到|融合|合并|组合|结合|合到|放到|放进|放在|贴到|换到|参考|照着|按照.{0,8}风格|风格.{0,6}(?:换成|用|参考)|第[一二三四五六七八1-8]张.{0,16}第[一二三四五六七八1-8]张|把.{0,12}(?:和|与|跟).{0,12}(?:合|放|拼|融)|\b(?:combine|merge|composite|blend|collage|montage|put .{0,30} into|place .{0,30} (?:in|on|into)|use the (?:first|second|third)|in the style of)\b"#, options: [.regularExpression, .caseInsensitive]) != nil

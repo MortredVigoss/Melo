@@ -9661,37 +9661,37 @@
         }
       }
     },
-    "当前通道按实际返回展示预览。质量按选择请求，最终以服务返回为准；局部遮罩与明确尺寸需使用支持这些参数的图像 API。": {
+    "当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前通道按实际返回展示预览。质量按选择请求，最终以服务返回为准；局部遮罩与明确尺寸需使用支持这些参数的图像 API。"
+            "value": "当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previews reflect actual responses. The selected quality is requested, but the service determines the result. Masks and explicit sizes require an image API that supports them."
+            "value": "This channel shows previews as returned. Quality and size are requested as chosen; the service's actual output is final. Masked edits need an image API that supports masks."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "実際の応答に基づくプレビューを表示します。選択した品質を要求しますが、結果はサービスが決定します。マスクやサイズ指定には対応する画像 API が必要です。"
+            "value": "この接続は返された内容でプレビューを表示します。品質とサイズは選択どおりに要求し、最終結果はサービスの出力に従います。マスク編集にはマスク対応の画像 API が必要です。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실제 응답에 따라 미리보기를 표시합니다. 선택한 품질을 요청하지만 결과는 서비스가 결정합니다. 마스크와 크기 지정은 지원되는 이미지 API가 필요합니다."
+            "value": "이 연결은 반환된 대로 미리보기를 표시합니다. 품질과 크기는 선택한 대로 요청하며 최종 결과는 서비스 출력을 따릅니다. 마스크 편집에는 마스크를 지원하는 이미지 API가 필요합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las vistas previas reflejan la respuesta real. Se solicita la calidad elegida, pero el servicio determina el resultado. Las máscaras y tamaños explícitos requieren una API compatible."
+            "value": "Este canal muestra las vistas previas tal como llegan. Calidad y tamaño se piden según lo elegido; manda el resultado del servicio. Las ediciones con máscara requieren una API de imágenes compatible."
           }
         }
       }
@@ -29716,6 +29716,356 @@
         }
       }
     },
+    "标准 · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Cuadrado"
+          }
+        }
+      }
+    },
+    "标准 · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Horizontal"
+          }
+        }
+      }
+    },
+    "标准 · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Vertical"
+          }
+        }
+      }
+    },
+    "2K · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Cuadrado"
+          }
+        }
+      }
+    },
+    "2K · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Horizontal"
+          }
+        }
+      }
+    },
+    "2K · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Vertical"
+          }
+        }
+      }
+    },
+    "4K 实验 · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Cuadrado"
+          }
+        }
+      }
+    },
+    "4K 实验 · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Horizontal"
+          }
+        }
+      }
+    },
+    "4K 实验 · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Vertical"
+          }
+        }
+      }
+    },
+    "2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K and 4K are slower and use more allowance; 4K is experimental and may be less consistent. If the channel does not accept the chosen size, the image is made at the service default and the actual pixels are noted."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・4K は時間と使用量が増えます。4K は実験的で結果が安定しない場合があります。接続が選択サイズを受け付けない場合は既定サイズで生成し、実際の画素数を表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K·4K는 더 느리고 사용량이 많습니다. 4K는 실험적이라 결과가 불안정할 수 있습니다. 연결이 선택한 크기를 받지 않으면 기본 크기로 생성하고 실제 픽셀을 표시합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K y 4K tardan más y gastan más cuota; 4K es experimental y puede ser menos estable. Si el canal no acepta el tamaño elegido, se genera con el tamaño por defecto y se indica el real."
+          }
+        }
+      }
+    },
     "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。": {
       "extractionState": "manual",
       "localizations": {
@@ -36576,37 +36926,37 @@
         }
       }
     },
-    "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。": {
+    "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量按选择请求，以实际输出为准。API 连接使用此处填写的图片型号。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。"
+            "value": "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量按选择请求，以实际输出为准。API 连接使用此处填写的图片型号。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex uses the image engine assigned by the service; the returned model is recorded in the task workspace. Size and quality are preferences; actual output may vary. API connections use the model entered here."
+            "value": "Codex uses the image engine assigned by the service; the returned model is recorded in the task workspace. Size and quality are requested as chosen; the actual output is what counts. API connections use the model entered here."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex はサービス指定の画像エンジンを使用し、返されたモデルはタスク空間に記録します。サイズと品質は希望値です。API 接続はここで指定したモデルを使用します。"
+            "value": "Codex はサービス指定の画像エンジンを使用し、返されたモデルはタスク空間に記録します。サイズと品質は選択どおりに要求し、実際の出力を基準とします。API 接続はここで指定したモデルを使用します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex는 서비스가 지정한 이미지 엔진을 사용하며 반환된 모델은 작업 공간에 기록합니다. 크기와 품질은 요청값이며 실제 출력은 다를 수 있습니다. API 연결은 여기에 입력한 모델을 사용합니다."
+            "value": "Codex는 서비스가 지정한 이미지 엔진을 사용하며 반환된 모델은 작업 공간에 기록합니다. 크기와 품질은 선택한 대로 요청하며 실제 출력을 기준으로 합니다. API 연결은 여기에 입력한 모델을 사용합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex usa el motor asignado por el servicio y registra el modelo devuelto en el espacio de tareas. Tamaño y calidad son preferencias; puede variar el resultado. La API usa el modelo indicado aquí."
+            "value": "Codex usa el motor asignado por el servicio y registra el modelo devuelto en el espacio de tareas. Tamaño y calidad se piden tal como los eliges; cuenta el resultado real. La API usa el modelo indicado aquí."
           }
         }
       }
@@ -36681,37 +37031,37 @@
         }
       }
     },
-    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。": {
+    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。"
+            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex uses your subscription allowance. API connections are billed by their provider and must support images/edits and the selected model. Failures do not switch channels automatically. Image analysis uses the chat model. Up to four references per request."
+            "value": "Codex uses your subscription allowance. API connections are billed by their provider and must support images/edits and the selected model. Failures do not switch channels automatically. Image analysis uses the chat model. Up to eight photos per message; several photos are edited one by one unless you ask to combine them."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex はサブスクリプション枠を使用します。API は提供元が課金し、images/edits と選択モデルへの対応が必要です。失敗時に接続を自動変更しません。画像分析には会話モデルを使用します。参照画像は最大4枚です。"
+            "value": "Codex はサブスクリプション枠を使用します。API は提供元が課金し、images/edits と選択モデルへの対応が必要です。失敗時に接続を自動変更しません。画像分析には会話モデルを使用します。1 回に最大 8 枚まで。複数の画像は 1 枚ずつ編集し、「合成」と指示したときだけ 1 枚にまとめます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex는 구독 한도를 사용합니다. API는 해당 플랫폼에서 과금되며 images/edits와 선택한 모델을 지원해야 합니다. 실패 시 연결을 자동 전환하지 않습니다. 이미지 분석은 대화 모델을 사용하며 참조는 최대 4장입니다."
+            "value": "Codex는 구독 한도를 사용합니다. API는 해당 플랫폼에서 과금되며 images/edits와 선택한 모델을 지원해야 합니다. 실패 시 연결을 자동 전환하지 않습니다. 이미지 분석은 대화 모델을 사용합니다. 한 번에 최대 8장이며, 여러 장은 한 장씩 편집하고 ‘합성’을 요청할 때만 한 장으로 합칩니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex usa tu cuota de suscripción. La API factura según su proveedor y debe admitir images/edits y el modelo elegido. No cambia de canal al fallar. El análisis usa el modelo del chat. Máximo cuatro referencias."
+            "value": "Codex usa tu cuota de suscripción. La API factura según su proveedor y debe admitir images/edits y el modelo elegido. No cambia de canal al fallar. El análisis usa el modelo del chat. Hasta ocho fotos por mensaje; varias fotos se editan una a una salvo que pidas combinarlas."
           }
         }
       }

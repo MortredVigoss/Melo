@@ -292,6 +292,19 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"你好")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(),execute:{ _ in fatalError("disabled tools executed") }))
         assert(toolRounds==1)
+        // A chosen output size is sent to the image tool; if rejected, one retry at the default size, reported in the reply.
+        var sizeRequests: [String?] = []
+        let sizedPixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="
+        CodexFixture.handler={ request in
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            let size=((body["tools"] as? [[String:Any]])?.first { $0["type"] as? String=="image_generation" })?["size"] as? String
+            sizeRequests.append(size)
+            if size != nil { return (400,Data(#"{"error":{"message":"Invalid size"}}"#.utf8)) }
+            return (200,try sse([["type":"image_generation_call","status":"completed","result":sizedPixel]]))
+        }
+        let sized=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"画一只猫")],model:"gpt-6.1-sol",instructions:"",imageTask:ImageTaskPlan(action:.generate,size:"3824x2144"))
+        assert(sizeRequests==["3824x2144",nil], "exactly one retry without size: \(sizeRequests)")
+        assert(sized.images.count==1 && sized.text.contains("服务未接受所选尺寸"))
         // Ordinary replies offer the image tool only when this Agent may make images here;
         // the model decides, and an image it returns is delivered instead of "missing tool".
         var imageRounds=0

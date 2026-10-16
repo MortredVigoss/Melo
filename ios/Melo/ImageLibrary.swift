@@ -46,9 +46,11 @@ final class ImageLibrary {
     }
     func data(_ image: LocalImage) throws -> Data {
         let url = try url(image)
-        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 24*1024*1024 else { throw MeloError.message("图片文件超过容量限制。") }
+        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= ImageLibrary.storedLimit else { throw MeloError.message("图片文件超过容量限制。") }
         return try Data(contentsOf: url)
     }
+    /// Stored copies (≤4096 px, PNG) of a 4K result can exceed 24 MB.
+    static let storedLimit = 64*1024*1024
     func images(for message: String) -> [LocalImage] { (index.messages[message] ?? []).compactMap { index.assets[$0] } }
     func inputs(_ refs: [ImageReference]) throws -> [ImageInput] {
         if refs.isEmpty { return [] }
@@ -106,7 +108,7 @@ final class ImageLibrary {
     }
     func store(_ image: CGImage, title: String, references: [String] = [], reportedModel: String = "", revisedPrompt: String = "", jpeg: Bool = false) throws -> LocalImage {
         let bytes = try Self.encoded(image, jpeg: jpeg)
-        guard bytes.count <= 24*1024*1024 else { throw MeloError.message("处理后的图片超过 24 MB，请缩小尺寸。") }
+        guard bytes.count <= ImageLibrary.storedLimit else { throw MeloError.message("处理后的图片超过 64 MB，请缩小尺寸。") }
         let asset = LocalImage(id: UUID().uuidString, width: image.width, height: image.height, mimeType: jpeg ? "image/jpeg" : "image/png", title: title, referenceIDs: references, reportedModel: reportedModel, revisedPrompt: revisedPrompt)
         guard ready else { throw MeloError.message("图片目录不可用。") }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

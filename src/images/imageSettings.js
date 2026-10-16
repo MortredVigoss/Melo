@@ -1,5 +1,9 @@
 import { DEFAULT_CHAT_MODEL } from '../shared/modelCatalog.js';
 
+// Output sizes offered on both clients. gpt-image-2 accepts edges that are
+// multiples of 16 below 3840 px; above 2560x1440 is experimental (OpenAI guide).
+// Mirrored by ImageTaskPlan.sizes on the phone.
+export const IMAGE_SIZES = Object.freeze(['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2560x1440', '1440x2560', '2816x2816', '3824x2144', '2144x3824']);
 export function imageSettings(config = {}) {
   const source = config.imageSettings || {};
   const legacyEngine = ['auto', 'codex'].includes(config.imageEngine)
@@ -14,7 +18,7 @@ export function imageSettings(config = {}) {
     visionProfileId: source.visionProfileId || '',
     detail: ['auto', 'high', 'original'].includes(source.detail) ? source.detail : 'auto',
     quality: ['auto', 'low', 'medium', 'high'].includes(source.quality) ? source.quality : 'high',
-    size: ['auto', '1024x1024', '1536x1024', '1024x1536'].includes(source.size)
+    size: IMAGE_SIZES.includes(source.size)
       ? source.size
       : 'auto',
     previews: source.previews === true,

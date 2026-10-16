@@ -233,6 +233,7 @@ export async function runImageTask({
             action: task.action,
             model: requestModel,
             quality: settings.quality,
+            size: settings.size,
             signal,
             onPreview,
             onStage: (e) => emit({ kind: 'pipeline', ...e, id: `${id}:${e.id}` }),
@@ -242,6 +243,7 @@ export async function runImageTask({
             prompt,
             model: requestModel,
             quality: settings.quality,
+            size: settings.size,
             signal,
             onPreview,
           });
@@ -266,6 +268,9 @@ export async function runImageTask({
       } else throw new Error('未知生图引擎，请重新选择。');
       signal?.throwIfAborted();
       const saved = await saveImageArtifact(workspace.rootPath, result.buffer, { signal });
+      // Report what the service actually returned, and say so when a chosen size was not accepted.
+      const actual = await sharp(result.buffer).metadata().catch(() => ({}));
+      if (result.sizeFallback) reviews.push(`第 ${index + 1} 张：服务未接受所选尺寸 ${settings.size}，已按服务默认尺寸生成（${actual.width || '?'}×${actual.height || '?'}）。需要 2K/4K 可改用图像 API 连接。`);
       const artifact = {
         id: `artifact-${id}`,
         kind: 'image',
@@ -277,6 +282,8 @@ export async function runImageTask({
         reportedModel: result.reportedModel || '',
         requestedQuality: settings.quality,
         reportedQuality: result.reportedQuality || '',
+        requestedSize: settings.size,
+        ...(actual.width ? { width: actual.width, height: actual.height } : {}),
         ...(jobBefore ? { beforeUrl: jobBefore.url, beforePath: jobBefore.path } : {}),
       };
       generated = true;

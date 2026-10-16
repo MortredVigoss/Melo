@@ -265,12 +265,14 @@ export async function generateImageViaCodex({
   background,
   inputFidelity,
   quality = 'auto',
+  size = 'auto',
   onPreview,
   signal,
   timeoutMs = GEN_TIMEOUT_MS,
   fetchImpl = fetch,
   credentialProvider = getCodexCredential,
 } = {}) {
+  const args = arguments[0] || {};
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
     throw new Error('generateImageViaCodex: prompt is required');
   }
@@ -301,6 +303,7 @@ export async function generateImageViaCodex({
   const imageTool = { type: 'image_generation' };
   if (!['auto', 'low', 'medium', 'high'].includes(quality)) throw new Error('Invalid image quality.');
   if (quality !== 'auto') imageTool.quality = quality;
+  if (size !== 'auto') imageTool.size = String(size);
   if (background) imageTool.background = String(background);
   if (inputFidelity) imageTool.input_fidelity = String(inputFidelity);
 
@@ -369,6 +372,11 @@ export async function generateImageViaCodex({
     // compare request vs. response shape after the fact.
     await debugLog(`${tracePrefix} ✗ request body preview: ${JSON.stringify(body).slice(0, 400)}`);
 
+    // A size the service does not accept: retry once at its default size and say so.
+    if (response.status === 400 && size !== 'auto') {
+      await debugLog(`${tracePrefix} size ${size} rejected; retrying at the service default`);
+      return { ...(await generateImageViaCodex({ ...args, size: 'auto' })), sizeFallback: true };
+    }
     let message = `Codex image generation HTTP ${response.status}`;
     try {
       const parsed = raw ? JSON.parse(raw) : null;
@@ -725,6 +733,7 @@ async function runCodexResponsesImageRequest({
   instructions,
   input,
   quality,
+  size = 'auto',
   model,
   credential,
   sessionId,
@@ -734,13 +743,14 @@ async function runCodexResponsesImageRequest({
   idleTimeoutMs,
   tracePrefix,
 }) {
+  const args = arguments[0];
   const body = {
     model,
     stream: true,
     store: false,
     instructions,
     input,
-    tools: [{ type: 'image_generation', ...(quality !== 'auto' ? { quality } : {}) }],
+    tools: [{ type: 'image_generation', ...(quality !== 'auto' ? { quality } : {}), ...(size !== 'auto' ? { size: String(size) } : {}) }],
     tool_choice: 'auto',
   };
 
@@ -771,6 +781,10 @@ async function runCodexResponsesImageRequest({
   if (!response.ok) {
     const raw = await safeReadText(response);
     await debugLog(`${tracePrefix} ✗ error body: ${(raw || '').slice(0, 800).replace(/\s+/g, ' ')}`);
+    if (response.status === 400 && size !== 'auto') {
+      await debugLog(`${tracePrefix} size ${size} rejected; retrying at the service default`);
+      return { ...(await runCodexResponsesImageRequest({ ...args, size: 'auto' })), sizeFallback: true };
+    }
     let message = `Codex image edit HTTP ${response.status}`;
     try {
       const parsed = raw ? JSON.parse(raw) : null;
@@ -870,6 +884,7 @@ export async function editImageViaCodex({
   referenceRoles = [],
   action = 'edit',
   quality = 'auto',
+  size = 'auto',
   onPreview,
   onStage,
   model = DEFAULT_MODEL,
@@ -984,6 +999,7 @@ export async function editImageViaCodex({
     instructions: action === 'edit' ? EDIT_IMAGE_INSTRUCTIONS : `You create a new image from assigned references. ${IMAGE_INTENT_RULES} Call image_generation exactly once. Return the image, not code or text.`,
     input: editInput,
     quality,
+    size,
     model,
     credential,
     sessionId,

@@ -106,11 +106,12 @@ struct ImageComposerBar: View {
                     }
                     Section("图片任务") {
                         TextField("API 图片模型",text:$plan.model).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Text("Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。").font(.footnote).foregroundStyle(.secondary)
-                        Picker("尺寸",selection:$plan.size) { Text("自动").tag("auto");Text("正方形").tag("1024x1024");Text("竖图").tag("1024x1536");Text("横图").tag("1536x1024") }
+                        Text("Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量按选择请求，以实际输出为准。API 连接使用此处填写的图片型号。").font(.footnote).foregroundStyle(.secondary)
+                        Picker("尺寸",selection:$plan.size) { ForEach(ImageTaskPlan.sizes, id: \.id) { Text(LocalizedStringKey($0.label)).tag($0.id) } }
+                        Text("2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。").font(.footnote).foregroundStyle(.secondary)
                         Picker("质量",selection:$plan.quality) { Text("自动").tag("auto");Text("低").tag("low");Text("中").tag("medium");Text("高").tag("high") }
                     }
-                    Section { Text("Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。") }
+                    Section { Text("Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。") }
                 }.navigationTitle("图片设置").toolbar { ToolbarItem(placement:.confirmationAction){Button("完成"){options=false}} }
             }.preferredColorScheme(.dark)
         }

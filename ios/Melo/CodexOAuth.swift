@@ -208,11 +208,16 @@ enum CodexRequest {
         var body=ImageRequestBody.responses(messages:messages,inputs:inputs,task:task,model:model,instructions:instructions)
         // Match the proven desktop Codex contract. The service chooses the image
         // engine; keep model/size server-selected, but forward the requested quality.
-        body["tools"]=[["type":"image_generation"].merging(task.quality == "auto" ? [:] : ["quality":task.quality]) { _, new in new }]
+        var tool: [String:Any] = ["type":"image_generation"]
+        if task.quality != "auto" { tool["quality"] = task.quality }
+        // Requested size goes to the tool; if the service rejects it, the caller retries once without.
+        if task.size != "auto" { tool["size"] = task.size }
+        body["tools"]=[tool]
         body["tool_choice"]="auto"
         if task.size != "auto" || task.quality != "auto", var input=body["input"] as? [[String:Any]], !input.isEmpty,
            var content=input[input.count-1]["content"] as? [[String:Any]], !content.isEmpty {
-            let format=task.size == "1024x1536" ? "竖幅构图" : task.size == "1536x1024" ? "横幅构图" : task.size == "1024x1024" ? "正方形构图" : "尺寸由服务决定"
+            let dims=task.size.split(separator:"x").compactMap { Int($0) }
+            let format=dims.count != 2 ? "尺寸由服务决定" : dims[0] == dims[1] ? "正方形构图" : dims[0] > dims[1] ? "横幅构图" : "竖幅构图"
             content[0]["text"]=(content[0]["text"] as? String ?? "") + "\n输出偏好：" + format + "；质量偏好 " + task.quality + "。具体像素尺寸和质量以服务实际返回为准。"
             input[input.count-1]["content"]=content; body["input"]=input
         }
