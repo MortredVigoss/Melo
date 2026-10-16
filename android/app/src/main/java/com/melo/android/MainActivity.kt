@@ -42,10 +42,14 @@ import kotlinx.serialization.json.*
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var chatRequest by mutableStateOf<Pair<String, Int>?>(null)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
-        setContent { MeloTheme { MeloApp() } }
+        readChatRequest(intent)
+        setContent { MeloTheme { MeloApp(requestedChat = chatRequest) } }
     }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readChatRequest(intent) }
+    private fun readChatRequest(intent: Intent) { chatRequest = intent.getStringExtra("melo_chat_id")?.let { it to ((chatRequest?.second ?: 0) + 1) } }
 }
 class MeloViewModel(application: Application) : AndroidViewModel(application) {
     val engine = (application as MeloApplication).engine
@@ -58,7 +62,7 @@ private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub)
 private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun MeloApp(vm: MeloViewModel = viewModel()) {
+@Composable fun MeloApp(vm: MeloViewModel = viewModel(), requestedChat: Pair<String, Int>? = null) {
     val data by vm.repository.data.collectAsStateWithLifecycle()
     val runtime by vm.engine.runtime.collectAsStateWithLifecycle()
     val deviceAgent = (LocalContext.current.applicationContext as MeloApplication).deviceAgent
@@ -68,6 +72,10 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     var chatId by rememberSaveable { mutableStateOf<String?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var executionChat by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(requestedChat, runtime.initialized) {
+        val target = requestedChat?.first
+        if (runtime.initialized && target != null && data.chats.any { it.id == target }) { chatId = target; pageName = Page.Chats.name; showHistory = false; executionChat = null }
+    }
     val context = LocalContext.current
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     fun newChat(agentId: String = "main", projectId: String? = null) { vm.engine.work { chatId = vm.repository.newChat(agentId, projectId); pageName = Page.Chats.name; showHistory = false } }
@@ -91,7 +99,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             IconButton(onClick = { if (executionChat != null) executionChat = null else if (page == Page.Chats) showHistory = !showHistory else pageName = Page.Home.name }) {
                 Icon(if (page == Page.Chats && executionChat == null) Icons.Outlined.History else Icons.AutoMirrored.Outlined.ArrowBack, "返回或历史")
             }
-        }, actions = { if (page == Page.Chats) { IconButton(onClick = { pageName = Page.Device.name }) { Icon(Icons.Outlined.TouchApp, "手机助手") }; IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
+        }, actions = { if (page == Page.Chats) { IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
     ) { padding ->
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, LocalDensity.current.fontScale * data.settings.fontScale)) {
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
@@ -110,7 +118,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                     }
                     Page.Agents -> AgentsScreen(data, vm, onChat = { newChat(it) })
                     Page.Workspace -> WorkspaceScreen(data, vm, onChat = { newChat(projectId = it) })
-                    Page.Settings -> SettingsScreen(data, runtime, vm)
+                    Page.Settings -> SettingsScreen(data, runtime, vm) { pageName = Page.Device.name }
                     Page.Device -> DeviceAgentScreen(data)
                     Page.Tasks -> TasksScreen(data, vm, onChat = { chatId = it; pageName = Page.Chats.name }, onExecution = { executionChat = it })
                 }
@@ -129,7 +137,6 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         item { Spacer(Modifier.height(20.dp)); Text("Melo", style = MaterialTheme.typography.headlineLarge, color = MeloGold); Text("想法在这里连接", color = MeloMuted) }
         item { SharedScene(buildJsonObject { put("selected", 0); put("compact", false); put("still", data.settings.reduceMotion); put("transmitting", runtime.busyChatId != null) }, Modifier.fillMaxWidth().height(300.dp), onSelect = { id -> onPage(when (id) { 1 -> Page.Chats; 4 -> Page.Agents; 2 -> Page.Workspace; 5 -> Page.Tasks; else -> Page.Settings }) }) }
         item { FilledTonalButton(onClick = onNewChat, modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("开始新对话") }; Spacer(Modifier.height(16.dp)) }
-        item { OutlinedButton(onClick = { onPage(Page.Device) }, modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)) { Icon(Icons.Outlined.TouchApp, null); Spacer(Modifier.width(8.dp)); Text("手机助手") }; Spacer(Modifier.height(12.dp)) }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { onPage(Page.Agents) }) { Text("角色") }; TextButton(onClick = { onPage(Page.Workspace) }) { Text("工作区") }; TextButton(onClick = { onPage(Page.Tasks) }) { Text("任务空间") }; TextButton(onClick = { onPage(Page.Settings) }) { Text("系统") } } }
         item { Text("${data.chats.size} 段对话 · ${data.agents.size} 个角色 · 保存在本机", color = MeloMuted, style = MaterialTheme.typography.bodySmall) }
         if (data.settings.connections.isEmpty()) item { TextButton(onClick = { onPage(Page.Settings) }) { Text("配置模型连接") } }
@@ -163,6 +170,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val turn = runtime.turns[chat.id]
+    var handledRun by rememberSaveable(chat.id) { mutableStateOf(turn?.runId) }
     val deviceAgent = (context.applicationContext as MeloApplication).deviceAgent
     val deviceRuntime by deviceAgent.runtime.collectAsStateWithLifecycle()
     val deviceRuns = data.deviceRuns.filter { it.taskContext?.chatId == chat.id }
@@ -172,9 +180,6 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     }
     val deviceBusy = deviceRuntime.running && deviceRuntime.chatId == chat.id
     val busy = turn != null || deviceBusy
-    var deviceMode by rememberSaveable(chat.id) { mutableStateOf(false) }
-    var screenshots by rememberSaveable(chat.id) { mutableStateOf(true) }
-    var forceProbe by rememberSaveable(chat.id) { mutableStateOf(false) }
     var scriptLibrary by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     var speech by remember { mutableStateOf<TextToSpeech?>(null) }
@@ -184,14 +189,21 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris -> vm.engine.work { images = (images + uris.map { vm.repository.importImage(it) }).take(4) } }
     LaunchedEffect(chat.id, draft) { delay(350); vm.engine.work { vm.repository.draft(chat.id, draft) } }
-    LaunchedEffect(turn?.runId) { if (turn?.runId != null) { draft = ""; images = emptyList(); focus.clearFocus() } }
-    LaunchedEffect(deviceRuntime.runId) { if (deviceBusy && deviceRuntime.runId != null) { draft = ""; focus.clearFocus() } }
+    LaunchedEffect(turn?.runId) {
+        if (turn?.runId != null && handledRun != turn.runId) {
+            val submitted = chat.messages.lastOrNull { it.role == "user" }
+            if (draft.trim() == submitted?.content?.trim()) draft = ""
+            images = emptyList(); focus.clearFocus()
+        }
+        handledRun = turn?.runId
+    }
     LaunchedEffect(chat.messages.size, turn?.partial?.length, deviceRuns.lastOrNull()?.steps?.size) { if (list.layoutInfo.totalItemsCount > 0) list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             val agent = data.agents.find { it.id == chat.agentId }
             Text(agent?.name ?: "Melo", color = MeloGold)
             Text(" · " + (data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection) }?.model?.ifBlank { "未配置模型" } ?: "未配置模型"), color = MeloMuted, maxLines = 1, modifier = Modifier.weight(1f))
+            IconButton(onClick = { scriptLibrary = true }, enabled = !busy, modifier = Modifier.testTag("chat-cache-open")) { Icon(Icons.Outlined.History, "操作缓存") }
             IconButton(onClick = { options = true }, enabled = !busy) { Icon(Icons.Outlined.Tune, "对话设置") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
@@ -220,37 +232,23 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 Column { Text(failed.error ?: "上次请求未完成。", color = MaterialTheme.colorScheme.error); if (failed.partial.isNotBlank()) Text(failed.partial, color = MeloMuted); TextButton(onClick = { vm.engine.send(chat.id, "", retry = true) }) { Text("重试这次提问") } }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilterChip(selected = !deviceMode, onClick = { deviceMode = false }, label = { Text("对话") }, enabled = !busy)
-            Spacer(Modifier.width(8.dp))
-            FilterChip(selected = deviceMode, onClick = { deviceMode = true }, label = { Text("操作手机") }, enabled = !busy, modifier = Modifier.testTag("device-mode"))
-            if (deviceMode) { Spacer(Modifier.weight(1f)); TextButton(onClick = { scriptLibrary = true }, modifier = Modifier.testTag("chat-cache-open")) { Text("操作缓存") } }
-        }
-        if (deviceMode) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(selected = forceProbe, onClick = { forceProbe = !forceProbe }, label = { Text("强制 Probe") }, enabled = !busy, modifier = Modifier.testTag("force-probe"))
-                Spacer(Modifier.weight(1f)); Text("截图", color = MeloMuted); Switch(screenshots, { screenshots = it }, enabled = !busy)
-            }
-            Text("命中缓存在本机执行；Similar 改写发送目标与候选脚本，Probe 再提供界面文字${if (screenshots) "、截图" else ""}。成功步骤自动缓存，输入默认参数化。", Modifier.padding(horizontal = 12.dp), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
-        }
         if (images.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) { Text("已选 ${images.size} 张图片", color = MeloGold); TextButton(onClick = { images = emptyList() }) { Text("移除") } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy && !deviceMode) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
-            OutlinedTextField(draft, { draft = it }, placeholder = { Text(if (deviceMode) "希望手机帮你做什么？" else "输入消息…") }, modifier = Modifier.weight(1f).testTag("composer"), maxLines = 6, shape = RoundedCornerShape(20.dp))
+            IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
+            OutlinedTextField(draft, { draft = it }, placeholder = { Text("输入消息…") }, modifier = Modifier.weight(1f).testTag("composer"), maxLines = 6, shape = RoundedCornerShape(20.dp))
             IconButton(onClick = { try { dictation.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)) } catch (_: Exception) { vm.engine.work { error("此设备没有可用的系统语音输入服务，可使用键盘麦克风。") } } }, enabled = !busy) { Icon(Icons.Outlined.MicNone, "语音输入") }
             IconButton(onClick = {
                 when {
-                    deviceBusy -> deviceAgent.cancel()
+                    deviceBusy -> { vm.engine.cancel(chat.id); deviceAgent.cancel() }
                     turn != null -> vm.engine.cancel(chat.id)
-                    deviceMode -> if (images.isNotEmpty()) vm.engine.work { error("操作手机使用实时屏幕，请先移除已选参考图片。") } else deviceAgent.start(draft, 0, screenshots, chatId = chat.id, forceProbe = forceProbe)
                     else -> onSend(draft, images)
                 }
-            }, enabled = busy || draft.isNotBlank() || !deviceMode && images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
+            }, enabled = busy || draft.isNotBlank() || images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
         }
     }
     if (options) ChatOptions(chat, data, vm) { options = false }
     if (scriptLibrary) DeviceScriptLibrary(data, deviceAgent, { scriptLibrary = false }) { script, values ->
-        deviceAgent.start(script.goalTemplate, 0, screenshots, chatId = chat.id, scriptId = script.id, parameters = values)
+        deviceAgent.start(script.goalTemplate, 0, true, chatId = chat.id, scriptId = script.id, parameters = values)
     }
 }
 

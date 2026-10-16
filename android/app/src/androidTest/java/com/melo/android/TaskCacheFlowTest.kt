@@ -155,7 +155,8 @@ class TaskCacheFlowTest {
     @Test fun cacheLibraryEditsAndDeletesTheSavedRecipe() {
         val recipe = cached()
         runBlocking { app.repository.change { it.copy(deviceScripts = listOf(recipe)) } }
-        ui.onNodeWithText("手机助手").performClick()
+        ui.onAllNodesWithText("系统").onFirst().performClick()
+        ui.onNodeWithText("手机控制设置与诊断").performClick()
         ui.onNodeWithText("操作缓存 · 1").performClick()
         File(app.cacheDir, "task-cache-library-ui.png").outputStream().use { assertTrue(ui.onNodeWithTag("cache-library").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)) }
         ui.onNodeWithTag("cache-edit-${recipe.id}").performClick()

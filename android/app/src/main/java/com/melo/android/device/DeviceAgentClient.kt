@@ -3,6 +3,7 @@ package com.melo.android.device
 import com.melo.android.data.*
 import com.melo.android.data.Connection
 import com.melo.android.network.*
+import com.melo.android.chat.ChatPhoneUse
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.*
 import okhttp3.*
@@ -14,10 +15,10 @@ import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = ""): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false): DeviceTurn {
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
-        val payload = payload(connection, history, taskInstructions)
+        val payload = payload(connection, history, taskInstructions, chatTools)
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
             .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", "application/json")
             .apply { if (connection.protocol == "anthropic") { header("x-api-key", key); header("anthropic-version", "2023-06-01") } else header("Authorization", "Bearer $key") }.build()
@@ -31,7 +32,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                         val result = response.use {
                             require(it.isSuccessful) { ModelClient.statusError(it.code) }
                             val raw = ModelClient.readBounded(it.body ?: error("服务没有返回内容。"), 8 * 1024 * 1024)
-                            try { decode(MeloJson.parseToJsonElement(String(raw)).jsonObject, connection.protocol) }
+                            try { decode(MeloJson.parseToJsonElement(String(raw)).jsonObject, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device") }
                             catch (_: Exception) { throw IllegalStateException("模型未返回完整、有效的 Tool Calling 回执，请检查模型及接口协议。") }
                         }
                         if (continuation.isActive) continuation.resume(result)
@@ -42,11 +43,14 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
     }
     companion object {
         fun initial(protocol: String, goal: String) = mutableListOf(buildJsonObject { put("role", "user"); put("content", goal) })
-        fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = ""): JsonObject = buildJsonObject {
+        fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false): JsonObject = buildJsonObject {
             require(taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
             put("model", connection.model); put("stream", false)
-            val instructions = taskInstructions + "\n\n" + DeviceTools.instructions + "\n" + DeviceTools.completionInstructions + "\nSwipes must move at least 48 image pixels. Use tap for clicks; do not emulate clicks using stationary or tiny swipes."
-            val function = buildJsonObject { put("name", "android_device"); put("description", DeviceTools.description); put("parameters", DeviceTools.schema); put("strict", false) }
+            val instructions = if (chatTools) taskInstructions else taskInstructions + "\n\n" + DeviceTools.instructions + "\n" + DeviceTools.completionInstructions + "\nSwipes must move at least 48 image pixels. Use tap for clicks; do not emulate clicks using stationary or tiny swipes."
+            val name = if (chatTools) ChatPhoneUse.name else "android_device"
+            val description = if (chatTools) ChatPhoneUse.description else DeviceTools.description
+            val schema = if (chatTools) ChatPhoneUse.schema else DeviceTools.schema
+            val function = buildJsonObject { put("name", name); put("description", description); put("parameters", schema); put("strict", false) }
             when (connection.protocol) {
                 "responses" -> {
                     put("instructions", instructions); put("store", false); put("input", JsonArray(history))
@@ -54,7 +58,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
                 "anthropic" -> {
                     put("system", instructions); put("max_tokens", 4096); put("messages", JsonArray(history))
-                    put("tools", buildJsonArray { add(buildJsonObject { put("name", "android_device"); put("description", DeviceTools.description); put("input_schema", DeviceTools.schema) }) })
+                    put("tools", buildJsonArray { add(buildJsonObject { put("name", name); put("description", description); put("input_schema", schema) }) })
                 }
                 else -> {
                     put("messages", JsonArray(listOf(buildJsonObject { put("role", "system"); put("content", instructions) }) + history))
@@ -62,7 +66,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
             }
         }
-        fun decode(value: JsonObject, protocol: String): DeviceTurn {
+        fun decode(value: JsonObject, protocol: String, toolName: String = "android_device"): DeviceTurn {
             require(value["error"] == null || value["error"] == JsonNull) { "模型返回错误，设备操作未继续。" }
             val wire: List<JsonObject>
             val text: String
@@ -91,9 +95,9 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                     require((choice.text("finish_reason") == "tool_calls") == calls.isNotEmpty()) { "工具回执不完整。" }
                 }
             }
-            require(calls.size <= 1 && calls.all { it.id.isNotBlank() && it.name == "android_device" }) { "模型必须每次只调用一个 android_device 工具。" }
+            require(calls.size <= 1 && calls.all { it.id.isNotBlank() && it.name == toolName }) { "模型必须每次只调用一个已注册工具。" }
             require(calls.isNotEmpty() || text.isNotBlank()) { "模型没有返回可执行工具或回答。" }
-            return DeviceTurn(text, calls, wire)
+            return DeviceTurn(text, calls, wire, value.text("model").ifBlank { null })
         }
         private fun arguments(raw: String): JsonObject { require(raw.length <= 12_000) { "工具参数过长。" }; return MeloJson.parseToJsonElement(raw).jsonObject }
         fun appendResult(history: MutableList<JsonObject>, protocol: String, call: DeviceCall, result: DeviceToolResult) {

@@ -37,7 +37,8 @@ import kotlinx.serialization.json.*
     var projectId by remember { mutableStateOf(chat.projectId) }
     var connectionId by remember { mutableStateOf(chat.connectionId) }
     var pinned by remember { mutableStateOf(chat.pinned) }
-    EditorDialog("对话设置", close, save = { vm.engine.work { require(title.isNotBlank()) { "请输入对话名称。" }; vm.repository.editChat(chat.id) { it.copy(title = title.take(500), agentId = agentId, projectId = projectId, connectionId = connectionId, pinned = pinned) }; close() } }) {
+    var phoneUse by remember { mutableStateOf(chat.phoneUseEnabled) }
+    EditorDialog("对话设置", close, save = { vm.engine.work { require(title.isNotBlank()) { "请输入对话名称。" }; vm.repository.editChat(chat.id) { it.copy(title = title.take(500), agentId = agentId, projectId = projectId, connectionId = connectionId, pinned = pinned, phoneUseEnabled = phoneUse) }; close() } }) {
         Field("对话名称", title, { title = it })
         Text("角色"); data.agents.forEach { agent -> FilterChip(selected = agentId == agent.id, onClick = { agentId = agent.id }, label = { Text(agent.name) }) }
         Text("项目资料"); FilterChip(selected = projectId == null, onClick = { projectId = null }, label = { Text("不绑定项目") })
@@ -45,6 +46,8 @@ import kotlinx.serialization.json.*
         Text("模型连接"); FilterChip(selected = connectionId == null, onClick = { connectionId = null }, label = { Text("使用全局选择") })
         data.settings.connections.forEach { connection -> FilterChip(selected = connectionId == connection.id, onClick = { connectionId = connection.id }, label = { Text("${connection.name} · ${connection.model}") }) }
         Row(verticalAlignment = Alignment.CenterVertically) { Text("置顶", Modifier.weight(1f)); Switch(pinned, { pinned = it }) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("允许调用手机", Modifier.weight(1f)); Switch(phoneUse, { phoneUse = it }, modifier = Modifier.testTag("chat-phone-use")) }
+        Text("需要时可搜索手机 App 或执行你的指令；需先开启系统辅助功能。", color = MeloMuted)
     }
 }
 
@@ -128,7 +131,7 @@ import kotlinx.serialization.json.*
     Column { Text("所属项目"); FilterChip(selected = selected == null, onClick = { change(null) }, label = { Text("未绑定") }); data.projects.filterNot { it.archived }.forEach { project -> FilterChip(selected = selected == project.id, onClick = { change(project.id) }, label = { Text(project.name) }) } }
 }
 
-@Composable fun SettingsScreen(data: AppData, runtime: ChatRuntime, vm: MeloViewModel) {
+@Composable fun SettingsScreen(data: AppData, runtime: ChatRuntime, vm: MeloViewModel, onPhoneSettings: () -> Unit = {}) {
     var editing by remember { mutableStateOf<Connection?>(null) }
     var syncEndpoint by remember(data.settings.syncEndpoint) { mutableStateOf(data.settings.syncEndpoint) }
     var syncKey by remember { mutableStateOf("") }
@@ -139,6 +142,7 @@ import kotlinx.serialization.json.*
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { vm.engine.work { vm.repository.exportTo(it); tested = "文字资料已导出，不含凭证与图片文件。" } } }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.engine.work { vm.repository.importFrom(it); tested = "资料已合并导入。" } } }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 30.dp)) {
+        item { TextButton(onClick = onPhoneSettings) { Text("手机控制设置与诊断") } }
         item { SectionLabel("模型连接"); Text("凭证仅在这台设备加密保存，不进入资料同步或导出。", color = MeloMuted) }
         items(data.settings.connections, key = { it.id }) { connection ->
             val credentialStatus by produceState("正在检查本机凭证…", connection.id, editing) {

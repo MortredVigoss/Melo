@@ -28,7 +28,7 @@ class AndroidFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
     private fun ready() = runBlocking { withTimeout(10_000) { app.engine.runtime.first { it.initialized } } }
-    @Test fun deviceModeAndTaskCardsAreEmbeddedInChatAndSurviveRecreation() {
+    @Test fun ordinaryChatContainsDeviceCardsWithoutAModeSwitchAndSurvivesRecreation() {
         ready()
         compose.onNodeWithText("开始新对话").performClick()
         compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
@@ -36,8 +36,8 @@ class AndroidFlowTest {
         val run = DeviceRun(goal = "打开设置并检查页面", connectionName = "Local UI Fixture", status = "blocked", answer = "Fixture：需要登录，未执行后续操作。",
             steps = listOf(DeviceStep("observe", true, "Fixture 观察回执", callId = "fixture-ui")), taskContext = DeviceTaskContext(chat.id, chat.agentId, chat.projectId, "fixture-ui-connection"))
         runBlocking { app.repository.change { it.copy(deviceRuns = it.deviceRuns + run) } }
-        compose.onNodeWithTag("device-mode").performClick()
-        compose.onNodeWithText("希望手机帮你做什么？").assertExists()
+        compose.onNodeWithTag("device-mode").assertDoesNotExist()
+        compose.onNodeWithText("输入消息…").assertExists()
         compose.onNodeWithTag("device-task-${run.id}").assertExists()
         compose.onNodeWithText("查看操作步骤").performScrollTo().performClick()
         compose.onNodeWithText("Fixture：需要登录，未执行后续操作。").assertExists()
@@ -45,7 +45,8 @@ class AndroidFlowTest {
         compose.activityRule.scenario.recreate()
         compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("composer").assertTextContains("保留下一次操作草稿")
-        compose.onNodeWithTag("device-mode").assertIsSelected()
+        compose.onNodeWithTag("device-mode").assertDoesNotExist()
+        compose.onNodeWithTag("chat-cache-open").assertExists()
         compose.onNodeWithTag("device-task-${run.id}").assertExists()
         assertFalse(MeloJson.encodeToString(app.repository.snapshot()).contains("Local UI Fixture"))
         compose.runOnIdle { if (android.os.Build.VERSION.SDK_INT >= 30) compose.activity.window.decorView.windowInsetsController?.hide(android.view.WindowInsets.Type.ime()) }
@@ -198,7 +199,9 @@ class AndroidFlowTest {
         compose.waitUntil(5000) { app.engine.runtime.value.busyChatId == id }
         compose.runOnIdle { compose.activity.moveTaskToBack(true) }
         compose.waitUntil(15_000) { app.repository.data.value.runs.any { it.chatId == id && it.status == "completed" } }
-        app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        // Retain ActivityScenario's launch identity when onNewIntent updates the Activity intent.
+        app.startActivity(Intent(compose.activity.intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        compose.waitUntil(5000) { compose.activity.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED }
         assertEquals(1, app.repository.data.value.chats.first { it.id == id }.messages.count { it.role == "assistant" })
     }
     @Test fun importedExecutionEvidenceReachesTheSharedRenderer() {

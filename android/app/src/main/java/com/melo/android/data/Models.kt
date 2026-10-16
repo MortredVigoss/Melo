@@ -12,7 +12,7 @@ fun now(): String = Instant.now().toString()
 
 @Serializable data class Attachment(val id: String = newId(), val name: String, val mime: String, val file: String)
 @Serializable data class Message(val id: String = newId(), val role: String, val content: String, val createdAt: String = now(), val attachments: List<Attachment> = emptyList(), val runId: String? = null)
-@Serializable data class Conversation(val id: String = newId(), val title: String = "新对话", val createdAt: String = now(), val updatedAt: String = createdAt, val messages: List<Message> = emptyList(), val agentId: String = "main", val projectId: String? = null, val connectionId: String? = null, val archived: Boolean = false, val pinned: Boolean = false)
+@Serializable data class Conversation(val id: String = newId(), val title: String = "新对话", val createdAt: String = now(), val updatedAt: String = createdAt, val messages: List<Message> = emptyList(), val agentId: String = "main", val projectId: String? = null, val connectionId: String? = null, val archived: Boolean = false, val pinned: Boolean = false, val phoneUseEnabled: Boolean = true)
 @Serializable data class Agent(val id: String = newId(), val name: String, val subtitle: String = "", val instructions: String = "", val identity: String = "", val soul: String = "", val systemPrompt: String = "", val mood: String = "warm", val model: String = "") {
     fun prompt(): String = listOf(identity, soul, systemPrompt, instructions).filter(String::isNotBlank).joinToString("\n")
 }

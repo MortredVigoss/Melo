@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 
 data class DeviceApproval(val id: String = newId(), val action: String)
 data class DeviceRuntime(val running: Boolean = false, val runId: String? = null, val phase: String = "", val error: String? = null, val approval: DeviceApproval? = null, val chatId: String? = null, val scriptId: String? = null)
+internal data class ChatDeviceContext(val chat: Conversation, val connection: com.melo.android.data.Connection, val key: String, val instructions: String, val parentRunId: String)
 
 class DeviceAgent(private val context: Context, private val repository: Repository,
                   private val client: DeviceAgentClient = DeviceAgentClient(BuildConfig.DEBUG)) {
@@ -41,15 +42,37 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
     }
     /** One device lease; bind context before the first asynchronous boundary. */
     fun start(goal: String, displayId: Int, screenshots: Boolean, executor: DeviceExecutor? = DeviceAccess.service, chatId: String? = null,
-              forceProbe: Boolean = false, scriptId: String? = null, parameters: Map<String, String> = emptyMap()): Boolean {
+              forceProbe: Boolean = false, scriptId: String? = null, parameters: Map<String, String> = emptyMap()): Boolean =
+        startTask(goal, displayId, screenshots, executor, chatId, forceProbe, scriptId, parameters)
+
+    /** Await exactly this Chat's child. Cancelling the parent also tears down its device lease. */
+    internal suspend fun invoke(goal: String, research: Boolean, binding: ChatDeviceContext, executor: DeviceExecutor? = DeviceAccess.service): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
+        val engine = (context.applicationContext as com.melo.android.MeloApplication).engine
+        if (engine.runtime.value.turns[binding.chat.id]?.runId != binding.parentRunId)
+            return@withContext DeviceToolResult.error("所属对话已停止，未开始手机操作。", "stale_chat")
+        if (!startTask(goal, 0, true, executor, binding.chat.id, research, null, emptyMap(), binding, !research))
+            return@withContext DeviceToolResult.error(mutable.value.error ?: "手机正被其他任务使用。", "device_busy")
+        val owned = job!!
+        try {
+            owned.join(); currentCoroutineContext().ensureActive()
+            val run = repository.data.value.deviceRuns.lastOrNull { it.parentRunId == binding.parentRunId && it.goal == goal.trim() }
+                ?: return@withContext DeviceToolResult.error(mutable.value.error ?: "未取得手机任务回执，请检查辅助功能权限。", "device_unavailable")
+            com.melo.android.chat.ChatPhoneUse.receipt(run, research)
+        } finally {
+            withContext(NonCancellable) { if (owned.isActive) owned.cancelAndJoin() }
+        }
+    }
+
+    private fun startTask(goal: String, displayId: Int, screenshots: Boolean, executor: DeviceExecutor?, chatId: String?,
+                          forceProbe: Boolean, scriptId: String?, parameters: Map<String, String>, binding: ChatDeviceContext? = null, cacheEnabled: Boolean = true): Boolean {
         if (job?.isActive == true || mutable.value.running) { mutable.update { it.copy(error = "已有手机操作任务在运行，请先停止或等待结束；输入已保留。") }; return false }
-        if (chatId != null && (context.applicationContext as com.melo.android.MeloApplication).engine.runtime.value.turns.containsKey(chatId)) { mutable.update { it.copy(error = "这段对话正在生成，请先停止或等待结束。") }; return false }
+        if (binding == null && chatId != null && (context.applicationContext as com.melo.android.MeloApplication).engine.runtime.value.turns.containsKey(chatId)) { mutable.update { it.copy(error = "这段对话正在生成，请先停止或等待结束。") }; return false }
         val state = repository.data.value
-        val chat = chatId?.let { id -> state.chats.find { it.id == id } }
+        val chat = binding?.chat ?: chatId?.let { id -> state.chats.find { it.id == id } }
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
-        val connection = state.settings.connections.find { it.id == connectionId }
+        val connection = binding?.connection ?: state.settings.connections.find { it.id == connectionId }
         val taskContext = chat?.let { DeviceTaskContext(it.id, it.agentId, it.projectId, connection?.id.orEmpty()) }
-        val instructions = if (chat != null) repository.instructions(chat, state) else ""
+        val instructions = binding?.instructions ?: if (chat != null) repository.instructions(chat, state) else ""
         val cacheScope = MessageDigest.getInstance("SHA-256").digest("${chat?.agentId.orEmpty()}|${chat?.projectId.orEmpty()}|$displayId|$instructions".toByteArray()).joinToString("") { "%02x".format(it) }
         val manualScript = scriptId?.let { id -> state.deviceScripts.find { it.id == id } }
         val supplied = parameters.toMap()
@@ -66,7 +89,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 require(scriptId == null || manualScript != null) { "脚本已经被删除。" }
                 suspend fun credentials(): Pair<com.melo.android.data.Connection, String> {
                     val selected = connection ?: error("Cache 未命中或已失效，Probe 需要先配置模型连接。")
-                    val key = repository.credential(selected.id)
+                    val key = binding?.key ?: repository.credential(selected.id)
                     ConnectionPolicy.validate(selected, key, BuildConfig.DEBUG)
                     require(selected.protocol != "fixture") { "Probe 需要支持 Tool Calling 的模型连接；本机脚本命中无需模型。" }
                     return selected to key
@@ -82,11 +105,11 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 val source = lookup.exact?.script ?: lookup.similar.firstOrNull()
                 val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
                 val started = DeviceRun(goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
-                    executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision)
+                    executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision, parentRunId = binding?.parentRunId)
                 run = started
                 repository.change { current ->
                     require(chatId == null || current.chats.any { it.id == chatId }) { "对话已删除。" }
-                    current.copy(deviceRuns = (current.deviceRuns + started).takeLast(50), drafts = if (chatId == null) current.drafts else current.drafts - chatId)
+                    current.copy(deviceRuns = (current.deviceRuns + started).takeLast(50), drafts = if (chatId == null || binding != null || scriptId != null) current.drafts else current.drafts - chatId)
                 }
                 mutable.update { it.copy(running = true, runId = started.id, phase = "正在检查操作缓存…", chatId = chatId, scriptId = source?.id) }
                 device.begin(displayId, screenshots && lookup.exact == null && lookup.similar.isEmpty()); begun = true
@@ -137,7 +160,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         onPhase = { phase -> mutable.update { it.copy(phase = phase) } },
                         onResult = recorder::record,
                     ).run(probeGoal)
-                    if (result.status == "achieved") {
+                    if (result.status == "achieved" && cacheEnabled) {
                         pendingCache = recorder.compile(cacheScope, started.id)
                         if (pendingCache == null) run = run!!.copy(cacheNote = "任务成功；未缓存：${recorder.unsupported.ifBlank { "缺少可重放步骤。" }}")
                     }

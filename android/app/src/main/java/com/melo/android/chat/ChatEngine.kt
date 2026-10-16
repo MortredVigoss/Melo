@@ -5,6 +5,7 @@ import android.content.Intent
 import com.melo.android.BuildConfig
 import com.melo.android.data.*
 import com.melo.android.network.*
+import com.melo.android.device.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -39,6 +40,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
         val connection = state.settings.connections.find { it.id == connectionId }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
+        val phoneUse = chat?.phoneUseEnabled == true && connection?.protocol != "fixture"
+        val skillInstructions = if (phoneUse) ChatPhoneUse.context(instructions) else ""
         val capturedAttachments = attachments.toList()
         mutable.update { it.copy(turns = it.turns + (chatId to ChatTurn()), error = null) }
         val turn = scope.launch(start = CoroutineStart.LAZY) {
@@ -67,13 +70,37 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 }
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
-                    client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
+                    if (!phoneUse) client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
+                    else withTimeout(15 * 60 * 1000L) {
+                        val tools = DeviceAgentClient(BuildConfig.DEBUG, client.http)
+                        ChatToolLoop(connection.protocol,
+                            next = { history -> tools.next(connection, key, history, skillInstructions, chatTools = true) },
+                            invoke = { args ->
+                                currentCoroutineContext().ensureActive()
+                                check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，手机操作已停止。" }
+                                val research = args.text("purpose") == "research"
+                                val researchInstructions = if (research) "\nThis is a live research task. Read the requested facts from current pages and return the findings, app/source, any visible useful links/addresses, and uncertainties in finish.summary (up to 2000 characters). Opening an app alone is not the research goal. Do not send messages, book, purchase or modify account/settings. Never fabricate facts or links. Current device time: ${java.time.ZonedDateTime.now()}." else ""
+                                val receipt = (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.invoke(
+                                    args.text("goal"), research, ChatDeviceContext(chat, connection, key, instructions + researchInstructions, run.id))
+                                currentCoroutineContext().ensureActive()
+                                if (research && receipt.ok) withContext(Dispatchers.Main) {
+                                    runCatching { context.startActivity(Intent(context, com.melo.android.MainActivity::class.java).putExtra("melo_chat_id", chatId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
+                                }
+                                receipt
+                            },
+                            onPhase = { phase -> updateTurn(chatId) { it.copy(partial = phase) } },
+                        ).run(ChatPhoneUse.history(selected, connection.protocol, repository::imageData))
+                    }
                 }
+                currentCoroutineContext().ensureActive()
+                check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }
                 checkpoint.cancelAndJoin(); checkpoint = null
                 val sources = replySources(result.text)
                 val completed = run.copy(status = "completed", finishedAt = now(), partial = result.text, reportedModel = result.model, simulated = result.simulated, sources = sources)
                 val assistant = Message(role = "assistant", content = result.text, runId = run.id)
-                repository.change { current -> current.copy(
+                repository.change { current ->
+                    require(current.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }
+                    current.copy(
                     chats = current.chats.map { if (it.id == chatId) it.copy(messages = it.messages + assistant, updatedAt = now()) else it },
                     runs = current.runs.map { if (it.id == run.id) completed else it },
                     workspace = SyncProtocol.put(current.workspace, "message", assistant.id, completed.messageMetadata(), current.deviceId)) }
