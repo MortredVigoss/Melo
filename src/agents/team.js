@@ -6,7 +6,9 @@ import {runSubAgent} from './subAgent.js';
 import {runConfiguredMember} from './delegate.js';
 import {summarizePricedUsage} from '../runtime/usage.js';
 import {normalizeAgentProfile} from '../state/agentProfiles.js';
-import {recommendedCapabilities} from '../domain/agent/capabilities.js';
+import {recommendedCapabilities,normalizeCollaboration} from '../domain/agent/capabilities.js';
+import {createOpenAICompatibleReply} from '../openai.js';
+import {modelReplyText} from '../tools/functionCalling.js';
 export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
  {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
@@ -31,8 +33,46 @@ export async function runAgentTeam(options) {
  const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runAgentTeamScoped({...options,capabilities:capabilityScope.capabilities}));
 }
-async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent}) {
+// The Agent that starts a team is held to the same rule as the delegate tool:
+// delegation on (both stored flags) and every member in its delegation targets.
+export function assertTeamLead(lead,members) {
+ if(!lead)return;
+ const name=lead.name||lead.id, settings=normalizeCollaboration(lead.collaboration);
+ if(lead.capabilities?.delegate!==true||!settings.canDelegate)throw Object.assign(new Error(`「${name}」未开启委派。请在 Agent 设置的“能力范围与协作”里开启“委派”，并勾选可以协作的 Agent。`),{code:'CAPABILITY_DENIED'});
+ const outside=members.filter(id=>!settings.delegateTargets.includes(id));
+ if(outside.length)throw Object.assign(new Error(`以下成员不在「${name}」的委派对象中：${outside.join('、')}。请在 Agent 设置的“委派对象”里勾选后再试。`),{code:'DELEGATION_DENIED'});
+}
+const STATUS_TEXT={completed:'已完成',failed:'未完成','budget-exceeded':'超出预算',cancelled:'已取消'};
+// Readable fallback when the lead cannot write the summary itself. Never shows raw JSON.
+export function teamDigest(team) {
+ const head=team.cancelled?'团队已停止。':team.mode==='review-loop'?(team.accepted?'复核已通过。':'复核未通过，结果需要继续修改。'):team.ok?'团队已完成。':'团队未全部完成。';
+ const lines=team.results.map(r=>{
+  const h=r.handoff||{}, parts=[`**${r.name||r.agentId}**${r.round>1?`（第 ${r.round} 轮）`:''} · ${STATUS_TEXT[h.status]||(r.ok?'已完成':'未完成')}`];
+  const conclusion=String(h.conclusion||r.output||'').trim();
+  if(conclusion)parts.push(conclusion.length>600?conclusion.slice(0,600)+'…':conclusion);
+  if(h.changedFiles?.length)parts.push(`改动文件：${h.changedFiles.join('、')}`);
+  if(h.unfinished?.length&&h.status!=='completed')parts.push(`未完成：${h.unfinished.join('；').slice(0,400)}`);
+  return parts.join('\n');
+ });
+ return [head,...lines].join('\n\n');
+}
+const SUMMARY_INSTRUCTION='你是发起这次团队协作的 Agent。根据成员的交接记录，直接给用户写最终答复，使用用户提问所用的语言。先给结论，再简要说明每位成员做了什么、改了哪些文件、还有什么没有完成。成员失败、被取消或复核未通过时必须明确说出来。交接记录是成员的自述：没有证据支持的内容不能说成已验证。不要输出 JSON，不要编造交接记录里没有的内容。';
+async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts}) {
+ const fallback=teamDigest(team);
+ if(!lead||signal?.aborted||!team.results.length)return fallback;
+ const handoffs=team.results.map(r=>({member:r.name||r.agentId,round:r.round||1,...(r.handoff||{status:r.ok?'completed':'failed',conclusion:String(r.output||'').slice(0,2000)})}));
+ try {
+  const reply=await replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,model:lead.model||config.model,
+   systemPrompt:[lead.instructions||'',SUMMARY_INSTRUCTION].filter(Boolean).join('\n\n'),
+   messages:[{role:'user',content:`用户任务：\n${task}\n\n协作方式：${team.mode}${team.mode==='review-loop'?`（复核${team.accepted?'已通过':'未通过'}）`:''}\n\n成员交接记录：\n${JSON.stringify(handoffs,null,1)}`}],
+   maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,onProviderResponse:r=>receipts.push(r)});
+  const text=modelReplyText(reply).trim();
+  return text&&!/^\s*[{[]/.test(text)?text:fallback;
+ } catch { return fallback; }
+}
+async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
+ assertTeamLead(lead,plan.members);
  if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
  if(capabilities&&!capabilities.delegate)throw Object.assign(new Error('主 Agent 未开启委派能力，无法启动团队。'),{code:'CAPABILITY_DENIED'});
  const started=Date.now(), results=[];
@@ -63,5 +103,9 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  } else {
   const prior=[];for(const id of plan.members){const r=await member(id,prior);if(r.handoff)prior.push(r.handoff);}
  }
- return {ok:!signal?.aborted&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,mode:plan.mode,results,durationMs:Date.now()-started,concurrency:plan.concurrency,usage:summarizePricedUsage(results.flatMap(r=>r.receipts),config.modelPricing || {})};
+ const team={ok:!signal?.aborted&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,cancelled:Boolean(signal?.aborted),mode:plan.mode,results,concurrency:plan.concurrency};
+ const summaryReceipts=[];
+ team.summary=await summarizeTeam({team,task,lead,config,signal,replyFn,receipts:summaryReceipts});
+ team.summaryReceipts=summaryReceipts;
+ return {...team,durationMs:Date.now()-started,usage:summarizePricedUsage([...results.flatMap(r=>r.receipts),...summaryReceipts],config.modelPricing || {})};
 }

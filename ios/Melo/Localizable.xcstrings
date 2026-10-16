@@ -28806,6 +28806,636 @@
         }
       }
     },
+    "调研 → 实施 → 复核": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调研 → 实施 → 复核"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Research → Build → Review"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "調査 → 実装 → レビュー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조사 → 구현 → 검토"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Investigar → Implementar → Revisar"
+          }
+        }
+      }
+    },
+    "并行调研后复核": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "并行调研后复核"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parallel research, then review"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並行調査のあとレビュー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "병렬 조사 후 검토"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Investigación en paralelo y luego revisión"
+          }
+        }
+      }
+    },
+    "实施 / 复核循环": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实施 / 复核循环"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build / review loop"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実装 / レビューのループ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구현 / 검토 반복"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ciclo de implementación / revisión"
+          }
+        }
+      }
+    },
+    "打开 Agent 设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Agent 设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Agent settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 設定を開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 설정 열기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir ajustes del Agent"
+          }
+        }
+      }
+    },
+    "请先为这个对话选择 Agent。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先为这个对话选择 Agent。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an Agent for this conversation first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にこの会話の Agent を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 이 대화의 Agent를 선택하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero elige un Agent para esta conversación."
+          }
+        }
+      }
+    },
+    "「{0}」未开启委派。在 Agent 设置的“能力范围与协作”里开启“委派”，并勾选可以协作的 Agent。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」未开启委派。在 Agent 设置的“能力范围与协作”里开启“委派”，并勾选可以协作的 Agent。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“{0}” cannot delegate yet. In Agent settings → Capabilities and collaboration, turn on Delegate and select the Agents it may work with."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」は委任がオフです。Agent 設定の「機能範囲と協働」で「委任」をオンにし、協働できる Agent を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」은(는) 위임이 꺼져 있습니다. Agent 설정의 ‘기능 범위와 협업’에서 ‘위임’을 켜고 함께 일할 Agent를 선택하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«{0}» no puede delegar. En Ajustes del Agent → Capacidades y colaboración, activa Delegar y elige con qué Agents puede trabajar."
+          }
+        }
+      }
+    },
+    "「{0}」还没有可协作的 Agent。在 Agent 设置的“委派对象”里勾选后再来。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」还没有可协作的 Agent。在 Agent 设置的“委派对象”里勾选后再来。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“{0}” has no Agents to work with yet. Select them under Delegation targets in Agent settings."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」にはまだ協働できる Agent がありません。Agent 設定の「委任先」で選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」에는 아직 함께 일할 Agent가 없습니다. Agent 설정의 ‘위임 대상’에서 선택하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«{0}» aún no tiene Agents con quienes trabajar. Elígelos en Destinos de delegación, en los ajustes del Agent."
+          }
+        }
+      }
+    },
+    "执行输入框中的团队任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行输入框中的团队任务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run the composer text as a team task"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力欄の内容をチームで実行"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력창 내용을 팀 작업으로 실행"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar el texto del editor como tarea de equipo"
+          }
+        }
+      }
+    },
+    "保存为项目默认团队": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存为项目默认团队"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as the project's default team"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトの既定チームとして保存"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 기본 팀으로 저장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar como equipo predeterminado del proyecto"
+          }
+        }
+      }
+    },
+    "由「{0}」发起并汇总结果。成员按列表顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由「{0}」发起并汇总结果。成员按列表顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Led and summarized by “{0}”. Members work in list order; in parallel mode the last one reviews; the loop needs exactly two: the first builds, the second reviews."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」が開始し、結果をまとめます。メンバーは一覧の順に引き継ぎます。並行モードでは最後の 1 人がレビューし、ループでは 2 人ちょうど（先に実装、次にレビュー）が必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{0}」이(가) 시작하고 결과를 정리합니다. 구성원은 목록 순서대로 이어서 작업하며, 병렬 모드에서는 마지막 구성원이 검토하고, 반복 모드에는 정확히 두 명(먼저 구현, 다음 검토)이 필요합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo inicia y resume «{0}». Los miembros trabajan en el orden de la lista; en modo paralelo el último revisa; el ciclo necesita exactamente dos: el primero implementa y el segundo revisa."
+          }
+        }
+      }
+    },
+    "每个成员都会独立调用模型；整个团队有总时间和总用量上限，超出后不再启动新成员。停止对话会取消所有成员。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个成员都会独立调用模型；整个团队有总时间和总用量上限，超出后不再启动新成员。停止对话会取消所有成员。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each member calls the model separately. The team has an overall time and usage limit; once reached, no new member starts. Stopping the conversation cancels every member."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各メンバーは個別にモデルを呼び出します。チーム全体に時間と使用量の上限があり、超えると新しいメンバーは開始されません。会話を停止するとすべてのメンバーが取り消されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 구성원은 모델을 따로 호출합니다. 팀 전체에 시간과 사용량 한도가 있으며, 초과하면 새 구성원은 시작되지 않습니다. 대화를 중지하면 모든 구성원이 취소됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada miembro llama al modelo por separado. El equipo tiene un límite total de tiempo y uso; al alcanzarlo no empieza ningún miembro nuevo. Detener la conversación cancela a todos."
+          }
+        }
+      }
+    },
+    "多 Agent 协作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多 Agent 协作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multi-Agent collaboration"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マルチ Agent 協働"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다중 Agent 협업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Colaboración entre Agents"
+          }
+        }
+      }
+    },
+    "协作方式": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "协作方式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collaboration mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "協働の方法"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "협업 방식"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo de colaboración"
+          }
+        }
+      }
+    },
+    "协作面板不可用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "协作面板不可用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The collaboration panel is unavailable."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "協働パネルを利用できません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "협업 패널을 사용할 수 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El panel de colaboración no está disponible."
+          }
+        }
+      }
+    },
+    "请至少勾选一位成员。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少勾选一位成员。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select at least one member."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバーを 1 人以上選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구성원을 한 명 이상 선택하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige al menos un miembro."
+          }
+        }
+      }
+    },
+    "实施 / 复核循环需要正好勾选两位成员。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实施 / 复核循环需要正好勾选两位成员。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The build / review loop needs exactly two members."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実装 / レビューのループには、ちょうど 2 人のメンバーが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구현 / 검토 반복에는 정확히 두 명의 구성원이 필요합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El ciclo de implementación / revisión necesita exactamente dos miembros."
+          }
+        }
+      }
+    },
+    "请先在输入框写下团队任务。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在输入框写下团队任务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write the team task in the composer first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に入力欄にチームのタスクを書いてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 입력창에 팀 작업을 작성하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero escribe la tarea del equipo en el editor."
+          }
+        }
+      }
+    },
+    "开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With Delegate on, this Agent can hand work to the Agents selected below and start a multi-Agent team. Agents not selected cannot be delegated to or join its team."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「委任」をオンにすると、この Agent は下で選んだ Agent に作業を任せたり、マルチ Agent 協働を始めたりできます。選ばれていない Agent には委任もチーム参加もできません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘위임’을 켜면 이 Agent는 아래에서 선택한 Agent에게 작업을 맡기거나 다중 Agent 협업을 시작할 수 있습니다. 선택하지 않은 Agent는 위임받거나 팀에 참여할 수 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con Delegar activado, este Agent puede pasar trabajo a los Agents marcados abajo e iniciar un equipo. Los Agents no marcados no pueden recibir delegaciones ni unirse al equipo."
+          }
+        }
+      }
+    },
     "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。": {
       "extractionState": "manual",
       "localizations": {

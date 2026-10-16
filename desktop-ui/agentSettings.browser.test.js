@@ -60,13 +60,13 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('.agent-capabilities>summary').click();
   await form.locator('[name=cap_readFiles]').check();
   await form.locator('[name=cap_mcpServers][value=playwright]').check();
-  await form.locator('[name=canDelegate]').check();
-  await form.locator('[name=canDelegate]').uncheck();
+  await form.locator('[name=cap_delegate]').check();
+  await form.locator('[name=cap_delegate]').uncheck();
   await form.locator('.agent-channels>summary').click();
   assert.equal(await form.locator('[name^=telegram],[data-channel-id=telegram]').count(),0);
   await form.locator('[data-action=switch-agent-channel-tab][data-channel-id=discord]').click();
   assert.equal(await form.locator('.agent-channels').getAttribute('open'),'');
-  assert.equal(await form.locator('[name=canDelegate]').isChecked(),false);
+  assert.equal(await form.locator('[name=canDelegate]').count(),0);assert.equal(await form.locator('[name=cap_delegate]').isChecked(),false);
   await form.locator('[name=discordChannelId]').fill('fixture-channel');
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   const saved=(await boot()).customize.agents.find(a=>a.id===id);

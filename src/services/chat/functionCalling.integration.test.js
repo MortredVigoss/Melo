@@ -95,17 +95,36 @@ test('main chat never executes calls from a truncated stream or a cancelled turn
 
 test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{
  const cap={...emptyCapabilities(),delegate:true};
- const profiles={main:{id:'main',name:'Main',instructions:'parent',model:'parent',capabilities:cap},research:{id:'research',name:'Research',instructions:'research persona',model:'research-model',capabilities:emptyCapabilities()},reviewer:{id:'reviewer',name:'Reviewer',instructions:'review persona',model:'review-model',capabilities:emptyCapabilities()}};
- const h=await harness(t,round=>done([{...message,content:[{type:'output_text',text:JSON.stringify({conclusion:'result '+round,evidence:['fixture source'],changedFiles:[],unfinished:[],review:'approve'}),annotations:[]}]}]),{text:'比较这些选择',profiles,teamPlan:{members:['research','reviewer'],mode:'sequential'}});
+ const profiles={main:{id:'main',name:'Main',instructions:'parent',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research','reviewer']}},research:{id:'research',name:'Research',instructions:'research persona',model:'research-model',capabilities:emptyCapabilities()},reviewer:{id:'reviewer',name:'Reviewer',instructions:'review persona',model:'review-model',capabilities:emptyCapabilities()}};
+ const h=await harness(t,round=>done([{...message,content:[{type:'output_text',text:round<3?JSON.stringify({conclusion:'result '+round,evidence:['fixture source'],changedFiles:[],unfinished:[],review:'approve'}):'lead summary of both members',annotations:[]}]}]),{text:'比较这些选择',profiles,teamPlan:{members:['research','reviewer'],mode:'sequential'}});
  const result=await h.run();
- assert.equal(h.requests.length,2);
- assert.deepEqual(h.requests.map(r=>r.body.model),['research-model','review-model']);
+ // Two members, then one summary request written by the lead with its own model and persona.
+ assert.equal(h.requests.length,3);
+ assert.deepEqual(h.requests.map(r=>r.body.model),['research-model','review-model','parent']);
+ assert.match(JSON.stringify(h.requests[2].body),/parent/);
+ assert.match(JSON.stringify(h.requests[2].body),/result 1/);
+ assert.match(JSON.stringify(h.requests[2].body),/result 2/);
+ assert.equal(result.normalizedReply.content,'lead summary of both members');
  assert.match(JSON.stringify(h.requests[0].body),/research persona/);
  assert.match(JSON.stringify(h.requests[1].body),/review persona/);
  assert.match(JSON.stringify(h.requests[1].body),/result 1/);
  assert.ok(h.requests.every(r=>!(r.body.tools||[]).some(t=>t.type==='web_search'||t.type==='image_generation'||t.name==='bash')));
  assert.equal(h.events.filter(e=>e.event.handoff).length,2);
- assert.match(result.normalizedReply.content,/result/);
+});
+test('a team is refused before any member request when the lead has not chosen that member',async t=>{
+ const cap={...emptyCapabilities(),delegate:true};
+ const profiles={main:{id:'main',name:'Main',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research']}},research:{id:'research',name:'Research',model:'research-model',capabilities:emptyCapabilities()},reviewer:{id:'reviewer',name:'Reviewer',model:'review-model',capabilities:emptyCapabilities()}};
+ const h=await harness(t,()=>done([message]),{text:'比较这些选择',profiles,teamPlan:{members:['research','reviewer'],mode:'sequential'}});
+ await assert.rejects(h.run(),/reviewer/);
+ assert.equal(h.requests.length,0);
+});
+test('a team is refused when the lead has the capability on but the synced delegation flag off',async t=>{
+ const cap={...emptyCapabilities(),delegate:true};
+ const profiles={main:{id:'main',name:'Main',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research']}},research:{id:'research',name:'Research',model:'research-model',capabilities:emptyCapabilities()}};
+ const off={...profiles,main:{...profiles.main,collaboration:{canDelegate:false,delegateTargets:['research','reviewer']}}};
+ const h2=await harness(t,()=>done([message]),{text:'比较这些选择',profiles:off,teamPlan:{members:['research'],mode:'sequential'}});
+ await assert.rejects(h2.run(),/未开启委派/);
+ assert.equal(h2.requests.length,0);
 });
 
 

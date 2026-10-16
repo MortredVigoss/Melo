@@ -21,7 +21,8 @@ export function buildAgentProfilePatch(form, formData) {
     const flags=['readFiles','writeFiles','runCommands','network','knowledgeMemory','generateMedia','delegate'];
     patch.capabilities={version:1,...Object.fromEntries(flags.map(k=>[k,formData.get('cap_'+k)==='on'])),...Object.fromEntries(['skills','mcpServers','connectors'].map(k=>[k,choiceList('cap_'+k)]))};
     if(hasFormField('capabilityMigrationExpected')) patch.capabilityMigrationExpected=String(formData.get('capabilityMigrationExpected'));
-    patch.collaboration={canDelegate:formData.get('canDelegate')==='on',delegateTargets:choiceList('delegateTargets'),maxDelegationDepth:Number(formData.get('maxDelegationDepth')||1),maxIterations:Number(formData.get('maxIterations')||8),maxTokens:Number(formData.get('maxTokens')||32000),timeoutMs:Number(formData.get('timeoutMs')||180000)};
+    // One delegation switch: the capability flag also sets the synced collaboration flag.
+    patch.collaboration={canDelegate:formData.get('cap_delegate')==='on',delegateTargets:choiceList('delegateTargets'),maxDelegationDepth:Number(formData.get('maxDelegationDepth')||1),maxIterations:Number(formData.get('maxIterations')||8),maxTokens:Number(formData.get('maxTokens')||32000),timeoutMs:Number(formData.get('timeoutMs')||180000)};
     patch.contextSources=Object.fromEntries(['projects','knowledge','memory'].map(k=>[k,formData.get('context_'+k)==='on']));
   }
   assignString('name');

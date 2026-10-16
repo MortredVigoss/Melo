@@ -41,3 +41,30 @@ test('serial team roles inherit one bound connection despite changing process de
   }});assert.equal(result.ok,true);assert.deepEqual(seen,['selected-role-model','selected-role-model']);
  }finally{if(previous===undefined)delete process.env.MELO_MODEL;else process.env.MELO_MODEL=previous;}
 });
+
+const lead={id:'main',name:'Lead',instructions:'lead persona',model:'lead-model',capabilities:{delegate:true},collaboration:{canDelegate:true,delegateTargets:['research','reviewer']}};
+const handoffOutput=conclusion=>JSON.stringify({conclusion,evidence:[],changedFiles:['a.js'],unfinished:[]});
+test('the lead writes the reply from member handoffs and its request is counted in team cost',async()=>{
+ const calls=[];
+ const team=await runAgentTeam({plan:{members:['research','reviewer']},task:'compare',lead,config:{model:'m',modelPricing:{'lead-model':{input:1,output:1,cached:0,cacheWrite:0}}},
+  run:async()=>({ok:true,output:handoffOutput('member finding')}),
+  replyFn:async options=>{calls.push(options);options.onProviderResponse({requestedModel:'lead-model',usage:{input:10,output:5,cached:0,cacheWrite:0}});return 'Lead summary';}});
+ assert.equal(calls.length,1);assert.equal(calls[0].model,'lead-model');assert.match(calls[0].systemPrompt,/lead persona/);
+ assert.match(calls[0].messages[0].content,/member finding/);assert.equal(calls[0].nativeWebSearchEnabled,false);
+ assert.equal(team.summary,'Lead summary');assert.equal(team.summaryReceipts.length,1);
+});
+test('a failed, JSON-shaped or cancelled summary falls back to a readable digest without raw JSON',async()=>{
+ for(const replyFn of [async()=>{throw new Error('down');},async()=>'{"conclusion":"x"}']){
+  const team=await runAgentTeam({plan:{members:['research']},task:'t',lead,config:{},run:async()=>({ok:true,output:handoffOutput('found it')}),replyFn});
+  assert.match(team.summary,/团队已完成/);assert.match(team.summary,/found it/);assert.match(team.summary,/a\.js/);assert.doesNotMatch(team.summary,/[{}]/);
+ }
+ const controller=new AbortController();let summaries=0;
+ const team=await runAgentTeam({plan:{members:['research']},task:'t',lead,config:{},signal:controller.signal,run:async()=>{controller.abort();throw new Error('stop');},replyFn:async()=>{summaries++;return 'x';}});
+ assert.equal(summaries,0);assert.match(team.summary,/团队已停止/);
+});
+test('a lead without delegation or with an unchosen member starts no member',async()=>{
+ let started=0;const run=async()=>{started++;return {ok:true,output:'x'};};
+ await assert.rejects(runAgentTeam({plan:{members:['research','builder']},task:'t',lead,config:{},run}),/builder/);
+ await assert.rejects(runAgentTeam({plan:{members:['research']},task:'t',lead:{...lead,collaboration:{...lead.collaboration,canDelegate:false}},config:{},run}),/未开启委派/);
+ assert.equal(started,0);
+});

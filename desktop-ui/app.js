@@ -45,6 +45,7 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { renderTeamPanel, collectTeamPlan } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
@@ -1639,6 +1640,17 @@ function agentProfileById(agentId) {
 
 function mainAgentProfile() {
   return agentProfileById('main');
+}
+
+// A task runs in a chat owned by the task's Agent inside the task's project,
+// so its team is led by that Agent with the project's overrides applied.
+function taskTeamLead(task) {
+  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:task.projectId || null});
+  return agents.find(agent => agent.id === (task.owner || 'main')) || null;
+}
+
+function composerTeamPlan() {
+  return null;
 }
 
 function activeChatAgentProfile() {
@@ -6786,7 +6798,7 @@ function renderTaskPanel({ compact = false } = {}) {
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
                       ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? ui`<details class="quality-details"><summary>多Agent协作 · 职责与费用</summary><p>每个成员都会独立调用模型；仅服务报告用量时计数。含执行成员时串行运行，调查与复核最多并发 2 个。停止对话会取消所有成员。</p><select id="team-plan-${task.id}"><option value="parallel-research">并行调研</option><option value="research-build-review">调研 → 实施 → 复核</option><option value="review-loop">实施 / 复核循环（最多 2 轮）</option></select><button class="small-button" data-action="run-task-team" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>按此分工执行</button></details>` : ''}
+                      ${task.status !== 'running' ? renderTeamPanel({scope:'task',target:task.id,lead:taskTeamLead(task),agents:conversationAgents(uiState.bootstrap,{overview:true,newProjectId:task.projectId || null}),disabled:uiState.sending,escapeHtml}) : ''}
                       ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各成员结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
                       ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
                       ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
@@ -6946,7 +6958,7 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
-                <details class="conversation-context"><summary>多 Agent 协作</summary><input class="input" id="chat-team-members" placeholder="成员 Agent ID，逗号分隔；空为默认成员"><select id="chat-team-template"><option value="research-build-review">调研 → 实施 → 复核</option><option value="parallel-research">并行调研</option><option value="review-loop">实施 / 复核循环</option></select><button type="button" class="small-button" data-action="run-chat-team" ${uiState.sending?'disabled':''}>执行输入框中的团队任务</button></details>
+                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:uiState.sending,escapeHtml})}
                 ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
@@ -8052,14 +8064,16 @@ function renderAgentCapabilities(selected,draft) {
   const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
   if (!c) return '';
   const value=k=>draft?.['cap_'+k] ?? c[k];
-  const checked=k=>value(k)===true||value(k)==='on';
   const collaboration=draft?.collaboration || selected.collaboration || {};
+  // One visible switch for delegation. Execution requires both stored flags, so
+  // older data where they disagree shows (and behaves) as off.
+  const checked=k=>(value(k)===true||value(k)==='on')&&(k!=='delegate'||draft?.['cap_delegate']!==undefined||collaboration.canDelegate===true);
   const pending=selected.pendingCapabilityChange;
   const settingText=value=>typeof value==='boolean'?t(value?'开启':'关闭'):Array.isArray(value)?value.join(', '):String(value);
   const pendingChanges=pending ? [
     ...Object.entries(selected.capabilityLabels||{}).filter(([key])=>pending.requested.capabilities[key]&&!selected.capabilities?.[key]).map(([,label])=>label),
     ...[['mcpServers','MCP 服务'],['skills','技能'],['connectors','连接器']].flatMap(([key,label])=>pending.requested.capabilities[key].filter(id=>!selected.capabilities?.[key]?.includes(id)).map(id=>`${t(label)}: ${id}`)),
-    ...[['canDelegate','允许委派'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
+    ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
   return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
@@ -8069,7 +8083,8 @@ function renderAgentCapabilities(selected,draft) {
     ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
     <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(uiState.bootstrap.customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):uiState.bootstrap.customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
-    <div class="agent-settings-grid"><label class="checkbox-row"><input type="checkbox" name="canDelegate" ${(draft?.canDelegate !== undefined ? draft.canDelegate === 'on' : collaboration.canDelegate)?'checked':''}>允许委派</label>
+    <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
+    <div class="agent-settings-grid">
     ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,uiState.bootstrap.customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
     ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
     </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
@@ -12206,12 +12221,17 @@ document.addEventListener('click', async event => {
         break;
       case 'run-chat-team': {
         const chat=activeChat(), content=uiState.composer.trim();
-        if(!content) {showError('请先在输入框写下团队任务。');break;}
-        await handleSendMessage({chatId:chat?.id,content,teamPlan:{templateId:document.getElementById('chat-team-template')?.value || 'research-build-review',...(document.getElementById('chat-team-members')?.value?.trim()?{members:document.getElementById('chat-team-members').value.split(',').map(s=>s.trim()).filter(Boolean)}:{})}});break;
+        if(!content) {showError(t('请先在输入框写下团队任务。'));break;}
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        await handleSendMessage({chatId:chat?.id,content,teamPlan:team.plan});break;
       }
-      case 'run-task-team':
-        await handleRunTask(trigger.dataset.taskId, {templateId:document.getElementById(`team-plan-${trigger.dataset.taskId}`)?.value || 'research-build-review'});
+      case 'run-task-team': {
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        await handleRunTask(trigger.dataset.taskId, team.plan);
         break;
+      }
       case 'run-task':
         await handleRunTask(trigger.dataset.taskId);
         break;

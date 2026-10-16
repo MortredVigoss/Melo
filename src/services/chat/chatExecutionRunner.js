@@ -493,9 +493,10 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask || teamPlan) {
-          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]))});
-          modelResponses.push(...team.results.flatMap(r=>r.receipts));
-          return {reply:team.results.map(r=>`${r.role} · ${r.ok ? '已交付，待核对' : '需要修复'}\n${r.output}`).join('\n\n'),team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}`,toolName:`成员 ${r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
+          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile});
+          modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
+          // The lead's summary is the reply; member handoffs stay in the execution record.
+          return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
         }
         if (env.MELO_DEBUG_VISION === '1') {
           for (const [index, message] of graphState.modelMessages.entries()) {
