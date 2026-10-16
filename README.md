@@ -132,7 +132,9 @@ File and command tools follow Melo's permission and workspace rules. Built-in MC
 
 On iPhone, calendar, reminders, contacts, and location access is opt-in on that device, with separate per-Agent grants and iOS permission checks. Writes require confirmation. These grants stay local and are not copied from desktop permissions. Availability is limited to the supported ChatGPT connection path; API and image requests do not gain system-data tools.
 
-Image requests use natural conversation instructions, including edits with a reference photo; no separate image mode is required. Saved-image counts show actual completed results, not an invented percentage for a provider that reports no internal progress.
+Image requests use natural conversation instructions, including edits with a reference photo; no separate image mode is required. Saved-image counts show actual completed results, not an invented percentage for a provider that reports no internal progress. Image previews support continuous zoom. On iPhone, photo saves show persistent feedback, block concurrent duplicate writes, and ask before saving another copy.
+
+iPhone file access is limited to app-owned files and files or folders explicitly selected through the system picker. Selected-folder grants can be revoked locally; they do not provide unrestricted access to the phone or synchronize permissions to another device.
 
 Provider connections, image engines, synchronization, and remote channels are independently configured. Real-account availability, background behavior on iOS, and third-party service limits need validation in the environment where you use them.
 
