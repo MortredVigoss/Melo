@@ -16,7 +16,7 @@
 
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
-| Android / Mobile Use | Kotlin / Compose 客户端与原生 AccessibilityService Agent 已实现；0.2.3 上轮已覆盖 Fold6。本地 `554776b` 保存 Home 修复，`7c2fe6f` 合入最新 `origin/master`（`2e8b533`），现转入 `codex/mobile-use-features` | 本轮 36 JVM、Debug 构建、90 同步与 41 schema / contract 回归通过；上轮 17 runtime / Release / signature 不是本轮复验。Launcher 搜索到游戏的完整实机结论待验，聊天内嵌与新增 iPhone Agent / team 能力未移植到 Android |
+| Android / Mobile Use | Kotlin / Compose 客户端与原生 AccessibilityService Agent 已实现；0.2.3 上轮已覆盖 Fold6。本地 `554776b` 保存 Home 修复，`7c2fe6f` 合入 `origin/master`（`2e8b533`），当前 `codex/mobile-use-features` | 合并基线 36 JVM / Debug / 90 sync / 41 contract 已过；最新审视另跑全 JS：3608 pass / 15 fail / 19 skip，不能称全绿。执行结果语义、动态 UI、恢复与聊天会话关联为下一阶段重点；见 [审视与路线](docs/mobile-use-repo-review-20261016.md) |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | WSL Android 客户端、原生屏幕助手、App discovery 与 Home freshness；当前 `codex/mobile-use-features` 保留全部 Android 历史并合入最新主线 | 10-16 36 JVM / Debug / 90 sync / 41 contract 通过；历史 Fold6 0.2.3 安装和 Home 实看通过，游戏入口复测上轮中断。详见 `android/verification.md`；后续继续 Mobile Use |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 当前 `codex/mobile-use-features`；已完成基于 `964bc7b` 的跨模块源码 / 测试审视，只增加审视与交接文档 | 全 JS 3642 项：3608 pass / 15 fail / 19 skip；6 个 WSL 文件身份测试独立复现失败，另 9 个为 Chrome / Ruby 环境缺口。13 项发现及分阶段验收见 [审视](docs/mobile-use-repo-review-20261016.md)；尚未开始新产品实现 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -447,3 +447,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 先以 `554776b` 保存上轮已验但未提交的 0.2.3 Home 修复；`git pull --no-rebase origin master` 合入 `2e8b533`，merge 为 `7c2fe6f`。仅 README / PROGRESS 冲突：保留新版主线说明与归档，并保留 Android 入口和五条本地进度；package scripts 同时保留双方入口。
 - 合并后逐字核对 `android/` 与本地修复一致、`ios/` / `mobile-sync/` / `shared/protocol/` 与上游一致；本轮 36 JVM tests / Debug 构建、90 mobile-sync tests、41 schema / contract tests 全通过。日志在本会话 `work/melo-mobile-branch-{android,sync}.log`。
 - 本轮只同步代码与本地分支，未使用真实 provider、操作手机或发布。旧 runtime / Release / 安装证据不充当合并后实机验收；下一步继续原生 Launcher / 搜索恢复的完整实机验证，游戏启动尚无完成结论。
+
+### 2026-10-16 — Android / Mobile Use — repo 审视与下一步
+
+- 线程 ID：`01a13a56-c8c5-7d21-a108-d761aee8c657`；用户要求全面审视 repo 并决定下一步。基线 `964bc7b`，范围为三端架构、Android 工具与聊天、Node 权限/文件工具、同步契约与构建检查；不是逐行全库审查。
+- 新跑 `npm run test:unit`：3642 tests，3608 pass / 15 fail / 19 skip。8 个浏览器失败缺 Chrome 默认路径，1 项缺 Ruby；6 个文件身份替换检查在单独重跑也失败。临时目录对照：未持有 FD 20/20 复用编号，持有 FD 0/20；仅本机 WSL 证据，不外推 macOS 或 Android 点击执行器。
+- [详细审视](docs/mobile-use-repo-review-20261016.md) 含 13 项发现、源码行号、重现入口和验收边界。建议先补 Mobile Use TaskOutcome / 动态目标校验 / 有界恢复，再处理按对话 Job 和聊天内嵌；并行修本地测试基线、Android gate、Kotlin 行为契约。存储与 UI 热点先按基准/变更边界治理。
+- 本轮产品源码、用户数据、凭证与实机保持；只增加审视和交接文档。报告不将成功 Tool、模型结束语、代码量或旧测试计数当作当前真实任务完成率；下一阶段实现尚未开始。
