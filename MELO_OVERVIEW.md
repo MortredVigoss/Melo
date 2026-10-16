@@ -18,6 +18,7 @@
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
+| Android / Chat Phone Use | 用户确认普通 Chat 按需 invoke 内置 Skill；0.5.0 接线 WIP，已移除模式切换 | JVM 109 与首轮新增 5 项 Native 链路通过；完整 runtime / 最终包 / Fold6 仍待验，不能按首轮测试推断交付；[已认可设计](docs/specs/2026-10-17-chat-phone-use-design.md)。微信输入后置 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -494,3 +495,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 99 JVM / 34 Android runtime、Lint / Debug / R8 / signature / alignment 通过；同证书覆盖安装保留 7 Chat / 1 角色与其他辅助服务。安装 APK SHA 与交付一致。
 - 最终 0.4.2 同包 folded 968×2376、unfolded 1856×2160 均强制 Probe，均 3 steps / 3 model requests、com.tencent.mm / 0 节点，模型明确确认画面可读，finish 重查通过。只读，原消息发送任务未重跑；[详细证据](docs/evidence/wechat-window-042-20261017.json)。
 - 参考 AutoInput 的讨论另用外部 Windows ADB 验证微信搜索字段“新截图 → 坐标点击 → ASCII 输入 → 截图核对 → 清除”可行，0 消息发送。它不是 Melo 生产输入功能，中文 / 新 IME / Shizuku / MediaProjection 未接入；Fold Cache 布局隔离仍待做。没有私聊截图入仓库，没有推送 / git pp 或整个 repo gate。
+
+### 2026-10-17 — Android / Chat Phone Use — 已认可设计与接线检查点
+
+- 线程 `01a13a56-c8c5-7d21-a108-d761aee8c657`；用户明确“生硬”来自单独入口，希望普通 Chat invoke Skill，并回复 Go ahead。采用高层 phone_use Tool 调用现有 DeviceAgent，原 Chat 继续整理结果；不以关键词分类或另装插件替代。微信输入暂缓。
+- 当前代码 WIP：统一 Chat 输入、按需执行、每 Chat 能力开关、Cache 管理；research 实时 Probe，action 复用已有 Cache。子任务捕获同一模型 / 角色 / 项目，停止联动，查询返回所属 Chat，保留下一条草稿。
+- JVM 109 与首轮新增 5 项 Native 链路通过；原后台测试暴露 launch identity / teardown 问题，已修正夹具；第二轮因 Emulator 内存耗尽中断，不计通过。最终 gate、签名包与实机尚待验，不称全交付。[设计](docs/specs/2026-10-17-chat-phone-use-design.md)。
