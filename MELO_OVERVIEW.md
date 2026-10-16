@@ -21,7 +21,7 @@
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
 | 双端 Logo | 10-16 简洁低饱和黑金 M 已替换双端正式资源；电脑已实际安装 | 17 个资源散列、尺寸/alpha、安装包签名、Finder 新图标、原生启动及资料核对通过；手机资源已更新但实体包未安装，见 [交接](docs/design/logo-muted-20261016/README.md) |
-| 桌面神经总览 | 放大、五区分段图标和中枢加密已在 `b96c48a`；当前核心 JS 无未提交差异 | 347 项是 10-10 历史 UI 回归；加密后的 GPU/功耗、现安装包和用户最终验收未复验；样式后续 WIP 见设计线程 |
+| 桌面神经总览 | `b96c48a` 的空间布局保留；10-16 双端星点核心提清、云雾收薄、暗尘带分层 | 21 项场景回归、24 组 Swift 与模拟器构建通过；桌面已刷新，手机离线资源已更新、实体安装待验；[本轮证据](docs/galaxy-clarity-20261016.md) |
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
@@ -57,7 +57,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | --- | --- | --- |
 | 桌面壳 / CLI | `desktop-app/main.swift`、`src/index.js` | 原生生命周期、安装启动和命令入口；核对实际 app / PID / home |
 | 桌面界面 | `desktop-ui/app.js`、`neural*.css`、`executionPanel*` | 暗色神经导航、聊天、设置、执行回看；局部更新保留焦点与草稿 |
-| 神经导航 / 场景 | `desktop-ui/neuralLayout.js`、`neuralMotion.js`、`neuralShell.js`、`neuralSatellite.js`、`neuralScene3D.js` / `neuralScene.js` | 同一空间模型驱动 DOM、GPU/Canvas 与拾取；分段五色图标、三阶段导航、内部密度；已提交与后续样式 WIP 分界见 UI 交接 |
+| 神经导航 / 场景 | `desktop-ui/neuralLayout.js`、`neuralMotion.js`、`neuralShell.js`、`neuralSatellite.js`、`neuralScene3D.js` / `neuralScene.js` | 同一空间模型驱动 DOM、GPU/Canvas 与拾取；10-16 两端共享清晰星核与薄云层，布局/持续动画不变，见 UI 交接 |
 | 传输 / 路由 | `src/server.js`、`src/http/` | HTTP/SSE、来源检查、声明式路由与生命周期；不承载新增领域业务 |
 | 请求运行边界 | `src/runtime/requestContext.js`、`requestScope.js`、`processOwnership.js` | 入口捕获 home、环境、身份、路径和取消信号；异步执行不重读可变全局 home |
 | 领域服务 | `src/services/`；`src/desktopStore.js` 为兼容入口 | chat / task / settings / agent / workspace 等业务；新增业务放领域服务 |
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 简洁低饱和黑金 M 已替换双端资源并安装电脑 | 原程序字节保留，Finder 图标、原生启动与资料验证通过；[本轮图标证据](docs/design/logo-muted-20261016/README.md)，[历史神经 UI](docs/handoffs/melo-ui-20261015.md) |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 双端首页银河清晰度微调已验证，源码与资源同步 | 桌面原生刷新、手机尺寸对照、21 场景/24 Swift 及模拟器构建通过；手机实体待装，[银河证据](docs/galaxy-clarity-20261016.md)；[此前图标交付](docs/design/logo-muted-20261016/README.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |

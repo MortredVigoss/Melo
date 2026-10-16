@@ -46,26 +46,26 @@ export function createNeuralScene(initialHost) {
    // Cool charcoal recedes; warm silver rims reveal the edges of opaque dust.
    dust.forEach((p,i)=>{
      const x=width*(.27+(p.x-.5)*.48),y=height*(.5+(p.x-.5)*.60+(p.y-.5)*.28);
-     haze(sky,x,y,(30+p.r*105)*Math.min(width/1200,1.5),i%5===0?'148,146,139':i%3===0?'53,58,65':'99,76,43',.008+p.a*p.a*.043);
+     haze(sky,x,y,(26+p.r*86)*Math.min(width/1200,1.5),i%5===0?'148,146,139':i%3===0?'53,58,65':'99,76,43',.006+p.a*p.a*.035);
    });
-   haze(sky,width*.22,height*.51,Math.min(width,height)*.29,'98,76,35',.16);
+   haze(sky,width*.22,height*.51,Math.min(width,height)*.26,'98,76,35',.13);
    // Narrow dark absorption lanes cut through the cloudy long-lens field.
    for(let i=0;i<20;i++)haze(sky,width*(.10+i*.018),height*(.31+i*.021+Math.sin(i)*.04),height*.065,'5,5,4',.3);
    grains.forEach((p,i)=>{
      const x=width*(.28+(p.x-.5)*.72),y=height*(.50+(p.x-.5)*.66+(p.y-.5)*.25*Math.sin(p.x*8+1));
-     sky.fillStyle=`rgba(${i%4===0?'151,148,139':'161,126,69'},${.012+Math.pow(p.r,3)*.11})`;sky.fillRect(x,y,.4+p.r*.6,.4+p.r*.6);
+     sky.fillStyle=`rgba(${i%4===0?'151,148,139':'161,126,69'},${.018+Math.pow(p.r,3)*.14})`;sky.fillRect(x,y,.4+p.r*.6,.4+p.r*.6);
    });
    // Foreground extinction cuts holes through the denser luminous dust.
    for(let i=0;i<32;i++)haze(sky,width*(.055+i*.015),height*(.3+i*.014+Math.sin(i*.6)*.04),height*(.025+(i%4)*.008),'2,3,5',.48);
    cloud.clearRect(0,0,width,height);
    dust.slice(0,75).forEach((p,i)=>{
      const x=width*(.29+(p.x-.5)*.55),y=height*(.52+(p.x-.5)*.7+(p.y-.5)*.12);
-     haze(cloud,x,y,18+p.r*62,i%3===0?'179,166,140':'87,91,98',.01+Math.pow(p.a,3)*.075);
+     haze(cloud,x,y,16+p.r*50,i%3===0?'179,166,140':'87,91,98',.008+Math.pow(p.a,3)*.060);
    });
    stars.forEach(s=>{
      const x=s.x*width,y=s.y*height,a=.11+Math.pow(s.r,3)*.55;
-     sky.fillStyle=`rgba(169,154,126,${a*.3})`;sky.beginPath();sky.arc(x,y,.25+Math.pow(s.r,6)*1.15,0,Math.PI*2);sky.fill();
-     if(s.r>.985){haze(sky,x,y,6,'194,180,153',.22);sky.strokeStyle='rgba(221,211,192,.18)';sky.lineWidth=.5;sky.beginPath();sky.moveTo(x-4,y);sky.lineTo(x+4,y);sky.moveTo(x,y-4);sky.lineTo(x,y+4);sky.stroke();}
+     sky.fillStyle=`rgba(169,154,126,${a*.38})`;sky.beginPath();sky.arc(x,y,.25+Math.pow(s.r,6)*1.15,0,Math.PI*2);sky.fill();
+     if(s.r>.985){haze(sky,x,y,4.5,'194,180,153',.18);sky.strokeStyle='rgba(221,211,192,.18)';sky.lineWidth=.5;sky.beginPath();sky.moveTo(x-4,y);sky.lineTo(x+4,y);sky.moveTo(x,y-4);sky.lineTo(x,y+4);sky.stroke();}
    });
  }
  function point(n){

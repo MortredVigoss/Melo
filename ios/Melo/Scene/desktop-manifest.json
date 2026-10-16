@@ -1,8 +1,8 @@
 {
   "desktop-ui/i18n.js": "3c69314c66d65d77063b192c2f7cf9df6f2da81d88c06fc1791b82c6b43e41fe",
   "desktop-ui/translations.js": "7bde9a9c45befe9e40d60d3d6657e90ab291830b848fd6858281213c507f0595",
-  "desktop-ui/neuralScene3D.js": "6458bec8558d5386e60ae890a2bdecd772c735ac103b88348f67cd44a00ab25e",
-  "desktop-ui/neuralScene.js": "492d8c7911c2336e682556f1b896bc8f27eba7c608549feb4128d1366cbca812",
+  "desktop-ui/neuralScene3D.js": "020e8dbe4697f4c0ec53fed8936deede947a9edc48f942a2735882ad493681d8",
+  "desktop-ui/neuralScene.js": "0c66032eb0dc83bb38c4dccd798465f7f4a7e4a2fdd79eafa85dfe2efae2f3b6",
   "desktop-ui/neuralSatellite.js": "2a89fce4ea91acaf3516a2d5028543af9986ba1dcf8f040c3c8f17322510f92e",
   "desktop-ui/executionDetails.js": "f4200dffd3228b2a815689eb376c63371d0897f3a665542a5c47092b272dba55",
   "desktop-ui/executionPanel.js": "bb399d5ffc4435765d5010d1ade3b5c88c9e32d204f49356290aeb159440c2a4",
