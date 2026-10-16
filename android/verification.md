@@ -1,5 +1,11 @@
 # Android verification — 2026-10-15
 
+## 2026-10-16 主线合并后的检查
+
+已保存 0.2.3 修复为 `554776b`，合入 `origin/master` 的 `2e8b533`（merge `7c2fe6f`），并切换至 `codex/mobile-use-features`。README / PROGRESS 冲突保留双方说明与进度；Android 源码逐字保持，主线的 iPhone scene / sync schema 原样保留。
+
+合并后 36 项 JVM tests、Debug APK 构建、90 项 mobile-sync tests、41 项 schema / contract tests 通过。日志为本会话 `work/melo-mobile-branch-android.log` 与 `work/melo-mobile-branch-sync.log`。本轮未运行 Android runtime / Release / 实机或真实模型，以下结果是各历史版本当时的验收范围；0.2.3 上轮已实看 Home 成功回到 Launcher，完整游戏启动复测因中断尚无结论。
+
 ## 0.2.3 让 Home 导航不被进度更新误判为过期
 
 0.2.2 已覆盖安装到 Fold6（保留配置和记录）。用户明确同意暂时停止使用手机，由 Melo 使用现有 Modal 连接执行“搜索并打开 Hearthstone，仅停在启动画面，不进入对局”。真实记录共 9 个工具步骤：搜索已遍历 265 个可启动 App catalog（Hearthstone / 炉石 / blizzard 均无匹配），模型随后主动使用 observe → home 回退 Launcher；但 Melo 自身运行进度与记录更新改变目标窗口 generation，使每次 Home 都被 freshness guard 拒绝。模型如实报告未打开游戏；此轮未进入对局、安装 App 或更改权限 / 设置。

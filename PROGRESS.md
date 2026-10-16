@@ -1,3 +1,9 @@
+## 2026-10-16 — 在最新主线基础上隔离后续 Mobile Use 开发
+
+用户要求 pull 并为现有工作创建新分支；Codex 保留 Android 历史与未提交修复，合入最新主线后切换到 codex/mobile-use-features。
+说明与进度冲突同时保留双方内容；Android 源码与保存的修复一致，iPhone / sync / shared protocol 与拉取的主线一致。
+本轮 36 JVM、Debug 构建、90 同步与 41 contract 回归通过；未将上轮 runtime 或实机结果当成本轮验证。工作区供下一步 Mobile Use 继续，游戏启动复测仍待完成。
+
 ## 2026-10-16 — 保存已验证的 Home 修复，准备继续 Mobile Use
 
 用户要求拉取最新主线并将当前 Mobile 工作转入新分支；Codex 先保存上轮中断前未提交的修复，不丢弃现有 Android 工作。

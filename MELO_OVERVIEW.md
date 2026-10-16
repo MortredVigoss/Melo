@@ -5,6 +5,7 @@
 ## 1. 先看这里
 
 - 真正产品仓库：`/Users/mortred/Desktop/melo/Melo Desktop Project`。Codex 当前保存项目 `New project` 指向 `/Users/mortred/Documents/New project`，不能混淆。
+- Android / Mobile Use 本会话使用 Windows 主机上的 WSL checkout `/home/zhouy/workplace/Melo`（同一 GitHub origin），当前分支 `codex/mobile-use-features`；此路径与上面的 macOS checkout 分属不同主机。
 - 本文保存当前事实、架构边界、跨线程交接和待验事项；`PROGRESS.md` 保存意图时间线；专项文档保存详细证据；Git 保存代码历史。`codex.md` 是自动生成快照，不手改。
 - 接手顺序：本文 → `CLAUDE.md` → `git status --short` → 本次模块的实际 diff / 源码与证据。正常工作不用完整回读线程。
 - 记录缺失、线程更新时间晚于交接、源码与文档冲突时，只定向读该线程近期相关轮次，再补本文；不要靠旧总结覆盖新代码。
@@ -15,6 +16,7 @@
 
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
+| Android / Mobile Use | Kotlin / Compose 客户端与原生 AccessibilityService Agent 已实现；0.2.3 上轮已覆盖 Fold6。本地 `554776b` 保存 Home 修复，`7c2fe6f` 合入最新 `origin/master`（`2e8b533`），现转入 `codex/mobile-use-features` | 本轮 36 JVM、Debug 构建、90 同步与 41 schema / contract 回归通过；上轮 17 runtime / Release / signature 不是本轮复验。Launcher 搜索到游戏的完整实机结论待验，聊天内嵌与新增 iPhone Agent / team 能力未移植到 Android |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -72,6 +74,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 记忆 / 检索 | `src/memory/`、`src/retrieval/`、`src/runtime/derivedIndexing.js` | 内置 ONNX 多语 embedding worker、本地 SQLite/FTS/向量、事实作用域与增量派生；使用记录只计实际进入 prompt |
 | 执行事件 | `src/shared/executionScene.js`、`executionMetadata.js`、`src/services/chat/executionPipeline.js` | 真实工具/模型轮次、公开摘要、结果、token/耗时白名单；未知保持未知，历史查看不重跑 |
 | 手机原生 | `ios/Melo/ChatStore.swift`、`ContentView.swift`、`SettingsView.swift`、`MeloApp.swift` | 本机聊天、角色、草稿、设置、图片和前后台；桌面关机不应阻断独立聊天 |
+| Android 原生 / 手机操作 | `android/app/src/main/java/com/melo/android/`；`device/DeviceAgent.kt`、`MeloAccessibilityService.kt`、`AppCatalog.kt` | Kotlin / Compose 独立聊天；模型按观察与真实回执循环操作。完整 catalog 搜索后分页、相似候选不代选；取消 / 息屏停止；凭证用本机 Keystore，原始屏幕与 App 列表不落盘同步。Android 与 iPhone 功能边界分别验收 |
 | 手机授权 | `CodexOAuth.swift`、`ChatGPTAccount.swift`、`CodexLoginView.swift`、`Keychain.swift` | 设备码 / PKCE / 身份签名 / 刷新；新键 `codexAccounts`，连接 ID 保留 `chatgpt`；不复制桌面 token |
 | 手机同步 / 共享渲染 | `mobile-sync/`、`ios/Melo/SyncWorkspace.swift`、`ios/Melo/Scene/`、`ios/scripts/build-scene.py` | schema 生成 JS/Swift 约束与共用样例；共享资源 manifest/hash；同步不是模型登录 |
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
@@ -108,6 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | WSL Android 客户端、原生屏幕助手、App discovery 与 Home freshness；当前 `codex/mobile-use-features` 保留全部 Android 历史并合入最新主线 | 10-16 36 JVM / Debug / 90 sync / 41 contract 通过；历史 Fold6 0.2.3 安装和 Home 实看通过，游戏入口复测上轮中断。详见 `android/verification.md`；后续继续 Mobile Use |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -436,3 +440,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 项目可设默认 Agent（项目内新对话使用）和默认团队，只存电脑、不进同步。计划与验证边界见 [协作整合](docs/agent-team-20261016.md)。
 - 未验证：真实模型下的汇总质量；用户现有 Agent 委派均为关闭，需用户自行开启。手机端无团队功能。
 - 手机端团队（同分支）：手机按同一规则在本机运行团队（同步的协作设置决定谁能组队；成员单次文字调用，联网需发起者与成员都在本机开启；15 分钟总时间，无 token 总上限）。控制栏“团队”只作用于下一条消息。共享契约新增交接、计划、执行顺序三组；模拟器经真实发送路径验证。未验证：真实账号、实体机。
+
+### 2026-10-16 — Android / Mobile Use — 保留手机工作并更新主线
+
+- 线程 ID：`01a13a56-c8c5-7d21-a108-d761aee8c657`；用户要求 pull 后开新分支继续 Mobile Use。WSL checkout `/home/zhouy/workplace/Melo`，当前 `codex/mobile-use-features`。
+- 先以 `554776b` 保存上轮已验但未提交的 0.2.3 Home 修复；`git pull --no-rebase origin master` 合入 `2e8b533`，merge 为 `7c2fe6f`。仅 README / PROGRESS 冲突：保留新版主线说明与归档，并保留 Android 入口和五条本地进度；package scripts 同时保留双方入口。
+- 合并后逐字核对 `android/` 与本地修复一致、`ios/` / `mobile-sync/` / `shared/protocol/` 与上游一致；本轮 36 JVM tests / Debug 构建、90 mobile-sync tests、41 schema / contract tests 全通过。日志在本会话 `work/melo-mobile-branch-{android,sync}.log`。
+- 本轮只同步代码与本地分支，未使用真实 provider、操作手机或发布。旧 runtime / Release / 安装证据不充当合并后实机验收；下一步继续原生 Launcher / 搜索恢复的完整实机验证，游戏启动尚无完成结论。
