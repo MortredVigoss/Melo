@@ -5911,6 +5911,12 @@ select option {
 .conversation-context > summary { cursor:pointer; list-style:none; padding:8px 10px; border-radius:18px; background:rgba(200,180,130,.07); }
 .conversation-context-menu { position:absolute; z-index:60; bottom:calc(100% + 10px); right:0; width:min(320px,80vw); max-height:360px; overflow:auto; padding:16px; border:1px solid rgba(220,200,150,.2); border-radius:16px; background:rgba(15,18,23,.97); box-shadow:0 15px 55px #0007; backdrop-filter:blur(24px); }
 .conversation-context-menu p { font-size:12px; line-height:1.6; color:var(--text-secondary); }
+/* Team panel copy matches the neighbouring context menu wherever the panel is placed. */
+.team-panel p { font-size:12px; line-height:1.6; color:var(--text-secondary); font-weight:400; }
+.team-panel .context-materials { display:grid; gap:6px; margin:8px 0; }
+.team-panel select { margin:6px 0 8px; }
+/* The team chip sits left of “项目与资料”; open toward the composer's free side so the menu is never clipped. */
+.conversation-context.team-panel > .conversation-context-menu { right:auto; left:0; }
 .context-materials { display:grid; gap:10px; margin-top:12px; }
 .context-materials label { display:flex; gap:8px; align-items:start; }
 .context-materials input { accent-color:#cdb786; }

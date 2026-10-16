@@ -15,6 +15,8 @@ import { validateConversationSelection } from '../chat/conversationSelection.js'
 // defaultProjectTime to the 2-arg version in projectService.js). Same
 // import path desktopStore.js uses.
 import { normalizeProject } from '../../state/stateHydration.js';
+import { validateTeamPlan } from '../../agents/team.js';
+import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 
 export async function createProject({ name, summary, instructions, tag, workspacePath }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createProject(...arguments));
@@ -58,6 +60,14 @@ export async function updateProject(projectId, patch) {
 
     const safePatch={...patch};
     delete safePatch.workspaceConfirmation;delete safePatch.confirmWorkspace;
+    const agentIds=allAgentIdsFromProfiles(state.agentProfiles);
+    if (Object.hasOwn(patch,'defaultAgentId') && patch.defaultAgentId && !agentIds.includes(patch.defaultAgentId)) throw new Error('默认 Agent 不存在。');
+    if (Object.hasOwn(patch,'teamPlan') && patch.teamPlan) {
+      const plan=validateTeamPlan(patch.teamPlan);
+      const missing=plan.members.filter(id=>!agentIds.includes(id));
+      if (missing.length) throw new Error(`团队成员 Agent 不存在：${missing.join('、')}`);
+      safePatch.teamPlan={templateId:plan.templateId||'research-build-review',members:plan.members};
+    }
     if (patch.confirmWorkspace===true) {
       const candidate=normalizeProject({...project,...safePatch});
       const status=await projectWorkspaceStatus(candidate);

@@ -45,7 +45,7 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
-import { renderTeamPanel, collectTeamPlan } from './teamPanel.js';
+import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
@@ -1649,8 +1649,15 @@ function taskTeamLead(task) {
   return agents.find(agent => agent.id === (task.owner || 'main')) || null;
 }
 
+// Inside a project the composer starts from the project's saved team.
 function composerTeamPlan() {
-  return null;
+  const projectId = !uiState.neuralOverview && activeChat() ? activeChat().projectId : uiState.newChatProjectId;
+  return uiState.bootstrap?.projects?.find(project => project.id === projectId)?.teamPlan || null;
+}
+
+function projectDefaultAgentId(projectId) {
+  const id = uiState.bootstrap?.projects?.find(project => project.id === projectId)?.defaultAgentId;
+  return id && conversationAgents(uiState.bootstrap).some(agent => agent.id === id) ? id : '';
 }
 
 function activeChatAgentProfile() {
@@ -3761,7 +3768,7 @@ function showTranscriptToast(text) {
 }
 
 async function startProjectSession(projectId, mode) {
-  await handleCreateChat({ projectId, mode });
+  await handleCreateChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
 }
 
 async function handleSendMessage(prepared = null) {
@@ -7883,6 +7890,20 @@ function renderProjectCreateForm() {
   `;
 }
 
+function renderProjectAgentDefaults(project) {
+  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:project.id});
+  const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
+  const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
+  return ui`<section class="surface-card project-detail-panel project-agent-defaults">
+    <h2 class="subsection-title">Agent 与协作</h2>
+    <label class="label">默认 Agent<select class="input" data-project-default-agent="${escapeHtml(project.id)}" ${project.archived ? 'disabled' : ''}><option value="">不指定（沿用当前选择）</option>${options}</select></label>
+    <p class="meta-label">在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。</p>
+    <h3 class="subsection-title">默认团队</h3>
+    ${renderTeamPanel({scope:'project',target:project.id,lead,agents,plan:project.teamPlan,disabled:project.archived,escapeHtml,open:true})}
+    ${project.teamPlan ? ui`<p class="meta-label">已保存默认团队：${escapeHtml(project.teamPlan.members.map(id => agents.find(agent => agent.id === id)?.name || id).join('、'))}</p><button type="button" class="small-button is-outline" data-action="clear-project-team" data-project-id="${escapeHtml(project.id)}">清除默认团队</button>` : ''}
+  </section>`;
+}
+
 function renderProjectsDetailView(project) {
   const relatedChats = activeProjectChats();
   const relatedArtifacts = activeProjectArtifacts();
@@ -7996,6 +8017,7 @@ function renderProjectsDetailView(project) {
           </section>
 
           <aside class="project-detail-aside">
+            ${renderProjectAgentDefaults(project)}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
@@ -11492,6 +11514,15 @@ document.addEventListener('click', async event => {
           activeView: 'projects',
         });
         break;
+      case 'save-project-team': {
+        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
+        if(team.error) {showError(t(team.error));break;}
+        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:team.plan}}})); } catch(error) { showError(error.message); }
+        break;
+      }
+      case 'clear-project-team':
+        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:null}}})); } catch(error) { showError(error.message); }
+        break;
       case 'chat-from-project':
         await startProjectSession(trigger.dataset.projectId, 'chat');
         break;
@@ -12702,13 +12733,24 @@ document.addEventListener(
 document.addEventListener('change', async event => {
   const target = event.target;
   if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
+  if (target.dataset?.projectDefaultAgent) {
+    try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
+    catch(error) { showError(error.message); }
+    render(); return;
+  }
   if (target.dataset?.chatContext) {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
     try {
       if (uiState.sending) throw new Error('请等待当前回复结束后再修改。');
       if (chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch}}));
-      else if (Object.hasOwn(patch,'projectId')) uiState.newChatProjectId = patch.projectId;
+      else if (Object.hasOwn(patch,'projectId')) {
+        uiState.newChatProjectId = patch.projectId;
+        // Picking a project for a new chat switches to that project's default Agent; the picker can still change it.
+        const projectAgent = projectDefaultAgentId(patch.projectId);
+        if (projectAgent) uiState.activeChatAgentId = projectAgent;
+      }
       else {
         const notes=uiState.bootstrap.artifacts.filter(a=>patch.contextArtifactIds.includes(a.id));
         if(notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length,0)>24000) throw new Error('最多选用 8 份、合计 24000 字资料。');

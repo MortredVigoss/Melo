@@ -29121,37 +29121,37 @@
         }
       }
     },
-    "由「{0}」发起并汇总结果。成员按列表顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。": {
+    "由「{0}」发起并汇总结果。成员按勾选顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "由「{0}」发起并汇总结果。成员按列表顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。"
+            "value": "由「{0}」发起并汇总结果。成员按勾选顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Led and summarized by “{0}”. Members work in list order; in parallel mode the last one reviews; the loop needs exactly two: the first builds, the second reviews."
+            "value": "Led and summarized by “{0}”. Members work in the order you tick them; in parallel mode the last one reviews; the loop needs exactly two: the first builds, the second reviews."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "「{0}」が開始し、結果をまとめます。メンバーは一覧の順に引き継ぎます。並行モードでは最後の 1 人がレビューし、ループでは 2 人ちょうど（先に実装、次にレビュー）が必要です。"
+            "value": "「{0}」が開始し、結果をまとめます。メンバーはチェックした順に引き継ぎます。並行モードでは最後の 1 人がレビューし、ループでは 2 人ちょうど（先に実装、次にレビュー）が必要です。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "「{0}」이(가) 시작하고 결과를 정리합니다. 구성원은 목록 순서대로 이어서 작업하며, 병렬 모드에서는 마지막 구성원이 검토하고, 반복 모드에는 정확히 두 명(먼저 구현, 다음 검토)이 필요합니다."
+            "value": "「{0}」이(가) 시작하고 결과를 정리합니다. 구성원은 선택한 순서대로 이어서 작업하며, 병렬 모드에서는 마지막 구성원이 검토하고, 반복 모드에는 정확히 두 명(먼저 구현, 다음 검토)이 필요합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lo inicia y resume «{0}». Los miembros trabajan en el orden de la lista; en modo paralelo el último revisa; el ciclo necesita exactamente dos: el primero implementa y el segundo revisa."
+            "value": "Lo inicia y resume «{0}». Los miembros trabajan en el orden en que los marques; en modo paralelo el último revisa; el ciclo necesita exactamente dos: el primero implementa y el segundo revisa."
           }
         }
       }
@@ -29432,6 +29432,286 @@
           "stringUnit": {
             "state": "translated",
             "value": "Con Delegar activado, este Agent puede pasar trabajo a los Agents marcados abajo e iniciar un equipo. Los Agents no marcados no pueden recibir delegaciones ni unirse al equipo."
+          }
+        }
+      }
+    },
+    "Agent 与协作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 与协作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents and collaboration"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent と協働"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent와 협업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents y colaboración"
+          }
+        }
+      }
+    },
+    "默认 Agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认 Agent"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定の Agent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 Agent"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent predeterminado"
+          }
+        }
+      }
+    },
+    "不指定（沿用当前选择）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不指定（沿用当前选择）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None (keep the current choice)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指定しない（現在の選択のまま）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지정 안 함(현재 선택 유지)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguno (mantener la selección actual)"
+          }
+        }
+      }
+    },
+    "在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used for new conversations in this project, and it leads the team. Agent permissions inside a project can only be stricter than the global ones."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトで新しい会話を始めるときに使い、チームもこの Agent が開始します。プロジェクト内の Agent 権限はグローバル設定より厳しくすることしかできません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프로젝트에서 새 대화를 시작할 때 사용하며, 팀도 이 Agent가 시작합니다. 프로젝트 안의 Agent 권한은 전역 설정보다 엄격하게만 할 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa en las conversaciones nuevas de este proyecto y dirige el equipo. Los permisos del Agent dentro del proyecto solo pueden ser más estrictos que los globales."
+          }
+        }
+      }
+    },
+    "已保存默认团队：{0}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存默认团队：{0}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved default team: {0}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済みの既定チーム：{0}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 기본 팀: {0}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equipo predeterminado guardado: {0}"
+          }
+        }
+      }
+    },
+    "清除默认团队": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除默认团队"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear default team"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定チームを解除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 팀 지우기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar equipo predeterminado"
+          }
+        }
+      }
+    },
+    "执行顺序：{0}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行顺序：{0}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Order: {0}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行順：{0}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 순서: {0}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orden: {0}"
+          }
+        }
+      }
+    },
+    "默认团队": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认团队"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default team"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定のチーム"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 팀"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equipo predeterminado"
           }
         }
       }
