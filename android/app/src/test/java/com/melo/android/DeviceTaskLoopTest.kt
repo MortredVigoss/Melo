@@ -123,4 +123,51 @@ class DeviceTaskLoopTest {
         assertEquals(1, traces.count { it.code == "discovery_required" })
         assertTrue(traces.any { it.action == "list_apps" && it.ok })
     }
+    @Test fun animatedScreensAndInterleavedObservationsCannotHideRepeatedLaunches() = runBlocking {
+        var decisions = 0; var launches = 0
+        val traces = mutableListOf<DeviceStep>()
+        val outcome = DeviceTaskLoop("chat-completions", { history ->
+            if (decisions >= 4) assertTrue(history.toString().contains("same app twice"))
+            turn("c${decisions}", args(if (decisions++ % 2 == 0) "open_app" else "observe", "package_name" to "fixture.app"))
+        }, {
+            if (it.text("action") == "open_app") launches++
+            val observed = screen(id = newId(), text = "Animation ${newId()}")
+            DeviceToolResult(observed.data, "changing-pixels-${newId()}")
+        }, { traces += it }).run("Open fixture")
+        assertEquals("blocked", outcome.status); assertEquals(2, launches)
+        assertEquals(5, decisions); assertEquals("repeated_launch", traces.last().code)
+    }
+    @Test fun launchNameAndResolvedPackageShareTheSameAttemptBudget() = runBlocking {
+        val turns = ArrayDeque(listOf(turn("a", args("open_app", "app_name" to "Fixture")), turn("b", args("open_app", "package_name" to "fixture.app")), turn("c", args("open_app", "app_name" to "Fixture"))))
+        var launches = 0
+        val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, {
+            launches++; DeviceToolResult(JsonObject(screen().data + ("target_package" to "fixture.app".jp())), "changing-$launches")
+        }, {}).run("Open fixture")
+        assertEquals("blocked", result.status); assertEquals(2, launches)
+    }
+    @Test fun repeatedLaunchCanRecoverByFinishingWithVisibleEvidence() = runBlocking {
+        val turns = ArrayDeque(listOf(turn("a", args("open_app", "package_name" to "fixture.app")), turn("b", args("open_app", "package_name" to "fixture.app")), turn("done", finish())))
+        val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, { screen() }, {}).run("Open fixture")
+        assertEquals("achieved", result.status); assertEquals("visible_facts", result.verification)
+    }
+    @Test fun launchingAnAppDoesNotAutomaticallyCompleteAMultiStepGoal() = runBlocking {
+        val turns = ArrayDeque(listOf(turn("open", args("open_app", "package_name" to "fixture.app")), turn("done", finish(text = "Bluetooth")), turn("blocked", finish("blocked"))))
+        val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, { screen(text = "Settings") }, {}).run("Open settings and find Bluetooth")
+        assertEquals("blocked", result.status); assertNull(result.verification)
+    }
+    @Test fun navigationAllowsAnIntentionalReturnToTheSameAppEntry() {
+        val guard = DeviceLaunchGuard(); val launch = args("open_app", "package_name" to "fixture.app")
+        repeat(2) { guard.record(launch, screen()) }; assertEquals(2, guard.count(launch))
+        guard.record(args("back", "screen_id" to "s1"), screen()); assertEquals(0, guard.count(launch))
+        guard.record(launch, screen()); assertEquals(1, guard.count(launch))
+    }
+    @Test fun completionReobservesTheSelectedPaneInsteadOfTheOtherActivePane() = runBlocking {
+        val turns = ArrayDeque(listOf(turn("left", buildJsonObject { put("action", "observe"); put("window_id", 17) }), turn("done", finish())))
+        val windows = mutableListOf<Int>()
+        val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, {
+            windows += it["window_id"]!!.jsonPrimitive.int
+            DeviceToolResult(JsonObject(screen().data + ("window_id" to JsonPrimitive(17))))
+        }, {}).run("Check the main pane")
+        assertEquals("achieved", result.status); assertEquals(listOf(17, 17), windows)
+    }
 }

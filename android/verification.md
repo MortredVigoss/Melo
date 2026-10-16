@@ -1,5 +1,13 @@
 # Android verification — 2026-10-16
 
+## 0.3.1 Fold6 实机循环修复
+
+真实 Fold6 的 0.3.0 已打开设置，却重复 launch 并耗尽 30 步；这次失败推翻“Fixture 已通过就等于实机完成”的推断。0.3.1 增加独立 launch 限制、already_foreground、新的并列 pane 观察 / 选择和所选窗口完成重查。
+
+第一份 0.3.1 Preview 已覆盖安装，3 段聊天 / 1 个角色计数保留，原模型 Key 没有读取或迁移。真实模型在“打开设置”5 步、“进入 Bluetooth 页面且不切开关”10 步均通过 finish 重查；系统窗口 metadata 和任务记录分别核对。后续同 App modal 防护以最终本机 gate 验证；APK hash / 验证层级分开，见 [实机证据与边界](../docs/mobile-use-fold6-20261016.md)。
+
+以下 0.3.0 gate 是当时 Fixture 结果，不代表后续实机或新代码验收。
+
 ## 0.3.0 Mobile Use Core 与聊天内嵌
 
 - 当前源码通过 59 项 JVM tests、Lint（0 errors）、Debug 与优化 Release 构建；24 项 Android 16 Emulator runtime tests 全部通过，无 skip。另有 9 项工程 gate tests 与 856 个 JS 文件语法检查通过。

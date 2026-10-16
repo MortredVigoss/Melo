@@ -67,6 +67,7 @@ class DeviceTaskLoop(
     suspend fun run(goal: String): DeviceOutcome {
         val history = DeviceAgentClient.initial(protocol, goal)
         val progress = DeviceProgress()
+        val launches = DeviceLaunchGuard()
         var latestScreen: DeviceToolResult? = null
         var previous: DeviceToolResult? = null
         var recovery = 0
@@ -96,16 +97,21 @@ class DeviceTaskLoop(
             val action = call.arguments.text("action")
             onPhase("第 $step 步 · $action")
             val started = System.nanoTime()
+            val repeatedLaunch = action == "open_app" && launches.count(call.arguments) >= 2
             val result = try {
                 DeviceTools.validate(call.arguments)
-                if (action == "finish") {
+                if (repeatedLaunch) DeviceToolResult.error("同一 App 已反复请求打开；已停止重复执行。请检查现有页面或缩小目标。", "repeated_launch")
+                else if (action == "finish") {
                     if (call.arguments.text("outcome") != "achieved" && previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
                         discoveryRecovery = true
                         DeviceToolResult.error("Before concluding the app is unavailable, search ALL apps using list_apps(query=shorter name/alternate name/package fragment) and inspect candidates/pagination, or home + observe and launcher search. Do not repeat failing arguments, install apps or change permissions. If still blocked or ambiguous, finish honestly; this recovery is offered only once.", "discovery_required")
                     }
                     else if (call.arguments.text("outcome") != "achieved") DeviceToolResult(buildJsonObject { put("ok", true) })
                     else if (latestScreen?.data?.text("screen_id") != call.arguments.text("screen_id")) DeviceToolResult.error("请使用最近 screen_id。", "stale_evidence")
-                    else DeviceCompletion.verify(call.arguments, latestScreen, execute(buildJsonObject { put("action", "observe") }))
+                    else DeviceCompletion.verify(call.arguments, latestScreen, execute(buildJsonObject {
+                        put("action", "observe")
+                        latestScreen?.data?.get("window_id")?.jsonPrimitive?.intOrNull?.let { put("window_id", it) }
+                    }))
                 } else execute(call.arguments)
             } catch (e: IllegalArgumentException) { DeviceToolResult.error("工具参数不符合执行契约，请检查 action 与必需字段。", "invalid_arguments") }
             currentCoroutineContext().ensureActive()
@@ -118,6 +124,9 @@ class DeviceTaskLoop(
             }
             onStep(DeviceStep(action, result.ok, detail, callId = call.id, durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code"), recoveryCount = recovery))
             DeviceAgentClient.appendResult(history, protocol, call, result)
+            launches.record(call.arguments, result)
+            if (repeatedLaunch) return DeviceOutcome("blocked", error = result.data.text("error"))
+            if (action == "open_app" && launches.count(call.arguments) >= 2) history += message("You have already requested this same app twice. Do not call open_app for it again without a meaningful navigation action. Inspect the returned package_name, window_title and related_windows. A foldable app can show a main navigation pane and a different detail pane simultaneously; use observe(window_id=...) for a related pane. If the requested visible goal is already satisfied, call finish with evidence now. Otherwise navigate toward the remaining goal or finish blocked; repeatedly launching is not progress.")
             previous = result
             if (result.data.text("code") == "user_declined") return DeviceOutcome("needs_user", error = "本步操作未获允许；已停止，未自动重试。")
             if (result.data.text("screen_id").isNotBlank() && result.ok) latestScreen = result

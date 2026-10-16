@@ -52,6 +52,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private var overlayManager: WindowManager? = null
     private var confirmationButton: Button? = null
     private var sessionApps: AppCatalog? = null
+    private var lastLaunchTarget = ""
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (authorized && intent?.action == Intent.ACTION_SCREEN_OFF) { (application as MeloApplication).deviceAgent.cancel(); end() }
@@ -95,10 +96,10 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             title = "Melo device assistant stop"
         }
         wm.addView(stop, params); overlayManager = wm; overlay = stop
-        sessionApps = null; authorized = true; invalidateObservation()
+        sessionApps = null; lastLaunchTarget = ""; authorized = true; invalidateObservation()
     }
     override fun end() {
-        authorized = false; sessionApps = null; invalidateObservation()
+        authorized = false; sessionApps = null; lastLaunchTarget = ""; invalidateObservation()
         confirmationButton?.let { runCatching { overlayManager?.removeView(it) } }; confirmationButton = null
         overlay?.let { runCatching { overlayManager?.removeView(it) } }; overlay = null; overlayManager = null
     }
@@ -110,15 +111,27 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         check(!getSystemService(KeyguardManager::class.java).isKeyguardLocked) { "手机已锁屏，请解锁后重新开始。" }
         check(getSystemService(DisplayManager::class.java).getDisplay(selectedDisplay) != null) { "所选 Display 已断开。" }
     }
-    private fun activeWindow(): AccessibilityWindowInfo {
+    private fun readableWindows(): List<AccessibilityWindowInfo> {
         val windows = if (Build.VERSION.SDK_INT >= 30) windowsOnAllDisplays[selectedDisplay].orEmpty() else windows
-        return windows.filter { it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY && it.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD && it.root != null }
-            .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive }.thenByDescending { it.isFocused }.thenByDescending { it.layer }).firstOrNull()
+        return windows.filter { it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY && it.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD && it.root?.isVisibleToUser == true }
+            .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive }.thenByDescending { it.isFocused }.thenByDescending { it.layer })
+    }
+    private fun activeWindow(): AccessibilityWindowInfo = readableWindows().firstOrNull()
             ?: error("无法读取此 Display 的窗口，请让目标 App 保持可见。")
+    private fun identity(window: AccessibilityWindowInfo): DeviceWindowIdentity {
+        val rect = Rect().also(window::getBoundsInScreen)
+        return DeviceWindowIdentity(window.id, window.root?.packageName?.toString().orEmpty(), listOf(rect.left, rect.top, rect.right, rect.bottom))
+    }
+    private fun selectedWindow(id: Int?): AccessibilityWindowInfo {
+        val windows = readableWindows()
+        val active = windows.firstOrNull() ?: error("无法读取此 Display 的窗口，请让目标 App 保持可见。")
+        if (id == null || id == active.id) return active
+        return windows.firstOrNull { it.id == id && it.type == AccessibilityWindowInfo.TYPE_APPLICATION && DeviceWindowPolicy.sameApp(identity(active), identity(it)) }
+            ?: throw DeviceExecutionException("stale_screen", "所选窗口已不可见或不属于前台 App，请重新 observe。")
     }
     private fun requireFresh(arguments: JsonObject, contentSensitive: Boolean = true) {
         if (!(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000)) throw DeviceExecutionException("stale_screen", "屏幕已变化或 observation 已过期，请重新 observe。")
-        val current = activeWindow(); val currentBounds = Rect().also(current::getBoundsInScreen)
+        val current = selectedWindow(windowId); val currentBounds = Rect().also(current::getBoundsInScreen)
         if (current.id != windowId || currentBounds != bounds) throw DeviceExecutionException("stale_screen", "窗口或尺寸已改变，请重新 observe。")
     }
     private fun target(node: AccessibilityNodeInfo): DeviceTarget {
@@ -161,6 +174,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         try {
             checkSession(); DeviceTools.validate(arguments)
             val action = arguments.text("action")
+            var launchTarget: String? = null
+            var launchDispatched = false
             require(action != "finish") { "finish 由任务循环校验，不能直接操作设备。" }
             if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", 100)))
             // Home never targets content. Melo's own progress updates must not
@@ -172,9 +187,16 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                     val apps = catalog()
                     val candidates = if (arguments.text("package_name").isNotBlank()) apps.exactPackage(arguments.text("package_name")) else apps.exactName(arguments.text("app_name"))
                     if (candidates.size != 1) return@withContext apps.openFailure(arguments.text("package_name"), arguments.text("app_name"), candidates.size > 1)
-                    val intent = packageManager.getLaunchIntentForPackage(candidates.single().packageName) ?: error("该 App 没有可启动入口。")
-                    val options = android.app.ActivityOptions.makeBasic().apply { if (Build.VERSION.SDK_INT >= 26) launchDisplayId = selectedDisplay }
-                    startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options.toBundle())
+                    launchTarget = candidates.single().packageName
+                    // A first launch may intentionally return from a detail page to the app entry.
+                    // A repeated launch without navigation must not restart an already visible app.
+                    if (lastLaunchTarget != launchTarget || identity(activeWindow()).packageName != launchTarget) {
+                        val intent = packageManager.getLaunchIntentForPackage(launchTarget) ?: error("该 App 没有可启动入口。")
+                        val options = android.app.ActivityOptions.makeBasic().apply { if (Build.VERSION.SDK_INT >= 26) launchDisplayId = selectedDisplay }
+                        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options.toBundle())
+                        launchDispatched = true
+                    }
+                    lastLaunchTarget = launchTarget
                 }
                 "tap" -> {
                     val nodeId = arguments.text("node_id")
@@ -209,9 +231,16 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 }
                 "wait" -> delay(number(arguments, "duration_ms", 600).coerceIn(100, 3000).toLong())
             }
+            if (action in setOf("tap", "type_text", "swipe", "back", "home")) lastLaunchTarget = ""
             if (action != "observe") { invalidateObservation(); delay(650); checkSession() }
-            val observation = observe()
-            DeviceToolResult(JsonObject(observation.data + ("ok" to JsonPrimitive(true)) + ("action" to action.jp())), observation.jpeg)
+            val observation = observe(if (action == "observe") arguments["window_id"]?.jsonPrimitive?.intOrNull else null)
+            DeviceToolResult(buildJsonObject {
+                observation.data.forEach { (key, value) -> put(key, value) }; put("ok", true); put("action", action)
+                launchTarget?.let {
+                    put("target_package", it); put("launch_dispatched", launchDispatched)
+                    if (!launchDispatched) { put("code", "already_foreground"); put("hint", "The app is already visible. Inspect the current pane and related_windows. Finish if the requested visible goal is satisfied; otherwise navigate. Do not relaunch again.") }
+                }
+            }, observation.jpeg)
         } catch (e: CancellationException) { throw e }
         catch (e: DeviceExecutionException) { DeviceToolResult.error(e.message.orEmpty(), e.code) }
         catch (e: Exception) { DeviceToolResult.error(e.message ?: "设备操作失败。") }
@@ -241,12 +270,12 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         } } finally { overlay?.visibility = View.VISIBLE }
         check(success) { "手势被取消或系统拒绝。" }
     }
-    private suspend fun observe(): DeviceObservation {
+    private suspend fun observe(requestedWindowId: Int? = null): DeviceObservation {
         checkSession()
         // Bounded quiet wait: animated pages remain usable through node validation.
         for (attempt in 0 until 5) { val before = generation; delay(120); if (generation == before) break }
         checkSession(); invalidateObservation()
-        val window = activeWindow(); val root = window.root ?: error("窗口内容不可读。")
+        val window = selectedWindow(requestedWindowId); val root = window.root ?: error("窗口内容不可读。")
         windowId = window.id; bounds = Rect().also(window::getBoundsInScreen)
         require(bounds.width() > 0 && bounds.height() > 0) { "窗口没有可见内容。" }
         val scale = minOf(1f, 1280f / maxOf(bounds.width(), bounds.height()))
@@ -280,6 +309,13 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime()
         return DeviceObservation(buildJsonObject {
             put("screen_id", screenId); put("display_id", selectedDisplay); put("window_id", windowId); put("package_name", root.packageName?.toString().orEmpty())
+            put("window_title", window.title?.toString().orEmpty().take(160))
+            put("screenshot_scope", "selected_window_only")
+            put("related_windows", buildJsonArray {
+                for (related in readableWindows().filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && DeviceWindowPolicy.sameApp(identity(window), identity(it)) }) add(buildJsonObject {
+                    put("window_id", related.id); put("title", related.title?.toString().orEmpty().take(160)); put("selected", related.id == windowId)
+                })
+            })
             put("image_width", imageWidth); put("image_height", imageHeight); put("nodes", entries)
             put("screenshot_available", jpeg != null); screenshotError?.let { put("screenshot_error", it) }
             put("stable", generation == before)

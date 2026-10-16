@@ -88,6 +88,17 @@ class DeviceAgentTest {
         val opened = service.execute(buildJsonObject { put("action", "open_app"); put("package_name", "com.android.settings") })
         assertTrue(opened.data.toString(), opened.ok)
         assertEquals("com.android.settings", opened.data.text("package_name"))
+        assertTrue(opened.data["launch_dispatched"]!!.jsonPrimitive.boolean)
+        assertEquals("selected_window_only", opened.data.text("screenshot_scope"))
+        assertTrue(opened.data["related_windows"]!!.jsonArray.any { it.jsonObject["selected"]?.jsonPrimitive?.booleanOrNull == true })
+        val selected = service.execute(buildJsonObject { put("action", "observe"); put("window_id", opened.data["window_id"]!!) })
+        assertTrue(selected.data.toString(), selected.ok)
+        val unavailable = service.execute(buildJsonObject { put("action", "observe"); put("window_id", Int.MAX_VALUE) })
+        assertFalse(unavailable.ok); assertEquals("stale_screen", unavailable.data.text("code"))
+        val repeated = service.execute(buildJsonObject { put("action", "open_app"); put("package_name", "com.android.settings") })
+        assertTrue(repeated.data.toString(), repeated.ok)
+        assertFalse(repeated.data["launch_dispatched"]!!.jsonPrimitive.boolean)
+        assertEquals("already_foreground", repeated.data.text("code"))
         service.end()
     }
     @Test fun homeCanLeaveAChangingWindowWhileCoordinateTapsStillRejectStaleContent() = runBlocking {
@@ -142,6 +153,17 @@ class DeviceAgentTest {
         delay(1000)
         val rejected = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", before.data.text("screen_id")); put("node_id", node(before, "Target button").text("node_id")) })
         assertFalse(rejected.ok); assertEquals("stale_screen", rejected.data.text("code")); service.end()
+    }
+    @Test fun sameAppModalStillInvalidatesTheObscuredWindow() = runBlocking {
+        ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
+            val service = DeviceAccess.service!!
+            service.begin(0, false)
+            val before = observe(service)
+            scenario.onActivity { android.app.AlertDialog.Builder(it).setTitle("Fixture modal").setMessage("Foreground dialog").setPositiveButton("Close", null).show() }
+            delay(700)
+            val rejected = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", before.data.text("screen_id")); put("node_id", node(before, "Target button").text("node_id")) })
+            assertFalse(rejected.ok); assertEquals("stale_screen", rejected.data.text("code")); service.end()
+        }
     }
     private fun fixtureCall(id: String, arguments: JsonObject) = MockResponse().setBody(buildJsonObject {
         put("choices", buildJsonArray { add(buildJsonObject {
