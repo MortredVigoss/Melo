@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-17",
+  "sourceCommit": "954b382",
+  "version": "0.5.0",
+  "versionCode": 12,
+  "sha256": "d2328c41574e9b7c71eb5950b5a6c4eb9fd578d042048815af95f5c8d03c4a1e",
+  "device": "Galaxy Z Fold6 SM-F956B / Android 16 API 36 / One UI 8.5",
+  "layout": "unfolded 1856x2160",
+  "install": {
+    "version": "0.5.0",
+    "sameCertificateUpdate": true,
+    "countsBefore": [
+      "7 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "countsAfter": [
+      "7 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "otherServicesPreserved": true
+  },
+  "ordinaryChat": {
+    "prompt": "What is 2 plus 3? Answer only the number.",
+    "answer": "5",
+    "deviceTaskShown": false,
+    "noModeSwitch": true
+  },
+  "maps": {
+    "noModeSwitch": true,
+    "kind": "live research",
+    "deviceSteps": 9,
+    "deviceModelRequests": 9,
+    "deviceDurationSeconds": 53.543,
+    "delegatedGoal": "In Google Maps search restaurants in Surry Hills, Sydney, Australia. Read current results and report exactly 2 restaurant places with names and actual displayed opening status; if status not visible report unknown. Include visible address or Maps link if available, source and time context (device local time 2026-10-17 around 03:42 Australia/Sydney), and uncertainties. Do not infer status from assumptions. Read-only: no booking, calling, navigation, or messages. Stop after obtaining two results.",
+    "deviceSummary": "已在 Google Maps 读取“Surry Hills Sydney, 新南威尔士州 Australia附近的restaurants”当前搜索结果，取得两条后停止。时间背景：设备本地时间 2026-10-17 约03:42，Australia/Sydney。\n1. HACO — 实际显示“已结束营业 · 开始营业时间：12:00”（Closed · Opens 12:00）。\n2. I Maccheroni, Italian Osteria, Paddington — 实际显示“已结束营业 · 开始营业时间：12:00”（Closed · Opens 12:00）。\n来源：Google Maps Android 应用当前结果列表；两条均标为“赞助商广告”。页面未显示这两家完整街道地址或可抄录的 Maps 链接，故不提供推测地址/链接。第二条名称明确含 Paddington，不能确认它位于 Surry Hills；搜索结果可能包括附近区域，并非严格限于该区。状态仅为页面当时显示，未独立核实实际营业情况，未由时间自行推断。未预订、致电、导航或发送消息。",
+    "chatReply": "Google Maps results for **restaurants in Surry Hills, Sydney**, checked at approximately **3:42 am, 17 October 2026 (Sydney time)**:\n\n| Place | Displayed opening status |\n|---|---|\n| HACO | Closed · Opens 12:00 |\n| I Maccheroni, Italian Osteria, Paddington | Closed · Opens 12:00 |\n\nBoth were sponsored results. The second is labelled **Paddington**, so it is not confirmed to be in Surry Hills.\n\nSource: current Google Maps app results. No booking, calling, navigation or messages were performed.",
+    "scope": "Current displayed results; both sponsored, one explicitly labelled Paddington. Not proof of actual business opening or strict geographic suitability."
+  },
+  "followUp": {
+    "prompt": "For the second result you just found, which suburb is explicitly shown in its name? Recheck current results without a new search/detail.",
+    "deviceSteps": 5,
+    "deviceModelRequests": 5,
+    "deviceDurationSeconds": 31.531,
+    "resolvedGoal": "Read only the currently displayed Google Maps restaurant search results from the prior search for restaurants in Surry Hills, Sydney. Do not search again, do not open any restaurant detail, and do not book, call, navigate or send messages. Recheck the second previously reported result, 'I Maccheroni, Italian Osteria, Paddington', and report which suburb is explicitly shown in its displayed name, using only the currently visible results. Return observed text, source, time context and any uncertainty. If the existing results are not accessible without a new search or opening details, report that limitation and stop.",
+    "deviceSummary": "已核对 Google Maps 现有搜索结果：第二条可见结果（标记为“赞助商广告”）名称原文为“I Maccheroni, Italian Osteria, Paddington”，其中明确显示的城区是 Paddington，不是 Surry Hills。来源：Google Maps 当前结果列表，搜索标题为“Surry Hills Sydney, 新南威尔士州 Australia附近的restaurants”。时间背景：本次读取时，设备提供的日期为2026-10-17，约03:45（Australia/Sydney，UTC+11）；页面未显示结果更新时间。仅核实显示名称，未核验实际街道地址；当前可见结果未提供可引用的网址或完整地址。未重新搜索、打开餐厅详情、订位、致电、导航或发送消息。",
+    "chatReply": "**Paddington** — rechecked in the current Google Maps results, where the second result is named “I Maccheroni, Italian Osteria, Paddington.” No new search or restaurant detail was opened."
+  },
+  "researchReturn": {
+    "method": "ActivityTaskManager launches originating from Melo, before later shell inspection; windows-only focus fields unavailable",
+    "recentResearchReturns": [
+      {
+        "deviceLogTime": [
+          "10-17",
+          "03:42:53.002"
+        ],
+        "caller": "com.melo.android",
+        "target": "com.melo.android/.MainActivity",
+        "allowedReason": "BAL_ALLOW_TOKEN",
+        "resultCode": 2
+      },
+      {
+        "deviceLogTime": [
+          "10-17",
+          "03:46:17.594"
+        ],
+        "caller": "com.melo.android",
+        "target": "com.melo.android/.MainActivity",
+        "allowedReason": "BAL_ALLOW_TOKEN",
+        "resultCode": 2
+      }
+    ]
+  },
+  "validation": {
+    "jvm": 109,
+    "androidRuntime": 39,
+    "failures": 0,
+    "skipped": 0,
+    "lintErrors": 0,
+    "debug": true,
+    "r8Release": true,
+    "sameCertificate": true,
+    "signatureAnd16KiBAlignment": true,
+    "installedShaMatches": true
+  },
+  "limits": [
+    "Device task request counts exclude the ordinary Chat planning and final-answer requests.",
+    "One owned QA conversation added after preserving the original seven chats and one agent during installation.",
+    "No booking, calling, navigation, messages or native-confirmation bypass performed.",
+    "Xiaohongshu and 0.5.0 folded hardware were not run; earlier 0.4.2 dual-mode screenshot checks are historical evidence.",
+    "WeChat input/IME and folded/unfolded Cache partition remain deferred.",
+    "Phone Use enabled uses non-streaming Tool Calling; disabled or local Fixture uses original chat path.",
+    "No remote CI or full-repository release gate; no private UI screenshots or raw trees committed."
+  ]
+}

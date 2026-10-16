@@ -1,4 +1,12 @@
-# Android verification — 2026-10-16
+# Android verification — 2026-10-17
+
+## 0.5.0 Chat Phone Use（2026-10-17）
+
+普通 Chat 按需调用 phone_use，结果在同一对话续答；模式切换已移除。109 JVM / 39 Android 16 runtime 全通过，无失败 / skip；Lint 零 errors、Debug / R8 Release、同证书签名和四 ABI 16 KiB alignment 通过。
+
+最终同包安装 Fold6 / One UI 8.5 保留 7 Chat / 1 角色。unfolded 1856×2160 真实模型普通问答未启动设备；Maps 当前结果查询 Probe 9 steps / 53.543s，“第二家”上下文追问 Probe 5 steps / 31.531s，均回 Chat 独立续答。没有预订、致电、路线导航或发送消息；另留一个 QA Chat。
+
+SHA-256 `d2328c41574e9b7c71eb5950b5a6c4eb9fd578d042048815af95f5c8d03c4a1e`，已安装包一致。产品 `954b382`；[交付与分层边界](../docs/chat-phone-use-20261017.md) / [脱敏回执](../docs/evidence/chat-phone-use-fold6-050-20261017.json)。Phone Use 开启暂非 Streaming；小红书和本版 folded 未实测，微信输入及 Fold Cache 分区待后续。未运行远端 CI / 整个 repo gate。
 
 ## 0.4.2 WeChat 启动窗口与双屏截图（2026-10-17）
 

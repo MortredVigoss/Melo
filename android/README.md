@@ -38,9 +38,13 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## 手机助手（0.3.0）
+## Chat Phone Use（0.5.0）
 
-聊天输入框上方切换「操作手机」，直接发送操作目标，当前对话内会显示任务卡片、步骤、结果和停止按钮。使用此对话选择的模型、角色和项目指令；屏幕仍是整台设备共享，一次只允许一个操作任务。普通文字聊天可跨对话并发，停止按钮只取消当前对话。首页独立助手页仍提供权限、Display 与全部本机历史入口。
+在普通 Chat 直接说“查一下 Surry Hills 现在营业的餐厅”或“去小红书搜索这家店”，模型按需 invoke 内置 Phone Use，再把观察结果带回当前对话。不需要切换「操作手机」模式或进入独立助手。每 Chat 的「对话设置 → 允许调用手机」可关闭能力；普通问答不会创建设备会话。
+
+设备任务卡片与停止按钮留在 Chat；历史图标可管理操作 Cache。使用该轮捕获的模型、角色和项目，一次只允许一个设备任务，其他 Chat 可独立问答。停止 Chat 会取消其子任务；失败 / 取消 / 需用户时不会自动续跑。research 强制实时 Probe，不复用旧查询事实；action 可复用已验证 Cache 步骤。查询成功后尝试返回所属 Chat。
+
+本版 Phone Use 开启时采用非 Streaming Tool Calling；关闭后与本地 Fixture 沿用原 streaming chat。使用现有三种模型协议，无需安装外部 Skill / MCP / AutoInput。
 
 完成必须调用 `finish`，声明 achieved / blocked / needs_user；achieved 要求最近 screen_id 和明确的 App / 精确页面文字，执行器重新观察后校验。它验证可见事实，不保证付款到账等不可见业务效果。模型只返回结束文字时不会自动标记完成；历史 completed 记录保留原语义。
 
@@ -48,15 +52,15 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 默认记录只包含目标、模型连接名称、关联会话和步骤摘要 / call ID / 耗时 / 错误码；不保存或同步屏幕、UI tree、输入参数和凭证。长任务按完整 Tool Call / Result 对裁剪，保留最近观察、当前搜索结果与截图；超过字符预算明确停止。
 
-首页「手机助手」，或聊天页顶部的手势图标进入。先用页面按钮打开 Android 辅助功能设置，在已安装服务中启用「Melo 手机助手」，返回后输入自然语言目标并点击「开始执行」。例如：`打开设置，搜索蓝牙，停在搜索结果页面`。若系统提示 App 的设置受限制，请按系统提示在该 App 的信息页面允许相应设置；App 不会自行启用辅助功能。
+首次在「系统 → 手机控制设置与诊断」打开 Android 辅助功能设置，在已安装服务中启用「Melo 手机助手」，返回普通 Chat 发送自然语言目标即可。例如：`打开设置，搜索蓝牙，停在搜索结果页面`。诊断页仍保留独立手动执行与 Display 设置。若系统提示 App 的设置受限制，请按系统提示在该 App 的信息页面允许相应设置；App 不会自行启用辅助功能。
 
 独立助手页使用全局模型，Chat 内使用该对话选择；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait、finish，屏幕操作后回传新画面。模型根据实际观察选择下一步，不录制固定脚本。
 
 官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
 
-开始前页面明确告知界面文字与可选截图会发给当前模型服务。截图仅保留在运行中的内存，不写入相册、日志、Room 或 sync；密码节点不导出，系统禁止的截图不会绕过。API 30 起支持截图，API 28/29 只提供节点观察；API 34 起优先窗口截图以排除停止浮层。可选择 Display；节点与图片坐标属于同一窗口，窗口变化后旧操作会被拒绝。back/home 是系统全局动作，只在主 Display 提供。
+手机任务的界面文字与截图会发给当前模型服务；可在对话设置关闭 Phone Use，也可随时停止。截图仅保留在运行中的内存，不写入相册、日志、Room 或 sync；密码节点不导出，系统禁止的截图不会绕过。API 30 起支持截图，API 28/29 只提供节点观察；API 34 起优先窗口截图以排除停止浮层。可选择 Display；节点与图片坐标属于同一窗口，窗口变化后旧操作会被拒绝。back/home 是系统全局动作，只在主 Display 提供。
 
-任务期间有悬浮「停止 Melo」，也可以回到页面停止。最多 30 次工具调用 / 10 分钟，连续三次失败停止；进程或服务中断后不会自动恢复操作。执行记录保存在本机，只记录目标、工具名、简短结果及模型结束语，不保存原始界面、截图或输入字段内容；不进入 portable export/sync。模型结束语需结合真实步骤核对，不视为任意 App 的任务成功保证。
+任务期间有悬浮「停止 Melo」，也可以回到页面停止。最多 30 次工具调用 / 10 分钟，连续三次失败停止；进程或服务中断后不会自动恢复操作。执行记录保存在本机，只记录目标、工具名、简短结果及模型结束语，不保存原始界面、截图或输入字段内容；不进入 portable export/sync。模型结束语需结合真实步骤核对，不视为任意 App 的任务成功保证。用户请求的查询摘要与最终回复属于正常 Chat 文字，参与既有文字资料同步；本机设备记录仍不导出 / 同步。
 
 开发只用 Fixture：Debug 的「系统 → 添加本地 Fixture」会明确显示模拟回复，不访问模型服务。Release 禁用 Fixture。不会从环境变量或桌面目录读取现有账户或凭证。
 
@@ -72,10 +76,10 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 ## Samsung / Fold 验证边界
 
-目标机型：Galaxy Z Fold6，One UI 8.5。0.1.0 已在实际 SM-F956B（Android 16 / API 36，One UI property 80500）安装并冷启动；0.2.0 开发时手机未连接，新增 AccessibilityService 操作仍需实机验收。Android 16 Emulator 验证不能代替 Samsung firmware 验收。
+目标机型 Galaxy Z Fold6 / One UI 8.5。0.5.0 最终签名包已在实际 SM-F956B（Android 16 / API 36，One UI property 80500）覆盖安装；展开模式真实模型普通 Chat → Maps 当前查询 → 上下文追问 → 原 Chat 续答通过。0.4.2 曾分别验证两种模式的微信截图；这些历史结果不能替代本版 folded 实机查询。详见 [Chat Phone Use 交付](../docs/chat-phone-use-20261017.md)。
 
 小于 600 dp 使用 bottom navigation，展开至 600 dp 以上使用 NavigationRail。无固定 orientation 或 aspect ratio；使用 system bar / IME insets，scene viewport 随窗口更新；页面、所选对话和文字草稿随 Activity recreation 保留。
 
-自动验证与实际证据见 [verification.md](verification.md)。后续真机验收仍需覆盖 cover → 展开 → 分屏、Samsung Keyboard、权限、Back gesture、锁屏和省电策略。暂未做真实 provider、Samsung TTS / 语音服务或手机 firmware 验证。
+自动验证与实际证据见 [verification.md](verification.md)。后续真机验收仍需覆盖 cover → 展开 → 分屏、Samsung Keyboard、权限、Back gesture、锁屏和省电策略。本版小红书、folded 查询、Samsung TTS / 语音服务、分屏 / 省电和 Fold Cache 布局隔离仍未验收；微信独立输入后置。
 
 当前 Android 连接采用 API credentials；未移植 iOS 的 ChatGPT OAuth、图片生成/编辑和桌面 tool execution。手机图片输入使用用户选定图片；同步不传输图片文件。这里不声称与桌面或 iOS 的全部功能等价。

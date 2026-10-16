@@ -1,3 +1,9 @@
+## 2026-10-17 — 用真实 Maps 查询证明手机能力已融入普通 Chat
+
+用户认可自然 invoke 后，Codex 完成普通 Chat 的 Tool Calling，不再要求独立助手 / 模式切换；微信输入按用户要求后置。普通问答不启动设备，当前信息强制实时读取，不能把旧 Cache 结果当现在事实。
+最终 109 JVM / 39 runtime、Lint / Debug / R8 / 签名通过；前两轮夹具失败和 Emulator OOM 保留且未冒充通过。Fold6 同包 Maps 9 步读取当前列表，追问“第二家”5 步重新核对，均原 Chat 续答；7 Chat / 1 角色在安装时保留，另留 QA 对话供回看，无消息发送 / 预订 / 致电。
+产品提交 954b382；Phone Use 开启暂非 Streaming，小红书 / 本版 folded 实测及 Fold Cache 分区待后续。没有新增插件或读取手机 Key，没有推送 / git pp 或整仓 gate。
+
 ## 2026-10-17 — 让手机能力成为普通对话中的按需工具
 
 用户明确不希望进入单独手机助手或切换模式，认可内置 Skill + Chat Tool Calling 并要求开始；微信输入后置。Codex 接线后普通问答不读屏，查询要求实时观察，避免把旧 Cache 答案当作当前事实。

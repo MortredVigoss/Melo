@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
-| Android / Chat Phone Use | 用户确认普通 Chat 按需 invoke 内置 Skill；0.5.0 接线 WIP，已移除模式切换 | JVM 109 与首轮新增 5 项 Native 链路通过；完整 runtime / 最终包 / Fold6 仍待验，不能按首轮测试推断交付；[已认可设计](docs/specs/2026-10-17-chat-phone-use-design.md)。微信输入后置 |
+| Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
@@ -113,7 +113,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | Cache 0.4.0 已验证；0.4.1 `d2df321` 保留外屏反例，0.4.2 最终包已完成微信双屏只读验证 | 99 JVM / 34 runtime / Lint / R8 / 签名；[截图诊断与实机回执](docs/wechat-window-capture-20261016.md)、[Cache 交接](docs/android-task-cache-20261016.md)。视觉输入仅外部 ADB 可行性测试，Fold Cache 分区待做；本地提交，未推送 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.4.2 双屏截图修复 `a00f035`；Chat Phone Use 设计 `375a1b2`、0.5.0 实现 `954b382`，最终签名包已安装 | 109 JVM / 39 runtime / Lint / R8 / 签名；Fold6 真实 Maps 搜索及上下文追问见 [Chat Phone Use](docs/chat-phone-use-20261017.md)。微信输入后置；小红书、本版 folded 和 Fold Cache 分区未验 / 未做。仅本地提交 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -501,3 +501,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 线程 `01a13a56-c8c5-7d21-a108-d761aee8c657`；用户明确“生硬”来自单独入口，希望普通 Chat invoke Skill，并回复 Go ahead。采用高层 phone_use Tool 调用现有 DeviceAgent，原 Chat 继续整理结果；不以关键词分类或另装插件替代。微信输入暂缓。
 - 当前代码 WIP：统一 Chat 输入、按需执行、每 Chat 能力开关、Cache 管理；research 实时 Probe，action 复用已有 Cache。子任务捕获同一模型 / 角色 / 项目，停止联动，查询返回所属 Chat，保留下一条草稿。
 - JVM 109 与首轮新增 5 项 Native 链路通过；原后台测试暴露 launch identity / teardown 问题，已修正夹具；第二轮因 Emulator 内存耗尽中断，不计通过。最终 gate、签名包与实机尚待验，不称全交付。[设计](docs/specs/2026-10-17-chat-phone-use-design.md)。
+
+### 2026-10-17 — Android / Chat Phone Use — 0.5.0 最终交付
+
+- 产品 `954b382`，设计 `375a1b2`；普通 Chat 注册高层 phone_use，按需执行现有设备 Agent、原对话续答，移除模式切换。research 强制实时 Probe，action 沿用 Cache；停止、上下文快照、草稿和删除事务边界保留。
+- 109 JVM / 39 Android runtime、Lint / Debug / R8 / signature / alignment 全通过；首轮夹具身份失败和第二轮 Emulator OOM 分开保留，不计作成功。最终先构建再运行新 Emulator，完成后已关闭。
+- 同证书覆盖 Fold6，安装前后 7 Chat / 1 角色及其他辅助服务保留；另留一个 QA Chat。最终 APK 实机普通问答无设备调用，Maps 当前列表查询 9 步 / 53.543 秒，引用“第二家”重新核对 5 步 / 31.531 秒，均回同一 Chat 最终回复；系统日志记录 App 自身返回。没有预订 / 致电 / 导航 / 发消息或代点确认。
+- [交付与准确边界](docs/chat-phone-use-20261017.md) / [脱敏回执](docs/evidence/chat-phone-use-fold6-050-20261017.json)。Phone Use 开启本版暂非 Streaming。小红书与本版 folded 未实测；微信输入后置、Fold Cache 分区仍待做。未推送 / git pp / 远端 CI 或整个 repo gate。
