@@ -113,8 +113,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive }.thenByDescending { it.isFocused }.thenByDescending { it.layer }).firstOrNull()
             ?: error("无法读取此 Display 的窗口，请让目标 App 保持可见。")
     }
-    private fun requireFresh(arguments: JsonObject) {
-        require(arguments.text("screen_id") == screenId && screenId.isNotBlank() && observedGeneration == generation && SystemClock.elapsedRealtime() - observedAt < 90_000) { "屏幕已变化或 observation 已过期，请重新 observe。" }
+    private fun requireFresh(arguments: JsonObject, contentSensitive: Boolean = true) {
+        require(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000) { "屏幕已变化或 observation 已过期，请重新 observe。" }
         val current = activeWindow(); val currentBounds = Rect().also(current::getBoundsInScreen)
         require(current.id == windowId && currentBounds == bounds) { "窗口或尺寸已改变，请重新 observe。" }
     }
@@ -123,7 +123,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             checkSession(); DeviceTools.validate(arguments)
             val action = arguments.text("action")
             if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", 100)))
-            if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments)
+            // Home never targets content. Melo's own progress updates must not
+            // prevent leaving its window; keep screen identity/age/window checks.
+            if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive = action != "home")
             when (action) {
                 "open_app" -> {
                     val apps = catalog()

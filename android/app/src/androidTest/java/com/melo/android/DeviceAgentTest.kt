@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melo.android.data.*
 import com.melo.android.device.*
@@ -93,6 +94,26 @@ class DeviceAgentTest {
         assertTrue(opened.data.toString(), opened.ok)
         assertEquals("com.android.settings", opened.data.text("package_name"))
         service.end()
+    }
+    @Test fun homeCanLeaveAChangingWindowWhileCoordinateTapsStillRejectStaleContent() = runBlocking {
+        ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
+            val service = DeviceAccess.service!!
+            service.begin(0, false)
+            delay(700)
+            val screen = observe(service)
+            assertTrue(screen.data.toString(), screen.ok)
+            scenario.onActivity { activity ->
+                val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
+                (content.getChildAt(0) as android.widget.TextView).text = "Progress updated while deciding"
+            }
+            delay(700)
+            val tap = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", screen.data.text("screen_id")); put("x", 10); put("y", 10) })
+            assertFalse("Coordinate tap must reject changed content", tap.ok)
+            val home = service.execute(buildJsonObject { put("action", "home"); put("screen_id", screen.data.text("screen_id")) })
+            assertTrue(home.data.toString(), home.ok)
+            assertNotEquals("com.melo.android", home.data.text("package_name"))
+            service.end()
+        }
     }
     private fun fixtureCall(id: String, arguments: JsonObject) = MockResponse().setBody(buildJsonObject {
         put("choices", buildJsonArray { add(buildJsonObject {

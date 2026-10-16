@@ -1,5 +1,13 @@
 # Android verification — 2026-10-15
 
+## 0.2.3 让 Home 导航不被进度更新误判为过期
+
+0.2.2 已覆盖安装到 Fold6（保留配置和记录）。用户明确同意暂时停止使用手机，由 Melo 使用现有 Modal 连接执行“搜索并打开 Hearthstone，仅停在启动画面，不进入对局”。真实记录共 9 个工具步骤：搜索已遍历 265 个可启动 App catalog（Hearthstone / 炉石 / blizzard 均无匹配），模型随后主动使用 observe → home 回退 Launcher；但 Melo 自身运行进度与记录更新改变目标窗口 generation，使每次 Home 都被 freshness guard 拒绝。模型如实报告未打开游戏；此轮未进入对局、安装 App 或更改权限 / 设置。
+
+Home 不引用任何目标按钮或坐标，因此仅对该动作忽略内容 generation 变化；仍要求当前 session、最近 screen_id、90 秒时限、相同窗口与 bounds，并继续限制主 Display。tap / type_text / swipe / back 的内容 freshness guard 保持不变。新增实际 Android 窗口回归先 RED，复现“文字更新后 Home 被拒绝”，并同时要求过期画面的坐标点击必须拒绝；修复只针对 Home。
+
+最终完整检查通过：36 项 JVM tests、17 项 Android runtime tests（零失败 / 跳过）、Lint（零 errors）、Debug 与 R8 Release 构建。0.2.3（versionCode 6）同证书覆盖安装成功，APK signature / 四 ABI 16 KiB alignment 检查通过；SHA-256：d61a11f808cc75c9ef39526306590708bd4e43c5b277d6d2e0e6b62c14ab2cca。
+
 ## 0.2.2 App discovery 与失败后的恢复
 
 用户的真实记录为 observe 成功 → list_apps 成功 → open_app 找不到唯一名称 → 模型结束并报告列表没有该游戏。当前用户主 Profile 的 Launcher 查询有 265 个 package，旧工具只返回排序后的前 200 个，既无搜索也无分页信息；因此该记录不足以证明目标游戏未安装。用户确认平时由独立图标打开。
