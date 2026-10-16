@@ -35,7 +35,8 @@ export async function prepareVisionInputs(
       if (match) buffer = Buffer.from(match[1], 'base64');
       else buffer = (await readResource?.(source, { signal, timeoutMs: 30000 }))?.buffer;
       if (!buffer?.length) throw new Error('图片内容无法读取，未将不可访问的本机链接发送给模型。');
-      if (buffer.length > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，请先压缩。');
+      // Oversize photos are shrunk to a bounded copy instead of being refused.
+      if (buffer.length > 20 * 1024 * 1024) buffer = await sharp(buffer, { limitInputPixels: 80_000_000 }).rotate().resize({ width: 4096, height: 4096, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
       const selectedDetail = part.image_url.detail || detail;
       const metadata = await sharp(buffer, { limitInputPixels: 80_000_000 }).metadata();
       let pipeline = sharp(buffer, { limitInputPixels: 80_000_000 }).rotate();

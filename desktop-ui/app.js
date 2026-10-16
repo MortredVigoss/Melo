@@ -45,6 +45,7 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { attachmentLimit, makeTransferCopy, MB } from './transferCopy.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
@@ -3356,26 +3357,27 @@ async function queueComposerFiles(fileList) {
 
   const nextAttachments = [];
   for (const file of files) {
-    if (file.size > 20 * 1024 * 1024) {
-      showError(`${file.name} is too large. Keep attachments under 20 MB.`);
-      continue;
-    }
-
     const kind = detectAttachmentKindFromFile(file);
     if (!kind) {
       showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
       continue;
     }
-
-    const url = await readFileAsDataUrl(file);
+    // Photos up to 100 MB are accepted and sent as a bounded copy; other files keep 20 MB.
+    const limit = kind === 'image' ? attachmentLimit('image') : 20 * MB;
+    if (file.size > limit) {
+      showError(t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB }));
+      continue;
+    }
+    const copy = kind === 'image' ? await makeTransferCopy(file).catch(() => null) : null;
+    const url = copy?.url || await readFileAsDataUrl(file);
     nextAttachments.push({
       id: crypto.randomUUID(),
       kind,
       url,
       title: file.name,
       fileName: file.name,
-      mimeType: file.type || (isPdfFile(file) ? 'application/pdf' : ''),
-      sizeLabel: formatFileSize(file.size),
+      mimeType: copy?.mimeType || file.type || (isPdfFile(file) ? 'application/pdf' : ''),
+      sizeLabel: copy ? t('{size} · 发送 {width}×{height} 副本', { size: formatFileSize(file.size), width: copy.width, height: copy.height }) : formatFileSize(file.size),
     });
   }
 

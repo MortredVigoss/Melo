@@ -727,5 +727,7 @@ const rows = [
 ["4K 实验 · 横向", "4K experimental · Landscape", "4K 実験的・横向き", "4K 실험 · 가로", "4K experimental · Horizontal"],
 ["4K 实验 · 纵向", "4K experimental · Portrait", "4K 実験的・縦向き", "4K 실험 · 세로", "4K experimental · Vertical"],
 ["2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。", "2K and 4K are slower and use more allowance; 4K is experimental and may be less consistent. If the channel does not accept the chosen size, the image is made at the service default and the actual pixels are noted.", "2K・4K は時間と使用量が増えます。4K は実験的で結果が安定しない場合があります。接続が選択サイズを受け付けない場合は既定サイズで生成し、実際の画素数を表示します。", "2K·4K는 더 느리고 사용량이 많습니다. 4K는 실험적이라 결과가 불안정할 수 있습니다. 연결이 선택한 크기를 받지 않으면 기본 크기로 생성하고 실제 픽셀을 표시합니다.", "2K y 4K tardan más y gastan más cuota; 4K es experimental y puede ser menos estable. Si el canal no acepta el tamaño elegido, se genera con el tamaño por defecto y se indica el real."],
+["{name} 超过 {limit} MB，未添加。", "{name} is over {limit} MB and was not added.", "{name} は {limit} MB を超えているため追加していません。", "{name}은(는) {limit}MB를 넘어 추가하지 않았습니다.", "{name} supera {limit} MB y no se añadió."],
+["{size} · 发送 {width}×{height} 副本", "{size} · sends a {width}×{height} copy", "{size} · {width}×{height} のコピーを送信", "{size} · {width}×{height} 사본 전송", "{size} · envía una copia de {width}×{height}"],
 ];
 export const translations = Object.freeze(Object.fromEntries(rows.map(([key,en,ja,ko,es]) => [key, Object.freeze({ 'zh-CN':key,en,ja,ko,es })])));

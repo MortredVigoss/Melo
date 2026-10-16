@@ -30066,6 +30066,76 @@
         }
       }
     },
+    "{name} 超过 {limit} MB，未添加。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} 超过 {limit} MB，未添加。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} is over {limit} MB and was not added."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} は {limit} MB を超えているため追加していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name}은(는) {limit}MB를 넘어 추가하지 않았습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} supera {limit} MB y no se añadió."
+          }
+        }
+      }
+    },
+    "{size} · 发送 {width}×{height} 副本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · 发送 {width}×{height} 副本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · sends a {width}×{height} copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · {width}×{height} のコピーを送信"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · {width}×{height} 사본 전송"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · envía una copia de {width}×{height}"
+          }
+        }
+      }
+    },
     "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。": {
       "extractionState": "manual",
       "localizations": {

@@ -49,18 +49,30 @@ final class ImageLibrary {
         guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= ImageLibrary.storedLimit else { throw MeloError.message("图片文件超过容量限制。") }
         return try Data(contentsOf: url)
     }
-    /// Stored copies (≤4096 px, PNG) of a 4K result can exceed 24 MB.
+    /// Stored copies (≤4096 px) of a 4K result can exceed 24 MB.
     static let storedLimit = 64*1024*1024
+    /// Picked photos may be large originals; only a ≤4096 px copy is kept and sent.
+    static let importLimit = 100*1024*1024
+    /// Sum of the copies sent in one request.
+    static let requestLimit = 40*1024*1024
     func images(for message: String) -> [LocalImage] { (index.messages[message] ?? []).compactMap { index.assets[$0] } }
-    func inputs(_ refs: [ImageReference]) throws -> [ImageInput] {
+    /// Transfer copies for a request: stored images are sent as-is when small, otherwise
+    /// re-encoded (JPEG unless transparent) at most `maxDimension` px. Stored files never change.
+    func inputs(_ refs: [ImageReference], maxDimension: Int = 4096) throws -> [ImageInput] {
         if refs.isEmpty { return [] }
         guard ready else { throw MeloError.message("图片目录无法读取，原文件已保留。") }
         var total = 0
         return try refs.map { ref in
             guard let image = index.assets[ref.id] else { throw MeloError.message("参考图已不存在，请重新选择。") }
-            let bytes = try data(image); total += bytes.count
-            guard total <= 24*1024*1024 else { throw MeloError.message("参考图合计超过 24 MB，请缩小图片或减少张数。") }
-            return ImageInput(data: bytes, mimeType: image.mimeType, role: ref.role)
+            var bytes = try data(image), mimeType = image.mimeType
+            if bytes.count > 6*1024*1024 || max(image.width, image.height) > maxDimension {
+                let copy = try Self.decoded(bytes, maxDimension: maxDimension)
+                let jpeg = !Self.hasAlpha(copy)
+                bytes = try Self.encoded(copy, jpeg: jpeg); mimeType = jpeg ? "image/jpeg" : "image/png"
+            }
+            total += bytes.count
+            guard total <= Self.requestLimit else { throw MeloError.message("这次附带的图片合计超过 40 MB（已按传输副本压缩），请减少张数；原图已保留。") }
+            return ImageInput(data: bytes, mimeType: mimeType, role: ref.role)
         }
     }
     func bind(_ images: [LocalImage], to message: String, request: ImageTaskPlan? = nil) throws {
@@ -102,9 +114,13 @@ final class ImageLibrary {
         try data.write(to: url, options: .atomic)
         #endif
     }
-    func store(_ data: Data, title: String, references: [String] = [], reportedModel: String = "", revisedPrompt: String = "") throws -> LocalImage {
+    func store(_ data: Data, title: String, references: [String] = [], reportedModel: String = "", revisedPrompt: String = "", photo: Bool = false) throws -> LocalImage {
         let image = try Self.decoded(data)
-        return try store(image, title: title, references: references, reportedModel: reportedModel, revisedPrompt: revisedPrompt)
+        // Imported photos without transparency are kept as high-quality JPEG; generated results stay PNG.
+        return try store(image, title: title, references: references, reportedModel: reportedModel, revisedPrompt: revisedPrompt, jpeg: photo && !Self.hasAlpha(image))
+    }
+    static func hasAlpha(_ image: CGImage) -> Bool {
+        ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
     }
     func store(_ image: CGImage, title: String, references: [String] = [], reportedModel: String = "", revisedPrompt: String = "", jpeg: Bool = false) throws -> LocalImage {
         let bytes = try Self.encoded(image, jpeg: jpeg)
@@ -118,7 +134,7 @@ final class ImageLibrary {
         return asset
     }
     static func decoded(_ data: Data, maxDimension: Int = 4096) throws -> CGImage {
-        guard data.count <= 24*1024*1024,
+        guard data.count <= Self.importLimit,
               let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache:false] as CFDictionary),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString:Any],
               let width = props[kCGImagePropertyPixelWidth] as? Int, let height = props[kCGImagePropertyPixelHeight] as? Int,

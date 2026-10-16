@@ -252,7 +252,8 @@ import SwiftUI
             // A deliberate retry may choose a new image connection; keep the original input and other parameters.
             if retry, let connectionID = imageTask?.connectionID { plan.connectionID = connectionID }
             // Per-photo edits read each photo when its own request starts.
-            imageInputs = plan.separately == true ? [] : try imageLibrary.inputs(plan.references)
+            // Analysis needs less detail than editing; both send transfer copies, never the stored file itself when large.
+            imageInputs = plan.separately == true ? [] : try imageLibrary.inputs(plan.references, maxDimension: plan.makesImage ? 4096 : 2048)
         } catch { fail(error.localizedDescription); return }
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
@@ -507,7 +508,7 @@ import SwiftUI
         return ModelReply(text: text)
     }
     func importImage(_ data: Data, title: String = "参考图片") throws -> LocalImage {
-        let image = try imageLibrary.store(data, title: title); imageRevision += 1; return image
+        let image = try imageLibrary.store(data, title: title, photo: true); imageRevision += 1; return image
     }
     func transformImage(_ image: LocalImage, operation: String) throws -> LocalImage {
         let result = try imageLibrary.transformed(image, operation: operation); imageRevision += 1; return result

@@ -180,6 +180,24 @@ import CoreGraphics
         let directoryStyle = ImageLibrary(directory: URL(fileURLWithPath: root.appendingPathComponent("DirectoryStyle").path, isDirectory: true))
         let directoryAsset = try directoryStyle.store(data, title: "Directory URL regression")
         try check(!directoryStyle.data(directoryAsset).isEmpty, "directory URL flags must not reject sandbox images")
+        // A large photo (beyond the old 24 MB limit) is accepted: a ≤4096 px JPEG copy is kept,
+        // a smaller transfer copy is sent for analysis, and the stored file is never rewritten.
+        let side = 3200
+        var noise = [UInt8](repeating: 0, count: side * side * 4)
+        for index in stride(from: 0, to: noise.count, by: 4) { noise[index] = UInt8.random(in: 0...255); noise[index+1] = UInt8.random(in: 0...255); noise[index+2] = UInt8.random(in: 0...255); noise[index+3] = 255 }
+        let provider = CGDataProvider(data: Data(noise) as CFData)!
+        let big = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let bigData = try ImageLibrary.encoded(big)
+        try check(bigData.count > 24*1024*1024, "fixture must exceed the old limit (\(bigData.count))")
+        let photo = try library.store(bigData, title: "large", photo: true)
+        try check(photo.mimeType == "image/jpeg" && max(photo.width, photo.height) <= 4096, "large photo kept as a bounded JPEG copy")
+        let storedBefore = try library.data(photo)
+        let analysis = try library.inputs([ImageReference(id: photo.id)], maxDimension: 2048)
+        let sent = try ImageLibrary.decoded(analysis[0].data, maxDimension: 10000)
+        try check(max(sent.width, sent.height) <= 2048 && analysis[0].data.count < storedBefore.count, "analysis sends a smaller transfer copy")
+        try check(try library.data(photo) == storedBefore, "sending never rewrites the stored photo")
+        let generatedKeepsPNG = try library.store(bigData, title: "result")
+        try check(generatedKeepsPNG.mimeType == "image/png", "generated results stay lossless")
         print("Image workflow passed: persisted originals/references, safe formats/paths, local transforms, provider payloads, explicit intent, complete image SSE and failure boundaries")
     }
 }

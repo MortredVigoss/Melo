@@ -84,7 +84,7 @@ struct ImageComposerBar: View {
                 let urls=try result.get();guard urls.count<=ImageTaskPlan.maxReferences else{throw MeloError.message("一次最多选择八张图片。")}
                 let refs=try urls.map { url -> ImageReference in
                     let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
-                    guard (try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max)<=24*1024*1024 else{throw MeloError.message("单张图片不能超过 24 MB。")}
+                    guard (try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max)<=ImageLibrary.importLimit else{throw MeloError.message("单张图片不能超过 100 MB。")}
                     return ImageReference(id:try store.importImage(Data(contentsOf:url)).id)
                 };plan.references=refs
             } catch { store.error=error.localizedDescription }
