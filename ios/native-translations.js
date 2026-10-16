@@ -162,7 +162,6 @@ const rows = [
 ['参考','Reference','参照','참조','Referencia'],
 ['文字已复制','Text copied','テキストをコピーしました','텍스트 복사됨','Texto copiado'],
 ['%@ · 图片保存在此 iPhone','%@ · Images saved on this iPhone','%@ · 画像はこの iPhone に保存','%@ · 이미지가 이 iPhone에 저장됨','%@ · Imágenes guardadas en este iPhone'],
-['%lld × %lld · 双指缩放','%lld × %lld · Pinch to zoom','%lld × %lld · ピンチで拡大縮小','%lld × %lld · 두 손가락으로 확대/축소','%lld × %lld · Pellizca para ampliar'],
 ['服务返回：%@','Reported by service: %@','サービスの応答：%@','서비스 반환: %@','Devuelto por el servicio: %@'],
 
 ['照片','Photos','写真','사진','Fotos'],

@@ -26,18 +26,18 @@ import UIKit
             store.send("后台测试", chatID: chatID)
             try await waitUntil { requests == 1 }
             scheduler.expiration?()
-            try await waitUntil { store.sendingID == nil }
-            guard requests == 1, effects == 0, cancellations == 1, store.sendingID == nil,
+            try await waitUntil { !store.anySending }
+            guard requests == 1, effects == 0, cancellations == 1, !store.anySending,
                   store.scenes(for: chatID).last?.status == "interrupted", store.chats.first?.messages.count == 1,
                   store.interruptionNotice(for: chatID) != nil else { throw VerificationError.failed("expiry or cancellation") }
             let reloaded = ChatStore(directory: directory, background: ReplyBackgroundLifetime(scheduler: VerificationScheduler()))
             guard reloaded.chats.first?.messages.count == 1, reloaded.interruptionNotice(for: chatID) != nil else { throw VerificationError.failed("restart recovery") }
             store.send("", chatID: chatID, retry: true)
-            try await waitUntil { store.sendingID == nil }
+            try await waitUntil { !store.anySending }
             guard requests == 2, effects == 1, store.chats.first?.messages.count == 2, store.scenes(for: chatID).last?.status == "completed" else { throw VerificationError.failed("retry duplicated question or lost reply") }
             store.send("手动停止", chatID: chatID)
             try await waitUntil { requests == 3 }; store.cancel()
-            try await waitUntil { store.sendingID == nil }
+            try await waitUntil { !store.anySending }
             guard cancellations == 2, effects == 1, store.scenes(for: chatID).last?.status == "cancelled" else { throw VerificationError.failed("manual cancel") }
             // Existing records retain bytes while their file protection migrates.
             let legacy = root.appendingPathComponent("legacy.json"), bytes = Data("{\"keep\":true}".utf8)

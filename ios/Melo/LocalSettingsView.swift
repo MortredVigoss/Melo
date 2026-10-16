@@ -138,11 +138,11 @@ struct LocalDataSettings: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent").font(.subheadline)
                 Text("可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
-                Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.sendingID != nil || store.syncing)
-                Button("导入资料文件") { importing = true }.disabled(store.sendingID != nil || store.syncing)
+                Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
+                Button("导入资料文件") { importing = true }.disabled(store.anySending || store.syncing)
                 if let value = pending {
                     Text("将合并 \(value.snapshot.chats.count) 段对话，保留当前资料与模型连接。").font(.caption)
-                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "资料已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.sendingID != nil || store.syncing)
+                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "资料已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
                     Button("取消") { pending = nil }
                 }
                 Button("清理网页临时缓存") { Task { await LocalDeviceServices.clearWebCache(); status = "网页临时缓存已清理，聊天与登录凭据保留。" } }

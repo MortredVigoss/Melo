@@ -113,5 +113,90 @@
     "prompt": "draw a cat in SVG code",
     "hasImage": false,
     "action": "analyze"
+  },
+  {
+    "prompt": "把天空弄成晚霞",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "处理成卡通风格",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "让他笑起来",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "帮我P一下，皮肤干净点",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "背景虚化一点",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "修复这张老照片",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "make it look like an anime still",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "turn this into a watercolor",
+    "hasImage": true,
+    "action": "edit"
+  },
+  {
+    "prompt": "这是我家的猫",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "这张图片里有几个人",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "帮我看看这张图",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "翻译图里的文字",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "这张照片拍得怎么样？",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "What breed is this dog?",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "不要改，只说说构图",
+    "hasImage": true,
+    "action": "analyze"
+  },
+  {
+    "prompt": "参考这张图生成一张海报",
+    "hasImage": true,
+    "action": "generate"
+  },
+  {
+    "prompt": "把天空弄成晚霞",
+    "hasImage": false,
+    "action": "analyze"
   }
 ]

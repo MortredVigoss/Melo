@@ -45,7 +45,7 @@ import Foundation
             draftsReloaded.updatePreferences { $0.chatAgents[a] = "missing-agent" }
             draftsReloaded.error = nil
             draftsReloaded.send("do not publish global error", chatID: a, onPreflightFailure: { preflight = $0 })
-            guard preflight != nil, draftsReloaded.error == nil, draftsReloaded.sendingID == nil else { throw MeloError.message("preflight escaped to global alert") }
+            guard preflight != nil, draftsReloaded.error == nil, !draftsReloaded.anySending else { throw MeloError.message("preflight escaped to global alert") }
             result["localFailure"] = true
             result["passed"] = true
             result["checks"] = ["role persisted and reloaded", "failed storage preserves draft and saved role", "per-conversation text and image drafts isolated"]

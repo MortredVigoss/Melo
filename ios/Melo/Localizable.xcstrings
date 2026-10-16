@@ -35351,41 +35351,6 @@
         }
       }
     },
-    "%lld × %lld · 双指缩放": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld × %lld · 双指缩放"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld × %lld · Pinch to zoom"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld × %lld · ピンチで拡大縮小"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld × %lld · 두 손가락으로 확대/축소"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld × %lld · Pellizca para ampliar"
-          }
-        }
-      }
-    },
     "服务返回：%@": {
       "extractionState": "manual",
       "localizations": {

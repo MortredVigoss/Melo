@@ -41,7 +41,7 @@ import Foundation
         let calls = Calls()
         let store = store(calls: calls, root: FileManager.default.temporaryDirectory.appendingPathComponent("team-verify-" + UUID().uuidString))
         store.updatePreferences { $0.agents = agents() }
-        func settle() async { for _ in 0..<200 where store.sendingID != nil { try? await Task.sleep(nanoseconds: 50_000_000) } }
+        func settle() async { for _ in 0..<200 where store.anySending { try? await Task.sleep(nanoseconds: 50_000_000) } }
         do {
             guard let chat = store.newChat(agentID: "main") else { throw MeloError.message("无法创建对话") }
             // An unchosen member is refused before any request or message.

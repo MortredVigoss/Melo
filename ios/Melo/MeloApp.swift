@@ -24,7 +24,7 @@ import SwiftUI
                 .environment(\.locale, Locale(identifier: InterfaceLanguage.resolve(interfaceLanguage).localeID))
                 .tint(meloAccent).foregroundStyle(MeloTheme.text)
                 .task {
-                    RuntimeDiagnostics.journal.record("launch", requestActive: store.sendingID != nil)
+                    RuntimeDiagnostics.journal.record("launch", requestActive: store.anySending)
                     #if DEBUG && targetEnvironment(simulator)
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-interactions") { InteractionVerification.run(); InteractionVerification.seed(store); InteractionVerification.seedReview(store) }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-sync-audit") { await SyncAuditVerification.run() }
@@ -36,6 +36,7 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-background") { await ReplyBackgroundVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-device-data") { await DeviceDataVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-team") { await TeamVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-verify-concurrency") { await ConcurrencyVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-preview-device-approval") { DeviceDataVerification.startApproval(store) }
                     #endif
                     #if DEBUG
@@ -44,11 +45,11 @@ import SwiftUI
                     }
                     #endif
                 }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in RuntimeDiagnostics.journal.record("termination-callback", requestActive: store.sendingID != nil) }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in RuntimeDiagnostics.journal.record("memory-warning", requestActive: store.sendingID != nil) }
-                .onChange(of: store.sendingID) { _, id in RuntimeDiagnostics.journal.record(id == nil ? "request-end" : "request-start", requestActive: id != nil) }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in RuntimeDiagnostics.journal.record("termination-callback", requestActive: store.anySending) }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in RuntimeDiagnostics.journal.record("memory-warning", requestActive: store.anySending) }
+                .onChange(of: store.sendingChats.isEmpty) { _, idle in RuntimeDiagnostics.journal.record(idle ? "request-end" : "request-start", requestActive: !idle) }
                 .onChange(of: scenePhase) { _, phase in
-                    RuntimeDiagnostics.journal.record(phase == .background ? "background" : phase == .active ? "active" : "inactive", requestActive: store.sendingID != nil)
+                    RuntimeDiagnostics.journal.record(phase == .background ? "background" : phase == .active ? "active" : "inactive", requestActive: store.anySending)
                     store.account.setApplicationActive(phase == .active)
                     if phase == .background { store.enteredBackground() }
                     if phase == .active {

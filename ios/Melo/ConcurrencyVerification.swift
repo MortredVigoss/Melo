@@ -1,0 +1,63 @@
+#if DEBUG && targetEnvironment(simulator)
+import Foundation
+
+/// Simulator-only acceptance: two conversations reply at the same time through
+/// the real ChatStore send path, and stopping one leaves the other running.
+/// Fake model with counters; no account or network.
+@MainActor enum ConcurrencyVerification {
+    final class Log: @unchecked Sendable {
+        var events: [String] = []; let lock = NSLock()
+        func add(_ value: String) { lock.lock(); events.append(value); lock.unlock() }
+        var snapshot: [String] { lock.lock(); defer { lock.unlock() }; return events }
+    }
+    static func run() async {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo/concurrency-verification.json")
+        var result: [String: Any] = ["passed": false]
+        let log = Log()
+        let store = ChatStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("concurrency-verify-" + UUID().uuidString), replyLoader: { messages, _ in
+            let question = messages.last?.content ?? ""
+            log.add("start:" + question)
+            try await Task.sleep(nanoseconds: question.contains("慢") ? 1_500_000_000 : 500_000_000)
+            log.add("end:" + question)
+            return ModelReply(text: "回复：" + question)
+        })
+        func settle() async { for _ in 0..<200 where store.anySending { try? await Task.sleep(nanoseconds: 25_000_000) } }
+        // The main thread keeps ticking while both replies run.
+        var longestGap: TimeInterval = 0
+        let ticker = Task { @MainActor in
+            var last = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                longestGap = max(longestGap, Date().timeIntervalSince(last)); last = Date()
+            }
+        }
+        do {
+            guard let a = store.newChat(agentID: "melo"), let b = store.newChat(agentID: "writer") else { throw MeloError.message("无法创建对话") }
+            store.send("A 慢任务", chatID: a)
+            store.send("B 任务", chatID: b)
+            guard store.isSending(a), store.isSending(b) else { throw MeloError.message("第二个对话没有同时开始：\(store.sendingChats)") }
+            await settle()
+            let events = log.snapshot
+            guard let endA = events.firstIndex(of: "end:A 慢任务"), let startB = events.firstIndex(of: "start:B 任务"), startB < endA else { throw MeloError.message("两个回复没有并行：\(events)") }
+            for (chat, text) in [(a, "回复：A 慢任务"), (b, "回复：B 任务")] {
+                guard store.chats.first(where: { $0.id == chat })?.messages.last?.content == text else { throw MeloError.message("回复缺失或串到其他对话") }
+            }
+            // Stopping one conversation leaves the other running to completion.
+            store.send("A 慢任务二", chatID: a)
+            store.send("B 任务二", chatID: b)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            store.cancel(chatID: a)
+            await settle()
+            guard store.chats.first(where: { $0.id == a })?.messages.last?.role == "user",
+                  store.scenes(for: a).last?.status == "cancelled" else { throw MeloError.message("停止 A 没有生效") }
+            guard store.chats.first(where: { $0.id == b })?.messages.last?.content == "回复：B 任务二" else { throw MeloError.message("停止 A 影响了 B") }
+            ticker.cancel()
+            result["events"] = log.snapshot
+            result["longestMainThreadGapMs"] = Int(longestGap * 1000)
+            result["passed"] = true
+        } catch { ticker.cancel(); result["error"] = error.localizedDescription; result["events"] = log.snapshot }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
+    }
+}
+#endif

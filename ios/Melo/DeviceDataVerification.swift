@@ -24,7 +24,7 @@ import Contacts
         return store
     }
     static func startApproval(_ store: ChatStore) {
-        guard store.sendingID == nil, let chat = store.newChat() else { return }
+        guard !store.anySending, let chat = store.newChat() else { return }
         store.send("确认弹窗测试", chatID: chat)
     }
     static func run() async {

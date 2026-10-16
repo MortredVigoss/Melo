@@ -18,6 +18,9 @@ struct ChatGPTModel: Decodable, Identifiable {
     @Published var status = "尚未登录 Codex"
     @Published var error: String?
     @Published private(set) var replyStatus = "正在思考…"
+    /// Status per conversation, so two replies running at once each show their own.
+    @Published private(set) var replyStatuses: [String: String] = [:]
+    func replyStatus(for key: String) -> String { replyStatuses[key] ?? "正在思考…" }
     @Published private(set) var imageVerified = false
     private var loginTask: Task<Void,Never>?
     private var attemptID: UUID?
@@ -163,11 +166,15 @@ struct ChatGPTModel: Decodable, Identifiable {
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
-        replyStatus = "正在思考…"
-        defer { replyStatus = "正在思考…" }
+        func setStatus(_ value: String) {
+            if replyStatus != value { replyStatus = value }
+            if let statusKey, replyStatuses[statusKey] != value { replyStatuses[statusKey] = value }
+        }
+        setStatus("正在思考…")
+        defer { replyStatus = "正在思考…"; if let statusKey { replyStatuses[statusKey] = nil } }
         let account = try await credentials()
         try Task.checkCancellation()
         guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 Codex 模型。") }
@@ -180,6 +187,15 @@ struct ChatGPTModel: Decodable, Identifiable {
             body["input"] = imageBody["input"]
             if imageTask?.makesImage == true { body = CodexRequest.imageBody(messages: messages, inputs: imageInputs, task: imageTask!, model: model, instructions: instructions) }
         }
+        // Ordinary replies may still make or edit an image when the wording was not
+        // recognised up front: the model decides, instead of saying the tool is missing.
+        let offersImageTool = allowImageTool && imageTask?.makesImage != true
+        if offersImageTool {
+            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": (imageTask ?? ImageTaskPlan()).model]]
+            if body["tool_choice"] == nil { body["tool_choice"] = "auto" }
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。"
+        }
+        let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone data tools are offered only for ordinary replies, never image generation.
         let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.policy.tools ?? [])
         if !phoneTools.isEmpty, let deviceTools {
@@ -208,7 +224,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             try Task.checkCancellation()
             guard epoch == expectedEpoch else { throw CancellationError() }
             var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
-            request.timeoutInterval = imageTask?.makesImage == true ? 180 : 120
+            request.timeoutInterval = imageMode ? 180 : 120
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             request.setValue(sessionID, forHTTPHeaderField: "session_id")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -229,29 +245,13 @@ struct ChatGPTModel: Decodable, Identifiable {
                 if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
                 throw MeloError.message("模型服务暂时不可用，请稍后重试。")
             }
-            var parser = ChatGPTSSE(maxBytes: imageTask?.makesImage == true ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageTask?.makesImage == true, requestStarted: requestStarted)
-            var revision = -1
-            var receivedText = false
-            var consumedBytes = 0
-            for try await byte in bytes {
-                consumedBytes += 1
-                if consumedBytes.isMultiple(of: 32768) { await Task.yield() }
-                try Task.checkCancellation()
-                guard epoch == expectedEpoch else { throw CancellationError() }
-                do { try parser.accept(byte) }
-                catch { onObservation?(parser.stream.observation); throw error }
-                if !receivedText && !parser.stream.text.isEmpty { receivedText = true; onReceiving?() }
-                if parser.stream.observation.revision != revision {
-                    revision = parser.stream.observation.revision
-                    onObservation?(parser.stream.observation)
-                }
-                let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
-                if replyStatus != nextStatus { replyStatus = nextStatus }
-                if parser.stream.completed { return parser.stream }
-            }
-            // Reaching here means no completion event: finish() reports truncation.
-            _ = try parser.finish()
-            return parser.stream
+            // Read and parse off the main thread: an image reply is megabytes of
+            // base64, and byte-by-byte work here would stall the interface.
+            let updates = StreamUpdates(onObservation: onObservation, onReceiving: onReceiving, setStatus: setStatus)
+            let stream = try await Self.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, updates: updates)
+            try Task.checkCancellation()
+            guard epoch == expectedEpoch else { throw CancellationError() }
+            return stream
         }
         for _ in 0..<DeviceToolLoop.maxRounds {
             let stream = try await streamOnce(body)
@@ -263,7 +263,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             for call in calls {
                 try Task.checkCancellation()
                 guard epoch == expectedEpoch else { throw CancellationError() }
-                replyStatus = "正在读取手机数据…"
+                setStatus("正在读取手机数据…")
                 let output = await deviceTools.execute(call)
                 deviceTools.onCall?(call, output)
                 try Task.checkCancellation()
@@ -276,4 +276,46 @@ struct ChatGPTModel: Decodable, Identifiable {
         }
         throw MeloError.message("手机数据操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
     }
+    /// Hands parser progress to the main actor at most every 150 ms (and always for the first text and the end).
+    final class StreamUpdates: @unchecked Sendable {
+        let onObservation: ((ExecutionObservation) -> Void)?
+        let onReceiving: (() -> Void)?
+        let setStatus: (String) -> Void
+        init(onObservation: ((ExecutionObservation) -> Void)?, onReceiving: (() -> Void)?, setStatus: @escaping (String) -> Void) {
+            self.onObservation = onObservation; self.onReceiving = onReceiving; self.setStatus = setStatus
+        }
+    }
+    nonisolated static func readStream(_ bytes: URLSession.AsyncBytes, maxBytes: Int, acceptImageCompletion: Bool, requestStarted: TimeInterval, updates: StreamUpdates) async throws -> ChatGPTStream {
+        var parser = ChatGPTSSE(maxBytes: maxBytes, acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted)
+        var revision = -1, receivedText = false, status = "正在思考…", lastSent = Date.distantPast
+        func publish(force: Bool) async {
+            let now = Date()
+            guard force || now.timeIntervalSince(lastSent) >= 0.15 else { return }
+            lastSent = now
+            let observation = parser.stream.observation
+            let changed = observation.revision != revision
+            revision = observation.revision
+            let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
+            let statusChanged = nextStatus != status
+            status = nextStatus
+            guard changed || statusChanged else { return }
+            await MainActor.run {
+                if changed { updates.onObservation?(observation) }
+                if statusChanged { updates.setStatus(nextStatus) }
+            }
+        }
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            do { try parser.accept(byte) }
+            catch { let observation = parser.stream.observation; await MainActor.run { updates.onObservation?(observation) }; throw error }
+            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; await MainActor.run { updates.onReceiving?() } }
+            if parser.stream.completed { await publish(force: true); return parser.stream }
+            if byte == 10 { await publish(force: false) }
+        }
+        // Reaching here means no completion event: finish() reports truncation.
+        _ = try parser.finish()
+        await publish(force: true)
+        return parser.stream
+    }
+
 }

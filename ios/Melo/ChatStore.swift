@@ -10,13 +10,17 @@ import SwiftUI
     private var draftSaveTask: Task<Void, Never>?
     private var draftsReady = false
     private var draftsFile: URL { file.deletingLastPathComponent().appendingPathComponent("composer-drafts.json") }
-    @Published var sendingID: String?
+    /// Conversations with a reply in progress. Each conversation runs on its own;
+    /// a reply in one never blocks sending, cancelling or editing another.
+    @Published private(set) var sendingChats: Set<String> = []
+    func isSending(_ chatID: String?) -> Bool { chatID.map { sendingChats.contains($0) } ?? false }
+    var anySending: Bool { !sendingChats.isEmpty }
     /// A team chosen for the next message of a chat. One-shot and local: it is
     /// cleared once that message is accepted, so a team never runs by surprise.
     @Published var pendingTeams: [String: PhoneTeamPlan] = [:]
     @Published private(set) var pendingDeviceAction: DeviceActionRequest?
-    private var deviceApproval: CheckedContinuation<Bool, Never>?
-    @Published private(set) var activeImageAction: ImageAction?
+    @Published private(set) var activeImageActions: [String: ImageAction] = [:]
+    func activeImageAction(for chatID: String) -> ImageAction? { activeImageActions[chatID] }
     @Published private(set) var replyBackgroundStatus = ""
     @Published var syncing = false
     @Published var error: String?
@@ -35,9 +39,12 @@ import SwiftUI
     private var automaticSyncTask: Task<Void, Never>?
     private var automaticSyncPending = false
     private let syncLoader: ((Data) async throws -> Data)?
-    private var sendTask: Task<Void, Never>?
-    private let replyBackground: ReplyBackgroundLifetime
-    private var expiredRunID: String?
+    private struct ActiveRun { let runID: String; var task: Task<Void, Never>?; let background: ReplyBackgroundLifetime }
+    private var runs: [String: ActiveRun] = [:]
+    private var injectedBackground: ReplyBackgroundLifetime?
+    private var expiredRuns: Set<String> = []
+    private struct ApprovalRequest { let chatID: String?; let request: DeviceActionRequest; let continuation: CheckedContinuation<Bool, Never> }
+    private var approvalQueue: [ApprovalRequest] = []
     private var isBackground = false
     private let replyLoader: (([ChatMessage], String) async throws -> ModelReply)?
     private let file: URL
@@ -49,15 +56,8 @@ import SwiftUI
         self.replyLoader = replyLoader
         self.syncLoader = syncLoader
         imageLibrary = ImageLibrary(directory: (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo")).appendingPathComponent("Images"))
-        replyBackground = background ?? ReplyBackgroundLifetime(scheduler: IOSReplyBackground())
+        injectedBackground = background
         file = (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo")).appendingPathComponent("conversations.json")
-        replyBackground.onProtectionChange = { [weak self] protection in
-            switch protection {
-            case .continued: self?.replyBackgroundStatus = "可切换应用 · 后台继续，系统可随时停止"
-            case .limited: self?.replyBackgroundStatus = "已申请短时后台续行 · 时长由系统决定"
-            case .unavailable: self?.replyBackgroundStatus = "当前未获后台执行时间，请保持应用在前台"
-            }
-        }
         do {
             try BackgroundReplyStorage.prepare([file, preferencesFile, sceneFile])
             if FileManager.default.fileExists(atPath: syncRecoveryFile.path) {
@@ -133,12 +133,26 @@ import SwiftUI
             lastSceneSave = Date()
         } catch { self.error = "任务记录暂未保存，聊天记录不受影响。" }
     }
+    /// One background allowance per running reply (iOS identifiers are per run).
+    private func makeBackground() -> ReplyBackgroundLifetime {
+        let lifetime: ReplyBackgroundLifetime
+        if let injected = injectedBackground, injected.runID == nil { lifetime = injected } else { lifetime = ReplyBackgroundLifetime(scheduler: IOSReplyBackground()) }
+        lifetime.onProtectionChange = { [weak self] protection in
+            switch protection {
+            case .continued: self?.replyBackgroundStatus = "可切换应用 · 后台继续，系统可随时停止"
+            case .limited: self?.replyBackgroundStatus = "已申请短时后台续行 · 时长由系统决定"
+            case .unavailable: self?.replyBackgroundStatus = "当前未获后台执行时间，请保持应用在前台"
+            }
+        }
+        return lifetime
+    }
+    private func background(forRun runID: String) -> ReplyBackgroundLifetime? { runs.values.first { $0.runID == runID }?.background }
     private func observe(_ value: ExecutionObservation, runID: String) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
         guard !executionRecords[index].terminal else { return }
         executionRecords[index].observe(value)
         if !value.operations.isEmpty || value.returnedModel != nil {
-            replyBackground.update(runID: runID, completed: 1, subtitle: "正在接收回复与检索结果")
+            background(forRun: runID)?.update(runID: runID, completed: 1, subtitle: "正在接收回复与检索结果")
         }
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
     }
@@ -178,11 +192,11 @@ import SwiftUI
         return preferences.agents.first { $0.id == preferences.chatAgents[chatID] } ?? preferences.agents.first ?? AgentProfile.defaults[0]
     }
     func selectAgent(_ id: String, chatID: String) {
-        guard sendingID != chatID, preferences.agents.contains(where: { $0.id == id }) else { return }
+        guard !isSending(chatID), preferences.agents.contains(where: { $0.id == id }) else { return }
         updatePreferences { $0.chatAgents[chatID] = id }
     }
     func selectModel(_ model: ConversationModel?, chatID: String) {
-        guard sendingID != chatID else { return }
+        guard !isSending(chatID) else { return }
         updatePreferences { if $0.chatModels == nil { $0.chatModels = [:] }; $0.chatModels?[chatID] = model }
     }
     func project(for chatID: String) -> PersonalProject? { preferences.projects?.first { $0.id == preferences.chatProjects?[chatID] } }
@@ -201,7 +215,7 @@ import SwiftUI
         do { try save(); guard updatePreferences({ $0.chatAgents[chat.id] = agentID; if let projectID { if $0.chatProjects == nil { $0.chatProjects = [:] }; $0.chatProjects?[chat.id] = projectID } }) else { chats.removeAll { $0.id == chat.id }; try save(); return nil }; return chat.id } catch { chats.removeAll { $0.id == chat.id }; self.error = error.localizedDescription; return nil }
     }
     @discardableResult func deleteConversation(_ chatID: String) -> Bool {
-        guard storageReady, executionReady, sendingID != chatID, chats.contains(where: { $0.id == chatID }) else { return false }
+        guard storageReady, executionReady, !isSending(chatID), chats.contains(where: { $0.id == chatID }) else { return false }
         do {
             let nextDeleted = try mergeDeletedChats(deletedChats, [.init(id: chatID, deletedAt: timestamp())])
             let nextChats = try merge(chats, [], deletedChats: nextDeleted)
@@ -218,7 +232,7 @@ import SwiftUI
     }
     func send(_ text: String, chatID: String, retry: Bool = false, imageTask: ImageTaskPlan? = nil, onPreflightFailure: ((String) -> Void)? = nil) {
         func fail(_ reason: String) { if let onPreflightFailure { onPreflightFailure(reason) } else { self.error = reason } }
-        guard sendingID == nil, storageReady, let index = chats.firstIndex(where: { $0.id == chatID }) else { onPreflightFailure?("当前无法发送，请确认对话存在且没有其他请求进行中。"); return }
+        guard !isSending(chatID), storageReady, let index = chats.firstIndex(where: { $0.id == chatID }) else { onPreflightFailure?("当前无法发送，请确认对话存在，且这个对话没有正在进行的回复。"); return }
         var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !retry, clean.isEmpty, imageTask?.references.isEmpty == false {
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
@@ -334,9 +348,9 @@ import SwiftUI
         guard history.last?.role == "user" else { return }
         let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
         executionRecords.append(record); saveExecutionRecords()
-        activeImageAction = plan.makesImage ? plan.action : nil
+        activeImageActions[chatID] = plan.makesImage ? plan.action : nil
         if teamPlan != nil { pendingTeams[chatID] = nil }
-        sendingID = chatID
+        sendingChats.insert(chatID)
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel, explicitModel = choice != nil
         let loader = replyLoader, chatAccount = account
         // One model request per team member or summary, on the chat's connection.
@@ -347,19 +361,21 @@ import SwiftUI
             if routeChatGPT { return try await chatAccount.reply(messages: messages, model: !explicitModel && !own.isEmpty ? own : routeCodexModel, instructions: system, allowWebSearch: web).text }
             return try await Network.reply(messages: messages, endpoint: routeEndpoint, model: !explicitModel && !own.isEmpty ? own : routeModel, token: routeKey, instructions: system, apiProtocol: routeProtocol).text
         }
-        expiredRunID = nil
+        let replyBackground = makeBackground()
+        runs[chatID] = ActiveRun(runID: record.runId, task: nil, background: replyBackground)
         replyBackground.begin(runID: record.runId) { [weak self] in
             guard let self else { return }
-            self.expiredRunID = record.runId
+            self.expiredRuns.insert(record.runId)
             self.finishRun(record.runId, state: "interrupted")
-            self.resolveDeviceAction(false)
-            self.sendTask?.cancel()
+            self.rejectApprovals(chatID: chatID)
+            self.runs[chatID]?.task?.cancel()
         }
-        sendTask = Task {
+        runs[chatID]?.task = Task {
             var completed = false
             defer {
                 replyBackground.finish(runID: record.runId, success: completed)
-                sendingID = nil; sendTask = nil; activeImageAction = nil
+                if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
+                sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
             }
             do {
@@ -367,7 +383,7 @@ import SwiftUI
                 let reply: ModelReply
                 if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(history, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { self.replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
@@ -402,9 +418,9 @@ import SwiftUI
                 LocalDeviceServices.shared.completed(text: reply.text, background: isBackground)
                 completed = true
                 replyBackground.finish(runID: record.runId, success: true)
-            } catch is CancellationError { if expiredRunID != record.runId { finishRun(record.runId, state: "cancelled") } }
-            catch let failure as URLError where failure.code == .cancelled { if expiredRunID != record.runId { finishRun(record.runId, state: "cancelled") } }
-            catch { if expiredRunID != record.runId {
+            } catch is CancellationError { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") } }
+            catch let failure as URLError where failure.code == .cancelled { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") } }
+            catch { if !expiredRuns.contains(record.runId) {
                 stage(record.runId, id: "reply:failure", name: "请求失败", status: "failed", output: String(error.localizedDescription.prefix(1000)))
                 finishRun(record.runId, state: "failed"); self.error = error.localizedDescription
             } }
@@ -449,7 +465,7 @@ import SwiftUI
         let result = try imageLibrary.transformed(image, operation: operation); imageRevision += 1; return result
     }
     func exportLocalArchive() throws -> Data {
-        guard storageReady, executionReady, sendingID == nil, !syncing else { throw MeloError.message("请等待当前任务结束后再导出。") }
+        guard storageReady, executionReady, !anySending, !syncing else { throw MeloError.message("请等待当前任务结束后再导出。") }
         let connections = try portableConnections()
         let workspace = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
         guard WorkspaceProjection.pending(preferences).isEmpty else { throw MeloError.message("部分人设暂不能完整导出为兼容资料，请先单独备份人设全文。") }
@@ -458,7 +474,7 @@ import SwiftUI
         return data
     }
     func importLocalArchive(_ archive: PortableArchive) throws {
-        guard storageReady, executionReady, sendingID == nil, !syncing else { throw MeloError.message("请等待当前任务结束后再导入。") }
+        guard storageReady, executionReady, !anySending, !syncing else { throw MeloError.message("请等待当前任务结束后再导入。") }
         try archive.validate()
         let connections = try portableConnections(), remote = archive.snapshot
         let nextDeleted = try mergeDeletedChats(deletedChats, remote.deletedChats ?? [])
@@ -477,16 +493,20 @@ import SwiftUI
         try commitSync(SyncRecovery(snapshot:SyncSnapshot(chats:nextChats,tasks:nextTasks,handoffs:nextHandoffs,deletedChats:nextDeleted),preferences:nextPreferences,records:nextRecords))
         deletedChats = nextDeleted; chats = nextChats; preferences = nextPreferences; executionRecords = nextRecords; taskCheckpoints = nextTasks; taskHandoffs = nextHandoffs
     }
-    func cancel() { resolveDeviceAction(false); sendTask?.cancel(); LocalDeviceServices.shared.stopSpeech() }
+    /// Stops one conversation's reply (or every reply when no conversation is given).
+    func cancel(chatID: String? = nil) {
+        for (id, run) in runs where chatID == nil || id == chatID { rejectApprovals(chatID: id); run.task?.cancel() }
+        LocalDeviceServices.shared.stopSpeech()
+    }
     // Phone data tools: reads run directly once the user enabled the kind;
     // every write waits here for an explicit tap in the confirmation alert.
-    private func deviceToolContext(runID: String, agentID: String) -> DeviceToolContext? {
+    private func deviceToolContext(runID: String, agentID: String, chatID: String? = nil) -> DeviceToolContext? {
         let policy = PhoneAgentPermissions.load().devicePolicy(for: agentID, device: DeviceToolPolicy.load())
         guard !policy.enabled.isEmpty else { return nil }
         return DeviceToolContext(policy: policy, execute: { [weak self] call in
             guard let self else { return #"{"ok":false,"error":"CANCELLED"}"# }
             return await DeviceToolRunner.run(call, policy: policy, source: SystemDeviceData.shared,
-                                             approve: { await self.requestDeviceApproval($0) }, isAllowed: {
+                                             approve: { await self.requestDeviceApproval($0, chatID: chatID) }, isAllowed: {
                 // Re-read both switches: either may be revoked while the reply runs.
                 guard let kind = DeviceToolSpec.named(call.name)?.kind else { return false }
                 return PhoneAgentPermissions.load().devicePolicy(for: agentID, device: DeviceToolPolicy.load()).enabled.contains(kind)
@@ -497,27 +517,37 @@ import SwiftUI
             self?.stage(runID, id: "device:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
         })
     }
-    func requestDeviceApproval(_ request: DeviceActionRequest) async -> Bool {
-        guard deviceApproval == nil, sendTask != nil, !Task.isCancelled else { return false }
+    /// Write confirmations are shown one at a time; a second conversation's request
+    /// waits for the first to be answered instead of being refused.
+    func requestDeviceApproval(_ request: DeviceActionRequest, chatID: String? = nil) async -> Bool {
+        guard anySending, !Task.isCancelled else { return false }
         return await withCheckedContinuation { continuation in
-            deviceApproval = continuation
-            pendingDeviceAction = request
+            approvalQueue.append(ApprovalRequest(chatID: chatID, request: request, continuation: continuation))
+            if approvalQueue.count == 1 { pendingDeviceAction = request }
         }
     }
     func resolveDeviceAction(_ allowed: Bool) {
-        guard let continuation = deviceApproval else { pendingDeviceAction = nil; return }
-        deviceApproval = nil; pendingDeviceAction = nil
-        continuation.resume(returning: allowed)
+        guard !approvalQueue.isEmpty else { pendingDeviceAction = nil; return }
+        let current = approvalQueue.removeFirst()
+        pendingDeviceAction = approvalQueue.first?.request
+        current.continuation.resume(returning: allowed)
+    }
+    private func rejectApprovals(chatID: String) {
+        let rejected = approvalQueue.filter { $0.chatID == chatID }
+        guard !rejected.isEmpty else { return }
+        approvalQueue.removeAll { $0.chatID == chatID }
+        pendingDeviceAction = approvalQueue.first?.request
+        for item in rejected { item.continuation.resume(returning: false) }
     }
     func enteredBackground() {
         isBackground = true
         flushDrafts()
         saveExecutionRecords()
-        replyBackground.enteredBackground()
+        for run in runs.values { run.background.enteredBackground() }
     }
     func becameActive() { isBackground = false }
     func interruptionNotice(for chatID: String) -> String? {
-        guard sendingID != chatID, chats.first(where: { $0.id == chatID })?.messages.last?.role == "user",
+        guard !isSending(chatID), chats.first(where: { $0.id == chatID })?.messages.last?.role == "user",
               scenes(for: chatID).last?.status == "interrupted" else { return nil }
         return "上次回复已中断，可能是后台任务结束或应用被关闭。提问已保存，点重新生成可再试。"
     }

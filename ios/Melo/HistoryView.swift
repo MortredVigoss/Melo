@@ -86,6 +86,6 @@ struct HistoryView: View {
         Button("重命名", systemImage: "pencil") { searchFocused = false; renameID = chat.id; title = chat.title }
         Button(store.preferences.pinnedChats.contains(chat.id) ? "取消置顶" : "置顶", systemImage: "pin") { store.updatePreferences { if $0.pinnedChats.contains(chat.id) { $0.pinnedChats.remove(chat.id) } else { $0.pinnedChats.insert(chat.id) } } }
         Button(store.preferences.archivedChats.contains(chat.id) ? "取消归档" : "归档", systemImage: "archivebox") { store.updatePreferences { if $0.archivedChats.contains(chat.id) { $0.archivedChats.remove(chat.id) } else { $0.archivedChats.insert(chat.id) } } }
-        Button("删除对话", systemImage: "trash", role: .destructive) { searchFocused = false; deleteID = chat.id }.disabled(store.sendingID == chat.id)
+        Button("删除对话", systemImage: "trash", role: .destructive) { searchFocused = false; deleteID = chat.id }.disabled(store.isSending(chat.id))
     }
 }

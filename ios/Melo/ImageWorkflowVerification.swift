@@ -30,7 +30,7 @@ import UIKit
             let blockedPlan=ImageTaskPlan(references:[ImageReference(id:blockedInput.id)])
             blocked.composerDrafts[blockedChat] = ConversationDraft(text:requirement,imagePlan:blockedPlan)
             blocked.send(requirement,chatID:blockedChat,imageTask:blockedPlan)
-            guard blocked.error?.contains(CodexOAuth.loginRequired)==true,blocked.sendingID==nil,blocked.chats.first?.messages.isEmpty==true,blocked.executionRecords.isEmpty,
+            guard blocked.error?.contains(CodexOAuth.loginRequired)==true,!blocked.anySending,blocked.chats.first?.messages.isEmpty==true,blocked.executionRecords.isEmpty,
                   blocked.composerDrafts[blockedChat]?.text==requirement,blocked.composerDrafts[blockedChat]?.imagePlan==blockedPlan else {throw MeloError.message("Unsigned Codex route did not preserve input at preflight")}
             do { _=try await blocked.account.reply(messages:[ChatMessage(role:"user",content:requirement)],model:"gpt-6-astra",instructions:"",imageTask:ImageTaskPlan(action:.edit,references:blockedPlan.references));throw MeloError.message("Unsigned direct account route admitted") }
             catch { guard error.localizedDescription==CodexOAuth.loginRequired else {throw error} }
@@ -47,7 +47,7 @@ import UIKit
             guard store.chats.first?.messages.isEmpty==true,calls==0 else{throw MeloError.message("空编辑要求触发了生成")}
             store.send("改一下背景墙，换成蓝色",chatID:chat,imageTask:ImageTaskPlan(references:[ImageReference(id:input.id)]))
             try await Task.sleep(for:.milliseconds(160))
-            guard store.chats.first?.messages.count==1,store.sendingID==nil,let user=store.chats.first?.messages.first,store.imageLibrary.images(for:user.id).count==1 else{throw MeloError.message("失败丢失参考图或问题")}
+            guard store.chats.first?.messages.count==1,!store.anySending,let user=store.chats.first?.messages.first,store.imageLibrary.images(for:user.id).count==1 else{throw MeloError.message("失败丢失参考图或问题")}
             guard store.imageLibrary.index.requests[user.id]?.action == .edit,
                   store.executionRecords.last?.pipeline?.contains(where: { $0.id == "reply:failure" && !$0.output.isEmpty }) == true else {throw MeloError.message("Automatic edit or failure diagnostic was not saved")}
             store.send("",chatID:chat,retry:true,imageTask:ImageTaskPlan(connectionID:connection.id))
@@ -58,7 +58,7 @@ import UIKit
             guard restored.imageLibrary.images(for:answer.id)==[output],restored.imageLibrary.index.requests[user.id]?.references.first?.id==input.id,restored.imageLibrary.index.requests[user.id]?.connectionID==connection.id,restored.executionRecords.last?.requestedModel=="gpt-image-2" else{throw MeloError.message("图片重启恢复失败")}
             let second=restored.newChat()!
             restored.send("把它改蓝",chatID:second,imageTask:ImageTaskPlan(action:.edit))
-            guard restored.chats.first(where:{$0.id==second})?.messages.isEmpty==true,restored.sendingID==nil else{throw MeloError.message("串用其他对话图片")}
+            guard restored.chats.first(where:{$0.id==second})?.messages.isEmpty==true,!restored.anySending else{throw MeloError.message("串用其他对话图片")}
             var naturalCalls = 0
             let natural = ChatStore(directory:root.appendingPathComponent("natural"),replyLoader:{ _, instructions in
                 naturalCalls += 1
@@ -66,7 +66,7 @@ import UIKit
             })
             let naturalChat = natural.newChat()!, naturalInput = try natural.importImage(orange)
             natural.send("增加一些对比度 粉色更粉 蓝色更蓝一点点",chatID:naturalChat,imageTask:ImageTaskPlan(references:[ImageReference(id:naturalInput.id)]))
-            for _ in 0..<100 { if natural.sendingID == nil { break }; try await Task.sleep(for:.milliseconds(20)) }
+            for _ in 0..<100 { if !natural.anySending { break }; try await Task.sleep(for:.milliseconds(20)) }
             guard naturalCalls == 1, let naturalAnswer = natural.chats.first?.messages.last,
                   naturalAnswer.role == "assistant", natural.imageLibrary.images(for:naturalAnswer.id).count == 1,
                   natural.imageLibrary.index.requests[natural.chats.first!.messages.first!.id]?.action == .edit else { throw MeloError.message("Natural edit needed a second request") }

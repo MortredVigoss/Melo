@@ -33,8 +33,8 @@ import Foundation
             actual.updatePreferences { $0.agents.append(custom) }
             let customChat = actual.newChat(agentID: custom.id)!
             func finish() async throws {
-                for _ in 0..<400 where actual.sendingID != nil { try await Task.sleep(for: .milliseconds(25)) }
-                guard actual.sendingID == nil, actual.chats.first(where: { $0.id == customChat })?.messages.last?.role == "assistant" else { throw MeloError.message("fixture reply did not finish") }
+                for _ in 0..<400 where actual.anySending { try await Task.sleep(for: .milliseconds(25)) }
+                guard !actual.anySending, actual.chats.first(where: { $0.id == customChat })?.messages.last?.role == "assistant" else { throw MeloError.message("fixture reply did not finish") }
             }
             actual.send("我不喜欢咖啡", chatID: customChat); try await finish()
             guard prompts.last?.contains("CUSTOM_ROLE_REQUEST") == true, prompts.last?.contains("MOOD_REQUEST") == false,

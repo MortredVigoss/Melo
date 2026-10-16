@@ -21,7 +21,7 @@ struct CodexLoginCard: View {
                         }
                         Spacer()
                     }.font(.subheadline)
-                }.disabled(account.busy || store.sendingID != nil)
+                }.disabled(account.busy || store.anySending)
             }
             if let code=account.deviceCode {
                 Text(code.userCode).font(.system(size:26,weight:.semibold,design:.monospaced)).tracking(2).textSelection(.enabled).accessibilityLabel("登录验证码 \(code.userCode)")
@@ -39,13 +39,13 @@ struct CodexLoginCard: View {
             } else {
                 Button { copied=false; Task { await account.signIn(existingID:account.activeID) } } label: {
                     Label("使用 ChatGPT 账号登录 Codex",systemImage:"arrow.up.right.circle").font(.subheadline.weight(.semibold)).frame(maxWidth:.infinity,minHeight:48)
-                }.buttonStyle(.borderedProminent).tint(meloGold).foregroundStyle(.black).disabled(store.sendingID != nil)
+                }.buttonStyle(.borderedProminent).tint(meloGold).foregroundStyle(.black).disabled(store.anySending)
                 if !account.registrations.isEmpty {
-                    Button("登录其他账号") { copied=false; Task { await account.signIn() } }.font(.caption).disabled(store.sendingID != nil)
+                    Button("登录其他账号") { copied=false; Task { await account.signIn() } }.font(.caption).disabled(store.anySending)
                 }
                 if account.signedIn {
                     Text(account.imageVerified ? "此账号已成功返回图片" : "登录已完成 · 图片能力等待首次实际生成或编辑验证").font(.caption).foregroundStyle(.secondary)
-                    Button("退出此手机的 Codex 登录",role:.destructive) { Task { await account.signOut() } }.font(.caption).disabled(store.sendingID != nil)
+                    Button("退出此手机的 Codex 登录",role:.destructive) { Task { await account.signOut() } }.font(.caption).disabled(store.anySending)
                 }
             }
             if let error=account.error { Text(error).font(.footnote).foregroundStyle(.orange).textSelection(.enabled) }

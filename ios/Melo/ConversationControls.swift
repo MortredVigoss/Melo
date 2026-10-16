@@ -94,7 +94,7 @@ struct ConversationControls: View {
                 } label: { Label(modelLabel.isEmpty ? "选择模型" : modelLabel, systemImage: "cpu").font(.caption).lineLimit(1).padding(11).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话模型")
                 Button { context = true } label: { Label("项目与资料\(store.knowledge(for: chatID).isEmpty ? "" : " · \(store.knowledge(for: chatID).count)")", systemImage: "paperclip").font(.caption).padding(11).background(MeloTheme.inset, in: Capsule()) }
             }.padding(.horizontal, 16).padding(.vertical, 6)
-        }.disabled(store.sendingID == chatID).onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }
+        }.disabled(store.isSending(chatID)).onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }
         .task { if account.signedIn && account.models.isEmpty { await account.loadModels() } }
         .sheet(isPresented: $context) { ConversationContextPicker(chatID: chatID) }
         Text(capability).font(.caption2).foregroundStyle(MeloTheme.soft).padding(.horizontal, 18).padding(.bottom, 3)

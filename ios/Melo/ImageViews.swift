@@ -49,14 +49,14 @@ struct ImageComposerBar: View {
                 }.frame(height:100)
             }
             HStack(spacing:14) {
-                PhotosPicker(selection:$photos,maxSelectionCount:4,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.sendingID != nil)
-                Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.sendingID != nil)
+                PhotosPicker(selection:$photos,maxSelectionCount:4,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.isSending(chatID))
+                Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.isSending(chatID))
                 Menu {
                     Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
                         do { imageConnections = try LLMConnection.saved().filter { !$0.key.isEmpty && $0.apiProtocol != "anthropic" }; options=true }
                         catch { store.error="模型连接无法读取，请先在系统设置中检查连接。" }
                     }
-                } label: { Label("图片选项",systemImage:"ellipsis").font(.caption) }.disabled(loading || store.sendingID != nil)
+                } label: { Label("图片选项",systemImage:"ellipsis").font(.caption) }.disabled(loading || store.isSending(chatID))
                 Spacer(minLength:0)
                 if loading { ProgressView().controlSize(.small) }
             }.foregroundStyle(meloGold)
@@ -155,9 +155,15 @@ struct ImagePreview: View {
                     if let previewBitmap {
                         ImageZoomView(image: previewBitmap, imageID: displayed.id)
                     } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-                }.frame(minHeight:180,maxHeight:.infinity).clipped()
-                Text("\(displayed.width) × \(displayed.height) · 双指缩放").font(.caption).foregroundStyle(.secondary)
-                if !displayed.reportedModel.isEmpty { Text("服务返回：\(displayed.reportedModel)").font(.caption2).foregroundStyle(.secondary) }
+                }
+                // Fixed share of the screen, not "whatever is left": the result and
+                // original pages then place the image at exactly the same height.
+                .frame(maxWidth:.infinity).containerRelativeFrame(.vertical) { length, _ in max(180, length * 0.58) }.clipped()
+                ScrollView { VStack(spacing:14) {
+                VStack(spacing:2) {
+                    Text("\(displayed.width) × \(displayed.height)").font(.caption).foregroundStyle(.secondary)
+                    Text("服务返回：\(displayed.reportedModel)").font(.caption2).foregroundStyle(.secondary).opacity(displayed.reportedModel.isEmpty ? 0 : 1)
+                }
                 ScrollView(.horizontal) {
                     HStack(spacing:18) {
                         Button("继续修改"){onUse(displayed);dismiss()}
@@ -176,6 +182,7 @@ struct ImagePreview: View {
                 if !status.isEmpty { Text(status).font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
                 if !recognized.isEmpty { ScrollView { Text(recognized).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading).padding() }.frame(maxHeight:140);Button("复制文字"){UIPasteboard.general.string=recognized;status="文字已复制"} }
                 Text("本机处理会另存新图，原图保留。图片文件暂不参与两端同步。").font(.caption2).foregroundStyle(.secondary).padding(.horizontal)
+                } }
             }.padding(.bottom,12).background(meloBackground).navigationTitle("图片").navigationBarTitleDisplayMode(.inline)
             .toolbar{ToolbarItem(placement:.confirmationAction){Button("完成"){dismiss()}}}
         }.preferredColorScheme(.dark)

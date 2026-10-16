@@ -292,6 +292,29 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"你好")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(),execute:{ _ in fatalError("disabled tools executed") }))
         assert(toolRounds==1)
+        // Ordinary replies offer the image tool only when this Agent may make images here;
+        // the model decides, and an image it returns is delivered instead of "missing tool".
+        var imageRounds=0
+        let onePixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="
+        CodexFixture.handler={ request in
+            imageRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            let tools=(body["tools"] as? [[String:Any]]) ?? []
+            assert(tools.contains { $0["type"] as? String=="image_generation" && $0["action"]==nil }, "image tool offered without forcing an action")
+            assert(body["tool_choice"] as? String=="auto" && (body["instructions"] as? String ?? "").contains("不要说缺少工具"))
+            return (200,try sse([["type":"image_generation_call","status":"completed","result":onePixel]]))
+        }
+        let drawn=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"把天空弄成晚霞的感觉吧")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:false,allowImageTool:true,statusKey:"chat-a")
+        assert(imageRounds==1 && drawn.images.count==1, "image returned by the auto tool must be kept")
+        assert(refreshing.replyStatuses["chat-a"]==nil, "per-chat status is cleared when the reply ends")
+        CodexFixture.handler={ request in
+            imageRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="image_generation" }, "no image tool without permission")
+            return (200,try sse([["type":"message","content":[["type":"output_text","text":"好的","annotations":[]]]]]))
+        }
+        _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"把天空弄成晚霞的感觉吧")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:false,allowImageTool:false)
+        assert(imageRounds==2)
         // An Agent without phone search permission gets no web_search tool, even for news-style questions.
         var searchRounds=0
         CodexFixture.handler={ request in
