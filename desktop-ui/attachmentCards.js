@@ -132,7 +132,9 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
           if (attachment.kind === 'image') {
             return ui`
               <figure class="message-attachment-card media-card image-card">
-                <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
+                <button type="button" class="message-image-preview" data-image-preview aria-label="预览图片：${escapeHtml(attachmentLabel(attachment))}" title="点击放大预览">
+                  <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
+                </button>
                 <figcaption>${escapeHtml(attachmentLabel(attachment))}</figcaption>
               </figure>
             `;

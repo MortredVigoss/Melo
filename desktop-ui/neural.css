@@ -70,7 +70,7 @@ body,html {background:#080807;}
 .neural-dashboard .composer-textarea {font-size:13px;}
 .neural-dashboard .composer-input-frame {border-radius:10px;}
 .neural-dashboard .thread-footer {padding-bottom:0;}
-.neural-dashboard .thread-header .page-title {font-size:25px;}
+.neural-dashboard .thread-header .page-title {font-size:21px;}
 .neural-dashboard .config-grid,.neural-dashboard .page-grid.two-columns {grid-template-columns:minmax(0,1fr);}
 .neural-shell.is-overview .neural-dashboard {background:linear-gradient(130deg,rgba(22,21,18,.39),rgba(11,10,8,.68));}
 .neural-overview {min-height:100%;display:flex;flex-direction:column;justify-content:center;padding:48px clamp(26px,4vw,68px);}
@@ -179,7 +179,6 @@ body,html {background:#080807;}
 .neural-overview {padding:0!important;min-height:0;display:block;}
 .neural-home-caption {text-align:center;margin-bottom:14px;}.neural-home-caption>span{font:8px monospace;letter-spacing:.2em;color:#ad9365;}.neural-home-caption p{font-size:13px;color:#cbbd9f;margin:10px 0;}
 .neural-home-composer .composer-card{background:#12100deb;border-color:#a18b5e3b;padding:12px;}
-.neural-home-composer .composer-textarea{min-height:45px;max-height:110px;}
 .neural-home-composer .composer-status-copy{display:none;}
 .neural-overview-note {margin:12px 0 0;text-align:center;font-size:9px;letter-spacing:.05em;}
 .neural-module-summary{display:none;}
@@ -212,7 +211,6 @@ body,html {background:#080807;}
 .neural-home-composer .composer-actions{flex-direction:row;align-items:center;}
 .neural-home-composer .composer-bottom-right{gap:6px;}
 .neural-home-composer .composer-input-frame{padding:6px 9px;border:0;background:none;box-shadow:none;}
-.neural-home-composer .composer-textarea{padding:5px;min-height:40px;}
 .neural-home-composer .composer-card{padding:8px 11px;}
 .neural-home-composer .composer-icon-button{width:34px;height:34px;min-height:34px;}
 .neural-home-caption{margin-bottom:9px;}.neural-home-caption p{margin:6px 0;}

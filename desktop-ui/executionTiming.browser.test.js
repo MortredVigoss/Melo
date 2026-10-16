@@ -23,7 +23,8 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
     const page = await browser.newPage({ viewport: { width: 1200, height: 850 }, reducedMotion: 'reduce' });
     page.setDefaultTimeout(8000);
     const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.clock.install({ time: new Date('2026-10-16T02:00:00Z') });
+    // pauseAt must be in the future even under a busy parallel test runner.
+    await page.clock.install({ time: new Date('2026-10-15T02:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-16T02:00:00Z'));
     const importmap = (await readFile('desktop-ui/index.html', 'utf8')).match(/<script type="importmap">[\s\S]*?<\/script>/)[0];
     await page.route('**/timing-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/executionPanel.css">${importmap}<style>body{background:#090c12;color:#d8c8af;font:14px system-ui;margin:0;padding:16px;box-sizing:border-box}.message{padding:16px;border:1px solid #a4987e33;border-radius:16px;margin-top:16px}.message-scene-replay{background:none;color:#d8c8af;border:0;padding:8px 0}</style></head><body><p>计时与图片进度 · 本地验收样本</p><main></main><article class="message" data-message-id="answer"><p>这里保留回复内容和图片，不因秒表更新而重新创建。</p></article><script type="module">
@@ -70,4 +71,26 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
     const timer = setTimeout(() => child.kill('SIGKILL'), 5000); await exited; clearTimeout(timer);
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test('shared popup and dialog materials keep secondary text distinct', {timeout:30000}, async()=>{
+ const browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ try {
+  const page=await browser.newPage({viewport:{width:1100,height:750}});
+  const html=await readFile('desktop-ui/index.html','utf8');
+  const sheets=[...html.matchAll(/<link[^>]+href="([^"?]+\.css)[^"]*"/g)].map(m=>m[1].replace(/^\//,''));
+  const css=(await Promise.all(sheets.map(p=>readFile(join('desktop-ui',p),'utf8')))).join('\n');
+  await page.setContent(`<style>${css}</style><body style="background:#080b10"><div id="app"><div class="neural-dashboard"><h1>Shared surfaces</h1></div></div><div class="conversation-context"><div class="conversation-context-menu" style="position:relative;bottom:auto;right:auto"><strong>Project and team</strong><p>Supporting description</p></div></div><div class="language-menu" style="position:relative;bottom:auto;left:auto">Language</div><dialog class="chat-file-dialog management-dialog"><h2>Manage connection</h2><p>Shared dialog material</p><button>Close</button></dialog></body>`);
+  const before=await page.evaluate(()=>{
+   const menu=getComputedStyle(document.querySelector('.conversation-context-menu')),lang=getComputedStyle(document.querySelector('.language-menu'));
+   return {menu:menu.backgroundImage,lang:lang.backgroundImage,blur:menu.backdropFilter,langBlur:lang.backdropFilter,radius:menu.borderRadius,langRadius:lang.borderRadius,text:getComputedStyle(document.querySelector('strong')).color,muted:getComputedStyle(document.querySelector('.conversation-context-menu p')).color};
+  });
+  assert.equal(before.menu,before.lang);assert.notEqual(before.menu,'none');assert.equal(before.blur,'blur(4px)');assert.equal(before.langBlur,before.blur);assert.equal(before.radius,'16px');assert.equal(before.langRadius,before.radius);assert.notEqual(before.text,before.muted);
+  await page.evaluate(()=>document.querySelector('dialog').showModal());
+  const opened=await page.evaluate(()=>({radius:getComputedStyle(document.querySelector('dialog')).borderRadius,bg:getComputedStyle(document.querySelector('dialog')).backgroundImage,dim:getComputedStyle(document.querySelector('.neural-dashboard')).filter}));
+  assert.equal(opened.radius,'22px');assert.notEqual(opened.bg,'none');assert.equal(opened.dim,'brightness(0.45)');
+  await mkdir('.tmp/ios-align-release-20261016',{recursive:true});await page.screenshot({path:'.tmp/ios-align-release-20261016/desktop-surfaces.png'});
+  await page.evaluate(()=>document.querySelector('dialog').close());
+  assert.equal(await page.locator('.neural-dashboard').evaluate(el=>getComputedStyle(el).filter),'none');
+ } finally {await browser.close();}
 });

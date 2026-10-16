@@ -1413,7 +1413,7 @@ async function requestOpenAICompatibleReply({
   }
 
   const json = await response.json();
-  onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage });
+  onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage, finishReason: json.choices?.[0]?.finish_reason });
   const assistantText = extractAssistantText(json);
   if (typeof onDelta === 'function') {
     await onDelta({

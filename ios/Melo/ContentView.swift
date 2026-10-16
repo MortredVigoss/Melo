@@ -298,7 +298,7 @@ struct ChatView: View {
                 .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
         ScrollViewReader { reader in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     if chat == nil {
                         Text("这段对话已被删除").foregroundStyle(.secondary)
                         Button("开启新对话") { if let id = store.newChat() { chatID = id } }
@@ -346,7 +346,7 @@ struct ChatView: View {
                                     }
                                 }
                             }
-                        }.padding(18).padding(.leading, 12)
+                        }.padding(14).padding(.leading, 10)
                         .background(message.role == "user" ? meloGold.opacity(0.065) : meloBackground.opacity(0.3), in: RoundedRectangle(cornerRadius: 22))
                         .overlay(alignment: .leading) {
                             VStack(spacing: 6) { Circle().fill(meloGold.opacity(0.7)).frame(width: 4, height: 4); Rectangle().fill(LinearGradient(colors: [meloGold.opacity(0.3), meloGold.opacity(0.04)], startPoint: .top, endPoint: .bottom)).frame(width: 0.5) }.padding(.vertical, 20).padding(.leading, 10)
@@ -378,7 +378,7 @@ struct ChatView: View {
                     if deviceSpeech.speechFailed { Text(deviceSpeech.speechStatus).font(.caption2).foregroundStyle(.red) }
                     if deviceSpeech.speechActive { Button { LocalDeviceServices.shared.stopSpeech() } label: { Image(systemName: "speaker.slash") }.accessibilityLabel("停止朗读") }
                     AtomicButton(busy: store.isSending(chatID)) { executionRunID = nil; showExecution = true }
-                    TextField("给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").lineLimit(1...6).padding(13).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+                    TextField("给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").font(.subheadline).lineLimit(2...4).padding(.horizontal, 10).padding(.vertical, 8).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
                     Button {
                         composerFocused = false
                         if voiceInput.state.active { voiceInput.stop() }
@@ -410,7 +410,7 @@ struct ChatView: View {
                     Spacer()
                     Text("回复可能有误，请核实重要信息").font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
-            }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).background(meloBackground.opacity(0.65))
+            }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 6).background(meloBackground.opacity(0.65))
         }
         .onAppear { store.selectedConversationID = chatID }
         .onDisappear { voiceInput.cancel(); store.flushDrafts() }

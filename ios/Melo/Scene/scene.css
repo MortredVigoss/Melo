@@ -83,14 +83,12 @@
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-meta {display:none;}
 .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread {padding:8px;}
 .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-input-frame {padding:4px 8px;}
-.composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-textarea {min-height:32px;max-height:80px;}
 .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {gap:5px;}
 @media(max-height:750px){.chat-thread .execution-panel-stage{height:max(220px,var(--detail-height,0px));min-height:220px}}
 .chat-thread .execution-panel-stage {height:max(clamp(280px,calc(100dvh - 490px),410px),var(--detail-height,0px));min-height:280px;}
 @media(min-width:1100px){
 .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-core {flex-direction:row;align-items:center;}
 .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-input-frame {flex:1;min-width:0;order:-1;}
-.composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-textarea {min-height:32px;}
 }
 
 /* Camera controls float above the same transparent space, not the chat scroll. */
@@ -134,8 +132,25 @@
 .execution-candidate:has(.execution-comparison[open]) > a { display:none; }
 .execution-panel .execution-comparison img { height:150px; }
 .execution-panel .execution-inspector { max-height:calc(100% - 60px); }
+.execution-api-detail dl {display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px;margin:9px 0 14px;}
+.execution-api-detail dl>div {min-width:0;padding:7px 9px;border:1px solid #c2a67320;border-radius:8px;background:#b5a27908;}
+.execution-api-detail dt {font-size:9px;color:#8e9eaa;}.execution-api-detail dd {margin:3px 0 0;color:#dccbab;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+.execution-panel .execution-signal {position:relative;width:calc(100% - 24px);margin:0 12px 10px;padding:9px 12px;display:grid;gap:4px;text-align:left;background:#12111ec4;backdrop-filter:blur(8px);border-color:#a98bb844;box-shadow:0 5px 22px #0003;}
+.execution-signal b {font-size:10px;font-weight:500;color:#c8b2da;}
+.execution-signal span {font-size:11px;line-height:1.6;color:#d2d7dc;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;}
+.execution-signal small,.execution-panel .execution-api-line {font-size:9px;color:#b5a68e;overflow-wrap:anywhere;}
+.execution-reasoning-records {position:absolute;z-index:4;inset:46px 12px 50px;overflow:auto;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin;overscroll-behavior:contain;}
+.execution-panel .execution-reasoning-records button {flex:0 0 auto;text-align:left;padding:12px 14px;background:#171520b8;border-color:#b095ce38;}
+.execution-reasoning-records b {font-size:10px;font-weight:500;color:#cbb6dd;}
+.execution-reasoning-records p {font-size:12px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;color:#ced4dc;margin:8px 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;}
+.execution-reasoning-records small {font-size:9px;color:#b1a48f;}
+.execution-panel-stage[data-focus=compute]:has(.execution-reasoning-records) .execution-operation {display:none;}
+.execution-inspector {overscroll-behavior:contain;scrollbar-width:thin;}
 .chat-thread .execution-panel:has(.execution-panel-stage[data-focus=create][data-wide=false]) .execution-panel-viewport { max-height:clamp(250px,calc(100dvh - 360px),440px); }
 .chat-thread .execution-panel .execution-panel-stage[data-focus=create][data-wide=false] { height:clamp(250px,calc(100dvh - 360px),440px); }
+
+.execution-panel.is-collapsed .execution-signal-host {display:none;}
+.chat-thread .execution-panel:has(.execution-signal) .execution-panel-stage {height:clamp(220px,calc(100dvh - 560px),340px);min-height:220px;}
 
 .execution-timing {font-size:11px;line-height:1.6;color:#a4b3be;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0;}
 .execution-timing-host {padding:0 13px 9px;}
@@ -171,6 +186,7 @@
  --space-inset-size:20px;
  --space-blur:4px;
  --text:var(--space-text);--text-muted:var(--space-muted);--text-soft:var(--space-soft);
+ --text-primary:var(--space-text);--text-secondary:var(--space-muted);
  --border:var(--space-edge-soft);--border-strong:var(--space-edge-raised);
  --radius-xl:var(--space-radius-panel);--radius-lg:var(--space-radius-card);--radius-md:var(--space-radius-control);
 }
@@ -239,7 +255,7 @@
  backdrop-filter:none;-webkit-backdrop-filter:none;
 }
 .neural-dashboard .composer-input-frame {background:var(--space-inset);border-color:var(--space-edge-soft);border-radius:var(--space-radius-control);box-shadow:none;}
-.neural-dashboard .composer-textarea {font-size:13px;line-height:1.65;}
+.neural-dashboard .composer-textarea {font-size:13px;line-height:20px;}
 .neural-dashboard .message-bubble {background:rgba(16,18,22,.38);border-radius:var(--space-radius-card);}
 .neural-dashboard .message.is-user .message-bubble {background:rgba(75,58,31,.28);}
 .neural-dashboard .composer-icon-button,.neural-home-composer .composer-icon-button,.atomic-button {width:40px;height:40px;min-height:40px;flex:0 0 40px;border-radius:var(--space-radius-control);}
@@ -332,7 +348,6 @@
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) {gap:12px;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .page-title {font-size:17px;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .small-button {min-height:30px;padding:6px 9px;font-size:10px;}
-.composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-textarea {max-height:60px;}
 .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:row;align-items:center;}
 .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-input-frame {flex:1;min-width:0;order:-1;}
 @container workspace (max-width:640px) {
@@ -521,18 +536,18 @@
 .neural-shell[data-neural-stage=overview] .neural-cluster-copy strong {font-size:14px;}
 .neural-shell[data-neural-stage=overview] .neural-cluster-copy small {font-size:8px;}
 .neural-shell[data-neural-stage=overview] .neural-cluster[data-group=projects] .neural-cluster-copy {left:calc(50% + var(--neural-home-orb,80px)/2 + 10px);top:14px;}
-.neural-home-composer .composer-shell {position:relative;gap:8px;}
-.neural-home-composer .composer-conversation-choice {min-height:36px;margin:0;padding:0 116px 0 4px;}
-.neural-home-composer .image-task-options {position:absolute;right:4px;top:0;margin:0;z-index:6;}
-.neural-home-composer .image-task-options>button {min-height:36px;padding:6px 12px;font-size:11px;}
-.neural-home-composer .image-task-fields {
+:is(.neural-home-composer,.chat-thread) .composer-shell {position:relative;gap:8px;}
+:is(.neural-home-composer,.chat-thread) .composer-conversation-choice {min-height:36px;margin:0 0 6px;padding:0 116px 0 4px;}
+:is(.neural-home-composer,.chat-thread) .image-task-options {position:absolute;right:4px;top:0;margin:0;z-index:6;}
+:is(.neural-home-composer,.chat-thread) .image-task-options>button {min-height:36px;padding:6px 12px;font-size:11px;}
+:is(.neural-home-composer,.chat-thread) .image-task-fields {
  position:absolute;right:0;bottom:calc(100% + 10px);width:min(560px,calc(100vw - 64px));
  max-height:min(320px,calc(100dvh - 160px));overflow:auto;padding:16px;
  background:var(--space-floating);border-color:var(--space-edge-raised);border-radius:var(--space-radius-card);
  box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur));-webkit-backdrop-filter:blur(var(--space-blur));
 }
-.neural-home-composer .composer-card {padding:12px 14px;}
-.neural-home-composer .composer-textarea {font-size:14px;min-height:44px;}
+.neural-home-composer .composer-card {padding:8px 10px;}
+.neural-home-composer .composer-textarea {font-size:13px;}
 .neural-home-caption {margin-bottom:12px;}
 .neural-home-caption p {font-size:16px;margin:7px 0;}
 .neural-shell[data-neural-stage=module] .neural-branch {min-height:66px;padding:12px;}
@@ -549,6 +564,13 @@
 
 /* Let an opened conversation use more of its existing work surface. */
 .neural-dashboard .page:has(>.chat-thread) {padding-inline:16px;padding-block:14px;}
+
+/* Context/team menus and management dialogs use the same spatial layers. */
+.conversation-context-menu { color:var(--space-text);background:var(--space-floating);border-color:var(--space-edge-raised);border-radius:var(--space-radius-card);box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur)); }
+.chat-file-dialog { color:var(--space-text);background:var(--space-dialog);border-color:var(--space-edge-raised);border-radius:var(--space-radius-panel);box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur)); }
+.chat-file-dialog::backdrop { background:rgba(0,0,0,.25); }
+body:has(.chat-file-dialog[open]) #app .neural-dashboard,
+body:has(.chat-file-dialog[open]) #app .neural-nav { filter:brightness(.45);pointer-events:none; }
 
 /* Desktop materials are shared; these rules only adapt the phone viewport. */
 :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:var(--space-text);background:transparent}

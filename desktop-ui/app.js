@@ -9,6 +9,7 @@ import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
+import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
@@ -2917,20 +2918,42 @@ function focusComposerSoon() {
   });
 }
 
+let composerResizeObserver;
+let observedComposer;
+let observedComposerWidth = 0;
+
 function syncComposerTextareaHeight() {
   const composer = document.querySelector('#composer');
+  if (composer !== observedComposer) {
+    composerResizeObserver?.disconnect();
+    observedComposer = composer;
+    observedComposerWidth = composer?.clientWidth || 0;
+    if (composer && typeof ResizeObserver !== 'undefined') {
+      composerResizeObserver ||= new ResizeObserver(entries => {
+        if (entries[0]?.target !== observedComposer) return;
+        const width = observedComposer.clientWidth;
+        if (width === observedComposerWidth) return;
+        observedComposerWidth = width;
+        syncComposerTextareaHeight();
+      });
+      composerResizeObserver.observe(composer);
+    }
+  }
   if (!(composer instanceof HTMLTextAreaElement)) {
     return;
   }
 
   const computedStyle = window.getComputedStyle(composer);
-  const minHeight = Number.parseFloat(computedStyle.minHeight) || 58;
-  const maxHeight = Number.parseFloat(computedStyle.maxHeight) || 220;
+  const minHeight = Number.parseFloat(computedStyle.minHeight) || 48;
+  const maxHeight = Number.parseFloat(computedStyle.maxHeight) || 88;
+  const scrollTop = composer.scrollTop;
 
   composer.style.height = 'auto';
-  const nextHeight = Math.min(maxHeight, Math.max(minHeight, composer.scrollHeight));
+  const contentHeight = composer.scrollHeight;
+  const nextHeight = Math.min(maxHeight, Math.max(minHeight, contentHeight));
   composer.style.height = `${nextHeight}px`;
-  composer.style.overflowY = composer.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  composer.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  composer.scrollTop = scrollTop;
 }
 
 function renderEditContextMenu() {
@@ -6455,60 +6478,6 @@ function renderSidebar() {
   `;
 }
 
-function renderTopbar() {
-  const data = uiState.bootstrap;
-  const project = activeProject();
-  const currentAgent = conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
-
-  return ui`
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="pill-button" data-action="open-command-palette">
-          Quick actions
-          <span class="meta-label">Cmd/Ctrl+K</span>
-        </button>
-      </div>
-
-      <div class="topbar-center">
-        <div class="mode-switch">
-          ${data.modes
-            // Cowork / Code modes are hidden for now — keeping them in
-            // MODE_DEFS so persisted chats and the command palette still
-            // round-trip, but not showing the tabs in the topbar until
-            // we decide what those pages should actually be.
-            .filter(mode => mode.id === 'chat')
-            .map(
-              mode => ui`
-                <button
-                  class="mode-button ${
-                    data.settings.activeMode === mode.id ? 'is-active' : ''
-                  }"
-                  data-action="switch-mode"
-                  data-mode="${mode.id}"
-                >
-                  ${escapeHtml(mode.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-      </div>
-
-      <div class="topbar-right status-group">
-        ${
-          currentAgent
-            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}</div>`
-            : ''
-        }
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? 'Agent 默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
-        </div>
-      </div>
-    </header>
-  `;
-}
-
 function syncModelPickerPosition() {
   const panel = document.querySelector('#model-picker-panel');
   const trigger = document.querySelector('.model-picker-trigger');
@@ -6926,6 +6895,7 @@ function renderComposerCard({ inline = false } = {}) {
   return ui`
     <div class="composer-shell">
       <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
+      ${renderImageTaskControls(uiState.composerAttachments)}
       ${renderExecutionPanel()}
       ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
@@ -7023,12 +6993,12 @@ function renderComposerCard({ inline = false } = {}) {
               <textarea
                 id="composer"
                 class="composer-textarea"
+                rows="2"
                 placeholder="${escapeHtml(inline ? t("回复…") : composerPlaceholder())}"
                 aria-label="消息输入框"
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
 
-            ${renderImageTaskControls(uiState.composerAttachments)}
             ${renderAttachmentPreviewList(uiState.composerAttachments)}
             ${
               uiState.composerDragActive
@@ -10573,6 +10543,8 @@ function render({ background = false, changedSections = null } = {}) {
   // every time a background render fires (autosave, runtime poll, toast
   // expiry). See captureFormTextareaScrolls for the full rationale.
   const _savedTextareaScrolls = captureFormTextareaScrolls();
+  const _savedComposer = document.querySelector('#composer');
+  const _savedComposerScroll = _savedComposer ? { value: _savedComposer.value, top: _savedComposer.scrollTop } : null;
 
   // Save content scroll position — render() rebuilds the DOM and would reset it to 0
   const _contentScroller = document.querySelector('.content-scroll');
@@ -10670,7 +10642,6 @@ function render({ background = false, changedSections = null } = {}) {
       <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
-        ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
         ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
         ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
@@ -10738,6 +10709,10 @@ function render({ background = false, changedSections = null } = {}) {
   syncSearchFieldFocus();
   syncFileEditorGoToLine();
   syncComposerTextareaHeight();
+  const _newComposer = document.querySelector('#composer');
+  if (_newComposer && _savedComposerScroll?.value === _newComposer.value) {
+    _newComposer.scrollTop = _savedComposerScroll.top;
+  }
   restoreAgentEditorState();
   // Put the caret back into whichever input/textarea was focused before the
   // page update. Runs AFTER restoreAgentEditorState so the agent-specific
@@ -13443,6 +13418,7 @@ function retryMissingImages({ chatId, query, task }) {
 
 installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
+installImagePreview({ saveNativeImage: window.webkit?.messageHandlers?.meloVoice ? payload => nativeSettings('saveImage', payload) : undefined });
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
 window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));
 

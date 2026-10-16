@@ -443,7 +443,8 @@ import SwiftUI
         let name: @Sendable (String) -> String = { id in agents.first { $0.id == id }?.name ?? id }
         stage(runID, id: "team", name: "团队协作", status: "running", output: "由「\(lead.name)」发起：" + plan.members.map(name).joined(separator: " → "))
         let leadWeb = permissions.allows(lead.id, .network)
-        let outcome = await AgentTeam.run(plan, task: task, call: { [weak self] call in
+        let deadline = Date().addingTimeInterval(AgentTeam.timeBudget)
+        var outcome = await AgentTeam.run(plan, task: task, deadline: deadline, call: { [weak self] call in
             guard let member = agents.first(where: { $0.id == call.memberID }) else { throw AgentTeam.Failure.invalid("团队成员 Agent 不存在：\(call.memberID)") }
             await MainActor.run { self?.stage(runID, id: "team:\(call.memberID):\(call.round)", name: "\(member.name) · 成员执行", status: "running", output: call.round > 1 ? "第 \(call.round) 轮" : "") }
             let hints = call.hints
@@ -457,7 +458,13 @@ import SwiftUI
         var text = AgentTeam.digest(outcome, name: name)
         if !outcome.timedOut && !outcome.results.isEmpty {
             stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "running")
-            let summary = try? await ask(lead, lead.prompt + "\n\n" + AgentTeam.summaryInstruction, AgentTeam.summaryInput(task: task, outcome: outcome, name: name), false)
+            let input = AgentTeam.summaryInput(task: task, outcome: outcome, name: name)
+            let final = try await AgentTeam.summarize(deadline: deadline) {
+                try await ask(lead, lead.prompt + "\n\n" + AgentTeam.summaryInstruction, input, false)
+            }
+            outcome.timedOut = final.timedOut
+            if final.timedOut { text = AgentTeam.digest(outcome, name: name) }
+            let summary = final.text
             try Task.checkCancellation()
             if let summary, AgentTeam.usableSummary(summary) { text = summary; stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "completed", output: "已写出最终答复") }
             else { stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "failed", output: "汇总未完成，改用按交接记录生成的摘要") }

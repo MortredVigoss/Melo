@@ -172,6 +172,11 @@ struct PortableModelReceipt: Codable, Equatable {
     var simulated = false
     var purpose: String?
 }
+enum KnowledgeCollection {
+    static func items(_ notes: [KnowledgeNote], results: Bool, deleted: Bool, query: String) -> [KnowledgeNote] {
+        notes.filter { ($0.deleted == true) == deleted && ($0.kind == "result") == results && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) }
+    }
+}
 enum ConversationContext {
     static func validateNewProject(_ id: String?, preferences: MobilePreferences) throws {
         guard let id else { return }

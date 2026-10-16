@@ -41,7 +41,7 @@ struct TeamOutcome {
     let results: [TeamMemberResult]
     let accepted: Bool
     let cancelled: Bool
-    let timedOut: Bool
+    var timedOut: Bool
     var ok: Bool { !cancelled && !timedOut && accepted && !results.isEmpty && (mode == .reviewLoop || results.allSatisfy(\.ok)) }
 }
 
@@ -198,6 +198,28 @@ enum AgentTeam {
             }
         }
         return TeamOutcome(mode: plan.mode, results: results, accepted: accepted, cancelled: Task.isCancelled, timedOut: timedOut)
+    }
+
+    /// The lead uses the remainder of the original team budget. URLSession and
+    /// provider tasks propagate cancellation; late text is never accepted.
+    static func summarize(deadline: Date, call: @escaping () async throws -> String) async throws -> (text: String?, timedOut: Bool) {
+        try Task.checkCancellation()
+        let remaining = deadline.timeIntervalSinceNow
+        guard remaining > 0 else { return (nil, true) }
+        enum Result { case text(String?), expired }
+        let result = await withTaskGroup(of: Result.self) { group in
+            group.addTask { .text(try? await call()) }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)); return .expired }
+            let first = await group.next() ?? .expired
+            group.cancelAll()
+            return first
+        }
+        try Task.checkCancellation()
+        guard Date() < deadline else { return (nil, true) }
+        switch result {
+        case .expired: return (nil, true)
+        case .text(let text): return (text.flatMap { usableSummary($0) ? $0 : nil }, false)
+        }
     }
 
     // MARK: Reply

@@ -18,7 +18,7 @@ struct TeamSheet: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
+            MeloForm {
                 switch store.teamState(for: chatID) {
                 case .delegateOff:
                     Section { Text("「\(lead.name)」未开启委派。请在电脑的 Agent 设置里开启“委派”，并勾选可以协作的 Agent；设置会同步到这台手机。").foregroundStyle(.secondary) }
