@@ -198,6 +198,33 @@ import CoreGraphics
         try check(try library.data(photo) == storedBefore, "sending never rewrites the stored photo")
         let generatedKeepsPNG = try library.store(bigData, title: "result")
         try check(generatedKeepsPNG.mimeType == "image/png", "generated results stay lossless")
+        // Conversation image context: two photos, a result made from photo 1, then follow-ups.
+        func image(_ id: String, source: String? = nil) -> LocalImage { LocalImage(id: id, width: 10, height: 10, mimeType: "image/png", title: id, referenceIDs: source.map { [$0] } ?? []) }
+        let photoA = UUID().uuidString, photoB = UUID().uuidString, resultA = UUID().uuidString
+        let upload = ChatMessage(role: "user", content: "都换成晴天"), answer = ChatMessage(role: "assistant", content: "已修改第一张")
+        let owned: [String: [LocalImage]] = [upload.id: [image(photoA), image(photoB)], answer.id: [image(resultA, source: photoA)]]
+        let catalog = ImageContext.catalog([upload, answer]) { owned[$0] ?? [] }
+        try check(catalog.map(\.number) == [1, 2, 3] && catalog[2].sourceID == photoA)
+        try check(ImageContext.marker(for: upload.id, in: catalog) == "[此消息附带图片：图1、图2]" && ImageContext.marker(for: answer.id, in: catalog) == "[此回复生成图片：图3（由图1修改）]")
+        try check(ImageContext.resolve("第二张也改成晴天", catalog: catalog) == [photoB], "second photo, which has no result yet")
+        try check(ImageContext.resolve("第一张再亮一点", catalog: catalog) == [resultA], "first photo means its newest version")
+        try check(ImageContext.resolve("第一张用原图重新改", catalog: catalog) == [photoA], "原图 means the original")
+        try check(ImageContext.resolve("这两张都调亮", catalog: catalog) == [resultA, photoB], "both, each in its newest version")
+        try check(ImageContext.resolve("图2 换成黑白", catalog: catalog) == [photoB])
+        try check(ImageContext.resolve("再亮一点", catalog: catalog) == [resultA], "unspecified follow-up keeps the latest result")
+        let followUp = try ImageTaskPlan().resolved(prompt: "第二张也处理一下", previousImages: [photoB])
+        try check(followUp.action == .edit && followUp.references.map(\.id) == [photoB], "a follow-up naming photo 2 edits photo 2")
+        let both = try ImageTaskPlan().resolved(prompt: "这两张都调亮", previousImages: [resultA, photoB])
+        try check(both.action == .edit && both.separately == true && both.references.count == 2)
+        let question = try ImageTaskPlan().resolved(prompt: "第二张图里是什么天气？", previousImages: [photoB])
+        try check(question.action == .analyze && question.references.map(\.id) == [photoB], "questions about an earlier image attach it")
+        try check(try ImageTaskPlan().resolved(prompt: "谢谢", previousImages: [photoB]).references.isEmpty, "ordinary chat attaches nothing")
+        // A follow-up linked to an earlier result is not a new upload: ordinals still mean the original upload.
+        let followUpMessage = ChatMessage(role: "user", content: "第二张再亮一点")
+        let ownedLater = owned.merging([followUpMessage.id: [image(resultA, source: photoA)]]) { a, _ in a }
+        let later = ImageContext.catalog([upload, answer, followUpMessage]) { ownedLater[$0] ?? [] }
+        try check(later.count == 3 && ImageContext.resolve("第一张的原图是什么天气？", catalog: later) == [photoA], "re-used images do not start a new batch")
+        try check(ImageContext.attachmentNote([photoB], catalog: catalog) == "[本轮附带：图2（你上传的第 2 张），按顺序对应随后的图片]")
         print("Image workflow passed: persisted originals/references, safe formats/paths, local transforms, provider payloads, explicit intent, complete image SSE and failure boundaries")
     }
 }

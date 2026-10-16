@@ -196,7 +196,7 @@ struct ImageSizeRejected: Error {}
             let plan = imageTask ?? ImageTaskPlan()
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": plan.model].merging(plan.size == "auto" ? [:] : ["size": plan.size]) { _, new in new }]
             if body["tool_choice"] == nil { body["tool_choice"] = "auto" }
-            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。"
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。用户提到之前的图片（如“第二张”“原图”）而本轮没有附带那张图时，不要凭空生成新图，请说明需要哪一张。"
         }
         let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone data tools are offered only for ordinary replies, never image generation.

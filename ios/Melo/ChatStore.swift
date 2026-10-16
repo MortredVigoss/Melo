@@ -246,9 +246,9 @@ import SwiftUI
         var plan: ImageTaskPlan
         let imageInputs: [ImageInput]
         do {
-            let previousImages = chats[index].messages.reversed().compactMap { message -> [String]? in
-                let images = imageLibrary.images(for: message.id); return images.isEmpty ? nil : images.map(\.id)
-            }.first ?? []
+            // Follow-ups mean specific earlier images ("第二张", "原图", "这几张"…), not just the latest message's.
+            let library = imageLibrary
+            let previousImages = ImageContext.resolve(clean, catalog: ImageContext.catalog(chats[index].messages) { library.images(for: $0) })
             if retry, let last = chats[index].messages.last {
                 clean = last.content
                 plan = try (imageLibrary.index.requests[last.id] ?? ImageTaskPlan(action: .analyze)).resolved(prompt: clean, previousImages: [])
@@ -353,7 +353,16 @@ import SwiftUI
         instructions += MobileMemoryRecall.instructions(recalled.facts)
         let history = chats[index].messages
         // The model sees the video as frames plus its transcript; the chat keeps a short line.
-        let modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
+        var modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
+        // Every message that carried images says which numbers they have, so the model can follow
+        // "图2" / "第二张" across turns; the current turn names the images actually attached.
+        let library = imageLibrary
+        let catalog = ImageContext.catalog(history) { library.images(for: $0) }
+        for position in modelHistory.indices {
+            if let marker = ImageContext.marker(for: modelHistory[position].id, in: catalog) { modelHistory[position].content += "\n" + marker }
+        }
+        if let lastPosition = modelHistory.indices.last, !plan.references.isEmpty, catalog.contains(where: { $0.messageID != modelHistory[lastPosition].id && plan.references.map(\.id).contains($0.id) }),
+           let note = ImageContext.attachmentNote(plan.references.map(\.id), catalog: catalog) { modelHistory[lastPosition].content += "\n" + note }
         let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
         let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
@@ -393,7 +402,7 @@ import SwiftUI
                 try Task.checkCancellation()
                 if let video { stage(record.runId, id: "video:study", name: "视频画面与文字稿", status: "completed", output: "\(video.frames.count) 帧 · " + (video.transcript.isEmpty ? video.transcriptNote : "文字稿 \(video.transcript.count) 字")) }
                 let reply: ModelReply
-                if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: history, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
+                if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
                 else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }

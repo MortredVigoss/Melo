@@ -71,12 +71,15 @@ struct ImageTaskPlan: Codable, Equatable {
             // A photo attached to this message plus an instruction (not a question or a request to
             // look at it) is an edit request, however it is phrased. Same rule as src/services/chat/imageTask.js.
             let fromReference = affirmative.range(of: #"(?:参考|按照|照着|仿照|根据|模仿|用)[^。！？\n]{0,20}(?:生成|画|做|制作|设计|出)[^。！？\n]{0,20}(?:图|海报|插画|封面|头像|壁纸|图标|logo)|\b(?:based on|using|like) (?:this|the) (?:image|photo|picture)\b.{0,40}\b(?:generate|create|draw|make)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
-            let uploadedInstruction = !references.isEmpty && ImageTaskPlan.asksAboutImage(masked) == false && ImageTaskPlan.instructsChange(affirmative)
+            // Also a follow-up that names an earlier image ("第二张也…", "原图…", "这几张…") plus an instruction.
+            let namesEarlierImage = references.isEmpty && !previousImages.isEmpty && affirmative.range(of: #"第\s*[一二两三四五六七八1-8]\s*张|图\s*[1-9]|原图|这几张|这两张|这张|那张|上一张|刚才那|\b(?:first|second|third|original)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+            let uploadedInstruction = (!references.isEmpty || namesEarlierImage) && ImageTaskPlan.asksAboutImage(masked) == false && ImageTaskPlan.instructsChange(affirmative)
             result.action = (edits || adjustments || (uploadedInstruction && !generates && !naturalGeneration && !fromReference)) && (!references.isEmpty || !previousImages.isEmpty) ? .edit : (generates || naturalGeneration || fromReference) ? .generate : .analyze
         }
         if result.action == .edit && result.references.isEmpty { result.references = previousImages.map { ImageReference(id: $0) } }
-        if result.action == .analyze && result.references.isEmpty && masked.range(of: "这张|这幅|图中|上图|图里的|in this image|in the picture", options: [.regularExpression,.caseInsensitive]) != nil {
-            result.references = previousImages.map { ImageReference(id: $0) }
+        // A question about earlier images attaches them, so the model sees what it is asked about.
+        if result.action == .analyze && result.references.isEmpty && (masked.range(of: "这张|这幅|图中|上图|图里的|in this image|in the picture", options: [.regularExpression,.caseInsensitive]) != nil || ImageContext.mentionsImage(masked)) {
+            result.references = previousImages.prefix(4).map { ImageReference(id: $0) }
         }
         // Several photos are edited one by one unless the wording asks to combine them.
         result.separately = result.action == .edit && result.references.count > 1 && !ImageTaskPlan.combinesImages(masked) ? true : nil

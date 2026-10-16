@@ -15,7 +15,7 @@ if '--renderer-only' in sys.argv:
 if platform.system() != 'Darwin':
     print('Swift iOS protocol tests require macOS; JS/renderer gate passed; Swift explicitly skipped')
     raise SystemExit(0)
-shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift']
+shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/ImageContext.swift']
 suites={'main':['ios/Melo/Models.swift'], 'NetworkTests':shared, 'ConnectionProbeTests':['ios/Melo/ConnectionProbe.swift'], 'ChatGPTTests':shared, 'SSETransportTests':shared, 'WebSearchTests':shared, 'ExecutionTests':shared, 'ExecutionPageTests':['ios/Melo/ExecutionPagePolicy.swift']}
 suites['ConversationFoundationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/ReplyDocument.swift','ios/Melo/WorkspaceProjection.swift']
 suites['SyncContractTests']=['ios/Melo/Models.swift']

@@ -40,6 +40,30 @@ import UIKit
             await settle()
             guard calls.count == before + 1 else { throw MeloError.message("合成应只发 1 次请求，实际 \(calls.count - before)") }
             result["combine"] = ["requests": calls.count - before]
+            // 6. Follow-ups across turns: each message knows the numbered images, "第二张" means photo 2's
+            //    newest version, and a question about the first original attaches that original.
+            var prompts: [String] = []
+            let flow = ChatStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("media-flow-" + UUID().uuidString), replyLoader: { messages, instructions in
+                prompts.append(messages.map(\.content).joined(separator: "\n---\n"))
+                if instructions.contains("图片创作助手") { return ModelReply(text: "", images: [ImagePayload(data: png(.systemTeal), mimeType: "image/png")]) }
+                return ModelReply(text: "看到了。")
+            })
+            guard let flowChat = flow.newChat() else { throw MeloError.message("无法创建对话") }
+            let pair = try [UIColor.red, .green].map { try flow.importImage(png($0)) }
+            flow.send("都换成晴天", chatID: flowChat, imageTask: ImageTaskPlan(references: pair.map { ImageReference(id: $0.id) }))
+            for _ in 0..<300 where flow.anySending { try? await Task.sleep(nanoseconds: 25_000_000) }
+            guard let firstAnswer = flow.chats.first(where: { $0.id == flowChat })?.messages.last, flow.imageLibrary.images(for: firstAnswer.id).count == 2 else { throw MeloError.message("两张都应返回结果") }
+            let resultForB = flow.imageLibrary.images(for: firstAnswer.id)[1]
+            flow.send("第二张再亮一点", chatID: flowChat)
+            for _ in 0..<300 where flow.anySending { try? await Task.sleep(nanoseconds: 25_000_000) }
+            let secondQuestion = flow.chats.first(where: { $0.id == flowChat })!.messages.dropLast().last!
+            guard flow.imageLibrary.index.requests[secondQuestion.id]?.references.map(\.id) == [resultForB.id] else { throw MeloError.message("“第二张”没有指向第二张的最新结果") }
+            flow.send("第一张的原图是什么天气？", chatID: flowChat)
+            for _ in 0..<300 where flow.anySending { try? await Task.sleep(nanoseconds: 25_000_000) }
+            let thirdQuestion = flow.chats.first(where: { $0.id == flowChat })!.messages.dropLast().last!
+            guard flow.imageLibrary.index.requests[thirdQuestion.id]?.references.map(\.id) == [pair[0].id] else { throw MeloError.message("提问没有带上第一张原图") }
+            guard let lastPrompt = prompts.last, lastPrompt.contains("[此消息附带图片：图1、图2]"), lastPrompt.contains("[本轮附带：图1（你上传的第 1 张）") else { throw MeloError.message("模型没有收到图片编号：\(prompts.last?.suffix(200) ?? "")") }
+            result["followUps"] = ["requests": prompts.count, "secondPhotoResolved": true, "originalAttached": true]
             // 5. A real video (pushed into Documents by the test script): frames + transcript note,
             //    sent as frames with the transcript text, and only a short line kept in the chat.
             let sample = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("media-verification-sample.mp4")
