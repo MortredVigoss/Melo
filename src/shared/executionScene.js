@@ -1,3 +1,5 @@
+import { executionMetadata, publicSummaryText } from './executionMetadata.js';
+
 // Browser/server contract. Only observations enter this state; animation has
 // no authority to create operations, URLs, progress or candidate results.
 export const EXECUTION_MODULES = Object.freeze([
@@ -135,12 +137,16 @@ export function applyExecutionEvent(scene, event) {
     if (!stage) { stage = { id: event.id, module: event.module === 'compute' ? 'compute' : 'create', name: sceneText(event.name, 100), status: 'queued' }; scene.pipeline.push(stage); }
     if (!TERMINAL_SCENE_STATUSES.includes(stage.status)) {
       for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel']) {
-        if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 12000 : 1000);
+        if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 24000 : 1000);
       }
       if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
       if (event.status === 'running' && !stage.startedAt) stage.startedAt = at;
       if (TERMINAL_SCENE_STATUSES.includes(event.status)) stage.finishedAt = at;
-      if (event.channel === 'reasoning-summary') stage.channel = 'reasoning-summary';
+      if (event.channel === 'reasoning-summary') { stage.channel = 'reasoning-summary'; stage.output = publicSummaryText(stage.output); }
+      if (event.api) {
+        const next = executionMetadata(event.api);
+        stage.api = { ...stage.api, ...next, ...((stage.api?.usage || next.usage) ? { usage: { ...stage.api?.usage, ...next.usage } } : {}) };
+      }
       scene.lastModule = stage.module;
     }
   }

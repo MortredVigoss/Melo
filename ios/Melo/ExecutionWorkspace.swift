@@ -1,6 +1,41 @@
 import SwiftUI
 import WebKit
 
+struct ExecutionTimingView: View {
+    let record: ExecutionRecord
+    @Environment(\.locale) private var locale
+    private func duration(_ ms: Double) -> String { "\(Int(ms / 1000).formatted(.number.locale(locale))) s" }
+    private func clock(_ date: Date) -> String {
+        date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute().second().locale(locale))
+    }
+    @ViewBuilder private func details(_ now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let elapsed = record.elapsedMilliseconds(now: now) {
+                if record.terminal { Text("本轮用时 \(duration(elapsed))") }
+                else { Text("已用时 \(duration(elapsed))") }
+            } else { Text("用时未记录") }
+            if let model = record.modelMilliseconds(now: now) { Text("思考与回复 \(duration(model))") }
+            if record.terminal, !record.runId.hasPrefix("legacy-"), let end = ExecutionClock.date(record.finishedAt) {
+                if record.status == "completed" { Text("完成于 \(clock(end))") }
+                else { Text("停止于 \(clock(end))") }
+            }
+            if let image = record.imageProgress {
+                Text("图片成果 \(image.percent)% · 已保存 \(image.saved)/\(image.requested) 张")
+                ProgressView(value: Double(image.percent), total: 100).tint(meloGold)
+                    .accessibilityLabel("图片成果进度")
+                let end = image.saved >= image.requested ? ExecutionClock.date(image.finishedAt) : record.terminal ? ExecutionClock.date(record.finishedAt) : now
+                if let elapsed = ExecutionClock.elapsed(image.startedAt, end: end) { Text("图片处理 \(duration(elapsed))") }
+                if let saved = ExecutionClock.date(image.finishedAt) { Text("图片保存于 \(clock(saved))") }
+                if !record.terminal && image.percent < 100 { Text("按已保存张数计；单张生成进度未提供") }
+            }
+        }.font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+    }
+    var body: some View {
+        if record.terminal { details(Date()) }
+        else { TimelineView(.periodic(from: .now, by: 1)) { context in details(context.date) } }
+    }
+}
+
 struct ExecutionWorkspace: View {
     @EnvironmentObject var store: ChatStore
     @Environment(\.dismiss) private var dismiss
@@ -28,6 +63,7 @@ struct ExecutionWorkspace: View {
                             if records.isEmpty { Text("当前对话还没有任务记录。").foregroundStyle(.secondary) }
                             ForEach(records.reversed()) { record in
                                 Text(record.query).font(.headline)
+                                ExecutionTimingView(record: record)
                                 Text("\(record.status) · \(record.operations.count) 次实际调用").font(.caption)
                                 ForEach(record.sources) { source in
                                     Button(source.title) { if let url = URL(string: source.citationUrl ?? source.url) { sourcePage = SourcePage(url: url) } }.multilineTextAlignment(.leading)

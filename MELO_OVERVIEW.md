@@ -17,13 +17,14 @@
 | --- | --- | --- |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
+| 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
 | MCP 启动 | 图表、PDF、Mermaid、本地 Playwright 默认启动；移除首启询问，并修复原生 NVM PATH 导致服务无法连接 | 63 项 MCP + 浏览器专项、两次真实冷启动通过；开关与调用授权保留，见 `docs/mcp-startup-20261015.md` |
 | 桌面图片链 | 10-15 只读实查默认 `codex-oauth`，未指定图像型号/质量；10-14 生产编辑回执为 `gpt-image-2-codex`、成图 `quality: low` | API 配置默认 Sunburst 2.5 不等于 Codex 已调用它；未接入 `xhigh/max`，不能称默认满血；见本页图像默认值核对 |
 | 阅读密度 / 图片预览 | 阅读/预览UI仍共享WIP；10-15原生桌面复现生成图预览失败：旧签名URL403、原件仍在，同文件任务回看重签200且SHA一致 | 已确认访问生命周期缺陷，尚未修复；完整[图片承载治理计划](docs/image-capacity-plan-20261015.md)覆盖原件/衍生/缓存/内存/恢复；历史366 UI不代表已覆盖过期和重启 |
 | 双端 Logo | 10-16 简洁低饱和黑金 M 已替换双端正式资源；电脑已实际安装 | 17 个资源散列、尺寸/alpha、安装包签名、Finder 新图标、原生启动及资料核对通过；手机资源已更新但实体包未安装，见 [交接](docs/design/logo-muted-20261016/README.md) |
 | 桌面神经总览 | `22bcd1b` 已提清双端银河；本轮桌面中枢按可用高度下移最多 30px，给顶部悬停放大留白 | 18 项神经 UI 回归通过，原生首页已刷新；1320×860 顶部完全聚焦仍在画面内；[证据](docs/galaxy-clarity-20261016.md)。手机安装边界沿用前轮 |
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
-| 执行面板 | 桌面多段公开摘要按轮合并，API 回执白名单保存与历史回看；2026-10-15 核对实际 diff 仍 WIP | 无摘要不补造；手机共享渲染已打包，但独立请求端新增数据采集不在该轮范围；当次真实请求未返回摘要，多段合并为协议样本证据 |
+| 执行面板 | 桌面多段公开摘要与 API 白名单回执；手机已补独立 Responses/兼容 API/Anthropic 回执并保留历史 | 手机 `2afe9dd`，0.5.18 (24) 已装；协议/持久化/模拟器详情通过，真实服务回执本轮未发请求；v1 同步不传新增 api 字段 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
@@ -77,6 +78,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
 | 外部官网原型 | `/Users/mortred/Documents/New project/melo-universe/src/{data,neural-geometry,scene,navigation,main}.js`、`styles.css` | 独立 Three.js / Vite SPA；连通神经图、真实投影命中、History API 管理三级 hash 路由，`onFrame` 进度协调相机/滚动/正文；不接产品模型、账号或收款，旧站与桌面导出分别保留 |
 | 外部 SWE-bench 适配 | `/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/{run_melo.mjs,container_tools.py,run_batch.py}` | 调用产品正常消息入口，在独立基准进程替换六个工具运行函数并自动授权；产品仓库没有Docker功能改动或接入提交；评分不覆盖桌面权限/手机 |
+| GitHub 公开介绍 | `README.md`、GitHub About / Topics（`MortredVigoss/Melo`） | 英文介绍个人AI执行工作区、双端职责/架构、内置语义记忆、源码启动和分层验证；按用户要求仅保留英文，未发布未完成源码或宣称全集跑分 |
 
 ### 设计线程模块补充（2026-10-15 核对，源码仍 WIP）
 
@@ -111,12 +113,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 银河清晰度后续：桌面首页中枢轻微下移，保留顶部放大余量 | 18 项回归、原生刷新、顶部聚焦完整放大通过；[银河与留白证据](docs/galaxy-clarity-20261016.md)，此前手机资源已同步但未实体安装 |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
-| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-15 补文档交接；脚本静态核对与 `bash -n` 通过；176,085 是 10-14 历史统计，非当前计数；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
+| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-16 再统计 180,648 行（含空行/注释，不含 ios）；只读源码统计，非产品验收；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
 | melo网站 | `019dce6e-faae-7850-a8bb-db48b737b928` | 2026-10-15 核对神经网络四区、外放标签和连续镜头源码/快照差异；首页有界轴向转动，非各层无限自转 | 独立本地 WIP，无 Git 元数据/可核实提交；历史 13 单元/22 浏览器未重跑；本轮静态核对旧站 9/9 散列与桌面副本一致；详见[网站交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>)，Safari/用户验收/发布待验 |
-| Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF |
+| Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF；GitHub英文README/About/12标签已发布 `39cc759` |
 
 外部跑分证据：`/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/report.md`。网站旧目录 `site/`、`/Users/mortred/Desktop/melo_web` 与 `melo-universe/` 是不同产物；不能自动互相覆盖。
 
@@ -165,12 +167,17 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 ## 8. 补录完成登记与接手索引
 
+### 2026-10-16 — melo副线 — 刷新固定范围统计
+- 同日用户再次要求统计，重新执行相同范围命令，最新 180,648 行，退出码 0；下方 179,438 为同日较早快照。本轮仍仅更新文档及派生快照，无产品测试或提交。
+- 线程 `019d5db3-d2cd-70c2-bc8f-955d36099219`；按既定四目录与扩展名执行 `find ... -print0 | xargs -0 wc -l`，结果 179,438 行，退出码 0；仅源码文件行数证据，不含手机目录，不代表测试或用户验收。
+- 本轮仅总览与进度文档 WIP、刷新派生快照；保留其他线程改动，未提交、推送或运行产品 gate；后续统计须重跑，数值会随共享源码变化。
+
 2026-10-15 主线通过逐线程状态快照确认，8 条被通知线程的本次补录均为 `completed`，且本地对应记录存在。重复实现按实际源码归属合并：UI 辅助线程保留派发/截图证据，产品实现归 `melo ui`；设计增强与手机登录、文件权限分别记录。
 
 | 已完成补录的线程 | 详细交接入口 |
 | --- | --- |
 | melo主线（历史·2026-10-15） | [登录交付及生命周期](docs/handoffs/melo-thread-backfill-20261015.md#historical) |
-| 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片；五语与质量链路已提交；本轮免费 MCP 默认启动和取消首启询问 | MCP 63 项及原生两次冷启动通过，交接见 `docs/mcp-startup-20261015.md`；旧阅读/预览/执行详情仍共享 WIP，边界见本页专项 |
+| 设计 Melo | [API 观测](docs/handoffs/melo-thread-backfill-20261015.md#design-api)、[阅读与图片保存](docs/handoffs/melo-thread-backfill-20261015.md#design-reading) |
 | melo ui | [神经场景交接](docs/handoffs/melo-ui-20261015.md)、[原始回执](docs/handoffs/melo-thread-backfill-20261015.md#ui)、[B 图标落地](docs/design/logo-cosmic-20261015/IMPLEMENTATION.md) |
 | 读取 melo ui 方案 | [派发、历史测试与 Library 截图](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
@@ -195,24 +202,40 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 官方核对：[Sunburst 型号页](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst)、[图像工具参数](https://developers.openai.com/api/docs/guides/tools-image-generation) 支持明确选择 Sunburst 与 `xhigh/max`；公开 API 文档不等于 Codex 私有通道已支持。未发模型请求、未安装/更改设置；本轮不重跑产品 gate。
 - 未完 / 下一步：若要保证 Sunburst 最高档，需分通道接入明确型号与 `quality: max`、同步手机，并验证账户能力及实际回执；当前不能标为“默认满血”。
 
+### 2026-10-15 — Benchmark Melo on a major platform — 更新 GitHub 英文项目介绍
+- 线程 ID：`01a139e9-2509-7623-8cb7-4df16b2d0c86`；状态：公开英文README已发布 `39cc759`（前序 `a303f49`）；About和12个主题标签已更新；此交接及短进度保留本地WIP。
+- 行为：早期CLI、零依赖与旧记忆默认说明 → 个人AI执行工作区；说明macOS/iPhone职责、模型连接、内置ONNX记忆、工具授权、模块化架构和源码启动。按用户“英文就好，中文删掉”，删除README.zh-CN.md和切换链接。
+- 文件/接口：`README.md` 与 GitHub `MortredVigoss/Melo` About/Topics；没有虚构官网/许可证/全集评分，也没有发布产品源码WIP。无手机或运行行为变更。
+- 验证：文档相对链接、npm脚本名称、GitHub Markdown渲染与限定diff检查通过；远端README blob与本地相同，中文README返回404，简介/12标签回读一致。本地主线安全合并公开文档，前后45项其他WIP字节散列一致，此前未推送的5条产品/内部文档提交未随本次发布。未跑产品gate/安装或调用模型。
+- 证据：`.tmp/github-profile-20261015/publication.json`、`remote-verification.json`；[公开英文README](https://github.com/MortredVigoss/Melo/blob/master/README.md)。重读共享文档后只补本线程内容，并运行 `npm run progress:codex`。
+- 未完/下一步：公开介绍不替代真实账号、当前源码树和手机验收；Docker产品化、大样本评分及其他线程WIP仍按原交接推进。本轮未变更域名、仓库可见性、权限或发布包。
+
+### 2026-10-15 — 设计 Melo — 五语界面系统
+- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：已本地提交 `2cae1cd`（质量前序 `fcb52d7`）；远端预审环境缺失，未推送。范围：中/英/韩/日/西班牙语；系统设置及左下快捷入口；手机同步接入。
+- 已核对：当前没有语言层，`localSettings.js` 仅写固定中文；本机偏好由 `src/domain/settings/localPreferences.js` 校验，手机使用 UserDefaults。保留已有共享 WIP。
+- 实现：`desktop-ui/i18n.js` / `translations.js` 显式静态词条、`languageControls.js` 左下入口，偏好 `interfaceLanguage`；手机同词条生成 `Localizable.xcstrings`、原生菜单及本机设置。用户文本与模型提示不翻译，保存失败保留原语言与草稿。
+- 验证：语言浏览器及单元 7/7（五语、刷新保持、草稿、保存失败重试）；当前共享树 `npm test` 3496 JS + 23 Swift、语法/设置浏览器通过；独立 UI 370/370。实际桌面原生切换中→英→中与模拟器英文主页检查通过，修正手机按钮重叠。证据 `.tmp/language-20261015/`。
+- 隔离提交树：367 UI、73 图像、21 Swift/共享渲染与模拟器构建通过；只提交本次语言变更，旧设计和其他线程 WIP 保留。入口 `docs/interface-languages-20261015.md`；未更改用户默认中文、手机账号或聊天资料。原生设置日语预览遇到模拟器既有凭据错误，菜单触控/其他子页与实体机仍待验。
+
 ### 2026-10-15 — melo主线 — 图片预览故障与承载计划
 
 - 用户确认电脑端报错；原生点击复现，旧地址403/过期，原文件2,090,093字节存在，任务回看同文件重签200且SHA一致。当前仅调查/计划，未修产品实现。
 - [方案](docs/image-capacity-plan-20261015.md)：P0访问恢复→资源盘点→原件可靠保存→缩略图/内存→磁盘缓存回收→大历史/排队→双端验收。已核对生成目录漏统计、预览文件生命周期、Base64/解码峰值与分散限额；尚未压测容量上限。
 - 证据：`.tmp/image-capacity-audit-20261015/` 的签名状态、存储快照、源码散列；没有生成模型请求、清数据或安装。其他线程语言/质量/OAuth WIP保留。
 
-### 2026-10-15 — 设计 Melo — 五语界面系统
-- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：实现与验证完成，正在本地提交；远端预审环境缺失。范围：中/英/韩/日/西班牙语；系统设置及左下快捷入口；手机同步接入。
-- 已核对：当前没有语言层，`localSettings.js` 仅写固定中文；本机偏好由 `src/domain/settings/localPreferences.js` 校验，手机使用 UserDefaults。保留已有共享 WIP。
-- 实现：`desktop-ui/i18n.js` / `translations.js` 显式静态词条、`languageControls.js` 左下入口，偏好 `interfaceLanguage`；手机同词条生成 `Localizable.xcstrings`、原生菜单及本机设置。用户文本与模型提示不翻译，保存失败保留原语言与草稿。
-- 验证：语言浏览器及单元 7/7（五语、刷新保持、草稿、保存失败重试）；当前共享树 `npm test` 3496 JS + 23 Swift、语法/设置浏览器通过；独立 UI 370/370。实际桌面原生切换中→英→中与模拟器英文主页检查通过，修正手机按钮重叠。证据 `.tmp/language-20261015/`。
-- 隔离提交树：367 UI、73 图像、21 Swift/共享渲染与模拟器构建通过；只提交本次语言变更，旧设计和其他线程 WIP 保留。入口 `docs/interface-languages-20261015.md`；未更改用户默认中文、手机账号或聊天资料。原生设置日语预览遇到模拟器既有凭据错误，菜单触控/其他子页与实体机仍待验。
-
 ### 2026-10-15 — 设计 Melo — 默认高质量与真实回执
-- 状态：质量链路已本地提交 `fcb52d7`，界面与隔离暂存修正随语言提交；用户明确要求生成质量改高。桌面默认/设置、生图和编辑链路及手机请求均传 `quality: high`；运行中用户 imageSettings 已只修改质量为 high，保留原引擎和账号。
+- 状态：质量链路已本地提交 `fcb52d7`，界面与隔离暂存修正已进入 `2cae1cd`；用户明确要求生成质量改高。桌面默认/设置、生图和编辑链路及手机请求均传 `quality: high`；运行中用户 imageSettings 已只修改质量为 high，保留原引擎和账号。
 - 文件：`src/images/imageSettings.js` / `codexImageEngine.js`、`src/services/chat/imageTask.js` / `imageEditFastPath.js`、`src/tools/builtins/imageTool.js`，桌面 `imageControls.js`、手机 `ImageWorkflow.swift` / `CodexOAuth.swift`。回执保留请求和实际质量，禁止把请求值当成服务结果。
 - 验证：72 项图像协议测试通过；一次合成图真实请求确认工具参数 high、HTTP 200，但 Codex 服务回报 low。证据 `.tmp/language-20261015/quality-live.json` 与 PNG；未换付费通道、未自动重生成。
 - 未完：上游没有按 high 执行，不能声称实际高质量已实现。当前桌面服务已重启加载并回读 high（PID 59032，`desktop-live.json`）；手机仅装独立模拟器，未覆盖实体机。`git pp` 因本机预审可执行文件缺失 ENOENT 停止，未推送或绕过。
+
+### 2026-10-15 — melo iphone — 图片保存明确反馈并防止重复写入
+- 线程 ID：`01a11116-8469-74a2-9815-8ce59b702afa`；状态：WIP，保留现有语言/图片/桌面共享改动，不混合提交。
+- 行为：各入口局部忙碌且每次重复写入 → 全入口共用本机成功记录和进行中保护；首次成功绿色标记，重启保留，第二次询问“取消/再保存一份”。失败可重试，取消无写入，处理后新图独立。
+- 接入：`ios/Melo/ImagePhotoSave.swift`、`ImageViews.swift`、`ios/Tests/ImagePhotoSaveTests.swift`、工程/测试脚本；新提示加入现有五语词条和生成资源。只申请照片添加权限，不读取实体相册、不改变模型或原图字节；桌面交互原则写入 `docs/mobile-desktop-alignment.md`。
+- 验证：23 组 Swift、4 项 JS/共享资源、语言专项及 Debug 模拟器构建通过。专用模拟器实际照片 6→7，重复提示/取消仍 7，确认再存后 8；重启标记和长按入口共用确认已验。证据 `.tmp/ios-photo-save-20261015/`，专项 `docs/ios-photo-save-20261015.md`。
+- 失败与修正：首次共享词条哈希校验失败，重生成 Scene 后通过；main-actor 默认参数警告修复。原生试版确认 popover 隐藏取消按钮，改为显式双按钮 alert 并重新编译/点击核对。
+- 未完：未签名或覆盖实体手机，真机触感/相册待验；旧版历史保存无法追溯，系统分享不在本防重复范围。未发真实模型请求，未改手机权限/账号/已有聊天。后续安装核对完整共享树及版本，不把本次局部验收当发布 gate。
 
 ### 2026-10-15 — melo主线 — 项目边界与图片治理对齐
 
@@ -221,11 +244,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 建议：项目配置统一解析，本机工作区/授权独立绑定，运行/审批捕获目标快照；无项目按需持久目录，原图走稳定资产引用。图片预览 P0 独立修，原件自动回收等生命周期规则稳定；详见两份计划的依赖顺序。
 - 证据：`.tmp/project-architecture-audit-20261015/source-manifest.json` 的27份源码散列（HEAD 2cae1cd 加共享WIP）；验证为静态调用路径、文档链接与diff，未运行产品gate/原生操作或模型请求。保留全部其他线程WIP。
 
-### 2026-10-15 — melo主线 — Agent 演进 P0 开发中
+### 2026-10-15 — melo主线 — Agent 方案执行位置
 
-- 用户已批准 Agent/能力/协作/知识成果方案并授权实施；[阶段记录](docs/agent-evolution-20261015.md)。代码在 `.tmp/agent-evolution-20261015/worktree` 的 `codex/agent-evolution-20261015`，从 b51a390 带入共享 WIP 验证，尚未合回或替换当前运行版本。
-- P0 已接统一人设、内置编辑、事务后 Markdown 导出、本机频道/语音分表、桌面与手机字段及文案；新增迁移/故障/真实浏览器证据通过，23 Swift 组通过。日常完整 JS 首轮尚有继承的图片预览 focus 失败，原树亦复现；详见阶段记录。
-- P1 权限迁移仍需产品内实际影响预览与确认，P2–P4 待实施；不得据此宣称多 Agent 或能力约束已交付。原项目架构和图片承载计划保持独立。
+- 用户已批准 Agent / 能力 / 协作 / 知识成果 P0–P4；开发在 `.tmp/agent-evolution-20261015/worktree`（分支 `codex/agent-evolution-20261015`），详细进度见该目录 `docs/agent-evolution-20261015.md`。当前原目录和运行应用未替换。
+- P0 人设/保存/双端字段已接通，23 组 Swift、内置 Agent 浏览器保存/失败/Markdown 导入导出通过；正在去除带入共享 WIP 后验收待提交范围。现有图片预览 focus 断言在原树也失败，单独保留边界；P1–P4 未完成。
 
 ### 2026-10-15 — melo主线 — Agent P0 预审 C，等待修正方案确认
 
@@ -237,6 +259,19 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户答复“按修正方案继续”；已消除冷加载旧频道/语音表回写，用新提交数据发布缓存，并保留完整聊天检查点语义。
 - Markdown 接原生保存桥；干净树定向 18/18、新进程红绿回归与浏览器成功/取消/失败通过，独立原生保存/取消与未保存草稿 UTF-8 字节一致性通过。原生导出首次暴露的缺失导入已修正。
 - 详见[修正方案与证据](docs/agent-p0-review-remediation-20261015.md)；独立分支修正提交/重审进行中，未替换用户应用或迁移真实数据。P1–P4 等 P0 重审通过后继续。
+
+### 2026-10-15 — 设计 Melo — 免费 MCP 默认启动
+- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：已本地提交 `f3dba1a`，当前桌面生效，未推送。用户明确授权无需额外支出的 MCP 默认启动、删除开机选择弹窗，覆盖旧版首启点击政策。
+- 核对：旧弹窗只控制 AntV / Markdown2PDF / Mermaid；启动默认另含本地 Playwright。AntV 使用官方免费远程渲染，其余三个本机运行；Browserless 及自定义配置不自动扩展授权。当前真实用户配置四项原已开启，未改账号、图像质量或聊天数据。
+- 实际文件：`src/config.js` 新默认及旧未答复标记迁移；`src/mcp/init.js` 保留启动接线并隔离测试外部进程；`desktop-ui/app.js` 删除弹窗和选择回调，旧 dispatcher 删除。后续手动关闭持久保留；角色授权与单次调用审批不变。
+- 验证：新迁移及极简 PATH 冷进程回归先红后绿；MCP 63/63，浏览器启动/刷新/服务重启专项 1/1。原生真实启动发现 NVM Node 所在目录没进 PATH，四服务均未连接；已在 `src/mcp/client.js` 补本 Node 安装目录并保留显式服务 PATH。重启后四服务全部连接，Browserless 关闭，无启动弹窗；14 对话/1项目/6角色保留。
+- 证据：`.tmp/mcp-startup-20261015/desktop-path-fixed.json`（PID 79771）及 red/green/browser 日志。共享树日常 JS 3493/3494，已有图片预览焦点断言失败，独立复跑同样失败（主线也已记录）；不改无关 WIP。隔离暂存树 `npm test` 通过：3485 JS / 1 项未复制打包模型而跳过、语法、设置/加速浏览器、21 Swift/共享渲染；179.6 秒。第二次原生冷启动 PID 86552 四项已连接，退出旧进程已清理。没有模型/生图/真实业务工具调用；详见 `docs/mcp-startup-20261015.md`。
+
+### 2026-10-15 — melo主线 — Agent P0 第二次预审 C
+
+- 首轮批准修正已提交 `99937f7` 并通过定向、干净日常与原生导出验收；第二次 git pp 仍阻止推送，原因是新发现的长人设跨版本同步回归，另有原生翻译覆盖缺口。
+- 独立复现旧合法 30000+30000 合并为 60016，旧端拒绝整份 snapshot；远端分支仍为 `39cc759`，未部署或迁移用户数据。
+- 已停止代码改写，待确认[第二次修正方案](docs/agent-p0-sync-compatibility-plan-20261015.md)：保持 v1 无损往返，不可表示的新文档明确待同步，其他数据继续；补齐原生词条。P1–P4 未实施。
 
 ### 2026-10-15 — melo主线 — 旧端兼容修正获批并实施
 
@@ -270,18 +305,22 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 完整 `npm run test:full` 为 GREEN：3536/3536 JS、23 Swift 组、语法、设置/快速浏览器、桌面打包安装、Desktop 与 Launchpad 启动、桌面流程、运行时浏览器、人设契约全部通过。日志 `/tmp/melo-agent-integrated-full3.log`。随后加强取消后的写锁排空：即使执行器已返回取消，底层工具未结束也不释放工作区；41/41 协作/取消/子 Agent/技能/依赖回归通过（`/tmp/melo-writer-drain.log`），16/16 状态/能力回归见 `/tmp/melo-integrated-post-migration-regression.log`。
 实际数据迁移已完成，不再等待批准或 git pp。手机可选能力同步的服务代码已交付，尚未部署用户远端同步服务或验证实体手机；不把模拟器/HTTP 夹具称为真机或真实模型团队验收。
 
-### 2026-10-15 — 设计 Melo — 免费 MCP 默认启动
-- 线程 ID：`01a1161a-1919-79c1-9764-8709bb0e2e2d`；状态：已验证，待本地提交。用户明确授权无需额外支出的 MCP 默认启动、删除开机选择弹窗，覆盖旧版首启点击政策。
-- 核对：旧弹窗只控制 AntV / Markdown2PDF / Mermaid；启动默认另含本地 Playwright。AntV 使用官方免费远程渲染，其余三个本机运行；Browserless 及自定义配置不自动扩展授权。当前真实用户配置四项原已开启，未改账号、图像质量或聊天数据。
-- 实际文件：`src/config.js` 新默认及旧未答复标记迁移；`src/mcp/init.js` 保留启动接线并隔离测试外部进程；`desktop-ui/app.js` 删除弹窗和选择回调，旧 dispatcher 删除。后续手动关闭持久保留；角色授权与单次调用审批不变。
-- 验证：新迁移及极简 PATH 冷进程回归先红后绿；MCP 63/63，浏览器启动/刷新/服务重启专项 1/1。原生真实启动发现 NVM Node 所在目录没进 PATH，四服务均未连接；已在 `src/mcp/client.js` 补本 Node 安装目录并保留显式服务 PATH。重启后四服务全部连接，Browserless 关闭，无启动弹窗；14 对话/1项目/6角色保留。
-- 证据：`.tmp/mcp-startup-20261015/desktop-path-fixed.json`（PID 79771）及 red/green/browser 日志。共享树日常 JS 3493/3494，已有图片预览焦点断言失败，独立复跑同样失败（主线也已记录）；不改无关 WIP。隔离暂存树 `npm test` 通过：3485 JS / 1 项未复制打包模型而跳过、语法、设置/加速浏览器、21 Swift/共享渲染；179.6 秒。第二次原生冷启动 PID 86552 四项已连接，退出旧进程已清理。没有模型/生图/真实业务工具调用；详见 `docs/mcp-startup-20261015.md`。
-
 ### 2026-10-15 — 用户授权直接推送与兼容性介绍
 - 用户明确要求 git push，不运行 git pp 或额外 Codex 审计；发布范围为已提交主线与本线程 Agent P0–P4，保留其他线程未提交 WIP。
 - 英文 README 增加模型/接口/MCP 兼容表，Claude 作为支持服务正常介绍；同时写清能力按端点/账号而异、旧版同步服务继续同步聊天、新能力同步需升级私人服务。GitHub About 已采用相同中性定位。
 - 推送前在干净实施树合并当前 master，仅文档追加位置发生冲突，双方记录均保留；源码合并后运行日常回归。本轮未替换用户安装包或再次迁移数据。
 - 本轮日常检查 GREEN：3528/3528 JS、21 Swift 组、824 文件语法及两组浏览器检查；112.9 秒，`/tmp/melo-agent-push-daily-20261015.log`。完整安装 gate 沿用上轮集成证据，不标成本轮重跑。
+
+### 2026-10-15 — melo iphone — 对齐与装机前回归
+- 用户授权对齐及覆盖。已读主线/设计/UI 最新交接并核对源码，按 `docs/ios-align-install-20261015.md` 顺序执行；10-14 build23 缺完整源码快照，差异参考 10-13 基线，不冒充全是本次新增。
+- 新增手机成果分类/详情、独立请求 API 白名单回执与旧同步回声保留；项目生成保留版本。Agent/五语/阅读与神经资源、图片保存和文件权限的现有 WIP 一并验证。
+- 本轮 23 Swift、80 同步、22 UI/资源/语言契约通过，模拟器编译通过；实体仍为 0.5.17 (23)，已完成聊天/配置/执行/图片备份，EditDrafts 空目录单独核对。签名、覆盖及原生画面检查进行中。
+- API 新回执先存手机本机，不扩展冻结 v1 线协议；桌面协作只读、私人服务升级和真实模型/长后台验收边界保留。证据 `.tmp/ios-align-install-20261015/`。
+
+### 2026-10-15 — melo iphone — 0.5.18 (24) 已覆盖并启动
+- 上述装机前阶段完成：个人签名/同 bundle 和 team 覆盖、启动 PID 26056、实际版本回读及 Device Hub 真机神经首页均已核对；ChatGPT 登录标识、9 对话/5 Agent 保留。
+- 聊天/偏好/草稿/UserDefaults/三张原图与索引逐字节一致；执行记录 JSON 内容一致。源代码/API/成果差异、平台依赖、安装及模拟器证据详见 `docs/ios-align-install-20261015.md`；下轮源码基线 `.tmp/ios-align-install-20261015/after/`。
+- 独立 API/版本生成修正提交 `2afe9dd`；成果与翻译依赖共享 Agent WIP，未顺手提交他线程实现；未运行 git pp 或推送。旧偶发退出、长期后台、真实模型和实体文件/照片授权未在本轮宣布修复或完成。
 
 ## UI Logo 探索交接（2026-10-15）
 
@@ -299,6 +338,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 修正范围及逐项依据见 [审查修正](docs/agent-review-fixes-20261015.md)：远端加权待桌面确认、全局权限上限、团队迁移预检、回复预算、只读知识检索、围栏解析及复核循环；保留用户拥有的内置人设。
 - 隔离实现 `51882bd` / `f4546c5` 已整合共享源码，保留其他线程顶栏删除、手机新增测试及生成资源。共享树 `npm test` GREEN：3554 JS、834 文件语法、两组浏览器、23 Swift / 共享渲染，181.3 秒；证据 `/tmp/melo-agent-audit-shared-daily.log`。
 - 本地修正提交 `4680530`；后端已重启到该版本（PID 71003），原生窗口正常、确认接口拒绝无来源请求。14 聊天 / 6 Agent / 26 成果 / 1 项目保留；42 个配置/正文/Agent 文件散列一致，主状态仅频道轮询时间及修订变化。证据 `.tmp/agent-review-fixes-20261015/runtime-restart/{before,after}.json`。本轮未做完整发布 gate、真机重新安装或真实模型协作。
+
+### 2026-10-15 — Claude 架构复审 — 加固实施说明（待实施）
+- 复审结论：状态常驻、派生索引离开提交路径、循环依赖清零、声明式路由、协议单一来源、测试自动发现均已落地；剩余重点是前端单体整页重建、项目 R1 未实施、Agent 能力依赖调用方传参（漏传即放行）。
+- 用户批准先做两项，见[实施说明](docs/arch-hardening-20261015.md)：A 执行器从请求上下文自行解析能力作用域（只可收窄、无法解析即拒绝）；B 项目 R1（创建不读 UI 选中、空字段不造文案、无项目不回退 APP_ROOT/process.cwd，按需聊天独立目录）。仅文档，未改代码。
 
 ### 2026-10-15 — melo主线 — 架构加固 A 完成，B 继续
 - 用户已批准 `docs/arch-hardening-20261015.md`；实施在现有隔离树 `codex/arch-hardening-20261015`，共享运行源码尚未替换。
@@ -318,6 +361,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 共享日常 GREEN：3572 JS / 844 语法 / 两组浏览器 / 23 Swift，150.4 秒；依赖图 388 模块、0 环。隔离真实命令、文件写入、冷进程重读、项目默认目录写入、拦截计数与浏览器确认通过。首轮共享夹具沿用被删顶栏按钮，改为现有快捷键后通过，保留他线程界面。
 - 共享其他 WIP 保留；三方整合备份与测试日志在 `.tmp/arch-hardening-20261015/`。源代码已本地提交，未 git pp/推送；真实数据不迁移、不删除、不代确认旧程序目录。
 - 当前应用未运行，本轮未重装/重启；14 聊天 / 6 Agent / 26 成果 / 1 项目只读核对，0 运行中聊天。下一步可按文档逐项复核；真实模型、实体手机与完整安装 gate 属于后续发布验证。
+
+### 2026-10-15 — melo主线 — 用户要求直接推送已完成
+- 按用户本轮“git push”执行 `git push origin master`，远端接受 `5b2d9f7..1553314`，包含架构 A/B 与验收文档。未运行 git pp。
+- 推送仅包含已提交内容；共享树现有 WIP 保留，应用及真实数据未变动。本条为本地推送回执，未新增代码或重复测试。
 
 ## UI Logo 简化方向（2026-10-16）
 
@@ -343,6 +390,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-16 — melo iphone — 对齐计划与基线
 - 已核对主线/设计/UI 实际 diff，基线 `.tmp/ios-align-install-20261016/`；计划见 [本轮对齐](docs/ios-align-install-20261016.md)。发现手机 Mood 控件、项目默认占位提示及创建校验需补齐；其余主线执行器加固为桌面职责。
 - UI 总览的“仍为设计稿”已过期：定向读最新 melo ui 回执确认用户已要求替换，当前正式资源为低饱和黑金 M；本轮手机一起带入。尚未测试/构建/覆盖安装。
+### 2026-10-16 — melo主线 — 用户要求 git push 已完成
+- 已执行 `git push origin master`，远端接受 `1553314..04a13c5` 共 6 个提交，包含 Telegram 归档、统一 Agent 设置与简洁黑金图标；`git ls-remote` 核对远端 master=`04a13c57aeb6e8b2d3bb9e96c5b3d6f900c0d315`，与本地 HEAD 一致。
+- 未运行 git pp，未把共享树未提交改动纳入推送，未重启应用或修改真实数据；不重复产品测试。本条为本地推送回执，其他线程继续保留现有 WIP。
 
 ### 2026-10-16 — melo iphone — 原生差距修正与构建
 - 已补 Agent 首屏新建、去除旧语气 UI/冲突摘要、项目显式归属验证与旧占位隐藏；实际文件及测试见 [本轮记录](docs/ios-align-install-20261016.md)。共享 WIP 保留。
@@ -387,6 +437,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 电脑每次删聊天询问文件去留；文件面板跟随聊天，可预览/打开 Finder。手机同步删除保留本机文件，在存储管理待处理；项目目录不会被聊天删除连带清理。能力白名单、迁移标记和连接器/MCP/会话授权/技能管理同步完成。
 - 共享 `npm test` GREEN：3613 JS、859 文件语法、设置/快速浏览器、23 Swift，113.3 秒。日志 `/tmp/melo-ui-alignment-shared-daily.log`；三方备份、截图和 `verification.json` 在 `.tmp/ui-function-alignment-20261016/`。实现与失败修复详见 [回执](docs/ui-function-alignment-20261016.md#共享整合回执)。
 - 尚未重启或覆盖安装应用，未 git pp/推送；真实模型、远端连接器/MCP、原生 Finder、手机文件去留界面与完整发布 gate 不在本轮验收内。
+
+### 2026-10-16 — Claude — iPhone 系统数据工具（分支待整合）
+- 用户要求手机端接入苹果系统数据。分支 `claude/ios-device-tools-20261016` 本地提交 `8165a3c`（基于 `411cb42`，工作树 `.tmp/ios-device-tools-20261016`），未合入共享源码，未推送。
+- Codex 对话可调用日历、提醒、通讯录、当前位置。默认全关，按类型在设置里开启，只存本机不进同步；读取直接执行，每次写入弹窗确认。API 连接与图片生成不提供手机工具。
+- 验证：新 `DeviceToolsTests` 已接入 iOS gate 并做过变红验证；Codex 假服务器两轮往返和轮数上限；模拟器真实 EventKit/通讯录/定位自检通过；工作树 `npm test` GREEN（3603 JS、22 Swift）。写入确认弹窗未在真实对话里实看，未真机安装。详见该分支 `docs/ios-device-data-20261016.md`。
+- 整合注意：工程文件新增 4 个文件条目；ContentView、SettingsView、ChatStore 各只有一处挂接，和本树未提交的 iOS WIP 合并时核对这几处。
 
 ### 2026-10-16 — melo iphone — Claude 系统数据整合与安装计划
 - 用户要求检查 Claude 改动、写 MD、覆盖安装及 git push。核对 `8165a3c` 相对 `411cb42` 的 18 个文件；当前共享 WIP 55 项完整保留，基线 `.tmp/claude-device-review-20261016/`。
@@ -436,6 +492,50 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 项目可设默认 Agent（项目内新对话使用）和默认团队，只存电脑、不进同步。计划与验证边界见 [协作整合](docs/agent-team-20261016.md)。
 - 未验证：真实模型下的汇总质量；用户现有 Agent 委派均为关闭，需用户自行开启。手机端无团队功能。
 - 手机端团队（同分支）：手机按同一规则在本机运行团队（同步的协作设置决定谁能组队；成员单次文字调用，联网需发起者与成员都在本机开启；15 分钟总时间，无 token 总上限）。控制栏“团队”只作用于下一条消息。共享契约新增交接、计划、执行顺序三组；模拟器经真实发送路径验证。未验证：真实账号、实体机。
+
+### 2026-10-16 — melo主线 — Agent 循环与卡死边界审查
+- 用户要求检查遇到 bug 是否死循环。当前主对话 10、成员最多 20、技能最多 16、团队复核最多 5、手机工具 6 轮；主对话同一永久错误实测重复 10 次后停止，未发现外层无限重试。
+- 隔离复现：hook 在超时/取消之外等待；不合作成员超时后持续持有工作区，下一写成员未启动即超时；团队总结绕过总时限。实际代码位置、触发条件、修复顺序及边界见 [审查报告](docs/agent-loop-audit-20261016.md)。
+- 已有专项 55/55，新行为探针 6/6（含缺陷复现，不是已修复）；证据 `.tmp/agent-loop-audit-20261016/`。仅审查文档/交接 WIP，无产品改动/真实调用/安装/推送，保留共享暂存；下一步补统一运行截止时间、重复失败停止和写任务隔离恢复。
+
+### 2026-10-16 — melo ui — 设计语言一致性审计
+- 用户只要求审计。当前主视觉、五区身份色、共享 Swift 主题来源基本一致；六类差异集中在浮层材质、管理弹窗、设置页卡片、未定义文字 token、下拉识别及操作文案。具体文件/复现/修正顺序见[审计报告](docs/ui-language-audit-20261016.md)。
+- 实际定位：`neuralGlass.css` 对照 `styles.css`、`localSettings.css`、`language.css`、`managementActions.js`；手机 `EditableDocument` / `ConversationContextPicker` / `TeamSheet` 的 Form 底层材料仍需原生验证。
+- 验证为原生桌面首页截图、同服务 1320×860 浏览器页面与浮层截图/计算样式、双端源码；证据 `.tmp/ui-language-audit-20261016/`，含源码散列。不代表完整功能/性能/实体手机验收；未触发模型、权限或保存操作。
+- 报告独立本地提交 `1610519`；本线程总览/短进度片段为 WIP，已有共享暂存保留。未改产品代码、安装、git pp 或推送。下一步如进入实施，先统一浮层/对话框与文字 token，再收敛管理页/控件并补原生手机视觉验收。
+
+### 2026-10-16 — melo主线 — 执行计时与图片进度计划
+- 用户要求实时思考秒数、最终用时、图片百分比与完成时间；按[实施方案](docs/execution-timing-20261016.md)从执行时间戳和已保存成果计算，云端无进度不伪造百分比。
+- 桌面聊天/任务空间及手机原生聊天一起对齐；当前仅方案 WIP，保留原共享暂存。基线 `.tmp/execution-timing-20261016/`；下一步计时与成果进度回归、界面验证及本轮本地提交。
+
+### 2026-10-16 — melo主线 — 执行计时与图片成果进度完成
+- 桌面聊天/任务空间秒表与最终用时、完成日期已落地；图片按实际保存张数显示百分比与处理用时。手机原生聊天和共用场景同步显示。实现文件、接口边界与验收见[交付记录](docs/execution-timing-20261016.md)。
+- 当前树日常 3659 JS / 863 语法 / 设置浏览器 / 26 Swift 通过；独立提交内容另做定向回归，Debug 编译与模拟器聊天/任务空间实看一致。证据 `.tmp/execution-timing-20261016/`。
+- 单张云端无内部百分比时显示成果 0→100，多张按保存数量；预览/失败不算完成。原有真实数据与共享暂存保留，功能本地提交 `c0e0725`；独立提交版本 10 项 JS/浏览器和 24 Swift 通过。未 git pp、推送、桌面重启或实体覆盖。
+
+### 2026-10-17 — melo iphone — 双端对齐、覆盖和发布计划
+- 用户要求检查 Claude、手机对齐/覆盖、git push，补充桌面同步。已读三线程总览和实际 diff，Claude 手机团队/图片并发已在主线，最新计时尚未装机；README 团队边界已过期。
+- 按[本轮计划](docs/dual-platform-align-20261017.md)顺序修双端团队汇总时限、统一浮层和原生表单材料、验共用神经场景及计时，再签名备份覆盖与推送。基线 `1bb030c`，6 个已有暂存与共享 WIP 保留。
+- 当前仅计划与源码审读完成；实体手机已连接解锁，未安装/推送，未改真实权限或账号。
+
+### 2026-10-17 — melo iphone — 双端团队边界与材料修正
+- `src/agents/team.js` 与 `ios/Melo/AgentTeam.swift` / `ChatStore.swift` 的汇总受原团队剩余预算约束；超时/取消明确失败，桌面迟到回执丢弃。14 项 JS 和 26 组 Swift 通过。
+- 桌面 `neuralGlass.css` / `language.css` 和手机三个原生表单统一材料；浏览器辅助色层级已定位修正，原生视觉与完整日常继续验证。详见[对齐记录](docs/dual-platform-align-20261017.md)。
+- 同包 0.5.24 (30) Debug 构建中，实体 0.5.23 已私有备份；已有暂存/WIP 保留，尚未装机/推送。
+
+### 2026-10-17 — melo iphone — 完整源码发布范围确认与日常验证
+- 用户最新明确提交并推送其他线程全部 WIP；原有仅本轮片段提交计划被覆盖。手机与桌面安装将对应同一份完整产品源码，账号数据及本地备份不入 Git。
+- 当前完整树日常 3663 JS / 863 语法 / 设置与 extra-fast 浏览器 / 26 Swift GREEN；团队授权/顺序、并发取消、图片首轮与缩放夹具通过，原生团队/资料/知识页材料与神经场景已实看。
+- 两个浏览器测试竞态已修正并复跑通过，失败日志保留；详见 [完整记录](docs/dual-platform-align-20261017.md)。68 个候选文件敏感内容/大文件扫描无发现，下一步签名 Release、私有备份、手机及桌面覆盖和推送。真实供应商/长后台仍为独立边界。
+
+### 2026-10-17 — melo iphone — 完整版本双端覆盖完成
+- 用户授权的全部产品 WIP 已提交 `8cd3eff`；0.5.24 (30) 签名 Release 同包覆盖实体手机并启动 PID 31417。11 聊天/6 Agent/图片/草稿/配置保留，仅运行日志更新，未改账号或权限。
+- 桌面原生 app 已构建、覆盖并正常重启，健康接口源码 `8cd3eff0af9a`、干净树、PID 26309；原 home、14 聊天/1 项目/6 Agent 与连接配置保留。神经首页、团队浮层实看通过。
+- 安装及逐文件对比见 [双端回执](docs/dual-platform-align-20261017.md#双端安装回执)。日常 3663 JS / 26 Swift 与原生夹具通过；真实模型/远端同步/长后台未重验。最终英文 README 和回执随文档提交推送，不发布私有备份或签名包。
+
+### 2026-10-17 — melo iphone — 完整版本已推送 GitHub
+- `2e8b533..063fd11` 推送 master 成功，远端 SHA 与 README blob 已核实一致；全部产品 WIP 收入 `8cd3eff`，两端已安装该源码，工作树干净。完整 [回执](docs/dual-platform-align-20261017.md#github-发布回执) 含验证边界。
+- 本条为最终文档回执，随文档提交继续推送；没有运行 git pp、发布签名包或上传私有备份。用户可直接使用已覆盖的手机 0.5.24 (30) 和桌面版。
 
 ### 2026-10-16 — Claude — 多图、尺寸、上传上限与视频（分支 `claude/media-20261016`）
 

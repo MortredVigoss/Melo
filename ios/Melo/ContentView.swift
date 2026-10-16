@@ -298,7 +298,7 @@ struct ChatView: View {
                 .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
         ScrollViewReader { reader in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     if chat == nil {
                         Text("这段对话已被删除").foregroundStyle(.secondary)
                         Button("开启新对话") { if let id = store.newChat() { chatID = id } }
@@ -316,6 +316,7 @@ struct ChatView: View {
                             ReplyContentView(content: message.content)
                             MessageImages(messageID: message.id, preview: { imagePreview = $0 }, edit: useImage)
                             if let run = store.execution(for: message.id) {
+                                ExecutionTimingView(record: run)
                                 HStack {
                                     Button { executionRunID = run.runId; showExecution = true } label: { Label("回看任务空间", systemImage: "atom").font(.caption) }
                                     Spacer()
@@ -345,14 +346,17 @@ struct ChatView: View {
                                     }
                                 }
                             }
-                        }.padding(18).padding(.leading, 12)
+                        }.padding(14).padding(.leading, 10)
                         .background(message.role == "user" ? meloGold.opacity(0.065) : meloBackground.opacity(0.3), in: RoundedRectangle(cornerRadius: 22))
                         .overlay(alignment: .leading) {
                             VStack(spacing: 6) { Circle().fill(meloGold.opacity(0.7)).frame(width: 4, height: 4); Rectangle().fill(LinearGradient(colors: [meloGold.opacity(0.3), meloGold.opacity(0.04)], startPoint: .top, endPoint: .bottom)).frame(width: 0.5) }.padding(.vertical, 20).padding(.leading, 10)
                         }.id(message.id)
                         .onAppear { if message.role == "assistant" { store.markRendered(message.id) } }
                     }
-                    if store.isSending(chatID) { HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); RunProgressList(steps: store.liveSteps(for: chatID)); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }.padding() }
+                    if store.isSending(chatID) { VStack(alignment: .leading, spacing: 6) {
+                        HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); RunProgressList(steps: store.liveSteps(for: chatID)); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }
+                        if let run = store.scenes(for: chatID).last { ExecutionTimingView(record: run) }
+                    }.padding() }
                     else if chat?.messages.last?.role == "user" {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
                         Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
@@ -374,7 +378,7 @@ struct ChatView: View {
                     if deviceSpeech.speechFailed { Text(deviceSpeech.speechStatus).font(.caption2).foregroundStyle(.red) }
                     if deviceSpeech.speechActive { Button { LocalDeviceServices.shared.stopSpeech() } label: { Image(systemName: "speaker.slash") }.accessibilityLabel("停止朗读") }
                     AtomicButton(busy: store.isSending(chatID)) { executionRunID = nil; showExecution = true }
-                    TextField(store.isSending(chatID) ? "输入补充要求" : "给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").lineLimit(1...6).padding(13).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+                    TextField(store.isSending(chatID) ? "输入补充要求" : "给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").font(.subheadline).lineLimit(2...4).padding(.horizontal, 10).padding(.vertical, 8).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
                     Button {
                         composerFocused = false
                         if voiceInput.state.active { voiceInput.stop() }
@@ -406,7 +410,7 @@ struct ChatView: View {
                     Spacer()
                     Text("回复可能有误，请核实重要信息").font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
-            }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).background(meloBackground.opacity(0.65))
+            }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 6).background(meloBackground.opacity(0.65))
         }
         .onAppear { store.selectedConversationID = chatID }
         .onDisappear { voiceInput.cancel(); store.flushDrafts() }

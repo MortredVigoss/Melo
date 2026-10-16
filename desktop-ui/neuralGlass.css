@@ -24,6 +24,7 @@
  --space-inset-size:20px;
  --space-blur:4px;
  --text:var(--space-text);--text-muted:var(--space-muted);--text-soft:var(--space-soft);
+ --text-primary:var(--space-text);--text-secondary:var(--space-muted);
  --border:var(--space-edge-soft);--border-strong:var(--space-edge-raised);
  --radius-xl:var(--space-radius-panel);--radius-lg:var(--space-radius-card);--radius-md:var(--space-radius-control);
 }
@@ -92,7 +93,7 @@
  backdrop-filter:none;-webkit-backdrop-filter:none;
 }
 .neural-dashboard .composer-input-frame {background:var(--space-inset);border-color:var(--space-edge-soft);border-radius:var(--space-radius-control);box-shadow:none;}
-.neural-dashboard .composer-textarea {font-size:13px;line-height:1.65;}
+.neural-dashboard .composer-textarea {font-size:13px;line-height:20px;}
 .neural-dashboard .message-bubble {background:rgba(16,18,22,.38);border-radius:var(--space-radius-card);}
 .neural-dashboard .message.is-user .message-bubble {background:rgba(75,58,31,.28);}
 .neural-dashboard .composer-icon-button,.neural-home-composer .composer-icon-button,.atomic-button {width:40px;height:40px;min-height:40px;flex:0 0 40px;border-radius:var(--space-radius-control);}
@@ -185,7 +186,6 @@
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) {gap:12px;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .page-title {font-size:17px;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .small-button {min-height:30px;padding:6px 9px;font-size:10px;}
-.composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-card.is-thread .composer-textarea {max-height:60px;}
 .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:row;align-items:center;}
 .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-input-frame {flex:1;min-width:0;order:-1;}
 @container workspace (max-width:640px) {
@@ -374,18 +374,18 @@
 .neural-shell[data-neural-stage=overview] .neural-cluster-copy strong {font-size:14px;}
 .neural-shell[data-neural-stage=overview] .neural-cluster-copy small {font-size:8px;}
 .neural-shell[data-neural-stage=overview] .neural-cluster[data-group=projects] .neural-cluster-copy {left:calc(50% + var(--neural-home-orb,80px)/2 + 10px);top:14px;}
-.neural-home-composer .composer-shell {position:relative;gap:8px;}
-.neural-home-composer .composer-conversation-choice {min-height:36px;margin:0;padding:0 116px 0 4px;}
-.neural-home-composer .image-task-options {position:absolute;right:4px;top:0;margin:0;z-index:6;}
-.neural-home-composer .image-task-options>button {min-height:36px;padding:6px 12px;font-size:11px;}
-.neural-home-composer .image-task-fields {
+:is(.neural-home-composer,.chat-thread) .composer-shell {position:relative;gap:8px;}
+:is(.neural-home-composer,.chat-thread) .composer-conversation-choice {min-height:36px;margin:0 0 6px;padding:0 116px 0 4px;}
+:is(.neural-home-composer,.chat-thread) .image-task-options {position:absolute;right:4px;top:0;margin:0;z-index:6;}
+:is(.neural-home-composer,.chat-thread) .image-task-options>button {min-height:36px;padding:6px 12px;font-size:11px;}
+:is(.neural-home-composer,.chat-thread) .image-task-fields {
  position:absolute;right:0;bottom:calc(100% + 10px);width:min(560px,calc(100vw - 64px));
  max-height:min(320px,calc(100dvh - 160px));overflow:auto;padding:16px;
  background:var(--space-floating);border-color:var(--space-edge-raised);border-radius:var(--space-radius-card);
  box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur));-webkit-backdrop-filter:blur(var(--space-blur));
 }
-.neural-home-composer .composer-card {padding:12px 14px;}
-.neural-home-composer .composer-textarea {font-size:14px;min-height:44px;}
+.neural-home-composer .composer-card {padding:8px 10px;}
+.neural-home-composer .composer-textarea {font-size:13px;}
 .neural-home-caption {margin-bottom:12px;}
 .neural-home-caption p {font-size:16px;margin:7px 0;}
 .neural-shell[data-neural-stage=module] .neural-branch {min-height:66px;padding:12px;}
@@ -402,3 +402,10 @@
 
 /* Let an opened conversation use more of its existing work surface. */
 .neural-dashboard .page:has(>.chat-thread) {padding-inline:16px;padding-block:14px;}
+
+/* Context/team menus and management dialogs use the same spatial layers. */
+.conversation-context-menu { color:var(--space-text);background:var(--space-floating);border-color:var(--space-edge-raised);border-radius:var(--space-radius-card);box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur)); }
+.chat-file-dialog { color:var(--space-text);background:var(--space-dialog);border-color:var(--space-edge-raised);border-radius:var(--space-radius-panel);box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur)); }
+.chat-file-dialog::backdrop { background:rgba(0,0,0,.25); }
+body:has(.chat-file-dialog[open]) #app .neural-dashboard,
+body:has(.chat-file-dialog[open]) #app .neural-nav { filter:brightness(.45);pointer-events:none; }

@@ -31,6 +31,7 @@ export async function requestAnthropicReply({ baseUrl, apiKey, model, systemProm
   }
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const data = await response.json();
+    onModelMetadata?.({ reportedModel: data.model, responseId: data.id, usage: data.usage, transport: 'anthropic-messages', finishReason: data.stop_reason, responseStatus: ['end_turn','stop_sequence'].includes(data.stop_reason) ? 'completed' : 'incomplete' });
     completed(data.stop_reason);
     const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
     if (!text.trim()) throw new Error('模型没有返回文字内容。');
@@ -48,13 +49,13 @@ export async function requestAnthropicReply({ baseUrl, apiKey, model, systemProm
     if (event.type === 'error') throw new Error(`模型流返回错误：${String(event.error?.message || '未知错误').slice(0, 400)}`);
     if (event.type === 'message_start') usage = {...(event.message?.usage || {})};
     if (event.type === 'message_delta' && event.usage) usage = {...usage,...event.usage};
-    if (event.type === 'message_start') onModelMetadata?.({ reportedModel: event.message?.model || '', responseId: event.message?.id || '', transport: 'anthropic-messages' });
+    if (event.type === 'message_start') onModelMetadata?.({ reportedModel: event.message?.model || '', responseId: event.message?.id || '', transport: 'anthropic-messages', usage, responseStatus: 'in_progress' });
     if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') throw new Error('模型返回了未请求的工具调用。');
     if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
       const delta = event.delta.text || ''; text += delta; await onDelta?.({ delta, text });
     }
     if (event.type === 'message_delta' && event.delta?.stop_reason) reason = event.delta.stop_reason;
-    if (event.type === 'message_stop') { completed(reason); stopped = true; }
+    if (event.type === 'message_stop') { onModelMetadata?.({ usage, finishReason: reason, responseStatus: ['end_turn','stop_sequence'].includes(reason) ? 'completed' : 'incomplete' }); completed(reason); stopped = true; }
   };
   const reader = response.body.getReader();
   try {

@@ -20,6 +20,7 @@ struct SettingsContent: View {
             VStack(alignment: .leading, spacing: 24) {
                 PageHeading(eyebrow: "SYSTEM", title: "系统设置", detail: "个人资料、使用习惯与模型连接。")
                 LocalProfileSettings()
+                LocalPermissionsCard()
                 LocalGeneralSettings()
                 LocalVoiceSettings()
                 DeviceDataSettings()

@@ -1,6 +1,19 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["用时未记录", "Time not recorded", "時間未記録", "시간 미기록", "Tiempo no registrado"],
+["{seconds} 秒", "{seconds} s", "{seconds} 秒", "{seconds}초", "{seconds} s"],
+["本轮用时 {time}", "Total time {time}", "今回の所要時間 {time}", "전체 소요 시간 {time}", "Tiempo total {time}"],
+["已用时 {time}", "Elapsed {time}", "経過 {time}", "경과 {time}", "Transcurrido {time}"],
+["思考与回复 {time}", "Thinking and response {time}", "思考と応答 {time}", "생각 및 응답 {time}", "Razonamiento y respuesta {time}"],
+["完成于 {time}", "Completed at {time}", "完了日時 {time}", "완료 시각 {time}", "Completado a las {time}"],
+["停止于 {time}", "Stopped at {time}", "停止日時 {time}", "중지 시각 {time}", "Detenido a las {time}"],
+["图片成果 {percent}% · 已保存 {saved}/{total} 张", "Image results {percent}% · Saved {saved}/{total}", "画像成果 {percent}% · 保存済み {saved}/{total} 枚", "이미지 결과 {percent}% · 저장 {saved}/{total}장", "Imágenes {percent}% · Guardadas {saved}/{total}"],
+["图片成果进度", "Image results progress", "画像成果の進捗", "이미지 결과 진행률", "Progreso de imágenes"],
+["图片处理 {time}", "Image processing {time}", "画像処理 {time}", "이미지 처리 {time}", "Procesamiento de imagen {time}"],
+["图片保存于 {time}", "Image saved at {time}", "画像保存日時 {time}", "이미지 저장 시각 {time}", "Imagen guardada a las {time}"],
+["按已保存张数计；单张生成进度未提供", "Based on saved images; per-image generation progress unavailable", "保存済み枚数による進捗。各画像の生成進捗は未提供", "저장된 이미지 수 기준. 개별 이미지 생성 진행률 미제공", "Según imágenes guardadas; progreso por imagen no disponible"],
+["本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时", "Total includes waiting and tools; thinking and response measures model requests, not internal reasoning", "合計は待機とツール実行を含みます。思考と応答はモデル要求の時間で、内部推論時間ではありません", "전체 시간에는 대기와 도구 실행이 포함됩니다. 생각 및 응답은 모델 요청 시간이며 내부 추론 시간이 아닙니다", "El total incluye espera y herramientas; razonamiento y respuesta mide las solicitudes, no el razonamiento interno"],
 ["本地文件与命令由 Agent 能力设置控制。","Local files and commands are controlled by Agent capabilities.","ローカルファイルとコマンドは Agent の機能設定で管理します。","로컬 파일과 명령은 Agent 기능 설정으로 제어합니다.","Los archivos locales y comandos se controlan con las capacidades del Agent."],
 ["查看 Agent 能力","View Agent capabilities","Agent の機能を表示","Agent 기능 보기","Ver capacidades del Agent"],
 ["名称", "Name", "名前", "이름", "Nombre"],

@@ -158,12 +158,103 @@ struct MessageImages: View {
             VStack(alignment:.leading,spacing:8) {
                 ForEach(images) { image in
                     Button { preview(image) } label: { LocalImageThumbnail(image:image,library:store.imageLibrary).frame(maxWidth:.infinity).frame(height:210).background(.black.opacity(0.2),in:RoundedRectangle(cornerRadius:14)) }.accessibilityLabel("打开图片预览")
+                        .modifier(ImageContextActions(image: image, library: store.imageLibrary, preview: { preview(image) }, edit: { edit(image) }))
                     HStack { Text("\(image.width) × \(image.height)").font(.caption2).foregroundStyle(.secondary);Spacer();Button("继续修改"){edit(image)}.font(.caption) }
                 }
             }
         }
     }
 }
+
+// Both the long-press menu and preview save the original bytes through the same path.
+@MainActor enum ImagePhotoExport {
+    static func save(_ image: LocalImage, library: ImageLibrary, confirmedRepeat: Bool = false,
+                     history: ImagePhotoSaveStore? = nil) async throws -> ImagePhotoSaveStore.Outcome {
+        let history = history ?? .shared
+        let outcome = try await history.save(id: image.id, confirmedRepeat: confirmedRepeat) {
+            let data = try library.data(image)
+            let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard authorization == .authorized || authorization == .limited else {
+                throw MeloError.message("未允许保存照片，请在系统设置中允许 Melo 添加照片。")
+            }
+            try await PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, data: data, options: nil)
+            }
+        }
+        if outcome == .saved { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+        return outcome
+    }
+}
+
+private struct ImagePhotoSaveLabel: View {
+    let saving: Bool
+    let saved: Bool
+    var body: some View {
+        if saving { Label("正在保存…", systemImage: "hourglass") }
+        else if saved { Label("已保存", systemImage: "checkmark.circle.fill") }
+        else { Label("保存到照片", systemImage: "square.and.arrow.down") }
+    }
+}
+
+private struct ImagePhotoSaveStatus: View {
+    let imageID: String
+    var compact = false
+    @ObservedObject private var history = ImagePhotoSaveStore.shared
+    var body: some View {
+        if history.savingIDs.contains(imageID) {
+            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("正在保存…").font(.caption.bold()) }
+                .padding(10).background(.regularMaterial, in: Capsule())
+        } else if history.savedIDs.contains(imageID) {
+            Label(compact ? LocalizedStringKey("已保存") : LocalizedStringKey("已保存到照片"), systemImage: "checkmark.circle.fill")
+                .font(compact ? .caption.bold() : .subheadline.bold()).foregroundStyle(.green)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.green.opacity(0.45), lineWidth: 1))
+        }
+    }
+}
+
+private struct ImageContextActions: ViewModifier {
+    let image: LocalImage
+    let library: ImageLibrary
+    var preview: (() -> Void)? = nil
+    var edit: (() -> Void)? = nil
+    var showsStatus = true
+    @ObservedObject private var history = ImagePhotoSaveStore.shared
+    @State private var repeatTarget: LocalImage?
+    @State private var notice = ""
+    @State private var showingNotice = false
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            if let preview { Button("预览图片", systemImage: "arrow.up.left.and.arrow.down.right", action: preview) }
+            Button { save(image) } label: {
+                ImagePhotoSaveLabel(saving: history.savingIDs.contains(image.id), saved: history.savedIDs.contains(image.id))
+            }.disabled(history.savingIDs.contains(image.id))
+            if let url = try? library.url(image) {
+                ShareLink(item: url) { Label("分享 / 存储到文件", systemImage: "square.and.arrow.up") }
+            }
+            if let edit { Button("继续修改", systemImage: "wand.and.stars", action: edit) }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showsStatus { ImagePhotoSaveStatus(imageID: image.id, compact: true).padding(8).allowsHitTesting(false) }
+        }
+        .alert("这张图片已经保存过", isPresented: Binding(get: { repeatTarget != nil }, set: { if !$0 { repeatTarget = nil } }), presenting: repeatTarget) { target in
+            Button("再保存一份") { save(target, confirmedRepeat: true) }
+            Button("取消", role: .cancel) {}
+        } message: { _ in Text("再次保存会在照片中新增一份。是否继续？") }
+        .alert("保存失败", isPresented: $showingNotice) { Button("好", role: .cancel) {} } message: { Text(notice) }
+    }
+    private func save(_ target: LocalImage, confirmedRepeat: Bool = false) {
+        Task { @MainActor in
+            do {
+                let outcome = try await ImagePhotoExport.save(target, library: library, confirmedRepeat: confirmedRepeat)
+                if outcome == .needsConfirmation { repeatTarget = target }
+            } catch { notice = error.localizedDescription; showingNotice = true }
+        }
+    }
+}
+
 struct ImagePreview: View {
     @EnvironmentObject var store: ChatStore
     @Environment(\.dismiss) private var dismiss
@@ -176,12 +267,16 @@ struct ImagePreview: View {
     @State private var busy=false
     @State private var recognized=""
     @State private var previewBitmap: UIImage?
+    @ObservedObject private var photoHistory = ImagePhotoSaveStore.shared
+    @State private var repeatPhoto: LocalImage?
+    @State private var photoError: String?
+    private var savingPhoto: Bool { photoHistory.savingIDs.contains(displayed.id) }
     private var original: LocalImage? { image.referenceIDs.first.flatMap{store.imageLibrary.index.assets[$0]} }
     private var displayed: LocalImage { showOriginal ? (original ?? image) : image }
     var body: some View {
         NavigationStack {
             VStack(spacing:14) {
-                if original != nil { Picker("图片对照",selection:$showOriginal) { Text("结果").tag(false);Text("原图").tag(true) }.pickerStyle(.segmented).padding(.horizontal).disabled(busy) }
+                if original != nil { Picker("图片对照",selection:$showOriginal) { Text("结果").tag(false);Text("原图").tag(true) }.pickerStyle(.segmented).padding(.horizontal).disabled(busy || savingPhoto) }
                 Group {
                     if let previewBitmap {
                         ImageZoomView(image: previewBitmap, imageID: displayed.id)
@@ -191,6 +286,7 @@ struct ImagePreview: View {
                 // original pages then place the image at exactly the same height.
                 .frame(maxWidth:.infinity).containerRelativeFrame(.vertical) { length, _ in max(180, length * 0.58) }.clipped()
                 ScrollView { VStack(spacing:14) {
+                ImagePhotoSaveStatus(imageID: displayed.id)
                 VStack(spacing:2) {
                     Text("\(displayed.width) × \(displayed.height)").font(.caption).foregroundStyle(.secondary)
                     Text("服务返回：\(displayed.reportedModel)").font(.caption2).foregroundStyle(.secondary).opacity(displayed.reportedModel.isEmpty ? 0 : 1)
@@ -205,18 +301,33 @@ struct ImagePreview: View {
                         }
                         if chatID != nil { Button("检查图片"){reviewing=true} }
                         Button("提取文字"){recognize()}
-                        Button("保存到照片"){savePhoto()}
                         if let url=try? store.imageLibrary.url(displayed) { ShareLink(item:url){Label("分享 / 存文件",systemImage:"square.and.arrow.up")} }
                     }.font(.subheadline).padding(.horizontal).frame(minHeight:44)
-                }.disabled(busy)
+                }.disabled(busy || savingPhoto)
                 if busy { ProgressView() }
                 if !status.isEmpty { Text(status).font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
                 if !recognized.isEmpty { ScrollView { Text(recognized).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading).padding() }.frame(maxHeight:140);Button("复制文字"){UIPasteboard.general.string=recognized;status="文字已复制"} }
                 Text("本机处理会另存新图，原图保留。图片文件暂不参与两端同步。").font(.caption2).foregroundStyle(.secondary).padding(.horizontal)
                 } }
             }.padding(.bottom,12).background(meloBackground).navigationTitle("图片").navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.confirmationAction){Button("完成"){dismiss()}}}
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { savePhoto(displayed) } label: {
+                        ImagePhotoSaveLabel(saving: savingPhoto, saved: photoHistory.savedIDs.contains(displayed.id))
+                    }.labelStyle(.titleAndIcon)
+                        .tint(photoHistory.savedIDs.contains(displayed.id) ? .green : meloGold)
+                        .disabled(busy || savingPhoto)
+                }
+                ToolbarItem(placement:.confirmationAction){Button("完成"){dismiss()}}
+            }
         }.preferredColorScheme(.dark)
+        .alert("这张图片已经保存过", isPresented: Binding(get: { repeatPhoto != nil }, set: { if !$0 { repeatPhoto = nil } }), presenting: repeatPhoto) { target in
+            Button("再保存一份") { savePhoto(target, confirmedRepeat: true) }
+            Button("取消", role: .cancel) {}
+        } message: { _ in Text("再次保存会在照片中新增一份。是否继续？") }
+        .alert("保存失败", isPresented: Binding(get: { photoError != nil }, set: { if !$0 { photoError = nil } })) {
+            Button("好", role: .cancel) {}
+        } message: { Text(photoError ?? "") }
         .sheet(isPresented: $reviewing) { if let chatID { ImageReviewView(image: displayed, chatID: chatID, completed: { reviewing = false; dismiss() }) } }
         .task(id:displayed.id) {
             previewBitmap=nil;recognized=""
@@ -246,17 +357,12 @@ struct ImagePreview: View {
             } catch { status=error.localizedDescription }
         }
     }
-    private func savePhoto() {
-        let target=displayed;busy=true
+    private func savePhoto(_ target: LocalImage, confirmedRepeat: Bool = false) {
         Task { @MainActor in
-            defer{busy=false}
-            let authorization=await PHPhotoLibrary.requestAuthorization(for:.addOnly)
-            guard authorization == .authorized || authorization == .limited else{status="未允许保存照片，请在系统设置中允许 Melo 添加照片。";return}
             do {
-                let data=try store.imageLibrary.data(target)
-                try await PHPhotoLibrary.shared().performChanges { let request=PHAssetCreationRequest.forAsset();request.addResource(with:.photo,data:data,options:nil) }
-                status="已保存到照片"
-            } catch { status="保存失败：\(error.localizedDescription)" }
+                let outcome = try await ImagePhotoExport.save(target, library: store.imageLibrary, confirmedRepeat: confirmedRepeat)
+                if outcome == .needsConfirmation { repeatPhoto = target }
+            } catch { photoError = error.localizedDescription }
         }
     }
 }
@@ -274,6 +380,7 @@ struct ImageGallery: View {
                 LazyVGrid(columns:[GridItem(.adaptive(minimum:130))],spacing:16) {
                     ForEach(images) { image in
                         VStack { Button { preview=image } label: { LocalImageThumbnail(image:image,library:store.imageLibrary).frame(height:140) }.accessibilityLabel("查看已保存图片")
+                            .modifier(ImageContextActions(image: image, library: store.imageLibrary, preview: { preview = image }, edit: { onUse(image); dismiss() }))
                             Button("继续修改"){onUse(image);dismiss()}.font(.caption)
                         }.padding(8).background(meloGold.opacity(0.06),in:RoundedRectangle(cornerRadius:14))
                     }

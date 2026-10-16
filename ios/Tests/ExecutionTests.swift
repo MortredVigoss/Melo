@@ -1,6 +1,36 @@
 import Foundation
 @main struct ExecutionTests {
     static func main() throws {
+        let clockStart = "2026-10-16T00:00:00.000Z"
+        let clockEnd = "2026-10-16T00:00:19.000Z"
+        var timed = ExecutionRecord(chatId: "timed", query: "q", requestedModel: "m")
+        timed.startedAt = clockStart
+        assert(timed.elapsedMilliseconds(now: ExecutionClock.date(clockEnd)!) == 19000)
+        timed.pipeline = [
+            ExecutionStage(id: "model:1", name: "m", status: "completed", startedAt: "2026-10-16T00:00:01Z", finishedAt: "2026-10-16T00:00:09Z"),
+            ExecutionStage(id: "model:2", name: "m", status: "completed", startedAt: "2026-10-16T00:00:05Z", finishedAt: "2026-10-16T00:00:12Z"),
+            ExecutionStage(id: "model:3", name: "m", status: "running", startedAt: "2026-10-16T00:00:16Z"),
+            ExecutionStage(id: "model:1:summary", channel: "reasoning-summary", name: "summary", status: "running", startedAt: clockStart)
+        ]
+        assert(timed.modelMilliseconds(now: ExecutionClock.date("2026-10-16T00:00:20Z")!) == 15000)
+        for state in ["completed", "failed", "cancelled", "interrupted"] {
+            timed.status = state; timed.finishedAt = clockEnd
+            assert(timed.elapsedMilliseconds(now: Date.distantFuture) == 19000)
+            let restored = try JSONDecoder().decode(ExecutionRecord.self, from: JSONEncoder().encode(timed))
+            assert(restored.elapsedMilliseconds(now: Date.distantFuture) == 19000)
+        }
+        timed.finishedAt = nil
+        assert(timed.elapsedMilliseconds(now: Date.distantFuture) == nil)
+        timed.startedAt = "invalid"
+        assert(timed.elapsedMilliseconds() == nil)
+        var imageProgress = ExecutionImageProgress(requested: 2, startedAt: clockStart)
+        assert(imageProgress.percent == 0)
+        imageProgress.saved = 1
+        assert(imageProgress.percent == 50)
+        imageProgress.saved = 2; imageProgress.finishedAt = clockEnd
+        timed.imageProgress = imageProgress
+        let restoredImage = try JSONDecoder().decode(ExecutionRecord.self, from: JSONEncoder().encode(timed))
+        assert(restoredImage.imageProgress?.percent == 100 && restoredImage.imageProgress?.finishedAt == clockEnd)
         var receipt = ExecutionObservation(requestStarted: ProcessInfo.processInfo.systemUptime - 1)
         receipt.accept(["type":"response.created", "response":["id":"resp_safe", "model":"real-model", "status":"in_progress", "headers":["authorization":"secret"], "input":"private prompt"]])
         receipt.accept(["type":"response.completed", "response":["status":"completed", "usage":["input_tokens":42,"output_tokens":9,"total_tokens":51,"input_tokens_details":["cached_tokens":20],"output_tokens_details":["reasoning_tokens":3]], "output":[]]])

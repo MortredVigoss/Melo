@@ -1,5 +1,5 @@
 import { t, ui, currentLanguage } from './i18n.js';
-import { renderExecutionDetail } from './executionDetails.js';
+import { renderExecutionDetail, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, moduleActivity, sceneFinished, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
@@ -30,7 +30,7 @@ function cancelCollapse() { clearTimeout(collapseTimer); closingRun = null; }
 export const renderExecutionPanel = () => ui`<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>`;
 export function renderSceneReplay(message) {
   const id = message.role === 'assistant' && message.metadata?.runId;
-  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button>` : '';
+  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button><div data-execution-timing-run="${escape(id)}">${renderExecutionTiming(scenes.get(id))}</div>` : '';
 }
 const selectedScene = () => {
   const scene = scenes.get(currentRun); if (!scene) return null;
@@ -139,12 +139,13 @@ function headerStatus(scene) {
   if (running.length === 1) return `${EXECUTION_MODULES.find(m => m.id === running[0].module)?.name} · 执行中`;
   if (scene.operations.some(op => op.status === 'waiting')) return t("等待许可 · 尚未执行");
   const stage = (scene.pipeline || []).filter(item => item.status === 'running').at(-1);
-  if (stage) return `${stage.name} · ${stage.output || t("执行中")}`;
+  if (stage) return `${stage.name} · ${stage.channel === 'reasoning-summary' ? t("公开摘要更新中") : stage.output || t("执行中")}`;
   return scene.operations.length ? t("调用已返回 · 等待回答") : t("请求处理中 · 等待可观测工具事件");
 }
 function detailsFor(scene) {
   if (focus === 'search') return visibleSceneSources(scene, more);
   if (focus === 'create') return [];
+  if (focus === 'compute') return moduleActivity(scene, focus).operations.filter(op => op.channel !== 'reasoning-summary').map(op => ({ ...op, title: op.expression || op.name }));
   return moduleActivity(scene, focus).operations.map(op => ({ ...op, title: op.expression || op.name }));
 }
 function sizeDetails() {
@@ -174,7 +175,7 @@ function renderCandidates(scene) {
   if (focus !== 'create') return '';
   const artifacts = scene?.artifacts || [];
   const stages = moduleActivity(scene, 'create').operations;
-  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(stage.name)}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(stage.output || stage.input || t("等待返回"))}</small></button>`).join('')}</div>`;
+  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(stage.name)}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(stage.output || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escape(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
   const previews = (scene?.previews || []).filter(p => !artifacts.some(a=>a.operationId===p.operationId));
   const previewCards = previews.map(p => ui`<article class="execution-candidate execution-preview"><img src="${escape(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
   const missing = Math.max(0,(scene?.imageTask?.count || 0)-artifacts.filter(a=>a.kind==='image').length);
@@ -191,12 +192,25 @@ function renderCandidates(scene) {
   </article>`).join('')}</div></div>`;
 }
 let inspectedOperation = '';
+function paintTiming(liveOnly = false) {
+  if (document.hidden) return;
+  const update = (node, scene) => {
+    if (!node || liveOnly && (!scene || sceneFinished(scene))) return;
+    const html = renderExecutionTiming(scene);
+    if (node.innerHTML !== html) node.innerHTML = html;
+  };
+  update(host?.querySelector('.execution-timing-host'), selectedScene());
+  for (const node of document.querySelectorAll('[data-execution-timing-run]')) update(node, scenes.get(node.dataset.executionTimingRun));
+}
 function paint() {
   if (!host?.isConnected) return;
   const scene = selectedScene(), items = detailsFor(scene);
   if (inspectedOperation) {
     const op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === inspectedOperation);
-    if (op) host.querySelector('.execution-inspector').innerHTML = renderExecutionDetail(op, statusNames[op.status]);
+    if (op) {
+      const inspector = host.querySelector('.execution-inspector'), html = renderExecutionDetail(op, statusNames[op.status]);
+      if (inspector.innerHTML !== html) { const top = inspector.scrollTop; inspector.innerHTML = html; inspector.scrollTop = top; }
+    }
   }
   const searchOps = (scene?.operations || []).filter(op => op.module === 'search');
   host.hidden = !opened && !scene;
@@ -217,14 +231,17 @@ function paint() {
       return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" style="--module-color:${module.color}" aria-label="进入${escape(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escape(t(module.name))}</strong><small>${escape(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${scene.sources.length} 条来源 ↗` : module.id === 'tools' ? ` · ${activity.operations.length} 次工具调用` : module.id === 'create' ? ` · ${activity.operations.length} 条记录` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
     }).join('') + renderDetails(scene, items);
     host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escape(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
-    host.querySelector('.execution-extra').innerHTML = renderSearchTrail(scene) + (renderCandidates(scene) || (!scene || focus && !items.length ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域暂无执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
+    const extra = host.querySelector('.execution-extra'), scrollTop = extra.querySelector('.execution-reasoning-records')?.scrollTop || 0;
+    extra.innerHTML = renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域暂无执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
+    const records = extra.querySelector('.execution-reasoning-records'); if (records) records.scrollTop = scrollTop;
+    host.querySelector('.execution-signal-host').innerHTML = wideViewport(zoom) ? renderExecutionSignal(scene) : '';
     host.querySelector('.execution-inspector').hidden = !inspectedOperation;
     gpu?.update(scene, focus, items, zoom);
   }
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
   const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · 图片 ${images.length}/${scene.requestedImages} 张成功` : '';
   host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? '执行已停止 · 神经脉冲是低强度氛围动画' : scene ? '只展示已记录的执行 · 不代表模型内部思维' : '准备就绪 · 尚未搜索、计算或调用工具'))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
-  updateButtons(); syncZoomControls();
+  updateButtons(); syncZoomControls(); paintTiming();
   if (opened && !gpu && !loading) {
     loading = true;
     const currentHost = host;
@@ -294,7 +311,7 @@ export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAu
   const next = document.querySelector('#execution-panel');
   if (next !== host) {
     releaseZoom?.(); releaseZoom = null; layoutObserver?.disconnect(); layoutObserver = null; clearTimeout(zoomSaveTimer); gpu?.dispose(); gpu = null; host = next; lastSignature = '';
-    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><footer class="execution-panel-footer"></footer>`;
+    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><div class="execution-signal-host"></div><footer class="execution-panel-footer"></footer>`;
   }
   if (host && !releaseZoom) {
     const stage = host.querySelector('.execution-panel-stage');
@@ -388,7 +405,10 @@ document.addEventListener('change', event => {
   if (event.target.matches('[data-execution-history]')) { cancelCollapse(); chooseRun(event.target.value); setOpen(true); }
   if (event.target.matches('[data-execution-slot]')) { slot = Number(event.target.value); rememberView(); paint(); }
 });
-document.addEventListener('visibilitychange', () => { document.documentElement.dataset.executionHidden = String(document.hidden); });
+document.addEventListener('visibilitychange', () => { document.documentElement.dataset.executionHidden = String(document.hidden); paintTiming(); });
 setInterval(() => {
   if (!document.hidden && host?.isConnected && currentChat && Date.now() - lastPoll > 3500 && [...scenes.values()].some(s => s.chatId === currentChat && !sceneFinished(s))) { lastPoll = Date.now(); void loadScenes(currentChat); }
 }, 4000);
+
+// Refresh only text/progress, preserving images, reading position and WebGL.
+setInterval(() => { if (!document.hidden && host?.isConnected) paintTiming(true); }, 1000);

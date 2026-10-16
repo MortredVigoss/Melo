@@ -16,7 +16,7 @@ export function nativeSettings(action,payload={}) {
   if(!bridge())return Promise.reject(new Error(t("此功能需要在 Melo 桌面应用中使用。")));
   return new Promise((resolve,reject)=>{
     const requestID=crypto.randomUUID();
-    const timer=setTimeout(()=>{requests.delete(requestID);reject(new Error('桌面设置未响应，请重试。'));},action==='savePortableArchive'?300000:15000);
+    const timer=setTimeout(()=>{requests.delete(requestID);reject(new Error(t("桌面操作未响应，请重试。")));},['savePortableArchive','saveImage'].includes(action)?300000:15000);
     requests.set(requestID,{resolve,reject,timer});bridge().postMessage({action,requestID,...payload});
   });
 }

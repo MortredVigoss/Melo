@@ -63,14 +63,17 @@ async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts}) {
  const fallback=teamDigest(team);
  if(!lead||signal?.aborted||team.budgetExceeded||!team.results.length)return fallback;
  const handoffs=team.results.map(r=>({member:r.name||r.agentId,round:r.round||1,...(r.handoff||{status:r.ok?'completed':'failed',conclusion:String(r.output||'').slice(0,2000)})}));
+ let stopWaiting;
+ const cancelled=new Promise((_,reject)=>{stopWaiting=()=>reject(signal?.reason || new Error('Team cancelled'));signal?.addEventListener('abort',stopWaiting,{once:true});});
  try {
-  const reply=await replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,model:lead.model||config.model,
+  const reply=await Promise.race([replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,model:lead.model||config.model,
    systemPrompt:[lead.instructions||'',SUMMARY_INSTRUCTION].filter(Boolean).join('\n\n'),
    messages:[{role:'user',content:`用户任务：\n${task}\n\n协作方式：${team.mode}${team.mode==='review-loop'?`（复核${team.accepted?'已通过':'未通过'}）`:''}\n\n成员交接记录：\n${JSON.stringify(handoffs,null,1)}`}],
-   maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,onProviderResponse:r=>receipts.push(r)});
+   maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,onProviderResponse:r=>{if(!signal?.aborted)receipts.push(r);}}),cancelled]);
   const text=modelReplyText(reply).trim();
   return text&&!/^\s*[{[]/.test(text)?text:fallback;
  } catch { return fallback; }
+ finally { signal?.removeEventListener('abort',stopWaiting); }
 }
 async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
@@ -123,10 +126,14 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
   } else {
    const prior=[];for(const id of plan.members){const r=await member(id,prior);if(r.handoff)prior.push(r.handoff);}
   }
- } finally {clearTimeout(budgetTimer);signal?.removeEventListener('abort',stop);}
+ // The same deadline covers the lead's final request, not just members.
+ if(usedTokens>=plan.maxTokens)budgetExceeded=true;
  const team={ok:!signal?.aborted&&!budgetExceeded&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,cancelled:Boolean(signal?.aborted),budgetExceeded,mode:plan.mode,results,concurrency:plan.concurrency};
  const summaryReceipts=[];
- team.summary=await summarizeTeam({team,task,lead,config,signal,replyFn,receipts:summaryReceipts});
+ team.summary=await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts});
+ team.cancelled=Boolean(signal?.aborted);team.budgetExceeded=budgetExceeded;
+ if(team.cancelled||budgetExceeded){team.ok=false;team.summary=teamDigest(team);}
  team.summaryReceipts=summaryReceipts;
  return {...team,durationMs:Date.now()-started,usage:summarizePricedUsage([...results.flatMap(r=>r.receipts),...summaryReceipts],config.modelPricing || {})};
+ } finally {clearTimeout(budgetTimer);signal?.removeEventListener('abort',stop);}
 }

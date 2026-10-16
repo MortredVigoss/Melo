@@ -65,30 +65,48 @@ struct KnowledgeView: View {
     @State private var tab = 0
     @State private var importing = false
     @State private var showDeleted = false
-    private var notes: [KnowledgeNote] { (store.preferences.knowledge ?? []).filter { ($0.deleted == true) == showDeleted && $0.kind != "result" && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) } }
+    private var notes: [KnowledgeNote] { KnowledgeCollection.items(store.preferences.knowledge ?? [], results: tab == 2, deleted: showDeleted, query: query) }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 PageHeading(eyebrow: "KNOWLEDGE", title: "知识资料", detail: "保存反复用到的背景、要求和参考文字，在对话里主动选用。")
-                Picker("知识分类", selection: $tab) { Text("资料").tag(0); Text("记忆").tag(1) }.pickerStyle(.segmented)
+                Picker("知识分类", selection: $tab) { Text("资料").tag(0); Text("记忆").tag(1); Text("成果").tag(2) }.pickerStyle(.segmented).accessibilityIdentifier("knowledge.category")
                 if tab == 1 { MemoryFactsView() } else {
-                HStack { Button { editing = KnowledgeNote(title: "", content: "") } label: { Label("添加资料", systemImage: "plus") }; Spacer(); Button("导入文字文件") { importing = true } }.font(.subheadline).padding(.vertical, 8)
-                TextField("搜索资料", text: $query).meloInput()
-                Toggle("查看已删除资料", isOn: $showDeleted).font(.caption)
-                if notes.isEmpty { Text(query.isEmpty ? "把个人偏好、工作规范、产品说明或学习笔记保存在这里。之后在对话的“项目与资料”中选择，模型才能使用。" : "没有匹配的资料。").font(.subheadline).foregroundStyle(.secondary).meloPanel() }
+                if tab == 0 { HStack { Button { editing = KnowledgeNote(title: "", content: "") } label: { Label("添加资料", systemImage: "plus") }; Spacer(); Button("导入文件") { importing = true } }.font(.subheadline).padding(.vertical, 8) }
+                TextField(tab == 2 ? "搜索成果" : "搜索资料", text: $query).meloInput()
+                Toggle(tab == 2 ? "查看已删除成果" : "查看已删除资料", isOn: $showDeleted).font(.caption)
+                if notes.isEmpty { Text(LocalizedStringKey(query.isEmpty ? (tab == 2 ? "同步后的成果会显示在这里，不会自动用作知识资料。" : "把个人偏好、工作规范、产品说明或学习笔记保存在这里。之后在对话的“项目与资料”中选择，模型才能使用。") : "没有匹配的资料。")).font(.subheadline).foregroundStyle(.secondary).meloPanel() }
                 ForEach(notes) { note in
                     VStack(alignment: .leading, spacing: 10) {
                         Button { editing = note } label: { VStack(alignment: .leading, spacing: 9) { Text(note.title).font(.headline); Text(note.content).font(.subheadline).foregroundStyle(.secondary).lineLimit(3) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
-                        Button(note.deleted == true ? "恢复资料" : "删除资料", role: note.deleted == true ? nil : .destructive) { store.updatePreferences { p in if let index = p.knowledge?.firstIndex(where: { $0.id == note.id }) { p.knowledge?[index].deleted = note.deleted != true; p.knowledge?[index].updatedAt = timestamp() } } }.font(.caption)
+                        if tab == 2 { Text(note.language ?? "text").font(.caption).foregroundStyle(meloGold) }
+                        Button(note.deleted == true ? (tab == 2 ? "恢复成果" : "恢复资料") : (tab == 2 ? "删除成果" : "删除资料"), role: note.deleted == true ? nil : .destructive) { store.updatePreferences { p in if let index = p.knowledge?.firstIndex(where: { $0.id == note.id }) { p.knowledge?[index].deleted = note.deleted != true; p.knowledge?[index].updatedAt = timestamp() } } }.font(.caption)
                     }.meloPanel()
                 }
                 Text("删除后立即停止用于新请求；配置同步服务后，资料和删除状态一起同步。电脑本地文件不会自动上传。").font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(20)
-        }.sheet(item: $editing) { note in KnowledgeEditor(note: note) }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .utf8PlainText, UTType(filenameExtension: "md") ?? .plainText]) { result in
-            do { let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }; let data = try Data(contentsOf: url); guard data.count <= 60000, let text = String(data: data, encoding: .utf8), text.count <= 12000 else { throw MeloError.message("请选择 12,000 字以内的 UTF-8 文字资料。") }; editing = KnowledgeNote(title: url.deletingPathExtension().lastPathComponent, content: text) } catch { store.error = error.localizedDescription }
+        }.sheet(item: $editing) { note in
+            if note.kind == "result" { ResultDetail(note: note) } else { KnowledgeEditor(note: note) }
         }
+        .sheet(isPresented: $importing) { LocalFilesView() }
+    }
+}
+struct ResultDetail: View {
+    @Environment(\.dismiss) private var dismiss
+    let note: KnowledgeNote
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(note.title).font(.title3.weight(.semibold))
+                    Label("成果", systemImage: "doc.text").foregroundStyle(meloGold)
+                    Text(note.language ?? "text").font(.caption).foregroundStyle(.secondary)
+                    Text(note.content).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(20)
+            }.navigationTitle("成果").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }; ToolbarItem(placement: .primaryAction) { ShareLink(item: note.content) } }
+        }.presentationBackground(MeloTheme.dialog)
     }
 }
 struct KnowledgeEditor: View {

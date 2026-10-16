@@ -3,7 +3,7 @@
 .language-switcher summary::-webkit-details-marker{display:none}
 .language-switcher summary:focus-visible,.language-menu button:focus-visible{outline:2px solid var(--accent,#bca572);outline-offset:3px}
 .language-switcher summary span:last-child{margin-left:auto}
-.language-menu{position:absolute;bottom:calc(100% + 8px);left:0;z-index:80;min-width:170px;max-width:min(280px,80vw);padding:6px;border:1px solid #b89c6350;border-radius:13px;background:#17191ef5;box-shadow:0 14px 40px #0008;backdrop-filter:blur(18px)}
+.language-menu{position:absolute;bottom:calc(100% + 8px);left:0;z-index:80;min-width:170px;max-width:min(280px,80vw);padding:6px;border:1px solid var(--space-edge-raised);border-radius:var(--space-radius-card);background:var(--space-floating);box-shadow:var(--space-shadow-raised);backdrop-filter:blur(var(--space-blur))}
 .neural-nav-footer .language-menu button{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;min-height:36px;padding:8px 10px;border-radius:8px;font-size:12px;color:#eee3d0}
 .language-menu button:hover,.language-menu button[aria-pressed=true]{background:#b89c6324}
 .language-menu p{font-size:12px;line-height:1.5;color:#f0b7aa;padding:4px 8px}

@@ -18,12 +18,12 @@ Connect Claude through Anthropic Messages, use supported OpenAI and OpenAI-compa
 | --- | --- |
 | **Work across conversations and projects** | Organize chats, project instructions, reference material, Agents, and conversation-level model choices. |
 | **Connect multiple model providers** | Use supported Codex OAuth connections, OpenAI-compatible APIs, Claude through Anthropic Messages, OpenRouter, or a local/custom model endpoint. Keep provider and model choices configurable. |
-| **Collaborate with Agents** | Configure each Agent's instructions, model, and capabilities. Delegate work or run sequential, parallel, and review teams on the desktop, with structured handoffs and inherited permission limits. |
+| **Collaborate with Agents** | Configure each Agent's instructions, model, and capabilities. Delegate work or run sequential, parallel-research, and review teams with structured handoffs. Desktop tools and iPhone text teams follow their platform-specific capability limits. |
 | **Separate knowledge from results** | Save reference documents as knowledge, retrieve relevant passages locally, and keep automatically extracted code blocks in a separate results collection. |
 | **Recall relevant context** | Search local history and use scoped memory backed by SQLite, keyword retrieval, and an embedded multilingual semantic model. Inspect, edit, or forget stored facts. |
 | **Act on your desktop workspace** | Read and edit files, run commands, research the web, use browser tools, and invoke reusable skills or configured MCP tools, subject to permissions and available dependencies. |
 | **Work with media** | Use supported image understanding, generation/editing, document reading, voice input, and speech output. Availability depends on the configured engine, model, and account. |
-| **Inspect task execution** | Review model and tool events, sources, results, and saved execution history in the neural task space. Provider-supplied metadata is shown when available. |
+| **Inspect task execution** | Review model and tool events, sources, results, and saved execution history in the neural task space. View live elapsed time, completion timestamps, and image progress based on saved results. Provider-supplied metadata is shown when available. |
 
 ### Compatibility and connections
 
@@ -43,13 +43,13 @@ Protocol compatibility is the starting point: model access, attachments, tool ca
 ### Desktop, iPhone, and CLI
 
 - **macOS:** a native Swift shell around the local workspace, with a JavaScript UI, neural navigation, and the Node.js execution core.
-- **iPhone:** a native SwiftUI client for conversations, model connections, Agents, drafts, image workflows, and optional workspace synchronization. Independent chat can use its own model connection while the Mac is off; desktop tool execution still needs the desktop runtime.
+- **iPhone:** a native SwiftUI client for concurrent conversations, model connections, Agents, text teams, drafts, image workflows, and optional workspace synchronization. Independent chat can use its own model connection while the Mac is off; desktop tool execution still needs the desktop runtime.
 - **CLI:** interactive chat, single prompts, history search, memory status, and runtime diagnostics through the same local codebase.
 - **Connected channels:** Discord can route configured channels into Melo. It requires explicit setup and a running runtime. Telegram is temporarily archived; its saved configuration and conversation history are preserved.
 
 Synchronization is configured separately from model access. It is not an automatic hosted service, and mobile does not have every desktop tool.
 
-The optional Agent capability sync extension preserves the existing conversation sync protocol. Older sync servers can continue syncing conversations while capability settings remain pending; showing those settings on iPhone requires an updated private sync server and client. Team execution remains on the desktop.
+The optional Agent capability sync extension preserves the existing conversation sync protocol. Older sync servers can continue syncing conversations while capability settings remain pending; showing those settings on iPhone requires an updated private sync server and client. iPhone teams run directly on the phone using those collaboration settings: members make text requests, search requires local permission for both the lead and member, and the lead summarizes their handoffs. The shared time budget also covers that summary. Phone teams do not run desktop file/command tools or provide the desktop token-budget accounting; project default teams remain desktop-local.
 
 ## Architecture
 
@@ -129,6 +129,12 @@ Semantic recall uses bundled, quantized **multilingual-e5-small** through an ONN
 ## Permissions and integrations
 
 File and command tools follow Melo's permission and workspace rules. Built-in MCP services can start with the desktop; Agent capabilities and tool approvals govern their use. Additional MCP servers require configuration, and service switches remain editable. An approved third-party process can have broader local access; approval dialogs are not an operating-system sandbox.
+
+On iPhone, calendar, reminders, contacts, and location access is opt-in on that device, with separate per-Agent grants and iOS permission checks. Writes require confirmation. These grants stay local and are not copied from desktop permissions. Availability is limited to the supported ChatGPT connection path; API and image requests do not gain system-data tools.
+
+Image requests use natural conversation instructions, including edits with a reference photo; no separate image mode is required. Saved-image counts show actual completed results, not an invented percentage for a provider that reports no internal progress. Image previews support continuous zoom. On iPhone, photo saves show persistent feedback, block concurrent duplicate writes, and ask before saving another copy.
+
+iPhone file access is limited to app-owned files and files or folders explicitly selected through the system picker. Selected-folder grants can be revoked locally; they do not provide unrestricted access to the phone or synchronize permissions to another device.
 
 Provider connections, image engines, synchronization, and remote channels are independently configured. Real-account availability, background behavior on iOS, and third-party service limits need validation in the environment where you use them.
 

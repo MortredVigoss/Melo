@@ -25,6 +25,10 @@ import Foundation
     }
     let legacyPreview: SyncValue = .object(["name":.string("Original"),"mood":.string("sharp"),"symbol":.string("star")])
     assert(!legacyPreview.preview.contains("sharp") && legacyPreview.preview.contains("star"), "retired mood must not appear in conflict previews")
+    let mixedNotes = [KnowledgeNote(id:"note",title:"知识",content:"reference"), KnowledgeNote(id:"result",title:"成果",content:"original code",kind:"result"), KnowledgeNote(id:"deleted-result",title:"已删除",content:"retained",deleted:true,kind:"result")]
+    assert(KnowledgeCollection.items(mixedNotes,results:false,deleted:false,query:"").map(\.id) == ["note"])
+    assert(KnowledgeCollection.items(mixedNotes,results:true,deleted:false,query:"CODE").map(\.id) == ["result"])
+    assert(KnowledgeCollection.items(mixedNotes,results:true,deleted:true,query:"").map(\.id) == ["deleted-result"])
     let fencedIdentity = "Actual identity\n\n```md\n## 风格\nLiteral style heading\n```\n\n~~~~\n## 补充要求\nLiteral extra heading\n~~~~"
     var fencedAgent = AgentProfile(name:"Fenced",subtitle:"",symbol:"star",instructions:"",identity:fencedIdentity,soul:"Actual style")
     assert(fencedAgent.identity == fencedIdentity && fencedAgent.soul == "Actual style")
@@ -87,6 +91,19 @@ import Foundation
         let actual = round.records.first { $0.key == row.key }!
         assert(actual.versions == row.versions,"cross-platform round trip changed \(row.key): \(actual.versions[0].value.canonical)")
     }
+    if records[0].pipeline?.isEmpty != false { records[0].pipeline = [ExecutionStage(id:"local-only",name:"local",status:"completed")] }
+    let localStage = records[0].pipeline![0]
+    records[0].pipeline![0].api = ["responseId":.string("resp_local_only"),"usage":.object(["input":.number(12)])]
+    var wireWithLocalStage = wire
+    let messageRow = wire.records.first { $0.kind == "message" && $0.id == "answer" }!
+    var messageValue = messageRow.versions[0].value.object
+    var sceneValue = messageValue["scene"]!.object
+    sceneValue["pipeline"] = try .from([WorkspaceProjection.stage(localStage)])
+    messageValue["scene"] = .object(sceneValue)
+    wireWithLocalStage.put(kind:"message",id:"answer",value:.object(messageValue),device:"phone")
+    try WorkspaceProjection.apply(wireWithLocalStage,preferences:&imported,records:&records,connections:connections)
+    assert(records[0].pipeline?[0].api?["responseId"] == .string("resp_local_only"),"Old sync echoes must retain local API receipts")
+    assert(WorkspaceProjection.stage(records[0].pipeline![0])["api"] == nil,"Do not add fields to frozen v1 wire")
     var left=wire,right=wire
     let changedA=try SyncValue.from(["title":"A","content":"手机修改","deleted":false,"kind":"note","language":"text","projectId":NSNull()])
     let changedB=try SyncValue.from(["title":"B","content":"桌面修改","deleted":false,"kind":"note","language":"text","projectId":NSNull()])

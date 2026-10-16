@@ -6,6 +6,7 @@ import Speech
 import WebKit
 import ServiceManagement
 import UserNotifications
+import UniformTypeIdentifiers
 
 final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, AVAudioPlayerDelegate {
   private var window: NSWindow!
@@ -546,7 +547,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       return
     }
 
-    let localActions = ["getLocalSettings", "setLocalSettings", "openLoginItems", "openMicrophoneSettings", "savePortableArchive", "notifyReplyComplete"]
+    let localActions = ["getLocalSettings", "setLocalSettings", "openLoginItems", "openMicrophoneSettings", "savePortableArchive", "saveImage", "notifyReplyComplete"]
     if localActions.contains(action) {
       guard message.frameInfo.isMainFrame, let url = message.frameInfo.request.url,
             url.scheme == "http", url.host == host, url.port == port else { return }
@@ -733,6 +734,25 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
         guard response == .OK, let url = panel.url else { self.localSettingsReply(requestID, extra: ["cancelled": true]); return }
         do { try text.write(to: url, atomically: true, encoding: .utf8); self.localSettingsReply(requestID) }
         catch { self.localSettingsReply(requestID, extra: ["error": error.localizedDescription]) }
+      }
+    case "saveImage":
+      let extensions = ["image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif", "image/heic": "heic"]
+      guard let mimeType = payload["mimeType"] as? String, let ext = extensions[mimeType],
+            let encoded = payload["data"] as? String, encoded.utf8.count <= 90 * 1024 * 1024,
+            let data = Data(base64Encoded: encoded), !data.isEmpty, data.count <= 64 * 1024 * 1024,
+            NSImage(data: data) != nil else {
+        localSettingsReply(requestID, extra: ["error": "图片无法读取或超过 64 MB，请重新打开后重试。"]); return
+      }
+      let panel = NSSavePanel()
+      let suppliedName = (payload["name"] as? String ?? "Melo-image") as NSString
+      let stem = (suppliedName.lastPathComponent as NSString).deletingPathExtension
+      panel.nameFieldStringValue = (stem.isEmpty ? "Melo-image" : stem) + "." + ext
+      if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
+      panel.canCreateDirectories = true
+      panel.beginSheetModal(for: window) { response in
+        guard response == .OK, let url = panel.url else { self.localSettingsReply(requestID, extra: ["cancelled": true]); return }
+        do { try data.write(to: url, options: .atomic); self.localSettingsReply(requestID) }
+        catch { self.localSettingsReply(requestID, extra: ["error": "图片保存失败：" + error.localizedDescription]) }
       }
     case "notifyReplyComplete":
       guard UserDefaults.standard.bool(forKey: "melo.notifications"), !NSApp.isActive else { return }

@@ -6,7 +6,7 @@ struct ReplyContentView: View {
         Text((try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(value))
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 9) {
             ForEach(Array(ReplyDocument.parse(content).enumerated()), id: \.offset) { _, block in
                 switch block.kind {
                 case .code:
@@ -23,7 +23,7 @@ struct ReplyContentView: View {
                                 ForEach(0..<max(headings.count, row.count), id: \.self) { column in
                                     VStack(alignment: .leading, spacing: 3) {
                                         if column < headings.count { inline(headings[column]).font(.caption).foregroundStyle(meloGold) }
-                                        inline(column < row.count ? row[column] : "—").font(.body)
+                                        inline(column < row.count ? row[column] : "—").font(.subheadline)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }.padding(12).background(MeloTheme.inset, in: RoundedRectangle(cornerRadius: 12))
@@ -36,6 +36,6 @@ struct ReplyContentView: View {
                 case .paragraph: inline(block.text).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-        }.font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(.subheadline).lineSpacing(3).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -1,6 +1,14 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["本轮用时 %@", "Total time %@", "今回の所要時間 %@", "전체 소요 시간 %@", "Tiempo total %@"],
+["已用时 %@", "Elapsed %@", "経過 %@", "경과 %@", "Transcurrido %@"],
+["思考与回复 %@", "Thinking and response %@", "思考と応答 %@", "생각 및 응답 %@", "Razonamiento y respuesta %@"],
+["完成于 %@", "Completed at %@", "完了日時 %@", "완료 시각 %@", "Completado a las %@"],
+["停止于 %@", "Stopped at %@", "停止日時 %@", "중지 시각 %@", "Detenido a las %@"],
+["图片成果 %lld% · 已保存 %lld/%lld 张", "Image results %lld% · Saved %lld/%lld", "画像成果 %lld% · 保存済み %lld/%lld 枚", "이미지 결과 %lld% · 저장 %lld/%lld장", "Imágenes %lld% · Guardadas %lld/%lld"],
+["图片处理 %@", "Image processing %@", "画像処理 %@", "이미지 처리 %@", "Procesamiento de imagen %@"],
+["图片保存于 %@", "Image saved at %@", "画像保存日時 %@", "이미지 저장 시각 %@", "Imagen guardada a las %@"],
 ["从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。", "Synced from the computer and limits only what this Agent does on the computer; increases need confirmation there. Search, images and phone data on this iPhone are set under “On this iPhone”.", "コンピュータから同期され、この Agent のコンピュータ上の実行だけを制限します。拡大はコンピュータでの確認が必要です。iPhone での検索、画像、iPhone データは「この iPhone」で設定します。", "컴퓨터에서 동기화되며 이 Agent의 컴퓨터 실행만 제한합니다. 권한 확대는 컴퓨터에서 확인해야 합니다. iPhone의 검색, 이미지, iPhone 데이터는 '이 iPhone에서'에서 설정합니다.", "Sincronizado desde el ordenador; solo limita lo que este Agent hace en el ordenador y las ampliaciones se confirman allí. Búsqueda, imágenes y datos del iPhone se configuran en «En este iPhone»."],
 ["还需要在 Agent 页的“这台手机上”为每个 Agent 单独授权。", "Each Agent also needs its own permission under “On this iPhone” on its Agent page.", "各 Agent ごとに、Agent ページの「この iPhone」で許可も必要です。", "각 Agent 페이지의 '이 iPhone에서'에서 Agent별로 허용해야 합니다.", "Cada Agent también necesita permiso propio en «En este iPhone» de su página."],
 ["这台手机上", "On this iPhone", "この iPhone", "이 iPhone에서", "En este iPhone"],
@@ -27,6 +35,12 @@ const rows = [
 ["Melo 请求在你的 iPhone 上执行这项操作。", "Melo is asking to do this on your iPhone.", "Melo がこの操作を iPhone で実行しようとしています。", "Melo가 iPhone에서 이 작업을 하려고 합니다.", "Melo quiere hacer esto en tu iPhone."],
 ["直接描述图片要求", "Describe what you want in the conversation", "会話で画像の要望を伝える", "대화에서 이미지 요청 설명", "Describe la imagen en la conversación"],
 ["这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。", "These are synced capability settings. Permission increases require confirmation on the computer. Desktop tools and multi-Agent collaboration run on the computer.", "同期された機能設定です。権限の拡大はコンピュータでの確認後に有効になります。デスクトップツールと複数 Agent の協調はコンピュータで実行します。", "동기화된 기능 설정입니다. 권한 확대는 컴퓨터에서 확인한 후 적용됩니다. 데스크톱 도구와 다중 Agent 협업은 컴퓨터에서 실행됩니다.", "Esta es la configuración de capacidades sincronizada. Ampliar permisos requiere confirmación en el ordenador. Las herramientas de escritorio y la colaboración entre Agents se ejecutan en el ordenador."],
+["成果", "Results", "成果", "결과", "Resultados"],
+["搜索成果", "Search results", "成果を検索", "결과 검색", "Buscar resultados"],
+["查看已删除成果", "Show deleted results", "削除した成果を表示", "삭제된 결과 보기", "Ver resultados eliminados"],
+["同步后的成果会显示在这里，不会自动用作知识资料。", "Synced results appear here. They are not automatically used as knowledge.", "同期した成果をここに表示します。知識資料には自動利用されません。", "동기화된 결과가 표시됩니다. 지식 자료로 자동 사용되지 않습니다.", "Los resultados sincronizados aparecen aquí. No se usan automáticamente como conocimiento."],
+["恢复成果", "Restore result", "成果を復元", "결과 복원", "Restaurar resultado"],
+["删除成果", "Delete result", "成果を削除", "결과 삭제", "Eliminar resultado"],
 ["最多 8 份；长资料按预算选取，全文保留。", "Up to 8 documents. Long documents are excerpted to fit the context; originals are retained.", "最大8件。長い資料は予算に合わせて抜粋し、原文は保持します。", "최대 8개. 긴 문서는 문맥 한도에 맞춰 발췌하며 원문은 보존됩니다.", "Hasta 8 documentos. Los textos largos se extractan según el límite; se conservan los originales."],
 ["本机人设恢复副本", "Local persona recovery copy", "端末内の人設定義の復元用コピー", "로컬 페르소나 복구 사본", "Copia local de recuperación del perfil"],
 ["图片模式", "Image mode", "画像モード", "이미지 모드", "Modo de imagen"],

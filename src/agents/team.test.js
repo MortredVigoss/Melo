@@ -99,3 +99,33 @@ test('the team time budget cancels a running member and starts no more',async t=
  assert.equal(started,1);assert.equal(sawAbort,true);assert.equal(team.budgetExceeded,true);assert.equal(team.cancelled,false);
  assert.equal(team.results[1].handoff.status,'budget-exceeded');
 });
+
+test('the original team deadline covers summary and ignores late text and receipts',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ let summaries=0, summarySignal, release;
+ const pending=runAgentTeam({plan:{members:['research'],maxMinutes:1},task:'t',lead,config:{},
+  run:async()=>({ok:true,output:handoffOutput('verified finding')}),
+  replyFn:options=>{summaries++;summarySignal=options.signal;return new Promise(resolve=>{release=()=>{options.onProviderResponse({usage:{input:5,output:5}});resolve('Late success');};});}});
+ await new Promise(r=>setImmediate(r));
+ assert.equal(summaries,1);t.mock.timers.tick(60001);
+ const team=await pending;
+ assert.equal(summarySignal.aborted,true);assert.equal(team.budgetExceeded,true);assert.equal(team.ok,false);assert.equal(team.cancelled,false);
+ assert.match(team.summary,/总预算/);assert.match(team.summary,/verified finding/);
+ release();await new Promise(r=>setImmediate(r));
+ assert.equal(team.summaryReceipts.length,0);assert.doesNotMatch(team.summary,/Late success/);
+});
+test('stopping during summary cancels it and never reports a successful team',async()=>{
+ const controller=new AbortController();let summaries=0,sawAbort=false;
+ const pending=runAgentTeam({plan:{members:['research']},task:'t',lead,config:{},signal:controller.signal,
+  run:async()=>({ok:true,output:handoffOutput('finding')}),
+  replyFn:({signal})=>{summaries++;return new Promise(resolve=>signal.addEventListener('abort',()=>{sawAbort=true;resolve('Should be discarded');},{once:true}));}});
+ await new Promise(r=>setImmediate(r));controller.abort();const team=await pending;
+ assert.equal(summaries,1);assert.equal(sawAbort,true);assert.equal(team.cancelled,true);assert.equal(team.ok,false);assert.match(team.summary,/团队已停止/);
+});
+test('the final member exhausting the token budget also prevents a summary request',async()=>{
+ let summaries=0;
+ const team=await runAgentTeam({plan:{members:['research'],maxTokens:10000},task:'t',lead,config:{},
+  run:async({onProviderResponse})=>{onProviderResponse({usage:{input:10000,output:1}});return {ok:true,output:'finding'};},
+  replyFn:async()=>{summaries++;return 'summary';}});
+ assert.equal(summaries,0);assert.equal(team.budgetExceeded,true);assert.equal(team.ok,false);
+});

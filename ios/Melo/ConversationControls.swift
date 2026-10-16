@@ -121,7 +121,7 @@ struct ConversationContextPicker: View {
     let chatID: String
     var body: some View {
         NavigationStack {
-            Form {
+            MeloForm {
                 Section("放入项目") {
                     Picker("项目", selection: Binding(get: { store.preferences.chatProjects?[chatID] ?? "" }, set: { id in store.updatePreferences { if $0.chatProjects == nil { $0.chatProjects = [:] }; $0.chatProjects?[chatID] = id.isEmpty ? nil : id } })) {
                         Text("独立对话").tag("")
