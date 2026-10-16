@@ -183,6 +183,38 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let output = next[3] as? [String: Any]
         assert(output?["type"] as? String == "function_call_output" && output?["call_id"] as? String == "call_1" && output?["output"] as? String == #"{"ok":true}"#)
 
+        // Per-Agent phone permissions: baseline keeps search/images, never data.
+        let perms = UserDefaults(suiteName: "melo.phone-perms.test.\(UUID().uuidString)")!
+        var phone = PhoneAgentPermissions.load(perms)
+        assert(phone.allowed("writer") == [.network, .generateMedia])
+        let device = DeviceToolPolicy(enabled: [.calendar, .contacts])
+        assert(phone.devicePolicy(for: "writer", device: device).enabled.isEmpty, "no Agent gets phone data by default")
+        phone.set("writer", .calendar, true); phone.set("writer", .network, false); phone.save(perms)
+        let reloaded = PhoneAgentPermissions.load(perms)
+        assert(reloaded.allows("writer", .calendar) && !reloaded.allows("writer", .network) && reloaded.allows("writer", .generateMedia))
+        // Device switch and Agent grant must both allow: reminders granted to the Agent but off on the device stays off.
+        phone.set("writer", .reminders, true)
+        assert(phone.devicePolicy(for: "writer", device: device).enabled == [.calendar])
+        assert(phone.devicePolicy(for: "analyst", device: device).enabled.isEmpty, "grants never leak across Agents")
+
+        // Migration: legacy device-wide kinds go to the default Agent only, once.
+        let legacy = UserDefaults(suiteName: "melo.phone-perms.legacy.\(UUID().uuidString)")!
+        DeviceToolPolicy(enabled: [.calendar, .location]).save(legacy)
+        let migrated = PhoneAgentPermissions.load(legacy)
+        assert(migrated.allowed("melo") == [.network, .generateMedia, .calendar, .location])
+        assert(migrated.devicePolicy(for: "writer", device: DeviceToolPolicy(enabled: [.calendar, .location])).enabled.isEmpty)
+        var revoked = migrated; revoked.set("melo", .calendar, false); revoked.save(legacy)
+        assert(!PhoneAgentPermissions.load(legacy).allows("melo", .calendar), "migration never re-grants after the user revokes")
+
+        // A grant revoked mid-reply stops the next call before the data source.
+        source = FakeSource(); prompts = 0
+        var grant = true
+        out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"张"}"#), policy: all, source: source, approve: approveYes, isAllowed: { grant })
+        assert(json(out)["ok"] as? Bool == true && source.reads == 1)
+        grant = false
+        out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"张"}"#), policy: all, source: source, approve: approveYes, isAllowed: { grant })
+        assert(json(out)["ok"] as? Bool != true && source.reads == 1)
+
         print("DeviceToolsTests passed")
     }
 }

@@ -48,6 +48,72 @@ struct DeviceToolPolicy: Equatable {
     var tools: [DeviceToolSpec] { DeviceToolSpec.all.filter { enabled.contains($0.kind) } }
 }
 
+/// What one Agent may do when it runs on this iPhone. Desktop capabilities
+/// govern desktop execution; these govern phone execution. Device-local and
+/// never synced, like file bookmarks and OS permissions.
+enum PhoneCapability: String, CaseIterable, Codable, Identifiable {
+    case network, generateMedia, calendar, reminders, contacts, location
+    var id: String { rawValue }
+    var deviceKind: DeviceDataKind? { DeviceDataKind(rawValue: rawValue) }
+    var label: String {
+        switch self {
+        case .network: return "联网搜索"
+        case .generateMedia: return "生成与修改图片"
+        default: return deviceKind!.label
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .network: return "globe"
+        case .generateMedia: return "photo.badge.plus"
+        default: return deviceKind!.symbol
+        }
+    }
+}
+
+struct PhoneAgentPermissions: Equatable {
+    static let defaultsKey = "phoneAgentPermissions"
+    static let migratedKey = "phoneAgentPermissionsMigrated"
+    /// Agents without an entry keep the phone's existing behaviour: web search
+    /// and image generation on, no personal data.
+    static let baseline: Set<PhoneCapability> = [.network, .generateMedia]
+    var grants: [String: Set<PhoneCapability>] = [:]
+
+    func allowed(_ agentID: String) -> Set<PhoneCapability> { grants[agentID] ?? Self.baseline }
+    func allows(_ agentID: String, _ capability: PhoneCapability) -> Bool { allowed(agentID).contains(capability) }
+    mutating func set(_ agentID: String, _ capability: PhoneCapability, _ on: Bool) {
+        var current = allowed(agentID)
+        if on { current.insert(capability) } else { current.remove(capability) }
+        grants[agentID] = current
+    }
+
+    static func load(_ defaults: UserDefaults = .standard) -> PhoneAgentPermissions {
+        var result = PhoneAgentPermissions()
+        if let raw = defaults.dictionary(forKey: defaultsKey) as? [String: [String]] {
+            result.grants = raw.mapValues { Set($0.compactMap(PhoneCapability.init(rawValue:))) }
+        }
+        // Phone data used to be device-wide. Keep it working for the default
+        // Agent only; every other Agent must be granted explicitly.
+        if !defaults.bool(forKey: migratedKey) {
+            let legacy = DeviceToolPolicy.load(defaults).enabled
+            if !legacy.isEmpty, result.grants["melo"] == nil {
+                result.grants["melo"] = baseline.union(legacy.compactMap { PhoneCapability(rawValue: $0.rawValue) })
+            }
+            defaults.set(true, forKey: migratedKey)
+            result.save(defaults)
+        }
+        return result
+    }
+    func save(_ defaults: UserDefaults = .standard) {
+        defaults.set(grants.mapValues { $0.map(\.rawValue).sorted() }, forKey: Self.defaultsKey)
+    }
+
+    /// Phone data needs both the device switch (with OS permission) and this Agent's grant.
+    func devicePolicy(for agentID: String, device: DeviceToolPolicy) -> DeviceToolPolicy {
+        DeviceToolPolicy(enabled: device.enabled.filter { allows(agentID, PhoneCapability(rawValue: $0.rawValue)!) })
+    }
+}
+
 struct DeviceToolSpec {
     let name: String
     let kind: DeviceDataKind

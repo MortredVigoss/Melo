@@ -163,7 +163,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         replyStatus = "正在思考…"
@@ -172,7 +172,8 @@ struct ChatGPTModel: Decodable, Identifiable {
         try Task.checkCancellation()
         guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 Codex 模型。") }
         let sessionID = UUID().uuidString
-        let webSearch = imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
+        // The device-wide switch and this Agent's phone permission must both allow search.
+        let webSearch = allowWebSearch && imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
         var body = ChatGPTRequest.body(messages: messages, model: model, instructions: instructions, webSearch: webSearch)
         if !imageInputs.isEmpty || imageTask?.makesImage == true {
             let imageBody = ImageRequestBody.responses(messages: messages, inputs: imageInputs, task: imageTask ?? ImageTaskPlan(action: .analyze), model: model, instructions: instructions)

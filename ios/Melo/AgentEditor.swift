@@ -46,6 +46,7 @@ struct AgentEditor: View {
                     }
                 }
                 if session.isEditing { editableFields } else { details }
+                if !session.isNew { PhoneAgentPermissionsSection(agentID: session.draft.id) }
                 capabilityDetails
             }
             .scrollDismissesKeyboard(.interactively)
@@ -90,7 +91,7 @@ struct AgentEditor: View {
     }
     @ViewBuilder private var capabilityDetails: some View {
         Section("电脑执行能力") {
-            Text("这里显示同步的能力配置；放宽权限须在电脑确认后生效。手机不执行桌面工具或多 Agent 协作。").font(.caption).foregroundStyle(.secondary)
+            Text("从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。").font(.caption).foregroundStyle(.secondary)
             if let caps=session.draft.capabilities {
                 ForEach(["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"],id: \.self) { key in
                     HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }

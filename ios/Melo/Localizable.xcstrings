@@ -3256,6 +3256,41 @@
         }
       }
     },
+    "这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These capabilities limit only what this Agent does on the computer. Search, image generation and phone data on the iPhone are set on the phone's Agent page under “On this iPhone”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの機能はこの Agent のコンピュータ上の実行だけを制限します。iPhone での検索、画像生成、iPhone データは、iPhone の Agent ページの「この iPhone」で設定します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기능은 이 Agent의 컴퓨터 실행만 제한합니다. iPhone의 검색, 이미지 생성, iPhone 데이터는 iPhone의 Agent 페이지 '이 iPhone에서'에서 설정합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estas capacidades solo limitan lo que este Agent hace en el ordenador. La búsqueda, la generación de imágenes y los datos del iPhone se configuran en la página del Agent del iPhone, en «En este iPhone»."
+          }
+        }
+      }
+    },
     "关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。": {
       "extractionState": "manual",
       "localizations": {
@@ -28767,6 +28802,216 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent guardado. Falló la exportación Markdown; inténtalo más tarde."
+          }
+        }
+      }
+    },
+    "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced from the computer and limits only what this Agent does on the computer; increases need confirmation there. Search, images and phone data on this iPhone are set under “On this iPhone”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンピュータから同期され、この Agent のコンピュータ上の実行だけを制限します。拡大はコンピュータでの確認が必要です。iPhone での検索、画像、iPhone データは「この iPhone」で設定します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터에서 동기화되며 이 Agent의 컴퓨터 실행만 제한합니다. 권한 확대는 컴퓨터에서 확인해야 합니다. iPhone의 검색, 이미지, iPhone 데이터는 '이 iPhone에서'에서 설정합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sincronizado desde el ordenador; solo limita lo que este Agent hace en el ordenador y las ampliaciones se confirman allí. Búsqueda, imágenes y datos del iPhone se configuran en «En este iPhone»."
+          }
+        }
+      }
+    },
+    "还需要在 Agent 页的“这台手机上”为每个 Agent 单独授权。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还需要在 Agent 页的“这台手机上”为每个 Agent 单独授权。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each Agent also needs its own permission under “On this iPhone” on its Agent page."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各 Agent ごとに、Agent ページの「この iPhone」で許可も必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 Agent 페이지의 '이 iPhone에서'에서 Agent별로 허용해야 합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada Agent también necesita permiso propio en «En este iPhone» de su página."
+          }
+        }
+      }
+    },
+    "这台手机上": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台手机上"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On this iPhone"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone에서"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En este iPhone"
+          }
+        }
+      }
+    },
+    "只在这台 iPhone 上生效，立即保存，不同步。手机数据还需要在设置 > 手机数据中开启对应类型。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只在这台 iPhone 上生效，立即保存，不同步。手机数据还需要在设置 > 手机数据中开启对应类型。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies only on this iPhone, saves immediately and is not synced. Phone data also needs the matching type turned on in Settings > Phone data."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone でのみ有効で、すぐに保存され、同期されません。iPhone データは設定 > iPhone のデータで該当する種類をオンにする必要もあります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone에서만 적용되며 즉시 저장되고 동기화되지 않습니다. iPhone 데이터는 설정 > iPhone 데이터에서 해당 유형도 켜야 합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se aplica en este iPhone, se guarda al instante y no se sincroniza. Los datos del iPhone también requieren activar el tipo en Ajustes > Datos del iPhone."
+          }
+        }
+      }
+    },
+    "设置中尚未开启": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置中尚未开启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not turned on in Settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定でまだオンになっていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정에서 아직 켜지지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No activado en Ajustes"
+          }
+        }
+      }
+    },
+    "生成与修改图片": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成与修改图片"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate and edit images"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像の生成と編集"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 생성 및 편집"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generar y editar imágenes"
           }
         }
       }

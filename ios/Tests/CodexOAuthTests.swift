@@ -292,6 +292,25 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"你好")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(),execute:{ _ in fatalError("disabled tools executed") }))
         assert(toolRounds==1)
+        // An Agent without phone search permission gets no web_search tool, even for news-style questions.
+        var searchRounds=0
+        CodexFixture.handler={ request in
+            searchRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="web_search" })
+            return (200,try sse([["type":"message","content":[["type":"output_text","text":"无法联网","annotations":[]]]]]))
+        }
+        _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"今天的新闻")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:false)
+        assert(searchRounds==1)
+        // Same question with permission: the search tool is offered.
+        CodexFixture.handler={ request in
+            searchRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert(((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="web_search" })
+            return (200,Data(("data: "+String(decoding:try json(["type":"response.completed","response":["status":"completed","output":[["type":"web_search_call","status":"completed"],["type":"message","content":[["type":"output_text","text":"已搜索","annotations":[]]]]]]]),as:UTF8.self)+"\n\n").utf8))
+        }
+        _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"今天的新闻")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:true)
+        assert(searchRounds==2)
         print("Codex OAuth tests passed: background pause/resume, transport recovery, explicit cancellation, expiry, single-use exchange, PKCE, signed identity, account binding, refresh and image delivery; no live login")
     }
 }

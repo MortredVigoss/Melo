@@ -239,6 +239,12 @@ import SwiftUI
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
         let selectedAgent = agent(for: chatID)
+        // Phone execution is governed by this iPhone's per-Agent permissions;
+        // desktop capability settings govern desktop execution only.
+        let phonePermissions = PhoneAgentPermissions.load()
+        if plan.makesImage && !phonePermissions.allows(selectedAgent.id, .generateMedia) {
+            fail("当前 Agent 在这台手机上未开启“生成与修改图片”。可在 Agent 页的本机权限中开启；要求和图片已保留。"); return
+        }
         let roleModel = selectedAgent.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var useChatGPT = choice.map { $0.connectionID == "chatgpt" } ?? ((UserDefaults.standard.string(forKey: "modelAuthMode") ?? "chatgpt") == "chatgpt")
         var endpoint = UserDefaults.standard.string(forKey: "modelEndpoint") ?? ""
@@ -337,7 +343,7 @@ import SwiftUI
                 try Task.checkCancellation()
                 let reply: ModelReply
                 if let replyLoader { reply = try await replyLoader(history, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId), onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { self.replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { self.replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
@@ -418,15 +424,16 @@ import SwiftUI
     func cancel() { resolveDeviceAction(false); sendTask?.cancel(); LocalDeviceServices.shared.stopSpeech() }
     // Phone data tools: reads run directly once the user enabled the kind;
     // every write waits here for an explicit tap in the confirmation alert.
-    private func deviceToolContext(runID: String) -> DeviceToolContext? {
-        let policy = DeviceToolPolicy.load()
+    private func deviceToolContext(runID: String, agentID: String) -> DeviceToolContext? {
+        let policy = PhoneAgentPermissions.load().devicePolicy(for: agentID, device: DeviceToolPolicy.load())
         guard !policy.enabled.isEmpty else { return nil }
         return DeviceToolContext(policy: policy, execute: { [weak self] call in
             guard let self else { return #"{"ok":false,"error":"CANCELLED"}"# }
             return await DeviceToolRunner.run(call, policy: policy, source: SystemDeviceData.shared,
                                              approve: { await self.requestDeviceApproval($0) }, isAllowed: {
+                // Re-read both switches: either may be revoked while the reply runs.
                 guard let kind = DeviceToolSpec.named(call.name)?.kind else { return false }
-                return DeviceToolPolicy.load().enabled.contains(kind)
+                return PhoneAgentPermissions.load().devicePolicy(for: agentID, device: DeviceToolPolicy.load()).enabled.contains(kind)
             })
         }, onCall: { [weak self] call, output in
             let summary = DeviceToolSummary.of(output)
