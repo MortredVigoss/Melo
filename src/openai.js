@@ -562,11 +562,22 @@ function normalizeProviderMessageContent(content) {
   return parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts;
 }
 
+// Per-turn reference material (contextBudget's tail sections) is joined to the
+// newest user message only here, at serialization, so intent checks that read
+// the user's own text never see it and nothing is written back to the chat.
+export function contentWithContextTail(message) {
+  const tail = typeof message?.contextTail === 'string' ? message.contextTail.trim() : '';
+  if (!tail || message?.role !== 'user') return message?.content;
+  if (Array.isArray(message.content)) return [...message.content, { type: 'text', text: tail }];
+  const text = typeof message.content === 'string' ? message.content : '';
+  return text ? `${text}\n\n${tail}` : tail;
+}
+
 function normalizeProviderMessages(messages = []) {
   return messages
     .map(message => ({
       role: message?.role,
-      content: normalizeProviderMessageContent(message?.content),
+      content: normalizeProviderMessageContent(contentWithContextTail(message)),
     }))
     .filter(message => {
       if (message.role !== 'user' && message.role !== 'assistant') {
@@ -973,7 +984,7 @@ export async function buildCodexResponsesInput(messages = [], { signal } = {}) {
       continue;
     }
 
-    const content = await buildCodexUserContentParts(message.content, { signal });
+    const content = await buildCodexUserContentParts(contentWithContextTail(message), { signal });
     if (!content.length) {
       continue;
     }

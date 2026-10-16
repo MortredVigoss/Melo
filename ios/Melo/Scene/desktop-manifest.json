@@ -1,11 +1,11 @@
 {
   "desktop-ui/i18n.js": "3c69314c66d65d77063b192c2f7cf9df6f2da81d88c06fc1791b82c6b43e41fe",
-  "desktop-ui/translations.js": "1b0ee55d26b557708399681f3b49aa8f9ba69854b759e37e1867f5cf2aa866d9",
+  "desktop-ui/translations.js": "3f3007381128f0161cda7172b8ce11cfe43470c3ee29cd7147120adb86b806ca",
   "desktop-ui/neuralScene3D.js": "020e8dbe4697f4c0ec53fed8936deede947a9edc48f942a2735882ad493681d8",
   "desktop-ui/neuralScene.js": "0c66032eb0dc83bb38c4dccd798465f7f4a7e4a2fdd79eafa85dfe2efae2f3b6",
   "desktop-ui/neuralSatellite.js": "2a89fce4ea91acaf3516a2d5028543af9986ba1dcf8f040c3c8f17322510f92e",
   "desktop-ui/executionTiming.js": "575f3356fd42e698b3fd9c80632068e74138cc8e2490bd79b395bf1be15dc52b",
-  "desktop-ui/executionDetails.js": "510d6bb2b5f8ef94b2b2c331c340f76c01c9509b741a75aeec0090dcb74840a1",
+  "desktop-ui/executionDetails.js": "0c6ef89b22e5ce8015df40f3f6c7d0efa049a1d8d974fa5aac2188dac477f62f",
   "desktop-ui/executionPanel.js": "e5914794ce4601edd7a5157307425bf5cb7a2b8d48af0962fa39037d78e83228",
   "desktop-ui/executionScene3D.js": "cf4374a649932e4f2e9a2b4cd9d4f319834ff7ee912f87b79215323ab163f48f",
   "desktop-ui/executionViewport.js": "2f251b217e014d09e02d28482d562191966b23a656f8bd5619b35124daca7813",
@@ -20,9 +20,10 @@
   "ios/SceneSource/neural.css": "659d3dfd97ecfc3c53f47f624537518ad855b383bc56a803c4ef15387b21f568",
   "ios/SceneSource/mobile.js": "d6186d45f7aa6a2ebe37ee13c479edb522036d05ccabec900fa537e3602bc5b2",
   "ios/SceneSource/mobile.css": "c11d41a90c55fe0b448ac477126ba6e3d1eb215234a9ae0dfd824ece30c4fed4",
-  "ios/scripts/build-scene.py": "67b53a83f69126d9f630bf757d524627360e5d49a0bdcfec2a9ce036ddd89cde",
+  "ios/scripts/build-scene.py": "75dacaf547148c4d35b4f6919ea4815d822d9456a4c5d48cfcd2cd0d07f06ec2",
   "ios/scripts/sync-theme.py": "7bd250331eda828178158eba0b5cf82b3bf23769d669118012ecfa5b299fbc3f",
   "ios/Melo/MeloTheme.swift": "356825cbe51e2c3ca45073578e507173e040c073001b066315f28297d61dfe04",
   "node_modules/three/package.json": "8308e43d6d6dd4c636c2dfe2e724da07dcd9fe4349bba6afb56f2c5ba6625391",
-  "src/memory/offline/extractor.js": "b8a9ef9ad7129784ca3fb6fd95d111c91c1976bf3d659021c08162c8b558dd3c"
+  "src/memory/offline/extractor.js": "b8a9ef9ad7129784ca3fb6fd95d111c91c1976bf3d659021c08162c8b558dd3c",
+  "src/shared/conversationTopics.js": "3f59c13db3319c2cf4c768e7216213fb3d316772fdc28f62a679d37c27cf3846"
 }

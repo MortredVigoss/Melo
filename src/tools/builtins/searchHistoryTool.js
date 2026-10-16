@@ -2,7 +2,8 @@
  * search_history tool
  *
  * Full-text search over conversation history using FTS5 BM25 ranking.
- * Searches across all indexed chat messages (user + assistant) and returns
+ * Searches the indexed messages (user + assistant) of the chats this chat may
+ * read — the same project, or the other chats outside projects — and returns
  * excerpts with source chat context.
  *
  * Useful when the user asks "what did we discuss about X?" or wants to
@@ -10,12 +11,14 @@
  */
 
 import { searchHistory } from '../../memory/conversationIndex.js';
+import { loadState } from '../../state/stateStore.js';
+import { historySearchChatIds } from '../../services/chat/historyScope.js';
 
 export const searchHistoryTool = {
   id: 'search_history',
   name: 'Search Conversation History',
   description:
-    'Full-text search over past conversation messages. ' +
+    'Full-text search over past conversation messages in this project (or, outside projects, in other chats outside projects). ' +
     'Use this to find previous discussions, decisions, code snippets, or answers the user has already received. ' +
     'Supports CJK (Chinese/Japanese/Korean) queries natively. ' +
     'Returns excerpts ranked by relevance with the source chat title and date.',
@@ -55,13 +58,19 @@ export const searchHistoryTool = {
     { query: 'auth middleware', after: '2026-03-01' },
   ],
 
-  async run({ query, limit = 8, after, chatId }) {
+  async run({ query, limit = 8, after, chatId }, context = {}) {
     if (!query || typeof query !== 'string' || !query.trim()) {
       return { ok: false, output: 'Missing or empty query.', error: 'INVALID_QUERY' };
     }
 
     const lim = Math.max(1, Math.min(20, Math.floor(limit) || 8));
-    const results = searchHistory(query.trim(), { limit: lim, after, chatId });
+    // Bound the search to chats the current one may read (no crossing projects).
+    let chatIds;
+    if (context.chatId) {
+      const state = await loadState({ home: context.meloHome });
+      chatIds = historySearchChatIds(state, context.chatId);
+    }
+    const results = searchHistory(query.trim(), { limit: lim, after, chatId, chatIds });
 
     const filterDesc = [];
     if (after) filterDesc.push(`after=${after}`);

@@ -39,6 +39,7 @@ import {
 } from './viz/citationRenderer.js';
 import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 import { extractTextUrls } from '/shared/textUrls.js';
+import { segmentConversationTopics } from '/shared/conversationTopics.js';
 import { renderCopyLinkButton, copyLinkText } from './linkActions.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { describeAudioExtractionStatus, describeVideoExtractionStatus } from './videoStatus.js';
@@ -7134,13 +7135,36 @@ function renderMessageToolResults(message) {
   return _renderMessageToolResultsFromModule(message, escapeHtml);
 }
 
+// A thin marker where the conversation moves to another topic; a return to an
+// earlier topic links back to where that topic started. Same split as the phone.
+function topicDividers(messages) {
+  const segmentation = segmentConversationTopics(messages);
+  const dividers = new Map();
+  if (segmentation.topics.length < 2) return dividers;
+  let previous = null;
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const topic = segmentation.topics.find(entry => entry.id === segmentation.byMessage[message.id]);
+    if (!topic) continue;
+    if (previous && topic.id !== previous) {
+      dividers.set(message.id, topic.id === message.id
+        ? ui`<div class="topic-divider" role="separator"><span>${escapeHtml(t('话题：{label}', { label: topic.label }))}</span></div>`
+        : ui`<div class="topic-divider is-return" role="separator"><button type="button" data-action="jump-to-topic" data-message-id="${escapeHtml(topic.id)}" title="跳到这个话题开始处">${escapeHtml(t('回到话题：{label}', { label: topic.label }))}</button></div>`);
+    }
+    previous = topic.id;
+  }
+  return dividers;
+}
+
 function renderMessageList(chat) {
+  const dividers = topicDividers(chat.messages || []);
   return ui`
     <div class="message-list">
       ${chat.messages
         .map(selectedMessagePresentation)
         .map(
           message => ui`
+            ${dividers.get(message.id) || ''}
             <article class="message ${message.role} ${
               uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             }" data-message-id="${escapeHtml(message.id)}">
@@ -11285,6 +11309,10 @@ document.addEventListener('click', async event => {
         if(decision!=='cancel') {await api('/api/workspace/retained',{method:'POST',body:{chatId:record.chatId,decision,token:record.token}});await refreshAdvancedStatus();}
         break;
       }
+      case 'jump-to-topic':
+        prepareThreadNavigation({ highlightedMessageId: trigger.dataset.messageId, autoFollow: false });
+        render();
+        break;
       case 'toggle-model-picker':
         uiState.modelPickerOpen = !uiState.modelPickerOpen;
         uiState.ttsVoicePanelOpen = false;

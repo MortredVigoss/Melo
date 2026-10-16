@@ -766,5 +766,9 @@ const rows = [
 ["补充已送达，会在下一步加入：{text}", "Added; it joins at the next step: {text}", "追加済み。次のステップで反映します：{text}", "전달됨. 다음 단계에 반영됩니다: {text}", "Añadido; se aplicará en el siguiente paso: {text}"],
 ["补充：{text}", "Follow-up: {text}", "追加：{text}", "보충: {text}", "Añadido: {text}"],
 ["正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。", "Replying. You can type a follow-up and it joins at the next step; agent, model or project changes apply from the next message.", "返信中です。追加の指示は次のステップで反映されます。エージェント・モデル・プロジェクトの変更は次のメッセージから有効です。", "답변 중입니다. 보충 요청은 다음 단계에 반영되며, 에이전트·모델·프로젝트 변경은 다음 메시지부터 적용됩니다.", "Respondiendo. Puedes añadir indicaciones y se aplicarán en el siguiente paso; los cambios de agente, modelo o proyecto se aplican desde el siguiente mensaje."],
+["话题：{label}", "Topic: {label}", "トピック：{label}", "주제: {label}", "Tema: {label}"],
+["回到话题：{label}", "Back to topic: {label}", "トピックに戻る：{label}", "주제로 돌아가기: {label}", "De vuelta al tema: {label}"],
+["跳到这个话题开始处", "Jump to where this topic started", "このトピックの最初へ移動", "이 주제의 시작으로 이동", "Ir al inicio de este tema"],
+["带回较早话题", "Brought back an earlier topic", "以前のトピックを呼び戻し", "이전 주제 불러오기", "Se recuperó un tema anterior"],
 ];
 export const translations = Object.freeze(Object.fromEntries(rows.map(([key,en,ja,ko,es]) => [key, Object.freeze({ 'zh-CN':key,en,ja,ko,es })])));

@@ -272,8 +272,10 @@ export function coerceAfterTimestamp(value) {
  * }} options
  * @returns {{ chatId, chatTitle, messageId, role, snippet, createdAt, rank }[]}
  */
-export function searchHistory(query, { limit = 10, after, chatId } = {}) {
+export function searchHistory(query, { limit = 10, after, chatId, chatIds } = {}) {
   if (!query || !query.trim()) return [];
+  // An explicit allow-list (even an empty one) bounds which chats can match.
+  if (Array.isArray(chatIds) && !chatIds.length) return [];
 
   const database = getDb();
   const ftsQuery = buildFtsQuery(toCjkSpaced(query.trim()));
@@ -291,6 +293,10 @@ export function searchHistory(query, { limit = 10, after, chatId } = {}) {
   if (chatId !== undefined && chatId !== null && String(chatId).trim()) {
     conditions.push('chat_id = ?');
     params.push(String(chatId).trim());
+  }
+  if (Array.isArray(chatIds)) {
+    conditions.push(`chat_id IN (${chatIds.map(() => '?').join(',')})`);
+    params.push(...chatIds.map(String));
   }
 
   params.push(Math.max(1, Math.min(50, limit || 10)));

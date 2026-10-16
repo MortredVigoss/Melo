@@ -1,0 +1,216 @@
+[
+ {
+  "name": "A → B → C → back to A by keyword, then a bare follow-up",
+  "messages": [
+   [
+    "user",
+    "帮我写一个 Python 爬虫，抓取豆瓣电影 Top250 的片名和评分",
+    0
+   ],
+   [
+    "assistant",
+    "可以用 requests 和 BeautifulSoup 抓取豆瓣页面，再解析片名和评分。"
+   ],
+   [
+    "user",
+    "爬虫遇到 403 怎么办",
+    0
+   ],
+   [
+    "assistant",
+    "加上 User-Agent 请求头，并控制抓取频率。"
+   ],
+   [
+    "user",
+    "明天北京天气怎么样",
+    1
+   ],
+   [
+    "assistant",
+    "明天北京晴，最高 18 度，最低 6 度。"
+   ],
+   [
+    "user",
+    "推荐几本科幻小说",
+    2
+   ],
+   [
+    "assistant",
+    "可以看《三体》《基地》《沙丘》。"
+   ],
+   [
+    "user",
+    "那个爬虫怎么加代理",
+    0
+   ],
+   [
+    "assistant",
+    "在 requests.get 里传 proxies 参数即可。"
+   ],
+   [
+    "user",
+    "还有呢",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "English A → B → back to A",
+  "messages": [
+   [
+    "user",
+    "How do I set up a Postgres database for my Rails app?",
+    0
+   ],
+   [
+    "assistant",
+    "Add the pg gem, configure database.yml and run rails db:create."
+   ],
+   [
+    "user",
+    "What's a good recipe for banana bread?",
+    1
+   ],
+   [
+    "assistant",
+    "Mash three ripe bananas, mix with butter, sugar, egg and flour, bake 60 minutes."
+   ],
+   [
+    "user",
+    "Back to the Postgres setup: how do I add a read replica?",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "follow-ups without keywords stay on the topic",
+  "messages": [
+   [
+    "user",
+    "介绍一下 React 的 useEffect 钩子",
+    0
+   ],
+   [
+    "assistant",
+    "useEffect 用来处理副作用，依赖数组决定何时重新执行。"
+   ],
+   [
+    "user",
+    "那依赖数组为空呢",
+    0
+   ],
+   [
+    "assistant",
+    "只在组件挂载后执行一次。"
+   ],
+   [
+    "user",
+    "为什么开发环境会执行两次",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "explicit return cue",
+  "messages": [
+   [
+    "user",
+    "我们来规划一下去日本旅行的行程，东京五天",
+    0
+   ],
+   [
+    "assistant",
+    "第一天浅草寺，第二天新宿，第三天镰仓……"
+   ],
+   [
+    "user",
+    "顺便问一下，Mac 电脑怎么截长图",
+    1
+   ],
+   [
+    "assistant",
+    "可以用 Shift+Command+5 录屏，或者用第三方工具截长图。"
+   ],
+   [
+    "user",
+    "回到刚才的行程，第三天去哪里比较好",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "a short unrelated question does not split a topic",
+  "messages": [
+   [
+    "user",
+    "帮我把这段 SQL 改成按月份统计订单数量",
+    0
+   ],
+   [
+    "assistant",
+    "SELECT date_trunc('month', created_at), count(*) FROM orders GROUP BY 1;"
+   ],
+   [
+    "user",
+    "要按时区算",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "a follow-up that adds details in new words stays on the topic",
+  "messages": [
+   [
+    "user",
+    "帮我看看这个报错 TypeError: Cannot read properties of undefined (reading 'map')",
+    0
+   ],
+   [
+    "assistant",
+    "说明你在对 undefined 调用 map，通常是数据还没加载完。"
+   ],
+   [
+    "user",
+    "我在 useEffect 里调用了 fetch 拿数据",
+    0
+   ],
+   [
+    "assistant",
+    "首次渲染时数据还是 undefined，给初始值设为空数组即可。"
+   ],
+   [
+    "user",
+    "I tried an empty array but the list still flickers",
+    0
+   ]
+  ]
+ },
+ {
+  "name": "a clearly new request after a finished topic starts a new topic",
+  "messages": [
+   [
+    "user",
+    "帮我把这段英文翻译成中文：The quick brown fox jumps over the lazy dog",
+    0
+   ],
+   [
+    "assistant",
+    "敏捷的棕色狐狸跳过了那只懒狗。"
+   ],
+   [
+    "user",
+    "我想学做红烧肉，需要准备哪些食材和调料",
+    1
+   ],
+   [
+    "assistant",
+    "五花肉、冰糖、生抽、老抽、料酒、姜和八角。"
+   ],
+   [
+    "user",
+    "炖多久",
+    1
+   ]
+  ]
+ }
+]

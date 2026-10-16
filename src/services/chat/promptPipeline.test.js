@@ -107,7 +107,9 @@ test('greetings avoid tool prompts and verification; high-risk writing retains b
   assert.deepEqual(greeting.visibleToolIds, []);
   const writing = await runChatAgentExecutionGraph({
     ...fixture('帮我写一份药物剂量说明'), _dependencies: { getEmbedding: async () => null, createReply: async request => {
-      assert.match(request.systemPrompt, /Uncertainty signaling/);
+      // Verification rules depend on this turn, so they travel after the history, not in the prefix.
+      assert.match(request.messages.findLast(message => message.role === 'user').contextTail, /Uncertainty signaling/);
+      assert.doesNotMatch(request.systemPrompt, /Uncertainty signaling/);
       return '需要更多已核实的信息。';
     } },
   });
@@ -236,7 +238,7 @@ test('actual prompt gets a fact once, and only complete budget-surviving facts c
   metadata:{chatId,scope:'chat',audience:'local',category:'preference'},createdAt:'2026-01-01T00:00:00Z'});
  store.replaceMemories([make(text)]);
  let prompt='';
- const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{prompt=req.systemPrompt;return '已记住。';}}});
+ const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{prompt=`${req.systemPrompt}\n${req.messages.findLast(m=>m.role==='user')?.contextTail || ''}`;return '已记住。';}}});
  assert.equal(prompt.split(text).length-1,1,'one fact must have exactly one prompt representation');
  assert.equal(result.normalizedReply.memoryUsage.filter(r=>r.id===id).length,1);
  assert.equal(store.getMemoriesByIds([id])[0].metadata.useCount,1);

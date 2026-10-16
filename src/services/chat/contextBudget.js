@@ -91,11 +91,18 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
     end = start - 1;
   }
   const keptSections = unique.filter(section => selected.has(section.id)).map(section => selected.get(section.id));
-  const systemPrompt = renderPromptSections(keptSections);
-  const keptMessages = selectedMessages();
-  diagnostics.inputTokens = Math.ceil(estimateTextTokens(systemPrompt) * 4 / 3) + 32 + toolTokens + estimateMessagesTokens(keptMessages);
+  let keptMessages = selectedMessages();
+  // Tail sections ride on the newest user message (rendered by the provider
+  // serializers), keeping the system prompt and history stable between turns.
+  const latestUser = keptMessages.findLastIndex(message => message?.role === 'user' && !message?.isToolResult);
+  const placeTail = latestUser >= 0;
+  const contextTail = placeTail ? renderPromptSections(keptSections.filter(section => section.placement === 'tail')) : '';
+  const systemPrompt = renderPromptSections(keptSections.filter(section => !placeTail || section.placement !== 'tail'));
+  if (contextTail) keptMessages = keptMessages.map((message, index) => index === latestUser ? { ...message, contextTail } : message);
+  diagnostics.contextTailTokens = contextTail ? estimateTextTokens(contextTail) : 0;
+  diagnostics.inputTokens = Math.ceil(estimateTextTokens(systemPrompt + contextTail) * 4 / 3) + 32 + toolTokens + estimateMessagesTokens(keptMessages);
   diagnostics.droppedMessages = messages.length - keptMessages.length;
   diagnostics.sections = keptSections.map(section => ({ id: section.id, estimatedTokens: estimateTextTokens(section.text) }));
   if (diagnostics.inputTokens > inputLimit) throw overflow();
-  return { systemPrompt, messages: keptMessages, sections: keptSections, diagnostics };
+  return { systemPrompt, contextTail, messages: keptMessages, sections: keptSections, diagnostics };
 }

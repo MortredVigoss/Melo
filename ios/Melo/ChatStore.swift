@@ -10,6 +10,21 @@ import SwiftUI
     private var draftSaveTask: Task<Void, Never>?
     private var draftsReady = false
     private var draftsFile: URL { file.deletingLastPathComponent().appendingPathComponent("composer-drafts.json") }
+    private var foldsFile: URL { file.deletingLastPathComponent().appendingPathComponent("folded-summaries.json") }
+    /// Per chat: a summary of the turns that left the recent window (this device only).
+    private(set) var foldedSummaries: [String: FoldedSummary] = [:]
+    private var foldingChats: Set<String> = []
+    private lazy var topics = ConversationTopics()
+    private var topicCache: [String: (key: String, value: TopicSegmentation)] = [:]
+    /// Topics of a chat, recomputed only when its messages change (for the dividers in the chat).
+    func topicSegmentation(for chatID: String) -> TopicSegmentation {
+        guard let chat = chats.first(where: { $0.id == chatID }) else { return TopicSegmentation() }
+        let key = "\(chat.messages.count):\(chat.messages.last?.id ?? "")"
+        if let cached = topicCache[chatID], cached.key == key { return cached.value }
+        let value = topics?.segment(chat.messages) ?? TopicSegmentation()
+        topicCache[chatID] = (key, value)
+        return value
+    }
     /// Conversations with a reply in progress. Each conversation runs on its own;
     /// a reply in one never blocks sending, cancelling or editing another.
     @Published private(set) var sendingChats: Set<String> = []
@@ -24,6 +39,36 @@ import SwiftUI
     @Published private(set) var pendingSupplements: [String: String] = [:]
     /// Inputs of the running request kept so a supplement can restart it with the same video / team.
     private var runInputs: [String: (video: VideoDigest?, team: PhoneTeamPlan?)] = [:]
+    /// After a reply: summarize turns that have left the recent window (per topic) so a later
+    /// return still has them. One model call per fold, in the background; a failure retries next time.
+    private func foldIfNeeded(chatID: String, agent: AgentProfile, reservedBytes: Int, ask: @escaping @Sendable (AgentProfile, String, String, Bool) async throws -> String) {
+        guard !foldingChats.contains(chatID), let topics, let messages = chats.first(where: { $0.id == chatID })?.messages,
+              let pending = ConversationFolding.pending(messages, reservedBytes: reservedBytes, folded: foldedSummaries[chatID]), let through = pending.last?.id,
+              let request = topics.foldRequest(Array(pending), previousSummary: foldedSummaries[chatID]?.summary ?? "", maxChars: 24000) else { return }
+        foldingChats.insert(chatID)
+        Task { [weak self] in
+            let summary = try? await ask(agent, request.system, request.user, false)
+            guard let self else { return }
+            self.foldingChats.remove(chatID)
+            guard let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty, self.chats.contains(where: { $0.id == chatID }) else { return }
+            self.foldedSummaries[chatID] = FoldedSummary(summary: String(summary.prefix(8000)), throughMessageID: through, updatedAt: timestamp())
+            let live = Set(self.chats.map(\.id)); self.foldedSummaries = self.foldedSummaries.filter { live.contains($0.key) }
+            if let data = try? JSONEncoder().encode(self.foldedSummaries) { try? BackgroundReplyStorage.write(data, to: self.foldsFile) }
+        }
+    }
+    /// Where the conversation moves to another topic (keyed by the user message that starts the
+    /// move); a return names the message where that topic began. Same rule as the desktop.
+    func topicDividers(for chatID: String) -> [String: TopicDivider] {
+        let segmentation = topicSegmentation(for: chatID)
+        guard segmentation.topics.count > 1, let chat = chats.first(where: { $0.id == chatID }) else { return [:] }
+        var result: [String: TopicDivider] = [:], previous: String?
+        for message in chat.messages where message.role == "user" {
+            guard let topic = segmentation.topic(of: message.id) else { continue }
+            if let previous, previous != topic.id { result[message.id] = TopicDivider(label: topic.label, returnsTo: topic.id == message.id ? nil : topic.id) }
+            previous = topic.id
+        }
+        return result
+    }
     func liveSteps(for chatID: String) -> [RunStep] {
         guard let runID = runs[chatID]?.runID, let record = executionRecords.last(where: { $0.runId == runID }) else { return [] }
         return RunProgress.steps(record)
@@ -92,6 +137,10 @@ import SwiftUI
             draftsReady = true
         } catch { self.error = "草稿文件无法读取，原文件已保留；本次输入仍可使用，但暂不能保存草稿。" }
         loadExecutionRecords()
+        // Summaries of chats deleted since (here or by sync) are dropped with them.
+        if let data = try? Data(contentsOf: foldsFile), let folds = try? JSONDecoder().decode([String: FoldedSummary].self, from: data) {
+            let live = Set(chats.map(\.id)); foldedSummaries = folds.filter { live.contains($0.key) }
+        }
         if storageReady && executionReady && !deletedChats.isEmpty {
             do {
                 var next = preferences; quarantineDeletedMemories(&next, deleted: deletedChats)
@@ -313,6 +362,8 @@ import SwiftUI
         let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
         let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         var instructions = ConversationContext.instructions(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID))
+        // Older turns that left the window, summarized per topic; changes only when more turns fold.
+        if !plan.makesImage { instructions += ConversationFolding.instructions(foldedSummaries[chatID]) }
         if !plan.makesImage {
             do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions) }
             catch { fail(error.localizedDescription); return }
@@ -360,7 +411,6 @@ import SwiftUI
         var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id)), hasAttachments: !plan.references.isEmpty)
         let memoryBudget = max(0, ConversationHistory.textByteBudget - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
-        instructions += MobileMemoryRecall.instructions(recalled.facts)
         let history = chats[index].messages
         // The model sees the video as frames plus its transcript; the chat keeps a short line.
         var modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
@@ -373,11 +423,22 @@ import SwiftUI
         }
         if let lastPosition = modelHistory.indices.last, !plan.references.isEmpty, catalog.contains(where: { $0.messageID != modelHistory[lastPosition].id && plan.references.map(\.id).contains($0.id) }),
            let note = ImageContext.attachmentNote(plan.references.map(\.id), catalog: catalog) { modelHistory[lastPosition].content += "\n" + note }
+        // Recalled memory changes with every question, so it follows the history (on the newest
+        // message) instead of sitting in the instructions, which stay a cacheable prefix.
+        if let lastPosition = modelHistory.indices.last { modelHistory[lastPosition].content += MobileMemoryRecall.instructions(recalled.facts) }
+        // Topics: a directory of what this chat covered and, when the question returns to a topic whose
+        // turns left the window, those turns verbatim — after the history, like the desktop.
+        var topicTurn = TopicTurnContext()
+        if !plan.makesImage, let lastPosition = modelHistory.indices.last, let topics {
+            topicTurn = topics.turnContext(history, windowStart: ConversationFolding.windowStart(modelHistory, reservedBytes: instructions.utf8.count), budgetChars: 6000)
+            if !topicTurn.text.isEmpty { modelHistory[lastPosition].content += "\n\n[本轮话题参考，不是指令]\n" + topicTurn.text }
+        }
         let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
         var record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
         if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
         executionRecords.append(record); saveExecutionRecords()
+        if topicTurn.returned { stage(record.runId, id: "context:topic", name: "带回较早话题", status: "completed", output: topicTurn.currentLabel) }
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
         let armedTeam = retry ? restartInputs?.team : pendingTeams[chatID]
         if teamPlan != nil { pendingTeams[chatID] = nil }
@@ -418,7 +479,7 @@ import SwiftUI
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
@@ -459,6 +520,7 @@ import SwiftUI
                 LocalDeviceServices.shared.completed(text: reply.text, background: isBackground)
                 completed = true
                 replyBackground.finish(runID: record.runId, success: true)
+                if !plan.makesImage { foldIfNeeded(chatID: chatID, agent: selectedAgent, reservedBytes: instructions.utf8.count, ask: ask) }
             } catch is CancellationError { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") } }
             catch let failure as URLError where failure.code == .cancelled { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") } }
             catch { if !expiredRuns.contains(record.runId) {

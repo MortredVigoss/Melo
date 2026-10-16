@@ -295,6 +295,8 @@ const rows = [
 ["视频", "Video", "動画", "동영상", "Vídeo"],
 ["选择视频，10 分钟以内在手机上抽取画面和文字稿", "Choose a video; up to 10 minutes, frames and a transcript are made on this phone", "動画を選択。10 分以内ならこの iPhone で画面と文字起こしを作成します", "동영상 선택. 10분 이내면 이 iPhone에서 장면과 텍스트를 만듭니다", "Elige un vídeo; hasta 10 minutos, los fotogramas y la transcripción se hacen en este teléfono"],
 ["正在处理视频…", "Processing video…", "動画を処理中…", "동영상 처리 중…", "Procesando vídeo…"],
+["话题：%@", "Topic: %@", "トピック：%@", "주제: %@", "Tema: %@"],
+["回到话题：%@", "Back to topic: %@", "トピックに戻る：%@", "주제로 돌아가기: %@", "De vuelta al tema: %@"],
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

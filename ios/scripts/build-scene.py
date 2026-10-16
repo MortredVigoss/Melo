@@ -26,6 +26,9 @@ shutil.copy(root/'ios/SceneSource/neural.css',out/'neural.css')
 extractor=root/'src/memory/offline/extractor.js'
 (out/'memory-extractor.js').write_text(extractor.read_text().replace('export function extractFactsRuleBased', 'function extractFactsRuleBased'))
 manifest['src/memory/offline/extractor.js']=hashlib.sha256(extractor.read_bytes()).hexdigest()
+topics=root/'src/shared/conversationTopics.js'
+(out/'conversation-topics.js').write_text(topics.read_text().replace('export function ', 'function ').replace('export const ', 'const '))
+manifest['src/shared/conversationTopics.js']=hashlib.sha256(topics.read_bytes()).hexdigest()
 (out/'desktop-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 shutil.copy(root/'node_modules/three/LICENSE',out/'THREE-LICENSE.txt')
 print('Bundled desktop neural and execution renderers with provenance manifest')

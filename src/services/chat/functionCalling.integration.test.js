@@ -57,7 +57,7 @@ async function harness(t, respond, options={}) {
       }
     },
   }));
-  return { requests, events, executions, permissions, run };
+  return { requests, events, executions, permissions, run, chat };
 }
 
 test('main chat sends native definitions, authorizes valid calls and returns all outputs across three real HTTP turns', async t => {
@@ -114,6 +114,46 @@ test('a supplement typed during a tool step reaches the very next model request,
   assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.id?.startsWith('supplement:') && e.event.output === '只核对 C，不要 A'));
   assert.deepEqual(usedSupplements('fixture-chat').map(e => e.text), ['只核对 C，不要 A']);
   assert.deepEqual(endSupplements('fixture-chat').map(e => e.text), ['最后再写个总结'], 'no further step: returned to be sent next');
+});
+
+test('two turns in one chat send the same instructions; per-turn material follows the history', async t => {
+  const h = await harness(t, () => done([message]), { text: '介绍一下这个项目的结构' });
+  await h.run();
+  h.chat.messages.push({ id: 'answer-1', role: 'assistant', content: '核对完成。', createdAt: new Date().toISOString() },
+    { id: 'user-2', role: 'user', content: '再讲讲它的测试是怎么组织的', createdAt: new Date().toISOString() });
+  await h.run();
+  const [first, second] = h.requests.map(r => r.body).filter(body => !String(body.instructions).includes('- factual: asking for facts'));
+  assert.equal(first.instructions, second.instructions, 'the cacheable prefix is identical');
+  assert.equal(JSON.stringify(first.instructions).includes('Reply language'), false);
+  const user = item => JSON.stringify(item.content);
+  assert.match(user(first.input.at(-1)), /介绍一下这个项目的结构/);
+  assert.match(user(second.input[0]), /介绍一下这个项目的结构/);
+  assert.equal(first.input.length, 1);
+  assert.ok(user(first.input.at(-1)).length > user(second.input[0]).length, 'the earlier turn is resent without its old tail');
+});
+
+test('returning to a topic whose turns were folded away brings them back after the history, not in the instructions', async t => {
+  const h = await harness(t, () => done([message]), { text: '那个爬虫怎么加代理' });
+  const at = new Date().toISOString();
+  const rows = [
+    ['u1', 'user', '帮我写一个 Python 爬虫，抓取豆瓣电影 Top250 的片名和评分'], ['a1', 'assistant', '可以用 requests 和 BeautifulSoup 抓取。'],
+    ['u2', 'user', '爬虫遇到 403 怎么办'], ['a2', 'assistant', '加上 User-Agent 请求头 UA-FIXTURE-7。'],
+    ['u3', 'user', '明天北京天气怎么样'], ['a3', 'assistant', '明天北京晴。'],
+    ['u4', 'user', '推荐几本科幻小说'], ['a4', 'assistant', '《三体》《基地》。'],
+  ];
+  h.chat.messages.unshift(...rows.map(([id, role, content]) => ({ id, role, content, createdAt: at })));
+  // Everything up to the weather answer was folded into a summary and left the window.
+  h.chat.compactBoundaryMessageId = 'a3'; h.chat.compactSummary = '用户先问了豆瓣爬虫，又问了北京天气。'; h.chat.compactedMessageCount = 6;
+  await h.run();
+  const body = h.requests.map(r => r.body).find(b => !String(b.instructions).includes('- factual: asking for facts'));
+  const last = JSON.stringify(body.input.at(-1).content);
+  assert.match(last, /UA-FIXTURE-7/, 'the crawler topic\'s folded turn comes back verbatim');
+  assert.match(last, /本对话涉及的话题/);
+  const topicsBlock = last.slice(last.indexOf('[Reference data: topics'), last.indexOf('[End reference data: topics]'));
+  assert.match(topicsBlock, /爬虫遇到 403/);
+  assert.doesNotMatch(topicsBlock, /明天北京晴/, 'other topics are not brought back');
+  assert.equal(String(body.instructions).includes('UA-FIXTURE-7'), false, 'nothing per-turn enters the cached prefix');
+  assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.id === 'context:topic'), 'the step is visible');
 });
 
 test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{

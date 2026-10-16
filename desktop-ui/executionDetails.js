@@ -12,7 +12,7 @@ export function executionApiLine(op) {
   if (!api) return '';
   const usage = api.usage || {};
   return [api.reportedModel || op.model,
-    amount(usage.input) !== null ? `输入 ${amount(usage.input)}` : '',
+    amount(usage.input) !== null ? `输入 ${amount(usage.input)}${amount(usage.cached) && usage.cached > 0 ? `（缓存 ${amount(usage.cached)}）` : ''}` : '',
     amount(usage.output) !== null ? `输出 ${amount(usage.output)} token` : '',
     seconds(api.durationMs) ? `耗时 ${seconds(api.durationMs)}` : '',
     !api.usage ? t("用量未返回") : '',

@@ -5970,3 +5970,7 @@ select option {
 @keyframes run-step-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .run-step-spinner { animation: none; } }
 .run-steps-note { margin: 0 0 8px; font-size: 12px; color: #c8b482; }
+.topic-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0 6px; font-size: 11px; color: var(--text-soft); }
+.topic-divider::before, .topic-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.topic-divider button { background: none; border: 0; padding: 0; font: inherit; color: var(--text-muted); cursor: pointer; }
+.topic-divider button:hover { color: var(--text); text-decoration: underline; }

@@ -46,3 +46,31 @@ test('history is a recent continuous suffix; a large recent turn cannot expose o
  const messages=[{role:'user',content:'old'},{role:'assistant',content:'old answer'},{role:'user',content:'big'.repeat(10000)},{role:'assistant',content:'recent answer'},{role:'user',content:'now'}];
  const result=fitRequestContext({messages,totalTokens:4096,outputReserve:512});assert.deepEqual(result.messages,[messages.at(-1)]);
 });
+
+test('per-turn material rides on the newest user message so the system prompt stays a reusable prefix', async () => {
+  const { buildReActPromptSections } = await import('./systemPrompt.js');
+  const history = [{ role: 'user', content: '先问 A' }, { role: 'assistant', content: 'A 的回答' }];
+  const turn = (memoryContext, question) => fitRequestContext({
+    sections: buildReActPromptSections({ config: {}, profile: { name: 'Melo' }, memoryContext, selectedMaterials: '资料片段 ' + question,
+      languageConstraint: '用中文回答', projectContext: 'Active project: Melo', now: new Date('2026-10-17T00:00:00Z'), timeZone: 'UTC' }),
+    messages: [...history, { role: 'user', content: question }],
+  });
+  const first = turn('- 记忆一', '再问 B'), second = turn('- 记忆二', '回到 A');
+  assert.equal(first.systemPrompt, second.systemPrompt, 'memory, materials and language rules change per turn but never the prefix');
+  assert.doesNotMatch(first.systemPrompt, /记忆一|资料片段|用中文回答/);
+  assert.match(first.systemPrompt, /Active project: Melo/, 'stable project context stays in the prefix');
+  assert.match(first.messages.at(-1).contextTail, /记忆一/);
+  assert.match(first.messages.at(-1).contextTail, /资料片段 再问 B/);
+  assert.match(second.messages.at(-1).contextTail, /记忆二/);
+  assert.match(first.messages.at(-1).contextTail, /用中文回答/);
+  assert.equal(first.messages.at(-1).content, '再问 B', 'the user text itself is untouched');
+  assert.equal(first.messages[0].contextTail, undefined, 'older turns carry no tail');
+  assert.ok(first.diagnostics.contextTailTokens > 0);
+});
+
+test('without a user message the tail falls back into the system prompt instead of disappearing', () => {
+  const fit = fitRequestContext({ sections: [{ id: 'base', text: 'rules', required: true }, { id: 'memory', text: 'recalled', priority: 1, placement: 'tail' }],
+    messages: [{ role: 'assistant', content: 'only an answer' }] });
+  assert.match(fit.systemPrompt, /recalled/);
+  assert.equal(fit.contextTail, '');
+});

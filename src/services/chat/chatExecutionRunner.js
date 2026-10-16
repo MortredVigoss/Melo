@@ -7,6 +7,7 @@ import { resolveSessionFacts } from '../../memory/factRecords.js';
 import { selectedMaterials } from './conversationSelection.js';
 import { runAgentTeam } from '../../agents/team.js';
 import { takeSupplements, supplementMessage } from './supplements.js';
+import { segmentConversationTopics, topicContextForTurn, markTopicsForSummary, TOPIC_SUMMARY_INSTRUCTIONS } from '../../shared/conversationTopics.js';
 import { summarizePricedUsage } from '../../runtime/usage.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { persistCompactSnapshot } from './derivedState.js';
@@ -335,8 +336,11 @@ export async function runChatAgentExecutionGraph({
         const compactPlan = hasModelConfig ? planIncrementalCompact(chat) : null;
         if (compactPlan) {
           try {
-            const summary = await compactConversation(compactPlan.messages, {
+            // Folded turns are summarized per topic, so returning to any topic later finds its own state.
+            const foldTopics = segmentConversationTopics(chat.messages || []);
+            const summary = await compactConversation(markTopicsForSummary(compactPlan.messages, foldTopics), {
               config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
+              customInstructions: foldTopics.topics.length > 1 ? TOPIC_SUMMARY_INSTRUCTIONS : undefined,
             });
             if (summary) {
               chat.compactSummary = compactPlan.truncated
@@ -358,6 +362,15 @@ export async function runChatAgentExecutionGraph({
           }
         }
 
+        // Topics in this chat: a one-line directory, and when the question returns to a topic whose
+        // turns have left the recent window, that topic's older turns verbatim. Both are per-turn
+        // material placed after the history, so the cached prefix is untouched.
+        const windowIds = new Set(modelMessageSourceIds(modelMessages));
+        const firstInWindow = (chat.messages || []).findIndex(message => windowIds.has(message.id));
+        const turnTopics = topicContextForTurn(chat.messages || [], firstInWindow < 0 ? (chat.messages || []).length : firstInWindow, 6000);
+        const topicContext = turnTopics.text;
+        if (turnTopics.returned) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'context:topic', name: '带回较早话题', module: 'compute', status: 'completed', output: turnTopics.currentLabel });
+
         // ── 5. Assemble system prompt ──────────────────────────────────────
         const compactContext = chat.compactSummary
           ? formatCompactContextBlock(chat.compactSummary, chat.compactedMessageCount || 0)
@@ -377,7 +390,9 @@ export async function runChatAgentExecutionGraph({
         // enabledMcpServerIds whitelist; the default is deny-all so a new
         // agent can't call any MCP without explicit opt-in.  Non-MCP tools
         // pass through filterMcpToolsForAgent untouched.
-        let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
+        // The search route is decided per turn, so it travels after the history (tail section).
+        const searchRoutingPrompt = buildSearchRoutingPrompt(searchPlan);
+        let toolsPrompt = '';
         let visibleToolIds = new Set();
         let promptTools = [];
         const explicitTeam=teamPlan || state.tasks?.find(t=>t.execution?.requestId===context.requestId)?.execution?.teamPlan;
@@ -447,6 +462,8 @@ export async function runChatAgentExecutionGraph({
           skillsPrompts,
           dynamicContext,
           compactContext,
+          topicContext,
+          searchRoutingPrompt,
           toolsPrompt,
           sessionMemoryBlock,
           languageConstraint: buildLanguageConstraint(latestUserMessage),
@@ -554,7 +571,7 @@ export async function runChatAgentExecutionGraph({
         const functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
         const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
-          ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
+          ? { ...section, text: [buildToolsSystemPrompt(graphState.promptTools,
             { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n') } : section);
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
@@ -587,7 +604,7 @@ export async function runChatAgentExecutionGraph({
           if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
           if (isFirstIteration) {
             signal?.throwIfAborted();
-            const used = (graphState.memoryRendered || []).filter(row=>row.renderedText && request.systemPrompt.includes(row.renderedText));
+            const used = (graphState.memoryRendered || []).filter(row=>row.renderedText && `${request.systemPrompt}\n${request.contextTail || ''}`.includes(row.renderedText));
             graphState.memoryUsage = [...new Map(used.map(row=>[row.id,{
               id:row.id,text:String(row.text).slice(0,200),kind:row.kind,
               sourceChatId:row.metadata?.chatId || chat.id,
