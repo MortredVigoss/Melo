@@ -2,6 +2,7 @@ import { createRequestContext, requestIdentity } from '../runtime/requestContext
 import { validateChatRequest, errorPayload } from '../services/chat/requestContract.js';
 import { sendChatMessage } from '../services/chat/sendChatMessage.js';
 import { sendJson, startSse, writeSseEvent, readJsonBody } from './transport.js';
+import { beginSupplements, addSupplement, endSupplements } from '../services/chat/supplements.js';
 export async function handleChatRoutes(request, response, url) {
     if (url.pathname === '/api/chat/send' && request.method === 'POST') {
       const body = validateChatRequest(await readJsonBody(request));
@@ -36,6 +37,14 @@ export async function handleChatRoutes(request, response, url) {
       return;
     }
 
+    // A supplement for the turn currently running in this chat (409 when none is).
+    if (url.pathname === '/api/chat/supplement' && request.method === 'POST') {
+      const body = await readJsonBody(request);
+      const entry = addSupplement(String(body?.chatId || ''), body?.content);
+      sendJson(response, entry ? 200 : 409, entry ? { id: entry.id } : { error: '这个对话当前没有进行中的回复。' });
+      return;
+    }
+
     if (url.pathname === '/api/chat/send/stream' && request.method === 'POST') {
       const body = validateChatRequest(await readJsonBody(request));
       const abortController = new AbortController();
@@ -50,6 +59,7 @@ export async function handleChatRoutes(request, response, url) {
         }
       });
 
+      beginSupplements(body.chatId);
       startSse(response);
       writeSseEvent(response, 'started', {
         ...requestIdentity(context),
@@ -72,7 +82,7 @@ export async function handleChatRoutes(request, response, url) {
           },
         });
 
-        writeSseEvent(response, 'done', { ...requestIdentity(context), ...payload });
+        writeSseEvent(response, 'done', { ...requestIdentity(context), ...payload, unusedSupplements: endSupplements(body.chatId).map(entry => entry.text) });
         response.end();
       } catch (error) {
         if (abortController.signal.aborted) {
@@ -86,6 +96,9 @@ export async function handleChatRoutes(request, response, url) {
 
         writeSseEvent(response, 'error', errorPayload(error, context));
         response.end();
+      } finally {
+        // A stopped or failed turn takes no supplements with it into the next one.
+        endSupplements(body.chatId);
       }
       return;
     }

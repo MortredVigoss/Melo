@@ -11,6 +11,7 @@ import { createRequestContext } from '../../runtime/requestContext.js';
 import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { registerTool, unregisterTool } from '../../tools/registryCore.js';
 import { resolvePermission } from '../../tools/permissions.js';
+import { beginSupplements, addSupplement, usedSupplements, endSupplements } from './supplements.js';
 
 const fn = (id, query, name = 'fixture_lookup') => ({ type: 'function_call', id: `item-${id}`,
   call_id: id, name, arguments: JSON.stringify({ query }), status: 'completed' });
@@ -92,6 +93,28 @@ test('main chat never executes calls from a truncated stream or a cancelled turn
   assert.equal(h.executions.length, 0); assert.equal(h.permissions.length, 0);
 });
 
+
+test('a supplement typed during a tool step reaches the very next model request, and one typed during the final answer is handed back', async t => {
+  const h = await harness(t, round => {
+    // The user types while the model request of this round is in flight.
+    if (round === 1) addSupplement('fixture-chat', '只核对 C，不要 A');
+    if (round === 2) addSupplement('fixture-chat', '最后再写个总结');
+    return done(round === 1 ? [fn('a', 'A')] : [message]);
+  });
+  beginSupplements('fixture-chat');
+  t.after(() => endSupplements('fixture-chat'));
+  const result = await h.run();
+  assert.equal(result.normalizedReply.content, '核对完成。');
+  assert.equal(h.requests.length, 2);
+  assert.equal(JSON.stringify(h.requests[0].body).includes('只核对 C'), false);
+  const next = JSON.stringify(h.requests[1].body.input);
+  assert.ok(next.includes('只核对 C，不要 A'), 'the next model request carries the supplement');
+  assert.ok(next.includes('found A'), 'the finished tool step is kept');
+  assert.deepEqual(h.executions, ['A']);
+  assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.id?.startsWith('supplement:') && e.event.output === '只核对 C，不要 A'));
+  assert.deepEqual(usedSupplements('fixture-chat').map(e => e.text), ['只核对 C，不要 A']);
+  assert.deepEqual(endSupplements('fixture-chat').map(e => e.text), ['最后再写个总结'], 'no further step: returned to be sent next');
+});
 
 test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{
  const cap={...emptyCapabilities(),delegate:true};

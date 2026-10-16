@@ -5941,3 +5941,16 @@ select option {
 .management-dialog { width: 580px; max-height: 85vh; overflow: auto; }
 .management-dialog form { display: grid; gap: 12px; }
 .management-output { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Live steps of the running reply, inside the chat (see runSteps.js). */
+.run-steps { list-style: none; margin: 6px 0 10px; padding: 8px 12px; display: grid; gap: 4px; border-left: 1px solid rgba(200,180,130,.25); font-size: 12px; color: var(--text-secondary); }
+.run-step { display: grid; grid-template-columns: 16px auto 1fr; gap: 8px; align-items: baseline; min-width: 0; }
+.run-step-title { color: var(--text-primary, inherit); white-space: nowrap; }
+.run-step.is-done .run-step-title, .run-step.is-failed .run-step-title { color: var(--text-secondary); }
+.run-step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
+.run-step.is-done .run-step-icon { color: #c8b482; }
+.run-step.is-failed .run-step-icon { color: #e07a6a; }
+.run-step-spinner { display: inline-block; width: 9px; height: 9px; border: 1.5px solid rgba(200,180,130,.35); border-top-color: #c8b482; border-radius: 50%; animation: run-step-spin .9s linear infinite; }
+@keyframes run-step-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .run-step-spinner { animation: none; } }
+.run-steps-note { margin: 0 0 8px; font-size: 12px; color: #c8b482; }

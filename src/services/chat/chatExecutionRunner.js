@@ -6,6 +6,7 @@ import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
 import { selectedMaterials } from './conversationSelection.js';
 import { runAgentTeam } from '../../agents/team.js';
+import { takeSupplements, supplementMessage } from './supplements.js';
 import { summarizePricedUsage } from '../../runtime/usage.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { persistCompactSnapshot } from './derivedState.js';
@@ -572,6 +573,15 @@ export async function runChatAgentExecutionGraph({
           // On subsequent iterations, we're streaming "thinking" not the final
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
+          // Supplements typed while this turn runs join before the next model call,
+          // keeping every step already done.
+          if (!isFirstIteration) {
+            const supplements = takeSupplements(chat.id);
+            if (supplements.length) {
+              loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements) }];
+              for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, name: '收到补充', module: 'compute', status: 'completed', output: entry.text });
+            }
+          }
 
           const request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
           if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);

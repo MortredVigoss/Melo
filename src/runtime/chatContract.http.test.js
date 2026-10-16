@@ -68,6 +68,10 @@ test('HTTP and SSE share validation, turn identity and durable retry semantics',
     assert.equal(bad.status, 400);
     assert.equal((await bad.json()).code, 'INVALID_CONTENT');
   }
+  // The supplement route is reachable and refuses text when no reply is running in the chat.
+  const idle = await post('/api/chat/supplement', { chatId: 'contract', content: '改成五言' });
+  assert.equal(idle.status, 409);
+  assert.match((await idle.json()).error, /没有进行中的回复/);
   const body = { chatId: 'contract', content: 'hello', requestId: 'stable-request' };
   const streamed = await post('/api/chat/send/stream', body);
   assert.equal(streamed.status, 200);
@@ -75,6 +79,7 @@ test('HTTP and SSE share validation, turn identity and durable retry semantics',
     event: block.match(/^event: (.+)/)[1], data: JSON.parse(block.match(/\ndata: (.+)/)[1]),
   }));
   const done = events.find(item => item.event === 'done').data;
+  assert.deepEqual(done.unusedSupplements, [], 'a turn with no supplements hands none back');
   assert.equal(done.requestId, body.requestId);
   for (const item of events) {
     assert.equal(item.data.runId, done.runId);

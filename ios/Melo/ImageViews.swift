@@ -62,15 +62,15 @@ struct ImageComposerBar: View {
                 }.frame(height:100)
             }
             HStack(spacing:14) {
-                PhotosPicker(selection:$photos,maxSelectionCount:ImageTaskPlan.maxReferences,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading || store.isSending(chatID))
-                Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading || store.isSending(chatID))
-                PhotosPicker(selection:$videoItem,matching:.videos,photoLibrary:.shared()) { Label("视频",systemImage:"film").font(.caption) }.disabled(studyingVideo || store.isSending(chatID)).accessibilityLabel("选择视频，10 分钟以内在手机上抽取画面和文字稿")
+                PhotosPicker(selection:$photos,maxSelectionCount:ImageTaskPlan.maxReferences,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading)
+                Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading)
+                PhotosPicker(selection:$videoItem,matching:.videos,photoLibrary:.shared()) { Label("视频",systemImage:"film").font(.caption) }.disabled(studyingVideo).accessibilityLabel("选择视频，10 分钟以内在手机上抽取画面和文字稿")
                 Menu {
                     Button("本机图片库") { gallery=true };Button("图片模型与尺寸") {
                         do { imageConnections = try LLMConnection.saved().filter { !$0.key.isEmpty && $0.apiProtocol != "anthropic" }; options=true }
                         catch { store.error="模型连接无法读取，请先在系统设置中检查连接。" }
                     }
-                } label: { Label("图片选项",systemImage:"ellipsis").font(.caption) }.disabled(loading || store.isSending(chatID))
+                } label: { Label("图片选项",systemImage:"ellipsis").font(.caption) }.disabled(loading)
                 Spacer(minLength:0)
                 if loading || studyingVideo { ProgressView().controlSize(.small) }
                 if studyingVideo { Text("正在处理视频…").font(.caption2).foregroundStyle(.secondary) }

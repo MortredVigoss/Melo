@@ -27,6 +27,10 @@ import UIKit
             // 1. Three photos + an edit request: three requests, each result paired with its own original.
             let originals = try [UIColor.red, .green, .orange].map { try store.importImage(png($0)) }
             store.send("都调亮一点", chatID: chat, imageTask: ImageTaskPlan(references: originals.map { ImageReference(id: $0.id) }))
+            try await Task.sleep(nanoseconds: 80_000_000)
+            let midRun = store.liveSteps(for: chat)
+            guard midRun.contains(where: { $0.title.hasPrefix("第 1/3 张") && $0.state == .running }) else { throw MeloError.message("进行中没有显示步骤：\(midRun.map(\.title))") }
+            result["liveSteps"] = midRun.map { "\($0.title):\($0.state)" }
             await settle()
             guard calls.count == 3 else { throw MeloError.message("逐张修改应发 3 次请求，实际 \(calls.count)") }
             guard let reply = store.chats.first(where: { $0.id == chat })?.messages.last, reply.role == "assistant" else { throw MeloError.message("没有保存回复") }

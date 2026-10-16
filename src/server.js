@@ -518,7 +518,7 @@ await finishChatDeletions(runtimePaths.home);
       sendJson(response, 200, await deleteChat(body.chatId,body));
       return;
     } },
-  { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream","/api/chat/supplement"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       await handleChatRoutes(request, response, url);
       return;
     } },

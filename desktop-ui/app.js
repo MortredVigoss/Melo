@@ -17,7 +17,8 @@ import { renderImageSettings, renderImageTaskControls, consumeImageTask, restore
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 import { renderAtomicButton } from './atomicButton.js';
-import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation } from './executionPanel.js';
+import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor } from './executionPanel.js';
+import { sceneSteps, renderRunSteps } from './runSteps.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
 import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
@@ -1440,16 +1441,29 @@ function renderThinkingMessage() {
   return '';
 }
 
+function renderLiveRunSteps(chat) {
+  const sent = (uiState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
+  return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id)), escapeHtml, t)}</div>${sent}`;
+}
+
+function patchLiveRunSteps(chatId) {
+  const host = document.querySelector(`[data-run-steps-chat="${CSS.escape(chatId || '')}"]`);
+  if (host) host.innerHTML = renderRunSteps(sceneSteps(liveSceneFor(chatId)), escapeHtml, t);
+}
+
 function renderStreamingAssistantMessage(chat) {
   if (!uiState.sending || uiState.streamingChatId !== chat?.id) {
     return '';
   }
 
-  // Tool calls strip always shown while tools are running (even before text appears)
+  // Tool calls strip always shown while tools are running (even before text appears).
+  // The live steps of this run (what it is doing now) sit under the newest output so
+  // they stay in view; they are patched in place on scene events.
   const toolStrip = renderActiveToolCallsStrip();
+  const liveSteps = renderLiveRunSteps(chat);
 
   if (!uiState.streamingAssistantText) {
-    return toolStrip + renderThinkingMessage();
+    return toolStrip + renderThinkingMessage() + liveSteps;
   }
 
   // Strip any <tool_call>...</tool_call> XML blocks (and partial opening tags)
@@ -1480,6 +1494,7 @@ function renderStreamingAssistantMessage(chat) {
       </div>
       ${renderSourceCitationCards(streamCitations)}
     </article>
+    ${liveSteps}
   `;
 }
 
@@ -2834,7 +2849,7 @@ function composerHintText({ inline = false } = {}) {
     return t('正在上传视频「{name}」，完成后可发送。', { name: uiState.attachmentUploading });
   }
   if (uiState.sending) {
-    return 'Working on your message now. Live lookups can take a little longer.';
+    return t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
   }
   if (uiState.voice.recording) {
     return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
@@ -3500,7 +3515,6 @@ function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
 
 function toggleVoiceInput() {
   if (voiceInputActive(uiState.voice)) { voiceInput.stop(); return; }
-  if (uiState.sending) return;
   stopCurrentTts();
   voiceInput.start(uiState.voiceLanguage || 'zh-CN');
 }
@@ -3784,7 +3798,30 @@ async function startProjectSession(projectId, mode) {
   await handleCreateChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
 }
 
+// A supplement for the reply running in this chat. The server adds it before the
+// next model step; if the turn has no further step it comes back and is sent next.
+async function sendSupplement(chatId, text) {
+  uiState.composer = '';
+  try {
+    const response = await fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, content: text }) });
+    if (response.ok) (uiState.supplementsSent ||= []).push(text);
+    else (uiState.supplementsAfterTurn ||= []).push(text);
+  } catch { (uiState.supplementsAfterTurn ||= []).push(text); }
+  // The turn may have ended while the request was in flight: send it as the next message now.
+  if (!uiState.sending && uiState.supplementsAfterTurn?.length) {
+    const queued = uiState.supplementsAfterTurn.splice(0);
+    uiState.supplementsSent = [];
+    await handleSendMessage({ chatId, content: queued.join('\n') });
+    return;
+  }
+  render();
+}
+
 async function handleSendMessage(prepared = null) {
+  if (!prepared && uiState.sending && !voiceInputActive(uiState.voice) && uiState.composer.trim() && uiState.streamingChatId && uiState.streamingChatId === activeChat()?.id) {
+    await sendSupplement(uiState.streamingChatId, uiState.composer.trim());
+    return;
+  }
   if (uiState.sending || uiState.agentSelectionSaving || (!prepared && voiceInputActive(uiState.voice))) return;
   const content = prepared?.content || uiState.composer.trim();
   const attachments = prepared ? [] : [...uiState.composerAttachments];
@@ -3891,7 +3928,7 @@ async function handleSendMessage(prepared = null) {
       },
       signal: uiState.sendAbortController.signal,
       onEvent: message => {
-        if (message.event === 'execution_scene') receiveExecutionScene(message.payload?.scene);
+        if (message.event === 'execution_scene') { receiveExecutionScene(message.payload?.scene); patchLiveRunSteps(message.payload?.scene?.chatId); }
         const previousPhase = uiState.activeTurn?.phase;
         receiveTurnPresentation(uiState.activeTurn, message.event, message.payload);
         if (previousPhase !== uiState.activeTurn?.phase) render();
@@ -4004,6 +4041,7 @@ async function handleSendMessage(prepared = null) {
     });
 
     sendSucceeded = true;
+    if (result?.unusedSupplements?.length) (uiState.supplementsAfterTurn ||= []).push(...result.unusedSupplements);
     if (!prepared) uiState.composerRetry = null;
     notifyLocalCompletion();
     if (result?.bootstrap) {
@@ -4037,6 +4075,14 @@ async function handleSendMessage(prepared = null) {
     showError(error.message);
   } finally {
     uiState.sending = false;
+    // Supplements the turn could not use are sent as the next message of the same chat.
+    // A stopped or failed turn returns every supplement to the composer instead of dropping it.
+    const followUp = sendSucceeded ? (uiState.supplementsAfterTurn || []) : [];
+    const returned = sendSucceeded ? [] : [...(uiState.supplementsSent || []), ...(uiState.supplementsAfterTurn || [])];
+    uiState.supplementsSent = [];
+    uiState.supplementsAfterTurn = [];
+    if (returned.length) uiState.composer = [uiState.composer.trim(), ...returned.map(text => t('补充：{text}', { text }))].filter(Boolean).join('\n');
+    if (followUp.length && chatId) setTimeout(() => handleSendMessage({ chatId, content: followUp.join('\n') }), 0);
     uiState.activeTurn = null;
     uiState.sendAbortController = null;
     uiState.thinkingSince = 0;
@@ -6978,8 +7024,8 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
-                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:uiState.sending,escapeHtml})}
-                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
+                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
+                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
                   selection:!uiState.neuralOverview && activeChat() ? activeChat().modelSelection : uiState.newChatModel,
@@ -7001,7 +7047,7 @@ function renderComposerCard({ inline = false } = {}) {
                   class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
                   type="button"
                   data-action="toggle-voice-input"
-                  ${!uiState.sending && uiState.voice.status !== 'stopping' ? '' : 'disabled'}
+                  ${uiState.voice.status !== 'stopping' ? '' : 'disabled'}
                   aria-label="${escapeHtml(voiceInputLabel(uiState.voice))}"
                   aria-pressed="${voiceInputActive(uiState.voice)}"
                   title="${voiceSupported ? escapeHtml(voiceInputLabel(uiState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
@@ -7012,6 +7058,9 @@ function renderComposerCard({ inline = false } = {}) {
                 ${
                   uiState.sending
                     ? ui`
+                      <button class="composer-icon-button" type="submit" title="补充到正在进行的回复">
+                        <span class="toolbar-icon">${icon.send}</span>
+                      </button>
                       <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="停止生成">
                         <span class="toolbar-icon">${icon.stop}</span>
                       </button>
@@ -7036,7 +7085,7 @@ function renderComposerCard({ inline = false } = {}) {
               <textarea
                 id="composer"
                 class="composer-textarea"
-                placeholder="${escapeHtml(inline ? t("回复…") : composerPlaceholder())}"
+                placeholder="${escapeHtml(uiState.sending ? t("输入补充要求") : inline ? t("回复…") : composerPlaceholder())}"
                 aria-label="消息输入框"
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
@@ -7193,7 +7242,7 @@ function renderAgentSelectorChip() {
     <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
+            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.agentSelectionSaving ? 'disabled' : ''}>
       <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
@@ -11270,7 +11319,6 @@ document.addEventListener('click', async event => {
         break;
       case 'pick-default-model': {
         if (uiState.modelPickerSaving) break;
-        if (uiState.sending) break;
         const model = trigger.dataset.model;
         const selection = model ? {model, profileId:trigger.dataset.profileId || ''} : null;
         uiState.modelPickerSaving = true;
@@ -12496,7 +12544,8 @@ document.addEventListener('click', async event => {
       }
       case 'select-chat-agent': {
         const agentId = trigger.dataset.agentId;
-        if (uiState.sending || uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
+        // Allowed during a reply: the running turn keeps the Agent it started with; this applies next.
+        if (uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
         const chat = !uiState.neuralOverview ? activeChat() : null;
         uiState.agentSelectionSaving=true; render();
         try {
@@ -12765,7 +12814,6 @@ document.addEventListener('change', async event => {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
     try {
-      if (uiState.sending) throw new Error('请等待当前回复结束后再修改。');
       if (chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch}}));
       else if (Object.hasOwn(patch,'projectId')) {
         uiState.newChatProjectId = patch.projectId;

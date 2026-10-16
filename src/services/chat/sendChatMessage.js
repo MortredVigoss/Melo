@@ -1,3 +1,4 @@
+import { usedSupplements } from './supplements.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
 import { conversationConfig, selectedMaterials } from './conversationSelection.js';
 import { visionConnection } from '../../images/imageSettings.js';
@@ -456,6 +457,10 @@ async function executeChatTurn({
     const existingIndex = latestChat.messages.findIndex(m => m.id === assistantMessage.id);
     if (existingIndex >= 0) latestChat.messages[existingIndex] = assistantMessage;
     else latestChat.messages.push(assistantMessage);
+    // Supplements used during the turn become part of the question in the transcript.
+    const used = usedSupplements(chat.id);
+    const question = used.length ? latestChat.messages.find(m => m.id === userMessage.id) : null;
+    if (question) question.content = `${question.content}\n\n补充：${used.map(entry => entry.text).join('\n')}`;
     completeChatRun(latestState, context, assistantMessage);
     latestChat.updatedAt = nowIso();
     refreshChatMemorySummary(latestChat);

@@ -20,6 +20,14 @@ import SwiftUI
     @Published var pendingTeams: [String: PhoneTeamPlan] = [:]
     /// A video studied on this iPhone (frames + transcript) for the next message of a chat.
     @Published var pendingVideos: [String: VideoDigest] = [:]
+    /// Supplements typed while a chat is replying; applied when its current request stops.
+    @Published private(set) var pendingSupplements: [String: String] = [:]
+    /// Inputs of the running request kept so a supplement can restart it with the same video / team.
+    private var runInputs: [String: (video: VideoDigest?, team: PhoneTeamPlan?)] = [:]
+    func liveSteps(for chatID: String) -> [RunStep] {
+        guard let runID = runs[chatID]?.runID, let record = executionRecords.last(where: { $0.runId == runID }) else { return [] }
+        return RunProgress.steps(record)
+    }
     @Published private(set) var pendingDeviceAction: DeviceActionRequest?
     @Published private(set) var activeImageActions: [String: ImageAction] = [:]
     func activeImageAction(for chatID: String) -> ImageAction? { activeImageActions[chatID] }
@@ -193,12 +201,13 @@ import SwiftUI
         if let projectID = preferences.chatProjects?[chatID], let agentID = preferences.chatAgents[chatID], let override = preferences.projectAgents?[projectID]?[agentID] { return override }
         return preferences.agents.first { $0.id == preferences.chatAgents[chatID] } ?? preferences.agents.first ?? AgentProfile.defaults[0]
     }
+    // Changing Agent or model during a reply is allowed: the running reply took its
+    // Agent and model when it started; the change applies from the next message.
     func selectAgent(_ id: String, chatID: String) {
-        guard !isSending(chatID), preferences.agents.contains(where: { $0.id == id }) else { return }
+        guard preferences.agents.contains(where: { $0.id == id }) else { return }
         updatePreferences { $0.chatAgents[chatID] = id }
     }
     func selectModel(_ model: ConversationModel?, chatID: String) {
-        guard !isSending(chatID) else { return }
         updatePreferences { if $0.chatModels == nil { $0.chatModels = [:] }; $0.chatModels?[chatID] = model }
     }
     func project(for chatID: String) -> PersonalProject? { preferences.projects?.first { $0.id == preferences.chatProjects?[chatID] } }
@@ -240,7 +249,8 @@ import SwiftUI
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
             clean = "请分析这些图片。"
         }
-        let video = retry ? nil : pendingVideos[chatID]
+        let restartInputs = retry ? runInputs.removeValue(forKey: chatID) : nil
+        let video = retry ? restartInputs?.video : pendingVideos[chatID]
         if video != nil && clean.isEmpty { clean = "请看这段视频，总结主要内容。" }
         guard retry || !clean.isEmpty else { return }
         var plan: ImageTaskPlan
@@ -270,7 +280,7 @@ import SwiftUI
             fail("当前 Agent 在这台手机上未开启“生成与修改图片”。可在 Agent 页的本机权限中开启；要求和图片已保留。"); return
         }
         var teamPlan: AgentTeam.Plan?
-        if !retry, let armed = pendingTeams[chatID] {
+        if let armed = retry ? restartInputs?.team : pendingTeams[chatID] {
             guard !plan.makesImage, plan.references.isEmpty else { fail("团队任务只支持文字。请先移除图片，或取消团队后再发送。"); return }
             do {
                 let validated = try AgentTeam.validate(templateID: armed.templateID, members: armed.members)
@@ -368,6 +378,7 @@ import SwiftUI
         let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
         executionRecords.append(record); saveExecutionRecords()
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
+        let armedTeam = retry ? restartInputs?.team : pendingTeams[chatID]
         if teamPlan != nil { pendingTeams[chatID] = nil }
         if video != nil { pendingVideos[chatID] = nil }
         sendingChats.insert(chatID)
@@ -397,6 +408,7 @@ import SwiftUI
                 if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
                 sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
+                if let supplement = pendingSupplements.removeValue(forKey: chatID) { applySupplement(supplement, chatID: chatID, finished: completed, inputs: (video, armedTeam)) }
             }
             do {
                 try Task.checkCancellation()
@@ -495,6 +507,26 @@ import SwiftUI
         return ModelReply(text: summary, images: images, imageReferences: owners)
     }
     func armTeam(_ team: PhoneTeamPlan?, chatID: String) { pendingTeams[chatID] = team }
+    /// A supplement typed during a reply. The current request cannot take text half-way, so it stops
+    /// and restarts at once with the question plus "补充：…"; if the reply already finished, the
+    /// supplement is sent as the next message instead.
+    func supplement(_ text: String, chatID: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, isSending(chatID), let run = runs[chatID] else { return }
+        pendingSupplements[chatID] = [pendingSupplements[chatID], clean].compactMap { $0 }.joined(separator: "\n")
+        stage(run.runID, id: "supplement", name: "收到补充，按补充重新开始", status: "completed", output: String(clean.prefix(200)))
+        rejectApprovals(chatID: chatID)
+        run.task?.cancel()
+    }
+    private func applySupplement(_ text: String, chatID: String, finished: Bool, inputs: (video: VideoDigest?, team: PhoneTeamPlan?)) {
+        guard let index = chats.firstIndex(where: { $0.id == chatID }) else { return }
+        if finished || chats[index].messages.last?.role != "user" { send(text, chatID: chatID); return }
+        let original = chats[index]
+        chats[index].messages[chats[index].messages.count - 1].content += "\n\n补充：" + text
+        do { try save() } catch { chats[index] = original; self.error = error.localizedDescription; return }
+        runInputs[chatID] = inputs
+        send("", chatID: chatID, retry: true)
+    }
     /// Keeps a studied video as a knowledge note any Agent can use later.
     @discardableResult func saveVideoKnowledge(_ digest: VideoDigest) -> Bool {
         updatePreferences { p in p.knowledge = (p.knowledge ?? []) + [VideoStudy.knowledge(digest)] }

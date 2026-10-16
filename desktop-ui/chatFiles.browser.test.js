@@ -50,7 +50,8 @@ test('chat files, explicit deletion decisions and management actions work throug
  // Connector CRUD and real loopback manifest/tool requests.
  await advanced();await page.locator('details.quality-details>summary').filter({hasText:'扩展与连接管理'}).click();await page.locator('[data-action=manage-new-connector]').click();
  await dialog.locator('[name=name]').fill('Fixture connector');await dialog.locator('[name=endpoint]').fill(`http://127.0.0.1:${external.address().port}`);await dialog.getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('dialog[open]'));
- await advanced();await page.locator('details.quality-details>summary').filter({hasText:'扩展与连接管理'}).click();await page.locator('[data-action=ping-connector]').click();
+ await advanced();await page.locator('details.quality-details>summary').filter({hasText:'扩展与连接管理'}).click();// The invoke button is always shown; its tool list comes from the ping, so wait for that response.
+ await Promise.all([page.waitForResponse(r=>r.url().includes('/api/connectors/external/ping')&&r.ok()),page.locator('[data-action=ping-connector]').click()]);
  await page.waitForFunction(()=>document.querySelector('[data-action=manage-invoke-connector]'));
  await page.locator('[data-action=manage-invoke-connector]').click();await dialog.locator('[name=id] option').first().waitFor({state:'attached'});await dialog.getByRole('button',{name:'执行',exact:true}).click();await dialog.locator('[role=status]').filter({hasText:'fixture tool result'}).waitFor();assert.equal(invocations,1);await dialog.getByRole('button',{name:'关闭',exact:true}).click();
  await page.locator('[data-action=manage-resource-connector]').click();await dialog.getByRole('button',{name:'执行',exact:true}).click();await dialog.locator('[role=status]').filter({hasText:'fixture resource'}).waitFor();await dialog.getByRole('button',{name:'关闭',exact:true}).click();

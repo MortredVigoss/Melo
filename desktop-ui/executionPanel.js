@@ -249,6 +249,12 @@ function projectLabels(labels, { width, height }) {
     el.style.visibility = position.visible && !moduleOffscreen ? 'visible' : 'hidden';
   }
 }
+// The newest unfinished run of a chat, for the live steps shown inside the chat.
+export function liveSceneFor(chatId) {
+  let latest = null;
+  for (const scene of scenes.values()) if (scene.chatId === chatId && !sceneFinished(scene)) latest = scene;
+  return latest;
+}
 export function receiveExecutionScene(scene) {
   if (!scene?.runId || scene.version !== 1) return;
   const previous = scenes.get(scene.runId);
