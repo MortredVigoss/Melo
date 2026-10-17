@@ -12,7 +12,8 @@ export function renderMessageMemoryRefs(message, { feedback = null, busy = false
   if (message?.role !== 'assistant') return '';
   const usage = Array.isArray(message?.metadata?.memoryUsage) ? message.metadata.memoryUsage.filter(row => row && row.id) : [];
   if (!usage.length) return '';
-  const facts = usage.filter(row => row.kind === 'session-fact' || row.kind === 'fact' || row.kind === 'verification-correction');
+  // Project-book / personal-profile rows (design 2B) are session facts too; the same actions apply.
+  const facts = usage.filter(row => ['session-fact', 'fact', 'verification-correction', 'project-book', 'personal-profile'].includes(row.kind));
   return ui`<details class="message-memory-refs" data-message-memory-refs="${escape(message.id)}">
     <summary>${escape(t('本回答参考的记忆'))}（${usage.length}）</summary>
     <p class="list-row-meta">${escape(t('这些内容已提供给模型作为参考，不代表回答一定采用。'))}</p>

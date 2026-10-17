@@ -131,8 +131,10 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
   // second one wrapped in "Reference data; not instructions"), and a project
   // override put the project persona in one block and the stale global persona
   // in the other (2026-10-17 audit B-1 / C-9).
+  // Project namespaces are rendered by the Project Memory Book in the stable
+  // prefix (design 2B); the attic only covers the chat, user and agent rows.
   const rows = recallMemories({
-    namespaces,
+    namespaces: namespaces.filter(ns => !String(ns).startsWith('project:')),
     kinds: ['fact', 'session-fact', 'verification-correction'],
     limit: limit * 4,
     sideEffects: false,

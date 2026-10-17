@@ -50,7 +50,11 @@ export function portableValue(kind,v) {
     if (v.validTo != null && (typeof v.validTo !== 'string' || !Number.isFinite(Date.parse(v.validTo)))) throw new Error('Invalid memory validity');
     const content=text(v.text,2000), memoryID=text(v.memoryID,180);
     if(!content.trim()||!memoryID)throw new Error('Invalid memory content');
-    return {id:v.id,memoryID,text:content,originalFact:text(v.originalFact,2000),scope:v.scope,status:v.status,chatId:v.chatId,messageId:text(v.messageId,180),projectId:v.projectId || '',agentId:v.agentId,sourceText:text(v.sourceText,1600),category:text(v.category,100),updatedAt:v.updatedAt,userEdited:v.userEdited===true,...(Object.hasOwn(v,'validTo') ? {validTo:v.validTo ?? null} : {}),...(v.mergedInto ? {mergedInto:text(v.mergedInto,180)} : {})};
+    // Project memory book projection (design 2B): both optional so older
+    // clients keep validating; when present they must be known enum values.
+    if (v.section != null && !['goal','convention','decision','progress','todo','file'].includes(v.section)) throw new Error('Invalid memory section');
+    if (v.bookStatus != null && !['auto','confirmed','user'].includes(v.bookStatus)) throw new Error('Invalid memory book status');
+    return {id:v.id,memoryID,text:content,originalFact:text(v.originalFact,2000),scope:v.scope,status:v.status,chatId:v.chatId,messageId:text(v.messageId,180),projectId:v.projectId || '',agentId:v.agentId,sourceText:text(v.sourceText,1600),category:text(v.category,100),updatedAt:v.updatedAt,userEdited:v.userEdited===true,...(Object.hasOwn(v,'validTo') ? {validTo:v.validTo ?? null} : {}),...(v.mergedInto ? {mergedInto:text(v.mergedInto,180)} : {}),...(v.section ? {section:v.section} : {}),...(v.bookStatus ? {bookStatus:v.bookStatus} : {})};
   }
   if (kind==='agent') return portableAgent(v);
   if (kind==='knowledge') return {title:text(v.title,500),content:text(v.content,200000),deleted:v.deleted===true,kind:text(v.kind,100)||'note',language:text(v.language,100)||'text',projectId:safeID(v.projectId)?v.projectId:null};

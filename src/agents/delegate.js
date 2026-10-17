@@ -8,6 +8,7 @@ import {currentRequestContext,runWithRequestContext} from '../runtime/requestSco
 import {summarizePricedUsage} from '../runtime/usage.js';
 import {withWorkspaceWriter} from './workspaceScheduling.js';
 import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
+import {narrowBudget,remainingMs} from '../runtime/runBudget.js';
 
 export async function runConfiguredMember({profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent}) {
  if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
@@ -20,11 +21,16 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  const toolObject=id=>extraTools.find(t=>t.id===id)||getTool(id)||undefined;
  const toolIds=(Array.isArray(allowedToolIds)?allowedToolIds:[...getAllTools(),...extraTools].map(t=>t.id)).filter(id=>toolCapabilityAllowed(id,capabilities,undefined,toolObject(id)));
  const controller=new AbortController();const abort=()=>controller.abort(signal?.reason);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
- const timer=setTimeout(()=>controller.abort(Object.assign(new Error('Member time budget exhausted'),{code:'MEMBER_TIMEOUT'})),settings.timeoutMs);
+ // Run budget (C1): the member gets a child pool — its own timeoutMs cut to
+ // the parent's remaining time, token/tool limits = parent remaining — and
+ // whatever it spends is charged to the parent as well.
+ const budget=narrowBudget(parent.budget||null,{deadlineMs:settings.timeoutMs});
+ const timeoutMs=Math.max(1,Math.min(settings.timeoutMs,remainingMs(budget)));
+ const timer=setTimeout(()=>controller.abort(Object.assign(new Error('Member time budget exhausted'),{code:'MEMBER_TIMEOUT'})),timeoutMs);
  const receipts=[], started=Date.now(), memberId=randomUUID();
  const emit=(type,event)=>sseEmitter?.(type,type==='execution_event'?{...event,id:`member:${memberId}:${event.id}`,name:`${profile.name} · ${event.name || ''}`}:{...event,agentId:profile.id});
  const invoke=()=>run({extraTools,task,instructions,background,agentProfile:profile,config:{...config,model:profile.model || config.model,modelResolvedForTurn:true},workspacePath,signal:controller.signal,sseEmitter:emit,chatId,depth,allowedToolIds:toolIds,capabilities,roleId:profile.id,agentProfiles,collaboration:settings,ancestry:[...ancestry,profile.id],maxDepth,maxIterations:settings.maxIterations,maxTokens:settings.maxTokens,onProviderResponse:r=>{if(!controller.signal.aborted)receipts.push(r);}});
- const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,agentId:profile.id,capabilityScope}),invoke):invoke();
+ const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,agentId:profile.id,capabilityScope,...(budget?{budget}:{})}),invoke):invoke();
  const writer=capabilities.writeFiles||capabilities.runCommands||capabilities.generateMedia||capabilities.mcpServers.length>0||capabilities.connectors.length>0;
  emit('execution_event',{kind:'pipeline',id:'handoff',name:'成员执行',module:'compute',status:'running',input:task});
  let outcome, stopWaiting;

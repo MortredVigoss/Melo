@@ -2,6 +2,11 @@ import { recordMemoryRejection } from './store.js';
 import { iterateMemoryRecords, getMemoriesByIds, upsertMemory, withTransaction, isEntryInvalidated } from './store.js';
 import { factId, factNamespace, normalizedFact, canRecallMemory, isLocalChat } from './factPolicy.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
+import { writeAutoBookRow, normalizeSection, BOOK_SECTIONS } from '../services/project/projectMemoryBook.js';
+
+// Personal profile (design 2B): only these categories render in the stable
+// personal block; anything else promoted to personal is a preference.
+export const PERSONAL_PROFILE_CATEGORIES = Object.freeze(['user_preference', 'identity', 'correction']);
 
 // Session facts are a checkpoint of extraction; the store owns validity and
 // user overrides. Replaying an old checkpoint must not undo edits or forgetting.
@@ -45,6 +50,14 @@ export function reconcileChatFacts(chat, agentId=chat?.agentId || 'main') {
         updatedAt:prior?.updatedAt || fact.extractedAt || new Date().toISOString(),metadata};
       if (!prior || prior.text!==entry.text || prior.namespace!==entry.namespace || JSON.stringify(prior.metadata)!==JSON.stringify(metadata)) upsertMemory(entry);
       results.push(entry);
+      // Project memory book (design 2B): the single exception to "automatic
+      // facts stay in their chat". A decision / project_context fact of a
+      // local chat that belongs to a project is mirrored as an `[auto]` book
+      // row (id `book:<factId>`); replaying an old checkpoint never rewrites it.
+      if (!prior && scope==='chat' && chat.projectId && isLocalChat(chat)) {
+        try { writeAutoBookRow(entry, chat); }
+        catch (error) { console.warn(`[memory.book] auto row skipped: ${error.message}`); }
+      }
     }
     return results;
   });
@@ -61,7 +74,14 @@ export function reconcileLegacyFacts(state) {
   // Facts whose source chat was deleted have no safe audience to infer. Keep
   // their text available in management, but exclude them from automatic recall.
   const chats=new Set((state.chats || []).map(c=>c.id));
+  const projects=new Set((state.projects || []).map(p=>p.id));
   for (const row of iterateMemoryRecords()) {
+    // Hand-written project-book rows (design 2B) have no source chat; their
+    // source is the project itself.
+    if (row.metadata.bookStatus==='user' && !row.metadata.chatId) {
+      if (!projects.has(row.metadata.projectId) && !row.metadata.sourceDeleted) upsertMemory({...row,metadata:{...row.metadata,quarantined:true,sourceDeleted:true}});
+      continue;
+    }
     if (!chats.has(row.metadata.chatId) && !row.metadata.sourceDeleted) upsertMemory({...row,metadata:{...row.metadata,scope:row.metadata.scope || 'chat',quarantined:true,sourceDeleted:true}});
   }
 }
@@ -96,6 +116,25 @@ export function editMemoryFact(id, patch={}) {
     metadata.category=category;
   }
   if (patch.pinned!==undefined) metadata.pinned=patch.pinned===true;
+  // Project memory book / personal profile (design 2B).
+  if (patch.section!==undefined) {
+    const section=String(patch.section||'').trim();
+    if (!BOOK_SECTIONS.includes(section)) throw new Error('记忆本分节无效。');
+    metadata.section=section;
+  }
+  if (patch.bookStatus!==undefined) {
+    // Only confirmation is user-settable; `user` is reserved for hand-written rows.
+    if (patch.bookStatus!=='confirmed') throw new Error('记忆本状态只能改为已确认。');
+    metadata.bookStatus='confirmed'; metadata.needsConfirmation=false;
+  }
+  if (scope==='project') {
+    if (patch.scope==='project' && metadata.bookStatus!=='user') { metadata.bookStatus='confirmed'; metadata.needsConfirmation=false; }
+    metadata.bookStatus=metadata.bookStatus || 'confirmed';
+    metadata.section=normalizeSection(metadata.section,metadata.category);
+  } else if (metadata.bookStatus && patch.scope && patch.scope!=='project') {
+    delete metadata.bookStatus; delete metadata.section; delete metadata.needsConfirmation;
+  }
+  if (scope==='personal' && !PERSONAL_PROFILE_CATEGORIES.includes(metadata.category)) metadata.category='user_preference';
   if (patch.forgotten===true) { metadata.forgotten=true; metadata.validTo=metadata.editedAt; recordMemoryRejection(id); }
   if (patch.forgotten===false) { metadata.forgotten=false; metadata.validTo=null; metadata.quarantined=false; }
   const updated={...row,text,searchText:normalizedFact(text),updatedAt:metadata.editedAt,

@@ -11,6 +11,7 @@ import { normalizeMessageBlocks } from '../../domain/message/messageBlocks.js';
 import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
 import { inferImageTask } from './imageTask.js';
 import { requestsPhotoAdjustment } from '../../shared/imageRequestIntent.js';
+import { hydrateAttachments } from '../../media/attachments.js';
 
 export async function imageFollowUpAttachments({ chat, content, attachments, imageTask, home }) {
   if (attachments.some(a => a.kind === 'image') || imageTask?.action === 'generate' || imageTask?.retryOf) return attachments;
@@ -23,8 +24,10 @@ export async function imageFollowUpAttachments({ chat, content, attachments, ima
     const message = recent[i];
     if (message.role === 'user' && message.attachments?.some(a => a.kind === 'image')) {
       // A newer upload takes precedence over older generated results.
+      // Externalized uploads are read back inline so extraction and the
+      // persisted snapshot see the same bytes as a fresh upload.
       return shouldCarryForwardRecentMedia([...recent, {role:'user',content}], recent.length, i) || imageTask?.action === 'edit' || adjustment
-        ? [...attachments, ...message.attachments.filter(a => a.kind === 'image')]
+        ? [...attachments, ...await hydrateAttachments(message.attachments.filter(a => a.kind === 'image'), { home })]
         : attachments;
     }
     if (message.role !== 'assistant' || !message.metadata?.runId) continue;

@@ -74,6 +74,7 @@ import {
   buildThreadContextForChat,
   ensureChatThreadContext,
 } from '../memory/chatThreadContext.js';
+import { normalizeCompactCards, compactCardsEqual } from '../memory/compactLedger.js';
 
 // One day in ms — used by `defaultProjectTime` below. The original
 // desktopStore.js sourced this constant from a top-level `const ONE_DAY_MS`
@@ -138,6 +139,8 @@ function normalizeToolResultsForHydration(rawList) {
     if (item.member) entry.member={agentId:String(item.member.agentId),name:String(item.member.name),memberId:String(item.member.memberId),durationMs:Number(item.member.durationMs)||0};
     if (typeof item.path === 'string') entry.path = item.path;
     if (Number.isInteger(item.exitCode)) entry.exitCode = item.exitCode;
+    if (typeof item.summary === 'string' && item.summary.trim()) entry.summary = item.summary.slice(0, 200);
+    if (item.status === 'empty') entry.status = 'empty';
     if (item.replayed === true) entry.replayed = true;
     out.push(entry);
   }
@@ -269,6 +272,8 @@ export function normalizeChat(chat) {
     // Context-compression fields (contextCompact.js)
     compactSummary:
       typeof chat?.compactSummary === 'string' ? chat.compactSummary.trim() : '',
+    // Ledger cards (compactLedger.js); compactSummary is their rendering.
+    compactCards: normalizeCompactCards(chat?.compactCards),
     compactBoundaryMessageId:
       typeof chat?.compactBoundaryMessageId === 'string'
         ? chat.compactBoundaryMessageId.trim()
@@ -297,6 +302,8 @@ export function normalizeChat(chat) {
     toolGroupsActivated: Array.isArray(chat?.toolGroupsActivated)
       ? [...new Set(chat.toolGroupsActivated.filter(id => ['browser', 'documents', 'media'].includes(id)))].sort()
       : [],
+    // Inline data-URL attachments were migrated to files once (src/media/attachments.js).
+    attachmentsExternalized: chat?.attachmentsExternalized === true,
     // Session memory — extracted facts accumulated across turns
     sessionMemory: Array.isArray(chat?.sessionMemory) ? chat.sessionMemory : [],
     memoryLastExtractedAt: Number.isFinite(Number(chat?.memoryLastExtractedAt))
@@ -395,13 +402,15 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
       Boolean(chat?.memoryLastExtractedAt) ||
       Boolean(chat?.memoryLastExtractedAtCount) ||
       Boolean(chat?.compactSummary) ||
+      Boolean(chat?.compactCards?.length) ||
       Boolean(chat?.compactBoundaryMessageId) ||
       Boolean(chat?.compactedMessageCount) ||
       Boolean(chat?.compactedAt) ||
       Boolean(chat?.compactFailures) ||
       Boolean(chat?.compactSummarySource) ||
       Boolean(chat?.compactUpgradeAttempts) ||
-      Boolean(chat?.toolGroupsActivated?.length);
+      Boolean(chat?.toolGroupsActivated?.length) ||
+      chat?.attachmentsExternalized === true;
     return !hasRuntimeState;
   }
 
@@ -412,6 +421,7 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
     (Number(runtime.memoryLastExtractedAtCount) || 0) ===
       (Number(chat?.memoryLastExtractedAtCount) || 0) &&
     String(runtime.compactSummary || '') === String(chat?.compactSummary || '') &&
+    compactCardsEqual(runtime.compactCards, chat?.compactCards) &&
     String(runtime.compactBoundaryMessageId || '') === String(chat?.compactBoundaryMessageId || '') &&
     (Number(runtime.compactedMessageCount) || 0) === (Number(chat?.compactedMessageCount) || 0) &&
     String(runtime.compactedAt || '') === String(chat?.compactedAt || '') &&
@@ -419,7 +429,8 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
     String(runtime.compactSummarySource || '') === String(chat?.compactSummarySource || '') &&
     (Number(runtime.compactUpgradeAttempts) || 0) === (Number(chat?.compactUpgradeAttempts) || 0) &&
     JSON.stringify(Array.isArray(runtime.toolGroupsActivated) ? runtime.toolGroupsActivated : []) ===
-      JSON.stringify(Array.isArray(chat?.toolGroupsActivated) ? chat.toolGroupsActivated : [])
+      JSON.stringify(Array.isArray(chat?.toolGroupsActivated) ? chat.toolGroupsActivated : []) &&
+    (runtime.attachmentsExternalized === true) === (chat?.attachmentsExternalized === true)
   );
 }
 

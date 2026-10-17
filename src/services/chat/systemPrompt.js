@@ -179,6 +179,8 @@ export function buildReActPromptSections({
   profile,
   modePrompt = '',
   projectContext = '',
+  projectMemoryBook = '',
+  personalProfile = '',
   selectedMaterials = '',
   connectorPrompts = '',
   skillsPrompts = '',
@@ -187,6 +189,7 @@ export function buildReActPromptSections({
   channelPrompt = '',
   toolRoutingPrompt = '',
   compactContext = '',
+  topicExcerpts = '',
   toolsPrompt = '',
   sessionMemoryBlock = '',
   languageConstraint = '',
@@ -235,6 +238,13 @@ export function buildReActPromptSections({
     // the lowest-priority optional block and vanished from long conversations
     // once the summary filled the recall budget (audit C-3).
     reference('project', projectContext, 105, 3000, 'system'),
+    // Project memory book + personal profile (design 2026-10-17 §3.4, 2B):
+    // stable blocks that only change when a fact changes, so they live in the
+    // cacheable prefix right behind the project settings. The book is
+    // required (it replaces the old "hope the 6-slot recall finds it" path);
+    // the profile is small and optional. Both are empty for remote channels.
+    { ...reference('project-memory', projectMemoryBook, 104, 2000, 'system'), required: true },
+    reference('personal-profile', personalProfile, 106, 400, 'system'),
     // The conversation summary only changes when a new compaction lands, so it
     // belongs to the cacheable prefix as well (it is also the largest block).
     reference('compact', compactContext, 100, 6000, 'system'),
@@ -246,6 +256,10 @@ export function buildReActPromptSections({
     instruction('language', languageConstraint, 'turn'),
     { ...reference('selected-materials', selectedMaterials, 110, 12000), required: true },
     reference('session-memory', sessionMemoryBlock, 90, 3000),
+    // Original messages of the 1–2 ledger cards most relevant to this turn
+    // (design 1D-4). Per turn by nature; sits between the session facts and
+    // the general recall.
+    reference('topic-excerpts', topicExcerpts, 85, 4000),
     reference('memory', memoryContext, 80, 5000),
     reference('dynamic', dynamicContext, 70, 6000),
   ].filter(section => section.text);

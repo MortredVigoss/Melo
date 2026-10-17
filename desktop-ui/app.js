@@ -8,6 +8,7 @@ import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js'
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
+import { renderProjectMemoryBook } from './projectMemoryBook.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -8084,6 +8085,7 @@ function renderProjectsDetailView(project) {
 
           <aside class="project-detail-aside">
             ${renderProjectAgentDefaults(project)}
+            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft })}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
@@ -9123,6 +9125,47 @@ async function handleMemoryFactAction(action, id) {
   try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
+}
+
+// Project memory book (design 2B): the project page lists the book and lets
+// the user confirm / re-section / stop an auto row or hand-write one.
+function projectBookData(projectId) {
+  if (!projectId) return null;
+  const cached = uiState.projectBook?.projectId === projectId ? uiState.projectBook : null;
+  // Auto rows arrive from chats in the background: re-read after 30s, keeping
+  // the stale list on screen meanwhile.
+  const fresh = cached && Date.now() - (cached.loadedAt || 0) < 30_000;
+  if (!fresh && uiState.projectBook?.loadingId !== projectId) {
+    uiState.projectBook = { ...(uiState.projectBook || {}), loadingId: projectId };
+    api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`)
+      .then(data => { uiState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
+      .catch(error => { uiState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: Date.now() }; showError(error.message); bgRender(); });
+  }
+  return cached?.data || null;
+}
+async function refreshProjectBook(projectId) {
+  uiState.projectBook = { projectId, data: await api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`), loadedAt: Date.now() };
+}
+async function handleProjectBookAction(action, id, { section = null, form = null } = {}) {
+  const projectId = activeProject()?.id;
+  if (!projectId || uiState.projectBookBusy) return;
+  uiState.projectBookBusy = true; uiState.projectBookFeedback = null; bgRender();
+  try {
+    if (action === 'project-book-create') {
+      const data = new FormData(form);
+      await api('/api/projects/memory-book', { method: 'POST', body: { projectId, text: String(data.get('text') || ''), section: String(data.get('section') || 'convention') } });
+      uiState.projectBookDraft = null; uiState.projectBookFeedback = t('已写入记忆本');
+    } else {
+      const patch = action === 'project-book-confirm' ? { bookStatus: 'confirmed' }
+        : action === 'project-book-section' ? { section }
+        : { forgotten: action === 'project-book-forget' };
+      await api('/api/memory/facts/update', { method: 'POST', body: { id, patch } });
+      uiState.projectBookFeedback = action === 'project-book-confirm' ? t('已确认') : action === 'project-book-section' ? t('已改节') : action === 'project-book-forget' ? t('已停止使用') : t('已恢复使用');
+    }
+    await refreshProjectBook(projectId);
+    if (uiState.memoryFacts) await refreshMemoryStatus();
+  } catch (error) { showError(error.message); }
+  finally { uiState.projectBookBusy = false; bgRender(); }
 }
 
 // Reply-footer memory actions (design audit M5): promote a referenced fact to
@@ -11676,6 +11719,11 @@ document.addEventListener('click', async event => {
       case 'memory-ref-forget':
         await handleMemoryRefAction(action, trigger.dataset.memoryId, trigger.dataset.scope);
         break;
+      case 'project-book-confirm':
+      case 'project-book-forget':
+      case 'project-book-restore':
+        await handleProjectBookAction(action, trigger.dataset.id);
+        break;
       case 'memory-pause':
       case 'memory-diagnose':
       case 'memory-connect':
@@ -12868,6 +12916,12 @@ document.addEventListener('change', async event => {
   const target = event.target;
   if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'||target.id==='memory-fact-category'||target.id==='memory-fact-pinned'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){const field=target.id.replace('memory-fact-','');uiState.memoryFactDraft[field]=field==='pinned'?target.checked:target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
+  if (target.dataset?.bookSectionSelect) {
+    const record = target.closest('[data-book-record]')?.dataset.bookRecord;
+    if (record) { await handleProjectBookAction('project-book-section', record, { section: target.value }); return; }
+    uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), section: target.value }; return;
+  }
+  if (target.closest?.('form[data-form="project-book-create"]') && target.name === 'text') { uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), text: target.value }; return; }
   if (target.dataset?.projectDefaultAgent) {
     try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
     catch(error) { showError(error.message); }
@@ -13212,6 +13266,9 @@ document.addEventListener('submit', async event => {
         break;
       case 'project-update':
         await handleUpdateProject(form);
+        break;
+      case 'project-book-create':
+        await handleProjectBookAction('project-book-create', null, { form });
         break;
       case 'task-pricing': {
         const body=Object.fromEntries(new FormData(form));

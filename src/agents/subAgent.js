@@ -4,6 +4,7 @@ import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import {estimateTextTokens} from '../memory/tokenEstimate.js';
+import {budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
 import {HANDOFF_INSTRUCTION} from './handoff.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
@@ -193,15 +194,22 @@ async function runSubAgentLoop({
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
     const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
     if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults}};
+    // Run budget (C1): the child pool derived from the parent turn; spending here is charged upward.
+    const runBudget=currentRequestContext()?.budget||null;
+    const exhausted=budgetExhausted(runBudget);
+    if(exhausted) return {ok:false,output:`Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults}};
     const tokensBefore=usedTokens;
     const remaining=maxTokens-usedTokens-estimatedInput;
     const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
     const outputLimit=Math.max(1,Math.floor(Math.min(remaining,Math.max(1,contextBudget.totalTokens-estimatedInput),Number.isFinite(configuredLimit)&&configuredLimit>0?configuredLimit:remaining)));
-    let responseUsage=null;
-    const rawReply = await replyFn({
+    let responseUsage=null, accounted=false;
+    const account=receipt=>{if(accounted)return;accounted=true;recordUsage(runBudget,{providerCalls:1,inputTokens:receiptInputTokens(receipt)??estimatedInput});};
+    let rawReply;
+    try { rawReply = await replyFn({
       ...functionSession.requestOptions(),
       maxTokens:outputLimit,
-      onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;onProviderResponse?.(receipt);},
+      timeoutMs:runBudget?requestTimeoutMs(runBudget):undefined,
+      onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;account(receipt);onProviderResponse?.(receipt);},
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -215,7 +223,8 @@ async function runSubAgentLoop({
       // Native tools obey the same inherited capability snapshot as local tools.
       workspacePath,
       // No onDelta for sub-agents — output goes through tool result
-    });
+    }); }
+    finally { account(null); }
 
     const measured=responseUsage&&Number(responseUsage.input)+Number(responseUsage.output);
     usedTokens=tokensBefore+(Number.isFinite(measured)&&measured>0?measured:estimatedInput+Math.ceil(estimateTextTokens(typeof rawReply==='string'?rawReply:JSON.stringify(rawReply))*4/3));

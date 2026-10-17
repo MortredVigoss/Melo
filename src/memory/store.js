@@ -1125,7 +1125,9 @@ function isSnapshotProtectedIncrementalMemory(row = {}) {
   // upsertMemory(). Snapshot rebuilds are allowed to prune stale state-derived
   // rows, but promoted session facts are intentionally independent of any
   // single chat snapshot and must survive compaction/deletion saves.
-  return row.kind === 'session-fact' && String(row.id || '').startsWith('promoted:');
+  // Project-memory-book rows (`book:…`, design 2B) are written the same way
+  // and must equally survive snapshot rebuilds.
+  return row.kind === 'session-fact' && /^(promoted|book):/.test(String(row.id || ''));
 }
 
 /**
@@ -2706,11 +2708,11 @@ export function notifyMemoryIndexRepaired(home) {
 
 // Stable keyset traversal for maintenance/export. Updating rows must not move
 // them across an OFFSET boundary or silently leave records beyond a UI limit.
-export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, batchSize = 500 } = {}) {
+export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, namespace = null, batchSize = 500 } = {}) {
   let after = '';
-  const query = getDb().prepare(`SELECT * FROM memories WHERE kind = ? AND id > ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ORDER BY id LIMIT ?`);
+  const query = getDb().prepare(`SELECT * FROM memories WHERE kind = ? AND id > ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ${namespace ? 'AND namespace = ?' : ''} ORDER BY id LIMIT ?`);
   for (;;) {
-    const rows = query.all(kind, after, ...(chatId ? [chatId] : []), Math.max(1, Math.min(10000, batchSize)));
+    const rows = query.all(kind, after, ...(chatId ? [chatId] : []), ...(namespace ? [namespace] : []), Math.max(1, Math.min(10000, batchSize)));
     if (!rows.length) return;
     after = rows.at(-1).id;
     yield* materializeMemoryRows(rows);

@@ -1,7 +1,7 @@
 import {previewChatDeletion,listChatFiles,decideChatFiles,openChatFiles} from '../services/workspace/chatWorkspaceFiles.js';
 import { createRouteRegistry } from './routeRegistry.js';
 import { saveExtraFast, testExtraFast } from '../services/settings/extraFast.js';
-import { memoryFacts, updateMemoryFact } from '../services/memory/memoryManagement.js';
+import { memoryFacts, updateMemoryFact, projectMemoryBook, createProjectMemoryBookEntry } from '../services/memory/memoryManagement.js';
 import { exportLocalArchive, importLocalArchive, validateLocalArchive, extractionCache } from '../services/settings/localData.js';
 import { updateLocalProfile } from '../services/settings/localProfile.js';
 import { listTaskOperations, releaseTaskOperation } from '../services/task/operationLedger.js';
@@ -408,6 +408,9 @@ const router = createRouteRegistry([
     // also check for modelId drift so the UI can flash a warning chip.
     { method: 'GET', paths: ["/api/memory/facts"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => { sendJson(response,200,await memoryFacts({query:url.searchParams.get('q'),offset:url.searchParams.get('offset')})); return; } },
     { method: 'POST', paths: ["/api/memory/facts/update"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => { if (!requireLocalOrigin(request,response)) return; sendJson(response,200,updateMemoryFact(await readJsonBody(request))); return; } },
+    // Project memory book (design 2B): list for the project page; hand-written rows.
+    { method: 'GET', paths: ["/api/projects/memory-book"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => { sendJson(response,200,await projectMemoryBook({projectId:url.searchParams.get('projectId')})); return; } },
+    { method: 'POST', paths: ["/api/projects/memory-book"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => { if (!requireLocalOrigin(request,response)) return; sendJson(response,200,createProjectMemoryBookEntry(await readJsonBody(request))); return; } },
     { method: 'POST', paths: ["/api/memory/repair"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       sendJson(response, 200, await repairMemoryBatch()); return;
     } },

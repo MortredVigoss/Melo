@@ -29,6 +29,7 @@ export const TOOL_ERROR_CODES = Object.freeze([
   'NETWORK',
   'PROVIDER_DOWN',
   'EXIT_NONZERO',
+  'BUDGET_EXHAUSTED',
   'UNKNOWN',
 ]);
 
@@ -112,6 +113,7 @@ export function toolCodeHint(code) {
     case 'PROVIDER_DOWN': return 'The backing service is unavailable; do not keep retrying — report it.';
     case 'EXIT_NONZERO': return 'The command ran but exited non-zero; read stderr before retrying.';
     case 'INVALID_ARGS': return 'The arguments were rejected; fix them according to the schema.';
+    case 'BUDGET_EXHAUSTED': return 'This turn has used up its run budget (time, tokens or tool calls); do not call more tools — summarise what is done and what is left.';
     default: return '';
   }
 }

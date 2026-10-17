@@ -64,3 +64,31 @@ test('memory sync preserves source, edits, stop/restore, conflicts and in-flight
   state.mobileDeletedChats=tombstones;state.chats=state.chats.filter(c=>c.id!=='chat-a');applyPortableMemory(state);assert(getMemoriesByIds([row.id])[0].metadata.quarantined);
  } finally {_resetStoreForTests(); if(old===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=old;rmSync(home,{recursive:true,force:true});}
 });
+
+// Project memory book projection (design 2026-10-17 §3.4, 2B): `section` and
+// `bookStatus` ride the wire as optional enum fields, survive a round trip,
+// and are rejected when malformed. Older clients that omit them still validate.
+test('memory sync carries the project memory book projection as optional fields',()=>{
+ const home=mkdtempSync(join(tmpdir(),'melo-memory-book-sync-')); const old=process.env.MELO_HOME;process.env.MELO_HOME=home;_resetStoreForTests();
+ try {
+  const state={chats:[{id:'chat-a',source:'desktop',title:'A',projectId:'P',messages:[]}],projects:[{id:'P',name:'P'}],artifacts:[],agentProfiles:{}};
+  const row={id:'book:promoted:test',kind:'session-fact',namespace:'project:P',sourceId:'chat-a',text:'API fields use snake_case',searchText:'api fields use snake_case',createdAt:'2026-10-11T00:00:00.000Z',updatedAt:'2026-10-11T00:00:00.000Z',
+   metadata:{chatId:'chat-a',agentId:'main',scope:'project',projectId:'P',audience:'local',category:'decision',bookStatus:'auto',section:'decision'}};
+  upsertMemory(row);refreshPortableWorkspace(state);const expected=refreshPortableMemory(state);
+  const register=state.mobileWorkspaceSync.records.find(r=>r.kind==='memory'),v=register.versions[0].value;
+  assert.equal(v.section,'decision');assert.equal(v.bookStatus,'auto');
+  assert.doesNotThrow(()=>validateWorkspace(state.mobileWorkspaceSync));
+  const legacy={...v};delete legacy.section;delete legacy.bookStatus;
+  assert.doesNotThrow(()=>validateWorkspace({version:1,records:[{...register,versions:[{...register.versions[0],value:legacy}]}]}),'older clients omit the fields');
+  assert.throws(()=>validateWorkspace({version:1,records:[{...register,versions:[{...register.versions[0],value:{...v,section:'misc'}}]}]}),/section|schema/);
+  assert.throws(()=>validateWorkspace({version:1,records:[{...register,versions:[{...register.versions[0],value:{...v,bookStatus:'maybe'}}]}]}),/book status|schema/);
+  // the phone confirms the row and moves it to another section
+  const mobile=structuredClone(state.mobileWorkspaceSync);
+  putWorkspace(mobile,'memory',register.id,{...v,bookStatus:'confirmed',section:'convention',updatedAt:'2026-10-11T00:01:00.000Z'},'phone');
+  state.mobileWorkspaceSync=mergeWorkspaces(state.mobileWorkspaceSync,mobile);applyPortableMemory(state,expected);
+  const updated=getMemoriesByIds([row.id])[0];
+  assert.equal(updated.metadata.bookStatus,'confirmed');assert.equal(updated.metadata.section,'convention');assert.equal(updated.namespace,'project:P');
+  assert.equal(refreshPortableMemory(state).size,1);
+  assert.equal(state.mobileWorkspaceSync.records.find(r=>r.kind==='memory').versions[0].value.section,'convention');
+ } finally { _resetStoreForTests(); if(old===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=old; rmSync(home,{recursive:true,force:true}); }
+});

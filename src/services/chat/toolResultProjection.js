@@ -92,6 +92,10 @@ export function projectToolResultForPersist(call, result) {
       : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED')
     : null);
   if (result?.status === 'empty') entry.status = 'empty';
+  // Short model-facing conclusion so the compaction transcript can say what a
+  // tool call found (design 1D-5); the full output never enters history.
+  const summary = typeof result?.output === 'string' ? result.output.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  if (summary) entry.summary = summary;
   if (errorCode) {
     entry.errorCode = errorCode;
   }

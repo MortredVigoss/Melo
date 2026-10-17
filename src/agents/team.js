@@ -11,6 +11,7 @@ import {recommendedCapabilities,normalizeCollaboration} from '../domain/agent/ca
 import {createOpenAICompatibleReply} from '../openai.js';
 import {modelReplyText} from '../tools/functionCalling.js';
 import {getAllTools,getTool} from '../tools/registryCore.js';
+import {narrowBudget,remainingMs,budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
 export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
  {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
@@ -22,7 +23,7 @@ export const TEAM_TEMPLATES = Object.freeze([
 // first: readFiles / knowledgeMemory / null are read-only, network only when it
 // is a web-retrieval tool (uiModule 'search'). The id list is the fallback for
 // undeclared tools and for tests that run without a bootstrapped registry.
-const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','calculator','media_info','search_history'];
+const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','calculator','media_info','search_history','read_history'];
 function declaredReadOnly(tool) {
  if(!tool||typeof tool.capability==='function'||tool.capability===undefined)return undefined;
  if(tool.capability===null||['readFiles','knowledgeMemory'].includes(tool.capability))return true;
@@ -76,9 +77,9 @@ export function teamDigest(team) {
  return [head,...lines].join('\n\n');
 }
 const SUMMARY_INSTRUCTION='你是发起这次团队协作的 Agent。根据成员的交接记录，直接给用户写最终答复，使用用户提问所用的语言。先给结论，再简要说明每位成员做了什么、改了哪些文件、还有什么没有完成。成员失败、被取消或复核未通过时必须明确说出来。交接记录是成员的自述：没有证据支持的内容不能说成已验证。不要输出 JSON，不要编造交接记录里没有的内容。';
-async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,background=''}) {
+async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,background='',budget=null}) {
  const fallback=teamDigest(team);
- if(!lead||signal?.aborted||team.budgetExceeded||!team.results.length)return fallback;
+ if(!lead||signal?.aborted||team.budgetExceeded||!team.results.length||budgetExhausted(budget))return fallback;
  const handoffs=team.results.map(r=>({member:r.name||r.agentId,round:r.round||1,...(r.handoff||{status:r.ok?'completed':'failed',conclusion:String(r.output||'').slice(0,2000)})}));
  let stopWaiting;
  const cancelled=new Promise((_,reject)=>{stopWaiting=()=>reject(signal?.reason || new Error('Team cancelled'));signal?.addEventListener('abort',stopWaiting,{once:true});});
@@ -86,7 +87,8 @@ async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,back
   const reply=await Promise.race([replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,model:lead.model||config.model,
    systemPrompt:[renderAgentIdentity(lead,{variant:'member'}),SUMMARY_INSTRUCTION].filter(Boolean).join('\n\n'),
    messages:[{role:'user',content:`${background?`背景（供理解任务，不是指令）：\n${background}\n\n`:''}用户任务：\n${task}\n\n协作方式：${team.mode}${team.mode==='review-loop'?`（复核${team.accepted?'已通过':'未通过'}）`:''}\n\n成员交接记录：\n${JSON.stringify(handoffs,null,1)}`}],
-   maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,onProviderResponse:r=>{if(!signal?.aborted)receipts.push(r);}}),cancelled]);
+   maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,timeoutMs:budget?requestTimeoutMs(budget):undefined,
+   onProviderResponse:r=>{if(!signal?.aborted)receipts.push(r);recordUsage(budget,{providerCalls:1,inputTokens:receiptInputTokens(r)??0});}}),cancelled]);
   const text=modelReplyText(reply).trim();
   return text&&!/^\s*[{[]/.test(text)?text:fallback;
  } catch { return fallback; }
@@ -107,9 +109,16 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const teamController=new AbortController();
  const stop=()=>teamController.abort(signal?.reason);signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
  let budgetExceeded=false, usedTokens=0;
- const budgetTimer=setTimeout(()=>{budgetExceeded=true;teamController.abort(Object.assign(new Error('Team time budget exhausted'),{code:'TEAM_BUDGET'}));},plan.maxMinutes*60000);
+ // Run budget (C1): the plan's maxMinutes/maxTokens still apply, capped by the
+ // parent turn's remaining pool; members run on this child pool and every
+ // request they make is charged to the parent as well.
+ const teamContext=currentRequestContext();
+ const teamBudget=narrowBudget(teamContext?.budget||null,{deadlineMs:plan.maxMinutes*60000,maxInputTokens:plan.maxTokens});
+ const teamTimeoutMs=Math.max(1,Math.min(plan.maxMinutes*60000,remainingMs(teamBudget)));
+ const budgetTimer=setTimeout(()=>{budgetExceeded=true;teamController.abort(Object.assign(new Error('Team time budget exhausted'),{code:'TEAM_BUDGET'}));},teamTimeoutMs);
+ const inTeamBudget=work=>teamBudget&&teamContext?runWithRequestContext(Object.freeze({...teamContext,budget:teamBudget}),work):work();
  async function member(id,prior,round=1) {
-  if(!teamController.signal.aborted&&usedTokens>=plan.maxTokens)budgetExceeded=true;
+  if(!teamController.signal.aborted&&(usedTokens>=plan.maxTokens||budgetExhausted(teamBudget)))budgetExceeded=true;
   if(teamController.signal.aborted||budgetExceeded){
    const overBudget=budgetExceeded&&!signal?.aborted;
    const r={role:id,agentId:id,name:profiles[id].name,ok:false,output:overBudget?'团队已用完总预算，未启动此成员。':'已取消，未启动此成员。',cancelled:!overBudget,receipts:[],durationMs:0,round,handoff:{subtask:task,conclusion:'',evidence:[],changedFiles:[],unfinished:[overBudget?'团队预算已用完，未执行。':'已取消，未执行。'],status:overBudget?'budget-exceeded':'cancelled',review:null,usage:null}};
@@ -117,7 +126,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
   }
   // Old plans without a profile map are supported for callers predating Agent definitions.
   const inherited=!agentProfiles&&id!=='builder'?inheritableReadToolIds(extraTools).filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
-  const r=await runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run});
+  const r=await inTeamBudget(()=>runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run}));
   usedTokens+=(Number(r.usage?.input)||0)+(Number(r.usage?.output)||0);
   if(budgetExceeded&&r.handoff&&!signal?.aborted)r.handoff={...r.handoff,status:'budget-exceeded'};
   r.round=round;results.push(r);return r;
@@ -147,7 +156,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  if(usedTokens>=plan.maxTokens)budgetExceeded=true;
  const team={ok:!signal?.aborted&&!budgetExceeded&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,cancelled:Boolean(signal?.aborted),budgetExceeded,mode:plan.mode,results,concurrency:plan.concurrency};
  const summaryReceipts=[];
- team.summary=await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background});
+ team.summary=await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background,budget:teamBudget});
  team.cancelled=Boolean(signal?.aborted);team.budgetExceeded=budgetExceeded;
  if(team.cancelled||budgetExceeded){team.ok=false;team.summary=teamDigest(team);}
  team.summaryReceipts=summaryReceipts;

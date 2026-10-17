@@ -636,6 +636,72 @@ test('main tool dispatch carries its MCP whitelist and resolved role model into 
 });
 
 
+test('run budget (C1): deadline passes during a tool call → explicit 运行预算 reply, budget:exhausted event, no second provider call', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'budget-user', role: 'user', content: '把这个任务做完' }] });
+  state.chats = [chat];
+  await saveState(state);
+  // Virtual clock: the run has 60 s; the one tool the model calls "takes" 61 s.
+  let now = 1_000_000;
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
+  let toolRuns = 0;
+  const probe = { id: 'budget_probe', name: 'budget_probe', description: 'slow probe', parametersSchema: { type: 'object', properties: {} }, requiresPermission: false,
+    run: async () => { toolRuns++; now += 61_000; return { ok: true, output: 'slow work done' }; } };
+  registerTool(probe);
+  const events = []; let replies = 0;
+  try {
+    const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async options => {
+          replies++;
+          assert.equal(options.timeoutMs, 60_000, 'request timeout = min(600 s, remaining)');
+          return '<tool_call>{"id":"slow","name":"budget_probe","arguments":{}}</tool_call>';
+        } } });
+    assert.equal(toolRuns, 1);
+    assert.equal(replies, 1, 'the second model call is beyond the deadline and must not happen');
+    assert.match(result.normalizedReply.content, /运行预算/);
+    assert.match(result.normalizedReply.content, /继续/);
+    const exhausted = events.find(e => e.type === 'execution_event' && e.value.id === 'budget:exhausted');
+    assert.ok(exhausted, 'budget:exhausted execution event is emitted');
+    assert.equal(exhausted.value.budget.reason, 'deadline');
+    assert.equal(budget.used.toolCalls, 1);
+    assert.equal(budget.used.providerCalls, 1);
+    assert.ok(budget.used.inputTokens > 0, 'a provider without usage is estimated, not skipped');
+  } finally { unregisterTool(probe.id); }
+});
+
+test('run budget (C1): tool-call cap → executor refuses with BUDGET_EXHAUSTED and the loop stops before the next model call', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'cap-user', role: 'user', content: '把这个任务做完' }] });
+  state.chats = [chat];
+  await saveState(state);
+  const budget = createRunBudget({ now: () => 5, overrides: { maxToolCalls: 1 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
+  let toolRuns = 0;
+  const probe = { id: 'cap_probe', name: 'cap_probe', description: 'probe', parametersSchema: { type: 'object', properties: {} }, requiresPermission: false,
+    run: async () => { toolRuns++; return { ok: true, output: 'ok' }; } };
+  registerTool(probe);
+  const events = []; let replies = 0;
+  try {
+    const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async () => { replies++; return '<tool_call>{"id":"a","name":"cap_probe","arguments":{}}</tool_call><tool_call>{"id":"b","name":"cap_probe","arguments":{}}</tool_call>'; } } });
+    assert.equal(toolRuns, 1, 'only the first call fits the cap');
+    assert.equal(replies, 1);
+    const done = events.find(e => e.type === 'tool_calls_done');
+    assert.deepEqual(done.value.results.map(r => r.ok), [true, false]);
+    assert.match(done.value.results[1].output, /Run budget exhausted \(tool-calls\)/);
+    assert.match(result.normalizedReply.content, /运行预算（工具调用次数 1 次）/);
+  } finally { unregisterTool(probe.id); }
+});
+
 test('optional fast judge retains the answer model and contributes its real usage receipt', async () => {
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat];
   const events = []; let judgments = 0, answers = 0;

@@ -15,6 +15,7 @@
 import { planIncrementalCompact, compactConversationDetailed } from '../../memory/contextCompact.js';
 import { persistCompactSnapshot } from './derivedState.js';
 import { resolveContextBudget } from './contextBudget.js';
+import { appendCompactCard } from '../../memory/compactLedger.js';
 
 export const PRECOMPACT_SHARE = 0.7;
 
@@ -39,15 +40,7 @@ export async function precompactIfNeeded(chat, { config, home, env = process.env
       config, signal, previousSummary: plan.previousSummary, ...(createReply ? { _createReply: createReply } : {}),
     });
     if (!summary) return { compacted: false, source: 'none' };
-    chat.compactSummary = plan.truncated
-      ? '[部分历史过长，摘要仅包含可容纳的片段；原文保留在对话记录中。]\n' + summary
-      : summary;
-    chat.compactBoundaryMessageId = plan.boundaryId;
-    chat.compactedMessageCount = plan.compactedCount;
-    chat.compactedAt = new Date().toISOString();
-    chat.compactFailures = 0;
-    chat.compactSummarySource = source || 'cloud';
-    chat.compactUpgradeAttempts = 0;
+    appendCompactCard(chat, plan, { summary, source: source || 'cloud' });
     await persistCompactSnapshot(chat, plan, { home });
     return { compacted: true, source: chat.compactSummarySource, compactedCount: plan.compactedCount };
   } finally {

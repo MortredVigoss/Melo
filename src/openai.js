@@ -1301,9 +1301,13 @@ export async function discoverAvailableModels({
 export async function createOpenAICompatibleReply(options) {
   const record = createCapabilityRecorder({ config: options });
   let metadata = {};
+  // `timeoutMs` (run budget, design audit C1): the caller's remaining run
+  // time caps this one request on top of the per-transport 600 s ceilings.
+  const timeoutMs = Number(options.timeoutMs);
+  const signal = Number.isFinite(timeoutMs) && timeoutMs > 0 ? withTimeoutSignal(timeoutMs, options.signal) : options.signal;
   try {
     const reply = await requestOpenAICompatibleReply({
-      ...options, onModelMetadata: value => { metadata = { ...metadata, ...value }; options.onModelMetadata?.(value); },
+      ...options, signal, onModelMetadata: value => { metadata = { ...metadata, ...value }; options.onModelMetadata?.(value); },
     });
     const reportedModel = /^[a-z0-9._:/-]{1,150}$/i.test(metadata.reportedModel || '') ? metadata.reportedModel : '';
     const receipt = {

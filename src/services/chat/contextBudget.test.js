@@ -46,8 +46,12 @@ test('duplicate blocks count once and invalid settings fall back safely', () => 
   assert.equal(cloud.totalTokens, 160000);
   assert.equal(cloud.outputReserve, 8000);
   assert.equal(cloud.inputLimit, 152000);
-  assert.equal(cloud.windowTokens, Math.floor(152000 * 0.75));
+  // Near-window cap (design 1D-1): raw history stops at 64k; the ledger,
+  // topic excerpts and read_history cover the rest.
+  assert.equal(cloud.windowTokens, 64000);
   assert.equal(cloud.compactTriggerTokens, cloud.windowTokens);
+  assert.equal(resolveContextBudget({ MELO_HISTORY_WINDOW_TOKENS: '100000' }, { config: { authMode: 'codex' } }).windowTokens, 100000, 'cap override');
+  assert.equal(resolveContextBudget({ MELO_HISTORY_WINDOW_TOKENS: '999999' }, { config: { authMode: 'codex' } }).windowTokens, Math.floor(152000 * 0.75), 'share still bounds the window');
   assert.ok(cloud.windowTokens < cloud.inputLimit, 'window leaves room for system prompt and tools');
   const local = resolveContextBudget({}, { config: { authMode: 'local' } });
   assert.equal(local.totalTokens, 24000);

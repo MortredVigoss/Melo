@@ -109,7 +109,7 @@ export function renderAttachmentCards(message, { savedVideoKnowledge = {}, escap
   };
 
   const isPlayableVideoUrl = url =>
-    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$)|\/api\/media\/uploads\/[0-9a-f-]+\.(?:mp4|mov|webm|m4v|mkv)$)/i.test(String(url || ''));
+    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$)|\/api\/media\/(?:uploads|attachments)\/[0-9a-f-]+\.(?:mp4|mov|webm|m4v|mkv)$)/i.test(String(url || ''));
 
   const isSocialPreviewUrl = url => {
     try {

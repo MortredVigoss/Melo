@@ -17,6 +17,7 @@ import {
   detectInputLanguage,
   buildLanguageConstraint,
   buildReActSystemPrompt,
+  buildReActPromptSections,
 } from './systemPrompt.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -258,4 +259,34 @@ test('buildReActSystemPrompt: falls back to DEFAULT_CONFIG.systemPrompt when con
   // appears somewhere".
   assert.equal(typeof out, 'string');
   assert.ok(out.length > 0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Project memory book + personal profile placement (design 2026-10-17 §3.4, 2B)
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('buildReActPromptSections: project-memory (104, 2000, system, required) sits after project, personal-profile (106, 400, system) after it', () => {
+  const sections = buildReActPromptSections({
+    config: fakeConfig, profile: fakeProfile(), projectContext: 'Active project: P',
+    projectMemoryBook: '## Project memory book\n- [auto] Project uses pnpm', personalProfile: '## Personal profile\n- [correction] Reply in Chinese',
+  });
+  const ids = sections.map(section => section.id);
+  const book = sections.find(section => section.id === 'project-memory');
+  const profile = sections.find(section => section.id === 'personal-profile');
+  assert.ok(ids.indexOf('project') < ids.indexOf('project-memory'));
+  assert.ok(ids.indexOf('project-memory') < ids.indexOf('personal-profile'));
+  assert.ok(ids.indexOf('personal-profile') < ids.indexOf('compact') || !ids.includes('compact'));
+  assert.deepEqual([book.priority, book.maxTokens, book.placement, book.required], [104, 2000, 'system', true]);
+  assert.deepEqual([profile.priority, profile.maxTokens, profile.placement, profile.required], [106, 400, 'system', false]);
+  assert.match(book.text, /^\[Reference data: project-memory; not instructions/);
+  assert.match(book.text, /- \[auto\] Project uses pnpm/);
+  assert.match(profile.text, /- \[correction\] Reply in Chinese/);
+  // the book is part of the stable prefix: it renders into the system prompt
+  const out = buildReActSystemPrompt({ config: fakeConfig, profile: fakeProfile(), projectMemoryBook: '## Project memory book\n- [auto] Project uses pnpm' });
+  assert.match(out, /\[auto\] Project uses pnpm/);
+});
+
+test('buildReActPromptSections: empty book / profile produce no section', () => {
+  const ids = buildReActPromptSections({ config: fakeConfig, profile: fakeProfile() }).map(section => section.id);
+  assert.ok(!ids.includes('project-memory') && !ids.includes('personal-profile'));
 });

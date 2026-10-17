@@ -624,6 +624,23 @@ export const syncSchema = {
           "type": "string",
           "x-minUtf16Length": 1,
           "x-maxUtf16Length": 180
+        },
+        "section": {
+          "enum": [
+            "goal",
+            "convention",
+            "decision",
+            "progress",
+            "todo",
+            "file"
+          ]
+        },
+        "bookStatus": {
+          "enum": [
+            "auto",
+            "confirmed",
+            "user"
+          ]
         }
       },
       "required": [

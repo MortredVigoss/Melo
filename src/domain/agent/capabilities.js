@@ -66,7 +66,7 @@ export function toolCapabilityAllowed(id, capabilities, args, tool) {
   if (id==='bash') return c.runCommands;
   if (id==='agent'||id==='delegate') return c.delegate;
   if (id==='calculator') return true;
-  if (id==='search_history'||id==='reminder') return c.knowledgeMemory;
+  if (id==='search_history'||id==='read_history'||id==='reminder') return c.knowledgeMemory;
   if (id==='knowledge') return c.knowledgeMemory && (!args||args.action!=='index'||c.readFiles);
   if (id==='clipboard') return args ? (args.action==='read'?c.readFiles:c.writeFiles) : c.readFiles||c.writeFiles;
   if (id==='pdf') {

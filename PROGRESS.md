@@ -1,3 +1,11 @@
+## 2026-10-17 — 设计方案第二批：账本式话题卡 + read_history、项目记忆本 + 个人档案、RunBudget、附件外置
+
+用户拍板后的第二批（1D、2B、C1、附件外置）。长对话：原文近窗收回到 64k（`MELO_HISTORY_WINDOW_TOKENS` 可调），压缩改为只追加话题卡（`chat.compactCards`，`compactSummary` 变成卡片渲染，旧摘要自动迁成历史卡），新增 `read_history` 原文读回工具与话题原文摘录进 turn 段，工具结论进摘要转录。记忆：项目记忆本（自动行带 `[auto]`、同主题替代、user/confirmed 不被 auto 顶掉、项目页「记忆本」、`POST /api/projects/memory-book`）与个人档案进稳定前缀，协议加可选 `section/bookStatus`。工具：每轮一个 RunBudget（20 min / 400k 输入 / 120 次工具，成员/技能/团队取子预算并回记父预算，超限 `BUDGET_EXHAUSTED`）。存储：用户附件 >4KB 的 data URL 落盘 `desktop/attachments/`，消息只存 `/api/media/attachments/<id>` 与 `storage:'file'`，发给模型前再读回；旧对话首次发消息时惰性迁移。（Claude）
+
+设计承诺：`messages[]` 的顺序与集合永不被话题机制改动（与稳定前缀布局兼容）；卡片只增不改、降级卡才被替换；`read_history` 与 `search_history` 共用执行上下文的受众/项目作用域；记忆本只在事实变化时变，不逐轮召回；附件外置任何写失败都保留内联原样。
+
+沙箱相关套件通过，Mac `npm test` 为合并门禁。Final commit: 见本条提交.
+
 ## 2026-10-17 — 工具调用 / 长对话 / 跨线程记忆：设计审计与可选方案
 
 用户要求在修复落地后再审计三条链路的设计并出方案。只读三路扫描 6adc270；不重复 bug 层审计，只评估设计并给可选项，等用户拍板后实施。（Claude）

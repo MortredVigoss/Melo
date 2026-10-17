@@ -11,8 +11,10 @@ export function summarizeAttachmentsForPrompt(attachments = []) {
         attachment.title ||
         attachment.fileName ||
         `${titleCase(attachment.kind)} attachment`;
+      // Inline data and desktop-local media URLs (/api/media/attachments,
+      // /api/media/uploads) mean nothing to the model; only real links print.
       const printableUrl =
-        attachment.url && !attachment.url.startsWith('data:')
+        attachment.url && !attachment.url.startsWith('data:') && !attachment.url.startsWith('/api/media/')
           ? ` (${attachment.url})`
           : '';
       return `- ${titleCase(attachment.kind)}: ${label}${printableUrl}`;

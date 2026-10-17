@@ -3,6 +3,7 @@ import { iterateMemoryRecords, getMemoriesByIds, upsertMemory, withTransaction }
 import { quarantineDeletedChatFacts } from '../../memory/factRecords.js';
 import { factNamespace, normalizedFact } from '../../memory/factPolicy.js';
 import { putWorkspace, stableJSON, mergeWorkspaces } from '../../../mobile-sync/workspaceProtocol.js';
+import { BOOK_SECTIONS, BOOK_STATUSES } from '../project/projectMemoryBook.js';
 
 export const portableMemoryID = id => 'memory_' + createHash('sha256').update(id).digest('hex');
 // Older clients omit validity. Preserve the real timestamp unless they
@@ -18,7 +19,10 @@ function value(row) {
     scope:m.scope || 'chat',status:m.mergedInto?'historical':m.forgotten?'forgotten':m.quarantined?'unconfirmed':m.validTo && Date.parse(m.validTo)<=Date.now()?'historical':'active',
     chatId:m.chatId,messageId:m.sourceMessageId || '',projectId:m.projectId || '',agentId:m.agentId || 'main',
     sourceText:String(m.sourceText || '').slice(0,1600),category:m.category || 'general',updatedAt:row.updatedAt,userEdited:m.userEdited===true,validTo:m.validTo || null,
-    ...(m.mergedInto ? {mergedInto:m.mergedInto} : {})};
+    ...(m.mergedInto ? {mergedInto:m.mergedInto} : {}),
+    // Project memory book projection (design 2B): optional on the wire.
+    ...(m.scope==='project' && BOOK_SECTIONS.includes(m.section) ? {section:m.section} : {}),
+    ...(m.scope==='project' && BOOK_STATUSES.includes(m.bookStatus) ? {bookStatus:m.bookStatus} : {})};
 }
 export function refreshPortableMemory(state) {
   const live=new Set(state.chats.filter(c=>!c.externalThreadKey).map(c=>c.id)), expected=new Map();
@@ -100,7 +104,8 @@ export function applyPortableMemory(state, expected=null) {
       const chat=local.get(v.chatId);
       const metadata={...prior?.metadata,originalFact:v.originalFact,chatId:v.chatId,chatTitle:chat.title,projectId:v.projectId || null,agentId:v.agentId,
         sourceMessageId:v.messageId || null,sourceText:v.sourceText,sourceRole:'user',source:chat.source || 'desktop',audience:'local',category:v.category,
-        scope:v.scope,userEdited:v.userEdited,forgotten:v.status==='forgotten',quarantined:v.status==='unconfirmed',validTo:portableValidTo(v, prior),mobileSyncConflict:false};
+        scope:v.scope,userEdited:v.userEdited,forgotten:v.status==='forgotten',quarantined:v.status==='unconfirmed',validTo:portableValidTo(v, prior),mobileSyncConflict:false,
+        ...(v.scope==='project' ? {section:v.section || prior?.metadata.section || null,bookStatus:v.bookStatus || prior?.metadata.bookStatus || 'confirmed'} : {})};
       upsertMemory({id:v.memoryID,namespace:factNamespace({id:v.chatId,projectId:v.projectId},v.scope,v.agentId),kind:'session-fact',sourceId:v.chatId,text:v.text,searchText:normalizedFact(v.text),createdAt:prior?.createdAt || v.updatedAt,updatedAt:v.updatedAt,metadata});
     }
   });

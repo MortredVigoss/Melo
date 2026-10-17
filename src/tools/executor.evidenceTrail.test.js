@@ -129,3 +129,44 @@ test('executeTool: rawResult is a string (primitive) → no evidenceTrail attach
   assert.equal(result.output, 'just a string');
   assert.ok(!('evidenceTrail' in result));
 });
+
+// ─── Run budget (2026-10-17 design audit C1) ────────────────────────────────
+
+test('executeTool: run budget — each call is counted, the call past the cap returns a BUDGET_EXHAUSTED envelope without running', async () => {
+  const { createRequestContext } = await import('../runtime/requestContext.js');
+  const { createRunBudget } = await import('../runtime/runBudget.js');
+  let runs = 0;
+  const tool = makeTool('fake.budgeted', async () => { runs++; return { ok: true, output: `run ${runs}` }; });
+  const budget = createRunBudget({ now: () => 1_000, overrides: { maxToolCalls: 2 } });
+  const requestContext = createRequestContext({ budget });
+
+  const first = await executeTool(tool, {}, { requestContext });
+  const second = await executeTool(tool, {}, { requestContext });
+  assert.equal(first.ok, true); assert.equal(second.ok, true);
+  assert.equal(budget.used.toolCalls, 2, 'every executed call is charged to the run budget');
+
+  const third = await executeTool(tool, {}, { requestContext });
+  assert.equal(runs, 2, 'the tool must not run once the budget is gone');
+  assert.equal(third.ok, false);
+  assert.equal(third.status, 'error');
+  assert.equal(third.code, 'BUDGET_EXHAUSTED');
+  assert.equal(third.error, 'BUDGET_EXHAUSTED', 'error mirrors code for existing === checks');
+  assert.equal(third.meta.executionStarted, false);
+  assert.equal(third.meta.budget.reason, 'tool-calls');
+  assert.match(third.output, /Run budget exhausted \(tool-calls\)/);
+  assert.equal(budget.used.toolCalls, 2, 'a refused call is not charged');
+});
+
+test('executeTool: run budget — a past deadline refuses the tool with reason=deadline', async () => {
+  const { createRequestContext } = await import('../runtime/requestContext.js');
+  const { createRunBudget } = await import('../runtime/runBudget.js');
+  let now = 0;
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const requestContext = createRequestContext({ budget });
+  const tool = makeTool('fake.deadline', async () => ({ ok: true, output: 'ran' }));
+  assert.equal((await executeTool(tool, {}, { requestContext })).ok, true);
+  now = 61_000;
+  const late = await executeTool(tool, {}, { requestContext });
+  assert.equal(late.code, 'BUDGET_EXHAUSTED');
+  assert.equal(late.meta.budget.reason, 'deadline');
+});

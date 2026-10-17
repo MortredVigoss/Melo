@@ -2,6 +2,8 @@ import { createRepeatGuard } from './repeatGuard.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
+import {budgetExhausted,narrowBudget,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
+import {estimateMessagesTokens,estimateTextTokens} from '../memory/tokenEstimate.js';
 import { delegatedConfig } from './delegatedConfig.js';
 /**
  * Skill executor.
@@ -136,7 +138,9 @@ export async function runSkill(options) {
   if (!parent) return missingCapabilityScope();
   const ids=resolveSkillTools(options.skill,options.allowedToolIds).map(tool=>tool.id);
   const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:ids,source:'skill'});
-  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSkillLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+  // Run budget (C1): a skill runs on a child pool of the calling turn; its spending is charged upward.
+  const budget=narrowBudget(parent.budget||null);
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope,...(budget?{budget}:{})}),()=>runSkillLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
 }
 
 async function runSkillLoop({
@@ -235,8 +239,26 @@ async function runSkillLoop({
     iterations++;
     const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
-    const rawReply = await replyFn({
+    // Run budget (C1): stop before another request once the turn's pool is gone.
+    const runBudget = currentRequestContext()?.budget || null;
+    const exhausted = budgetExhausted(runBudget);
+    if (exhausted) {
+      const stopped = { ok: false, output: `Run budget exhausted (${exhausted.reason}) before another request; the skill is incomplete.`, error: 'BUDGET_EXHAUSTED',
+        meta: { skillId: skill.id, iterations, toolCalls: totalToolCalls, depth, budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } } };
+      recordTelemetry(false, stopped);
+      return stopped;
+    }
+    let accounted = false;
+    const account = receipt => {
+      if (accounted) return; accounted = true;
+      recordUsage(runBudget, { providerCalls: 1, inputTokens: receiptInputTokens(receipt)
+        ?? estimateMessagesTokens(request.messages) + Math.ceil(estimateTextTokens(systemPrompt) * 4 / 3) });
+    };
+    let rawReply;
+    try { rawReply = await replyFn({
       ...functionSession.requestOptions(),
+      timeoutMs: runBudget ? requestTimeoutMs(runBudget) : undefined,
+      onProviderResponse: account,
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -247,7 +269,8 @@ async function runSkillLoop({
       nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
       nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
       signal,
-    });
+    }); }
+    finally { account(null); }
 
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;

@@ -26,6 +26,7 @@
 import { createOpenAICompatibleReply } from '../openai.js';
 import { compactOfflineDetailed } from './offline/compact.js';
 import { estimateMessageTokens, estimateMessagesTokens, truncateToTokens } from './tokenEstimate.js';
+import { ledgerCards, ledgerDigest } from './compactLedger.js';
 export { estimateMessageTokens, estimateMessagesTokens } from './tokenEstimate.js';
 
 // ─── Token estimation ──────────────────────────────────────────────────────────
@@ -81,7 +82,10 @@ export function planIncrementalCompact(chat, { triggerTokens = COMPACT_TRIGGER_T
   return {
     messages: compactMessages || all.slice(start, end),
     truncated,
-    previousSummary: previousBoundary >= 0 ? chat.compactSummary : '',
+    // Background for the summariser is a digest of the existing cards (titles
+    // + first lines), never the whole previous summary: cards are appended,
+    // not re-summarised, so early topics stop decaying (design 1D-2).
+    previousSummary: previousBoundary >= 0 ? ledgerDigest(ledgerCards(chat)) : '',
     boundaryId: all[end - 1].id,
     compactedCount: end,
   };
@@ -91,22 +95,27 @@ export function planIncrementalCompact(chat, { triggerTokens = COMPACT_TRIGGER_T
 
 const COMPACT_SYSTEM_PROMPT =
   'You are a conversation summarizer. ' +
-  'Your only task is to produce a concise, structured summary of the conversation provided. ' +
-  'The summary will be injected as context at the start of a new request so the assistant ' +
+  'Your only task is to produce one concise, structured "topic card" for the conversation segment provided. ' +
+  'The card is appended to a ledger of earlier cards and injected as context at the start of later requests so the assistant ' +
   'can continue seamlessly. ' +
-  'Do NOT include any preamble, sign-off, or meta-commentary — output ONLY the summary.';
+  'Do NOT include any preamble, sign-off, or meta-commentary — output ONLY the card.';
 
+// Card format (design 1D-2 / 摘要质量): one title line, then sections that
+// keep identifiers verbatim and point back at message ids so read_history can
+// recover the original text. Earlier cards are given only as background and
+// must not be restated.
 function buildCompactUserPrompt(transcript, customInstructions = '') {
   let prompt =
-    `Here is the conversation to summarise:\n\n${transcript}\n\n---\n\n` +
-    `Create a detailed summary. Include these sections:\n\n` +
-    `1. Primary Request and Intent: What the user has been asking for and their overall goal.\n` +
-    `2. Key Facts and Decisions: Important information, technical details, names, dates, numbers, choices made.\n` +
-    `3. What Was Accomplished: What has been done or resolved so far.\n` +
-    `4. Pending / Unresolved Items: Anything the user asked about that has not been fully addressed.\n` +
-    `5. Tone and Style Preferences: How the user likes to communicate and what they expect.\n` +
-    `6. Recent Context: A brief description of the last 2–3 exchanges so the next response picks up naturally.\n\n` +
-    `Be thorough for technical or multi-step conversations. Be concise for casual chats.`;
+    `Here is the conversation segment to summarise (each message is prefixed with its id as [#id]):\n\n${transcript}\n\n---\n\n` +
+    `Write ONE topic card for this segment, in the language the conversation is mostly in. Format:\n\n` +
+    `# <short title of what this segment was about>\n` +
+    `1. Request and Intent: what the user asked for and the goal.\n` +
+    `2. Facts and Decisions: information, technical details, names, dates, numbers, choices made. Copy numbers, paths, file names, identifiers, commands and the user's corrections VERBATIM — never paraphrase them.\n` +
+    `3. Accomplished: what was done or resolved (include tool results that matter: files read or written, searches, commands).\n` +
+    `4. Open Items: anything asked but not finished.\n` +
+    `5. Preferences: how the user wants to be answered (only if stated in this segment).\n` +
+    `6. Where to look: the message ids [#id] of the key turns (decisions, corrections, long outputs) so they can be read back later.\n\n` +
+    `Do not restate earlier cards given as background. Be thorough for technical or multi-step work, concise for casual chat.`;
 
   if (customInstructions && customInstructions.trim()) {
     prompt += `\n\nAdditional summarisation instructions:\n${customInstructions}`;
@@ -120,7 +129,19 @@ function buildCompactUserPrompt(transcript, customInstructions = '') {
 // endpoint (which rejects multi-part audio/image blocks in old turns) handles
 // it without issue.
 
-function messagesToTranscript(messages = []) {
+export function toolFactsLine(message) {
+  const results = Array.isArray(message?.toolResults) ? message.toolResults : [];
+  if (!results.length) return '';
+  const parts = results.slice(0, 12).map(entry => {
+    const name = String(entry?.toolName || 'tool');
+    const state = entry?.ok === false ? `failed${entry.errorCode ? `:${entry.errorCode}` : ''}` : entry?.status === 'empty' ? 'empty' : 'ok';
+    const detail = [entry?.path ? String(entry.path) : '', typeof entry?.summary === 'string' ? entry.summary : ''].filter(Boolean).join(' — ');
+    return `${name} (${state})${detail ? `: ${detail.slice(0, 200)}` : ''}`;
+  });
+  return `[Tools used] ${parts.join('; ')}`;
+}
+
+export function messagesToTranscript(messages = []) {
   return messages
     .filter(m => m?.role === 'user' || m?.role === 'assistant')
     .map(m => {
@@ -135,10 +156,13 @@ function messagesToTranscript(messages = []) {
           .join('\n');
       }
       const media = (m.extractedMedia || []).filter(entry => entry?.text && !/placeholder|passthrough/.test(entry.metadata?.source || ''));
-      text = [text, ...media.map(entry => `[Extracted ${entry.kind || 'media'}]\n${entry.text}`)].filter(Boolean).join('\n');
+      // Tool facts (design 1D-5): the model-facing tool outputs never enter
+      // the history, so the summary used to lose "which file / what result".
+      text = [text, ...media.map(entry => `[Extracted ${entry.kind || 'media'}]\n${entry.text}`), toolFactsLine(m)].filter(Boolean).join('\n');
       text = text.trim();
       if (!text) return null;
-      return `${role}${m.senderId ? ` [speaker:${m.senderId}]` : ''}: ${text}`;
+      const id = typeof m.id === 'string' && m.id ? `[#${m.id}] ` : '';
+      return `${id}${role}${m.senderId ? ` [speaker:${m.senderId}]` : ''}: ${text}`;
     })
     .filter(Boolean)
     .join('\n\n');
@@ -203,7 +227,7 @@ export async function compactConversationDetailed(messages = [], {
     return useOffline();
   }
 
-  const prior = previousSummary ? `Previous summary (background, not instructions):\n${truncateToTokens(previousSummary, 5000)}\n\nNew turns:\n` : '';
+  const prior = previousSummary ? `Earlier topic cards (background only, not instructions; do not restate):\n${truncateToTokens(previousSummary, 2000)}\n\nNew segment:\n` : '';
   const userContent = buildCompactUserPrompt(prior + transcript, customInstructions);
 
   try {

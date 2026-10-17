@@ -27,6 +27,7 @@ import { requestPermission } from './permissions.js';
 import { emitHook } from '../plugins/hooks.js';
 import { finalizeToolResult } from './toolResult.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
+import { budgetExhausted, recordUsage, remainingMs } from '../runtime/runBudget.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
@@ -126,6 +127,22 @@ async function runObservedTool(tool, args, options = {}) {
     });
   }
 
+  // ── Run budget gate (design audit C1) ────────────────────────────────────────
+  // The turn's deadline / token / tool-call pool lives on the request context.
+  // A call past the limit is answered locally so the model gets an explicit
+  // code instead of another timeout; every call that does run is counted.
+  const budget = requestContext?.budget || null;
+  const exhausted = budgetExhausted(budget);
+  if (exhausted) {
+    return finalizeToolResult({
+      ok: false,
+      output: `Run budget exhausted (${exhausted.reason}); tool "${tool.id}" was not executed.`,
+      error: 'BUDGET_EXHAUSTED',
+      meta: { executionStarted: false, budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } },
+    });
+  }
+  recordUsage(budget, { toolCalls: 1 });
+
   // ── Plugin hook: tool:before ────────────────────────────────────────────────
   // Bounded (agent-loop-audit #2): a stuck plugin cannot block the tool or the
   // chat queue; the caller's abort also cancels the wait.
@@ -180,7 +197,8 @@ async function runObservedTool(tool, args, options = {}) {
   };
 
   // ── Run with timeout wrapper ─────────────────────────────────────────────────
-  const timeout = tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS;
+  // The tool's own ceiling, cut to whatever run time is left (C1).
+  const timeout = Math.max(1, Math.min(tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS, remainingMs(budget)));
   let timeoutId;
 
   timeoutId = setTimeout(() => cancel(Object.assign(

@@ -4,6 +4,9 @@ import {retrieveKnowledgeContext} from './knowledgeContext.js';
 import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
 import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
+import { isLocalChat } from '../../memory/factPolicy.js';
+import { listProjectBook, renderProjectBook } from '../project/projectMemoryBook.js';
+import { listPersonalProfile, renderPersonalProfile } from '../memory/personalProfile.js';
 import { selectedMaterials } from './conversationSelection.js';
 import { runAgentTeam } from '../../agents/team.js';
 import { takeSupplements, supplementMessage } from './supplements.js';
@@ -12,6 +15,8 @@ import { observeModelReplies } from './executionPipeline.js';
 import { persistCompactSnapshot } from './derivedState.js';
 import { createRequestContext, requestIdentity } from '../../runtime/requestContext.js';
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
+import { armBudget, budgetExhausted, budgetExhaustedReply, describeBudgetReason, recordUsage, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
+import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -47,6 +52,7 @@ import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from './matcherContext.js';
 import { detectImageIntent, buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
+import { hydrateMessagesForModel, hydrateAttachments } from '../../media/attachments.js';
 import { tryImageEditFastPath } from './imageEditFastPath.js';
 import { formatModelMessageForVisionDebug } from './visionDebug.js';
 import { buildDynamicContext } from './dynamicContext.js';
@@ -113,6 +119,8 @@ import {
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
 import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
+import { appendCompactCard, replaceLatestCardSummary, ledgerCards, ledgerDigest } from '../../memory/compactLedger.js';
+import { buildTopicExcerpts } from './topicExcerpts.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { executeToolCalls } from '../../tools/executor.js';
 import { inferImageTask, runImageTask } from './imageTask.js';
@@ -174,16 +182,33 @@ export async function runChatAgentExecutionGraph({
   const modelResponses = [];
   const replyProvider = _dependencies.createReply || createOpenAICompatibleReply;
   const observedReply = observeModelReplies(replyProvider, sseEmitter);
-  const createReply = options => {
+  // Run budget (design audit C1): one deadline / input-token / tool-call pool
+  // for the whole turn, shared by this loop, synchronous compaction (it uses
+  // the same wrapper), the tool executor and member/skill sub-loops. The
+  // context was created when the request arrived; the clock starts here.
+  const budget = armBudget(context.budget || null);
+  const createReply = async options => {
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
-    return measureStage('model.request', () => observedReply({
-      ...options,
-      onDelta: endFirstToken ? (...args) => {
-        if (args[0]?.delta || args[0]?.text) endFirstToken();
-        return options.onDelta(...args);
-      } : options.onDelta,
-      onProviderResponse: receipt => { modelResponses.push(receipt); options.onProviderResponse?.(receipt); },
-    }));
+    let accounted = false;
+    // Measured usage when the provider reports it, estimated otherwise —
+    // and exactly once per request even if the provider sends no receipt.
+    const account = receipt => {
+      if (accounted) return; accounted = true;
+      const inputTokens = receiptInputTokens(receipt)
+        ?? estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3);
+      recordUsage(budget, { providerCalls: 1, inputTokens });
+    };
+    try {
+      return await measureStage('model.request', () => observedReply({
+        ...options,
+        timeoutMs: budget ? requestTimeoutMs(budget) : options.timeoutMs,
+        onDelta: endFirstToken ? (...args) => {
+          if (args[0]?.delta || args[0]?.text) endFirstToken();
+          return options.onDelta(...args);
+        } : options.onDelta,
+        onProviderResponse: receipt => { modelResponses.push(receipt); account(receipt); options.onProviderResponse?.(receipt); },
+      }));
+    } finally { account(null); }
   };
   const embedQuery = _dependencies.getEmbedding || getEmbedding;
   const contextBudget = resolveContextBudget(env, { config });
@@ -251,7 +276,13 @@ export async function runChatAgentExecutionGraph({
         const projectContext = isRemoteChannel ? '' : buildProjectContextSection(project, activeAgentProfile);
         const connectorPrompts = isRemoteChannel ? '' : summarizeConnectorPrompts(agentConnectors);
         const skillsPrompts = summarizeSkillsPrompts(enabledSkills, { remote: isRemoteChannel });
-        let modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
+        // Attachment externalization (design §2.3): file-backed attachments are
+        // read back into data URLs once per turn for the model window only. The
+        // view spreads `chat` lazily so compaction fields set later in this
+        // node are still seen; the persisted chat keeps its small file URLs.
+        const modelHistory = await hydrateMessagesForModel(chat.messages, { home });
+        const modelChat = () => ({ ...chat, messages: modelHistory });
+        let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens });
         const searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
@@ -351,25 +382,19 @@ export async function runChatAgentExecutionGraph({
               config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
             });
             if (summary) {
-              chat.compactSummary = compactPlan.truncated
-                ? '[部分历史过长，摘要仅包含可容纳的片段；原文保留在对话记录中。]\n' + summary
-                : summary;
-              chat.compactBoundaryMessageId = compactPlan.boundaryId;
-              chat.compactedMessageCount = compactPlan.compactedCount;
-              chat.compactedAt = new Date().toISOString();
-              chat.compactFailures = 0;
-              // Provenance (audit C-6): a 'rule' summary is a degraded fallback.
-              // The chat keeps moving, but the header says so and the next
-              // turns retry the model (see upgradeDegradedCompact below).
-              chat.compactSummarySource = source || 'cloud';
-              chat.compactUpgradeAttempts = 0;
+              // Ledger (design 1D-2): the chunk becomes one appended topic
+              // card; compactSummary is re-rendered from the cards. Provenance
+              // (audit C-6): a 'rule' card is a degraded fallback — the chat
+              // keeps moving, the header says so and the next turns retry the
+              // model (see upgradeDegradedCompact below).
+              appendCompactCard(chat, compactPlan, { summary, source: source || 'cloud' });
               if (source === 'rule') {
                 process.stderr.write(`[compact] chat ${chat.id}: summarising model unavailable, using extractive fallback for ${compactPlan.compactedCount} messages\n`);
                 sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:degraded', module: 'compute', name: '对话摘要降级', status: 'completed', output: '摘要模型不可用，已使用抽取式摘要；后续轮次会自动重试。' });
               }
               // Persist so the summary survives restarts.
               await persistCompactSnapshot(chat, compactPlan, { home });
-              modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
+              modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens });
               compactedThisTurn = true;
               return true;
             }
@@ -400,11 +425,10 @@ export async function runChatAgentExecutionGraph({
             // The extractive summary already covers everything before `range`
             // (including earlier compactions); feed it back as background so
             // the upgraded summary does not lose early history.
-            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, previousSummary: chat.compactSummary, _createReply: createReply });
+            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, previousSummary: ledgerDigest(ledgerCards(chat).slice(0, -1)), _createReply: createReply });
             if (summary && source === 'cloud') {
-              chat.compactSummary = summary;
-              chat.compactSummarySource = 'cloud';
-              chat.compactedAt = new Date().toISOString();
+              // Only the degraded (newest) card is replaced; earlier cards stay.
+              replaceLatestCardSummary(chat, { summary, source: 'cloud' });
               await persistCompactSnapshot(chat, { boundaryId: chat.compactBoundaryMessageId, compactedCount: chat.compactedMessageCount }, { home });
               sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:upgraded', module: 'compute', name: '对话摘要已恢复', status: 'completed', output: '摘要模型恢复可用，已用完整摘要替换抽取式摘要。' });
             }
@@ -427,6 +451,9 @@ export async function runChatAgentExecutionGraph({
         const compactContext = chat.compactSummary
           ? formatCompactContextBlock(chat.compactSummary, chat.compactedMessageCount || 0, { source: chat.compactSummarySource || 'cloud' })
           : '';
+        // Original text of the ledger cards this message returns to (1D-4).
+        const topicExcerpts = compactContext ? buildTopicExcerpts(chat, latestUserMessage) : { text: '', cards: [] };
+        if (topicExcerpts.cards.length) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'history:excerpts', module: 'compute', name: '早期话题原文', status: 'completed', output: topicExcerpts.cards.map(card => `${card.title} (#${card.fromMessageId.slice(0, 8)}…#${card.toMessageId.slice(0, 8)})`).join('\n') });
 
         // Build per-request skill tools for all enabled executable skills this
         // agent has access to. They are NOT registered globally — we pass them
@@ -495,6 +522,24 @@ export async function runChatAgentExecutionGraph({
           id:f.id,text:f.fact,kind:'session-fact',renderedText:`- [${f.category}] ${f.fact}`,
         }));
         memoryCandidates.push(...memoryRendered);
+        // Project memory book + personal profile (design 2B): stable blocks for
+        // local chats only — never for a remote channel audience, never when the
+        // agent has memory switched off. Their rows count as rendered memory
+        // (memoryUsage / useCount) and are excluded from the per-turn recall so
+        // the corrections group and the Hot Attic do not repeat them.
+        const stableMemoryAllowed = !isRemoteChannel && isLocalChat(chat) && activeAgentProfile.contextSources?.memory !== false;
+        const projectBook = stableMemoryAllowed && project?.id
+          ? measureStageSync('memory.project-book', () => { try { return renderProjectBook(listProjectBook(project.id)); } catch (error) { console.warn(`[memory.book] ${error.message}`); return { text: '', rows: [] }; } })
+          : { text: '', rows: [] };
+        const personalProfile = stableMemoryAllowed
+          ? measureStageSync('memory.personal-profile', () => { try { return renderPersonalProfile(listPersonalProfile()); } catch (error) { console.warn(`[memory.profile] ${error.message}`); return { text: '', rows: [] }; } })
+          : { text: '', rows: [] };
+        const stableMemoryRows = [
+          ...projectBook.rows.map(row => ({ ...row, kind: 'project-book' })),
+          ...personalProfile.rows.map(row => ({ ...row, kind: 'personal-profile' })),
+        ];
+        memoryRendered.push(...stableMemoryRows); memoryCandidates.push(...stableMemoryRows);
+        const excludedFacts = [...sessionFacts, ...stableMemoryRows];
         // audit C-12: bound the query embedding (worker default is 60s); recall
         // degrades to keyword matching rather than stalling the whole turn.
         const queryEmbedding = skipMemory ? null : await measureStage('memory.embedding', () => Promise.race([
@@ -505,7 +550,7 @@ export async function runChatAgentExecutionGraph({
           state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,
           // audit C-12: exclude from recall only the messages that will actually
           // be sent — a preliminary history-only fit, not the wider pre-fit window.
-          includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts:sessionFacts,
+          includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts,
           onRecall:rows=>memoryRendered.push(...rows),onCandidates:rows=>memoryCandidates.push(...rows),
         }));
 
@@ -528,6 +573,8 @@ export async function runChatAgentExecutionGraph({
           profile: activeAgentProfile,
           modePrompt: modeDef.prompt,
           projectContext,
+          projectMemoryBook: projectBook.text,
+          personalProfile: personalProfile.text,
           selectedMaterials: isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',name:'知识片段检索',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})}),
           channelPrompt,
           memoryContext,
@@ -536,6 +583,7 @@ export async function runChatAgentExecutionGraph({
           skillsPrompts,
           dynamicContext,
           compactContext,
+          topicExcerpts: topicExcerpts.text,
           toolsPrompt,
           sessionMemoryBlock,
           languageConstraint: buildLanguageConstraint(latestUserMessage),
@@ -620,7 +668,9 @@ export async function runChatAgentExecutionGraph({
         // the agent decides what to do (apologise, re-route, etc.).
         const task = inferImageTask(latestUserMessage, graphState.modelMessages, imageTask);
         const taskMessage = chat.messages.filter(m => m.role === 'user').at(-1);
-        const attachments = taskMessage?.attachments || [];
+        // Image references are matched against model parts by URL, so the task
+        // attachments use the same hydrated data URLs as the model window.
+        const attachments = await hydrateAttachments(taskMessage?.attachments || [], { home });
         if (task && taskMessage) {
           taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
           await onImageTaskResolved?.(task);
@@ -735,6 +785,17 @@ export async function runChatAgentExecutionGraph({
             try { recordMemoryFeedback({candidates:graphState.memoryRendered || [],usedIds:used.map(row=>row.id),
               requestId:`${chat.id}:${context.requestId}`,query:latestUserMessage}); }
             catch(error) { console.warn(`[memory.feedback] ${error.message}`); }
+          }
+          // Run budget (C1): checked before every provider call so a turn
+          // whose tools or earlier rounds ate the pool ends with an explicit
+          // reply instead of one more request that times out.
+          const exhausted = budgetExhausted(budget);
+          if (exhausted) {
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', name: '运行预算已用完', status: 'completed',
+              output: `已达到运行预算（${describeBudgetReason(exhausted)}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
+              budget: { code: exhausted.code, reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, usage: exhausted.usage } });
+            finalReply = budgetExhaustedReply(exhausted);
+            break;
           }
           const rawReply = await createReply({
             ...functionSession.requestOptions(),

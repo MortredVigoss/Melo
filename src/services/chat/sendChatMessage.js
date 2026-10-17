@@ -71,6 +71,7 @@ import { promoteTextUrlsToAttachments } from '../../media/urlDetector.js';
 import { getRequestNetworkPolicy, requestUrls } from '../../retrieval/requestPolicy.js';
 import { modelSupportsVision } from '../../media/visionCapability.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
+import { externalizeMessageAttachments, hydrateAttachments, migrateInlineAttachments, applyAttachmentMigration } from '../../media/attachments.js';
 import { indexMessage, tagChatScope } from '../../memory/conversationIndex.js';
 import { maybeExtractSessionMemory } from '../../memory/sessionMemory.js';
 import {
@@ -246,6 +247,10 @@ async function executeChatTurn({
   chat.updatedAt = nowIso();
   const visualConnection=userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
   const visualTest=visualConnection.visionTest || config.llmProfiles?.[config.activeLlmProfileId]?.visionTest;
+  // Re-sent file-backed attachments (image retry, API clients echoing a stored
+  // URL) are read back inline so extraction sees the bytes; externalization
+  // below maps them onto the same file again.
+  userMessage.attachments = await hydrateAttachments(userMessage.attachments, { home });
   await enrichMessageWithMediaContext(userMessage, {
     config,
     allowRemoteExtraction: !networkPolicy.fetchForbidden,
@@ -253,6 +258,16 @@ async function executeChatTurn({
       visualConnection.model, visualTest,
     ),
   });
+  // Attachment externalization (design §2.3): large inline data URLs move to
+  // <home>/desktop/attachments and the stored message keeps a small
+  // /api/media/attachments URL. Runs after media extraction, which still
+  // reads the inline bytes. Older inline attachments in this chat migrate
+  // once (chat.attachmentsExternalized) and the patches are replayed onto
+  // the freshly loaded chat inside the atomic write below.
+  const externalizedUserMessage = await externalizeMessageAttachments(userMessage, { home });
+  userMessage.attachments = externalizedUserMessage.attachments;
+  userMessage.extractedMedia = externalizedUserMessage.extractedMedia;
+  const attachmentMigration = await migrateInlineAttachments(chat, { home });
   refreshChatMemorySummary(chat);
   if (trimmed && !background) {
     state.settings.promptHistory = normalizePromptHistory([
@@ -285,6 +300,7 @@ async function executeChatTurn({
     signal?.throwIfAborted();
     {
       latestChat.messages.push(userMessage);
+      applyAttachmentMigration(latestChat, attachmentMigration);
       latestChat.updatedAt = chat.updatedAt;
       if (!latestChat.title || latestChat.title === 'New chat') latestChat.title = chat.title;
       latestChat.agentId = chat.agentId;
