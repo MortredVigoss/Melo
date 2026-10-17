@@ -41,8 +41,8 @@ Phone Use 开启时本版普通 Chat 使用非 Streaming Tool Calling，整段�
 
 小红书未实机复测；0.5.0 本次没有重新做 folded 实机查询。0.4.2 的双模式截图是历史证据；Fold Cache 几何分区仍待做。微信空 tree 的独立输入 / IME 按用户要求暂缓。没有接入外部 PhoneUse、AutoInput、Shizuku 或新权限。未运行远端 CI / 整个 repo gate，未推送或 git pp。
 
-## 后续源码：减少 App discovery 往返（未装机）
+## 0.5.1：减少 App discovery 往返并覆盖 Fold6
 
 用户指出先列大量 App 不合理；本轮修正 Android Adapter 的调用指令与参数约束，准确名称 / 包名优先直接 open_app，本机解析并回传当前画面；失败先用已有候选，必要时定向检索。默认 10 候选、定向上限 20，清单浏览需 browse=true；精确候选不夹带模糊匹配，重名仍需消歧。屏幕动作使用已有新观察，完成仍由 Host 重查。
 
-113 JVM / 40 Android 16 runtime、Lint / Debug / R8 Release 通过；三协议 HTTP Fixture 的直接打开子任务只需两次模型请求，真实 Service 的标签启动 / 空清单拒绝 / 小页查询通过。详情与失败记录见 [Android verification](../android/verification.md)。本轮未连到 Fold6、未发真实模型请求或安装；以上 0.5.0 实机 / APK SHA 仍为历史证据。共享 Core 与搜索优先路由尚未完成。
+113 JVM / 40 Android 16 runtime、Lint / Debug / R8 Release 通过；三协议 HTTP Fixture 的直接打开子任务只需两次模型请求，真实 Service 的标签启动 / 空清单拒绝 / 小页查询通过。详情与失败记录见 [Android verification](../android/verification.md)。后续 0.5.1 同签名覆盖 Fold6 保留原 10 Chat / 1 角色；folded 真实模型首轮 12 步受阻，关闭旧搜索页后同 Chat 重试 5 步 / 23.806s 取得「设置」标题并完成。两轮无 list_apps，但跨包恢复与 stale-screen 额外恢复仍未修；[实机回执](evidence/app-discovery-fold6-051-20261017.json)。以上 0.5.0 SHA / unfolded 证据仍为历史，40 runtime 属于版本号更改前的同一产品逻辑基线。共享 Core 与搜索优先路由尚未完成。

@@ -17,7 +17,7 @@
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
-| Android / App Discovery | 后续源码已修正：准确名称 / 包名优先直接打开；定向小候选、显式浏览清单，减少重复 observe | 新跑 113 JVM / 40 Android 16 runtime、Lint / Debug / R8 Release 通过；三协议 Fixture 直接打开两次子任务模型请求。Fold6 当前未连接、未覆盖；[验证及边界](android/verification.md)。共享 Core / Search 仍待实现 |
+| Android / App Discovery | 0.5.1 (13) 已同签名覆盖 Fold6；准确名称 / 包名优先打开，小候选与显式浏览清单 | 原 10 Chat / 1 角色保留；folded 首轮 12 步受阻，退出旧搜索页后 5 步 / 23.806s 核对「设置」，两轮无 list_apps。跨包恢复 / 额外窗口恢复仍待修。[实机证据](docs/evidence/app-discovery-fold6-051-20261017.json)；113 JVM / Lint / R8 / 签名，本版前的同逻辑 runtime 40，详 verification |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
@@ -116,7 +116,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 已 pull `6adc270` 并登记共享 Core 约束；本轮修正 Android App discovery Adapter，减少全清单与读屏往返 | 113 JVM / 40 runtime / Lint / Debug / R8 Release 通过，[App 发现验证](android/verification.md)。未连到 Fold6 / 未安装 / 未推送；三端 Core、Search 与微信输入仍待做，旧实机证据保留 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 已 pull `6adc270`、登记共享 Core 约束；App discovery `00b0e73` 已随 0.5.1 覆盖 Fold6 | 新版构建 / 同签名 / 安装保留 10 Chat / 1 角色；真实查询两轮无 list_apps，受控复测 5 步通过，首次 12 步失败保留。共享 Core / Search、Samsung 跨包恢复和微信输入仍待做，见 [verification](android/verification.md)。未推送 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
@@ -651,3 +651,11 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 修复现有 Android Adapter：准确名称 / 包名优先直接打开；只有候选不足才定向查询，默认 10 / 定向上限 20，空查询或大页显式 browse=true；精确匹配不夹带模糊建议，重名保留消歧，空 open_app 拒绝。已有动作观察优先复用，最终 finish 的重观察和其他停止 / 权限规则保留。此为 OS 特有能力修复，共享 Core 与 Search 仍待设计实现。
 - 113 JVM / 40 Android 16 runtime、Lint 零 Error、Debug / R8 Release 及 test APK 构建通过。三协议 HTTP Fixture 直接按名找到第 265 个 App，设备子任务仅 open_app / finish 两次模型请求，Host 验证另做 observe；不是整个 Chat 零 LLM 或真实 provider 性能结论。真实 Service 标签启动、无 query 无列表回传、小页 / 分页及原 Chat / Cache / 取消回归通过。
 - 首轮新增测试揭示精确查询仍夹带模糊候选；另调整旧 Fixture 的有效目标以分别测试错误累计 / 重复启动保护，未降低原断言。失败、最终日志与准确边界见 [verification](android/verification.md)。构建后才启本轮 Emulator，runtime 完成已关闭；未操作实体手机、签名发行 / 覆盖安装、推送 / git pp 或整个 repo gate。
+
+### 2026-10-17 — Android / Mobile Use — 0.5.1 覆盖与真实 Probe 验收
+
+- 用户连接并解锁 Fold6 后授权继续；安装 0.5.1 (13)，同证书 / 已安装 SHA 与签名包一致，原 10 Chat / 1 角色及其他辅助服务保留。只新增一个本轮 QA Chat，沿用本机模型连接，没有读取 / 迁移 Key。
+- 最终版本 113 JVM、Lint / Debug / R8、签名及四库 alignment 通过；40 runtime 为 `00b0e73` 同逻辑、版本号更改前的基线，最终版本未重跑 Emulator，以免和实体 ADB 抢连接。ADB 40/41 曾触发一次服务重启，后续先检查版本，再复用 Windows 5037。
+- folded 首轮真实 Probe 12 步 / 54.132s，含名称错误、窗口恢复与导航，最终 Settings Intelligence 伴随包被严格窗口校验停止；保留 needs_user。此前仅凭末步作出“整轮已走直接路径”的判断过早，已完整补读并更正。
+- 手动仅 Back 退出旧搜索页后，同 QA Chat 重试：Probe 5 步 / 23.806s，实时读取标题「设置」、终态重查并续答；含一次 swipe stale_screen 拒绝与重新观察。两轮均无 list_apps，但不等于最短两请求已在实机实现，也不等于跨包恢复已修。完整[脱敏回执](docs/evidence/app-discovery-fold6-051-20261017.json) / [准确边界](android/verification.md)。
+- 结束无运行任务，回到 QA 结果；本版展开模式 / 其他 App / 微信 / restaurant 查询未复验，共享 Core / Search 与 Task Cache Fold 隔离仍待做。无推送 / git pp / 远端 CI 或整个 repo gate。

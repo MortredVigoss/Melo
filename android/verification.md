@@ -1,6 +1,20 @@
 # Android verification — 2026-10-17
 
-## 后续源码：App 发现与直接打开（2026-10-17，未安装）
+## 0.5.1 App Discovery — Fold6 已安装（2026-10-17）
+
+产品逻辑基线 `00b0e73`，版本元数据升至 0.5.1 (13)。最终包 SHA-256 `150cf6427d81240478e3b3d41960ba2e60c9cd490ffe10b6d6e6ca9bebbc1984`；与原 0.5.0 同证书，签名及四原生库 ZIP / ELF alignment 通过。安装前后均 10 Chat / 1 角色，其他辅助服务保留，随后仅新增一个本轮 QA Chat，未读取或迁移 Keystore 凭证。
+
+最终版本重新跑 113 JVM、Lint 零 Error、Debug / R8 Release；40 Android 16 runtime 属于同一产品逻辑 `00b0e73` 在版本号更改前的基线，未把它写成最终版本 APK 又跑了一次。构建日志 `.tmp/app-launch-051-check-20261017.log`，签名元数据在本会话忽略的 outputs 目录。
+
+Fold6 / Android 16 / One UI property 80500，folded 968×2376，普通 Chat 沿用既有 gpt-6.1-sol 连接做只读设置标题查询。首次 Probe 12 步 / 12 次子任务模型请求 / 54.132s，先有名称未匹配、窗口变化与导航恢复，最后进入设置搜索伴随包 com.android.settings.intelligence，因 foreground_window_unavailable 停止为 needs_user。没有把该轮记成功。
+
+手动只用两次 Back 关闭旧搜索页并回到设置主 Activity 后，在同一 QA Chat 重试：Probe 5 步 / 5 次子任务模型请求 / 23.806s，取得标题「设置」、Host 终态重查通过并续答。成功回执行为是 open_app / observe / swipe / finish，另有一次 swipe 被 stale_screen 拒绝；不等于 Fixture 的两次请求最短路径。两轮完整卡片均无 list_apps，没有全量 App 清单回传。计数不含外层 Chat 规划 / 最终整理。
+
+首次完整步骤补读后已更正“仅凭末步判断整轮最短”的过早结论；首轮 12 步与受控复测 5 步分别保留。跨包恢复和窗口变化导致的额外恢复仍待修，不将准备起始页面后的成功外推全部状态。初轮 tap 目标未按隐私策略落盘，只保存动作与回执；复测无 tap / 输入，仅打开、观察、滑动与结束。
+
+[脱敏实机回执](../docs/evidence/app-discovery-fold6-051-20261017.json)。本版 unfolded、其他 App、微信输入及 restaurant 查询未复验；共享 Core / Search 仍待做，未运行整仓 gate / 远端 CI / 推送。安装时遇到 ADB 40/41 冲突并重启过一次，之后检查版本再复用 Windows 5037；没有继续启动 Emulator 抢占设备连接。设备无活动任务，结束回 QA 结果页。
+
+## App 发现修正的装机前基线（00b0e73，历史记录）
 
 用户反馈每次先列大量 App；源码核对原工具没有固定先列 200 的 Host 流程，但空 query、大页面以及 discovery 优先指令会让模型走冗余路径。当前 Windows ADB 未发现 Fold6，本轮无法核对用户最新一次真实调用。
 

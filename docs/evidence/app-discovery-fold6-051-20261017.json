@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-17",
+  "version": "0.5.1",
+  "versionCode": 13,
+  "behaviorCommit": "00b0e73",
+  "apkSha256": "150cf6427d81240478e3b3d41960ba2e60c9cd490ffe10b6d6e6ca9bebbc1984",
+  "device": {
+    "model": "Samsung Galaxy Z Fold6 SM-F956B",
+    "android": "16",
+    "oneUiProperty": "80500",
+    "layout": "folded",
+    "physicalSize": "968x2376"
+  },
+  "install": {
+    "sameCertificateUpdate": true,
+    "countsBefore": "10 段对话 · 1 个角色 · 保存在本机",
+    "countsAfter": "10 段对话 · 1 个角色 · 保存在本机",
+    "otherServicesPreserved": true
+  },
+  "ownedQaChatsAdded": 1,
+  "initialAttempt": {
+    "status": "needs_user",
+    "deviceSteps": 12,
+    "deviceModelRequests": 12,
+    "deviceDurationSeconds": 54.132,
+    "steps": [
+      "open_app · 受阻 · 没有精确匹配的可启动 App；请核对候选，改用短名称或包名搜索，必要时使用 Launcher 搜索。不能据此断言未安装。 · 4436 ms · app_not_found",
+      "open_app · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 19 个节点 · 已截图 · 1193 ms",
+      "tap · 受阻 · 窗口或尺寸已改变，请重新 observe。 · 11 ms · stale_screen",
+      "observe · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 17 个节点 · 已截图 · 317 ms",
+      "back · 受阻 · 窗口内容不可读。 · 1586 ms · execution_error",
+      "observe · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 39 个节点 · 已截图 · 301 ms",
+      "open_app · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 39 个节点 · 已截图 · 843 ms",
+      "tap · 已执行 · 执行回执已返回 · com.android.settings · 520×1280 · 16 个节点 · 已截图 · 964 ms",
+      "back · 受阻 · 窗口或尺寸已改变，请重新 observe。 · 18 ms · stale_screen",
+      "observe · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 16 个节点 · 已截图 · 317 ms",
+      "back · 已执行 · 执行回执已返回 · com.android.settings.intelligence · 521×1280 · 10 个节点 · 已截图 · 904 ms",
+      "open_app · 受阻 · 已请求打开 com.android.settings，但 Accessibility 未提供目标前台窗口；当前窗口为 com.android.settings.intelligence。目标可能已经显示，不能据此认定未安装。已停止，不会操作替代窗口。 · 3714 ms · foreground_window_unavailable"
+    ],
+    "terminalCode": "foreground_window_unavailable",
+    "observedForeground": "com.android.settings.intelligence/.search.SearchActivity",
+    "listAppsCalls": 0,
+    "scope": "Initial name mismatch, stale-window recovery and navigation preceded the terminal cross-package search window. Not a shortest-path success."
+  },
+  "retestPrecondition": {
+    "components": [
+      "com.android.settings.intelligence/.search.SearchActivity",
+      "com.android.settings.intelligence/.search.SearchActivity",
+      "com.android.settings/.Settings"
+    ],
+    "onlyBackNavigation": true,
+    "settingsValuesChanged": false,
+    "purpose": "Close the pre-existing Settings search screen for a controlled retest; initial failure retained."
+  },
+  "retest": {
+    "status": "achieved",
+    "executionMode": "probe",
+    "deviceSteps": 5,
+    "deviceModelRequests": 5,
+    "deviceDurationSeconds": 23.806,
+    "successfulStepRows": [
+      "open_app · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 34 个节点 · 已截图 · 918 ms",
+      "observe · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 32 个节点 · 已截图 · 398 ms",
+      "swipe · 已执行 · 执行回执已返回 · com.android.settings · 521×1280 · 32 个节点 · 已截图 · 1716 ms",
+      "finish · 已执行 · 已记录明确任务结果 · 已重新检查可见证据 · 325 ms"
+    ],
+    "rejectedStepRows": [
+      "swipe · 受阻 · 屏幕已变化或 observation 已过期，请重新 observe。 · 4 ms · stale_screen"
+    ],
+    "listAppsCalls": 0,
+    "chatReply": "已实时打开并查看 Android 设置主页面，显示的标题原文是「设置」。未更改任何选项。",
+    "verification": "visible_facts",
+    "scope": "Controlled retest after closing the pre-existing search page; includes one rejected swipe and re-observation. Counts exclude parent Chat planning/final reply."
+  },
+  "end": {
+    "idle": true,
+    "returnedToQaReply": true,
+    "appOriginatedReturns": [
+      {
+        "deviceLogTime": [
+          "10-17",
+          "16:35:35.638"
+        ],
+        "caller": "com.melo.android",
+        "target": "com.melo.android/.MainActivity",
+        "allowedReason": "BAL_ALLOW_TOKEN",
+        "resultCode": 2
+      }
+    ]
+  },
+  "verification": {
+    "fresh051": "113 JVM, Lint zero errors, Debug/R8 builds, same certificate, APK signature and 16 KiB ZIP/ELF alignment.",
+    "runtimeBaseline": "40 Android 16 Emulator tests passed on 00b0e73 before the version-only bump; not rerun on final versioned 0.5.1 APK."
+  },
+  "limitations": [
+    "The initial Samsung cross-package task-restoration case remains unresolved.",
+    "Real-model retest used five device calls, not the two-call HTTP Fixture minimum.",
+    "No 0.5.1 unfolded physical test or new restaurant/WeChat test.",
+    "Shared Core and Web Search are still pending.",
+    "No raw screen pixels, node trees, model credentials or action arguments are committed."
+  ]
+}

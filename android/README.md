@@ -38,7 +38,7 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## Chat Phone Use（0.5.0）
+## Chat Phone Use（0.5.1）
 
 在普通 Chat 直接说“查一下 Surry Hills 现在营业的餐厅”或“去小红书搜索这家店”，模型按需 invoke 内置 Phone Use，再把观察结果带回当前对话。不需要切换「操作手机」模式或进入独立助手。每 Chat 的「对话设置 → 允许调用手机」可关闭能力；普通问答不会创建设备会话。
 
@@ -56,7 +56,7 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 独立助手页使用全局模型，Chat 内使用该对话选择；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait、finish，屏幕操作后回传新画面。模型根据实际观察选择下一步，不录制固定脚本。
 
-2026-10-17 后续源码优化（尚未覆盖手机）：已知准确 App 名称 / 包名时优先直接 `open_app`，名称由 Android Adapter 在本机解析，打开后已带新画面；只有缺少目标或候选不足时才 `list_apps(query=...)`。查询仍覆盖完整 Launcher Catalog，但默认仅返回 10 个候选、定向查询上限 20；精确命中时只返回精确候选，重名保留多个结果，模糊匹配不自动启动。空查询或大页面需显式 `browse=true`，仅用于用户需要浏览 App 清单的任务。观察用于屏幕动作，已有动作回执的当前画面无需重复 observe；最终 finish 仍重新观察验证。此为平台 Adapter 的发现和回传优化，共享 Core 与 Search 接入仍待实现。
+0.5.1 App Discovery（已同证书覆盖 Fold6）：已知准确 App 名称 / 包名时优先直接 `open_app`，名称由 Android Adapter 在本机解析，打开后已带新画面；只有缺少目标或候选不足时才 `list_apps(query=...)`。查询仍覆盖完整 Launcher Catalog，但默认仅返回 10 个候选、定向查询上限 20；精确命中时只返回精确候选，重名保留多个结果，模糊匹配不自动启动。空查询或大页面需显式 `browse=true`，仅用于用户需要浏览 App 清单的任务。观察用于屏幕动作，已有动作回执的当前画面无需重复 observe；最终 finish 仍重新观察验证。此为平台 Adapter 的发现和回传优化，共享 Core 与 Search 接入仍待实现。
 
 官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
 
@@ -77,6 +77,8 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 运行中的 user prompt 先落盘，assistant 仅在有效 completion receipt 后落盘；partial 内容单独记录。Activity recreation 不取消请求，后台请求使用带取消按钮的 Foreground Service。系统终止进程后，下次启动标记 interrupted，允许显式重试；不会自动重新发起计费请求。
 
 ## Samsung / Fold 验证边界
+
+0.5.1 (13) 已覆盖安装 Fold6，原 10 Chat / 1 角色和其他辅助服务保留。folded 真实模型首轮 12 步因旧页面 / 窗口恢复受阻；手动退出旧搜索页后，同 Chat 复测 5 步 / 23.806s 读取「设置」并重查完成，两轮均无 list_apps。跨包搜索页恢复仍待修，不能把受控复测视为所有起始状态通过；[详细证据](verification.md)。
 
 目标机型 Galaxy Z Fold6 / One UI 8.5。0.5.0 最终签名包已在实际 SM-F956B（Android 16 / API 36，One UI property 80500）覆盖安装；展开模式真实模型普通 Chat → Maps 当前查询 → 上下文追问 → 原 Chat 续答通过。0.4.2 曾分别验证两种模式的微信截图；这些历史结果不能替代本版 folded 实机查询。详见 [Chat Phone Use 交付](../docs/chat-phone-use-20261017.md)。
 
