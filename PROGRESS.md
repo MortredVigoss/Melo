@@ -1,3 +1,8 @@
+## 2026-10-18 — 让 GitHub 首页和更新记录更容易读懂
+
+用户要求先核对整体代码，再重写产品介绍和 GitHub 简介；公开改动说明只说主要变化，不再堆内部实现细节。Codex 保留英文与兼容性定位，详细技术记录仍保留供接手。
+本次授权包含 GitHub 文档与 About 发布；仅做文档链接、命令及 GitHub Markdown 渲染验证，不重跑产品 gate，不运行 git pp，不改账号数据或安装应用。发布回执保留在本地证据目录。
+
 ## 2026-10-17 — 设计方案第三批：工具调用记录与回放、远程 SQL 受众、三协议原生工具、MCP 隔离、手机摘要同步与记忆冲突
 
 第三批收尾用户拍板的方案。工具：每次调用生成一条 ToolInvocationRecord 追加到 `desktop/execution-scenes/<runId>.tools.jsonl`（args 脱敏、hash、模型实际看到的输出 ≤8000），`tool_calls_start`/`tool_calls_done`/持久化 `toolResults` 三个投影同源；取消或失败的轮次把工具轨迹（≤600 字纯文本）写回对话，下一轮与压缩都能看到。协议：`functionCalling` 从 `native` 布尔改为 `protocol ∈ responses|anthropic|chat-completions|xml`，Anthropic 原生 `tools/tool_use/tool_result`（含 cache_control）与 chat-completions `tools/tool_calls`（默认仍走 XML，`toolCalling:'native'` 或 `MELO_CHAT_TOOLS=1` 开启），Responses 请求逐字节不变；每轮工具链以协议中立的 IR 存进 `metadata.toolChain`。MCP 工具改进独立 `mcpRegistry`，按 Agent 白名单在 prepare 时合并，函数名可读 `mcp__server__tool`。记忆：召回 SQL 层带 audience（远程渠道在查询里就看不到 `audience=local` 的项目/个人/Agent 行），corrections 组拆为 agentNotes/sharedFacts 各 4 席。手机：工作区 `conversation` 记录带可选 `compact`（边界、计数、摘要 ≤8KB、卡片），计数大者胜；iOS 只取边界后消息并前置摘要；记忆行冲突状态与「采用桌面版 / 采用手机版」。（Claude）

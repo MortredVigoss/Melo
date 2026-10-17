@@ -1,6 +1,6 @@
 # Melo 总览：架构、线程改动与接手入口
 
-更新时间：2026-10-16（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
+更新时间：2026-10-18（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
 
 ## 1. 先看这里
 
@@ -78,7 +78,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
 | 外部官网原型 | `/Users/mortred/Documents/New project/melo-universe/src/{data,neural-geometry,scene,navigation,main}.js`、`styles.css` | 独立 Three.js / Vite SPA；连通神经图、真实投影命中、History API 管理三级 hash 路由，`onFrame` 进度协调相机/滚动/正文；不接产品模型、账号或收款，旧站与桌面导出分别保留 |
 | 外部 SWE-bench 适配 | `/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/{run_melo.mjs,container_tools.py,run_batch.py}` | 调用产品正常消息入口，在独立基准进程替换六个工具运行函数并自动授权；产品仓库没有Docker功能改动或接入提交；评分不覆盖桌面权限/手机 |
-| GitHub 公开介绍 | `README.md`、GitHub About / Topics（`MortredVigoss/Melo`） | 英文介绍个人AI执行工作区、双端职责/架构、内置语义记忆、源码启动和分层验证；按用户要求仅保留英文，未发布未完成源码或宣称全集跑分 |
+| GitHub 公开介绍 | `README.md`、`CHANGELOG.md`、GitHub About（`MortredVigoss/Melo`） | 10-18 按源码重写简短英文介绍，突出多模型兼容、项目、记忆与 Agent 协作；公开改动说明只写用户可感知的大方向，协议、参数、路径和验收细节留在专项文档 |
 
 ### 设计线程模块补充（2026-10-15 核对，源码仍 WIP）
 
@@ -111,7 +111,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、文件生命周期/能力配置/管理入口已对齐；10-18 核对主要源码后精简 GitHub 产品介绍与更新记录 | 功能历史证据见[实施回执](docs/ui-function-alignment-20261016.md)；本轮仅文档与 About，源码基线 `e4fed5c`，链接/命令/GitHub Markdown 渲染通过，详见末尾交接 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
@@ -555,3 +555,11 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 - 现状：电脑同一对话原文窗口约 6 万 token、超 8 万压成一份摘要；手机约 48 KB 原文、无摘要。无话题意识。本机 24 轮记录提示缓存命中约 4%（每轮变化的记忆/资料插在历史前）。跨对话：自动事实默认只在本对话，项目共享说明/资料/审批任务但不共享讨论结论；聊天记录搜索不分项目。
 - 方案与评分见 [方案](docs/context-memory-plan-20261017.md)；推荐“缓存友好顺序 + 话题分段 + 个人档案与项目记忆本”。仅文档，未改代码。
+
+### 2026-10-18 — melo主线 — GitHub 介绍与公开更新记录精简
+
+- 用户要求先整体扫代码再重写介绍，公开改动说明只保留大方向。按 `e4fed5c` 的结构与近期 diff 核对模型接入、Agent/工具权限、项目/记忆、媒体、CLI 和手机同步；这是介绍事实核对，不是逐行安全审计或完整运行验收。
+- `README.md` 收拢为用途、兼容性、平台分工和必要安装说明；`CHANGELOG.md` 的 10-17 更新压成 5 条。核对 `src/shared/channelAvailability.js` 后修正 Discord 仍可接入的旧说法；详细架构与验收文档保留。
+- GitHub About 已更新并读回一致，突出 Claude / OpenAI / OpenRouter / 本地模型兼容。公开文案继续英文；以后更新只写用户可感知的变化，内部实现细节留在专项文档。
+- 文档相对链接、安装/测试命令、英文与格式检查通过；GitHub Markdown 渲染的标题、7 个章节、6 行兼容表和 3 个命令块通过。证据 `.tmp/github-copy-20261018/`；本条随文档提交，发布目标为 GitHub `master`，远端提交及文件散列在发布后核对。
+- 仅文档/仓库元数据；未运行 `git pp`、产品回归、真实模型请求或双端安装，未修改用户数据。
