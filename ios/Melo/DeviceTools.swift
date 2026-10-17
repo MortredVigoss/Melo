@@ -376,10 +376,10 @@ enum DeviceToolLoop {
         previous + output.map { $0 as Any } + results.map { ["type": "function_call_output", "call_id": $0.callID, "output": $0.output] as Any }
     }
 
-    static func validateBatch(_ calls: [ResponsesFunctionCall]) throws {
+    static func validateBatch(_ calls: [ResponsesFunctionCall], previousCallIDs: Set<String> = []) throws {
         guard calls.count <= maxCallsPerRound else { throw MeloError.message("模型一次请求了过多手机数据操作，已全部拦截，未执行任何操作。") }
         var seen = Set<String>()
-        for call in calls where call.callID.isEmpty || call.callID.count > 256 || !seen.insert(call.callID).inserted {
+        for call in calls where call.callID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || call.callID.count > 256 || previousCallIDs.contains(call.callID) || !seen.insert(call.callID).inserted {
             throw MeloError.message("模型返回的工具调用编号无效，已全部拦截，未执行任何操作。")
         }
     }

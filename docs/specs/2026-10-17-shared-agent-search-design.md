@@ -2,7 +2,7 @@
 
 日期：2026-10-17。基线：`c4fe0cc`，`codex/mobile-use-features`。
 
-状态：用户已认可共用 Agent Core / Platform Adapter 的方向，进一步要求先审查现有 Loop、State、Memory / Context、Tool 和 Skill；检查结果见 [Agent Core 检查](../agent-core-audit-20261017.md)。本机同源 JS 是推荐实现，Runtime 可行性 spike 和产品迁移尚未开始；设计记录不代表 Android 已有 Web Search。
+状态：用户已明确选择方案 A：三端本机运行同一份 JavaScript Core、手机独立运行。前置检查见 [Agent Core 检查](../agent-core-audit-20261017.md)，实施顺序见 [计划](../shared-agent-implementation-20261017.md)。Runtime spike 与产品迁移按计划推进；设计记录不代表 Android 已有 Web Search。
 
 ## 1. 问题与已确认约束
 

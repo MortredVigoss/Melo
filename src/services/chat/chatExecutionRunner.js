@@ -237,6 +237,7 @@ export async function runChatAgentExecutionGraph({
         const enabledSkills = matchSkillsForMessage(agentScopedSkills, matcherContext, {
           skillIndex,
           cache: defaultSkillMatchCache,
+          cacheScope: JSON.stringify([context.home, activeAgentProfile.id, chat.projectId || null]),
           recencyByIdMap,
         });
         const channelPrompt = buildChannelRoutePrompt({ chat, channelContext, profile: activeAgentProfile });

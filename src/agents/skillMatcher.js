@@ -34,6 +34,7 @@
 import { buildSkillIndex, candidateSkillIdsFor } from './skillIndex.js';
 import { defaultSkillMatchCache } from './skillMatchCache.js';
 import { tokenizeForMatch } from './skillTokenize.js';
+import { createHash } from 'node:crypto';
 
 // Re-export so existing callers (skillUpgrade.js, skillMatcher.test.js) keep
 // working without knowing about the new shared module.
@@ -252,39 +253,17 @@ export function scoreSkill(skill, message, options = {}) {
 
 // ─── Cache key helpers ──────────────────────────────────────────────────────
 
-function fingerprintMessage(message) {
-  if (typeof message === 'string') {
-    return 's:' + message.slice(0, 256) + ':' + message.length;
+function canonical(value) {
+  if (value instanceof Map) return canonical(Object.fromEntries(value));
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
   }
-  if (Array.isArray(message)) {
-    const parts = [];
-    // Newest 3 msgs dominate scoring; only fingerprint those.
-    const slice = message.slice(-3);
-    for (const m of slice) {
-      const role = (m?.role || '').toString().slice(0, 16);
-      const content = typeof m?.content === 'string'
-        ? m.content.slice(0, 256)
-        : JSON.stringify(m?.content || '').slice(0, 256);
-      parts.push(role + '\u001f' + content);
-    }
-    return 'a:' + parts.join('\u001e');
-  }
-  return 'x:' + String(message ?? '').slice(0, 256);
+  return value;
 }
 
-function fingerprintSkills(skills) {
-  // Cheap rolling fingerprint: id + updatedAt (if present) + systemPrompt
-  // length. Any edit to a skill changes at least one of these.
-  const parts = [];
-  for (const s of skills) {
-    if (!s) continue;
-    parts.push(
-      (s.id || '') + ':'
-      + (s.updatedAt || s.version || '') + ':'
-      + (typeof s.systemPrompt === 'string' ? s.systemPrompt.length : 0),
-    );
-  }
-  return parts.join('|');
+function fingerprint(value) {
+  return createHash('sha256').update(JSON.stringify(canonical(value)) ?? 'undefined').digest('hex');
 }
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
@@ -328,18 +307,22 @@ export function matchSkillsForMessage(skills, messageOrMessages, options = {}) {
     ? options.keepProtected !== false
     : options.keepBuiltIn !== false; // back-compat alias
 
-  // Cache lookup — skip only if explicitly disabled.
-  const cache = options.cache === false
+  // Without a fixed clock, recency can cross a threshold while cached.
+  const hasRecency = options.recencyByIdMap instanceof Map
+    ? options.recencyByIdMap.size > 0 : Object.keys(options.recencyByIdMap || {}).length > 0;
+  const cache = options.cache === false || (hasRecency && options.now === undefined)
     ? null
     : (options.cache || defaultSkillMatchCache);
   let cacheKey = null;
   if (cache) {
-    cacheKey = fingerprintMessage(messageOrMessages)
-      + '::' + fingerprintSkills(skills)
-      + '::' + maxKeep + ',' + minKeep + ',' + (keepProtected ? 1 : 0)
-      + '::' + (options.recencyByIdMap ? 'r' : 'n');
+    cacheKey = fingerprint({ scope: options.cacheScope ?? null, message: messageOrMessages, skills,
+      maxKeep, minKeep, keepProtected, recency: options.recencyByIdMap, now: options.now,
+      applyTierBonus: options.applyTierBonus, msgWeights: options.msgWeights });
     const hit = cache.get(cacheKey);
-    if (hit) return hit.slice(); // defensive copy so callers can mutate
+    if (hit) {
+      const current = new Map(skills.map(skill => [skill.id, skill]));
+      return hit.map(id => current.get(id)).filter(Boolean);
+    }
   }
 
   // Candidate narrowing via inverted index, if provided. Protected /
@@ -408,7 +391,8 @@ export function matchSkillsForMessage(skills, messageOrMessages, options = {}) {
     result = merged.map(entry => entry.skill);
   }
 
-  if (cache && cacheKey) cache.set(cacheKey, result.slice());
+  // Resolve definitions from the current Registry, never cached foreign objects.
+  if (cache && cacheKey) cache.set(cacheKey, result.map(skill => skill.id));
   return result;
 }
 

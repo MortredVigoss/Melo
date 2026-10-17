@@ -71,12 +71,14 @@ class ChatToolLoop(
 ) {
     suspend fun run(history: MutableList<JsonObject>): ModelReply {
         val goals = mutableSetOf<String>()
+        val callIds = mutableSetOf<String>()
         repeat(4) { index ->
             currentCoroutineContext().ensureActive()
             val turn = next(history)
             if (turn.calls.isEmpty()) return ModelReply(turn.text, turn.model)
             require(index < 3) { "本轮手机任务已达到上限；已完成步骤保留，请缩小目标后继续。" }
             val call = turn.calls.single()
+            require(call.id.isNotBlank() && call.id.length <= 256 && callIds.add(call.id)) { "模型返回了无效或重复的调用编号，已停止，未重复执行。" }
             require(call.name == ChatPhoneUse.name) { "普通 Chat 只能调用已注册的 Phone Use。" }
             ChatPhoneUse.validate(call.arguments)
             val identity = call.arguments.text("purpose") + ":" + call.arguments.text("goal").trim().lowercase()

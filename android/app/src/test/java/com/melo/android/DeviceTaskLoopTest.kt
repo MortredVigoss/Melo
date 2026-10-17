@@ -8,6 +8,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceTaskLoopTest {
+    @Test fun reusedCallIdentityStopsBeforeTheSecondNativeAction() = runBlocking {
+        for (protocol in listOf("chat-completions", "responses", "anthropic")) {
+            val turns = ArrayDeque(listOf(turn("same-id", args("observe")), turn("same-id", finish())))
+            var executed = 0
+            val result = runCatching { DeviceTaskLoop(protocol, { turns.removeFirst() }, { executed++; screen() }, {}).run("Inspect fixture") }
+            assertTrue("$protocol accepted a reused call ID", result.isFailure)
+            assertEquals(1, executed)
+        }
+    }
     @Test fun inaccessibleLaunchedWindowStopsBeforeAnotherModelCallOrDeviceAction() = runBlocking {
         var requests = 0; var actions = 0
         val traces = mutableListOf<DeviceStep>()

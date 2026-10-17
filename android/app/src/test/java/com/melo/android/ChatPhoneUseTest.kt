@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 class ChatPhoneUseTest {
     private val protocols = listOf("chat-completions", "responses", "anthropic")
     private fun args(goal: String = "查 Google Maps 上 Surry Hills 当前营业的餐厅") = buildJsonObject { put("goal", goal); put("purpose", "research") }
-    private fun call(arguments: JsonObject = args()) = DeviceTurn("", listOf(DeviceCall("call-1", ChatPhoneUse.name, arguments)), listOf(buildJsonObject { put("role", "assistant"); put("content", "fixture-wire") }))
+    private fun call(arguments: JsonObject = args(), id: String = "call-1") = DeviceTurn("", listOf(DeviceCall(id, ChatPhoneUse.name, arguments)), listOf(buildJsonObject { put("role", "assistant"); put("content", "fixture-wire") }))
     private fun receipt() = ChatPhoneUse.receipt(DeviceRun(goal = "fixture", connectionName = "fixture", status = "achieved", answer = "Fixture A 营业状态未知；仅本地样例", finishedAt = now(), verification = "visible_facts"), true)
 
     @Test fun ordinaryAnswerNeverInvokesPhoneOrRequestsScreen() = runBlocking {
@@ -33,13 +33,21 @@ class ChatPhoneUseTest {
     }
     @Test fun distinctTasksStillHaveABoundedTurn() = runBlocking {
         var requests = 0; var invoked = 0
-        assertTrue(runCatching { ChatToolLoop("chat-completions", { call(args("task ${++requests}")) }, { invoked++; receipt() }).run(mutableListOf()) }.isFailure)
+        assertTrue(runCatching { ChatToolLoop("chat-completions", { call(args("task ${++requests}"), "call-$requests") }, { invoked++; receipt() }).run(mutableListOf()) }.isFailure)
         assertEquals(4, requests); assertEquals(3, invoked)
     }
     @Test fun cancellationPropagatesIntoTheOwnedPhoneInvocation() = runBlocking {
         val entered = CompletableDeferred<Unit>(); var cancelled = false
         val task = launch { ChatToolLoop("chat-completions", { call() }, { entered.complete(Unit); try { awaitCancellation() } finally { cancelled = true } }).run(mutableListOf()) }
         entered.await(); task.cancelAndJoin(); assertTrue(cancelled)
+    }
+    @Test fun reusedCallIdentityCannotInvokeADifferentTaskAcrossRounds() = runBlocking {
+        for (protocol in protocols) {
+            var requests = 0; var invoked = 0
+            val result = runCatching { ChatToolLoop(protocol, { call(args("task ${++requests}")) }, { invoked++; receipt() }).run(mutableListOf()) }
+            assertTrue("$protocol accepted a reused call ID", result.isFailure)
+            assertEquals(2, requests); assertEquals(1, invoked)
+        }
     }
     @Test fun malformedToolCannotReachTheDevice() = runBlocking {
         val invalid = listOf(buildJsonObject { put("goal", "x") }, buildJsonObject { put("goal", "x"); put("purpose", "purchase") }, buildJsonObject { put("goal", "x"); put("purpose", "research"); put("shell", "anything") }, args(" "), args("x".repeat(4001)))

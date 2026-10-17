@@ -12,9 +12,8 @@
 //     exceeds capacity we evict the head (oldest entry).
 //   * This is a small, dependency-free LRU — ~20 lines. No need for an
 //     npm dep (keeping the Phase 4 package zero-native-dep per user spec).
-//   * Cache values are arrays of skill objects. Callers should treat the
-//     returned array as read-only; the matcher makes a defensive slice
-//     before handing it out.
+//   * Matcher values are arrays of Skill IDs. Definitions are resolved from
+//     the caller's current Registry; cached objects never cross scopes.
 //
 // API:
 //   createSkillMatchCache({ capacity })  → { get, set, has, delete, clear, size }

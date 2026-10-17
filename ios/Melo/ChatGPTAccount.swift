@@ -259,6 +259,7 @@ struct ImageSizeRejected: Error {}
             guard epoch == expectedEpoch else { throw CancellationError() }
             return stream
         }
+        var seenToolCallIDs = Set<String>()
         for _ in 0..<DeviceToolLoop.maxRounds {
             let stream: ChatGPTStream
             do { stream = try await streamOnce(body) }
@@ -271,7 +272,8 @@ struct ImageSizeRejected: Error {}
             let calls = phoneTools.isEmpty ? [] : stream.functionCalls
             guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
             // Validate the whole batch before any side effect, then run sequentially.
-            try DeviceToolLoop.validateBatch(calls)
+            try DeviceToolLoop.validateBatch(calls, previousCallIDs: seenToolCallIDs)
+            seenToolCallIDs.formUnion(calls.map(\.callID))
             var results: [(callID: String, output: String)] = []
             for call in calls {
                 try Task.checkCancellation()

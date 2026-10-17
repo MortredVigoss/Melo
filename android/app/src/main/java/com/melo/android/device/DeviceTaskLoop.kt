@@ -69,6 +69,7 @@ class DeviceTaskLoop(
         val history = DeviceAgentClient.initial(protocol, goal)
         val progress = DeviceProgress()
         val launches = DeviceLaunchGuard()
+        val callIds = mutableSetOf<String>()
         var latestScreen: DeviceToolResult? = null
         var previous: DeviceToolResult? = null
         var recovery = 0
@@ -80,6 +81,9 @@ class DeviceTaskLoop(
             DeviceContextBudget.compact(history, protocol)
             val turn = next(history)
             currentCoroutineContext().ensureActive()
+            for (call in turn.calls) {
+                require(call.id.isNotBlank() && call.id.length <= 256 && callIds.add(call.id)) { "模型返回了无效或重复的调用编号，已停止，未重复执行。" }
+            }
             history += turn.wire
             if (turn.calls.isEmpty()) {
                 if (previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
