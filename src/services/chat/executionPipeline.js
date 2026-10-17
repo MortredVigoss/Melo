@@ -3,6 +3,16 @@ import { executionMetadata, publicSummaryText } from '../../shared/executionMeta
 
 // Observe application boundaries, never prompts, hidden reasoning or guessed
 // progress. Wrapping an existing callback must not enable extra streaming.
+// Pending tool requests in a provider reply, for any tool protocol (E1):
+// Responses function_call items, chat-completions tool_calls, Anthropic tool_use.
+function pendingToolCalls(reply) {
+  if (!reply || typeof reply !== 'object') return 0;
+  if (Array.isArray(reply.responseItems)) return reply.responseItems.filter(item => item?.type === 'function_call').length;
+  if (Array.isArray(reply.message?.tool_calls)) return reply.message.tool_calls.length;
+  if (Array.isArray(reply.content)) return reply.content.filter(block => block?.type === 'tool_use').length;
+  return 0;
+}
+
 export function observeModelReplies(provider, emit) {
   let serial = 0;
   const publish = event => { try { emit?.('execution_event', { kind: 'pipeline', ...event }); } catch {} };
@@ -69,7 +79,7 @@ export function observeModelReplies(provider, emit) {
       const status = options.signal?.aborted ? 'cancelled' : ['incomplete', 'interrupted'].includes(api.responseStatus) ? 'interrupted' : api.responseStatus === 'failed' ? 'failed' : 'completed';
       if (summary) summarize(status);
       publish({ id, name: receipt?.simulated ? '模拟响应' : name, status, api, returnedModel: receipt?.reportedModel || api.reportedModel || '',
-        output: `${receipt?.simulated ? '模拟返回' : status === 'completed' ? '模型返回完成' : '响应未完整结束'} · 收到 ${modelReplyText(reply).length} 个字符${reply?.responseItems?.some(item => item.type === 'function_call') ? ` · ${reply.responseItems.filter(item => item.type === 'function_call').length} 个工具请求待执行` : ''}${api.reportedModel ? ` · 服务返回模型：${api.reportedModel}` : ' · 服务未报告模型标识'}` });
+        output: `${receipt?.simulated ? '模拟返回' : status === 'completed' ? '模型返回完成' : '响应未完整结束'} · 收到 ${modelReplyText(reply).length} 个字符${pendingToolCalls(reply) ? ` · ${pendingToolCalls(reply)} 个工具请求待执行` : ''}${api.reportedModel ? ` · 服务返回模型：${api.reportedModel}` : ' · 服务未报告模型标识'}` });
       return reply;
     } catch (error) {
       closed = true; api.durationMs = elapsed();

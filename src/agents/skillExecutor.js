@@ -51,8 +51,11 @@ const SKILL_FORBIDDEN_TOOLS = new Set(['agent']);
  *
  * The `agent` tool is always removed — skills cannot spawn sub-agents.
  */
-function resolveSkillTools(skill, callerAllowedToolIds) {
-  const all = getAllTools();
+function resolveSkillTools(skill, callerAllowedToolIds, extraTools = []) {
+  // F3: MCP tools are not in the global registry; the caller's turn passes
+  // its own (agent-whitelisted) MCP tools as `extraTools`. Only `mcp:` ids
+  // are accepted here — skills still cannot call skills.
+  const all = [...getAllTools(), ...(Array.isArray(extraTools) ? extraTools : []).filter(t => typeof t?.id === 'string' && t.id.startsWith('mcp:'))];
   const skillWhitelist = Array.isArray(skill?.toolWhitelist) && skill.toolWhitelist.length > 0
     ? new Set(skill.toolWhitelist)
     : null;
@@ -136,7 +139,7 @@ export async function runSkill(options) {
   if (!options.skill || options.skill.type!=='executable' || !options.config) return runSkillLoop(options);
   const parent=await resolveCapabilityContext(currentRequestContext());
   if (!parent) return missingCapabilityScope();
-  const ids=resolveSkillTools(options.skill,options.allowedToolIds).map(tool=>tool.id);
+  const ids=resolveSkillTools(options.skill,options.allowedToolIds,options.extraTools).map(tool=>tool.id);
   const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:ids,source:'skill'});
   // Run budget (C1): a skill runs on a child pool of the calling turn; its spending is charged upward.
   const budget=narrowBudget(parent.budget||null);
@@ -155,6 +158,7 @@ async function runSkillLoop({
   depth = 0,
   allowedToolIds = null,
   capabilities = null,
+  extraTools = [],
   replyFn = createOpenAICompatibleReply,
 }) {
   const runStartedAt = Date.now();
@@ -197,10 +201,10 @@ async function runSkillLoop({
   }
 
   const providerConfig = delegatedConfig(config);
-  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds),currentRequestContext().capabilityScope);
+  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds, extraTools),currentRequestContext().capabilityScope);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
-  const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native });
+  const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native, protocol: functionSession.protocol });
 
   // Compose the first user turn. We include both the structured args (for
   // machine-readable invocation) and any task text the caller supplied.
@@ -305,7 +309,7 @@ async function runSkillLoop({
       if (!allowSet.has(tc.name)) {
         return { id: tc.id, tool: null, args: tc.arguments, callRef: tc, denied: true };
       }
-      const tool = getTool(tc.name);
+      const tool = allowedTools.find(t => t.id === tc.name) || getTool(tc.name);
       return { id: tc.id, tool, args: tc.arguments, callRef: tc };
     });
     totalToolCalls += executableCalls.filter(c => c.tool).length;
@@ -325,6 +329,7 @@ async function runSkillLoop({
         // Downstream nested tool calls cannot widen the skill's whitelist.
         allowedToolIds: allowedTools.map(t => t.id),
         capabilities,
+        extraTools,
       },
     );
 
@@ -428,6 +433,7 @@ export function buildSkillTool(skill) {
         depth: context.agentDepth || 0,
         allowedToolIds: context.allowedToolIds || null,
       capabilities: context.capabilities,
+        extraTools: context.extraTools || [],
       });
     },
   };

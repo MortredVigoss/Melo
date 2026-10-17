@@ -122,7 +122,9 @@ import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResul
 import { appendCompactCard, replaceLatestCardSummary, ledgerCards, ledgerDigest } from '../../memory/compactLedger.js';
 import { buildTopicExcerpts } from './topicExcerpts.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
+import { toolsForAgent as mcpToolsForAgent, indexMcpTools } from '../../tools/mcpRegistry.js';
 import { executeToolCalls } from '../../tools/executor.js';
+import { buildToolInvocationRecord, appendToolInvocationRecord, modelFacingOutputsFor, redactToolArgs } from '../../tools/toolInvocationRecord.js';
 import { inferImageTask, runImageTask } from './imageTask.js';
 import { visionConnection, imageSettings } from '../../images/imageSettings.js';
 import { prepareVisionInputs } from '../../media/visionInputs.js';
@@ -130,7 +132,8 @@ import { createOpenAICompatibleReply } from '../../openai.js';
 import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
 import { fitRequestContext, resolveContextBudget, attachTurnContextToMessages } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
-import { createFunctionCallingSession, compactToolChain } from '../../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain, toolProtocolFor } from '../../tools/functionCalling.js';
+import { buildToolChainRecord } from '../../tools/toolProtocol.js';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -282,7 +285,15 @@ export async function runChatAgentExecutionGraph({
         // node are still seen; the persisted chat keeps its small file URLs.
         const modelHistory = await hydrateMessagesForModel(chat.messages, { home });
         const modelChat = () => ({ ...chat, messages: modelHistory });
-        let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens });
+        // Protocol adapter (design audit E1): earlier replies persist a
+        // protocol-neutral tool chain; with MELO_TOOL_CHAIN_HISTORY=1 (or
+        // `config.toolChainHistory === true`) it is rendered back into the
+        // active protocol's shape so a chat continues after a provider switch.
+        // Default off: history stays prose-only, as before.
+        const toolChainProtocol = env.MELO_TOOL_CHAIN_HISTORY === '1' || config.toolChainHistory === true
+          ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
+          : null;
+        let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
         const searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
@@ -394,7 +405,7 @@ export async function runChatAgentExecutionGraph({
               }
               // Persist so the summary survives restarts.
               await persistCompactSnapshot(chat, compactPlan, { home });
-              modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens });
+              modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
               compactedThisTurn = true;
               return true;
             }
@@ -463,6 +474,12 @@ export async function runChatAgentExecutionGraph({
         const skillTools = listExecutableSkills(enabledSkills)
           .map(buildSkillTool)
           .filter(Boolean);
+        // F3 (design 2026-10-17): stdio MCP tools live in their own registry
+        // (tools/mcpRegistry.js) and are merged here per agent whitelist, so
+        // two agents in parallel chats see disjoint MCP sets. `tool.id` stays
+        // `mcp:<server>:<tool>`; the model sees `tool.functionName`
+        // (`mcp__server__tool`) and dispatch resolves both.
+        const mcpTools = mcpToolsForAgent(activeAgentProfile);
 
         // Build tools system prompt — remote channels now get all tools.
         // Stdio MCP tools (`mcp:<server>:<tool>`) are gated by the agent's
@@ -481,7 +498,7 @@ export async function runChatAgentExecutionGraph({
         if (!allowLiveSpeech && toolContextPolicy.mode !== 'none' && shouldInjectToolsPrompt({ mode: chat.mode })) {
           // prepare scope owns the local `activeAgentProfile` (line 150);
           // graphState doesn't exist here (only invoke-model gets that).
-          const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
+          const allowedTools = filterMcpToolsForAgent([...getAllTools(), ...mcpTools], activeAgentProfile);
           // Stable tool set (design audit A2): core tools always; extension
           // groups (browser / documents / media) activate on a hint and then
           // stay for the rest of the chat, so the definitions array only grows
@@ -505,7 +522,7 @@ export async function runChatAgentExecutionGraph({
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, promptTools);
-        toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n');
+        toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n');
         if (toolContextPolicy.mode === 'none') {
           toolsPrompt = [toolsPrompt, 'This is a self-contained text task. Answer directly from the user-provided context or basic knowledge; no tools are exposed for this turn. If information is missing, say so.'].filter(Boolean).join('\n\n');
         }
@@ -546,8 +563,13 @@ export async function runChatAgentExecutionGraph({
           embedQuery(latestUserMessage,config),
           new Promise(resolve => { const t = setTimeout(() => resolve(null), 2500); t.unref?.(); }),
         ])).catch(()=>null);
+        // Remote audience boundary (design §3.4 M7): the channel name reaches
+        // the store so audience=local rows are dropped in SQL, not only by the
+        // JS `canRecallMemory` filter. Desktop/mobile owner chats pass 'desktop'.
+        const memoryAudience = isRemoteChannel ? String(channelContext?.channelId || chat.source || 'remote')
+          : (isLocalChat(chat) ? 'desktop' : String(chat.source || 'remote'));
         const memoryContext = skipMemory ? '' : measureStageSync('memory.recall', () => buildAgentMemoryNodeContext({
-          state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,
+          state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,audience:memoryAudience,
           // audit C-12: exclude from recall only the messages that will actually
           // be sent — a preliminary history-only fit, not the wider pre-fit window.
           includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts,
@@ -627,6 +649,7 @@ export async function runChatAgentExecutionGraph({
           projectContext,
           activeAgentProfile,
           skillTools,
+          mcpTools,
           promptTools,
           searchPlan,
           visibleToolIds: [...visibleToolIds],
@@ -646,7 +669,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask || teamPlan) {
-          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext})});
+          const team = await runAgentTeam({extraTools:[...(graphState.skillTools||[]),...(graphState.mcpTools||[])],plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext})});
           modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
           // The lead's summary is the reply; member handoffs stay in the execution record.
           return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
@@ -709,7 +732,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
         const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
           ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
-            { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n') } : section);
+            { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
         let finalReply = '';
@@ -721,6 +744,10 @@ export async function runChatAgentExecutionGraph({
         // (G-1f window) — users翻 chat history 看不到当时哪条 tier 失败了.
         // Each entry: { toolCallId, toolName, ok, evidenceTrail? }.
         const accumulatedToolResults = [];
+        // Protocol-neutral IR of every tool turn (design audit E1), persisted
+        // as `metadata.toolChain` on the assistant message. Arguments are the
+        // redacted projection; outputs are bounded by buildToolChainRecord.
+        const toolChainTurns = [];
         const evidencePairs = [];
         // agent-loop-audit #1: identical failing calls are answered locally
         // after two consecutive failures instead of re-executed.
@@ -730,13 +757,15 @@ export async function runChatAgentExecutionGraph({
         // including an effectiveAgentProfile merge for every agent and the
         // member background text — although none of them change within a turn.
         const skillToolsById = new Map((graphState.skillTools || []).map(t => [t.id, t]));
+        // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
+        const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
         const allowedToolIdList = [...visibleToolIds];
         let allowedDispatchTools = null;
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;
         const dispatchConstants = () => {
-          allowedDispatchTools ??= new Set(filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id));
+          allowedDispatchTools ??= new Set(filterMcpToolsForAgent([...getAllTools(), ...mcpToolsForAgent(graphState.activeAgentProfile)], graphState.activeAgentProfile).map(t => t.id));
           dispatchAgentProfiles ??= Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]));
           dispatchMemberBackground ??= buildMemberBackground({ chat, projectContext: graphState.projectContext });
           return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
@@ -839,9 +868,11 @@ export async function runChatAgentExecutionGraph({
 
           // Emit SSE event so the UI can show tool execution status
           if (typeof sseEmitter === 'function') {
+            // Design audit D1: the UI gets the same redacted args the
+            // ToolInvocationRecord stores — raw secrets never leave the loop.
             sseEmitter('tool_calls_start', {
               iteration,
-              calls: toolCalls.map(c => ({ id: c.id, name: c.name, arguments: c.arguments })),
+              calls: toolCalls.map(c => ({ id: c.id, name: c.name, arguments: redactToolArgs(c.arguments) })),
             });
           }
 
@@ -873,7 +904,7 @@ export async function runChatAgentExecutionGraph({
             if (repeated) tc.rejectedResult = repeated;
           }
           const executableCalls = toolCalls.map(tc => {
-            let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || getTool(tc.name);
+            let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || mcpToolsByName.get(tc.name) || getTool(tc.name);
             if (tool && !visibleToolIds.has(tool.id)) {
               tool = null;
             }
@@ -898,7 +929,7 @@ export async function runChatAgentExecutionGraph({
               allowedToolIds: allowedToolIdList,
               agentDepth: 0,
               capabilities: context.capabilityScope.capabilities,
-              extraTools: graphState.skillTools,
+              extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])],
               collaboration: graphState.activeAgentProfile.collaboration,
               agentProfiles: dispatchAgentProfiles,
               projectId: chat.projectId,
@@ -937,6 +968,31 @@ export async function runChatAgentExecutionGraph({
             };
           });
 
+          // Append assistant turn (thinking + tool calls) and tool results.
+          // Appending first lets the records below capture the exact
+          // model-facing output string instead of re-deriving it.
+          loopMessages = functionSession.append(loopMessages, turn, allResults);
+          toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments) }));
+
+          // Design audit D1: one ToolInvocationRecord per call, written to
+          // `<home>/desktop/execution-scenes/<runId>.tools.jsonl`. The SSE
+          // `tool_calls_done` payload and the persisted toolResults entry
+          // below are projections of this record; the jsonl line is the
+          // only place the full model-facing output is kept.
+          const modelFacingOutputs = modelFacingOutputsFor(loopMessages[loopMessages.length - 1], allResults);
+          const batchFinishedAt = Date.now();
+          const toolRecords = allResults.map(({ call, result }) => {
+            const execution = resultsById.get(call.id);
+            const record = buildToolInvocationRecord({
+              runId: context.runId, iteration, call, args: call.arguments, result,
+              modelFacingOutput: modelFacingOutputs.get(call.id) || '',
+              startedAt: execution?.startedAt ?? batchFinishedAt, finishedAt: execution?.finishedAt ?? batchFinishedAt,
+              parallelGroup: execution?.parallelGroup ?? null,
+            });
+            appendToolInvocationRecord(record, { home: context.home });
+            return { call, result, record };
+          });
+
           // Emit SSE with results for UI.  G-1d slice 1.5 (2026-05-11):
           // forward `evidenceTrail` to the UI so devtools / debug overlay can
           // inspect which fallback tiers a search tool walked through.  Only
@@ -946,12 +1002,15 @@ export async function runChatAgentExecutionGraph({
           if (typeof sseEmitter === 'function') {
             sseEmitter('tool_calls_done', {
               iteration,
-              results: allResults.map(({ call, result }) => {
+              results: toolRecords.map(({ call, result, record }) => {
                 const item = {
-                  id: call.id,
-                  name: call.name,
+                  id: record.callId,
+                  name: record.toolId,
                   ok: result.ok,
+                  status: record.resultEnvelope.status,
                   output: result.output?.slice(0, 500), // truncate for SSE
+                  argsHash: record.argsHash,
+                  durationMs: record.durationMs,
                 };
                 if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
                   item.evidenceTrail = result.evidenceTrail;
@@ -960,8 +1019,8 @@ export async function runChatAgentExecutionGraph({
                 // errorCode (SearchTask taxonomy) on the same debug channel
                 // as evidenceTrail, so the live devtools overlay sees the
                 // precise failure classification. Additive; null when N/A.
-                const errorCode = deriveUnifiedErrorCode(call, result);
-                if (errorCode) {
+                const errorCode = deriveUnifiedErrorCode(call, result) || record.resultEnvelope.code;
+                if (errorCode && !result.ok) {
                   item.errorCode = errorCode;
                 }
                 return item;
@@ -969,20 +1028,20 @@ export async function runChatAgentExecutionGraph({
             });
           }
 
-          // Append assistant turn (thinking + tool calls) and tool results
-          loopMessages = functionSession.append(loopMessages, turn, allResults);
-
           // G-1d slice 2: accumulate structured tool-result metadata for
           // persistence on the eventual assistantMessage.  Projection
           // logic lives in `./toolResultProjection.js` so it has direct
           // unit-test coverage (Codex review on commit 1 flagged this as
           // a covered-by-hydration-only test gap — solved by extracting
           // the producer-side helper).
-          for (const { call, result } of allResults) {
-            accumulatedToolResults.push(projectToolResultForPersist(call, result));
+          for (const { call, result, record } of toolRecords) {
+            accumulatedToolResults.push(projectToolResultForPersist(call, result, record));
             evidencePairs.push({ call, result, receivedAt: nowIso() });
           }
           if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
+          // A cancelled turn stops here: its records are on disk for the
+          // tool-trace replay (D2) and no further model request is sent.
+          signal?.throwIfAborted();
 
           // If the last iteration was tool calls only, the next pass will produce
           // the final prose reply. Continue loop.
@@ -1005,6 +1064,9 @@ export async function runChatAgentExecutionGraph({
         const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
+        }
+        if (toolChainTurns.length > 0) {
+          out.toolChain = buildToolChainRecord(toolChainTurns, { protocol: functionSession.protocol });
         }
         return out;
       },
@@ -1132,6 +1194,7 @@ export async function runChatAgentExecutionGraph({
         if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {
           normalizedReply.toolResults = graphState.toolResults;
         }
+        if (graphState.toolChain) normalizedReply.toolChain = graphState.toolChain;
         if (signal?.aborted) throw signal.reason || new Error('Request aborted');
         if (modelResponses.length) {
           normalizedReply.modelResponses = modelResponses;

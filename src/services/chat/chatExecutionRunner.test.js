@@ -635,6 +635,34 @@ test('main tool dispatch carries its MCP whitelist and resolved role model into 
   } finally {unregisterTool(forbidden.id);unregisterTool(probe.id);}
 });
 
+test('F3 MCP isolation: mcpRegistry tools reach only the whitelisted agent and dispatch by readable wire name', async () => {
+  const { registerMcpTool, unregisterMcpServer } = await import('../../tools/mcpRegistry.js');
+  const { getTool } = await import('../../tools/registry.js');
+  let runs = 0;
+  registerMcpTool({ id: 'mcp:probe-srv:echo', name: 'probe-srv/echo', description: 'echo', category: 'mcp', requiresPermission: false,
+    parametersSchema: { type: 'object', properties: {} }, run: async () => { runs++; return { ok: true, output: 'echoed' }; } });
+  assert.equal(getTool('mcp:probe-srv:echo'), null, 'MCP tools must not land in the global registry');
+  const run = async (whitelist, callName) => {
+    const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'u1', role: 'user', content: 'Use the echo tool for this task' }] });
+    state.chats = [chat]; state.agentProfiles.main.enabledMcpServerIds = whitelist;
+    await saveState(state);
+    let replies = 0;
+    const result = await runChatAgentExecutionGraph({ config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [], latestUserMessage: 'Use the echo tool for this task', agentId: 'main',
+      _dependencies: { getEmbedding: async () => null, createReply: async () => replies++ === 0 ? `<tool_call>{"id":"c1","name":"${callName}","arguments":{}}</tool_call>` : 'finished' } });
+    return result;
+  };
+  try {
+    const allowed = await run(['probe-srv'], 'mcp__probe_srv__echo');
+    assert.ok((allowed.visibleToolIds || []).includes('mcp:probe-srv:echo'));
+    assert.equal(runs, 1, 'wire name resolves back to the MCP tool');
+    await run(['probe-srv'], 'mcp:probe-srv:echo');
+    assert.equal(runs, 2, 'the canonical id still dispatches');
+    const denied = await run([], 'mcp__probe_srv__echo');
+    assert.ok(!(denied.visibleToolIds || []).includes('mcp:probe-srv:echo'));
+    assert.equal(runs, 2, 'an agent without the server on its whitelist cannot call it');
+  } finally { unregisterMcpServer('probe-srv'); }
+});
+
 
 test('run budget (C1): deadline passes during a tool call → explicit 运行预算 reply, budget:exhausted event, no second provider call', async () => {
   const { registerTool, unregisterTool } = await import('../../tools/registry.js');
@@ -725,4 +753,50 @@ test('optional fast judge retains the answer model and contributes its real usag
   assert.equal(result.normalizedReply.usage.input, 28); assert.equal(result.normalizedReply.usage.output, 11);
   assert.equal(result.normalizedReply.usage.requests, 2);
   assert.ok(events.some(event => event.type === 'execution_event' && event.value.id === 'judge:intent'));
+});
+
+test('tool invocation records (D1): 3 calls → 3 jsonl lines whose modelFacingOutput is the exact function_call_output sent back, and tool_calls_start carries no raw secret', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { readToolInvocationRecords } = await import('../../tools/toolInvocationRecord.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'd1-user', role: 'user', content: '读三个文件' }] });
+  state.chats = [chat];
+  await saveState(state);
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id });
+  const probe = { id: 'trace_probe', name: 'trace_probe', description: 'probe', requiresPermission: false, isConcurrencySafe: true,
+    parametersSchema: { type: 'object', properties: { path: { type: 'string' }, apiKey: { type: 'string' } }, required: ['path', 'apiKey'], additionalProperties: false },
+    run: async args => args.path === 'missing.md' ? { ok: false, output: 'ENOENT no such file', error: 'ENOENT no such file' } : { ok: true, output: `contents of ${args.path}` } };
+  registerTool(probe);
+  const events = []; let replies = 0; let sentOutputs = null;
+  const call = (id, path) => ({ type: 'function_call', call_id: id, name: 'trace_probe', arguments: JSON.stringify({ path, apiKey: 'sk-SECRET-VALUE' }) });
+  try {
+    await runChatAgentExecutionGraph({ context, config: { ...fixtureConfig, apiProtocol: 'responses' }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '读三个文件', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async options => {
+          if (replies++ === 0) return { protocol: 'responses', text: '', responseItems: [call('c1', 'a.md'), call('c2', 'missing.md'), call('c3', 'b.md')] };
+          sentOutputs = options.messages.find(m => Array.isArray(m.functionCallOutputs)).functionCallOutputs;
+          return { protocol: 'responses', text: '读完了', responseItems: [] };
+        } } });
+    assert.equal(replies, 2);
+    assert.equal(sentOutputs.length, 3);
+    const records = await readToolInvocationRecords(context.runId, { home: TEST_HOME });
+    assert.equal(records.length, 3, 'one jsonl line per call');
+    assert.deepEqual(records.map(r => r.callId), ['c1', 'c2', 'c3']);
+    records.forEach((record, i) => {
+      assert.equal(record.modelFacingOutput, sentOutputs[i].output, `record ${i} holds the exact string the model received`);
+      assert.equal(record.runId, context.runId); assert.equal(record.iteration, 0); assert.equal(record.toolId, 'trace_probe');
+      assert.equal(record.argsRedacted.apiKey, '[redacted]'); assert.match(record.argsHash, /^[0-9a-f]{16}$/);
+      assert.ok(Number.isFinite(record.durationMs) && record.durationMs >= 0); assert.equal(record.parallelGroup, 0);
+    });
+    assert.equal(records[1].resultEnvelope.status, 'error'); assert.equal(records[1].resultEnvelope.code, 'NOT_FOUND');
+    const start = events.find(e => e.type === 'tool_calls_start');
+    assert.ok(!JSON.stringify(start.value).includes('sk-SECRET-VALUE'), 'tool_calls_start must not carry the raw key');
+    assert.equal(start.value.calls[0].arguments.apiKey, '[redacted]');
+    assert.equal(start.value.calls[0].arguments.path, 'a.md');
+    const done = events.find(e => e.type === 'tool_calls_done');
+    assert.deepEqual(done.value.results.map(r => [r.id, r.ok, r.status, r.argsHash === records[done.value.results.indexOf(r)].argsHash]), [['c1', true, 'ok', true], ['c2', false, 'error', true], ['c3', true, 'ok', true]]);
+    assert.equal(done.value.results[1].errorCode, 'NOT_FOUND');
+    assert.ok(!JSON.stringify(events).includes('sk-SECRET-VALUE'), 'no SSE event leaks the raw key');
+  } finally { unregisterTool(probe.id); }
 });

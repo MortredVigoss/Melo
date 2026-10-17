@@ -455,13 +455,35 @@ export async function readCodexSseResponse(
   throw new Error('Codex OAuth request completed without returning a final reply.');
 }
 
+// Tool protocol (design audit E1): with `returnToolResponse` the streamed
+// `delta.tool_calls` fragments are accumulated by `index` (id / function.name
+// arrive on the first fragment, `function.arguments` is concatenated) and the
+// reply is `{ protocol:'chat-completions', text, message:{ role, content,
+// tool_calls? } }`; `finish_reason:'tool_calls'` then counts as completion.
 export async function readChatCompletionsSseResponse(
   response,
-  { onDelta, onModelMetadata, idleTimeoutMs = resolveStreamIdleTimeoutMs() } = {},
+  { onDelta, onModelMetadata, idleTimeoutMs = resolveStreamIdleTimeoutMs(), returnToolResponse = false } = {},
 ) {
   let fullText = '';
   let metadata = {};
   let completed = false;
+  const toolCallsByIndex = new Map();
+  const accumulateToolCalls = event => {
+    const fragments = event.choices?.[0]?.delta?.tool_calls;
+    if (!Array.isArray(fragments)) return;
+    for (const fragment of fragments) {
+      if (!fragment || typeof fragment !== 'object') continue;
+      const index = Number.isInteger(fragment.index) ? fragment.index : toolCallsByIndex.size;
+      const current = toolCallsByIndex.get(index) || { id: '', type: 'function', function: { name: '', arguments: '' } };
+      if (typeof fragment.id === 'string' && fragment.id) current.id = fragment.id;
+      if (typeof fragment.type === 'string' && fragment.type) current.type = fragment.type;
+      if (typeof fragment.function?.name === 'string' && fragment.function.name) current.function.name = fragment.function.name;
+      if (typeof fragment.function?.arguments === 'string') current.function.arguments += fragment.function.arguments;
+      if (current.function.arguments.length > 256 * 1024) throw new Error('Streamed tool arguments exceed the size limit.');
+      toolCallsByIndex.set(index, current);
+    }
+  };
+  const assembledToolCalls = () => [...toolCallsByIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => call);
 
   const processEventBlock = async block => {
     if (block.split(/\r?\n/).some(line => /^data:\s*\[DONE\]\s*$/.test(line))) {
@@ -478,15 +500,17 @@ export async function readChatCompletionsSseResponse(
     }
     if (event.model) metadata = { ...metadata, reportedModel: event.model, responseId: event.id || '' };
     if (event.usage) metadata.usage = event.usage;
+    if (returnToolResponse) accumulateToolCalls(event);
     const finishReason = event.choices?.[0]?.finish_reason;
     if (finishReason) metadata.finishReason = finishReason;
-    if (event.model || event.usage || finishReason) onModelMetadata?.({ ...metadata, responseStatus: finishReason ? (finishReason === 'stop' ? 'completed' : 'incomplete') : 'in_progress' });
-    if (finishReason && finishReason !== 'stop') {
+    const toolFinish = returnToolResponse && finishReason === 'tool_calls' && toolCallsByIndex.size > 0;
+    if (event.model || event.usage || finishReason) onModelMetadata?.({ ...metadata, responseStatus: finishReason ? (finishReason === 'stop' || toolFinish ? 'completed' : 'incomplete') : 'in_progress' });
+    if (finishReason && finishReason !== 'stop' && !toolFinish) {
       // Partial text must not be saved as a successful reply after a token
       // limit, content filter or unsupported native tool-only completion.
       throw new Error(`Provider response incomplete (finish_reason: ${String(finishReason).slice(0, 60)}).`);
     }
-    if (finishReason === 'stop') completed = true;
+    if (finishReason === 'stop' || toolFinish) completed = true;
 
     const delta = extractChatCompletionDelta(event);
     if (delta) {
@@ -507,6 +531,13 @@ export async function readChatCompletionsSseResponse(
   });
 
   if (!completed) throw new Error('Provider stream ended before a completion event; the reply is incomplete.');
+  if (returnToolResponse) {
+    const toolCalls = assembledToolCalls();
+    const text = fullText.trim();
+    if (!text && !toolCalls.length) throw new Error('Streaming request completed without returning a final reply.');
+    onModelMetadata?.({ ...metadata, responseStatus: 'completed' });
+    return { protocol: 'chat-completions', text, message: { role: 'assistant', content: fullText, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) } };
+  }
   if (fullText.trim()) {
     onModelMetadata?.({ ...metadata, responseStatus: 'completed' });
     return fullText.trim();

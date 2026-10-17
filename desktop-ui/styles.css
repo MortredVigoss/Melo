@@ -4198,6 +4198,25 @@ select option {
   min-height: 100%;
 }
 
+/* Memory page: cross-device conflict (design 2026-10-17 §3.4). */
+.memory-conflict-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(220, 120, 40, 0.18);
+  color: #b85c12;
+  font-size: 12px;
+  font-weight: 600;
+}
+.memory-conflict {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 120, 40, 0.45);
+  border-radius: 10px;
+  background: rgba(220, 120, 40, 0.06);
+}
+.memory-conflict p { margin: 4px 0; }
+
 .detail-meta {
   display: grid;
   gap: 12px;

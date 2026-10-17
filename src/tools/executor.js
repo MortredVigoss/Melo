@@ -286,9 +286,14 @@ export async function executeToolCalls(calls, options = {}) {
 
   const results = new Array(calls.length);
   let parallelGroup = []; // indices of queued concurrent-safe calls
+  // Design audit D1: every entry also reports wall-clock timing and the
+  // scheduling group it ran in (one number per parallel flush or serial call)
+  // so the runner can build the ToolInvocationRecord without re-timing.
+  let groupSequence = 0;
 
-  async function executeIndex(idx) {
+  async function executeIndex(idx, group) {
     const { id, tool, args } = calls[idx];
+    const startedAt = Date.now();
     let result;
     try {
       result = await executeTool(tool, args, { ...options, toolCallId: `${options.executionPrefix || ''}${id}` });
@@ -298,19 +303,20 @@ export async function executeToolCalls(calls, options = {}) {
       result = finalizeToolResult({ ok: false, error: error.code || 'TOOL_EXECUTION_FAILED', output: error.message,
         meta: { aborted: !!options.signal?.aborted } });
     }
-    results[idx] = { id, toolId: tool.id, result };
+    results[idx] = { id, toolId: tool.id, result, startedAt, finishedAt: Date.now(), parallelGroup: group };
   }
 
   async function flushParallel() {
     if (!parallelGroup.length) return;
     const group = parallelGroup.slice();
     parallelGroup = [];
+    const groupId = groupSequence++;
     let cursor = 0;
     await Promise.all(
       Array.from({ length: Math.min(4, group.length) }, async () => {
         while (cursor < group.length) {
           const idx = group[cursor++];
-          await executeIndex(idx);
+          await executeIndex(idx, groupId);
         }
       }),
     );
@@ -325,7 +331,7 @@ export async function executeToolCalls(calls, options = {}) {
       // Flush any accumulated safe tools first
       await flushParallel();
       // Then run this serial tool
-      await executeIndex(i);
+      await executeIndex(i, groupSequence++);
     }
   }
 

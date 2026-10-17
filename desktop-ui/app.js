@@ -4055,6 +4055,7 @@ async function handleSendMessage(prepared = null) {
             if (existing) {
               existing.status = r.ok ? 'ok' : 'error';
               existing.output = r.output;
+              if (Number.isFinite(r.durationMs)) existing.durationMs = r.durationMs;
               if (Array.isArray(r.evidenceTrail) && r.evidenceTrail.length > 0) {
                 existing.evidenceTrail = r.evidenceTrail;
               }
@@ -9120,9 +9121,11 @@ async function handleMemoryFactAction(action, id) {
   if (action === 'memory-fact-search') { uiState.memoryFactQuery=document.getElementById('memory-fact-query')?.value || ''; uiState.memoryFactOffset=0; await refreshMemoryStatus(); return; }
   if (action === 'memory-fact-prev' || action === 'memory-fact-next') { uiState.memoryFactOffset=Math.max(0,(uiState.memoryFactOffset || 0)+(action.endsWith('next')?50:-50)); await refreshMemoryStatus(); return; }
   if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
-  const patch=action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
+  // Cross-device conflict (design 2026-10-17 §3.4): 采用桌面版 / 采用手机版.
+  const resolveConflict=action==='memory-fact-resolve-desktop'?'desktop':action==='memory-fact-resolve-mobile'?'mobile':null;
+  const patch=resolveConflict ? {resolveConflict} : action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
   uiState.memoryFactBusy=true; bgRender();
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
 }
@@ -11713,6 +11716,8 @@ document.addEventListener('click', async event => {
       case 'memory-fact-save':
       case 'memory-fact-forget':
       case 'memory-fact-restore':
+      case 'memory-fact-resolve-desktop':
+      case 'memory-fact-resolve-mobile':
         await handleMemoryFactAction(action,trigger.dataset.id || trigger.closest('[data-memory-record]')?.dataset.memoryRecord);
         break;
       case 'memory-ref-scope':

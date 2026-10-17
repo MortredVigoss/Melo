@@ -2,6 +2,7 @@ import { moduleForOperation, sceneText, sceneUrl } from '../shared/executionScen
 import { verifySignedFileUrl } from '../web/urlSigning.js';
 import { observeShellWeb } from './shellWebObservation.js';
 import { declaredInputKeys, declaredUiModule } from './tool.js';
+import { redactToolArgs } from './toolInvocationRecord.js';
 
 const safeText = (value, max = 2200) => sceneText(value, max).replace(/\b(Bearer\s+)[^\s]+/gi, '$1[redacted]')
   .replace(/((?:api[_-]?key|password|access[_-]?token|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]');
@@ -14,10 +15,16 @@ export function describeToolInput(args = {}, inputKeys = DEFAULT_INPUT_KEYS) {
 }
 // `tool` is optional: the executor passes the tool object so its `uiModule` /
 // `inputKeys` self-description wins; id-only callers get the legacy tables.
-export function observeTool({ id, name, args = {}, status, result, tool }) {
+export function observeTool({ id, name, args = {}, status, result, tool, record }) {
   const module = moduleForOperation(name, args, declaredUiModule(tool, args));
   const meta = result?.meta || {};
-  const event = { kind: 'operation', id, name, module, status, input: describeToolInput(args, declaredInputKeys(tool)), sources: [], artifacts: [] };
+  // The scene's `input` is the same projection the ToolInvocationRecord uses
+  // (design audit D1): secret-looking keys never reach the execution scene,
+  // whatever the tool's inputKeys say. A caller holding the record passes it
+  // so all three projections read one object.
+  const shownArgs = record?.argsRedacted || redactToolArgs(args, { maxString: 2200 });
+  const event = { kind: 'operation', id, name, module, status, input: describeToolInput(shownArgs, declaredInputKeys(tool)), sources: [], artifacts: [] };
+  if (record && Number.isFinite(record.durationMs)) event.durationMs = record.durationMs;
   if (result) {
     event.status = meta.aborted && !meta.timedOut ? 'cancelled' : result.ok === false ? 'failed' : 'completed';
     event.output = safeText(result.output || '');

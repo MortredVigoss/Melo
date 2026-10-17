@@ -48,6 +48,28 @@ function shouldRenderTrail(call) {
   return shouldShowEvidenceTrail(call?.evidenceTrail, call?.status !== 'error');
 }
 
+// Design audit D1 (2026-10-17): `tool_calls_start` now carries the redacted
+// args projection of the ToolInvocationRecord (secret-looking keys are
+// already '[redacted]', long strings cut), so a short digest can be shown
+// on the pill. Scalars only, first two keys, each value cut to 48 chars.
+export function toolCallArgsDigest(args, { maxEntries = 2, maxValue = 48 } = {}) {
+  if (!args || typeof args !== 'object') return '';
+  const parts = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (!['string', 'number', 'boolean'].includes(typeof value)) continue;
+    const text = String(value).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    parts.push(`${key}=${text.length > maxValue ? `${text.slice(0, maxValue)}…` : text}`);
+    if (parts.length >= maxEntries) break;
+  }
+  return parts.join(', ');
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+}
+
 function renderTrail(call, escapeHtml) {
   if (!shouldRenderTrail(call)) return '';
   return renderEvidenceTrailList(call.evidenceTrail, escapeHtml);
@@ -84,14 +106,20 @@ export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon } =
         // `.tool-call-pill { flex-direction: column; }` directly which
         // broke the no-trail pill into 3 vertical rows.  Layout-contract
         // tests in the .test.js file pin this wrapper's presence.
+        const digest = toolCallArgsDigest(call.arguments);
+        const args = digest ? `<span class="tool-call-pill-args" title="${esc(digest)}">${esc(digest)}</span>` : '';
+        const duration = call.status !== 'running' ? formatDuration(call.durationMs) : '';
+        const timing = duration ? `<span class="tool-call-pill-duration">${esc(duration)}</span>` : '';
         return `
         <div class="tool-call-pill ${statusClass}">
           <div class="tool-call-pill-main">
             <span class="tool-call-pill-icon">${iconMarkup}</span>
             <span class="tool-call-pill-name">${esc(call.name)}</span>
+            ${args}
             ${spinner}
             ${check}
             ${cross}
+            ${timing}
           </div>
           ${renderTrail(call, esc)}
         </div>

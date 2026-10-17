@@ -117,7 +117,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
-| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-16 再统计 180,648 行（含空行/注释，不含 ios）；只读源码统计，非产品验收；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
+| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-17 再统计 189,424 行（含空行/注释，不含 ios）；只读源码统计，非产品验收；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
 | melo网站 | `019dce6e-faae-7850-a8bb-db48b737b928` | 2026-10-15 核对神经网络四区、外放标签和连续镜头源码/快照差异；首页有界轴向转动，非各层无限自转 | 独立本地 WIP，无 Git 元数据/可核实提交；历史 13 单元/22 浏览器未重跑；本轮静态核对旧站 9/9 散列与桌面副本一致；详见[网站交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>)，Safari/用户验收/发布待验 |
 | Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF；GitHub英文README/About/12标签已发布 `39cc759` |
 
@@ -169,6 +169,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ## 8. 补录完成登记与接手索引
 
 ### 2026-10-16 — melo副线 — 刷新固定范围统计
+- 2026-10-17 用户再次要求统计，相同四目录及扩展名命令返回 189,424 行，退出码 0；仅文件计数，文档 WIP 和派生快照更新，不代表产品验收。后续须重新统计。
 - 同日用户再次要求统计，重新执行相同范围命令，最新 180,648 行，退出码 0；下方 179,438 为同日较早快照。本轮仍仅更新文档及派生快照，无产品测试或提交。
 - 线程 `019d5db3-d2cd-70c2-bc8f-955d36099219`；按既定四目录与扩展名执行 `find ... -print0 | xargs -0 wc -l`，结果 179,438 行，退出码 0；仅源码文件行数证据，不含手机目录，不代表测试或用户验收。
 - 本轮仅总览与进度文档 WIP、刷新派生快照；保留其他线程改动，未提交、推送或运行产品 gate；后续统计须重跑，数值会随共享源码变化。

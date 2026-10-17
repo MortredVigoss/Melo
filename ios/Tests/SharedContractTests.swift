@@ -79,6 +79,16 @@ import Foundation
         }
         wait.wait()
 
-        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay, \(handoffs.count) handoffs, \(plans.count) team plans, \(schedules.count) team schedules")
+        let compactSync = contract["compactSync"] as! [String: Any]
+        let conversation = try! SyncValue.from(compactSync["conversation"] as! [String: Any])
+        try! SyncWireContract.validate(conversation, definition: "conversation")
+        let compactMessages = (compactSync["messages"] as! [[String: Any]]).map { ChatMessage(id: $0["id"] as! String, role: $0["role"] as! String, content: $0["content"] as! String) }
+        let compactContext = ConversationHistory.compactContext(conversation["compact"], messages: compactMessages)
+        assert(compactContext.messages.map(\.id) == compactSync["expectedInputIds"] as! [String], "compact boundary differs: \(compactContext.messages.map(\.id))")
+        assert(compactContext.summary.contains(compactSync["summaryContains"] as! String), "compact summary missing")
+        assert(ConversationHistory.recentTurns(compactMessages, afterMessageId: "m4").map(\.id) == compactSync["expectedInputIds"] as! [String])
+        assert(ConversationHistory.recentTurns(compactMessages, afterMessageId: "missing") == ConversationHistory.recentTurns(compactMessages), "an unknown boundary keeps the full history")
+
+        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay, \(handoffs.count) handoffs, \(plans.count) team plans, \(schedules.count) team schedules, compact sync")
     }
 }

@@ -82,6 +82,19 @@ export function replayPortableMemory(state) {
   applyPortableMemory(state);
   state.mobileMemoryPending = null;
 }
+// Row-level conflict (design 2026-10-17 §3.4): the phone's edit arrives as a
+// single version although the desktop row was edited by the user more
+// recently than the phone's edit (both sides edited the same fact). The
+// desktop row stays active; the phone version waits under `metadata.conflict`
+// for 采用桌面版 / 采用手机版 (`editMemoryFact(id,{resolveConflict})`).
+export const memoryConflict = v => ({text:v.text,scope:v.scope,editedAt:v.updatedAt,source:'mobile'});
+export function hasMemoryConflict(prior, v) {
+  if (!prior || !v || v.status!=='active' || prior.metadata.forgotten || prior.metadata.mergedInto) return false;
+  if (prior.text===v.text && (prior.metadata.scope || 'chat')===v.scope) return false;
+  if (!v.userEdited || !prior.metadata.userEdited) return false;
+  const desktopEditedAt = Date.parse(prior.metadata.editedAt || '');
+  return Number.isFinite(desktopEditedAt) && desktopEditedAt > Date.parse(v.updatedAt);
+}
 export function applyPortableMemory(state, expected=null) {
   const rows=(state.mobileWorkspaceSync?.records || []).filter(r=>r.kind==='memory');
   const local=new Map(state.chats.filter(c=>!c.externalThreadKey).map(c=>[c.id,c]));
@@ -97,15 +110,34 @@ export function applyPortableMemory(state, expected=null) {
       if(v.mergedInto!==undefined && v.mergedInto!==prior?.metadata.mergedInto)throw new Error('Memory merge source mismatch');
       if(expected && (prior ? stableJSON(value(prior)) : undefined)!==expected.get(v.memoryID))throw Object.assign(new Error('记忆在同步期间变化，请重新同步；新内容未被覆盖。'),{statusCode:409});
       if(register.versions.length>1) {
-        if(prior && !prior.metadata.mobileSyncConflict)upsertMemory({...prior,metadata:{...prior.metadata,mobileSyncConflict:true}});
+        // Concurrent desktop/phone edits (design 2026-10-17 §3.4 冲突): keep
+        // the workspace-level conflict and expose the phone version on the row
+        // so the memory page can offer 采用桌面版 / 采用手机版.
+        if(prior) {
+          const mine=stableJSON(value(prior));
+          const other=register.versions.map(x=>x.value).find(x=>stableJSON(x)!==mine) || null;
+          const conflict=other ? memoryConflict(other) : prior.metadata.conflict || null;
+          if(!prior.metadata.mobileSyncConflict || stableJSON(conflict)!==stableJSON(prior.metadata.conflict || null)) upsertMemory({...prior,metadata:{...prior.metadata,mobileSyncConflict:true,...(conflict ? {conflict} : {})}});
+        }
         continue;
       }
-      if(prior && stableJSON(value(prior))===stableJSON(v) && !prior.metadata.mobileSyncConflict)continue;
+      if(prior && stableJSON(value(prior))===stableJSON(v)) {
+        // The register settled on the desktop version (sync conflict UI): lift
+        // the workspace flag; a pending row-level conflict stays until resolved.
+        if(prior.metadata.mobileSyncConflict) { const metadata={...prior.metadata,mobileSyncConflict:false}; delete metadata.conflict; upsertMemory({...prior,metadata}); }
+        continue;
+      }
+      if(prior && hasMemoryConflict(prior,v)) {
+        const conflict=memoryConflict(v);
+        if(stableJSON(prior.metadata.conflict || null)!==stableJSON(conflict)) upsertMemory({...prior,metadata:{...prior.metadata,conflict}});
+        continue;
+      }
       const chat=local.get(v.chatId);
       const metadata={...prior?.metadata,originalFact:v.originalFact,chatId:v.chatId,chatTitle:chat.title,projectId:v.projectId || null,agentId:v.agentId,
         sourceMessageId:v.messageId || null,sourceText:v.sourceText,sourceRole:'user',source:chat.source || 'desktop',audience:'local',category:v.category,
         scope:v.scope,userEdited:v.userEdited,forgotten:v.status==='forgotten',quarantined:v.status==='unconfirmed',validTo:portableValidTo(v, prior),mobileSyncConflict:false,
         ...(v.scope==='project' ? {section:v.section || prior?.metadata.section || null,bookStatus:v.bookStatus || prior?.metadata.bookStatus || 'confirmed'} : {})};
+      delete metadata.conflict;
       upsertMemory({id:v.memoryID,namespace:factNamespace({id:v.chatId,projectId:v.projectId},v.scope,v.agentId),kind:'session-fact',sourceId:v.chatId,text:v.text,searchText:normalizedFact(v.text),createdAt:prior?.createdAt || v.updatedAt,updatedAt:v.updatedAt,metadata});
     }
   });

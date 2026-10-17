@@ -1,5 +1,6 @@
 import { normalizeUsage } from './runtime/usage.js';
 import { modelReplyText } from './tools/functionCalling.js';
+import { isToolProtocolMessage, renderToolMessage } from './tools/toolProtocol.js';
 import { prepareVisionInputs } from './media/visionInputs.js';
 import { fastGenerationOptions } from './shared/fastGeneration.js';
 import { requestAnthropicReply } from './providers/anthropic.js';
@@ -577,11 +578,16 @@ function normalizeProviderMessageContent(content) {
 
 function normalizeProviderMessages(messages = []) {
   return messages
-    .map(message => ({
-      role: message?.role,
-      content: normalizeProviderMessageContent(message?.content),
-    }))
+    .map(message => isToolProtocolMessage(message)
+      // Protocol-neutral tool turns (design audit E1) are rendered by the
+      // transport (anthropic.js / chat-completions below), not flattened here.
+      ? message
+      : {
+        role: message?.role,
+        content: normalizeProviderMessageContent(message?.content),
+      })
     .filter(message => {
+      if (isToolProtocolMessage(message)) return true;
       if (message.role !== 'user' && message.role !== 'assistant') {
         return false;
       }
@@ -1318,7 +1324,9 @@ export async function createOpenAICompatibleReply(options) {
     };
     options.onProviderResponse?.(receipt);
     if (options.providerProfile !== 'fast') {
-      await record('model', { ok: Boolean(modelReplyText(reply).trim() || reply?.responseItems?.some(item => item.type === 'function_call')), level: 'response', provider: options.authMode || '', ...receipt });
+      const hasToolCalls = reply?.responseItems?.some(item => item.type === 'function_call')
+        || reply?.message?.tool_calls?.length > 0 || reply?.content?.some?.(block => block?.type === 'tool_use');
+      await record('model', { ok: Boolean(modelReplyText(reply).trim() || hasToolCalls), level: 'response', provider: options.authMode || '', ...receipt });
     }
     return reply;
   } catch (error) {
@@ -1349,6 +1357,10 @@ async function requestOpenAICompatibleReply({
   cacheScope,
   maxTokens,
   functionTools,
+  // Tool protocol (design audit E1): which shape `functionTools` is in and
+  // which transport must carry the tool turn. Absent → the historical
+  // behaviour (any functionTools array means the Responses protocol).
+  toolProtocol,
 }) {
   if (requestEnvironment().MELO_MOCK_RESPONSE) {
     const mockReply = requestEnvironment().MELO_MOCK_RESPONSE;
@@ -1397,14 +1409,20 @@ async function requestOpenAICompatibleReply({
   }
 
   messages = await prepareVisionInputs(messages, { readResource: readAttachmentResource, signal });
-  if (Array.isArray(functionTools) || apiProtocol === 'responses') {
+  const nativeTools = Array.isArray(functionTools);
+  const resolvedToolProtocol = nativeTools ? (toolProtocol || 'responses') : null;
+  if (resolvedToolProtocol === 'responses' || apiProtocol === 'responses') {
     return createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages, functionTools, signal,
       onDelta, onReasoningDelta, onModelMetadata, maxTokens, cacheScope, providerProfile });
   }
   const protocol = apiProtocol || (new URL(baseUrl).hostname === 'api.anthropic.com' ? 'anthropic' : 'chat-completions');
-  if (protocol === 'anthropic') return requestAnthropicReply({ baseUrl: normalizeBaseUrl(baseUrl), apiKey, model, systemPrompt, messages: normalizeProviderMessages(messages), signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal), onDelta, onModelMetadata, maxTokens: maxTokens ?? (providerProfile === 'fast' ? 1024 : undefined) });
+  if (protocol === 'anthropic' || resolvedToolProtocol === 'anthropic') {
+    return requestAnthropicReply({ baseUrl: normalizeBaseUrl(baseUrl), apiKey, model, systemPrompt, messages: normalizeProviderMessages(messages), signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal), onDelta, onModelMetadata, maxTokens: maxTokens ?? (providerProfile === 'fast' ? 1024 : undefined),
+      ...(resolvedToolProtocol === 'anthropic' ? { tools: functionTools } : {}) });
+  }
 
   const endpoint = `${normalizeBaseUrl(baseUrl)}/chat/completions`;
+  const chatTools = resolvedToolProtocol === 'chat-completions';
   // Resolve audio_attachment parts to input_audio (base64) so models that support
   // native audio input (e.g. GPT-4o Audio, local multimodal models) can process them
   // directly instead of requiring Whisper transcription.
@@ -1415,10 +1433,13 @@ async function requestOpenAICompatibleReply({
     model,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...resolvedMessages,
+      // Tool protocol (E1): assistant `tool_calls` are echoed exactly as
+      // received and each result becomes one `{role:'tool'}` message.
+      ...resolvedMessages.flatMap(message => renderToolMessage(message, 'chat-completions') || [message]),
     ],
     ...(typeof onDelta === 'function' ? { stream: true } : {}),
     ...(chatPromptCacheKey ? { prompt_cache_key: chatPromptCacheKey } : {}),
+    ...(chatTools && functionTools.length ? { tools: functionTools, tool_choice: 'auto' } : {}),
   };
 
   await ensureFetchKeepAliveConfigured();
@@ -1447,11 +1468,12 @@ async function requestOpenAICompatibleReply({
 
   const responseType = response.headers.get('content-type') || '';
   if (typeof onDelta === 'function' && responseType.includes('text/event-stream')) {
-    return readChatCompletionsSseResponse(response, { onDelta, onModelMetadata });
+    return readChatCompletionsSseResponse(response, { onDelta, onModelMetadata, returnToolResponse: chatTools });
   }
 
   const json = await response.json();
   onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage, finishReason: json.choices?.[0]?.finish_reason });
+  if (chatTools) return chatCompletionsToolReply(json, { onDelta });
   const assistantText = extractAssistantText(json);
   if (typeof onDelta === 'function') {
     await onDelta({
@@ -1460,4 +1482,21 @@ async function requestOpenAICompatibleReply({
     });
   }
   return assistantText;
+}
+
+// Non-streaming chat-completions reply in the tool protocol: `{ protocol:
+// 'chat-completions', text, message }` where `message` is the assistant
+// message exactly as the provider returned it (echoed back in history).
+async function chatCompletionsToolReply(json, { onDelta } = {}) {
+  const choice = json?.choices?.[0];
+  const message = choice?.message && typeof choice.message === 'object' ? choice.message : null;
+  const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  const finishReason = choice?.finish_reason;
+  if (finishReason && finishReason !== 'stop' && !(finishReason === 'tool_calls' && toolCalls.length)) {
+    throw new Error(`Provider response incomplete (finish_reason: ${String(finishReason).slice(0, 60)}).`);
+  }
+  const text = normalizeMessageContent(message?.content);
+  if (!text && !toolCalls.length) throw new Error('Provider returned an empty response without a final reply.');
+  if (typeof onDelta === 'function' && text) await onDelta({ delta: text, text });
+  return { protocol: 'chat-completions', text, message: { ...message, role: 'assistant' } };
 }

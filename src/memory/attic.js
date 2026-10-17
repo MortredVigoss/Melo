@@ -122,9 +122,12 @@ export function reassessAttic({ sinceIso = null, limit = 2000, nowMs = Date.now(
  * @param {string[]}   options.namespaces
  * @param {number}     [options.limit]            max rows (default 8)
  * @param {number}     [options.tokenBudget]      default ATTIC_HOT_TOKEN_BUDGET
+ * @param {string}     [options.audience]         'desktop' (default) or the remote
+ *                                                channel name; remote drops
+ *                                                audience=local rows at the SQL layer
  * @returns {string}
  */
-export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall } = {}) {
+export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall, audience = 'desktop' } = {}) {
   // `identity` rows are deliberately NOT recalled here. The agent persona is
   // already rendered verbatim in the `agent` section of the system prompt;
   // re-injecting it through memory meant every turn carried two copies (the
@@ -139,6 +142,10 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
     limit: limit * 4,
     sideEffects: false,
     accept,
+    // Remote audience boundary (design §3.4 M7): applied in SQL next to
+    // forgotten/validTo, so a remote chat's Hot Attic can never surface a
+    // desktop-only row even if `accept` forgets to check it.
+    audience,
     // Pinned / correction / decision / sweep-marked-hot rows first, so an
     // old pinned decision is not pushed out of the pool by newer ordinary
     // facts (design audit M3).

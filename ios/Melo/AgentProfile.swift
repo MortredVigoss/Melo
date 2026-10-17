@@ -123,6 +123,8 @@ struct MobilePreferences: Codable {
     var chatProjects: [String: String]?
     var knowledge: [KnowledgeNote]?
     var chatKnowledge: [String: Set<String>]?
+    /// `conversation.compact` from the sync workspace (desktop summary + boundary), keyed by chat id.
+    var chatCompact: [String: SyncValue]?
     var projectAgents: [String: [String: AgentProfile]]?
     var workspaceSync: SyncWorkspace?
     var messageModels: [String: [PortableModelReceipt]]?

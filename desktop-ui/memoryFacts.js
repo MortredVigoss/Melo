@@ -2,7 +2,7 @@ import { t, ui } from './i18n.js';
 import { renderEditActions, EditSession } from './settingsEdit.js';
 const escape=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const scopes={chat:'仅原对话',project:'此项目的本地对话',agent:'此Agent的本地对话',personal:'我的全部本地对话'};
-const statuses={active:'使用中',historical:'已失效',forgotten:'已停止使用',unconfirmed:'来源待确认'};
+const statuses={active:'使用中',historical:'已失效',forgotten:'已停止使用',unconfirmed:'来源待确认',conflict:'冲突'};
 const categories={user_preference:'偏好',project_context:'项目背景',technical_detail:'技术细节',decision:'决定',correction:'纠正',identity:'身份'};
 export function renderMemoryFacts(data,{query='',editing=null,busy=false,draft=null,session=null,feedback=null}={}) {
   return ui`<section class="quality-details memory-facts"><h3>记住的事实</h3>
@@ -10,7 +10,11 @@ export function renderMemoryFacts(data,{query='',editing=null,busy=false,draft=n
     <div class="inline-actions"><input id="memory-fact-query" aria-label="搜索记忆" placeholder="搜索内容或来源对话" value="${escape(query)}"/><button class="small-button" data-action="memory-fact-search">搜索</button></div>
     ${!data?ui`<p>正在读取记忆…</p>`:data.records.length?data.records.map(r=>ui`<article class="detail-card" data-memory-record="${escape(r.id)}">
       ${feedback?.id===r.id?ui`<div class="settings-edit-toolbar" data-edit-status="saved"><span class="settings-save-status" role="status">✓ ${escape(feedback.message)}</span></div>`:''}
-      <div class="list-row-meta">${escape(statuses[r.status])} · ${escape(scopes[r.scope])}${r.category?` · ${escape(categories[r.category] || r.category)}`:''}${r.pinned?' · 📌 固定常驻':''}</div>
+      <div class="list-row-meta">${r.status==='conflict'?ui`<span class="status-badge memory-conflict-badge">冲突</span> `:''}${escape(statuses[r.status] || r.status)} · ${escape(scopes[r.scope])}${r.category?` · ${escape(categories[r.category] || r.category)}`:''}${r.pinned?' · 📌 固定常驻':''}</div>
+      ${r.conflict?ui`<div class="memory-conflict" data-memory-conflict="${escape(r.id)}"><p>桌面与手机都修改了这条记忆，桌面版仍在使用；请选择保留哪一版。</p>
+        <p><strong>桌面版</strong>（${escape(scopes[r.scope])}）：${escape(r.text)}</p>
+        <p><strong>手机版</strong>（${escape(scopes[r.conflict.scope] || r.conflict.scope || '')}${r.conflict.editedAt?` · ${escape(r.conflict.editedAt)}`:''}）：${escape(r.conflict.text)}</p>
+        <div class="inline-actions"><button class="small-button" data-action="memory-fact-resolve-desktop" data-id="${escape(r.id)}" ${busy?'disabled':''}>采用桌面版</button><button class="small-button" data-action="memory-fact-resolve-mobile" data-id="${escape(r.id)}" ${busy?'disabled':''}>采用手机版</button></div></div>`:''}
       ${editing===r.id?ui`<label>记忆内容<textarea id="memory-fact-text" rows="3" maxlength="2000" ${busy?'disabled':''}>${escape(draft?.text ?? r.text)}</textarea></label>
         <label>使用范围<select id="memory-fact-scope" ${busy?'disabled':''}>${Object.entries(scopes).filter(([key])=>key==='chat'||r.local&&(key!=='project'||r.projectId)).map(([key,label])=>ui`<option value="${key}" ${key===(draft?.scope ?? r.scope)?'selected':''}>${escape(label)}</option>`).join('')}</select></label>
         <label>类别<select id="memory-fact-category" ${busy?'disabled':''}>${Object.entries(categories).map(([key,label])=>ui`<option value="${key}" ${key===(draft?.category ?? r.category)?'selected':''}>${escape(label)}</option>`).join('')}</select></label>

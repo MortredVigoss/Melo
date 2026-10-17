@@ -71,3 +71,19 @@ test('team execution order, inputs and acceptance match the shared contract', as
     assert.deepEqual([team.accepted, team.ok], [row.accepted, row.ok]);
   }
 });
+
+test('compact sync fixture validates on the wire and the phone-side history rule yields the turns after the boundary', async () => {
+  const { portableValue, validateWorkspace } = await import('./workspaceProtocol.js');
+  const { conversation, messages, expectedInputIds, summaryContains } = contract.compactSync;
+  const value = portableValue('conversation', conversation);
+  assert.equal(value.compact.boundaryMessageId, 'm4');
+  assert.equal(value.compact.compactedCount, 4);
+  assert.ok(value.compact.summary.includes(summaryContains));
+  assert.equal(value.compact.cards.length, 1);
+  const workspace = validateWorkspace({ version: 1, records: [{ kind: 'conversation', id: 'long-chat', versions: [{ clock: { desktop: 1 }, value: conversation }] }] });
+  assert.deepEqual(workspace.records[0].versions[0].value.compact, value.compact);
+  // Same rule as ConversationHistory.recentTurns(afterMessageId:) on iOS.
+  const boundary = messages.findLastIndex(m => m.id === value.compact.boundaryMessageId);
+  assert.deepEqual(messages.slice(boundary + 1).map(m => m.id), expectedInputIds);
+  assert.equal(messages.findLastIndex(m => m.id === 'missing'), -1, 'an unknown boundary keeps the full history');
+});

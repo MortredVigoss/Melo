@@ -42,7 +42,7 @@ export function estimateTextTokens(value = '') {
 const messageCostCache = new WeakMap();
 
 function costFingerprint(message) {
-  const items = message.responseItems || message.functionCallOutputs;
+  const items = message.responseItems || message.functionCallOutputs || message.toolCalls || message.toolResults;
   return {
     content: message.content,
     items,
@@ -69,10 +69,13 @@ export function estimateMessageTokens(message) {
 }
 
 function computeMessageTokens(message) {
-  const protocolItems = message?.responseItems || message?.functionCallOutputs;
+  // Responses items, or the protocol-neutral toolCalls/toolResults IR
+  // (Anthropic / chat-completions tool turns, design audit E1).
+  const protocolItems = message?.responseItems || message?.functionCallOutputs || message?.toolCalls || message?.toolResults;
   if (Array.isArray(protocolItems)) {
     // Include opaque encrypted state conservatively; never log or truncate it.
-    return 6 + estimateTextTokens(JSON.stringify(protocolItems));
+    const textCost = !message.responseItems && Array.isArray(message.toolCalls) && typeof message.content === 'string' ? estimateTextTokens(message.content) : 0;
+    return 6 + estimateTextTokens(JSON.stringify(protocolItems)) + textCost;
   }
   const content = message?.content;
   let cost = 6;

@@ -144,7 +144,7 @@ async function runSubAgentLoop({
 
   // Tool prompt is scoped to the allowed subset so the model doesn't hallucinate
   // tools it cannot actually call.
-  const toolsPrompt = buildToolsSystemPrompt(allowedTools, { native: functionSession.native });
+  const toolsPrompt = buildToolsSystemPrompt(allowedTools, { native: functionSession.native, protocol: functionSession.protocol });
 
   // System prompt intentionally does NOT embed the parent-supplied `instructions`.
   // They are treated as untrusted input and surfaced in the first user turn

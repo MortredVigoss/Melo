@@ -43,6 +43,39 @@ export function portableScene(v) {
   const stage = x => ({id:text(x.id,200),module:['search','compute','files','tools','create'].includes(x.module)?x.module:'tools',name:text(x.name,200),status:['queued','running','completed','failed','cancelled','interrupted'].includes(x.status)?x.status:'interrupted',provider:text(x.provider,200),input:text(x.input,2200),output:text(x.handoff?JSON.stringify(x.handoff):x.output,12000),query:text(x.query,2200),resultSummary:text(x.resultSummary,2200),model:text(x.model,180),returnedModel:text(x.returnedModel,180),channel:text(x.channel,100),startedAt:text(x.startedAt,50),finishedAt:text(x.finishedAt,50)});
   return {runId:v.runId,status:v.status,query:text(v.query,12000),startedAt:text(v.startedAt,50),finishedAt:text(v.finishedAt,50),lastModule:text(v.lastModule,50),requestedModel:text(v.requestedModel,180),returnedModel:text(v.returnedModel,180),sourceDevice:text(v.sourceDevice,200),operations:list(v.operations,500).map(stage),pipeline:list(v.pipeline,500).map(stage),sources:list(v.sources,2000).map((s,i)=>({id:text(s.id,200)||`source-${i}`,url:url(s.url),title:text(s.title,1000),titleProvided:s.titleProvided===true,order:Number.isSafeInteger(s.order)?s.order:i,rank:Number.isSafeInteger(s.rank)?s.rank:i,reading:['unknown','snippet','partial','range-unknown','extracted','full'].includes(s.reading)?s.reading:'unknown',appeared:s.appeared===true,accessed:s.accessed===true,opened:s.opened===true,cited:s.cited===true,providers:list(s.providers,30).map(x=>text(x,200)),queries:list(s.queries,100).map(x=>text(x,2200))}))};
 }
+// Desktop compact state synced to the phone (design 2026-10-17 手机对齐):
+// the phone keeps only turns after `boundaryMessageId` and prepends
+// `summary` (≤8 KB) to its instructions. `cards` is the optional ledger
+// (each summary ≤2 KB) for clients that render topic cards.
+export const COMPACT_SOURCES = ['cloud','local','rule'];
+export const COMPACT_SUMMARY_LIMIT = 8192, COMPACT_CARD_SUMMARY_LIMIT = 2048, COMPACT_CARDS_LIMIT = 200;
+const date = v => { if (typeof v !== 'string' || !Number.isFinite(Date.parse(v))) throw new Error('Invalid compact timestamp'); return v; };
+export function portableCompact(v) {
+  if (v == null) return null;
+  if (!object(v)) throw new Error('Invalid conversation compact');
+  if (!validMessageID(v.boundaryMessageId)) throw new Error('Invalid compact boundary');
+  if (!Number.isSafeInteger(v.compactedCount) || v.compactedCount < 1) throw new Error('Invalid compact count');
+  if (!COMPACT_SOURCES.includes(v.source)) throw new Error('Invalid compact source');
+  if (!Array.isArray(v.cards || []) || (v.cards || []).length > COMPACT_CARDS_LIMIT) throw new Error('Compact cards exceed limit');
+  const cards = (v.cards || []).map(card => {
+    if (!object(card) || !COMPACT_SOURCES.includes(card.source)) throw new Error('Invalid compact card');
+    const id = text(card.id,200), summary = text(card.summary,COMPACT_CARD_SUMMARY_LIMIT);
+    if (!id || !summary) throw new Error('Invalid compact card');
+    if (card.fromMessageId && !validMessageID(card.fromMessageId) || card.toMessageId && !validMessageID(card.toMessageId)) throw new Error('Invalid compact card range');
+    if (!Number.isSafeInteger(card.messageCount ?? 0) || (card.messageCount ?? 0) < 0) throw new Error('Invalid compact card count');
+    return {id,title:text(card.title,200),summary,fromMessageId:card.fromMessageId || '',toMessageId:card.toMessageId || '',messageCount:card.messageCount ?? 0,at:card.at ? date(card.at) : '',source:card.source};
+  });
+  return {boundaryMessageId:v.boundaryMessageId,compactedCount:v.compactedCount,source:v.source,at:date(v.at),summary:text(v.summary,COMPACT_SUMMARY_LIMIT),...(cards.length ? {cards} : {})};
+}
+/** Merge rule: the larger `compactedCount` wins, ties go to the later `at`; never moves backwards. */
+export function preferCompact(current, incoming) {
+  if (!incoming) return current || null;
+  if (!current) return incoming;
+  if (incoming.compactedCount !== current.compactedCount) return incoming.compactedCount > current.compactedCount ? incoming : current;
+  return Date.parse(incoming.at) > Date.parse(current.at) ? incoming : current;
+}
+/** True when `incoming` would replace `current` under `preferCompact`. */
+export const compactAdvances = (current, incoming) => !!incoming && preferCompact(current, incoming) === incoming && incoming !== current;
 export function portableValue(kind,v) {
   if (!object(v)) throw new Error('Invalid workspace value');
   if (kind==='memory') {
@@ -63,7 +96,10 @@ export function portableValue(kind,v) {
     for(const [id,agent] of Object.entries(v.agentOverrides || {})) {if(!safeID(id))throw new Error('Invalid project role');agentOverrides[id]=portableAgent(agent);}
     return {name:text(v.name,200),goal:text(v.goal),instructions:text(v.instructions),archived:v.archived===true,knowledgeIds:ids(v.knowledgeIds),agentOverrides};
   }
-  if (kind==='conversation') return {agentId:safeID(v.agentId)?v.agentId:'main',projectId:safeID(v.projectId)?v.projectId:null,knowledgeIds:ids(v.knowledgeIds),model:portableModel(v.model)};
+  if (kind==='conversation') {
+    const compact = portableCompact(v.compact);
+    return {agentId:safeID(v.agentId)?v.agentId:'main',projectId:safeID(v.projectId)?v.projectId:null,knowledgeIds:ids(v.knowledgeIds),model:portableModel(v.model),...(compact ? {compact} : {})};
+  }
   if (kind==='message') {
     if (!safeID(v.chatId)) throw new Error('Invalid message context');
     if(!Array.isArray(v.models || []) || (v.models || []).length>200)throw new Error('Invalid model receipts');
@@ -84,6 +120,17 @@ function coalesce(versions) {
   // Equal clocks carrying different payloads are preserved as conflicts too.
   return list.filter((v,i)=>!list.some((other,j)=>j!==i&&dominates(other.clock,v.clock)&&!dominates(v.clock,other.clock))).sort((a,b)=>stableJSON(a.value).localeCompare(stableJSON(b.value)));
 }
+// Conversation registers whose concurrent versions differ only in `compact`
+// are not a user-facing conflict: the compact merge rule picks one.
+function coalesceConversation(versions) {
+  if (versions.length < 2) return versions;
+  const strip = value => { const {compact:_compact, ...rest} = value; return stableJSON(rest); };
+  const base = strip(versions[0].value);
+  if (!versions.every(version => strip(version.value) === base)) return versions;
+  const compact = versions.reduce((best, version) => preferCompact(best, version.value.compact || null), null);
+  const {compact:_dropped, ...rest} = versions[0].value;
+  return [{clock:joinClocks(versions),value:{...rest,...(compact ? {compact} : {})}}];
+}
 export function validateWorkspace(v) {
   if(v==null)return null;
   validateSchema(v, syncSchema.$defs.workspace, syncSchema);
@@ -93,7 +140,8 @@ export function validateWorkspace(v) {
     const key=`${r.kind}:${r.id}`;
     if(!(r.kind==='message'?validMessageID(r.id):safeID(r.id))||seen.has(key)||!Array.isArray(r.versions)||!r.versions.length||r.versions.length>20)throw new Error('Invalid workspace register');
     seen.add(key);
-    return {kind:r.kind,id:r.id,versions:coalesce(r.versions.map(version=>({clock:clock(version.clock),value:portableValue(r.kind,version.value)})))};
+    const versions=coalesce(r.versions.map(version=>({clock:clock(version.clock),value:portableValue(r.kind,version.value)})));
+    return {kind:r.kind,id:r.id,versions:r.kind==='conversation'?coalesceConversation(versions):versions};
   }).sort((a,b)=>`${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))};
 }
 export function mergeWorkspaces(a,b) {

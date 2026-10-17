@@ -2,7 +2,7 @@ import { recordMemoryRejection } from './store.js';
 import { iterateMemoryRecords, getMemoriesByIds, upsertMemory, withTransaction, isEntryInvalidated } from './store.js';
 import { factId, factNamespace, normalizedFact, canRecallMemory, isLocalChat } from './factPolicy.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
-import { writeAutoBookRow, normalizeSection, BOOK_SECTIONS } from '../services/project/projectMemoryBook.js';
+import { writeAutoBookRow, normalizeSection, BOOK_SECTIONS } from './projectBook.js';
 
 // Personal profile (design 2B): only these categories render in the stable
 // personal block; anything else promoted to personal is a preference.
@@ -100,6 +100,15 @@ export function editMemoryFact(id, patch={}) {
   const row=getMemoriesByIds([id]).find(r=>r.kind==='session-fact');
   if (!row) throw new Error('这条记忆不存在。');
   if (row.metadata.sourceDeleted && patch.forgotten === false) throw new Error('来源对话已删除，这条记忆不能重新启用。');
+  // Cross-device conflict (design 2026-10-17 §3.4): 'desktop' keeps the row's
+  // own text, 'mobile' takes the phone version stored under metadata.conflict;
+  // both clear the conflict (and the workspace-level flag).
+  if (patch.resolveConflict!==undefined) {
+    if (!['desktop','mobile'].includes(patch.resolveConflict)) throw new Error('冲突处理方式无效。');
+    const conflict=row.metadata.conflict;
+    if (!conflict || typeof conflict!=='object') throw new Error('这条记忆没有待处理的冲突。');
+    if (patch.resolveConflict==='mobile') patch={...patch,text:conflict.text,scope:conflict.scope || row.metadata.scope || 'chat'};
+  }
   const text=patch.text===undefined?row.text:String(patch.text).trim();
   if (!text || text.length>2000) throw new Error('记忆内容需要在 1–2000 字之间。');
   const scope=patch.scope || row.metadata.scope || 'chat';
@@ -135,6 +144,7 @@ export function editMemoryFact(id, patch={}) {
     delete metadata.bookStatus; delete metadata.section; delete metadata.needsConfirmation;
   }
   if (scope==='personal' && !PERSONAL_PROFILE_CATEGORIES.includes(metadata.category)) metadata.category='user_preference';
+  if (patch.resolveConflict!==undefined) { delete metadata.conflict; metadata.mobileSyncConflict=false; }
   if (patch.forgotten===true) { metadata.forgotten=true; metadata.validTo=metadata.editedAt; recordMemoryRejection(id); }
   if (patch.forgotten===false) { metadata.forgotten=false; metadata.validTo=null; metadata.quarantined=false; }
   const updated={...row,text,searchText:normalizedFact(text),updatedAt:metadata.editedAt,

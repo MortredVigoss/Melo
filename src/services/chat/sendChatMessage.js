@@ -11,6 +11,7 @@ import { beginChatRun, completeChatRun, interruptChatRun } from './turnLedger.js
 import { recordFailure } from '../../runtime/failureCounters.js';
 import { precompactIfNeeded } from './compactScheduler.js';
 import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, persistImageProgress, finishPartialImageReply } from './imageTurnState.js';
+import { persistToolTrace, readToolTraceText, buildToolTraceMessage } from './toolTraceReplay.js';
 // sendChatMessage entry — sub-phase 7d-5δ commit 8f of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -131,6 +132,11 @@ export function sendChatMessage(options) {
       } catch (error) {
         const status = context.signal?.aborted ? 'cancelled' : 'failed';
         const partialReply = await finishPartialImageReply(context, status);
+        // Design audit D2: the tools this turn already ran are replayed to the
+        // next turn as a short text trace (appended to the partial reply when
+        // one exists, otherwise a `tool-trace` assistant message). Best
+        // effort — the turn's own error is what the caller must see.
+        await persistToolTrace(context, { status }).catch(traceError => recordFailure('chat:tool-trace', traceError));
         // If marking the run interrupted fails, the chat stays `running` and
         // rejects retries/deletion until restart (audit A-10): retry once,
         // then count and log it so diagnostics can show the stuck ledger.
@@ -379,6 +385,11 @@ async function executeChatTurn({
       attachments: [],
       createdAt: nowIso(),
     };
+    // Design audit D2: the failure text itself is filtered out of future
+    // prompts (contextFilters), so the tools this turn already ran travel as
+    // a separate plain-text `tool-trace` message written in the same commit.
+    const failureTrace = await readToolTraceText(context, { status: 'failed' }).catch(() => '');
+    const traceMessage = failureTrace ? buildToolTraceMessage(context, failureTrace, { status: 'failed', agent: { id: activeAgentProfile.id, name: activeAgentProfile.name } }) : null;
     // Persist the failure reply inside the atomic queue so concurrent
     // writes (other chats, poller, UI edits) can't undo the append. We
     // re-find the chat inside the mutator to avoid writing based on a
@@ -391,6 +402,7 @@ async function executeChatTurn({
         throw new Error('Chat not found after provider failure.');
       }
       signal?.throwIfAborted();
+      if (traceMessage) latestChat.messages.push(traceMessage);
       latestChat.messages.push(assistantMessage);
       completeChatRun(latestState, context, assistantMessage);
       latestChat.updatedAt = nowIso();
@@ -463,9 +475,17 @@ async function executeChatTurn({
           ...(normalizedReply.modelResponses?.length ? { modelResponses: normalizedReply.modelResponses } : {}),
           ...(state._pendingVerificationRecord ? { verificationRecord: state._pendingVerificationRecord } : {}),
           ...(normalizedReply.canonicalReply ? { canonicalReply: normalizedReply.canonicalReply } : {}),
+          // Protocol-neutral tool chain (design audit E1): bounded IR of this
+          // reply's tool turns; rendered back into any protocol by messageBuilder.
+          ...(normalizedReply.toolChain ? { toolChain: normalizedReply.toolChain } : {}),
         } },
   };
   delete state._pendingVerificationRecord;
+  // Design audit D2 (optional): MELO_TOOL_TRACE_ALWAYS=1 also replays the
+  // tool trace of successful turns that ran at least one tool.
+  const successTrace = context.env.MELO_TOOL_TRACE_ALWAYS === '1' && Array.isArray(normalizedReply.toolResults) && normalizedReply.toolResults.length
+    ? await readToolTraceText(context, { status: 'completed' }).catch(() => '') : '';
+  const successTraceMessage = successTrace ? buildToolTraceMessage(context, successTrace, { status: 'completed', agent: { id: effectiveAgentId, name: activeAgentProfile.name } }) : null;
   // Persist the assistant reply inside the atomic queue so we always merge
   // against the freshest chat (no lost updates from concurrent message
   // writes or artifact pushes). `latestChat` captures the in-queue chat
@@ -480,7 +500,12 @@ async function executeChatTurn({
     }
     signal?.throwIfAborted();
     const existingIndex = latestChat.messages.findIndex(m => m.id === assistantMessage.id);
-    if (existingIndex >= 0) latestChat.messages[existingIndex] = assistantMessage;
+    if (successTraceMessage && !latestChat.messages.some(m => m.id === successTraceMessage.id)) {
+      if (existingIndex >= 0) latestChat.messages.splice(existingIndex, 0, successTraceMessage);
+      else latestChat.messages.push(successTraceMessage);
+    }
+    const replyIndex = latestChat.messages.findIndex(m => m.id === assistantMessage.id);
+    if (replyIndex >= 0) latestChat.messages[replyIndex] = assistantMessage;
     else latestChat.messages.push(assistantMessage);
     // Supplements used during the turn become part of the question in the transcript.
     const used = usedSupplements(chat.id);

@@ -76,9 +76,11 @@ function latestUserIndex(messages) {
 function requiredIndices(messages) {
   const latestUser = latestUserIndex(messages);
   const indices = new Set(latestUser >= 0 ? [latestUser] : []);
-  if (latestUser >= 0 && messages.slice(latestUser).some(message => message.responseItems || message.functionCallOutputs)) {
-    // Responses continuation is one indivisible chain from the current user
-    // input through every call/output/reasoning item. Fail closed if too large.
+  if (latestUser >= 0 && messages.slice(latestUser).some(message => message.responseItems || message.functionCallOutputs || message.toolCalls || message.toolResults)) {
+    // A native tool continuation (Responses items, or the protocol-neutral
+    // toolCalls/toolResults IR used for Anthropic and chat-completions) is one
+    // indivisible chain from the current user input through every
+    // call/output/reasoning item. Fail closed if too large.
     for (let index = latestUser; index < messages.length; index += 1) indices.add(index);
   }
   // Keep the newest tool-call/result pair together, including error evidence.

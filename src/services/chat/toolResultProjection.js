@@ -69,14 +69,21 @@ export function deriveUnifiedErrorCode(call, result) {
 /**
  * @param {{ id?: string, name?: string }} call
  * @param {{ ok?: boolean, error?: string, evidenceTrail?: Array }} result
- * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array, errorCode?: string }}
+ * @param {{ callId?: string, toolId?: string, argsHash?: string, durationMs?: number, resultEnvelope?: Object }} [record]
+ *   ToolInvocationRecord (design audit D1). When given, identity, status and
+ *   the small `argsHash` / `durationMs` fields are read from it so the
+ *   persisted entry is a projection of the same object the SSE events and
+ *   the jsonl line come from.
+ * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array, errorCode?: string, argsHash?: string, durationMs?: number }}
  */
-export function projectToolResultForPersist(call, result) {
+export function projectToolResultForPersist(call, result, record = null) {
   const entry = {
-    toolCallId: typeof call?.id === 'string' ? call.id : '',
-    toolName: typeof call?.name === 'string' ? call.name : '',
+    toolCallId: typeof record?.callId === 'string' && record.callId ? record.callId : typeof call?.id === 'string' ? call.id : '',
+    toolName: typeof record?.toolId === 'string' && record.toolId ? record.toolId : typeof call?.name === 'string' ? call.name : '',
     ok: result?.ok !== false,
   };
+  if (typeof record?.argsHash === 'string' && /^[0-9a-f]{8,64}$/.test(record.argsHash)) entry.argsHash = record.argsHash;
+  if (Number.isFinite(record?.durationMs) && record.durationMs >= 0) entry.durationMs = Math.round(record.durationMs);
   if (Array.isArray(result?.evidenceTrail) && result.evidenceTrail.length > 0) {
     entry.evidenceTrail = result.evidenceTrail;
   }

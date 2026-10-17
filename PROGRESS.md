@@ -1,3 +1,14 @@
+## 2026-10-17 — 设计方案第三批：工具调用记录与回放、远程 SQL 受众、三协议原生工具、MCP 隔离、手机摘要同步与记忆冲突
+
+第三批收尾用户拍板的方案。工具：每次调用生成一条 ToolInvocationRecord 追加到 `desktop/execution-scenes/<runId>.tools.jsonl`（args 脱敏、hash、模型实际看到的输出 ≤8000），`tool_calls_start`/`tool_calls_done`/持久化 `toolResults` 三个投影同源；取消或失败的轮次把工具轨迹（≤600 字纯文本）写回对话，下一轮与压缩都能看到。协议：`functionCalling` 从 `native` 布尔改为 `protocol ∈ responses|anthropic|chat-completions|xml`，Anthropic 原生 `tools/tool_use/tool_result`（含 cache_control）与 chat-completions `tools/tool_calls`（默认仍走 XML，`toolCalling:'native'` 或 `MELO_CHAT_TOOLS=1` 开启），Responses 请求逐字节不变；每轮工具链以协议中立的 IR 存进 `metadata.toolChain`。MCP 工具改进独立 `mcpRegistry`，按 Agent 白名单在 prepare 时合并，函数名可读 `mcp__server__tool`。记忆：召回 SQL 层带 audience（远程渠道在查询里就看不到 `audience=local` 的项目/个人/Agent 行），corrections 组拆为 agentNotes/sharedFacts 各 4 席。手机：工作区 `conversation` 记录带可选 `compact`（边界、计数、摘要 ≤8KB、卡片），计数大者胜；iOS 只取边界后消息并前置摘要；记忆行冲突状态与「采用桌面版 / 采用手机版」。（Claude）
+
+iOS Swift 改动未在本机编译（无 Xcode 环境），`generate-sync-contract --check` 与 contracts 固件已对齐；需要用户在 Xcode 跑一次。Final commit: 见本条提交.
+
+## 2026-10-17 — 继续以固定范围提供源码统计
+
+用户要求统计；Codex 重跑既定四目录及扩展名范围，结果更新总览，保留旧快照的历史边界。
+仅文件计数和文档快照更新，无产品测试、安装或提交，保留其他线程 WIP。
+
 ## 2026-10-17 — 设计方案第二批：账本式话题卡 + read_history、项目记忆本 + 个人档案、RunBudget、附件外置
 
 用户拍板后的第二批（1D、2B、C1、附件外置）。长对话：原文近窗收回到 64k（`MELO_HISTORY_WINDOW_TOKENS` 可调），压缩改为只追加话题卡（`chat.compactCards`，`compactSummary` 变成卡片渲染，旧摘要自动迁成历史卡），新增 `read_history` 原文读回工具与话题原文摘录进 turn 段，工具结论进摘要转录。记忆：项目记忆本（自动行带 `[auto]`、同主题替代、user/confirmed 不被 auto 顶掉、项目页「记忆本」、`POST /api/projects/memory-book`）与个人档案进稳定前缀，协议加可选 `section/bookStatus`。工具：每轮一个 RunBudget（20 min / 400k 输入 / 120 次工具，成员/技能/团队取子预算并回记父预算，超限 `BUDGET_EXHAUSTED`）。存储：用户附件 >4KB 的 data URL 落盘 `desktop/attachments/`，消息只存 `/api/media/attachments/<id>` 与 `storage:'file'`，发给模型前再读回；旧对话首次发消息时惰性迁移。（Claude）

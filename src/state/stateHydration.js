@@ -142,6 +142,10 @@ function normalizeToolResultsForHydration(rawList) {
     if (typeof item.summary === 'string' && item.summary.trim()) entry.summary = item.summary.slice(0, 200);
     if (item.status === 'empty') entry.status = 'empty';
     if (item.replayed === true) entry.replayed = true;
+    // ToolInvocationRecord projection (design audit D1): args fingerprint and
+    // wall-clock duration, both small; the record itself stays in the jsonl.
+    if (typeof item.argsHash === 'string' && /^[0-9a-f]{8,64}$/.test(item.argsHash)) entry.argsHash = item.argsHash;
+    if (Number.isFinite(Number(item.durationMs)) && Number(item.durationMs) >= 0) entry.durationMs = Math.round(Number(item.durationMs));
     out.push(entry);
   }
   return out;
@@ -353,6 +357,10 @@ export function normalizeChat(chat) {
           ...(message?.metadata && typeof message.metadata === 'object'
             ? { metadata: message.metadata }
             : {}),
+          // Tool-trace replay message (design audit D2): a plain-text
+          // assistant message summarising a cancelled/failed turn's tool
+          // calls. The kind survives hydration so the UI can label it.
+          ...(message?.kind === 'tool-trace' ? { kind: 'tool-trace' } : {}),
           // G-1d slice 2 (2026-05-12): structured tool execution metadata
           // attached by sendChatMessage when chatExecutionRunner's tool
           // loop ran any tools.  Each entry: { toolCallId, toolName, ok,

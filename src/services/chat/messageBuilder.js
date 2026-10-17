@@ -35,6 +35,7 @@ import {
 } from '../../media/index.js';
 import { messageVisibleText } from '../../domain/message/messageBlocks.js';
 import { shouldSuppressAssistantContextText } from '../../domain/chat/contextFilters.js';
+import { toolChainToMessages } from '../../tools/toolProtocol.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Attachment classification constants
@@ -529,7 +530,25 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
 const sourceIds = new WeakMap();
 export function modelMessageSourceIds(messages) { return messages.map(message=>sourceIds.get(message)).filter(Boolean); }
 
-export function buildModelMessagesFromChat(chat, { windowTokens } = {}) {
+/**
+ * Protocol adapter (design audit E1): an assistant message that ran tools
+ * carries a protocol-neutral `metadata.toolChain` record. When the caller
+ * passes `toolChainProtocol`, the record is rendered back into that
+ * protocol's loop messages (Responses items, Anthropic tool_use/tool_result
+ * blocks, chat-completions tool_calls/tool messages or XML text) and placed
+ * before the final prose of that reply, so a chat can be continued after
+ * switching provider. Without the option the history stays prose-only (the
+ * pre-E1 behaviour). Call ids never leave the chat that produced them: only
+ * this chat's own messages are read here.
+ */
+function toolChainHistoryMessages(message, protocol) {
+  if (!protocol || message?.role !== 'assistant') return [];
+  const chain = message?.metadata?.toolChain;
+  if (!chain || !Array.isArray(chain.turns) || !chain.turns.length) return [];
+  try { return toolChainToMessages(chain, protocol); } catch { return []; }
+}
+
+export function buildModelMessagesFromChat(chat, { windowTokens, toolChainProtocol = null } = {}) {
   const isGroupChat = chat?.chatType === 'group' || chat?.chatType === 'supergroup';
   const allMessages = Array.isArray(chat?.messages) ? chat.messages : [];
 
@@ -569,7 +588,7 @@ export function buildModelMessagesFromChat(chat, { windowTokens } = {}) {
     }
   }
 
-  return messages.map((message, index) => {
+  return messages.flatMap((message, index) => {
     let effectiveMessage = message;
     if (index === latestIndex && message?.role === 'user' && carryForwardSourceIndex >= 0) {
       effectiveMessage = mergeRichMediaContextIntoMessage(message, messages[carryForwardSourceIndex]);
@@ -581,6 +600,8 @@ export function buildModelMessagesFromChat(chat, { windowTokens } = {}) {
       content: messageToModelContent(effectiveMessage, { includeSenderPrefix: isGroupChat }),
     };
     sourceIds.set(modelMessage,message.id);
-    return modelMessage;
+    // Chain messages carry no source id of their own: the prose message that
+    // follows them already stands for the persisted assistant message.
+    return [...toolChainHistoryMessages(message, toolChainProtocol), modelMessage];
   });
 }
