@@ -1375,7 +1375,18 @@ export function recallMemories({
             const exact=query && String(row.search_text || row.text).toLowerCase().includes(String(query).toLowerCase());
             fused.set(row.id,{...row,...prior,score:(prior?.score||0)+1/(60+i+1)+(exact?0.05:0)});
           });
-          const mmrSorted = String(query).trim() ? [...fused.values()].sort((a,b)=>b.score-a.score).slice(0,lim) : applyMmrRerank(sorted,lim);
+          // 2026-10-17 audit C-12: MMR used to run only on the no-query branch,
+          // which production never takes, so the diversity rerank was dead code.
+          // Apply it after RRF fusion with scores normalised to 0..1 so the
+          // diversity penalty is on the same scale as the relevance term.
+          let mmrSorted;
+          if (String(query).trim()) {
+            const fusedSorted = [...fused.values()].sort((a,b)=>b.score-a.score);
+            const top = fusedSorted[0]?.score || 1;
+            mmrSorted = applyMmrRerank(fusedSorted.map(row=>({...row,score:row.score/top})),lim);
+          } else {
+            mmrSorted = applyMmrRerank(sorted,lim);
+          }
 
           if (mmrSorted.length > 0) {
             logRecallScores('recallMemories.semantic', mmrSorted, query);

@@ -15,7 +15,7 @@ if '--renderer-only' in sys.argv:
 if platform.system() != 'Darwin':
     print('Swift iOS protocol tests require macOS; JS/renderer gate passed; Swift explicitly skipped')
     raise SystemExit(0)
-shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift']
+shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift']
 suites={'main':['ios/Melo/Models.swift'], 'NetworkTests':shared, 'ConnectionProbeTests':['ios/Melo/ConnectionProbe.swift'], 'ChatGPTTests':shared, 'SSETransportTests':shared, 'WebSearchTests':shared, 'ExecutionTests':shared, 'ExecutionPageTests':['ios/Melo/ExecutionPagePolicy.swift']}
 suites['ConversationFoundationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/ReplyDocument.swift','ios/Melo/WorkspaceProjection.swift']
 suites['SyncContractTests']=['ios/Melo/Models.swift']
@@ -33,6 +33,10 @@ suites['InterfaceLanguageTests']=['ios/Melo/InterfaceLanguage.swift']
 suites['DeviceToolsTests']=shared
 suites['SharedContractTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # reads shared/protocol/contracts.json, same as the JS half
 suites['AgentTeamTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']
+suites['VideoStudyTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/VideoStudy.swift']
+suites['RunProgressTests']=shared
+suites['LocalFileAccessTests']=['ios/Melo/LocalFileAccess.swift']
+suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 toolchain = [platform.machine()]
 swift_started = time.monotonic()
 cached = 0

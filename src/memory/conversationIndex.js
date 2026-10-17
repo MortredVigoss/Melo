@@ -90,8 +90,53 @@ function getDb() {
     CREATE TABLE IF NOT EXISTS indexed_message_ids (
       message_id TEXT PRIMARY KEY
     );
+
+    -- Scope side table (2026-10-17 audit P0-3). search_history used to search
+    -- every indexed message regardless of who was asking: a Telegram/Discord
+    -- audience could retrieve desktop private chats and other projects'
+    -- conversations. audience = 'desktop' | 'telegram' | 'discord' | ...;
+    -- project_id = '' for chats outside any project. Rows indexed before this
+    -- table existed have no scope row: the desktop owner still sees them,
+    -- remote audiences never do (fail closed).
+    CREATE TABLE IF NOT EXISTS message_scope (
+      message_id TEXT PRIMARY KEY,
+      chat_id    TEXT NOT NULL,
+      audience   TEXT NOT NULL,
+      project_id TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS message_scope_chat ON message_scope (chat_id);
   `);
   return _db;
+}
+
+export const DESKTOP_AUDIENCE = 'desktop';
+
+export function normalizeAudience(source) {
+  const value = String(source || '').trim().toLowerCase();
+  return value && value !== 'desktop' && value !== 'local' ? value : DESKTOP_AUDIENCE;
+}
+
+const _taggedChats = new Set();
+
+/**
+ * Record (or backfill) the audience / project scope for every indexed
+ * message of a chat. Cheap after the first call per chat per process.
+ */
+export function tagChatScope(chatId, { audience = DESKTOP_AUDIENCE, projectId = '' } = {}) {
+  try {
+    const id = String(chatId || '');
+    if (!id) return;
+    const key = `${id}|${normalizeAudience(audience)}|${String(projectId || '')}`;
+    if (_taggedChats.has(key)) return;
+    const database = getDb();
+    database.prepare(
+      `INSERT OR REPLACE INTO message_scope (message_id, chat_id, audience, project_id)
+       SELECT message_id, chat_id, ?, ? FROM messages_fts WHERE chat_id = ?`,
+    ).run(normalizeAudience(audience), String(projectId || ''), id);
+    _taggedChats.add(key);
+  } catch {
+    // Best-effort — scope backfill must never break the message flow
+  }
 }
 
 // ─── Write API ────────────────────────────────────────────────────────────────
@@ -105,7 +150,7 @@ function getDb() {
  * @param {string} chatTitle
  * @param {{ id: string, role: string, content: string, createdAt: string }} message
  */
-export function indexMessage(chatId, chatTitle, message) {
+export function indexMessage(chatId, chatTitle, message, { audience = DESKTOP_AUDIENCE, projectId = '' } = {}) {
   try {
     const role = String(message?.role || '');
     if (role === 'tool' || role === 'system') return;
@@ -140,6 +185,9 @@ export function indexMessage(chatId, chatTitle, message) {
       database.prepare(
         'INSERT OR IGNORE INTO indexed_message_ids (message_id) VALUES (?)',
       ).run(messageId);
+      database.prepare(
+        'INSERT OR REPLACE INTO message_scope (message_id, chat_id, audience, project_id) VALUES (?, ?, ?, ?)',
+      ).run(messageId, String(chatId), normalizeAudience(audience), String(projectId || ''));
       database.exec('COMMIT');
     } catch (err) {
       try { database.exec('ROLLBACK'); } catch {}
@@ -272,7 +320,7 @@ export function coerceAfterTimestamp(value) {
  * }} options
  * @returns {{ chatId, chatTitle, messageId, role, snippet, createdAt, rank }[]}
  */
-export function searchHistory(query, { limit = 10, after, chatId } = {}) {
+export function searchHistory(query, { limit = 10, after, chatId, audience, projectId, allProjects = false } = {}) {
   if (!query || !query.trim()) return [];
 
   const database = getDb();
@@ -284,13 +332,35 @@ export function searchHistory(query, { limit = 10, after, chatId } = {}) {
 
   const afterMs = coerceAfterTimestamp(after);
   if (afterMs !== null) {
-    conditions.push('created_at >= ?');
+    conditions.push('m.created_at >= ?');
     params.push(afterMs);
   }
 
   if (chatId !== undefined && chatId !== null && String(chatId).trim()) {
-    conditions.push('chat_id = ?');
+    conditions.push('m.chat_id = ?');
     params.push(String(chatId).trim());
+  }
+
+  // Scope: when an audience is given, only that audience's rows are visible.
+  // Legacy rows without a scope row count as desktop-owned (desktop sees them,
+  // remote audiences do not). Project filtering follows the same rule.
+  if (audience !== undefined) {
+    const wanted = normalizeAudience(audience);
+    if (wanted === DESKTOP_AUDIENCE) {
+      conditions.push('(s.audience = ? OR s.audience IS NULL)');
+    } else {
+      conditions.push('s.audience = ?');
+    }
+    params.push(wanted);
+    if (!allProjects || wanted !== DESKTOP_AUDIENCE) {
+      const project = String(projectId || '');
+      if (wanted === DESKTOP_AUDIENCE) {
+        conditions.push("(COALESCE(s.project_id, '') = ?)");
+      } else {
+        conditions.push('s.project_id = ?');
+      }
+      params.push(project);
+    }
   }
 
   params.push(Math.max(1, Math.min(50, limit || 10)));
@@ -298,14 +368,15 @@ export function searchHistory(query, { limit = 10, after, chatId } = {}) {
   try {
     const sql = `
       SELECT
-        chat_id    AS chatId,
-        chat_title AS chatTitle,
-        message_id AS messageId,
-        role,
+        m.chat_id    AS chatId,
+        m.chat_title AS chatTitle,
+        m.message_id AS messageId,
+        m.role       AS role,
         snippet(messages_fts, 4, '…[', ']…', '…', 32) AS snippet,
-        created_at AS createdAt,
+        m.created_at AS createdAt,
         bm25(messages_fts) AS rank
-      FROM messages_fts
+      FROM messages_fts m
+      LEFT JOIN message_scope s ON s.message_id = m.message_id
       WHERE ${conditions.join(' AND ')}
       ORDER BY rank
       LIMIT ?

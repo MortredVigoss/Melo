@@ -291,7 +291,10 @@ export const imageTool = {
         try {
           if (engine === 'sdcpp') {
             const { generateWithSdcpp, defaultMeloHomeDir } = await import('../../images/sdcppEngine.js');
-            const homeDir = config?.meloHomeDir || defaultMeloHomeDir(context?.projectRoot);
+            // The executor already resolved the real MELO_HOME for this
+            // request; the private ~/.melo fallback only applies when a caller
+            // bypassed the executor entirely (audit A-11).
+            const homeDir = config?.meloHomeDir || context?.meloHome || defaultMeloHomeDir(context?.projectRoot);
             const result = await generateWithSdcpp({
               prompt,
               negativePrompt: args?.negativePrompt,

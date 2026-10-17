@@ -1,4 +1,11 @@
 import { emptyCapabilities, normalizeCapabilities, normalizeCollaboration } from '../../domain/agent/capabilities.js';
+import { estimateTextTokens } from '../../memory/tokenEstimate.js';
+
+// Below the default cloud input limit (160k − 8k reserve, see contextBudget.js)
+// with room for the other required sections. Personas above this cannot fit
+// any request; large-but-fitting documents (e.g. the 64k-char "unsyncable to
+// mobile" case covered by agentPersona.browser.test.js) remain allowed.
+export const MAX_INSTRUCTIONS_TOKENS = 120_000;
 // Agent-profile orchestration — pure functional core.
 //
 // Complements the data-layer modules around it:
@@ -76,6 +83,13 @@ export function normalizeAgentUpdatePatch(patch = {}) {
   if (Object.hasOwn(safePatch,'collaboration')) nextPatch.collaboration=normalizeCollaboration(safePatch.collaboration);
   if (Object.hasOwn(safePatch,'instructions') && (typeof safePatch.instructions !== 'string' || safePatch.instructions.length > 200100)) {
     throw new Error('Agent instructions must be text within 200100 characters.');
+  }
+  // The persona is a required prompt section: one that does not fit the
+  // request budget makes every turn of that agent fail with a message that
+  // blames the user's input (2026-10-17 audit B-9). Reject it at save time
+  // with a budget-shaped limit instead of only the generous character cap.
+  if (Object.hasOwn(safePatch,'instructions') && estimateTextTokens(safePatch.instructions) > MAX_INSTRUCTIONS_TOKENS) {
+    throw Object.assign(new Error(`Agent instructions are too long for a single request (about ${estimateTextTokens(safePatch.instructions)} tokens; limit ${MAX_INSTRUCTIONS_TOKENS}). Shorten the persona or move reference material into project knowledge.`), { statusCode: 400, code: 'AGENT_INSTRUCTIONS_TOO_LONG' });
   }
 
   // identity/identify aliases — pick the first string-valued one.

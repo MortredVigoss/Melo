@@ -7,6 +7,11 @@ export function normalizeHandoff(raw) {
 export function createHandoff(task,outcome,usage) {
  let supplied={};try {supplied=JSON.parse(outcome.output.replace(/^```(?:json)?\s*|\s*```$/g,''));} catch {}
  const observed=(outcome.meta?.toolResults || []).filter(r=>r.ok&&r.path&&['file_write','file_edit','file_delete','file_move','file_mkdir','xlsx','pdf'].includes(r.toolName)).map(r=>r.path);
- return normalizeHandoff({subtask:task,conclusion:supplied.conclusion || outcome.output,evidence:supplied.evidence || [],changedFiles:[...new Set([...observed,...strings(supplied.changedFiles)])],unfinished:supplied.unfinished || (outcome.ok?[]:[outcome.output]),review:supplied.review,status:outcome.meta?.aborted?'cancelled':outcome.meta?.budgetExceeded?'budget-exceeded':outcome.ok?'completed':'failed',usage});
+ // A member that reached a conclusion decides its own status ('completed' or
+ // 'failed'); cancellation and budget exhaustion are facts the runner knows
+ // better and always win.
+ const selfReported=['completed','failed'].includes(supplied.status)?supplied.status:null;
+ const status=outcome.meta?.aborted?'cancelled':outcome.meta?.budgetExceeded?'budget-exceeded':!outcome.ok?'failed':(selfReported || 'completed');
+ return normalizeHandoff({subtask:task,conclusion:supplied.conclusion || outcome.output,evidence:supplied.evidence || [],changedFiles:[...new Set([...observed,...strings(supplied.changedFiles)])],unfinished:supplied.unfinished || (status==='completed'?[]:[outcome.output]),review:supplied.review,status,usage});
 }
 export const HANDOFF_INSTRUCTION='Return only a JSON handoff with conclusion, evidence (sources and observations; distinguish claims from verified checks), changedFiles, unfinished, and review (approve or revise only when reviewing). Do not claim verification without evidence. Do not write long-term memory.';

@@ -28,7 +28,6 @@
 import { buildRecentWindow } from '../../memory/contextWindow.js';
 import {
   normalizeMessageAttachments,
-  titleCase,
 } from '../../shared/helpers.js';
 import {
   normalizeExtractedMedia,
@@ -248,22 +247,11 @@ export const LINK_FOLLOW_UP_PATTERN = /(?:\b(?:link|url|article|page|webpage|web
  * prompt. One line per attachment: `- Image: label (url)`. Data URIs get
  * their URL omitted so we don't splatter base64 into the prompt.
  */
-export function summarizeAttachmentsForPrompt(attachments = []) {
-  if (!attachments.length) return '';
-  return attachments
-    .map(attachment => {
-      const label =
-        attachment.title ||
-        attachment.fileName ||
-        `${titleCase(attachment.kind)} attachment`;
-      const printableUrl =
-        attachment.url && !attachment.url.startsWith('data:')
-          ? ` (${attachment.url})`
-          : '';
-      return `- ${titleCase(attachment.kind)}: ${label}${printableUrl}`;
-    })
-    .join('\n');
-}
+// Moved byte-for-byte to domain/chat/attachmentSummary.js (audit A-4) so the
+// memory layer can use it without importing services/. Re-exported here for
+// existing importers.
+import { summarizeAttachmentsForPrompt } from '../../domain/chat/attachmentSummary.js';
+export { summarizeAttachmentsForPrompt };
 
 // ────────────────────────────────────────────────────────────────────────────
 // Rich-media filtering
@@ -541,7 +529,7 @@ export function messageToModelContent(message, { includeSenderPrefix = false } =
 const sourceIds = new WeakMap();
 export function modelMessageSourceIds(messages) { return messages.map(message=>sourceIds.get(message)).filter(Boolean); }
 
-export function buildModelMessagesFromChat(chat) {
+export function buildModelMessagesFromChat(chat, { windowTokens } = {}) {
   const isGroupChat = chat?.chatType === 'group' || chat?.chatType === 'supergroup';
   const allMessages = Array.isArray(chat?.messages) ? chat.messages : [];
 
@@ -557,8 +545,11 @@ export function buildModelMessagesFromChat(chat) {
     }
   }
 
+  // The window budget comes from resolveContextBudget so it moves with the
+  // request fitter and the compaction trigger instead of a fixed 60k.
   const messages = buildRecentWindow(
     candidateMessages.filter(message => !isProviderFailureAssistantMessage(message)),
+    windowTokens,
   );
 
   const latestIndex = messages.length - 1;

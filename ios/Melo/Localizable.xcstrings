@@ -1,6 +1,461 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "用时未记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用时未记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time not recorded"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間未記録"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간 미기록"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiempo no registrado"
+          }
+        }
+      }
+    },
+    "{seconds} 秒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{seconds} 秒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{seconds} s"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{seconds} 秒"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{seconds}초"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{seconds} s"
+          }
+        }
+      }
+    },
+    "本轮用时 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮用时 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total time {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回の所要時間 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 소요 시간 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiempo total {time}"
+          }
+        }
+      }
+    },
+    "已用时 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用时 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elapsed {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経過 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경과 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcurrido {time}"
+          }
+        }
+      }
+    },
+    "思考与回复 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考与回复 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking and response {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考と応答 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생각 및 응답 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Razonamiento y respuesta {time}"
+          }
+        }
+      }
+    },
+    "完成于 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成于 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed at {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了日時 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시각 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completado a las {time}"
+          }
+        }
+      }
+    },
+    "停止于 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止于 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped at {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止日時 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지 시각 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detenido a las {time}"
+          }
+        }
+      }
+    },
+    "图片成果 {percent}% · 已保存 {saved}/{total} 张": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片成果 {percent}% · 已保存 {saved}/{total} 张"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image results {percent}% · Saved {saved}/{total}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像成果 {percent}% · 保存済み {saved}/{total} 枚"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 결과 {percent}% · 저장 {saved}/{total}장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imágenes {percent}% · Guardadas {saved}/{total}"
+          }
+        }
+      }
+    },
+    "图片成果进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片成果进度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image results progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像成果の進捗"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 결과 진행률"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progreso de imágenes"
+          }
+        }
+      }
+    },
+    "图片处理 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片处理 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image processing {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像処理 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 처리 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Procesamiento de imagen {time}"
+          }
+        }
+      }
+    },
+    "图片保存于 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片保存于 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image saved at {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像保存日時 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 저장 시각 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagen guardada a las {time}"
+          }
+        }
+      }
+    },
+    "按已保存张数计；单张生成进度未提供": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按已保存张数计；单张生成进度未提供"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Based on saved images; per-image generation progress unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済み枚数による進捗。各画像の生成進捗は未提供"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 이미지 수 기준. 개별 이미지 생성 진행률 미제공"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Según imágenes guardadas; progreso por imagen no disponible"
+          }
+        }
+      }
+    },
+    "本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total includes waiting and tools; thinking and response measures model requests, not internal reasoning"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合計は待機とツール実行を含みます。思考と応答はモデル要求の時間で、内部推論時間ではありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 시간에는 대기와 도구 실행이 포함됩니다. 생각 및 응답은 모델 요청 시간이며 내부 추론 시간이 아닙니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El total incluye espera y herramientas; razonamiento y respuesta mide las solicitudes, no el razonamiento interno"
+          }
+        }
+      }
+    },
     "本地文件与命令由 Agent 能力设置控制。": {
       "extractionState": "manual",
       "localizations": {
@@ -9661,37 +10116,37 @@
         }
       }
     },
-    "当前通道按实际返回展示预览。质量按选择请求，最终以服务返回为准；局部遮罩与明确尺寸需使用支持这些参数的图像 API。": {
+    "当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前通道按实际返回展示预览。质量按选择请求，最终以服务返回为准；局部遮罩与明确尺寸需使用支持这些参数的图像 API。"
+            "value": "当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previews reflect actual responses. The selected quality is requested, but the service determines the result. Masks and explicit sizes require an image API that supports them."
+            "value": "This channel shows previews as returned. Quality and size are requested as chosen; the service's actual output is final. Masked edits need an image API that supports masks."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "実際の応答に基づくプレビューを表示します。選択した品質を要求しますが、結果はサービスが決定します。マスクやサイズ指定には対応する画像 API が必要です。"
+            "value": "この接続は返された内容でプレビューを表示します。品質とサイズは選択どおりに要求し、最終結果はサービスの出力に従います。マスク編集にはマスク対応の画像 API が必要です。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실제 응답에 따라 미리보기를 표시합니다. 선택한 품질을 요청하지만 결과는 서비스가 결정합니다. 마스크와 크기 지정은 지원되는 이미지 API가 필요합니다."
+            "value": "이 연결은 반환된 대로 미리보기를 표시합니다. 품질과 크기는 선택한 대로 요청하며 최종 결과는 서비스 출력을 따릅니다. 마스크 편집에는 마스크를 지원하는 이미지 API가 필요합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las vistas previas reflejan la respuesta real. Se solicita la calidad elegida, pero el servicio determina el resultado. Las máscaras y tamaños explícitos requieren una API compatible."
+            "value": "Este canal muestra las vistas previas tal como llegan. Calidad y tamaño se piden según lo elegido; manda el resultado del servicio. Las ediciones con máscara requieren una API de imágenes compatible."
           }
         }
       }
@@ -29716,6 +30171,1546 @@
         }
       }
     },
+    "标准 · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Cuadrado"
+          }
+        }
+      }
+    },
+    "标准 · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Horizontal"
+          }
+        }
+      }
+    },
+    "标准 · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准 · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar · Vertical"
+          }
+        }
+      }
+    },
+    "2K · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Cuadrado"
+          }
+        }
+      }
+    },
+    "2K · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Horizontal"
+          }
+        }
+      }
+    },
+    "2K · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K · Vertical"
+          }
+        }
+      }
+    },
+    "4K 实验 · 正方形": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 正方形"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Square"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・正方形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 정사각형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Cuadrado"
+          }
+        }
+      }
+    },
+    "4K 实验 · 横向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 横向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Landscape"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・横向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 가로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Horizontal"
+          }
+        }
+      }
+    },
+    "4K 实验 · 纵向": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 实验 · 纵向"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Portrait"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 実験的・縦向き"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K 실험 · 세로"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4K experimental · Vertical"
+          }
+        }
+      }
+    },
+    "2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K and 4K are slower and use more allowance; 4K is experimental and may be less consistent. If the channel does not accept the chosen size, the image is made at the service default and the actual pixels are noted."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K・4K は時間と使用量が増えます。4K は実験的で結果が安定しない場合があります。接続が選択サイズを受け付けない場合は既定サイズで生成し、実際の画素数を表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K·4K는 더 느리고 사용량이 많습니다. 4K는 실험적이라 결과가 불안정할 수 있습니다. 연결이 선택한 크기를 받지 않으면 기본 크기로 생성하고 실제 픽셀을 표시합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2K y 4K tardan más y gastan más cuota; 4K es experimental y puede ser menos estable. Si el canal no acepta el tamaño elegido, se genera con el tamaño por defecto y se indica el real."
+          }
+        }
+      }
+    },
+    "{name} 超过 {limit} MB，未添加。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} 超过 {limit} MB，未添加。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} is over {limit} MB and was not added."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} は {limit} MB を超えているため追加していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name}은(는) {limit}MB를 넘어 추가하지 않았습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} supera {limit} MB y no se añadió."
+          }
+        }
+      }
+    },
+    "{size} · 发送 {width}×{height} 副本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · 发送 {width}×{height} 副本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · sends a {width}×{height} copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · {width}×{height} のコピーを送信"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · {width}×{height} 사본 전송"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{size} · envía una copia de {width}×{height}"
+          }
+        }
+      }
+    },
+    "{name} 上传失败：{reason}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} 上传失败：{reason}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not upload {name}: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} をアップロードできませんでした：{reason}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{name} 업로드 실패: {reason}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo subir {name}: {reason}"
+          }
+        }
+      }
+    },
+    "正在上传视频「{name}」，完成后可发送。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传视频「{name}」，完成后可发送。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uploading the video “{name}”; you can send once it finishes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画「{name}」をアップロード中です。完了後に送信できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상 「{name}」 업로드 중입니다. 완료되면 보낼 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subiendo el vídeo «{name}»; podrás enviarlo al terminar."
+          }
+        }
+      }
+    },
+    "这段视频还没有处理结果。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段视频还没有处理结果。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video has not been processed yet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この動画はまだ処理されていません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 동영상은 아직 처리되지 않았습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este vídeo aún no se ha procesado."
+          }
+        }
+      }
+    },
+    "存为知识资料": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存为知识资料"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as knowledge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジとして保存"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지식으로 저장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar como conocimiento"
+          }
+        }
+      }
+    },
+    "已存入知识": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存入知识"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved to knowledge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジに保存済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지식에 저장됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardado en conocimiento"
+          }
+        }
+      }
+    },
+    "生成图片": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成图片"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate image"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像を生成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 생성"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generar imagen"
+          }
+        }
+      }
+    },
+    "修改图片": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改图片"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit image"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像を編集"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 편집"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar imagen"
+          }
+        }
+      }
+    },
+    "联网搜索": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网搜索"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web search"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウェブ検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 검색"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Búsqueda web"
+          }
+        }
+      }
+    },
+    "查找文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 찾기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar archivos"
+          }
+        }
+      }
+    },
+    "搜索代码": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索代码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 검색"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en el código"
+          }
+        }
+      }
+    },
+    "读取网页": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取网页"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read web page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウェブページを読む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 페이지 읽기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leer página web"
+          }
+        }
+      }
+    },
+    "写入文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写入文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write file"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを書き込む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 쓰기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribir archivo"
+          }
+        }
+      }
+    },
+    "移动文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move file"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを移動"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 이동"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mover archivo"
+          }
+        }
+      }
+    },
+    "新建文件夹": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建文件夹"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいフォルダ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 폴더"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva carpeta"
+          }
+        }
+      }
+    },
+    "查找聊天记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找聊天记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search chat history"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャット履歴を検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 기록 검색"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en el historial"
+          }
+        }
+      }
+    },
+    "交给其他 Agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交给其他 Agent"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hand off to another agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のエージェントに任せる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 에이전트에게 넘기기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasar a otro agente"
+          }
+        }
+      }
+    },
+    "工具": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramienta"
+          }
+        }
+      }
+    },
+    "收到补充": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到补充"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supplement received"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加指示を受信"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보충 요청 받음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indicación adicional recibida"
+          }
+        }
+      }
+    },
+    "正在进行的步骤": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在进行的步骤"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steps in progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中のステップ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중인 단계"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasos en curso"
+          }
+        }
+      }
+    },
+    "补充到正在进行的回复": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充到正在进行的回复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to the reply in progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中の返信に追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중인 답변에 추가"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir a la respuesta en curso"
+          }
+        }
+      }
+    },
+    "输入补充要求": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入补充要求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a follow-up"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加の指示を入力"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보충 요청 입력"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade una indicación"
+          }
+        }
+      }
+    },
+    "补充已送达，会在下一步加入：{text}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充已送达，会在下一步加入：{text}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added; it joins at the next step: {text}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加済み。次のステップで反映します：{text}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달됨. 다음 단계에 반영됩니다: {text}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadido; se aplicará en el siguiente paso: {text}"
+          }
+        }
+      }
+    },
+    "补充：{text}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充：{text}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow-up: {text}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加：{text}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보충: {text}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadido: {text}"
+          }
+        }
+      }
+    },
+    "正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replying. You can type a follow-up and it joins at the next step; agent, model or project changes apply from the next message."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信中です。追加の指示は次のステップで反映されます。エージェント・モデル・プロジェクトの変更は次のメッセージから有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 중입니다. 보충 요청은 다음 단계에 반영되며, 에이전트·모델·프로젝트 변경은 다음 메시지부터 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respondiendo. Puedes añadir indicaciones y se aplicarán en el siguiente paso; los cambios de agente, modelo o proyecto se aplican desde el siguiente mensaje."
+          }
+        }
+      }
+    },
+    "本轮用时 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮用时 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total time %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回の所要時間 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 소요 시간 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiempo total %@"
+          }
+        }
+      }
+    },
+    "已用时 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用时 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elapsed %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経過 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경과 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcurrido %@"
+          }
+        }
+      }
+    },
+    "思考与回复 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考与回复 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking and response %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考と応答 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생각 및 응답 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Razonamiento y respuesta %@"
+          }
+        }
+      }
+    },
+    "完成于 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成于 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed at %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了日時 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시각 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completado a las %@"
+          }
+        }
+      }
+    },
+    "停止于 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止于 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped at %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止日時 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지 시각 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detenido a las %@"
+          }
+        }
+      }
+    },
+    "图片成果 %lld% · 已保存 %lld/%lld 张": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片成果 %lld% · 已保存 %lld/%lld 张"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image results %lld% · Saved %lld/%lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像成果 %lld% · 保存済み %lld/%lld 枚"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 결과 %lld% · 저장 %lld/%lld장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imágenes %lld% · Guardadas %lld/%lld"
+          }
+        }
+      }
+    },
+    "图片处理 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片处理 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image processing %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像処理 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 처리 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Procesamiento de imagen %@"
+          }
+        }
+      }
+    },
+    "图片保存于 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片保存于 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image saved at %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像保存日時 %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 저장 시각 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagen guardada a las %@"
+          }
+        }
+      }
+    },
     "从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。": {
       "extractionState": "manual",
       "localizations": {
@@ -30626,6 +32621,216 @@
         }
       }
     },
+    "成果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成果"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultados"
+          }
+        }
+      }
+    },
+    "搜索成果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索成果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search results"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成果を検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 검색"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar resultados"
+          }
+        }
+      }
+    },
+    "查看已删除成果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看已删除成果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show deleted results"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除した成果を表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제된 결과 보기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver resultados eliminados"
+          }
+        }
+      }
+    },
+    "同步后的成果会显示在这里，不会自动用作知识资料。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步后的成果会显示在这里，不会自动用作知识资料。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced results appear here. They are not automatically used as knowledge."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期した成果をここに表示します。知識資料には自動利用されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화된 결과가 표시됩니다. 지식 자료로 자동 사용되지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los resultados sincronizados aparecen aquí. No se usan automáticamente como conocimiento."
+          }
+        }
+      }
+    },
+    "恢复成果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复成果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore result"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成果を復元"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 복원"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar resultado"
+          }
+        }
+      }
+    },
+    "删除成果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除成果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete result"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成果を削除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 삭제"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar resultado"
+          }
+        }
+      }
+    },
     "最多 8 份；长资料按预算选取，全文保留。": {
       "extractionState": "manual",
       "localizations": {
@@ -30727,76 +32932,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Modo de imagen"
-          }
-        }
-      }
-    },
-    "生成图片": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成图片"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generate image"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像を生成"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이미지 생성"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generar imagen"
-          }
-        }
-      }
-    },
-    "修改图片": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "修改图片"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Edit image"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像を編集"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이미지 편집"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Editar imagen"
           }
         }
       }
@@ -33951,41 +36086,6 @@
         }
       }
     },
-    "联网搜索": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "联网搜索"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Web search"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ウェブ検索"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "웹 검색"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Búsqueda web"
-          }
-        }
-      }
-    },
     "刷新可用模型": {
       "extractionState": "manual",
       "localizations": {
@@ -36576,37 +38676,37 @@
         }
       }
     },
-    "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。": {
+    "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量按选择请求，以实际输出为准。API 连接使用此处填写的图片型号。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量为偏好，以实际输出为准。API 连接使用此处填写的图片型号。"
+            "value": "Codex 使用服务分配的图片引擎，实际返回型号记录在任务空间；尺寸和质量按选择请求，以实际输出为准。API 连接使用此处填写的图片型号。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex uses the image engine assigned by the service; the returned model is recorded in the task workspace. Size and quality are preferences; actual output may vary. API connections use the model entered here."
+            "value": "Codex uses the image engine assigned by the service; the returned model is recorded in the task workspace. Size and quality are requested as chosen; the actual output is what counts. API connections use the model entered here."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex はサービス指定の画像エンジンを使用し、返されたモデルはタスク空間に記録します。サイズと品質は希望値です。API 接続はここで指定したモデルを使用します。"
+            "value": "Codex はサービス指定の画像エンジンを使用し、返されたモデルはタスク空間に記録します。サイズと品質は選択どおりに要求し、実際の出力を基準とします。API 接続はここで指定したモデルを使用します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex는 서비스가 지정한 이미지 엔진을 사용하며 반환된 모델은 작업 공간에 기록합니다. 크기와 품질은 요청값이며 실제 출력은 다를 수 있습니다. API 연결은 여기에 입력한 모델을 사용합니다."
+            "value": "Codex는 서비스가 지정한 이미지 엔진을 사용하며 반환된 모델은 작업 공간에 기록합니다. 크기와 품질은 선택한 대로 요청하며 실제 출력을 기준으로 합니다. API 연결은 여기에 입력한 모델을 사용합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex usa el motor asignado por el servicio y registra el modelo devuelto en el espacio de tareas. Tamaño y calidad son preferencias; puede variar el resultado. La API usa el modelo indicado aquí."
+            "value": "Codex usa el motor asignado por el servicio y registra el modelo devuelto en el espacio de tareas. Tamaño y calidad se piden tal como los eliges; cuenta el resultado real. La API usa el modelo indicado aquí."
           }
         }
       }
@@ -36681,37 +38781,37 @@
         }
       }
     },
-    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。": {
+    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多四张参考图。"
+            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex uses your subscription allowance. API connections are billed by their provider and must support images/edits and the selected model. Failures do not switch channels automatically. Image analysis uses the chat model. Up to four references per request."
+            "value": "Codex uses your subscription allowance. API connections are billed by their provider and must support images/edits and the selected model. Failures do not switch channels automatically. Image analysis uses the chat model. Up to eight photos per message; several photos are edited one by one unless you ask to combine them."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex はサブスクリプション枠を使用します。API は提供元が課金し、images/edits と選択モデルへの対応が必要です。失敗時に接続を自動変更しません。画像分析には会話モデルを使用します。参照画像は最大4枚です。"
+            "value": "Codex はサブスクリプション枠を使用します。API は提供元が課金し、images/edits と選択モデルへの対応が必要です。失敗時に接続を自動変更しません。画像分析には会話モデルを使用します。1 回に最大 8 枚まで。複数の画像は 1 枚ずつ編集し、「合成」と指示したときだけ 1 枚にまとめます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex는 구독 한도를 사용합니다. API는 해당 플랫폼에서 과금되며 images/edits와 선택한 모델을 지원해야 합니다. 실패 시 연결을 자동 전환하지 않습니다. 이미지 분석은 대화 모델을 사용하며 참조는 최대 4장입니다."
+            "value": "Codex는 구독 한도를 사용합니다. API는 해당 플랫폼에서 과금되며 images/edits와 선택한 모델을 지원해야 합니다. 실패 시 연결을 자동 전환하지 않습니다. 이미지 분석은 대화 모델을 사용합니다. 한 번에 최대 8장이며, 여러 장은 한 장씩 편집하고 ‘합성’을 요청할 때만 한 장으로 합칩니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex usa tu cuota de suscripción. La API factura según su proveedor y debe admitir images/edits y el modelo elegido. No cambia de canal al fallar. El análisis usa el modelo del chat. Máximo cuatro referencias."
+            "value": "Codex usa tu cuota de suscripción. La API factura según su proveedor y debe admitir images/edits y el modelo elegido. No cambia de canal al fallar. El análisis usa el modelo del chat. Hasta ocho fotos por mensaje; varias fotos se editan una a una salvo que pidas combinarlas."
           }
         }
       }
@@ -39407,6 +41507,181 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."
+          }
+        }
+      }
+    },
+    "存为知识": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存为知识"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as knowledge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジに保存"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지식으로 저장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar en conocimiento"
+          }
+        }
+      }
+    },
+    "移除视频": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除视频"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove video"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画を外す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상 제거"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar vídeo"
+          }
+        }
+      }
+    },
+    "视频": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vídeo"
+          }
+        }
+      }
+    },
+    "选择视频，10 分钟以内在手机上抽取画面和文字稿": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择视频，10 分钟以内在手机上抽取画面和文字稿"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a video; up to 10 minutes, frames and a transcript are made on this phone"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画を選択。10 分以内ならこの iPhone で画面と文字起こしを作成します"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상 선택. 10분 이내면 이 iPhone에서 장면과 텍스트를 만듭니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un vídeo; hasta 10 minutos, los fotogramas y la transcripción se hacen en este teléfono"
+          }
+        }
+      }
+    },
+    "正在处理视频…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在处理视频…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing video…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画を処理中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상 처리 중…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Procesando vídeo…"
           }
         }
       }

@@ -18,7 +18,7 @@ struct EditableDocument<Value: Equatable & Codable, Fields: View>: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
+            MeloForm {
                 EditStatus(editing: edit.editing, dirty: edit.dirty, saving: edit.saving, saved: edit.saved, error: edit.error)
                 if edit.hasConflict, let current = read() {
                     Text("合并后保留你的修改，未修改的字段跟随最新值。请检查后再保存。").font(.caption)

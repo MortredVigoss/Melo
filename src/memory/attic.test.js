@@ -151,3 +151,44 @@ test('injectHotAttic does not touch non-hot candidate rows while scanning', asyn
     assert.equal(cold.lastUsedAt, null);
   });
 });
+
+test('injectHotAttic never re-injects the agent identity and skips oversized rows instead of stopping', async () => {
+  // 2026-10-17 audit B-1 / C-9: the persona is already in the `agent` system
+  // prompt section; a second copy via memory doubled the token cost and, with
+  // a project override, surfaced the stale global persona. An oversized row
+  // also used to `break` the loop and blank every later decision.
+  await withTempMeloHome(async () => {
+    const now = '2026-05-01T00:00:00.000Z';
+    upsertMemory({
+      id: 'attic-identity',
+      namespace: 'agent:attic-identity-test',
+      kind: 'identity',
+      text: 'User-selected role: Persona\n## 身份\nA very long persona document ' + 'x'.repeat(5000),
+      searchText: 'persona identity',
+      createdAt: now, updatedAt: now,
+      metadata: { category: 'identity' },
+    });
+    upsertMemory({
+      id: 'attic-huge-decision',
+      namespace: 'agent:attic-identity-test',
+      kind: 'fact',
+      text: 'Oversized decision ' + 'y'.repeat(6000),
+      searchText: 'oversized decision',
+      createdAt: now, updatedAt: now,
+      metadata: { category: 'decision' },
+    });
+    upsertMemory({
+      id: 'attic-small-decision',
+      namespace: 'agent:attic-identity-test',
+      kind: 'fact',
+      text: 'Keep replies in Chinese',
+      searchText: 'keep replies in chinese',
+      createdAt: now, updatedAt: now,
+      metadata: { category: 'decision' },
+    });
+    const block = injectHotAttic({ namespaces: ['agent:attic-identity-test'], limit: 8 });
+    assert.doesNotMatch(block, /User-selected role|身份/);
+    assert.doesNotMatch(block, /Oversized decision/);
+    assert.match(block, /Keep replies in Chinese/, 'a later small decision survives an earlier oversized row');
+  });
+});

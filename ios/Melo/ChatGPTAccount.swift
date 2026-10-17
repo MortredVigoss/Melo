@@ -9,6 +9,8 @@ struct ChatGPTModel: Decodable, Identifiable {
 }
 // Keep the existing connection identifier so conversation selections survive migration.
 // Credentials are exclusively Codex grants in a NEW Keychain entry; SIWC is never reused.
+/// The image tool rejected the requested output size.
+struct ImageSizeRejected: Error {}
 @MainActor final class ChatGPTAccount: ObservableObject {
     @Published private(set) var registrations: [CodexRegistration] = []
     @Published private(set) var activeID: String?
@@ -191,9 +193,10 @@ struct ChatGPTModel: Decodable, Identifiable {
         // recognised up front: the model decides, instead of saying the tool is missing.
         let offersImageTool = allowImageTool && imageTask?.makesImage != true
         if offersImageTool {
-            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": (imageTask ?? ImageTaskPlan()).model]]
+            let plan = imageTask ?? ImageTaskPlan()
+            body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": plan.model].merging(plan.size == "auto" ? [:] : ["size": plan.size]) { _, new in new }]
             if body["tool_choice"] == nil { body["tool_choice"] = "auto" }
-            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。"
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。用户提到之前的图片（如“第二张”“原图”）而本轮没有附带那张图时，不要凭空生成新图，请说明需要哪一张。"
         }
         let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone data tools are offered only for ordinary replies, never image generation.
@@ -207,6 +210,7 @@ struct ChatGPTModel: Decodable, Identifiable {
         }
         let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
         var priorSources: [WebSource] = []
+        var sizeFallback = false
         var searchedEarlier = false
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
@@ -218,7 +222,8 @@ struct ChatGPTModel: Decodable, Identifiable {
                 imageVerified = true
             }
             let sources = WebReplyFormatter.references(in: "", annotations: priorSources + stream.sources)
-            return ModelReply(text: text, sources: sources, searched: searched, images: stream.images)
+            let note = sizeFallback ? "服务未接受所选尺寸 \(imageTask?.size ?? "")，已按服务默认尺寸生成；需要 2K/4K 可改用支持该尺寸的图像 API 连接。" : ""
+            return ModelReply(text: [text, note].filter { !$0.isEmpty }.joined(separator: "\n\n"), sources: sources, searched: searched, images: stream.images)
         }
         func streamOnce(_ body: [String: Any]) async throws -> ChatGPTStream {
             try Task.checkCancellation()
@@ -236,6 +241,7 @@ struct ChatGPTModel: Decodable, Identifiable {
             guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
             guard http.statusCode == 200 else {
                 if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
+                if http.statusCode == 400, ((body["tools"] as? [[String: Any]]) ?? []).contains(where: { $0["type"] as? String == "image_generation" && $0["size"] != nil }) { throw ImageSizeRejected() }
                 if [400, 413, 422].contains(http.statusCode) {
                     var errorBody = Data()
                     for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
@@ -254,7 +260,14 @@ struct ChatGPTModel: Decodable, Identifiable {
             return stream
         }
         for _ in 0..<DeviceToolLoop.maxRounds {
-            let stream = try await streamOnce(body)
+            let stream: ChatGPTStream
+            do { stream = try await streamOnce(body) }
+            catch is ImageSizeRejected {
+                // Retry once at the service's default size; the reply says so.
+                body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
+                sizeFallback = true
+                stream = try await streamOnce(body)
+            }
             let calls = phoneTools.isEmpty ? [] : stream.functionCalls
             guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
             // Validate the whole batch before any side effect, then run sequentially.

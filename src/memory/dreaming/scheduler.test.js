@@ -96,3 +96,31 @@ test('startIdleWatch re-arm tears down the prior watch (no listener/interval lea
   assert.equal(emitter.activeCount, 0, 'unsub clears the active watch');
   _resetForTests();
 });
+
+test('a startup catch-up sweep runs when the persisted clock says one is overdue', async () => {
+  // 2026-10-17 audit C-11: without this, a desktop that never stays up for six
+  // hours never consolidated memory at all.
+  _resetForTests();
+  const saved = process.env.MELO_DREAMING_ENABLED;
+  process.env.MELO_DREAMING_ENABLED = '1';
+  try {
+    const timeouts = [];
+    const intervals = [];
+    startDreamingScheduler({
+      setInterval: (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; },
+      clearInterval: () => {},
+      setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return { unref() {} }; },
+      incrementalMs: 1000, fullMs: 10_000, startupDelayMs: 5, persist: false,
+    });
+    assert.equal(intervals.length, 2);
+    assert.equal(timeouts.length, 1, 'one startup catch-up timer');
+    assert.equal(timeouts[0].ms, 5);
+    // With no persisted run both are overdue; the full sweep wins. The sweep
+    // itself is fire-and-forget (errors swallowed), so calling the timer is safe.
+    timeouts[0].fn();
+  } finally {
+    if (saved == null) delete process.env.MELO_DREAMING_ENABLED;
+    else process.env.MELO_DREAMING_ENABLED = saved;
+    _resetForTests();
+  }
+});

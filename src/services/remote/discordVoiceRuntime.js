@@ -28,6 +28,7 @@
 // (via DiscordVoiceSession), and the normalized profile/channel objects from
 // agentProfiles / agentChannels.
 
+import { assertAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { DiscordVoiceSession } from './discordVoiceSession.js';
 
@@ -60,6 +61,7 @@ class DiscordVoiceRuntime {
    * an explicit logout via _disposeAgent(agentId).
    */
   async _getClient(agentId, botToken) {
+    assertAgentChannelAvailable('discord');
     const existing = this.clientsByAgent.get(agentId);
     if (existing) {
       await existing.ready;
@@ -127,6 +129,7 @@ class DiscordVoiceRuntime {
    * @returns {Promise<{ handled: boolean, reply?: string }>}
    */
   async handleTextCommand({ incoming, agentId, profile, discordChannel, botUserId, resolveConfig }) {
+    assertAgentChannelAvailable('discord');
     const rawText = String(incoming?.text || '').trim();
     if (!rawText) return { handled: false };
 

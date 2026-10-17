@@ -2,6 +2,7 @@ import { observeNativeItem } from '../tools/executionObservation.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 import { extractResponsesText, extractChatCompletionDelta, extractProviderErrorMessage } from './responseText.js';
 import { createResponseItemCollector } from './responseItems.js';
+import { createReasoningSummaryCollector } from './reasoningSummary.js';
 
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120000;
 
@@ -105,34 +106,6 @@ function extractCodexEventError(event) {
   }
 
   return 'Codex OAuth request failed.';
-}
-
-function isCodexReasoningDeltaEvent(eventType = '') {
-  return eventType === 'response.reasoning_summary_text.delta';
-}
-
-function extractCodexReasoningDelta(event) {
-  if (!event || typeof event !== 'object') {
-    return '';
-  }
-
-  if (typeof event.delta === 'string') {
-    return event.delta;
-  }
-
-  if (typeof event.text === 'string') {
-    return event.text;
-  }
-
-  if (typeof event.summary === 'string') {
-    return event.summary;
-  }
-
-  if (event?.text && typeof event.text?.value === 'string') {
-    return event.text.value;
-  }
-
-  return '';
 }
 
 async function cleanupReader(reader) {
@@ -246,7 +219,7 @@ export async function readCodexSseResponse(
   } = {},
 ) {
   let deltaText = '';
-  let reasoningText = '';
+  const summaries = createReasoningSummaryCollector();
   let completedResponse = null;
   const responseItems = returnToolResponse ? createResponseItemCollector() : null;
   // attemptedImageIds — dedup so we don't re-invoke onInlineImage for a
@@ -324,16 +297,19 @@ export async function readCodexSseResponse(
     if (!event) {
       return;
     }
+    const summary = summaries.accept(event);
+    if (summary) await onReasoningDelta?.(summary);
+    if (event.response) onModelMetadata?.({
+      reportedModel: event.response.model, responseId: event.response.id, usage: event.response.usage,
+      responseStatus: event.response.status || ({ 'response.completed': 'completed', 'response.done': 'completed', 'response.incomplete': 'incomplete', 'response.failed': 'failed' })[event.type],
+      finishReason: event.response.incomplete_details?.reason || event.response.error?.code,
+    });
     responseItems?.accept(event);
     if(event.type === 'response.image_generation_call.partial_image') await onInlineImagePreview?.(event);
     if (event.type === 'response.output_item.added') observeItem(event.item, 'running');
     if (event.type === 'response.output_item.done') {
       observeItem(event.item, event.item?.status === 'failed' ? 'failed' : event.item?.status === 'cancelled' ? 'cancelled' : event.item?.status === 'incomplete' ? 'interrupted' : 'completed');
       await observeSearch(event.item);
-      if (event.item?.type === 'reasoning' && !reasoningText) {
-        const summary = (event.item.summary || []).filter(p => p.type === 'summary_text').map(p => p.text || '').join('\n');
-        if (summary) { reasoningText = summary; await onReasoningDelta?.({ delta: summary, text: summary, eventType: 'response.reasoning_summary_text.delta' }); }
-      }
     }
 
     if (
@@ -346,21 +322,6 @@ export async function readCodexSseResponse(
           delta: event.delta,
           text: deltaText,
         });
-      }
-      return;
-    }
-
-    if (isCodexReasoningDeltaEvent(event.type)) {
-      const delta = extractCodexReasoningDelta(event);
-      if (delta) {
-        reasoningText += delta;
-        if (typeof onReasoningDelta === 'function') {
-          await onReasoningDelta({
-            delta,
-            text: reasoningText,
-            eventType: event.type,
-          });
-        }
       }
       return;
     }
@@ -390,10 +351,6 @@ export async function readCodexSseResponse(
       const output = completedResponse?.output;
       if (Array.isArray(output)) {
         for (const item of output) {
-          if (item?.type === 'reasoning' && !reasoningText) {
-            const summary = (item.summary || []).filter(p => p.type === 'summary_text').map(p => p.text || '').join('\n');
-            if (summary) { reasoningText = summary; await onReasoningDelta?.({ delta: summary, text: summary, eventType: 'response.reasoning_summary_text.delta' }); }
-          }
           observeItem(item, item.status === 'failed' ? 'failed' : item.status === 'cancelled' ? 'cancelled' : item.status === 'incomplete' ? 'interrupted' : 'completed');
           await observeSearch(item);
           if (
@@ -458,7 +415,7 @@ export async function readCodexSseResponse(
     const missing = links.filter(a => !completedText.includes(a.url));
     if (missing.length) completedText += '\n\n' + missing.map(a => `[source: ${a.url}]`).join(' ');
   }
-  onModelMetadata?.({ reportedModel: completedResponse?.model || '', responseId: completedResponse?.id || '', usage: completedResponse?.usage });
+  onModelMetadata?.({ reportedModel: completedResponse?.model || '', responseId: completedResponse?.id || '', usage: completedResponse?.usage, responseStatus: completedResponse?.status || (completedResponse ? 'completed' : 'interrupted'), finishReason: completedResponse?.incomplete_details?.reason });
   const trimmedDelta = deltaText.trim();
   const baseText = completedText || trimmedDelta;
 
@@ -522,6 +479,8 @@ export async function readChatCompletionsSseResponse(
     if (event.model) metadata = { ...metadata, reportedModel: event.model, responseId: event.id || '' };
     if (event.usage) metadata.usage = event.usage;
     const finishReason = event.choices?.[0]?.finish_reason;
+    if (finishReason) metadata.finishReason = finishReason;
+    if (event.model || event.usage || finishReason) onModelMetadata?.({ ...metadata, responseStatus: finishReason ? (finishReason === 'stop' ? 'completed' : 'incomplete') : 'in_progress' });
     if (finishReason && finishReason !== 'stop') {
       // Partial text must not be saved as a successful reply after a token
       // limit, content filter or unsupported native tool-only completion.
@@ -549,7 +508,7 @@ export async function readChatCompletionsSseResponse(
 
   if (!completed) throw new Error('Provider stream ended before a completion event; the reply is incomplete.');
   if (fullText.trim()) {
-    onModelMetadata?.(metadata);
+    onModelMetadata?.({ ...metadata, responseStatus: 'completed' });
     return fullText.trim();
   }
 

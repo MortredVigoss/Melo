@@ -1,3 +1,7 @@
+// Composition root: register built-in tools explicitly here instead of
+// relying on the desktopStore facade's import side effect (audit A-11).
+import { bootstrapBuiltinTools } from './tools/registry.js';
+bootstrapBuiltinTools();
 import {loadConfig} from './config.js';
 import { isAgentChannelAvailable } from './shared/channelAvailability.js';
 import { createRouteRegistry } from './http/routeRegistry.js';
@@ -13,6 +17,7 @@ import { handleExecutionRoutes } from './http/executionRoutes.js';
 import { handleMobileSyncRoute } from './http/mobileSyncRoutes.js';
 import { matchesDomainRoute, handleDomainRoutes } from './http/domainRoutes.js';
 import { createTtsRoutes } from './http/ttsRoutes.js';
+import { createMediaRoutes } from './http/mediaRoutes.js';
 import { handleChatRoutes } from './http/chatRoutes.js';
 import { sendJson, startSse, writeSseEvent, readJsonBody } from './http/transport.js';
 import { createRequestContext } from './runtime/requestContext.js';
@@ -25,7 +30,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifySignedFileUrl, setServerOrigin } from './web/urlSigning.js';
-import { isOriginAllowed } from './web/originCheck.js';
+import { isOriginAllowed, isHostAllowed } from './web/originCheck.js';
 import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 // Stage 3a shutdown hook (2026-05-21 audit): pageRegistry holds persistent
 // CDP Browser+page handles per browser_open call.  Without an explicit
@@ -108,7 +113,7 @@ const discordPollIntervalMs = Math.max(
   Number(getArgValue('--discord-poll-ms', process.env.MELO_DISCORD_POLL_MS || '3500')) || 3500,
 );
 let discordPollTimer = null;
-let discordPollingStopped = false;
+let discordPollingStopped = !isAgentChannelAvailable('discord');
 
 // ── Bot-channel polling singleton locks ───────────────────────────────────────
 // Prevents two concurrent server instances (e.g. terminal + desktop app) from
@@ -131,8 +136,10 @@ async function _acquirePollerLock(lockFile) {
       try {
         process.kill(existingPid, 0); // signal 0 = liveness check, no actual signal
         return false; // another live instance holds the lock
-      } catch {
-        // Stale lock — process no longer exists, take over
+      } catch (error) {
+        // Only ESRCH proves the holder is gone. EPERM means a live process we
+        // may not signal — treat it as alive (audit A-6; mirrors serverLock.js).
+        if (error?.code !== 'ESRCH') return false;
       }
     }
   } catch { /* no lock file yet */ }
@@ -269,13 +276,21 @@ purgeStaleSoftDeletes({ olderThanDays: 7 }).then(({ purged }) => {
  */
 function requireLocalOrigin(request, response) {
   const origin = request.headers?.origin;
-  if (isOriginAllowed(origin, host, runtimeIdentity.port)) return true;
+  if (isOriginAllowed(origin, host, runtimeIdentity.port, { secFetchSite: request.headers?.['sec-fetch-site'] })) return true;
 
   sendJson(response, 403, {
     ok: false,
     error: 'FORBIDDEN_ORIGIN',
-    message: `Origin "${origin}" is not allowed for this endpoint.`,
+    message: `Origin "${origin || request.headers?.['sec-fetch-site'] || 'unknown'}" is not allowed for this endpoint.`,
   });
+  return false;
+}
+
+// DNS-rebinding guard for every /api request (audit A-3). The Swift shell,
+// the UI and local tools all address the server by loopback name.
+function requireLocalHost(request, response) {
+  if (isHostAllowed(request.headers?.host, host, runtimeIdentity.port)) return true;
+  sendJson(response, 403, { ok: false, error: 'FORBIDDEN_HOST', message: `Host "${request.headers?.host}" is not this Melo instance.` });
   return false;
 }
 
@@ -305,6 +320,7 @@ function getStaticPath(urlPath) {
 
 
 const ttsRoutes = createTtsRoutes({ startVoicePackServers });
+const mediaRoutes = createMediaRoutes({ home: runtimePaths.home });
 
 // ── Vendored Three.js from node_modules ─────────────────────────────────
 // The Demon 3D renderer (globe-flight, solar-system, …) needs Three.js on
@@ -414,7 +430,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);
@@ -516,7 +532,7 @@ await finishChatDeletions(runtimePaths.home);
       sendJson(response, 200, await deleteChat(body.chatId,body));
       return;
     } },
-  { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'POST', paths: ["/api/chat/send","/api/chat/send/stream","/api/chat/supplement"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       await handleChatRoutes(request, response, url);
       return;
     } },
@@ -906,12 +922,17 @@ await finishChatDeletions(runtimePaths.home);
 const server = createServer((request, response) => runWithRequestContext(createRequestContext({ bootstrapBase: String(request.headers['x-melo-bootstrap-base'] || '').slice(0,80) }), async () => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
+    if (url.pathname.startsWith('/api/') && !requireLocalHost(request, response)) return;
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) && !requireLocalOrigin(request, response)) return;
 
     if (await handleMobileSyncRoute(request, response, url)) return;
     if (await handleExecutionRoutes(request, response, url, runtimePaths.home)) return;
+    if (mediaRoutes.matches(request, url)) {
+      await mediaRoutes.handle(request, response, url, requireLocalOrigin);
+      return;
+    }
     if (ttsRoutes.matches(request, url)) {
-      await ttsRoutes.handle(request, response, url);
+      await ttsRoutes.handle(request, response, url, requireLocalOrigin);
       return;
     }
 
@@ -995,25 +1016,38 @@ server.listen(port, host, () => {
 });
 
 // ── Voice pack auto-start / restart ──────────────────────────────────────────
+// 2026-10-17 audit A-2: the watchdog used to `kill -9` whatever was LISTENING
+// on 7860 every five minutes, before even checking that a voice pack was
+// installed — 7860 is also the default Gradio / SD-WebUI port, so a user's
+// own process could be killed. Now: no voice pack → no watchdog at all; a
+// restart only kills the process this server spawned (by pid), never a
+// stranger on the port.
+let _voicePackProcess = null;
+async function voicePackInstalled() {
+  const { access } = await import('node:fs/promises');
+  try { await access(join(rootDir, 'voice-packs', 'custom-voice', 'start.sh')); return true; }
+  catch { return false; }
+}
 async function startVoicePackServers({ force = false } = {}) {
   if (process.env.MELO_TEST_MODE === '1') return;
-  const { spawn, execSync } = await import('node:child_process');
-  const { access } = await import('node:fs/promises');
+  const { spawn } = await import('node:child_process');
 
   const voicePackDir = join(rootDir, 'voice-packs', 'custom-voice');
   const startScript = join(voicePackDir, 'start.sh');
   const healthUrl = 'http://127.0.0.1:7860/health';
 
+  if (!(await voicePackInstalled())) return; // no voice pack installed, skip silently
+
   if (force) {
-    // Kill any existing F5-TTS process on port 7860
-    try {
-      // Only kill the process LISTENING on 7860 (the fish-speech server itself),
-      // NOT clients connected to it (which includes this node process during synthesis).
-      execSync("lsof -ti tcp:7860 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true", { stdio: 'ignore' });
-      process.stdout.write('[voice-pack] Killed existing F5-TTS process.\n');
-    } catch {}
-    // Brief pause to let the port free up
-    await new Promise(r => setTimeout(r, 1500));
+    // Restart only the server we started ourselves.
+    if (_voicePackProcess && _voicePackProcess.exitCode === null) {
+      try { _voicePackProcess.kill('SIGTERM'); process.stdout.write('[voice-pack] Stopped the F5-TTS process started by this server.\n'); } catch {}
+      // Brief pause to let the port free up
+      await new Promise(r => setTimeout(r, 1500));
+    } else {
+      process.stderr.write('[voice-pack] F5-TTS watchdog: port 7860 is unhealthy but the listener was not started by this server; not killing it. Stop it manually if it is a stale voice-pack process.\n');
+      return;
+    }
   } else {
     // Check if already running (healthy)
     try {
@@ -1025,13 +1059,6 @@ async function startVoicePackServers({ force = false } = {}) {
     } catch {}
   }
 
-  // Check start.sh exists
-  try {
-    await access(startScript);
-  } catch {
-    return; // no voice pack installed, skip silently
-  }
-
   process.stdout.write(`[voice-pack] ${force ? 'Restarting' : 'Starting'} F5-TTS custom voice server...\n`);
   const proc = spawn('bash', [startScript], {
     detached: false,
@@ -1039,6 +1066,7 @@ async function startVoicePackServers({ force = false } = {}) {
     env: { ...process.env },
   });
   proc.unref();
+  _voicePackProcess = proc;
 
   // Poll until healthy (max 120s) — fire-and-forget poll when not forced
   const deadline = Date.now() + 120_000;
@@ -1061,7 +1089,8 @@ async function startVoicePackServers({ force = false } = {}) {
 
 // ── F5-TTS periodic watchdog ─────────────────────────────────────────────────
 // Every 5 minutes, ping the health endpoint. If it's down, restart automatically.
-function scheduleF5TtsWatchdog() {
+async function scheduleF5TtsWatchdog() {
+  if (process.env.MELO_TEST_MODE === '1' || !(await voicePackInstalled())) return;
   setTimeout(async () => {
     try {
       // 10s timeout — F5-TTS event loop is now free during inference (executor fix),
@@ -1201,7 +1230,9 @@ async function runDiscordPollLoop() {
   }
 }
 
-_acquireDiscordLock().then(acquired => {
+// Same archive gate as Telegram: an archived transport takes no poller lock
+// and never schedules a cycle, so an old `enabled: true` cannot restart it.
+if (isAgentChannelAvailable('discord')) _acquireDiscordLock().then(acquired => {
   if (acquired) {
     scheduleDiscordPoll(0);
   } else {
@@ -1258,7 +1289,7 @@ function shutdown() {
     .catch(() => {});
   Promise.allSettled([
     isAgentChannelAvailable('telegram') ? _releaseTelegramLock() : Promise.resolve(),
-    _releaseDiscordLock(),
+    isAgentChannelAvailable('discord') ? _releaseDiscordLock() : Promise.resolve(),
     voiceShutdown,
     pageRegistryShutdown,
     backgroundRunner.shutdown(),

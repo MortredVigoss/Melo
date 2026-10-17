@@ -9,6 +9,7 @@ import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
+import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
@@ -17,7 +18,8 @@ import { renderImageSettings, renderImageTaskControls, consumeImageTask, restore
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 import { renderAtomicButton } from './atomicButton.js';
-import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation } from './executionPanel.js';
+import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor } from './executionPanel.js';
+import { sceneSteps, renderRunSteps } from './runSteps.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
 import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
@@ -45,6 +47,8 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
+import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
@@ -524,7 +528,7 @@ function thinkingLabel() {
     0,
     Math.floor((Date.now() - uiState.thinkingSince) / 1000),
   );
-  return elapsedSeconds > 0 ? `${label} · ${elapsedSeconds}s` : label;
+  return `${label} · ${t('已用时 {time}', { time: t('{seconds} 秒', { seconds: elapsedSeconds }) })}`;
 }
 
 function parseRenderableMessageBlocks(value = '') {
@@ -1345,7 +1349,7 @@ function renderTtsVoicePanel() {
 }
 
 function renderMessageAttachments(message) {
-  return renderAttachmentCards(message, { escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
+  return renderAttachmentCards(message, { savedVideoKnowledge: uiState.savedVideoKnowledge || {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
 }
 
 function getGreeting() {
@@ -1438,16 +1442,29 @@ function renderThinkingMessage() {
   return '';
 }
 
+function renderLiveRunSteps(chat) {
+  const sent = (uiState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
+  return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id)), escapeHtml, t)}</div>${sent}`;
+}
+
+function patchLiveRunSteps(chatId) {
+  const host = document.querySelector(`[data-run-steps-chat="${CSS.escape(chatId || '')}"]`);
+  if (host) host.innerHTML = renderRunSteps(sceneSteps(liveSceneFor(chatId)), escapeHtml, t);
+}
+
 function renderStreamingAssistantMessage(chat) {
   if (!uiState.sending || uiState.streamingChatId !== chat?.id) {
     return '';
   }
 
-  // Tool calls strip always shown while tools are running (even before text appears)
+  // Tool calls strip always shown while tools are running (even before text appears).
+  // The live steps of this run (what it is doing now) sit under the newest output so
+  // they stay in view; they are patched in place on scene events.
   const toolStrip = renderActiveToolCallsStrip();
+  const liveSteps = renderLiveRunSteps(chat);
 
   if (!uiState.streamingAssistantText) {
-    return toolStrip + renderThinkingMessage();
+    return toolStrip + renderThinkingMessage() + liveSteps;
   }
 
   // Strip any <tool_call>...</tool_call> XML blocks (and partial opening tags)
@@ -1478,6 +1495,7 @@ function renderStreamingAssistantMessage(chat) {
       </div>
       ${renderSourceCitationCards(streamCitations)}
     </article>
+    ${liveSteps}
   `;
 }
 
@@ -2828,8 +2846,11 @@ window.addEventListener('melo-external-link', event => {
 });
 
 function composerHintText({ inline = false } = {}) {
+  if (uiState.attachmentUploading) {
+    return t('正在上传视频「{name}」，完成后可发送。', { name: uiState.attachmentUploading });
+  }
   if (uiState.sending) {
-    return 'Working on your message now. Live lookups can take a little longer.';
+    return t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
   }
   if (uiState.voice.recording) {
     return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
@@ -2917,20 +2938,42 @@ function focusComposerSoon() {
   });
 }
 
+let composerResizeObserver;
+let observedComposer;
+let observedComposerWidth = 0;
+
 function syncComposerTextareaHeight() {
   const composer = document.querySelector('#composer');
+  if (composer !== observedComposer) {
+    composerResizeObserver?.disconnect();
+    observedComposer = composer;
+    observedComposerWidth = composer?.clientWidth || 0;
+    if (composer && typeof ResizeObserver !== 'undefined') {
+      composerResizeObserver ||= new ResizeObserver(entries => {
+        if (entries[0]?.target !== observedComposer) return;
+        const width = observedComposer.clientWidth;
+        if (width === observedComposerWidth) return;
+        observedComposerWidth = width;
+        syncComposerTextareaHeight();
+      });
+      composerResizeObserver.observe(composer);
+    }
+  }
   if (!(composer instanceof HTMLTextAreaElement)) {
     return;
   }
 
   const computedStyle = window.getComputedStyle(composer);
-  const minHeight = Number.parseFloat(computedStyle.minHeight) || 58;
-  const maxHeight = Number.parseFloat(computedStyle.maxHeight) || 220;
+  const minHeight = Number.parseFloat(computedStyle.minHeight) || 48;
+  const maxHeight = Number.parseFloat(computedStyle.maxHeight) || 88;
+  const scrollTop = composer.scrollTop;
 
   composer.style.height = 'auto';
-  const nextHeight = Math.min(maxHeight, Math.max(minHeight, composer.scrollHeight));
+  const contentHeight = composer.scrollHeight;
+  const nextHeight = Math.min(maxHeight, Math.max(minHeight, contentHeight));
   composer.style.height = `${nextHeight}px`;
-  composer.style.overflowY = composer.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  composer.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  composer.scrollTop = scrollTop;
 }
 
 function renderEditContextMenu() {
@@ -3356,26 +3399,34 @@ async function queueComposerFiles(fileList) {
 
   const nextAttachments = [];
   for (const file of files) {
-    if (file.size > 20 * 1024 * 1024) {
-      showError(`${file.name} is too large. Keep attachments under 20 MB.`);
-      continue;
-    }
-
     const kind = detectAttachmentKindFromFile(file);
     if (!kind) {
       showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
       continue;
     }
-
-    const url = await readFileAsDataUrl(file);
+    // Photos up to 100 MB are sent as a bounded copy; videos up to 500 MB are uploaded as a file; other files keep 20 MB.
+    const limit = kind === 'image' || kind === 'video' ? attachmentLimit(kind) : 20 * MB;
+    if (file.size > limit) {
+      showError(t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB }));
+      continue;
+    }
+    const copy = kind === 'image' ? await makeTransferCopy(file).catch(() => null) : null;
+    let url = copy?.url;
+    if (kind === 'video') {
+      uiState.attachmentUploading = file.name; render();
+      try { url = (await uploadVideoFile(file)).url; }
+      catch (error) { showError(t('{name} 上传失败：{reason}', { name: file.name, reason: error.message })); continue; }
+      finally { uiState.attachmentUploading = null; }
+    }
+    url ||= await readFileAsDataUrl(file);
     nextAttachments.push({
       id: crypto.randomUUID(),
       kind,
       url,
       title: file.name,
       fileName: file.name,
-      mimeType: file.type || (isPdfFile(file) ? 'application/pdf' : ''),
-      sizeLabel: formatFileSize(file.size),
+      mimeType: copy?.mimeType || file.type || (isPdfFile(file) ? 'application/pdf' : ''),
+      sizeLabel: copy ? t('{size} · 发送 {width}×{height} 副本', { size: formatFileSize(file.size), width: copy.width, height: copy.height }) : formatFileSize(file.size),
     });
   }
 
@@ -3487,7 +3538,6 @@ function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
 
 function toggleVoiceInput() {
   if (voiceInputActive(uiState.voice)) { voiceInput.stop(); return; }
-  if (uiState.sending) return;
   stopCurrentTts();
   voiceInput.start(uiState.voiceLanguage || 'zh-CN');
 }
@@ -3771,7 +3821,30 @@ async function startProjectSession(projectId, mode) {
   await handleCreateChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
 }
 
+// A supplement for the reply running in this chat. The server adds it before the
+// next model step; if the turn has no further step it comes back and is sent next.
+async function sendSupplement(chatId, text) {
+  uiState.composer = '';
+  try {
+    const response = await fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, content: text }) });
+    if (response.ok) (uiState.supplementsSent ||= []).push(text);
+    else (uiState.supplementsAfterTurn ||= []).push(text);
+  } catch { (uiState.supplementsAfterTurn ||= []).push(text); }
+  // The turn may have ended while the request was in flight: send it as the next message now.
+  if (!uiState.sending && uiState.supplementsAfterTurn?.length) {
+    const queued = uiState.supplementsAfterTurn.splice(0);
+    uiState.supplementsSent = [];
+    await handleSendMessage({ chatId, content: queued.join('\n') });
+    return;
+  }
+  render();
+}
+
 async function handleSendMessage(prepared = null) {
+  if (!prepared && uiState.sending && !voiceInputActive(uiState.voice) && uiState.composer.trim() && uiState.streamingChatId && uiState.streamingChatId === activeChat()?.id) {
+    await sendSupplement(uiState.streamingChatId, uiState.composer.trim());
+    return;
+  }
   if (uiState.sending || uiState.agentSelectionSaving || (!prepared && voiceInputActive(uiState.voice))) return;
   const content = prepared?.content || uiState.composer.trim();
   const attachments = prepared ? [] : [...uiState.composerAttachments];
@@ -3878,7 +3951,7 @@ async function handleSendMessage(prepared = null) {
       },
       signal: uiState.sendAbortController.signal,
       onEvent: message => {
-        if (message.event === 'execution_scene') receiveExecutionScene(message.payload?.scene);
+        if (message.event === 'execution_scene') { receiveExecutionScene(message.payload?.scene); patchLiveRunSteps(message.payload?.scene?.chatId); }
         const previousPhase = uiState.activeTurn?.phase;
         receiveTurnPresentation(uiState.activeTurn, message.event, message.payload);
         if (previousPhase !== uiState.activeTurn?.phase) render();
@@ -3991,6 +4064,7 @@ async function handleSendMessage(prepared = null) {
     });
 
     sendSucceeded = true;
+    if (result?.unusedSupplements?.length) (uiState.supplementsAfterTurn ||= []).push(...result.unusedSupplements);
     if (!prepared) uiState.composerRetry = null;
     notifyLocalCompletion();
     if (result?.bootstrap) {
@@ -4024,6 +4098,14 @@ async function handleSendMessage(prepared = null) {
     showError(error.message);
   } finally {
     uiState.sending = false;
+    // Supplements the turn could not use are sent as the next message of the same chat.
+    // A stopped or failed turn returns every supplement to the composer instead of dropping it.
+    const followUp = sendSucceeded ? (uiState.supplementsAfterTurn || []) : [];
+    const returned = sendSucceeded ? [] : [...(uiState.supplementsSent || []), ...(uiState.supplementsAfterTurn || [])];
+    uiState.supplementsSent = [];
+    uiState.supplementsAfterTurn = [];
+    if (returned.length) uiState.composer = [uiState.composer.trim(), ...returned.map(text => t('补充：{text}', { text }))].filter(Boolean).join('\n');
+    if (followUp.length && chatId) setTimeout(() => handleSendMessage({ chatId, content: followUp.join('\n') }), 0);
     uiState.activeTurn = null;
     uiState.sendAbortController = null;
     uiState.thinkingSince = 0;
@@ -6455,60 +6537,6 @@ function renderSidebar() {
   `;
 }
 
-function renderTopbar() {
-  const data = uiState.bootstrap;
-  const project = activeProject();
-  const currentAgent = conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
-
-  return ui`
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="pill-button" data-action="open-command-palette">
-          Quick actions
-          <span class="meta-label">Cmd/Ctrl+K</span>
-        </button>
-      </div>
-
-      <div class="topbar-center">
-        <div class="mode-switch">
-          ${data.modes
-            // Cowork / Code modes are hidden for now — keeping them in
-            // MODE_DEFS so persisted chats and the command palette still
-            // round-trip, but not showing the tabs in the topbar until
-            // we decide what those pages should actually be.
-            .filter(mode => mode.id === 'chat')
-            .map(
-              mode => ui`
-                <button
-                  class="mode-button ${
-                    data.settings.activeMode === mode.id ? 'is-active' : ''
-                  }"
-                  data-action="switch-mode"
-                  data-mode="${mode.id}"
-                >
-                  ${escapeHtml(mode.label)}
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-      </div>
-
-      <div class="topbar-right status-group">
-        ${
-          currentAgent
-            ? ui`<div class="status-pill">${escapeHtml(currentAgent.name)}</div>`
-            : ''
-        }
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          ${!uiState.neuralOverview && activeChat()?.modelSelection ? t("本对话") : currentAgent?.model ? 'Agent 默认' : t("默认")} · ${escapeHtml(modelLabel((!uiState.neuralOverview && activeChat()?.modelSelection?.model) || currentAgent?.model || data.settings.config.model))}
-        </div>
-      </div>
-    </header>
-  `;
-}
-
 function syncModelPickerPosition() {
   const panel = document.querySelector('#model-picker-panel');
   const trigger = document.querySelector('.model-picker-trigger');
@@ -6926,6 +6954,7 @@ function renderComposerCard({ inline = false } = {}) {
   return ui`
     <div class="composer-shell">
       <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
+      ${renderImageTaskControls(uiState.composerAttachments)}
       ${renderExecutionPanel()}
       ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
@@ -6965,8 +6994,8 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
-                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:uiState.sending,escapeHtml})}
-                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:uiState.sending},escapeHtml)}
+                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
+                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
                   selection:!uiState.neuralOverview && activeChat() ? activeChat().modelSelection : uiState.newChatModel,
@@ -6988,7 +7017,7 @@ function renderComposerCard({ inline = false } = {}) {
                   class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
                   type="button"
                   data-action="toggle-voice-input"
-                  ${!uiState.sending && uiState.voice.status !== 'stopping' ? '' : 'disabled'}
+                  ${uiState.voice.status !== 'stopping' ? '' : 'disabled'}
                   aria-label="${escapeHtml(voiceInputLabel(uiState.voice))}"
                   aria-pressed="${voiceInputActive(uiState.voice)}"
                   title="${voiceSupported ? escapeHtml(voiceInputLabel(uiState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
@@ -6999,6 +7028,9 @@ function renderComposerCard({ inline = false } = {}) {
                 ${
                   uiState.sending
                     ? ui`
+                      <button class="composer-icon-button" type="submit" title="补充到正在进行的回复">
+                        <span class="toolbar-icon">${icon.send}</span>
+                      </button>
                       <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="停止生成">
                         <span class="toolbar-icon">${icon.stop}</span>
                       </button>
@@ -7023,12 +7055,12 @@ function renderComposerCard({ inline = false } = {}) {
               <textarea
                 id="composer"
                 class="composer-textarea"
-                placeholder="${escapeHtml(inline ? t("回复…") : composerPlaceholder())}"
+                rows="2"
+                placeholder="${escapeHtml(uiState.sending ? t("输入补充要求") : inline ? t("回复…") : composerPlaceholder())}"
                 aria-label="消息输入框"
               >${escapeHtml(uiState.composer)}</textarea>
             </div>
 
-            ${renderImageTaskControls(uiState.composerAttachments)}
             ${renderAttachmentPreviewList(uiState.composerAttachments)}
             ${
               uiState.composerDragActive
@@ -7180,7 +7212,7 @@ function renderAgentSelectorChip() {
     <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
             aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.sending || uiState.agentSelectionSaving ? 'disabled' : ''}>
+            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.agentSelectionSaving ? 'disabled' : ''}>
       <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
@@ -8142,10 +8174,12 @@ function renderAgentWorkbench(selected) {
     uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
   // Archived channels have no controls; their saved configuration stays in the draft.
-  const VALID_CHANNEL_TABS = ['discord'];
+  // The list follows src/shared/channelAvailability.js so archiving a transport
+  // removes its tab, card and form inputs in one place.
+  const VALID_CHANNEL_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
   const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
     ? uiState.agentChannelTab[selected.id]
-    : 'discord';
+    : (VALID_CHANNEL_TABS[0] || null);
   const channelTabDefs = [
     {
       id: 'telegram',
@@ -8199,7 +8233,11 @@ function renderAgentWorkbench(selected) {
 
         <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
           <summary>消息渠道</summary>
-          <p class="agent-section-note">Telegram 已归档，原有配置与历史对话保留。</p>
+          <p class="agent-section-note">${
+            VALID_CHANNEL_TABS.length
+              ? 'Telegram 已归档，原有配置与历史对话保留。'
+              : 'Telegram 与 Discord 已暂时归档：不轮询、不外发、不加入语音频道；原有 token、ID 与历史对话全部保留，恢复后无需重新配置。'
+          }</p>
         <section class="selected-file-card agent-channel-voice">
                   <label class="label">
                     语音回复模式
@@ -8246,7 +8284,7 @@ function renderAgentWorkbench(selected) {
         </div>
 
         <div class="agent-channel-panel">
-          ${ui`
+          ${!isAgentChannelAvailable('discord') ? '' : ui`
                 <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -10573,6 +10611,8 @@ function render({ background = false, changedSections = null } = {}) {
   // every time a background render fires (autosave, runtime poll, toast
   // expiry). See captureFormTextareaScrolls for the full rationale.
   const _savedTextareaScrolls = captureFormTextareaScrolls();
+  const _savedComposer = document.querySelector('#composer');
+  const _savedComposerScroll = _savedComposer ? { value: _savedComposer.value, top: _savedComposer.scrollTop } : null;
 
   // Save content scroll position — render() rebuilds the DOM and would reset it to 0
   const _contentScroller = document.querySelector('.content-scroll');
@@ -10670,7 +10710,6 @@ function render({ background = false, changedSections = null } = {}) {
       <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
-        ${renderTopbar()}
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
         ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
         ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
@@ -10738,6 +10777,10 @@ function render({ background = false, changedSections = null } = {}) {
   syncSearchFieldFocus();
   syncFileEditorGoToLine();
   syncComposerTextareaHeight();
+  const _newComposer = document.querySelector('#composer');
+  if (_newComposer && _savedComposerScroll?.value === _newComposer.value) {
+    _newComposer.scrollTop = _savedComposerScroll.top;
+  }
   restoreAgentEditorState();
   // Put the caret back into whichever input/textarea was focused before the
   // page update. Runs AFTER restoreAgentEditorState so the agent-specific
@@ -11257,7 +11300,6 @@ document.addEventListener('click', async event => {
         break;
       case 'pick-default-model': {
         if (uiState.modelPickerSaving) break;
-        if (uiState.sending) break;
         const model = trigger.dataset.model;
         const selection = model ? {model, profileId:trigger.dataset.profileId || ''} : null;
         uiState.modelPickerSaving = true;
@@ -11514,6 +11556,15 @@ document.addEventListener('click', async event => {
           activeView: 'projects',
         });
         break;
+      case 'save-video-knowledge': {
+        const message = activeChat()?.messages?.find(m => m.id === trigger.dataset.messageId);
+        const attachment = message?.attachments?.find(a => a.id === trigger.dataset.attachmentId);
+        const entry = message && attachment ? videoExtraction(message, attachment) : null;
+        if (!entry) { showError(t('这段视频还没有处理结果。')); break; }
+        try { applyBootstrap(await api('/api/artifacts', { method: 'POST', body: { ...videoKnowledgeNote(attachment, entry), projectId: activeChat()?.projectId || null } })); (uiState.savedVideoKnowledge ||= {})[attachment.id] = true; render(); }
+        catch (error) { showError(error.message); }
+        break;
+      }
       case 'save-project-team': {
         const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
         if(team.error) {showError(t(team.error));break;}
@@ -11872,7 +11923,7 @@ document.addEventListener('click', async event => {
       case 'switch-agent-channel-tab': {
         const agentId = trigger.dataset.agentId;
         const channelId = trigger.dataset.channelId;
-        const VALID_TABS = ['discord'];
+        const VALID_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
         if (agentId && VALID_TABS.includes(channelId)) {
           // Flush any pending debounced autosave before switching tabs so
           // in-flight edits (e.g. a bot token typed <350ms ago) are not lost
@@ -12474,7 +12525,8 @@ document.addEventListener('click', async event => {
       }
       case 'select-chat-agent': {
         const agentId = trigger.dataset.agentId;
-        if (uiState.sending || uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
+        // Allowed during a reply: the running turn keeps the Agent it started with; this applies next.
+        if (uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
         const chat = !uiState.neuralOverview ? activeChat() : null;
         uiState.agentSelectionSaving=true; render();
         try {
@@ -12743,7 +12795,6 @@ document.addEventListener('change', async event => {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
     try {
-      if (uiState.sending) throw new Error('请等待当前回复结束后再修改。');
       if (chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch}}));
       else if (Object.hasOwn(patch,'projectId')) {
         uiState.newChatProjectId = patch.projectId;
@@ -12980,7 +13031,11 @@ document.addEventListener('change', async event => {
           [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
-        render();
+        // Same rule as the generic branch below (2026-10-17): a text field's
+        // blur fires `change` on the pointerdown of the Save click; a full
+        // render here replaced the button mid-click and swallowed the save.
+        // Only the <select> needs an immediate repaint.
+        if (target instanceof HTMLSelectElement) render();
         return;
       }
 
@@ -13443,5 +13498,12 @@ function retryMissingImages({ chatId, query, task }) {
 
 installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
+installImagePreview({ saveNativeImage: window.webkit?.messageHandlers?.meloVoice ? payload => nativeSettings('saveImage', payload) : undefined });
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{if(uiState.bootstrap)render();});
 window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'settings'}));
+
+// A silent provider must still advance the visible wait timer.
+setInterval(() => {
+  if (!uiState.sending || document.hidden) return;
+  for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = thinkingLabel();
+}, 1000);

@@ -35,16 +35,29 @@ test('archived Telegram keeps the local reminder and permanently stops remote de
   assert.match(chat.messages[0].content, /Coffee/);
 });
 
-test('Discord reminders preserve the originating channel and cannot mass-mention users', async () => {
-  const { delivery, calls } = fixture('discord');
-  await delivery({ id: 'r1', chatId: 'origin', text: '@everyone Coffee' });
-  assert.equal(calls[0][1], '/channels/456/messages');
-  assert.deepEqual(calls[0][2].body.allowed_mentions, { parse: [] });
+test('archived Discord keeps the local reminder and permanently stops remote delivery', async () => {
+  // 2026-10-17: Discord archived alongside Telegram. The local reminder message
+  // is still appended; the outgoing send is intercepted before any network
+  // call and marked permanent so the scheduler stops retrying.
+  const { delivery, calls, chat } = fixture('discord');
+  let sends = 0;
+  await assert.rejects(delivery({ id: 'r1', chatId: 'origin', text: '@everyone Coffee' }, {
+    beforeExternalSend: async () => { sends++; },
+  }), error => error.code === 'CHANNEL_ARCHIVED' && error.permanent === true);
+  assert.equal(calls.length, 0);
+  assert.equal(sends, 0);
+  assert.match(chat.messages[0].content, /Coffee/);
 });
 
-test('missing chats and disconnected channels fail instead of silently losing the reminder', async () => {
-  const { delivery, state } = fixture('discord');
+test('missing chats fail instead of silently losing the reminder', async () => {
+  const { delivery } = fixture('discord');
   await assert.rejects(delivery({ id: 'r1', chatId: 'missing', text: 'Coffee' }), /no longer exists/);
-  state.agentProfiles.main.channels.discord.enabled = false;
-  await assert.rejects(delivery({ id: 'r1', chatId: 'origin', text: 'Coffee' }), /disconnected/);
+});
+
+test('desktop reminders never consult the archive policy or remote senders', async () => {
+  // Guard against the archive check leaking into local-only delivery.
+  const { delivery, chat, calls } = fixture('desktop');
+  await delivery({ id: 'r2', chatId: 'origin', text: 'Local only' });
+  assert.equal(chat.messages.length, 1);
+  assert.equal(calls.length, 0);
 });

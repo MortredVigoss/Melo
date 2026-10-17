@@ -32,7 +32,7 @@ import { normalizeConversationSnippet } from './heuristics.js';
 import { normalizeMessageAttachments } from '../shared/helpers.js';
 import { messageVisibleText } from '../domain/message/messageBlocks.js';
 import { extractedMediaPromptText } from '../domain/message/messageSearch.js';
-import { summarizeAttachmentsForPrompt } from '../services/chat/messageBuilder.js';
+import { summarizeAttachmentsForPrompt } from '../domain/chat/attachmentSummary.js';
 
 export const MAX_CONTEXT_RECENT_MESSAGES = 8;
 export const MAX_CONTEXT_MEMORY_MESSAGES = 24;
@@ -126,6 +126,12 @@ function buildChatRuntimeCheckpoint(chat = {}) {
     compactFailures:
       Number.isFinite(Number(chat.compactFailures)) && Number(chat.compactFailures) >= 0
         ? Number(chat.compactFailures)
+        : 0,
+    compactSummarySource:
+      ['cloud', 'local', 'rule'].includes(chat.compactSummarySource) ? chat.compactSummarySource : '',
+    compactUpgradeAttempts:
+      Number.isFinite(Number(chat.compactUpgradeAttempts)) && Number(chat.compactUpgradeAttempts) >= 0
+        ? Number(chat.compactUpgradeAttempts)
         : 0,
   };
 }

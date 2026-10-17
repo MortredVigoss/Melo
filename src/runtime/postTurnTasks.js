@@ -1,13 +1,16 @@
 import { derivedHomeKey } from '../state/derivedDispatcher.js';
+import { recordFailure } from './failureCounters.js';
 
 // Work may outlive result delivery, but it must not outlive teardown silently.
 // Callers capture request scope before scheduling; this registry only owns life.
 const jobs = new Map();
-export function schedulePostTurnTask(home, run) {
+export function schedulePostTurnTask(home, run, { label = 'post-turn' } = {}) {
   const key = derivedHomeKey(home);
   const pending = jobs.get(key) || new Set();
   jobs.set(key, pending);
-  const job = Promise.resolve().then(run).catch(() => {}).finally(() => {
+  // Failures never propagate (the reply is already delivered) but they are
+  // counted and logged instead of vanishing (audit A-10).
+  const job = Promise.resolve().then(run).catch(error => { recordFailure(`post-turn:${label}`, error); }).finally(() => {
     pending.delete(job);
     if (!pending.size) jobs.delete(key);
   });

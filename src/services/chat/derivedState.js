@@ -17,7 +17,7 @@ export async function persistCompactSnapshot(chat, compactPlan, { home } = {}) {
     const current = latest.chats.find(entry => entry.id === chat.id);
     if (!current || !current.messages.some(message => message.id === compactPlan.boundaryId)) return;
     if ((current.compactedMessageCount || 0) > compactPlan.compactedCount) return;
-    for (const key of ['compactSummary', 'compactBoundaryMessageId', 'compactedMessageCount', 'compactedAt', 'compactFailures']) {
+    for (const key of ['compactSummary', 'compactBoundaryMessageId', 'compactedMessageCount', 'compactedAt', 'compactFailures', 'compactSummarySource', 'compactUpgradeAttempts']) {
       current[key] = chat[key];
     }
   }, { home });

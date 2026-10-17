@@ -30,6 +30,7 @@
 // the discord.js Client and handing this class a ready Guild. We don't log
 // in here — that's per-agent-token concern.
 
+import { renderAgentIdentity } from '../../domain/agent/agentIdentity.js';
 import {
   joinVoiceChannel,
   createAudioPlayer,
@@ -448,21 +449,10 @@ export class DiscordVoiceSession {
   }
 
   async _generateReply({ transcript, username, config }) {
-    // System prompt assembly: agent's identity/soul/rolePrompt/systemPrompt
-    // concatenated in priority order, then the voice-mode suffix appended.
-    const parts = [];
-    const add = v => {
-      const s = String(v || '').trim();
-      if (s) parts.push(s);
-    };
-    add(this.profile?.identity || this.profile?.identify);
-    add(this.profile?.soulMd || this.profile?.['soul.md'] || this.profile?.soul);
-    add(this.profile?.rolePrompt);
-    add(this.profile?.systemPrompt);
-    let systemPrompt = parts.join('\n\n');
-    if (!systemPrompt) {
-      systemPrompt = `You are ${this.profile?.name || 'a helpful assistant'}.`;
-    }
+    // Persona comes from the shared renderer (canonical section order, same
+    // document the chat prompt uses — audit B-8); the voice-mode suffix is
+    // appended after it.
+    let systemPrompt = renderAgentIdentity(this.profile, { variant: 'voice' });
     systemPrompt += VOICE_MODE_SYSTEM_SUFFIX;
 
     const messages = [];

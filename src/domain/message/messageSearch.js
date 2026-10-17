@@ -28,7 +28,7 @@ import {
 import {
   extractedMediaSearchText,
   renderExtractedMediaContext,
-} from '../../media/index.js';
+} from '../media/extractedMedia.js';
 import { normalizeMessageAttachments } from '../../shared/helpers.js';
 
 export function attachmentSearchText(attachment) {

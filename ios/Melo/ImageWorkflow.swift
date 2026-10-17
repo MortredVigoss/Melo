@@ -40,6 +40,9 @@ struct ImageTaskPlan: Codable, Equatable {
     var quality = "high"
     // Local connection ID only; credentials stay in Keychain. Missing in older drafts.
     var connectionID: String?
+    /// Several photos with an edit request: edit each on its own (one request per photo).
+    /// Missing in older drafts, which keeps their single combined request.
+    var separately: Bool?
     var makesImage: Bool { action == .generate || action == .edit }
     func resolved(prompt: String, previousImages: [String]) throws -> Self {
         var result = self
@@ -68,28 +71,42 @@ struct ImageTaskPlan: Codable, Equatable {
             // A photo attached to this message plus an instruction (not a question or a request to
             // look at it) is an edit request, however it is phrased. Same rule as src/services/chat/imageTask.js.
             let fromReference = affirmative.range(of: #"(?:参考|按照|照着|仿照|根据|模仿|用)[^。！？\n]{0,20}(?:生成|画|做|制作|设计|出)[^。！？\n]{0,20}(?:图|海报|插画|封面|头像|壁纸|图标|logo)|\b(?:based on|using|like) (?:this|the) (?:image|photo|picture)\b.{0,40}\b(?:generate|create|draw|make)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
-            let uploadedInstruction = !references.isEmpty && ImageTaskPlan.asksAboutImage(masked) == false && ImageTaskPlan.instructsChange(affirmative)
+            // Also a follow-up that names an earlier image ("第二张也…", "原图…", "这几张…") plus an instruction.
+            let namesEarlierImage = references.isEmpty && !previousImages.isEmpty && affirmative.range(of: #"第\s*[一二两三四五六七八1-8]\s*张|图\s*[1-9]|原图|这几张|这两张|这张|那张|上一张|刚才那|\b(?:first|second|third|original)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+            let uploadedInstruction = (!references.isEmpty || namesEarlierImage) && ImageTaskPlan.asksAboutImage(masked) == false && ImageTaskPlan.instructsChange(affirmative)
             result.action = (edits || adjustments || (uploadedInstruction && !generates && !naturalGeneration && !fromReference)) && (!references.isEmpty || !previousImages.isEmpty) ? .edit : (generates || naturalGeneration || fromReference) ? .generate : .analyze
         }
         if result.action == .edit && result.references.isEmpty { result.references = previousImages.map { ImageReference(id: $0) } }
-        if result.action == .analyze && result.references.isEmpty && masked.range(of: "这张|这幅|图中|上图|图里的|in this image|in the picture", options: [.regularExpression,.caseInsensitive]) != nil {
-            result.references = previousImages.map { ImageReference(id: $0) }
+        // A question about earlier images attaches them, so the model sees what it is asked about.
+        if result.action == .analyze && result.references.isEmpty && (masked.range(of: "这张|这幅|图中|上图|图里的|in this image|in the picture", options: [.regularExpression,.caseInsensitive]) != nil || ImageContext.mentionsImage(masked)) {
+            result.references = previousImages.prefix(4).map { ImageReference(id: $0) }
         }
-        guard result.references.count <= 4, Set(result.references.map(\.id)).count == result.references.count,
-              result.references.allSatisfy({ UUID(uuidString: $0.id) != nil && ImageReference.roles.contains($0.role) }) else { throw MeloError.message("最多选择四张不同的参考图，请重新选择。") }
+        // Several photos are edited one by one unless the wording asks to combine them.
+        result.separately = result.action == .edit && result.references.count > 1 && !ImageTaskPlan.combinesImages(masked) ? true : nil
+        guard result.references.count <= ImageTaskPlan.maxReferences, Set(result.references.map(\.id)).count == result.references.count,
+              result.references.allSatisfy({ UUID(uuidString: $0.id) != nil && ImageReference.roles.contains($0.role) }) else { throw MeloError.message("最多选择八张不同的图片，请重新选择。") }
         guard result.action != .edit || !result.references.isEmpty else { throw MeloError.message("先选择要修改的图片，或点已有图片的继续修改。") }
         guard !result.makesImage || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("请先填写图片要求。") }
         guard !result.makesImage || prompt.utf16.count <= 24000 else { throw MeloError.message("图片要求超过 24000 字符，请拆成几次修改；内容没有被截断。") }
-        guard !result.makesImage || (["auto","1024x1024","1024x1536","1536x1024"].contains(size) && ["auto","low","medium","high"].contains(quality) && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { throw MeloError.message("图片尺寸、质量或模型设置无效。") }
+        guard !result.makesImage || (ImageTaskPlan.sizes.contains(where: { $0.id == size }) && ["auto","low","medium","high"].contains(quality) && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else { throw MeloError.message("图片尺寸、质量或模型设置无效。") }
         return result
     }
+    static let maxReferences = 8
+    /// Same list as IMAGE_SIZES in src/images/imageSettings.js. Above 2560x1440 is experimental.
+    static let sizes: [(id: String, label: String)] = [("auto","自动"),("1024x1024","标准 · 正方形"),("1536x1024","标准 · 横向"),("1024x1536","标准 · 纵向"),("2048x2048","2K · 正方形"),("2560x1440","2K · 横向"),("1440x2560","2K · 纵向"),("2816x2816","4K 实验 · 正方形"),("3824x2144","4K 实验 · 横向"),("2144x3824","4K 实验 · 纵向")]
+    /// Same rule as combinesImages in src/shared/imageRequestIntent.js.
+    static func combinesImages(_ text: String) -> Bool {
+        text.range(of: #"合成|拼接|拼成|拼在|拼到|融合|合并|组合|结合|合到|放到|放进|放在|贴到|换到|参考|照着|按照.{0,8}风格|风格.{0,6}(?:换成|用|参考)|第[一二三四五六七八1-8]张.{0,16}第[一二三四五六七八1-8]张|把.{0,12}(?:和|与|跟).{0,12}(?:合|放|拼|融)|\b(?:combine|merge|composite|blend|collage|montage|put .{0,30} into|place .{0,30} (?:in|on|into)|use the (?:first|second|third)|in the style of)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+    /// The plan for one photo of a per-photo edit.
+    func single(_ reference: ImageReference) -> ImageTaskPlan { var plan = self; plan.references = [reference]; plan.separately = nil; return plan }
     /// Questions and requests to look at, describe or explain the image.
     static func asksAboutImage(_ text: String) -> Bool {
-        text.range(of: #"[?？]\s*$|吗|什么|怎么样|如何|为什么|哪|是不是|是否|多少|几(?:个|张|只|种)|谁|看看|看一下|看下|分析|识别|认一下|描述|解释|说明|介绍|翻译|总结|提取|读一下|评价|点评|检查|有没有|告诉我|这是|那是|\b(?:what|why|how|which|who|whether|is (?:it|this|there)|are there|describe|explain|analy[sz]e|identify|translate|summari[sz]e|read|tell me|check|review)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        text.range(of: #"[?？]\s*$|吗|什么|怎么样|如何|为什么|哪|是不是|是否|多少|(?<![这那])几(?:个|张|只|种)|谁|看看|看一下|看下|分析|识别|认一下|描述|解释|说明|介绍|翻译|总结|提取|读一下|评价|点评|检查|有没有|告诉我|这是|那是|\b(?:what|why|how|which|who|whether|is (?:it|this|there)|are there|describe|explain|analy[sz]e|identify|translate|summari[sz]e|read|tell me|check|review)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
     /// Wording that asks for something to be done to or made from the image.
     static func instructsChange(_ text: String) -> Bool {
-        text.range(of: #"把|让|给|帮我|请|麻烦|弄|处理|变|改|换|[Pp]图|修|美化|加|去|删|调|做成|转成|风格|卡通|动漫|水彩|油画|素描|像素|手绘|吉卜力|老照片|上色|高清|扩图|延展|虚化|模糊|磨皮|瘦|美颜|滤镜|色调|晚霞|日落|夜景|雪景|\b(?:turn|make|convert|style|cartoon|anime|fix|restore|colou?ri[sz]e|enhance|upscale|blur|add|remove|put|replace|swap)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        text.range(of: #"把|让|给|帮我|请|麻烦|弄|处理|合成|拼|融合|合并|组合|变|改|换|[Pp]图|修|美化|加|去|删|调|做成|转成|风格|卡通|动漫|水彩|油画|素描|像素|手绘|吉卜力|老照片|上色|高清|扩图|延展|虚化|模糊|磨皮|瘦|美颜|滤镜|色调|晚霞|日落|夜景|雪景|\b(?:turn|make|convert|combine|merge|blend|collage|style|cartoon|anime|fix|restore|colou?ri[sz]e|enhance|upscale|blur|add|remove|put|replace|swap)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
     func validateRoute(useChatGPT: Bool, apiProtocol: String) throws {
         guard makesImage, !useChatGPT else { return }

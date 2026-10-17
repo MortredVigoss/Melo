@@ -48,7 +48,7 @@ import {
 import {
   normalizeExtractedMedia,
   memoryKindForExtractedMedia,
-} from '../media/index.js';
+} from '../domain/media/extractedMedia.js';
 import {
   messageVisibleText,
 } from '../domain/message/messageBlocks.js';
@@ -76,9 +76,8 @@ import {
 import {
   normalizeAgentProfile,
 } from '../state/agentProfiles.js';
-import {
-  summarizeAgentPrompt,
-} from '../services/chat/systemPrompt.js';
+import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
+import { isLocalChat } from './factPolicy.js';
 import {
   normalizeAgentStorageId,
   nowIso,
@@ -353,6 +352,12 @@ export function buildMemoryStoreEntries(state, {includeChats = true, includeGlob
           messageId: message.id,
           claim: rec.claim || '',
           correction: rec.correction,
+          // audit C-12: the agent namespace was the intent, but canRecallMemory
+          // treated a missing scope as chat-only, so corrections never crossed
+          // conversations. Desktop-owner audience only; remote chats stay local.
+          scope: isLocalChat(chat) ? 'agent' : 'chat',
+          agentId,
+          audience: isLocalChat(chat) ? 'local' : 'remote',
         },
       });
     }
@@ -434,7 +439,10 @@ export function buildMemoryStoreEntries(state, {includeChats = true, includeGlob
       namespace: `agent:${agentId}`,
       kind: 'identity',
       sourceId: agentId,
-      text: summarizeAgentPrompt(profile),
+      // Persona text for the identity row. The pure domain renderer keeps the
+      // memory layer independent of services/ (audit A-4); identity rows are
+      // no longer recalled into prompts (audit B-1), they only feed dedupe.
+      text: renderAgentIdentity(profile, { variant: 'chat' }),
       createdAt: nowIso(),
       updatedAt: nowIso(),
       metadata: {

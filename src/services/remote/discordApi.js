@@ -24,6 +24,8 @@
 // _refactor-backup/REFACTOR_PLAN.md). Pure module — no state dependencies,
 // no imports from desktopStore.
 
+import { assertAgentChannelAvailable } from '../../shared/channelAvailability.js';
+
 export const DISCORD_API_VERSION = 'v10';
 
 export function discordApiBase() {
@@ -48,6 +50,7 @@ export async function discordApiRequest(
   path,
   { method = 'GET', body = null, searchParams = {}, timeoutMs = 15000, baseUrl } = {},
 ) {
+  assertAgentChannelAvailable('discord');
   const token = String(channel?.botToken || '').trim();
   if (!token) {
     throw new Error('Discord needs a bot token before it can be used.');
@@ -116,6 +119,7 @@ export async function sendDiscordMediaReply(
   buffer,
   { mimeType = 'application/octet-stream', fileName = 'file', content = '', timeoutMs = 45000 } = {},
 ) {
+  assertAgentChannelAvailable('discord');
   const targetChannelId = String(incoming?.chatId || channel?.channelId || '').trim();
   if (!targetChannelId) {
     throw new Error('Discord media reply is missing a channelId.');

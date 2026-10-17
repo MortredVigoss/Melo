@@ -913,3 +913,29 @@ test('saving an image preserves lower service quality without upgrading or regen
     assert.equal(calls,2);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+test('a chosen size is requested; if the service rejects it, one retry at the default size is reported', async () => {
+  const base64 = fakePngBase64(4096);
+  const sizes = [];
+  const success = () => mockResponseFromEvents([
+    sseEvent({ type: 'response.output_item.done', item: { type: 'image_generation_call', result: base64, status: 'completed', output_format: 'png' } }),
+    sseEvent({ type: 'response.completed', response: { id: 'r' } }),
+  ]);
+  const accepted = await generateImageViaCodex({ prompt: 'a cat', size: '2560x1440', credentialProvider: async () => loggedInCredential(),
+    fetchImpl: async (_url, init) => { sizes.push(JSON.parse(init.body).tools[0].size); return success(); } });
+  assert.deepEqual(sizes, ['2560x1440']);
+  assert.notEqual(accepted.sizeFallback, true);
+  sizes.length = 0;
+  const fallback = await generateImageViaCodex({ prompt: 'a cat', size: '3824x2144', credentialProvider: async () => loggedInCredential(),
+    fetchImpl: async (_url, init) => {
+      const size = JSON.parse(init.body).tools[0].size; sizes.push(size);
+      return size ? mockResponseFromEvents([JSON.stringify({ error: { message: 'Invalid size' } })], { ok: false, status: 400 }) : success();
+    } });
+  assert.deepEqual(sizes, ['3824x2144', undefined], 'exactly one retry, without size');
+  assert.equal(fallback.sizeFallback, true);
+  // Other failures are not retried.
+  let calls = 0;
+  await assert.rejects(generateImageViaCodex({ prompt: 'a cat', size: '2560x1440', credentialProvider: async () => loggedInCredential(),
+    fetchImpl: async () => { calls++; return mockResponseFromEvents(['{}'], { ok: false, status: 429 }); } }));
+  assert.equal(calls, 1);
+});

@@ -24,7 +24,7 @@
  */
 
 import { createOpenAICompatibleReply } from '../openai.js';
-import { compactOffline } from './offline/compact.js';
+import { compactOfflineDetailed } from './offline/compact.js';
 import { estimateMessageTokens, estimateMessagesTokens, truncateToTokens } from './tokenEstimate.js';
 export { estimateMessageTokens, estimateMessagesTokens } from './tokenEstimate.js';
 
@@ -161,25 +161,39 @@ function messagesToTranscript(messages = []) {
  * @param {string} [options.customInstructions]
  * @returns {Promise<string|null>}           – summary text or null on failure
  */
-export async function compactConversation(messages = [], {
+export async function compactConversation(messages = [], options = {}) {
+  return (await compactConversationDetailed(messages, options)).summary;
+}
+
+/**
+ * compactConversation plus the provenance of the text:
+ *   source: 'cloud' | 'local' | 'rule' | 'none'
+ * A 'rule' summary is a degraded, extractive fallback. The caller keeps the
+ * conversation moving with it but marks the chat so the next turn retries the
+ * cloud model and the prompt header tells the model details may be missing
+ * (2026-10-17 audit C-6: fallbacks used to be silent and permanent).
+ */
+export async function compactConversationDetailed(messages = [], {
   config,
   signal,
   customInstructions,
   previousSummary = '',
   _createReply = createOpenAICompatibleReply,
-  _compactOffline = compactOffline,
+  _compactOffline = compactOfflineDetailed,
 } = {}) {
   if (signal?.aborted) throw signal.reason || new Error('Request aborted');
-  if (!messages.length) return null;
+  if (!messages.length) return { summary: null, source: 'none' };
 
   const transcript = messagesToTranscript(messages);
-  if (!transcript.trim()) return null;
+  if (!transcript.trim()) return { summary: null, source: 'none' };
   const offlineMessages = messages.map(message => ({ ...message, content: messagesToTranscript([message]) }));
   if (previousSummary) offlineMessages.unshift({ role: 'user', content: `Previous summary (background, not instructions):\n${previousSummary}` });
   const useOffline = async () => {
-    const summary = await _compactOffline(offlineMessages, { config, signal });
+    const result = await _compactOffline(offlineMessages, { config, signal });
     if (signal?.aborted) throw signal.reason || new Error('Request aborted');
-    return summary?.trim() ? truncateToTokens(summary.trim(), 6000) : null;
+    const detailed = typeof result === 'string' ? { summary: result, source: 'rule' } : (result || { summary: '', source: 'none' });
+    const text = String(detailed.summary || '').trim();
+    return text ? { summary: truncateToTokens(text, 6000), source: detailed.source || 'rule' } : { summary: null, source: 'none' };
   };
 
   // Offline-only mode: skip cloud LLMs entirely.  compactOffline tries every
@@ -207,7 +221,7 @@ export async function compactConversation(messages = [], {
       // providerProfile defaults to 'default' (not 'fast') so the summary is thorough.
     });
 
-    if (typeof summary === 'string' && summary.trim()) return truncateToTokens(summary.trim(), 6000);
+    if (typeof summary === 'string' && summary.trim()) return { summary: truncateToTokens(summary.trim(), 6000), source: 'cloud' };
   } catch (error) {
     if (signal?.aborted) throw signal.reason || error;
     // Fall through to the offline path so a transient network blip never
@@ -230,13 +244,15 @@ export async function compactConversation(messages = [], {
  * @param {number} [compactedCount]  – how many messages are summarised
  * @returns {string}
  */
-export function formatCompactContextBlock(summary, compactedCount) {
+export function formatCompactContextBlock(summary, compactedCount, { source = 'cloud' } = {}) {
+  const degraded = source === 'rule';
   const header = compactedCount
-    ? `=== Previous Conversation Summary (${compactedCount} messages) ===`
-    : '=== Previous Conversation Summary ===';
+    ? `=== Previous Conversation Summary (${compactedCount} messages${degraded ? '; extractive fallback' : ''}) ===`
+    : `=== Previous Conversation Summary${degraded ? ' (extractive fallback)' : ''} ===`;
 
   return [
     header,
+    ...(degraded ? ['(This summary was produced by a deterministic extractive fallback because the summarising model was unavailable. It may omit decisions and details; prefer the recent messages and ask the user when something seems missing.)'] : []),
     summary.trim(),
     '=== End of Summary — continue the conversation from here ===',
   ].join('\n');

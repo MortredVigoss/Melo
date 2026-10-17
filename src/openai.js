@@ -1189,13 +1189,27 @@ export async function createCodexResponsesReply({
 
 // Public API function turns use the same stateless Responses continuation as
 // OAuth. No provider-hosted agent runtime or server-side conversation storage.
+// prompt_cache_key is an OpenAI-specific routing hint; some OpenAI-compatible
+// servers reject unknown fields, so only first-party hosts (or an explicit
+// MELO_PROMPT_CACHE_KEY=1) receive it (2026-10-17 audit C-5).
+export function apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile = 'default', endpoint = 'api' }) {
+  if (!cacheScope) return null;
+  let host = '';
+  try { host = new URL(String(baseUrl || '')).hostname; } catch { host = ''; }
+  const firstParty = /(^|\.)openai\.com$/i.test(host);
+  if (!firstParty && requestEnvironment().MELO_PROMPT_CACHE_KEY !== '1') return null;
+  return buildPromptCacheKey({ home: '', accountId: '', endpoint, model, scope: cacheScope, profile: providerProfile });
+}
+
 export async function createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages,
-  functionTools, signal, onDelta, onReasoningDelta, onModelMetadata, maxTokens,
+  functionTools, signal, onDelta, onReasoningDelta, onModelMetadata, maxTokens, cacheScope, providerProfile,
   _fetchImpl = fetch } = {}) {
+  const promptCacheKey = apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile, endpoint: 'responses' });
   const payload = {
     model, instructions: systemPrompt, store: false, stream: true,
     input: await buildCodexResponsesInput(messages, { signal }),
     include: ['reasoning.encrypted_content'],
+    ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(Number.isFinite(maxTokens) ? { max_output_tokens: maxTokens } : {}),
     ...(functionTools?.length ? { tools: functionTools, tool_choice: 'auto', parallel_tool_calls: true } : {}),
   };
@@ -1363,7 +1377,7 @@ async function requestOpenAICompatibleReply({
   messages = await prepareVisionInputs(messages, { readResource: readAttachmentResource, signal });
   if (Array.isArray(functionTools) || apiProtocol === 'responses') {
     return createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages, functionTools, signal,
-      onDelta, onReasoningDelta, onModelMetadata, maxTokens });
+      onDelta, onReasoningDelta, onModelMetadata, maxTokens, cacheScope, providerProfile });
   }
   const protocol = apiProtocol || (new URL(baseUrl).hostname === 'api.anthropic.com' ? 'anthropic' : 'chat-completions');
   if (protocol === 'anthropic') return requestAnthropicReply({ baseUrl: normalizeBaseUrl(baseUrl), apiKey, model, systemPrompt, messages: normalizeProviderMessages(messages), signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal), onDelta, onModelMetadata, maxTokens: maxTokens ?? (providerProfile === 'fast' ? 1024 : undefined) });
@@ -1373,6 +1387,7 @@ async function requestOpenAICompatibleReply({
   // native audio input (e.g. GPT-4o Audio, local multimodal models) can process them
   // directly instead of requiring Whisper transcription.
   const resolvedMessages = await resolveAudioAttachments(normalizeProviderMessages(messages), { signal });
+  const chatPromptCacheKey = apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile, endpoint: 'chat-completions' });
   const payload = {
     ...fastGenerationOptions({ model, baseUrl, maxTokens, providerProfile }),
     model,
@@ -1381,6 +1396,7 @@ async function requestOpenAICompatibleReply({
       ...resolvedMessages,
     ],
     ...(typeof onDelta === 'function' ? { stream: true } : {}),
+    ...(chatPromptCacheKey ? { prompt_cache_key: chatPromptCacheKey } : {}),
   };
 
   await ensureFetchKeepAliveConfigured();
@@ -1413,7 +1429,7 @@ async function requestOpenAICompatibleReply({
   }
 
   const json = await response.json();
-  onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage });
+  onModelMetadata?.({ reportedModel: json.model || '', responseId: json.id || '', usage: json.usage, finishReason: json.choices?.[0]?.finish_reason });
   const assistantText = extractAssistantText(json);
   if (typeof onDelta === 'function') {
     await onDelta({

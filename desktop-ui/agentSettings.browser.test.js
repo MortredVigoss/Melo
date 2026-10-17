@@ -64,17 +64,19 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[name=cap_delegate]').uncheck();
   await form.locator('.agent-channels>summary').click();
   assert.equal(await form.locator('[name^=telegram],[data-channel-id=telegram]').count(),0);
-  await form.locator('[data-action=switch-agent-channel-tab][data-channel-id=discord]').click();
+  // 2026-10-17: Discord archived too — no tabs, no Discord inputs; only the shared voice card remains.
+  assert.equal(await form.locator('[name^=discord],[data-channel-id=discord]').count(),0);
+  assert.equal(await form.locator('[data-action=switch-agent-channel-tab]').count(),0);
+  assert.equal(await form.locator('[name=voiceReplyMode]').isVisible(),true);
   assert.equal(await form.locator('.agent-channels').getAttribute('open'),'');
   assert.equal(await form.locator('[name=canDelegate]').count(),0);assert.equal(await form.locator('[name=cap_delegate]').isChecked(),false);
-  await form.locator('[name=discordChannelId]').fill('fixture-channel');
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   const saved=(await boot()).customize.agents.find(a=>a.id===id);
   assert.equal(saved.name,'Settings regression');assert.equal(saved.instructions,'My instructions');
   assert.equal(saved.capabilities.readFiles,true);assert.deepEqual(saved.capabilities.mcpServers,['playwright']);
   assert.equal(saved.collaboration.canDelegate,false);
   assert.equal(saved.channels.find(c=>c.id==='telegram').archived,true);
-  assert.equal(saved.channels.find(c=>c.id==='discord').channelId,'fixture-channel');
+  assert.equal(saved.channels.find(c=>c.id==='discord').archived,true);
   await page.reload();await form.waitFor();assert.equal(await form.locator('[name=name]').inputValue(),'Settings regression');
   const proof=resolve('.tmp/agent-settings-20261015');await mkdir(proof,{recursive:true});
   for (const [width,height] of [[1440,1000],[1100,800],[390,844]]) {

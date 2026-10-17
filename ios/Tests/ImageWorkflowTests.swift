@@ -34,6 +34,17 @@ import CoreGraphics
             let request = ImageRequestBody.responses(messages:[ChatMessage(role:"user",content:prompt)],inputs:attached ? try library.inputs(route.references) : [],task:route,model:"fixture",instructions:"")
             try check((request["tools"] != nil) == route.makesImage, "First turn must include the required image tool")
         }
+        // Several photos: edit each on its own unless the wording combines them (shared with the desktop).
+        let batch = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "ios/Tests/Fixtures/image-batch-intent.json"))) as! [[String:Any]]
+        for fixture in batch {
+            let prompt = fixture["prompt"] as! String, photos = fixture["photos"] as! Int
+            let refs = (0..<photos).map { _ in ImageReference(id: UUID().uuidString) }
+            let route = try ImageTaskPlan(references: refs).resolved(prompt: prompt, previousImages: [])
+            try check(route.action == .edit, "Several photos not edited: \(prompt)")
+            try check((route.separately == true) == (fixture["separately"] as! Bool), "Each-vs-combine misrouted: \(prompt) (\(photos))")
+            if route.separately == true { try check(route.single(refs[1]).references == [refs[1]] && route.single(refs[1]).separately == nil) }
+        }
+        try check((try? ImageTaskPlan(references: (0..<9).map { _ in ImageReference(id: UUID().uuidString) }).resolved(prompt: "都调亮", previousImages: [])) == nil, "more than eight photos accepted")
         for prompt in ["帮我把转盘掉漆的处理干净，背景墙换成黑色木纹，压低一点曝光", "改一下背景墙，其他保持不变", "换背景", "把后面的墙换一下", "把墙改白", "把背景墙刷成奶油色", "给背景墙加上木饰面", "把背景墙颜色调浅一点", "make the background wall white", "retouch the background"] {
             let routed = try uploaded.resolved(prompt:prompt,previousImages:[])
             try check(routed.action == .edit, "Uploaded image edit misrouted to analysis: \(prompt)")
@@ -169,6 +180,51 @@ import CoreGraphics
         let directoryStyle = ImageLibrary(directory: URL(fileURLWithPath: root.appendingPathComponent("DirectoryStyle").path, isDirectory: true))
         let directoryAsset = try directoryStyle.store(data, title: "Directory URL regression")
         try check(!directoryStyle.data(directoryAsset).isEmpty, "directory URL flags must not reject sandbox images")
+        // A large photo (beyond the old 24 MB limit) is accepted: a ≤4096 px JPEG copy is kept,
+        // a smaller transfer copy is sent for analysis, and the stored file is never rewritten.
+        let side = 3200
+        var noise = [UInt8](repeating: 0, count: side * side * 4)
+        for index in stride(from: 0, to: noise.count, by: 4) { noise[index] = UInt8.random(in: 0...255); noise[index+1] = UInt8.random(in: 0...255); noise[index+2] = UInt8.random(in: 0...255); noise[index+3] = 255 }
+        let provider = CGDataProvider(data: Data(noise) as CFData)!
+        let big = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let bigData = try ImageLibrary.encoded(big)
+        try check(bigData.count > 24*1024*1024, "fixture must exceed the old limit (\(bigData.count))")
+        let photo = try library.store(bigData, title: "large", photo: true)
+        try check(photo.mimeType == "image/jpeg" && max(photo.width, photo.height) <= 4096, "large photo kept as a bounded JPEG copy")
+        let storedBefore = try library.data(photo)
+        let analysis = try library.inputs([ImageReference(id: photo.id)], maxDimension: 2048)
+        let sent = try ImageLibrary.decoded(analysis[0].data, maxDimension: 10000)
+        try check(max(sent.width, sent.height) <= 2048 && analysis[0].data.count < storedBefore.count, "analysis sends a smaller transfer copy")
+        try check(try library.data(photo) == storedBefore, "sending never rewrites the stored photo")
+        let generatedKeepsPNG = try library.store(bigData, title: "result")
+        try check(generatedKeepsPNG.mimeType == "image/png", "generated results stay lossless")
+        // Conversation image context: two photos, a result made from photo 1, then follow-ups.
+        func image(_ id: String, source: String? = nil) -> LocalImage { LocalImage(id: id, width: 10, height: 10, mimeType: "image/png", title: id, referenceIDs: source.map { [$0] } ?? []) }
+        let photoA = UUID().uuidString, photoB = UUID().uuidString, resultA = UUID().uuidString
+        let upload = ChatMessage(role: "user", content: "都换成晴天"), answer = ChatMessage(role: "assistant", content: "已修改第一张")
+        let owned: [String: [LocalImage]] = [upload.id: [image(photoA), image(photoB)], answer.id: [image(resultA, source: photoA)]]
+        let catalog = ImageContext.catalog([upload, answer]) { owned[$0] ?? [] }
+        try check(catalog.map(\.number) == [1, 2, 3] && catalog[2].sourceID == photoA)
+        try check(ImageContext.marker(for: upload.id, in: catalog) == "[此消息附带图片：图1、图2]" && ImageContext.marker(for: answer.id, in: catalog) == "[此回复生成图片：图3（由图1修改）]")
+        try check(ImageContext.resolve("第二张也改成晴天", catalog: catalog) == [photoB], "second photo, which has no result yet")
+        try check(ImageContext.resolve("第一张再亮一点", catalog: catalog) == [resultA], "first photo means its newest version")
+        try check(ImageContext.resolve("第一张用原图重新改", catalog: catalog) == [photoA], "原图 means the original")
+        try check(ImageContext.resolve("这两张都调亮", catalog: catalog) == [resultA, photoB], "both, each in its newest version")
+        try check(ImageContext.resolve("图2 换成黑白", catalog: catalog) == [photoB])
+        try check(ImageContext.resolve("再亮一点", catalog: catalog) == [resultA], "unspecified follow-up keeps the latest result")
+        let followUp = try ImageTaskPlan().resolved(prompt: "第二张也处理一下", previousImages: [photoB])
+        try check(followUp.action == .edit && followUp.references.map(\.id) == [photoB], "a follow-up naming photo 2 edits photo 2")
+        let both = try ImageTaskPlan().resolved(prompt: "这两张都调亮", previousImages: [resultA, photoB])
+        try check(both.action == .edit && both.separately == true && both.references.count == 2)
+        let question = try ImageTaskPlan().resolved(prompt: "第二张图里是什么天气？", previousImages: [photoB])
+        try check(question.action == .analyze && question.references.map(\.id) == [photoB], "questions about an earlier image attach it")
+        try check(try ImageTaskPlan().resolved(prompt: "谢谢", previousImages: [photoB]).references.isEmpty, "ordinary chat attaches nothing")
+        // A follow-up linked to an earlier result is not a new upload: ordinals still mean the original upload.
+        let followUpMessage = ChatMessage(role: "user", content: "第二张再亮一点")
+        let ownedLater = owned.merging([followUpMessage.id: [image(resultA, source: photoA)]]) { a, _ in a }
+        let later = ImageContext.catalog([upload, answer, followUpMessage]) { ownedLater[$0] ?? [] }
+        try check(later.count == 3 && ImageContext.resolve("第一张的原图是什么天气？", catalog: later) == [photoA], "re-used images do not start a new batch")
+        try check(ImageContext.attachmentNote([photoB], catalog: catalog) == "[本轮附带：图2（你上传的第 2 张），按顺序对应随后的图片]")
         print("Image workflow passed: persisted originals/references, safe formats/paths, local transforms, provider payloads, explicit intent, complete image SSE and failure boundaries")
     }
 }

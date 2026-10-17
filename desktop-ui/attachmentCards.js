@@ -1,5 +1,6 @@
 import { t, ui } from './i18n.js';
-export function renderAttachmentCards(message, { escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls = () => [] }) {
+import { videoExtraction } from './videoKnowledge.js';
+export function renderAttachmentCards(message, { savedVideoKnowledge = {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls = () => [] }) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
   if (!attachments.length) {
     return '';
@@ -108,7 +109,7 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
   };
 
   const isPlayableVideoUrl = url =>
-    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$))/i.test(String(url || ''));
+    /^(data:video\/|https?:\/\/.+\.(?:mp4|mov|webm|m4v|mkv)(?:\?|$)|\/api\/media\/uploads\/[0-9a-f-]+\.(?:mp4|mov|webm|m4v|mkv)$)/i.test(String(url || ''));
 
   const isSocialPreviewUrl = url => {
     try {
@@ -132,7 +133,9 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
           if (attachment.kind === 'image') {
             return ui`
               <figure class="message-attachment-card media-card image-card">
-                <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
+                <button type="button" class="message-image-preview" data-image-preview aria-label="预览图片：${escapeHtml(attachmentLabel(attachment))}" title="点击放大预览">
+                  <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
+                </button>
                 <figcaption>${escapeHtml(attachmentLabel(attachment))}</figcaption>
               </figure>
             `;
@@ -143,12 +146,14 @@ export function renderAttachmentCards(message, { escapeHtml, truncate, icon, att
               return renderLinkAttachmentCard(attachment);
             }
             const status = describeVideoExtractionStatus(message, attachment);
+            const studied = videoExtraction(message, attachment);
             return ui`
               <div class="message-attachment-card media-card">
-                <video class="message-video" controls src="${escapeHtml(attachment.url)}"></video>
+                <video class="message-video" controls preload="metadata" src="${escapeHtml(attachment.url)}"></video>
                 <div class="media-caption">
                   ${escapeHtml(attachmentLabel(attachment))}
                   <span class="media-caption-hint">${escapeHtml(status)}</span>
+                  ${studied ? (savedVideoKnowledge[attachment.id] ? ui`<button type="button" class="small-button" disabled>已存入知识</button>` : ui`<button type="button" class="small-button" data-action="save-video-knowledge" data-message-id="${escapeHtml(message.id || '')}" data-attachment-id="${escapeHtml(attachment.id || '')}">存为知识资料</button>`) : ''}
                 </div>
               </div>
             `;

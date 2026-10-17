@@ -56,7 +56,8 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   assert.ok([...document.querySelectorAll('a.execution-source')].every(a => a.dataset.externalUrl === a.href));
 
   applyExecutionEvent(scene, { sources: [{ url: 'https://example.test/source-13?utm_source=openai', title: 'source test final', citationUrl: 'https://example.test/source-13?utm_source=openai', citationLabel: 'Final reference' }] });
-  applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1', name: '模型请求', status: 'completed', output: '模型返回完成' });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1', name: '模型请求', status: 'completed', output: '模型返回完成', api: { reportedModel: 'fixture-model', usage: { input: 1200, output: 80, reasoning: 30 }, durationMs: 2345 } });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1:summary', module: 'compute', channel: 'reasoning-summary', name: '公开摘要', status: 'completed', output: '核对输入条件\n\n整理证据' });
   finishExecutionScene(scene, { message: { id: 'answer' }, citedUrls: ['https://example.test/source-12', 'https://example.test/source-13?utm_source=openai'] });
   panel.receiveExecutionScene(structuredClone(scene));
   document.querySelector('[data-module="search"]').click();
@@ -74,6 +75,19 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   assert.match(document.querySelector('.execution-pipeline').textContent, /模型请求/);
   assert.match(document.querySelector('.execution-pipeline').textContent, /本机聊天渲染/);
   assert.ok(localStorage.getItem('melo-scene-presented:sources'));
+  assert.match(document.querySelector('.execution-pipeline').textContent, /1,200/);
+  document.querySelector('[data-module=compute]').click();
+  assert.match(document.querySelector('.execution-reasoning-records').textContent, /整理证据/);
+  const beforeReading = stage.dataset.zoom;
+  const readScroll = new dom.window.WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+  document.querySelector('.execution-reasoning-records p').dispatchEvent(readScroll);
+  assert.equal(readScroll.defaultPrevented, false); assert.equal(stage.dataset.zoom, beforeReading);
+  document.querySelector('.execution-reasoning-records button').click();
+  assert.equal(document.querySelector('.execution-inspector').hidden, false);
+  assert.match(document.querySelector('.execution-inspector').textContent, /核对输入条件/);
+  document.querySelector('[data-execution-action=close-inspector]').click();
+  document.querySelector('[data-execution-action=overview]').click();
+  assert.match(document.querySelector('.execution-signal').textContent, /历史回看/);
   assert.equal(scene.operations.length, 0, 'rendering and model events do not become fake tool calls');
   const imageScene = createExecutionScene({ runId: 'images', chatId: 'chat', query: '生成三张图片' });
   const artifacts = Array.from({ length: 5 }, (_, i) => ({ id: `img-${i}`, kind: 'image', url: `https://example.test/candidate-${i}.png`, title: `Candidate ${i}` }));

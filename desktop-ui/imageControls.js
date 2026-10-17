@@ -66,20 +66,26 @@ export function renderImageSettings(config) {
               ['high', t("高")],
             ],
             value.quality,
-          )}</select></label>` : ''}
+          )}</select></label><label class="label">尺寸<select class="config-select" data-image-setting="size">${opts(
+            [
+              ['auto', t("自动")],
+              ['1024x1024', t("标准 · 正方形")],
+              ['1536x1024', t("标准 · 横向")],
+              ['1024x1536', t("标准 · 纵向")],
+              ['2048x2048', t("2K · 正方形")],
+              ['2560x1440', t("2K · 横向")],
+              ['1440x2560', t("2K · 纵向")],
+              ['2816x2816', t("4K 实验 · 正方形")],
+              ['3824x2144', t("4K 实验 · 横向")],
+              ['2144x3824', t("4K 实验 · 纵向")],
+            ],
+            value.size,
+          )}</select></label><p class="list-row-meta">${esc(t("2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。"))}</p>` : ''}
     ${value.engine === 'codex-oauth' ? ui`<label class="label">图片请求使用的语言模型<input class="config-input" data-image-setting="codexModel" value="${esc(value.codexModel)}" placeholder="gpt-6.1-sol / gpt-6-astra"></label>` : ''}
     ${
       value.engine === 'openai-api'
-        ? ui`<label class="label">图像 API 连接<select class="config-select" data-image-setting="profileId">${opts([['', t("请选择已保存的 API 连接")], ...profiles(config, true)], value.profileId)}</select></label><label class="label">图像模型 ID<input class="config-input" data-image-setting="model" value="${esc(value.model)}"></label><label class="label">尺寸<select class="config-select" data-image-setting="size">${opts(
-            [
-              ['auto', t("自动")],
-              ['1024x1024', t("正方形")],
-              ['1536x1024', t("横向")],
-              ['1024x1536', t("纵向")],
-            ],
-            value.size,
-          )}</select></label><label><input type="checkbox" data-image-setting="previews" ${value.previews ? 'checked' : ''}> 请求生成中的预览（可能增加用量；通道需支持流式图像）</label>`
-        : ui`<p class="list-row-meta">当前通道按实际返回展示预览。质量按选择请求，最终以服务返回为准；局部遮罩与明确尺寸需使用支持这些参数的图像 API。</p>`
+        ? ui`<label class="label">图像 API 连接<select class="config-select" data-image-setting="profileId">${opts([['', t("请选择已保存的 API 连接")], ...profiles(config, true)], value.profileId)}</select></label><label class="label">图像模型 ID<input class="config-input" data-image-setting="model" value="${esc(value.model)}"></label><label><input type="checkbox" data-image-setting="previews" ${value.previews ? 'checked' : ''}> 请求生成中的预览（可能增加用量；通道需支持流式图像）</label>`
+        : ui`<p class="list-row-meta">当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。</p>`
     }
     <label><input type="checkbox" data-image-setting="inspectEdits" ${value.inspectEdits ? 'checked' : ''}> 改图后核对修改与保留项（每张额外一次视觉请求，不自动重生成）</label>
     </fieldset><p role="status">${esc(status)}</p>

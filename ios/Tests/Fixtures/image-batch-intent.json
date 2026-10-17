@@ -1,0 +1,13 @@
+[
+  {"prompt": "都调亮一点", "photos": 3, "separately": true},
+  {"prompt": "把这几张的背景都换成白色", "photos": 4, "separately": true},
+  {"prompt": "处理成卡通风格", "photos": 2, "separately": true},
+  {"prompt": "修复这些老照片", "photos": 5, "separately": true},
+  {"prompt": "increase the contrast", "photos": 2, "separately": true},
+  {"prompt": "把这三张合成一张海报", "photos": 3, "separately": false},
+  {"prompt": "把第一张的人放到第二张的背景里", "photos": 2, "separately": false},
+  {"prompt": "拼成一张九宫格", "photos": 4, "separately": false},
+  {"prompt": "把狗和猫放在同一张图里", "photos": 2, "separately": false},
+  {"prompt": "combine these into one collage", "photos": 3, "separately": false},
+  {"prompt": "都调亮一点", "photos": 1, "separately": false}
+]

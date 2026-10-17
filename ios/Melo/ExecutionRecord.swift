@@ -1,5 +1,28 @@
 import Foundation
 
+struct ExecutionImageProgress: Codable, Equatable {
+    var requested = 1
+    var saved = 0
+    var startedAt = timestamp()
+    var finishedAt: String?
+    var percent: Int { min(100, max(0, saved) * 100 / max(1, requested)) }
+}
+
+enum ExecutionClock {
+    static func date(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = parser.date(from: value) { return date }
+        parser.formatOptions = [.withInternetDateTime]
+        return parser.date(from: value)
+    }
+    static func elapsed(_ start: String?, end: Date?) -> Double? {
+        guard let start = date(start), let end, end >= start else { return nil }
+        return end.timeIntervalSince(start) * 1000
+    }
+}
+
 struct ExecutionStage: Codable, Equatable, Identifiable {
     var id: String
     var module = "create"
@@ -253,6 +276,8 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     var artifacts: [String] = []
     var selectedImageIds: [String] = []
     var requestedImages = 1
+    // Local observation only; older records omit this and remain readable.
+    var imageProgress: ExecutionImageProgress?
     var lastModule: String?
     var events: [String] = []
     var restSeed = "0"
@@ -262,6 +287,27 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     var observationNote = "手机直连 · 真实工具与交付记录，非模型内部思维"
     var sourceDevice: String?
     var terminal: Bool { ["completed", "failed", "cancelled", "interrupted"].contains(status) }
+    func elapsedMilliseconds(now: Date = Date()) -> Double? {
+        guard !runId.hasPrefix("legacy-") else { return nil }
+        return ExecutionClock.elapsed(startedAt, end: terminal ? ExecutionClock.date(finishedAt) : now)
+    }
+    func modelMilliseconds(now: Date = Date()) -> Double? {
+        let end = terminal ? ExecutionClock.date(finishedAt) : now
+        let intervals: [(Date, Date)] = (pipeline ?? []).compactMap { stage in
+            guard stage.id.hasPrefix("model:"), stage.channel != "reasoning-summary", !stage.id.hasSuffix(":summary"),
+                  let start = ExecutionClock.date(stage.startedAt) else { return nil }
+            let done = ["completed", "failed", "cancelled", "interrupted"].contains(stage.status)
+            guard let stop = ExecutionClock.date(stage.finishedAt) ?? (done ? nil : end), stop >= start else { return nil }
+            return (start, stop)
+        }.sorted { $0.0 < $1.0 }
+        guard var interval = intervals.first else { return nil }
+        var total = 0.0
+        for next in intervals.dropFirst() {
+            if next.0 > interval.1 { total += interval.1.timeIntervalSince(interval.0); interval = next }
+            else { interval.1 = max(interval.1, next.1) }
+        }
+        return (total + interval.1.timeIntervalSince(interval.0)) * 1000
+    }
     mutating func reconcileReferences(message: ChatMessage, annotations: [WebSource] = []) {
         guard message.role == "assistant", messageId == message.id else { return }
         let references = WebReplyFormatter.references(in: message.content, annotations: annotations)

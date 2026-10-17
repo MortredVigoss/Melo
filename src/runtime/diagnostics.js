@@ -1,3 +1,4 @@
+import { failureSnapshot } from './failureCounters.js';
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
@@ -80,6 +81,9 @@ export async function collectRuntimeDiagnostics({ runtime = null, includeStorage
       path: memory.store.path, counts: memory.counts,
     },
     searchProbe, storage,
+    // Swallowed-failure counters (audit A-10): non-empty means something has
+    // been failing quietly in this process — see src/runtime/failureCounters.js.
+    failures: failureSnapshot(),
   };
 }
 

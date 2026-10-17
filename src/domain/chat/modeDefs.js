@@ -7,23 +7,27 @@
 // module so the chat execution graph runner (commit 7b of this phase)
 // can import the catalogue without re-importing desktopStore.
 
+// 2026-10-17 (audit B-10): modes are working styles layered on the selected
+// agent, not a second identity. They used to open with "You are Melo Chat /
+// Cowork / Code" right after the agent section's "User-selected role: …",
+// which diluted custom personas with a competing "You are".
 export const MODE_DEFS = [
   {
     id: 'chat',
     label: 'Chat',
     prompt:
-      'You are Melo Chat. Focus on clear answers, planning, and steady collaboration.',
+      'Working style (Chat): focus on clear answers, planning, and steady collaboration. This adjusts style only; the selected role above stays who you are.',
   },
   {
     id: 'cowork',
     label: 'Cowork',
     prompt:
-      'You are Melo Cowork. Collaborate like a thoughtful teammate, keep momentum, and suggest next steps.',
+      'Working style (Cowork): collaborate like a thoughtful teammate, keep momentum, and suggest next steps. This adjusts style only; the selected role above stays who you are.',
   },
   {
     id: 'code',
     label: 'Code',
     prompt:
-      'You are Melo Code. Be implementation-focused, structured, and explicit about technical tradeoffs.',
+      'Working style (Code): be implementation-focused, structured, and explicit about technical tradeoffs. This adjusts style only; the selected role above stays who you are.',
   },
 ];

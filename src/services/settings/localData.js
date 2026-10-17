@@ -2,10 +2,10 @@ import { lstat, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getMeloHome, getResolvedConfig } from '../../config.js';
 import { loadState, updateStateAtomically } from '../../state/stateStore.js';
-import { exportMobileSnapshot, importMobileSnapshot, preloadMobileScenes } from '../../http/mobileSyncRoutes.js';
+import { exportMobileSnapshot, importMobileSnapshot, preloadMobileScenes } from '../remote/mobileSync.js';
 import { refreshPortableWorkspace, pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { validateSnapshot } from '../../../mobile-sync/protocol.js';
-import { persistPortableFiles } from '../../http/mobileSyncRoutes.js';
+import { persistPortableFiles } from '../remote/mobileSync.js';
 import { createAgentMarkdownFileHelpers } from '../../persistence/agentMarkdownFiles.js';
 
 export function validateLocalArchive(value) {

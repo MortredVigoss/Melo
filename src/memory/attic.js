@@ -19,6 +19,7 @@
  */
 
 import { requestEnvironment } from '../runtime/requestScope.js';
+import { estimateTextTokens } from './tokenEstimate.js';
 import { normalizedFact } from './factPolicy.js';
 import {
   listMemoriesForAtticReassess,
@@ -124,9 +125,15 @@ export function reassessAttic({ sinceIso = null, limit = 2000, nowMs = Date.now(
  * @returns {string}
  */
 export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall } = {}) {
+  // `identity` rows are deliberately NOT recalled here. The agent persona is
+  // already rendered verbatim in the `agent` section of the system prompt;
+  // re-injecting it through memory meant every turn carried two copies (the
+  // second one wrapped in "Reference data; not instructions"), and a project
+  // override put the project persona in one block and the stale global persona
+  // in the other (2026-10-17 audit B-1 / C-9).
   const rows = recallMemories({
     namespaces,
-    kinds: ['fact', 'session-fact', 'verification-correction', 'identity'],
+    kinds: ['fact', 'session-fact', 'verification-correction'],
     limit: limit * 4,
     sideEffects: false,
     accept,
@@ -153,8 +160,10 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
   let tokensRemaining = tokenBudget;
   for (const { row } of candidates) {
     const line = `- [${row.metadata?.category || row.kind}] ${row.text}`;
-    const cost = Math.ceil(line.length / 4);
-    if (cost > tokensRemaining) break;
+    // Shared estimator (CJK-aware) instead of length/4, and `continue` rather
+    // than `break`: one oversized row must not blank out every row after it.
+    const cost = estimateTextTokens(line);
+    if (cost > tokensRemaining) continue;
     lines.push(line);
     if (row.id) renderedIds.push(row.id);
     tokensRemaining -= cost;

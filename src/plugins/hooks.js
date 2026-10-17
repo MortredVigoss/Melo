@@ -118,19 +118,40 @@ export function getPluginHooks(pluginId) {
  * @param {Object} [payload]
  * @returns {Promise<Object>}  – the (potentially mutated) payload
  */
-export async function emitHook(hookName, payload = {}) {
+// Default ceiling for one plugin handler. agent-loop-audit #2 (2026-10-16):
+// a handler that never settles used to hang the tool executor outside its
+// own timeout/cancel protection and, through the per-chat serial queue,
+// every later message in that chat.
+export const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
+
+export async function emitHook(hookName, payload = {}, { timeoutMs = DEFAULT_HOOK_TIMEOUT_MS, signal } = {}) {
   const handlers = _hooks.get(hookName);
   if (!handlers?.length) return payload;
 
   for (const { pluginId, handler } of handlers) {
+    if (signal?.aborted) break;
+    let timer; let onAbort;
     try {
-      const result = await handler(payload);
+      const result = await Promise.race([
+        Promise.resolve().then(() => handler(payload)),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error(`Hook "${hookName}" timed out after ${timeoutMs}ms`), { code: 'HOOK_TIMEOUT' })), timeoutMs);
+          timer.unref?.();
+          if (signal) {
+            onAbort = () => reject(Object.assign(new Error(`Hook "${hookName}" cancelled`), { code: 'ABORTED' }));
+            signal.addEventListener('abort', onAbort, { once: true });
+          }
+        }),
+      ]);
       // If the handler returns an object, merge it back into payload
       if (result && typeof result === 'object' && !Array.isArray(result)) {
         Object.assign(payload, result);
       }
     } catch (err) {
       process.stderr.write(`[plugin:${pluginId}] Hook "${hookName}" error: ${err.message}\n`);
+    } finally {
+      clearTimeout(timer);
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
   }
 

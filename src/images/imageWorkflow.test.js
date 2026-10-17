@@ -349,3 +349,23 @@ test('an oversized task fails before any generation, analysis or image file oper
   await assert.rejects(runImageTask({task:{action:'generate'},config:{},messages:[{role:'user',content:'x'.repeat(40000)}],workspace:{rootPath:'/must-not-create'},dependencies:{generate:async()=>{generated++;}}}),{code:'IMAGE_PROMPT_TOO_LONG'});
   assert.equal(generated,0);
 });
+
+test('several photos with an edit request edit each photo once, each result paired with its own original', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'melo-image-each-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // Distinguish the photos by width; noise keeps each above the minimum image size.
+  const widths = [40, 48, 56];
+  const photos = await Promise.all(widths.map(w => sharp(randomBytes(w * 64 * 3), { raw: { width: w, height: 64, channels: 3 } }).png().toBuffer()));
+  const urls = photos.map(p => `data:image/png;base64,${p.toString('base64')}`);
+  const messages = [{ role: 'user', content: [{ type: 'text', text: '都调亮一点' }, ...urls.map(u => ({ type: 'image_url', image_url: { url: u } }))] }];
+  const task = inferImageTask('都调亮一点', messages, null);
+  assert.equal(task.separately, true);
+  const sources = [];
+  const text = await runImageTask({ task, config: { model: 'chosen' }, messages, attachments: urls.map((u, i) => ({ id: `p${i}`, kind: 'image', url: u })), workspace: { rootPath: root },
+    dependencies: { edit: async o => { sources.push((await sharp(o.sourceImageBytes).metadata()).width); assert.equal(o.referenceImages.length, 0); return { buffer: png }; } } });
+  // Exactly one edit per photo, in order, each with only that photo as its source.
+  assert.deepEqual(sources, widths);
+  assert.match(text, /已逐张修改 3\/3 张/);
+  const combine = inferImageTask('把这三张合成一张海报', messages, null);
+  assert.notEqual(combine.separately, true);
+});

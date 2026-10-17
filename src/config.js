@@ -1,7 +1,7 @@
 import { requestEnvironment, currentRequestContext, runWithRequestContext } from './runtime/requestScope.js';
 import { createRequestContext } from './runtime/requestContext.js';
 import { dirname, join } from 'node:path';
-import { chmod, mkdir, readFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, stat } from 'node:fs/promises';
 import { getCodexAuthState } from './codexAuth.js';
 import { atomicWriteJson } from './storage.js';
 import { registerSearchTriggers as registerWebSearchTriggers } from './retrieval/searchRouter.js';
@@ -303,8 +303,7 @@ export async function loadConfig({ skipModelNormalize = false } = {}) {
   const configPath = getConfigPath();
 
   try {
-    const raw = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = await readConfigJson(configPath);
     return normalizeConfigShape(parsed, { skipModelNormalize });
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
@@ -314,6 +313,24 @@ export async function loadConfig({ skipModelNormalize = false } = {}) {
     throw new Error(`Failed to read config at ${configPath}: ${error.message}`);
   }
 }
+
+// Raw config.json cache validated by stat (2026-10-17 tool-path
+// optimisation): getResolvedConfig() runs on every tool permission check,
+// every compaction and several other per-turn paths, and each call used to
+// read + JSON.parse the file. One stat per call now; a changed mtime/size
+// (saveConfig writes atomically, so either changes) refreshes the cache.
+// Callers still receive a fresh deep copy so mutations never leak.
+const _rawConfigCache = new Map(); // configPath → { mtimeMs, size, parsed }
+async function readConfigJson(configPath) {
+  const info = await stat(configPath);
+  const cached = _rawConfigCache.get(configPath);
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size && cached.ino === info.ino) return structuredClone(cached.parsed);
+  const raw = await readFile(configPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  _rawConfigCache.set(configPath, { mtimeMs: info.mtimeMs, size: info.size, ino: info.ino, parsed: structuredClone(parsed) });
+  return parsed;
+}
+export function _resetConfigCacheForTests() { _rawConfigCache.clear(); }
 
 export async function saveConfig(nextConfig, options = {}) {
   // `options.skipModelNormalize` is forwarded to `normalizeConfigShape`

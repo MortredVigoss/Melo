@@ -29,9 +29,21 @@ import Foundation
 
     static func previewStore() -> ChatStore {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("team-preview-" + UUID().uuidString)
-        let store = store(calls: Calls(), root: root)
+        let slow = ProcessInfo.processInfo.arguments.contains("-melo-preview-live-steps")
+        let store = slow ? ChatStore(directory: root, replyLoader: { messages, system in
+            try await Task.sleep(nanoseconds: 12_000_000_000)
+            if system.contains(AgentTeam.summaryInstruction) { return ModelReply(text: "团队汇总：完成。") }
+            return ModelReply(text: #"{"conclusion":"已查到资料","evidence":[],"changedFiles":[],"unfinished":[]}"#)
+        }) : store(calls: Calls(), root: root)
         store.updatePreferences { $0.agents = agents() }
-        if let chat = store.newChat(agentID: "main") { store.selectedConversationID = chat }
+        if let chat = store.newChat(agentID: "main") {
+            store.selectedConversationID = chat
+            // Preview only: start a slow team reply so the in-chat steps can be inspected.
+            if slow {
+                store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["research", "reviewer"]), chatID: chat)
+                store.send("整理发布说明", chatID: chat)
+            }
+        }
         return store
     }
 

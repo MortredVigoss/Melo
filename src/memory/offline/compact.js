@@ -111,11 +111,22 @@ async function _invokeLocalLlm(candidate, transcript, signal) {
  * @param {AbortSignal} [options.signal]
  * @returns {Promise<string>}
  */
-export async function compactOffline(messages = [], { config = {}, signal } = {}) {
-  if (!Array.isArray(messages) || messages.length === 0) return '';
+export async function compactOffline(messages = [], options = {}) {
+  return (await compactOfflineDetailed(messages, options)).summary;
+}
+
+/**
+ * Same as compactOffline but reports which path produced the text:
+ *   'local' — a local OpenAI-compatible LLM (quality-audited)
+ *   'rule'  — deterministic extractive fallback (TextRank)
+ *   'none'  — nothing to summarise
+ * Callers surface 'rule' as a degraded summary (2026-10-17 audit C-6).
+ */
+export async function compactOfflineDetailed(messages = [], { config = {}, signal } = {}) {
+  if (!Array.isArray(messages) || messages.length === 0) return { summary: '', source: 'none' };
 
   const transcript = messagesToTranscript(messages);
-  if (!transcript.trim()) return '';
+  if (!transcript.trim()) return { summary: '', source: 'none' };
 
   // Capture the quality gate mode + threshold once per call so a mid-flight
   // env change can't make the audit + fallback decisions diverge.  CLAUDE.md §6.
@@ -148,7 +159,7 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
           if (qualityMode === 'fallback' && audit && !audit.pass) {
             continue; // hallucinated — try the next candidate, then rule fallback
           }
-          return trimmed;
+          return { summary: trimmed, source: 'local', audit };
         }
       } catch {
         // try next candidate
@@ -157,7 +168,7 @@ export async function compactOffline(messages = [], { config = {}, signal } = {}
   }
 
   // Rule-based fallback — deterministic and works with zero dependencies.
-  return ruleBasedCompact(messages);
+  return { summary: ruleBasedCompact(messages), source: 'rule', audit: null };
 }
 
 // ─── Local LLM path ──────────────────────────────────────────────────────────

@@ -121,6 +121,19 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
   if (rule === 'allow') return;
   if (rule === 'deny') throw new Error(`Tool "${toolId}" is not permitted by policy.`);
 
+  // No approval surface → answer now instead of waiting the full timeout.
+  // Remote channels (Telegram / Discord polling) call the executor without an
+  // SSE emitter and the desktop UI does not poll pending requests, so a
+  // request here could never be approved; it used to sit for 120 s and then
+  // time out, blocking the whole polling loop meanwhile (2026-10-17 audit B-3).
+  // Pass `context.permissionSurface = 'headless'` to opt back into waiting
+  // (tests and future CLI prompts resolve via resolvePermission()).
+  if (typeof sseEmitter !== 'function' && context?.permissionSurface !== 'headless') {
+    const error = new Error(`Tool "${toolId}" needs user approval, but this channel has no approval surface. Ask the user to run this action from the Melo desktop app instead.`);
+    error.code = 'PERMISSION_NO_SURFACE';
+    throw error;
+  }
+
   const requestId = randomUUID();
 
   return new Promise((resolve, reject) => {

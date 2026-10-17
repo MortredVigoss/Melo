@@ -9,7 +9,7 @@
  * find a previous conversation, code snippet, or decision.
  */
 
-import { searchHistory } from '../../memory/conversationIndex.js';
+import { searchHistory, normalizeAudience, DESKTOP_AUDIENCE } from '../../memory/conversationIndex.js';
 
 export const searchHistoryTool = {
   id: 'search_history',
@@ -46,6 +46,13 @@ export const searchHistoryTool = {
           'Optional chat id. Restrict results to a single conversation. ' +
           'Use when the user references a specific chat or you want to drill down inside one thread.',
       },
+      scope: {
+        type: 'string',
+        enum: ['project', 'all'],
+        description:
+          'Default "project": only conversations of the current project (or, outside a project, conversations that belong to no project). ' +
+          '"all": every project on this desktop. Only honoured for the desktop user; messaging channels always stay inside their own channel and project.',
+      },
     },
     required: ['query'],
   },
@@ -55,17 +62,26 @@ export const searchHistoryTool = {
     { query: 'auth middleware', after: '2026-03-01' },
   ],
 
-  async run({ query, limit = 8, after, chatId }) {
+  async run({ query, limit = 8, after, chatId, scope = 'project' }, context = {}) {
     if (!query || typeof query !== 'string' || !query.trim()) {
       return { ok: false, output: 'Missing or empty query.', error: 'INVALID_QUERY' };
     }
 
+    // Scope comes from the execution context, never from the model (audit
+    // P0-3): a Telegram/Discord audience can only search its own channel and
+    // project; the desktop owner defaults to the current project and may opt
+    // into all projects.
+    const audience = normalizeAudience(context?.chatSource);
+    const projectId = String(context?.projectId || '');
+    const allProjects = audience === DESKTOP_AUDIENCE && scope === 'all';
     const lim = Math.max(1, Math.min(20, Math.floor(limit) || 8));
-    const results = searchHistory(query.trim(), { limit: lim, after, chatId });
+    const results = searchHistory(query.trim(), { limit: lim, after, chatId, audience, projectId, allProjects });
 
     const filterDesc = [];
     if (after) filterDesc.push(`after=${after}`);
     if (chatId) filterDesc.push(`chatId=${chatId}`);
+    if (audience !== DESKTOP_AUDIENCE) filterDesc.push(`channel=${audience}`);
+    else if (!allProjects) filterDesc.push(projectId ? `project=${projectId}` : 'no-project');
     const filterSuffix = filterDesc.length ? ` (${filterDesc.join(', ')})` : '';
 
     if (!results.length) {

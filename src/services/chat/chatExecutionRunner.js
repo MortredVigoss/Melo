@@ -6,6 +6,7 @@ import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
 import { selectedMaterials } from './conversationSelection.js';
 import { runAgentTeam } from '../../agents/team.js';
+import { takeSupplements, supplementMessage } from './supplements.js';
 import { summarizePricedUsage } from '../../runtime/usage.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { persistCompactSnapshot } from './derivedState.js';
@@ -80,12 +81,15 @@ import {
   matchSkillsForMessage,
 } from '../../agents/skillMatcher.js';
 import { getSkillLastRunMap } from '../../agents/skillRuns.js';
+import { createRepeatGuard } from '../../agents/repeatGuard.js';
+import { buildMemberBackground } from '../../agents/memberBackground.js';
 import { buildSkillTool } from '../../agents/skillExecutor.js';
 import { getEmbedding } from '../../memory/embeddings.js';
 import {
   planIncrementalCompact,
-  compactConversation,
+  compactConversationDetailed,
   formatCompactContextBlock,
+  buildRecentWindow,
 } from '../../memory/contextCompact.js';
 import { formatSessionMemoryBlock, selectSessionMemoryFacts } from '../../memory/sessionMemory.js';
 import {
@@ -114,9 +118,9 @@ import { visionConnection, imageSettings } from '../../images/imageSettings.js';
 import { prepareVisionInputs } from '../../media/visionInputs.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
 import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
-import { fitRequestContext, resolveContextBudget } from './contextBudget.js';
+import { fitRequestContext, resolveContextBudget, attachTurnContextToMessages } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
-import { createFunctionCallingSession } from '../../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain } from '../../tools/functionCalling.js';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -180,7 +184,11 @@ export async function runChatAgentExecutionGraph({
     }));
   };
   const embedQuery = _dependencies.getEmbedding || getEmbedding;
-  const contextBudget = resolveContextBudget(env);
+  const contextBudget = resolveContextBudget(env, { config });
+  // Per-turn prompt sections ride inside the current user message so the
+  // system prompt and earlier history stay cache-stable across turns.
+  // MELO_TURN_CONTEXT_IN_SYSTEM=1 restores the pre-2026-10-17 layout.
+  const turnContextPlacement = env.MELO_TURN_CONTEXT_IN_SYSTEM === '1' ? 'system' : 'message';
   const promptDebug = env.MELO_PROMPT_DEBUG === '1';
   const modelOverrides = {
     apiKey: config.activeLlmProfileId ? config.apiKey : env.MELO_API_KEY || env.OPENAI_API_KEY || config.apiKey,
@@ -241,7 +249,7 @@ export async function runChatAgentExecutionGraph({
         const projectContext = isRemoteChannel ? '' : buildProjectContextSection(project, activeAgentProfile);
         const connectorPrompts = isRemoteChannel ? '' : summarizeConnectorPrompts(agentConnectors);
         const skillsPrompts = summarizeSkillsPrompts(enabledSkills, { remote: isRemoteChannel });
-        let modelMessages = buildModelMessagesFromChat(chat);
+        let modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
         const searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
@@ -319,22 +327,24 @@ export async function runChatAgentExecutionGraph({
         }
 
         // ── 4. Auto-compact check ─────────────────────────────────────────
-        // Runs for ALL channels once history exceeds COMPACT_TRIGGER_TOKENS
-        // (~80K). Previously remote/Telegram were skipped to avoid adding
-        // latency; in practice that meant long-running Telegram bots lost
-        // all historical context beyond the 60K sliding window. The compact
-        // only fires on genuinely large histories and the MAX_COMPACT_FAILURES
-        // circuit breaker still guards against a hot-loop of failed summaries.
+        // Runs for ALL channels once the pending history (after the last
+        // compact boundary) would no longer fit the sliding window. The
+        // trigger is derived from the same budget as the window and the
+        // request fitter (resolveContextBudget), so history can no longer
+        // fall into a gap where it is neither sent nor summarised
+        // (2026-10-17 audit P0-2). Remote channels are included; the
+        // MAX_COMPACT_FAILURES circuit breaker still guards against a
+        // hot-loop of failed summaries.
         const hasModelConfig = Boolean(
           config.authMode === 'codex' ||
           config.apiKey ||
           (config.authMode === 'local' && config.baseUrl),
         );
 
-        const compactPlan = hasModelConfig ? planIncrementalCompact(chat) : null;
-        if (compactPlan) {
+        let compactedThisTurn = false;
+        const runCompact = async compactPlan => {
           try {
-            const summary = await compactConversation(compactPlan.messages, {
+            const { summary, source } = await compactConversationDetailed(compactPlan.messages, {
               config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
             });
             if (summary) {
@@ -345,21 +355,71 @@ export async function runChatAgentExecutionGraph({
               chat.compactedMessageCount = compactPlan.compactedCount;
               chat.compactedAt = new Date().toISOString();
               chat.compactFailures = 0;
+              // Provenance (audit C-6): a 'rule' summary is a degraded fallback.
+              // The chat keeps moving, but the header says so and the next
+              // turns retry the model (see upgradeDegradedCompact below).
+              chat.compactSummarySource = source || 'cloud';
+              chat.compactUpgradeAttempts = 0;
+              if (source === 'rule') {
+                process.stderr.write(`[compact] chat ${chat.id}: summarising model unavailable, using extractive fallback for ${compactPlan.compactedCount} messages\n`);
+                sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:degraded', module: 'compute', name: '对话摘要降级', status: 'completed', output: '摘要模型不可用，已使用抽取式摘要；后续轮次会自动重试。' });
+              }
               // Persist so the summary survives restarts.
               await persistCompactSnapshot(chat, compactPlan, { home });
-              modelMessages = buildModelMessagesFromChat(chat);
-            } else {
-              chat.compactFailures = (chat.compactFailures || 0) + 1;
+              modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
+              compactedThisTurn = true;
+              return true;
             }
+            chat.compactFailures = (chat.compactFailures || 0) + 1;
           } catch (error) {
             if (signal?.aborted) throw signal.reason || error;
             chat.compactFailures = (chat.compactFailures || 0) + 1;
           }
-        }
+          return false;
+        };
+
+        // Retry the model for a degraded (extractive) summary: re-summarise the
+        // already-compacted range once per turn, at most 3 times, with a short
+        // timeout so a still-unreachable model cannot stall the reply.
+        const upgradeDegradedCompact = async () => {
+          if (!hasModelConfig || chat.compactSummarySource !== 'rule' || (chat.compactUpgradeAttempts || 0) >= 3) return;
+          const boundaryIndex = chat.messages.findIndex(message => message.id === chat.compactBoundaryMessageId);
+          if (boundaryIndex < 0) return;
+          // Bound the re-summarised range to one compaction chunk (the common
+          // case is a single compaction that landed while the model was down).
+          const range = buildRecentWindow(chat.messages.slice(0, boundaryIndex + 1), 45_000, 2);
+          chat.compactUpgradeAttempts = (chat.compactUpgradeAttempts || 0) + 1;
+          const controller = new AbortController();
+          const onAbort = () => controller.abort(signal?.reason);
+          signal?.addEventListener('abort', onAbort, { once: true });
+          const timer = setTimeout(() => controller.abort(new Error('compact upgrade timed out')), 20_000);
+          try {
+            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, _createReply: createReply });
+            if (summary && source === 'cloud') {
+              chat.compactSummary = summary;
+              chat.compactSummarySource = 'cloud';
+              chat.compactedAt = new Date().toISOString();
+              await persistCompactSnapshot(chat, { boundaryId: chat.compactBoundaryMessageId, compactedCount: chat.compactedMessageCount }, { home });
+              sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:upgraded', module: 'compute', name: '对话摘要已恢复', status: 'completed', output: '摘要模型恢复可用，已用完整摘要替换抽取式摘要。' });
+            }
+          } catch (error) {
+            if (signal?.aborted) throw signal.reason || error;
+          } finally {
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+          }
+          if (chat.compactSummarySource === 'rule') await persistCompactSnapshot(chat, { boundaryId: chat.compactBoundaryMessageId, compactedCount: chat.compactedMessageCount }, { home });
+        };
+        await upgradeDegradedCompact();
+
+        const compactPlan = hasModelConfig
+          ? planIncrementalCompact(chat, { triggerTokens: contextBudget.compactTriggerTokens })
+          : null;
+        if (compactPlan) await runCompact(compactPlan);
 
         // ── 5. Assemble system prompt ──────────────────────────────────────
         const compactContext = chat.compactSummary
-          ? formatCompactContextBlock(chat.compactSummary, chat.compactedMessageCount || 0)
+          ? formatCompactContextBlock(chat.compactSummary, chat.compactedMessageCount || 0, { source: chat.compactSummarySource || 'cloud' })
           : '';
 
         // Build per-request skill tools for all enabled executable skills this
@@ -412,10 +472,17 @@ export async function runChatAgentExecutionGraph({
           id:f.id,text:f.fact,kind:'session-fact',renderedText:`- [${f.category}] ${f.fact}`,
         }));
         memoryCandidates.push(...memoryRendered);
-        const queryEmbedding = skipMemory ? null : await measureStage('memory.embedding', () => embedQuery(latestUserMessage,config)).catch(()=>null);
+        // audit C-12: bound the query embedding (worker default is 60s); recall
+        // degrades to keyword matching rather than stalling the whole turn.
+        const queryEmbedding = skipMemory ? null : await measureStage('memory.embedding', () => Promise.race([
+          embedQuery(latestUserMessage,config),
+          new Promise(resolve => { const t = setTimeout(() => resolve(null), 2500); t.unref?.(); }),
+        ])).catch(()=>null);
         const memoryContext = skipMemory ? '' : measureStageSync('memory.recall', () => buildAgentMemoryNodeContext({
           state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,
-          includedMessageIds:modelMessageSourceIds(modelMessages), excludedFacts:sessionFacts,
+          // audit C-12: exclude from recall only the messages that will actually
+          // be sent — a preliminary history-only fit, not the wider pre-fit window.
+          includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts:sessionFacts,
           onRecall:rows=>memoryRendered.push(...rows),onCandidates:rows=>memoryCandidates.push(...rows),
         }));
 
@@ -455,7 +522,21 @@ export async function runChatAgentExecutionGraph({
           isRemoteChannel,
           intent: classification,
         });
-        const preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
+        let preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+        // Safety net for P0-2: if the system prompt + tools turned out larger
+        // than the window share assumed and the fitter still had to drop
+        // history, summarise the overflow now instead of silently losing it.
+        // One forced pass per turn; the circuit breaker inside
+        // planIncrementalCompact still applies.
+        if (preparedRequest.diagnostics.droppedMessages > 0 && hasModelConfig && !compactedThisTurn) {
+          const forcedPlan = planIncrementalCompact(chat, { triggerTokens: 0 });
+          if (forcedPlan && await runCompact(forcedPlan)) {
+            preparedRequest = fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+          }
+        }
+        if (preparedRequest.diagnostics.droppedMessages > 0) {
+          process.stderr.write(`[prompt-budget] chat ${chat.id}: ${preparedRequest.diagnostics.droppedMessages} history message(s) did not fit the request (inputTokens≈${preparedRequest.diagnostics.inputTokens}, limit ${contextBudget.inputLimit})\n`);
+        }
         if (promptDebug) process.stdout.write(`[prompt-budget] ${JSON.stringify(preparedRequest.diagnostics)}\n`);
 
         return {
@@ -468,6 +549,7 @@ export async function runChatAgentExecutionGraph({
           memoryCandidates, memoryRendered,
           memoryUsage: [],
           systemPrompt: preparedRequest.systemPrompt,
+          turnContext: preparedRequest.turnContext,
           modelMessages: preparedRequest.messages,
           memoryContext,
           dynamicContext,
@@ -493,7 +575,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask || teamPlan) {
-          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile});
+          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext})});
           modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
           // The lead's summary is the reply; member handoffs stay in the execution record.
           return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
@@ -567,17 +649,58 @@ export async function runChatAgentExecutionGraph({
         // Each entry: { toolCallId, toolName, ok, evidenceTrail? }.
         const accumulatedToolResults = [];
         const evidencePairs = [];
+        // agent-loop-audit #1: identical failing calls are answered locally
+        // after two consecutive failures instead of re-executed.
+        const repeatGuard = createRepeatGuard();
+        // Per-turn constants for tool dispatch (2026-10-17 tool-path
+        // optimisation): these used to be rebuilt on every loop iteration —
+        // including an effectiveAgentProfile merge for every agent and the
+        // member background text — although none of them change within a turn.
+        const skillToolsById = new Map((graphState.skillTools || []).map(t => [t.id, t]));
+        const visibleToolIds = new Set(graphState.visibleToolIds || []);
+        const allowedToolIdList = [...visibleToolIds];
+        let allowedDispatchTools = null;
+        let dispatchAgentProfiles = null;
+        let dispatchMemberBackground = null;
+        const dispatchConstants = () => {
+          allowedDispatchTools ??= new Set(filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id));
+          dispatchAgentProfiles ??= Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]));
+          dispatchMemberBackground ??= buildMemberBackground({ chat, projectContext: graphState.projectContext });
+          return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
+        };
 
         for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
           // On subsequent iterations, we're streaming "thinking" not the final
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
+          // Supplements typed while this turn runs join before the next model call,
+          // keeping every step already done.
+          if (!isFirstIteration) {
+            const supplements = takeSupplements(chat.id);
+            if (supplements.length) {
+              loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements), isSupplement: true }];
+              for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, name: '收到补充', module: 'compute', status: 'completed', output: entry.text });
+            }
+          }
 
-          const request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
+          let request;
+          try {
+            request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+          } catch (error) {
+            // audit C-8: a long tool loop must not die after the tools already
+            // ran. Condense older tool outputs in this turn's chain and retry
+            // once; only then surface the budget error.
+            if (error?.code !== 'CONTEXT_BUDGET_EXCEEDED' || iteration === 0) throw error;
+            const condensed = compactToolChain(loopMessages);
+            if (!condensed.changed) throw error;
+            loopMessages = condensed.messages;
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: `tool-chain:condense:${iteration}`, module: 'compute', name: '工具结果已压缩', status: 'completed', output: '早期工具输出已压缩以继续本轮。' });
+            request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+          }
           if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
           if (isFirstIteration) {
             signal?.throwIfAborted();
-            const used = (graphState.memoryRendered || []).filter(row=>row.renderedText && request.systemPrompt.includes(row.renderedText));
+            const used = (graphState.memoryRendered || []).filter(row=>row.renderedText && request.promptText.includes(row.renderedText));
             graphState.memoryUsage = [...new Map(used.map(row=>[row.id,{
               id:row.id,text:String(row.text).slice(0,200),kind:row.kind,
               sourceChatId:row.metadata?.chatId || chat.id,
@@ -595,7 +718,7 @@ export async function runChatAgentExecutionGraph({
             baseUrl: vision?.baseUrl || modelOverrides.baseUrl,
             model: vision?.model || selectedModel,
             systemPrompt: request.systemPrompt,
-            messages: request.messages,
+            messages: attachTurnContextToMessages(request.messages, request.turnContext),
             cacheScope: `${agentId}:${chat.id}`,
             signal,
             onDelta: isFirstIteration ? onDelta : undefined,
@@ -635,10 +758,6 @@ export async function runChatAgentExecutionGraph({
           // in prepare (scoped to this agent), then fall back to the global
           // registry. Skill tools are prefixed `skill:` so they cannot
           // collide with regular tool ids.
-          const skillToolsById = new Map(
-            (graphState.skillTools || []).map(t => [t.id, t]),
-          );
-          const visibleToolIds = new Set(graphState.visibleToolIds || []);
           // Defence-in-depth: even though the prompt-level filter
           // already hides non-whitelisted MCP tools, a hallucinated
           // `mcp:<server>:<tool>` call must not slip through to the
@@ -656,9 +775,12 @@ export async function runChatAgentExecutionGraph({
           // was the providerErrors fallback "Melo could not complete
           // the model request right now. Details: …". Same fact also
           // accessible at lines 407 / 580 of this file via graphState.
-          const allowedDispatchTools = new Set(
-            filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id),
-          );
+          const { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground } = dispatchConstants();
+          for (const tc of toolCalls) {
+            if (tc.rejectedResult) continue;
+            const repeated = repeatGuard.check(tc.name, tc.arguments);
+            if (repeated) tc.rejectedResult = repeated;
+          }
           const executableCalls = toolCalls.map(tc => {
             let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || getTool(tc.name);
             if (tool && !visibleToolIds.has(tool.id)) {
@@ -682,25 +804,35 @@ export async function runChatAgentExecutionGraph({
               signal,
               chatId: chat.id,
               config: delegatedModelConfig,
-              allowedToolIds: [...visibleToolIds],
+              allowedToolIds: allowedToolIdList,
               agentDepth: 0,
               capabilities: context.capabilityScope.capabilities,
               extraTools: graphState.skillTools,
               collaboration: graphState.activeAgentProfile.collaboration,
-              agentProfiles: Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),
+              agentProfiles: dispatchAgentProfiles,
               projectId: chat.projectId,
+              chatSource: chat.source || 'desktop',
               agentId: graphState.activeAgentProfile?.id || agentId,
+              // Delegated members get bounded conversation background with
+              // their task (audit B-6); see agents/memberBackground.js.
+              memberBackground: dispatchMemberBackground,
               onOutput: typeof sseEmitter === 'function'
                 ? chunk => sseEmitter('tool_output', { chunk })
                 : undefined,
             },
           );
 
+          const callsById = new Map(toolCalls.map(tc => [tc.id, tc]));
+          const resultsById = new Map(execResults.map(r => [r.id, r]));
           for(const execution of execResults) if(execution.result?.meta?.receipts) modelResponses.push(...execution.result.meta.receipts);
+          for (const execution of execResults) {
+            const call = callsById.get(execution.id);
+            if (call) repeatGuard.record(call.name, call.arguments, execution.result);
+          }
           // Also handle unresolved tool names (not in registry)
           const allResults = toolCalls.map(tc => {
             if (tc.rejectedResult) return { call: tc, result: tc.rejectedResult };
-            const found = execResults.find(r => r.id === tc.id);
+            const found = resultsById.get(tc.id);
             if (found) return { call: tc, result: found.result };
             return {
               call: tc,

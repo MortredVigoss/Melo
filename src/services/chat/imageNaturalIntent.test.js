@@ -32,3 +32,11 @@ test("natural color follow-up retains only this conversation's recent image", as
   assert.deepEqual(await imageFollowUpAttachments({...options,content:'如何增加对比度'}),[]);
   assert.deepEqual(await imageFollowUpAttachments({...options,chat:{id:'other',messages:[]}}),[]);
 });
+
+const batchFixtures = JSON.parse(readFileSync(new URL('../../../ios/Tests/Fixtures/image-batch-intent.json', import.meta.url)));
+for (const fixture of batchFixtures) test(`several photos: ${fixture.prompt} (${fixture.photos})`, () => {
+  const parts = Array.from({ length: fixture.photos }, () => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }));
+  const task = inferImageTask(fixture.prompt, [{ role: 'user', content: [{ type: 'text', text: fixture.prompt }, ...parts] }], null);
+  assert.equal(task?.action, 'edit');
+  assert.equal(task?.separately === true, fixture.separately);
+});

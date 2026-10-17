@@ -21,7 +21,15 @@ export function createRouteRegistry(definitions) {
     async handle(request,response,url,requireLocalOrigin) {
       const route=find(request,url);
       if(!route)return false;
-      if(route.auth==='local-write' && !requireLocalOrigin?.(request,response))return true;
+      if(route.auth==='local-write') {
+        // The origin gate is mandatory for every write. A missing gate used to
+        // be read as "denied" and returned without writing a response, which
+        // left every POST /api/tts/* request hanging (2026-10-17 audit P0-1).
+        // Fail loudly at dispatch time instead so a wiring slip is caught by
+        // the first request rather than by a silent timeout in the UI.
+        if(typeof requireLocalOrigin!=='function') throw new TypeError(`Route ${request.method} ${url.pathname} is local-write but no requireLocalOrigin gate was supplied`);
+        if(!requireLocalOrigin(request,response))return true;
+      }
       await route.handler({request,response,url,requireLocalOrigin});
       return true;
     },

@@ -29,3 +29,11 @@ test('permissions stay bound to home, chat, tool and originating run', async t =
   await assert.rejects(requestPermission('never-start', {}, () => assert.fail('aborted permission was emitted'), controller.signal, 'same-chat', a));
   assert.deepEqual(getPendingPermissions(), []);
 });
+
+test('a permission request with no approval surface fails at once instead of waiting 120s', async () => {
+  const { requestPermission } = await import('./permissions.js');
+  const started = Date.now();
+  await assert.rejects(requestPermission('headless-tool', {}, undefined, undefined, 'remote-chat', { requestId: 'r', runId: 'run' }),
+    error => error.code === 'PERMISSION_NO_SURFACE' && /desktop app/.test(error.message));
+  assert.ok(Date.now() - started < 1000);
+});

@@ -18,6 +18,16 @@ import SwiftUI
     /// A team chosen for the next message of a chat. One-shot and local: it is
     /// cleared once that message is accepted, so a team never runs by surprise.
     @Published var pendingTeams: [String: PhoneTeamPlan] = [:]
+    /// A video studied on this iPhone (frames + transcript) for the next message of a chat.
+    @Published var pendingVideos: [String: VideoDigest] = [:]
+    /// Supplements typed while a chat is replying; applied when its current request stops.
+    @Published private(set) var pendingSupplements: [String: String] = [:]
+    /// Inputs of the running request kept so a supplement can restart it with the same video / team.
+    private var runInputs: [String: (video: VideoDigest?, team: PhoneTeamPlan?)] = [:]
+    func liveSteps(for chatID: String) -> [RunStep] {
+        guard let runID = runs[chatID]?.runID, let record = executionRecords.last(where: { $0.runId == runID }) else { return [] }
+        return RunProgress.steps(record)
+    }
     @Published private(set) var pendingDeviceAction: DeviceActionRequest?
     @Published private(set) var activeImageActions: [String: ImageAction] = [:]
     func activeImageAction(for chatID: String) -> ImageAction? { activeImageActions[chatID] }
@@ -191,12 +201,13 @@ import SwiftUI
         if let projectID = preferences.chatProjects?[chatID], let agentID = preferences.chatAgents[chatID], let override = preferences.projectAgents?[projectID]?[agentID] { return override }
         return preferences.agents.first { $0.id == preferences.chatAgents[chatID] } ?? preferences.agents.first ?? AgentProfile.defaults[0]
     }
+    // Changing Agent or model during a reply is allowed: the running reply took its
+    // Agent and model when it started; the change applies from the next message.
     func selectAgent(_ id: String, chatID: String) {
-        guard !isSending(chatID), preferences.agents.contains(where: { $0.id == id }) else { return }
+        guard preferences.agents.contains(where: { $0.id == id }) else { return }
         updatePreferences { $0.chatAgents[chatID] = id }
     }
     func selectModel(_ model: ConversationModel?, chatID: String) {
-        guard !isSending(chatID) else { return }
         updatePreferences { if $0.chatModels == nil { $0.chatModels = [:] }; $0.chatModels?[chatID] = model }
     }
     func project(for chatID: String) -> PersonalProject? { preferences.projects?.first { $0.id == preferences.chatProjects?[chatID] } }
@@ -238,23 +249,29 @@ import SwiftUI
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
             clean = "请分析这些图片。"
         }
+        let restartInputs = retry ? runInputs.removeValue(forKey: chatID) : nil
+        let video = retry ? restartInputs?.video : pendingVideos[chatID]
+        if video != nil && clean.isEmpty { clean = "请看这段视频，总结主要内容。" }
         guard retry || !clean.isEmpty else { return }
         var plan: ImageTaskPlan
         let imageInputs: [ImageInput]
         do {
-            let previousImages = chats[index].messages.reversed().compactMap { message -> [String]? in
-                let images = imageLibrary.images(for: message.id); return images.isEmpty ? nil : images.map(\.id)
-            }.first ?? []
+            // Follow-ups mean specific earlier images ("第二张", "原图", "这几张"…), not just the latest message's.
+            let library = imageLibrary
+            let previousImages = ImageContext.resolve(clean, catalog: ImageContext.catalog(chats[index].messages) { library.images(for: $0) })
             if retry, let last = chats[index].messages.last {
                 clean = last.content
                 plan = try (imageLibrary.index.requests[last.id] ?? ImageTaskPlan(action: .analyze)).resolved(prompt: clean, previousImages: [])
             } else { plan = try (imageTask ?? ImageTaskPlan()).resolved(prompt: clean, previousImages: previousImages) }
             // A deliberate retry may choose a new image connection; keep the original input and other parameters.
             if retry, let connectionID = imageTask?.connectionID { plan.connectionID = connectionID }
-            imageInputs = try imageLibrary.inputs(plan.references)
+            // Per-photo edits read each photo when its own request starts.
+            // Analysis needs less detail than editing; both send transfer copies, never the stored file itself when large.
+            imageInputs = plan.separately == true ? [] : try imageLibrary.inputs(plan.references, maxDimension: plan.makesImage ? 4096 : 2048)
         } catch { fail(error.localizedDescription); return }
         do { try ConversationContext.validate(preferences: preferences, chatID: chatID) } catch { fail(error.localizedDescription); return }
         let choice = preferences.chatModels?[chatID]
+        if video != nil && (plan.makesImage || !plan.references.isEmpty) { fail("视频和图片请分开发送：先发视频提问，或移除视频后再处理图片。"); return }
         let selectedAgent = agent(for: chatID)
         // Phone execution is governed by this iPhone's per-Agent permissions;
         // desktop capability settings govern desktop execution only.
@@ -263,7 +280,7 @@ import SwiftUI
             fail("当前 Agent 在这台手机上未开启“生成与修改图片”。可在 Agent 页的本机权限中开启；要求和图片已保留。"); return
         }
         var teamPlan: AgentTeam.Plan?
-        if !retry, let armed = pendingTeams[chatID] {
+        if let armed = retry ? restartInputs?.team : pendingTeams[chatID] {
             guard !plan.makesImage, plan.references.isEmpty else { fail("团队任务只支持文字。请先移除图片，或取消团队后再发送。"); return }
             do {
                 let validated = try AgentTeam.validate(templateID: armed.templateID, members: armed.members)
@@ -320,7 +337,7 @@ import SwiftUI
         }
         if !retry {
             let original = chats[index]
-            let question = ChatMessage(role: "user", content: clean)
+            let question = ChatMessage(role: "user", content: video.map { clean + "\n" + VideoStudy.chatLine($0) } ?? clean)
             if plan.makesImage || !plan.references.isEmpty {
                 do { try imageLibrary.bind(plan.references.compactMap { imageLibrary.index.assets[$0.id] }, to: question.id, request: plan); imageRevision += 1 }
                 catch { fail(error.localizedDescription); return }
@@ -345,11 +362,26 @@ import SwiftUI
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
         instructions += MobileMemoryRecall.instructions(recalled.facts)
         let history = chats[index].messages
+        // The model sees the video as frames plus its transcript; the chat keeps a short line.
+        var modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
+        // Every message that carried images says which numbers they have, so the model can follow
+        // "图2" / "第二张" across turns; the current turn names the images actually attached.
+        let library = imageLibrary
+        let catalog = ImageContext.catalog(history) { library.images(for: $0) }
+        for position in modelHistory.indices {
+            if let marker = ImageContext.marker(for: modelHistory[position].id, in: catalog) { modelHistory[position].content += "\n" + marker }
+        }
+        if let lastPosition = modelHistory.indices.last, !plan.references.isEmpty, catalog.contains(where: { $0.messageID != modelHistory[lastPosition].id && plan.references.map(\.id).contains($0.id) }),
+           let note = ImageContext.attachmentNote(plan.references.map(\.id), catalog: catalog) { modelHistory[lastPosition].content += "\n" + note }
+        let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
-        let record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
+        var record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
+        if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
         executionRecords.append(record); saveExecutionRecords()
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
+        let armedTeam = retry ? restartInputs?.team : pendingTeams[chatID]
         if teamPlan != nil { pendingTeams[chatID] = nil }
+        if video != nil { pendingVideos[chatID] = nil }
         sendingChats.insert(chatID)
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel, explicitModel = choice != nil
         let loader = replyLoader, chatAccount = account
@@ -377,25 +409,34 @@ import SwiftUI
                 if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
                 sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
+                if let supplement = pendingSupplements.removeValue(forKey: chatID) { applySupplement(supplement, chatID: chatID, finished: completed, inputs: (video, armedTeam)) }
             }
             do {
                 try Task.checkCancellation()
+                if let video { stage(record.runId, id: "video:study", name: "视频画面与文字稿", status: "completed", output: "\(video.frames.count) 帧 · " + (video.transcript.isEmpty ? video.transcriptNote : "文字稿 \(video.transcript.count) 字")) }
                 let reply: ModelReply
-                if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
-                else if let replyLoader { reply = try await replyLoader(history, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: history, model: chatGPTModel, instructions: instructions, imageInputs: imageInputs, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
+                else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
+                else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
-                    reply = try await Network.reply(messages: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: imageInputs, onObservation: { observation in self.observe(observation, runID: record.runId) })
+                    reply = try await Network.reply(messages: modelHistory, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, onObservation: { observation in self.observe(observation, runID: record.runId) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
                 guard let position = chats.firstIndex(where: { $0.id == chatID }) else { finishRun(record.runId, state: "interrupted"); return }
                 let message = ChatMessage(role: "assistant", content: reply.text)
                 if !reply.images.isEmpty {
-                    let assets = try reply.images.map { try imageLibrary.store($0.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: plan.references.map(\.id), reportedModel: $0.reportedModel, revisedPrompt: $0.revisedPrompt) }
+                    let assets = try reply.images.enumerated().map { index, payload in try imageLibrary.store(payload.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: reply.imageReferences.flatMap { index < $0.count ? $0[index] : nil } ?? plan.references.map(\.id), reportedModel: payload.reportedModel, revisedPrompt: payload.revisedPrompt) }
                     try imageLibrary.bind(assets, to: message.id); imageRevision += 1
+                    if let runIndex = executionRecords.firstIndex(where: { $0.runId == record.runId }) {
+                        var progress = executionRecords[runIndex].imageProgress ?? ExecutionImageProgress(startedAt: record.startedAt)
+                        progress.saved = assets.count; progress.finishedAt = timestamp()
+                        executionRecords[runIndex].imageProgress = progress
+                        saveExecutionRecords()
+                    }
                 }
                 stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机聊天记录")
                 let original = chats[position]
@@ -426,7 +467,77 @@ import SwiftUI
             } }
         }
     }
+    /// Several photos + an edit request: one request per photo, two at a time, each
+    /// result linked to its own original. One failed photo does not drop the others.
+    private func editEachPhoto(_ plan: ImageTaskPlan, prompt: String, history: [ChatMessage], instructions: String, runID: String, useChatGPT: Bool, codexModel: String, endpoint: String, key: String) async throws -> ModelReply {
+        let references = plan.references, total = references.count
+        let library = imageLibrary, loader = replyLoader, chatAccount = account
+        var outcomes = [Result<ModelReply, Error>?](repeating: nil, count: total)
+        let attempt: (Int) async -> Result<ModelReply, Error> = { index in
+            do {
+                let single = plan.single(references[index])
+                let inputs = try library.inputs(single.references)
+                if let loader { return .success(try await loader(history, single.instructions(instructions))) }
+                if useChatGPT { return .success(try await chatAccount.reply(messages: history, model: codexModel, instructions: instructions, imageInputs: inputs, imageTask: single)) }
+                return .success(try await ImageNetwork.reply(prompt: prompt, task: single, inputs: inputs, endpoint: endpoint, token: key))
+            } catch { return .failure(error) }
+        }
+        for start in stride(from: 0, to: total, by: 2) {
+            try Task.checkCancellation()
+            let batch = Array(start..<min(start + 2, total))
+            for index in batch { stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: "running", output: "正在修改") }
+            await withTaskGroup(of: (Int, Result<ModelReply, Error>).self) { group in
+                for index in batch { group.addTask { (index, await attempt(index)) } }
+                for await (index, outcome) in group { outcomes[index] = outcome }
+            }
+            try Task.checkCancellation()
+            for index in batch {
+                switch outcomes[index] {
+                case .success(let reply)?: stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: reply.images.isEmpty ? "failed" : "completed", output: reply.images.isEmpty ? "服务没有返回图片" : "已收到修改后的图片")
+                case .failure(let error)?: stage(runID, id: "image:each:\(index)", name: "第 \(index + 1)/\(total) 张", status: "failed", output: String(error.localizedDescription.prefix(300)))
+                case nil: break
+                }
+            }
+        }
+        var images: [ImagePayload] = [], owners: [[String]] = [], failures: [String] = []
+        for (index, outcome) in outcomes.enumerated() {
+            switch outcome {
+            case .success(let reply)? where !reply.images.isEmpty:
+                images.append(contentsOf: reply.images); owners.append(contentsOf: reply.images.map { _ in [references[index].id] })
+            case .failure(let error)?: failures.append("第 \(index + 1) 张未完成：\(error.localizedDescription)")
+            default: failures.append("第 \(index + 1) 张未完成：服务没有返回图片。")
+            }
+        }
+        if images.isEmpty, case .failure(let error)? = outcomes.first { throw error }
+        if images.isEmpty { throw MeloError.message("这几张图片都没有修改成功，要求和原图已保留。") }
+        let summary = (["已逐张修改 \(total - failures.count)/\(total) 张。"] + failures).joined(separator: "\n")
+        return ModelReply(text: summary, images: images, imageReferences: owners)
+    }
     func armTeam(_ team: PhoneTeamPlan?, chatID: String) { pendingTeams[chatID] = team }
+    /// A supplement typed during a reply. The current request cannot take text half-way, so it stops
+    /// and restarts at once with the question plus "补充：…"; if the reply already finished, the
+    /// supplement is sent as the next message instead.
+    func supplement(_ text: String, chatID: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, isSending(chatID), let run = runs[chatID] else { return }
+        pendingSupplements[chatID] = [pendingSupplements[chatID], clean].compactMap { $0 }.joined(separator: "\n")
+        stage(run.runID, id: "supplement", name: "收到补充，按补充重新开始", status: "completed", output: String(clean.prefix(200)))
+        rejectApprovals(chatID: chatID)
+        run.task?.cancel()
+    }
+    private func applySupplement(_ text: String, chatID: String, finished: Bool, inputs: (video: VideoDigest?, team: PhoneTeamPlan?)) {
+        guard let index = chats.firstIndex(where: { $0.id == chatID }) else { return }
+        if finished || chats[index].messages.last?.role != "user" { send(text, chatID: chatID); return }
+        let original = chats[index]
+        chats[index].messages[chats[index].messages.count - 1].content += "\n\n补充：" + text
+        do { try save() } catch { chats[index] = original; self.error = error.localizedDescription; return }
+        runInputs[chatID] = inputs
+        send("", chatID: chatID, retry: true)
+    }
+    /// Keeps a studied video as a knowledge note any Agent can use later.
+    @discardableResult func saveVideoKnowledge(_ digest: VideoDigest) -> Bool {
+        updatePreferences { p in p.knowledge = (p.knowledge ?? []) + [VideoStudy.knowledge(digest)] }
+    }
     func teamState(for chatID: String) -> AgentTeam.LeadState { AgentTeam.leadState(agent(for: chatID), agents: preferences.agents) }
     /// Same orchestration as the desktop: members in tick order, then the lead
     /// writes the reply. Members use text and, when both the lead and the member
@@ -436,7 +547,8 @@ import SwiftUI
         let name: @Sendable (String) -> String = { id in agents.first { $0.id == id }?.name ?? id }
         stage(runID, id: "team", name: "团队协作", status: "running", output: "由「\(lead.name)」发起：" + plan.members.map(name).joined(separator: " → "))
         let leadWeb = permissions.allows(lead.id, .network)
-        let outcome = await AgentTeam.run(plan, task: task, call: { [weak self] call in
+        let deadline = Date().addingTimeInterval(AgentTeam.timeBudget)
+        var outcome = await AgentTeam.run(plan, task: task, deadline: deadline, call: { [weak self] call in
             guard let member = agents.first(where: { $0.id == call.memberID }) else { throw AgentTeam.Failure.invalid("团队成员 Agent 不存在：\(call.memberID)") }
             await MainActor.run { self?.stage(runID, id: "team:\(call.memberID):\(call.round)", name: "\(member.name) · 成员执行", status: "running", output: call.round > 1 ? "第 \(call.round) 轮" : "") }
             let hints = call.hints
@@ -450,7 +562,13 @@ import SwiftUI
         var text = AgentTeam.digest(outcome, name: name)
         if !outcome.timedOut && !outcome.results.isEmpty {
             stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "running")
-            let summary = try? await ask(lead, lead.prompt + "\n\n" + AgentTeam.summaryInstruction, AgentTeam.summaryInput(task: task, outcome: outcome, name: name), false)
+            let input = AgentTeam.summaryInput(task: task, outcome: outcome, name: name)
+            let final = try await AgentTeam.summarize(deadline: deadline) {
+                try await ask(lead, lead.prompt + "\n\n" + AgentTeam.summaryInstruction, input, false)
+            }
+            outcome.timedOut = final.timedOut
+            if final.timedOut { text = AgentTeam.digest(outcome, name: name) }
+            let summary = final.text
             try Task.checkCancellation()
             if let summary, AgentTeam.usableSummary(summary) { text = summary; stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "completed", output: "已写出最终答复") }
             else { stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "failed", output: "汇总未完成，改用按交接记录生成的摘要") }
@@ -459,7 +577,7 @@ import SwiftUI
         return ModelReply(text: text)
     }
     func importImage(_ data: Data, title: String = "参考图片") throws -> LocalImage {
-        let image = try imageLibrary.store(data, title: title); imageRevision += 1; return image
+        let image = try imageLibrary.store(data, title: title, photo: true); imageRevision += 1; return image
     }
     func transformImage(_ image: LocalImage, operation: String) throws -> LocalImage {
         let result = try imageLibrary.transformed(image, operation: operation); imageRevision += 1; return result

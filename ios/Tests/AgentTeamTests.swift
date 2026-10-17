@@ -41,6 +41,27 @@ final class Counter: @unchecked Sendable { var calls: [String] = []; let lock = 
         assert(timed.timedOut && !timed.ok && timed.results.map(\.handoff.status) == ["budget-exceeded", "budget-exceeded"])
         assert(AgentTeam.digest(timed, name: { $0 }).hasPrefix("团队用完了总预算"))
 
+        // Summary shares the original deadline, cancels its provider, and does not
+        // invoke a provider after expiry. A second request gets no fresh budget.
+        let summaryCalls = Counter()
+        let shortDeadline = Date().addingTimeInterval(0.12)
+        let summary = try! await AgentTeam.summarize(deadline: shortDeadline) {
+            summaryCalls.add("start")
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+            catch { summaryCalls.add("cancelled"); throw error }
+            return "late"
+        }
+        assert(summary.timedOut && summary.text == nil)
+        assert(summaryCalls.calls == ["start", "cancelled"])
+        let expired = try! await AgentTeam.summarize(deadline: shortDeadline) { summaryCalls.add("unexpected"); return "x" }
+        assert(expired.timedOut && summaryCalls.calls.count == 2)
+        let good = try! await AgentTeam.summarize(deadline: Date().addingTimeInterval(2)) { "finished" }
+        assert(good.text == "finished" && !good.timedOut)
+        let stoppedSummary = Task { try await AgentTeam.summarize(deadline: Date().addingTimeInterval(2)) { summaryCalls.add("unexpected"); return "x" } }
+        stoppedSummary.cancel()
+        do { _ = try await stoppedSummary.value; assertionFailure("cancel must propagate") } catch { assert(error is CancellationError) }
+        assert(summaryCalls.calls.count == 2)
+
         // Cancellation before start calls no member.
         let none = Counter()
         let cancelled = Task { await AgentTeam.run(plan, task: "t") { call in none.add(call.memberID); return "x" } }

@@ -28,6 +28,45 @@ function toolOutput(result, maxOutputChars) {
   });
 }
 
+const CONDENSED_MARKER = '[Earlier tool output condensed to fit the context budget; call the tool again for the full result.]';
+
+function condenseOutput(outputJson, maxChars) {
+  try {
+    const parsed = JSON.parse(outputJson);
+    const text = String(parsed.output ?? '');
+    if (text.length <= maxChars) return outputJson;
+    return JSON.stringify({ ...parsed, output: text.slice(0, maxChars) + '\n' + CONDENSED_MARKER });
+  } catch {
+    return outputJson.length > maxChars ? outputJson.slice(0, maxChars) + '\n' + CONDENSED_MARKER : outputJson;
+  }
+}
+
+/**
+ * Shrink older tool results inside the current turn's chain so a long tool
+ * loop can keep going instead of failing with CONTEXT_BUDGET_EXCEEDED after
+ * the tools already ran (2026-10-17 audit C-8). The newest `keepRecentResults`
+ * result messages are left intact; call ids are never touched so the
+ * Responses chain stays valid.
+ */
+export function compactToolChain(messages = [], { keepRecentResults = 2, maxOutputChars = 600 } = {}) {
+  const resultIndices = [];
+  messages.forEach((message, index) => { if (message?.isToolResult) resultIndices.push(index); });
+  const protect = new Set(resultIndices.slice(-keepRecentResults));
+  let changed = false;
+  const next = messages.map((message, index) => {
+    if (!message?.isToolResult || protect.has(index)) return message;
+    if (Array.isArray(message.functionCallOutputs)) {
+      const outputs = message.functionCallOutputs.map(item => ({ ...item, output: condenseOutput(String(item.output ?? ''), maxOutputChars) }));
+      if (outputs.some((item, i) => item.output !== message.functionCallOutputs[i].output)) { changed = true; return { ...message, functionCallOutputs: outputs }; }
+      return message;
+    }
+    const content = typeof message.content === 'string' ? message.content : '';
+    if (content.length > maxOutputChars) { changed = true; return { ...message, content: content.slice(0, maxOutputChars) + '\n' + CONDENSED_MARKER }; }
+    return message;
+  });
+  return { messages: next, changed };
+}
+
 // One instance per loop. Aliases and call identities never leak between chats,
 // roles or skills. Native protocol data lives only in this turn's transient messages.
 export function createFunctionCallingSession(config, tools = []) {

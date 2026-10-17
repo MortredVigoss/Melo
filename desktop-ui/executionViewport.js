@@ -21,7 +21,7 @@ export function executionCameraFrame(definitions, aspect, focus, zoom = 1) {
 // Bound to the scene only. Scrollable result/inspection surfaces and the rest
 // of the chat retain their normal scrolling behavior.
 export function bindExecutionZoom(stage, { getZoom, setZoom, overview }) {
-  const excluded = target => target?.closest?.('.execution-inspector,.execution-candidates,.execution-search-trail,input,textarea,select,[contenteditable="true"]');
+  const excluded = target => target?.closest?.('.execution-inspector,.execution-candidates,.execution-search-trail,.execution-reasoning-records,.execution-outcomes,input,textarea,select,[contenteditable="true"]');
   let gestureBase = null;
   const wheel = event => {
     if (excluded(event.target) || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
