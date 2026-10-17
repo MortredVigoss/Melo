@@ -1,0 +1,57 @@
+package com.melo.android
+
+import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.ServiceTestRule
+import com.melo.android.core.SharedCoreRuntime
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+
+class SharedAgentCoreTest {
+    private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
+    @get:Rule val service = ServiceTestRule()
+
+    @Test fun samePackagedBundlePassesTheSharedConformanceFixtures() = runBlocking {
+        val fixtures = InstrumentationRegistry.getInstrumentation().context.assets.open("conformance.json").bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonArray }
+        SharedCoreRuntime.open(app).use { runtime ->
+            assertEquals(64, runtime.bundleHash.length)
+            for (fixture in fixtures) {
+                val row = fixture.jsonObject
+                val actual = runtime.evaluate(row.getValue("input").jsonObject)
+                assertEquals(row.getValue("name").jsonPrimitive.content, row["ok"], actual["ok"])
+                val value = actual[if (actual["ok"]?.jsonPrimitive?.boolean == true) "value" else "error"]!!.jsonObject
+                for ((key, expected) in row.getValue("expected").jsonObject) assertEquals("${row["name"]}: $key", expected, value[key])
+            }
+        }
+    }
+
+    @Test fun namedDataPreservesChineseAndCannotExecuteMessageContents() = runBlocking {
+        SharedCoreRuntime.open(app).use { runtime ->
+            val result = runtime.evaluate(buildJsonObject {
+                put("version", 1); put("op", "plan")
+                put("request", buildJsonObject { put("text", "');throw new Error('injected');// 中文 😀") })
+            })
+            assertEquals(true, result["ok"]!!.jsonPrimitive.boolean)
+        }
+    }
+
+    @Test fun closingOneChatDoesNotCloseAnotherChatOrTheApplicationSandbox() = runBlocking {
+        val first = SharedCoreRuntime.open(app)
+        SharedCoreRuntime.open(app).use { second ->
+            first.close()
+            assertTrue(runCatching { first.evaluateJSON("{}") }.isFailure)
+            assertTrue(second.evaluate(buildJsonObject { put("version", 1); put("op", "hello") })["ok"]!!.jsonPrimitive.boolean)
+        }
+        SharedCoreRuntime.open(app).use { assertTrue(it.evaluateJSON("{\"version\":1,\"op\":\"hello\"}").contains("melo-local-core")) }
+    }
+
+    @Test fun serviceRunsCoreWithoutAnActivityOrVisibleWebView() = runBlocking {
+        val binder = service.bindService(Intent(app, AgentCoreProbeService::class.java)) as AgentCoreProbeService.Probe
+        val result = withTimeout(15_000) { binder.evaluate("{\"version\":1,\"op\":\"hello\"}").await() }
+        assertTrue(result.contains("melo-local-core"))
+    }
+}

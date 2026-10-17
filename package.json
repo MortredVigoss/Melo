@@ -10,6 +10,9 @@
     "melo": "./src/index.js"
   },
   "scripts": {
+    "build:agent-core": "node scripts/build-agent-core.mjs",
+    "check:agent-core": "node scripts/build-agent-core.mjs --check",
+    "test:agent-core": "node --test shared/agent/*.test.js",
     "build:android": "node scripts/android.mjs build",
     "test:android": "node scripts/android.mjs test",
     "check:android": "node scripts/android.mjs check",

@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -30,22 +32,37 @@ android {
     }
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets.getByName("test").resources.srcDir("../../shared/protocol")
+    sourceSets.getByName("androidTest").assets.srcDir("../../shared/agent/fixtures")
     packaging.resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1")
 }
 
 abstract class PrepareSharedAssets : DefaultTask() {
     @get:InputDirectory abstract val sceneInput: DirectoryProperty
     @get:InputFile abstract val schemaInput: RegularFileProperty
+    @get:InputDirectory abstract val coreInput: DirectoryProperty
+    @get:InputDirectory abstract val coreSources: DirectoryProperty
     @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
     @TaskAction fun prepare() {
+        val manifest = coreInput.file("manifest.json").get().asFile.readText()
+        val entries = Regex("\"(shared/agent/[^\"]+)\"\\s*:\\s*\"([a-f0-9]{64})\"").findAll(manifest).toList()
+        require(entries.isNotEmpty()) { "Missing Agent Core source manifest" }
+        for (entry in entries) {
+            val source = coreSources.file(entry.groupValues[1].removePrefix("shared/agent/")).get().asFile.canonicalFile
+            require(source.toPath().startsWith(coreSources.get().asFile.canonicalFile.toPath())) { "Invalid Core source path" }
+            val hash = MessageDigest.getInstance("SHA-256").digest(source.readBytes()).joinToString("") { "%02x".format(it) }
+            require(hash == entry.groupValues[2]) { "Agent Core bundle is stale; run npm run build:agent-core" }
+        }
         sceneInput.get().asFile.copyRecursively(outputDirectory.dir("scene").get().asFile, overwrite = true)
         val protocol = outputDirectory.dir("protocol").get().asFile.apply { mkdirs() }
         schemaInput.get().asFile.copyTo(protocol.resolve("sync.schema.json"), overwrite = true)
+        coreInput.get().asFile.copyRecursively(outputDirectory.dir("agent-core").get().asFile, overwrite = true)
     }
 }
 val sharedAssets = tasks.register<PrepareSharedAssets>("prepareSharedAssets") {
     sceneInput.set(layout.projectDirectory.dir("../../ios/Melo/Scene"))
     schemaInput.set(layout.projectDirectory.file("../../shared/protocol/sync.schema.json"))
+    coreInput.set(layout.projectDirectory.dir("../../shared/agent/dist"))
+    coreSources.set(layout.projectDirectory.dir("../../shared/agent"))
     outputDirectory.set(layout.buildDirectory.dir("generated/shared-assets"))
 }
 androidComponents.onVariants { variant ->
@@ -62,6 +79,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.webkit:webkit:1.17.1")
+    implementation("androidx.javascriptengine:javascriptengine:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")

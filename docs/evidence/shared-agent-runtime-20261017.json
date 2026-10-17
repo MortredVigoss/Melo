@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-17",
+  "stage": "local-runtime-and-turn-guards",
+  "baseline": "3f47e292ec866cfc5fdd9e40153f5d197f89870a",
+  "bundle": {
+    "version": 1,
+    "sha256": "6e68a1a3551422b968e0a1def74d3660b9af8822a0df6e7c9a77c9788fdad7ed",
+    "sources": {
+      "shared/agent/index.js": "dbd6362d2a7cb93faf73faecb78ff66c72a5aee0775770512d96ec3b93201b34",
+      "shared/agent/turn.js": "2fa0a8b5f202337df9308fa210e519b62771124ca45c8c1d0e8723bbb6d06773",
+      "shared/agent/search.js": "221da4805ef8740063f06b1e03d94e54a1aa46a1fe1379277e1201e73dadb495",
+      "shared/agent/retrieval/requestPolicy.js": "36542792783f7340bbd5789f7d08435078096a3c402d36217b5697b82389cb1e",
+      "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
+      "shared/agent/retrieval/searchRouter.js": "9ff1e3f5d6f0313e336886c7dc9b29d3b0b22fd83e7d3cb90200a123b581fb84",
+      "shared/agent/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644"
+    }
+  },
+  "checks": {
+    "coreNode": {
+      "passed": 26,
+      "log": ".tmp/agent-core-audit-20261017/core-node.log"
+    },
+    "productionNode": {
+      "passed": 42,
+      "log": ".tmp/agent-core-audit-20261017/core-production-node.log"
+    },
+    "androidJVM": {
+      "tests": 115,
+      "failures": 0
+    },
+    "androidRuntime": {
+      "passed": 34,
+      "sharedFixtures": 20,
+      "serial": "emulator-5570",
+      "adbPort": 5048,
+      "log": ".tmp/agent-core-audit-20261017/core-production-emulator.log"
+    },
+    "lintDebug": "passed",
+    "debugAndTestApks": "passed",
+    "ios": {
+      "adapterAndConformanceSource": true,
+      "nativeCompilation": "not-run-no-macOS",
+      "productionEntryMigrated": false
+    },
+    "finalNode": {
+      "passed": 63,
+      "log": ".tmp/agent-core-audit-20261017/core-final-node.log"
+    },
+    "syntax": {
+      "files": 898,
+      "passed": true
+    },
+    "releaseR8": "passed",
+    "dailyGate": {
+      "passed": false,
+      "tests": 3729,
+      "pass": 3686,
+      "fail": 22,
+      "cancelled": 1,
+      "skipped": 20,
+      "log": ".tmp/agent-core-audit-20261017/core-daily.log",
+      "followUp": "Core/runtime and production Node checks 63/63; source-wrapper routing repaired; browser Persona serial passes, density failure reproduces at ff0f128 baseline; filesystem suites 71/71 with TMPDIR=/dev/shm; Ruby executable absent"
+    }
+  },
+  "boundaries": [
+    "No live model requests or private phone data used",
+    "Search routing reducer is implemented; production Search migration remains pending",
+    "Android Chat and Device Probe plus Node Main use shared Turn reducer; platform orchestration and existing native safety checks remain",
+    "iOS packaged bundle and Swift adapter/tests added, native validation and production hook pending",
+    "No tokens, images, raw device trees or credentials persisted by Core",
+    "No personal phone install, push or git pp in this stage"
+  ]
+}

@@ -13,6 +13,7 @@ test('new nested tests enter discovery without editing package or a hand-maintai
 });
 test('ordinary gate invokes discovery and the new architecture, sync and UI tests are included',async()=>{
   const {files}=await discoverRunnableTests();
+  assert.ok(files.includes('shared/agent/conformance.test.js'));
   for(const path of ['src/state/residentState.test.js','src/runtime/derivedIndexing.test.js','src/http/bootstrapTransport.test.js','mobile-sync/audit-round3.test.js','mobile-sync/http.test.js','mobile-sync/taskProtocol.test.js','desktop-ui/bootstrapPatch.test.js'])assert.ok(files.includes(path),path);
   const pkg=JSON.parse(await readFile('package.json','utf8'));
   assert.equal(pkg.scripts['test:unit'],'node scripts/run-unit-tests.js');

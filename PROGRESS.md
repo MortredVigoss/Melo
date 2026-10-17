@@ -1,3 +1,9 @@
+## 2026-10-17 — 以本机运行和真实入口验证共享，而不只对齐 Schema
+
+Codex 将同源 Core 接到 Node Main 与 Android Chat / Device Probe；20 个 Conformance Fixtures、34 Emulator runtime、115 JVM / Lint / Debug / R8 通过。关闭某个 Chat 不影响其他 isolate，所有测试只用本地 Fixture。
+广泛 gate 暴露本次静态资源 wrapper 路径回归，已修并复跑浏览器；旧排版失败在独立 baseline 也复现，inode suite 在 tmpfs 71/71，Ruby 缺失仍单列，不将日常 gate 称全绿。
+iOS 仅 bundle / Adapter / 测试源码和 JS renderer gate，缺 macOS 原生验收，暂未切换其生产 Loop；Search executor / 配置与 Memory / Context 等仍待迁移，未装私人手机或推送。
+
 ## 2026-10-17 — 先保留原行为，建立可移植 Core 的真实源码入口
 
 按仓库移植约定逐字提取纯决策，旧 Node 入口保留兼容导出；Router 仅以 factory 捕获 Host 依赖。逐字比对已确认，策略改变留给独立提交。

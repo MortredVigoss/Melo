@@ -7,6 +7,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.*
 import java.time.ZonedDateTime
+import com.melo.android.core.SharedCoreTurn
 
 /** Built-in skill: instructions select a tool; only the host can grant device access. */
 object ChatPhoneUse {
@@ -68,16 +69,19 @@ class ChatToolLoop(
     private val next: suspend (List<JsonObject>) -> DeviceTurn,
     private val invoke: suspend (JsonObject) -> DeviceToolResult,
     private val onPhase: (String) -> Unit = {},
+    private val core: SharedCoreTurn? = null,
 ) {
     suspend fun run(history: MutableList<JsonObject>): ModelReply {
         val goals = mutableSetOf<String>()
         val callIds = mutableSetOf<String>()
         repeat(4) { index ->
             currentCoroutineContext().ensureActive()
+            core?.request()
             val turn = next(history)
-            if (turn.calls.isEmpty()) return ModelReply(turn.text, turn.model)
+            if (turn.calls.isEmpty()) { core?.event("complete"); return ModelReply(turn.text, turn.model) }
             require(index < 3) { "本轮手机任务已达到上限；已完成步骤保留，请缩小目标后继续。" }
             val call = turn.calls.single()
+            core?.calls(turn.calls.map { it.id to it.name })
             require(call.id.isNotBlank() && call.id.length <= 256 && callIds.add(call.id)) { "模型返回了无效或重复的调用编号，已停止，未重复执行。" }
             require(call.name == ChatPhoneUse.name) { "普通 Chat 只能调用已注册的 Phone Use。" }
             ChatPhoneUse.validate(call.arguments)
@@ -86,6 +90,7 @@ class ChatToolLoop(
             onPhase("正在使用手机：${call.arguments.text("goal").take(120)}")
             val result = invoke(call.arguments)
             currentCoroutineContext().ensureActive()
+            core?.result(call.id, result.ok)
             if (!result.ok) return ModelReply("手机任务未完成：" + result.data.text("error").ifBlank { result.data.text("summary").ifBlank { "请检查权限、页面或执行记录。" } }, turn.model)
             history += turn.wire
             DeviceAgentClient.appendResult(history, protocol, call, result)

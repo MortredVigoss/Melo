@@ -6,6 +6,7 @@ import com.melo.android.BuildConfig
 import com.melo.android.data.*
 import com.melo.android.network.*
 import com.melo.android.device.*
+import com.melo.android.core.SharedCoreTurn
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -72,6 +73,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 val result = withContext(Dispatchers.IO) {
                     if (!phoneUse) client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
                     else withTimeout(15 * 60 * 1000L) {
+                        SharedCoreTurn.open(context, run.id, chatId, listOf(ChatPhoneUse.name), rounds = 4, timeoutMs = 900_000).use { core ->
                         val tools = DeviceAgentClient(BuildConfig.DEBUG, client.http)
                         ChatToolLoop(connection.protocol,
                             next = { history -> tools.next(connection, key, history, skillInstructions, chatTools = true) },
@@ -89,7 +91,9 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 receipt
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(partial = phase) } },
+                            core = core,
                         ).run(ChatPhoneUse.history(selected, connection.protocol, repository::imageData))
+                        }
                     }
                 }
                 currentCoroutineContext().ensureActive()

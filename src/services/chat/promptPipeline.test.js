@@ -127,7 +127,7 @@ test('greetings avoid tool prompts and verification; high-risk writing retains b
   assert.equal(writing.allowLiveSpeech, false);
 });
 
-test('tool exhaustion cannot publish XML as an answer', async () => {
+test('identical successful tools stop before exhaustion and cannot publish XML as an answer', async () => {
   let calls = 0;
   const result = await runChatAgentExecutionGraph({
     ...fixture('What happened to the release?'), _dependencies: { getEmbedding: async () => null, createReply: async () => {
@@ -135,8 +135,8 @@ test('tool exhaustion cannot publish XML as an answer', async () => {
       return `<tool_call>{"id":"call${calls}","name":"test_reference","arguments":{}}</tool_call>`;
     } },
   });
-  assert.equal(calls, 10);
-  assert.match(result.normalizedReply.content, /execution limit/);
+  assert.equal(calls, 6);
+  assert.match(result.normalizedReply.content, /NO_PROGRESS/);
   assert.doesNotMatch(result.normalizedReply.content, /<tool_call>/);
 });
 

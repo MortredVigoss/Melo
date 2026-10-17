@@ -121,6 +121,8 @@ import { collectVerificationEvidence } from '../../retrieval/verificationEvidenc
 import { fitRequestContext, resolveContextBudget, attachTurnContextToMessages } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
 import { createFunctionCallingSession, compactToolChain } from '../../tools/functionCalling.js';
+import { createCoreTurn } from '../../runtime/sharedAgentCore.js';
+import { createHash } from 'node:crypto';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -161,6 +163,9 @@ export async function runChatAgentExecutionGraph({
     if (!context) throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
   }
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
+  // Captured once for the whole graph, including tools and verification.
+  const turnTimeoutMs = _dependencies.turnTimeoutMs || 600_000;
+  signal = AbortSignal.any([signal, context.signal, AbortSignal.timeout(turnTimeoutMs)].filter(Boolean));
   home ||= context.home;
   const env = context.env;
   const firstToken = startStage('turn.prepare_to_first_token');
@@ -660,6 +665,7 @@ export async function runChatAgentExecutionGraph({
         const skillToolsById = new Map((graphState.skillTools || []).map(t => [t.id, t]));
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
         const allowedToolIdList = [...visibleToolIds];
+        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: turnTimeoutMs } });
         let allowedDispatchTools = null;
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;
@@ -671,6 +677,8 @@ export async function runChatAgentExecutionGraph({
         };
 
         for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+          signal.throwIfAborted();
+          if (coreTurn.update('request') !== 'running') break;
           // On subsequent iterations, we're streaming "thinking" not the final
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
@@ -738,14 +746,17 @@ export async function runChatAgentExecutionGraph({
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
 
+          signal.throwIfAborted();
           const turn = functionSession.parse(rawReply);
           const { thinking, toolCalls } = turn;
 
           // No tool calls → this is the final response
           if (!toolCalls.length) {
+            coreTurn.update('complete');
             finalReply = turn.text;
             break;
           }
+          coreTurn.update('calls', { calls: toolCalls });
 
           // Emit SSE event so the UI can show tool execution status
           if (typeof sseEmitter === 'function') {
@@ -784,6 +795,7 @@ export async function runChatAgentExecutionGraph({
           }
           const executableCalls = toolCalls.map(tc => {
             let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || getTool(tc.name);
+            if (!coreTurn.permits(tc.id)) tool = null;
             if (tool && !visibleToolIds.has(tool.id)) {
               tool = null;
             }
@@ -891,8 +903,17 @@ export async function runChatAgentExecutionGraph({
           for (const { call, result } of allResults) {
             accumulatedToolResults.push(projectToolResultForPersist(call, result));
             evidencePairs.push({ call, result, receivedAt: nowIso() });
+            coreTurn.update('result', { callId: call.id, ok: result.ok === true,
+              progressKey: createHash('sha256').update(call.name + '\n' + String(result.output || result.error || '')).digest('hex') });
           }
           if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
+          if (coreTurn.status !== 'running') {
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', name: '执行已停止', status: 'blocked', output: coreTurn.reason });
+            finalReply = /[\u3400-\u9fff]/.test(latestUserMessage)
+              ? `本轮已停止（${coreTurn.reason}）。已有操作和回执已保留，尚未确认任务完成；请调整目标或补充信息后继续。`
+              : `This turn stopped (${coreTurn.reason}). Existing actions and receipts are preserved; task completion is unverified. Please adjust the request or supply more information.`;
+            break;
+          }
 
           // If the last iteration was tool calls only, the next pass will produce
           // the final prose reply. Continue loop.

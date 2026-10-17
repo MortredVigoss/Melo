@@ -1,0 +1,719 @@
+[
+  {
+    "name": "plain chat does not touch network or screen",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "1+1",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "none",
+      "tools": []
+    }
+  },
+  {
+    "name": "unknown hosted support never implies web search",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "Surry Hills 有什么好吃的餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "unavailable",
+      "reason": "SEARCH_UNAVAILABLE",
+      "tools": []
+    }
+  },
+  {
+    "name": "verified hosted search needs no phone",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索 Surry Hills 现在营业的餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "verified"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "hosted-search",
+      "tools": [],
+      "backend": "hosted"
+    }
+  },
+  {
+    "name": "configured HTTP search uses a function tool",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索 Surry Hills 餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      }
+    },
+    "expected": {
+      "route": "http-search",
+      "tools": [
+        "web_search"
+      ]
+    }
+  },
+  {
+    "name": "explicit Maps launch preserves phone intent",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "打开 Google Maps 搜索餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "phone",
+      "tools": [
+        "phone_use"
+      ]
+    }
+  },
+  {
+    "name": "explicit Xiaohongshu preserves source",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "用小红书搜索 Surry Hills 餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "phone",
+      "tools": [
+        "phone_use"
+      ]
+    }
+  },
+  {
+    "name": "network denial is respected",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "不要联网，只根据对话回答餐厅问题",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "verified"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "none",
+      "tools": []
+    }
+  },
+  {
+    "name": "direct URL is fetched without broad search",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "读取 https://example.com/menu",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "fetch-url",
+      "tools": [
+        "fetch_url"
+      ],
+      "urls": [
+        "https://example.com/menu"
+      ]
+    }
+  },
+  {
+    "name": "no grant cannot turn into hosted search",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索最新新闻",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [],
+          "hostedSearch": "verified"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "unavailable",
+      "reason": "SEARCH_NOT_GRANTED",
+      "tools": []
+    }
+  },
+  {
+    "name": "quoted device instructions are data",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "翻译 \"打开微信搜索餐厅\"",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {}
+      }
+    },
+    "expected": {
+      "route": "none",
+      "tools": []
+    }
+  },
+  {
+    "name": "browser fallback requires explicit config",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索 Surry Hills 餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "browserFallback": true
+          }
+        }
+      }
+    },
+    "expected": {
+      "route": "browser-search",
+      "tools": [
+        "web_search"
+      ]
+    }
+  },
+  {
+    "name": "protocol version mismatch is explicit",
+    "ok": false,
+    "input": {
+      "version": 99,
+      "op": "hello"
+    },
+    "expected": {
+      "code": "PROTOCOL_VERSION"
+    }
+  },
+  {
+    "name": "unknown operation is explicit",
+    "ok": false,
+    "input": {
+      "version": 1,
+      "op": "read_credentials"
+    },
+    "expected": {
+      "code": "UNKNOWN_OPERATION"
+    }
+  },
+  {
+    "name": "reused call ID across rounds",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "calls",
+        "calls": [
+          {
+            "id": "previous",
+            "name": "read"
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": false,
+    "expected": {
+      "code": "DUPLICATE_CALL_ID"
+    }
+  },
+  {
+    "name": "unknown tool cannot receive an effect permit",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "calls",
+        "calls": [
+          {
+            "id": "new",
+            "name": "write"
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "permitted": [],
+      "pending": [
+        "new"
+      ]
+    }
+  },
+  {
+    "name": "deadline precedes effects",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "calls",
+        "calls": [
+          {
+            "id": "new",
+            "name": "read"
+          }
+        ]
+      },
+      "now": 2000
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "DEADLINE_EXCEEDED"
+    }
+  },
+  {
+    "name": "cancel closes the turn",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "cancel"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "status": "cancelled",
+      "pending": []
+    }
+  },
+  {
+    "name": "late result after cancellation",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "cancelled",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "result",
+        "callId": "previous",
+        "ok": true
+      },
+      "now": 1000
+    },
+    "ok": false,
+    "expected": {
+      "code": "TURN_CLOSED"
+    }
+  },
+  {
+    "name": "foreign run cannot complete",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "another-run",
+        "turnId": "turn-a",
+        "type": "complete"
+      },
+      "now": 1000
+    },
+    "ok": false,
+    "expected": {
+      "code": "TURN_MISMATCH"
+    }
+  },
+  {
+    "name": "unverified final feedback retains round count",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 2000,
+        "limits": {
+          "rounds": 3,
+          "callsPerRound": 2,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [
+          "previous"
+        ],
+        "pending": [],
+        "permitted": [],
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "run-a",
+        "turnId": "turn-a",
+        "type": "feedback"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "awaitingModel": false,
+      "rounds": 1
+    }
+  }
+]

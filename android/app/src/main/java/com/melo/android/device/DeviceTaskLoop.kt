@@ -1,5 +1,7 @@
 package com.melo.android.device
 
+import com.melo.android.core.SharedCoreTurn
+
 import com.melo.android.data.*
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -64,6 +66,7 @@ class DeviceTaskLoop(
     private val onPhase: (String) -> Unit = {},
     private val maxSteps: Int = 30,
     private val onResult: (JsonObject, DeviceToolResult) -> Unit = { _, _ -> },
+    private val core: SharedCoreTurn? = null,
 ) {
     suspend fun run(goal: String): DeviceOutcome {
         val history = DeviceAgentClient.initial(protocol, goal)
@@ -79,6 +82,8 @@ class DeviceTaskLoop(
             currentCoroutineContext().ensureActive()
             onPhase("模型正在决定第 $step 步…")
             DeviceContextBudget.compact(history, protocol)
+            if (core?.active == false) return DeviceOutcome("blocked", error = "共享 Agent 已停止（${core.reason}）。已有步骤保留。")
+            core?.request()
             val turn = next(history)
             currentCoroutineContext().ensureActive()
             for (call in turn.calls) {
@@ -86,6 +91,7 @@ class DeviceTaskLoop(
             }
             history += turn.wire
             if (turn.calls.isEmpty()) {
+                core?.event("feedback")
                 if (previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
                     discoveryRecovery = true; recovery++
                     history += message("The last open_app failed. Before concluding the app is unavailable, search ALL apps with list_apps(query=shorter name/alternate language/package fragment), inspect candidates and pagination, or use home + observe and launcher search. Never repeat the same failing arguments or open unrelated candidates. Do not install apps or change permissions. Keep the user's goal.")
@@ -99,6 +105,7 @@ class DeviceTaskLoop(
                 return DeviceOutcome(if (previous?.ok == false) "blocked" else "needs_user", turn.text.take(2000), "模型未提交可校验结果，未标记为完成。")
             }
             val call = turn.calls.single()
+            core?.calls(turn.calls.map { it.id to it.name })
             val action = call.arguments.text("action")
             onPhase("第 $step 步 · $action")
             val started = System.nanoTime()
@@ -134,6 +141,7 @@ class DeviceTaskLoop(
             onStep(DeviceStep(action, result.ok, detail, callId = call.id, durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code"), recoveryCount = recovery))
             DeviceAgentClient.appendResult(history, protocol, call, result)
             onResult(call.arguments, result)
+            core?.result(call.id, result.ok)
             launches.record(call.arguments, result)
             if (result.data.text("code") == "foreground_window_unavailable") return DeviceOutcome("needs_user", error = result.data.text("error"))
             if (repeatedLaunch) return DeviceOutcome("blocked", error = result.data.text("error"))

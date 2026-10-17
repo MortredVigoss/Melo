@@ -410,7 +410,9 @@ const coreRoutes = createRouteRegistry([
     } },
   { method: 'GET', paths: ["/shared/localPreferences.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'src','domain','settings','localPreferences.js')).pipe(response); return; } },
   { method: 'GET', paths: ["/shared/urlDetector.js","/shared/textUrls.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const absPath = join(rootDir, 'src', 'media', url.pathname.endsWith('/textUrls.js') ? 'textUrls.js' : 'urlDetector.js');
+      const absPath = url.pathname.endsWith('/textUrls.js')
+        ? join(rootDir, 'shared', 'agent', 'media', 'textUrls.js')
+        : join(rootDir, 'src', 'media', 'urlDetector.js');
       try {
         const fileStat = await stat(absPath);
         if (!fileStat.isFile()) throw new Error('not a file');

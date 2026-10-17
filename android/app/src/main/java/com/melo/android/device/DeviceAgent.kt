@@ -1,5 +1,7 @@
 package com.melo.android.device
 
+import com.melo.android.core.SharedCoreTurn
+
 import android.content.Context
 import android.widget.Toast
 import com.melo.android.BuildConfig
@@ -153,13 +155,14 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     device.configureScreenshots(screenshots)
                     val recorder = ScriptRecorder(trimmed, prefix, prefixValues)
                     val probeGoal = if (prefix.isEmpty()) trimmed else trimmed + "\nHost recovery: ${prefix.size} script steps have ALREADY executed (${prefix.joinToString { it.action }}). Continue only from the current observed page. Do not replay prior effects or restart the script. Verify before finishing."
-                    val result = DeviceTaskLoop(selected.protocol,
+                    val result = SharedCoreTurn.open(context, started.id, chatId ?: started.id, listOf("android_device"), rounds = 30).use { core -> DeviceTaskLoop(selected.protocol,
                         next = { history -> countRequest(); client.next(selected, key, history, instructions) },
                         execute = executeDevice,
                         onStep = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) },
                         onPhase = { phase -> mutable.update { it.copy(phase = phase) } },
                         onResult = recorder::record,
-                    ).run(probeGoal)
+                        core = core,
+                    ).run(probeGoal) }
                     if (result.status == "achieved" && cacheEnabled) {
                         pendingCache = recorder.compile(cacheScope, started.id)
                         if (pendingCache == null) run = run!!.copy(cacheNote = "任务成功；未缓存：${recorder.unsupported.ifBlank { "缺少可重放步骤。" }}")

@@ -20,7 +20,7 @@
 | Android / App Discovery | 0.5.1 (13) 已同签名覆盖 Fold6；准确名称 / 包名优先打开，小候选与显式浏览清单 | 原 10 Chat / 1 角色保留；folded 首轮 12 步受阻，退出旧搜索页后 5 步 / 23.806s 核对「设置」，两轮无 list_apps。跨包恢复 / 额外窗口恢复仍待修。[实机证据](docs/evidence/app-discovery-fold6-051-20261017.json)；113 JVM / Lint / R8 / 签名，本版前的同逻辑 runtime 40，详 verification |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
-| Shared Agent Core / Search | 用户已选择 A：同源本机 JS Core；前置 Cache / call ID 修复已落地，正在验证 Runtime | Cache 48 Node 定向检查通过；115 JVM 通过，含先 RED 后 GREEN 的跨轮重复 ID 反例。iOS 同类源码 / 测试已补，macOS 未验；[实施计划](docs/shared-agent-implementation-20261017.md)。同源 Runtime、Search 与产品迁移仍待做，不将前置修复称为核心统一 |
+| Shared Agent Core / Search | A 的 Node / Android 本机 Runtime 与 Turn Guard 已接入真实入口；Search / Context 等后续模块未迁完 | 115 JVM / Lint / Debug / R8、34 Emulator runtime 通过；20 个同源 Fixtures。iOS bundle / Adapter / 测试源码已补，缺 macOS 验证，生产入口未切换。日常 gate 有已核对环境 / baseline 失败，不能称全绿；[检查点](docs/shared-agent-runtime-20261017.md) / [实施计划](docs/shared-agent-implementation-20261017.md) |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
@@ -684,3 +684,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户已确认 A。前置修复 `ff0f128`：61 Node / 115 JVM 通过；Swift 测试源码未在 macOS 执行。
 - 纯 URL / Request Policy / Skill Catalog 已逐字移入 `shared/agent`，Search Router 函数体逐字保留并由 factory 注入 Host；旧入口兼容，专项回归通过。
 - Runtime spike / 生产接入与 Search API-first 政策仍在推进；不得用本阶段称三端已统一或已装新 APK。
+
+### 2026-10-17 — Shared Agent Core — 本机 Runtime 检查点
+
+- Node Main / Android Chat 与 Device Probe 使用同一 Turn reducer；资源有版本 / hash，Host 保留网络 / 存储 / 原生保护，Service 无 Activity 验证通过。
+- 63 Node 定向 / 115 JVM / 34 Emulator runtime / Lint / Debug / R8、898 文件语法检查通过。日常 gate 的旧环境与排版失败见专项，不称全绿。
+- iOS 仅打包 / Adapter / Conformance 源码，JS renderer gate 通过但 Swift skipped；生产入口未切换。Search、Skill 调度、Context / Memory、Task Cache 仍按计划继续，不将本阶段称整库统一。
+- 详细记录 `docs/shared-agent-runtime-20261017.md`；未访问真实模型或私人手机，隔离 Emulator / ADB 5048 已关闭，默认 USB ADB 未动；无 push / git pp。

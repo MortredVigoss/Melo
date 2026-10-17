@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Deterministic Xcode project without third-party project generators."""
 from pathlib import Path
-import hashlib, os, re
+import hashlib, os, re, json
+repository = Path(__file__).resolve().parents[2]
+core_manifest = json.loads((repository/'shared/agent/dist/manifest.json').read_text())
+for source, expected in core_manifest['sources'].items():
+    if hashlib.sha256((repository/source).read_bytes()).hexdigest() != expected:
+        raise SystemExit('Agent Core bundle is stale; run npm run build:agent-core')
 existing_project = Path(__file__).resolve().parents[1]/"Melo.xcodeproj/project.pbxproj"
 existing_text = existing_project.read_text() if existing_project.exists() else ""
 existing_bundle = re.search(r'PRODUCT_BUNDLE_IDENTIFIER\s*=\s*"?([A-Za-z0-9.-]+)', existing_text)
@@ -40,6 +45,9 @@ for resource in sorted((root/'Melo').glob('*.xcstrings')):
 scene = obj('sceneFolder', 'isa = PBXFileReference; lastKnownFileType = folder; path = Scene; sourceTree = "<group>";')
 refs.append(scene)
 resourcebuilds.append(obj('buildScene', f'isa = PBXBuildFile; fileRef = {scene};'))
+core = obj('coreFolder', 'isa = PBXFileReference; lastKnownFileType = folder; path = AgentCore; sourceTree = "<group>";')
+refs.append(core)
+resourcebuilds.append(obj('buildCore', f'isa = PBXBuildFile; fileRef = {core};'))
 app = obj('app', 'isa = PBXFileReference; explicitFileType = wrapper.application; path = Melo.app; sourceTree = BUILT_PRODUCTS_DIR;')
 srcgroup = obj('srcgroup', f'isa = PBXGroup; path = Melo; sourceTree = "<group>"; children = ({",".join(refs)},);')
 products = obj('products', f'isa = PBXGroup; name = Products; sourceTree = "<group>"; children = ({app},);')
