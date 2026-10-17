@@ -20,8 +20,9 @@ Connect Claude through Anthropic Messages, use supported OpenAI and OpenAI-compa
 | **Connect multiple model providers** | Use supported Codex OAuth connections, OpenAI-compatible APIs, Claude through Anthropic Messages, OpenRouter, or a local/custom model endpoint. Keep provider and model choices configurable. |
 | **Collaborate with Agents** | Configure each Agent's instructions, model, and capabilities. Delegate work or run sequential, parallel-research, and review teams with structured handoffs. Desktop tools and iPhone text teams follow their platform-specific capability limits. |
 | **Separate knowledge from results** | Save reference documents as knowledge, retrieve relevant passages locally, and keep automatically extracted code blocks in a separate results collection. |
-| **Recall relevant context** | Search local history and use scoped memory backed by SQLite, keyword retrieval, and an embedded multilingual semantic model. Inspect, edit, or forget stored facts. |
-| **Act on your desktop workspace** | Read and edit files, run commands, research the web, use browser tools, and invoke reusable skills or configured MCP tools, subject to permissions and available dependencies. |
+| **Recall relevant context** | Search local history and use scoped memory backed by SQLite, keyword retrieval, and an embedded multilingual semantic model. A per-project memory book and a personal profile sit in the stable prompt prefix; every reply shows which memories it drew on, and each one can be promoted to the project, to your profile, or stopped. |
+| **Keep long conversations coherent** | Early history is compacted into append-only topic cards; the model can read any card's original messages back verbatim with `read_history`, and the original text of the topic you return to is attached to that turn automatically. Compaction runs in the background. |
+| **Act on your desktop workspace** | Read and edit files, run commands, research the web, use browser tools, and invoke reusable skills or configured MCP tools, subject to permissions and available dependencies. Every tool call returns one uniform result envelope, each turn runs under a time / token / call budget, and cancelled turns leave a replayable tool trace. |
 | **Work with media** | Use supported image understanding, generation/editing, document reading, voice input, and speech output. Availability depends on the configured engine, model, and account. |
 | **Inspect task execution** | Review model and tool events, sources, results, and saved execution history in the neural task space. View live elapsed time, completion timestamps, and image progress based on saved results. Provider-supplied metadata is shown when available. |
 
@@ -31,10 +32,10 @@ Melo works alongside the model and tool ecosystems you already use. Choose a pro
 
 | Connection | Supported integration |
 | --- | --- |
-| **Anthropic / Claude** | Anthropic Messages API with an API key, including streamed text responses. |
-| **OpenAI** | OpenAI-compatible API connections and supported Codex OAuth access through their respective request paths. |
+| **Anthropic / Claude** | Anthropic Messages API with an API key, including streamed text responses and native tool use (`tools` / `tool_use` / `tool_result` with prompt caching). |
+| **OpenAI** | OpenAI-compatible API connections and supported Codex OAuth access through their respective request paths, with native Responses function calling. |
 | **OpenRouter** | API key or supported browser authorization, with the models available to that account. |
-| **Other hosted providers** | OpenAI-compatible Chat Completions endpoints, including configured connections for DeepSeek, Gemini, Kimi, Qwen, and Doubao. |
+| **Other hosted providers** | OpenAI-compatible Chat Completions endpoints, including configured connections for DeepSeek, Gemini, Kimi, Qwen, and Doubao. Tools use Melo's XML protocol by default; native Chat Completions `tools` can be enabled per connection (`toolCalling: "native"` or `MELO_CHAT_TOOLS=1`). |
 | **Local and custom models** | A reachable endpoint implementing a supported Chat Completions or Anthropic Messages protocol. |
 | **Tools and services** | MCP servers, reusable skills, and configured Discord channels, subject to Agent capabilities and permissions. |
 
@@ -50,6 +51,16 @@ Protocol compatibility is the starting point: model access, attachments, tool ca
 Synchronization is configured separately from model access. It is not an automatic hosted service, and mobile does not have every desktop tool.
 
 The optional Agent capability sync extension preserves the existing conversation sync protocol. Older sync servers can continue syncing conversations while capability settings remain pending; showing those settings on iPhone requires an updated private sync server and client. iPhone teams run directly on the phone using those collaboration settings: members make text requests, search requires local permission for both the lead and member, and the lead summarizes their handoffs. The shared time budget also covers that summary. Phone teams do not run desktop file/command tools or provide the desktop token-budget accounting; project default teams remain desktop-local.
+
+## What's new
+
+**2026-10-17 — tool calling, long conversations, and cross-conversation memory** (see [CHANGELOG](CHANGELOG.md) and the [design notes](docs/tool-conversation-memory-design-20261017.md))
+
+- Tool calls share one result envelope (`ok` / `empty` / `error` with canonical codes), the tool set no longer changes from turn to turn, and each turn runs under a run budget. Native tool calling now covers Responses, Anthropic Messages, and (opt-in) Chat Completions; MCP tools are registered per Agent with readable `mcp__server__tool` names.
+- Long conversations compact into append-only topic cards; `read_history` reads any range back verbatim; raw history is capped at 64k tokens by default (`MELO_HISTORY_WINDOW_TOKENS`); large attachments are stored as files instead of inline data.
+- Project memory book and personal profile in the prompt prefix, memory references under each reply, remote channels isolated at the SQL layer, and the desktop summary now syncs to iPhone.
+
+Updating an existing install keeps your data home; older conversations migrate their summary and attachments the next time you use them.
 
 ## Architecture
 
@@ -73,7 +84,7 @@ flowchart TD
 | `desktop-ui/` | Chat UI, settings, neural navigation, and execution views |
 | `src/services/`, `src/runtime/` | Application services, request scope, scheduling, and task lifecycle |
 | `src/providers/`, `src/openai.js` | Model connections, protocols, and response handling |
-| `src/tools/`, `src/safety/`, `src/agents/` | Tools, permissions, Agents, skills, and delegated work |
+| `src/tools/`, `src/safety/`, `src/agents/` | Tools, result envelope, protocol adapters, permissions, Agents, skills, and delegated work |
 | `src/memory/`, `src/state/`, `src/persistence/` | Retrieval, local state, checkpoints, and persistence |
 | `ios/`, `mobile-sync/`, `shared/` | iPhone client, synchronization protocol, and shared rendering/contracts |
 
@@ -154,6 +165,7 @@ The full gate includes build/install and native launch stages. Use the [testing 
 - [Model connections and provider boundaries](docs/llm-connections.md)
 - [Memory architecture](docs/memory-architecture.md)
 - [Native function calling](docs/function-calling-20261014.md)
+- [Tool calling, long conversations, and memory design (2026-10-17)](docs/tool-conversation-memory-design-20261017.md)
 - [UI design language](docs/ui-design-language.md)
 - [Image engine setup](docs/generation-setup.md)
 - [iPhone source and development notes](ios/README.md)
