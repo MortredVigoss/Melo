@@ -1,3 +1,12 @@
+## 2026-10-17 — 架构 / Agent / 上下文三路只读审计，报告与分批方案
+
+用户要求扫一遍架构问题、Agent 设计问题、上下文处理能力并出报告和方案。只读代码，三路并行扫描，不重复既有审计，只列新发现与"文档说已修 / 代码没修"。（Claude）
+用户另确认金冬天语音人设改为纯中文、不夹韩语（MiniMax 韩语发音差）；已经由运行中实例的 `/api/agents/update` 写入 `agentVoiceSettings`，未手改 state.json。
+
+三条 P0 在运行实例实测或逐行复核：POST `/api/tts/*` 因 `server.js:920` 漏传 `requireLocalOrigin` 全部挂起；窗口 52k 与摘要触发 80k 之间历史静默丢失；`search_history` 不分受众。`agent-loop-audit` 四项只修了 #4。方案分四批，第一批 7 条小修约 1 人日，并说明与 `context-memory-plan` 1B/2B 的先后关系。
+
+纯文档，未改产品代码，未重跑 `npm test`。见 `docs/architecture-agent-context-audit-20261017.md`。Final commit: 本条文档提交.
+
 ## 2026-10-17 — 0.6.0 合并、推送并装到手机
 
 用户要求合并、push、安装三项一起做。master 已有 Codex 的 0.5.24 (30) 对齐，先合入分支解决冲突，构建号顺延为 31。（Claude）
