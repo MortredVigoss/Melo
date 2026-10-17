@@ -2,7 +2,7 @@
 
 日期：2026-10-17。基线：`c4fe0cc`，`codex/mobile-use-features`。
 
-状态：用户已要求统一三端业务逻辑、公共信息查询优先检索；本文是具体 Runtime 方案的审阅稿，尚未实现或通过用户对该 Runtime 选择的确认。设计记录不代表 Android 已有 Web Search。
+状态：用户已认可共用 Agent Core / Platform Adapter 的方向，进一步要求先审查现有 Loop、State、Memory / Context、Tool 和 Skill；检查结果见 [Agent Core 检查](../agent-core-audit-20261017.md)。本机同源 JS 是推荐实现，Runtime 可行性 spike 和产品迁移尚未开始；设计记录不代表 Android 已有 Web Search。
 
 ## 1. 问题与已确认约束
 
@@ -96,8 +96,8 @@ Desktop UI / SwiftUI / Compose
 - [Android JavaScriptEngine](https://developer.android.com/develop/ui/views/layout/webapps/jsengine)：无 WebView 实例的 JavaScript 执行、Service 使用与 support / feature 检测。
 - [Apple JSContext](https://developer.apple.com/documentation/javascriptcore/jscontext)：Swift / Objective-C 内执行 JavaScript。
 
-## 8. 自审与待用户选择
+## 8. 自审与当前步骤
 
 已检查：共享源码与共享 Schema 不混称；手机独立运行；API transport 与 Hosted Tool 不混称；凭证不进入资料同步；禁止以搜索失败自动占屏；Runtime 不支持时不维护另一份业务 fallback；保留逐字抽取与行为改变的提交隔离；三端验收不互相替代。
 
-待审阅的是方案 A 的 Runtime 选择及上述 Search 行为。用户认可后再开始产品代码和 Runtime spike；本稿未新增依赖、未调模型、未操作手机、未构建安装或推送。
+用户已认可共用 Core + Adapter，并要求先检查既有实现。[检查](../agent-core-audit-20261017.md)确认了 Cache 隔离、重复模型往返、Context 截断、调用身份与总预算问题；先纳入修复 / Conformance，再开始 Runtime spike 与分模块迁移。尚未验证 Android JS engine 或三端同源 bundle，不把方向认可当作产品已统一。本设计未新增产品依赖、未调真实模型、未操作手机、未构建安装或推送。

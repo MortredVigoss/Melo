@@ -1,3 +1,9 @@
+## 2026-10-17 — 先区分持久化、调用上下文和真正共享的执行逻辑
+
+用户认可共用 Core + Adapter，并要求先检查 Loop / State / Memory / 能力。本轮确认三端尚未共享执行核心；父子任务传递有界上下文和交接，资料 Sync 也不等于共享在途状态。
+65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，复现 Cache 定义串用、有限但无效模型往返及 Android Context / call ID 缺口；诊断 GREEN 不表示修复。首次外加测试源未编译，最终明确核对测试 XML 并清理临时源码。
+当前只完成源码检查、隔离证据和报告；未修生产逻辑、访问真实模型 / 账号 / 手机或推送。先将确认的边界纳入 Core 修复与 Conformance，Runtime spike 和平台迁移仍待做。
+
 ## 2026-10-17 — 把统一执行逻辑落实为可审阅的 Runtime 选择
 
 用户要求三端共用业务逻辑，并质疑浏览器搜索及此前 Codex 能力解释。Codex 区分 API transport、Hosted Tool 与应用 Loop，建议同源本机 JS Core 和 Native / HTTP Search 优先，保留手机独立运行。

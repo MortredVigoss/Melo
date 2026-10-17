@@ -4,7 +4,7 @@
 
 现状已核对：Node Chat Runner、Swift ChatStore、Kotlin ChatEngine 各有执行链；通用 Search 已在桌面 / 部分 iOS 通道提供，Android 当前只接 Phone Use。现有共享行为 Fixtures 不完整覆盖 Android，后续必须共同验证通用能力、搜索优先、工具失败及取消，平台不支持的能力要显式反馈。
 
-执行顺序：核对与确定可共享 Core 边界 → 选择并验证共享 Runtime → 提取核心而保持原行为 → 接入平台 Adapter → 三端 Conformance Tests 与各端功能验收。[具体设计审阅稿](specs/2026-10-17-shared-agent-search-design.md)推荐同源可移植 JS Core 在三端本地运行，共用 Search capability / API-first 策略；Playwright 为显式可选 fallback。Android JS engine 需先验证 support / feature 和 Service 生命周期；具体 Runtime 方案尚未批准或实现，不能将本条约束登记计作三端已对齐。本轮只有文档修改，无产品测试 / 实体安装 / 发布。
+执行顺序：核对与确定可共享 Core 边界 → 选择并验证共享 Runtime → 提取核心而保持原行为 → 接入平台 Adapter → 三端 Conformance Tests 与各端功能验收。[具体设计](specs/2026-10-17-shared-agent-search-design.md)推荐同源可移植 JS Core 在三端本地运行，共用 Search capability / API-first 策略；Playwright 为显式可选 fallback。用户已认可共用 Core + Adapter，并要求先审现有实现；[前置检查](agent-core-audit-20261017.md)确认 Cache / Loop / Context / call identity 等缺口。65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，但诊断是复现而非修复。Android JS engine support / feature、Service 生命周期与 Runtime spike 尚未验证，未迁移产品 / 操作实体机 / 安装或发布。
 
 # 2026-10-15 · 对齐并覆盖 0.5.18 (24)
 

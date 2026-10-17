@@ -20,7 +20,7 @@
 | Android / App Discovery | 0.5.1 (13) 已同签名覆盖 Fold6；准确名称 / 包名优先打开，小候选与显式浏览清单 | 原 10 Chat / 1 角色保留；folded 首轮 12 步受阻，退出旧搜索页后 5 步 / 23.806s 核对「设置」，两轮无 list_apps。跨包恢复 / 额外窗口恢复仍待修。[实机证据](docs/evidence/app-discovery-fold6-051-20261017.json)；113 JVM / Lint / R8 / 签名，本版前的同逻辑 runtime 40，详 verification |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
-| Shared Agent Core / Search | 用户要求统一业务执行逻辑；同源 JS Core / 原生 Adapter 的具体设计已写成审阅稿 | [Runtime / Search 设计](docs/specs/2026-10-17-shared-agent-search-design.md)：推荐三端本机共用代码、经验证的 Native / HTTP Search 优先、浏览器为显式 fallback；Runtime 选择待确认，未接入产品 / 操作手机或验证 API 权限 |
+| Shared Agent Core / Search | 用户认可共用 Core + Adapter，要求先查现有执行链；已完成前置检查，未迁移产品 | [检查](docs/agent-core-audit-20261017.md)确认 Skill Cache 作用域碰撞、模型重复往返、Android Context / call ID 缺口及主轮总预算；65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过。诊断是复现，未修复；[Runtime / Search 设计](docs/specs/2026-10-17-shared-agent-search-design.md)的 spike 待做 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
@@ -117,7 +117,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | App discovery `00b0e73` 已随 0.5.1 覆盖 Fold6；本轮补共用 Runtime / Search 设计审阅稿 | 新版实机边界见 [verification](android/verification.md)，首次失败保留；[统一方案](docs/specs/2026-10-17-shared-agent-search-design.md)推荐同源 JS Core，本轮只完成源码 / 官方资料核对和文档检查。Runtime 待确认；共享 Core / Search、Samsung 跨包恢复和微信输入仍未实现。未推送 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 用户认可共用 Core + Adapter；本轮完成 Loop / State / Memory / Tool / Skill 前置检查 | [检查与证据](docs/agent-core-audit-20261017.md)：65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，现有缺陷未修复；Runtime spike / 共享 Core / Search 待迁移。0.5.1 实机边界沿用 [verification](android/verification.md)，未操作手机 / 安装 / 推送 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
@@ -136,6 +136,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 2026-10-17 用户要求 Android 与其他端保持一致，避免各端自行维护核心功能。后续通用能力按共享 Core / 平台 Adapter 划分：Skill、Tool 注册与路由、Loop / 取消 / 结果语义须同源维护并共同验证；平台实现差异显式声明。仅共用 Sync Schema 或同名 Tool 不能称为核心已统一；手机独立运行、设备本地权限与凭证边界保留。共享 Runtime 的具体落地方式尚未选定或实现，本约束不等于已完成三端重构。
 
 - 2026-10-17 用户要求统一整条执行逻辑并质疑 Google 浏览器抓取及 Codex 能力解释。已形成[具体设计审阅稿](docs/specs/2026-10-17-shared-agent-search-design.md)：同源本机 JS Core 为推荐路线，Native / HTTP Search 优先，Playwright 仅显式 fallback；这是建议而非用户已选定 Runtime。Hosted Tool 的支持须验证实际连接，不能由 API transport / Function Calling 推断；凭证不因统一配置而自动进入资料同步。
+
+- 2026-10-17 用户认可共用 Agent Core + Platform Adapter，并要求先检查循环、共享状态、Memory / Context 和真实能力清单。方向认可不等于 Runtime spike 或迁移已完成；[当前检查](docs/agent-core-audit-20261017.md)确认的边界应先进入修复与 Conformance。
 
 - 副线统计沿用 `src`、`desktop-ui`、`desktop-app`、`scripts` 下 `js/mjs/cjs/ts/tsx/jsx/swift/sh/applescript/json/html/css` 文件的 `wc -l` 合计，含注释和空行，不含 `ios/` 及目录外内容；不是全平台总代码量，历史结果不代替实时统计。
 - 2026-10-15 用户最新决定：仅用户明确要求才运行 `git pp` 或等价脚本；不自动审查、重审或推送。测试、本地提交、已授权修复持续推进。被要求运行时仍保留推送门禁。
@@ -669,3 +671,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - [设计稿](docs/specs/2026-10-17-shared-agent-search-design.md)对比同源本机 JS / 统一服务 / 改写语言栈，推荐 Node + JSCore + Android JS engine 承载同一 Core；先验证运行条件，再逐字提取与独立变更策略，保留手机独立运行。
 - Search 建议统一能力 / 配置 / 来源语义，默认经验证的 Native 或已配置 HTTP Backend；Playwright / Google 为显式 fallback。没有 Backend 时如实反馈，不静默占屏。Core / Adapter 边界及分层验收已写清；HTTP 供应商不擅自购买，密钥不加入资料同步。
 - 本轮只有文档，已做引用路径和 diff 检查；没有产品代码 / 新依赖、模型请求、JS engine 或账号能力实测、手机操作、构建安装、推送或 git pp。具体 Runtime 方案待用户确认，下一步按认可方案做 spike，不能称已统一。
+
+### 2026-10-17 — Android / Mobile Use — Agent Core 前置检查
+
+- 用户认可 Core + Adapter 后要求先审现有执行链。本轮直接核对 Node / Kotlin / Swift 主入口，枚举 30 个 Desktop Built-in ID（含 alias）、4 个内置轻量 Skill；Android 是 phone_use + android_device 的 10 个 action，未接 Desktop Search / Skill Registry。没有读取用户 Mac 的活动配置或自定义 Skill 内容。
+- 生产函数隔离探针复现 Skill Match Cache 跨 home 定义碰撞；永久失败为 10 模型 / 2 执行，相同成功读取为 10 / 10。Android 复现旧约束被 60 条窗口丢弃、长 instructions 拒绝短问、跨轮相同 call ID 执行两次。总 deadline 缺口为静态证据；未将摘要中的可见验证当成完整业务证明。
+- 65 Node 既有回归 + 3 Node 诊断、116 JVM（含 3 新诊断）通过。第一次 Gradle init 注入没有生效，未当作诊断通过；最终核对 XML 后清理自有临时测试源码。诊断 GREEN 表示确认现状，不是修复验收。
+- [详细检查](docs/agent-core-audit-20261017.md) / [脱敏结果和 hash](docs/evidence/agent-core-audit-20261017.json)；本机 Canvas 位于 Windows `.cursor/projects/empty-window/canvases/melo-agent-core-audit-20261017.canvas.tsx`。没有改产品逻辑、请求真实模型、读凭证 / 私聊、操作手机、Emulator / Swift 验证、安装、CLI review / git pp 或推送；共享 Core / Runtime spike 仍未实现。
