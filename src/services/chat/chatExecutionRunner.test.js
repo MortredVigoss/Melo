@@ -478,8 +478,10 @@ test('search routing — codex-native: native web_search enabled, fetch_url not 
   // parallel with the native capability — exactly the regression Codex
   // review was guarding against.
   const visible = new Set(result.visibleToolIds || []);
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on codex-native route');
-  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden on codex-native route');
+  // Design audit A2 (2026-10-17): the function set is stable per chat; the
+  // route is expressed in the routing prompt, not by hiding definitions.
+  assert.equal(visible.has('web_search'), true, 'web_search stays in the stable set on codex-native route');
+  assert.equal(visible.has('fetch_url'), true, 'fetch_url stays in the stable set on codex-native route');
 });
 
 test('search routing — melo-web: native web_search disabled, both tools dispatched', async () => {
@@ -520,7 +522,7 @@ test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_s
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on fetch-url route');
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on fetch-url route');
+  assert.equal(visible.has('web_search'), true, 'web_search stays visible (A2 stable set); the routing prompt prefers fetch_url');
 });
 
 test('search routing — social-link: 抖音 / xiaohongshu URL routes to fetch_url with web_search hidden (Codex 83cf5d4 B 建议闭环)', async () => {
@@ -550,7 +552,7 @@ test('search routing — social-link: 抖音 / xiaohongshu URL routes to fetch_u
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on social-link route');
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden so social-link reader is not bypassed');
+  assert.equal(visible.has('web_search'), true, 'web_search stays visible (A2 stable set); the routing prompt points at the social-link reader');
 });
 
 test('search routing — social-link: xiaohongshu URL also routes to fetch_url (different host in SOCIAL_HOST_PATTERN)', async () => {
@@ -567,10 +569,10 @@ test('search routing — social-link: xiaohongshu URL also routes to fetch_url (
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true);
-  assert.equal(visible.has('web_search'), false);
+  assert.equal(visible.has('web_search'), true);
 });
 
-test('search routing — none: no web intent, neither web_search nor fetch_url offered', async () => {
+test('search routing — none: no web intent, tools stay in the stable set and the prompt says not to search', async () => {
   // Same canonical message as searchRouter.test.js:82 — score is 0 and no
   // pattern hits, so the runner must offer neither network tool. This is
   // the "ordinary chat" baseline; if a future trigger weight bump makes
@@ -585,8 +587,8 @@ test('search routing — none: no web intent, neither web_search nor fetch_url o
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
   const visible = new Set(result.visibleToolIds || []);
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden when no web intent');
-  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden when no web intent');
+  assert.equal(visible.has('web_search'), true, 'A2: definitions are stable; no-web-intent is a prompt-level instruction');
+  assert.equal(visible.has('fetch_url'), true);
 });
 
 test('search routing — non-codex auth + web intent falls back to melo-web (not codex-native)', async () => {

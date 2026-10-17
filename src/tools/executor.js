@@ -7,13 +7,15 @@ import { operationScope } from '../safety/permissionContext.js';
 import { reserveTaskOperation } from '../services/task/operationLedger.js';
 import { randomUUID } from 'node:crypto';
 import { observeTool } from './executionObservation.js';
+import { toolConcurrencySafe } from './tool.js';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
 /**
  * Tool executor.
  *
  * Handles:
  *   - Pre-execution permission checks (via permissions.js)
- *   - Concurrent vs serial execution based on tool.isConcurrencySafe
+ *   - Concurrent vs serial execution based on toolConcurrencySafe(tool, args)
+ *     (per-call `concurrency` declaration, falling back to tool.isConcurrencySafe)
  *   - Timeout enforcement per-call
  *   - Structured ToolResult output
  *
@@ -23,6 +25,7 @@ import { currentRequestContext, runWithRequestContext } from '../runtime/request
 
 import { requestPermission } from './permissions.js';
 import { emitHook } from '../plugins/hooks.js';
+import { finalizeToolResult } from './toolResult.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
@@ -47,12 +50,12 @@ export async function executeTool(tool, args, options = {}) {
   const resolved=await resolveCapabilityContext(ambient || options.requestContext);
   if (!resolved) return missingCapabilityScope();
   const capabilityScope=narrowCapabilityScope(resolved.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
-  if (!scopeAllowsTool(capabilityScope,tool.id,args)) {
-    return {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}};
+  if (!scopeAllowsTool(capabilityScope,tool,args)) {
+    return finalizeToolResult({ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}});
   }
   let workspacePath;
   try {workspacePath=await workspaceForTool(resolved,tool,args,options.workspacePath);}
-  catch(error) {return {ok:false,error:error.code || 'WORKSPACE_UNAVAILABLE',output:error.message,meta:{denied:true,executionStarted:false}};}
+  catch(error) {return finalizeToolResult({ok:false,error:error.code || 'WORKSPACE_UNAVAILABLE',output:error.message,meta:{denied:true,executionStarted:false}});}
   const ownedWorkspace=await ownedWorkspaceSafety(resolved,workspacePath);
   const permissionScope=await operationScope(resolved,workspacePath,capabilityScope.agentId);
   const requestContext=Object.freeze({...resolved,workspacePath,ownedWorkspace,capabilityScope,permissionScope});
@@ -67,7 +70,7 @@ async function executeScopedTool(tool,args,options) {
   let executionStarted = false;
   const observe = (status, result) => {
     if (status === 'running') executionStarted = true;
-    try { options.sseEmitter?.('execution_event', observeTool({ id, name: tool.id, args, status, result })); } catch {}
+    try { options.sseEmitter?.('execution_event', observeTool({ id, name: tool.id, args, status, result, tool })); } catch {}
   };
   let waiting = false;
   const emit = (type,payload) => {
@@ -104,23 +107,23 @@ async function runObservedTool(tool, args, options = {}) {
       // Pass chatId so session-scope grants don't leak across chats.
       await requestPermission(tool.id, args, sseEmitter, signal, chatId, requestContext);
     } catch (err) {
-      return {
+      return finalizeToolResult({
         ok: false,
         output: err.message,
-        error: err.message,
-        meta: { denied: true },
-      };
+        error: err.code === 'PERMISSION_NO_SURFACE' ? 'PERMISSION_NO_SURFACE' : 'PERMISSION_DENIED',
+        meta: { denied: true, detail: err.message },
+      });
     }
   }
 
   // ── Abort guard ──────────────────────────────────────────────────────────────
   if (signal?.aborted) {
-    return {
+    return finalizeToolResult({
       ok: false,
       output: 'Aborted before execution.',
       error: 'ABORTED',
       meta: { aborted: true },
-    };
+    });
   }
 
   // ── Plugin hook: tool:before ────────────────────────────────────────────────
@@ -220,17 +223,19 @@ async function runObservedTool(tool, args, options = {}) {
         result.evidenceTrail = rawResult.evidenceTrail;
       }
     }
+    // Envelope (design audit B1): status ok|empty|error + canonical code.
+    result = finalizeToolResult(result);
     // Plugin hook: tool:after (bounded; a cancelled tool does not wait for it)
     await emitHook('tool:after', { toolId: tool.id, args, result }, { signal });
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
-    const result = {
+    const result = finalizeToolResult({
       ok: false,
       output: `Tool error: ${err.message}`,
-      error: err.message,
+      error: err.code && /^[A-Z][A-Z0-9_]{1,63}$/.test(String(err.code)) ? err.code : err.message,
       meta: cancelError ? { aborted: true, timedOut: cancelError.code === 'TOOL_TIMEOUT' } : {},
-    };
+    });
     if (!cancelError) await emitHook('tool:after', { toolId: tool.id, args, result }, { signal });
     return result;
   } finally {
@@ -242,9 +247,10 @@ async function runObservedTool(tool, args, options = {}) {
 /**
  * Execute multiple tool calls, respecting concurrency constraints.
  *
- * - Tools with isConcurrencySafe=true run in parallel (grouped together).
- * - Tools with isConcurrencySafe=false run serially, and flush any
- *   pending parallel group first.
+ * - Calls judged concurrency-safe (toolConcurrencySafe(tool, args): the tool's
+ *   `concurrency` declaration evaluated for these args, else isConcurrencySafe)
+ *   run in parallel (grouped together).
+ * - Serial calls flush any pending parallel group first, then run alone.
  *
  * Returns an array of { toolCallId, toolId, result } in original order.
  *
@@ -271,8 +277,8 @@ export async function executeToolCalls(calls, options = {}) {
     } catch (error) {
       // A scope/ledger failure is also a result for this call. Await the rest
       // of the batch before any serial write or next model request begins.
-      result = { ok: false, error: error.code || 'TOOL_EXECUTION_FAILED', output: error.message,
-        meta: { aborted: !!options.signal?.aborted } };
+      result = finalizeToolResult({ ok: false, error: error.code || 'TOOL_EXECUTION_FAILED', output: error.message,
+        meta: { aborted: !!options.signal?.aborted } });
     }
     results[idx] = { id, toolId: tool.id, result };
   }
@@ -295,7 +301,7 @@ export async function executeToolCalls(calls, options = {}) {
   for (let i = 0; i < calls.length; i++) {
     const { id, tool, args } = calls[i];
 
-    if (tool.isConcurrencySafe) {
+    if (toolConcurrencySafe(tool, args)) {
       parallelGroup.push(i);
     } else {
       // Flush any accumulated safe tools first

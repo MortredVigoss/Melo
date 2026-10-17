@@ -133,6 +133,7 @@ function buildChatRuntimeCheckpoint(chat = {}) {
       Number.isFinite(Number(chat.compactUpgradeAttempts)) && Number(chat.compactUpgradeAttempts) >= 0
         ? Number(chat.compactUpgradeAttempts)
         : 0,
+    toolGroupsActivated: Array.isArray(chat.toolGroupsActivated) ? [...chat.toolGroupsActivated] : [],
   };
 }
 

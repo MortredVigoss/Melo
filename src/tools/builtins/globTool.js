@@ -308,6 +308,8 @@ export const globTool = {
     if (!results.length) {
       return {
         ok: true,
+        status: 'empty',
+        code: 'NO_RESULTS',
         output: `No files matched pattern: ${pattern}${skipNote}`,
         meta: { count: 0, skippedSensitive: skipped.sensitive, baseDir: realBase },
       };

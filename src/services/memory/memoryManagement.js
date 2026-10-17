@@ -13,7 +13,7 @@ export async function memoryFacts({query='',offset=0}={}) {
     const records=rows.slice(start,start+50).map(r=>{
       const chat=state.chats.find(c=>c.id===r.metadata.chatId);
       const source=chat?.messages.find(m=>m.id===r.metadata.sourceMessageId);
-      return {id:r.id,text:r.text,scope:r.metadata.scope || 'chat',category:r.metadata.category,
+      return {id:r.id,text:r.text,scope:r.metadata.scope || 'chat',category:r.metadata.category,pinned:Boolean(r.metadata.pinned),
         status:r.metadata.forgotten?'forgotten':r.metadata.quarantined?'unconfirmed':isEntryInvalidated(r.metadata)?'historical':'active',
         sourceChatId:chat?.id || null,sourceMessageId:source?.id || null,sourceTitle:chat?.title || r.metadata.chatTitle || '来源对话已删除',
         sourceText:typeof source?.content==='string'?source.content.slice(0,1600):r.metadata.sourceText || null,

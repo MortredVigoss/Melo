@@ -87,9 +87,11 @@ export function projectToolResultForPersist(call, result) {
   if (Number.isInteger(result?.meta?.exitCode)) entry.exitCode = result.meta.exitCode;
   if (result?.meta?.replayed) entry.replayed = true;
   const errorCode = deriveUnifiedErrorCode(call, result) || (result?.ok === false
-    ? result?.meta?.denied ? 'PERMISSION_DENIED'
-      : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED'
+    ? (/^[A-Z][A-Z0-9_]{1,63}$/.test(result?.code || '') ? result.code
+      : result?.meta?.denied ? 'PERMISSION_DENIED'
+      : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED')
     : null);
+  if (result?.status === 'empty') entry.status = 'empty';
   if (errorCode) {
     entry.errorCode = errorCode;
   }

@@ -157,6 +157,11 @@ export const fileWriteTool = {
   category: 'filesystem',
   requiresPermission: true,
   isConcurrencySafe: false,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'writeFiles',
+  needsWorkspace: true,
+  uiModule: 'files',
+  inputKeys: ['path'],
   parametersSchema: {
     type: 'object',
     properties: {

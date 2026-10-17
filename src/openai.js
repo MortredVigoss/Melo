@@ -128,6 +128,19 @@ const CODEX_INLINE_IMAGE_EDIT_INSTRUCTION = [
   'just answer normally without invoking image_generation at all.',
 ].join(' ');
 
+// Prepend per-turn guidance (image-intent rules) to the latest user input item
+// so `instructions` stays cache-stable (design audit A2).
+export function withTurnGuidance(input, guidance) {
+  if (!guidance || !Array.isArray(input)) return input;
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const item = input[index];
+    if (item?.role !== 'user' || !Array.isArray(item.content)) continue;
+    const content = [{ type: 'input_text', text: `[Turn guidance]\n${guidance}` }, ...item.content];
+    return input.map((entry, i) => (i === index ? { ...entry, content } : entry));
+  }
+  return input;
+}
+
 // Inline copy of detectImageIntent (lives in services/chat/messageBuilder.js
 // alongside the regex constants we import above). See the comment on the
 // patterns import for why we don't pull the original function.
@@ -1093,20 +1106,25 @@ export async function createCodexResponsesReply({
   const latestUserText = extractLatestUserTextForIntent(messages);
   const latestUserHasImage = latestUserMessageHasImage(messages);
   const hasImageIntent = _detectImageIntentLocal(latestUserText, { hasInputImage: latestUserHasImage });
-  const tools = buildCodexResponsesTools({
+  // Design audit A2: function definitions first (stable per chat), native
+  // provider tools after them, so an image/search-specific turn appends to
+  // the cached prefix instead of shifting every function definition.
+  const nativeTools = buildCodexResponsesTools({
     enableWebSearch,
     workspacePath,
     hasInputImage,
     hasImageIntent,
     nativeImageGenerationEnabled,
   });
-  if (Array.isArray(functionTools)) tools.push(...functionTools);
+  const tools = [...(Array.isArray(functionTools) ? functionTools : []), ...nativeTools];
   const enableInlineImage = tools.some(t => t?.type === 'image_generation');
-  // All actual image routes share intent rules. Ordinary chat and vision-only
-  // turns retain their original instructions; edit guidance needs a reference.
-  const effectiveInstructions = enableInlineImage
-    ? [systemPrompt, IMAGE_INTENT_RULES, ...(hasInputImage ? [CODEX_INLINE_IMAGE_EDIT_INSTRUCTION] : [])].join('\n\n')
-    : systemPrompt;
+  // Image-intent rules are per-turn guidance: they ride in the latest user
+  // input (see below) rather than in `instructions`, which must stay
+  // byte-identical across turns for the prompt cache.
+  const effectiveInstructions = systemPrompt;
+  const turnGuidance = enableInlineImage
+    ? [IMAGE_INTENT_RULES, ...(hasInputImage ? [CODEX_INLINE_IMAGE_EDIT_INSTRUCTION] : [])].join('\n\n')
+    : '';
 
   // Preserve the selected model for both text and image-tool requests.
   const payload = {
@@ -1114,7 +1132,7 @@ export async function createCodexResponsesReply({
     store: false,
     stream: true,
     instructions: effectiveInstructions,
-    input: await buildCodexResponsesInput(messages, { signal }),
+    input: withTurnGuidance(await buildCodexResponsesInput(messages, { signal }), turnGuidance),
     text: { verbosity: isFastProfile ? 'low' : DEFAULT_CODEX_TEXT_VERBOSITY },
     include: ['reasoning.encrypted_content', ...(nativeWebSearchEnabled ? ['web_search_call.action.sources'] : [])],
     prompt_cache_key: promptCacheKey,

@@ -10,13 +10,29 @@ import {normalizeAgentProfile} from '../state/agentProfiles.js';
 import {recommendedCapabilities,normalizeCollaboration} from '../domain/agent/capabilities.js';
 import {createOpenAICompatibleReply} from '../openai.js';
 import {modelReplyText} from '../tools/functionCalling.js';
+import {getAllTools,getTool} from '../tools/registryCore.js';
 export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
  {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
  {id:'parallel-research',name:'并行调研后复核',members:['research','reviewer'],mode:'parallel'},
  {id:'review-loop',name:'实施 / 复核循环',members:['builder','reviewer'],mode:'review-loop',maxRounds:2},
 ]);
+// Tools a non-builder member of a legacy (profile-less) plan may inherit.
+// A registered tool's static `capability` declaration (tools/tool.js) decides
+// first: readFiles / knowledgeMemory / null are read-only, network only when it
+// is a web-retrieval tool (uiModule 'search'). The id list is the fallback for
+// undeclared tools and for tests that run without a bootstrapped registry.
 const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','calculator','media_info','search_history'];
+function declaredReadOnly(tool) {
+ if(!tool||typeof tool.capability==='function'||tool.capability===undefined)return undefined;
+ if(tool.capability===null||['readFiles','knowledgeMemory'].includes(tool.capability))return true;
+ return tool.capability==='network'&&tool.uiModule==='search';
+}
+export function inheritableReadToolIds(extraTools=[]) {
+ const registered=[...getAllTools(),...extraTools];
+ const candidates=new Set([...READ_TOOLS,...registered.filter(t=>declaredReadOnly(t)===true).map(t=>t.id)]);
+ return [...candidates].filter(id=>declaredReadOnly(registered.find(t=>t.id===id)||getTool(id))??READ_TOOLS.includes(id));
+}
 export function validateTeamPlan(plan) {
  if(!plan)return null;
  if(typeof plan!=='object'||Array.isArray(plan))throw new Error('Invalid team plan');
@@ -100,7 +116,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
    results.push(r);return r;
   }
   // Old plans without a profile map are supported for callers predating Agent definitions.
-  const inherited=!agentProfiles&&id!=='builder'?READ_TOOLS.filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
+  const inherited=!agentProfiles&&id!=='builder'?inheritableReadToolIds(extraTools).filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
   const r=await runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run});
   usedTokens+=(Number(r.usage?.input)||0)+(Number(r.usage?.output)||0);
   if(budgetExceeded&&r.handoff&&!signal?.aborted)r.handoff={...r.handoff,status:'budget-exceeded'};

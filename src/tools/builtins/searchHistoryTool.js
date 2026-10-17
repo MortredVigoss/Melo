@@ -22,6 +22,11 @@ export const searchHistoryTool = {
   category: 'memory',
   isConcurrencySafe: true,
   requiresPermission: false,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'knowledgeMemory',
+  needsWorkspace: false,
+  uiModule: 'files',
+  inputKeys: ['query', 'scope', 'chatId', 'after', 'limit'],
   parametersSchema: {
     type: 'object',
     properties: {
@@ -87,6 +92,8 @@ export const searchHistoryTool = {
     if (!results.length) {
       return {
         ok: true,
+        status: 'empty',
+        code: 'NO_RESULTS',
         output: `No conversation history found matching "${query}"${filterSuffix}.`,
         meta: { query, resultCount: 0, results: [], after: after || null, chatId: chatId || null },
       };

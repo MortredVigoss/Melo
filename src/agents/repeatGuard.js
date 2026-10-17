@@ -20,7 +20,9 @@ function canonical(value) {
 }
 
 function errorClass(result) {
-  const code = String(result?.error || result?.errorCode || '').trim();
+  // Canonical envelope code first (design audit B1); legacy free-text error
+  // only for results that never went through the executor.
+  const code = String(result?.code || result?.error || result?.errorCode || '').trim();
   if (code) return code;
   return String(result?.output || '').replace(/\s+/g, ' ').trim().slice(0, 80);
 }

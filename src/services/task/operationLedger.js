@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { toolConcurrencySafe } from '../../tools/tool.js';
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])])) : value;
 // This is a receipt, not a cache. Separate intentional calls from retransmission.
 // Plain read probes can always rerun; this does not bypass their permission gate.
@@ -10,7 +11,9 @@ function repeatableRead(tool, args) {
   return tool.id === 'bash' && /^(?:cat|ls|pwd|whoami)(?:[ \t]+[A-Za-z0-9_./*?=+,:@%~-]+)*[ \t]*$/.test(args.command || '');
 }
 export function reserveTaskOperation({ home, taskId, tool, args, workspacePath, invocationId }) {
-  if (!taskId || tool.isConcurrencySafe || tool.category === 'agent' || tool.id === 'agent') return null;
+  // Per-call verdict: a multi-action tool's write actions get a receipt even
+  // when its reads are concurrency-safe (tools/tool.js `concurrency`).
+  if (!taskId || toolConcurrencySafe(tool, args) || tool.category === 'agent' || tool.id === 'agent') return null;
   if (tool.requiresPermission === false && tool.id !== 'bash') return null;
   if (repeatableRead(tool, args)) return null;
   const hash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');

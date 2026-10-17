@@ -25,14 +25,41 @@ export function intersectCollaboration(a,b) {
   return {canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
     ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])]))};
 }
+// Tool self-description (tools/tool.js `capability`). The domain cannot import
+// the tool registry, so callers hand the tool object in; the resolved
+// requirement grammar is: null (always allowed) | key | key[] (all) | {anyOf:[keys]}.
+const CAPABILITY_KEYS=new Set(Object.keys(CAPABILITY_LABELS));
+export function declaredCapabilityRequirement(tool, args) {
+  if (!tool || typeof tool!=='object' || tool.capability===undefined) return undefined;
+  return typeof tool.capability==='function' ? tool.capability(args) : tool.capability;
+}
+// Unknown shapes fail closed: a typo in a declaration never widens access.
+export function capabilityRequirementAllowed(requirement, capabilities) {
+  const c=normalizeCapabilities(capabilities);
+  if (!c) return true;
+  if (requirement===null) return true;
+  if (typeof requirement==='string') return CAPABILITY_KEYS.has(requirement) && c[requirement]===true;
+  if (Array.isArray(requirement)) return requirement.length>0 && requirement.every(key=>CAPABILITY_KEYS.has(key) && c[key]===true);
+  if (requirement && typeof requirement==='object' && Array.isArray(requirement.anyOf)) return requirement.anyOf.some(key=>CAPABILITY_KEYS.has(key) && c[key]===true);
+  return false;
+}
+// Legacy id tables: consulted only when the tool declares no `capability`.
 const READ=new Set(['file_read','glob','grep','media_info']);
 const WRITE=new Set(['file_write','file_edit','file_delete','file_move','file_mkdir','xlsx']);
 const NETWORK=new Set(['web_search','fetch_url','media_api','translate','browser_open','browser_snapshot','browser_click','browser_fill','browser_wait_for','browser_close']);
-export function toolCapabilityAllowed(id, capabilities, args) {
+/**
+ * @param {string} id
+ * @param {Object|null} capabilities
+ * @param {Object} [args] - undefined for visibility checks (any action)
+ * @param {Object} [tool] - the tool object; its `capability` declaration wins over the id tables
+ */
+export function toolCapabilityAllowed(id, capabilities, args, tool) {
   const c=normalizeCapabilities(capabilities);
   if (!c) return true; // Existing profiles stay unchanged until the user accepts the migration preview.
   if (id.startsWith('mcp:')) { const parsed=parseMcpToolId(id);return !!parsed&&c.mcpServers.includes(parsed.server); }
   if (id.startsWith('skill:')) return c.skills.includes(id.slice(6));
+  const declared=tool && tool.id===id ? declaredCapabilityRequirement(tool,args) : undefined;
+  if (declared!==undefined) return capabilityRequirementAllowed(declared,c);
   if (READ.has(id)) return c.readFiles;
   if (WRITE.has(id)) return c.writeFiles;
   if (NETWORK.has(id)) return c.network;
@@ -54,7 +81,7 @@ export function toolCapabilityAllowed(id, capabilities, args) {
   }
   return false; // New/plugin tool identifiers need an explicit mapping, never trust self-declared permissions.
 }
-export const filterToolsByCapabilities = (tools,capabilities) => tools.filter(t=>t.id!=='agent' && (t.id!=='delegate'||capabilities?.delegate===true) && toolCapabilityAllowed(t.id,capabilities));
+export const filterToolsByCapabilities = (tools,capabilities) => tools.filter(t=>t.id!=='agent' && (t.id!=='delegate'||capabilities?.delegate===true) && toolCapabilityAllowed(t.id,capabilities,undefined,t));
 export function migrateLegacyCapabilities(profile, {skills=[],connectors=[]}={}) {
   const tools=new Set(profile.tools || []), local=tools.has('local-files');
   return normalizeCapabilities({readFiles:local,writeFiles:local,runCommands:tools.has('local-command'),network:tools.has('search'),knowledgeMemory:tools.has('artifacts')||tools.has('search'),

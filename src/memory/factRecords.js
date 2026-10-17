@@ -1,3 +1,4 @@
+import { recordMemoryRejection } from './store.js';
 import { iterateMemoryRecords, getMemoriesByIds, upsertMemory, withTransaction, isEntryInvalidated } from './store.js';
 import { factId, factNamespace, normalizedFact, canRecallMemory, isLocalChat } from './factPolicy.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
@@ -73,6 +74,8 @@ export function quarantineDeletedChatFacts(chatIds) {
   });
 }
 
+export const FACT_CATEGORIES=Object.freeze(['user_preference','project_context','technical_detail','decision','correction','identity']);
+
 export function editMemoryFact(id, patch={}) {
   const row=getMemoriesByIds([id]).find(r=>r.kind==='session-fact');
   if (!row) throw new Error('这条记忆不存在。');
@@ -84,7 +87,16 @@ export function editMemoryFact(id, patch={}) {
   if (scope!=='chat' && row.metadata.audience!=='local') throw new Error('频道记忆仅用于原对话。');
   if (scope==='project' && !row.metadata.projectId) throw new Error('原对话尚未关联项目。');
   const metadata={...row.metadata,scope,userEdited:true,editedAt:new Date().toISOString()};
-  if (patch.forgotten===true) { metadata.forgotten=true; metadata.validTo=metadata.editedAt; }
+  // 2026-10-17 (design audit M4): the two switches that keep a fact in the
+  // always-on Hot Attic — category correction/decision and pinned — were not
+  // editable anywhere. Both are now user-settable.
+  if (patch.category!==undefined) {
+    const category=String(patch.category||'').trim();
+    if (!FACT_CATEGORIES.includes(category)) throw new Error('记忆类别无效。');
+    metadata.category=category;
+  }
+  if (patch.pinned!==undefined) metadata.pinned=patch.pinned===true;
+  if (patch.forgotten===true) { metadata.forgotten=true; metadata.validTo=metadata.editedAt; recordMemoryRejection(id); }
   if (patch.forgotten===false) { metadata.forgotten=false; metadata.validTo=null; metadata.quarantined=false; }
   const updated={...row,text,searchText:normalizedFact(text),updatedAt:metadata.editedAt,
     namespace:factNamespace({id:metadata.chatId,source:metadata.source,projectId:metadata.projectId},scope,metadata.agentId),metadata};

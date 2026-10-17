@@ -3,7 +3,7 @@ import {narrowCapabilityScope,missingCapabilityScope,scopeAllowsTool} from '../d
 import {randomUUID} from 'node:crypto';
 import {runSubAgent} from './subAgent.js';
 import {toolCapabilityAllowed,normalizeCapabilities,intersectCapabilities,normalizeCollaboration,filterToolsByCapabilities,emptyCapabilities} from '../domain/agent/capabilities.js';
-import {getAllTools} from '../tools/registryCore.js';
+import {getAllTools,getTool} from '../tools/registryCore.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {summarizePricedUsage} from '../runtime/usage.js';
 import {withWorkspaceWriter} from './workspaceScheduling.js';
@@ -17,7 +17,8 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  const capabilities=capabilityScope.capabilities;
  const settings=normalizeCollaboration(profile.collaboration);
  extraTools=extraTools.filter(t=>!t.allowedAgentIds?.length||t.allowedAgentIds.includes(profile.id));
- const toolIds=(Array.isArray(allowedToolIds)?allowedToolIds:[...getAllTools(),...extraTools].map(t=>t.id)).filter(id=>toolCapabilityAllowed(id,capabilities));
+ const toolObject=id=>extraTools.find(t=>t.id===id)||getTool(id)||undefined;
+ const toolIds=(Array.isArray(allowedToolIds)?allowedToolIds:[...getAllTools(),...extraTools].map(t=>t.id)).filter(id=>toolCapabilityAllowed(id,capabilities,undefined,toolObject(id)));
  const controller=new AbortController();const abort=()=>controller.abort(signal?.reason);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
  const timer=setTimeout(()=>controller.abort(Object.assign(new Error('Member time budget exhausted'),{code:'MEMBER_TIMEOUT'})),settings.timeoutMs);
  const receipts=[], started=Date.now(), memberId=randomUUID();

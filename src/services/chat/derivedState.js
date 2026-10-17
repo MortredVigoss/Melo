@@ -12,12 +12,23 @@ export async function persistSessionMemorySnapshot(snapshot, { home } = {}) {
   return applied;
 }
 
+// Persist a small set of per-chat runtime fields (e.g. activated tool groups)
+// without touching messages. Used for only-grow flags that must survive a
+// restart.
+export async function persistChatRuntimeFields(chat, keys = [], { home } = {}) {
+  await updateStateAtomically(latest => {
+    const current = latest.chats.find(entry => entry.id === chat.id);
+    if (!current) return;
+    for (const key of keys) current[key] = chat[key];
+  }, { home });
+}
+
 export async function persistCompactSnapshot(chat, compactPlan, { home } = {}) {
   await updateStateAtomically(latest => {
     const current = latest.chats.find(entry => entry.id === chat.id);
     if (!current || !current.messages.some(message => message.id === compactPlan.boundaryId)) return;
     if ((current.compactedMessageCount || 0) > compactPlan.compactedCount) return;
-    for (const key of ['compactSummary', 'compactBoundaryMessageId', 'compactedMessageCount', 'compactedAt', 'compactFailures', 'compactSummarySource', 'compactUpgradeAttempts']) {
+    for (const key of ['compactSummary', 'compactBoundaryMessageId', 'compactedMessageCount', 'compactedAt', 'compactFailures', 'compactSummarySource', 'compactUpgradeAttempts', 'toolGroupsActivated']) {
       current[key] = chat[key];
     }
   }, { home });

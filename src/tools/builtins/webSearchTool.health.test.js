@@ -168,7 +168,7 @@ test('noCache=true skips the cache even when a row exists', async () => {
     assert.notEqual(result.meta.provider, 'test-fixture (cached)');
     assert.equal(result.meta.timings.cacheHit, false);
   } else {
-    assert.equal(result.error, 'SEARCH_FAILED');
+    assert.equal(result.error, 'PROVIDER_DOWN');
     assert.ok(result.meta?.timings);
     assert.equal(result.meta.timings.cacheHit, false);
   }

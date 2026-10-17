@@ -99,7 +99,10 @@ test('executeTool: thrown error returns result without evidenceTrail (no fabrica
   });
   const result = await executeTool(tool, {});
   assert.equal(result.ok, false);
-  assert.equal(result.error, 'boom');
+  // Envelope (B1): free-text errors map to a canonical code; the text survives in meta.detail.
+  assert.equal(result.error, 'UNKNOWN');
+  assert.equal(result.code, 'UNKNOWN');
+  assert.equal(result.meta.detail, 'boom');
   assert.ok(!('evidenceTrail' in result),
     'error path must not fabricate an evidenceTrail');
 });

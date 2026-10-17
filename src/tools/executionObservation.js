@@ -1,19 +1,23 @@
 import { moduleForOperation, sceneText, sceneUrl } from '../shared/executionScene.js';
 import { verifySignedFileUrl } from '../web/urlSigning.js';
 import { observeShellWeb } from './shellWebObservation.js';
+import { declaredInputKeys, declaredUiModule } from './tool.js';
 
 const safeText = (value, max = 2200) => sceneText(value, max).replace(/\b(Bearer\s+)[^\s]+/gi, '$1[redacted]')
   .replace(/((?:api[_-]?key|password|access[_-]?token|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]');
-export function describeToolInput(args = {}) {
-  return Object.entries(args).filter(([key, value]) =>
-    ['query', 'url', 'expression', 'action', 'path', 'file_path', 'operation', 'from', 'to', 'value', 'date', 'offset', 'command', 'cwd'].includes(key)
-    && ['string', 'number'].includes(typeof value))
+// Fallback summary keys for tools that declare no `inputKeys`.
+const DEFAULT_INPUT_KEYS = Object.freeze(['query', 'url', 'expression', 'action', 'path', 'file_path', 'operation', 'from', 'to', 'value', 'date', 'offset', 'command', 'cwd']);
+export function describeToolInput(args = {}, inputKeys = DEFAULT_INPUT_KEYS) {
+  const keys = Array.isArray(inputKeys) ? inputKeys : DEFAULT_INPUT_KEYS;
+  return Object.entries(args).filter(([key, value]) => keys.includes(key) && ['string', 'number'].includes(typeof value))
     .map(([key, value]) => `${key}: ${safeText(value)}`).join('\n').slice(0, 1000);
 }
-export function observeTool({ id, name, args = {}, status, result }) {
-  const module = moduleForOperation(name, args);
+// `tool` is optional: the executor passes the tool object so its `uiModule` /
+// `inputKeys` self-description wins; id-only callers get the legacy tables.
+export function observeTool({ id, name, args = {}, status, result, tool }) {
+  const module = moduleForOperation(name, args, declaredUiModule(tool, args));
   const meta = result?.meta || {};
-  const event = { kind: 'operation', id, name, module, status, input: describeToolInput(args), sources: [], artifacts: [] };
+  const event = { kind: 'operation', id, name, module, status, input: describeToolInput(args, declaredInputKeys(tool)), sources: [], artifacts: [] };
   if (result) {
     event.status = meta.aborted && !meta.timedOut ? 'cancelled' : result.ok === false ? 'failed' : 'completed';
     event.output = safeText(result.output || '');

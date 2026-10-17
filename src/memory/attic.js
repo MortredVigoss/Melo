@@ -137,6 +137,10 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
     limit: limit * 4,
     sideEffects: false,
     accept,
+    // Pinned / correction / decision / sweep-marked-hot rows first, so an
+    // old pinned decision is not pushed out of the pool by newer ordinary
+    // facts (design audit M3).
+    preferHot: true,
   });
 
   const seen = new Set();

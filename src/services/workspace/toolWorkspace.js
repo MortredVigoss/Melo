@@ -2,6 +2,7 @@ import {mkdir,lstat,realpath} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {loadState,updateStateAtomically} from '../../state/stateStore.js';
 import {requireProjectWorkspace,requireWorkspacePath,workspaceError} from './workspacePolicy.js';
+import {declaredWorkspaceRequirement} from '../../tools/tool.js';
 
 export function captureWorkspaceBinding(state,chat,projectId=chat.projectId) {
   if (projectId) {
@@ -11,8 +12,15 @@ export function captureWorkspaceBinding(state,chat,projectId=chat.projectId) {
   }
   return Object.freeze({kind:'chat',id:chat.id,workspacePath:chat.workspacePath || null});
 }
+// Fallback id table for tools that declare no `needsWorkspace` (tools/tool.js).
 const localTools=new Set(['bash','file_read','file_write','file_edit','file_delete','file_move','file_mkdir','glob','grep','pdf','xlsx']);
-export const toolNeedsWorkspace=(id,args={})=>localTools.has(id) || id==='image' || id==='knowledge' && args.action==='index';
+// `tool` is a tool object (declaration wins) or a bare id (table only).
+export function toolNeedsWorkspace(tool,args={}) {
+  const declared=typeof tool==='object'&&tool?declaredWorkspaceRequirement(tool,args):undefined;
+  if (declared!==undefined) return declared;
+  const id=typeof tool==='string'?tool:tool?.id;
+  return localTools.has(id) || id==='image' || id==='knowledge' && args.action==='index';
+}
 export function chatWorkspacePath(home,chatId) {
   if (!/^[a-zA-Z0-9_-]{1,200}$/.test(chatId || '')) throw workspaceError('WORKSPACE_UNAVAILABLE','无法为此对话分配安全工作目录。');
   return join(home,'workspaces','chats',chatId);
@@ -40,7 +48,7 @@ async function ensureChatWorkspace(context,binding) {
   return expected;
 }
 export async function workspaceForTool(context,tool,args,requestedPath) {
-  if (!toolNeedsWorkspace(tool.id,args)) return context.workspacePath || requestedPath || null;
+  if (!toolNeedsWorkspace(tool,args)) return context.workspacePath || requestedPath || null;
   let binding=context.turnBinding?.workspace;
   if (!binding && context.chatId) {
     const state=await loadState({home:context.home}),chat=state.chats.find(c=>c.id===context.chatId);

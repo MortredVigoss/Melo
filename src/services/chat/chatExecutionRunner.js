@@ -46,7 +46,7 @@ import { buildAgentMemoryNodeContext } from '../agent/agentMemoryContext.js';
 import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from './matcherContext.js';
-import { buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
+import { detectImageIntent, buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
 import { tryImageEditFastPath } from './imageEditFastPath.js';
 import { formatModelMessageForVisionDebug } from './visionDebug.js';
 import { buildDynamicContext } from './dynamicContext.js';
@@ -82,6 +82,8 @@ import {
 } from '../../agents/skillMatcher.js';
 import { getSkillLastRunMap } from '../../agents/skillRuns.js';
 import { createRepeatGuard } from '../../agents/repeatGuard.js';
+import { wantedToolGroups, nextActivatedGroups, selectStableTools } from '../../tools/toolGroups.js';
+import { persistChatRuntimeFields } from './derivedState.js';
 import { buildMemberBackground } from '../../agents/memberBackground.js';
 import { buildSkillTool } from '../../agents/skillExecutor.js';
 import { getEmbedding } from '../../memory/embeddings.js';
@@ -343,6 +345,7 @@ export async function runChatAgentExecutionGraph({
 
         let compactedThisTurn = false;
         const runCompact = async compactPlan => {
+          sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:running', module: 'compute', name: '压缩早期对话', status: 'running', output: `正在把最早的 ${compactPlan.compactedCount} 条消息压成摘要（通常后台已完成，这是兜底）。` });
           try {
             const { summary, source } = await compactConversationDetailed(compactPlan.messages, {
               config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
@@ -394,7 +397,10 @@ export async function runChatAgentExecutionGraph({
           signal?.addEventListener('abort', onAbort, { once: true });
           const timer = setTimeout(() => controller.abort(new Error('compact upgrade timed out')), 20_000);
           try {
-            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, _createReply: createReply });
+            // The extractive summary already covers everything before `range`
+            // (including earlier compactions); feed it back as background so
+            // the upgraded summary does not lose early history.
+            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, previousSummary: chat.compactSummary, _createReply: createReply });
             if (summary && source === 'cloud') {
               chat.compactSummary = summary;
               chat.compactSummarySource = 'cloud';
@@ -449,8 +455,25 @@ export async function runChatAgentExecutionGraph({
           // prepare scope owns the local `activeAgentProfile` (line 150);
           // graphState doesn't exist here (only invoke-model gets that).
           const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
-          const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = toolsForCapabilityScope([...routedTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
+          // Stable tool set (design audit A2): core tools always; extension
+          // groups (browser / documents / media) activate on a hint and then
+          // stay for the rest of the chat, so the definitions array only grows
+          // and the provider prefix cache survives routing changes. Search
+          // routing is prompt text only (buildSearchRoutingPrompt).
+          const latestAttachments = chat.messages?.at(-1)?.attachments || [];
+          const wantedGroups = wantedToolGroups({
+            text: latestUserMessage, attachments: latestAttachments, searchPlan, env,
+            hasImageIntent: detectImageIntent(latestUserMessage, { hasInputImage: latestAttachments.some(a => a?.kind === 'image') }),
+          });
+          const activatedGroups = nextActivatedGroups(chat.toolGroupsActivated, wantedGroups);
+          if (activatedGroups.join(',') !== (Array.isArray(chat.toolGroupsActivated) ? [...chat.toolGroupsActivated].sort().join(',') : '')) {
+            chat.toolGroupsActivated = activatedGroups;
+            await persistChatRuntimeFields(chat, ['toolGroupsActivated'], { home }).catch(() => {});
+          }
+          const stableTools = selectStableTools(allowedTools, activatedGroups)
+            // Browser tools keep their CDP gate from the old router.
+            .filter(tool => !/^browser_/.test(String(tool.id)) || env.MELO_CDP_ENABLED === '1');
+          promptTools = toolsForCapabilityScope([...stableTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
@@ -706,7 +729,10 @@ export async function runChatAgentExecutionGraph({
               sourceChatId:row.metadata?.chatId || chat.id,
               sourceMessageId:row.metadata?.sourceMessageId || row.metadata?.messageId || null,
             }])).values()].slice(0,40);
-            try { recordMemoryFeedback({candidates:graphState.memoryCandidates,usedIds:used.map(row=>row.id),
+            // Only rows that were actually rendered count as candidates (design
+            // audit M6): every recalled row used to be recorded, inflating
+            // memory_hits and skewing dreaming's recall gate.
+            try { recordMemoryFeedback({candidates:graphState.memoryRendered || [],usedIds:used.map(row=>row.id),
               requestId:`${chat.id}:${context.requestId}`,query:latestUserMessage}); }
             catch(error) { console.warn(`[memory.feedback] ${error.message}`); }
           }
@@ -732,7 +758,11 @@ export async function runChatAgentExecutionGraph({
             //
             // Native provider features obey the Agent capability snapshot.
             workspacePath: workspace?.rootPath || null,
-            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+            // Stable across turns (A2): the native web_search definition is
+            // present whenever the agent may use the network; whether to use
+            // it this turn is said in the routing prompt. Only an explicit
+            // user network-off or a non-Codex route keeps it off.
+            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && !['user-disabled-network', 'user-disabled-search'].includes(graphState.searchPlan?.reason),
             nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });

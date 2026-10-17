@@ -96,6 +96,11 @@ export const fileMoveTool = {
   category: 'filesystem',
   requiresPermission: true,
   isConcurrencySafe: false,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'writeFiles',
+  needsWorkspace: true,
+  uiModule: 'files',
+  inputKeys: ['src', 'dst'],
   parametersSchema: {
     type: 'object',
     properties: {

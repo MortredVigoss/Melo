@@ -165,6 +165,11 @@ export const fetchUrlTool = {
   category: 'web',
   isConcurrencySafe: true,
   requiresPermission: false,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'network',
+  needsWorkspace: false,
+  uiModule: 'search',
+  inputKeys: ['url', 'extract_mode'],
   parametersSchema: {
     type: 'object',
     properties: {

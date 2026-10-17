@@ -1,4 +1,5 @@
 import { compileFunctionTool } from './functionSchema.js';
+import { toolCodeHint } from './toolResult.js';
 import { parseModelResponse, formatToolResultsMessage, _shouldEmitEvidenceTrail } from './parser.js';
 
 export const MAX_FUNCTION_CALLS_PER_RESPONSE = 32;
@@ -17,9 +18,14 @@ export function modelReplyText(reply) {
 
 function toolOutput(result, maxOutputChars) {
   const raw = String(result.output ?? '');
-  return JSON.stringify({ ok: result.ok === true,
+  const status = result.status || (result.ok === true ? 'ok' : 'error');
+  const code = result.code || (status === 'error' ? String(result.error || 'UNKNOWN').slice(0, 64) : undefined);
+  const hint = toolCodeHint(code);
+  return JSON.stringify({ ok: result.ok === true, status,
+    ...(code ? { code, ...(status === 'error' ? { error: code } : {}) } : {}),
     output: raw.length > maxOutputChars ? raw.slice(0, maxOutputChars) + '\n[Tool output truncated; request a narrower excerpt if needed.]' : raw,
-    ...(result.error ? { error: String(result.error).slice(0, 500) } : {}),
+    ...(hint ? { hint } : {}),
+    ...(result.meta?.detail ? { detail: String(result.meta.detail).slice(0, 300) } : {}),
     ...(_shouldEmitEvidenceTrail(result) ? { evidenceTrail: result.evidenceTrail.slice(0, 20).map(item => ({
       tier: String(item?.tier || '').slice(0, 100), outcome: String(item?.outcome || '').slice(0, 100),
       ...(item?.reason ? { reason: String(item.reason).slice(0, 300) } : {}),

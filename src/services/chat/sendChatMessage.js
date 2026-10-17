@@ -9,6 +9,7 @@ import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { validateChatRequest } from './requestContract.js';
 import { beginChatRun, completeChatRun, interruptChatRun } from './turnLedger.js';
 import { recordFailure } from '../../runtime/failureCounters.js';
+import { precompactIfNeeded } from './compactScheduler.js';
 import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, persistImageProgress, finishPartialImageReply } from './imageTurnState.js';
 // sendChatMessage entry — sub-phase 7d-5δ commit 8f of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
@@ -508,6 +509,11 @@ async function executeChatTurn({
   // semantic recall catches up even when session-memory extraction does not
   // happen on this particular turn.
   schedulePostTurnTask(home, () => scheduleEmbeddingFillIn(config), { label: 'embedding-fill-in' });
+
+  // Background pre-compaction (design audit L4): summarise the oldest chunk
+  // once pending history passes 70% of the window, so the next turn does not
+  // stall on a synchronous summarising request.
+  schedulePostTurnTask(home, () => precompactIfNeeded(latestChat, { config, home }), { label: 'precompact' });
 
   // Session memory extraction (async, non-blocking — fire and forget).
   // Runs after saveState so it doesn't slow down the response. Previously

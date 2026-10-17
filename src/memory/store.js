@@ -672,7 +672,7 @@ function buildRecallQuery({ namespaces = [], kinds = [], allowGlobal = false } =
   if (!normalizedNamespaces.length && !allowGlobal) return null;
   return { normalizedNamespaces, normalizedKinds, allowGlobal };
 }
-function keywordRecallRows(built, query = '', {limit = 64, accept = () => true} = {}) {
+function keywordRecallRows(built, query = '', {limit = 64, accept = () => true, preferHot = false} = {}) {
   if (!built) return [];
   const database = getDb(), {normalizedNamespaces:ns, normalizedKinds:kinds} = built;
   const clauses = [activeMemorySQL('m.')], params = [];
@@ -705,7 +705,18 @@ function keywordRecallRows(built, query = '', {limit = 64, accept = () => true} 
       params.push(...tokens.map(token=>'%'+[...token].map(c=>c.replace(/[\\%_]/g,'\\$&')).join('%')+'%'));
     }
   }
-  return collect(`SELECT ${columns} FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY m.updated_at DESC,m.id LIMIT ? OFFSET ?`,params);
+  // Hot-first ordering (design audit M3): the Hot Attic candidate pool used to
+  // be "the 32 most recently updated rows", so an old pinned decision fell out
+  // of the pool as soon as newer ordinary facts arrived and dreaming's
+  // promotion had no visible effect. With preferHot, rows that are pinned,
+  // marked hot by the sweep, or in an always-hot category come first.
+  const hotOrder = preferHot
+    ? `CASE WHEN json_extract(m.metadata_json,'$.pinned')=1 THEN 0
+            WHEN json_extract(m.metadata_json,'$.category') IN ('correction','decision') THEN 1
+            WHEN json_extract(m.metadata_json,'$.attic')='hot' THEN 2
+            ELSE 3 END,`
+    : '';
+  return collect(`SELECT ${columns} FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY ${hotOrder}m.updated_at DESC,m.id LIMIT ? OFFSET ?`,params);
 }
 
 // Exported for unit tests — these are pure and deterministic.
@@ -1300,6 +1311,7 @@ export function recallMemories({
   queryEmbedding = null,
   includeEmbedding = false,
   accept = () => true,
+  preferHot = false,
 } = {}) {
   const builtQuery = buildRecallQuery({ namespaces, kinds, allowGlobal: false });
   if (!builtQuery) {
@@ -1409,7 +1421,7 @@ export function recallMemories({
   // effectively dead.  Opt-in `includeEmbedding: true` re-fetches just the
   // embedding BLOB by id for the final scored slice, so callers that need
   // it pay the cost, everyone else stays on the lean path.
-  const rows = keywordRecallRows(builtQuery,query,{limit:lim,accept});
+  const rows = keywordRecallRows(builtQuery,query,{limit:lim,accept,preferHot});
 
   if (includeEmbedding && rows.length > 0) {
     const ids = rows.map(r => r.id);
@@ -2091,6 +2103,22 @@ export function recordMemoryFeedback({ candidates = [], usedIds = [], requestId,
  * @param {string[]} [opts.memoryIds]   if provided, restrict to these ids
  * @param {number}   [opts.windowDays]  default 14
  */
+/**
+ * Negative feedback (design audit M6): the user stopped using a fact. Recorded
+ * as a hit with outcome 'rejected' so dreaming's outcome gate sees it; the
+ * gate reads goodOutcomes = used − rejected.
+ */
+export function recordMemoryRejection(memoryId, { requestId = 'user:forget' } = {}) {
+  if (!memoryId) return 0;
+  try {
+    return getDb().prepare(`INSERT INTO memory_hits(memory_id,hit_at,query_hash,rank,request_id,outcome) VALUES(?,?,?,?,?,'rejected')`)
+      .run(String(memoryId), new Date().toISOString(), 'user-feedback', 0, `${requestId}:${Date.now()}`).changes;
+  } catch (err) {
+    debugWarn('memory.feedback', 'recordMemoryRejection failed', err?.message || err);
+    return 0;
+  }
+}
+
 export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
   const database = getDb();
   const sinceIso = new Date(Date.now() - windowDays * 86_400_000).toISOString();
@@ -2102,7 +2130,8 @@ export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
            COUNT(*)                               AS hits,
            COUNT(DISTINCT query_hash)             AS distinctQueries,
            AVG(COALESCE(rank, 0))                 AS avgRank,
-           SUM(CASE WHEN outcome='used' THEN 1 ELSE 0 END) AS goodOutcomes
+           SUM(CASE WHEN outcome='used' THEN 1 WHEN outcome='rejected' THEN -1 ELSE 0 END) AS goodOutcomes,
+           SUM(CASE WHEN outcome='rejected' THEN 1 ELSE 0 END) AS rejectedOutcomes
     FROM memory_hits
     WHERE hit_at >= ?${idClause}
     GROUP BY memory_id

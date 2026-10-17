@@ -293,6 +293,10 @@ export function normalizeChat(chat) {
       Number.isFinite(Number(chat?.compactUpgradeAttempts)) && Number(chat.compactUpgradeAttempts) >= 0
         ? Number(chat.compactUpgradeAttempts)
         : 0,
+    // Extension tool groups activated in this chat (only grows; design audit A2).
+    toolGroupsActivated: Array.isArray(chat?.toolGroupsActivated)
+      ? [...new Set(chat.toolGroupsActivated.filter(id => ['browser', 'documents', 'media'].includes(id)))].sort()
+      : [],
     // Session memory — extracted facts accumulated across turns
     sessionMemory: Array.isArray(chat?.sessionMemory) ? chat.sessionMemory : [],
     memoryLastExtractedAt: Number.isFinite(Number(chat?.memoryLastExtractedAt))
@@ -396,7 +400,8 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
       Boolean(chat?.compactedAt) ||
       Boolean(chat?.compactFailures) ||
       Boolean(chat?.compactSummarySource) ||
-      Boolean(chat?.compactUpgradeAttempts);
+      Boolean(chat?.compactUpgradeAttempts) ||
+      Boolean(chat?.toolGroupsActivated?.length);
     return !hasRuntimeState;
   }
 
@@ -412,7 +417,9 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
     String(runtime.compactedAt || '') === String(chat?.compactedAt || '') &&
     (Number(runtime.compactFailures) || 0) === (Number(chat?.compactFailures) || 0) &&
     String(runtime.compactSummarySource || '') === String(chat?.compactSummarySource || '') &&
-    (Number(runtime.compactUpgradeAttempts) || 0) === (Number(chat?.compactUpgradeAttempts) || 0)
+    (Number(runtime.compactUpgradeAttempts) || 0) === (Number(chat?.compactUpgradeAttempts) || 0) &&
+    JSON.stringify(Array.isArray(runtime.toolGroupsActivated) ? runtime.toolGroupsActivated : []) ===
+      JSON.stringify(Array.isArray(chat?.toolGroupsActivated) ? chat.toolGroupsActivated : [])
   );
 }
 

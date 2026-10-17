@@ -77,17 +77,14 @@ function bailAbortedWebSearch(trail, currentPhase, query, ctx = {}) {
       recordWebSearchTrail(trail, p, 'skip', { reason: 'aborted-by-prev-phase' });
     }
   }
-  // Backward compat: keep error='SEARCH_FAILED' so existing callers that
-  // branch on error code (and tests that pin it) don't change behavior.
-  // The new `aborted: true` flag + evidenceTrail.tier='*-mid-loop' lets
-  // newer code distinguish abort from generic search failure.
-  // meta.intent/spanId/timings stay present (existing tests pin them on
-  // the fail path); ctx threads them in from run() so the helper stays
+  // Envelope (B1, 2026-10-17): an abort is ABORTED, not a generic search
+  // failure. meta.intent/spanId/timings stay present (existing tests pin them
+  // on the fail path); ctx threads them in from run() so the helper stays
   // stateless.
   return {
     ok: false,
     output: `Web search aborted for "${query}".`,
-    error: 'SEARCH_FAILED',
+    error: 'ABORTED',
     aborted: true,
     meta: {
       query,
@@ -1833,6 +1830,11 @@ export const webSearchTool = {
   // around if callers keep refreshing the search view.
   isConcurrencySafe: false,
   requiresPermission: false,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'network',
+  needsWorkspace: false,
+  uiModule: 'search',
+  inputKeys: ['query', 'num_results'],
   parametersSchema: {
     type: 'object',
     properties: {
@@ -2300,7 +2302,8 @@ export const webSearchTool = {
       return {
         ok: false,
         output: `Web search failed for "${q}": ${err?.message || err}`,
-        error: 'SEARCH_FAILED',
+        error: 'PROVIDER_DOWN',
+        meta: { detail: String(err?.message || err).slice(0, 300) },
         evidenceTrail: trail,
       };
     }
@@ -2372,11 +2375,24 @@ export const webSearchTool = {
       // serp + synonym both empty — content-fetch + rerank are skip.
       recordWebSearchTrail(trail, 'content-fetch', 'skip', { reason: 'no-serp-results' });
       recordWebSearchTrail(trail, 'semantic-rerank', 'skip', { reason: 'no-serp-results' });
-      writeWebSearchDebugLine(`[end] span=${spanId} path=fail errors=${errors.length}`);
+      writeWebSearchDebugLine(`[end] span=${spanId} path=${errors.length ? 'fail' : 'empty'} errors=${errors.length}`);
+      // Envelope (B1): a clean search with zero hits is 'empty' (ok, NO_RESULTS),
+      // only provider errors are failures (PROVIDER_DOWN). The model used to
+      // see both as SEARCH_FAILED and retried empties as if the service broke.
+      if (!errors.length) {
+        return {
+          ok: true,
+          status: 'empty',
+          code: 'NO_RESULTS',
+          output: `Web search ran but found no results for "${q}".`,
+          meta: { empty: true, query: q, timings: { totalMs: tAfterSerp - tStart, serpMs: tAfterSerp - tStart, contentMs: 0, cacheHit: false, weatherFastPath: false }, provider, resultCount: 0 },
+          evidenceTrail: trail,
+        };
+      }
       return {
         ok: false,
         output: `Web search failed for "${q}". Errors: ${errors.join('; ')}`,
-        error: 'SEARCH_FAILED',
+        error: 'PROVIDER_DOWN',
         meta: {
           query: q,
           timings: {

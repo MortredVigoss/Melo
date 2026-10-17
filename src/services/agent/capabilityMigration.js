@@ -6,8 +6,8 @@ export function capabilityMigrationPreview(profile,options={}) {
   const proposed=migrateLegacyCapabilities(profile,options);
   const input={id:profile.id,tools:profile.tools,enabledSkillIds:profile.enabledSkillIds,enabledConnectorIds:profile.enabledConnectorIds,enabledMcpServerIds:profile.enabledMcpServerIds,proposed};
   return {fingerprint:createHash('sha256').update(JSON.stringify(input)).digest('hex'),proposed,
-    lostTools:(options.tools||[]).filter(t=>!t.id.startsWith('mcp:')&&!toolCapabilityAllowed(t.id,proposed)).map(t=>t.id),
-    lostActions:['image.generate','pdf.write','clipboard.write','knowledge.index'].filter(action=>{const [id,name]=action.split('.');return !toolCapabilityAllowed(id,proposed,{action:name});}),
+    lostTools:(options.tools||[]).filter(t=>!t.id.startsWith('mcp:')&&!toolCapabilityAllowed(t.id,proposed,undefined,t)).map(t=>t.id),
+    lostActions:['image.generate','pdf.write','clipboard.write','knowledge.index'].filter(action=>{const [id,name]=action.split('.');return !toolCapabilityAllowed(id,proposed,{action:name},(options.tools||[]).find(t=>t.id===id));}),
     note:'旧开关此前仅影响上下文。确认后能力在执行时生效；生成媒体和委派需要单独开启。MCP 与技能仅允许所列对象。'};
 }
 

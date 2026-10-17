@@ -17,6 +17,7 @@
  *   - Handles multiple tool calls in a single response
  */
 
+import { toolCodeHint } from './toolResult.js';
 import { randomUUID } from 'node:crypto';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -185,13 +186,17 @@ export function formatToolResult(call, result, { maxOutputChars = Infinity } = {
   const output = raw.length > maxOutputChars
     ? `${raw.slice(0, maxOutputChars)}\n[Tool output truncated; request a narrower excerpt if needed.]`
     : raw;
+  const status = result.status || (result.ok ? 'ok' : 'error');
+  const code = result.code || (status === 'error' ? String(result.error || 'UNKNOWN') : '');
   const lines = [
-    `<tool_result id="${escapeXml(call.id).replace(/"/g, '&quot;')}" name="${escapeXml(call.name).replace(/"/g, '&quot;')}" ok="${okAttr}">`,
+    `<tool_result id="${escapeXml(call.id).replace(/"/g, '&quot;')}" name="${escapeXml(call.name).replace(/"/g, '&quot;')}" ok="${okAttr}" status="${status}"${code ? ` code="${escapeXml(code).replace(/"/g, '&quot;')}"` : ''}>`,
     `<output>${escapeXml(output)}</output>`,
   ];
-  if (!result.ok && result.error) {
-    lines.push(`<error>${escapeXml(result.error)}</error>`);
+  if (!result.ok && (result.error || code)) {
+    lines.push(`<error>${escapeXml(code || result.error)}${result.meta?.detail ? `: ${escapeXml(String(result.meta.detail).slice(0, 300))}` : ''}</error>`);
   }
+  const hint = toolCodeHint(code);
+  if (hint && status !== 'ok') lines.push(`<hint>${escapeXml(hint)}</hint>`);
   if (_shouldEmitEvidenceTrail(result)) {
     const items = result.evidenceTrail
       .map(_formatEvidenceTrailItem)
