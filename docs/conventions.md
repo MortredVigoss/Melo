@@ -11,8 +11,8 @@
 
 | 变量 | 默认 | 用途 |
 |---|---|---|
-| `MELO_HOME` | `~/.melo/desktop/` 推断 | 用户状态根目录（`state.json`、`store.sqlite`、`dreams/`、`agents/` 等都住这里）。测试用 `mkdtempSync(...)` 隔离时**必须**在 import desktopStore.js 之前设。 |
-| `MELO_DESKTOP_PORT` | `43128` | 默认 server 端口；Swift launcher 自动 rollover 时通过这个 env 通知 Node |
+| `MELO_HOME` | `<project>/.tmp/melo-home-user`（`src/runtime/paths.js`；`~/.melo` 仅作旧路径兼容） | 用户状态根目录（`state.json`、`store.sqlite`、`dreams/`、`agents/` 等都住这里）。测试用 `mkdtempSync(...)` 隔离时**必须**在 import desktopStore.js 之前设。 |
+| `MELO_DESKTOP_PORT` | `43127` | 默认 server 端口；Swift launcher 自动 rollover 时通过这个 env 通知 Node |
 
 ### 可选诊断 / 灰度开关
 
@@ -65,7 +65,7 @@ $HOME/
 │   │   ├── bin/{crwl,scrapling}                    ← 直装 layout
 │   │   └── pipx/venvs/{crawl4ai,scrapling,camoufox}/bin/...   ← pipx layout
 │   └── (其它 melo 相关文件夹)
-└── (默认 MELO_HOME 在这之外，~/.melo/desktop/，但 .tmp/melo-home-verify 是测试用 isolated home)
+└── (默认 MELO_HOME = .tmp/melo-home-user；.tmp/melo-home-verify 是测试用 isolated home)
 ```
 
 **重要**：
@@ -77,6 +77,8 @@ $HOME/
 ## 3. test:* npm scripts 和 gate 接入
 
 **核心原则**（详见 user memory `feedback_test_must_reach_gate.md`）:
+
+> **2026-10-17 更新（审计 A-12）**：下面「逐文件 allowlist 接入 verify-red-green」的描述已过时。现在 `npm test` = `scripts/verify-daily.js`：自动发现 `src/`、`desktop-ui/`、`mobile-sync/`、`scripts/`、`ios/Tests` 下所有 `*.test.js`（`scripts/test-discovery.js`），按改动范围计划（`scripts/test-plan.js`），不需要为新测试加 `package.json` script；隔离某个测试必须给原因和到期日。`npm run test:full` = `verify-red-green.js` 是发布 gate。以下段落保留作历史说明。
 
 > 每加一个新 `*.test.js` 必须问"`verify-red-green` 在 push 前会跑它吗"。
 > "测试存在但 gate 不跑" = silent skip = 等于没写。Codex C-gate 已经抓过两次同一类病。

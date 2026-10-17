@@ -379,3 +379,61 @@ desktopStore.js = 纯 re-export 门面 + 全仓唯一的 bootstrapBuiltinTools()
 - 沙箱缺 native addon（`dirfdOps`），未实测全量工具提示字节数。
 - 未审 iOS 侧 Agent / 上下文实现（只核对了 `ConversationHistory.swift`、`ChatStore.swift` 的常量与 `AgentProfile.swift` 已停用 mood 注入）。
 - 本轮没有运行 `npm test`、没有改产品代码、没有 git 提交产品改动；只新增本文档。
+
+---
+
+## 7. 实施状态（2026-10-17 同日）
+
+用户决定全部修复并暂时归档 Discord（与 Telegram 并列）。已落地（本地 `npm test` 日常层级 + 沙箱全量 JS 回归；浏览器测试在用户机器上跑）：
+
+| 编号 | 状态 | 实际改动 |
+|---|---|---|
+| P0-1 / A-1 | ✅ | `server.js` 传入 `requireLocalOrigin`；registry 缺 gate 即 throw；新增 `src/http/ttsRoutes.http.test.js` 走真实 `createServer` |
+| P0-2 / C-2 | ✅ | `resolveContextBudget` 单一来源：云端默认 160k、本地 24k、窗口 = 输入上限 × 0.75、压缩触发 = 窗口；fitter 丢消息时同轮强制压缩；`contextGap.test.js` 固定不变量 |
+| 窗口拉长（用户） | ✅ | 同上；`MELO_CONTEXT_BUDGET_TOKENS` 仍可覆盖（上限 400k） |
+| P0-3 / C-1 | ✅ | `message_scope` 侧表 + `tagChatScope` 回填；`search_history` 作用域来自执行上下文（受众 + 项目），远程渠道不能放宽 |
+| B-1 / C-9 | ✅ | Hot Attic 不再召回 `identity`；`break`→`continue`；共享估算器 |
+| A-2 | ✅ | 无 voice-pack 不装看门狗；只杀自己 spawn 的 pid |
+| A-3 / A-8 | ✅ | `/api/*` Host 白名单（LAN 绑定除外）；无 Origin 写请求校验 `Sec-Fetch-Site` |
+| A-4 | ✅ | gate 改传递闭包 + `services→http` 禁止；`attachmentSummary`、`extractedMedia` 下沉 domain；`trailLogger` 移 runtime；mobile-sync 业务逻辑移 `services/remote/mobileSync.js` |
+| A-6 | ✅ | poller 锁只认 `ESRCH` |
+| A-10 | ✅ | `failureCounters.js`：interrupt 重试一次后计数；post-turn 任务失败计数并写 stderr；诊断暴露 `failures` |
+| A-11 | ✅ | `bootstrapBuiltinTools()` 在 `server.js` / `index.js` 显式调用；image tool 优先用执行器的 home |
+| A-12 | ✅ | `conventions.md` 三处纠正 + 过时段落标注；`MELO_OVERVIEW.md:343`；loop-audit 状态；memory-architecture dreaming / provider 说明 |
+| B-2 | ✅ | 系统提示改为按 `capabilities` 宣称能力；不再读旧 `tools` |
+| B-3 | ✅ | 无审批入口时立即拒绝（`PERMISSION_NO_SURFACE`） |
+| B-4 | ⏸ 归档后不适用 | Discord 已归档；恢复时再做每 Agent 独立轮询 |
+| B-5 | ✅ | 成员 `ok` = 给出结论且无越权调用；自报 status 优先；团队/复核不再因单次工具失败假失败 |
+| B-6 | ✅ | `memberBackground.js`：成员与团队 lead 收到项目说明 + 摘要 + 最近 6 轮（有界，放首条用户消息） |
+| B-7 | ⏸ 归档后不适用 | 项目范围频道写入保留现状 |
+| B-8 | ✅ | `domain/agent/agentIdentity.js` 单一渲染，四处复用；voiceRewrite 语言规则与纯中文人设一致 |
+| B-9 | ✅ | 保存时按 token 估算拒绝过长人设（40k） |
+| B-10 | ✅ | mode 改为「Working style」后缀，不再第二个 "You are" |
+| B-11 / B-12 | ⏸ | 评分可配置与按 Agent 度量未做（见 §4.4） |
+| loop-audit #1/#2/#3 | ✅ | `repeatGuard.js`；hooks 超时 + abort；工作区租约可取消、卡住标记 `WORKSPACE_BLOCKED` |
+| C-3 | ✅ | project 段优先级 105、进入稳定前缀 |
+| C-4 / C-5 | ✅（部分） | 逐轮段落移入当前用户消息（`turnContextPlacement`）；Anthropic `cache_control`；OpenAI 一方 `prompt_cache_key`。**未做**：工具数组按 Agent 固定（搜索路由仍逐轮增删工具），见 §4.2 B-3 |
+| C-6 | ✅ | 摘要来源持久化（`compactSummarySource`）、降级头、下一轮重试云端（≤3 次、20s） |
+| C-7 | ⏸ | 固定小块（plan 2B）待用户选择方案 |
+| C-8 | ✅ | `compactToolChain`：超预算先压缩旧工具输出再重试 |
+| C-10 | ✅（部分） | 非拉丁 1.5→1.0；Hot Attic 用共享估算器；知识/手机单位未统一 |
+| C-11 | ✅ | dreaming 启动后 3 分钟补跑、lastRun 持久化 |
+| C-12 | ✅ | tiered 时跳过 flat prompts；RRF 后 MMR；`includedMessageIds` 用实际发送集合；自纠错 `scope:'agent'`；embedding 2.5s 上限 |
+| A-5 / A-7 / A-9 / B-12 | ⏸ | 写队列内 IO、CLI 锁、前端补救层、评估闭环：结构性，另排 |
+
+## 8. 工具调用链优化（2026-10-17，用户追加要求）
+
+只读复核后做的改动，行为不变、输出等价（沙箱等价性脚本逐样本比对）：
+
+| 位置 | 问题 | 改动 | 实测 |
+|---|---|---|---|
+| `memory/tokenEstimate.js` `estimateTextTokens` | 正则 `match(/[^\u0000-\u024f]/gu)` 为每个中文字符分配一个数组元素；fitter 每轮对全部消息重估 | 无分配的码点计数循环（代理对按 1 个码点） | 232k 字符 ×50：600ms → 38ms |
+| `truncateToTokens` | 二分查找，每步对切片重新估算 | 单次前向扫描，与整串估算 ceil 完全一致 | 232k 字符 ×5：257ms → 4ms |
+| `estimateMessageTokens` | 协议消息每次 `JSON.stringify(responseItems)` | 按消息对象 WeakMap 记忆，内容/条目引用或长度变化即失效 | 10 轮工具循环 fit：156ms → 11ms |
+| `chatExecutionRunner` 工具循环 | 每轮重建 `skillToolsById`、`visibleToolIds`、`allowedDispatchTools`（全量 `filterMcpToolsForAgent`）、全部 Agent 的 `effectiveAgentProfile` 合并、成员背景文本；`toolCalls.find` / `execResults.find` O(n²) | 提到循环外、首次用到时惰性计算；按 id 建 Map | — |
+| `config.js` `loadConfig` | 每次权限检查 / 压缩等都读盘 + JSON.parse config.json | 按 `stat`（mtime/size/ino）校验的原始 JSON 缓存，返回深拷贝 | 每次工具调用省一次文件读取 |
+
+未改：`executeToolCalls` 的"并发安全成组、串行工具 flush"策略是正确性属性，保留；`executeTool` 每次调用的 realpath/stat（3–4 次系统调用）相对工具本身开销可忽略，不加缓存以免引入状态。
+
+**顺带修复的既有 UI bug**：在「语音风格要求 / Edge TTS 音色」文本框编辑后直接点「保存修改」，blur 触发的 `change` 会整页 render 替换按钮，首次点击被吞（`desktop-ui/app.js` change handler 对这三个字段无条件 `render()`）。现在只有 `<select>` 才立即重绘，与通用分支一致；`telegramArchive.browser.test.js` 在归档 Discord 后恰好暴露了它。
+

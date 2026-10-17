@@ -65,13 +65,19 @@ export function buildAgentMemoryNodeContext({
     }
     for (const ns of participants.keys()) groups.push({id:ns,namespaces:[ns],kinds:['fact'],limit:3});
   }
-  const recalled = recallMemoryGroups({groups,query:latestUserMessage,queryEmbedding,accept});
+  const gate = String(env.MELO_MEMORY_TIERS_RECALL || '').trim();
+  const tiers = enabledTiers(env);
+  const tieredRecall = gate === '1' || (gate !== '0' && (tiers.has('scene') || tiers.has('frame')));
+  // audit C-12: with tiered recall on, the flat `prompts` group was queried and
+  // then discarded (its rows were overwritten by tiered contents) — one SQLite +
+  // vector pass per turn for nothing. Skip it up front; the tiered path falls
+  // back to a flat query only if it throws.
+  const flatGroups = tieredRecall ? groups.filter(group=>group.id !== 'prompts') : groups;
+  const recalled = recallMemoryGroups({groups:flatGroups,query:latestUserMessage,queryEmbedding,accept});
   const rows = id => recalled.get(id) || [];
   for (const group of recalled.values()) onCandidates?.(group);
   let scenes = [], frames = [], facts = [], prompts = rows('prompts');
-  const gate = String(env.MELO_MEMORY_TIERS_RECALL || '').trim();
-  const tiers = enabledTiers(env);
-  if (gate === '1' || (gate !== '0' && (tiers.has('scene') || tiers.has('frame')))) {
+  if (tieredRecall) {
     try {
       const tiered = recallMemoriesTiered({namespaces,query:latestUserMessage,queryEmbedding,
         accept:row=>accept(row)&&local(row),limits:{scenes:3,frames:8,contents:12}});
@@ -81,6 +87,9 @@ export function buildAgentMemoryNodeContext({
       onCandidates?.([...scenes,...frames,...prompts,...facts]);
     } catch (error) {
       console.warn(`[memory.recall.tiered] fallback to flat recall: ${error.message}`);
+      const fallback = recallMemoryGroups({groups:groups.filter(group=>group.id === 'prompts'),query:latestUserMessage,queryEmbedding,accept});
+      prompts = fallback.get('prompts') || [];
+      onCandidates?.(prompts);
     }
   }
   const blocks = [], rendered = [];

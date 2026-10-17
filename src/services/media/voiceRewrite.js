@@ -188,7 +188,7 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
       '1. Output language is determined by the persona definition above. ' +
         'If the persona speaks only English → reply in English only (no Chinese). ' +
         'If the persona speaks Chinese → reply in natural spoken Chinese and do not slip in English/Korean/Japanese words. ' +
-        'If the persona uses a specific style (Korean-flavored Chinese, dialect, etc.) → follow that style exactly.',
+        'If the persona uses a specific style (a dialect, a fixed set of catchphrases, etc.) → follow that style exactly, but never add words from a language the persona does not speak.',
       '2. Do NOT re-summarize or compress the input further — it is already condensed. Your job is only to restyle it into the persona\'s spoken voice.',
       '3. Remove all @mentions. No markdown, no emoji spam, no bullet lists.',
       '4. Output only the rewritten text — no explanations, no prefixes, no suffixes.',
@@ -204,8 +204,12 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
       providerProfile: 'fast',
     });
     if (typeof voiceText === 'string' && voiceText.trim()) {
-      // Post-process: strip @mentions only; preserve Hangul so agents with
-      // Korean-flavored voice personalities can keep their 语气词 (네/응/맞아/요 etc).
+      // Post-process: strip @mentions only. Language policy lives in the
+      // persona text (the 金冬天 persona is Chinese-only since 2026-10-17 —
+      // the MiniMax custom voice reads mixed-in Korean badly). We do not strip
+      // scripts here because other TTS engines can read them; the MiniMax
+      // path additionally applies stripKoreanForMinimax in ../../tts.js as a
+      // safety net.
       voiceText = voiceText
         .replace(/@[\w\u4e00-\u9fff]+/g, '')
         .replace(/^\s*[，,\s]+/, '')

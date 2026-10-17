@@ -32,6 +32,17 @@ function fixture(question) {
   };
 }
 
+// Since 2026-10-17 the per-turn sections (tools, uncertainty, language,
+// retrieved materials, recall, thread snapshot) travel inside the latest user
+// message so the system prompt stays cache-stable. Assertions about those
+// sections look at the whole prompt the model received.
+function fullPromptText(request) {
+  const latestUser = [...(request.messages || [])].reverse().find(message => message.role === 'user');
+  const content = latestUser?.content;
+  const userText = Array.isArray(content) ? content.map(part => part?.text || '').join('\n') : String(content ?? '');
+  return [request.systemPrompt, userText].join('\n\n');
+}
+
 test('retired Demon ignores legacy flags and strips new specs while file citations still work', async () => {
   const input = fixture('请整理这段文字。');
   input.workspace.filePaths = ['notes.txt'];
@@ -107,7 +118,7 @@ test('greetings avoid tool prompts and verification; high-risk writing retains b
   assert.deepEqual(greeting.visibleToolIds, []);
   const writing = await runChatAgentExecutionGraph({
     ...fixture('帮我写一份药物剂量说明'), _dependencies: { getEmbedding: async () => null, createReply: async request => {
-      assert.match(request.systemPrompt, /Uncertainty signaling/);
+      assert.match(fullPromptText(request), /Uncertainty signaling/);
       return '需要更多已核实的信息。';
     } },
   });
@@ -236,7 +247,7 @@ test('actual prompt gets a fact once, and only complete budget-surviving facts c
   metadata:{chatId,scope:'chat',audience:'local',category:'preference'},createdAt:'2026-01-01T00:00:00Z'});
  store.replaceMemories([make(text)]);
  let prompt='';
- const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{prompt=req.systemPrompt;return '已记住。';}}});
+ const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{prompt=fullPromptText(req);return '已记住。';}}});
  assert.equal(prompt.split(text).length-1,1,'one fact must have exactly one prompt representation');
  assert.equal(result.normalizedReply.memoryUsage.filter(r=>r.id===id).length,1);
  assert.equal(store.getMemoriesByIds([id])[0].metadata.useCount,1);

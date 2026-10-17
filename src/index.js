@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+// Composition root: register built-in tools explicitly here instead of
+// relying on the desktopStore facade's import side effect (audit A-11).
+import { bootstrapBuiltinTools } from './tools/registry.js';
+bootstrapBuiltinTools();
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';

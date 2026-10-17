@@ -16,14 +16,37 @@ function completed(reason) {
   if (!['end_turn', 'stop_sequence'].includes(reason)) throw new Error(`模型未完成回复（${String(reason || '缺少结束状态').slice(0, 60)}）。`);
 }
 
-export async function requestAnthropicReply({ baseUrl, apiKey, model, systemPrompt, messages, signal, onDelta, onModelMetadata, maxTokens = 8192, fetchImpl = fetch }) {
+// Prompt caching (2026-10-17 audit C-5): the system prompt is now the
+// cache-stable prefix (per-turn context rides in the latest user message), so
+// one breakpoint at the end of the system block and one at the end of the
+// history before the current turn let Anthropic reuse both across turns.
+const CACHE_BREAKPOINT = { type: 'ephemeral' };
+export function anthropicRequestBody({ model, systemPrompt, messages, maxTokens = 8192, stream = false, promptCache = true }) {
+  const turns = messages.filter(m => ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, content: anthropicContent(m.content) }));
+  if (promptCache) {
+    // Last assistant turn = end of the reusable history prefix.
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      if (turns[index].role !== 'assistant') continue;
+      const content = turns[index].content;
+      const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+      if (blocks.length) {
+        blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: CACHE_BREAKPOINT };
+        turns[index] = { role: 'assistant', content: blocks };
+      }
+      break;
+    }
+  }
+  const system = systemPrompt
+    ? (promptCache ? [{ type: 'text', text: systemPrompt, cache_control: CACHE_BREAKPOINT }] : systemPrompt)
+    : '';
+  return { model, system, max_tokens: Math.max(1, Math.min(8192, Math.floor(maxTokens) || 8192)), messages: turns, stream };
+}
+
+export async function requestAnthropicReply({ baseUrl, apiKey, model, systemPrompt, messages, signal, onDelta, onModelMetadata, maxTokens = 8192, fetchImpl = fetch, promptCache = true }) {
   const response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/messages`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model, system: systemPrompt || '', max_tokens: Math.max(1, Math.min(8192, Math.floor(maxTokens) || 8192)),
-      messages: messages.filter(m => ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, content: anthropicContent(m.content) })),
-      stream: typeof onDelta === 'function',
-    }),
+    body: JSON.stringify(anthropicRequestBody({ model, systemPrompt, messages, maxTokens, stream: typeof onDelta === 'function', promptCache })),
   });
   if (!response.ok) {
     let detail = ''; try { detail = (await response.json()).error?.message || ''; } catch {}

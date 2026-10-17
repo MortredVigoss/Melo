@@ -1,3 +1,4 @@
+import { createRepeatGuard } from './repeatGuard.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
@@ -220,6 +221,7 @@ async function runSkillLoop({
 
   let finalOutput = '';
   let totalToolCalls = 0;
+  const repeatGuard = createRepeatGuard();
   let completed = false;
   let iterations = 0;
 
@@ -270,6 +272,11 @@ async function runSkillLoop({
     }
 
     const allowSet = new Set(allowedTools.map(t => t.id));
+    for (const tc of toolCalls) {
+      if (tc.rejectedResult) continue;
+      const repeated = repeatGuard.check(tc.name, tc.arguments);
+      if (repeated) tc.rejectedResult = repeated;
+    }
     const executableCalls = toolCalls.map(tc => {
       if (tc.rejectedResult) return { id: tc.id, tool: null, args: tc.arguments, callRef: tc };
       if (!allowSet.has(tc.name)) {
@@ -318,6 +325,7 @@ async function runSkillLoop({
         result: { ok: false, output: `Unknown tool: "${tc.name}"`, error: 'UNKNOWN_TOOL' },
       };
     });
+    for (const { call, result } of allResults) if (result?.error !== 'REPEATED_FAILURE') repeatGuard.record(call.name, call.arguments, result);
 
     if (typeof sseEmitter === 'function') {
       // G-1d slice 1.5: forward evidenceTrail to UI (same pattern as

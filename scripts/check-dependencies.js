@@ -58,7 +58,41 @@ export function checkLayerDirections(graph, root) {
       const target = relative(root,dependency);
       if (source.startsWith('state/') && target.startsWith('services/')) throw Error(`Persistence depends on application service: ${source} -> ${target}`);
       if (source.startsWith('domain/') && /^(?:services\/|state\/|persistence\/|providers\/|openai\.js$|server\.js$)/.test(target)) throw Error(`Domain depends on runtime: ${source} -> ${target}`);
+      // Transport is the outermost layer; business services never reach back into it.
+      if (source.startsWith('services/') && target.startsWith('http/')) throw Error(`Service depends on transport: ${source} -> ${target}`);
     }
+  }
+  checkTransitiveLayers(graph, root);
+}
+
+// 2026-10-17 audit A-4: the direct-edge rules above were satisfied while the
+// state layer still reached services/, providers/, tools/ and openai.js two
+// or three hops away (state → memory → services/chat, media → services/search).
+// The closure rule makes the boundary real: nothing reachable from state/,
+// persistence/ or domain/ may be an application service, transport, provider
+// client or tool implementation.
+const LOWER_LAYERS = /^(?:state|persistence|domain)\//;
+const UPPER_LAYERS = /^(?:services\/|http\/|providers\/|tools\/|openai\.js$|server\.js$|desktopStore\.js$)/;
+export function checkTransitiveLayers(graph, root) {
+  const memo = new Map();
+  function reach(file, via = null, seen = new Set()) {
+    if (seen.has(file)) return null;
+    seen.add(file);
+    const target = relative(root, file);
+    if (via !== null && UPPER_LAYERS.test(target)) return [file];
+    if (memo.has(file)) return memo.get(file);
+    for (const next of graph.get(file) || []) {
+      const chain = reach(next, file, seen);
+      if (chain) { memo.set(file, [file, ...chain]); return memo.get(file); }
+    }
+    memo.set(file, null);
+    return null;
+  }
+  for (const file of graph.keys()) {
+    const source = relative(root, file);
+    if (!LOWER_LAYERS.test(source)) continue;
+    const chain = reach(file);
+    if (chain) throw Error(`Lower layer reaches an upper layer transitively: ${chain.map(p => relative(root, p)).join(' -> ')}`);
   }
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {

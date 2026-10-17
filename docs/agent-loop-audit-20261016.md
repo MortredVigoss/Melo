@@ -4,6 +4,9 @@
 
 ## 结论
 
+> **2026-10-17 状态更新**：#4 已于 10-16 修复（`team.js` 总结使用 `teamController.signal`）；#1、#2、#3 于 10-17 修复：`src/agents/repeatGuard.js`（同指纹连续失败两次后本地拒绝）、`src/plugins/hooks.js` 回调超时 + abort 竞速、`src/agents/workspaceScheduling.js` 等待时可被取消、卡住写入在宽限期后标记 `WORKSPACE_BLOCKED` 并自动解除。详见 `docs/architecture-agent-context-audit-20261017.md` §4。
+
+
 普通报错不会让外层 Agent 无上限循环，次数上限确实执行。但目前缺少重复失败提前终止、完整截止时间覆盖和卡住资源的恢复处理，因此可以反复做无效尝试，或已经显示取消却仍阻塞后续任务。没有发现持续占满 CPU 的必现无限循环；本轮“卡住”指异步等待不结束。
 
 ## 现有停止机制

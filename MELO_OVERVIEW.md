@@ -35,7 +35,7 @@
 
 保留模块化单体。桌面/CLI/远程渠道共用 Node 业务核心；iPhone 有独立 Swift 聊天与模型通道，通过共享同步协议交换工作区数据。网站和基准工具独立于产品运行时。
 
-Telegram 于 2026-10-16 按用户决定暂时归档：关闭设置入口、轮询和外发，原有配置与历史对话保留；Discord 继续使用。政策入口 `src/shared/channelAvailability.js`，行为、恢复条件与验证见 [Telegram 归档](docs/telegram-archive-20261016.md)。
+Telegram 于 2026-10-16、Discord 于 2026-10-17 按用户决定暂时归档：关闭设置入口、轮询、语音运行时和外发，原有配置与历史对话保留。政策入口 `src/shared/channelAvailability.js`，行为、恢复条件与验证见 [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md)。
 
 ```text
 桌面 Swift 壳 → desktop-ui → HTTP / SSE ┐
@@ -110,6 +110,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
+| melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
@@ -340,7 +341,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 本地修正提交 `4680530`；后端已重启到该版本（PID 71003），原生窗口正常、确认接口拒绝无来源请求。14 聊天 / 6 Agent / 26 成果 / 1 项目保留；42 个配置/正文/Agent 文件散列一致，主状态仅频道轮询时间及修订变化。证据 `.tmp/agent-review-fixes-20261015/runtime-restart/{before,after}.json`。本轮未做完整发布 gate、真机重新安装或真实模型协作。
 
 ### 2026-10-15 — Claude 架构复审 — 加固实施说明（待实施）
-- 复审结论：状态常驻、派生索引离开提交路径、循环依赖清零、声明式路由、协议单一来源、测试自动发现均已落地；剩余重点是前端单体整页重建、项目 R1 未实施、Agent 能力依赖调用方传参（漏传即放行）。
+- 复审结论：状态常驻、派生索引离开提交路径、循环依赖清零、声明式路由、协议单一来源、测试自动发现均已落地；剩余重点是前端单体整页重建、项目 R1 未实施。（2026-10-17 核对：Agent 能力已改为环境作用域、缺失即拒，`src/tools/executor.js`；前端已是键控 morph，但补救层仍在，见 `docs/architecture-agent-context-audit-20261017.md` A-9。）
 - 用户批准先做两项，见[实施说明](docs/arch-hardening-20261015.md)：A 执行器从请求上下文自行解析能力作用域（只可收窄、无法解析即拒绝）；B 项目 R1（创建不读 UI 选中、空字段不造文案、无项目不回退 APP_ROOT/process.cwd，按需聊天独立目录）。仅文档，未改代码。
 
 ### 2026-10-15 — melo主线 — 架构加固 A 完成，B 继续

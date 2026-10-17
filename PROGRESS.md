@@ -1,3 +1,19 @@
+## 2026-10-17 — 工具调用链优化：估算器与请求裁剪无分配化、循环常量上提、config 读缓存
+
+用户追加要求"把工具调用的代码去优化一下"。只读复核整条链（executor → functionCalling → runner 工具循环 → fitter）后，只改热点且输出等价：token 估算与截断改为单次扫描（16× / 60×），10 轮工具循环的请求裁剪 156ms→11ms，循环内每轮重建的分发常量上提，config.json 改 stat 校验缓存。（Claude）
+并发成组 / 串行 flush 的正确性策略与 executor 的每次 realpath/stat 保留不动；顺带修复"编辑语音风格后首次点保存被吞"的既有 UI bug。
+
+沙箱等价性脚本逐样本比对估算/截断结果一致；相关套件通过。Final commit: 见本条提交.
+
+## 2026-10-17 — 审计四批修复全部落地：窗口拉长、缓存友好提示词、Discord 归档、Agent/上下文加固
+
+用户决定：审计报告里的问题"全部修"，Telegram/Discord 暂时归档（保留配置与历史），单条对话窗口拉长（云端模型默认 160k、历史窗口 114k，可用 `MELO_CONTEXT_BUDGET_TOKENS` 覆盖）。（Claude）
+用户另指定：完成后直接合并 master 并 push，不跑 git pp / Codex 审查；之后再单独优化工具调用代码。
+
+设计承诺（diff 看不出的）：窗口、压缩触发、请求上限来自同一个 `resolveContextBudget`，三者不再独立漂移；逐轮段落放进当前用户消息而不是系统提示（`MELO_TURN_CONTEXT_IN_SYSTEM=1` 可回退）；归档只在运行时派生，不改存储里的 enabled；搜索历史的受众/项目作用域来自执行上下文，模型参数不能放宽；分层 gate 改为传递闭包，新增 `services→http` 禁止。
+
+沙箱全量 JS 回归 3628/3649 通过，19 项失败与基线完全一致（Swift/ios 缺目录、Linux inode 语义、无 rg、ORT 非 Mac 二进制），见 `docs/architecture-agent-context-audit-20261017.md` §7。Final commit: 见本条提交.
+
 ## 2026-10-17 — 架构 / Agent / 上下文三路只读审计，报告与分批方案
 
 用户要求扫一遍架构问题、Agent 设计问题、上下文处理能力并出报告和方案。只读代码，三路并行扫描，不重复既有审计，只列新发现与"文档说已修 / 代码没修"。（Claude）

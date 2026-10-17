@@ -315,3 +315,24 @@ test('delegation uses the request environment even when process defaults belong 
   await runSubAgent({task:'hello',config:{...validConfig(),model:'chosen-role',modelResolvedForTurn:true},allowedToolIds:[],replyFn:async o=>{assert.equal(o.model,'chosen-role');assert.equal(o.apiKey,'sk-test');return 'done';}});
  } finally {for(const k of ['MELO_MODEL','MELO_API_KEY']){if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k];}}
 });
+
+test('a member that keeps repeating the same failing call is stopped locally after two failures', async () => {
+  const calls = [];
+  const failingTool = { id: 'flaky_tool', name: 'flaky', description: 'always fails', category: 'test', requiresPermission: false, isConcurrencySafe: true,
+    parametersSchema: { type: 'object', properties: { q: { type: 'string' } } },
+    run: async args => { calls.push(args); return { ok: false, error: 'PERMANENT', output: 'nope' }; } };
+  registerTool(failingTool);
+  try {
+    const reply = makeFakeReply();
+    // The model re-issues the identical call five times with fresh ids.
+    for (let i = 1; i <= 5; i += 1) reply.queue.push(`<tool_call>{"id":"c${i}","name":"flaky_tool","arguments":{"q":"same"}}</tool_call>`);
+    reply.queue.push('giving up');
+    const res = await runSubAgent({ task: 't', config: validConfig(), allowedToolIds: ['flaky_tool'], replyFn: reply, maxIterations: 8 });
+    assert.equal(calls.length, 2, 'the tool actually ran only twice');
+    const repeated = res.meta.toolResults.filter(r => r.errorCode === 'REPEATED_FAILURE' || /not run again/.test(r.output || ''));
+    assert.ok(repeated.length >= 1, 'later identical calls were answered locally');
+    assert.match(res.output, /giving up/);
+  } finally {
+    unregisterTool?.('flaky_tool');
+  }
+});

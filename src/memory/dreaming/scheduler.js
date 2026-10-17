@@ -14,17 +14,46 @@
  */
 
 import { runDreamingSweep, dreamingEnabled } from './sweep.js';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { getMeloHome } from '../../config.js';
 
 const HOUR = 60 * 60 * 1000;
 const SIX_HOURS = 6 * HOUR;
 const TWENTY_FOUR_HOURS = 24 * HOUR;
 const IDLE_MS = 10 * 60 * 1000;
+// 2026-10-17 audit C-11: the scheduler only registered 6h / 24h intervals and
+// kept lastRun in memory, so a desktop that never stays up for six hours never
+// ran a sweep at all. Now the last run times are persisted under the home and
+// a startup check runs an overdue sweep shortly after boot.
+const STARTUP_DELAY_MS = 3 * 60 * 1000;
 
 let _scheduled = false;
 let _lastIncrementalIso = null;
 let _lastFullIso = null;
 let _timers = [];
 let _idleUnsub = null;
+
+function stateFile() {
+  return join(getMeloHome(), 'desktop', 'dreams', 'scheduler.json');
+}
+function loadPersistedRuns() {
+  try {
+    const parsed = JSON.parse(readFileSync(stateFile(), 'utf8'));
+    if (typeof parsed?.lastIncrementalIso === 'string') _lastIncrementalIso = parsed.lastIncrementalIso;
+    if (typeof parsed?.lastFullIso === 'string') _lastFullIso = parsed.lastFullIso;
+  } catch {}
+}
+function persistRuns() {
+  try {
+    mkdirSync(dirname(stateFile()), { recursive: true });
+    writeFileSync(stateFile(), JSON.stringify({ lastIncrementalIso: _lastIncrementalIso, lastFullIso: _lastFullIso }));
+  } catch {}
+}
+function overdue(iso, everyMs, now = Date.now()) {
+  const last = Date.parse(iso || '');
+  return !Number.isFinite(last) || now - last >= everyMs;
+}
 
 /**
  * @param {Object} [opts]
@@ -37,32 +66,46 @@ let _idleUnsub = null;
 export function startDreamingScheduler({
   setInterval: si = setInterval,
   clearInterval: ci = clearInterval,
+  setTimeout: st = setTimeout,
   incrementalMs = SIX_HOURS,
   fullMs = TWENTY_FOUR_HOURS,
+  startupDelayMs = STARTUP_DELAY_MS,
+  persist = true,
 } = {}) {
   if (_scheduled) return { stop };
   if (!dreamingEnabled()) return { stop: () => {} };
   _scheduled = true;
+  if (persist) loadPersistedRuns();
 
   const runIncremental = () => {
     const sinceIso = _lastIncrementalIso;
     _lastIncrementalIso = new Date().toISOString();
+    if (persist) persistRuns();
     runDreamingSweep({ sinceIso }).catch(() => {});
   };
   const runFull = () => {
     _lastFullIso = new Date().toISOString();
+    if (persist) persistRuns();
     runDreamingSweep({ sinceIso: null, limit: 20000 }).catch(() => {});
   };
 
   _timers.push(si(runIncremental, incrementalMs));
   _timers.push(si(runFull, fullMs));
+  // Catch-up pass a few minutes after boot: run whichever sweep is overdue
+  // according to the persisted clock (the full one wins when both are).
+  const startup = st(() => {
+    if (overdue(_lastFullIso, fullMs)) runFull();
+    else if (overdue(_lastIncrementalIso, incrementalMs)) runIncremental();
+  }, startupDelayMs);
+  startup?.unref?.();
+  _timers.push(startup);
 
   return { stop };
 }
 
 export function stop() {
   for (const t of _timers) {
-    try { clearInterval(t); } catch {}
+    try { clearInterval(t); clearTimeout(t); } catch {}
   }
   _timers = [];
   if (_idleUnsub) { try { _idleUnsub(); } catch {} _idleUnsub = null; }

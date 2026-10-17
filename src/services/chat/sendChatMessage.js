@@ -8,6 +8,7 @@ import { createRequestContext, requestIdentity } from '../../runtime/requestCont
 import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { validateChatRequest } from './requestContract.js';
 import { beginChatRun, completeChatRun, interruptChatRun } from './turnLedger.js';
+import { recordFailure } from '../../runtime/failureCounters.js';
 import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, persistImageProgress, finishPartialImageReply } from './imageTurnState.js';
 // sendChatMessage entry — sub-phase 7d-5δ commit 8f of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
@@ -69,7 +70,7 @@ import { promoteTextUrlsToAttachments } from '../../media/urlDetector.js';
 import { getRequestNetworkPolicy, requestUrls } from '../../retrieval/requestPolicy.js';
 import { modelSupportsVision } from '../../media/visionCapability.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
-import { indexMessage } from '../../memory/conversationIndex.js';
+import { indexMessage, tagChatScope } from '../../memory/conversationIndex.js';
 import { maybeExtractSessionMemory } from '../../memory/sessionMemory.js';
 import {
   promoteAndPersistFacts,
@@ -128,7 +129,13 @@ export function sendChatMessage(options) {
       } catch (error) {
         const status = context.signal?.aborted ? 'cancelled' : 'failed';
         const partialReply = await finishPartialImageReply(context, status);
-        await interruptChatRun(context, error).catch(() => {});
+        // If marking the run interrupted fails, the chat stays `running` and
+        // rejects retries/deletion until restart (audit A-10): retry once,
+        // then count and log it so diagnostics can show the stuck ledger.
+        await interruptChatRun(context, error).catch(async firstError => {
+          try { await interruptChatRun(context, error); }
+          catch (secondError) { recordFailure('chat:interrupt-run', secondError || firstError); }
+        });
         await executionRecorder.finish(status, partialReply);
         throw error;
       }
@@ -389,8 +396,9 @@ async function executeChatTurn({
 
     // Index new messages (fire and forget)
     try {
-      indexMessage(latestChat.id, latestChat.title, userMessage);
-      indexMessage(latestChat.id, latestChat.title, assistantMessage);
+      tagChatScope(latestChat.id, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
+      indexMessage(latestChat.id, latestChat.title, userMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
+      indexMessage(latestChat.id, latestChat.title, assistantMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
     } catch {}
 
     return {
@@ -490,15 +498,16 @@ async function executeChatTurn({
 
   // Conversation history indexing (fire and forget — never blocks the response)
   try {
-    indexMessage(latestChat.id, latestChat.title, userMessage);
-    indexMessage(latestChat.id, latestChat.title, assistantMessage);
+    tagChatScope(latestChat.id, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
+    indexMessage(latestChat.id, latestChat.title, userMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
+    indexMessage(latestChat.id, latestChat.title, assistantMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
   } catch {}
 
   // Snapshot sync writes new message/media/frame rows without embeddings.
   // Kick the bounded fill-in worker after every completed chat turn so
   // semantic recall catches up even when session-memory extraction does not
   // happen on this particular turn.
-  schedulePostTurnTask(home, () => scheduleEmbeddingFillIn(config));
+  schedulePostTurnTask(home, () => scheduleEmbeddingFillIn(config), { label: 'embedding-fill-in' });
 
   // Session memory extraction (async, non-blocking — fire and forget).
   // Runs after saveState so it doesn't slow down the response. Previously
@@ -524,13 +533,13 @@ async function executeChatTurn({
       // Background: fill in any missing embeddings
       await scheduleEmbeddingFillIn(config).catch(() => {});
     }
-  }));
+  }), { label: 'session-memory' });
 
   // Phase 3.4.1 — opportunistic skill-proposal scan. Fire-and-forget so it
   // never blocks the response; dedupes naturally via the store's seedId
   // check, so repeated turns in the same chat don't spam proposals.
   if (!background) {
-    schedulePostTurnTask(home, () => scanRecentChatsForSkillProposals());
+    schedulePostTurnTask(home, () => scanRecentChatsForSkillProposals(), { label: 'skill-proposals' });
   }
 
   // Plugin hook: chat:message:after

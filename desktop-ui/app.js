@@ -8174,10 +8174,12 @@ function renderAgentWorkbench(selected) {
     uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
   // Archived channels have no controls; their saved configuration stays in the draft.
-  const VALID_CHANNEL_TABS = ['discord'];
+  // The list follows src/shared/channelAvailability.js so archiving a transport
+  // removes its tab, card and form inputs in one place.
+  const VALID_CHANNEL_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
   const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
     ? uiState.agentChannelTab[selected.id]
-    : 'discord';
+    : (VALID_CHANNEL_TABS[0] || null);
   const channelTabDefs = [
     {
       id: 'telegram',
@@ -8231,7 +8233,11 @@ function renderAgentWorkbench(selected) {
 
         <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
           <summary>消息渠道</summary>
-          <p class="agent-section-note">Telegram 已归档，原有配置与历史对话保留。</p>
+          <p class="agent-section-note">${
+            VALID_CHANNEL_TABS.length
+              ? 'Telegram 已归档，原有配置与历史对话保留。'
+              : 'Telegram 与 Discord 已暂时归档：不轮询、不外发、不加入语音频道；原有 token、ID 与历史对话全部保留，恢复后无需重新配置。'
+          }</p>
         <section class="selected-file-card agent-channel-voice">
                   <label class="label">
                     语音回复模式
@@ -8278,7 +8284,7 @@ function renderAgentWorkbench(selected) {
         </div>
 
         <div class="agent-channel-panel">
-          ${ui`
+          ${!isAgentChannelAvailable('discord') ? '' : ui`
                 <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
                   <div class="agent-editor-header">
                     <div class="agent-editor-heading">
@@ -11917,7 +11923,7 @@ document.addEventListener('click', async event => {
       case 'switch-agent-channel-tab': {
         const agentId = trigger.dataset.agentId;
         const channelId = trigger.dataset.channelId;
-        const VALID_TABS = ['discord'];
+        const VALID_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
         if (agentId && VALID_TABS.includes(channelId)) {
           // Flush any pending debounced autosave before switching tabs so
           // in-flight edits (e.g. a bot token typed <350ms ago) are not lost
@@ -13025,7 +13031,11 @@ document.addEventListener('change', async event => {
           [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
         });
         // Settings are committed only by the explicit Save action.
-        render();
+        // Same rule as the generic branch below (2026-10-17): a text field's
+        // blur fires `change` on the pointerdown of the Save click; a full
+        // render here replaced the button mid-click and swallowed the save.
+        // Only the <select> needs an immediate repaint.
+        if (target instanceof HTMLSelectElement) render();
         return;
       }
 

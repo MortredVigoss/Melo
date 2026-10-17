@@ -50,6 +50,8 @@ prompt input ──> │ Hot attic (~800) │ ──> │ L0 identity           
 
 ## 2 · Key modules
 
+> 2026-10-17 核对：下列 provider（Chroma / LanceDB / HttpProxy / Router）不在聊天读写路径上——`agentMemoryContext.js` 与 `derivedIndex.js` 直接使用 `store.js`（内置 SQLite + sqlite-vec）。它们只能通过 CLI / 测试显式选用。
+
 | File | Responsibility |
 |------|----------------|
 | `src/memory/store.js` | sqlite-vec + FTS5 persistence; `recallMemories`, `recallMemoriesTiered`, `memoryStats`, attic-level persistence |
@@ -184,8 +186,11 @@ ranges.
 "Dreaming" is the idle-time consolidation pass that keeps the store healthy
 without blocking the hot path.  It is driven by two timers in
 `src/memory/dreaming/scheduler.js` (incremental every 6h, full every 24h)
-plus an idle-watch hook that can trigger a sweep when the user has been
-inactive for 10 minutes.  The entire pipeline short-circuits when
+plus a startup catch-up pass (2026-10-17): the last run times are persisted
+in `desktop/dreams/scheduler.json`, and three minutes after boot the scheduler
+runs whichever sweep is overdue, so a desktop that never stays up for six
+hours still consolidates. The idle-watch hook (`startIdleWatch`) exists but is
+not wired to a production idle signal. The entire pipeline short-circuits when
 `MELO_DREAMING_ENABLED=0`.
 
 A single call to `runDreamingSweep()` executes these phases in order:

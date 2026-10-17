@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-test('archived Telegram performs no network or state writes; Discord and saved data survive', { timeout: 60000 }, async t => {
+test('archived Telegram performs no network or state writes; saved data survives', { timeout: 60000 }, async t => {
   const home = await mkdtemp(join(tmpdir(), 'melo-telegram-archive-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const script = `
@@ -36,8 +36,10 @@ test('archived Telegram performs no network or state writes; Discord and saved d
     assert.equal(await readFile(process.env.MELO_HOME + '/desktop/state.json', 'utf8'), before, 'Archive checks do not rewrite state');
     assert.doesNotMatch(summarizeAgentPrompt((await loadState()).agentProfiles.main), /Telegram\\(bot linked/);
     await updateAgentProfile('main', { name: 'Renamed', channels: { discord: { botToken: 'discord-fixture', channelId: 'fixture' } } });
-    await testAgentChannelConnection('main', 'discord');
-    assert.equal(requests, 1, 'Discord still connects');
+    // 2026-10-17: Discord is archived too, so its connection test is also
+    // intercepted before any network call. See discordArchive.test.js.
+    await assert.rejects(testAgentChannelConnection('main', 'discord'), archived);
+    assert.equal(requests, 0, 'Archived Discord does not connect either');
     const after = await loadState();
     assert.deepEqual(after.agentProfiles.main.channels.telegram, saved);
     assert.deepEqual(after.projectAgentOverrides['fixture-project'].main.channels.telegram, saved);

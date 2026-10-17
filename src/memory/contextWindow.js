@@ -2,14 +2,18 @@
 import { estimateMessageTokens } from './tokenEstimate.js';
 
 // ─── Thresholds ────────────────────────────────────────────────────────────────
+// These two constants are FALLBACKS only. The live values come from
+// resolveContextBudget() in services/chat/contextBudget.js, which derives the
+// window and the compaction trigger from one total budget so they cannot
+// drift apart (2026-10-17 audit P0-2: a 60k window with an 80k trigger left
+// a band of history that was neither sent nor summarised). Callers in the
+// chat pipeline pass the resolved values explicitly; tests and legacy
+// callers that pass nothing still get these.
 
-/** Trigger a full LLM compact when total history exceeds this. */
+/** Fallback: trigger a full LLM compact when pending history exceeds this. */
 export const COMPACT_TRIGGER_TOKENS = 80_000;
 
-/**
- * Maximum tokens sent in a single API request.
- * The sliding window never exceeds this budget.
- */
+/** Fallback: maximum history tokens carried by the sliding window. */
 export const CONTEXT_WINDOW_TOKENS = 60_000;
 
 /** Always preserve at least this many recent messages verbatim. */
@@ -38,6 +42,7 @@ export function buildRecentWindow(
   minKeep = COMPACT_KEEP_RECENT_MIN,
 ) {
   const all = messages;
+  if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) tokenBudget = CONTEXT_WINDOW_TOKENS;
   // Start from the minimum guaranteed tail and grow backwards.
   // Use raw (un-padded) per-message estimates throughout so the loop increment
   // is consistent with the initial used sum.  The caller-facing budget is

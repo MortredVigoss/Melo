@@ -52,7 +52,7 @@ import {
   normalizeMessageAttachments,
 } from '../shared/helpers.js';
 import { normalizeMessageBlocks } from '../domain/message/messageBlocks.js';
-import { normalizeExtractedMedia } from '../media/index.js';
+import { normalizeExtractedMedia } from '../domain/media/extractedMedia.js';
 import { sanitizeWorkspacePath as sanitizeWorkspacePathRaw } from '../domain/workspacePath.js';
 import { normalizeProject as normalizeProjectRaw } from '../domain/project/projectService.js';
 import { BUILTIN_SKILLS } from '../domain/skill/skillService.js';
@@ -285,6 +285,14 @@ export function normalizeChat(chat) {
       Number.isFinite(Number(chat?.compactFailures)) && Number(chat.compactFailures) >= 0
         ? Number(chat.compactFailures)
         : 0,
+    // Provenance of compactSummary: 'cloud' | 'local' | 'rule'. 'rule' marks a
+    // degraded extractive fallback that the next turn tries to upgrade.
+    compactSummarySource:
+      ['cloud', 'local', 'rule'].includes(chat?.compactSummarySource) ? chat.compactSummarySource : '',
+    compactUpgradeAttempts:
+      Number.isFinite(Number(chat?.compactUpgradeAttempts)) && Number(chat.compactUpgradeAttempts) >= 0
+        ? Number(chat.compactUpgradeAttempts)
+        : 0,
     // Session memory — extracted facts accumulated across turns
     sessionMemory: Array.isArray(chat?.sessionMemory) ? chat.sessionMemory : [],
     memoryLastExtractedAt: Number.isFinite(Number(chat?.memoryLastExtractedAt))
@@ -386,7 +394,9 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
       Boolean(chat?.compactBoundaryMessageId) ||
       Boolean(chat?.compactedMessageCount) ||
       Boolean(chat?.compactedAt) ||
-      Boolean(chat?.compactFailures);
+      Boolean(chat?.compactFailures) ||
+      Boolean(chat?.compactSummarySource) ||
+      Boolean(chat?.compactUpgradeAttempts);
     return !hasRuntimeState;
   }
 
@@ -400,7 +410,9 @@ function chatRuntimeCheckpointMatches(runtime, chat) {
     String(runtime.compactBoundaryMessageId || '') === String(chat?.compactBoundaryMessageId || '') &&
     (Number(runtime.compactedMessageCount) || 0) === (Number(chat?.compactedMessageCount) || 0) &&
     String(runtime.compactedAt || '') === String(chat?.compactedAt || '') &&
-    (Number(runtime.compactFailures) || 0) === (Number(chat?.compactFailures) || 0)
+    (Number(runtime.compactFailures) || 0) === (Number(chat?.compactFailures) || 0) &&
+    String(runtime.compactSummarySource || '') === String(chat?.compactSummarySource || '') &&
+    (Number(runtime.compactUpgradeAttempts) || 0) === (Number(chat?.compactUpgradeAttempts) || 0)
   );
 }
 

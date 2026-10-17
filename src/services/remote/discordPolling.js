@@ -1,3 +1,4 @@
+import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 // Discord polling cluster — sub-phase 7d-5ζ commit 2 of the desktopStore
@@ -300,6 +301,9 @@ async function sendDiscordAudioReply(channel, incoming, audioBuffer, mimeType = 
 }
 
 export async function processDiscordPollingCycle() {
+  if (!isAgentChannelAvailable('discord')) {
+    return { archived: true, hasActiveChannel: false, processedUpdateCount: 0, encounteredError: false };
+  }
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => processDiscordPollingCycle(...arguments));
   const state = ensureSelectedEntities(await loadState());
   const agentIds = allAgentIdsFromProfiles(state.agentProfiles);

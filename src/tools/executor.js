@@ -124,7 +124,9 @@ async function runObservedTool(tool, args, options = {}) {
   }
 
   // ── Plugin hook: tool:before ────────────────────────────────────────────────
-  await emitHook('tool:before', { toolId: tool.id, args, runId: requestContext?.runId, requestId: requestContext?.requestId });
+  // Bounded (agent-loop-audit #2): a stuck plugin cannot block the tool or the
+  // chat queue; the caller's abort also cancels the wait.
+  await emitHook('tool:before', { toolId: tool.id, args, runId: requestContext?.runId, requestId: requestContext?.requestId }, { signal });
 
   const controller = new AbortController();
   let cancelError = null;
@@ -167,6 +169,8 @@ async function runObservedTool(tool, args, options = {}) {
     projectId: options.projectId,
     ancestry: options.ancestry,
     maxDelegationDepth: options.maxDelegationDepth,
+    memberBackground: options.memberBackground,
+    chatSource: options.chatSource,
     // Null is the legacy unrestricted caller; an array (including []) means the sub-agent
     // must stay within this whitelist. Tools like `agent` propagate this downward.
     allowedToolIds: Array.isArray(allowedToolIds) ? allowedToolIds : null,
@@ -216,8 +220,8 @@ async function runObservedTool(tool, args, options = {}) {
         result.evidenceTrail = rawResult.evidenceTrail;
       }
     }
-    // Plugin hook: tool:after
-    await emitHook('tool:after', { toolId: tool.id, args, result });
+    // Plugin hook: tool:after (bounded; a cancelled tool does not wait for it)
+    await emitHook('tool:after', { toolId: tool.id, args, result }, { signal });
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
@@ -227,7 +231,7 @@ async function runObservedTool(tool, args, options = {}) {
       error: err.message,
       meta: cancelError ? { aborted: true, timedOut: cancelError.code === 'TOOL_TIMEOUT' } : {},
     };
-    await emitHook('tool:after', { toolId: tool.id, args, result });
+    if (!cancelError) await emitHook('tool:after', { toolId: tool.id, args, result }, { signal });
     return result;
   } finally {
     clearTimeout(timeoutId);

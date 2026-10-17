@@ -15,8 +15,10 @@ test('Telegram archive survives startup, HTTP tests and Agent edits without dele
   trap.listen(0, '127.0.0.1'); await once(trap, 'listening');
   await mkdir(join(home, 'desktop'));
   const telegram = { enabled: true, botToken: 'fixture-preserved-secret', chatId: 'fixture-chat', lastUpdateId: 123, voiceReply: true };
+  const discord = { enabled: true, botToken: 'fixture-discord-secret', guildId: '1', channelId: 'discord-preserved', lastUpdateId: '9', voiceReply: true };
+  const savedDiscordChannelId = discord.channelId;
   await writeFile(join(home, 'desktop/state.json'), JSON.stringify({
-    agentProfiles: { main: { channels: { telegram } } },
+    agentProfiles: { main: { channels: { telegram, discord } } },
     chats: [{ id: 'telegram-history', title: 'Telegram history retained', agentId: 'main', source: 'telegram', messages: [{ id: 'history-message', role: 'user', content: 'Keep this history', createdAt: new Date().toISOString() }] }],
     settings: { activeView: 'agent', selectedAgentId: 'main' },
   }));
@@ -40,6 +42,9 @@ test('Telegram archive survives startup, HTTP tests and Agent edits without dele
   const blocked = await fetch(base + '/api/agents/channel/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId: 'main', channelId: 'telegram', patch: { botToken: 'do-not-save' } }) });
   assert.equal(blocked.status, 410); assert.equal((await blocked.json()).code, 'CHANNEL_ARCHIVED');
   await assert.rejects(access(join(home, 'telegram-poller.lock')), { code: 'ENOENT' });
+  await assert.rejects(access(join(home, 'discord-poller.lock')), { code: 'ENOENT' });
+  const blockedDiscord = await fetch(base + '/api/agents/channel/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId: 'main', channelId: 'discord', patch: { botToken: 'do-not-save' } }) });
+  assert.equal(blockedDiscord.status, 410); assert.equal((await blockedDiscord.json()).code, 'CHANNEL_ARCHIVED');
   browser = await chromium.launch({ executablePath: process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -50,14 +55,17 @@ test('Telegram archive survives startup, HTTP tests and Agent edits without dele
   if (await form.locator('.agent-channels>summary').count()) await form.locator('.agent-channels>summary').click();
   assert.equal(await form.locator('[name^=telegram],[data-channel-id=telegram]').count(), 0);
   assert.equal(await form.locator('[name=voiceReplyMode]').isVisible(), true);
-  assert.equal(await form.locator('[name=discordBotToken]').isVisible(), true);
+  // 2026-10-17: Discord archived too — no Discord inputs, no channel tabs, but
+  // the shared voice card stays editable and saved Discord config survives.
+  assert.equal(await form.locator('[name^=discord],[data-channel-id=discord]').count(), 0);
+  assert.equal(await form.locator('[data-action=switch-agent-channel-tab]').count(), 0);
   await form.locator('[name=name]').fill('Archive preservation');
   await form.locator('[name=voicePersonality]').fill('Preserve accessible voice settings');
-  await form.locator('[name=discordChannelId]').fill('discord-still-editable');
   await form.locator('[data-action=form-settings-save]').click(); await form.locator('[data-edit-status=saved]').waitFor();
   const after = await boot(), agent = after.customize.agents.find(agent => agent.id === 'main');
   assert.deepEqual(agent.channels.find(channel => channel.id === 'telegram'), savedTelegram);
-  assert.equal(agent.channels.find(channel => channel.id === 'discord').channelId, 'discord-still-editable');
+  assert.equal(agent.channels.find(channel => channel.id === 'discord').archived, true);
+  assert.equal(agent.channels.find(channel => channel.id === 'discord').channelId, savedDiscordChannelId);
   assert.equal(agent.voicePersonality, 'Preserve accessible voice settings');
   assert.ok(after.chats.some(chat => chat.id === 'telegram-history'));
   assert.equal(requests, 0, 'Old enabled flag never starts Telegram polling');

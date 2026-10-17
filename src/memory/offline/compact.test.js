@@ -254,3 +254,19 @@ test('quality gate=disabled skips audit + always returns LLM output unchanged', 
     },
   );
 });
+
+test('compactOfflineDetailed reports the rule fallback when no local model answers', async () => {
+  const { compactOfflineDetailed, compactOffline } = await import('./compact.js');
+  const previous = process.env.MELO_OFFLINE_DISABLE_LLM;
+  process.env.MELO_OFFLINE_DISABLE_LLM = '1';
+  try {
+    const messages = [{ role: 'user', content: 'The deploy window is Friday evening.' }, { role: 'assistant', content: 'Understood, Friday evening.' }];
+    const detailed = await compactOfflineDetailed(messages, {});
+    assert.equal(detailed.source, 'rule');
+    assert.ok(detailed.summary.length > 0);
+    assert.equal(await compactOffline(messages, {}), detailed.summary, 'string API unchanged');
+    assert.deepEqual(await compactOfflineDetailed([], {}), { summary: '', source: 'none' });
+  } finally {
+    if (previous === undefined) delete process.env.MELO_OFFLINE_DISABLE_LLM; else process.env.MELO_OFFLINE_DISABLE_LLM = previous;
+  }
+});

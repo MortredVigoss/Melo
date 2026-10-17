@@ -65,3 +65,23 @@ test('respects a non-default bound host (e.g. 0.0.0.0)', () => {
   assert.equal(isOriginAllowed('http://127.0.0.1:43127', '0.0.0.0', PORT), true);
   assert.equal(isOriginAllowed('http://localhost:43127', '0.0.0.0', PORT), true);
 });
+
+test('origin-less requests flagged cross-site by the browser are rejected (A-8)', () => {
+  assert.equal(isOriginAllowed(undefined, HOST, PORT, { secFetchSite: 'cross-site' }), false);
+  assert.equal(isOriginAllowed('', HOST, PORT, { secFetchSite: 'same-site' }), false);
+  assert.equal(isOriginAllowed(undefined, HOST, PORT, { secFetchSite: 'same-origin' }), true);
+  assert.equal(isOriginAllowed(undefined, HOST, PORT, { secFetchSite: 'none' }), true, 'direct navigation / native callers');
+  assert.equal(isOriginAllowed(undefined, HOST, PORT, {}), true, 'non-browser callers send neither header');
+});
+
+test('Host header must name this loopback instance (A-3 DNS rebinding)', async () => {
+  const { isHostAllowed } = await import('./originCheck.js');
+  assert.equal(isHostAllowed('127.0.0.1:43127', HOST, PORT), true);
+  assert.equal(isHostAllowed('localhost:43127', HOST, PORT), true);
+  assert.equal(isHostAllowed('[::1]:43127', HOST, PORT), true);
+  assert.equal(isHostAllowed('attacker.example:43127', HOST, PORT), false);
+  assert.equal(isHostAllowed('127.0.0.1:9999', HOST, PORT), false);
+  assert.equal(isHostAllowed(undefined, HOST, PORT), true);
+  assert.equal(isHostAllowed('192.168.1.20:43127', '0.0.0.0', PORT), true, 'LAN binding accepts the address the client used');
+  assert.equal(isHostAllowed('192.168.1.20:1', '0.0.0.0', PORT), false);
+});
