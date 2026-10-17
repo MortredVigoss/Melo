@@ -35246,37 +35246,72 @@
         }
       }
     },
-    "此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读使用系统语音，不需要麦克风权限；请检查媒体音量及耳机输出。": {
+    "语音语言（听写与朗读）": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读使用系统语音，不需要麦克风权限；请检查媒体音量及耳机输出。"
+            "value": "语音语言（听写与朗读）"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This setting applies only to this iPhone and affects new replies after saving. Read-aloud uses system speech and does not need microphone permission. Check media volume and headphone output."
+            "value": "Voice language (dictation and read-aloud)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この設定はこの iPhone のみに適用され、保存後の新しい返信から有効です。読み上げはシステム音声を使い、マイク権限は不要です。音量とイヤホン出力を確認してください。"
+            "value": "音声の言語（音声入力と読み上げ）"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 설정은 이 iPhone에만 적용되며 저장 후 새 응답부터 적용됩니다. 읽어주기는 시스템 음성을 사용하며 마이크 권한이 필요 없습니다. 미디어 음량과 이어폰 출력을 확인하세요."
+            "value": "음성 언어(받아쓰기 및 읽어주기)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Este ajuste solo se aplica a este iPhone y a respuestas nuevas tras guardarlo. La lectura usa la voz del sistema y no necesita micrófono. Comprueba el volumen y los auriculares."
+            "value": "Idioma de voz (dictado y lectura)"
+          }
+        }
+      }
+    },
+    "此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读只读回复的要点，不读网址、代码和表格；中文回复用中文语音，其余按这里的语言选择。不需要麦克风权限；请检查媒体音量及耳机输出。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读只读回复的要点，不读网址、代码和表格；中文回复用中文语音，其余按这里的语言选择。不需要麦克风权限；请检查媒体音量及耳机输出。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This setting applies only to this iPhone and affects new replies after saving. Read-aloud speaks the key points only, skipping URLs, code and tables; Chinese replies use a Chinese voice, others follow the language chosen here. No microphone permission is needed. Check media volume and headphone output."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この設定はこの iPhone のみに適用され、保存後の新しい返信から有効です。読み上げは要点だけを読み、URL・コード・表は読みません。中国語の返信は中国語音声、それ以外はここで選んだ言語に従います。マイク権限は不要です。音量とイヤホン出力を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 설정은 이 iPhone에만 적용되며 저장 후 새 응답부터 적용됩니다. 읽어주기는 요점만 읽고 URL·코드·표는 읽지 않습니다. 중국어 응답은 중국어 음성을, 그 외에는 여기서 선택한 언어를 따릅니다. 마이크 권한이 필요 없습니다. 미디어 음량과 이어폰 출력을 확인하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este ajuste solo se aplica a este iPhone y a respuestas nuevas tras guardarlo. La lectura dice solo los puntos clave y omite URL, código y tablas; las respuestas en chino usan voz china y el resto sigue el idioma elegido aquí. No necesita micrófono. Comprueba el volumen y los auriculares."
           }
         }
       }
