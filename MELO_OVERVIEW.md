@@ -678,3 +678,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 生产函数隔离探针复现 Skill Match Cache 跨 home 定义碰撞；永久失败为 10 模型 / 2 执行，相同成功读取为 10 / 10。Android 复现旧约束被 60 条窗口丢弃、长 instructions 拒绝短问、跨轮相同 call ID 执行两次。总 deadline 缺口为静态证据；未将摘要中的可见验证当成完整业务证明。
 - 65 Node 既有回归 + 3 Node 诊断、116 JVM（含 3 新诊断）通过。第一次 Gradle init 注入没有生效，未当作诊断通过；最终核对 XML 后清理自有临时测试源码。诊断 GREEN 表示确认现状，不是修复验收。
 - [详细检查](docs/agent-core-audit-20261017.md) / [脱敏结果和 hash](docs/evidence/agent-core-audit-20261017.json)；本机 Canvas 位于 Windows `.cursor/projects/empty-window/canvases/melo-agent-core-audit-20261017.canvas.tsx`。没有改产品逻辑、请求真实模型、读凭证 / 私聊、操作手机、Emulator / Swift 验证、安装、CLI review / git pp 或推送；共享 Core / Runtime spike 仍未实现。
+
+### 2026-10-17 — Shared Agent Core — 逐字移植入口
+
+- 用户已确认 A。前置修复 `ff0f128`：61 Node / 115 JVM 通过；Swift 测试源码未在 macOS 执行。
+- 纯 URL / Request Policy / Skill Catalog 已逐字移入 `shared/agent`，Search Router 函数体逐字保留并由 factory 注入 Host；旧入口兼容，专项回归通过。
+- Runtime spike / 生产接入与 Search API-first 政策仍在推进；不得用本阶段称三端已统一或已装新 APK。
