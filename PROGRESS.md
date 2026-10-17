@@ -1,3 +1,9 @@
+## 2026-10-18 — 跨午夜“今天”被模型更正、手机朗读语言与内容、工具组激活放宽
+
+用户反馈：前一条回复说“今天…”，过了零点再问别的，模型道歉说上一条错了；手机自动朗读只用系统语言、读完整回复连网址一起读。修复：系统提示的当前日期段加“早先消息按各自时间理解，不要更正/道歉”规则，日期变化时本轮加【日期提示】（`src/services/chat/dateContext.js`，turn 段，不动缓存前缀）；iPhone 指令原本完全没有日期，现在带当前本地日期与同样的规则（`ConversationHistory.dateInstructions/dateChangeNote`）。iPhone 朗读新增 `SpeechText.swift`：按桌面 `extractVoiceSummary` 同一套规则去网址/链接/代码/表格/标记并压缩到要点，语音按回复语种 → 语音语言设置 → 系统语言选择。工具组：浏览器组在 `MELO_CDP_ENABLED=1` 时首轮即可用（恢复 A2 之前的语义），媒体/文档组也按对话里已有的附件和更宽的措辞激活。（Claude）
+
+验证：新增 `dateContext.test.js`、Swift `SpeechTextTests`、`ConversationHistoryTests` 日期用例；iOS 模拟器 Debug 构建通过。工具调用的其余反馈（网页搜索、截图、图片预览具体失败方式）待用户补充复现。Final commit: 见本条提交.
+
 ## 2026-10-18 — 让 GitHub 首页和更新记录更容易读懂
 
 用户要求先核对整体代码，再重写产品介绍和 GitHub 简介；公开改动说明只说主要变化，不再堆内部实现细节。Codex 保留英文与兼容性定位，详细技术记录仍保留供接手。

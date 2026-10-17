@@ -37,6 +37,24 @@ import Foundation
         assert(ConversationHistory.recentTurns(multibyte, reservedBytes: 8000) == [multibyte.last!])
         do { try ConversationHistory.validateCurrentInput(String(repeating: "汉", count: 20000)); fatalError("Oversized current input accepted") } catch {}
         do { try ConversationHistory.validateCurrentInput("hi", instructions: String(repeating: "x", count: 48000)); fatalError("Instruction budget ignored") } catch {}
-        print("Conversation history tests passed: whole turns, contiguous suffix, current input, multi-answer turns and soft limit")
+        // Date context (2026-10-18): a late-night "今天" is dated when the next
+        // message arrives after midnight; same-day conversations get no note.
+        let sydney = TimeZone(identifier: "Australia/Sydney")!
+        let iso = ISO8601DateFormatter()
+        let beforeMidnight = iso.date(from: "2026-10-17T12:40:00Z")!   // 23:40 Sydney, Oct 17
+        let afterMidnight = iso.date(from: "2026-10-17T13:20:00Z")!    // 00:20 Sydney, Oct 18
+        assert(ConversationHistory.localDate(afterMidnight, timeZone: sydney) == "2026-10-18", "local day, not UTC day")
+        let dated = [
+            ChatMessage(id: "q1", role: "user", content: "今天怎么样", createdAt: iso.string(from: beforeMidnight)),
+            ChatMessage(id: "a1", role: "assistant", content: "今天挺好的", createdAt: iso.string(from: beforeMidnight.addingTimeInterval(10))),
+            ChatMessage(id: "q2", role: "user", content: "帮我查个别的", createdAt: iso.string(from: afterMidnight)),
+        ]
+        let note = ConversationHistory.dateChangeNote(dated, now: afterMidnight, timeZone: sydney)
+        assert(note.contains("2026-10-17（昨天）") && note.contains("今天是 2026-10-18"), note)
+        assert(ConversationHistory.dateChangeNote(dated, now: beforeMidnight.addingTimeInterval(60), timeZone: sydney).isEmpty, "same local day → no note")
+        assert(ConversationHistory.dateChangeNote([dated[0]], now: afterMidnight, timeZone: sydney).isEmpty, "first message → no note")
+        assert(ConversationHistory.dateInstructions(now: afterMidnight, timeZone: sydney).contains("当前本地日期：2026-10-18（Australia/Sydney）"))
+        assert(ConversationHistory.parseTimestamp(timestamp()) != nil, "fractional-second timestamps parse")
+        print("Conversation history tests passed: whole turns, contiguous suffix, current input, multi-answer turns, soft limit and date context")
     }
 }

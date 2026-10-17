@@ -29,6 +29,7 @@ suites['ReplyBackgroundTests']=['ios/Melo/ReplyBackgroundLifetime.swift']
 suites['ImageWorkflowTests']=shared
 suites['CodexOAuthTests']=shared+['ios/Melo/CodexOAuth.swift','ios/Melo/ChatGPTAccount.swift','ios/Melo/Keychain.swift']
 suites['ConversationHistoryTests']=['ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift']
+suites['SpeechTextTests']=['ios/Melo/SpeechText.swift']
 suites['InterfaceLanguageTests']=['ios/Melo/InterfaceLanguage.swift']
 suites['DeviceToolsTests']=shared
 suites['SharedContractTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # reads shared/protocol/contracts.json, same as the JS half

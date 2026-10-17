@@ -26,8 +26,8 @@ export function toolGroupOf(toolId) {
   return 'core';
 }
 
-const DOCUMENT_HINT = /\b(pdf|xlsx?|csv|excel|spreadsheet|workbook)\b|表格|电子表格|工作簿|pdf文件|做成\s*pdf|导出/i;
-const MEDIA_HINT = /\b(image|picture|photo|video|audio|mp3|mp4|wav|png|jpe?g|gif|ocr)\b|图片|图像|照片|画(一|张|个)|生成图|视频|音频|配图|截图/i;
+const DOCUMENT_HINT = /\b(pdf|xlsx?|csv|excel|spreadsheet|workbook|docx?|report)\b|表格|电子表格|工作簿|文档|文件|报告|pdf文件|做成\s*pdf|导出/i;
+const MEDIA_HINT = /\b(image|picture|photo|video|audio|mp3|mp4|wav|png|jpe?g|gif|ocr|screenshot|draw|paint|render|preview)\b|图片|图像|照片|画(一|张|个|幅)|生成.{0,4}图|做.{0,4}图|视频|音频|配图|截图|预览|看一下|放大|缩略|识别|海报|插画|头像|壁纸|logo/i;
 const BROWSER_HINT = /\b(browser|click|login|log in|sign in|scroll|screenshot of the page|fill (in|out) the form)\b|浏览器|点击|登录|打开网页|网页上|页面上|填表|滚动页面/i;
 
 function attachmentKinds(attachments = []) {
@@ -45,14 +45,21 @@ function attachmentKinds(attachments = []) {
  * Groups this turn asks for. Browser needs the CDP flag like before; the
  * search route still decides whether the browser is the right reader.
  */
-export function wantedToolGroups({ text = '', attachments = [], searchPlan = null, hasImageIntent = false, env = {} } = {}) {
+export function wantedToolGroups({ text = '', attachments = [], history = [], searchPlan = null, hasImageIntent = false, env = {} } = {}) {
   const wanted = new Set(attachmentKinds(attachments));
   const message = String(text || '');
   if (DOCUMENT_HINT.test(message)) wanted.add('documents');
   if (hasImageIntent || MEDIA_HINT.test(message)) wanted.add('media');
-  const browserAllowed = env.MELO_CDP_ENABLED === '1' && !['user-disabled-network', 'user-disabled-search'].includes(searchPlan?.reason);
-  const routeWantsBrowser = Array.isArray(searchPlan?.exposedNetworkTools) && searchPlan.exposedNetworkTools.some(id => /^browser_/.test(String(id)));
-  if (browserAllowed && (routeWantsBrowser || BROWSER_HINT.test(message))) wanted.add('browser');
+  // Browser tools keep the pre-A2 semantics: whenever the user has opted in
+  // with MELO_CDP_ENABLED=1 they are available from the first turn (the old
+  // router exposed them unconditionally under that flag), unless the user
+  // turned networking off for this turn. Gating them on a keyword hint made
+  // "截图这个网页" style requests miss the tools (2026-10-18 report).
+  const browserAllowed = env.MELO_CDP_ENABLED === '1' && !['user-disabled-network'].includes(searchPlan?.reason);
+  if (browserAllowed) wanted.add('browser');
+  // A chat that already carries images or documents keeps those groups even
+  // when the current message does not name them ("放大看一下", "再导出一次").
+  for (const kind of attachmentKinds(history.flatMap(message => message?.attachments || []))) wanted.add(kind);
   return wanted;
 }
 

@@ -15,12 +15,15 @@ test('core tools are always present and extension groups need a hint', () => {
 
 test('hints activate groups and activation never shrinks', () => {
   const env = { MELO_CDP_ENABLED: '1' };
-  const docs = wantedToolGroups({ text: '把这份报告导出成 pdf', env });
+  const docs = wantedToolGroups({ text: '把这份报告导出成 pdf' });
   assert.deepEqual([...docs], ['documents']);
-  const media = wantedToolGroups({ text: 'look', attachments: [{ kind: 'image', url: 'data:image/png;base64,AA==' }], env });
+  const media = wantedToolGroups({ text: 'look', attachments: [{ kind: 'image', url: 'data:image/png;base64,AA==' }] });
   assert.deepEqual([...media], ['media']);
-  const browser = wantedToolGroups({ text: 'open the page and click login', searchPlan: { exposedNetworkTools: ['fetch_url'] }, env });
-  assert.deepEqual([...browser], ['browser']);
+  assert.deepEqual([...wantedToolGroups({ text: '截图发我看看' })], ['media'], 'screenshot / preview wording counts as media');
+  assert.deepEqual([...wantedToolGroups({ text: '放大看一下', history: [{ role: 'user', attachments: [{ kind: 'image', url: 'data:image/png;base64,AA==' }] }] })], ['media'], 'earlier images in the chat keep the media group');
+  // Browser tools: available from the first turn whenever the CDP flag is on
+  // (pre-A2 semantics), never without it, and off when the user disabled networking.
+  assert.deepEqual([...wantedToolGroups({ text: 'hello', env })], ['browser']);
   assert.deepEqual([...wantedToolGroups({ text: 'open the page and click login', env: {} })], [], 'browser still needs the CDP flag');
   assert.deepEqual([...wantedToolGroups({ text: 'open the page', searchPlan: { exposedNetworkTools: ['browser_open'], reason: 'user-disabled-network' }, env })], [], 'user network-off wins');
   let activated = nextActivatedGroups([], docs);

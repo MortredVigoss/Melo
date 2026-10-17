@@ -121,6 +121,7 @@ import {
 import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
 import { appendCompactCard, replaceLatestCardSummary, ledgerCards, ledgerDigest } from '../../memory/compactLedger.js';
 import { buildTopicExcerpts } from './topicExcerpts.js';
+import { buildDateChangeNote } from './dateContext.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
 import { toolsForAgent as mcpToolsForAgent, indexMcpTools } from '../../tools/mcpRegistry.js';
 import { executeToolCalls } from '../../tools/executor.js';
@@ -506,7 +507,7 @@ export async function runChatAgentExecutionGraph({
           // routing is prompt text only (buildSearchRoutingPrompt).
           const latestAttachments = chat.messages?.at(-1)?.attachments || [];
           const wantedGroups = wantedToolGroups({
-            text: latestUserMessage, attachments: latestAttachments, searchPlan, env,
+            text: latestUserMessage, attachments: latestAttachments, history: chat.messages || [], searchPlan, env,
             hasImageIntent: detectImageIntent(latestUserMessage, { hasInputImage: latestAttachments.some(a => a?.kind === 'image') }),
           });
           const activatedGroups = nextActivatedGroups(chat.toolGroupsActivated, wantedGroups);
@@ -609,6 +610,7 @@ export async function runChatAgentExecutionGraph({
           toolsPrompt,
           sessionMemoryBlock,
           languageConstraint: buildLanguageConstraint(latestUserMessage),
+          dateContext: buildDateChangeNote(chat.messages),
           vizInstructions,
           citationInstructions,
           kind: 'chat',
