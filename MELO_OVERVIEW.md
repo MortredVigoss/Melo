@@ -1,6 +1,6 @@
 # Melo 总览：架构、线程改动与接手入口
 
-更新时间：2026-10-16（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
+更新时间：2026-10-17（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口。
 
 ## 1. 先看这里
 
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
-| Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming  已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
+| Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
@@ -115,7 +115,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.5.0 已安装，保留全部本地 Mobile Use；本轮 pull origin/master `6adc270` 并核对工具链 | 新跑 71 项目标 Tool / Search / Context / Sync tests 通过；Android 源码未变、未安装新包。确认仅 phone_use / android_device，Search 未接入；下一步抽 Tool Contract / Router 与平台 Adapter。历史实机见 [Chat Phone Use](docs/chat-phone-use-20261017.md)，其验证边界保留 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 0.5.0 已安装，保留全部本地 Mobile Use；本轮 pull origin/master `6adc270` 并核对工具链 | 新跑 71 项目标 Tool / Search / Context / Sync tests 通过；Android 源码未变、未安装新包。确认仅 phone_use / android_device，Search 未接入；用户已要求三端核心一致；下一步设计同源 Tool Runtime / Router / Skill 与平台 Adapter，共享 Runtime 未定。历史实机见 [Chat Phone Use](docs/chat-phone-use-20261017.md)，其验证边界保留 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
@@ -130,6 +130,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 外部跑分证据：`/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/report.md`。网站旧目录 `site/`、`/Users/mortred/Desktop/melo_web` 与 `melo-universe/` 是不同产物；不能自动互相覆盖。
 
 ## 5. 保留的产品决定
+
+- 2026-10-17 用户要求 Android 与其他端保持一致，避免各端自行维护核心功能。后续通用能力按共享 Core / 平台 Adapter 划分：Skill、Tool 注册与路由、Loop / 取消 / 结果语义须同源维护并共同验证；平台实现差异显式声明。仅共用 Sync Schema 或同名 Tool 不能称为核心已统一；手机独立运行、设备本地权限与凭证边界保留。共享 Runtime 的具体落地方式尚未选定或实现，本约束不等于已完成三端重构。
 
 - 副线统计沿用 `src`、`desktop-ui`、`desktop-app`、`scripts` 下 `js/mjs/cjs/ts/tsx/jsx/swift/sh/applescript/json/html/css` 文件的 `wc -l` 合计，含注释和空行，不含 `ios/` 及目录外内容；不是全平台总代码量，历史结果不代替实时统计。
 - 2026-10-15 用户最新决定：仅用户明确要求才运行 `git pp` 或等价脚本；不自动审查、重审或推送。测试、本地提交、已授权修复持续推进。被要求运行时仍保留推送门禁。
@@ -634,3 +636,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - Node 的 Built-in Registry 有 30 个 ID（含 agent 兼容 alias），含 web_search / fetch_url / 6 个 browser action；实际按 SearchPlan、Capabilities、MCP 配置过滤。iOS 的 WebSources 亦有按能力开启的 native web_search；两者均未接到 Android。静态注册不代表用户当前运行实例启用了全部工具。
 - 后续方向：将 Tool Contract / Router 与 Chat UI 分离，Skill 定义策略，Search 返回可引用来源，Phone Use 处理明确的 App 操作或只有 App 能提供的资料；平台 Adapter 保留各端执行方式，Android 必须能独立工作。此方向尚未实现，不能仅加 Prompt 就宣称能搜索。
 - 新跑目标 Function Calling / Search Router / Context Budget / Sync Contract 共 71 tests，全部通过；日志 `.tmp/pull-tools-check-20261017.log`。未跑完整 repo gate、Android runtime 或实体机；未安装 / 推送 / git pp。PROGRESS 合并后超过 500 行，按协议压缩较旧约 70% 条目，保留记录 commit 与现有归档。
+
+### 2026-10-17 — Android / Mobile Use — 三端核心一致性约束
+
+- 用户进一步明确 Android 不能与其他端各管各的，核心抽取需服务后续维护。本轮补读手机对齐协议、主线 / 设计 / UI 的现有交接、共享契约及三端 Chat 真实入口；状态是设计约束登记，没有产品实现。
+- 当前 Node Chat Runner、Swift ChatStore、Kotlin ChatEngine / ChatToolLoop 各有执行链。共享 `sync.schema.json` 已由三端使用；`contracts.json` 的 Tool Replay / Team 行为 Fixture 由 JS / Swift 消费，Android 尚未接入该行为集合。共享资料同步不代表共享执行核心。
+- 下一步收敛为同源 Core：先聚焦 Tool Registry、Router、Skill 策略和 Tool Loop / 结果 / 取消；平台 Adapter 负责网络传输、OS 权限、存储及本地设备能力。各端共同消费 Conformance Fixtures，通用能力差异显式暴露，不能把缺 Search 静默替换成占屏。共享 Runtime 方案需进一步设计，未承诺已有单一执行实现。
+- 保留 Android / iOS 独立使用及原资料、凭证，不把统一核心解释成必须依赖桌面在线。当前只更新共用决策及计划，未重跑产品测试 / 操作手机 / 安装 / 推送；前轮 71 项是 pull 后目标回归证据，不是核心统一验收。
