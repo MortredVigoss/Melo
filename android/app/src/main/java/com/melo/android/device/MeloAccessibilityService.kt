@@ -185,7 +185,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             var launchTarget: String? = null
             var launchDispatched = false
             require(action != "finish") { "finish 由任务循环校验，不能直接操作设备。" }
-            if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", 100)))
+            if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", AppCatalog.DEFAULT_PAGE_SIZE)))
             // Home never targets content. Melo's own progress updates must not
             // prevent leaving its window; keep screen identity/age/window checks.
             val contentSensitive = action == "swipe" || action == "tap" && arguments.text("node_id").isBlank()

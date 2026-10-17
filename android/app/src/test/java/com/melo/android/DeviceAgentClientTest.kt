@@ -16,13 +16,26 @@ class DeviceAgentClientTest {
     }
     @Test fun appDiscoveryToolSupportsSearchingAndCompletePagination() {
         val properties = DeviceTools.schema["properties"]!!.jsonObject
-        for (name in listOf("query", "offset", "limit")) assertTrue("Missing discovery argument $name", name in properties)
-        DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "炉石"); put("offset", 200); put("limit", 100) })
+        for (name in listOf("query", "browse", "offset", "limit")) assertTrue("Missing discovery argument $name", name in properties)
+        DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "炉石"); put("offset", 200); put("limit", 10) })
         for (value in listOf(-1, 0, 201)) assertTrue(runCatching {
             DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("limit", value) })
         }.isFailure)
         assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("offset", -1) }) }.isFailure)
         assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "x".repeat(161)) }) }.isFailure)
+    }
+    @Test fun appDiscoveryRequiresTargetedQueryUnlessInventoryBrowsingIsExplicit() {
+        for (query in listOf("", "   ")) assertTrue(runCatching {
+            DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", query); put("limit", 200) })
+        }.isFailure)
+        for (limit in listOf(1, 10, 20)) DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "Fixture"); put("limit", limit) })
+        assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("query", "Fixture"); put("limit", 200) }) }.isFailure)
+        DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("browse", true); put("limit", 200) })
+        for (invalid in listOf(JsonPrimitive("true"), JsonPrimitive(1), JsonNull)) assertTrue(runCatching {
+            DeviceTools.validate(buildJsonObject { put("action", "list_apps"); put("browse", invalid) })
+        }.isFailure)
+        assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "observe"); put("browse", true) }) }.isFailure)
+        assertTrue(runCatching { DeviceTools.validate(buildJsonObject { put("action", "open_app") }) }.isFailure)
     }
     @Test fun proxyFinalReplyWithExplicitNullToolCallsIsACompletedAnswer() {
         val value = MeloJson.parseToJsonElement("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"已打开设置。","reasoning_content":"","tool_calls":null}}]}""").jsonObject

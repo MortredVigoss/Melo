@@ -56,6 +56,7 @@ class AppCatalogTest {
         ))
         assertEquals("fixture.same", catalog.exactName("hearth-stone").single().packageName)
         assertEquals(2, catalog.exactName("炉石传说").size)
+        assertEquals(2, rows(catalog.page("炉石传说")).size)
         assertEquals("fixture.same", catalog.exactName("Hearthstone shortcut").single().packageName)
         assertEquals(2, rows(catalog.page()).size)
         assertEquals("app_ambiguous", catalog.openFailure("", "炉石传说", true).data.text("code"))
@@ -66,6 +67,18 @@ class AppCatalogTest {
         assertTrue(rows(page).isEmpty()); assertFalse(page["has_more"]!!.jsonPrimitive.boolean)
         assertTrue(page.text("search_scope").contains("current Android profile"))
         assertTrue(page.text("scope_note").contains("does not prove"))
+    }
+    @Test fun defaultPagesAreSmallWithoutLosingFullCatalogSearchOrPagination() {
+        val catalog = AppCatalog(manyApps)
+        val broad = catalog.page("Fixture")
+        assertEquals(265, broad["matched_apps"]!!.jsonPrimitive.int)
+        assertEquals(10, rows(broad).size)
+        assertTrue(broad["has_more"]!!.jsonPrimitive.boolean)
+        val next = catalog.page("Fixture", offset = broad["next_offset"]!!.jsonPrimitive.int)
+        assertTrue(rows(broad).map { it.text("package_name") }.intersect(rows(next).map { it.text("package_name") }.toSet()).isEmpty())
+        val exact = catalog.page("Fixture 265")
+        assertEquals("fixture.app265", rows(exact).single().text("package_name"))
+        assertEquals("fixture.app265", catalog.exactName("Fixture 265").single().packageName)
     }
     @Test fun invalidOrUnboundedQueriesAndPagesAreRejected() {
         val catalog = AppCatalog(manyApps)

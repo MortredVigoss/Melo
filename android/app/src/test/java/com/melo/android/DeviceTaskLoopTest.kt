@@ -54,6 +54,14 @@ class DeviceTaskLoopTest {
         val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, { screen() }, {}).run("Open fixture")
         assertEquals("needs_user", result.status); assertNull(result.verification)
     }
+    @Test fun unnamedBulkInventoryIsRejectedBeforeExecutingAnyDeviceRead() = runBlocking {
+        val turns = ArrayDeque(listOf(turn("bulk", buildJsonObject { put("action", "list_apps"); put("limit", 200) }), turn("stop", finish("blocked"))))
+        val executed = mutableListOf<String>(); val traces = mutableListOf<DeviceStep>()
+        val result = DeviceTaskLoop("chat-completions", { turns.removeFirst() }, { executed += it.text("action"); screen() }, { traces += it }).run("Open Fixture")
+        assertTrue(executed.isEmpty()); assertEquals("blocked", result.status)
+        assertEquals("invalid_arguments", traces.first().code)
+        assertTrue(traces.first().detail.contains("query"))
+    }
     @Test fun achievedRequiresReobservingAndMatchingExactVisibleFacts() = runBlocking {
         val turns = ArrayDeque(listOf(turn("observe", args("observe")), turn("done", finish())))
         val executed = mutableListOf<String>(); val traces = mutableListOf<DeviceStep>()
@@ -85,7 +93,8 @@ class DeviceTaskLoopTest {
     }
     @Test fun observationCannotResetRepeatedActionErrors() = runBlocking {
         var index = 0; var executed = 0
-        val result = DeviceTaskLoop("chat-completions", { turn("c${index}", args(if (index++ % 2 == 0) "open_app" else "observe")) }, {
+        // Distinct valid targets isolate the error streak from duplicate-launch protection.
+        val result = DeviceTaskLoop("chat-completions", { turn("c${index}", args(if (index++ % 2 == 0) "open_app" else "observe", "app_name" to "Missing$index")) }, {
             executed++; if (it.text("action") == "observe") screen() else DeviceToolResult.error("not found", "app_not_found")
         }, {}).run("goal")
         assertEquals("blocked", result.status); assertEquals(5, executed)
@@ -98,7 +107,7 @@ class DeviceTaskLoopTest {
     }
     @Test fun alternatingAlreadySeenScreensAndCatalogsStillCountsAsNoProgress() = runBlocking {
         var calls = 0
-        val result = DeviceTaskLoop("chat-completions", { turn("c${calls}", args(if (calls++ % 2 == 0) "observe" else "list_apps")) }, {
+        val result = DeviceTaskLoop("chat-completions", { turn("c${calls}", args(if (calls++ % 2 == 0) "observe" else "list_apps", "query" to "Fixture")) }, {
             if (it.text("action") == "observe") screen(id = newId()) else DeviceToolResult(buildJsonObject { put("ok", true); put("apps", JsonArray(emptyList())) })
         }, {}).run("goal")
         assertEquals("blocked", result.status); assertTrue(calls <= 8)

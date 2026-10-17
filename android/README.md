@@ -56,6 +56,8 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 独立助手页使用全局模型，Chat 内使用该对话选择；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait、finish，屏幕操作后回传新画面。模型根据实际观察选择下一步，不录制固定脚本。
 
+2026-10-17 后续源码优化（尚未覆盖手机）：已知准确 App 名称 / 包名时优先直接 `open_app`，名称由 Android Adapter 在本机解析，打开后已带新画面；只有缺少目标或候选不足时才 `list_apps(query=...)`。查询仍覆盖完整 Launcher Catalog，但默认仅返回 10 个候选、定向查询上限 20；精确命中时只返回精确候选，重名保留多个结果，模糊匹配不自动启动。空查询或大页面需显式 `browse=true`，仅用于用户需要浏览 App 清单的任务。观察用于屏幕动作，已有动作回执的当前画面无需重复 observe；最终 finish 仍重新观察验证。此为平台 Adapter 的发现和回传优化，共享 Core 与 Search 接入仍待实现。
+
 官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
 
 手机任务的界面文字与截图会发给当前模型服务；可在对话设置关闭 Phone Use，也可随时停止。截图仅保留在运行中的内存，不写入相册、日志、Room 或 sync；密码节点不导出，系统禁止的截图不会绕过。API 30 起支持截图，API 28/29 只提供节点观察；API 34 起优先窗口截图以排除停止浮层。可选择 Display；节点与图片坐标属于同一窗口，窗口变化后旧操作会被拒绝。back/home 是系统全局动作，只在主 Display 提供。

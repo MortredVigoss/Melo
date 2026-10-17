@@ -114,7 +114,7 @@ class DeviceTaskLoop(
                         latestScreen?.data?.get("window_id")?.jsonPrimitive?.intOrNull?.let { put("window_id", it) }
                     }))
                 } else execute(call.arguments)
-            } catch (e: IllegalArgumentException) { DeviceToolResult.error("工具参数不符合执行契约，请检查 action 与必需字段。", "invalid_arguments") }
+            } catch (e: IllegalArgumentException) { DeviceToolResult.error("工具参数不符合执行契约：" + (e.message?.take(300) ?: "请检查 action 与必需字段。"), "invalid_arguments") }
             currentCoroutineContext().ensureActive()
             if (!result.ok) recovery++
             val detail = when {

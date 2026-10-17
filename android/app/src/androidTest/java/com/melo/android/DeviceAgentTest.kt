@@ -77,13 +77,30 @@ class DeviceAgentTest {
         service.end()
         assertFalse(observe(service).ok)
     }
+    @Test fun installedLabelOpensWithoutPreflightAndUnnamedInventoryReturnsNoApps() = runBlocking {
+        val service = DeviceAccess.service!!
+        service.begin(0, false)
+        val rejected = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 200) })
+        assertFalse(rejected.ok); assertNull(rejected.data["apps"])
+        assertTrue(rejected.data.text("error").contains("query"))
+        val label = app.applicationInfo.loadLabel(app.packageManager).toString()
+        val opened = service.execute(buildJsonObject { put("action", "open_app"); put("app_name", label) })
+        assertTrue(opened.data.toString(), opened.ok)
+        assertEquals(app.packageName, opened.data.text("target_package"))
+        assertEquals(app.packageName, opened.data.text("package_name"))
+        assertTrue(opened.data.text("screen_id").isNotBlank())
+        val candidates = service.execute(buildJsonObject { put("action", "list_apps"); put("query", "com.android") })
+        assertTrue(candidates.ok); assertTrue(candidates.data["apps"]!!.jsonArray.size <= 10)
+        assertTrue(candidates.data["apps"]!!.jsonArray.all { it.jsonObject.text("package_name").contains("com.android") })
+        service.end()
+    }
     @Test fun launchableAppsAreDiscoverableAndOpenOnTheSelectedDisplay() = runBlocking {
         val service = DeviceAccess.service!!
         service.begin(0, false)
-        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1) })
+        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("browse", true); put("limit", 1) })
         assertTrue(page.ok); assertEquals(1, page.data["apps"]!!.jsonArray.size)
         assertTrue(page.data["has_more"]!!.jsonPrimitive.boolean)
-        val next = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1); put("offset", page.data["next_offset"]!!.jsonPrimitive.int) })
+        val next = service.execute(buildJsonObject { put("action", "list_apps"); put("browse", true); put("limit", 1); put("offset", page.data["next_offset"]!!.jsonPrimitive.int) })
         assertNotEquals(page.data["apps"], next.data["apps"])
         val apps = service.execute(buildJsonObject { put("action", "list_apps"); put("query", "com.android.sett") })
         assertTrue(apps.ok)
@@ -133,7 +150,7 @@ class DeviceAgentTest {
         val opened = service.execute(buildJsonObject { put("action", "open_app"); put("package_name", "com.android.settings") })
         assertTrue(opened.data.toString(), opened.ok)
         assertEquals("com.android.settings", opened.data.text("package_name"))
-        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("limit", 1) })
+        val page = service.execute(buildJsonObject { put("action", "list_apps"); put("browse", true); put("limit", 1) })
         assertTrue(page.ok); assertTrue(page.data["total_apps"]!!.jsonPrimitive.int > 1)
         assertTrue(page.data["has_more"]!!.jsonPrimitive.boolean)
         service.end()

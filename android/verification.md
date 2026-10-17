@@ -1,5 +1,17 @@
 # Android verification — 2026-10-17
 
+## 后续源码：App 发现与直接打开（2026-10-17，未安装）
+
+用户反馈每次先列大量 App；源码核对原工具没有固定先列 200 的 Host 流程，但空 query、大页面以及 discovery 优先指令会让模型走冗余路径。当前 Windows ADB 未发现 Fold6，本轮无法核对用户最新一次真实调用。
+
+本轮 Android Adapter 优先接受准确名称 / 包名的 open_app，本机解析后直接打开并返回新画面；失败附少量候选，候选不足才定向检索。查询默认 10、上限 20；空查询或大页面需显式 browse=true。精确命中只回传精确候选并保留重名消歧；仍先查全目录后分页，模糊建议不自动启动。最终 finish 重观察、权限和停止保护保留。
+
+113 JVM / 40 Android 16 Emulator runtime 全通过，无失败 / skip；Lint 零 Error，Debug / R8 Release 和 instrumentation APK 构建通过。三协议 localhost HTTP Fixture 验证目标在 265 个 App 的末尾仍可直接按名打开，设备任务两次模型请求（open_app、finish），Host 另做完成重观察；没有把 App 清单发给 Fixture 模型。真实 Service 验证空清单请求无 apps 回传、按安装标签直接打开、默认小候选页及原分页能力。此计数不含外层 Chat 规划 / 整理请求，不代表真实模型总能选择最短路径。
+
+首轮新增测试暴露精确匹配混入模糊候选，已收紧；之后旧错误计数 Fixture 因新增空名称校验而触发重复启动保护，已用不同的有效目标隔离两种 guard，保留原失败次数与停止断言。失败日志均保留，没有降低断言 / skip。最终先完成构建再启动本轮独占 Emulator，runtime 后关闭。
+
+日志 `.tmp/app-launch-{unit-final,build,release,runtime}-20261017.log`；失败日志 `app-launch-unit-first-20261017.log`、`app-launch-unit-guard-fixture-20261017.log`。本轮未调用真实 provider / 操作 Fold6 / 签名发行或覆盖安装，也未运行完整 repo gate / 推送。手机仍是既有 0.5.0；共享 Core、Web Search、微信输入与 Fold Cache 分区仍待实现。
+
 ## 0.5.0 Chat Phone Use（2026-10-17）
 
 普通 Chat 按需调用 phone_use，结果在同一对话续答；模式切换已移除。109 JVM / 39 Android 16 runtime 全通过，无失败 / skip；Lint 零 errors、Debug / R8 Release、同证书签名和四 ABI 16 KiB alignment 通过。

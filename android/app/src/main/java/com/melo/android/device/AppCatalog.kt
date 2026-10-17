@@ -9,6 +9,7 @@ data class LaunchableApp(val packageName: String, val name: String, val aliases:
 
 /** Search the entire session catalog before paging. Similar names are suggestions, never launch targets. */
 class AppCatalog(entries: List<LaunchableApp>) {
+    companion object { const val DEFAULT_PAGE_SIZE = 10 }
     private val apps = entries.groupBy { it.packageName }.map { (_, variants) ->
         val first = variants.first()
         first.copy(aliases = variants.flatMap { listOf(it.name) + it.aliases }.distinct().filter { it != first.name }.sorted())
@@ -21,12 +22,15 @@ class AppCatalog(entries: List<LaunchableApp>) {
     }
     fun exactPackage(name: String) = apps.filter { it.packageName == name }
 
-    fun page(query: String = "", offset: Int = 0, limit: Int = 100): JsonObject {
+    fun page(query: String = "", offset: Int = 0, limit: Int = DEFAULT_PAGE_SIZE): JsonObject {
         require(query.length <= 160 && (query.isBlank() || normalized(query).isNotEmpty())) { "query 必须包含名称或包名，且不超过 160 字符。" }
         require(offset >= 0 && limit in 1..200) { "offset 必须非负，limit 必须为 1–200。" }
         val needle = normalized(query)
-        val matches = apps.mapNotNull { app -> match(app, needle)?.let { Triple(app, it.first, it.second) } }
+        val ranked = apps.mapNotNull { app -> match(app, needle)?.let { Triple(app, it.first, it.second) } }
             .sortedWith(compareByDescending<Triple<LaunchableApp, Int, String>> { it.second }.thenBy { normalized(it.first.name) }.thenBy { it.first.packageName })
+        // An exact local identity needs no unrelated fuzzy suggestions. Keep all
+        // exact candidates so duplicate labels still require disambiguation.
+        val matches = if (ranked.any { it.second >= 100 }) ranked.filter { it.second >= 100 } else ranked
         val rows = matches.drop(offset).take(limit)
         val next = offset + rows.size
         return buildJsonObject {
