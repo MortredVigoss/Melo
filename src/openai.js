@@ -192,7 +192,8 @@ export function extractLatestUserTextForIntent(messages) {
 export function messagesHaveInputImages(messages) {
   if (!Array.isArray(messages)) return false;
   for (const message of messages) {
-    if (message?.role !== 'user') continue;
+    // Tool images (web_screenshot, isToolResult) are not user uploads.
+    if (message?.role !== 'user' || message?.isToolResult) continue;
     const content = message?.content;
     if (!Array.isArray(content)) continue;
     for (const item of content) {

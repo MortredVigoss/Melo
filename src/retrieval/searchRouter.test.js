@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSearchPlan,
+  buildSearchRoutingPrompt,
   clearSearchTriggers,
   filterToolsForSearchPlan,
   registerSearchTriggers,
@@ -135,4 +136,17 @@ test('disabled browser automation is not advertised as an available tool', () =>
     if (original === undefined) delete process.env.MELO_CDP_ENABLED;
     else process.env.MELO_CDP_ENABLED = original;
   }
+});
+
+test('routing prompt: web_screenshot is offered for "show me the page" on link routes and forbidden when the user turned networking off', () => {
+  for (const route of ['fetch-url', 'social-link', 'melo-web']) {
+    assert.match(buildSearchRoutingPrompt({ route, reason: 'url-present' }), /use `web_screenshot`; to read it, use `fetch_url`/);
+  }
+  assert.match(buildSearchRoutingPrompt({ route: 'none', reason: 'user-disabled-network' }), /Do not call `web_screenshot`/);
+  assert.doesNotMatch(buildSearchRoutingPrompt({ route: 'codex-native', reason: 'codex-native-primary' }), /web_screenshot/);
+  assert.equal(buildSearchRoutingPrompt({ route: 'none', reason: 'no-web-intent' }), '');
+  // The definition set itself is not routed (A2): only the network-off turn withholds it.
+  const tools = [{ id: 'web_screenshot', capability: 'network', uiModule: 'search' }, { id: 'fetch_url' }, { id: 'calculator' }];
+  assert.deepEqual(filterToolsForSearchPlan(tools, buildSearchPlan({ latestUserMessage: '2+2 等于几', authMode: 'api-key' })).map(t => t.id), ['web_screenshot', 'calculator']);
+  assert.deepEqual(filterToolsForSearchPlan(tools, { route: 'none', reason: 'user-disabled-network', exposedNetworkTools: [] }).map(t => t.id), ['calculator']);
 });

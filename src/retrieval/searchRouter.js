@@ -32,7 +32,12 @@ const LINK_READ_PATTERN = /(?:\b(?:open|read|fetch|summari[sz]e|parse|extract)\s
 // the plan; the id set is the fallback for undeclared tools. Browser tools are
 // gated by MELO_CDP_ENABLED above instead, never by the plan.
 const SEARCH_NETWORK_TOOL_IDS = new Set(['web_search', 'fetch_url']);
+// web_screenshot is a web tool too, but no route "exposes" it: like the
+// browser tools it is only withheld when the user turned networking off for
+// the turn, and the routing prompt says when to prefer it over fetch_url.
+const NETWORK_OFF_ONLY_TOOL_IDS = new Set(['web_screenshot']);
 function searchPlanGoverns(tool, id) {
+  if (NETWORK_OFF_ONLY_TOOL_IDS.has(id)) return false;
   if (typeof tool?.capability === 'string' && typeof tool?.uiModule === 'string') return tool.capability === 'network' && tool.uiModule === 'search';
   return SEARCH_NETWORK_TOOL_IDS.has(id);
 }
@@ -247,10 +252,13 @@ export function filterToolsForSearchPlan(tools = [], searchPlan = {}) {
     const id = String(tool?.id || '');
     if (/^browser_/u.test(id) && requestEnvironment().MELO_CDP_ENABLED !== '1') return false;
     if (/^browser_/u.test(id)) return searchPlan.reason !== 'user-disabled-network';
+    if (NETWORK_OFF_ONLY_TOOL_IDS.has(id)) return searchPlan.reason !== 'user-disabled-network';
     if (!searchPlanGoverns(tool, id)) return true;
     return exposed.has(id);
   });
 }
+
+const SCREENSHOT_HINT = 'To show the user what a page looks like, use `web_screenshot`; to read it, use `fetch_url`.';
 
 export function buildSearchRoutingPrompt(searchPlan = {}) {
   const route = searchPlan?.route || 'none';
@@ -270,6 +278,7 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       'This turn is routed to Melo web_search for structured source retrieval.',
       'Use `web_search` for broad web lookup, then answer from the returned sources.',
       'If browser automation is unavailable, continue with public web search. Separate confirmed date-specific flight schedules from live fares and report precisely which facts remain unverified.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (route === 'fetch-url') {
@@ -277,6 +286,7 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to `fetch_url` because the user is asking about a specific link/page.',
       'Use `fetch_url` for the pasted URL. Do not use `web_search` for this turn.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (route === 'social-link') {
@@ -284,10 +294,11 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to `fetch_url`; social links are handled by Melo\'s dedicated social preview reader.',
       'Use `fetch_url` for the pasted social URL. Do not use `web_search` for this turn.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (searchPlan.reason === 'user-disabled-network' || searchPlan.reason === 'user-disabled-search') {
-    return '## Search Routing\nThe user forbids web lookup for this turn. Answer from available context; if it is insufficient, say so. Do not invent current facts or replace web search with a local command unless the user separately requested that local action.';
+    return '## Search Routing\nThe user forbids web lookup for this turn. Answer from available context; if it is insufficient, say so. Do not invent current facts or replace web search with a local command unless the user separately requested that local action. Do not call `web_screenshot` either.';
   }
   return '';
 }

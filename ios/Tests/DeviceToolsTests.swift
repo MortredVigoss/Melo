@@ -183,6 +183,40 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let output = next[3] as? [String: Any]
         assert(output?["type"] as? String == "function_call_output" && output?["call_id"] as? String == "call_1" && output?["output"] as? String == #"{"ok":true}"#)
 
+        // Results with a screenshot add one user image message after every function output.
+        let jpeg = Data([0xFF, 0xD8, 0xFF])
+        let mixed: [(callID: String, result: PhoneToolResult)] = [
+            ("call_1", PhoneToolResult(output: #"{"ok":true,"screenshot":"attached"}"#, imageJPEG: jpeg, imageURL: "https://a.example")),
+            ("call_2", PhoneToolResult(output: #"{"ok":true}"#))]
+        let withImage = DeviceToolLoop.followUpInput(previous: previous, output: stream.outputItems, results: mixed)
+        assert(withImage.count == 6)
+        assert((withImage[3] as? [String: Any])?["type"] as? String == "function_call_output" && (withImage[4] as? [String: Any])?["call_id"] as? String == "call_2")
+        let imageItem = withImage[5] as? [String: Any]
+        assert(imageItem?["role"] as? String == "user")
+        let imageParts = imageItem?["content"] as? [[String: Any]]
+        assert(imageParts?[0]["text"] as? String == "[web_screenshot of https://a.example]")
+        assert(imageParts?[1]["type"] as? String == "input_image" && imageParts?[1]["image_url"] as? String == "data:image/jpeg;base64," + jpeg.base64EncodedString())
+        let textOnly = DeviceToolLoop.followUpInput(previous: previous, output: stream.outputItems, results: [("call_1", PhoneToolResult(output: #"{"ok":true}"#))])
+        assert(textOnly.count == 4, "no image message without a screenshot")
+
+        // Unified context: web tools follow the Agent's network grant, dispatch by name, device tools otherwise.
+        var webCalls = 0, deviceCalls = 0
+        let webContext = WebToolContext(execute: { call in webCalls += 1; return PhoneToolResult(output: #"{"ok":true,"url":"\#(call.name)"}"#) })
+        let unified = DeviceToolContext(policy: DeviceToolPolicy(enabled: [.contacts]), execute: { _ in deviceCalls += 1; return #"{"ok":true}"# }, web: webContext)
+        assert(unified.definitions.map(\.name) == ["contacts_search", "open_url", "web_screenshot"])
+        assert(unified.definitions.allSatisfy { $0.responsesDefinition["type"] as? String == "function" && ($0.chatCompletionsDefinition["function"] as? [String: Any])?["name"] as? String == $0.name && $0.anthropicDefinition["input_schema"] != nil })
+        assert(unified.instructions.contains("通讯录") && unified.instructions.contains("open_url"))
+        assert(unified.statusText(for: call("web_screenshot", "{}")) == "正在截图网页…" && unified.statusText(for: call("open_url", "{}")) == "正在打开网页…" && unified.statusText(for: call("contacts_search", "{}")) == "正在读取手机数据…")
+        _ = await unified.perform(call("open_url", #"{"url":"https://a.example"}"#))
+        _ = await unified.perform(call("contacts_search", #"{"query":"a"}"#))
+        assert(webCalls == 1 && deviceCalls == 1)
+        let withoutWeb = DeviceToolContext(policy: DeviceToolPolicy(enabled: [.contacts]), execute: { _ in deviceCalls += 1; return #"{"ok":false,"error":"UNKNOWN_TOOL"}"# })
+        assert(withoutWeb.definitions.map(\.name) == ["contacts_search"] && !withoutWeb.instructions.contains("open_url"))
+        _ = await withoutWeb.perform(call("open_url", "{}"))
+        assert(webCalls == 1 && deviceCalls == 2, "web calls fall through to the device runner when web tools are not offered")
+        let webOnly = DeviceToolContext(policy: DeviceToolPolicy(), execute: { _ in "{}" }, web: webContext)
+        assert(webOnly.definitions.map(\.name) == ["open_url", "web_screenshot"] && webOnly.toolSet.definitions.count == 2 && webOnly.toolSet.instructions == WebPageToolSpec.instructions)
+
         // Reading permissions must never infer a grant from a device switch.
         let freshReadName = "melo.phone-perms.read-only.\(UUID().uuidString)"
         let freshRead = UserDefaults(suiteName: freshReadName)!

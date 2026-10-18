@@ -1,3 +1,9 @@
+## 2026-10-18 — 网页打开与截图：手机 open_url / web_screenshot（三条连接路径）、桌面 web_screenshot
+
+用户问手机端“她能给链接但能不能自己打开、为什么不能截图”。此前手机只有 ChatGPT 服务端 web_search，没有打开/读取/截图网页的工具，API 密钥连接连函数工具都没有。现在：iPhone 新增 `open_url`（隐藏 WKWebView 加载并抽正文，12000 字分页）与 `web_screenshot`（同一 WebView 截图，存入图片库挂在回复下，并作为 input_image 回传给模型），受 Agent 的“联网”权限控制、只读不弹审批；手机函数工具（含日历等设备工具）扩展到 Chat Completions 与 Anthropic 两条 API 密钥路径（各 ≤6 轮、无工具时请求体逐字节不变）。桌面新增 `web_screenshot`：`MELO_CDP_ENABLED=1` 时用已登录的 Melo Chrome，否则无头启动本机 Chrome，PNG 走生成图片目录与签名 URL，模型通过协议层的 tool-images 消息看到 JPEG（Responses input_image / Anthropic image 块 / chat-completions image_url；XML 不传图），持久化工具链不含 base64；新增 `src/tools/urlSafety.js` 私网/本机地址拦截。（Claude）
+
+验证：Swift 30 套件（新增 WebPageToolsTests、NetworkTests 工具轮）与模拟器 Debug 构建通过；沙箱工具/聊天/检索套件通过；依赖分层检查 0 环。真机 WKWebView 渲染与三条路径的真实模型行为未在本轮复验。Final commit: 见本条提交.
+
 ## 2026-10-18 — iPhone 覆盖安装 0.7.0 (32)
 
 用户要求手机也覆盖安装并把版本升到 0.7 开头。`MELO_IOS_VERSION=0.7.0 MELO_IOS_BUILD=32` 走 `ios/scripts/build-personal.sh` 签名构建（日常门禁已过：3857 JS + 29 Swift 套件，含新增 SpeechTextTests 与日期用例），`devicectl` 对连接中的 Mortred (3) 同包覆盖 `com.melo.iphone.mfpiao`，安装后回读版本 0.7.0 (32)，普通启动 PID 36090。未卸载、未清数据。证据 `.tmp/ios-install-0.7.0/`。本次带上手机侧日期上下文、朗读要点化与语种选择、桌面摘要同步。真机 UI 与真实模型回复未在本轮复验。（Claude）

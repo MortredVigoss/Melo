@@ -5,6 +5,9 @@ final class MockProtocol: URLProtocol {
     static var anthropic = false
     static var requestBody: [String: Any] = [:]
     static var payload = "{\"choices\":[{\"message\":{\"content\":\"Hello iPhone\"}}]}"
+    /// Consumed first when set: one response per round of a tool loop.
+    static var payloads: [String] = []
+    static var requestBodies: [[String: Any]] = []
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -22,6 +25,7 @@ final class MockProtocol: URLProtocol {
             }
         }
         Self.requestBody = (try! JSONSerialization.jsonObject(with: body)) as! [String: Any]
+        Self.requestBodies.append(Self.requestBody)
         if Self.anthropic {
             assert(request.value(forHTTPHeaderField: "Authorization") == nil)
             assert(request.value(forHTTPHeaderField: "x-api-key") == "test-key")
@@ -32,11 +36,13 @@ final class MockProtocol: URLProtocol {
         if let failure = Self.failure { client?.urlProtocol(self, didFailWithError: URLError(failure)); return }
         let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(Self.payload.utf8))
+        let payload = Self.payloads.isEmpty ? Self.payload : Self.payloads.removeFirst()
+        client?.urlProtocol(self, didLoad: Data(payload.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
 }
+func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:] }
 @main struct NetworkTests {
     static func main() async throws {
         let configuration = URLSessionConfiguration.ephemeral
@@ -122,6 +128,74 @@ final class MockProtocol: URLProtocol {
             let instructions = native ? MockProtocol.requestBody["system"] as? String : messages.first?["content"]
             assert(instructions?.contains("Preserve role instructions") == true)
         }
-        print("Swift network tests passed: compatible + Anthropic protocols, whole-turn request history, actual model, complete/empty/truncated replies, source evidence, pipeline persistence, transport cancellation, authorization and endpoint safety")
+
+        // Phone tools on API-key connections. Without tools the bodies carry no tool keys and the historical system line.
+        MockProtocol.anthropic = false
+        MockProtocol.payload = "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"ok\"}}]}"
+        _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "hi")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", session: session)
+        assert(MockProtocol.requestBody["tools"] == nil && MockProtocol.requestBody["tool_choice"] == nil)
+        assert(((MockProtocol.requestBody["messages"] as? [[String: Any]])?.first?["content"] as? String)?.hasPrefix("你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n") == true)
+        let empty = PhoneToolSet(definitions: [], instructions: "", perform: { _ in fatalError("no tools, no calls") })
+        _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "hi")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", tools: empty, session: session)
+        assert(MockProtocol.requestBody["tools"] == nil, "an empty tool set must not change the request")
+
+        let jpeg = Data([0xFF, 0xD8, 0xFF])
+        var performed: [ResponsesFunctionCall] = []
+        let toolSet = PhoneToolSet(definitions: WebPageToolSpec.all.map(\.definition), instructions: WebPageToolSpec.instructions, perform: { call in
+            performed.append(call)
+            if call.name == "web_screenshot" { return PhoneToolResult(output: #"{"ok":true,"screenshot":"attached"}"#, imageJPEG: jpeg, imageURL: "https://a.example") }
+            return PhoneToolResult(output: #"{"ok":true,"text":"page text"}"#)
+        })
+        // Chat Completions: tool_calls round, assistant echoed verbatim, one tool message per call, screenshot as a user image message, then the answer.
+        MockProtocol.requestBodies = []
+        MockProtocol.payloads = [
+            "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}},{\"id\":\"call_b\",\"type\":\"function\",\"function\":{\"name\":\"web_screenshot\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}}]}}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"页面说 page text\"}}]}"]
+        let chatAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "看看 https://a.example")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", instructions: "Role", tools: toolSet, session: session)
+        assert(chatAnswer.text == "页面说 page text" && performed.map(\.name) == ["open_url", "web_screenshot"] && performed.map(\.callID) == ["call_a", "call_b"])
+        assert(performed[0].arguments == #"{"url":"https://a.example"}"#)
+        assert(MockProtocol.requestBodies.count == 2)
+        let firstChat = MockProtocol.requestBodies[0]
+        assert((firstChat["tools"] as? [[String: Any]])?.count == 2 && firstChat["tool_choice"] as? String == "auto")
+        assert(((firstChat["tools"] as? [[String: Any]])?.first?["function"] as? [String: Any])?["name"] as? String == "open_url")
+        let systemLine = (firstChat["messages"] as? [[String: Any]])?.first?["content"] as? String
+        assert(systemLine?.contains("open_url") == true && systemLine?.contains("不能声称已经操作电脑、读取未提供的文件或执行工具") == false && systemLine?.hasSuffix("Role") == true)
+        let secondChat = MockProtocol.requestBodies[1]["messages"] as! [[String: Any]]
+        assert(secondChat.count == 6, "system, user, assistant(tool_calls), tool, tool, user(image)")
+        assert(secondChat[2]["role"] as? String == "assistant" && (secondChat[2]["tool_calls"] as? [[String: Any]])?.count == 2 && secondChat[2]["content"] is NSNull)
+        assert(secondChat[3]["role"] as? String == "tool" && secondChat[3]["tool_call_id"] as? String == "call_a" && secondChat[3]["content"] as? String == #"{"ok":true,"text":"page text"}"#)
+        assert(secondChat[4]["tool_call_id"] as? String == "call_b")
+        let chatImage = secondChat[5]["content"] as? [[String: Any]]
+        assert(secondChat[5]["role"] as? String == "user" && chatImage?[0]["text"] as? String == "[web_screenshot of https://a.example]" && ((chatImage?[1]["image_url"] as? [String: Any])?["url"] as? String)?.hasPrefix("data:image/jpeg;base64,") == true)
+        assert(MockProtocol.requestBodies[1]["tools"] != nil, "tools stay offered on the follow-up round")
+
+        // Anthropic: tool_use round, assistant content echoed, tool_result blocks first, then the screenshot blocks in the same user message.
+        MockProtocol.anthropic = true
+        MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = [
+            "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"text\",\"text\":\"我来看看\"},{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"web_screenshot\",\"input\":{\"url\":\"https://a.example\",\"fullPage\":true}}]}",
+            "{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"截图已附上\"}]}"]
+        let claudeAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "截图 https://a.example")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session)
+        assert(claudeAnswer.text == "截图已附上" && performed.count == 1 && performed[0].callID == "toolu_1")
+        assert(json(performed[0].arguments)["fullPage"] as? Bool == true && json(performed[0].arguments)["url"] as? String == "https://a.example")
+        let firstClaude = MockProtocol.requestBodies[0]
+        assert((firstClaude["tools"] as? [[String: Any]])?.first?["input_schema"] != nil && firstClaude["tool_choice"] == nil)
+        assert((firstClaude["system"] as? String)?.contains("web_screenshot") == true)
+        let secondClaude = MockProtocol.requestBodies[1]["messages"] as! [[String: Any]]
+        assert(secondClaude.count == 3, "user, assistant(tool_use), user(tool_result + image)")
+        assert(secondClaude[1]["role"] as? String == "assistant" && (secondClaude[1]["content"] as? [[String: Any]])?.count == 2)
+        let resultBlocks = secondClaude[2]["content"] as! [[String: Any]]
+        assert(secondClaude[2]["role"] as? String == "user" && resultBlocks.count == 3)
+        assert(resultBlocks[0]["type"] as? String == "tool_result" && resultBlocks[0]["tool_use_id"] as? String == "toolu_1" && resultBlocks[0]["content"] as? String == #"{"ok":true,"screenshot":"attached"}"#)
+        assert(resultBlocks[1]["type"] as? String == "text" && resultBlocks[2]["type"] as? String == "image" && ((resultBlocks[2]["source"] as? [String: Any])?["media_type"] as? String) == "image/jpeg")
+
+        // The loop is bounded: a model that keeps calling tools is stopped after maxRounds.
+        MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = Array(repeating: "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}", count: 10)
+        do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "一直查")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session); fatalError("unbounded tool loop") }
+        catch { assert(error.localizedDescription.contains("\(DeviceToolLoop.maxRounds) 轮")) }
+        assert(performed.count == DeviceToolLoop.maxRounds)
+        MockProtocol.payloads = []; MockProtocol.anthropic = false
+        print("Swift network tests passed: compatible + Anthropic protocols, whole-turn request history, actual model, complete/empty/truncated replies, source evidence, pipeline persistence, transport cancellation, authorization and endpoint safety, phone tool rounds on both API protocols")
     }
 }

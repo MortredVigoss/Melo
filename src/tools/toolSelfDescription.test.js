@@ -217,12 +217,16 @@ test('search routing and team read inheritance read the declaration before their
   const exposed = filterToolsForSearchPlan([webTool, otherTool, { id: 'web_search' }, { id: 'calculator' }], { exposedNetworkTools: ['web_search'] });
   assert.deepEqual(exposed.map(t => t.id), ['custom_api', 'web_search', 'calculator']);
   assert.deepEqual(filterToolsForSearchPlan([webTool], { exposedNetworkTools: ['custom_web'] }).map(t => t.id), ['custom_web']);
+  // web_screenshot is never "exposed" by a route; it only drops out when the user turned networking off.
+  const shot = { id: 'web_screenshot', capability: 'network', uiModule: 'search' };
+  assert.deepEqual(filterToolsForSearchPlan([shot, webTool], { route: 'none', reason: 'no-web-intent', exposedNetworkTools: [] }).map(t => t.id), ['web_screenshot']);
+  assert.deepEqual(filterToolsForSearchPlan([shot], { route: 'none', reason: 'user-disabled-network', exposedNetworkTools: [] }), []);
   const readIds = inheritableReadToolIds([
     { id: 'notes_lookup', capability: 'knowledgeMemory' },
     { id: 'poster_maker', capability: 'generateMedia' },
     { id: 'api_caller', capability: 'network', uiModule: 'tools' },
     { id: 'page_reader', capability: 'network', uiModule: 'search' },
   ]);
-  for (const id of ['file_read', 'glob', 'grep', 'web_search', 'fetch_url', 'calculator', 'media_info', 'search_history', 'notes_lookup', 'page_reader']) assert.ok(readIds.includes(id), id);
+  for (const id of ['file_read', 'glob', 'grep', 'web_search', 'fetch_url', 'web_screenshot', 'calculator', 'media_info', 'search_history', 'notes_lookup', 'page_reader']) assert.ok(readIds.includes(id), id);
   for (const id of ['poster_maker', 'api_caller', tool.id, 'file_write', 'bash']) assert.equal(readIds.includes(id), false, id);
 });

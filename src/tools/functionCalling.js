@@ -1,7 +1,7 @@
 import { compileFunctionTool } from './functionSchema.js';
 import { toolCodeHint } from './toolResult.js';
 import { parseModelResponse, formatToolResultsMessage, _shouldEmitEvidenceTrail } from './parser.js';
-import { resolveToolProtocol, toolDefinitionsForProtocol, parseAssistantResponse, toLoopMessages } from './toolProtocol.js';
+import { resolveToolProtocol, toolDefinitionsForProtocol, parseAssistantResponse, toLoopMessages, toolImagesMessage, normalizeToolImages, condenseToolImagesMessage } from './toolProtocol.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 
 export const MAX_FUNCTION_CALLS_PER_RESPONSE = 32;
@@ -67,6 +67,9 @@ export function compactToolChain(messages = [], { keepRecentResults = 2, maxOutp
   let changed = false;
   const next = messages.map((message, index) => {
     if (!message?.isToolResult || protect.has(index)) return message;
+    // Older tool images (web_screenshot) lose their pixels first: they are
+    // the largest items in the chain and the model already looked at them.
+    if (message.toolImages && !message.toolImagesCondensed) { changed = true; return condenseToolImagesMessage(message); }
     if (Array.isArray(message.functionCallOutputs)) {
       const outputs = message.functionCallOutputs.map(item => ({ ...item, output: condenseOutput(String(item.output ?? ''), maxOutputChars) }));
       if (outputs.some((item, i) => item.output !== message.functionCallOutputs[i].output)) { changed = true; return { ...message, functionCallOutputs: outputs }; }
@@ -102,6 +105,23 @@ export function createFunctionCallingSession(config, tools = []) {
   }
   const seenCallIds = new Set();
   const definitions = toolDefinitionsForProtocol([...byName.values()], protocol);
+  /**
+   * Images produced by a batch's tools (`result.meta.modelImage`, a data URL),
+   * to be shown to the model: `[{ callId, name, text, dataUrl }]`. Bounded by
+   * normalizeToolImages; empty on the XML protocol.
+   */
+  const imagesOf = (results = [], { labelFor } = {}) => {
+    if (!native) return [];
+    const images = [];
+    for (const { call, result } of results) {
+      const dataUrl = result?.meta?.modelImage;
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) continue;
+      const target = result.meta.finalUrl || result.meta.url || call.arguments?.url || '';
+      const text = typeof labelFor === 'function' ? labelFor(call, result) : `[${call.name}${target ? ` of ${target}` : ''}]`;
+      images.push({ callId: call.id, name: call.name, text, dataUrl });
+    }
+    return normalizeToolImages(images);
+  };
   return {
     protocol,
     get native() { return protocol !== 'xml'; },
@@ -162,14 +182,27 @@ export function createFunctionCallingSession(config, tools = []) {
       return [...messages, { role: 'assistant', content: turn.text },
         { role: 'user', content: formatToolResultsMessage(results, { maxOutputChars }), isToolResult: true }];
     },
+    imagesOf,
+    /**
+     * Append the image message for a batch after its results message. Returns
+     * the messages unchanged when there is nothing to show (no images or XML),
+     * so requests for image-free turns stay byte-identical.
+     */
+    appendToolImages(messages, images = []) {
+      const message = toolImagesMessage(images, protocol);
+      return message ? [...messages, message] : messages;
+    },
     /**
      * Protocol-neutral IR of one executed tool turn, for the persisted
      * `toolChain` record. `argumentsFor(call)` lets the caller substitute
      * redacted arguments.
      */
-    turnRecord(turn, results, { maxOutputChars = 8000, argumentsFor } = {}) {
+    turnRecord(turn, results, { maxOutputChars = 8000, argumentsFor, images } = {}) {
       const wireCalls = new Map((turn.protocolCalls || []).map(call => [call.id, call]));
+      const turnImages = normalizeToolImages(Array.isArray(images) ? images : imagesOf(results));
       return {
+        // Transient: buildToolChainRecord drops `images` before persisting.
+        ...(turnImages.length ? { images: turnImages } : {}),
         text: turn.text || '',
         toolCalls: (turn.toolCalls || []).map(call => {
           const wire = wireCalls.get(call.id);

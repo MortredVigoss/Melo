@@ -19,7 +19,7 @@ import { registerTool, unregisterTool } from '../../tools/registryCore.js';
 import { resolvePermission } from '../../tools/permissions.js';
 import { toRequestMessages } from '../../tools/toolProtocol.js';
 
-async function harness(t, { config: configOverrides, respond, env = {} }) {
+async function harness(t, { config: configOverrides, respond, env = {}, toolResult = null }) {
   const home = await mkdtemp(join(tmpdir(), 'melo-tool-protocol-'));
   const requests = [], events = [], executions = [], permissions = [];
   const server = createServer(async (req, res) => {
@@ -33,7 +33,7 @@ async function harness(t, { config: configOverrides, respond, env = {} }) {
   registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
     parametersSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer' } }, required: ['query'] },
     requiresPermission: true, isConcurrencySafe: true,
-    run: async args => { executions.push(args.query); return { ok: true, output: `found ${args.query}` }; } });
+    run: async args => { executions.push(args.query); return toolResult ? toolResult(args) : { ok: true, output: `found ${args.query}` }; } });
   t.after(async () => { unregisterTool('fixture_lookup'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(home, { recursive: true, force: true }); });
   const config = { authMode: 'api-key', apiKey: 'fixture-key', model: 'fixture-model',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, activeLlmProfileId: 'fixture', conversationModelSelected: true, ...configOverrides };
@@ -234,5 +234,86 @@ test('responses: unchanged request shape and the same protocol-neutral chain is 
   assert.deepEqual(input.filter(i => i.type === 'function_call_output').map(i => [i.call_id, JSON.parse(i.output).output]), [['a', 'found A']]);
   assert.equal(result.normalizedReply.toolChain.protocol, 'responses');
   assert.deepEqual(result.normalizedReply.toolChain.turns[0].toolCalls, [{ id: 'a', name: 'fixture_lookup', arguments: '{"query":"A"}' }]);
+  assertRebuildable(result, chat);
+});
+
+// ─── Tool images (web_screenshot `meta.modelImage`) ──────────────────────────
+
+const JPEG_DATA_URL = `data:image/jpeg;base64,${Buffer.from('fixture-jpeg-bytes-for-the-model').toString('base64')}`;
+const SIGNED_URL = 'http://127.0.0.1:43127/api/files/signed/screenshot-1.png?p=abc&e=1&s=def';
+const screenshotResult = () => ({ ok: true, output: `Screenshot of "Example" (https://example.com/, 1280×960, tier headless) saved.\n\n![Example](${SIGNED_URL})`,
+  meta: { url: 'https://example.com/', finalUrl: 'https://example.com/', title: 'Example', width: 1280, height: 960, tier: 'headless', path: '/tmp/x.png', signedUrl: SIGNED_URL, modelImage: JPEG_DATA_URL } });
+
+test('anthropic: a result with meta.modelImage is shown to the model as an image block after the tool_result; history keeps no base64', async t => {
+  const h = await harness(t, {
+    config: { apiProtocol: 'anthropic' },
+    toolResult: screenshotResult,
+    respond: round => round === 1
+      ? { id: 'msg-1', model: 'claude-fixture', stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 5 }, content: [
+        { type: 'tool_use', id: 'toolu_shot', name: 'fixture_lookup', input: { query: 'A' } }] }
+      : { id: 'msg-2', model: 'claude-fixture', stop_reason: 'end_turn', usage: { input_tokens: 20, output_tokens: 5 }, content: [{ type: 'text', text: '页面是蓝色的。' }] },
+  });
+  const result = await h.run();
+  assert.equal(result.normalizedReply.content, '页面是蓝色的。');
+  assert.equal(h.requests.length, 2);
+  const second = h.requests[1].body.messages;
+  const resultIndex = second.findIndex(m => m.role === 'user' && Array.isArray(m.content) && m.content[0]?.type === 'tool_result');
+  assert.ok(resultIndex > 0);
+  assert.deepEqual(second[resultIndex].content.map(b => b.tool_use_id), ['toolu_shot']);
+  const imageMessage = second[resultIndex + 1];
+  assert.equal(imageMessage.role, 'user');
+  assert.deepEqual(imageMessage.content, [
+    { type: 'text', text: '[fixture_lookup of https://example.com/]' },
+    { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: JPEG_DATA_URL.split(',')[1] } },
+  ]);
+  assert.equal(JSON.stringify(h.requests[0].body).includes('base64'), false, 'first request has no image');
+  const toolChain = result.normalizedReply.toolChain;
+  assert.equal(JSON.stringify(toolChain).includes('base64'), false, 'persisted toolChain carries no base64');
+  assert.equal(JSON.stringify(result.normalizedReply.toolResults || []).includes(JPEG_DATA_URL.slice(-40)), false);
+  assert.ok(JSON.stringify(toolChain.turns[0].toolResults[0].output).includes(SIGNED_URL), 'the markdown image for the UI stays in the text output');
+  assertRebuildable(result, h.chat);
+});
+
+test('responses: a result with meta.modelImage becomes an input_image user item after the function_call_output; image-free turns unchanged', async t => {
+  const fn = (id, query) => ({ type: 'function_call', id: `item-${id}`, call_id: id, name: 'fixture_lookup', arguments: JSON.stringify({ query, limit: null }), status: 'completed' });
+  const home = await mkdtemp(join(tmpdir(), 'melo-tool-protocol-images-'));
+  const requests = [];
+  const done = output => `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'fixture-response', model: 'fixture-model', status: 'completed', output } })}\n\n`;
+  const server = createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    requests.push({ path: req.url, body: JSON.parse(raw) });
+    res.setHeader('content-type', 'text/event-stream');
+    res.end(done(requests.length === 1 ? [fn('shot', 'A')] : [{ type: 'message', role: 'assistant', id: 'answer', status: 'completed', content: [{ type: 'output_text', text: '页面是蓝色的。', annotations: [] }] }]));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
+    parametersSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer' } }, required: ['query'] },
+    requiresPermission: false, isConcurrencySafe: true, run: async () => screenshotResult() });
+  t.after(async () => { unregisterTool('fixture_lookup'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(home, { recursive: true, force: true }); });
+  const config = { authMode: 'api-key', apiProtocol: 'responses', apiKey: 'fixture-key', model: 'fixture-model', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, activeLlmProfileId: 'fixture', conversationModelSelected: true };
+  const text = '请调用工具读取本地代码并核对其中的内容';
+  const chat = { id: 'responses-images-chat', title: 'Fixture', mode: 'chat', agentId: 'main', projectId: null, messages: [{ id: 'user-1', role: 'user', content: text, createdAt: new Date().toISOString() }], sessionMemory: [] };
+  const state = { projects: [], chats: [chat], tasks: [], approvals: [], artifacts: [], commandRuns: [], externalConnectors: [],
+    agentProfiles: { main: { id: 'main', name: 'Fixture', model: 'fixture-model', tools: [], skills: [], channels: {}, identity: '', soulMd: '' } },
+    projectAgentOverrides: {}, settings: { selectedChatId: chat.id, selectedAgentId: 'main', activeMode: 'chat', promptHistory: [] } };
+  const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config, env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0' } }), turnBinding: { role: 'main', project: null, taskId: null } });
+  const result = await runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat,
+    workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
+    connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null }, sseEmitter() {} }));
+  assert.equal(result.normalizedReply.content, '页面是蓝色的。');
+  assert.equal(requests.length, 2);
+  const input = requests[1].body.input;
+  const outputIndex = input.findIndex(i => i.type === 'function_call_output');
+  assert.ok(outputIndex > 0);
+  assert.equal(input[outputIndex].call_id, 'shot');
+  const imageItem = input[outputIndex + 1];
+  assert.deepEqual(imageItem, { role: 'user', content: [
+    { type: 'input_text', text: '[fixture_lookup of https://example.com/]' },
+    { type: 'input_image', detail: 'low', image_url: JPEG_DATA_URL },
+  ] });
+  assert.equal(input.filter(i => Array.isArray(i.content) && i.content.some(part => part.type === 'input_image')).length, 1, 'exactly one image item');
+  assert.equal(JSON.stringify(requests[0].body).includes('input_image'), false);
+  assert.equal(JSON.stringify(result.normalizedReply.toolChain).includes('base64'), false, 'persisted toolChain carries no base64');
+  assert.equal(result.normalizedReply.toolChain.turns[0].images, undefined);
   assertRebuildable(result, chat);
 });

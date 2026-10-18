@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { toolGroupOf, wantedToolGroups, nextActivatedGroups, selectStableTools } from './toolGroups.js';
 
 // 2026-10-17 design audit T1 / option A2: the tool array only grows within a chat.
-const tools = ['file_read', 'bash', 'web_search', 'fetch_url', 'browser_open', 'browser_click', 'pdf', 'xlsx', 'image', 'media_info', 'search_history'].map(id => ({ id }));
+const tools = ['file_read', 'bash', 'web_search', 'fetch_url', 'web_screenshot', 'browser_open', 'browser_click', 'pdf', 'xlsx', 'image', 'media_info', 'search_history'].map(id => ({ id }));
 
 test('core tools are always present and extension groups need a hint', () => {
-  assert.deepEqual(selectStableTools(tools, []).map(t => t.id), ['file_read', 'bash', 'web_search', 'fetch_url', 'search_history']);
+  assert.deepEqual(selectStableTools(tools, []).map(t => t.id), ['file_read', 'bash', 'web_search', 'fetch_url', 'web_screenshot', 'search_history']);
+  assert.equal(toolGroupOf('web_screenshot'), 'core', 'web_screenshot is a small core definition, not a browser-group tool');
   assert.equal(toolGroupOf('browser_fill'), 'browser');
   assert.equal(toolGroupOf('pdf'), 'documents');
   assert.equal(toolGroupOf('image'), 'media');
@@ -32,7 +33,7 @@ test('hints activate groups and activation never shrinks', () => {
   assert.deepEqual(activated, ['documents'], 'a turn without hints does not remove groups');
   activated = nextActivatedGroups(activated, media);
   assert.deepEqual(activated, ['documents', 'media']);
-  assert.deepEqual(selectStableTools(tools, activated).map(t => t.id), ['file_read', 'bash', 'web_search', 'fetch_url', 'pdf', 'xlsx', 'image', 'media_info', 'search_history']);
+  assert.deepEqual(selectStableTools(tools, activated).map(t => t.id), ['file_read', 'bash', 'web_search', 'fetch_url', 'web_screenshot', 'pdf', 'xlsx', 'image', 'media_info', 'search_history']);
   assert.deepEqual(nextActivatedGroups(['bogus', 'media'], new Set(['nope'])), ['media'], 'unknown ids are dropped');
 });
 

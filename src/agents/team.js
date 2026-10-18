@@ -23,7 +23,7 @@ export const TEAM_TEMPLATES = Object.freeze([
 // first: readFiles / knowledgeMemory / null are read-only, network only when it
 // is a web-retrieval tool (uiModule 'search'). The id list is the fallback for
 // undeclared tools and for tests that run without a bootstrapped registry.
-const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','calculator','media_info','search_history','read_history'];
+const READ_TOOLS=['file_read','glob','grep','web_search','fetch_url','web_screenshot','calculator','media_info','search_history','read_history'];
 function declaredReadOnly(tool) {
  if(!tool||typeof tool.capability==='function'||tool.capability===undefined)return undefined;
  if(tool.capability===null||['readFiles','knowledgeMemory'].includes(tool.capability))return true;

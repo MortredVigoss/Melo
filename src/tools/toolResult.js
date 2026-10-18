@@ -30,6 +30,8 @@ export const TOOL_ERROR_CODES = Object.freeze([
   'PROVIDER_DOWN',
   'EXIT_NONZERO',
   'BUDGET_EXHAUSTED',
+  'BROWSER_UNAVAILABLE',
+  'LOAD_FAILED',
   'UNKNOWN',
 ]);
 
@@ -114,6 +116,8 @@ export function toolCodeHint(code) {
     case 'EXIT_NONZERO': return 'The command ran but exited non-zero; read stderr before retrying.';
     case 'INVALID_ARGS': return 'The arguments were rejected; fix them according to the schema.';
     case 'BUDGET_EXHAUSTED': return 'This turn has used up its run budget (time, tokens or tool calls); do not call more tools — summarise what is done and what is left.';
+    case 'BROWSER_UNAVAILABLE': return 'No local browser is available for rendering; do not retry — read the page with fetch_url instead.';
+    case 'LOAD_FAILED': return 'The page could not be loaded in the browser; check the URL, or read it with fetch_url instead of retrying the same call.';
     default: return '';
   }
 }

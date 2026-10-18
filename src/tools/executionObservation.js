@@ -60,8 +60,18 @@ export function observeTool({ id, name, args = {}, status, result, tool, record 
     reading: name === 'browser_snapshot' ? 'partial' : 'unknown', provider: 'Melo Chrome', characters: meta.textLength }];
   if (name === 'fetch_url' && result?.ok) event.sources = [{ url: meta.url || args.url, title: meta.title,
     provider: meta.method, accessed: true, reading: 'partial', characters: meta.length || result.output?.length }];
+  if (name === 'web_screenshot' && result?.ok) {
+    const pageUrl = sceneUrl(meta.finalUrl || meta.url || args.url);
+    // A screenshot renders the page without extracting its text: range unknown.
+    if (pageUrl) event.sources = [{ url: pageUrl, title: meta.title, provider: meta.tier === 'cdp' ? 'Melo Chrome' : 'Chrome (headless)', opened: true, accessed: true, reading: 'range-unknown' }];
+    if (meta.signedUrl && sceneUrl(meta.signedUrl)) {
+      const signedPath = verifySignedFileUrl(new URL(meta.signedUrl).searchParams);
+      event.artifacts.push({ id: `artifact-${id}`, kind: 'image', url: meta.signedUrl, ...(signedPath === meta.path ? { path: meta.path } : {}),
+        title: meta.title ? `网页截图 · ${sceneText(meta.title, 80)}` : '网页截图', ...(meta.width ? { width: meta.width, height: meta.height } : {}) });
+    }
+  }
   // Metadata is emitted only after the artifact was actually saved by a tool.
-  if (result?.ok && meta.url && sceneUrl(meta.url) && (name === 'image' || meta.path)) {
+  if (name !== 'web_screenshot' && result?.ok && meta.url && sceneUrl(meta.url) && (name === 'image' || meta.path)) {
     // Only renew paths proven to have been signed by this Melo process.
     // An external MCP response must not mint access to an arbitrary file.
     const signedPath = verifySignedFileUrl(new URL(meta.url).searchParams);

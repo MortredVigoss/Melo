@@ -122,6 +122,11 @@ struct LocalPermissionsView: View {
                         Text("对话选图使用系统照片选择器，无需允许读取整个相册，也不需要先打开相册权限。").font(.caption).foregroundStyle(.secondary)
                     }.meloPanel()
                     permissionRow("保存到照片", symbol: "square.and.arrow.down", state: permissions.addPhotos, detail: "只添加你点击保存的图片，不读取相册其他内容。", kind: .photos)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("网页访问", systemImage: "globe").font(.headline)
+                        Text("随 Agent 的“联网搜索”开关").font(.caption.bold()).foregroundStyle(.secondary)
+                        Text("开启后，Melo 可在这台 iPhone 上后台打开网页读取正文或截图，用来查看链接内容；只访问公开的 http/https 地址，不读取本机或局域网内容。网页正文和截图会随本次请求发送给当前模型服务。").font(.caption).foregroundStyle(.secondary)
+                    }.meloPanel()
                     permissionRow("通知", symbol: "bell", state: permissions.notifications, detail: "后台回复完成时提醒。Melo 的通知偏好目前\(notificationsEnabled ? "已开启" : "未开启，可在通用与外观中编辑保存")；系统允许通知不会自动修改该偏好。", kind: .notifications)
                     Text("系统权限只影响对应功能，拒绝后仍可使用其他功能。后台执行仍受 iOS 调度、低电量和强制退出等限制。").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)

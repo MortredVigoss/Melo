@@ -1,3 +1,7 @@
+# 2026-10-18 · 网页工具
+
+手机端新增两个只读函数工具：`open_url`（隐藏 WKWebView 打开公开 http/https 页面，返回标题、最终地址和正文，每页 12 000 字，`page` 取下一段）和 `web_screenshot`（截图，JPEG ≤ 1 600 px；截图绑定到回答下方，并作为图片随后续请求发给模型）。拒绝 `file:`/`javascript:`/data URL、localhost 与私有/链路本地地址，超时 20 s。跟随 Agent 的"联网搜索"手机权限，无确认弹窗。工具现在在三条路径都提供：Codex Responses（函数工具 + `function_call_output` + 截图用户消息）、Chat Completions（`tools`/`tool_choice:auto`、`tool_calls` 回显、`role:tool`，截图为 `image_url` 用户消息）、Anthropic（`tools`/`input_schema`、`tool_use`→`tool_result`，同一条用户消息里附 `image` block），均 ≤ 6 轮；手机数据工具也随之进入 API 密钥连接。无工具时请求体与此前逐字节一致。纯逻辑在 `WebPageText.swift`（`WebPageToolsTests`），WebKit 部分在 `WebPageTools.swift`（模拟器编译通过，真机渲染未复验）。
+
 # 2026-10-16 · 0.5.19 (25) 已覆盖 iPhone
 
 Agent 设置/项目规则及新黑金图标已对齐；日常 3575 JS / 23 Swift、模拟器、签名/安装/启动/数据核对通过。9 对话、5 Agent、3 图片与账号配置保留；真实模型、远端能力服务、实体 UI/权限与长后台未复验。详见[本轮回执](../docs/ios-align-install-20261016.md)。以下为历史记录。

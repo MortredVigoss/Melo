@@ -974,14 +974,21 @@ export async function runChatAgentExecutionGraph({
           // Appending first lets the records below capture the exact
           // model-facing output string instead of re-deriving it.
           loopMessages = functionSession.append(loopMessages, turn, allResults);
-          toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments) }));
+          const toolResultMessage = loopMessages[loopMessages.length - 1];
+          // Tool images (web_screenshot `meta.modelImage`): shown to the model
+          // as one extra user message after this batch's results on native
+          // protocols; the XML protocol gets the text output only. Transient —
+          // the persisted tool chain never carries the base64.
+          const toolImages = functionSession.imagesOf(allResults);
+          loopMessages = functionSession.appendToolImages(loopMessages, toolImages);
+          toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments), images: toolImages }));
 
           // Design audit D1: one ToolInvocationRecord per call, written to
           // `<home>/desktop/execution-scenes/<runId>.tools.jsonl`. The SSE
           // `tool_calls_done` payload and the persisted toolResults entry
           // below are projections of this record; the jsonl line is the
           // only place the full model-facing output is kept.
-          const modelFacingOutputs = modelFacingOutputsFor(loopMessages[loopMessages.length - 1], allResults);
+          const modelFacingOutputs = modelFacingOutputsFor(toolResultMessage, allResults);
           const batchFinishedAt = Date.now();
           const toolRecords = allResults.map(({ call, result }) => {
             const execution = resultsById.get(call.id);

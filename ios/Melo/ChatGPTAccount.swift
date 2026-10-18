@@ -23,6 +23,8 @@ struct ImageSizeRejected: Error {}
     /// Status per conversation, so two replies running at once each show their own.
     @Published private(set) var replyStatuses: [String: String] = [:]
     func replyStatus(for key: String) -> String { replyStatuses[key] ?? "正在思考…" }
+    /// Status of a reply running on another connection (API key with phone tools); nil clears it.
+    func setReplyStatus(_ value: String?, for key: String) { replyStatuses[key] = value }
     @Published private(set) var imageVerified = false
     private var loginTask: Task<Void,Never>?
     private var attemptID: UUID?
@@ -199,24 +201,25 @@ struct ImageSizeRejected: Error {}
             body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。用户提到之前的图片（如“第二张”“原图”）而本轮没有附带那张图时，不要凭空生成新图，请说明需要哪一张。"
         }
         let imageMode = imageTask?.makesImage == true || offersImageTool
-        // Phone data tools are offered only for ordinary replies, never image generation.
-        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.policy.tools ?? [])
+        // Phone tools (device data + web pages) are offered only for ordinary replies, never image generation.
+        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? [])
         if !phoneTools.isEmpty, let deviceTools {
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
             body["tool_choice"] = "auto" // Allow phone data before a web lookup (e.g. nearby weather).
             let include = (body["include"] as? [String]) ?? []
             body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
-            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + DeviceToolLoop.instructions(deviceTools.policy)
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + deviceTools.instructions
         }
         let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
         var priorSources: [WebSource] = []
         var sizeFallback = false
         var searchedEarlier = false
+        var openedWebPage = false // A page actually fetched by open_url/web_screenshot counts as real web access.
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
             let searched = searchedEarlier || stream.searched
             if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
-            if mustSearch && !searched { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
+            if mustSearch && !searched && !openedWebPage { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
             if !stream.images.isEmpty {
                 defaults.set(true, forKey: "codexImageVerified:" + account.id)
                 imageVerified = true
@@ -272,22 +275,23 @@ struct ImageSizeRejected: Error {}
             guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
             // Validate the whole batch before any side effect, then run sequentially.
             try DeviceToolLoop.validateBatch(calls)
-            var results: [(callID: String, output: String)] = []
+            var results: [(callID: String, result: PhoneToolResult)] = []
             for call in calls {
                 try Task.checkCancellation()
                 guard epoch == expectedEpoch else { throw CancellationError() }
-                setStatus("正在读取手机数据…")
-                let output = await deviceTools.execute(call)
-                deviceTools.onCall?(call, output)
+                setStatus(deviceTools.statusText(for: call))
+                let result = await deviceTools.perform(call)
                 try Task.checkCancellation()
                 guard epoch == expectedEpoch else { throw CancellationError() }
-                results.append((call.callID, output))
+                if WebPageToolSpec.named(call.name) != nil, result.output.contains(#""ok":true"#) { openedWebPage = true }
+                results.append((call.callID, result))
             }
+            setStatus("正在思考…")
             priorSources += stream.sources
             searchedEarlier = searchedEarlier || stream.searched
             body["input"] = DeviceToolLoop.followUpInput(previous: (body["input"] as? [Any]) ?? [], output: stream.outputItems, results: results)
         }
-        throw MeloError.message("手机数据操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
+        throw MeloError.message("手机工具操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
     }
     /// Hands parser progress to the main actor at most every 150 ms (and always for the first text and the end).
     final class StreamUpdates: @unchecked Sendable {

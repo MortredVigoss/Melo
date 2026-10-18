@@ -31991,37 +31991,177 @@
         }
       }
     },
-    "目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。": {
+    "Codex 登录与 API 密钥连接的对话都可以调用这些数据。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。"
+            "value": "Codex 登录与 API 密钥连接的对话都可以调用这些数据。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Available in conversations using Codex sign-in. API connections do not use phone data yet."
+            "value": "Conversations on Codex sign-in and on API-key connections can both use this data."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex ログインの会話で利用できます。API 接続ではまだ iPhone のデータを使いません。"
+            "value": "Codex ログインと API キー接続の会話のどちらでもこのデータを使えます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 로그인 대화에서 사용할 수 있습니다. API 연결은 아직 iPhone 데이터를 사용하지 않습니다."
+            "value": "Codex 로그인 대화와 API 키 연결 대화 모두 이 데이터를 사용할 수 있습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disponible en conversaciones con inicio de sesión de Codex. Las conexiones API aún no usan los datos del iPhone."
+            "value": "Las conversaciones con inicio de sesión de Codex y con conexiones por clave API pueden usar estos datos."
+          }
+        }
+      }
+    },
+    "联网搜索；也允许在这台 iPhone 上打开网页读取正文和截图，截图会附在回答下方。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网搜索；也允许在这台 iPhone 上打开网页读取正文和截图，截图会附在回答下方。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web search; also lets Melo open web pages on this iPhone to read their text and take screenshots, which appear under the reply."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web 検索。この iPhone で Web ページを開いて本文を読み取り、スクリーンショットを撮ることも許可します。スクリーンショットは回答の下に表示されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 검색. 이 iPhone에서 웹 페이지를 열어 본문을 읽고 스크린샷을 찍는 것도 허용합니다. 스크린샷은 답변 아래에 표시됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Búsqueda web; también permite abrir páginas web en este iPhone para leer su texto y hacer capturas, que aparecen debajo de la respuesta."
+          }
+        }
+      }
+    },
+    "网页访问": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网页访问"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web page access"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web ページへのアクセス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 페이지 접근"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso a páginas web"
+          }
+        }
+      }
+    },
+    "随 Agent 的“联网搜索”开关": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随 Agent 的“联网搜索”开关"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follows the Agent's “Web search” switch"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent の「Web 検索」スイッチに従います"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent의 ‘웹 검색’ 스위치를 따릅니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sigue el interruptor «Búsqueda web» del Agent"
+          }
+        }
+      }
+    },
+    "开启后，Melo 可在这台 iPhone 上后台打开网页读取正文或截图，用来查看链接内容；只访问公开的 http/https 地址，不读取本机或局域网内容。网页正文和截图会随本次请求发送给当前模型服务。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，Melo 可在这台 iPhone 上后台打开网页读取正文或截图，用来查看链接内容；只访问公开的 http/https 地址，不读取本机或局域网内容。网页正文和截图会随本次请求发送给当前模型服务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When on, Melo can open web pages in the background on this iPhone to read their text or take a screenshot, so it can look at links. Only public http/https addresses are opened; nothing on this device or the local network is read. Page text and screenshots are sent to the current model service with the request."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、Melo はこの iPhone でバックグラウンドに Web ページを開いて本文を読み取ったりスクリーンショットを撮ったりして、リンクの内容を確認できます。公開の http/https アドレスのみを開き、この端末やローカルネットワークの内容は読み取りません。ページ本文とスクリーンショットはリクエストとともに現在のモデルサービスに送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 Melo가 이 iPhone에서 백그라운드로 웹 페이지를 열어 본문을 읽거나 스크린샷을 찍어 링크 내용을 확인할 수 있습니다. 공개 http/https 주소만 열며 이 기기나 로컬 네트워크의 내용은 읽지 않습니다. 페이지 본문과 스크린샷은 요청과 함께 현재 모델 서비스로 전송됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al activarlo, Melo puede abrir páginas web en segundo plano en este iPhone para leer su texto o hacer una captura y así consultar enlaces. Solo abre direcciones http/https públicas; no lee nada de este dispositivo ni de la red local. El texto y las capturas se envían al servicio de modelos actual con la solicitud."
           }
         }
       }

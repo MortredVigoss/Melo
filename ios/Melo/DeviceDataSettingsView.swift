@@ -40,7 +40,7 @@ struct DeviceDataSettings: View {
                     }.disabled(requesting != nil)
                 }
                 if let denied { Text("iOS 未授予\(Text(LocalizedStringKey(denied.label)))权限。可在 iPhone 设置中允许 Melo 后再开启。").font(.caption).foregroundStyle(.orange) }
-                Text("目前在 Codex 登录的对话中可用；API 连接暂不调用手机数据。").font(.caption).foregroundStyle(.secondary)
+                Text("Codex 登录与 API 密钥连接的对话都可以调用这些数据。").font(.caption).foregroundStyle(.secondary)
             }.padding(.top, 16)
             Button("打开系统权限设置") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }.padding(.top, 12)
         } label: { Label("手机数据", systemImage: "iphone").font(.headline) }
@@ -73,6 +73,7 @@ struct PhoneAgentPermissionsSection: View {
                 Toggle(isOn: binding(capability)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label(LocalizedStringKey(capability.label), systemImage: capability.symbol)
+                        if let detail = capability.detail { Text(LocalizedStringKey(detail)).font(.caption).foregroundStyle(.secondary) }
                         if unavailable { Text("设置中尚未开启").font(.caption).foregroundStyle(.secondary) }
                     }
                 }

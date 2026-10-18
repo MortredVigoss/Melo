@@ -40,7 +40,7 @@ export function sceneKey(value) {
 // over the id table below, which stays as the fallback for undeclared tools.
 export function moduleForOperation(name = '', args = {}, declared) {
   if (declared && EXECUTION_MODULES.some(m => m.id === declared)) return declared;
-  if (name === 'web_search' || name === 'fetch_url' || name === 'native_web_search' || ['browser_open', 'browser_snapshot'].includes(name)) return 'search';
+  if (name === 'web_search' || name === 'fetch_url' || name === 'web_screenshot' || name === 'native_web_search' || ['browser_open', 'browser_snapshot'].includes(name)) return 'search';
   if (name === 'calculator') return 'compute';
   if (name === 'xlsx' || name === 'pdf' && ['write', 'structured', 'from_spec'].includes(args.action)) return 'create';
   if (name === 'native_image_generation' || name === 'image' && args.action === 'generate') return 'create';

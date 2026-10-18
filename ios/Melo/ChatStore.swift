@@ -424,22 +424,32 @@ import SwiftUI
                 try Task.checkCancellation()
                 if let video { stage(record.runId, id: "video:study", name: "视频画面与文字稿", status: "completed", output: "\(video.frames.count) 帧 · " + (video.transcript.isEmpty ? video.transcriptNote : "文字稿 \(video.transcript.count) 字")) }
                 let reply: ModelReply
+                let screenshots = CapturedScreenshots()
+                // The same phone tools (device data + web pages) on every connection.
+                let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID, screenshots: screenshots)
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID), allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
-                    reply = try await Network.reply(messages: modelHistory, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, onObservation: { observation in self.observe(observation, runID: record.runId) })
+                    defer { account.setReplyStatus(nil, for: chatID) }
+                    reply = try await Network.reply(messages: modelHistory, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
                 guard let position = chats.firstIndex(where: { $0.id == chatID }) else { finishRun(record.runId, state: "interrupted"); return }
                 let message = ChatMessage(role: "assistant", content: reply.text)
+                var attachments: [LocalImage] = []
+                // Web screenshots render under the reply like generated images; a failed save never loses the answer.
+                for shot in screenshots.items {
+                    do { attachments.append(try imageLibrary.store(shot.jpeg, title: "网页截图 " + (URL(string: shot.url)?.host ?? ""), photo: true)) }
+                    catch { stage(record.runId, id: "web:save", name: "保存网页截图", status: "failed", output: String(error.localizedDescription.prefix(300))) }
+                }
                 if !reply.images.isEmpty {
                     let assets = try reply.images.enumerated().map { index, payload in try imageLibrary.store(payload.data, title: plan.action == .edit ? "修改后的图片" : "生成的图片", references: reply.imageReferences.flatMap { index < $0.count ? $0[index] : nil } ?? plan.references.map(\.id), reportedModel: payload.reportedModel, revisedPrompt: payload.revisedPrompt) }
-                    try imageLibrary.bind(assets, to: message.id); imageRevision += 1
+                    attachments += assets
                     if let runIndex = executionRecords.firstIndex(where: { $0.runId == record.runId }) {
                         var progress = executionRecords[runIndex].imageProgress ?? ExecutionImageProgress(startedAt: record.startedAt)
                         progress.saved = assets.count; progress.finishedAt = timestamp()
@@ -447,6 +457,7 @@ import SwiftUI
                         saveExecutionRecords()
                     }
                 }
+                if !attachments.isEmpty { try imageLibrary.bind(attachments, to: message.id); imageRevision += 1 }
                 stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机聊天记录")
                 let original = chats[position]
                 chats[position].messages.append(message)
@@ -627,9 +638,22 @@ import SwiftUI
     }
     // Phone data tools: reads run directly once the user enabled the kind;
     // every write waits here for an explicit tap in the confirmation alert.
-    private func deviceToolContext(runID: String, agentID: String, chatID: String? = nil) -> DeviceToolContext? {
-        let policy = PhoneAgentPermissions.load().devicePolicy(for: agentID, device: DeviceToolPolicy.load())
-        guard !policy.enabled.isEmpty else { return nil }
+    /// Screenshots taken by web_screenshot during one reply; bound to the
+    /// assistant message once the answer is saved.
+    final class CapturedScreenshots { var items: [(jpeg: Data, url: String)] = [] }
+    private func deviceToolContext(runID: String, agentID: String, chatID: String? = nil, screenshots: CapturedScreenshots? = nil) -> DeviceToolContext? {
+        let permissions = PhoneAgentPermissions.load()
+        let policy = permissions.devicePolicy(for: agentID, device: DeviceToolPolicy.load())
+        // Web page tools share the Agent's network switch with web search; read-only, no dialog.
+        let web: WebToolContext? = permissions.allows(agentID, .network) ? WebToolContext(execute: { call in
+            await WebPageToolRunner.run(call: call, allowed: { PhoneAgentPermissions.load().allows(agentID, .network) }).phoneResult
+        }, onCall: { [weak self] call, result in
+            let summary = WebPageText.summary(result)
+            let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"
+            self?.stage(runID, id: "web:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
+            if let jpeg = result.imageJPEG, let screenshots { screenshots.items.append((jpeg, result.imageURL)) }
+        }) : nil
+        guard !policy.enabled.isEmpty || web != nil else { return nil }
         return DeviceToolContext(policy: policy, execute: { [weak self] call in
             guard let self else { return #"{"ok":false,"error":"CANCELLED"}"# }
             return await DeviceToolRunner.run(call, policy: policy, source: SystemDeviceData.shared,
@@ -642,7 +666,7 @@ import SwiftUI
             let summary = DeviceToolSummary.of(output)
             let name = DeviceToolSpec.named(call.name).map { "手机数据 · \($0.actionLabel)" } ?? "手机数据 · \(call.name)"
             self?.stage(runID, id: "device:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
-        })
+        }, web: web)
     }
     /// Write confirmations are shown one at a time; a second conversation's request
     /// waits for the first to be answered instead of being refused.

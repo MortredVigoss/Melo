@@ -11,6 +11,7 @@ import { buildModelMessagesFromChat } from '../services/chat/messageBuilder.js';
 import {
   resolveToolProtocol, toolDefinitionsForProtocol, parseAssistantResponse, toLoopMessages, renderToolMessage,
   toRequestMessages, buildToolChainRecord, toolChainToMessages, withAnthropicToolCache,
+  toolImagesMessage, normalizeToolImages, MAX_TOOL_IMAGES_PER_TURN, MAX_TOOL_IMAGE_DATA_CHARS,
 } from './toolProtocol.js';
 
 const tool = { id: 'fixture_lookup', description: 'Read the requested fixture entry.', parametersSchema: {
@@ -283,4 +284,78 @@ test('persisted tool chain renders into every protocol and the history builder p
   const big = buildToolChainRecord(Array.from({ length: 40 }, (_, i) => ({ ...turns[0], toolCalls: [{ ...turns[0].toolCalls[0], id: `c${i}` }], toolResults: [{ ...turns[0].toolResults[0], callId: `c${i}` }] })), { protocol: 'responses' });
   assert.equal(big.truncated, true); assert.ok(big.turns.length < 40); assert.equal(big.turns.at(-1).toolCalls[0].id, 'c39');
   assert.deepEqual(toLoopMessages({ text: '', toolCalls: [], toolResults: [] }, 'anthropic')[0].toolCalls, []);
+});
+
+// ─── Tool images (web_screenshot) ────────────────────────────────────────────
+
+const JPEG_DATA_URL = `data:image/jpeg;base64,${Buffer.from('fixture-jpeg-bytes').toString('base64')}`;
+const shotResult = { ok: true, status: 'ok', output: 'Screenshot of "Example" saved.\n\n![Example](http://127.0.0.1:43127/api/files/signed/s.png?p=a&e=1&s=b)',
+  meta: { url: 'https://example.com/', finalUrl: 'https://example.com/', modelImage: JPEG_DATA_URL } };
+const shotCall = { id: 'call_shot', name: 'web_screenshot', arguments: { url: 'https://example.com/' } };
+const shotTool = { id: 'web_screenshot', description: 'Screenshot a page.', parametersSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } };
+
+test('tool images: one extra user message after the results on native protocols, none on xml, requests without images unchanged', () => {
+  for (const [config, protocol] of [[{ apiProtocol: 'responses', authMode: 'api-key' }, 'responses'], [{ apiProtocol: 'anthropic' }, 'anthropic'], [{ apiProtocol: 'chat-completions', toolCalling: 'native' }, 'chat-completions']]) {
+    const session = createFunctionCallingSession(config, [shotTool]);
+    assert.equal(session.protocol, protocol);
+    const images = session.imagesOf([{ call: shotCall, result: shotResult }, { call: { id: 'c2', name: 'web_screenshot', arguments: {} }, result: { ok: false, output: 'x' } }]);
+    assert.deepEqual(images, [{ callId: 'call_shot', name: 'web_screenshot', text: '[web_screenshot of https://example.com/]', dataUrl: JPEG_DATA_URL, detail: 'low' }]);
+    const base = [{ role: 'user', content: 'show me' }];
+    assert.strictEqual(session.appendToolImages(base, []), base, 'no images → same array');
+    const withImages = session.appendToolImages(base, images);
+    assert.equal(withImages.length, 2);
+    const message = withImages[1];
+    assert.equal(message.role, 'user'); assert.equal(message.isToolResult, true);
+    assert.deepEqual(message.toolImages, [{ callId: 'call_shot', name: 'web_screenshot', text: '[web_screenshot of https://example.com/]' }]);
+    assert.deepEqual(message.content, [{ type: 'text', text: '[web_screenshot of https://example.com/]' }, { type: 'image_url', image_url: { url: JPEG_DATA_URL, detail: 'low' } }]);
+    // The image message is an ordinary user message for the transports.
+    assert.equal(renderToolMessage(message, protocol), null);
+    if (protocol === 'anthropic') {
+      const body = anthropicRequestBody({ model: 'm', systemPrompt: 's', messages: withImages, promptCache: false });
+      assert.deepEqual(body.messages[1].content, [{ type: 'text', text: '[web_screenshot of https://example.com/]' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: JPEG_DATA_URL.split(',')[1] } }]);
+    }
+    // Turn record carries bounded images; the persisted chain drops them.
+    const record = session.turnRecord({ text: '', toolCalls: [shotCall], protocolCalls: [{ id: 'call_shot', name: 'web_screenshot', arguments: '{"url":"https://example.com/"}' }] }, [{ call: shotCall, result: shotResult }]);
+    assert.equal(record.images.length, 1);
+    const chain = buildToolChainRecord([record], { protocol });
+    assert.equal(JSON.stringify(chain).includes('base64'), false, 'persisted history never carries base64');
+    assert.equal('images' in chain.turns[0], false);
+    assert.deepEqual(toLoopMessages({ ...record }, protocol).length, 3, 'IR with images renders three loop messages');
+    assert.deepEqual(toolChainToMessages(chain, protocol).length, 2, 'rebuilt history has no image message');
+  }
+  const xml = createFunctionCallingSession({ apiProtocol: 'chat-completions' }, [shotTool]);
+  assert.equal(xml.protocol, 'xml');
+  assert.deepEqual(xml.imagesOf([{ call: shotCall, result: shotResult }]), []);
+  const base = [{ role: 'user', content: 'show me' }];
+  assert.strictEqual(xml.appendToolImages(base, [{ callId: 'call_shot', name: 'web_screenshot', text: 't', dataUrl: JPEG_DATA_URL }]), base);
+  assert.equal(toLoopMessages({ text: '', toolCalls: [], toolResults: [], images: [{ callId: 'x', name: 'web_screenshot', text: 't', dataUrl: JPEG_DATA_URL }] }, 'xml').length, 2);
+});
+
+test('tool images are bounded: at most 4 per turn, data URLs only, oversized ones dropped; the fitter counts them as images not prose', async () => {
+  const many = Array.from({ length: 6 }, (_, i) => ({ callId: `c${i}`, name: 'web_screenshot', text: `[shot ${i}]`, dataUrl: JPEG_DATA_URL }));
+  assert.equal(normalizeToolImages(many).length, MAX_TOOL_IMAGES_PER_TURN);
+  assert.deepEqual(normalizeToolImages([{ callId: 'a', name: 'x', dataUrl: 'https://example.com/a.jpg' }, { callId: 'b', name: 'x', dataUrl: 'data:text/plain;base64,QUJD' },
+    { callId: 'c', name: 'x', dataUrl: `data:image/png;base64,${'A'.repeat(MAX_TOOL_IMAGE_DATA_CHARS)}` }]), []);
+  const big = toolImagesMessage([{ callId: 'c', name: 'web_screenshot', text: 't', dataUrl: `data:image/jpeg;base64,${'A'.repeat(400_000)}` }], 'responses');
+  const { estimateMessageTokens } = await import('../memory/tokenEstimate.js');
+  assert.ok(estimateMessageTokens(big) < 3000, 'a 400 KB data URL costs one image, not 100k prose tokens');
+  const request = fitRequestContext({ sections: [{ id: 'sys', text: 'system', required: true }], messages: [{ role: 'user', content: 'show me' },
+    { role: 'assistant', content: '', toolCalls: [{ id: 'call_shot', name: 'web_screenshot', arguments: '{}' }] },
+    { role: 'user', content: '', isToolResult: true, toolResults: [{ callId: 'call_shot', name: 'web_screenshot', output: envelopeJson('saved') }] }, big], totalTokens: 60000, outputReserve: 8000 });
+  assert.equal(request.messages.length, 4, 'the image message stays with its tool chain');
+});
+
+test('compactToolChain condenses older tool images to text and keeps the newest', async () => {
+  const { compactToolChain } = await import('./functionCalling.js');
+  const image = () => toolImagesMessage([{ callId: 'c', name: 'web_screenshot', text: '[web_screenshot of https://example.com/]', dataUrl: JPEG_DATA_URL }], 'responses');
+  const results = i => ({ role: 'user', content: '', isToolResult: true, functionCallOutputs: [{ type: 'function_call_output', call_id: `c${i}`, output: envelopeJson('x') }] });
+  const messages = [{ role: 'user', content: 'q' }, { role: 'assistant', content: '', responseItems: [] }, results(1), image(),
+    { role: 'assistant', content: '', responseItems: [] }, results(2), image()];
+  const { messages: next, changed } = compactToolChain(messages, { keepRecentResults: 2 });
+  assert.equal(changed, true);
+  assert.equal(typeof next[3].content, 'string'); assert.match(next[3].content, /no longer attached/); assert.equal(next[3].toolImagesCondensed, true);
+  assert.equal(JSON.stringify(next[3]).includes('base64'), false);
+  assert.deepEqual(next[6], messages[6], 'newest image kept');
+  assert.equal(compactToolChain(next, { keepRecentResults: 2 }).changed, false);
 });

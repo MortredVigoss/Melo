@@ -23,6 +23,8 @@ export function toolGroupOf(toolId) {
   if (/^browser_/.test(id)) return 'browser';
   if (id === 'pdf' || id === 'xlsx') return 'documents';
   if (id === 'image' || id === 'media_info' || id === 'media_api') return 'media';
+  // web_screenshot is a small definition and sits in core next to fetch_url;
+  // the routing prompt (not the definition list) says when not to use it.
   return 'core';
 }
 

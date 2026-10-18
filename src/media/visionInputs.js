@@ -19,12 +19,15 @@ export async function prepareVisionInputs(
       }
       signal?.throwIfAborted();
       const source = part.image_url?.url || '';
+      // Inline data images pass through untouched. `low` detail is what tool
+      // images (web_screenshot, already a bounded JPEG) carry; re-encoding
+      // them to PNG here would only inflate the payload.
       if (
         source.startsWith('data:image/') &&
         !part.image_url.crop &&
         !part.image_url.ocr &&
         !part.image_url.role &&
-        (!part.image_url.detail || part.image_url.detail === 'auto') &&
+        (!part.image_url.detail || part.image_url.detail === 'auto' || part.image_url.detail === 'low') &&
         detail === 'auto'
       ) {
         content.push(part);

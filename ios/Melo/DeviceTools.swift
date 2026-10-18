@@ -69,6 +69,13 @@ enum PhoneCapability: String, CaseIterable, Codable, Identifiable {
         default: return deviceKind!.symbol
         }
     }
+    /// Help text under the switch; nil when the label says it all.
+    var detail: String? {
+        switch self {
+        case .network: return "联网搜索；也允许在这台 iPhone 上打开网页读取正文和截图，截图会附在回答下方。"
+        default: return nil
+        }
+    }
 }
 
 struct PhoneAgentPermissions: Equatable {
@@ -130,9 +137,8 @@ struct DeviceToolSpec {
     let description: String
     let parameters: [String: Any]
 
-    var responsesDefinition: [String: Any] {
-        ["type": "function", "name": name, "description": description, "parameters": parameters, "strict": false]
-    }
+    var definition: PhoneToolDefinition { PhoneToolDefinition(name: name, description: description, parameters: parameters) }
+    var responsesDefinition: [String: Any] { definition.responsesDefinition }
 
     static func object(_ properties: [String: [String: Any]], required: [String] = []) -> [String: Any] {
         ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
@@ -375,6 +381,15 @@ enum DeviceToolLoop {
     static func followUpInput(previous: [Any], output: [[String: Any]], results: [(callID: String, output: String)]) -> [Any] {
         previous + output.map { $0 as Any } + results.map { ["type": "function_call_output", "call_id": $0.callID, "output": $0.output] as Any }
     }
+    /// Same replay; a screenshot result additionally appends a user message
+    /// with the image after all function outputs, so the model sees the page.
+    static func followUpInput(previous: [Any], output: [[String: Any]], results: [(callID: String, result: PhoneToolResult)]) -> [Any] {
+        let outputs = followUpInput(previous: previous, output: output, results: results.map { ($0.callID, $0.result.output) })
+        return outputs + results.compactMap { item -> Any? in
+            guard let jpeg = item.result.imageJPEG else { return nil }
+            return WebPageText.followUpImageItem(callID: item.callID, dataURL: WebPageText.dataURL(jpeg: jpeg), url: item.result.imageURL)
+        }
+    }
 
     static func validateBatch(_ calls: [ResponsesFunctionCall]) throws {
         guard calls.count <= maxCallsPerRound else { throw MeloError.message("模型一次请求了过多手机数据操作，已全部拦截，未执行任何操作。") }
@@ -385,11 +400,53 @@ enum DeviceToolLoop {
     }
 }
 
-/// Everything ChatGPTAccount needs to run phone tools during one reply.
+/// Web page tools (open_url / web_screenshot), offered with the Agent's
+/// network permission. Read-only: no approval dialog.
+struct WebToolContext {
+    var tools: [WebPageToolSpec] = WebPageToolSpec.all
+    var execute: @MainActor (ResponsesFunctionCall) async -> PhoneToolResult
+    var onCall: (@MainActor (ResponsesFunctionCall, PhoneToolResult) -> Void)? = nil
+}
+
+/// Everything a reply needs to run phone tools: device data (gated by the
+/// device switches and per-Agent grants) plus, optionally, the web page tools.
 struct DeviceToolContext {
     var policy: DeviceToolPolicy
     var execute: @MainActor (ResponsesFunctionCall) async -> String
     var onCall: (@MainActor (ResponsesFunctionCall, String) -> Void)? = nil
+    var web: WebToolContext? = nil
+
+    /// Protocol-neutral definitions: device tools first, then web tools.
+    var definitions: [PhoneToolDefinition] { policy.tools.map(\.definition) + (web?.tools.map(\.definition) ?? []) }
+    var instructions: String {
+        [DeviceToolLoop.instructions(policy), web == nil ? "" : WebPageToolSpec.instructions].filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+    /// Loop status while a call runs.
+    func statusText(for call: ResponsesFunctionCall) -> String {
+        WebPageToolSpec.named(call.name).map(\.statusText) ?? "正在读取手机数据…"
+    }
+    /// Dispatches one call (web tools by name first, then device tools) and
+    /// reports it for the run record.
+    @MainActor func perform(_ call: ResponsesFunctionCall) async -> PhoneToolResult {
+        if let web, WebPageToolSpec.named(call.name) != nil {
+            let result = await web.execute(call)
+            web.onCall?(call, result)
+            return result
+        }
+        let output = await execute(call)
+        onCall?(call, output)
+        return PhoneToolResult(output: output)
+    }
+    /// The same tools for the API-key protocols in Network.reply.
+    var toolSet: PhoneToolSet { PhoneToolSet(definitions: definitions, instructions: instructions, perform: perform) }
+}
+
+/// Function tools for Chat Completions and Anthropic connections. `perform`
+/// runs a call (with any approval dialog) and reports it to the run record.
+struct PhoneToolSet {
+    var definitions: [PhoneToolDefinition]
+    var instructions: String
+    var perform: @MainActor (ResponsesFunctionCall) async -> PhoneToolResult
 }
 
 extension DeviceToolSpec {

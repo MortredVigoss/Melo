@@ -3,7 +3,13 @@
 // One protocol-neutral intermediate representation (IR) of a tool turn:
 //
 //   assistant turn  { role:'assistant', text, toolCalls:[{ id, name, arguments }] }
-//   results turn    { role:'tool',      toolResults:[{ callId, name, output }] }
+//   results turn    { role:'tool',      toolResults:[{ callId, name, output }], images?:[{ callId, name, text, dataUrl }] }
+//
+// `images` (web_screenshot) are tool outputs the model should look at. They
+// are transient: the loop appends one extra user message carrying the image
+// parts after the results message (`toolImagesMessage`), the XML protocol
+// skips it, and `buildToolChainRecord` never persists it (no base64 in
+// history).
 //
 // `name` is the wire function name the model saw (`functionName(tool.id)`),
 // `arguments` is the raw JSON string the model produced and `output` is the
@@ -16,6 +22,11 @@
 //   anthropic /      { role:'assistant', content, toolCalls:[{ id, name, arguments, raw? }] }
 //   chat-completions { role:'user', content:'', isToolResult, toolResults:[{ callId, name, output }] }
 //   xml              plain text messages (parser.js)
+//   (any native)     { role:'user', isToolResult, toolImages:[{ callId, name }],
+//                      content:[{ type:'text', text }, { type:'image_url', image_url:{ url:dataUrl, detail:'low' } }] }
+//                    — only when a result carried an image; the transports already render
+//                    `image_url` parts as input_image (Responses), image blocks (Anthropic)
+//                    or image_url parts (chat-completions).
 //
 // Pure module: no I/O, no registry access, no request-scope reads except the
 // optional `env` passed to `resolveToolProtocol`.
@@ -121,6 +132,52 @@ export function parseAssistantResponse(raw, protocol) {
   throw new Error(`Unknown tool protocol: ${protocol}`);
 }
 
+// ─── Tool images (transient, never persisted) ────────────────────────────────
+
+export const MAX_TOOL_IMAGES_PER_TURN = 4;
+// ≈450 KB of base64 per image; web_screenshot encodes to ≤400 KB JPEG.
+export const MAX_TOOL_IMAGE_DATA_CHARS = 600_000;
+const IMAGE_DATA_URL = /^data:image\/(?:jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * Bound and validate the images of one tool turn: JPEG/PNG/WebP/GIF data
+ * URLs only, at most MAX_TOOL_IMAGES_PER_TURN, each under the size cap.
+ */
+export function normalizeToolImages(images = []) {
+  const out = [];
+  for (const image of Array.isArray(images) ? images : []) {
+    const dataUrl = typeof image?.dataUrl === 'string' ? image.dataUrl : '';
+    if (!dataUrl || dataUrl.length > MAX_TOOL_IMAGE_DATA_CHARS || !IMAGE_DATA_URL.test(dataUrl)) continue;
+    const name = String(image.name || 'tool');
+    out.push({ callId: String(image.callId || ''), name, text: String(image.text || `[${name} image]`).slice(0, 300), dataUrl,
+      detail: image.detail === 'high' ? 'high' : 'low' });
+    if (out.length >= MAX_TOOL_IMAGES_PER_TURN) break;
+  }
+  return out;
+}
+
+/**
+ * The loop message that shows tool images to the model, or `null` when the
+ * protocol cannot carry images (xml) or there are none. Marked
+ * `isToolResult` so it is never mistaken for the user's latest input.
+ */
+export function toolImagesMessage(images = [], protocol) {
+  const list = normalizeToolImages(images);
+  if (!list.length || protocol === 'xml') return null;
+  const content = list.flatMap(image => [
+    { type: 'text', text: image.text },
+    { type: 'image_url', image_url: { url: image.dataUrl, detail: image.detail } },
+  ]);
+  return { role: 'user', content, isToolResult: true, toolImages: list.map(({ callId, name, text }) => ({ callId, name, text })) };
+}
+
+/** Text-only form of a tool-images message (older images are condensed to this). */
+export function condenseToolImagesMessage(message) {
+  if (!message?.toolImages) return message;
+  const text = message.toolImages.map(image => `${image.text} (image no longer attached)`).join('\n');
+  return { role: 'user', content: text, isToolResult: true, toolImages: message.toolImages.map(image => ({ ...image })), toolImagesCondensed: true };
+}
+
 // ─── Loop messages ───────────────────────────────────────────────────────────
 
 export function isToolProtocolMessage(message) {
@@ -129,8 +186,18 @@ export function isToolProtocolMessage(message) {
     || (message.isToolResult === true && Array.isArray(message.toolResults));
 }
 
-/** Build the two loop messages for one IR turn in the given protocol. */
-export function toLoopMessages({ text = '', toolCalls = [], toolResults = [] }, protocol, { responseItems } = {}) {
+/**
+ * Build the loop messages for one IR turn in the given protocol: assistant
+ * turn, results turn and — only when the turn carries `images` on a native
+ * protocol — a third user message with the image parts.
+ */
+export function toLoopMessages(turn, protocol, options = {}) {
+  const messages = toLoopMessagesCore(turn, protocol, options);
+  const imagesMessage = toolImagesMessage(turn?.images, protocol);
+  return imagesMessage ? [...messages, imagesMessage] : messages;
+}
+
+function toLoopMessagesCore({ text = '', toolCalls = [], toolResults = [] }, protocol, { responseItems } = {}) {
   if (protocol === 'responses') {
     const items = Array.isArray(responseItems) ? responseItems : [
       ...(text ? [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }] : []),
@@ -242,7 +309,8 @@ function truncateOutput(output, maxChars) {
  * Bounded IR of every tool turn of one reply, persisted on the assistant
  * message (`metadata.toolChain`) so the chain can be rebuilt for any protocol
  * later. Arguments are expected to be redacted by the caller. Call ids stay
- * inside the chat that produced them.
+ * inside the chat that produced them. Turn `images` (tool screenshots) are
+ * dropped here on purpose: persisted history never carries base64 image data.
  */
 export function buildToolChainRecord(turns = [], { protocol, maxOutputChars = DEFAULT_CHAIN_OUTPUT_CHARS, maxArgChars = DEFAULT_CHAIN_ARG_CHARS, maxChars = DEFAULT_CHAIN_MAX_CHARS } = {}) {
   const rendered = turns.map(turn => ({
