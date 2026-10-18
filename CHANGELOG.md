@@ -2,7 +2,7 @@
 
 A brief overview of user-facing updates. Technical details live in the project documentation and commit history.
 
-## 2026-10-18
+## 2026-10-18 — iPhone 0.7.0 (32)
 
 - Date continuity: the prompt now says that earlier messages were written at their own time, and when a conversation crosses midnight the turn carries a short note ("the previous message was sent yesterday") — the model no longer "corrects" a previous reply's "今天". iPhone requests now include the current local date (they carried none).
 - iPhone auto-read: speaks a condensed version of the reply (conclusions and numbers; no URLs, link targets, code, tables or markdown), and picks the voice by the reply's own language first (Chinese replies in Chinese on an English phone), then the voice-language setting, then the device language. The setting is now labelled "语音语言（听写与朗读）".

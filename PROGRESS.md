@@ -1,3 +1,7 @@
+## 2026-10-18 — iPhone 覆盖安装 0.7.0 (32)
+
+用户要求手机也覆盖安装并把版本升到 0.7 开头。`MELO_IOS_VERSION=0.7.0 MELO_IOS_BUILD=32` 走 `ios/scripts/build-personal.sh` 签名构建（日常门禁已过：3857 JS + 29 Swift 套件，含新增 SpeechTextTests 与日期用例），`devicectl` 对连接中的 Mortred (3) 同包覆盖 `com.melo.iphone.mfpiao`，安装后回读版本 0.7.0 (32)，普通启动 PID 36090。未卸载、未清数据。证据 `.tmp/ios-install-0.7.0/`。本次带上手机侧日期上下文、朗读要点化与语种选择、桌面摘要同步。真机 UI 与真实模型回复未在本轮复验。（Claude）
+
 ## 2026-10-18 — 跨午夜“今天”被模型更正、手机朗读语言与内容、工具组激活放宽
 
 用户反馈：前一条回复说“今天…”，过了零点再问别的，模型道歉说上一条错了；手机自动朗读只用系统语言、读完整回复连网址一起读。修复：系统提示的当前日期段加“早先消息按各自时间理解，不要更正/道歉”规则，日期变化时本轮加【日期提示】（`src/services/chat/dateContext.js`，turn 段，不动缓存前缀）；iPhone 指令原本完全没有日期，现在带当前本地日期与同样的规则（`ConversationHistory.dateInstructions/dateChangeNote`）。iPhone 朗读新增 `SpeechText.swift`：按桌面 `extractVoiceSummary` 同一套规则去网址/链接/代码/表格/标记并压缩到要点，语音按回复语种 → 语音语言设置 → 系统语言选择。工具组：浏览器组在 `MELO_CDP_ENABLED=1` 时首轮即可用（恢复 A2 之前的语义），媒体/文档组也按对话里已有的附件和更宽的措辞激活。（Claude）
