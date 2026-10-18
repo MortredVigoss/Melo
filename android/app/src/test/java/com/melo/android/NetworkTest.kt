@@ -11,6 +11,17 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class NetworkTest {
+    @Test fun responsesExposeOnlyProviderPublicSummariesAndRetainThemAtStreamCompletion() {
+        val response = MeloJson.parseToJsonElement("""{"status":"completed","model":"fixture","output":[{"type":"reasoning","encrypted_content":"opaque","content":[{"type":"reasoning_text","text":"private"}],"summary":[{"type":"summary_text","text":"Public summary"}]},{"type":"message","content":[{"type":"output_text","text":"Final answer"}]}]}""").jsonObject
+        val answer = ModelClient.decodeResponse(response, "responses")
+        assertEquals("Final answer", answer.text); assertEquals("Public summary", answer.publicSummary)
+        assertFalse(answer.toString().contains("opaque")); assertFalse(answer.toString().contains("private"))
+        val stream = StreamDecoder("responses")
+        stream.accept("""{"type":"response.completed","response":$response}""")
+        assertEquals(answer, stream.finish())
+        val plain = ModelClient.decodeResponse(MeloJson.parseToJsonElement("""{"choices":[{"finish_reason":"stop","message":{"content":"Answer","reasoning_content":"not a public summary"}}]}""").jsonObject, "chat-completions")
+        assertNull(plain.publicSummary)
+    }
     @Test fun missingConfigurationStopsBeforeHttpAndIdentifiesTheSelectedConnection() = runBlocking {
         MockWebServer().use { server ->
             server.start()

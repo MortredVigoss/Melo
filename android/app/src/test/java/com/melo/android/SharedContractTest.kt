@@ -84,6 +84,19 @@ class SharedContractTest {
         assertTrue(value.getValue("models").jsonArray.single().jsonObject.getValue("simulated").jsonPrimitive.boolean)
         assertEquals(listOf("https://example.com/doc"), run.sources)
     }
+    @Test fun processDeathPreservesFinishedToolsAndInterruptsOnlyPendingObservations() {
+        val scene = MeloJson.parseToJsonElement("""{"version":1,"runId":"r","status":"running","operations":[{"id":"s","name":"web_search","status":"completed","output":"Observed source"},{"id":"p","name":"phone_use","status":"running"}],"pipeline":[],"sources":[]}""").jsonObject
+        val restored = RunRecord(id = "r", chatId = "chat", prompt = "fixture", sharedScene = scene).interrupted("2026-10-18T00:00:00Z")
+        assertEquals("interrupted", restored.status)
+        val observations = restored.sharedScene!!.getValue("operations").jsonArray
+        assertEquals("completed", observations.first().jsonObject.text("status"))
+        assertEquals("interrupted", observations.last().jsonObject.text("status"))
+        assertEquals("Observed source", observations.first().jsonObject.text("output"))
+        val workspace = SyncProtocol.put(Workspace(), "message", "assistant", restored.messageMetadata(), "android")
+        schema.validate(MeloJson.encodeToJsonElement(workspace), "workspace")
+        val value = workspace.records.single().versions.single().value
+        assertEquals("interrupted", value.getValue("scene").jsonObject.text("status"))
+    }
     @Test fun nodeNormalizationNeverCreatesSameClockConflicts() {
         val golden = MeloJson.parseToJsonElement(resource("portable-records.json")).jsonArray
         golden.forEach { item ->

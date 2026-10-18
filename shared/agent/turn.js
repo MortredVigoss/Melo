@@ -13,14 +13,14 @@ function identity(value) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 256;
 }
 
-export function startTurn({ runId, turnId, allowedTools = [], requiredTools = [], now, limits = {} }) {
+export function startTurn({ runId, turnId, allowedTools = [], requiredTools = [], toolDependencies = {}, now, limits = {} }) {
   if (!identity(runId) || !identity(turnId) || !Number.isFinite(now)) fail('INVALID_TURN', 'Invalid turn identity or clock.');
   const bounded = (key, fallback, max) => Number.isInteger(limits[key]) && limits[key] > 0 && limits[key] <= max ? limits[key] : fallback;
   return {
     version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now,
     deadline: now + bounded('timeoutMs', 600_000, 3_600_000),
     limits: { rounds: bounded('rounds', 10, 64), callsPerRound: bounded('callsPerRound', 8, 32), errors: bounded('errors', 3, 10), stagnant: bounded('stagnant', 5, 20) },
-    allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
+    allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], toolDependencies: Object.fromEntries(Object.entries(toolDependencies).filter(([name, needs]) => identity(name) && Array.isArray(needs)).map(([name, needs]) => [name, needs.filter(identity).slice(0, 16)])), successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
     callIds: [], pending: [], permitted: [], phoneTasks: [], rejections: {}, errors: 0, roundSucceeded: false, stagnant: 0, progressKeys: [], reason: null,
   };
 }
@@ -59,6 +59,7 @@ export function advanceTurn(previous, event, now) {
       state.rejections = {};
       state.permitted = calls.filter(call => {
         if (!state.allowedTools.includes(call.name)) { state.rejections[call.id] = 'UNKNOWN_TOOL'; return false; }
+        if ((state.toolDependencies?.[call.name] || []).some(name => !state.successfulTools.includes(name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
         if (COMMON_TOOLS.some(tool => tool.name === call.name)) {
           try { validateCommonTool(call.name, call.arguments); }
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }

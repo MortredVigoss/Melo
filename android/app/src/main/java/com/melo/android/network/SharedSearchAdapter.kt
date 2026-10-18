@@ -11,6 +11,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import okhttp3.Dns
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -47,9 +48,9 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
     }
     suspend fun fetch(runtime: SharedCoreRuntime, args: JsonObject, requestedUrls: List<String>): DeviceToolResult {
         val target = args.text("url")
-        require(target in requestedUrls) { "本轮只允许读取用户指定的 URL。" }
+        if (target !in requestedUrls) return DeviceToolResult.error("只能读取用户指定或本轮 Search 实际返回的来源 URL。", "FETCH_URL_NOT_IN_EVIDENCE")
         val request = Request.Builder().url(EndpointPolicy.validate(target, debug)).header("Accept", "text/html, text/plain, application/json").build()
-        val result = exchange(request, 1_048_576)
+        val result = exchange(request, 1_048_576, publicPage = true)
         if (!result.ok) return result
         val type = result.data.text("contentType")
         if (!type.contains("text/") && !type.contains("json")) return DeviceToolResult.error("该页面不是可直接读取的文本；尚未处理附件或动态渲染。", "FETCH_CONTENT_TYPE_UNSUPPORTED")
@@ -58,8 +59,13 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
             put("observation", buildJsonObject { put("fetchedAt", now()) })
         }).jsonObject)
     }
-    private suspend fun exchange(request: Request, limit: Int): DeviceToolResult = suspendCancellableCoroutine { continuation ->
-        val call = client.newCall(request)
+    private suspend fun exchange(request: Request, limit: Int, publicPage: Boolean = false): DeviceToolResult = suspendCancellableCoroutine { continuation ->
+        val pageClient = if (!publicPage) client else client.newBuilder().dns { hostname ->
+            val addresses = Dns.SYSTEM.lookup(hostname)
+            if (!(debug && hostname in setOf("localhost", "127.0.0.1", "10.0.2.2")) && addresses.any { it.isAnyLocalAddress || it.isLoopbackAddress || it.isLinkLocalAddress || it.isSiteLocalAddress || it.isMulticastAddress || it.address.size == 16 && (it.address[0].toInt() and 0xfe) == 0xfc }) throw java.net.UnknownHostException("网页来源不能读取本地或私有网络地址。")
+            addresses
+        }.build()
+        val call = pageClient.newCall(request)
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, error: IOException) {

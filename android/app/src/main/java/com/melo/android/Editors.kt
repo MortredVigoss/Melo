@@ -285,7 +285,7 @@ import com.melo.android.network.HostedSearchAdapter
         item { SectionLabel("真实执行记录") }
         if (data.runs.isEmpty()) item { EmptyPage("还没有执行记录", "模型请求开始后会记录状态、返回模型、引用与失败信息。") }
         items(data.runs.asReversed(), key = { it.id }) { run ->
-            ListItem(headlineContent = { Text(run.prompt.take(90)) }, supportingContent = { Text("${run.status} · ${if (run.simulated) "本地 Fixture" else run.reportedModel ?: run.requestedModel}\n${run.error ?: run.startedAt}") }, modifier = Modifier.clickable { onExecution(run.chatId) }, trailingContent = { TextButton(onClick = { onChat(run.chatId) }) { Text("对话") } })
+            ListItem(headlineContent = { Text(run.prompt.take(90)) }, supportingContent = { Text("${executionStatus(run.status)} · ${if (run.simulated) "本地 Fixture" else run.reportedModel ?: run.requestedModel}\n${run.error ?: run.startedAt}") }, modifier = Modifier.clickable { onExecution(run.chatId) }, trailingContent = { TextButton(onClick = { onChat(run.chatId) }) { Text("对话") } })
         }
     }
 }

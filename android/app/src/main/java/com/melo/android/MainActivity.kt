@@ -59,7 +59,7 @@ class MeloViewModel(application: Application) : AndroidViewModel(application) {
 private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device }
 private data class NavItem(val page: Page, val label: String, val icon: ImageVector)
 private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
-private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null)
+private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null, val run: RunRecord? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MeloApp(vm: MeloViewModel = viewModel(), requestedChat: Pair<String, Int>? = null) {
@@ -174,9 +174,11 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     val deviceAgent = (context.applicationContext as MeloApplication).deviceAgent
     val deviceRuntime by deviceAgent.runtime.collectAsStateWithLifecycle()
     val deviceRuns = data.deviceRuns.filter { it.taskContext?.chatId == chat.id }
-    val timeline = remember(chat.messages, deviceRuns) {
-        (chat.messages.map { ChatTimelineItem("message-${it.id}", it.createdAt, message = it) } + deviceRuns.map { ChatTimelineItem("device-${it.id}", it.startedAt, device = it) })
-            .sortedBy { runCatching { java.time.Instant.parse(it.at).toEpochMilli() }.getOrDefault(0L) }
+    val chatRuns = data.runs.filter { it.chatId == chat.id }
+    val timeline = remember(chat.messages, deviceRuns, chatRuns) {
+        (chat.messages.map { ChatTimelineItem("message-${it.id}", it.createdAt, message = it) } + deviceRuns.map { ChatTimelineItem("device-${it.id}", it.startedAt, device = it) } + chatRuns.map { ChatTimelineItem("run-${it.id}", it.startedAt, run = it) })
+            .sortedWith(compareBy<ChatTimelineItem> { runCatching { java.time.Instant.parse(it.at) }.getOrDefault(java.time.Instant.EPOCH) }
+                .thenBy { if (it.message?.role == "user") 0 else if (it.run != null) 1 else 2 })
     }
     val deviceBusy = deviceRuntime.running && deviceRuntime.chatId == chat.id
     val busy = turn != null || deviceBusy
@@ -206,17 +208,18 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             IconButton(onClick = { scriptLibrary = true }, enabled = !busy, modifier = Modifier.testTag("chat-cache-open")) { Icon(Icons.Outlined.History, "操作缓存") }
             IconButton(onClick = { options = true }, enabled = !busy) { Icon(Icons.Outlined.Tune, "对话设置") }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp).testTag("chat-timeline"), state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
             if (chat.messages.isEmpty() && deviceRuns.isEmpty()) item { EmptyPage("开始这段对话", "消息与草稿保存在这台设备；模型服务需要网络。") }
             items(timeline, key = { it.id }) { row ->
                 val deviceRun = row.device
-                if (deviceRun != null) DeviceTaskCard(deviceRun, active = deviceRuntime.running && deviceRuntime.runId == deviceRun.id, phase = deviceRuntime.phase, onCancel = deviceAgent::cancel)
+                if (row.run != null) ExecutionCard(row.run, phase = if (turn?.runId == row.run.id) turn.phase else "", onDetails = onExecution)
+                else if (deviceRun != null) DeviceTaskCard(deviceRun, active = deviceRuntime.running && deviceRuntime.runId == deviceRun.id, phase = deviceRuntime.phase, onCancel = deviceAgent::cancel)
                 else {
                 val message = row.message!!
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.role == "user") Alignment.End else Alignment.Start) {
                     Text(if (message.role == "user") "你" else agentName(data, chat), color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                     Surface(color = if (message.role == "user") MeloGold.copy(alpha = .10f) else MeloSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.widthIn(max = 760.dp)) {
-                        Column(Modifier.padding(14.dp)) { SelectionContainer { ReplyText(message.content) }; if (message.attachments.isNotEmpty()) Text("${message.attachments.size} 张参考图片", color = MeloGold) }
+                        Column(Modifier.padding(14.dp)) { SelectionContainer { if (message.role == "assistant") ReplyContent(message.content) else Text(message.content, style = MaterialTheme.typography.bodyLarge) }; if (message.attachments.isNotEmpty()) Text("${message.attachments.size} 张参考图片", color = MeloGold) }
                     }
                     if (message.role == "assistant") Row {
                         TextButton(onClick = { speech?.language = Locale.getDefault(); speech?.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, message.id) }) { Text("朗读") }
@@ -226,7 +229,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 }
                 }
             }
-            if (turn != null) item { Column { Text(if (turn.partial.isBlank()) "正在等待服务…" else turn.partial); Text("生成中 · 尚未保存为完整回复", color = MeloMuted, style = MaterialTheme.typography.labelSmall) } }
+            if (turn != null) item { Column { if (turn.partial.isNotBlank()) ReplyContent(turn.partial); Text(if (turn.phase.isBlank()) "生成中 · 尚未保存为完整回复" else turn.phase, color = MeloMuted, style = MaterialTheme.typography.labelSmall) } }
             val failed = data.runs.lastOrNull { it.chatId == chat.id && it.status in setOf("failed", "cancelled", "interrupted") }
             if (!busy && failed != null && chat.messages.lastOrNull()?.role == "user") item {
                 Column { Text(failed.error ?: "上次请求未完成。", color = MaterialTheme.colorScheme.error); if (failed.partial.isNotBlank()) Text(failed.partial, color = MeloMuted); TextButton(onClick = { vm.engine.send(chat.id, "", retry = true) }) { Text("重试这次提问") } }
@@ -253,13 +256,6 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
 }
 
 private fun agentName(data: AppData, chat: Conversation) = data.agents.find { it.id == chat.agentId }?.name ?: "Melo"
-@Composable private fun ReplyText(text: String) {
-    val content = buildAnnotatedString {
-        val links = Regex("https?://[^\\s<>\\)\\]]+").findAll(text).toList(); var position = 0
-        links.forEach { link -> append(text.substring(position, link.range.first)); withLink(LinkAnnotation.Url(link.value)) { append(link.value) }; position = link.range.last + 1 }; append(text.substring(position))
-    }
-    Text(content, style = MaterialTheme.typography.bodyLarge)
-}
 @Composable fun EmptyPage(title: String, detail: String) { Column(Modifier.fillMaxWidth().padding(vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(title, style = MaterialTheme.typography.titleMedium); Spacer(Modifier.height(8.dp)); Text(detail, color = MeloMuted, modifier = Modifier.padding(horizontal = 12.dp)) } }
 fun openUrl(context: android.content.Context, url: String) {
     val uri = Uri.parse(url)

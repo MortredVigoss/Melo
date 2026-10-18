@@ -83,3 +83,64 @@ export function replyPlainText(value) {
     return prefix + (b.type==='table'?b.rows.map(r=>r.map(readableInline).join('\t')).join('\n'):b.type==='code'?b.text:(b.type==='list'?' '.repeat(b.indent)+marker+' ':'')+readableInline(b.text));
   }).join('');
 }
+
+// Shared presentation tokens; native Hosts apply their own fonts and layout.
+export function inlinePresentation(value = '') {
+  const result = [];
+  const append = (value, style) => { if (value) result.push({ text: value, ...style }); };
+  const safeLink = value => /^https?:\/\/[^\s/@]+(?:[/?#][^\s]*)?$/iu.test(value) && value.length <= 4000;
+  function parse(text, style = {}, depth = 0) {
+    if (depth > 6) { append(text, style); return; }
+    let start = 0, index = 0;
+    const flush = () => { append(text.slice(start, index), style); };
+    while (index < text.length) {
+      if (text[index] === '`') {
+        const marker = /^`+/u.exec(text.slice(index))[0];
+        const end = text.indexOf(marker, index + marker.length);
+        if (end >= index + marker.length) { flush(); append(text.slice(index + marker.length, end), { ...style, code: true }); index = end + marker.length; start = index; continue; }
+      }
+      if (text[index] === '\\' && /[\\`*_~\[\]()]/.test(text[index + 1] || '')) {
+        flush(); append(text[index + 1], style); index += 2; start = index; continue;
+      }
+      if (text[index] === '[') {
+        const labelEnd = text.indexOf('](', index + 1);
+        if (labelEnd > index && labelEnd - index < 1000) {
+          let close = labelEnd + 2, balance = 1;
+          for (; close < text.length && close - labelEnd <= 4000; close++) {
+            if (/\s/u.test(text[close])) break;
+            if (text[close] === '(') balance++;
+            if (text[close] === ')' && --balance === 0) break;
+          }
+          const raw = text.slice(labelEnd + 2, close);
+          const url = raw.startsWith('<') && raw.endsWith('>') ? raw.slice(1, -1) : raw;
+          if (balance === 0 && safeLink(url)) { flush(); parse(text.slice(index + 1, labelEnd), { ...style, url }, depth + 1); index = close + 1; start = index; continue; }
+        }
+      }
+      const markers = [['***', { bold: true, italic: true }], ['**', { bold: true }], ['__', { bold: true }], ['~~', { strike: true }], ['*', { italic: true }], ['_', { italic: true }]];
+      let matched = false;
+      for (const [marker, flags] of markers) {
+        if (!text.startsWith(marker, index) || marker.includes('_') && /[\p{L}\p{N}]/u.test(text[index - 1] || '') || /\s/u.test(text[index + marker.length] || ' ')) continue;
+        const end = text.indexOf(marker, index + marker.length);
+        if (end <= index + marker.length || /\s/u.test(text[end - 1])) continue;
+        flush(); parse(text.slice(index + marker.length, end), { ...style, ...flags }, depth + 1); index = end + marker.length; start = index; matched = true; break;
+      }
+      if (matched) continue;
+      if (/^https?:\/\//iu.test(text.slice(index, index + 8))) {
+        const raw = /^https?:\/\/[^\s<>\[\]]+/iu.exec(text.slice(index))?.[0] || '';
+        const url = raw.replace(/[.,，。！!?？;；]+$/u, '');
+        if (safeLink(url)) { flush(); append(url, { ...style, url }); index += url.length; start = index; continue; }
+      }
+      index++;
+    }
+    append(text.slice(start), style);
+  }
+  parse(String(value));
+  return result;
+}
+
+export function replyPresentation(value = '') {
+  return parseReplyDocument(value).map(block => ({ ...block,
+    ...(block.text !== undefined && block.type !== 'code' ? { inline: inlinePresentation(block.text) } : {}),
+    ...(block.rows ? { cells: block.rows.map(row => row.map(inlinePresentation)) } : {}),
+  }));
+}

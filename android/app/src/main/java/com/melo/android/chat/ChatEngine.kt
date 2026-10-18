@@ -10,7 +10,7 @@ import kotlinx.serialization.json.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-data class ChatTurn(val runId: String? = null, val partial: String = "")
+data class ChatTurn(val runId: String? = null, val partial: String = "", val phase: String = "")
 data class ChatRuntime(val initialized: Boolean = false, val turns: Map<String, ChatTurn> = emptyMap(), val error: String? = null, val syncStatus: String? = null) {
     val busyChatId get() = turns.keys.firstOrNull()
     val runId get() = turns.values.firstOrNull()?.runId
@@ -87,7 +87,10 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 }
                                 receipt
                             },
-                            onPhase = { phase -> updateTurn(chatId) { it.copy(partial = phase) } },
+                            onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
+                            onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
+                            previousScenes = state.runs.filter { it.chatId == chatId }.takeLast(3).map { it.sharedScene },
+                            onScene = { scene -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(sharedScene = scene) else it }) } },
                         )
                     }
                 }
@@ -95,7 +98,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }
                 checkpoint.cancelAndJoin(); checkpoint = null
                 val sources = replySources(result.text)
-                val completed = run.copy(status = "completed", finishedAt = now(), partial = result.text, reportedModel = result.model, simulated = result.simulated, sources = sources)
+                val observed = repository.data.value.runs.find { it.id == run.id } ?: run
+                val completed = observed.copy(status = result.outcome, finishedAt = now(), partial = result.text, error = result.stopReason, reportedModel = result.model, simulated = result.simulated, sources = sources)
                 val assistant = Message(role = "assistant", content = result.text, runId = run.id)
                 repository.change { current ->
                     require(current.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }

@@ -1,8 +1,10 @@
 import { CORE_VERSION, startTurn, advanceTurn } from './turn.js';
-import { planRequest } from './search.js';
+import { planRequest, actionEvidence } from './search.js';
 import { buildSkills } from './skill/skillService.js';
 import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } from './tools.js';
 import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } from './hostedSearch.js';
+import { executionScene, executionContext, publicReasoning } from './execution.js';
+import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
 
 export function evaluate(input) {
   try {
@@ -11,10 +13,17 @@ export function evaluate(input) {
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'plan': value = planRequest(input.request); break;
+      case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;
       case 'catalog': value = toolCatalog(input.names); break;
       case 'validateTool': value = validateCommonTool(input.name, input.arguments); break;
       case 'config': value = normalizeRuntimeConfig(input.config); break;
+      case 'scene': value = executionScene(input); break;
+      case 'executionContext': value = executionContext(input.scenes); break;
+      case 'publicReasoning': value = publicReasoning(input.items); break;
+      case 'replyDocument': value = parseReplyDocument(input.text); break;
+      case 'replyPresentation': value = replyPresentation(input.text); break;
+      case 'inlineSpans': value = inlineSpans(input.text); break;
       case 'searchResult': value = normalizeSearchResponse(input.result, input.observation); break;
       case 'searchRequest': value = searchRequest(input.arguments, input.config); break;
       case 'pageResult': value = normalizeFetchedPage(input.result, input.observation); break;

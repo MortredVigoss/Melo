@@ -83,7 +83,7 @@ class SharedSearchFlowTest {
             model.start(); val deviceCount = app.repository.data.value.deviceRuns.size
             val id = chat(model)
             val run = send(id, "Surry Hills 有什么好吃的饭店")
-            assertEquals("completed", run.status); assertTrue(run.partial.contains("SEARCH_UNAVAILABLE"))
+            assertEquals("blocked", run.status); assertTrue(run.partial.contains("SEARCH_UNAVAILABLE"))
             assertEquals(0, model.requestCount); assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
         }
     }
@@ -147,7 +147,7 @@ class SharedSearchFlowTest {
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
             val deviceCount = app.repository.data.value.deviceRuns.size
             val id = chat(model, config = config)
-            assertEquals("completed", send(id, "搜索 Surry Hills 餐厅").status)
+            assertEquals("blocked", send(id, "搜索 Surry Hills 餐厅").status)
             model.takeRequest(2, TimeUnit.SECONDS)
             val follow = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             assertTrue(follow.contains("SEARCH_HTTP_503")); assertFalse(follow.contains("phone_use"))

@@ -84,7 +84,9 @@
     },
     "expected": {
       "route": "hosted-search",
-      "tools": [],
+      "tools": [
+        "fetch_url"
+      ],
       "backend": "hosted"
     }
   },
@@ -120,7 +122,8 @@
     "expected": {
       "route": "http-search",
       "tools": [
-        "web_search"
+        "web_search",
+        "fetch_url"
       ]
     }
   },
@@ -1419,5 +1422,96 @@
         "web_search"
       ]
     }
+  },
+  {
+    "name": "brunch plus navigation uses staged research",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "推荐 Surry Hills brunch，然后导航",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "http-search",
+      "tools": [
+        "web_search",
+        "fetch_url",
+        "phone_use"
+      ],
+      "requiredTools": [
+        "web_search",
+        "phone_use"
+      ]
+    }
+  },
+  {
+    "name": "execution questions do not repeat phone effects",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "为什么没有打开 Google Map 帮我导航？调用了什么工具？",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "none",
+      "reason": "execution-explanation",
+      "tools": []
+    }
+  },
+  {
+    "name": "shared Markdown block parser preserves code literals",
+    "input": {
+      "version": 1,
+      "op": "replyDocument",
+      "text": "# Heading\n\n```js\na_b * c\n```"
+    },
+    "ok": true,
+    "expected": [
+      {
+        "type": "heading",
+        "text": "Heading"
+      },
+      {
+        "type": "code",
+        "language": "js",
+        "text": "a_b * c"
+      }
+    ]
   }
 ]

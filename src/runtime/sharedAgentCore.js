@@ -1,8 +1,8 @@
 import { startTurn, advanceTurn } from '../../shared/agent/turn.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
-export function createCoreTurn({ runId, turnId, allowedTools, requiredTools, limits, clock = () => performance.timeOrigin + performance.now() }) {
-  let state = startTurn({ runId, turnId, allowedTools, requiredTools, limits, now: clock() });
+export function createCoreTurn({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits, clock = () => performance.timeOrigin + performance.now() }) {
+  let state = startTurn({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits, now: clock() });
   return {
     get status() { return state.status; },
     get reason() { return state.reason; },

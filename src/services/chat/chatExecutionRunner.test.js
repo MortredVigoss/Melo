@@ -460,7 +460,7 @@ async function runForRouteFixture({ latestUserMessage, config, searchCapability 
   });
 }
 
-test('search routing — codex-native: native web_search enabled, fetch_url not dispatched', async () => {
+test('search routing — codex-native: hosted search with optional source reading', async () => {
   // Same canonical message as searchRouter.test.js:18 — score ≥ 3 from the
   // weather + "查一下" triggers, no URL, no DEEP_RESEARCH/EXPLICIT_LOCAL/
   // LINK_READ pattern hit, codex auth → codex-native branch.
@@ -472,13 +472,12 @@ test('search routing — codex-native: native web_search enabled, fetch_url not 
 
   assert.equal(result.searchPlan?.route, 'codex-native');
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, true);
-  assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
+  assert.deepEqual(result.searchPlan?.sharedPlan.requiredTools, []);
   // visibleToolIds is the FINAL whitelist consulted by invoke-model when
   // resolving tool calls (chatExecutionRunner.js:499). Codex Responses
   // owns web_search server-side on this route; pushing a local web_search
-  // or fetch_url tool would cause the model to emit XML tool calls in
-  // parallel with the native capability — exactly the regression Codex
-  // review was guarding against.
+  // tool remains Host-owned; fetch_url can read a relevant returned source.
   const visible = new Set(result.visibleToolIds || []);
   // Design audit A2 (2026-10-17): the function set is stable per chat; the
   // route is expressed in the routing prompt, not by hiding definitions.
@@ -499,11 +498,11 @@ test('search routing — configured HTTP backend handles deep research without b
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(
     [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
-    ['web_search'],
+    ['fetch_url', 'web_search'],
   );
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('web_search'), true, 'web_search must be dispatched on melo-web route');
-  assert.equal(visible.has('fetch_url'), true, 'stable definitions; the turn permit still requires a requested URL');
+  assert.equal(visible.has('fetch_url'), true, 'source reading is available after Search');
 });
 
 test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_search hidden', async () => {
@@ -607,7 +606,7 @@ test('search routing — a non-codex connection uses its explicitly configured H
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(
     [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
-    ['web_search'],
+    ['fetch_url', 'web_search'],
   );
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('web_search'), true);

@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class ModelReply(val text: String, val model: String?, val simulated: Boolean = false)
+data class ModelReply(val text: String, val model: String?, val simulated: Boolean = false, val outcome: String = "completed", val stopReason: String? = null, val publicSummary: String? = null)
 
 object EndpointPolicy {
     private val fixtureHosts = setOf("127.0.0.1", "localhost", "10.0.2.2")
@@ -149,7 +149,9 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
                 }
             }
             require(text.isNotBlank()) { "模型没有返回文字内容。" }
-            return ModelReply(text, value.text("model").ifBlank { null })
+            val summary = if (protocol == "responses") value["output"]?.jsonArray.orEmpty().filter { it.jsonObject.text("type") == "reasoning" }
+                .flatMap { it.jsonObject["summary"]?.jsonArray.orEmpty() }.filter { it.jsonObject.text("type") == "summary_text" }.joinToString("\n") { it.jsonObject.text("text") }.take(12000).ifBlank { null } else null
+            return ModelReply(text, value.text("model").ifBlank { null }, publicSummary = summary)
         }
     }
 }
@@ -159,6 +161,7 @@ class StreamDecoder(private val protocol: String) {
     private var model: String? = null
     private var terminal = false
     private var stopped = false
+    private var summary: String? = null
     fun accept(data: String) {
         if (data == "[DONE]") { terminal = true; return }
         val value = MeloJson.parseToJsonElement(data).jsonObject
@@ -171,7 +174,7 @@ class StreamDecoder(private val protocol: String) {
                     val response = value["response"]?.jsonObject ?: error("缺少完成回执。")
                     val final = ModelClient.decodeResponse(response, "responses")
                     // The terminal output is authoritative; deltas may be missing or revised.
-                    text = final.text; model = final.model ?: model; terminal = true; stopped = true
+                    text = final.text; model = final.model ?: model; summary = final.publicSummary; terminal = true; stopped = true
                 }
             }
             "anthropic" -> when (value.text("type")) {
@@ -190,6 +193,6 @@ class StreamDecoder(private val protocol: String) {
     }
     fun finish(): ModelReply {
         require(stopped && (terminal || protocol == "chat-completions") && text.isNotBlank()) { "连接结束但缺少完整回复回执；部分文字已保留，可重试。" }
-        return ModelReply(text, model)
+        return ModelReply(text, model, publicSummary = summary)
     }
 }

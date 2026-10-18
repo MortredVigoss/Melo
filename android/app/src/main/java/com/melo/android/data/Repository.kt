@@ -25,7 +25,7 @@ class Repository(private val context: Context) {
     suspend fun initialize() = mutex.withLock {
         if (loaded) return@withLock
         val saved = storage.load()
-        val recovered = saved.copy(runs = saved.runs.map { if (it.status == "running") it.copy(status = "interrupted", finishedAt = now(), error = "上次运行被系统终止，提问和部分内容已保留。") else it },
+        val recovered = saved.copy(runs = saved.runs.map { if (it.status == "running") it.interrupted() else it },
             deviceRuns = saved.deviceRuns.map { if (it.status == "running") it.copy(status = "interrupted", finishedAt = now(), error = "上次手机操作被系统中断；不会自动恢复执行。") else it })
         if (saved != recovered) storage.save(recovered)
         mutable.value = recovered; loaded = true

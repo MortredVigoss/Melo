@@ -14,8 +14,8 @@ android {
         applicationId = "com.melo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.6.0"
+        versionCode = 15
+        versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -41,6 +41,7 @@ abstract class PrepareSharedAssets : DefaultTask() {
     @get:InputFile abstract val schemaInput: RegularFileProperty
     @get:InputDirectory abstract val coreInput: DirectoryProperty
     @get:InputDirectory abstract val coreSources: DirectoryProperty
+    @get:InputFile abstract val replyDocumentSource: RegularFileProperty
     @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
     @TaskAction fun prepare() {
         val manifest = coreInput.file("manifest.json").get().asFile.readText()
@@ -52,6 +53,8 @@ abstract class PrepareSharedAssets : DefaultTask() {
             val hash = MessageDigest.getInstance("SHA-256").digest(source.readBytes()).joinToString("") { "%02x".format(it) }
             require(hash == entry.groupValues[2]) { "Agent Core bundle is stale; run npm run build:agent-core" }
         }
+        val replyHash = MessageDigest.getInstance("SHA-256").digest(replyDocumentSource.get().asFile.readBytes()).joinToString("") { "%02x".format(it) }
+        require(manifest.contains("\"src/shared/replyDocument.js\": \"$replyHash\"")) { "Shared reply parser bundle is stale; run npm run build:agent-core" }
         sceneInput.get().asFile.copyRecursively(outputDirectory.dir("scene").get().asFile, overwrite = true)
         val protocol = outputDirectory.dir("protocol").get().asFile.apply { mkdirs() }
         schemaInput.get().asFile.copyTo(protocol.resolve("sync.schema.json"), overwrite = true)
@@ -63,6 +66,7 @@ val sharedAssets = tasks.register<PrepareSharedAssets>("prepareSharedAssets") {
     schemaInput.set(layout.projectDirectory.file("../../shared/protocol/sync.schema.json"))
     coreInput.set(layout.projectDirectory.dir("../../shared/agent/dist"))
     coreSources.set(layout.projectDirectory.dir("../../shared/agent"))
+    replyDocumentSource.set(layout.projectDirectory.file("../../src/shared/replyDocument.js"))
     outputDirectory.set(layout.buildDirectory.dir("generated/shared-assets"))
 }
 androidComponents.onVariants { variant ->

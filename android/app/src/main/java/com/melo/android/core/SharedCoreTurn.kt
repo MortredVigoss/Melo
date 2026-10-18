@@ -2,6 +2,7 @@ package com.melo.android.core
 
 import android.content.Context
 import android.os.SystemClock
+import com.melo.android.data.text
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.*
@@ -21,9 +22,11 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         return state
     }
     suspend fun request() { event("request"); check(active) { "共享 Agent 已停止（$reason）；已有操作保留。" } }
-    suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap()) {
+    fun permits(id: String) = active && state.getValue("permitted").jsonArray.any { it.jsonPrimitive.content == id }
+    fun rejection(id: String) = state["rejections"]?.jsonObject?.text(id).orEmpty()
+    suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap(), requireAll: Boolean = true) {
         event("calls", buildJsonObject { put("calls", buildJsonArray { for ((id, name) in calls) add(buildJsonObject { put("id", id); put("name", name); arguments[id]?.let { put("arguments", it) } }) }) })
-        check(state.getValue("permitted").jsonArray.size == calls.size) { "本轮工具请求已拒绝（${state["rejections"]}），未执行。" }
+        check(!requireAll || state.getValue("permitted").jsonArray.size == calls.size) { "本轮工具请求已拒绝（${state["rejections"]}），未执行。" }
     }
     suspend fun result(id: String, ok: Boolean, progressKey: String? = null) {
         event("result", buildJsonObject { put("callId", id); put("ok", ok); progressKey?.let { put("progressKey", it) } })
@@ -31,7 +34,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     override fun close() = runtime.close()
 
     companion object {
-        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000, requiredTools: List<String> = emptyList()): SharedCoreTurn {
+        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000, requiredTools: List<String> = emptyList(), toolDependencies: JsonObject = buildJsonObject {}): SharedCoreTurn {
             val runtime = SharedCoreRuntime.open(context)
             try {
                 val reply = runtime.evaluate(buildJsonObject {
@@ -40,6 +43,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
                         put("runId", runId); put("turnId", turnId); put("now", SystemClock.elapsedRealtime())
                         put("allowedTools", JsonArray(allowedTools.map { JsonPrimitive(it) }))
                         put("requiredTools", JsonArray(requiredTools.map { JsonPrimitive(it) }))
+                        put("toolDependencies", toolDependencies)
                         put("limits", buildJsonObject { put("rounds", rounds); put("timeoutMs", timeoutMs); put("callsPerRound", 1) })
                     })
                 })
