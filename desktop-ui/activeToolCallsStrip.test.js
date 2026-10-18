@@ -13,7 +13,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderActiveToolCallsStrip, _internalsForTests } from './activeToolCallsStrip.js';
+import { renderActiveToolCallsStrip, toolCallArgsDigest, _internalsForTests } from './activeToolCallsStrip.js';
 
 // Minimal escapeHtml shim — matches the app.js production shape
 // closely enough that escape failures are observable via `&lt;` / `&amp;`.
@@ -324,4 +324,28 @@ test('_internalsForTests.formatTrailDetail edge cases', () => {
   assert.equal(formatTrailDetail({ latencyMs: 'oops' }), '');
   // Infinity: skip
   assert.equal(formatTrailDetail({ latencyMs: Infinity }), '');
+});
+
+// ─── Design audit D1 (2026-10-17): redacted args digest + duration ─────────
+
+test('pill shows a short digest of the (already redacted) arguments and the duration once done', () => {
+  const html = render([
+    { id: 'c1', name: 'file_read', arguments: { path: 'notes/plan.md', apiKey: '[redacted]', nested: { x: 1 } }, status: 'ok', durationMs: 42 },
+    { id: 'c2', name: 'bash', arguments: { command: '<script>'.repeat(20) }, status: 'running', durationMs: 10 },
+  ]);
+  assert.match(html, /tool-call-pill-args" title="path=notes\/plan\.md, apiKey=\[redacted\]">path=notes\/plan\.md, apiKey=\[redacted\]<\/span>/);
+  assert.match(html, /tool-call-pill-duration">42ms<\/span>/);
+  assert.doesNotMatch(html, /<script>/, 'digest is escaped');
+  assert.match(html, /…/, 'long values are cut in the digest');
+  // A running call never shows a duration; a call without args shows no digest.
+  assert.equal((html.match(/tool-call-pill-duration/g) || []).length, 1);
+  assert.doesNotMatch(render([{ id: 'c3', name: 'calc', status: 'ok', durationMs: 1500 }]), /tool-call-pill-args/);
+  assert.match(render([{ id: 'c3', name: 'calc', status: 'ok', durationMs: 1500 }]), /1\.5s/);
+});
+
+test('toolCallArgsDigest: scalars only, first two keys, bounded values', () => {
+  assert.equal(toolCallArgsDigest({ a: 'x', b: 2, c: true, d: 'skipped' }), 'a=x, b=2');
+  assert.equal(toolCallArgsDigest({ list: [1], obj: {} }), '');
+  assert.equal(toolCallArgsDigest(null), '');
+  assert.equal(toolCallArgsDigest({ q: 'y'.repeat(60) }, { maxValue: 8 }), 'q=yyyyyyyy…');
 });

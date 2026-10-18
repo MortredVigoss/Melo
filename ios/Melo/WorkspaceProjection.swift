@@ -123,7 +123,12 @@ enum WorkspaceProjection {
         for n in preferences.knowledge ?? [] { try put("knowledge",n.id,["title":n.title,"content":n.content,"deleted":n.deleted == true,"kind":n.kind ?? "note","language":n.language ?? "text","projectId":n.projectId as Any? ?? NSNull()]) }
         for chat in chats {
             if unavailableAgents.contains(preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo") || unavailableProjects.contains(preferences.chatProjects?[chat.id] ?? "") { hold("conversation",chat.id,chat.title) }
-            else { try put("conversation",chat.id,["agentId":preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo","projectId":preferences.chatProjects?[chat.id] as Any? ?? NSNull(),"knowledgeIds":(preferences.chatKnowledge?[chat.id] ?? []).sorted(),"model":model(preferences.chatModels?[chat.id],connections:connections)]) }
+            else {
+                var conversation: [String: Any] = ["agentId":preferences.chatAgents[chat.id] ?? preferences.agents.first?.id ?? "melo","projectId":preferences.chatProjects?[chat.id] as Any? ?? NSNull(),"knowledgeIds":(preferences.chatKnowledge?[chat.id] ?? []).sorted(),"model":model(preferences.chatModels?[chat.id],connections:connections)]
+                // Desktop compact state is carried back unchanged so a phone edit never drops it (design 2026-10-17 手机对齐).
+                if let compact = preferences.chatCompact?[chat.id], compact != .null, let value = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(compact), options: [.fragmentsAllowed]) { conversation["compact"] = value }
+                try put("conversation",chat.id,conversation)
+            }
             for message in chat.messages where message.role == "assistant" {
                 let persona = preferences.messageAgents?[message.id]
                 let record = records.last { $0.messageId == message.id && $0.terminal }
@@ -182,6 +187,16 @@ enum WorkspaceProjection {
                 if preferences.chatProjects == nil { preferences.chatProjects = [:] }; preferences.chatProjects?[row.id] = v["projectId"] == .null ? nil : v["projectId"].string
                 if preferences.chatKnowledge == nil { preferences.chatKnowledge = [:] }; preferences.chatKnowledge?[row.id] = Set(v["knowledgeIds"].array.map(\.string))
                 if preferences.chatModels == nil { preferences.chatModels = [:] }; preferences.chatModels?[row.id] = modelSelection(v["model"],connections:connections)
+                // Compact never moves backwards: larger compactedCount wins, ties go to the later `at`.
+                if v["compact"] != .null {
+                    let incoming = v["compact"], current = preferences.chatCompact?[row.id] ?? .null
+                    var incomingCount = 0.0, currentCount = -1.0
+                    if case .number(let n) = incoming["compactedCount"] { incomingCount = n }
+                    if case .number(let n) = current["compactedCount"] { currentCount = n }
+                    if incomingCount > currentCount || (incomingCount == currentCount && incoming["at"].string > current["at"].string) {
+                        if preferences.chatCompact == nil { preferences.chatCompact = [:] }; preferences.chatCompact?[row.id] = incoming
+                    }
+                }
             case "message":
                 if v["agent"] != .null {
                     if preferences.messageAgents == nil { preferences.messageAgents = [:] }

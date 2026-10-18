@@ -4,6 +4,9 @@ import {retrieveKnowledgeContext} from './knowledgeContext.js';
 import { measureStage, measureStageSync, startStage } from '../../runtime/performanceTrace.js';
 import { recordMemoryFeedback } from '../../memory/store.js';
 import { resolveSessionFacts } from '../../memory/factRecords.js';
+import { isLocalChat } from '../../memory/factPolicy.js';
+import { listProjectBook, renderProjectBook } from '../project/projectMemoryBook.js';
+import { listPersonalProfile, renderPersonalProfile } from '../memory/personalProfile.js';
 import { selectedMaterials } from './conversationSelection.js';
 import { runAgentTeam } from '../../agents/team.js';
 import { takeSupplements, supplementMessage } from './supplements.js';
@@ -12,6 +15,8 @@ import { observeModelReplies } from './executionPipeline.js';
 import { persistCompactSnapshot } from './derivedState.js';
 import { createRequestContext, requestIdentity } from '../../runtime/requestContext.js';
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
+import { armBudget, budgetExhausted, budgetExhaustedReply, describeBudgetReason, recordUsage, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
+import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -46,7 +51,8 @@ import { buildAgentMemoryNodeContext } from '../agent/agentMemoryContext.js';
 import { buildToolRoutingPrompt } from '../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from './matcherContext.js';
-import { buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
+import { detectImageIntent, buildModelMessagesFromChat, modelMessageSourceIds } from './messageBuilder.js';
+import { hydrateMessagesForModel, hydrateAttachments } from '../../media/attachments.js';
 import { tryImageEditFastPath } from './imageEditFastPath.js';
 import { formatModelMessageForVisionDebug } from './visionDebug.js';
 import { buildDynamicContext } from './dynamicContext.js';
@@ -82,6 +88,8 @@ import {
 } from '../../agents/skillMatcher.js';
 import { getSkillLastRunMap } from '../../agents/skillRuns.js';
 import { createRepeatGuard } from '../../agents/repeatGuard.js';
+import { wantedToolGroups, nextActivatedGroups, selectStableTools } from '../../tools/toolGroups.js';
+import { persistChatRuntimeFields } from './derivedState.js';
 import { buildMemberBackground } from '../../agents/memberBackground.js';
 import { buildSkillTool } from '../../agents/skillExecutor.js';
 import { getEmbedding } from '../../memory/embeddings.js';
@@ -111,8 +119,13 @@ import {
   shouldInjectToolsPrompt,
 } from '../../tools/systemPrompt.js';
 import { projectToolResultForPersist, deriveUnifiedErrorCode } from './toolResultProjection.js';
+import { appendCompactCard, replaceLatestCardSummary, ledgerCards, ledgerDigest } from '../../memory/compactLedger.js';
+import { buildTopicExcerpts } from './topicExcerpts.js';
+import { buildDateChangeNote } from './dateContext.js';
 import { getTool, getAllTools } from '../../tools/registry.js';
+import { toolsForAgent as mcpToolsForAgent, indexMcpTools } from '../../tools/mcpRegistry.js';
 import { executeToolCalls } from '../../tools/executor.js';
+import { buildToolInvocationRecord, appendToolInvocationRecord, modelFacingOutputsFor, redactToolArgs } from '../../tools/toolInvocationRecord.js';
 import { inferImageTask, runImageTask } from './imageTask.js';
 import { visionConnection, imageSettings } from '../../images/imageSettings.js';
 import { prepareVisionInputs } from '../../media/visionInputs.js';
@@ -120,7 +133,8 @@ import { createOpenAICompatibleReply } from '../../openai.js';
 import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
 import { fitRequestContext, resolveContextBudget, attachTurnContextToMessages } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
-import { createFunctionCallingSession, compactToolChain } from '../../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain, toolProtocolFor } from '../../tools/functionCalling.js';
+import { buildToolChainRecord } from '../../tools/toolProtocol.js';
 import { createCoreTurn } from '../../runtime/sharedAgentCore.js';
 import { createHash } from 'node:crypto';
 
@@ -177,16 +191,33 @@ export async function runChatAgentExecutionGraph({
   const modelResponses = [];
   const replyProvider = _dependencies.createReply || createOpenAICompatibleReply;
   const observedReply = observeModelReplies(replyProvider, sseEmitter);
-  const createReply = options => {
+  // Run budget (design audit C1): one deadline / input-token / tool-call pool
+  // for the whole turn, shared by this loop, synchronous compaction (it uses
+  // the same wrapper), the tool executor and member/skill sub-loops. The
+  // context was created when the request arrived; the clock starts here.
+  const budget = armBudget(context.budget || null);
+  const createReply = async options => {
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
-    return measureStage('model.request', () => observedReply({
-      ...options,
-      onDelta: endFirstToken ? (...args) => {
-        if (args[0]?.delta || args[0]?.text) endFirstToken();
-        return options.onDelta(...args);
-      } : options.onDelta,
-      onProviderResponse: receipt => { modelResponses.push(receipt); options.onProviderResponse?.(receipt); },
-    }));
+    let accounted = false;
+    // Measured usage when the provider reports it, estimated otherwise —
+    // and exactly once per request even if the provider sends no receipt.
+    const account = receipt => {
+      if (accounted) return; accounted = true;
+      const inputTokens = receiptInputTokens(receipt)
+        ?? estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3);
+      recordUsage(budget, { providerCalls: 1, inputTokens });
+    };
+    try {
+      return await measureStage('model.request', () => observedReply({
+        ...options,
+        timeoutMs: budget ? requestTimeoutMs(budget) : options.timeoutMs,
+        onDelta: endFirstToken ? (...args) => {
+          if (args[0]?.delta || args[0]?.text) endFirstToken();
+          return options.onDelta(...args);
+        } : options.onDelta,
+        onProviderResponse: receipt => { modelResponses.push(receipt); account(receipt); options.onProviderResponse?.(receipt); },
+      }));
+    } finally { account(null); }
   };
   const embedQuery = _dependencies.getEmbedding || getEmbedding;
   const contextBudget = resolveContextBudget(env, { config });
@@ -255,7 +286,21 @@ export async function runChatAgentExecutionGraph({
         const projectContext = isRemoteChannel ? '' : buildProjectContextSection(project, activeAgentProfile);
         const connectorPrompts = isRemoteChannel ? '' : summarizeConnectorPrompts(agentConnectors);
         const skillsPrompts = summarizeSkillsPrompts(enabledSkills, { remote: isRemoteChannel });
-        let modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
+        // Attachment externalization (design §2.3): file-backed attachments are
+        // read back into data URLs once per turn for the model window only. The
+        // view spreads `chat` lazily so compaction fields set later in this
+        // node are still seen; the persisted chat keeps its small file URLs.
+        const modelHistory = await hydrateMessagesForModel(chat.messages, { home });
+        const modelChat = () => ({ ...chat, messages: modelHistory });
+        // Protocol adapter (design audit E1): earlier replies persist a
+        // protocol-neutral tool chain; with MELO_TOOL_CHAIN_HISTORY=1 (or
+        // `config.toolChainHistory === true`) it is rendered back into the
+        // active protocol's shape so a chat continues after a provider switch.
+        // Default off: history stays prose-only, as before.
+        const toolChainProtocol = env.MELO_TOOL_CHAIN_HISTORY === '1' || config.toolChainHistory === true
+          ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
+          : null;
+        let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
         const searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
@@ -349,30 +394,25 @@ export async function runChatAgentExecutionGraph({
 
         let compactedThisTurn = false;
         const runCompact = async compactPlan => {
+          sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:running', module: 'compute', name: '压缩早期对话', status: 'running', output: `正在把最早的 ${compactPlan.compactedCount} 条消息压成摘要（通常后台已完成，这是兜底）。` });
           try {
             const { summary, source } = await compactConversationDetailed(compactPlan.messages, {
               config, signal, previousSummary: compactPlan.previousSummary, _createReply: createReply,
             });
             if (summary) {
-              chat.compactSummary = compactPlan.truncated
-                ? '[部分历史过长，摘要仅包含可容纳的片段；原文保留在对话记录中。]\n' + summary
-                : summary;
-              chat.compactBoundaryMessageId = compactPlan.boundaryId;
-              chat.compactedMessageCount = compactPlan.compactedCount;
-              chat.compactedAt = new Date().toISOString();
-              chat.compactFailures = 0;
-              // Provenance (audit C-6): a 'rule' summary is a degraded fallback.
-              // The chat keeps moving, but the header says so and the next
-              // turns retry the model (see upgradeDegradedCompact below).
-              chat.compactSummarySource = source || 'cloud';
-              chat.compactUpgradeAttempts = 0;
+              // Ledger (design 1D-2): the chunk becomes one appended topic
+              // card; compactSummary is re-rendered from the cards. Provenance
+              // (audit C-6): a 'rule' card is a degraded fallback — the chat
+              // keeps moving, the header says so and the next turns retry the
+              // model (see upgradeDegradedCompact below).
+              appendCompactCard(chat, compactPlan, { summary, source: source || 'cloud' });
               if (source === 'rule') {
                 process.stderr.write(`[compact] chat ${chat.id}: summarising model unavailable, using extractive fallback for ${compactPlan.compactedCount} messages\n`);
                 sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:degraded', module: 'compute', name: '对话摘要降级', status: 'completed', output: '摘要模型不可用，已使用抽取式摘要；后续轮次会自动重试。' });
               }
               // Persist so the summary survives restarts.
               await persistCompactSnapshot(chat, compactPlan, { home });
-              modelMessages = buildModelMessagesFromChat(chat, { windowTokens: contextBudget.windowTokens });
+              modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
               compactedThisTurn = true;
               return true;
             }
@@ -400,11 +440,13 @@ export async function runChatAgentExecutionGraph({
           signal?.addEventListener('abort', onAbort, { once: true });
           const timer = setTimeout(() => controller.abort(new Error('compact upgrade timed out')), 20_000);
           try {
-            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, _createReply: createReply });
+            // The extractive summary already covers everything before `range`
+            // (including earlier compactions); feed it back as background so
+            // the upgraded summary does not lose early history.
+            const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, previousSummary: ledgerDigest(ledgerCards(chat).slice(0, -1)), _createReply: createReply });
             if (summary && source === 'cloud') {
-              chat.compactSummary = summary;
-              chat.compactSummarySource = 'cloud';
-              chat.compactedAt = new Date().toISOString();
+              // Only the degraded (newest) card is replaced; earlier cards stay.
+              replaceLatestCardSummary(chat, { summary, source: 'cloud' });
               await persistCompactSnapshot(chat, { boundaryId: chat.compactBoundaryMessageId, compactedCount: chat.compactedMessageCount }, { home });
               sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:upgraded', module: 'compute', name: '对话摘要已恢复', status: 'completed', output: '摘要模型恢复可用，已用完整摘要替换抽取式摘要。' });
             }
@@ -427,6 +469,9 @@ export async function runChatAgentExecutionGraph({
         const compactContext = chat.compactSummary
           ? formatCompactContextBlock(chat.compactSummary, chat.compactedMessageCount || 0, { source: chat.compactSummarySource || 'cloud' })
           : '';
+        // Original text of the ledger cards this message returns to (1D-4).
+        const topicExcerpts = compactContext ? buildTopicExcerpts(chat, latestUserMessage) : { text: '', cards: [] };
+        if (topicExcerpts.cards.length) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'history:excerpts', module: 'compute', name: '早期话题原文', status: 'completed', output: topicExcerpts.cards.map(card => `${card.title} (#${card.fromMessageId.slice(0, 8)}…#${card.toMessageId.slice(0, 8)})`).join('\n') });
 
         // Build per-request skill tools for all enabled executable skills this
         // agent has access to. They are NOT registered globally — we pass them
@@ -436,6 +481,12 @@ export async function runChatAgentExecutionGraph({
         const skillTools = listExecutableSkills(enabledSkills)
           .map(buildSkillTool)
           .filter(Boolean);
+        // F3 (design 2026-10-17): stdio MCP tools live in their own registry
+        // (tools/mcpRegistry.js) and are merged here per agent whitelist, so
+        // two agents in parallel chats see disjoint MCP sets. `tool.id` stays
+        // `mcp:<server>:<tool>`; the model sees `tool.functionName`
+        // (`mcp__server__tool`) and dispatch resolves both.
+        const mcpTools = mcpToolsForAgent(activeAgentProfile);
 
         // Build tools system prompt — remote channels now get all tools.
         // Stdio MCP tools (`mcp:<server>:<tool>`) are gated by the agent's
@@ -454,14 +505,31 @@ export async function runChatAgentExecutionGraph({
         if (!allowLiveSpeech && toolContextPolicy.mode !== 'none' && shouldInjectToolsPrompt({ mode: chat.mode })) {
           // prepare scope owns the local `activeAgentProfile` (line 150);
           // graphState doesn't exist here (only invoke-model gets that).
-          const allowedTools = filterMcpToolsForAgent(getAllTools(), activeAgentProfile);
-          const routedTools = filterToolsForSearchPlan(allowedTools, searchPlan);
-          promptTools = toolsForCapabilityScope([...routedTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
+          const allowedTools = filterMcpToolsForAgent([...getAllTools(), ...mcpTools], activeAgentProfile);
+          // Stable tool set (design audit A2): core tools always; extension
+          // groups (browser / documents / media) activate on a hint and then
+          // stay for the rest of the chat, so the definitions array only grows
+          // and the provider prefix cache survives routing changes. Search
+          // routing is prompt text only (buildSearchRoutingPrompt).
+          const latestAttachments = chat.messages?.at(-1)?.attachments || [];
+          const wantedGroups = wantedToolGroups({
+            text: latestUserMessage, attachments: latestAttachments, history: chat.messages || [], searchPlan, env,
+            hasImageIntent: detectImageIntent(latestUserMessage, { hasInputImage: latestAttachments.some(a => a?.kind === 'image') }),
+          });
+          const activatedGroups = nextActivatedGroups(chat.toolGroupsActivated, wantedGroups);
+          if (activatedGroups.join(',') !== (Array.isArray(chat.toolGroupsActivated) ? [...chat.toolGroupsActivated].sort().join(',') : '')) {
+            chat.toolGroupsActivated = activatedGroups;
+            await persistChatRuntimeFields(chat, ['toolGroupsActivated'], { home }).catch(() => {});
+          }
+          const stableTools = selectStableTools(allowedTools, activatedGroups)
+            // Browser tools keep their CDP gate from the old router.
+            .filter(tool => !/^browser_/.test(String(tool.id)) || env.MELO_CDP_ENABLED === '1');
+          promptTools = toolsForCapabilityScope([...stableTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, promptTools);
-        toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n');
+        toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n');
         if (toolContextPolicy.mode === 'none') {
           toolsPrompt = [toolsPrompt, 'This is a self-contained text task. Answer directly from the user-provided context or basic knowledge; no tools are exposed for this turn. If information is missing, say so.'].filter(Boolean).join('\n\n');
         }
@@ -478,17 +546,40 @@ export async function runChatAgentExecutionGraph({
           id:f.id,text:f.fact,kind:'session-fact',renderedText:`- [${f.category}] ${f.fact}`,
         }));
         memoryCandidates.push(...memoryRendered);
+        // Project memory book + personal profile (design 2B): stable blocks for
+        // local chats only — never for a remote channel audience, never when the
+        // agent has memory switched off. Their rows count as rendered memory
+        // (memoryUsage / useCount) and are excluded from the per-turn recall so
+        // the corrections group and the Hot Attic do not repeat them.
+        const stableMemoryAllowed = !isRemoteChannel && isLocalChat(chat) && activeAgentProfile.contextSources?.memory !== false;
+        const projectBook = stableMemoryAllowed && project?.id
+          ? measureStageSync('memory.project-book', () => { try { return renderProjectBook(listProjectBook(project.id)); } catch (error) { console.warn(`[memory.book] ${error.message}`); return { text: '', rows: [] }; } })
+          : { text: '', rows: [] };
+        const personalProfile = stableMemoryAllowed
+          ? measureStageSync('memory.personal-profile', () => { try { return renderPersonalProfile(listPersonalProfile()); } catch (error) { console.warn(`[memory.profile] ${error.message}`); return { text: '', rows: [] }; } })
+          : { text: '', rows: [] };
+        const stableMemoryRows = [
+          ...projectBook.rows.map(row => ({ ...row, kind: 'project-book' })),
+          ...personalProfile.rows.map(row => ({ ...row, kind: 'personal-profile' })),
+        ];
+        memoryRendered.push(...stableMemoryRows); memoryCandidates.push(...stableMemoryRows);
+        const excludedFacts = [...sessionFacts, ...stableMemoryRows];
         // audit C-12: bound the query embedding (worker default is 60s); recall
         // degrades to keyword matching rather than stalling the whole turn.
         const queryEmbedding = skipMemory ? null : await measureStage('memory.embedding', () => Promise.race([
           embedQuery(latestUserMessage,config),
           new Promise(resolve => { const t = setTimeout(() => resolve(null), 2500); t.unref?.(); }),
         ])).catch(()=>null);
+        // Remote audience boundary (design §3.4 M7): the channel name reaches
+        // the store so audience=local rows are dropped in SQL, not only by the
+        // JS `canRecallMemory` filter. Desktop/mobile owner chats pass 'desktop'.
+        const memoryAudience = isRemoteChannel ? String(channelContext?.channelId || chat.source || 'remote')
+          : (isLocalChat(chat) ? 'desktop' : String(chat.source || 'remote'));
         const memoryContext = skipMemory ? '' : measureStageSync('memory.recall', () => buildAgentMemoryNodeContext({
-          state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,
+          state,chat,latestUserMessage,activeAgentProfile,project,queryEmbedding,env,audience:memoryAudience,
           // audit C-12: exclude from recall only the messages that will actually
           // be sent — a preliminary history-only fit, not the wider pre-fit window.
-          includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts:sessionFacts,
+          includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts,
           onRecall:rows=>memoryRendered.push(...rows),onCandidates:rows=>memoryCandidates.push(...rows),
         }));
 
@@ -511,6 +602,8 @@ export async function runChatAgentExecutionGraph({
           profile: activeAgentProfile,
           modePrompt: modeDef.prompt,
           projectContext,
+          projectMemoryBook: projectBook.text,
+          personalProfile: personalProfile.text,
           selectedMaterials: isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',name:'知识片段检索',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})}),
           channelPrompt,
           memoryContext,
@@ -519,9 +612,11 @@ export async function runChatAgentExecutionGraph({
           skillsPrompts,
           dynamicContext,
           compactContext,
+          topicExcerpts: topicExcerpts.text,
           toolsPrompt,
           sessionMemoryBlock,
           languageConstraint: buildLanguageConstraint(latestUserMessage),
+          dateContext: buildDateChangeNote(chat.messages),
           vizInstructions,
           citationInstructions,
           kind: 'chat',
@@ -562,6 +657,7 @@ export async function runChatAgentExecutionGraph({
           projectContext,
           activeAgentProfile,
           skillTools,
+          mcpTools,
           promptTools,
           searchPlan,
           visibleToolIds: [...visibleToolIds],
@@ -581,7 +677,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
         const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
         if (teamTask || teamPlan) {
-          const team = await runAgentTeam({extraTools:graphState.skillTools,plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext})});
+          const team = await runAgentTeam({extraTools:[...(graphState.skillTools||[]),...(graphState.mcpTools||[])],plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext})});
           modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
           // The lead's summary is the reply; member handoffs stay in the execution record.
           return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
@@ -603,7 +699,9 @@ export async function runChatAgentExecutionGraph({
         // the agent decides what to do (apologise, re-route, etc.).
         const task = inferImageTask(latestUserMessage, graphState.modelMessages, imageTask);
         const taskMessage = chat.messages.filter(m => m.role === 'user').at(-1);
-        const attachments = taskMessage?.attachments || [];
+        // Image references are matched against model parts by URL, so the task
+        // attachments use the same hydrated data URLs as the model window.
+        const attachments = await hydrateAttachments(taskMessage?.attachments || [], { home });
         if (task && taskMessage) {
           taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
           await onImageTaskResolved?.(task);
@@ -642,7 +740,7 @@ export async function runChatAgentExecutionGraph({
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
         const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
           ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
-            { includeExamples: false, native: functionSession.native })].filter(Boolean).join('\n\n') } : section);
+            { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
         let finalReply = '';
@@ -654,6 +752,10 @@ export async function runChatAgentExecutionGraph({
         // (G-1f window) — users翻 chat history 看不到当时哪条 tier 失败了.
         // Each entry: { toolCallId, toolName, ok, evidenceTrail? }.
         const accumulatedToolResults = [];
+        // Protocol-neutral IR of every tool turn (design audit E1), persisted
+        // as `metadata.toolChain` on the assistant message. Arguments are the
+        // redacted projection; outputs are bounded by buildToolChainRecord.
+        const toolChainTurns = [];
         const evidencePairs = [];
         // agent-loop-audit #1: identical failing calls are answered locally
         // after two consecutive failures instead of re-executed.
@@ -663,6 +765,8 @@ export async function runChatAgentExecutionGraph({
         // including an effectiveAgentProfile merge for every agent and the
         // member background text — although none of them change within a turn.
         const skillToolsById = new Map((graphState.skillTools || []).map(t => [t.id, t]));
+        // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
+        const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
         const allowedToolIdList = [...visibleToolIds];
         const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: turnTimeoutMs } });
@@ -670,7 +774,7 @@ export async function runChatAgentExecutionGraph({
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;
         const dispatchConstants = () => {
-          allowedDispatchTools ??= new Set(filterMcpToolsForAgent(getAllTools(), graphState.activeAgentProfile).map(t => t.id));
+          allowedDispatchTools ??= new Set(filterMcpToolsForAgent([...getAllTools(), ...mcpToolsForAgent(graphState.activeAgentProfile)], graphState.activeAgentProfile).map(t => t.id));
           dispatchAgentProfiles ??= Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]));
           dispatchMemberBackground ??= buildMemberBackground({ chat, projectContext: graphState.projectContext });
           return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
@@ -715,9 +819,23 @@ export async function runChatAgentExecutionGraph({
               sourceChatId:row.metadata?.chatId || chat.id,
               sourceMessageId:row.metadata?.sourceMessageId || row.metadata?.messageId || null,
             }])).values()].slice(0,40);
-            try { recordMemoryFeedback({candidates:graphState.memoryCandidates,usedIds:used.map(row=>row.id),
+            // Only rows that were actually rendered count as candidates (design
+            // audit M6): every recalled row used to be recorded, inflating
+            // memory_hits and skewing dreaming's recall gate.
+            try { recordMemoryFeedback({candidates:graphState.memoryRendered || [],usedIds:used.map(row=>row.id),
               requestId:`${chat.id}:${context.requestId}`,query:latestUserMessage}); }
             catch(error) { console.warn(`[memory.feedback] ${error.message}`); }
+          }
+          // Run budget (C1): checked before every provider call so a turn
+          // whose tools or earlier rounds ate the pool ends with an explicit
+          // reply instead of one more request that times out.
+          const exhausted = budgetExhausted(budget);
+          if (exhausted) {
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', name: '运行预算已用完', status: 'completed',
+              output: `已达到运行预算（${describeBudgetReason(exhausted)}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
+              budget: { code: exhausted.code, reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, usage: exhausted.usage } });
+            finalReply = budgetExhaustedReply(exhausted);
+            break;
           }
           const rawReply = await createReply({
             ...functionSession.requestOptions(),
@@ -741,7 +859,11 @@ export async function runChatAgentExecutionGraph({
             //
             // Native provider features obey the Agent capability snapshot.
             workspacePath: workspace?.rootPath || null,
-            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+            // Stable across turns (A2): the native web_search definition is
+            // present whenever the agent may use the network; whether to use
+            // it this turn is said in the routing prompt. Only an explicit
+            // user network-off or a non-Codex route keeps it off.
+            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && !['user-disabled-network', 'user-disabled-search'].includes(graphState.searchPlan?.reason),
             nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
             onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
           });
@@ -756,13 +878,15 @@ export async function runChatAgentExecutionGraph({
             finalReply = turn.text;
             break;
           }
-          coreTurn.update('calls', { calls: toolCalls });
+          coreTurn.update('calls', { calls: toolCalls.map(call => ({ ...call, name: mcpToolsByName.get(call.name)?.id || call.name })) });
 
           // Emit SSE event so the UI can show tool execution status
           if (typeof sseEmitter === 'function') {
+            // Design audit D1: the UI gets the same redacted args the
+            // ToolInvocationRecord stores — raw secrets never leave the loop.
             sseEmitter('tool_calls_start', {
               iteration,
-              calls: toolCalls.map(c => ({ id: c.id, name: c.name, arguments: c.arguments })),
+              calls: toolCalls.map(c => ({ id: c.id, name: c.name, arguments: redactToolArgs(c.arguments) })),
             });
           }
 
@@ -794,7 +918,7 @@ export async function runChatAgentExecutionGraph({
             if (repeated) tc.rejectedResult = repeated;
           }
           const executableCalls = toolCalls.map(tc => {
-            let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || getTool(tc.name);
+            let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || mcpToolsByName.get(tc.name) || getTool(tc.name);
             if (!coreTurn.permits(tc.id)) tool = null;
             if (tool && !visibleToolIds.has(tool.id)) {
               tool = null;
@@ -820,7 +944,7 @@ export async function runChatAgentExecutionGraph({
               allowedToolIds: allowedToolIdList,
               agentDepth: 0,
               capabilities: context.capabilityScope.capabilities,
-              extraTools: graphState.skillTools,
+              extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])],
               collaboration: graphState.activeAgentProfile.collaboration,
               agentProfiles: dispatchAgentProfiles,
               projectId: chat.projectId,
@@ -859,6 +983,31 @@ export async function runChatAgentExecutionGraph({
             };
           });
 
+          // Append assistant turn (thinking + tool calls) and tool results.
+          // Appending first lets the records below capture the exact
+          // model-facing output string instead of re-deriving it.
+          loopMessages = functionSession.append(loopMessages, turn, allResults);
+          toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments) }));
+
+          // Design audit D1: one ToolInvocationRecord per call, written to
+          // `<home>/desktop/execution-scenes/<runId>.tools.jsonl`. The SSE
+          // `tool_calls_done` payload and the persisted toolResults entry
+          // below are projections of this record; the jsonl line is the
+          // only place the full model-facing output is kept.
+          const modelFacingOutputs = modelFacingOutputsFor(loopMessages[loopMessages.length - 1], allResults);
+          const batchFinishedAt = Date.now();
+          const toolRecords = allResults.map(({ call, result }) => {
+            const execution = resultsById.get(call.id);
+            const record = buildToolInvocationRecord({
+              runId: context.runId, iteration, call, args: call.arguments, result,
+              modelFacingOutput: modelFacingOutputs.get(call.id) || '',
+              startedAt: execution?.startedAt ?? batchFinishedAt, finishedAt: execution?.finishedAt ?? batchFinishedAt,
+              parallelGroup: execution?.parallelGroup ?? null,
+            });
+            appendToolInvocationRecord(record, { home: context.home });
+            return { call, result, record };
+          });
+
           // Emit SSE with results for UI.  G-1d slice 1.5 (2026-05-11):
           // forward `evidenceTrail` to the UI so devtools / debug overlay can
           // inspect which fallback tiers a search tool walked through.  Only
@@ -868,12 +1017,15 @@ export async function runChatAgentExecutionGraph({
           if (typeof sseEmitter === 'function') {
             sseEmitter('tool_calls_done', {
               iteration,
-              results: allResults.map(({ call, result }) => {
+              results: toolRecords.map(({ call, result, record }) => {
                 const item = {
-                  id: call.id,
-                  name: call.name,
+                  id: record.callId,
+                  name: record.toolId,
                   ok: result.ok,
+                  status: record.resultEnvelope.status,
                   output: result.output?.slice(0, 500), // truncate for SSE
+                  argsHash: record.argsHash,
+                  durationMs: record.durationMs,
                 };
                 if (Array.isArray(result.evidenceTrail) && result.evidenceTrail.length > 0) {
                   item.evidenceTrail = result.evidenceTrail;
@@ -882,8 +1034,8 @@ export async function runChatAgentExecutionGraph({
                 // errorCode (SearchTask taxonomy) on the same debug channel
                 // as evidenceTrail, so the live devtools overlay sees the
                 // precise failure classification. Additive; null when N/A.
-                const errorCode = deriveUnifiedErrorCode(call, result);
-                if (errorCode) {
+                const errorCode = deriveUnifiedErrorCode(call, result) || record.resultEnvelope.code;
+                if (errorCode && !result.ok) {
                   item.errorCode = errorCode;
                 }
                 return item;
@@ -891,22 +1043,22 @@ export async function runChatAgentExecutionGraph({
             });
           }
 
-          // Append assistant turn (thinking + tool calls) and tool results
-          loopMessages = functionSession.append(loopMessages, turn, allResults);
-
           // G-1d slice 2: accumulate structured tool-result metadata for
           // persistence on the eventual assistantMessage.  Projection
           // logic lives in `./toolResultProjection.js` so it has direct
           // unit-test coverage (Codex review on commit 1 flagged this as
           // a covered-by-hydration-only test gap — solved by extracting
           // the producer-side helper).
-          for (const { call, result } of allResults) {
-            accumulatedToolResults.push(projectToolResultForPersist(call, result));
+          for (const { call, result, record } of toolRecords) {
+            accumulatedToolResults.push(projectToolResultForPersist(call, result, record));
             evidencePairs.push({ call, result, receivedAt: nowIso() });
             coreTurn.update('result', { callId: call.id, ok: result.ok === true,
               progressKey: createHash('sha256').update(call.name + '\n' + String(result.output || result.error || '')).digest('hex') });
           }
           if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
+          // A cancelled turn stops here: its records are on disk for the
+          // tool-trace replay (D2) and no further model request is sent.
+          signal?.throwIfAborted();
           if (coreTurn.status !== 'running') {
             sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', name: '执行已停止', status: 'blocked', output: coreTurn.reason });
             finalReply = /[\u3400-\u9fff]/.test(latestUserMessage)
@@ -936,6 +1088,9 @@ export async function runChatAgentExecutionGraph({
         const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
+        }
+        if (toolChainTurns.length > 0) {
+          out.toolChain = buildToolChainRecord(toolChainTurns, { protocol: functionSession.protocol });
         }
         return out;
       },
@@ -1063,6 +1218,7 @@ export async function runChatAgentExecutionGraph({
         if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {
           normalizedReply.toolResults = graphState.toolResults;
         }
+        if (graphState.toolChain) normalizedReply.toolChain = graphState.toolChain;
         if (signal?.aborted) throw signal.reason || new Error('Request aborted');
         if (modelResponses.length) {
           normalizedReply.modelResponses = modelResponses;

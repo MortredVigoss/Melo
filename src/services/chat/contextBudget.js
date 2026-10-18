@@ -22,6 +22,14 @@ const MIN_BUDGET_TOKENS = 4_096;
 // limit is what prevents the fitter from dropping messages the trigger
 // never saw.
 const HISTORY_WINDOW_SHARE = 0.75;
+// Near-window cap (2026-10-17 design 1D-1). With the 160k cloud budget the
+// 75% share allowed ~114k tokens of raw history per turn: expensive even
+// when cached, and old topics diluted attention. The ledger cards, topic
+// excerpts and read_history now cover the early part of a conversation, so
+// raw history is capped at this many tokens and compaction starts earlier.
+// MELO_HISTORY_WINDOW_TOKENS overrides the cap (raise it for providers whose
+// cache makes long raw history cheap).
+const DEFAULT_NEAR_WINDOW_TOKENS = 64_000;
 
 function defaultBudgetFor(config) {
   const authMode = String(config?.authMode || '').toLowerCase();
@@ -35,7 +43,8 @@ export function resolveContextBudget(env = process.env, { config = null } = {}) 
   const totalTokens = bounded(env.MELO_CONTEXT_BUDGET_TOKENS, defaultBudgetFor(config), MIN_BUDGET_TOKENS, MAX_BUDGET_TOKENS);
   const outputReserve = Math.floor(Math.min(totalTokens / 3, bounded(env.MELO_OUTPUT_RESERVE_TOKENS, 8000, 512, 32000)));
   const inputLimit = totalTokens - outputReserve;
-  const windowTokens = Math.max(2048, Math.floor(inputLimit * HISTORY_WINDOW_SHARE));
+  const nearWindowCap = bounded(env.MELO_HISTORY_WINDOW_TOKENS, DEFAULT_NEAR_WINDOW_TOKENS, 2048, MAX_BUDGET_TOKENS);
+  const windowTokens = Math.max(2048, Math.min(nearWindowCap, Math.floor(inputLimit * HISTORY_WINDOW_SHARE)));
   return {
     totalTokens,
     outputReserve,
@@ -67,9 +76,11 @@ function latestUserIndex(messages) {
 function requiredIndices(messages) {
   const latestUser = latestUserIndex(messages);
   const indices = new Set(latestUser >= 0 ? [latestUser] : []);
-  if (latestUser >= 0 && messages.slice(latestUser).some(message => message.responseItems || message.functionCallOutputs)) {
-    // Responses continuation is one indivisible chain from the current user
-    // input through every call/output/reasoning item. Fail closed if too large.
+  if (latestUser >= 0 && messages.slice(latestUser).some(message => message.responseItems || message.functionCallOutputs || message.toolCalls || message.toolResults)) {
+    // A native tool continuation (Responses items, or the protocol-neutral
+    // toolCalls/toolResults IR used for Anthropic and chat-completions) is one
+    // indivisible chain from the current user input through every
+    // call/output/reasoning item. Fail closed if too large.
     for (let index = latestUser; index < messages.length; index += 1) indices.add(index);
   }
   // Keep the newest tool-call/result pair together, including error evidence.

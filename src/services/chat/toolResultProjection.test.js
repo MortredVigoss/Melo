@@ -207,3 +207,19 @@ test('browser capability failures and real permission denials persist distinctly
   assert.equal(projectToolResultForPersist({ name: 'browser_click' }, { ok: false, error: 'User denied', meta: { denied: true } }).errorCode, 'PERMISSION_DENIED');
   assert.equal(projectToolResultForPersist({ name: 'browser_open' }, { ok: false, error: 'secret or arbitrary upstream message' }).errorCode, 'TOOL_FAILED');
 });
+
+// ─── Design audit D1 (2026-10-17): projection fed from the ToolInvocationRecord ─
+
+test('record argument adds argsHash + durationMs and wins for identity; malformed record fields are ignored', () => {
+  const call = { id: 'c1', name: 'file_read' };
+  const result = { ok: true, output: 'text' };
+  const record = { callId: 'c1', toolId: 'file_read', argsHash: 'abcdef0123456789', durationMs: 12.6, resultEnvelope: { ok: true, status: 'ok' } };
+  const entry = projectToolResultForPersist(call, result, record);
+  assert.equal(entry.argsHash, 'abcdef0123456789');
+  assert.equal(entry.durationMs, 13);
+  assert.equal(entry.toolCallId, 'c1');
+  assert.deepEqual(projectToolResultForPersist(call, result), { toolCallId: 'c1', toolName: 'file_read', ok: true, summary: 'text' }, 'no record → unchanged shape');
+  const loose = projectToolResultForPersist(call, result, { argsHash: 'not-hex!', durationMs: -5 });
+  assert.equal('argsHash' in loose, false);
+  assert.equal('durationMs' in loose, false);
+});

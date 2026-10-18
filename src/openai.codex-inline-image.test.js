@@ -89,6 +89,17 @@ function sseCompleted(response = null) {
   })}`;
 }
 
+
+// Design audit A2 (2026-10-17): image-intent rules ride in the latest user
+// input item ("[Turn guidance]") so `instructions` stays cache-stable. These
+// assertions look at both places via promptText().
+function promptText(body) {
+  const items = Array.isArray(body?.input) ? body.input : [];
+  const user = [...items].reverse().find(item => item?.role === 'user' && Array.isArray(item.content));
+  const turn = user ? user.content.filter(part => part?.type === 'input_text').map(part => part.text).join('\n') : '';
+  return `${body?.instructions || ''}\n${turn}`;
+}
+
 test('readCodexSseResponse surfaces nested Codex SSE error messages', async () => {
   const response = mockResponseFromEvents([
     `event: error\ndata: ${JSON.stringify({
@@ -361,15 +372,15 @@ test('payload — edit-mode (workspace + input image): bare image_generation too
   // tool_choice must allow the model to invoke image_generation
   assert.equal(captured.body.tool_choice, 'auto');
   // Instructions: contain the edit-mode block
-  assert.match(captured.body.instructions, /Explicit user changes take precedence/);
-  assert.match(captured.body.instructions, /preserve unrequested attributes/i);
+  assert.match(promptText(captured.body), /Explicit user changes take precedence/);
+  assert.match(promptText(captured.body), /preserve unrequested attributes/i);
   assert.match(
-    captured.body.instructions,
+    promptText(captured.body),
     /INLINE IMAGE EDITING/,
     'edit-mode instructions must be appended when input image present',
   );
   assert.match(
-    captured.body.instructions,
+    promptText(captured.body),
     /DO NOT ask the user for a file path/,
     'anti-file-path clause must be appended',
   );
@@ -424,9 +435,9 @@ test('payload — pure text-to-image (workspace + no input image): minimal tool,
     'pure generate must NOT carry input_fidelity (cost + behaviour bias)',
   );
   // Instructions: edit block must NOT be appended for pure-generate
-  assert.match(captured.body.instructions, /subject, intended use, composition, style, exact text/);
+  assert.match(promptText(captured.body), /subject, intended use, composition, style, exact text/);
   assert.doesNotMatch(
-    captured.body.instructions,
+    promptText(captured.body),
     /INLINE IMAGE EDITING/,
     'edit instructions must not appear when no input image',
   );
@@ -460,7 +471,7 @@ test('payload — plain text Q&A (workspace + no image, no draw intent): caller 
     'plain text turn must keep the caller-chosen model verbatim',
   );
   assert.doesNotMatch(
-    captured.body.instructions,
+    promptText(captured.body),
     /INLINE IMAGE EDITING/,
     'plain text turn must not carry image-edit instructions',
   );
@@ -527,7 +538,7 @@ test('payload — no workspace + input image: no image_generation tool, no edit 
 
   const imageTool = captured.body.tools?.find(t => t.type === 'image_generation');
   assert.equal(imageTool, undefined, 'no workspace → no image_generation tool');
-  assert.doesNotMatch(captured.body.instructions, /INLINE IMAGE EDITING/);
+  assert.doesNotMatch(promptText(captured.body), /INLINE IMAGE EDITING/);
   assert.equal(
     captured.body.model,
     'gpt-4.1',
@@ -585,12 +596,12 @@ test('payload — historical image (older user turn) + new edit ask: edit-mode s
     undefined,
     'no input_fidelity ever, even on cross-turn edits',
   );
-  assert.match(captured.body.instructions, /INLINE IMAGE EDITING/);
+  assert.match(promptText(captured.body), /INLINE IMAGE EDITING/);
   // Instructions must also contain the EXCEPTIONS clause so model can
   // peel back to text-to-image when user actually says "draw something
   // new". Asserts the explicit pass-through is wired in.
   assert.match(
-    captured.body.instructions,
+    promptText(captured.body),
     /EXCEPTIONS/,
     'edit-mode instructions must include the explicit exceptions clause',
   );

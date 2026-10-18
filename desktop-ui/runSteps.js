@@ -1,6 +1,10 @@
 // What the running reply is doing right now, shown inside the chat (the side
 // panel keeps the full record). Same rules as RunProgress.steps on the phone:
 // only real scene steps, running ones always kept, finished ones trimmed.
+// Hand-maintained: the browser only sees scene operations (tool id + args),
+// never the tool object, so the self-description fields in src/tools/tool.js
+// (capability / needsWorkspace / uiModule / inputKeys / concurrency) cannot
+// drive these labels. Add a label here when registering a tool the user sees.
 const TOOL_NAMES = {
   file_read: '读取文件', file_write: '写入文件', file_edit: '修改文件', file_delete: '删除文件', file_move: '移动文件', file_mkdir: '新建文件夹',
   bash: '运行命令', glob: '查找文件', grep: '搜索代码', web_search: '联网搜索', native_web_search: '联网搜索', fetch_url: '读取网页',

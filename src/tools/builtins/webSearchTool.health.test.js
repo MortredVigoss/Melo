@@ -168,7 +168,9 @@ test('noCache=true skips the cache even when a row exists', async () => {
     assert.notEqual(result.meta.provider, 'test-fixture (cached)');
     assert.equal(result.meta.timings.cacheHit, false);
   } else {
-    assert.equal(result.error, 'SEARCH_FAILED');
+    // Offline sandboxes fail fast (PROVIDER_DOWN); a machine with network can
+    // instead hit the 3 s signal before the provider answers (ABORTED).
+    assert.ok(['PROVIDER_DOWN', 'ABORTED'].includes(result.error), result.error);
     assert.ok(result.meta?.timings);
     assert.equal(result.meta.timings.cacheHit, false);
   }

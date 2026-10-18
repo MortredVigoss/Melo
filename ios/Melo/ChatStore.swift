@@ -313,6 +313,9 @@ import SwiftUI
         let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
         let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         var instructions = ConversationContext.instructions(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID))
+        // Current local date + continuity rule (2026-10-18); the day-change
+        // note for this turn is appended after the history is known.
+        instructions += "\n\n" + ConversationHistory.dateInstructions()
         if !plan.makesImage {
             do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions) }
             catch { fail(error.localizedDescription); return }
@@ -361,7 +364,13 @@ import SwiftUI
         let memoryBudget = max(0, ConversationHistory.textByteBudget - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
         instructions += MobileMemoryRecall.instructions(recalled.facts)
-        let history = chats[index].messages
+        let dateNote = ConversationHistory.dateChangeNote(chats[index].messages)
+        if !dateNote.isEmpty { instructions += "\n\n" + dateNote }
+        // Desktop compact sync (design 2026-10-17 手机对齐): only the turns after the
+        // synced boundary go to the model; the desktop summary (≤8 KB) leads the instructions.
+        let compact = ConversationHistory.compactContext(preferences.chatCompact?[chatID], messages: chats[index].messages)
+        if !compact.summary.isEmpty { instructions = compact.summary + "\n\n" + instructions }
+        let history = compact.messages
         // The model sees the video as frames plus its transcript; the chat keeps a short line.
         var modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
         // Every message that carried images says which numbers they have, so the model can follow

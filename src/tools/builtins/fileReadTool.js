@@ -78,6 +78,11 @@ export const fileReadTool = {
   // file_read?" prompt before any path classification runs).
   requiresPermission: false,
   isConcurrencySafe: true,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'readFiles',
+  needsWorkspace: true,
+  uiModule: 'files',
+  inputKeys: ['path', 'start_line', 'end_line'],
   parametersSchema: {
     type: 'object',
     properties: {

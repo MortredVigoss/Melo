@@ -176,6 +176,11 @@ export const bashTool = {
   requiresPermission: false,
   isConcurrencySafe: false,
   observesOwnLifecycle: true,
+  // Self-description (tools/tool.js); see that file for the fallback tables.
+  capability: 'runCommands',
+  needsWorkspace: true,
+  uiModule: 'tools',
+  inputKeys: ['command', 'cwd'],
   parametersSchema: {
     type: 'object',
     properties: {
@@ -351,7 +356,7 @@ export const bashTool = {
         resolve({
           ok,
           output: parts.join('\n\n'),
-          error: ok ? undefined : stopped ? 'ABORTED' : `Exit code ${exitCode ?? sigName}`,
+          error: ok ? undefined : stopped ? 'ABORTED' : sigName ? 'KILLED_BY_SIGNAL' : 'EXIT_NONZERO',
           meta: { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, aborted: stopped },
         });
       });

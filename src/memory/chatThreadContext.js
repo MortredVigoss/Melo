@@ -30,6 +30,7 @@ import {
 } from './threadContext.js';
 import { normalizeConversationSnippet } from './heuristics.js';
 import { normalizeMessageAttachments } from '../shared/helpers.js';
+import { normalizeCompactCards } from './compactLedger.js';
 import { messageVisibleText } from '../domain/message/messageBlocks.js';
 import { extractedMediaPromptText } from '../domain/message/messageSearch.js';
 import { summarizeAttachmentsForPrompt } from '../domain/chat/attachmentSummary.js';
@@ -111,6 +112,8 @@ function buildChatRuntimeCheckpoint(chat = {}) {
       : 0,
     compactSummary:
       typeof chat.compactSummary === 'string' ? chat.compactSummary.trim() : '',
+    // Ledger cards (design 1D-2); compactSummary is their rendering.
+    compactCards: normalizeCompactCards(chat.compactCards),
     compactBoundaryMessageId:
       typeof chat.compactBoundaryMessageId === 'string'
         ? chat.compactBoundaryMessageId.trim()
@@ -133,6 +136,8 @@ function buildChatRuntimeCheckpoint(chat = {}) {
       Number.isFinite(Number(chat.compactUpgradeAttempts)) && Number(chat.compactUpgradeAttempts) >= 0
         ? Number(chat.compactUpgradeAttempts)
         : 0,
+    toolGroupsActivated: Array.isArray(chat.toolGroupsActivated) ? [...chat.toolGroupsActivated] : [],
+    attachmentsExternalized: chat.attachmentsExternalized === true,
   };
 }
 

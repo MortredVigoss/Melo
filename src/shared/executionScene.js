@@ -36,7 +36,10 @@ export function sceneKey(value) {
   for (const c of String(value)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return (h >>> 0).toString(36);
 }
-export function moduleForOperation(name = '', args = {}) {
+// `declared` is the tool's own `uiModule` (tools/tool.js); a valid module id wins
+// over the id table below, which stays as the fallback for undeclared tools.
+export function moduleForOperation(name = '', args = {}, declared) {
+  if (declared && EXECUTION_MODULES.some(m => m.id === declared)) return declared;
   if (name === 'web_search' || name === 'fetch_url' || name === 'native_web_search' || ['browser_open', 'browser_snapshot'].includes(name)) return 'search';
   if (name === 'calculator') return 'compute';
   if (name === 'xlsx' || name === 'pdf' && ['write', 'structured', 'from_spec'].includes(args.action)) return 'create';

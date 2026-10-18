@@ -8,6 +8,7 @@ import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js'
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { renderMemoryFacts } from './memoryFacts.js';
+import { renderProjectMemoryBook } from './projectMemoryBook.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -46,6 +47,8 @@ import { renderAdvancedPage } from './advancedPage.js';
 import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
+import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
+import { renderMessageMemoryRefs } from './messageMemoryRefs.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
 import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
@@ -273,6 +276,10 @@ const uiState = {
   taskLaneOverflowOpen: false,
   composerDragActive: false,
   highlightedMessageId: null,
+  // Per-chat "load earlier" expansion of the message render window
+  // (chatId → extra messages beyond THREAD_RENDER_WINDOW). See threadWindow.js.
+  threadWindow: {},
+  memoryRefFeedback: null,
   shouldFocusSearch: false,
   lastThreadScrollSignature: '',
   lastThreadChatId: null,
@@ -4048,6 +4055,7 @@ async function handleSendMessage(prepared = null) {
             if (existing) {
               existing.status = r.ok ? 'ok' : 'error';
               existing.output = r.output;
+              if (Number.isFinite(r.durationMs)) existing.durationMs = r.durationMs;
               if (Array.isArray(r.evidenceTrail) && r.evidenceTrail.length > 0) {
                 existing.evidenceTrail = r.evidenceTrail;
               }
@@ -7134,10 +7142,37 @@ function renderMessageToolResults(message) {
   return _renderMessageToolResultsFromModule(message, escapeHtml);
 }
 
+// Which slice of `chat.messages` gets rendered. Long threads only render the
+// newest THREAD_RENDER_WINDOW messages plus whatever the user expanded via
+// "加载更早"; a highlighted message (search hit / quote jump) always pulls the
+// window wide enough to include it, and that expansion is persisted so the
+// window doesn't snap back when the highlight is later cleared.
+function activeMessageWindow(chat) {
+  const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+  uiState.threadWindow ||= {};
+  if (uiState.highlightedMessageId) {
+    ensureMessageInThreadWindow(uiState.threadWindow, chat?.id, messages, uiState.highlightedMessageId);
+  }
+  return visibleMessageWindow(messages, {
+    chatId: chat?.id,
+    state: uiState.threadWindow,
+    highlightedMessageId: uiState.highlightedMessageId,
+  });
+}
+
+function renderThreadLoadEarlier(hiddenCount) {
+  if (!hiddenCount) return '';
+  return `<button class="small-button thread-load-earlier" type="button" data-action="thread-load-earlier">${escapeHtml(
+    t('加载更早的 {count} 条', { count: hiddenCount }),
+  )}</button>`;
+}
+
 function renderMessageList(chat) {
+  const { messages: windowed, hiddenCount } = activeMessageWindow(chat);
   return ui`
     <div class="message-list">
-      ${chat.messages
+      ${renderThreadLoadEarlier(hiddenCount)}
+      ${windowed
         .map(selectedMessagePresentation)
         .map(
           message => ui`
@@ -7150,6 +7185,7 @@ function renderMessageList(chat) {
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
+              ${renderMessageMemoryRefs(message, { feedback: uiState.memoryRefFeedback, busy: uiState.memoryFactBusy })}
               ${renderMessageAttachments(message)}
               ${renderModelReceipt(message, escapeHtml)}
               ${renderSceneReplay(message)}
@@ -8050,6 +8086,7 @@ function renderProjectsDetailView(project) {
 
           <aside class="project-detail-aside">
             ${renderProjectAgentDefaults(project)}
+            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft })}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
@@ -9079,16 +9116,73 @@ async function handleMemoryRepairAction(action) {
 
 async function handleMemoryFactAction(action, id) {
   if (uiState.memoryFactBusy) return;
-  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat'}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
+  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat',category:row?.category||'technical_detail',pinned:Boolean(row?.pinned)}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
   if (action === 'memory-fact-cancel') { uiState.memoryFactEditing=null; uiState.memoryFactDraft=null; memoryFactEdit.cancel(); bgRender(); return; }
   if (action === 'memory-fact-search') { uiState.memoryFactQuery=document.getElementById('memory-fact-query')?.value || ''; uiState.memoryFactOffset=0; await refreshMemoryStatus(); return; }
   if (action === 'memory-fact-prev' || action === 'memory-fact-next') { uiState.memoryFactOffset=Math.max(0,(uiState.memoryFactOffset || 0)+(action.endsWith('next')?50:-50)); await refreshMemoryStatus(); return; }
   if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
-  const patch=action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
+  // Cross-device conflict (design 2026-10-17 §3.4): 采用桌面版 / 采用手机版.
+  const resolveConflict=action==='memory-fact-resolve-desktop'?'desktop':action==='memory-fact-resolve-mobile'?'mobile':null;
+  const patch=resolveConflict ? {resolveConflict} : action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
   uiState.memoryFactBusy=true; bgRender();
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
+}
+
+// Project memory book (design 2B): the project page lists the book and lets
+// the user confirm / re-section / stop an auto row or hand-write one.
+function projectBookData(projectId) {
+  if (!projectId) return null;
+  const cached = uiState.projectBook?.projectId === projectId ? uiState.projectBook : null;
+  // Auto rows arrive from chats in the background: re-read after 30s, keeping
+  // the stale list on screen meanwhile.
+  const fresh = cached && Date.now() - (cached.loadedAt || 0) < 30_000;
+  if (!fresh && uiState.projectBook?.loadingId !== projectId) {
+    uiState.projectBook = { ...(uiState.projectBook || {}), loadingId: projectId };
+    api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`)
+      .then(data => { uiState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
+      .catch(error => { uiState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: Date.now() }; showError(error.message); bgRender(); });
+  }
+  return cached?.data || null;
+}
+async function refreshProjectBook(projectId) {
+  uiState.projectBook = { projectId, data: await api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`), loadedAt: Date.now() };
+}
+async function handleProjectBookAction(action, id, { section = null, form = null } = {}) {
+  const projectId = activeProject()?.id;
+  if (!projectId || uiState.projectBookBusy) return;
+  uiState.projectBookBusy = true; uiState.projectBookFeedback = null; bgRender();
+  try {
+    if (action === 'project-book-create') {
+      const data = new FormData(form);
+      await api('/api/projects/memory-book', { method: 'POST', body: { projectId, text: String(data.get('text') || ''), section: String(data.get('section') || 'convention') } });
+      uiState.projectBookDraft = null; uiState.projectBookFeedback = t('已写入记忆本');
+    } else {
+      const patch = action === 'project-book-confirm' ? { bookStatus: 'confirmed' }
+        : action === 'project-book-section' ? { section }
+        : { forgotten: action === 'project-book-forget' };
+      await api('/api/memory/facts/update', { method: 'POST', body: { id, patch } });
+      uiState.projectBookFeedback = action === 'project-book-confirm' ? t('已确认') : action === 'project-book-section' ? t('已改节') : action === 'project-book-forget' ? t('已停止使用') : t('已恢复使用');
+    }
+    await refreshProjectBook(projectId);
+    if (uiState.memoryFacts) await refreshMemoryStatus();
+  } catch (error) { showError(error.message); }
+  finally { uiState.projectBookBusy = false; bgRender(); }
+}
+
+// Reply-footer memory actions (design audit M5): promote a referenced fact to
+// the project / personal scope, or stop using it, right where it was seen.
+async function handleMemoryRefAction(action, id, scope) {
+  if (!id || uiState.memoryFactBusy) return;
+  const patch = action === 'memory-ref-forget' ? { forgotten: true } : { scope };
+  uiState.memoryFactBusy = true; bgRender();
+  try {
+    await api('/api/memory/facts/update', { method: 'POST', body: { id, patch } });
+    uiState.memoryRefFeedback = { id, message: action === 'memory-ref-forget' ? t('已停止使用') : scope === 'project' ? t('已记到项目') : t('已记成个人') };
+    if (uiState.memoryFacts) await refreshMemoryStatus();
+  } catch (error) { showError(error.message); }
+  finally { uiState.memoryFactBusy = false; bgRender(); }
 }
 
 async function refreshMemoryStatus() {
@@ -11622,7 +11716,18 @@ document.addEventListener('click', async event => {
       case 'memory-fact-save':
       case 'memory-fact-forget':
       case 'memory-fact-restore':
+      case 'memory-fact-resolve-desktop':
+      case 'memory-fact-resolve-mobile':
         await handleMemoryFactAction(action,trigger.dataset.id || trigger.closest('[data-memory-record]')?.dataset.memoryRecord);
+        break;
+      case 'memory-ref-scope':
+      case 'memory-ref-forget':
+        await handleMemoryRefAction(action, trigger.dataset.memoryId, trigger.dataset.scope);
+        break;
+      case 'project-book-confirm':
+      case 'project-book-forget':
+      case 'project-book-restore':
+        await handleProjectBookAction(action, trigger.dataset.id);
         break;
       case 'memory-pause':
       case 'memory-diagnose':
@@ -11996,6 +12101,36 @@ document.addEventListener('click', async event => {
           }),
         );
         break;
+      case 'thread-load-earlier': {
+        // Long-thread render window: reveal the next 60 older messages. The
+        // thread signature (chat id / length / updatedAt) does not change, so
+        // render() restores the raw scrollTop — which would now point INTO
+        // the freshly inserted older content. Anchor on the first visible
+        // message instead (same helpers as the viz-hydration path) and shift
+        // scrollTop by the height the new content added above it; fall back
+        // to a plain scrollHeight delta when no anchor is available (e.g.
+        // the scroller was within the auto-follow threshold of the bottom).
+        const chat = activeChat();
+        if (!chat) break;
+        const scroller = document.querySelector('.thread-scroll-region');
+        const anchor = scroller instanceof HTMLElement ? captureThreadAnchor(scroller) : null;
+        const previousHeight = scroller instanceof HTMLElement ? scroller.scrollHeight : 0;
+        const previousTop = scroller instanceof HTMLElement ? scroller.scrollTop : 0;
+        uiState.threadWindow ||= {};
+        expandThreadWindow(uiState.threadWindow, chat.id, 60);
+        render();
+        const nextScroller = document.querySelector('.thread-scroll-region');
+        if (nextScroller instanceof HTMLElement) {
+          if (!(anchor && restoreThreadAnchor(anchor))) {
+            nextScroller.scrollTop = previousTop + (nextScroller.scrollHeight - previousHeight);
+          }
+          uiState.lastKnownScrollTop = nextScroller.scrollTop;
+          // Viz cards (if any) hydrate async and grow above the viewport —
+          // re-pin once the frame after the swap settles.
+          if (anchor) requestAnimationFrame(() => restoreThreadAnchor(anchor));
+        }
+        break;
+      }
       case 'scroll-thread-to-bottom': {
         // User clicked the floating "jump to latest" arrow. Re-enable
         // auto-follow so subsequent streaming chunks keep the view pinned to
@@ -12553,7 +12688,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'||target.id==='memory-fact-category'||target.id==='memory-fact-pinned'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){const field=target.id.replace('memory-fact-','');uiState.memoryFactDraft[field]=field==='pinned'?target.checked:target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -12784,8 +12919,14 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){uiState.memoryFactDraft[target.id.endsWith('text')?'text':'scope']=target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'||target.id==='memory-fact-category'||target.id==='memory-fact-pinned'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){const field=target.id.replace('memory-fact-','');uiState.memoryFactDraft[field]=field==='pinned'?target.checked:target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
   if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
+  if (target.dataset?.bookSectionSelect) {
+    const record = target.closest('[data-book-record]')?.dataset.bookRecord;
+    if (record) { await handleProjectBookAction('project-book-section', record, { section: target.value }); return; }
+    uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), section: target.value }; return;
+  }
+  if (target.closest?.('form[data-form="project-book-create"]') && target.name === 'text') { uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), text: target.value }; return; }
   if (target.dataset?.projectDefaultAgent) {
     try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
     catch(error) { showError(error.message); }
@@ -13130,6 +13271,9 @@ document.addEventListener('submit', async event => {
         break;
       case 'project-update':
         await handleUpdateProject(form);
+        break;
+      case 'project-book-create':
+        await handleProjectBookAction('project-book-create', null, { form });
         break;
       case 'task-pricing': {
         const body=Object.fromEntries(new FormData(form));

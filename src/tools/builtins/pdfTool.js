@@ -506,7 +506,23 @@ export const pdfTool = {
     '5. Once visually verified, return the FINAL PDF URL to the user. Do NOT echo the rendered page-PNG URLs to the user — those were just for your own QA. The user wants the document, not its screenshots.\n' +
     'Skip the loop only when: (a) the user explicitly says "don\'t bother reviewing" / "just generate it", (b) the PDF is trivial (single short page), or (c) `render` errors with the poppler-not-installed hint — then surface the install hint to the user and skip self-review.',
   category: 'filesystem',
+  // Self-description (tools/tool.js). Only `read` is read-only: every other
+  // action writes a PDF/PNG, so those calls run serially and get a ledger receipt.
   isConcurrencySafe: true,
+  concurrency: args => args?.action === 'read',
+  capability: args => {
+    if (!args) return { anyOf: ['readFiles', 'writeFiles'] };
+    const read = args.action === 'read';
+    const remote = Object.values(args).some(v => typeof v === 'string' && /^https?:\/\//i.test(v));
+    const keys = [read ? 'readFiles' : 'writeFiles'];
+    if (remote) keys.push('network');
+    // Everything but a fresh document also reads an existing PDF.
+    if (!read && !['write', 'structured', 'from_spec'].includes(args.action)) keys.push('readFiles');
+    return keys;
+  },
+  needsWorkspace: true,
+  uiModule: args => ['write', 'structured', 'from_spec'].includes(args?.action) ? 'create' : 'files',
+  inputKeys: ['action', 'path', 'source', 'pageRange', 'coverPath'],
   requiresPermission: true,
   parametersSchema: {
     type: 'object',

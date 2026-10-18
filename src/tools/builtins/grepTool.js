@@ -375,6 +375,8 @@ export const grepTool = {
     if (!allMatches.length) {
       return {
         ok: true,
+        status: 'empty',
+        code: 'NO_RESULTS',
         output: `No matches found for: ${pattern}${skipNote}`,
         meta: { count: 0, skippedSensitive: skipped.sensitive, baseDir: realBase },
       };

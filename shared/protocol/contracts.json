@@ -632,5 +632,71 @@
       "ok": false,
       "parallelPrefix": 0
     }
-  ]
+  ],
+  "compactSync": {
+    "_comment": "Desktop compact state synced through conversation.compact (design 2026-10-17 手机对齐): the phone sends only messages after boundaryMessageId and prepends the summary to its instructions; an unknown boundary leaves the history untouched.",
+    "conversation": {
+      "agentId": "main",
+      "projectId": null,
+      "knowledgeIds": [],
+      "model": null,
+      "compact": {
+        "boundaryMessageId": "m4",
+        "compactedCount": 4,
+        "source": "cloud",
+        "at": "2026-10-17T01:00:00.000Z",
+        "summary": "# 早期话题\n用户决定用 sqlite 做本地索引。",
+        "cards": [
+          {
+            "id": "card-1",
+            "title": "早期话题",
+            "summary": "用户决定用 sqlite 做本地索引。",
+            "fromMessageId": "m1",
+            "toMessageId": "m4",
+            "messageCount": 4,
+            "at": "2026-10-17T01:00:00.000Z",
+            "source": "cloud"
+          }
+        ]
+      }
+    },
+    "messages": [
+      {
+        "id": "m1",
+        "role": "user",
+        "content": "turn 1"
+      },
+      {
+        "id": "m2",
+        "role": "assistant",
+        "content": "turn 2"
+      },
+      {
+        "id": "m3",
+        "role": "user",
+        "content": "turn 3"
+      },
+      {
+        "id": "m4",
+        "role": "assistant",
+        "content": "turn 4"
+      },
+      {
+        "id": "m5",
+        "role": "user",
+        "content": "turn 5"
+      },
+      {
+        "id": "m6",
+        "role": "assistant",
+        "content": "turn 6"
+      }
+    ],
+    "expectedInputIds": [
+      "m5",
+      "m6"
+    ],
+    "summaryContains": "用户决定用 sqlite 做本地索引。",
+    "unknownBoundaryKeepsHistory": true
+  }
 }

@@ -69,14 +69,21 @@ export function deriveUnifiedErrorCode(call, result) {
 /**
  * @param {{ id?: string, name?: string }} call
  * @param {{ ok?: boolean, error?: string, evidenceTrail?: Array }} result
- * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array, errorCode?: string }}
+ * @param {{ callId?: string, toolId?: string, argsHash?: string, durationMs?: number, resultEnvelope?: Object }} [record]
+ *   ToolInvocationRecord (design audit D1). When given, identity, status and
+ *   the small `argsHash` / `durationMs` fields are read from it so the
+ *   persisted entry is a projection of the same object the SSE events and
+ *   the jsonl line come from.
+ * @returns {{ toolCallId: string, toolName: string, ok: boolean, evidenceTrail?: Array, errorCode?: string, argsHash?: string, durationMs?: number }}
  */
-export function projectToolResultForPersist(call, result) {
+export function projectToolResultForPersist(call, result, record = null) {
   const entry = {
-    toolCallId: typeof call?.id === 'string' ? call.id : '',
-    toolName: typeof call?.name === 'string' ? call.name : '',
+    toolCallId: typeof record?.callId === 'string' && record.callId ? record.callId : typeof call?.id === 'string' ? call.id : '',
+    toolName: typeof record?.toolId === 'string' && record.toolId ? record.toolId : typeof call?.name === 'string' ? call.name : '',
     ok: result?.ok !== false,
   };
+  if (typeof record?.argsHash === 'string' && /^[0-9a-f]{8,64}$/.test(record.argsHash)) entry.argsHash = record.argsHash;
+  if (Number.isFinite(record?.durationMs) && record.durationMs >= 0) entry.durationMs = Math.round(record.durationMs);
   if (Array.isArray(result?.evidenceTrail) && result.evidenceTrail.length > 0) {
     entry.evidenceTrail = result.evidenceTrail;
   }
@@ -87,9 +94,15 @@ export function projectToolResultForPersist(call, result) {
   if (Number.isInteger(result?.meta?.exitCode)) entry.exitCode = result.meta.exitCode;
   if (result?.meta?.replayed) entry.replayed = true;
   const errorCode = deriveUnifiedErrorCode(call, result) || (result?.ok === false
-    ? result?.meta?.denied ? 'PERMISSION_DENIED'
-      : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED'
+    ? (/^[A-Z][A-Z0-9_]{1,63}$/.test(result?.code || '') ? result.code
+      : result?.meta?.denied ? 'PERMISSION_DENIED'
+      : /^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error || '') ? result.error : 'TOOL_FAILED')
     : null);
+  if (result?.status === 'empty') entry.status = 'empty';
+  // Short model-facing conclusion so the compaction transcript can say what a
+  // tool call found (design 1D-5); the full output never enters history.
+  const summary = typeof result?.output === 'string' ? result.output.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  if (summary) entry.summary = summary;
   if (errorCode) {
     entry.errorCode = errorCode;
   }

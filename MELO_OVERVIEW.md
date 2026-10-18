@@ -1,6 +1,6 @@
 # Melo 总览：架构、线程改动与接手入口
 
-更新时间：2026-10-17（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口。
+更新时间：2026-10-18（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口。
 
 ## 1. 先看这里
 
@@ -85,7 +85,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
 | 外部官网原型 | `/Users/mortred/Documents/New project/melo-universe/src/{data,neural-geometry,scene,navigation,main}.js`、`styles.css` | 独立 Three.js / Vite SPA；连通神经图、真实投影命中、History API 管理三级 hash 路由，`onFrame` 进度协调相机/滚动/正文；不接产品模型、账号或收款，旧站与桌面导出分别保留 |
 | 外部 SWE-bench 适配 | `/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/{run_melo.mjs,container_tools.py,run_batch.py}` | 调用产品正常消息入口，在独立基准进程替换六个工具运行函数并自动授权；产品仓库没有Docker功能改动或接入提交；评分不覆盖桌面权限/手机 |
-| GitHub 公开介绍 | `README.md`、GitHub About / Topics（`MortredVigoss/Melo`） | 英文介绍个人AI执行工作区、双端职责/架构、内置语义记忆、源码启动和分层验证；按用户要求仅保留英文，未发布未完成源码或宣称全集跑分 |
+| GitHub 公开介绍 | `README.md`、`CHANGELOG.md`、GitHub About（`MortredVigoss/Melo`） | 10-18 按源码重写简短英文介绍，突出多模型兼容、项目、记忆与 Agent 协作；公开改动说明只写用户可感知的大方向，协议、参数、路径和验收细节留在专项文档 |
 
 ### 设计线程模块补充（2026-10-15 核对，源码仍 WIP）
 
@@ -119,13 +119,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | --- | --- | --- | --- |
 | Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 用户认可共用 Core + Adapter；本轮完成 Loop / State / Memory / Tool / Skill 前置检查 | [检查与证据](docs/agent-core-audit-20261017.md)：65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，现有缺陷未修复；Runtime spike / 共享 Core / Search 待迁移。0.5.1 实机边界沿用 [verification](android/verification.md)，未操作手机 / 安装 / 推送 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、Telegram 归档已交付；本轮文件生命周期/能力配置/管理入口对齐 | 本地 `7ae2292`；共享日常 3613 JS / 23 Swift，未安装/推送；[实施回执](docs/ui-function-alignment-20261016.md) |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、文件生命周期/能力配置/管理入口已对齐；10-18 核对主要源码后精简 GitHub 产品介绍与更新记录 | 功能历史证据见[实施回执](docs/ui-function-alignment-20261016.md)；本轮仅文档与 About，源码基线 `e4fed5c`，链接/命令/GitHub Markdown 渲染通过，详见末尾交接 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
-| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-16 再统计 180,648 行（含空行/注释，不含 ios）；只读源码统计，非产品验收；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
+| melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-17 再统计 189,424 行（含空行/注释，不含 ios）；只读源码统计，非产品验收；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
 | melo网站 | `019dce6e-faae-7850-a8bb-db48b737b928` | 2026-10-15 核对神经网络四区、外放标签和连续镜头源码/快照差异；首页有界轴向转动，非各层无限自转 | 独立本地 WIP，无 Git 元数据/可核实提交；历史 13 单元/22 浏览器未重跑；本轮静态核对旧站 9/9 散列与桌面副本一致；详见[网站交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>)，Safari/用户验收/发布待验 |
 | Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF；GitHub英文README/About/12标签已发布 `39cc759` |
 
@@ -183,6 +183,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ## 8. 补录完成登记与接手索引
 
 ### 2026-10-16 — melo副线 — 刷新固定范围统计
+- 2026-10-17 用户再次要求统计，相同四目录及扩展名命令返回 189,424 行，退出码 0；仅文件计数，文档 WIP 和派生快照更新，不代表产品验收。后续须重新统计。
 - 同日用户再次要求统计，重新执行相同范围命令，最新 180,648 行，退出码 0；下方 179,438 为同日较早快照。本轮仍仅更新文档及派生快照，无产品测试或提交。
 - 线程 `019d5db3-d2cd-70c2-bc8f-955d36099219`；按既定四目录与扩展名执行 `find ... -print0 | xargs -0 wc -l`，结果 179,438 行，退出码 0；仅源码文件行数证据，不含手机目录，不代表测试或用户验收。
 - 本轮仅总览与进度文档 WIP、刷新派生快照；保留其他线程改动，未提交、推送或运行产品 gate；后续统计须重跑，数值会随共享源码变化。
@@ -691,3 +692,17 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 63 Node 定向 / 115 JVM / 34 Emulator runtime / Lint / Debug / R8、898 文件语法检查通过。日常 gate 的旧环境与排版失败见专项，不称全绿。
 - iOS 仅打包 / Adapter / Conformance 源码，JS renderer gate 通过但 Swift skipped；生产入口未切换。Search、Skill 调度、Context / Memory、Task Cache 仍按计划继续，不将本阶段称整库统一。
 - 详细记录 `docs/shared-agent-runtime-20261017.md`；未访问真实模型或私人手机，隔离 Emulator / ADB 5048 已关闭，默认 USB ADB 未动；无 push / git pp。
+
+### 2026-10-18 — melo主线 — GitHub 介绍与公开更新记录精简
+
+- 用户要求先整体扫代码再重写介绍，公开改动说明只保留大方向。按 `e4fed5c` 的结构与近期 diff 核对模型接入、Agent/工具权限、项目/记忆、媒体、CLI 和手机同步；这是介绍事实核对，不是逐行安全审计或完整运行验收。
+- `README.md` 收拢为用途、兼容性、平台分工和必要安装说明；`CHANGELOG.md` 的 10-17 更新压成 5 条。核对 `src/shared/channelAvailability.js` 后修正 Discord 仍可接入的旧说法；详细架构与验收文档保留。
+- GitHub About 已更新并读回一致，突出 Claude / OpenAI / OpenRouter / 本地模型兼容。公开文案继续英文；以后更新只写用户可感知的变化，内部实现细节留在专项文档。
+- 文档相对链接、安装/测试命令、英文与格式检查通过；GitHub Markdown 渲染的标题、7 个章节、6 行兼容表和 3 个命令块通过。证据 `.tmp/github-copy-20261018/`；本条随文档提交，发布目标为 GitHub `master`，远端提交及文件散列在发布后核对。
+- 仅文档/仓库元数据；未运行 `git pp`、产品回归、真实模型请求或双端安装，未修改用户数据。
+
+### 2026-10-18 — Android / Shared Core — 接住最新主线
+
+- 用户要求先 pull，已合入远端 `84abfa9`（iPhone 0.7.0 / Tool 协议与记录 / MCP / Memory / RunBudget）；Search 未提交内容先存入 Git stash，合并后继续。
+- Core Guard 保留上游 Tool records 与预算，并按 Registry ID 接受 MCP wire name；旧 Router 的 self-description 政策迁入 portable 模块。Xcode 工程重新生成同时保留 SpeechText / SharedAgentCore 及上游版本。
+- 72 项定向离线回归通过；不是完整 gate 或 iOS 原生验收，未请求真实服务 / 操作私人手机 / 安装 / push / git pp。

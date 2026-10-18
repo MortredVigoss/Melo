@@ -150,7 +150,21 @@ export const imageTool = {
     'process: resize / rotate / grayscale / format convert (omit "output" to auto-save into chat workspace and return a displayable URL). ' +
     'generate: text-to-image. Uses the image engine selected in Melo settings; reports failures without switching services. Returns a URL the UI renders inline.',
   category: 'filesystem',
+  // Self-description (tools/tool.js). `ocr` / `info` only read the input;
+  // `process` / `generate` write into the workspace, so they run serially.
   isConcurrencySafe: true,
+  concurrency: args => ['ocr', 'info'].includes(args?.action),
+  capability: args => {
+    if (!args) return { anyOf: ['readFiles', 'generateMedia'] };
+    if (['info', 'ocr'].includes(args.action)) return 'readFiles';
+    const keys = ['generateMedia'];
+    if (args.output) keys.push('writeFiles');
+    if (args.action === 'process') keys.push('readFiles', 'writeFiles');
+    return [...new Set(keys)];
+  },
+  needsWorkspace: true,
+  uiModule: args => args?.action === 'generate' ? 'create' : 'files',
+  inputKeys: ['action', 'path', 'output', 'prompt'],
   // No permission prompt: all four actions are non-destructive —
   //   • ocr / info      → read-only on the input file
   //   • process         → writes into the chat workspace (generated/… by

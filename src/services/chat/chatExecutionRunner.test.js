@@ -478,8 +478,10 @@ test('search routing — codex-native: native web_search enabled, fetch_url not 
   // parallel with the native capability — exactly the regression Codex
   // review was guarding against.
   const visible = new Set(result.visibleToolIds || []);
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on codex-native route');
-  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden on codex-native route');
+  // Design audit A2 (2026-10-17): the function set is stable per chat; the
+  // route is expressed in the routing prompt, not by hiding definitions.
+  assert.equal(visible.has('web_search'), true, 'web_search stays in the stable set on codex-native route');
+  assert.equal(visible.has('fetch_url'), true, 'fetch_url stays in the stable set on codex-native route');
 });
 
 test('search routing — melo-web: native web_search disabled, both tools dispatched', async () => {
@@ -520,7 +522,7 @@ test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_s
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on fetch-url route');
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden on fetch-url route');
+  assert.equal(visible.has('web_search'), true, 'web_search stays visible (A2 stable set); the routing prompt prefers fetch_url');
 });
 
 test('search routing — social-link: 抖音 / xiaohongshu URL routes to fetch_url with web_search hidden (Codex 83cf5d4 B 建议闭环)', async () => {
@@ -550,7 +552,7 @@ test('search routing — social-link: 抖音 / xiaohongshu URL routes to fetch_u
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on social-link route');
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden so social-link reader is not bypassed');
+  assert.equal(visible.has('web_search'), true, 'web_search stays visible (A2 stable set); the routing prompt points at the social-link reader');
 });
 
 test('search routing — social-link: xiaohongshu URL also routes to fetch_url (different host in SOCIAL_HOST_PATTERN)', async () => {
@@ -567,10 +569,10 @@ test('search routing — social-link: xiaohongshu URL also routes to fetch_url (
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true);
-  assert.equal(visible.has('web_search'), false);
+  assert.equal(visible.has('web_search'), true);
 });
 
-test('search routing — none: no web intent, neither web_search nor fetch_url offered', async () => {
+test('search routing — none: no web intent, tools stay in the stable set and the prompt says not to search', async () => {
   // Same canonical message as searchRouter.test.js:82 — score is 0 and no
   // pattern hits, so the runner must offer neither network tool. This is
   // the "ordinary chat" baseline; if a future trigger weight bump makes
@@ -585,8 +587,8 @@ test('search routing — none: no web intent, neither web_search nor fetch_url o
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
   const visible = new Set(result.visibleToolIds || []);
-  assert.equal(visible.has('web_search'), false, 'web_search must be hidden when no web intent');
-  assert.equal(visible.has('fetch_url'), false, 'fetch_url must be hidden when no web intent');
+  assert.equal(visible.has('web_search'), true, 'A2: definitions are stable; no-web-intent is a prompt-level instruction');
+  assert.equal(visible.has('fetch_url'), true);
 });
 
 test('search routing — non-codex auth + web intent falls back to melo-web (not codex-native)', async () => {
@@ -633,6 +635,100 @@ test('main tool dispatch carries its MCP whitelist and resolved role model into 
   } finally {unregisterTool(forbidden.id);unregisterTool(probe.id);}
 });
 
+test('F3 MCP isolation: mcpRegistry tools reach only the whitelisted agent and dispatch by readable wire name', async () => {
+  const { registerMcpTool, unregisterMcpServer } = await import('../../tools/mcpRegistry.js');
+  const { getTool } = await import('../../tools/registry.js');
+  let runs = 0;
+  registerMcpTool({ id: 'mcp:probe-srv:echo', name: 'probe-srv/echo', description: 'echo', category: 'mcp', requiresPermission: false,
+    parametersSchema: { type: 'object', properties: {} }, run: async () => { runs++; return { ok: true, output: 'echoed' }; } });
+  assert.equal(getTool('mcp:probe-srv:echo'), null, 'MCP tools must not land in the global registry');
+  const run = async (whitelist, callName) => {
+    const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'u1', role: 'user', content: 'Use the echo tool for this task' }] });
+    state.chats = [chat]; state.agentProfiles.main.enabledMcpServerIds = whitelist;
+    await saveState(state);
+    let replies = 0;
+    const result = await runChatAgentExecutionGraph({ config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [], latestUserMessage: 'Use the echo tool for this task', agentId: 'main',
+      _dependencies: { getEmbedding: async () => null, createReply: async () => replies++ === 0 ? `<tool_call>{"id":"c1","name":"${callName}","arguments":{}}</tool_call>` : 'finished' } });
+    return result;
+  };
+  try {
+    const allowed = await run(['probe-srv'], 'mcp__probe_srv__echo');
+    assert.ok((allowed.visibleToolIds || []).includes('mcp:probe-srv:echo'));
+    assert.equal(runs, 1, 'wire name resolves back to the MCP tool');
+    await run(['probe-srv'], 'mcp:probe-srv:echo');
+    assert.equal(runs, 2, 'the canonical id still dispatches');
+    const denied = await run([], 'mcp__probe_srv__echo');
+    assert.ok(!(denied.visibleToolIds || []).includes('mcp:probe-srv:echo'));
+    assert.equal(runs, 2, 'an agent without the server on its whitelist cannot call it');
+  } finally { unregisterMcpServer('probe-srv'); }
+});
+
+
+test('run budget (C1): deadline passes during a tool call → explicit 运行预算 reply, budget:exhausted event, no second provider call', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'budget-user', role: 'user', content: '把这个任务做完' }] });
+  state.chats = [chat];
+  await saveState(state);
+  // Virtual clock: the run has 60 s; the one tool the model calls "takes" 61 s.
+  let now = 1_000_000;
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
+  let toolRuns = 0;
+  const probe = { id: 'budget_probe', name: 'budget_probe', description: 'slow probe', parametersSchema: { type: 'object', properties: {} }, requiresPermission: false,
+    run: async () => { toolRuns++; now += 61_000; return { ok: true, output: 'slow work done' }; } };
+  registerTool(probe);
+  const events = []; let replies = 0;
+  try {
+    const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async options => {
+          replies++;
+          assert.equal(options.timeoutMs, 60_000, 'request timeout = min(600 s, remaining)');
+          return '<tool_call>{"id":"slow","name":"budget_probe","arguments":{}}</tool_call>';
+        } } });
+    assert.equal(toolRuns, 1);
+    assert.equal(replies, 1, 'the second model call is beyond the deadline and must not happen');
+    assert.match(result.normalizedReply.content, /运行预算/);
+    assert.match(result.normalizedReply.content, /继续/);
+    const exhausted = events.find(e => e.type === 'execution_event' && e.value.id === 'budget:exhausted');
+    assert.ok(exhausted, 'budget:exhausted execution event is emitted');
+    assert.equal(exhausted.value.budget.reason, 'deadline');
+    assert.equal(budget.used.toolCalls, 1);
+    assert.equal(budget.used.providerCalls, 1);
+    assert.ok(budget.used.inputTokens > 0, 'a provider without usage is estimated, not skipped');
+  } finally { unregisterTool(probe.id); }
+});
+
+test('run budget (C1): tool-call cap → executor refuses with BUDGET_EXHAUSTED and the loop stops before the next model call', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'cap-user', role: 'user', content: '把这个任务做完' }] });
+  state.chats = [chat];
+  await saveState(state);
+  const budget = createRunBudget({ now: () => 5, overrides: { maxToolCalls: 1 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
+  let toolRuns = 0;
+  const probe = { id: 'cap_probe', name: 'cap_probe', description: 'probe', parametersSchema: { type: 'object', properties: {} }, requiresPermission: false,
+    run: async () => { toolRuns++; return { ok: true, output: 'ok' }; } };
+  registerTool(probe);
+  const events = []; let replies = 0;
+  try {
+    const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async () => { replies++; return '<tool_call>{"id":"a","name":"cap_probe","arguments":{}}</tool_call><tool_call>{"id":"b","name":"cap_probe","arguments":{}}</tool_call>'; } } });
+    assert.equal(toolRuns, 1, 'only the first call fits the cap');
+    assert.equal(replies, 1);
+    const done = events.find(e => e.type === 'tool_calls_done');
+    assert.deepEqual(done.value.results.map(r => r.ok), [true, false]);
+    assert.match(done.value.results[1].output, /Run budget exhausted \(tool-calls\)/);
+    assert.match(result.normalizedReply.content, /运行预算（工具调用次数 1 次）/);
+  } finally { unregisterTool(probe.id); }
+});
 
 test('optional fast judge retains the answer model and contributes its real usage receipt', async () => {
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat];
@@ -657,4 +753,50 @@ test('optional fast judge retains the answer model and contributes its real usag
   assert.equal(result.normalizedReply.usage.input, 28); assert.equal(result.normalizedReply.usage.output, 11);
   assert.equal(result.normalizedReply.usage.requests, 2);
   assert.ok(events.some(event => event.type === 'execution_event' && event.value.id === 'judge:intent'));
+});
+
+test('tool invocation records (D1): 3 calls → 3 jsonl lines whose modelFacingOutput is the exact function_call_output sent back, and tool_calls_start carries no raw secret', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { readToolInvocationRecords } = await import('../../tools/toolInvocationRecord.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'd1-user', role: 'user', content: '读三个文件' }] });
+  state.chats = [chat];
+  await saveState(state);
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id });
+  const probe = { id: 'trace_probe', name: 'trace_probe', description: 'probe', requiresPermission: false, isConcurrencySafe: true,
+    parametersSchema: { type: 'object', properties: { path: { type: 'string' }, apiKey: { type: 'string' } }, required: ['path', 'apiKey'], additionalProperties: false },
+    run: async args => args.path === 'missing.md' ? { ok: false, output: 'ENOENT no such file', error: 'ENOENT no such file' } : { ok: true, output: `contents of ${args.path}` } };
+  registerTool(probe);
+  const events = []; let replies = 0; let sentOutputs = null;
+  const call = (id, path) => ({ type: 'function_call', call_id: id, name: 'trace_probe', arguments: JSON.stringify({ path, apiKey: 'sk-SECRET-VALUE' }) });
+  try {
+    await runChatAgentExecutionGraph({ context, config: { ...fixtureConfig, apiProtocol: 'responses' }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '读三个文件', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null,
+        createReply: async options => {
+          if (replies++ === 0) return { protocol: 'responses', text: '', responseItems: [call('c1', 'a.md'), call('c2', 'missing.md'), call('c3', 'b.md')] };
+          sentOutputs = options.messages.find(m => Array.isArray(m.functionCallOutputs)).functionCallOutputs;
+          return { protocol: 'responses', text: '读完了', responseItems: [] };
+        } } });
+    assert.equal(replies, 2);
+    assert.equal(sentOutputs.length, 3);
+    const records = await readToolInvocationRecords(context.runId, { home: TEST_HOME });
+    assert.equal(records.length, 3, 'one jsonl line per call');
+    assert.deepEqual(records.map(r => r.callId), ['c1', 'c2', 'c3']);
+    records.forEach((record, i) => {
+      assert.equal(record.modelFacingOutput, sentOutputs[i].output, `record ${i} holds the exact string the model received`);
+      assert.equal(record.runId, context.runId); assert.equal(record.iteration, 0); assert.equal(record.toolId, 'trace_probe');
+      assert.equal(record.argsRedacted.apiKey, '[redacted]'); assert.match(record.argsHash, /^[0-9a-f]{16}$/);
+      assert.ok(Number.isFinite(record.durationMs) && record.durationMs >= 0); assert.equal(record.parallelGroup, 0);
+    });
+    assert.equal(records[1].resultEnvelope.status, 'error'); assert.equal(records[1].resultEnvelope.code, 'NOT_FOUND');
+    const start = events.find(e => e.type === 'tool_calls_start');
+    assert.ok(!JSON.stringify(start.value).includes('sk-SECRET-VALUE'), 'tool_calls_start must not carry the raw key');
+    assert.equal(start.value.calls[0].arguments.apiKey, '[redacted]');
+    assert.equal(start.value.calls[0].arguments.path, 'a.md');
+    const done = events.find(e => e.type === 'tool_calls_done');
+    assert.deepEqual(done.value.results.map(r => [r.id, r.ok, r.status, r.argsHash === records[done.value.results.indexOf(r)].argsHash]), [['c1', true, 'ok', true], ['c2', false, 'error', true], ['c3', true, 'ok', true]]);
+    assert.equal(done.value.results[1].errorCode, 'NOT_FOUND');
+    assert.ok(!JSON.stringify(events).includes('sk-SECRET-VALUE'), 'no SSE event leaks the raw key');
+  } finally { unregisterTool(probe.id); }
 });

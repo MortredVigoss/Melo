@@ -202,8 +202,101 @@ export const syncSchema = {
         },
         "model": {
           "$ref": "#/$defs/model"
+        },
+        "compact": {
+          "$ref": "#/$defs/compact"
         }
       }
+    },
+    "compactCard": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-minUtf16Length": 1,
+          "x-maxUtf16Length": 200
+        },
+        "title": {
+          "type": "string",
+          "x-maxUtf16Length": 200
+        },
+        "summary": {
+          "type": "string",
+          "x-maxUtf16Length": 2048
+        },
+        "fromMessageId": {
+          "type": "string",
+          "x-maxUtf16Length": 180
+        },
+        "toMessageId": {
+          "type": "string",
+          "x-maxUtf16Length": 180
+        },
+        "messageCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "at": {
+          "$ref": "#/$defs/date"
+        },
+        "source": {
+          "enum": [
+            "cloud",
+            "local",
+            "rule"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "summary",
+        "source"
+      ]
+    },
+    "compact": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "boundaryMessageId": {
+          "$ref": "#/$defs/messageId"
+        },
+        "compactedCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "enum": [
+            "cloud",
+            "local",
+            "rule"
+          ]
+        },
+        "at": {
+          "$ref": "#/$defs/date"
+        },
+        "summary": {
+          "type": "string",
+          "x-maxUtf16Length": 8192
+        },
+        "cards": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/compactCard"
+          }
+        }
+      },
+      "required": [
+        "boundaryMessageId",
+        "compactedCount",
+        "source",
+        "at",
+        "summary"
+      ]
     },
     "project": {
       "type": "object",
@@ -624,6 +717,23 @@ export const syncSchema = {
           "type": "string",
           "x-minUtf16Length": 1,
           "x-maxUtf16Length": 180
+        },
+        "section": {
+          "enum": [
+            "goal",
+            "convention",
+            "decision",
+            "progress",
+            "todo",
+            "file"
+          ]
+        },
+        "bookStatus": {
+          "enum": [
+            "auto",
+            "confirmed",
+            "user"
+          ]
         }
       },
       "required": [

@@ -21,10 +21,14 @@ export function narrowCapabilityScope(scope,{capabilities,allowedToolIds,agentId
     : scope.allowedToolIds;
   return freezeScope({...scope,agentId:agentId || scope.agentId,source:source || scope.source,capabilities:narrowed,legacy:scope.legacy && !narrowed,allowedToolIds:ids});
 }
-export function scopeAllowsTool(scope,id,args) {
-  return !!scope && (!scope.allowedToolIds || scope.allowedToolIds.includes(id)) &&
-    (scope.legacy===true || !!scope.capabilities && toolCapabilityAllowed(id,scope.capabilities,args));
+// `tool` is either a tool id (legacy id tables decide) or the tool object, whose
+// self-declared `capability` takes precedence over the tables.
+export function scopeAllowsTool(scope,tool,args) {
+  const id=typeof tool==='string'?tool:tool?.id;
+  const object=typeof tool==='object'&&tool?tool:undefined;
+  return !!scope && typeof id==='string' && (!scope.allowedToolIds || scope.allowedToolIds.includes(id)) &&
+    (scope.legacy===true || !!scope.capabilities && toolCapabilityAllowed(id,scope.capabilities,args,object));
 }
-export const toolsForCapabilityScope=(tools,scope)=>scope?filterToolsByCapabilities(tools,scope.capabilities).filter(t=>scopeAllowsTool(scope,t.id)):[];
+export const toolsForCapabilityScope=(tools,scope)=>scope?filterToolsByCapabilities(tools,scope.capabilities).filter(t=>scopeAllowsTool(scope,t)):[];
 export const nativeFeaturesForScope=scope=>({nativeWebSearchEnabled:scopeAllowsTool(scope,'web_search'),nativeImageGenerationEnabled:scopeAllowsTool(scope,'image',{action:'generate'})});
 export const missingCapabilityScope=()=>({ok:false,error:'CAPABILITY_SCOPE_MISSING',output:'Cannot determine the executing Agent capability scope.',meta:{denied:true,executionStarted:false}});

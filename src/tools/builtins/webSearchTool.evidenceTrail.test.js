@@ -507,7 +507,7 @@ test('evidenceTrail: aborted return preserves backward-compat meta.intent and me
     { signal: ac.signal },
   );
   assert.equal(result.ok, false);
-  assert.equal(result.error, 'SEARCH_FAILED');
+  assert.equal(result.error, 'ABORTED');
   assert.ok(result.meta?.timings);
   assert.equal(result.meta.timings.cacheHit, false);
   assert.ok(result.meta?.intent);

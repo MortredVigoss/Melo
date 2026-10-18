@@ -480,19 +480,20 @@ function storeEmbedding(memoryId, searchText, embedding, modelId = null) {
 }
 
 /** KNN query against vec_memories. Returns [{memory_id, distance}] */
-function knnRecall(queryEmbedding, limit, { namespaces = [], kinds = [] } = {}) {
+function knnRecall(queryEmbedding, limit, { namespaces = [], kinds = [], audience = DESKTOP_MEMORY_AUDIENCE } = {}) {
   if (!_vecLoaded || !queryEmbedding) return [];
   try {
     if (!namespaces.length) return [];
     const buf = Buffer.from(queryEmbedding.buffer, queryEmbedding.byteOffset, queryEmbedding.byteLength);
     const kindClause = kinds.length ? ` AND kind IN (${kinds.map(() => '?').join(', ')})` : '';
+    const audienceClause = memoryAudienceSQL(audience);
     return getDb().prepare(`
       SELECT memory_id, distance
       FROM vec_memories
       WHERE embedding MATCH ?
         AND memory_id IN (
           SELECT id FROM memories
-          WHERE namespace IN (${namespaces.map(() => '?').join(', ')})${kindClause} AND ${activeMemorySQL()}
+          WHERE namespace IN (${namespaces.map(() => '?').join(', ')})${kindClause} AND ${activeMemorySQL()}${audienceClause ? ` AND ${audienceClause}` : ''}
         )
       ORDER BY distance
       LIMIT ?
@@ -666,16 +667,40 @@ const activeMemorySQL = (prefix = '') => {
     `COALESCE(json_extract(${meta}, '$.${key}'), '') IN ('', 0)`).join(' AND ') +
     ` AND (json_extract(${meta}, '$.validTo') IS NULL OR julianday(json_extract(${meta}, '$.validTo')) IS NULL OR julianday(json_extract(${meta}, '$.validTo')) > julianday('now'))`;
 };
-function buildRecallQuery({ namespaces = [], kinds = [], allowGlobal = false } = {}) {
+// ─── Remote audience boundary (design 2026-10-17 §3.4, M7) ───────────────────
+//
+// Desktop-only rows carry `metadata.audience='local'` (session facts, project
+// memory book, personal profile, agent self-corrections from local chats).
+// Rows written by the snapshot builder for prompts / frames / scenes / tasks /
+// approvals carry no audience at all; for the desktop-origin namespaces
+// (`project:`, `user:local`, `agent:`) a missing audience is treated as local,
+// while `chat:` / `speaker:` rows of the remote conversation itself stay
+// visible. The predicate lives at the same layer as forgotten/validTo so every
+// recall path (FTS, LIKE fallback, ANN subquery, group counts) applies it and
+// a new kind cannot leak merely because a JS filter forgot about it.
+export const DESKTOP_MEMORY_AUDIENCE = 'desktop';
+export function normalizeMemoryAudience(audience) {
+  const value = String(audience || '').trim().toLowerCase();
+  return value && value !== DESKTOP_MEMORY_AUDIENCE && value !== 'local' ? value : DESKTOP_MEMORY_AUDIENCE;
+}
+export function memoryAudienceSQL(audience, prefix = '') {
+  if (normalizeMemoryAudience(audience) === DESKTOP_MEMORY_AUDIENCE) return null;
+  const aud = `COALESCE(json_extract(${prefix}metadata_json, '$.audience'), '')`;
+  const ns = `${prefix}namespace`;
+  return `(${aud} <> 'local' AND (${aud} <> '' OR (${ns} NOT LIKE 'project:%' AND ${ns} NOT LIKE 'agent:%' AND ${ns} <> 'user:local')))`;
+}
+function buildRecallQuery({ namespaces = [], kinds = [], allowGlobal = false, audience = DESKTOP_MEMORY_AUDIENCE } = {}) {
   const normalizedNamespaces = [...new Set(namespaces.map(value => String(value || '').trim()).filter(Boolean))];
   const normalizedKinds = [...new Set(kinds.map(value => String(value || '').trim()).filter(Boolean))];
   if (!normalizedNamespaces.length && !allowGlobal) return null;
-  return { normalizedNamespaces, normalizedKinds, allowGlobal };
+  return { normalizedNamespaces, normalizedKinds, allowGlobal, audience: normalizeMemoryAudience(audience) };
 }
-function keywordRecallRows(built, query = '', {limit = 64, accept = () => true} = {}) {
+function keywordRecallRows(built, query = '', {limit = 64, accept = () => true, preferHot = false} = {}) {
   if (!built) return [];
   const database = getDb(), {normalizedNamespaces:ns, normalizedKinds:kinds} = built;
   const clauses = [activeMemorySQL('m.')], params = [];
+  const audienceClause = memoryAudienceSQL(built.audience, 'm.');
+  if (audienceClause) clauses.push(audienceClause);
   if (ns.length) { clauses.push(`m.namespace IN (${ns.map(()=>'?').join(',')})`); params.push(...ns); }
   if (kinds.length) { clauses.push(`m.kind IN (${kinds.map(()=>'?').join(',')})`); params.push(...kinds); }
   const columns = 'm.id,m.namespace,m.kind,m.source_id,m.text,m.search_text,m.tokens_estimate,m.created_at,m.updated_at,m.last_used_at,m.metadata_json';
@@ -705,7 +730,18 @@ function keywordRecallRows(built, query = '', {limit = 64, accept = () => true} 
       params.push(...tokens.map(token=>'%'+[...token].map(c=>c.replace(/[\\%_]/g,'\\$&')).join('%')+'%'));
     }
   }
-  return collect(`SELECT ${columns} FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY m.updated_at DESC,m.id LIMIT ? OFFSET ?`,params);
+  // Hot-first ordering (design audit M3): the Hot Attic candidate pool used to
+  // be "the 32 most recently updated rows", so an old pinned decision fell out
+  // of the pool as soon as newer ordinary facts arrived and dreaming's
+  // promotion had no visible effect. With preferHot, rows that are pinned,
+  // marked hot by the sweep, or in an always-hot category come first.
+  const hotOrder = preferHot
+    ? `CASE WHEN json_extract(m.metadata_json,'$.pinned')=1 THEN 0
+            WHEN json_extract(m.metadata_json,'$.category') IN ('correction','decision') THEN 1
+            WHEN json_extract(m.metadata_json,'$.attic')='hot' THEN 2
+            ELSE 3 END,`
+    : '';
+  return collect(`SELECT ${columns} FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY ${hotOrder}m.updated_at DESC,m.id LIMIT ? OFFSET ?`,params);
 }
 
 // Exported for unit tests — these are pure and deterministic.
@@ -1114,7 +1150,9 @@ function isSnapshotProtectedIncrementalMemory(row = {}) {
   // upsertMemory(). Snapshot rebuilds are allowed to prune stale state-derived
   // rows, but promoted session facts are intentionally independent of any
   // single chat snapshot and must survive compaction/deletion saves.
-  return row.kind === 'session-fact' && String(row.id || '').startsWith('promoted:');
+  // Project-memory-book rows (`book:…`, design 2B) are written the same way
+  // and must equally survive snapshot rebuilds.
+  return row.kind === 'session-fact' && /^(promoted|book):/.test(String(row.id || ''));
 }
 
 /**
@@ -1272,22 +1310,23 @@ export function getMemoriesWithoutEmbeddings() {
  * get a scoped refill so plentiful prompt rows cannot starve corrections/tasks.
  * Namespace + kind restrictions still apply before each ANN top-K selection.
  */
-export function recallMemoryGroups({groups = [], query = '', queryEmbedding = null, accept = () => true} = {}) {
+export function recallMemoryGroups({groups = [], query = '', queryEmbedding = null, accept = () => true, audience = DESKTOP_MEMORY_AUDIENCE} = {}) {
   const active = groups.filter(g => g.namespaces?.length && g.kinds?.length && g.limit > 0);
   if (!active.length) return new Map();
   const namespaces = [...new Set(active.flatMap(g=>g.namespaces))];
   const kinds = [...new Set(active.flatMap(g=>g.kinds))];
   const matches = (row,g) => g.namespaces.includes(row.namespace) && g.kinds.includes(row.kind) && (!g.accept || g.accept(row));
-  const pool = recallMemories({namespaces,kinds,query,queryEmbedding,
+  const pool = recallMemories({namespaces,kinds,query,queryEmbedding,audience,
     limit: Math.min(512,active.reduce((sum,g)=>sum+g.limit,0)*4),
     accept: row => accept(row) && active.some(g=>matches(row,g))});
+  const audienceClause = memoryAudienceSQL(audience);
   const counts = getDb().prepare(`SELECT namespace,kind,COUNT(*) AS n FROM memories
     WHERE namespace IN (${namespaces.map(()=>'?').join(',')}) AND kind IN (${kinds.map(()=>'?').join(',')})
-      AND ${activeMemorySQL()} GROUP BY namespace,kind`).all(...namespaces,...kinds);
+      AND ${activeMemorySQL()}${audienceClause ? ` AND ${audienceClause}` : ''} GROUP BY namespace,kind`).all(...namespaces,...kinds);
   return new Map(active.map(group => {
     let rows = pool.filter(row=>matches(row,group)).slice(0,group.limit);
     const count = counts.filter(row=>group.namespaces.includes(row.namespace) && group.kinds.includes(row.kind)).reduce((sum,row)=>sum+row.n,0);
-    if (rows.length < Math.min(group.limit,count)) rows = recallMemories({...group,query,queryEmbedding,accept:row=>accept(row)&&matches(row,group)});
+    if (rows.length < Math.min(group.limit,count)) rows = recallMemories({...group,query,queryEmbedding,audience,accept:row=>accept(row)&&matches(row,group)});
     return [group.id,rows];
   }));
 }
@@ -1300,8 +1339,10 @@ export function recallMemories({
   queryEmbedding = null,
   includeEmbedding = false,
   accept = () => true,
+  preferHot = false,
+  audience = DESKTOP_MEMORY_AUDIENCE,
 } = {}) {
-  const builtQuery = buildRecallQuery({ namespaces, kinds, allowGlobal: false });
+  const builtQuery = buildRecallQuery({ namespaces, kinds, allowGlobal: false, audience });
   if (!builtQuery) {
     return [];
   }
@@ -1313,7 +1354,7 @@ export function recallMemories({
   // valid candidates, even when thousands of prompt rows are more similar.
   if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knnResults = knnRecall(queryEmbedding, lim * 8, {namespaces:builtQuery.normalizedNamespaces,kinds:builtQuery.normalizedKinds});
+      const knnResults = knnRecall(queryEmbedding, lim * 8, {namespaces:builtQuery.normalizedNamespaces,kinds:builtQuery.normalizedKinds,audience:builtQuery.audience});
       if (knnResults.length > 0) {
         const ids = knnResults.map(r => r.memory_id);
         const placeholders = ids.map(() => '?').join(', ');
@@ -1326,12 +1367,13 @@ export function recallMemories({
         const kindClause = normalizedKinds.length
           ? `AND kind IN (${normalizedKinds.map(() => '?').join(', ')})`
           : '';
+        const audienceClause = memoryAudienceSQL(builtQuery.audience);
 
         const rows = database.prepare(`
           SELECT id, namespace, kind, source_id, text, search_text, embedding,
                  tokens_estimate, created_at, updated_at, last_used_at, metadata_json
           FROM memories
-          WHERE id IN (${placeholders}) ${nsClause} ${kindClause}
+          WHERE id IN (${placeholders}) ${nsClause} ${kindClause}${audienceClause ? ` AND ${audienceClause}` : ''}
         `).all(...ids, ...normalizedNs, ...normalizedKinds);
 
         if (rows.length > 0) {
@@ -1409,7 +1451,7 @@ export function recallMemories({
   // effectively dead.  Opt-in `includeEmbedding: true` re-fetches just the
   // embedding BLOB by id for the final scored slice, so callers that need
   // it pay the cost, everyone else stays on the lean path.
-  const rows = keywordRecallRows(builtQuery,query,{limit:lim,accept});
+  const rows = keywordRecallRows(builtQuery,query,{limit:lim,accept,preferHot});
 
   if (includeEmbedding && rows.length > 0) {
     const ids = rows.map(r => r.id);
@@ -1750,6 +1792,9 @@ export function validateContext(
  * @param {boolean}        [options.validate]     run Stage 4 (default true)
  * @param {boolean}        [options.dropContested] Stage-4 filter mode
  *                                                 (default false — annotate)
+ * @param {string}         [options.audience]     'desktop' (default) sees every
+ *                                                 row; a remote channel name
+ *                                                 drops audience=local rows in SQL
  * @returns {{ scenes: Array, frames: Array, contents: Array, conflicts: Array }}
  */
 export function recallMemoriesTiered({
@@ -1761,11 +1806,15 @@ export function recallMemoriesTiered({
   validate = true,
   dropContested = false,
   accept = () => true,
+  audience = DESKTOP_MEMORY_AUDIENCE,
 } = {}) {
   const { scenes: sLim = 3, frames: fLim = 8, contents: cLim = 12 } = limits;
   const database = getDb();
   const now = Date.now();
   const normalizedNs = namespaces.map(n => String(n || '').trim()).filter(Boolean);
+  const recallAudience = normalizeMemoryAudience(audience);
+  const audienceClause = memoryAudienceSQL(recallAudience);
+  const audienceSQL = audienceClause ? ` AND ${audienceClause}` : '';
 
   // ─── Helper: attic filter ───────────────────────────────────────────────
   const atticOk = (row) => {
@@ -1777,7 +1826,7 @@ export function recallMemoriesTiered({
   if (!normalizedNs.length) return {scenes:[],frames:[],contents:[],conflicts:[]};
   const mergeTier = (semantic, kinds, limit) => {
     if (!String(query).trim() && semantic.length) return semantic.filter(row=>accept(materializeMemoryRows([row])[0])).slice(0,limit);
-    const built = buildRecallQuery({namespaces:normalizedNs,kinds,allowGlobal:false});
+    const built = buildRecallQuery({namespaces:normalizedNs,kinds,allowGlobal:false,audience:recallAudience});
     const lexical=keywordRecallRows(built,query,{limit:limit*4,accept:row=>atticOk(row) && accept(row)});
     const fused=new Map();
     semantic.filter(row=>accept(materializeMemoryRows([row])[0])).forEach((row,i)=>fused.set(row.id,{...row,score:1/(61+i)}));
@@ -1793,14 +1842,14 @@ export function recallMemoriesTiered({
   let scenes = [];
   if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, sLim * 6, {namespaces:normalizedNs,kinds:['scene']});
+      const knn = knnRecall(queryEmbedding, sLim * 6, {namespaces:normalizedNs,kinds:['scene'],audience:recallAudience});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
         : '';
       const sceneRows = fetchByIds(
         ids,
-        `AND kind = 'scene' ${nsClause}`,
+        `AND kind = 'scene' ${nsClause}${audienceSQL}`,
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
@@ -1818,14 +1867,14 @@ export function recallMemoriesTiered({
   let frames = [];
   if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, fLim * 6, {namespaces:normalizedNs,kinds:['frame']});
+      const knn = knnRecall(queryEmbedding, fLim * 6, {namespaces:normalizedNs,kinds:['frame'],audience:recallAudience});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
         : '';
       const frameRows = fetchByIds(
         ids,
-        `AND kind = 'frame' ${nsClause}`,
+        `AND kind = 'frame' ${nsClause}${audienceSQL}`,
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
@@ -1853,14 +1902,14 @@ export function recallMemoriesTiered({
   let contents = [];
   if (queryEmbedding && _vecLoaded && database.prepare("SELECT value FROM _meta WHERE key='embedding_repair_required'").get()?.value !== '1') {
     try {
-      const knn = knnRecall(queryEmbedding, cLim * 6, {namespaces:normalizedNs,kinds:['prompt','fact']});
+      const knn = knnRecall(queryEmbedding, cLim * 6, {namespaces:normalizedNs,kinds:['prompt','fact'],audience:recallAudience});
       const ids = knn.map(r => r.memory_id);
       const nsClause = normalizedNs.length
         ? `AND namespace IN (${normalizedNs.map(() => '?').join(', ')})`
         : '';
       const rows = fetchByIds(
         ids,
-        `AND kind IN ('prompt','fact') ${nsClause}`,
+        `AND kind IN ('prompt','fact') ${nsClause}${audienceSQL}`,
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
@@ -2091,6 +2140,22 @@ export function recordMemoryFeedback({ candidates = [], usedIds = [], requestId,
  * @param {string[]} [opts.memoryIds]   if provided, restrict to these ids
  * @param {number}   [opts.windowDays]  default 14
  */
+/**
+ * Negative feedback (design audit M6): the user stopped using a fact. Recorded
+ * as a hit with outcome 'rejected' so dreaming's outcome gate sees it; the
+ * gate reads goodOutcomes = used − rejected.
+ */
+export function recordMemoryRejection(memoryId, { requestId = 'user:forget' } = {}) {
+  if (!memoryId) return 0;
+  try {
+    return getDb().prepare(`INSERT INTO memory_hits(memory_id,hit_at,query_hash,rank,request_id,outcome) VALUES(?,?,?,?,?,'rejected')`)
+      .run(String(memoryId), new Date().toISOString(), 'user-feedback', 0, `${requestId}:${Date.now()}`).changes;
+  } catch (err) {
+    debugWarn('memory.feedback', 'recordMemoryRejection failed', err?.message || err);
+    return 0;
+  }
+}
+
 export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
   const database = getDb();
   const sinceIso = new Date(Date.now() - windowDays * 86_400_000).toISOString();
@@ -2102,7 +2167,8 @@ export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
            COUNT(*)                               AS hits,
            COUNT(DISTINCT query_hash)             AS distinctQueries,
            AVG(COALESCE(rank, 0))                 AS avgRank,
-           SUM(CASE WHEN outcome='used' THEN 1 ELSE 0 END) AS goodOutcomes
+           SUM(CASE WHEN outcome='used' THEN 1 WHEN outcome='rejected' THEN -1 ELSE 0 END) AS goodOutcomes,
+           SUM(CASE WHEN outcome='rejected' THEN 1 ELSE 0 END) AS rejectedOutcomes
     FROM memory_hits
     WHERE hit_at >= ?${idClause}
     GROUP BY memory_id
@@ -2677,11 +2743,11 @@ export function notifyMemoryIndexRepaired(home) {
 
 // Stable keyset traversal for maintenance/export. Updating rows must not move
 // them across an OFFSET boundary or silently leave records beyond a UI limit.
-export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, batchSize = 500 } = {}) {
+export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, namespace = null, batchSize = 500 } = {}) {
   let after = '';
-  const query = getDb().prepare(`SELECT * FROM memories WHERE kind = ? AND id > ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ORDER BY id LIMIT ?`);
+  const query = getDb().prepare(`SELECT * FROM memories WHERE kind = ? AND id > ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ${namespace ? 'AND namespace = ?' : ''} ORDER BY id LIMIT ?`);
   for (;;) {
-    const rows = query.all(kind, after, ...(chatId ? [chatId] : []), Math.max(1, Math.min(10000, batchSize)));
+    const rows = query.all(kind, after, ...(chatId ? [chatId] : []), ...(namespace ? [namespace] : []), Math.max(1, Math.min(10000, batchSize)));
     if (!rows.length) return;
     after = rows.at(-1).id;
     yield* materializeMemoryRows(rows);

@@ -39,7 +39,14 @@ export const xlsxTool = {
     'Header row is bold+filled, first row is frozen, and an auto-filter is applied. ' +
     'Omit `path` to auto-save into the chat workspace and receive a displayable URL.',
   category: 'filesystem',
+  // Self-description (tools/tool.js). The only action is a workbook write, so
+  // calls run serially and get a ledger receipt in task mode.
   isConcurrencySafe: true,
+  concurrency: false,
+  capability: 'writeFiles',
+  needsWorkspace: true,
+  uiModule: 'create',
+  inputKeys: ['path', 'title', 'name'],
   requiresPermission: true,
   parametersSchema: {
     type: 'object',

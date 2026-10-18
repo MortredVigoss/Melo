@@ -2,8 +2,10 @@
  * MCP server manager.
  *
  * Manages the lifecycle of MCP server connections defined in user config.
- * Registers discovered tools into the global tool registry with a `mcp:` prefix
- * so they're automatically available to the model's tool loop.
+ * Registers discovered tools into the dedicated MCP registry
+ * (`src/tools/mcpRegistry.js`, design F3) with a `mcp:` prefix; the chat
+ * runner merges them per agent whitelist at prepare time — they are never
+ * placed in the global tool registry.
  *
  * Config shape (stored in melo config under `mcpServers`):
  * {
@@ -21,7 +23,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { McpStdioClient, mcpResultToToolResult } from './client.js';
-import { registerTool, unregisterTool, getTool } from '../tools/registry.js';
+import { registerMcpTool, unregisterMcpServer, getMcpTool, mcpFunctionName } from '../tools/mcpRegistry.js';
 import { getMeloHome } from '../config.js';
 import { formatMcpToolId, isValidMcpServerId } from './toolId.js';
 
@@ -177,11 +179,14 @@ export async function connectMcpServer(serverName, serverConfig) {
       // here.  serverName has already passed isValidMcpServerId
       // above; this is just the canonical writer call.
       const toolId = formatMcpToolId(serverName, mcpTool.name);
-      if (getTool(toolId)) continue; // already registered
+      if (getMcpTool(toolId)) continue; // already registered
 
       const tool = buildMcpTool(serverName, mcpTool, client);
       try {
-        registerTool(tool);
+        // F3 (design 2026-10-17): MCP tools live in their own registry;
+        // the chat runner merges them per agent at prepare time, so the
+        // global registry never exposes them to an unauthorised agent.
+        registerMcpTool(tool);
         _registeredMcpToolIds.add(toolId);
         registered++;
       } catch {
@@ -211,13 +216,12 @@ export function disconnectMcpServer(serverName) {
     _clients.delete(serverName);
   }
 
-  // Unregister all tools belonging to this server
+  // Unregister all tools belonging to this server (mcpRegistry only —
+  // they were never in the global registry).
   const prefix = `mcp:${serverName}:`;
+  try { unregisterMcpServer(serverName); } catch {}
   for (const toolId of [..._registeredMcpToolIds]) {
-    if (toolId.startsWith(prefix)) {
-      try { unregisterTool(toolId); } catch {}
-      _registeredMcpToolIds.delete(toolId);
-    }
+    if (toolId.startsWith(prefix)) _registeredMcpToolIds.delete(toolId);
   }
 }
 
@@ -596,6 +600,9 @@ export function buildMcpTool(serverName, mcpTool, client) {
   return {
     id: toolId,
     name: `${serverName}/${mcpTool.name}`,
+    // Readable wire name for the model (F3); the registry re-derives it on
+    // registration, this is only so unregistered fixtures carry it too.
+    functionName: mcpFunctionName(serverName, mcpTool?.name),
     description: mcpTool.description || `MCP tool from ${serverName}`,
     category: 'mcp',
     parametersSchema,

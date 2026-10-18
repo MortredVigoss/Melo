@@ -93,9 +93,9 @@ struct LocalVoiceSettings: View {
                 UserDefaults.standard.set(value.language, forKey: "melo.voiceLanguage"); UserDefaults.standard.set(value.autoSpeak, forKey: "melo.autoSpeak")
                 if !value.autoSpeak { LocalDeviceServices.shared.stopSpeech() }; return value
             }) { value, _ in
-                Picker("语音输入语言", selection: value.language) { Text("中文").tag("zh-CN"); Text("English").tag("en-US"); Text("系统语言").tag("system") }
+                Picker("语音语言（听写与朗读）", selection: value.language) { Text("中文").tag("zh-CN"); Text("English").tag("en-US"); Text("系统语言").tag("system") }
                 Toggle("在前台自动朗读回复", isOn: value.autoSpeak)
-                Text("此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读使用系统语音，不需要麦克风权限；请检查媒体音量及耳机输出。").font(.caption).foregroundStyle(.secondary)
+                Text("此开关仅用于这台 iPhone，点击保存后对新回复生效。朗读只读回复的要点，不读网址、代码和表格；中文回复用中文语音，其余按这里的语言选择。不需要麦克风权限；请检查媒体音量及耳机输出。").font(.caption).foregroundStyle(.secondary)
             }.padding(.top, 16)
             HStack {
                 Button("试听朗读") { device.previewSpeech() }
@@ -191,11 +191,16 @@ import WebKit
     func previewSpeech() { speak("你好，这是 Melo 的朗读试听。你可以用手机媒体音量调整声音。") }
     private func speak(_ text: String) {
         guard UIApplication.shared.applicationState == .active else { return }
-        let plain = ReplyDocument.plainText(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Spoken form (SpeechText): no URLs / markdown / code, long replies
+        // condensed to their conclusions; the voice follows the reply's own
+        // language, then the voice-language preference, then the device.
+        let plain = SpeechText.spoken(from: ReplyDocument.plainText(text)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !plain.isEmpty else { return }
         stopSpeech()
         let utterance = AVSpeechUtterance(string: plain)
-        utterance.voice = AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first)
+        let preference = UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "zh-CN"
+        let language = SpeechText.voiceLanguage(for: plain, preference: preference)
+        utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first)
         currentUtterance = utterance; speechActive = true; speechFailed = false; speechStatus = "正在准备朗读…"
         speaker.speak(utterance)
         startTimeout = Task { [weak self, weak utterance] in

@@ -158,6 +158,15 @@ function clipText(value, max) {
 function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmation = null, persistentAllowed = true }) {
   if (signal?.aborted) return Promise.reject(denyError('File operation aborted.'));
   const context = currentRequestContext() || createRequestContext({ chatId, signal });
+  // Same rule as tools/permissions.js (design audit T5 / F1): with no
+  // approval surface the request can never be answered, so fail now instead
+  // of holding the caller — and the whole polling loop behind it — for the
+  // full timeout. `permissionSurface: 'headless'` opts back into waiting.
+  if (typeof sseEmitter !== 'function' && context?.permissionSurface !== 'headless') {
+    const error = denyError(`File operation "${kind}" needs user approval, but this channel has no approval surface. Ask the user to run it from the Melo desktop app.`);
+    error.code = 'PERMISSION_NO_SURFACE';
+    return Promise.reject(error);
+  }
   const canPersist = persistentAllowed && !payload.sensitive && ((!!payload.realPath && ['read', 'write_new', 'write_overwrite', 'edit'].includes(kind)) || (kind === 'bash' && !!payload.commandTemplate));
   return new Promise((resolveFn, rejectFn) => {
     const requestId = randomUUID();

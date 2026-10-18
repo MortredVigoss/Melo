@@ -391,3 +391,25 @@ test('hydrateChatThreads: restores runtime session memory and compact state from
     await rm(threadsDir, { recursive: true, force: true });
   }
 });
+
+// ─── Design audit D1/D2 (2026-10-17): record projection fields + tool-trace kind ─
+
+test('normalizeChat keeps toolResults.argsHash/durationMs and the tool-trace message kind', () => {
+  const c = normalizeChat({
+    id: 'd1',
+    messages: [
+      { id: 'a', role: 'assistant', content: 'done', toolResults: [
+        { toolCallId: 'c1', toolName: 'file_read', ok: true, argsHash: '0123456789abcdef', durationMs: 42.4 },
+        { toolCallId: 'c2', toolName: 'bash', ok: false, argsHash: 'XYZ', durationMs: 'slow' },
+      ] },
+      { id: 't', role: 'assistant', kind: 'tool-trace', content: '[工具轨迹] …', metadata: { runId: 'r', toolTrace: { status: 'cancelled' } } },
+      { id: 'u', role: 'user', kind: 'something-else', content: 'hi' },
+    ],
+  });
+  assert.deepEqual(c.messages[0].toolResults[0], { toolCallId: 'c1', toolName: 'file_read', ok: true, argsHash: '0123456789abcdef', durationMs: 42 });
+  assert.equal('argsHash' in c.messages[0].toolResults[1], false);
+  assert.equal('durationMs' in c.messages[0].toolResults[1], false);
+  assert.equal(c.messages[1].kind, 'tool-trace');
+  assert.equal(c.messages[1].metadata.toolTrace.status, 'cancelled');
+  assert.equal('kind' in c.messages[2], false, 'unknown kinds are still dropped');
+});

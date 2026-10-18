@@ -16,6 +16,7 @@ import { generateImageViaMinimax } from '../../images/imageGen.js';
 import { saveImageArtifact } from '../../images/imageArtifacts.js';
 import { requestedImageCount } from '../../shared/executionScene.js';
 import { resolveImageBytes, findLatestUserText } from './imageEditFastPath.js';
+import { hydrateAttachments } from '../../media/attachments.js';
 import { detectImageEditIntent, IMAGE_FOLLOW_UP_PATTERN } from './messageBuilder.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
 import { maskQuotedText } from '../../retrieval/requestPolicy.js';
@@ -91,6 +92,9 @@ export async function runImageTask({
 }) {
   if (!task || task.action === 'analyze') return null;
   task = validateImageTask(task);
+  // Reference images may be externalized uploads; resolveImageBytes only
+  // accepts data: URIs, so read them back inline first (no-op when already so).
+  attachments = await hydrateAttachments(attachments, { home });
   const prompt = validateImagePrompt(findLatestUserText(messages));
   const settings = imageSettings(config),
     engine = settings.engine;

@@ -1,3 +1,52 @@
+## 2026-10-18 — 合入主线后继续共享 Core，避免覆盖新工具与记忆链
+
+用户要求先 pull 最新 repo。Codex 暂存 Search WIP，合入 origin/master `84abfa9`；保留双方进度和 Shared Runtime，同时接住主线 Tool records / 三协议 / MCP 隔离 / RunBudget / Memory 更新。
+72 项 Core / Router / Chat / 协议 / MCP / Budget 离线回归通过；首次检查发现冲突解析遗漏导出，已修后重跑。Xcode 项目重新生成保留新 SpeechText 与 SharedAgentCore，未做 Swift 编译。
+本轮只做本地整合，不访问真实模型或安装私人手机；Search WIP 将在合并后恢复继续验证，无 push / git pp。
+
+## 2026-10-18 — iPhone 覆盖安装 0.7.0 (32)
+
+用户要求手机也覆盖安装并把版本升到 0.7 开头。`MELO_IOS_VERSION=0.7.0 MELO_IOS_BUILD=32` 走 `ios/scripts/build-personal.sh` 签名构建（日常门禁已过：3857 JS + 29 Swift 套件，含新增 SpeechTextTests 与日期用例），`devicectl` 对连接中的 Mortred (3) 同包覆盖 `com.melo.iphone.mfpiao`，安装后回读版本 0.7.0 (32)，普通启动 PID 36090。未卸载、未清数据。证据 `.tmp/ios-install-0.7.0/`。本次带上手机侧日期上下文、朗读要点化与语种选择、桌面摘要同步。真机 UI 与真实模型回复未在本轮复验。（Claude）
+
+## 2026-10-18 — 跨午夜“今天”被模型更正、手机朗读语言与内容、工具组激活放宽
+
+用户反馈：前一条回复说“今天…”，过了零点再问别的，模型道歉说上一条错了；手机自动朗读只用系统语言、读完整回复连网址一起读。修复：系统提示的当前日期段加“早先消息按各自时间理解，不要更正/道歉”规则，日期变化时本轮加【日期提示】（`src/services/chat/dateContext.js`，turn 段，不动缓存前缀）；iPhone 指令原本完全没有日期，现在带当前本地日期与同样的规则（`ConversationHistory.dateInstructions/dateChangeNote`）。iPhone 朗读新增 `SpeechText.swift`：按桌面 `extractVoiceSummary` 同一套规则去网址/链接/代码/表格/标记并压缩到要点，语音按回复语种 → 语音语言设置 → 系统语言选择。工具组：浏览器组在 `MELO_CDP_ENABLED=1` 时首轮即可用（恢复 A2 之前的语义），媒体/文档组也按对话里已有的附件和更宽的措辞激活。（Claude）
+
+验证：新增 `dateContext.test.js`、Swift `SpeechTextTests`、`ConversationHistoryTests` 日期用例；iOS 模拟器 Debug 构建通过。工具调用的其余反馈（网页搜索、截图、图片预览具体失败方式）待用户补充复现。Final commit: 见本条提交.
+
+## 2026-10-18 — 让 GitHub 首页和更新记录更容易读懂
+
+用户要求先核对整体代码，再重写产品介绍和 GitHub 简介；公开改动说明只说主要变化，不再堆内部实现细节。Codex 保留英文与兼容性定位，详细技术记录仍保留供接手。
+本次授权包含 GitHub 文档与 About 发布；仅做文档链接、命令及 GitHub Markdown 渲染验证，不重跑产品 gate，不运行 git pp，不改账号数据或安装应用。发布回执保留在本地证据目录。
+
+## 2026-10-17 — 设计方案第三批：工具调用记录与回放、远程 SQL 受众、三协议原生工具、MCP 隔离、手机摘要同步与记忆冲突
+
+第三批收尾用户拍板的方案。工具：每次调用生成一条 ToolInvocationRecord 追加到 `desktop/execution-scenes/<runId>.tools.jsonl`（args 脱敏、hash、模型实际看到的输出 ≤8000），`tool_calls_start`/`tool_calls_done`/持久化 `toolResults` 三个投影同源；取消或失败的轮次把工具轨迹（≤600 字纯文本）写回对话，下一轮与压缩都能看到。协议：`functionCalling` 从 `native` 布尔改为 `protocol ∈ responses|anthropic|chat-completions|xml`，Anthropic 原生 `tools/tool_use/tool_result`（含 cache_control）与 chat-completions `tools/tool_calls`（默认仍走 XML，`toolCalling:'native'` 或 `MELO_CHAT_TOOLS=1` 开启），Responses 请求逐字节不变；每轮工具链以协议中立的 IR 存进 `metadata.toolChain`。MCP 工具改进独立 `mcpRegistry`，按 Agent 白名单在 prepare 时合并，函数名可读 `mcp__server__tool`。记忆：召回 SQL 层带 audience（远程渠道在查询里就看不到 `audience=local` 的项目/个人/Agent 行），corrections 组拆为 agentNotes/sharedFacts 各 4 席。手机：工作区 `conversation` 记录带可选 `compact`（边界、计数、摘要 ≤8KB、卡片），计数大者胜；iOS 只取边界后消息并前置摘要；记忆行冲突状态与「采用桌面版 / 采用手机版」。（Claude）
+
+iOS Swift 改动未在本机编译（无 Xcode 环境），`generate-sync-contract --check` 与 contracts 固件已对齐；需要用户在 Xcode 跑一次。Final commit: 见本条提交.
+
+## 2026-10-17 — 继续以固定范围提供源码统计
+
+用户要求统计；Codex 重跑既定四目录及扩展名范围，结果更新总览，保留旧快照的历史边界。
+仅文件计数和文档快照更新，无产品测试、安装或提交，保留其他线程 WIP。
+
+## 2026-10-17 — 设计方案第二批：账本式话题卡 + read_history、项目记忆本 + 个人档案、RunBudget、附件外置
+
+用户拍板后的第二批（1D、2B、C1、附件外置）。长对话：原文近窗收回到 64k（`MELO_HISTORY_WINDOW_TOKENS` 可调），压缩改为只追加话题卡（`chat.compactCards`，`compactSummary` 变成卡片渲染，旧摘要自动迁成历史卡），新增 `read_history` 原文读回工具与话题原文摘录进 turn 段，工具结论进摘要转录。记忆：项目记忆本（自动行带 `[auto]`、同主题替代、user/confirmed 不被 auto 顶掉、项目页「记忆本」、`POST /api/projects/memory-book`）与个人档案进稳定前缀，协议加可选 `section/bookStatus`。工具：每轮一个 RunBudget（20 min / 400k 输入 / 120 次工具，成员/技能/团队取子预算并回记父预算，超限 `BUDGET_EXHAUSTED`）。存储：用户附件 >4KB 的 data URL 落盘 `desktop/attachments/`，消息只存 `/api/media/attachments/<id>` 与 `storage:'file'`，发给模型前再读回；旧对话首次发消息时惰性迁移。（Claude）
+
+设计承诺：`messages[]` 的顺序与集合永不被话题机制改动（与稳定前缀布局兼容）；卡片只增不改、降级卡才被替换；`read_history` 与 `search_history` 共用执行上下文的受众/项目作用域；记忆本只在事实变化时变，不逐轮召回；附件外置任何写失败都保留内联原样。
+
+沙箱相关套件通过，Mac `npm test` 为合并门禁。Final commit: 见本条提交.
+
+## 2026-10-17 — 工具调用 / 长对话 / 跨线程记忆：设计审计与可选方案
+
+用户要求在修复落地后再审计三条链路的设计并出方案。只读三路扫描 6adc270；不重复 bug 层审计，只评估设计并给可选项，等用户拍板后实施。（Claude）
+主要判断：工具数组逐轮变与结果无统一 envelope 是工具线的根；长对话的首因是"全量存储/回传/渲染"而非窗口大小，原版 1B 重排历史与今天的缓存布局冲突，改推 1D（固定近窗 + 账本式话题卡 + read_history）；跨线程记忆推 2A 剩余 + 2B 项目记忆本/个人档案放稳定前缀，2C 只保留为显式工具。
+
+发现一个今天引入的 bug：`upgradeDegradedCompact` 重摘要未传 `previousSummary`，列入第一批修复。六个待用户决定的问题见文档 §6。
+
+纯文档，未改产品代码。见 `docs/tool-conversation-memory-design-20261017.md`。Final commit: 本条文档提交.
+
 ## 2026-10-17 — 以本机运行和真实入口验证共享，而不只对齐 Schema
 
 Codex 将同源 Core 接到 Node Main 与 Android Chat / Device Probe；20 个 Conformance Fixtures、34 Emulator runtime、115 JVM / Lint / Debug / R8 通过。关闭某个 Chat 不影响其他 isolate，所有测试只用本地 Fixture。

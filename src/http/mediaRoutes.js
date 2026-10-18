@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs';
 import { createRouteRegistry } from './routeRegistry.js';
 import { sendJson } from './transport.js';
 import { saveUpload, uploadPath, uploadSize } from '../media/uploads.js';
+import { attachmentPath, mimeTypeForName } from '../media/attachments.js';
 
 const TYPES = { mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', webm: 'video/webm', mkv: 'video/x-matroska' };
 
@@ -33,6 +34,17 @@ export function createMediaRoutes({ home }) {
         return;
       }
       response.writeHead(200, { 'Content-Type': type, 'Content-Length': size, 'Accept-Ranges': 'bytes' });
+      createReadStream(path).pipe(response);
+    } },
+    // Externalized chat attachments (src/media/attachments.js). Names are
+    // content-stable (<uuid>.<ext>, never rewritten), so the browser may cache
+    // them for as long as it likes.
+    { method: 'GET', id: 'GET /api/media/attachments/:name', match: url => url.pathname.startsWith('/api/media/attachments/'), auth: 'local-read', handler: async ({ response, url }) => {
+      const path = attachmentPath(url.pathname, home);
+      let size;
+      try { size = path ? await uploadSize(path) : null; } catch { size = null; }
+      if (!path || size === null) { sendJson(response, 404, { error: '附件不存在。' }); return; }
+      response.writeHead(200, { 'Content-Type': mimeTypeForName(path), 'Content-Length': size, 'Cache-Control': 'private, max-age=31536000, immutable' });
       createReadStream(path).pipe(response);
     } },
   ]);

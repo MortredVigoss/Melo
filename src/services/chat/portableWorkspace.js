@@ -3,7 +3,8 @@ import { encodeV1Persona, decodeV1Persona } from '../../../mobile-sync/agentComp
 import { withoutDeletedChatContext } from '../../../mobile-sync/protocol.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { portableAgent, portableValue, portableModel, portableScene, putWorkspace, validateWorkspace, stableJSON, mergeWorkspaces } from '../../../mobile-sync/workspaceProtocol.js';
+import { portableAgent, portableValue, portableModel, portableScene, putWorkspace, validateWorkspace, stableJSON, mergeWorkspaces, portableCompact, preferCompact, compactAdvances, COMPACT_SUMMARY_LIMIT, COMPACT_CARD_SUMMARY_LIMIT, COMPACT_CARDS_LIMIT } from '../../../mobile-sync/workspaceProtocol.js';
+import { normalizeCompactCards } from '../../memory/compactLedger.js';
 import { effectiveAgentProfile, normalizeAgentProfile } from '../../state/agentProfiles.js';
 import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 import { createExecutionScene } from '../../shared/executionScene.js';
@@ -56,6 +57,55 @@ export function importModelSelection(value, config) {
   if(config.authMode===model.authMode && (model.authMode==='codex'||connectionBase(config.baseUrl)===connectionBase(model.baseURL)) && (config.apiProtocol || 'chat-completions')===model.apiProtocol) return {profileId:'',model:model.model,authMode:config.authMode,baseUrl:config.baseUrl,portable:model};
   return {profileId:'unconnected-sync',model:model.model,authMode:model.authMode,baseUrl:model.baseURL,portable:model};
 }
+// Desktop compact state → `conversation.compact` (design 2026-10-17 手机对齐).
+// Desktop is the primary summariser; the previous synced record is kept when
+// it is ahead (a phone-side local summary the desktop has not applied yet).
+const clip = (value, limit) => {
+  const text = typeof value === 'string' ? value : '';
+  if (text.length <= limit) return text;
+  // Never split a surrogate pair: the phone decodes JSON strictly.
+  const code = text.charCodeAt(limit - 1);
+  return text.slice(0, code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit);
+};
+export function exportCompact(chat, previous = null) {
+  const count = Number(chat?.compactedMessageCount) || 0;
+  const boundary = typeof chat?.compactBoundaryMessageId === 'string' ? chat.compactBoundaryMessageId : '';
+  let current = null;
+  if (count > 0 && boundary && chat.messages?.some(message => message.id === boundary)) {
+    const cards = normalizeCompactCards(chat.compactCards).slice(-COMPACT_CARDS_LIMIT).map(card => ({
+      id: card.id, title: clip(card.title, 200), summary: clip(card.summary, COMPACT_CARD_SUMMARY_LIMIT),
+      fromMessageId: card.fromMessageId, toMessageId: card.toMessageId, messageCount: card.messageCount, at: card.at, source: card.source,
+    }));
+    try {
+      current = portableCompact({
+        boundaryMessageId: boundary, compactedCount: count,
+        source: ['cloud','local','rule'].includes(chat.compactSummarySource) ? chat.compactSummarySource : 'cloud',
+        at: Number.isFinite(Date.parse(chat.compactedAt)) ? chat.compactedAt : new Date(0).toISOString(),
+        summary: clip(chat.compactSummary, COMPACT_SUMMARY_LIMIT), cards,
+      });
+    } catch { current = null; }
+  }
+  return preferCompact(previous || null, current);
+}
+// Incoming compact → chat fields, only when it advances (larger count, or a
+// later `at` at the same count). The caller runs inside the state update, so
+// the assignment is persisted with the rest of the import.
+export function applyCompact(chat, incoming) {
+  if (!chat || !incoming) return false;
+  const current = exportCompact(chat);
+  if (!compactAdvances(current, incoming)) return false;
+  if (!chat.messages?.some(message => message.id === incoming.boundaryMessageId)) return false;
+  const cards = normalizeCompactCards(incoming.cards);
+  chat.compactBoundaryMessageId = incoming.boundaryMessageId;
+  chat.compactedMessageCount = incoming.compactedCount;
+  chat.compactSummary = incoming.summary;
+  chat.compactSummarySource = incoming.source;
+  chat.compactedAt = incoming.at;
+  chat.compactCards = cards;
+  chat.compactFailures = 0;
+  chat.compactUpgradeAttempts = 0;
+  return true;
+}
 export function refreshPortableWorkspace(state,{config={},scenes=new Map()}={}) {
   const device=state.mobileWorkspaceDevice ||= randomUUID();
   const workspace=validateWorkspace(withoutDeletedChatContext(state.mobileWorkspaceSync, state.mobileDeletedChats)) || {version:1,records:[]};
@@ -103,7 +153,7 @@ export function refreshPortableWorkspace(state,{config={},scenes=new Map()}={}) 
   }
   for(const chat of state.chats.filter(c=>!c.externalThreadKey)) {
     if (unavailableAgents.has(chat.agentId || 'main') || unavailableProjects.has(chat.projectId)) hold('conversation',chat.id,chat.title);
-    else put('conversation',chat.id,{agentId:chat.agentId || 'main',projectId:chat.projectId,knowledgeIds:chat.contextArtifactIds,model:exportModelSelection(chat.modelSelection,config)});
+    else put('conversation',chat.id,{agentId:chat.agentId || 'main',projectId:chat.projectId,knowledgeIds:chat.contextArtifactIds,model:exportModelSelection(chat.modelSelection,config),compact:exportCompact(chat,previousValue(state,'conversation',chat.id)?.compact)});
     for(const message of chat.messages.filter(m=>m.role==='assistant'&&!m.pending)) {
       const previous = workspace.records.find(r => r.kind === 'message' && r.id === message.id);
       const preserved = previous?.versions.length === 1 ? previous.versions[0].value.scene : null;
@@ -162,6 +212,7 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
     if(r.kind==='conversation') {
       const chat=state.chats.find(c=>c.id===r.id&&!c.externalThreadKey);if(!chat)continue;
       Object.assign(chat,{agentId:v.agentId,projectId:v.projectId,contextArtifactIds:v.knowledgeIds,modelSelection:importModelSelection(v.model,config)});
+      if(v.compact)applyCompact(chat,v.compact);
     }
     if(r.kind==='message') {
       const chat=state.chats.find(c=>c.id===v.chatId&&!c.externalThreadKey),message=chat?.messages.find(m=>m.id===r.id&&m.role==='assistant');if(!message)continue;

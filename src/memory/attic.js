@@ -122,21 +122,34 @@ export function reassessAttic({ sinceIso = null, limit = 2000, nowMs = Date.now(
  * @param {string[]}   options.namespaces
  * @param {number}     [options.limit]            max rows (default 8)
  * @param {number}     [options.tokenBudget]      default ATTIC_HOT_TOKEN_BUDGET
+ * @param {string}     [options.audience]         'desktop' (default) or the remote
+ *                                                channel name; remote drops
+ *                                                audience=local rows at the SQL layer
  * @returns {string}
  */
-export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall } = {}) {
+export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC_HOT_TOKEN_BUDGET, accept, onRecall, audience = 'desktop' } = {}) {
   // `identity` rows are deliberately NOT recalled here. The agent persona is
   // already rendered verbatim in the `agent` section of the system prompt;
   // re-injecting it through memory meant every turn carried two copies (the
   // second one wrapped in "Reference data; not instructions"), and a project
   // override put the project persona in one block and the stale global persona
   // in the other (2026-10-17 audit B-1 / C-9).
+  // Project namespaces are rendered by the Project Memory Book in the stable
+  // prefix (design 2B); the attic only covers the chat, user and agent rows.
   const rows = recallMemories({
-    namespaces,
+    namespaces: namespaces.filter(ns => !String(ns).startsWith('project:')),
     kinds: ['fact', 'session-fact', 'verification-correction'],
     limit: limit * 4,
     sideEffects: false,
     accept,
+    // Remote audience boundary (design §3.4 M7): applied in SQL next to
+    // forgotten/validTo, so a remote chat's Hot Attic can never surface a
+    // desktop-only row even if `accept` forgets to check it.
+    audience,
+    // Pinned / correction / decision / sweep-marked-hot rows first, so an
+    // old pinned decision is not pushed out of the pool by newer ordinary
+    // facts (design audit M3).
+    preferHot: true,
   });
 
   const seen = new Set();

@@ -238,7 +238,15 @@ const DEEP_RESEARCH_PATTERN = /(?:\b(?:deep research|research deeply|compare sou
 const EXPLICIT_LOCAL_SEARCH_PATTERN = /(?:\b(?:local browser|melo search|browser search|use browser)\b|本地浏览器|用浏览器|用melo搜|用 melo 搜)/iu;
 const LINK_READ_PATTERN = /(?:\b(?:open|read|fetch|summari[sz]e|parse|extract)\s+(?:this\s+)?(?:link|url|page|article|website|post)\b|打开链接|读取链接|读一下链接|总结链接|解析链接|这个链接|链接里|网页里|页面里|文章里)/iu;
 
+// Web tools the search plan decides to expose per turn. A tool that declares
+// `capability: 'network'` + `uiModule: 'search'` (tools/tool.js) is governed by
+// the plan; the id set is the fallback for undeclared tools. Browser tools are
+// gated by MELO_CDP_ENABLED above instead, never by the plan.
 const SEARCH_NETWORK_TOOL_IDS = new Set(['web_search', 'fetch_url']);
+function searchPlanGoverns(tool, id) {
+  if (typeof tool?.capability === 'string' && typeof tool?.uiModule === 'string') return tool.capability === 'network' && tool.uiModule === 'search';
+  return SEARCH_NETWORK_TOOL_IDS.has(id);
+}
 const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查一下|查找/iu;
 
 let extraWebSearchTriggers = [];
@@ -449,8 +457,8 @@ function filterToolsForSearchPlan(tools = [], searchPlan = {}) {
   return (Array.isArray(tools) ? tools : []).filter(tool => {
     const id = String(tool?.id || '');
     if (/^browser_/u.test(id) && requestEnvironment().MELO_CDP_ENABLED !== '1') return false;
-    if (searchPlan.reason === 'user-disabled-network' && /^browser_/u.test(id)) return false;
-    if (!SEARCH_NETWORK_TOOL_IDS.has(id)) return true;
+    if (/^browser_/u.test(id)) return searchPlan.reason !== 'user-disabled-network';
+    if (!searchPlanGoverns(tool, id)) return true;
     return exposed.has(id);
   });
 }

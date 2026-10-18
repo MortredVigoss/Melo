@@ -127,6 +127,13 @@ export function normalizeMessageAttachments(attachments) {
         mimeType: typeof attachment?.mimeType === 'string' ? attachment.mimeType : '',
         fileName: typeof attachment?.fileName === 'string' ? attachment.fileName : '',
         sizeLabel: typeof attachment?.sizeLabel === 'string' ? attachment.sizeLabel : '',
+        // Externalized attachments (src/media/attachments.js) record where the
+        // bytes live; the keys only appear when set so inline attachments keep
+        // their historical shape.
+        ...(attachment?.storage === 'file' ? { storage: 'file' } : {}),
+        ...(Number.isFinite(Number(attachment?.byteSize)) && Number(attachment.byteSize) > 0
+          ? { byteSize: Number(attachment.byteSize) }
+          : {}),
       };
     })
     .filter(Boolean)

@@ -18,6 +18,13 @@ export function functionName(toolId) {
   return `melo_${toolId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42)}_${suffix}`;
 }
 
+// Wire name for a tool: MCP tools carry a readable `functionName`
+// (`mcp__server__tool`, see tools/mcpRegistry.js); everything else derives
+// it from the id.
+function wireName(tool) {
+  return /^[a-zA-Z0-9_-]{1,64}$/.test(tool?.functionName || '') ? tool.functionName : functionName(tool.id);
+}
+
 function nullable(schema) {
   if (schema.type === 'null' || schema.type?.includes?.('null')) return schema;
   return { anyOf: [schema, { type: 'null' }] };
@@ -141,19 +148,26 @@ export function compileFunctionTool(tool) {
   }
   return {
     schemaError: compiled.validationError || null,
-    definition: { type: 'function', name: functionName(tool.id), description: tool.description,
+    definition: { type: 'function', name: wireName(tool), description: tool.description,
       parameters: compiled.parameters, strict: compiled.strict },
-    parse(raw) {
+    // Protocol adapter (E1): Anthropic and chat-completions providers do not
+    // enforce strict mode, so they receive the original schema and their
+    // arguments are validated against it only (`parse(raw, { strict: false })`).
+    looseDefinition: { type: 'function', name: wireName(tool), description: tool.description,
+      parameters: structuredClone(schema), strict: false },
+    parse(raw, { strict = true } = {}) {
       let args;
       try {
         if (typeof raw !== 'string' || raw.length > 256 * 1024) throw new Error('Invalid argument payload');
         args = JSON.parse(raw);
         if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Expected an object');
         checkDepth(args);
-        if (compiled.validateWire && !compiled.validateWire(args)) {
+        if (strict && compiled.validateWire && !compiled.validateWire(args)) {
           return { error: 'INVALID_TOOL_ARGUMENTS', output: 'Arguments do not match the supplied function schema; supply every declared field, using null for omitted optional values.' };
         }
-        if (compiled.strict) args = restoreOptionalFields(args, schema, schema);
+        // Loose mode also drops `null` sent for optional non-nullable fields
+        // (models trained on strict schemas keep doing that).
+        if ((strict && compiled.strict) || !strict) args = restoreOptionalFields(args, schema, schema);
       } catch {
         return { error: 'INVALID_TOOL_ARGUMENTS', output: 'Tool arguments must be a complete JSON object within the size and nesting limits.' };
       }
