@@ -23,8 +23,9 @@ class SharedAgentCoreTest {
                 val row = fixture.jsonObject
                 val actual = runtime.evaluate(row.getValue("input").jsonObject)
                 assertEquals(row.getValue("name").jsonPrimitive.content, row["ok"], actual["ok"])
-                val value = actual[if (actual["ok"]?.jsonPrimitive?.boolean == true) "value" else "error"]!!.jsonObject
-                for ((key, expected) in row.getValue("expected").jsonObject) assertEquals("${row["name"]}: $key", expected, value[key])
+                val value = actual[if (actual["ok"]?.jsonPrimitive?.boolean == true) "value" else "error"]!!
+                if (row.getValue("expected") is JsonArray) assertEquals(row["name"].toString(), row["expected"], value)
+                else for ((key, expected) in row.getValue("expected").jsonObject) assertEquals("${row["name"]}: $key", expected, value.jsonObject[key])
             }
         }
     }

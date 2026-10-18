@@ -14,8 +14,8 @@ android {
         applicationId = "com.melo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.5.1"
+        versionCode = 14
+        versionName = "0.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

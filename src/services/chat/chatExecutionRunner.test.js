@@ -442,7 +442,7 @@ function fixtureNonCodexConfig() {
   return { authMode: 'api-key', apiKey: 'sk-stub', baseUrl: '', model: 'gpt-4' };
 }
 
-async function runForRouteFixture({ latestUserMessage, config }) {
+async function runForRouteFixture({ latestUserMessage, config, searchCapability }) {
   const state = fixtureState();
   const chat = fixtureChat({ mode: 'chat' });
   state.chats = [chat];
@@ -456,6 +456,7 @@ async function runForRouteFixture({ latestUserMessage, config }) {
     skills: [],
     latestUserMessage,
     agentId: 'main',
+    _dependencies: { searchCapability },
   });
 }
 
@@ -466,6 +467,7 @@ test('search routing — codex-native: native web_search enabled, fetch_url not 
   const result = await runForRouteFixture({
     latestUserMessage: '帮我查一下今天墨尔本天气',
     config: fixtureCodexConfig(),
+    searchCapability: { status: 'verified' },
   });
 
   assert.equal(result.searchPlan?.route, 'codex-native');
@@ -484,24 +486,24 @@ test('search routing — codex-native: native web_search enabled, fetch_url not 
   assert.equal(visible.has('fetch_url'), true, 'fetch_url stays in the stable set on codex-native route');
 });
 
-test('search routing — melo-web: native web_search disabled, both tools dispatched', async () => {
+test('search routing — configured HTTP backend handles deep research without browser fallback', async () => {
   // Same canonical message as searchRouter.test.js:60 — DEEP_RESEARCH_PATTERN
   // hits ("深度" / "多来源"), so the route forces local Melo web_search even
   // under codex auth.
   const result = await runForRouteFixture({
     latestUserMessage: '帮我做一个多来源深度调研，比较这几个产品',
-    config: fixtureCodexConfig(),
+    config: { ...fixtureCodexConfig(), agentRuntime: { search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } } },
   });
 
   assert.equal(result.searchPlan?.route, 'melo-web');
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(
     [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
-    ['fetch_url', 'web_search'],
+    ['web_search'],
   );
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('web_search'), true, 'web_search must be dispatched on melo-web route');
-  assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on melo-web route');
+  assert.equal(visible.has('fetch_url'), true, 'stable definitions; the turn permit still requires a requested URL');
 });
 
 test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_search hidden', async () => {
@@ -516,10 +518,10 @@ test('search routing — fetch-url: LINK_READ_PATTERN routes to fetch_url, web_s
     config: fixtureCodexConfig(),
   });
 
-  assert.equal(result.searchPlan?.route, 'fetch-url');
-  assert.equal(result.searchPlan?.reason, 'link-read-intent');
+  assert.equal(result.searchPlan?.route, 'unavailable');
+  assert.equal(result.searchPlan?.reason, 'MISSING_URL');
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
-  assert.deepEqual(result.searchPlan?.exposedNetworkTools, ['fetch_url']);
+  assert.deepEqual(result.searchPlan?.exposedNetworkTools, []);
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('fetch_url'), true, 'fetch_url must be dispatched on fetch-url route');
   assert.equal(visible.has('web_search'), true, 'web_search stays visible (A2 stable set); the routing prompt prefers fetch_url');
@@ -591,25 +593,25 @@ test('search routing — none: no web intent, tools stay in the stable set and t
   assert.equal(visible.has('fetch_url'), true);
 });
 
-test('search routing — non-codex auth + web intent falls back to melo-web (not codex-native)', async () => {
+test('search routing — a non-codex connection uses its explicitly configured HTTP backend', async () => {
   // Cross-check that `authMode !== 'codex'` correctly disables native search
   // even when scoreWebSearchIntent ≥ 3. Mirrors searchRouter.test.js:70 but
   // pinned at the runner level so a future provider-profile refactor that
   // forgets to pass authMode through to buildSearchPlan trips here.
   const result = await runForRouteFixture({
     latestUserMessage: '帮我查一下今天新加坡天气',
-    config: fixtureNonCodexConfig(),
+    config: { ...fixtureNonCodexConfig(), agentRuntime: { search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } } },
   });
 
   assert.equal(result.searchPlan?.route, 'melo-web');
   assert.equal(result.searchPlan?.nativeWebSearchEnabled, false);
   assert.deepEqual(
     [...(result.searchPlan?.exposedNetworkTools || [])].sort(),
-    ['fetch_url', 'web_search'],
+    ['web_search'],
   );
   const visible = new Set(result.visibleToolIds || []);
   assert.equal(visible.has('web_search'), true);
-  assert.equal(visible.has('fetch_url'), true);
+  assert.equal(visible.has('fetch_url'), true, 'definitions retain the upstream stable set; Core authorizes effects separately');
 });
 
 test('main tool dispatch carries its MCP whitelist and resolved role model into a nested skill', async () => {
@@ -661,6 +663,42 @@ test('F3 MCP isolation: mcpRegistry tools reach only the whitelisted agent and d
     assert.ok(!(denied.visibleToolIds || []).includes('mcp:probe-srv:echo'));
     assert.equal(runs, 2, 'an agent without the server on its whitelist cannot call it');
   } finally { unregisterMcpServer('probe-srv'); }
+});
+
+test('shared search policy keeps stable browser definitions but denies screen effects and unsupported final claims', async () => {
+  const { registerTool, unregisterTool, getTool } = await import('../../tools/registry.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const original = getTool('browser_open'); let effects = 0, calls = 0;
+  let inherited;
+  registerTool({ id: 'policy_probe', name: 'Policy Probe', description: 'Capture inherited permissions', requiresPermission: false, parametersSchema: { type: 'object', properties: {} },
+    run: async (_, context) => { inherited = context.allowedToolIds; return { ok: true, output: 'Policy captured' }; } });
+  unregisterTool('browser_open');
+  registerTool({ ...original, run: async () => { effects++; return { ok: true, output: 'Should never execute' }; } });
+  const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+  const context = createRequestContext({ home: TEST_HOME, env: { MELO_CDP_ENABLED: '1' } });
+  try {
+    const result = await runChatAgentExecutionGraph({ context, config: { ...fixtureConfig, agentRuntime: { search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } } },
+      state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [], latestUserMessage: '搜索 Surry Hills 餐厅', agentId: 'main',
+      _dependencies: { getEmbedding: async () => null, createReply: async () => calls++ === 0
+        ? '<tool_call>{"id":"browser-1","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call><tool_call>{"id":"probe-1","name":"policy_probe","arguments":{}}</tool_call>' : 'I searched and found the best restaurant.' } });
+    assert.ok(result.visibleToolIds.includes('browser_open'), 'upstream stable definitions are preserved');
+    assert.equal(effects, 0); assert.equal(calls, 2);
+    assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), false, 'nested Skill / Agent permissions cannot widen the parent search policy');
+    assert.match(result.reply, /MISSING_TOOL_EVIDENCE/);
+  } finally { unregisterTool('policy_probe'); unregisterTool('browser_open'); registerTool(original); }
+});
+
+test('Hosted Search final replies use the same completed/source receipt contract as Android', async () => {
+  const search = { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://fixture.invalid/verified', title: 'Fixture source' }] } };
+  for (const [items, accepted] of [[[search], true], [[], false], [[{ ...search, action: {} }], false]]) {
+    const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+    const result = await runChatAgentExecutionGraph({ config: fixtureCodexConfig(), state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '搜索当前 Surry Hills 餐厅', agentId: 'main',
+      _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
+        createReply: async () => ({ protocol: 'responses', text: 'Fixture answer', responseItems: items }) } });
+    if (accepted) { assert.match(result.reply, /https:\/\/fixture.invalid\/verified/); assert.match(result.reply, /Fixture answer/); }
+    else { assert.match(result.reply, /未收到可核对的 Search completed/); assert.doesNotMatch(result.reply, /Fixture answer/); }
+  }
 });
 
 

@@ -81,7 +81,7 @@ class ChatToolLoop(
             if (turn.calls.isEmpty()) { core?.event("complete"); return ModelReply(turn.text, turn.model) }
             require(index < 3) { "本轮手机任务已达到上限；已完成步骤保留，请缩小目标后继续。" }
             val call = turn.calls.single()
-            core?.calls(turn.calls.map { it.id to it.name })
+            core?.calls(turn.calls.map { it.id to it.name }, turn.calls.associate { it.id to it.arguments })
             require(call.id.isNotBlank() && call.id.length <= 256 && callIds.add(call.id)) { "模型返回了无效或重复的调用编号，已停止，未重复执行。" }
             require(call.name == ChatPhoneUse.name) { "普通 Chat 只能调用已注册的 Phone Use。" }
             ChatPhoneUse.validate(call.arguments)

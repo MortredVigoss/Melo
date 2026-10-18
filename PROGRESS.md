@@ -1,3 +1,9 @@
+## 2026-10-18 — 让公开查询先检索来源，减少占屏和无依据的完成声明
+
+Codex 在合入最新主线后继续 A：Node / Android 本机执行同源 Router 与 Guard，保留主线稳定工具前缀、MCP 隔离、记录和预算。没有 Backend 或真实回执就如实报告；手机不依赖桌面在线，凭证仍仅本机持有。
+314 Node + 203 相关回归、115 JVM / Lint / Debug / R8、Cover 43 + 展开 9 Emulator 执行通过；42 同源 Fixtures。新增测试曾有 teardown 签名与展开 UI 等待失败，已保留失败证据、修正夹具后复测，未放宽行为断言。
+iOS 仍缺 macOS 原生验收，Fold6 尚未装 0.6.0；Skill / Context / Memory / Tool history 与 Task Cache 后续迁移不冒称完成。本轮仅 Fixture，无真实账号 / 私人手机 / push / git pp。
+
 ## 2026-10-18 — 合入主线后继续共享 Core，避免覆盖新工具与记忆链
 
 用户要求先 pull 最新 repo。Codex 暂存 Search WIP，合入 origin/master `84abfa9`；保留双方进度和 Shared Runtime，同时接住主线 Tool records / 三协议 / MCP 隔离 / RunBudget / Memory 更新。

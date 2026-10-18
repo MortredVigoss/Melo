@@ -1,4 +1,11 @@
-# Android verification — 2026-10-17
+# Android verification — 2026-10-18
+
+## 2026-10-18 — 0.6.0 (14) Shared Search / Core
+
+115 JVM / Lint / Debug / R8 Release 构建通过；最终 Debug APK 的 Core hash、签名和四库 16 KiB alignment 核对通过。42 同源 Fixtures；Cover 968×2376 / 420dpi 43 项、展开 1856×2160 / 420dpi 9 项 Emulator 执行通过。包括三协议 Search → 来源回复、Hosted proof / missing receipt、无服务 / 失败 / 取消均不占屏，及 Phone Use / Device / Cache 回归、设置保存 / recreation / Key 空值保留与显式清除。
+
+展开组合曾一次保存等待超时，补初始草稿 / IME 等待后组合通过；失败与最终日志均保留。所有新增流程只用本地 Fixture；未使用真实订阅或操作 / 覆盖 Fold6。手机沿用历史 0.5.1，不能称 One UI 8.5 本版已验收；Release 仅构建，iOS Swift 未验。详见 [本轮检查点](../docs/shared-agent-search-20261018.md) / [机器证据](../docs/evidence/shared-agent-search-20261018.json)。
+
 
 ## 0.5.1 App Discovery — Fold6 已安装（2026-10-17）
 

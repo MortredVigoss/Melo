@@ -315,6 +315,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         provider: config.provider,
         imageSettings: resolvedImageSettings(config),
         llmConnections: publicLlmConnections(config),
+        agentRuntime: config.agentRuntime,
         extraFast: publicExtraFast(config),
         apiProtocol: config.apiProtocol || 'chat-completions',
         baseUrl: config.baseUrl,

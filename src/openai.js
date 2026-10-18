@@ -1226,16 +1226,16 @@ export function apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile 
 }
 
 export async function createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages,
-  functionTools, signal, onDelta, onReasoningDelta, onModelMetadata, maxTokens, cacheScope, providerProfile,
+  functionTools, signal, onDelta, onReasoningDelta, onModelMetadata, onExecutionEvent, nativeWebSearchEnabled = false, maxTokens, cacheScope, providerProfile,
   _fetchImpl = fetch } = {}) {
   const promptCacheKey = apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile, endpoint: 'responses' });
   const payload = {
     model, instructions: systemPrompt, store: false, stream: true,
     input: await buildCodexResponsesInput(messages, { signal }),
-    include: ['reasoning.encrypted_content'],
+    include: ['reasoning.encrypted_content', ...(nativeWebSearchEnabled ? ['web_search_call.action.sources'] : [])],
     ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(Number.isFinite(maxTokens) ? { max_output_tokens: maxTokens } : {}),
-    ...(functionTools?.length ? { tools: functionTools, tool_choice: 'auto', parallel_tool_calls: true } : {}),
+    ...((functionTools?.length || nativeWebSearchEnabled) ? { tools: [...(functionTools || []), ...(nativeWebSearchEnabled ? [{ type: 'web_search' }] : [])], tool_choice: 'auto', parallel_tool_calls: true } : {}),
   };
   await ensureFetchKeepAliveConfigured();
   const response = await _fetchImpl(`${normalizeBaseUrl(baseUrl).replace(/\/responses$/, '')}/responses`, {
@@ -1248,7 +1248,7 @@ export async function createApiResponsesReply({ baseUrl, apiKey, model, systemPr
     try { detail = extractProviderErrorMessage(JSON.parse(raw), raw); } catch {}
     throw new Error(`Responses request failed (${response.status}): ${detail}`);
   }
-  return readCodexSseResponse(response, { onDelta, onReasoningDelta,
+  return readCodexSseResponse(response, { onDelta, onReasoningDelta, onExecutionEvent,
     onModelMetadata: metadata => onModelMetadata?.({ ...metadata, transport: 'responses' }),
     returnToolResponse: Array.isArray(functionTools),
   });
@@ -1413,7 +1413,7 @@ async function requestOpenAICompatibleReply({
   const resolvedToolProtocol = nativeTools ? (toolProtocol || 'responses') : null;
   if (resolvedToolProtocol === 'responses' || apiProtocol === 'responses') {
     return createApiResponsesReply({ baseUrl, apiKey, model, systemPrompt, messages, functionTools, signal,
-      onDelta, onReasoningDelta, onModelMetadata, maxTokens, cacheScope, providerProfile });
+      onDelta, onReasoningDelta, onModelMetadata, onExecutionEvent, nativeWebSearchEnabled, maxTokens, cacheScope, providerProfile });
   }
   const protocol = apiProtocol || (new URL(baseUrl).hostname === 'api.anthropic.com' ? 'anthropic' : 'chat-completions');
   if (protocol === 'anthropic' || resolvedToolProtocol === 'anthropic') {

@@ -38,13 +38,13 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## Chat Phone Use（0.5.1）
+## Chat Search / Phone Use（0.6.0）
 
-在普通 Chat 直接说“查一下 Surry Hills 现在营业的餐厅”或“去小红书搜索这家店”，模型按需 invoke 内置 Phone Use，再把观察结果带回当前对话。不需要切换「操作手机」模式或进入独立助手。每 Chat 的「对话设置 → 允许调用手机」可关闭能力；普通问答不会创建设备会话。
+普通 Chat 的公开查询（例如“Surry Hills 现在营业的餐厅”）先由本机 Shared JS Core 选择已验证的 Hosted Search 或已配置 HTTP Search Backend，不自动占用屏幕。明确说“去小红书搜索这家店”或“用 Google Maps 搜索”才 invoke phone_use，再回当前 Chat。每 Chat 的「对话设置 → 允许调用手机」仍可关闭能力。
 
 设备任务卡片与停止按钮留在 Chat；历史图标可管理操作 Cache。使用该轮捕获的模型、角色和项目，一次只允许一个设备任务，其他 Chat 可独立问答。停止 Chat 会取消其子任务；失败 / 取消 / 需用户时不会自动续跑。research 强制实时 Probe，不复用旧查询事实；action 可复用已验证 Cache 步骤。查询成功后尝试返回所属 Chat。
 
-本版 Phone Use 开启时采用非 Streaming Tool Calling；关闭后与本地 Fixture 沿用原 streaming chat。使用现有三种模型协议，无需安装外部 Skill / MCP / AutoInput。
+普通问答沿用 Streaming；Search / Phone Use 采用非 Streaming Tool Calling。三种现有模型协议均有本地 HTTP Fixtures，不需要 AutoInput。模型说已搜索或已操作不算成功：Core 要求成功工具回执；重复目标 / call ID、持续失败或无进展会停止。
 
 完成必须调用 `finish`，声明 achieved / blocked / needs_user；achieved 要求最近 screen_id 和明确的 App / 精确页面文字，执行器重新观察后校验。它验证可见事实，不保证付款到账等不可见业务效果。模型只返回结束文字时不会自动标记完成；历史 completed 记录保留原语义。
 
@@ -56,7 +56,7 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 独立助手页使用全局模型，Chat 内使用该对话选择；模型需支持 Tool Calling，开启截图时还需支持图片输入。Chat Completions、Responses、Anthropic 均使用各自原生 Tool Call / Result 格式；每轮使用非 Streaming 请求，一次只执行一个操作。`android_device` 提供 observe、list_apps、open_app、tap、type_text、swipe、back、home、wait、finish，屏幕操作后回传新画面。模型根据实际观察选择下一步，不录制固定脚本。
 
-0.5.1 App Discovery（已同证书覆盖 Fold6）：已知准确 App 名称 / 包名时优先直接 `open_app`，名称由 Android Adapter 在本机解析，打开后已带新画面；只有缺少目标或候选不足时才 `list_apps(query=...)`。查询仍覆盖完整 Launcher Catalog，但默认仅返回 10 个候选、定向查询上限 20；精确命中时只返回精确候选，重名保留多个结果，模糊匹配不自动启动。空查询或大页面需显式 `browse=true`，仅用于用户需要浏览 App 清单的任务。观察用于屏幕动作，已有动作回执的当前画面无需重复 observe；最终 finish 仍重新观察验证。此为平台 Adapter 的发现和回传优化，共享 Core 与 Search 接入仍待实现。
+0.5.1 App Discovery（已同证书覆盖 Fold6）：已知准确 App 名称 / 包名时优先直接 `open_app`，名称由 Android Adapter 在本机解析，打开后已带新画面；只有缺少目标或候选不足时才 `list_apps(query=...)`。查询仍覆盖完整 Launcher Catalog，但默认仅返回 10 个候选、定向查询上限 20；精确命中时只返回精确候选，重名保留多个结果，模糊匹配不自动启动。空查询或大页面需显式 `browse=true`，仅用于用户需要浏览 App 清单的任务。观察用于屏幕动作，已有动作回执的当前画面无需重复 observe；最终 finish 仍重新观察验证。此为平台 Adapter 的发现和回传优化；0.6.0 已接入同源 Core / Search，后续共用能力与验收边界见下文。
 
 官方 OpenAI 的 GPT-6.1 Sol / GPT-6 Astra Tool Calling 使用 Responses API；OpenAI-compatible proxy 的 Chat Completions 是否能转换工具请求由该 proxy 决定。App 保留用户连接协议，不自动替换已填 Endpoint。依据：[官方 Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)。
 
@@ -67,6 +67,16 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 开发只用 Fixture：Debug 的「系统 → 添加本地 Fixture」会明确显示模拟回复，不访问模型服务。Release 禁用 Fixture。不会从环境变量或桌面目录读取现有账户或凭证。
 
 生产连接要求 HTTPS，认证请求不跟随 Redirect。Credentials 仅保存在设备本地 Keystore AES-256-GCM 中，不进入 Room 文档、sync、export 或 WebView。Android backup 和 device transfer 均排除本机数据；使用显式文字资料 export/import 迁移，凭证需要重新配置。
+
+## Search 配置与当前边界
+
+「系统 → Web Search」可配置 Brave Search API 或兼容 HTTP Backend。Provider 默认值、Tool Schema、Router、来源 / freshness 和 Loop Guard 来自 `shared/agent`；手机不依赖桌面在线。兼容接口使用 POST `{query,maxResults}`，返回 `{results:[{title,url,snippet}]}`；Brave 的 GET / header 编码也由同一 Core 生成。
+
+Responses 连接可点击「验证 Hosted Search」，此操作会发起一次真实模型搜索并计入服务用量；开发验收仅用本地 Fixture。仅选择 Responses / 模型名不代表服务支持 Search，必须观察到结构化 completed 回执；验证绑定 endpoint / model / Key，24 小时后重新验证。没有 Backend 时如实提示不可用。
+
+Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key；留空保留、明确勾选后清除，不进入导出 / Sync。两端共用配置结构与默认策略，尚未自动同步非秘密 Search 设置。网页读取目前 Android 支持直接文本 / 静态 HTML，不跟随 Redirect；动态页面和实时营业状态不能凭抓取时间认定。
+
+0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，尚未覆盖安装 Fold6；One UI 8.5 原生 Runtime 支持需实机确认。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [本轮证据](../docs/shared-agent-search-20261018.md)。
 
 ## 数据与跨端同步
 

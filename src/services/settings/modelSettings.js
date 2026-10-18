@@ -7,6 +7,8 @@ import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import { DEFAULT_CONFIG, DEFAULT_MODEL_CATALOGS, loadConfig, normalizeModelCatalogs, saveConfig, withConfigLock } from '../../config.js';
 import { discoverAvailableModels } from '../../openai.js';
+import { normalizeRuntimeConfig } from '../../../shared/agent/tools.js';
+import { searchCredentialId } from '../search/sharedSearchAdapter.js';
 
 export async function updateModelConfig(patch = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => updateModelConfig(...arguments));
@@ -73,6 +75,21 @@ async function updateModelConfigInner(patch = {}) {
       : currentVal;
 
   const safePatch = { ...patch };
+  if ('agentRuntime' in patch || 'searchApiKey' in patch || patch.clearSearchKey === true) {
+    safePatch.agentRuntime = normalizeRuntimeConfig(patch.agentRuntime || current.agentRuntime);
+    const endpoint = safePatch.agentRuntime.search.endpoint;
+    const credentials = { ...(current.searchCredentials || {}) };
+    if (patch.clearSearchKey === true && endpoint) delete credentials[searchCredentialId(endpoint)];
+    else if (typeof patch.searchApiKey === 'string' && patch.searchApiKey.trim()) {
+      const key = patch.searchApiKey.trim();
+      if (!/^[\x21-\x7e]{1,4096}$/u.test(key)) throw new Error('Search API Key 格式无效。');
+      if (!endpoint) throw new Error('请先填写 Search 地址或选择 Provider。');
+      credentials[searchCredentialId(endpoint)] = key;
+    }
+    safePatch.searchCredentials = credentials;
+  } else delete safePatch.searchCredentials;
+  delete safePatch.searchApiKey;
+  delete safePatch.clearSearchKey;
   if ('imageSettings' in safePatch) {
     if (!safePatch.imageSettings || typeof safePatch.imageSettings !== 'object' || Array.isArray(safePatch.imageSettings)) throw new Error('图片设置无效。');
     const settings=imageSettings({...current,imageSettings:safePatch.imageSettings});

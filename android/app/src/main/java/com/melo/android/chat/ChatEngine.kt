@@ -6,7 +6,7 @@ import com.melo.android.BuildConfig
 import com.melo.android.data.*
 import com.melo.android.network.*
 import com.melo.android.device.*
-import com.melo.android.core.SharedCoreTurn
+import kotlinx.serialization.json.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -42,7 +42,6 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val connection = state.settings.connections.find { it.id == connectionId }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
         val phoneUse = chat?.phoneUseEnabled == true && connection?.protocol != "fixture"
-        val skillInstructions = if (phoneUse) ChatPhoneUse.context(instructions) else ""
         val capturedAttachments = attachments.toList()
         mutable.update { it.copy(turns = it.turns + (chatId to ChatTurn()), error = null) }
         val turn = scope.launch(start = CoroutineStart.LAZY) {
@@ -71,13 +70,11 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 }
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
-                    if (!phoneUse) client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
+                    if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
                     else withTimeout(15 * 60 * 1000L) {
-                        SharedCoreTurn.open(context, run.id, chatId, listOf(ChatPhoneUse.name), rounds = 4, timeoutMs = 900_000).use { core ->
-                        val tools = DeviceAgentClient(BuildConfig.DEBUG, client.http)
-                        ChatToolLoop(connection.protocol,
-                            next = { history -> tools.next(connection, key, history, skillInstructions, chatTools = true) },
-                            invoke = { args ->
+                        SharedChatAgent(context, client, BuildConfig.DEBUG).reply(connection, key, selected, instructions,
+                            state.settings.agentRuntime, { search -> if (search.text("credentialRef") == "search") repository.credential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG)) else "" }, phoneUse, run.id, chatId, repository::imageData,
+                            invokePhone = { args ->
                                 currentCoroutineContext().ensureActive()
                                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，手机操作已停止。" }
                                 val research = args.text("purpose") == "research"
@@ -91,9 +88,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 receipt
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(partial = phase) } },
-                            core = core,
-                        ).run(ChatPhoneUse.history(selected, connection.protocol, repository::imageData))
-                        }
+                        )
                     }
                 }
                 currentCoroutineContext().ensureActive()

@@ -5,8 +5,8 @@ export function maskQuotedText(value = '') {
   return String(value).replace(/```[\s\S]*?```|`[^`\n]*`|"[^"\n]*"|(?<![\p{L}\p{N}])'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」/gu, match => ' '.repeat(match.length));
 }
 
-const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
-const SEARCH_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)[^。！？;；\n]{0,20}(?:搜|查找|检索)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|google|look up)\b/iu;
+const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
+const SEARCH_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|google|look up)\b/iu;
 const NETWORK_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|打开(?:链接|网址|网页)?|访问|读取(?:链接|网址|网页))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access|fetch|open|read)\b/iu;
 const CONTEXT_ONLY = /(?:仅|只)(?:凭|根据|依据|基于|使用).{0,16}(?:对话|上下文|基础知识|已给出的文字|提供的文本|提供的正文)|\b(?:only (?:use|using)|based only on)\s+(?:(?:this|our)\s+(?:chat|conversation|text)|the (?:provided|supplied)\s+(?:text|transcript))\b/iu;
 const LOCAL_SEARCH = /^(?:(?:please|can you|could you)\s+)?(?:rg|grep|ripgrep)\b|\b(?:search|find)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase|local files)\b|\b(?:search|find)\b[^\n]*\b(?:in|within)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase)\b|(?:在|从|对)(?:当前|这个|本地)?(?:工作区|仓库|项目|代码库|本地文件)[^。！？\n]{0,16}(?:搜|查找|检索)|(?:搜索|查找|检索)(?:当前|这个|本地)?(?:工作区|仓库|代码库)/iu;

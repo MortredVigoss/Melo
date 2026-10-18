@@ -10,3 +10,10 @@
 6. 分层验收与交付：同源 bundle hash / 三端 Conformance；Node / Kotlin / Swift 离线测试；Android Lint / Debug / R8 / Emulator 与 Fold6 folded / unfolded；iOS 必须有 macOS 编译和原生验收证据。当前 Windows 无 macOS 执行器，若仍不可用，完成可验证工作并保留该外部验收边界，不能代称三端全通过。
 
 每个稳定阶段本地提交并更新总览 / PROGRESS；仅暂存本阶段文件。全程保留聊天、账号、凭证和设备原生保护；不运行 git pp / CLI review，不推送。开发继续用 Fixture，沿用既有连接与凭证授权，不新增 API Key。
+
+## 2026-10-18 检查点
+
+- 已合入主线 `84abfa9`，Merge `7a668c7`。Stage 1 的 Runtime / Guard 与逐字抽取保留；上游新增 Tool / Memory / Budget 进入下一阶段迁移基线。
+- Node / Android Search 已接真实 Chat：同源 Router、通用 Schema、HTTP / Brave 编码、Hosted proof / receipt、来源与重复 / 完成 Guard；[验证与边界](shared-agent-search-20261018.md)。配置默认值同源，凭证本机，未做非秘密配置自动同步。
+- 下一步继续 Stage 4 / 5：先按逐字移植规则搬上游 Tool envelope / invocation projections 与可移植 Budget，再统一 Skill 调度和 Context / Memory / Compact，接 Native Host persistence。补显式 needs_user / Clarification 终态，避免把需要澄清等同缺证据失败。
+- iOS 只打包同源 Core、Adapter / Conformance 源码；缺 macOS 原生验证，生产入口未切换。Fold6 实际 JS engine / Service / 两种姿态与 Release runtime 需后续单独验收。不得以本轮 52 次 Emulator 执行替代实体机 / 三端完成。

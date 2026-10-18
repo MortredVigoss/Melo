@@ -20,7 +20,7 @@
 | Android / App Discovery | 0.5.1 (13) 已同签名覆盖 Fold6；准确名称 / 包名优先打开，小候选与显式浏览清单 | 原 10 Chat / 1 角色保留；folded 首轮 12 步受阻，退出旧搜索页后 5 步 / 23.806s 核对「设置」，两轮无 list_apps。跨包恢复 / 额外窗口恢复仍待修。[实机证据](docs/evidence/app-discovery-fold6-051-20261017.json)；113 JVM / Lint / R8 / 签名，本版前的同逻辑 runtime 40，详 verification |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
-| Shared Agent Core / Search | A 的 Node / Android 本机 Runtime 与 Turn Guard 已接入真实入口；Search / Context 等后续模块未迁完 | 115 JVM / Lint / Debug / R8、34 Emulator runtime 通过；20 个同源 Fixtures。iOS bundle / Adapter / 测试源码已补，缺 macOS 验证，生产入口未切换。日常 gate 有已核对环境 / baseline 失败，不能称全绿；[检查点](docs/shared-agent-runtime-20261017.md) / [实施计划](docs/shared-agent-implementation-20261017.md) |
+| Shared Agent Core / Search | 0.6.0 (14) 已接 Node / Android 真实 Chat 的同源 Router / Tool Contract / Search / Guard；已合入主线 `84abfa9` | 314 Node + 203 相关回归、115 JVM / Lint / Debug / R8、Cover 43 + 展开 9 Runtime；42 Fixtures。无真实账号或私人手机测试；Fold6 与 iOS 原生待验，Skill / Context / Memory / records 继续迁移；[本轮证据](docs/shared-agent-search-20261018.md) |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
@@ -117,7 +117,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 用户认可共用 Core + Adapter；本轮完成 Loop / State / Memory / Tool / Skill 前置检查 | [检查与证据](docs/agent-core-audit-20261017.md)：65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，现有缺陷未修复；Runtime spike / 共享 Core / Search 待迁移。0.5.1 实机边界沿用 [verification](android/verification.md)，未操作手机 / 安装 / 推送 |
+| Android / Mobile Use（本会话） | `01a13a56-c8c5-7d21-a108-d761aee8c657` | 10-18 合入远端 `84abfa9`（Merge `7a668c7`），保留新 Tool records / MCP / RunBudget / Memory；继续 A 的 Node / Android 同源 Search | [0.6.0 证据](docs/shared-agent-search-20261018.md)：公共查询不默认占屏，Hosted 要有连接 proof 与真实来源；52 次 Emulator 测试执行 / 115 JVM，通过构建。未覆盖私人 Fold6；iOS 仅同源 bundle / Adapter 源码，不能称全端完成 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、文件生命周期/能力配置/管理入口已对齐；10-18 核对主要源码后精简 GitHub 产品介绍与更新记录 | 功能历史证据见[实施回执](docs/ui-function-alignment-20261016.md)；本轮仅文档与 About，源码基线 `e4fed5c`，链接/命令/GitHub Markdown 渲染通过，详见末尾交接 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
@@ -706,3 +706,11 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户要求先 pull，已合入远端 `84abfa9`（iPhone 0.7.0 / Tool 协议与记录 / MCP / Memory / RunBudget）；Search 未提交内容先存入 Git stash，合并后继续。
 - Core Guard 保留上游 Tool records 与预算，并按 Registry ID 接受 MCP wire name；旧 Router 的 self-description 政策迁入 portable 模块。Xcode 工程重新生成同时保留 SpeechText / SharedAgentCore 及上游版本。
 - 72 项定向离线回归通过；不是完整 gate 或 iOS 原生验收，未请求真实服务 / 操作私人手机 / 安装 / push / git pp。
+
+### 2026-10-18 — Shared Agent Core — API-first Search 检查点
+
+- 用户要求先看最新 repo 再继续；已 Merge `84abfa9`，恢复受保护 WIP，接住主线的稳定 Tool definitions、MCP wire name、ToolInvocationRecord、三协议、RunBudget 与 Memory，而非回退旧 Main Loop。
+- Node / Android 真实 Chat 使用同源 Router / Source Contract / Provider 编码 / Guard；公共查询选 verified Hosted 或 configured HTTP，未知能力和 HTTP 失败不自动启动 Browser / Phone。设备任务仍走原生保护。
+- Hosted proof 绑定连接身份且 24h 过期；Source completed + 来源才算已检索，工具缺证据返回明确未验证。兼容 HTTP / Brave 均用 Fixture，凭证绑定 endpoint 且只存本机，配置 Schema 共用但尚未自动 Sync。
+- 314 Node + 203 相关回归、最后 UI 16 tests；115 JVM / Lint / Debug / R8、42 同源 Fixtures，Cover 43 + 展开 9 Emulator 执行通过。真实 Desktop 设置页 Playwright 验证、两种 Native 尺寸截图及 APK hash / 签名 / alignment 已核对；[详细边界](docs/shared-agent-search-20261018.md)。
+- Fold6 / One UI 8.5 与 iOS 原生仍待验；Skill 调度 / Tool records / Context / Memory / Task Cache 按计划继续。当前未访问真实账号、操作私人手机、覆盖安装、push / git pp；Emulator / ADB 5048 / QA server 与 Browser 已清理。

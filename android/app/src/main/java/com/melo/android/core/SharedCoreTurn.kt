@@ -21,9 +21,9 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         return state
     }
     suspend fun request() { event("request"); check(active) { "共享 Agent 已停止（$reason）；已有操作保留。" } }
-    suspend fun calls(calls: List<Pair<String, String>>) {
-        event("calls", buildJsonObject { put("calls", buildJsonArray { for ((id, name) in calls) add(buildJsonObject { put("id", id); put("name", name) }) }) })
-        check(state.getValue("permitted").jsonArray.size == calls.size) { "模型请求了本轮未授权的工具，未执行。" }
+    suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap()) {
+        event("calls", buildJsonObject { put("calls", buildJsonArray { for ((id, name) in calls) add(buildJsonObject { put("id", id); put("name", name); arguments[id]?.let { put("arguments", it) } }) }) })
+        check(state.getValue("permitted").jsonArray.size == calls.size) { "本轮工具请求已拒绝（${state["rejections"]}），未执行。" }
     }
     suspend fun result(id: String, ok: Boolean, progressKey: String? = null) {
         event("result", buildJsonObject { put("callId", id); put("ok", ok); progressKey?.let { put("progressKey", it) } })
@@ -31,7 +31,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     override fun close() = runtime.close()
 
     companion object {
-        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000): SharedCoreTurn {
+        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000, requiredTools: List<String> = emptyList()): SharedCoreTurn {
             val runtime = SharedCoreRuntime.open(context)
             try {
                 val reply = runtime.evaluate(buildJsonObject {
@@ -39,6 +39,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
                     put("turn", buildJsonObject {
                         put("runId", runId); put("turnId", turnId); put("now", SystemClock.elapsedRealtime())
                         put("allowedTools", JsonArray(allowedTools.map { JsonPrimitive(it) }))
+                        put("requiredTools", JsonArray(requiredTools.map { JsonPrimitive(it) }))
                         put("limits", buildJsonObject { put("rounds", rounds); put("timeoutMs", timeoutMs); put("callsPerRound", 1) })
                     })
                 })

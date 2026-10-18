@@ -323,7 +323,8 @@
             "fetch_url",
             "phone_use"
           ],
-          "hostedSearch": "unknown"
+          "hostedSearch": "unknown",
+          "browserSearch": true
         },
         "config": {
           "search": {
@@ -714,6 +715,709 @@
     "expected": {
       "awaitingModel": false,
       "rounds": 1
+    }
+  },
+  {
+    "name": "Brave provider and credentials stay in a common config contract",
+    "input": {
+      "version": 1,
+      "op": "config",
+      "config": {
+        "search": {
+          "backend": "http",
+          "provider": "brave"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "search": {
+        "backend": "http",
+        "provider": "brave",
+        "endpoint": "https://api.search.brave.com/res/v1/web/search",
+        "credentialRef": "search",
+        "browserFallback": false
+      }
+    }
+  },
+  {
+    "name": "Brave request uses encoded query and a header reference only",
+    "input": {
+      "version": 1,
+      "op": "searchRequest",
+      "arguments": {
+        "query": "Surry Hills 餐厅"
+      },
+      "config": {
+        "search": {
+          "backend": "http",
+          "provider": "brave"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "method": "GET",
+      "url": "https://api.search.brave.com/res/v1/web/search?q=Surry%20Hills%20%E9%A4%90%E5%8E%85&count=6",
+      "credentialHeader": "X-Subscription-Token",
+      "credentialPrefix": "",
+      "backend": "brave"
+    }
+  },
+  {
+    "name": "Brave result is evidence with unknown freshness",
+    "input": {
+      "version": 1,
+      "op": "searchResult",
+      "result": {
+        "web": {
+          "results": [
+            {
+              "title": "Fixture",
+              "url": "https://example.com/menu",
+              "description": "Hours unknown"
+            }
+          ]
+        }
+      },
+      "observation": {
+        "fetchedAt": "2026-10-17T01:00:00Z",
+        "backend": "brave"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "results": [
+        {
+          "title": "Fixture",
+          "url": "https://example.com/menu",
+          "snippet": "Hours unknown"
+        }
+      ],
+      "backend": "brave",
+      "freshness": "unknown"
+    }
+  },
+  {
+    "name": "common tool extra arguments never become native effects",
+    "input": {
+      "version": 1,
+      "op": "validateTool",
+      "name": "phone_use",
+      "arguments": {
+        "goal": "Open Maps",
+        "purpose": "research",
+        "shell": "anything"
+      }
+    },
+    "ok": false,
+    "expected": {
+      "code": "INVALID_TOOL_ARGUMENTS"
+    }
+  },
+  {
+    "name": "common tool parameters remain data",
+    "input": {
+      "version": 1,
+      "op": "validateTool",
+      "name": "web_search",
+      "arguments": {
+        "query": "中文 😀 '); throw Error('x') //"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "query": "中文 😀 '); throw Error('x') //"
+    }
+  },
+  {
+    "name": "static HTML excludes script content",
+    "input": {
+      "version": 1,
+      "op": "pageResult",
+      "result": {
+        "url": "https://example.com",
+        "contentType": "text/html",
+        "content": "<p>餐厅&nbsp;A</p><script>steal()</script>"
+      },
+      "observation": {
+        "fetchedAt": "2026-10-17T01:00:00Z"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "text": "餐厅 A",
+      "reading": "static_html",
+      "freshness": "unknown"
+    }
+  },
+  {
+    "name": "search algorithms do not request public web lookup",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "实现一个搜索算法",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "none",
+      "tools": []
+    }
+  },
+  {
+    "name": "a missing link is clarified instead of invented",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "帮我打开链接读一下",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "unavailable",
+      "reason": "MISSING_URL",
+      "tools": []
+    }
+  },
+  {
+    "name": "link references resolve visible conversation URLs",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "读取这个链接",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "https://example.com/menu"
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "fetch-url",
+      "tools": [
+        "fetch_url"
+      ],
+      "urls": [
+        "https://example.com/menu"
+      ]
+    }
+  },
+  {
+    "name": "app follow-ups preserve the explicit source",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "第二家还开着吗",
+        "messages": [
+          {
+            "role": "user",
+            "content": "打开 Google Maps 查餐厅"
+          },
+          {
+            "role": "assistant",
+            "content": "Fixture A, Fixture B"
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "phone",
+      "tools": [
+        "phone_use"
+      ]
+    }
+  },
+  {
+    "name": "Android cannot claim a browser executor from an imported toggle",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索 Surry Hills 餐厅",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "browserFallback": true
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "unavailable",
+      "reason": "SEARCH_UNAVAILABLE",
+      "tools": []
+    }
+  },
+  {
+    "name": "hosted proof cannot transfer to another connection",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "hostedCapability",
+      "proof": {
+        "version": 1,
+        "status": "verified",
+        "fingerprint": "first",
+        "checkedAt": 1000
+      },
+      "fingerprint": "second",
+      "now": 1001
+    },
+    "expected": {
+      "status": "unknown"
+    }
+  },
+  {
+    "name": "hosted proof expires after one day",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "hostedCapability",
+      "proof": {
+        "version": 1,
+        "status": "verified",
+        "fingerprint": "first",
+        "checkedAt": 1000
+      },
+      "fingerprint": "first",
+      "now": 86401000
+    },
+    "expected": {
+      "status": "unknown"
+    }
+  },
+  {
+    "name": "plain text and citations are not completed Search",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "hostedReceipt",
+      "response": {
+        "text": "I searched",
+        "items": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "I searched",
+                "annotations": [
+                  {
+                    "type": "url_citation",
+                    "url": "https://fixture.invalid",
+                    "title": "Fixture"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expected": {
+      "verified": false,
+      "freshness": "unknown"
+    }
+  },
+  {
+    "name": "completed Hosted Search supplies a citation receipt",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "hostedReceipt",
+      "response": {
+        "items": [
+          {
+            "type": "web_search_call",
+            "status": "completed",
+            "action": {
+              "sources": [
+                {
+                  "url": "https://fixture.invalid",
+                  "title": "Fixture"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "expected": {
+      "verified": true,
+      "sources": [
+        {
+          "url": "https://fixture.invalid",
+          "title": "Fixture"
+        }
+      ],
+      "freshness": "unknown"
+    }
+  },
+  {
+    "name": "flight clarification retains upstream lookup continuity",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "两个人",
+        "messages": [
+          {
+            "role": "user",
+            "content": "帮我查一下今天悉尼到墨尔本航班"
+          },
+          {
+            "role": "assistant",
+            "content": "几个人？"
+          },
+          {
+            "role": "user",
+            "content": "两个人"
+          }
+        ],
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "capabilities": {
+          "executors": [
+            "web_search"
+          ],
+          "grants": [
+            "web_search"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "route": "http-search"
+    }
+  },
+  {
+    "name": "explicit Maps source keeps phone routing",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "用 Google Maps 搜索 Surry Hills 餐厅",
+        "messages": [],
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "phone_use"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "route": "phone"
+    }
+  },
+  {
+    "name": "App follow-ups retain the source through several turns",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "第三家呢",
+        "messages": [
+          {
+            "role": "user",
+            "content": "用小红书搜 Surry Hills 餐厅"
+          },
+          {
+            "role": "user",
+            "content": "第二家呢"
+          }
+        ],
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "phone_use"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "route": "phone"
+    }
+  },
+  {
+    "name": "phone refusal cannot be read as consent",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "不要用手机，搜索 Surry Hills 餐厅",
+        "messages": [],
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "phone_use"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "route": "http-search"
+    }
+  },
+  {
+    "name": "old App task cannot hijack a new public lookup",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "搜索 Surry Hills 餐厅",
+        "messages": [
+          {
+            "role": "user",
+            "content": "用小红书搜餐厅"
+          }
+        ],
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "phone_use"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "route": "http-search"
+    }
+  },
+  {
+    "name": "required search cannot complete with model text alone",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "search-evidence",
+        "turnId": "chat",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 601000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 8,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "web_search"
+        ],
+        "requiredTools": [
+          "web_search"
+        ],
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "search-evidence",
+        "turnId": "chat",
+        "type": "complete"
+      },
+      "now": 1000
+    },
+    "expected": {
+      "status": "blocked",
+      "reason": "MISSING_TOOL_EVIDENCE"
+    }
+  },
+  {
+    "name": "successful permitted search allows final completion",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "search-evidence",
+        "turnId": "chat",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 601000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 8,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "web_search"
+        ],
+        "requiredTools": [
+          "web_search"
+        ],
+        "successfulTools": [
+          "web_search"
+        ],
+        "pendingTools": {},
+        "rounds": 2,
+        "awaitingModel": true,
+        "callIds": [
+          "lookup-1"
+        ],
+        "pending": [],
+        "permitted": [
+          "lookup-1"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": true,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "search-evidence",
+        "turnId": "chat",
+        "type": "complete"
+      },
+      "now": 1000
+    },
+    "expected": {
+      "status": "completed",
+      "successfulTools": [
+        "web_search"
+      ]
     }
   }
 ]

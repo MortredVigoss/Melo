@@ -22,8 +22,10 @@ import { fileMkdirTool } from './builtins/fileMkdirTool.js';
 import { globTool } from './builtins/globTool.js';
 import { grepTool } from './builtins/grepTool.js';
 import { agentTool } from '../agents/subAgent.js';
-import { fetchUrlTool } from './builtins/fetchUrlTool.js';
-import { webSearchTool } from './builtins/webSearchTool.js';
+import { fetchUrlTool as legacyFetchUrlTool } from './builtins/fetchUrlTool.js';
+import { createSharedFetchTool } from '../services/search/sharedFetchAdapter.js';
+import { webSearchTool as legacyWebSearchTool } from './builtins/webSearchTool.js';
+import { createSharedSearchTool } from '../services/search/sharedSearchAdapter.js';
 import { mediaInfoTool } from './builtins/mediaInfoTool.js';
 import { mediaApiTool } from './builtins/mediaApiTool.js';
 import { searchHistoryTool } from './builtins/searchHistoryTool.js';
@@ -50,6 +52,8 @@ export { registerTool, registerTools, getTool, getAllTools, getToolsByCategory, 
 // ─── Bootstrap built-in tools ─────────────────────────────────────────────────
 
 let _bootstrapped = false;
+const webSearchTool = createSharedSearchTool(legacyWebSearchTool);
+const fetchUrlTool = createSharedFetchTool(legacyFetchUrlTool);
 
 /**
  * Register all built-in tools.  Safe to call multiple times (idempotent).

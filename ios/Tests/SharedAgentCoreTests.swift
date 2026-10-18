@@ -12,7 +12,12 @@ import Foundation
         for fixture in cases {
             let reply = try await core.evaluate(fixture["input"] as! [String: Any])
             assert(reply["ok"] as? Bool == fixture["ok"] as? Bool, fixture["name"] as! String)
-            let value = reply[(reply["ok"] as? Bool == true) ? "value" : "error"] as! [String: Any]
+            let result = reply[(reply["ok"] as? Bool == true) ? "value" : "error"]!
+            if let expected = fixture["expected"] as? [Any] {
+                assert(NSDictionary(dictionary: ["value": result]).isEqual(to: ["value": expected]), fixture["name"] as! String)
+                continue
+            }
+            let value = result as! [String: Any]
             for (key, expected) in fixture["expected"] as! [String: Any] {
                 guard let actual = value[key] else { fatalError("Missing \(key)") }
                 assert(NSDictionary(dictionary: [key: actual]).isEqual(to: [key: expected]), "\(fixture["name"]!): \(key)")

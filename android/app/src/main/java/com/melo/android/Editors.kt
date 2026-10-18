@@ -23,6 +23,9 @@ import com.melo.android.data.*
 import com.melo.android.network.EndpointPolicy
 import com.melo.android.ui.*
 import kotlinx.serialization.json.*
+import com.melo.android.core.*
+import com.melo.android.network.SharedSearchAdapter
+import com.melo.android.network.HostedSearchAdapter
 
 @Composable private fun EditorDialog(title: String, dismiss: () -> Unit, save: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     AlertDialog(onDismissRequest = dismiss, title = { Text(title) }, text = { Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp), content = content) },
@@ -138,6 +141,14 @@ import kotlinx.serialization.json.*
     var userName by remember(data.settings.userName) { mutableStateOf(data.settings.userName) }
     var fontScale by remember(data.settings.fontScale) { mutableFloatStateOf(data.settings.fontScale) }
     var tested by remember { mutableStateOf<String?>(null) }
+    val savedSearch = data.settings.agentRuntime["search"] as? JsonObject ?: buildJsonObject {}
+    var searchEnabled by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("backend") == "http") }
+    var searchProvider by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("provider", "custom")) }
+    var searchEndpoint by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("endpoint")) }
+    var searchUsesKey by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("credentialRef").isNotBlank()) }
+    var searchKey by remember { mutableStateOf("") }
+    var searchClearKey by remember { mutableStateOf(false) }
+    var searchSaving by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { vm.engine.work { vm.repository.exportTo(it); tested = "文字资料已导出，不含凭证与图片文件。" } } }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.engine.work { vm.repository.importFrom(it); tested = "资料已合并导入。" } } }
@@ -159,6 +170,41 @@ import kotlinx.serialization.json.*
                 val fixture = data.settings.connections.find { it.protocol == "fixture" } ?: Connection(name = "本地 Fixture · 非真实模型", endpoint = "https://fixture.invalid", model = "local-fixture", protocol = "fixture")
                 vm.repository.saveConnection(fixture, null); vm.repository.change { it.copy(settings = it.settings.copy(activeConnection = fixture.id)) }; tested = "已选择本地 Fixture，不会调用真实模型。"
             } }) { Text("添加本地 Fixture（开发验证）") }
+        }
+        item {
+            SectionLabel("Web Search")
+            Text("公开信息优先通过已验证的 Hosted Search 或 Search API 检索；没有可用服务时提示不可用。明确要求操作 App 时才使用手机屏幕。", color = MeloMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("启用 HTTP Search", Modifier.weight(1f)); Switch(searchEnabled, { searchEnabled = it }, Modifier.testTag("search-enabled"), enabled = !searchSaving) }
+            Row {
+                FilterChip(selected = searchProvider == "brave", onClick = { searchProvider = "brave"; searchEndpoint = "" }, label = { Text("Brave Search API") }, modifier = Modifier.testTag("search-provider-brave"), enabled = !searchSaving)
+                Spacer(Modifier.width(8.dp))
+                FilterChip(selected = searchProvider != "brave", onClick = { searchProvider = "custom"; searchEndpoint = "" }, label = { Text("兼容 HTTP") }, modifier = Modifier.testTag("search-provider-custom"), enabled = !searchSaving)
+            }
+            OutlinedTextField(searchEndpoint, { searchEndpoint = it }, label = { Text(if (searchProvider == "brave") "Search 地址（留空使用 Brave 默认地址）" else "完整 HTTPS Search 地址") }, modifier = Modifier.fillMaxWidth().testTag("search-endpoint"), singleLine = true, enabled = !searchSaving)
+            if (searchProvider != "brave") Row(verticalAlignment = Alignment.CenterVertically) { Text("使用本机 Search 凭证", Modifier.weight(1f)); Switch(searchUsesKey, { searchUsesKey = it }, enabled = !searchSaving) }
+            if (searchProvider == "brave" || searchUsesKey) OutlinedTextField(searchKey, { searchKey = it }, label = { Text("新的 Search API Key（留空保留该地址原值）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("search-key"), singleLine = true, enabled = !searchSaving)
+            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(searchClearKey, { searchClearKey = it }, Modifier.testTag("search-clear-key"), enabled = !searchSaving); Text("清除此地址已保存的 Search Key") }
+            TextButton(modifier = Modifier.testTag("save-search"), enabled = !searchSaving, onClick = {
+                val enabledDraft = searchEnabled; val keyDraft = searchKey.trim(); val clearDraft = searchClearKey
+                val draft = buildJsonObject { put("search", buildJsonObject {
+                    put("backend", if (searchEnabled) "http" else "none"); put("provider", searchProvider); put("endpoint", searchEndpoint)
+                    put("credentialRef", if (searchUsesKey || searchProvider == "brave") "search" else "")
+                }) }
+                searchSaving = true
+                vm.engine.work { try {
+                val normalized = SharedCoreRuntime.open(context).use { it.value("config", buildJsonObject { put("config", draft) }).jsonObject }
+                val search = normalized.getValue("search").jsonObject
+                if (enabledDraft) {
+                    EndpointPolicy.validate(search.text("endpoint"), BuildConfig.DEBUG)
+                }
+                if (clearDraft || keyDraft.isNotBlank()) {
+                    require(clearDraft || keyDraft.length <= 4096 && keyDraft.all { it.code in 33..126 }) { "Search API Key 格式无效。" }
+                    vm.repository.saveCredential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG), if (clearDraft) "" else keyDraft)
+                }
+                vm.repository.change { it.copy(settings = it.settings.copy(agentRuntime = normalized)) }
+                searchKey = ""; searchClearKey = false; tested = "Search 配置已保存，尚未代表真实服务已验证。凭证仅在本机保存，并绑定这个地址。"
+                } finally { searchSaving = false } }
+            }) { Text("保存 Search 设置") }
         }
         item {
             SectionLabel("跨设备同步"); Field("完整 HTTPS 同步地址（/v1/sync）", syncEndpoint, { syncEndpoint = it })
@@ -185,8 +231,9 @@ import kotlinx.serialization.json.*
         var protocol by remember(original.id) { mutableStateOf(original.protocol) }; var stream by remember(original.id) { mutableStateOf(original.stream) }; var key by remember(original.id) { mutableStateOf("") }
         val hasCredential by produceState<Boolean?>(null, original.id) { value = runCatching { vm.repository.credential(original.id).isNotBlank() }.getOrDefault(false) }
         var probe by remember(original.id) { mutableStateOf<String?>(null) }; var probing by remember { mutableStateOf(false) }
+        var searchProof by remember(original.id) { mutableStateOf(original.searchProof) }
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
-            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream), key.takeIf(String::isNotBlank)); editing = null
+            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof), key.takeIf(String::isNotBlank)); editing = null
         } }) {
             Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it })
             Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
@@ -204,6 +251,15 @@ import kotlinx.serialization.json.*
                     probe = if (result.simulated) "Fixture 测试通过；没有调用真实模型。" else "本次测试成功 · 服务返回模型：${result.model ?: "未报告"}"
                 } finally { probing = false }
             } }) { Text(if (probing) "测试中…" else "发送测试请求") }
+            TextButton(enabled = !probing && protocol == "responses", modifier = Modifier.testTag("probe-hosted-search"), onClick = { vm.engine.work {
+                probing = true
+                try {
+                    val connection = original.copy(name = name, endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = false)
+                    searchProof = HostedSearchAdapter.probe(context, connection, key.trim().ifBlank { vm.repository.credential(original.id) }, vm.engine.client, BuildConfig.DEBUG)
+                    probe = if (searchProof.text("status") == "verified") "已收到服务端 Search completed 回执；保存连接后生效。" else "服务没有返回已完成的 Search 回执；普通回答不算搜索验证。"
+                } finally { probing = false }
+            } }) { Text("验证 Hosted Search") }
+            Text("Hosted Search 验证会发送一次真实搜索请求并计入服务用量；只验证当前连接与凭证，24 小时后需重新验证。", color = MeloMuted)
             probe?.let { Text(it, color = MeloGold) }
         }
     }

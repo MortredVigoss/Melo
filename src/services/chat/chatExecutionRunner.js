@@ -110,7 +110,6 @@ import {
   applyVerificationToReply,
 } from '../../retrieval/selfVerification.js';
 import {
-  buildSearchPlan,
   buildSearchRoutingPrompt,
   filterToolsForSearchPlan,
 } from '../../retrieval/searchRouter.js';
@@ -137,6 +136,9 @@ import { createFunctionCallingSession, compactToolChain, toolProtocolFor } from 
 import { buildToolChainRecord } from '../../tools/toolProtocol.js';
 import { createCoreTurn } from '../../runtime/sharedAgentCore.js';
 import { createHash } from 'node:crypto';
+import { buildSharedSearchPlan } from '../../retrieval/sharedSearchPlan.js';
+import { hostedSearchReceipt } from '../../../shared/agent/hostedSearch.js';
+import { resolveHostedSearchCapability } from '../search/hostedSearchCapability.js';
 
 // `getSharedSkillIndex(skills)` — module-private factory bound to the
 // `buildSkillIndex` implementation imported above. It returns a stable
@@ -301,10 +303,20 @@ export async function runChatAgentExecutionGraph({
           ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
           : null;
         let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
-        const searchPlan = buildSearchPlan({
+        const searchCapability = _dependencies.searchCapability || await resolveHostedSearchCapability({ ...config,
+          apiKey: modelOverrides.apiKey ?? config.apiKey, baseUrl: modelOverrides.baseUrl || config.baseUrl,
+          model: modelOverrides.model || activeAgentProfile.model || config.model });
+        const searchPlan = buildSharedSearchPlan({
           latestUserMessage,
           modelMessages,
-          authMode: config.authMode,
+          config,
+          capabilities: {
+            executors: getAllTools().filter(tool => scopeAllowsTool(context.capabilityScope, tool.id)).map(tool => tool.id),
+            grants: [...new Set(['web_search', 'fetch_url', 'phone_use', ...getAllTools().map(tool => tool.id)])].filter(id => scopeAllowsTool(context.capabilityScope, id)),
+            // Unknown until a connection-specific tool probe has supplied proof.
+            hostedSearch: searchCapability.status,
+            browserSearch: true,
+          },
         });
 
         // ── 2. Async fan-out ───────────────────────────────────────────────
@@ -493,7 +505,7 @@ export async function runChatAgentExecutionGraph({
         // enabledMcpServerIds whitelist; the default is deny-all so a new
         // agent can't call any MCP without explicit opt-in.  Non-MCP tools
         // pass through filterMcpToolsForAgent untouched.
-        let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
+        let toolsPrompt = searchPlan.sharedPlan?.instructions || buildSearchRoutingPrompt(searchPlan);
         let visibleToolIds = new Set();
         let promptTools = [];
         const explicitTeam=teamPlan || state.tasks?.find(t=>t.execution?.requestId===context.requestId)?.execution?.teamPlan;
@@ -739,7 +751,7 @@ export async function runChatAgentExecutionGraph({
         const functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
         const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
-          ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
+          ? { ...section, text: [graphState.searchPlan.sharedPlan?.instructions || buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
             { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
@@ -757,6 +769,8 @@ export async function runChatAgentExecutionGraph({
         // redacted projection; outputs are bounded by buildToolChainRecord.
         const toolChainTurns = [];
         const evidencePairs = [];
+        const hostedItems = [];
+        let missingHostedEvidence = false;
         // agent-loop-audit #1: identical failing calls are answered locally
         // after two consecutive failures instead of re-executed.
         const repeatGuard = createRepeatGuard();
@@ -768,13 +782,14 @@ export async function runChatAgentExecutionGraph({
         // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
         const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
-        const allowedToolIdList = [...visibleToolIds];
-        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: turnTimeoutMs } });
+        const allowedToolIdList = filterToolsForSearchPlan(graphState.promptTools, graphState.searchPlan)
+          .filter(tool => !/^browser_/u.test(tool.id) || graphState.searchPlan.sharedPlan?.backend === 'browser').map(tool => tool.id);
+        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.tools.filter(name => ['web_search', 'fetch_url', 'phone_use'].includes(name)), limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: turnTimeoutMs } });
         let allowedDispatchTools = null;
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;
         const dispatchConstants = () => {
-          allowedDispatchTools ??= new Set(filterMcpToolsForAgent([...getAllTools(), ...mcpToolsForAgent(graphState.activeAgentProfile)], graphState.activeAgentProfile).map(t => t.id));
+          allowedDispatchTools ??= new Set(filterMcpToolsForAgent([...getAllTools(), ...mcpToolsForAgent(graphState.activeAgentProfile)], graphState.activeAgentProfile).filter(tool => allowedToolIdList.includes(tool.id)).map(t => t.id));
           dispatchAgentProfiles ??= Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)]));
           dispatchMemberBackground ??= buildMemberBackground({ chat, projectContext: graphState.projectContext });
           return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
@@ -859,23 +874,32 @@ export async function runChatAgentExecutionGraph({
             //
             // Native provider features obey the Agent capability snapshot.
             workspacePath: workspace?.rootPath || null,
-            // Stable across turns (A2): the native web_search definition is
-            // present whenever the agent may use the network; whether to use
-            // it this turn is said in the routing prompt. Only an explicit
-            // user network-off or a non-Codex route keeps it off.
-            nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && !['user-disabled-network', 'user-disabled-search'].includes(graphState.searchPlan?.reason),
+            // Hosted tools require a connection-specific proof and this turn's route.
+            nativeWebSearchEnabled: graphState.searchPlan?.nativeWebSearchEnabled === true && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled,
             nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
-            onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
+            onExecutionEvent: event => {
+              sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined });
+            },
           });
 
           signal.throwIfAborted();
+          if (graphState.searchPlan?.nativeWebSearchEnabled) {
+            hostedItems.push(...(rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type)));
+          }
           const turn = functionSession.parse(rawReply);
           const { thinking, toolCalls } = turn;
 
           // No tool calls → this is the final response
           if (!toolCalls.length) {
             coreTurn.update('complete');
-            finalReply = turn.text;
+            const hostedReceipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
+            missingHostedEvidence = graphState.searchPlan?.nativeWebSearchEnabled && (!hostedReceipt.verified || !hostedReceipt.sources.length);
+            finalReply = coreTurn.reason === 'MISSING_TOOL_EVIDENCE'
+              ? '本轮未收到成功的工具回执，无法确认已检索来源或完成请求的操作（MISSING_TOOL_EVIDENCE）。'
+              : graphState.searchPlan?.nativeWebSearchEnabled
+                ? hostedReceipt.verified && hostedReceipt.sources.length ? hostedReceipt.answer
+                  : '本轮未收到可核对的 Search completed 与来源回执，无法确认已完成实时检索。请重新验证 Hosted Search 或配置 HTTP Search Backend。'
+                : turn.text;
             break;
           }
           coreTurn.update('calls', { calls: toolCalls.map(call => ({ ...call, name: mcpToolsByName.get(call.name)?.id || call.name })) });
@@ -919,7 +943,10 @@ export async function runChatAgentExecutionGraph({
           }
           const executableCalls = toolCalls.map(tc => {
             let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || mcpToolsByName.get(tc.name) || getTool(tc.name);
-            if (!coreTurn.permits(tc.id)) tool = null;
+            if (!coreTurn.permits(tc.id)) {
+              tool = null;
+              tc.rejectedResult ||= { ok: false, error: coreTurn.rejection(tc.id), output: `Tool request rejected by this turn's Core policy: ${coreTurn.rejection(tc.id)}` };
+            }
             if (tool && !visibleToolIds.has(tool.id)) {
               tool = null;
             }
@@ -1053,7 +1080,7 @@ export async function runChatAgentExecutionGraph({
             accumulatedToolResults.push(projectToolResultForPersist(call, result, record));
             evidencePairs.push({ call, result, receivedAt: nowIso() });
             coreTurn.update('result', { callId: call.id, ok: result.ok === true,
-              progressKey: createHash('sha256').update(call.name + '\n' + String(result.output || result.error || '')).digest('hex') });
+              progressKey: result.meta?.progressKey || createHash('sha256').update(call.name + '\n' + String(result.output || result.error || '')).digest('hex') });
           }
           if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
           // A cancelled turn stops here: its records are on disk for the
@@ -1085,7 +1112,8 @@ export async function runChatAgentExecutionGraph({
         // the finalize node can attach it to normalizedReply → sendChatMessage
         // attaches it to the persisted assistantMessage.  Only emit when
         // non-empty so we don't pollute pure-text replies with empty arrays.
-        const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+        const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }),
+          skipVerification: coreTurn.status === 'blocked' || missingHostedEvidence || graphState.searchPlan.sharedPlan?.route === 'unavailable', next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
         }
@@ -1105,6 +1133,7 @@ export async function runChatAgentExecutionGraph({
         const channelKind = isRemoteChannel ? 'remote' : 'desktop';
         const parsed = parseUncertaintyMarker(graphState.reply);
         const shouldVerify =
+          !graphState.skipVerification &&
           parsed.hasMarker &&
           intentRequiresVerification(graphState.classification || graphState.intent);
 

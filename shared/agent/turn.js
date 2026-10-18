@@ -1,3 +1,5 @@
+import { COMMON_TOOLS, validateCommonTool } from './tools.js';
+
 // Portable turn state. All time and identity come from the owning Host.
 export const CORE_VERSION = 1;
 
@@ -11,15 +13,15 @@ function identity(value) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 256;
 }
 
-export function startTurn({ runId, turnId, allowedTools = [], now, limits = {} }) {
+export function startTurn({ runId, turnId, allowedTools = [], requiredTools = [], now, limits = {} }) {
   if (!identity(runId) || !identity(turnId) || !Number.isFinite(now)) fail('INVALID_TURN', 'Invalid turn identity or clock.');
   const bounded = (key, fallback, max) => Number.isInteger(limits[key]) && limits[key] > 0 && limits[key] <= max ? limits[key] : fallback;
   return {
     version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now,
     deadline: now + bounded('timeoutMs', 600_000, 3_600_000),
     limits: { rounds: bounded('rounds', 10, 64), callsPerRound: bounded('callsPerRound', 8, 32), errors: bounded('errors', 3, 10), stagnant: bounded('stagnant', 5, 20) },
-    allowedTools: [...new Set(allowedTools.filter(identity))], rounds: 0, awaitingModel: false,
-    callIds: [], pending: [], permitted: [], errors: 0, roundSucceeded: false, stagnant: 0, progressKeys: [], reason: null,
+    allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
+    callIds: [], pending: [], permitted: [], phoneTasks: [], rejections: {}, errors: 0, roundSucceeded: false, stagnant: 0, progressKeys: [], reason: null,
   };
 }
 
@@ -28,7 +30,7 @@ export function advanceTurn(previous, event, now) {
   if (!Number.isFinite(now) || now < previous.lastNow) fail('INVALID_CLOCK', 'The Host clock must be monotonic.');
   if (event?.runId !== previous.runId || event?.turnId !== previous.turnId) fail('TURN_MISMATCH', 'The event belongs to another turn.');
   if (previous.status !== 'running') fail('TURN_CLOSED', 'The turn has ended; late events cannot issue effects.');
-  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys] };
+  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools } };
   const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [] });
   if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], awaitingModel: false };
   if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
@@ -50,10 +52,25 @@ export function advanceTurn(previous, event, now) {
       }
       state.callIds = [...seen];
       state.pending = calls.map(call => call.id);
+      state.pendingTools = Object.fromEntries(calls.map(call => [call.id, call.name]));
       state.roundSucceeded = false;
       // Unknown tools still receive paired error receipts; they never get an
       // effect permit. One hallucinated name must not drop a valid sibling.
-      state.permitted = calls.filter(call => state.allowedTools.includes(call.name)).map(call => call.id);
+      state.rejections = {};
+      state.permitted = calls.filter(call => {
+        if (!state.allowedTools.includes(call.name)) { state.rejections[call.id] = 'UNKNOWN_TOOL'; return false; }
+        if (COMMON_TOOLS.some(tool => tool.name === call.name)) {
+          try { validateCommonTool(call.name, call.arguments); }
+          catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
+        }
+        if (call.name === 'phone_use') {
+          const task = call.arguments.purpose + ':' + call.arguments.goal.trim().toLowerCase();
+          if (state.phoneTasks.includes(task)) { state.rejections[call.id] = 'REPEATED_TASK'; return false; }
+          if (state.phoneTasks.length >= 3) { state.rejections[call.id] = 'PHONE_TASK_LIMIT'; return false; }
+          state.phoneTasks.push(task);
+        }
+        return true;
+      }).map(call => call.id);
       state.awaitingModel = false;
       return state;
     }
@@ -65,6 +82,9 @@ export function advanceTurn(previous, event, now) {
       if (!state.pending.includes(event.callId)) fail('UNKNOWN_RESULT', 'The result has no pending call in this turn.');
       if (typeof event.ok !== 'boolean') fail('INVALID_RESULT', 'A tool result must report success explicitly.');
       state.pending = state.pending.filter(id => id !== event.callId);
+      const toolName = state.pendingTools[event.callId];
+      if (event.ok && state.permitted.includes(event.callId) && toolName && !state.successfulTools.includes(toolName)) state.successfulTools.push(toolName);
+      delete state.pendingTools[event.callId];
       state.roundSucceeded = state.roundSucceeded || event.ok;
       if (!state.pending.length) state.errors = state.roundSucceeded ? 0 : state.errors + 1;
       if (typeof event.progressKey === 'string' && event.progressKey.length <= 256 && event.progressKey) {
@@ -78,6 +98,7 @@ export function advanceTurn(previous, event, now) {
     }
     case 'complete':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'A final answer cannot drop pending tools.');
+      if ((state.requiredTools || []).some(name => !state.successfulTools.includes(name))) return stop('MISSING_TOOL_EVIDENCE');
       return { ...state, status: 'completed', awaitingModel: false };
     default: fail('UNKNOWN_EVENT', 'Unknown turn event.');
   }

@@ -1,6 +1,8 @@
 import { CORE_VERSION, startTurn, advanceTurn } from './turn.js';
 import { planRequest } from './search.js';
 import { buildSkills } from './skill/skillService.js';
+import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } from './tools.js';
+import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } from './hostedSearch.js';
 
 export function evaluate(input) {
   try {
@@ -10,6 +12,16 @@ export function evaluate(input) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'plan': value = planRequest(input.request); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;
+      case 'catalog': value = toolCatalog(input.names); break;
+      case 'validateTool': value = validateCommonTool(input.name, input.arguments); break;
+      case 'config': value = normalizeRuntimeConfig(input.config); break;
+      case 'searchResult': value = normalizeSearchResponse(input.result, input.observation); break;
+      case 'searchRequest': value = searchRequest(input.arguments, input.config); break;
+      case 'pageResult': value = normalizeFetchedPage(input.result, input.observation); break;
+      case 'connectionIdentity': value = connectionIdentity(input.connection); break;
+      case 'hostedCapability': value = hostedCapability(input.proof, input.fingerprint, input.now); break;
+      case 'hostedReceipt': value = hostedSearchReceipt(input.response); break;
+      case 'hostedProof': value = hostedSearchProof(input); break;
       case 'start': value = startTurn(input.turn); break;
       case 'advance': value = advanceTurn(input.state, input.event, input.now); break;
       default: throw Object.assign(new Error('Unknown Core operation.'), { code: 'UNKNOWN_OPERATION' });

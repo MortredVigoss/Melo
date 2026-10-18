@@ -18,6 +18,7 @@ import { renderReplyDocument, replyPlainText } from './replyDocument.js';
 import { renderImageSettings, renderImageTaskControls, consumeImageTask, restoreImageTask, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
+import { renderSearchSettings, editSearchSettings, handleSearchSettings } from './searchSettings.js';
 import { renderAtomicButton } from './atomicButton.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor } from './executionPanel.js';
 import { sceneSteps, renderRunSteps } from './runSteps.js';
@@ -8446,6 +8447,7 @@ function renderModelPage() {
       </div>
       ${renderDefaultModelSettings(config, escapeHtml)}
       ${renderLlmConnections(config)}
+      ${renderSearchSettings(config)}
       ${renderExtraFast(config)}
       ${renderImageSettings(config)}
       <details class="model-prompt-settings"><summary>全局系统提示词</summary>
@@ -11367,6 +11369,11 @@ document.addEventListener('click', async event => {
     await handleLlmConnection(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
     return;
   }
+  if (action?.startsWith('search-settings-') && trigger.tagName === 'BUTTON') {
+    event.preventDefault();
+    await handleSearchSettings(action, { api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) });
+    return;
+  }
   if (['new-chat','open-view','open-chat','focus-project','open-artifact','select-agent-profile','open-customize-section','select-palette-command','open-search-result','select-customize-item'].includes(action)) {
     uiState.neuralOverview = false;
     uiState.neuralGroup = null;
@@ -12708,6 +12715,7 @@ document.addEventListener('input', event => {
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editExtraFast(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
+  if (editSearchSettings(target)) return;
 
   if (target.id === 'composer') {
     uiState.composer = target.value;
@@ -12996,6 +13004,7 @@ document.addEventListener('change', async event => {
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
   if (editExtraFast(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
+  if (editSearchSettings(target)) { render(); return; }
 
   try {
     if (target.id === 'composer-attachment-input') {
