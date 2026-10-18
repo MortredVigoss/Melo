@@ -35,7 +35,7 @@
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
-2026-10-18 Fold6 0.6.0 的 brunch / 导航漏路由与历史解释误操作已在 0.7.0 (15) 源码修复；用户已认可 [Research / 折叠执行卡 / Markdown 规格](docs/specs/2026-10-18-research-execution-markdown-design.md)。同源 Core 接任务证据、Scene 和上轮记录上下文；Android 持久化真实步骤、区分受阻 / 部分完成，接默认折叠卡与共同 Markdown 解析。147 Node、117 JVM、Lint / Debug / R8、Cover 22 项通过，其他回归和展开继续验；私人 Fold6 尚未装本版，当前 Windows ADB 无设备，未发真实请求。既有诊断见 [Search 实机诊断](docs/shared-agent-search-20261018.md)。
+2026-10-18 Android 0.7.0 (15) 已实现已认可的 Research / 折叠执行卡 / 共享 Markdown；brunch + 导航先 Search，历史解释读取实际记录，Guard / 部分完成不冒称成功。147 Node、117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 执行、最终签名 R8 覆盖与 UI Smoke 通过，签名及四 ABI alignment 通过。Fold6 未被 Windows ADB 发现，尚未安装本版；没有真实模型/Search 请求，iOS 原生与全部 Skill/Context/Memory/Cache 统一仍待做。[实施和准确边界](docs/research-execution-markdown-20261018.md) / [机器证据](docs/evidence/research-execution-markdown-20261018.json)。
 
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
@@ -716,3 +716,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - Hosted proof 绑定连接身份且 24h 过期；Source completed + 来源才算已检索，工具缺证据返回明确未验证。兼容 HTTP / Brave 均用 Fixture，凭证绑定 endpoint 且只存本机，配置 Schema 共用但尚未自动 Sync。
 - 314 Node + 203 相关回归、最后 UI 16 tests；115 JVM / Lint / Debug / R8、42 同源 Fixtures，Cover 43 + 展开 9 Emulator 执行通过。真实 Desktop 设置页 Playwright 验证、两种 Native 尺寸截图及 APK hash / 签名 / alignment 已核对；[详细边界](docs/shared-agent-search-20261018.md)。
 - Fold6 / One UI 8.5 与 iOS 原生仍待验；Skill 调度 / Tool records / Context / Memory / Task Cache 按计划继续。当前未访问真实账号、操作私人手机、覆盖安装、push / git pp；Emulator / ADB 5048 / QA server 与 Browser 已清理。
+
+### 2026-10-18 — Android / Shared Core — 0.7.0 Research、执行透明度和 Markdown 交付
+
+- 用户已认可三项推荐方案；产品代码 `1e292e9`。Node / Android 共用复合任务依赖、来源证据和 ExecutionScene 投影，Android 接真实落盘与原生折叠卡、共享 Markdown 解析；没有新增服务或真实请求。
+- 147 Node / 117 JVM、Lint / Debug / R8、45 Fixtures、Cover 48 + 展开 10 次 Emulator 执行通过；另 2 次 UI seed 为最终 R8 覆盖检查准备。签名 / 四 ABI alignment / 安装 APK hash / 数据保留、重启和尺寸切换 UI 均通过；初轮失败和修复边界保留在[专项](docs/research-execution-markdown-20261018.md)。
+- 最终签名 Preview 0.7.0 (15) 在本会话 outputs；Fold6 当前未连接，未装本版，真实 Research / Maps 和 Samsung 姿态仍需验。Router 仍为关键词策略，iOS 生产 Loop / UI、全部通用能力迁移尚未完成；不是整仓 release gate。自有 Emulator / 5048 已清理，未 push / git pp。

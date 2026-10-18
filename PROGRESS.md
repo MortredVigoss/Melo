@@ -1,8 +1,8 @@
 ## 2026-10-18 — 让用户能核对 Research 和操作实际做到了哪一步
 
-用户已认可推荐方案。Codex 修复 brunch / 导航与历史解释的 Routing，接入同源记录 / 证据检查、Chat 折叠卡与共享 Markdown；保持 App 内配置和 Fixture 开发边界，不新增服务或自动请求真实模型。
-147 Node 定向回归、117 JVM、Lint / Debug / R8 构建通过；Cover 核心 / Search / 三协议复合任务 / UI / Phone Use 共 22 项已过，其他回归与展开尺寸继续验。初轮 UI 因测试 Intent 破坏 ActivityScenario 追踪失败，改走实际 UI 后两项复测通过，失败证据保留。
-当前 Fold6 未被 Windows ADB 发现，已询问连接状态；尚未安装 0.7.0，不将 Fixture 导航回执称真实 Maps 验收。
+用户已认可推荐方案。Codex 完成 Research 依赖/证据、历史解释、持久执行卡和共享 Markdown；沿用 App 内凭证与 Fixture 边界，没有新增付费服务或真实请求。
+147 Node、117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 执行，以及最终签名 R8 覆盖/重启/尺寸切换 UI 均通过；另 2 次 UI seed 独立记录。初轮测试 Intent 生命周期失败已修，失败证据保留，没有放宽断言。
+Fold6 未被 ADB 发现，0.7.0 未装手机；Fixture 导航不当作真实 Maps 或 Research 质量验收。自有 Emulator / 5048 已清理，未运行整仓 gate、push 或 git pp。产品提交 `1e292e9`；详细边界见专项交付文档。
 
 ## 2026-10-18 — 将推荐质量、执行透明度与 Markdown 作为同一条 Chat 体验核对
 

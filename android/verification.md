@@ -1,5 +1,13 @@
 # Android verification — 2026-10-18
 
+## 2026-10-18 — 0.7.0 (15) Research / 执行卡 / Markdown
+
+147 Node 定向回归、117 JVM tests、Lint 零 Error、Debug / R8 Release / test APK 构建通过。45 同源 Fixtures；Android 16 Emulator Cover 48（22 + 26）、展开 10 次最终执行全通过，另有 2 次仅用于 Release UI seed。三协议 HTTP Search → fetch → fixture phone_use → reply、来源/导航证据不足、历史解释、取消/中断和真实 Service/Device/Cache/Settings 回归均覆盖；不是实际 Maps 或真实 provider 验收。
+
+最终签名 R8 Preview 覆盖自有 Emulator，回读 APK hash 一致，完整本机测试文档、18 Chat / 10 runs / 5 agents、UID / 首次安装时间 / Accessibility 设置保留；进程重启、默认折叠/展开、Tool/来源/部分完成原因、Markdown 和 Cover/展开尺寸切换通过，无当前进程 Fatal。Smoke 时 Accessibility 未启用，其结果与先前 Service tests 分开。初轮 UI Intent 生命周期失败及辅助脚本 appId 匹配问题已修正，失败日志保留。
+
+APK SHA-256 `6b5807f8054c7919c2974af607d378986cdb697e94551341bf7e505760d58b34`，签名证书同历史 Preview，四 ABI ZIP / ELF 16 KiB alignment 通过。Windows ADB 未发现 Fold6，本版未安装手机，未发真实模型/Search 请求或读取手机凭证；iOS 原生/整个 repo gate/CI/push 未验。自有 Emulator 与 5048 已关闭，Windows 5037 保留。[详细记录](../docs/research-execution-markdown-20261018.md) / [机器证据](../docs/evidence/research-execution-markdown-20261018.json)。
+
 ## 2026-10-18 — Fold6 覆盖安装 0.6.0 (14)
 
 用户连接并授权安装后，R8 Release Preview 与手机现有 0.5.1 / 历史 Preview 证书核对一致；签名、四 ABI 16 KiB alignment 和打包 Core hash 通过。`pm install -r` 返回 Success，设备回读 0.6.0 (14) 与 APK SHA-256 一致；原 11 段对话 / 1 个角色、UID / 首次安装时间及两项 Accessibility 设置保留，未卸载或清数据，未读取配置值或 Keystore Key。

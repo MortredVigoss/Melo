@@ -22,7 +22,7 @@ Chat → 同源 JS Core Router → 已验证 Hosted Search / 已配置 HTTP Sear
 
 Desktop 与 Android 有显式保存的 Search 设置和 Hosted Search 测试入口。Key 绑定 endpoint，空输入保留、明确清除才删除；Desktop config 为本机私有存储，Android 用 Keystore。Search Key 不进入 bootstrap、资料 Sync 或 export，不读取其他模型的 Key。保存设置本身不发送搜索。
 
-配置 Schema / 默认值共用；非秘密 Search 设置尚未自动跨设备同步。Android 的最终回答 / 来源沿用 RunRecord；原始 Search 响应只在当前 Loop 内使用，尚未迁入 Desktop 的完整 ToolInvocationRecord / tool-trace replay。
+配置 Schema / 默认值共用；非秘密 Search 设置尚未自动跨设备同步。0.6.0 的 Android 最终回答 / 来源沿用 RunRecord，未保存通用 Tool trace；0.7.0 已补本机有界 ExecutionScene 与历史解释上下文，原始完整响应仍不落盘，完整 ToolInvocationRecord / trace replay 的统一继续单列。
 
 ## 实际验证
 
@@ -47,7 +47,9 @@ Desktop 与 Android 有显式保存的 Search 设置和 Hosted Search 测试入�
 - 上游新增 Tool envelope / records、预算、Skill 调度、Context / Memory、摘要 Sync 与 Task Cache 的后续模块迁移。当前仍有平台路径，见 [实施计划](shared-agent-implementation-20261017.md)。
 - Android 直接网页读取仅文本 / 静态 HTML，不跟随 Redirect，不承诺动态页面。HTTP / Hosted 来源不独立证明当前营业状态。需要澄清但未调用工具的任务目前可能统一返回“未验证”；显式 needs_user 终态与更自然的澄清需继续随统一 Loop 处理。
 
-## 后续实机只读诊断：用户 brunch / 导航记录
+## 后续实机只读诊断：用户 brunch / 导航记录（0.6.0 历史）
+
+以下是保留的失败基线。0.7.0 已修复这些已知措辞的 Routing、终态和记录缺口；历史执行记录不反向补造明细。[后续实现 / 验证及未完成边界](research-execution-markdown-20261018.md)。
 
 安装后用户自行请求推荐 brunch 并导航，随后追问使用了哪些工具、为何没有打开 Google Map。2026-10-18 的最新两条原生执行列表时间分别为 `06:06:21Z` 与 `06:07:36Z`，均标 `completed`；Chat 中分别为餐厅推荐 / Maps 路线链接，以及 `MISSING_TOOL_EVIDENCE`。Phone Use 已开启，Fold6 外屏 968×2376、无运行中任务。本回合只读这些 UI 记录与源码，并在本机重放 Router；没有重发提问、实际搜索、操作 Maps 或保存设置，最后返回原 Chat。私人截图 / 对话摘录仅在本会话忽略的 work 目录，不入 Git。
 

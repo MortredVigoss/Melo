@@ -1,6 +1,6 @@
 # Research、Chat 执行记录与 Markdown
 
-状态：用户于 2026-10-18 选择“按推荐方案实现”，开始实施。沿用已认可的同源本机 JS Core；开发只用 Fixture，App 内凭证保留，不新增付费服务或默认占用手机屏幕。
+状态：用户于 2026-10-18 选择“按推荐方案实现”；Android 0.7.0 已完成实现、定向回归、双尺寸 Emulator 与最终 R8 UI Smoke。Fold6 未连接，实机和真实 provider 待验；[实施与验证](../research-execution-markdown-20261018.md)。沿用已认可的同源本机 JS Core；开发只用 Fixture，App 内凭证保留，不新增付费服务或默认占用手机屏幕。
 
 ## 已核对的缺口
 

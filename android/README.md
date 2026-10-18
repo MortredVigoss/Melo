@@ -38,9 +38,13 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## Chat Search / Phone Use（0.6.0）
+## Chat Search / Phone Use（0.7.0）
 
 普通 Chat 的公开查询（例如“Surry Hills 现在营业的餐厅”）先由本机 Shared JS Core 选择已验证的 Hosted Search 或已配置 HTTP Search Backend，不自动占用屏幕。明确说“去小红书搜索这家店”或“用 Google Maps 搜索”才 invoke phone_use，再回当前 Chat。每 Chat 的「对话设置 → 允许调用手机」仍可关闭能力。
+
+0.7.0：`推荐 brunch 并导航 → Search → 按需读取来源 → Phone Use`；只有本轮实际返回来源后才能继续导航。关于上次执行的提问读取已存记录，不重新触发手机操作。缺少 Search Backend 时明确说明；真实检索仍需在「系统 → Web Search」配置或验证能力。
+
+Chat 答案前默认折叠执行卡，展开显示实际 Tool、来源、耗时和停止原因；来源摘要与网页读取分别记录，重启后保留。公开 Reasoning Summary 仅在服务真实返回时显示。旧记录没有明细就标明未知。回复支持标题、列表、粗体、代码、安全链接和可横向滚动表格，共用仓库 Markdown 解析。
 
 设备任务卡片与停止按钮留在 Chat；历史图标可管理操作 Cache。使用该轮捕获的模型、角色和项目，一次只允许一个设备任务，其他 Chat 可独立问答。停止 Chat 会取消其子任务；失败 / 取消 / 需用户时不会自动续跑。research 强制实时 Probe，不复用旧查询事实；action 可复用已验证 Cache 步骤。查询成功后尝试返回所属 Chat。
 
@@ -50,7 +54,7 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 
 同一窗口中其他节点更新不会阻止已重新校验的 Node 操作；目标本身、窗口、尺寸或有效期改变仍拒绝。坐标点击需在目标 App 的 Melo 悬浮按钮确认，明确的发送 / 删除 / 付款等节点也要求本步确认；确认后再次校验屏幕。此风险分类不覆盖所有自绘或未知按钮语义。随时可点击「停止 Melo」。
 
-默认记录只包含目标、模型连接名称、关联会话和步骤摘要 / call ID / 耗时 / 错误码；不保存或同步屏幕、UI tree、输入参数和凭证。长任务按完整 Tool Call / Result 对裁剪，保留最近观察、当前搜索结果与截图；超过字符预算明确停止。
+设备记录只包含目标、模型连接名称、关联会话和步骤摘要 / call ID / 耗时 / 错误码；不保存或同步屏幕、UI tree、设备输入参数和凭证。Chat 通用执行卡另在本机保存脱敏、有界的 Tool 输入/结果与来源摘要，不进入 portable Sync。长任务按完整 Tool Call / Result 对裁剪，保留最近观察、当前搜索结果与截图；超过字符预算明确停止。
 
 首次在「系统 → 手机控制设置与诊断」打开 Android 辅助功能设置，在已安装服务中启用「Melo 手机助手」，返回普通 Chat 发送自然语言目标即可。例如：`打开设置，搜索蓝牙，停在搜索结果页面`。诊断页仍保留独立手动执行与 Display 设置。若系统提示 App 的设置受限制，请按系统提示在该 App 的信息页面允许相应设置；App 不会自行启用辅助功能。
 
@@ -77,6 +81,8 @@ Responses 连接可点击「验证 Hosted Search」，此操作会发起一次�
 Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key；留空保留、明确勾选后清除，不进入导出 / Sync。两端共用配置结构与默认策略，尚未自动同步非秘密 Search 设置。网页读取目前 Android 支持直接文本 / 静态 HTML，不跟随 Redirect；动态页面和实时营业状态不能凭抓取时间认定。
 
 0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，并同签名覆盖安装 Fold6 / One UI 8.5；展开模式启动及原 11 Chat / 1 角色、Accessibility 设置保留核对通过。本次仅安装与启动，未发真实模型 / Search 请求，实机 Core 执行、两种姿态功能与切换仍需验证。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [开发证据](../docs/shared-agent-search-20261018.md) / [装机证据](../docs/evidence/shared-agent-fold6-install-060-20261018.json)。
+
+0.7.0 (15) 已完成 147 Node / 117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 测试执行和最终签名 Release UI Smoke；签名及四 ABI 16 KiB alignment 通过。原生导航链路使用 Fixture，没有发送真实模型/Search 请求。Fold6 当前未被 ADB 发现，尚未安装本版；[完整边界与交付](../docs/research-execution-markdown-20261018.md)。
 
 ## 数据与跨端同步
 
