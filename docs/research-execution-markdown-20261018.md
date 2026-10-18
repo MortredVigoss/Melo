@@ -23,7 +23,7 @@ Chat 每次请求在答案前显示默认折叠的执行卡，展开可查真实
 
 ## 交付与边界
 
-Windows 当前会话的 `outputs/Melo-Android-0.7.0-preview.apk` 是最终签名交付，另有 SHA、verification JSON 和四张 Release UI 截图。Windows ADB 没有发现 Fold6，未覆盖手机；手机最后已验证版本仍为 0.6.0 (14)。本轮没有读取手机私聊/凭证，也没有真实模型/Search 请求，Fixture 的导航回执不能证明真实 Maps 或推荐质量。
+Windows 当前会话的 `outputs/Melo-Android-0.7.0-preview.apk` 是最终签名交付，另有 SHA、verification JSON 和四张 Release UI 截图。开发回合原先未发现 Fold6；用户随后连接解锁，0.7.0 (15) 已同签名覆盖安装。实际包 hash 一致，原 13 Chat / 1 角色、UID / 安装历史及两项 Accessibility 设置保留，展开 MainActivity 启动稳定、当前进程无 Fatal。[独立装机证据](evidence/research-fold6-install-070-20261018.json)。装机回合没有读取私聊正文/配置值/凭证，也没有真实模型/Search 请求；Fixture 导航不证明真实 Maps 或推荐质量，外屏与姿态切换未复验。
 
 Router 仍是关键词策略，不承诺任意措辞；Phone 不可用的复合请求目前会整轮 preflight 停止，工具前需澄清的情形仍可能返回证据不足。网页仅静态文本/HTML、无 Redirect，来源时间不等于营业状态。Markdown 是既有语法子集，不是完整 CommonMark。Node 同步新契约并回归；iOS 只有相同 bundle，生产 Swift/UI 未切换或原生验收。Skill 调度、全部 Context/Memory/Cache 同源化仍按原计划推进。
 

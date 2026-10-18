@@ -1,5 +1,11 @@
 # Android verification — 2026-10-18
 
+## 2026-10-18 — Fold6 覆盖安装 0.7.0 (15)
+
+用户连接解锁并授权后，同证书覆盖实际 Fold6 / Android 16 / One UI property 80500。0.6.0 → 0.7.0 (15) 安装返回 Success，实际 APK hash 与最终 R8 Preview 一致；原 13 Chat / 1 角色、UID / 首次安装时间及两项 Accessibility 设置保留。展开 1856×2160 MainActivity 启动、前台与稳定 PID 核对正常，当前进程 Crash buffer 无 Fatal。未卸载/清数据、未读取私聊正文/配置值/Keystore，未新增 QA Chat 或发真实请求。
+
+首次 ADB Client 41 遇 Server 40 自动重启一次，之后复用 SmartSocket；安装后第一次 UI probe 未读到中枢，后续只读复核正常，没有重复安装。此次仅安装与展开启动，Research / Maps、外屏和姿态切换未测；源码未改，不重复产品 gate。[脱敏回执](../docs/evidence/research-fold6-install-070-20261018.json)。
+
 ## 2026-10-18 — 0.7.0 (15) Research / 执行卡 / Markdown
 
 147 Node 定向回归、117 JVM tests、Lint 零 Error、Debug / R8 Release / test APK 构建通过。45 同源 Fixtures；Android 16 Emulator Cover 48（22 + 26）、展开 10 次最终执行全通过，另有 2 次仅用于 Release UI seed。三协议 HTTP Search → fetch → fixture phone_use → reply、来源/导航证据不足、历史解释、取消/中断和真实 Service/Device/Cache/Settings 回归均覆盖；不是实际 Maps 或真实 provider 验收。

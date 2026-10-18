@@ -82,7 +82,7 @@ Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key�
 
 0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，并同签名覆盖安装 Fold6 / One UI 8.5；展开模式启动及原 11 Chat / 1 角色、Accessibility 设置保留核对通过。本次仅安装与启动，未发真实模型 / Search 请求，实机 Core 执行、两种姿态功能与切换仍需验证。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [开发证据](../docs/shared-agent-search-20261018.md) / [装机证据](../docs/evidence/shared-agent-fold6-install-060-20261018.json)。
 
-0.7.0 (15) 已完成 147 Node / 117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 测试执行和最终签名 Release UI Smoke；签名及四 ABI 16 KiB alignment 通过。原生导航链路使用 Fixture，没有发送真实模型/Search 请求。Fold6 当前未被 ADB 发现，尚未安装本版；[完整边界与交付](../docs/research-execution-markdown-20261018.md)。
+0.7.0 (15) 已完成 147 Node / 117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 测试执行和最终签名 Release UI Smoke；签名及四 ABI 16 KiB alignment 通过。原生导航链路使用 Fixture，没有发送真实模型/Search 请求。Fold6 / One UI 8.5 已同签名覆盖本版，原 13 Chat / 1 角色、UID / 安装历史及两项 Accessibility 设置保留，展开启动通过；没有真实 Search / Maps 任务或姿态切换复测，[装机证据](../docs/evidence/research-fold6-install-070-20261018.json)；[完整边界与交付](../docs/research-execution-markdown-20261018.md)。
 
 ## 数据与跨端同步
 

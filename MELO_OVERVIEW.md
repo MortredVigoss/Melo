@@ -20,7 +20,7 @@
 | Android / App Discovery | 0.5.1 (13) 已同签名覆盖 Fold6；准确名称 / 包名优先打开，小候选与显式浏览清单 | 原 10 Chat / 1 角色保留；folded 首轮 12 步受阻，退出旧搜索页后 5 步 / 23.806s 核对「设置」，两轮无 list_apps。跨包恢复 / 额外窗口恢复仍待修。[实机证据](docs/evidence/app-discovery-fold6-051-20261017.json)；113 JVM / Lint / R8 / 签名，本版前的同逻辑 runtime 40，详 verification |
 | Android / Samsung 窗口 | 0.4.2 已同证书安装；修正启动后的目标窗口交接，无法取得时停止；99 JVM / 34 runtime / Lint / R8 / 签名通过 | 同一最终 APK 的 folded / unfolded 微信截图均可读，tree 仍 0 节点；外部 ADB 搜索框坐标 + ASCII 输入成功，未发送消息；[证据与边界](docs/wechat-window-capture-20261016.md)。完整视觉输入 / 中文 IME 与 Fold Cache 布局隔离未实现 |
 | Android / Chat Phone Use | 0.5.0 已同证书安装；普通 Chat 按需 invoke phone_use，结果回当前对话；产品 `954b382` | 109 JVM / 39 runtime / Lint / R8 / 签名通过；Fold6 展开模式真实 Maps 查询 9 步及“第二家”追问 5 步通过，普通问答不启动设备；[证据](docs/chat-phone-use-20261017.md)。小红书 / 本版 folded 实测、微信输入 / Fold Cache 分区待做；Phone Use 开启暂非 Streaming；已确认查询默认占屏的路由缺口：Android 尚未接入 Search；核心能力分离与搜索优先待实现 |
-| Shared Agent Core / Search | 0.6.0 (14) 已接 Node / Android 真实 Chat 的同源 Router / Tool Contract / Search / Guard；已合入主线 `84abfa9`；R8 Preview 已同签名覆盖 Fold6 并启动 | 314 Node + 203 相关回归、115 JVM / Lint / Debug / R8、52 Emulator 执行与 42 Fixtures。实机展开安装前后 11 Chat / 1 角色、UID / 安装历史及两项 Accessibility 设置保留，无启动 Crash；[装机证据](docs/evidence/shared-agent-fold6-install-060-20261018.json)。未发真实请求，Fold6 Core 执行 / 两种姿态功能与 iOS 原生待验；Skill / Context / Memory / records 继续迁移；[开发证据](docs/shared-agent-search-20261018.md) |
+| Shared Agent Core / Search | Node / Android 本机共用 Router / Tool Contract / Search / Guard；Android 0.7.0 (15) 加 Research、持久折叠执行卡与共享 Markdown，已同签名覆盖 Fold6 | 147 Node / 117 JVM / Lint / Debug / R8、58 次双尺寸 Emulator 执行与 45 Fixtures；实机展开安装前后 13 Chat / 1 角色、UID / 安装历史和两项 Accessibility 设置保留，无当前进程 Fatal。[开发证据](docs/research-execution-markdown-20261018.md) / [装机证据](docs/evidence/research-fold6-install-070-20261018.json)。真实 Research / Maps、Fold 切换及 iOS 原生待验，全部 Skill / Context / Memory / records 统一继续迁移 |
 | 手机 Codex 登录 | `85ac3a5` 接独立设备码 OAuth；`14e602f` 修应用切换取消；0.5.17 (23) 已签名覆盖并启动，用户数据核对保留（含当时共享 WIP） | 同码恢复限同一进程，强杀/系统回收后需新验证码；用户真实授权尚未确认，交新主线跟进 |
 | 手机图片链 | 原图、编辑意图、失败保留与重试、结果保存/历史恢复已接生产入口；HTTP/原生夹具通过 | 手机真实账号权限、生成/修图画质待用户登录后验证；登录不自动生图 |
 | 手机保存反馈 | 共享成功记录、绿色已保存、并发保护及重复确认；聊天/图库/预览共用；已含在 0.5.18 (24) 实体包 | 23 Swift/模拟器实际照片写入及取消/重启通过；本轮签名安装启动通过，实体照片权限仍单列；见 `docs/ios-photo-save-20261015.md` |
@@ -35,7 +35,7 @@
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
-2026-10-18 Android 0.7.0 (15) 已实现已认可的 Research / 折叠执行卡 / 共享 Markdown；brunch + 导航先 Search，历史解释读取实际记录，Guard / 部分完成不冒称成功。147 Node、117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 执行、最终签名 R8 覆盖与 UI Smoke 通过，签名及四 ABI alignment 通过。Fold6 未被 Windows ADB 发现，尚未安装本版；没有真实模型/Search 请求，iOS 原生与全部 Skill/Context/Memory/Cache 统一仍待做。[实施和准确边界](docs/research-execution-markdown-20261018.md) / [机器证据](docs/evidence/research-execution-markdown-20261018.json)。
+2026-10-18 Android 0.7.0 (15) 已实现已认可的 Research / 折叠执行卡 / 共享 Markdown；brunch + 导航先 Search，历史解释读取实际记录，Guard / 部分完成不冒称成功。147 Node、117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 执行、最终签名 R8 覆盖与 UI Smoke 通过，签名及四 ABI alignment 通过。0.7.0 已同签名覆盖 Fold6 / One UI 8.5，原 13 Chat / 1 角色及两项 Accessibility 设置保留，展开启动正常；[装机证据](docs/evidence/research-fold6-install-070-20261018.json)。没有真实模型/Search 请求，iOS 原生与全部 Skill/Context/Memory/Cache 统一仍待做。[实施和准确边界](docs/research-execution-markdown-20261018.md) / [机器证据](docs/evidence/research-execution-markdown-20261018.json)。
 
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
@@ -722,3 +722,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户已认可三项推荐方案；产品代码 `1e292e9`。Node / Android 共用复合任务依赖、来源证据和 ExecutionScene 投影，Android 接真实落盘与原生折叠卡、共享 Markdown 解析；没有新增服务或真实请求。
 - 147 Node / 117 JVM、Lint / Debug / R8、45 Fixtures、Cover 48 + 展开 10 次 Emulator 执行通过；另 2 次 UI seed 为最终 R8 覆盖检查准备。签名 / 四 ABI alignment / 安装 APK hash / 数据保留、重启和尺寸切换 UI 均通过；初轮失败和修复边界保留在[专项](docs/research-execution-markdown-20261018.md)。
 - 最终签名 Preview 0.7.0 (15) 在本会话 outputs；Fold6 当前未连接，未装本版，真实 Research / Maps 和 Samsung 姿态仍需验。Router 仍为关键词策略，iOS 生产 Loop / UI、全部通用能力迁移尚未完成；不是整仓 release gate。自有 Emulator / 5048 已清理，未 push / git pp。
+
+### 2026-10-18 — Android — Fold6 覆盖 0.7.0 (15)
+
+- 用户连接并解锁后授权安装；实际 Fold6 / Android 16 / One UI property 80500，展开 1856×2160。实际已装 0.6.0 与最终 0.7.0 APK 证书一致，覆盖后版本和安装 APK hash 回读相符。
+- 原 13 Chat / 1 角色、UID / 首次安装时间及两项 Accessibility 设置保留；MainActivity 启动稳定、该进程 Crash buffer 无 Fatal。未读取私人对话正文、配置值或凭证，未新增 QA Chat 或发真实请求。
+- 首次 Windows ADB 41 Client 遇原 40 Server 自动重启一次，后续直接复用 SmartSocket；首次安装后 UI probe 没读到中枢，后续只读检查正常，没有重复安装。只验展开启动，不外推 Research / Maps / 外屏或姿态切换；[脱敏回执](docs/evidence/research-fold6-install-070-20261018.json)。无 push / git pp。
