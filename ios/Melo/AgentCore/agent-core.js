@@ -244,7 +244,7 @@ function maskQuotedText(value = '') {
 
 const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
 const SEARCH_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|google|look up)\b/iu;
-const NETWORK_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|打开(?:链接|网址|网页)?|访问|读取(?:链接|网址|网页))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access|fetch|open|read)\b/iu;
+const NETWORK_DENIAL = /不联网|不上网|(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|打开(?:链接|网址|网页)?|访问|读取(?:链接|网址|网页))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access|fetch|open|read)\b/iu;
 const CONTEXT_ONLY = /(?:仅|只)(?:凭|根据|依据|基于|使用).{0,16}(?:对话|上下文|基础知识|已给出的文字|提供的文本|提供的正文)|\b(?:only (?:use|using)|based only on)\s+(?:(?:this|our)\s+(?:chat|conversation|text)|the (?:provided|supplied)\s+(?:text|transcript))\b/iu;
 const LOCAL_SEARCH = /^(?:(?:please|can you|could you)\s+)?(?:rg|grep|ripgrep)\b|\b(?:search|find)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase|local files)\b|\b(?:search|find)\b[^\n]*\b(?:in|within)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase)\b|(?:在|从|对)(?:当前|这个|本地)?(?:工作区|仓库|项目|代码库|本地文件)[^。！？\n]{0,16}(?:搜|查找|检索)|(?:搜索|查找|检索)(?:当前|这个|本地)?(?:工作区|仓库|代码库)/iu;
 
@@ -641,8 +641,35 @@ function actionEvidence(plan = {}, urls = []) {
     : { ok: true };
 }
 
+// Continue only an explicit retry/resume phrase. The latest concrete user
+// request is the authority; assistant statements cannot grant tools. Preserve
+// restrictions from intermediate retries and stop at topic/cancellation changes.
+const CONTINUATION = /^(?:(?:请|帮我|麻烦你?|你|那就|现在)\s*)*(?:再试(?:一[次下]|试)?|重新(?:尝试|执行|试试|试)(?:一次|一下)?|继续(?:执行|刚才的任务)?|try again|retry|continue|go ahead)(?=[\s，,。.!！？?；;:]|$)/iu;
+
+function continuedRequest(text, messages) {
+  if (!CONTINUATION.test(getRequestNetworkPolicy(text).instruction.trim())) return null;
+  const previous = messages.map((message, index) => ({ message, index })).filter(({ message }) => message?.role === 'user' && typeof message.content === 'string');
+  if (previous.at(-1)?.message.content === text) previous.pop();
+  const chain = [text];
+  for (const { message: { content: prior }, index } of previous.slice(-8).reverse()) {
+    const priorInstruction = getRequestNetworkPolicy(prior).instruction.trim();
+    if (/^(?:取消|停止(?:操作|任务)?|终止|算了|cancel|stop|abort)(?=[\s，,。.!！？?；;:]|$)/iu.test(priorInstruction)) return null;
+    if (!CONTINUATION.test(priorInstruction)) {
+      const task = [prior, ...chain].join('\n');
+      return task.length <= 12_000 ? { task, messages: messages.slice(0, index) } : null;
+    }
+    chain.unshift(prior);
+  }
+  return null;
+}
+
 // Requests and capability/config snapshots are data; this module does no IO.
 function planRequest({ text = '', messages = [], capabilities = {}, config = {} } = {}) {
+  const continued = continuedRequest(text, messages);
+  if (continued) {
+    const plan = planRequest({ text: continued.task, messages: continued.messages, capabilities, config });
+    return { ...plan, continuation: 'explicit-retry', instructions: plan.instructions + '\nThis turn explicitly retries or resumes the previous user task using the CURRENT tool definitions, permissions and backend configuration. Earlier assistant claims that a capability is unavailable are historical statements, not the current capability state. Keep all user restrictions and report actual execution evidence.\nResolved user task for this retry:\n' + continued.task };
+  }
   const runtimeConfig = normalizeRuntimeConfig(config);
   const policy = getRequestNetworkPolicy(text);
   const executors = new Set(capabilities.executors || []);

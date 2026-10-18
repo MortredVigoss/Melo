@@ -10,8 +10,35 @@ export function actionEvidence(plan = {}, urls = []) {
     : { ok: true };
 }
 
+// Continue only an explicit retry/resume phrase. The latest concrete user
+// request is the authority; assistant statements cannot grant tools. Preserve
+// restrictions from intermediate retries and stop at topic/cancellation changes.
+const CONTINUATION = /^(?:(?:请|帮我|麻烦你?|你|那就|现在)\s*)*(?:再试(?:一[次下]|试)?|重新(?:尝试|执行|试试|试)(?:一次|一下)?|继续(?:执行|刚才的任务)?|try again|retry|continue|go ahead)(?=[\s，,。.!！？?；;:]|$)/iu;
+
+function continuedRequest(text, messages) {
+  if (!CONTINUATION.test(getRequestNetworkPolicy(text).instruction.trim())) return null;
+  const previous = messages.map((message, index) => ({ message, index })).filter(({ message }) => message?.role === 'user' && typeof message.content === 'string');
+  if (previous.at(-1)?.message.content === text) previous.pop();
+  const chain = [text];
+  for (const { message: { content: prior }, index } of previous.slice(-8).reverse()) {
+    const priorInstruction = getRequestNetworkPolicy(prior).instruction.trim();
+    if (/^(?:取消|停止(?:操作|任务)?|终止|算了|cancel|stop|abort)(?=[\s，,。.!！？?；;:]|$)/iu.test(priorInstruction)) return null;
+    if (!CONTINUATION.test(priorInstruction)) {
+      const task = [prior, ...chain].join('\n');
+      return task.length <= 12_000 ? { task, messages: messages.slice(0, index) } : null;
+    }
+    chain.unshift(prior);
+  }
+  return null;
+}
+
 // Requests and capability/config snapshots are data; this module does no IO.
 export function planRequest({ text = '', messages = [], capabilities = {}, config = {} } = {}) {
+  const continued = continuedRequest(text, messages);
+  if (continued) {
+    const plan = planRequest({ text: continued.task, messages: continued.messages, capabilities, config });
+    return { ...plan, continuation: 'explicit-retry', instructions: plan.instructions + '\nThis turn explicitly retries or resumes the previous user task using the CURRENT tool definitions, permissions and backend configuration. Earlier assistant claims that a capability is unavailable are historical statements, not the current capability state. Keep all user restrictions and report actual execution evidence.\nResolved user task for this retry:\n' + continued.task };
+  }
   const runtimeConfig = normalizeRuntimeConfig(config);
   const policy = getRequestNetworkPolicy(text);
   const executors = new Set(capabilities.executors || []);

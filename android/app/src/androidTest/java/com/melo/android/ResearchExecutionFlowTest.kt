@@ -93,4 +93,32 @@ class ResearchExecutionFlowTest {
             assertEquals(2,model.requestCount);assertEquals(1,backend.requestCount)
         } }
     }
+    @Test fun retryReevaluatesCurrentBraveConfigWithAllThreeProtocols() = runBlocking {
+        for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { model -> MockWebServer().use { backend ->
+            model.start(); backend.start()
+            val connection = Connection(endpoint=model.url("/model").toString(),model="fixture-model",protocol=protocol,stream=false)
+            val goal=Message(role="user",content="推荐 Surry Hills brunch，然后用 Google Maps 导航。")
+            fun config(enabled: Boolean)=buildJsonObject { put("search",buildJsonObject {
+                put("backend",if(enabled) "http" else "none");put("provider","brave");put("endpoint",backend.url("/search").toString());put("credentialRef","search")
+            }) }
+            val agent=SharedChatAgent(app,ModelClient(true),true)
+            val blocked=agent.reply(connection,"fixture-model-key",listOf(goal),"",config(false),{"fixture-brave-key"},true,"retry-before-r","retry-c",{""},{error("No phone task")},{})
+            assertEquals("blocked",blocked.outcome);assertEquals("SEARCH_UNAVAILABLE",blocked.stopReason)
+            assertEquals(0,model.requestCount);assertEquals(0,backend.requestCount)
+            backend.enqueue(MockResponse().setHeader("Content-Type","application/json").setBody("""{"web":{"results":[{"title":"Fixture brunch","url":"https://fixture.invalid/menu","description":"Fixture public menu"}]}}"""))
+            model.enqueue(tool(protocol,"web_search","retry-search",buildJsonObject {put("query","Surry Hills brunch")}));model.enqueue(final(protocol))
+            val messages=listOf(goal,Message(role="assistant",content="I have no search or phone tools."),Message(role="user",content="再试一次，只做检索并列出来源，先不要导航。"))
+            val scenes=mutableListOf<JsonObject>()
+            val result=agent.reply(connection,"fixture-model-key",messages,"",config(true),{"fixture-brave-key"},true,"retry-after-r","retry-c",{""},{error("Retry denied navigation")},{},onScene={scenes.add(it)})
+            assertEquals("completed",result.outcome);assertEquals(2,model.requestCount);assertEquals(1,backend.requestCount)
+            val search=backend.takeRequest(2,TimeUnit.SECONDS)!!
+            assertEquals("GET",search.method);assertEquals("fixture-brave-key",search.getHeader("X-Subscription-Token"));assertNull(search.getHeader("Authorization"))
+            assertTrue(search.path!!.contains("q=Surry%20Hills%20brunch"))
+            val first=model.takeRequest(2,TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(first.contains("web_search"));assertFalse(first.contains("\"name\":\"phone_use\""))
+            val scene=scenes.last();assertEquals(listOf("web_search"),scene.getValue("operations").jsonArray.map{it.jsonObject.text("name")})
+            assertEquals(1,scene.getValue("sources").jsonArray.size);assertFalse(scene.toString().contains("fixture-brave-key"))
+        } }
+    }
+
 }

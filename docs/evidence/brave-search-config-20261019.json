@@ -1,0 +1,79 @@
+{
+  "recordedAt": "2026-10-18T13:25:59.151654+00:00",
+  "behaviorCommit": "1e292e9d8039d398fa591c6d5ea2cc643a9258bb",
+  "installedVersion": "0.7.0 (15)",
+  "device": "Fold6 / Android 16 / One UI property 80500",
+  "latestRun": {
+    "localUiTime": "10-19 00:21:22",
+    "requestClass": "public brunch recommendation",
+    "outcome": "blocked",
+    "plan": "unavailable",
+    "reason": "SEARCH_UNAVAILABLE",
+    "toolCalls": 0,
+    "sources": 0
+  },
+  "observedSettings": {
+    "braveSelected": true,
+    "httpSearchEnabled": false
+  },
+  "offlineReplay": {
+    "disabledRoute": "unavailable",
+    "disabledReason": "SEARCH_UNAVAILABLE",
+    "enabledRoute": "http-search",
+    "enabledTools": [
+      "web_search",
+      "fetch_url"
+    ],
+    "apiRequests": 0
+  },
+  "configurationChanged": false,
+  "realSearchRequestsSent": 0,
+  "modelRequestsSent": 0,
+  "credentialsRead": false,
+  "privateDraftRead": false,
+  "pending": "Final source passed targeted gates; 0.7.1 signing, same-certificate install and bounded real search remain.",
+  "limits": [
+    "No conclusion about Brave credential validity, Search plan entitlement or network availability yet.",
+    "No product code changes; full product gate not repeated."
+  ],
+  "subsequentObservation": {
+    "recordedAt": "2026-10-18T13:36:19.940378+00:00",
+    "userSavedConfig": true,
+    "httpSearchEnabled": true,
+    "braveSelected": true,
+    "braveDefaultEndpoint": true,
+    "latestRetryLocalUiTime": "10-19 00:25:31",
+    "latestRetryTextClass": "explicit retry",
+    "latestRetryPlan": "none / conversation / tools=[]",
+    "latestRetryToolCalls": 0,
+    "latestRetrySources": 0,
+    "rootCause": "Shared Router classified only the retry text and failed to continue the preceding user task; no tool definitions reached the model.",
+    "productFix": "Explicit retry/resume resolves the latest concrete user task plus later restrictions, re-evaluates current capability/config, preserves prior app scope, and does not cross cancellation/topic boundaries.",
+    "nodeTargetedPassed": 153,
+    "nativeAndFinalArtifact": "pending",
+    "credentialsRead": false,
+    "modelRequestsSentByDebugger": 0
+  },
+  "validation": {
+    "nodePassed": 153,
+    "jvm": {
+      "tests": 117,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lintErrors": 0,
+    "debugBuild": true,
+    "r8ReleaseBuild": true,
+    "nativeCoverPassed": 18,
+    "nativeUnfoldedPassed": 10,
+    "conformanceFixtures": 49,
+    "threeProtocolRetryAndBraveEncoding": "passed via local HTTP Fixtures",
+    "failureHistory": [
+      "Original routing regression: 8 of 12 new assertions failed before fix.",
+      "Additional app-context assertion exposed context loss in first fix; corrected before final build.",
+      "First instrumentation command referenced a nonexistent SearchAgentFlowTest; corrected to SharedSearchFlowTest. All issued product cases passed; failure log retained."
+    ],
+    "physicalInstallAndRealSearch": "pending"
+  }
+}

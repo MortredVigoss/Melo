@@ -1513,5 +1513,190 @@
         "text": "a_b * c"
       }
     ]
+  },
+  {
+    "name": "retry keeps current configured research and navigation",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "再试一次",
+        "messages": [
+          {
+            "role": "user",
+            "content": "推荐 Surry Hills brunch 然后导航"
+          },
+          {
+            "role": "assistant",
+            "content": "No Search available."
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "provider": "brave"
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "http-search",
+      "tools": [
+        "web_search",
+        "fetch_url",
+        "phone_use"
+      ],
+      "continuation": "explicit-retry"
+    }
+  },
+  {
+    "name": "retry preserves no-phone restriction",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "再试一次，不要操作手机",
+        "messages": [
+          {
+            "role": "user",
+            "content": "推荐 Surry Hills brunch 然后导航"
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "provider": "brave"
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "http-search",
+      "tools": [
+        "web_search",
+        "fetch_url"
+      ]
+    }
+  },
+  {
+    "name": "retry preserves no-network restriction across turns",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "再试一次",
+        "messages": [
+          {
+            "role": "user",
+            "content": "推荐 Surry Hills brunch 然后导航"
+          },
+          {
+            "role": "user",
+            "content": "再试一次，不联网"
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "hostedSearch": "unknown"
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "provider": "brave"
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "none",
+      "tools": []
+    }
+  },
+  {
+    "name": "retry keeps the app scope of an earlier concrete follow-up",
+    "input": {
+      "version": 1,
+      "op": "plan",
+      "request": {
+        "text": "再试一次",
+        "messages": [
+          {
+            "role": "user",
+            "content": "用小红书找 Surry Hills brunch"
+          },
+          {
+            "role": "assistant",
+            "content": "A and B"
+          },
+          {
+            "role": "user",
+            "content": "第二家呢"
+          }
+        ],
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "provider": "brave"
+          }
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "route": "phone",
+      "tools": [
+        "phone_use"
+      ]
+    }
   }
 ]

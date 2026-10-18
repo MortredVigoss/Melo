@@ -728,3 +728,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户连接并解锁后授权安装；实际 Fold6 / Android 16 / One UI property 80500，展开 1856×2160。实际已装 0.6.0 与最终 0.7.0 APK 证书一致，覆盖后版本和安装 APK hash 回读相符。
 - 原 13 Chat / 1 角色、UID / 首次安装时间及两项 Accessibility 设置保留；MainActivity 启动稳定、该进程 Crash buffer 无 Fatal。未读取私人对话正文、配置值或凭证，未新增 QA Chat 或发真实请求。
 - 首次 Windows ADB 41 Client 遇原 40 Server 自动重启一次，后续直接复用 SmartSocket；首次安装后 UI probe 没读到中枢，后续只读检查正常，没有重复安装。只验展开启动，不外推 Research / Maps / 外屏或姿态切换；[脱敏回执](docs/evidence/research-fold6-install-070-20261018.json)。无 push / git pp。
+
+### 2026-10-19 — Android — Brave Search 配置诊断（待复测）
+
+- 用户反馈仍不能搜；最新 00:21:22 的执行卡为 blocked / SEARCH_UNAVAILABLE，0 Tool / 0 source，plan 为 unavailable。系统设置已选 Brave，但「启用 HTTP Search」仍为 false，尚未发到 Brave。离线同源 config replay 验证 none → unavailable、http → web_search/fetch_url。
+- 之前填写说明遗漏启用开关，已更正说明；准备改设置时手机切到有非空未发草稿的新 Chat，因此暂停 UI 操作等待用户处理，未改配置/读 Key/发真实请求。Brave Key 有效性、账号套餐与网络仍未知。[脱敏证据](docs/evidence/brave-search-config-20261019.json)。
+
+### 2026-10-19 — Android / Shared Core — 配置已开，补重试续接（已过定向门禁，待装机）
+
+- 用户自行保存 Brave 后再次反馈；只读复核 HTTP 已开启、Brave/default Endpoint 正确。最新 00:25:31 的“再试一次”却为 none / conversation / tools=[]，模型缺少工具定义；这是第二个独立缺陷。
+- Shared Router 新增有界显式 retry/resume 续接：采用最近具体 user task 与后续限制，重新计算当前配置/权限，保留更早 App 上下文，取消与换题不跨越。新增 13 项定向续接回归与 4 个跨 Runtime Fixtures；153 Node / 117 JVM / Lint / Debug / R8、外屏 18 + 展开 10 次 Emulator 执行通过；49 同源 Fixtures。0.7.1 (16) 待签名装机与真实 Search 复验。[证据](docs/evidence/brave-search-config-20261019.json)。尚未发送真实请求、读取 Key 或触发 Maps；无 push / git pp。

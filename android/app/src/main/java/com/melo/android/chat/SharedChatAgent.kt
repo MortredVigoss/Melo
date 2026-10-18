@@ -40,7 +40,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             if (plan.text("route") == "unavailable") return finish(when (plan.text("reason")) {
                 "MISSING_URL" -> "请提供要读取的完整 URL，或指出对话中的具体链接。"
                 "PHONE_UNAVAILABLE" -> "本轮没有可用的 Phone Use 权限或执行器，请检查这段对话的手机操作设置。"
-                else -> "当前连接尚未验证 Hosted Search，也没有可用的 HTTP Search Backend（${plan.text("reason")}）。可在模型连接中验证 Hosted Search，或在系统 Web Search 中配置 Search API；这次尚未进行 Research 或导航。"
+                else -> "当前连接尚未验证 Hosted Search，也没有可用的 HTTP Search Backend（${plan.text("reason")}）。可在模型连接中验证 Hosted Search；或在系统 Web Search 选择 Search API、开启「启用 HTTP Search」并保存。此次尚未进行 Research 或导航。"
             }, connection.model, "blocked", plan.text("reason"))
             val prior = if (plan.text("reason") == "execution-explanation" || "phone_use" in plan.strings("tools"))
                 runtime.value("executionContext", buildJsonObject { put("scenes", JsonArray(previousScenes.map { it ?: JsonNull })) }).jsonPrimitive.content else ""
