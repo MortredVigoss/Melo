@@ -1,5 +1,11 @@
 # Android verification — 2026-10-18
 
+## 2026-10-18 — Fold6 覆盖安装 0.6.0 (14)
+
+用户连接并授权安装后，R8 Release Preview 与手机现有 0.5.1 / 历史 Preview 证书核对一致；签名、四 ABI 16 KiB alignment 和打包 Core hash 通过。`pm install -r` 返回 Success，设备回读 0.6.0 (14) 与 APK SHA-256 一致；原 11 段对话 / 1 个角色、UID / 首次安装时间及两项 Accessibility 设置保留，未卸载或清数据，未读取配置值或 Keystore Key。
+
+实际 SM-F956B / Android 16 / One UI property 80500，展开 1856×2160、已解锁、无活动任务。MainActivity 启动后回读中枢计数与前台窗口，进程保持且该进程 Crash buffer 无 Fatal。直接复用 Windows ADB 40 SmartSocket，未重启共享 ADB；未新增 QA Chat、未发模型 / Search 请求或执行 Phone Use。该记录仅证明覆盖安装与启动，Fold6 原生 Core 执行、真实服务、外屏与姿态切换仍待验。[脱敏实机证据](../docs/evidence/shared-agent-fold6-install-060-20261018.json)。
+
 ## 2026-10-18 — 0.6.0 (14) Shared Search / Core
 
 115 JVM / Lint / Debug / R8 Release 构建通过；最终 Debug APK 的 Core hash、签名和四库 16 KiB alignment 核对通过。42 同源 Fixtures；Cover 968×2376 / 420dpi 43 项、展开 1856×2160 / 420dpi 9 项 Emulator 执行通过。包括三协议 Search → 来源回复、Hosted proof / missing receipt、无服务 / 失败 / 取消均不占屏，及 Phone Use / Device / Cache 回归、设置保存 / recreation / Key 空值保留与显式清除。

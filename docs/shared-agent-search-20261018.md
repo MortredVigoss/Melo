@@ -36,9 +36,13 @@ Desktop 与 Android 有显式保存的 Search 设置和 Hosted Search 测试入�
 
 机器证据：[脱敏 JSON](evidence/shared-agent-search-20261018.json)。原始日志 `.tmp/agent-core-audit-20261017/search-*20261018.log`，UI 图片同目录与 `output/playwright/search-settings-20261018.png`；派生产物不入 Git。
 
+## 后续实机安装
+
+用户连接手机后的独立安装回合：0.6.0 (14) R8 Preview 已同签名覆盖 Fold6 / One UI 8.5 并启动，11 Chat / 1 角色及 Accessibility 设置保留，无启动 Crash。该回合未发真实请求或执行 Core；[安装证据](evidence/shared-agent-fold6-install-060-20261018.json) 与前述开发 / Emulator 回合分开记录。
+
 ## 尚未完成
 
-- Fold6 / One UI 8.5 的真实 JS engine feature、Service、网络与 Cover / 展开切换验收；本轮尺寸模拟不是 Samsung 实机证据，手机仍是先前 0.5.1。
+- Fold6 / One UI 8.5 的真实 JS engine feature、Service、网络与 Cover / 展开切换验收；尺寸模拟与安装启动不能代替这些功能证据。
 - iOS 生产 Search / Loop Adapter 的切换与 macOS / 真机验收。不能将相同 bundle 或 JS gate 称为三端已统一。
 - 上游新增 Tool envelope / records、预算、Skill 调度、Context / Memory、摘要 Sync 与 Task Cache 的后续模块迁移。当前仍有平台路径，见 [实施计划](shared-agent-implementation-20261017.md)。
 - Android 直接网页读取仅文本 / 静态 HTML，不跟随 Redirect，不承诺动态页面。HTTP / Hosted 来源不独立证明当前营业状态。需要澄清但未调用工具的任务目前可能统一返回“未验证”；显式 needs_user 终态与更自然的澄清需继续随统一 Loop 处理。

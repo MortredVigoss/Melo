@@ -76,7 +76,7 @@ Responses 连接可点击「验证 Hosted Search」，此操作会发起一次�
 
 Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key；留空保留、明确勾选后清除，不进入导出 / Sync。两端共用配置结构与默认策略，尚未自动同步非秘密 Search 设置。网页读取目前 Android 支持直接文本 / 静态 HTML，不跟随 Redirect；动态页面和实时营业状态不能凭抓取时间认定。
 
-0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，尚未覆盖安装 Fold6；One UI 8.5 原生 Runtime 支持需实机确认。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [本轮证据](../docs/shared-agent-search-20261018.md)。
+0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，并同签名覆盖安装 Fold6 / One UI 8.5；展开模式启动及原 11 Chat / 1 角色、Accessibility 设置保留核对通过。本次仅安装与启动，未发真实模型 / Search 请求，实机 Core 执行、两种姿态功能与切换仍需验证。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [开发证据](../docs/shared-agent-search-20261018.md) / [装机证据](../docs/evidence/shared-agent-fold6-install-060-20261018.json)。
 
 ## 数据与跨端同步
 
