@@ -541,11 +541,15 @@ export function modelMessageSourceIds(messages) { return messages.map(message=>s
  * pre-E1 behaviour). Call ids never leave the chat that produced them: only
  * this chat's own messages are read here.
  */
-function toolChainHistoryMessages(message, protocol) {
+function toolChainHistoryMessages(message, protocol, seenIds) {
   if (!protocol || message?.role !== 'assistant') return [];
   const chain = message?.metadata?.toolChain;
   if (!chain || !Array.isArray(chain.turns) || !chain.turns.length) return [];
-  try { return toolChainToMessages(chain, protocol); } catch { return []; }
+  // Bug audit T18: ids repeated across replies (XML `call_001`, synthesized
+  // `call_<n>`) are re-minted per message so the request never carries
+  // duplicate call ids.
+  const idPrefix = `r${String(message.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12)}`;
+  try { return toolChainToMessages(chain, protocol, { idPrefix, seenIds }); } catch { return []; }
 }
 
 export function buildModelMessagesFromChat(chat, { windowTokens, toolChainProtocol = null } = {}) {
@@ -588,6 +592,7 @@ export function buildModelMessagesFromChat(chat, { windowTokens, toolChainProtoc
     }
   }
 
+  const replayedCallIds = new Set();
   return messages.flatMap((message, index) => {
     let effectiveMessage = message;
     if (index === latestIndex && message?.role === 'user' && carryForwardSourceIndex >= 0) {
@@ -602,6 +607,6 @@ export function buildModelMessagesFromChat(chat, { windowTokens, toolChainProtoc
     sourceIds.set(modelMessage,message.id);
     // Chain messages carry no source id of their own: the prose message that
     // follows them already stands for the persisted assistant message.
-    return [...toolChainHistoryMessages(message, toolChainProtocol), modelMessage];
+    return [...toolChainHistoryMessages(message, toolChainProtocol, replayedCallIds), modelMessage];
   });
 }

@@ -31,6 +31,7 @@
 // Pure module: no I/O, no registry access, no request-scope reads except the
 // optional `env` passed to `resolveToolProtocol`.
 import { formatToolResultsMessage } from './parser.js';
+import { redactSecretsInText } from './secretRedaction.js';
 
 export const TOOL_PROTOCOLS = Object.freeze(['responses', 'chat-completions', 'anthropic', 'xml']);
 
@@ -106,9 +107,13 @@ function argumentString(value) {
  * Parse a provider reply object into `{ text, toolCalls:[{ id, name, arguments, raw }] }`.
  * Throws when the reply does not carry the requested protocol.
  */
-export function parseAssistantResponse(raw, protocol) {
+export function parseAssistantResponse(raw, protocol, { synthesizeId } = {}) {
   if (!raw || typeof raw !== 'object' || raw.protocol !== protocol) throw new Error('Invalid model tool response.');
   const text = typeof raw.text === 'string' ? raw.text : '';
+  // Bug audit T12: some local chat-completions servers omit `tool_calls[].id`;
+  // a missing id gets `call_<n>` (the caller may supply a session-unique
+  // generator) instead of failing the whole turn.
+  const idFor = (id, index) => (typeof id === 'string' && id ? id : typeof synthesizeId === 'function' ? synthesizeId(index) : `call_${index + 1}`);
   if (protocol === 'responses') {
     if (!Array.isArray(raw.responseItems)) throw new Error('Invalid model tool response.');
     const toolCalls = raw.responseItems.filter(item => item?.type === 'function_call')
@@ -120,7 +125,10 @@ export function parseAssistantResponse(raw, protocol) {
     if (!message) throw new Error('Invalid model tool response.');
     const toolCalls = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
       .filter(item => item && (item.type === 'function' || !item.type))
-      .map(item => ({ id: item.id, name: item.function?.name, arguments: argumentString(item.function?.arguments), raw: item }));
+      .map((item, index) => {
+        const id = idFor(item.id, index);
+        return { id, name: item.function?.name, arguments: argumentString(item.function?.arguments), raw: item.id === id ? item : { ...item, id } };
+      });
     return { text, toolCalls, message };
   }
   if (protocol === 'anthropic') {
@@ -252,11 +260,17 @@ export function renderToolMessage(message, protocol) {
   if (protocol === 'chat-completions') {
     if (message.role === 'assistant') {
       // Echo the assistant message exactly as received (`raw`), falling back
-      // to a synthesized tool_call for rebuilt history.
-      return [{ role: 'assistant', content: text,
-        tool_calls: message.toolCalls.map(call => call.raw || { id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } }) }];
+      // to a synthesized tool_call for rebuilt history. Bug audit T13: a
+      // tool-call-only turn echoes `content: null` (strict gateways reject
+      // `""`), and `raw` entries missing an id get the IR id back.
+      return [{ role: 'assistant', content: text || null,
+        tool_calls: message.toolCalls.map(call => {
+          if (call.raw && typeof call.raw === 'object') return call.raw.id ? call.raw : { ...call.raw, id: call.id };
+          return { id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } };
+        }) }];
     }
-    return message.toolResults.map(result => ({ role: 'tool', tool_call_id: result.callId, content: result.output }));
+    // T13: strict gateways also want the function `name` on tool messages.
+    return message.toolResults.map(result => ({ role: 'tool', tool_call_id: result.callId, ...(result.name ? { name: result.name } : {}), content: result.output }));
   }
   if (protocol === 'anthropic') {
     if (message.role === 'assistant') {
@@ -319,7 +333,9 @@ export function buildToolChainRecord(turns = [], { protocol, maxOutputChars = DE
       const args = argumentString(call.arguments);
       return { id: String(call.id), name: String(call.name), arguments: args.length > maxArgChars ? '{}' : args };
     }),
-    toolResults: (turn.toolResults || []).map(result => ({ callId: String(result.callId), name: String(result.name || ''), output: truncateOutput(result.output, maxOutputChars) })),
+    // Bug audit T6: persisted outputs get the same value-level secret
+    // redaction as the records (the model-facing loop copy stays intact).
+    toolResults: (turn.toolResults || []).map(result => ({ callId: String(result.callId), name: String(result.name || ''), output: redactSecretsInText(truncateOutput(result.output, maxOutputChars)) })),
   }));
   // Oldest turns are dropped first when the whole record would be too large.
   let kept = rendered;
@@ -330,12 +346,46 @@ export function buildToolChainRecord(turns = [], { protocol, maxOutputChars = DE
   return { version: TOOL_CHAIN_VERSION, protocol: protocol || 'unknown', turns: kept, truncated: kept.length !== rendered.length };
 }
 
-/** Rebuild loop messages for `protocol` from a persisted tool chain record. */
-export function toolChainToMessages(toolChain, protocol) {
+// Call ids a provider accepts when a chain is replayed to it. Anthropic and
+// the Responses API validate the characters; everything else is permissive.
+const SAFE_CALL_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Rebuild loop messages for `protocol` from a persisted tool chain record.
+ *
+ * Bug audit T18: ids inside a persisted chain are only unique per turn —
+ * the XML protocol lets the model number its calls `call_001` in every
+ * turn and T12 synthesizes `call_<n>` per loop — and every reply's chain
+ * starts over, so replaying several replies verbatim repeats ids. Providers
+ * that validate ids (Anthropic tool_use ids, Responses call_ids) reject
+ * duplicates or odd characters. When an id repeats inside the chain,
+ * collides with an id already replayed (`seenIds`, shared across the
+ * history being built) or is malformed, every call of this chain gets a
+ * fresh id derived from `idPrefix`; results follow their call. Chains with
+ * unique well-formed ids keep them. Final ids are added to `seenIds`.
+ */
+export function toolChainToMessages(toolChain, protocol, { idPrefix = 'replay', seenIds = null } = {}) {
   if (!toolChain || !Array.isArray(toolChain.turns)) return [];
-  return toolChain.turns.flatMap(turn => toLoopMessages({
-    text: String(turn.text ?? ''),
-    toolCalls: (turn.toolCalls || []).map(call => ({ id: String(call.id), name: String(call.name), arguments: argumentString(call.arguments) })),
-    toolResults: (turn.toolResults || []).map(result => ({ callId: String(result.callId), name: String(result.name || ''), output: String(result.output ?? '') })),
-  }, protocol));
+  const ids = toolChain.turns.flatMap(turn => (turn.toolCalls || []).map(call => String(call.id)));
+  const seen = seenIds instanceof Set ? seenIds : null;
+  const needsRemap = new Set(ids).size !== ids.length || ids.some(id => !SAFE_CALL_ID.test(id) || seen?.has(id));
+  let sequence = 0;
+  const safePrefix = String(idPrefix || 'replay').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24) || 'replay';
+  return toolChain.turns.flatMap((turn, turnIndex) => {
+    const remap = new Map();
+    if (needsRemap) {
+      for (const call of turn.toolCalls || []) {
+        let id;
+        do { id = `${safePrefix}_${turnIndex + 1}_${++sequence}`; } while (seen?.has(id));
+        remap.set(String(call.id), id);
+      }
+    }
+    const idOf = id => remap.get(String(id)) || String(id);
+    for (const call of turn.toolCalls || []) seen?.add(idOf(call.id));
+    return toLoopMessages({
+      text: String(turn.text ?? ''),
+      toolCalls: (turn.toolCalls || []).map(call => ({ id: idOf(call.id), name: String(call.name), arguments: argumentString(call.arguments) })),
+      toolResults: (turn.toolResults || []).map(result => ({ callId: idOf(result.callId), name: String(result.name || ''), output: String(result.output ?? '') })),
+    }, protocol);
+  });
 }

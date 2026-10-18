@@ -15,7 +15,7 @@
 
 import { loadState } from '../../state/stateStore.js';
 import { normalizeAudience, DESKTOP_AUDIENCE } from '../../memory/conversationIndex.js';
-import { estimateTextTokens, truncateToTokens } from '../../memory/tokenEstimate.js';
+import { estimateTextTokens } from '../../memory/tokenEstimate.js';
 import { toolFactsLine } from '../../memory/contextCompact.js';
 
 export const READ_HISTORY_MAX_TOKENS = 8000;
@@ -27,13 +27,44 @@ function messageText(message) {
   return '';
 }
 
-function renderMessage(message) {
+function renderMessageParts(message, fromChar = 0) {
   const role = message.role === 'user' ? 'User' : message.role === 'assistant' ? 'Assistant' : message.role;
   const when = typeof message.createdAt === 'string' ? message.createdAt.slice(0, 16).replace('T', ' ') : '';
   const attachments = Array.isArray(message.attachments) && message.attachments.length
     ? `[attachments: ${message.attachments.map(a => a?.fileName || a?.title || a?.kind || 'file').join(', ')}]` : '';
-  const body = [messageText(message), attachments, toolFactsLine(message)].filter(Boolean).join('\n');
-  return `[#${message.id}] ${role}${when ? ` (${when})` : ''}:\n${body || '(no text)'}`;
+  const fullBody = [messageText(message), attachments, toolFactsLine(message)].filter(Boolean).join('\n') || '(no text)';
+  const offset = Math.max(0, Math.min(fullBody.length, Math.floor(Number(fromChar)) || 0));
+  const header = `[#${message.id}] ${role}${when ? ` (${when})` : ''}${offset ? ` (continued from character ${offset})` : ''}:\n`;
+  return { header, body: fullBody.slice(offset), offset };
+}
+
+function renderMessage(message, fromChar = 0) {
+  const { header, body } = renderMessageParts(message, fromChar);
+  return header + body;
+}
+
+const CUT_MARKER = '\n[message cut here — continue with fromChar]';
+
+/**
+ * Bug audit T3 (2026-10-18): a single message larger than the whole budget
+ * used to be truncated with `nextMessageId` pointing at itself, so the
+ * model re-read the same prefix forever. Now the cut is reported as a
+ * character offset inside that message's body (`continueFromChar`) which
+ * the caller passes back as `fromChar`; progress is guaranteed because the
+ * offset strictly increases. Returns the rendered partial text and the
+ * number of body characters it covered.
+ */
+export function cutMessageToBudget(message, fromChar, budget) {
+  const { header, body } = renderMessageParts(message, fromChar);
+  const fixed = estimateTextTokens(header + CUT_MARKER);
+  let lo = 0, hi = body.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fixed + estimateTextTokens(body.slice(0, mid)) <= budget) lo = mid; else hi = mid - 1;
+  }
+  let cut = lo;
+  if (cut && cut < body.length && /[\uD800-\uDBFF]/.test(body[cut - 1])) cut -= 1;
+  return { text: header + body.slice(0, cut) + (cut < body.length ? CUT_MARKER : ''), chars: cut, complete: cut >= body.length };
 }
 
 /** Pure slice: resolves the requested range inside `messages`. */
@@ -70,18 +101,19 @@ export const readHistoryTool = {
   description:
     'Read original messages of a conversation verbatim by message id. ' +
     'Use it when the conversation summary ("topic cards") mentions a message range or a decision you need the exact wording, numbers or code of — ' +
-    'the summary shows ranges as "消息 #<from> … #<to>". Returns at most ~8k tokens; continue with the returned nextMessageId when truncated.',
+    'the summary shows ranges as "消息 #<from> … #<to>". Returns at most ~8k tokens; continue with the returned nextMessageId when truncated (plus fromChar=continueFromChar when one message was cut mid-way).',
   category: 'memory',
   isConcurrencySafe: true,
   requiresPermission: false,
   capability: 'knowledgeMemory',
   needsWorkspace: false,
   uiModule: 'files',
-  inputKeys: ['chatId', 'fromMessageId', 'toMessageId', 'aroundMessageId', 'before', 'after', 'limit', 'scope'],
+  inputKeys: ['chatId', 'fromMessageId', 'fromChar', 'toMessageId', 'aroundMessageId', 'before', 'after', 'limit', 'scope'],
   parametersSchema: {
     type: 'object',
     properties: {
       fromMessageId: { type: 'string', description: 'First message id to read (inclusive). Defaults to the start of the conversation.' },
+      fromChar: { type: 'number', description: 'With fromMessageId: character offset inside that first message to continue from. Use the continueFromChar value returned when a single message was cut.' },
       toMessageId: { type: 'string', description: 'Last message id to read (inclusive). Defaults to fromMessageId + limit.' },
       aroundMessageId: { type: 'string', description: 'Read one message plus `before`/`after` neighbours instead of a range.' },
       before: { type: 'number', description: 'With aroundMessageId: how many earlier messages to include (default 2).' },
@@ -96,7 +128,7 @@ export const readHistoryTool = {
     { aroundMessageId: '0f3c…', before: 3, after: 3 },
   ],
 
-  async run({ chatId, fromMessageId, toMessageId, aroundMessageId, before = 2, after = 2, limit = DEFAULT_LIMIT, scope = 'project' } = {}, context = {}) {
+  async run({ chatId, fromMessageId, fromChar = 0, toMessageId, aroundMessageId, before = 2, after = 2, limit = DEFAULT_LIMIT, scope = 'project' } = {}, context = {}) {
     const audience = normalizeAudience(context?.chatSource);
     const currentChatId = String(context?.chatId || '');
     const targetId = String(chatId || currentChatId);
@@ -122,12 +154,28 @@ export const readHistoryTool = {
     if (!slice.messages.length) return { ok: true, status: 'empty', code: 'NO_RESULTS', output: 'No messages in that range.', meta: { chatId: targetId, count: 0 } };
 
     const rendered = [];
-    let used = 0, truncatedAt = '';
-    for (const message of slice.messages) {
-      const text = renderMessage(message);
+    const startChar = fromMessageId && !aroundMessageId ? Math.max(0, Math.floor(Number(fromChar)) || 0) : 0;
+    let used = 0, truncatedAt = '', continueFromChar = 0;
+    for (const [index, message] of slice.messages.entries()) {
+      const offset = index === 0 ? startChar : 0;
+      const text = renderMessage(message, offset);
       const tokens = estimateTextTokens(text);
       if (used + tokens > READ_HISTORY_MAX_TOKENS) {
-        if (!rendered.length) rendered.push(truncateToTokens(text, READ_HISTORY_MAX_TOKENS));
+        if (!rendered.length) {
+          // T3: one message bigger than the budget — return as much of it as
+          // fits and point the continuation at the character after the cut,
+          // never at the same (id, offset) pair we started from.
+          const part = cutMessageToBudget(message, offset, READ_HISTORY_MAX_TOKENS);
+          if (part.chars > 0 || part.complete) {
+            rendered.push(part.text);
+            if (!part.complete) { truncatedAt = message.id; continueFromChar = offset + part.chars; }
+            else truncatedAt = slice.messages[index + 1]?.id || (slice.hasMore ? slice.nextMessageId : '');
+            break;
+          }
+          rendered.push(`${renderMessageParts(message, offset).header}[message skipped: too large to render even partially]`);
+          truncatedAt = slice.messages[index + 1]?.id || (slice.hasMore ? slice.nextMessageId : '');
+          break;
+        }
         truncatedAt = message.id;
         break;
       }
@@ -135,11 +183,15 @@ export const readHistoryTool = {
       used += tokens;
     }
     const nextMessageId = truncatedAt || (slice.hasMore ? slice.nextMessageId : '');
-    const header = `Conversation "${chat.title || 'Untitled'}" (${targetId}), ${rendered.length} of ${slice.messages.length} requested message(s)${nextMessageId ? ` — truncated; continue with fromMessageId="${nextMessageId}"` : ''}.`;
+    const continuation = nextMessageId
+      ? ` — truncated; continue with fromMessageId="${nextMessageId}"${continueFromChar ? ` fromChar=${continueFromChar} (that message was cut mid-way)` : ''}`
+      : '';
+    const header = `Conversation "${chat.title || 'Untitled'}" (${targetId}), ${rendered.length} of ${slice.messages.length} requested message(s)${continuation}.`;
     return {
       ok: true,
       output: [header, ...rendered].join('\n\n'),
-      meta: { chatId: targetId, count: rendered.length, nextMessageId: nextMessageId || null, truncated: Boolean(truncatedAt) },
+      meta: { chatId: targetId, count: rendered.length, nextMessageId: nextMessageId || null, truncated: Boolean(truncatedAt),
+        ...(continueFromChar ? { continueFromChar } : {}) },
     };
   },
 };

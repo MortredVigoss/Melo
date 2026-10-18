@@ -97,8 +97,13 @@ test('compact round trip: desktop export → validate → phone snapshot import 
  assert.equal(phone.chats[0].compactSummary,'# 更新\n六条已压缩。','equal count with an earlier at is ignored');
  // Direct helpers: a boundary the receiver does not have is refused; oversize summaries are clipped on export.
  assert.equal(applyCompact(phone.chats[0],{boundaryMessageId:'missing',compactedCount:9,source:'local',at:T2,summary:'x'}),false);
+ // Oversize desktop renderings are re-rendered for the phone within the byte
+ // limit the phone enforces (audit L9), keeping the ledger cards' text.
  const huge=compactChat(4,{summary:'长'.repeat(9000)});
- assert.equal(exportCompact(huge).summary.length,8192);
+ assert.ok(Buffer.byteLength(exportCompact(huge).summary,'utf8')<=8192);
+ assert.match(exportCompact(huge).summary,/用户决定用 sqlite/);
+ const legacyHuge={...compactChat(4,{summary:'长'.repeat(9000)}),compactCards:[]};
+ assert.ok(Buffer.byteLength(exportCompact(legacyHuge).summary,'utf8')<=8192,'a bare legacy summary is clipped on a byte boundary');
  assert.equal(exportCompact({...compactChat(4),compactBoundaryMessageId:'gone'}),null,'no boundary message → no compact');
  assert.equal(exportCompact({...compactChat(4),compactedMessageCount:0},{boundaryMessageId:'m4',compactedCount:4,source:'cloud',at:T1,summary:'s'}).compactedCount,4,'a previous synced record is kept');
 });

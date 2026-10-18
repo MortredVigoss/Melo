@@ -159,7 +159,9 @@ export function compileFunctionTool(tool) {
       let args;
       try {
         if (typeof raw !== 'string' || raw.length > 256 * 1024) throw new Error('Invalid argument payload');
-        args = JSON.parse(raw);
+        // Bug audit T11: local chat-completions servers send `arguments: ""`
+        // for parameterless calls; treat an empty payload as `{}`.
+        args = raw.trim() === '' ? {} : JSON.parse(raw);
         if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Expected an object');
         checkDepth(args);
         if (strict && compiled.validateWire && !compiled.validateWire(args)) {

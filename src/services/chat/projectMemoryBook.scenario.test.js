@@ -88,4 +88,27 @@ test('chat 1 decision reaches chat 2 (another agent, same project) on its first 
   const otherTurn = await runTurn({ state, chat: other, agentId: 'main' });
   assert.doesNotMatch(otherTurn.systemPrompt, /snake_case/);
   assert.match(otherTurn.systemPrompt, /terse replies/, 'the personal profile follows the user into every local chat');
+
+  // Bug audit M9: in the source chat the promoted / mirrored facts render in
+  // the stable blocks only, never again under Session Memory.
+  const chat1Turn = await runTurn({ state, chat: chat1, agentId: 'main' });
+  assert.equal(chat1Turn.systemPrompt.split('User prefers terse replies').length, 2, 'personal row rendered once (profile), not in Session Memory');
+  assert.equal(chat1Turn.systemPrompt.split('API fields use snake_case').length, 2, 'mirrored decision rendered once (book), not in Session Memory');
+  assert.doesNotMatch(chat1Turn.systemPrompt, /## Session Memory/, 'nothing left for the session block');
+
+  // Bug audit M8: stable rows are reported in memoryUsage but are not recall
+  // feedback — only the session fact of this chat gets a memory_hits row.
+  const chat3 = { id: 'chat-3', title: '第三段', mode: 'chat', projectId: 'P', agentId: 'main', source: 'desktop', messages: [], sessionMemory: [{ fact: 'Chat three prefers tabs', category: 'technical_detail' }] };
+  state.chats.push(chat3);
+  reconcileChatFacts(chat3, 'main');
+  const sessionRow = [...store.iterateMemoryRecords({ chatId: 'chat-3' })][0];
+  const bookRow = [...store.iterateMemoryRecords({ chatId: 'chat-1' })].find(r => r.id.startsWith('book:'));
+  for (let i = 0; i < 3; i += 1) await runTurn({ state, chat: chat3, agentId: 'main' });
+  const stats = Object.fromEntries(store.getHitStats({ memoryIds: [sessionRow.id, bookRow.id, personal.id] }).map(s => [s.memoryId, s.hits]));
+  assert.equal(stats[sessionRow.id], 3, 'session fact: one hit per turn');
+  assert.equal(stats[bookRow.id], undefined, 'project-book row: no hits');
+  assert.equal(stats[personal.id], undefined, 'personal-profile row: no hits');
+  assert.equal(store.getMemoriesByIds([bookRow.id])[0].metadata.useCount || 0, 0, 'useCount untouched');
+  const lastUsage = (await runTurn({ state, chat: chat3, agentId: 'main' })).result.normalizedReply.memoryUsage || [];
+  assert.ok(lastUsage.some(row => row.id === bookRow.id && row.kind === 'project-book'), 'still reported in memoryUsage');
 });

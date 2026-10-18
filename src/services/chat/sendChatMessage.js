@@ -510,7 +510,13 @@ async function executeChatTurn({
     // Supplements used during the turn become part of the question in the transcript.
     const used = usedSupplements(chat.id);
     const question = used.length ? latestChat.messages.find(m => m.id === userMessage.id) : null;
-    if (question) question.content = `${question.content}\n\n补充：${used.map(entry => entry.text).join('\n')}`;
+    if (question) {
+      question.content = `${question.content}\n\n补充：${used.map(entry => entry.text).join('\n')}`;
+      // Blocks are what the UI and the next turn's model history read
+      // (messageVisibleText prefers them); rebuild them from the amended
+      // content or the supplement is invisible from the next turn on (audit L1).
+      question.blocks = normalizeMessageBlocks([], question.content);
+    }
     completeChatRun(latestState, context, assistantMessage);
     latestChat.updatedAt = nowIso();
     refreshChatMemorySummary(latestChat);
@@ -541,7 +547,10 @@ async function executeChatTurn({
   // Conversation history indexing (fire and forget — never blocks the response)
   try {
     tagChatScope(latestChat.id, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
-    indexMessage(latestChat.id, latestChat.title, userMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
+    // The stored question (with any mid-turn supplement) is what gets
+    // indexed; conversationIndex re-indexes a message whose text changed
+    // (audit L19).
+    indexMessage(latestChat.id, latestChat.title, latestChat.messages.find(m => m.id === userMessage.id) || userMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
     indexMessage(latestChat.id, latestChat.title, assistantMessage, { audience: latestChat.source || 'desktop', projectId: latestChat.projectId || '' });
   } catch {}
 
@@ -554,7 +563,7 @@ async function executeChatTurn({
   // Background pre-compaction (design audit L4): summarise the oldest chunk
   // once pending history passes 70% of the window, so the next turn does not
   // stall on a synchronous summarising request.
-  schedulePostTurnTask(home, () => precompactIfNeeded(latestChat, { config, home }), { label: 'precompact' });
+  schedulePostTurnTask(home, () => precompactIfNeeded(latestChat, { config, home, historyWindowTokens: normalizedReply.promptDiagnostics?.historyWindowTokens || 0 }), { label: 'precompact' });
 
   // Session memory extraction (async, non-blocking — fire and forget).
   // Runs after saveState so it doesn't slow down the response. Previously

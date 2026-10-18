@@ -200,7 +200,12 @@ import WebKit
         let utterance = AVSpeechUtterance(string: plain)
         let preference = UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "zh-CN"
         let language = SpeechText.voiceLanguage(for: plain, preference: preference)
-        utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first)
+        // `zh-Hans-CN` style tags are normalised in SpeechText; when no voice has
+        // the exact tag, the first installed voice of the same language is used.
+        let installed = AVSpeechSynthesisVoice.speechVoices().map(\.language)
+        let voiceLanguage = SpeechText.matchingVoiceLanguage(language, available: installed)
+            ?? Locale.preferredLanguages.first.flatMap { SpeechText.matchingVoiceLanguage(SpeechText.normalizedLanguage($0), available: installed) }
+        utterance.voice = voiceLanguage.flatMap { AVSpeechSynthesisVoice(language: $0) }
         currentUtterance = utterance; speechActive = true; speechFailed = false; speechStatus = "正在准备朗读…"
         speaker.speak(utterance)
         startTimeout = Task { [weak self, weak utterance] in

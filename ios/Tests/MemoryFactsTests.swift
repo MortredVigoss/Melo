@@ -34,6 +34,17 @@ import Foundation
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fact)) as! [String: Any]; legacy.removeValue(forKey: "validTo")
         let old = try JSONDecoder().decode(MobileMemoryFact.self, from: JSONSerialization.data(withJSONObject: legacy)); assert(old.validTo == nil)
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]; assert(json["validTo"] is NSNull)
+        // Audit I6: project-book fields round-trip; absent fields stay absent (never encoded as null).
+        var book = fact; book.scope = "project"; book.projectId = "proj"; book.section = "decision"; book.bookStatus = "user"
+        let bookJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(book)) as! [String: Any]
+        assert(bookJSON["section"] as? String == "decision" && bookJSON["bookStatus"] as? String == "user")
+        let bookBack = try JSONDecoder().decode(MobileMemoryFact.self, from: JSONEncoder().encode(book))
+        let validatedBook = try bookBack.validated()
+        assert(bookBack == book && validatedBook == book)
+        let plainJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fact)) as! [String: Any]
+        assert(plainJSON["section"] == nil && plainJSON["bookStatus"] == nil && plainJSON["mergedInto"] == nil)
+        var badStatus = book; badStatus.bookStatus = "pending"
+        do { _ = try badStatus.validated(); fatalError("Invalid bookStatus accepted") } catch {}
         var invalid = fact; invalid.updatedAt = "invalid"
         do { _ = try invalid.validated(); fatalError("Invalid date accepted") } catch {}
         var workspace = SyncWorkspace(); workspace.put(kind: "memory", id: fact.id, value: try JSONDecoder().decode(SyncValue.self, from: JSONEncoder().encode(fact)), device: "phone")

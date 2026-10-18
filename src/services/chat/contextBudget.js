@@ -30,6 +30,16 @@ const HISTORY_WINDOW_SHARE = 0.75;
 // MELO_HISTORY_WINDOW_TOKENS overrides the cap (raise it for providers whose
 // cache makes long raw history cheap).
 const DEFAULT_NEAR_WINDOW_TOKENS = 64_000;
+// One summarising request carries at most this much history (final-token
+// scale); the floor keeps local models compacting a few turns at a time.
+const MAX_COMPACT_CHUNK_TOKENS = 45_000;
+const MIN_COMPACT_CHUNK_TOKENS = 4_000;
+// Final-token margin kept between the required prompt and the history window.
+const HISTORY_WINDOW_MARGIN = 512;
+// Per-turn recall sections (session facts, excerpts, memory, dynamic context)
+// share this much at most; each lower-priority block keeps a floor (audit L3).
+const RECALL_BUDGET_TOKENS = 32_000;
+const RECALL_SECTION_FLOOR_TOKENS = 1_600;
 
 function defaultBudgetFor(config) {
   const authMode = String(config?.authMode || '').toLowerCase();
@@ -53,7 +63,32 @@ export function resolveContextBudget(env = process.env, { config = null } = {}) 
     windowTokens,
     // Compact as soon as pending history would no longer fit the window.
     compactTriggerTokens: windowTokens,
+    // Largest chunk one summarising request may carry (audit L4): about half
+    // the input limit so the transcript plus the card prompt fits the same
+    // model, never above the 45k the cloud summariser was tuned for.
+    compactChunkTokens: Math.min(MAX_COMPACT_CHUNK_TOKENS, Math.max(MIN_COMPACT_CHUNK_TOKENS, Math.floor(inputLimit / 2))),
   };
+}
+
+// Tokens the request needs before any history: the required prompt sections
+// (instructions, project settings, selected materials) plus the tool
+// definitions, on the same padded scale fitRequestContext uses.
+export function requiredPromptTokens({ sections = [], toolDefinitions = [] } = {}) {
+  const required = sections.filter(section => section?.required && section.text?.trim());
+  const toolTokens = toolDefinitions.length ? Math.ceil(estimateTextTokens(JSON.stringify(toolDefinitions)) * 4 / 3) : 0;
+  return Math.ceil(estimateTextTokens(renderPromptSections(required)) * 4 / 3) + 32 + toolTokens;
+}
+
+// The history window this request can actually carry (audit L4): the nominal
+// window, or less when the required prompt and tools leave less room in the
+// input limit. Local models with a 16k input and ~7.5k of required prompt
+// used to get a 12k window the fitter then cut back, dropping history the
+// compaction trigger had not seen.
+export function effectiveHistoryWindow(budget, requiredTokens, { margin = HISTORY_WINDOW_MARGIN } = {}) {
+  const inputLimit = Number(budget?.inputLimit) || 0;
+  const windowTokens = Number(budget?.windowTokens) || 0;
+  const room = inputLimit - (Number(requiredTokens) || 0) - margin;
+  return Math.max(1024, Math.min(windowTokens, room));
 }
 
 export function renderPromptSections(sections) {
@@ -147,18 +182,41 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
   const remaining = inputLimit - promptCost() - Math.ceil(selectedRawCost * 4 / 3);
   if (remaining < 0) throw overflow();
 
-  // Bound recall independently, leaving at least half the remaining room for recent turns.
-  let recallBudget = Math.min(16000, Math.floor(remaining / 2));
+  // Optional sections share at most half the remaining room; the other half
+  // is kept for recent turns. Within that share (audit L3):
+  //   • stable reference blocks (`placement: 'system'` — project settings,
+  //     profile, the conversation ledger) are bounded by their own maxTokens
+  //     only and never draw from the recall budget;
+  //   • per-turn recall (session facts, topic excerpts, memory, dynamic
+  //     context) shares RECALL_BUDGET_TOKENS, and every lower-priority block
+  //     keeps a floor so `memory` is not truncated and `dynamic` not dropped
+  //     by a full ledger while the request is far below the input limit.
+  const optionalShare = Math.floor(remaining / 2);
   const optional = unique.filter(section => !section.required).sort((a, b) => (b.priority || 0) - (a.priority || 0));
-  for (const section of optional) {
-    const allowance = Math.min(recallBudget, Math.floor((section.maxTokens || 5000) * 4 / 3));
+  const place = (section, allowance) => {
     const text = truncateToTokens(section.text, Math.max(0, Math.floor((allowance - 8) * 3 / 4)));
-    if (!text) { diagnostics.droppedSections.push(section.id); continue; }
+    if (!text) { diagnostics.droppedSections.push(section.id); return 0; }
     if (text !== section.text) diagnostics.truncatedSections.push(section.id);
     selected.set(section.id, { ...section, text });
-    const cost = Math.ceil(estimateTextTokens(text) * 4 / 3) + 8;
-    recallBudget -= cost;
+    return Math.ceil(estimateTextTokens(text) * 4 / 3) + 8;
+  };
+  const recall = optional.filter(section => section.placement !== 'system');
+  const floorOf = section => Math.min(RECALL_SECTION_FLOOR_TOKENS, Math.floor((section.maxTokens || 5000) * 4 / 3));
+  // Stable blocks may not eat the recall floors either (a small local budget
+  // with a full ledger used to leave nothing for memory and dynamic context).
+  const recallReserve = Math.min(recall.reduce((sum, section) => sum + floorOf(section), 0), Math.floor(optionalShare / 2));
+  let stableBudget = optionalShare - recallReserve;
+  for (const section of optional.filter(section => section.placement === 'system')) {
+    stableBudget -= place(section, Math.min(stableBudget, Math.floor((section.maxTokens || 5000) * 4 / 3)));
   }
+  let recallBudget = Math.min(RECALL_BUDGET_TOKENS, Math.max(0, stableBudget + recallReserve));
+  recall.forEach((section, index) => {
+    const reserved = recall.slice(index + 1).reduce((sum, later) => sum + floorOf(later), 0);
+    // Guaranteed share: the floor, or an equal split when the budget is below the floors.
+    const guaranteed = Math.min(floorOf(section), Math.floor(recallBudget / (recall.length - index)));
+    const allowance = Math.min(Math.max(recallBudget - reserved, guaranteed), Math.floor((section.maxTokens || 5000) * 4 / 3));
+    recallBudget -= place(section, allowance);
+  });
   const finalPromptCost = promptCost();
 
   // Add newest history first, keeping tool pairs and ordinary user/assistant turns intact.

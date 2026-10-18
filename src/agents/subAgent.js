@@ -8,6 +8,7 @@ import {budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '.
 import {HANDOFF_INSTRUCTION} from './handoff.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
+import { redactToolArgs } from '../tools/toolInvocationRecord.js';
 /**
  * Sub-agent executor.
  *
@@ -116,6 +117,10 @@ async function runSubAgentLoop({
   onProviderResponse,
   extraTools=[], agentProfile, agentProfiles, collaboration, ancestry=[], maxDepth=1,
   maxIterations=MAX_SUB_AGENT_ITERATIONS, maxTokens=32000,
+  // Bug audit T5: the audience / project of the conversation that spawned
+  // this loop, forwarded to tools exactly like the main loop does so
+  // search_history / read_history keep the same scope in a member.
+  chatSource, projectId,
 }) {
   if (depth > (agentProfile ? maxDepth : SUB_AGENT_MAX_DEPTH-1)) {
     return {
@@ -242,7 +247,8 @@ async function runSubAgentLoop({
       sseEmitter('tool_calls_start', {
         iteration,
         depth,
-        calls: toolCalls.map(c => ({ id: c.id, name: `[agent:d${depth}] ${c.name}`, arguments: c.arguments })),
+        // Bug audit T9: same redacted projection as the main loop.
+        calls: toolCalls.map(c => ({ id: c.id, name: `[agent:d${depth}] ${c.name}`, arguments: redactToolArgs(c.arguments) })),
       });
     }
 
@@ -277,6 +283,7 @@ async function runSubAgentLoop({
         agentDepth: depth,
         agentId: roleId,
         extraTools, agentProfiles, collaboration, ancestry, maxDelegationDepth:maxDepth,
+        chatSource, projectId,
         executionPrefix: `role:${roleId || depth}:${iteration}:`,
         // Also propagate the allowed-tool whitelist so nested sub-agents
         // cannot widen privileges.
@@ -412,6 +419,8 @@ export const agentTool = {
       depth: (context.agentDepth || 0) + 1,
       allowedToolIds: context.allowedToolIds || null,
       capabilities: context.capabilities,
+      chatSource: context.chatSource,
+      projectId: context.projectId,
     });
   },
 };

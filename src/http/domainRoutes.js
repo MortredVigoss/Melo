@@ -410,7 +410,7 @@ const router = createRouteRegistry([
     { method: 'POST', paths: ["/api/memory/facts/update"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => { if (!requireLocalOrigin(request,response)) return; sendJson(response,200,await updateMemoryFact(await readJsonBody(request))); return; } },
     // Project memory book (design 2B): list for the project page; hand-written rows.
     { method: 'GET', paths: ["/api/projects/memory-book"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => { sendJson(response,200,await projectMemoryBook({projectId:url.searchParams.get('projectId')})); return; } },
-    { method: 'POST', paths: ["/api/projects/memory-book"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => { if (!requireLocalOrigin(request,response)) return; sendJson(response,200,createProjectMemoryBookEntry(await readJsonBody(request))); return; } },
+    { method: 'POST', paths: ["/api/projects/memory-book"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => { if (!requireLocalOrigin(request,response)) return; sendJson(response,200,await createProjectMemoryBookEntry(await readJsonBody(request))); return; } },
     { method: 'POST', paths: ["/api/memory/repair"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       sendJson(response, 200, await repairMemoryBatch()); return;
     } },

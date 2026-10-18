@@ -203,11 +203,12 @@ test('chat-completions round trip: tool_calls → IR → tool-role messages, ass
   const results = [{ call: turn.toolCalls[0], result: { ok: true, status: 'ok', output: 'found A' } }, { call: turn.toolCalls[1], result: turn.toolCalls[1].rejectedResult }];
   const messages = session.append([{ role: 'user', content: '查 A' }], turn, results);
   const rendered = toRequestMessages(messages, 'chat-completions');
+  // Bug audit T13: tool-call-only turns echo `content: null`, tool messages carry `name`.
   assert.deepEqual(rendered, [
     { role: 'user', content: '查 A' },
-    { role: 'assistant', content: '', tool_calls: toolCalls },
-    { role: 'tool', tool_call_id: 'call_1', content: envelopeJson('found A') },
-    { role: 'tool', tool_call_id: 'call_2', content: messages[2].toolResults[1].output },
+    { role: 'assistant', content: null, tool_calls: toolCalls },
+    { role: 'tool', tool_call_id: 'call_1', name: 'fixture_lookup', content: envelopeJson('found A') },
+    { role: 'tool', tool_call_id: 'call_2', name: 'fixture_lookup', content: messages[2].toolResults[1].output },
   ]);
   assert.equal(rendered[1].tool_calls[0], toolCalls[0], 'the provider object itself is echoed back');
   // Streamed delta.tool_calls (fragments by index) accumulate into the same shape.
@@ -261,7 +262,7 @@ test('persisted tool chain renders into every protocol and the history builder p
   assert.equal(anthropic[1].content[0].tool_use_id, 'c1');
   const chat = toRequestMessages(toolChainToMessages(chain, 'chat-completions'), 'chat-completions');
   assert.deepEqual(chat[0].tool_calls, [{ id: 'c1', type: 'function', function: { name: 'fixture_lookup', arguments: '{"query":"A"}' } }]);
-  assert.deepEqual(chat[1], { role: 'tool', tool_call_id: 'c1', content: chain.turns[0].toolResults[0].output });
+  assert.deepEqual(chat[1], { role: 'tool', tool_call_id: 'c1', name: 'fixture_lookup', content: chain.turns[0].toolResults[0].output });
   const xml = toolChainToMessages(chain, 'xml');
   assert.match(xml[0].content, /<tool_call>\n\{"id":"c1","name":"fixture_lookup","arguments":\{"query":"A"\}\}\n<\/tool_call>/);
   assert.match(xml[1].content, /<tool_result id="c1" name="fixture_lookup" ok="true" status="ok">/);
@@ -358,4 +359,81 @@ test('compactToolChain condenses older tool images to text and keeps the newest'
   assert.equal(JSON.stringify(next[3]).includes('base64'), false);
   assert.deepEqual(next[6], messages[6], 'newest image kept');
   assert.equal(compactToolChain(next, { keepRecentResults: 2 }).changed, false);
+});
+
+// ─── Bug audit 2026-10-18 (T6 / T11 / T12 / T18) ─────────────────────────────
+
+test('T11/T12: empty arguments parse as {} and id-less chat-completions tool_calls get session-unique call_<n> ids', () => {
+  const optional = { id: 'fixture_ping', description: 'Ping.', parametersSchema: { type: 'object', properties: { note: { type: 'string' } } } };
+  assert.deepEqual(compileFunctionTool(optional).parse('', { strict: false }), { args: {} });
+  assert.deepEqual(compileFunctionTool(optional).parse('   ', { strict: false }), { args: {} });
+  assert.equal(compileFunctionTool(tool).parse('', { strict: false }).error, 'INVALID_TOOL_ARGUMENTS', 'required fields are still enforced after the empty payload becomes {}');
+  const session = createFunctionCallingSession({ authMode: 'api-key', apiProtocol: 'chat-completions', baseUrl: 'http://localhost:11434/v1', toolCalling: 'native' }, [optional]);
+  const reply = calls => ({ protocol: 'chat-completions', text: '', message: { role: 'assistant', content: null, tool_calls: calls } });
+  const first = session.parse(reply([{ type: 'function', function: { name: 'fixture_ping', arguments: '' } }, { id: 'call_2', type: 'function', function: { name: 'fixture_ping', arguments: '{}' } }]));
+  assert.deepEqual(first.toolCalls.map(c => c.id), ['call_1', 'call_2'], 'a synthesized id never collides with a real one in the same batch');
+  assert.deepEqual(first.toolCalls[0].arguments, {});
+  const second = session.parse(reply([{ type: 'function', function: { name: 'fixture_ping', arguments: '' } }]));
+  assert.deepEqual(second.toolCalls.map(c => c.id), ['call_3'], 'ids keep increasing across turns so seenCallIds never rejects them');
+  const rendered = toRequestMessages(session.append([], first, first.toolCalls.map(call => ({ call, result: { ok: true, status: 'ok', output: 'pong' } }))), 'chat-completions');
+  assert.deepEqual(rendered[0].tool_calls.map(c => c.id), ['call_1', 'call_2'], 'the echoed raw tool_call carries the synthesized id');
+  assert.equal(rendered[0].content, null);
+});
+
+test('T18: replayed chains re-mint ids that repeat (XML call_001 per turn, chains of several replies) and keep unique well-formed ids', () => {
+  const turn = (id, query) => ({ text: '', toolCalls: [{ id, name: 'fixture_lookup', arguments: JSON.stringify({ query }) }], toolResults: [{ callId: id, name: 'fixture_lookup', output: envelopeJson(`found ${query}`) }] });
+  // Same id in two turns of one reply (what the XML protocol produces).
+  const xmlChain = buildToolChainRecord([turn('call_001', 'A'), turn('call_001', 'B')], { protocol: 'xml' });
+  const responses = toolChainToMessages(xmlChain, 'responses');
+  const callIds = responses.filter(m => m.responseItems).flatMap(m => m.responseItems.filter(i => i.type === 'function_call').map(i => i.call_id));
+  const outputIds = responses.filter(m => m.functionCallOutputs).flatMap(m => m.functionCallOutputs.map(o => o.call_id));
+  assert.equal(new Set(callIds).size, 2, 'duplicate ids are re-minted');
+  assert.deepEqual(outputIds, callIds, 'results follow their calls');
+  assert.ok(callIds.every(id => /^[A-Za-z0-9_-]+$/.test(id)));
+  // Unique, well-formed ids are preserved; a malformed one forces a remap.
+  const clean = buildToolChainRecord([turn('toolu_01A', 'A')], { protocol: 'anthropic' });
+  assert.equal(toolChainToMessages(clean, 'responses')[0].responseItems.find(i => i.type === 'function_call').call_id, 'toolu_01A');
+  const odd = buildToolChainRecord([turn('call 001!', 'A')], { protocol: 'xml' });
+  assert.notEqual(toolChainToMessages(odd, 'anthropic')[0].toolCalls[0].id, 'call 001!');
+  // Two replies in one chat both recorded `call_1`: the history builder keeps every id unique.
+  const chainA = buildToolChainRecord([turn('call_1', 'A')], { protocol: 'chat-completions' });
+  const chainB = buildToolChainRecord([turn('call_1', 'B')], { protocol: 'chat-completions' });
+  const chat = { id: 'chat', messages: [
+    { id: 'u1', role: 'user', content: '查 A', createdAt: '2026-10-17T00:00:00Z' },
+    { id: 'a1', role: 'assistant', content: 'A。', createdAt: '2026-10-17T00:00:01Z', metadata: { toolChain: chainA } },
+    { id: 'u2', role: 'user', content: '查 B', createdAt: '2026-10-17T00:00:02Z' },
+    { id: 'a2', role: 'assistant', content: 'B。', createdAt: '2026-10-17T00:00:03Z', metadata: { toolChain: chainB } },
+    { id: 'u3', role: 'user', content: '继续', createdAt: '2026-10-17T00:00:04Z' },
+  ] };
+  const history = toRequestMessages(buildModelMessagesFromChat(chat, { toolChainProtocol: 'anthropic' }), 'anthropic');
+  const useIds = history.filter(m => m.role === 'assistant' && Array.isArray(m.content)).flatMap(m => m.content.filter(b => b.type === 'tool_use').map(b => b.id));
+  const resultIds = history.filter(m => m.role === 'user' && Array.isArray(m.content)).flatMap(m => m.content.filter(b => b.type === 'tool_result').map(b => b.tool_use_id));
+  assert.equal(useIds.length, 2);
+  assert.equal(new Set(useIds).size, 2, 'ids repeated across replies are unique in the request');
+  assert.deepEqual(resultIds, useIds);
+  assert.equal(useIds[0], 'call_1', 'the first reply keeps its original id');
+});
+
+test('T6: the persisted tool chain redacts secret values inside outputs', () => {
+  const chain = buildToolChainRecord([{ text: '', toolCalls: [{ id: 'c1', name: 'bash', arguments: '{"command":"curl"}' }],
+    toolResults: [{ callId: 'c1', name: 'bash', output: envelopeJson('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c\nOPENAI_API_KEY=sk-proj-abcdefghijklmnop https://u:p@h.test/x?token=abc123') }] }], { protocol: 'xml' });
+  const output = chain.turns[0].toolResults[0].output;
+  assert.doesNotMatch(output, /sflKxwRJ|sk-proj-abcdefghijklmnop|u:p@|token=abc123/);
+  assert.match(output, /Bearer \[redacted\]/);
+  assert.equal(JSON.parse(output).ok, true, 'the envelope JSON stays valid after redaction');
+});
+
+test('T10: on the XML protocol a screenshot result tells the model the image is not attached', async () => {
+  const { IMAGE_NOT_ATTACHED_NOTE } = await import('./functionCalling.js');
+  const session = createFunctionCallingSession({ authMode: 'api-key', apiProtocol: 'chat-completions', baseUrl: 'http://localhost:11434/v1' }, [shotTool]);
+  assert.equal(session.protocol, 'xml');
+  const turn = session.parse('<tool_call>{"id":"call_shot","name":"web_screenshot","arguments":{"url":"https://example.com/"}}</tool_call>');
+  const messages = session.append([{ role: 'user', content: '看看' }], turn, [{ call: turn.toolCalls[0], result: shotResult }]);
+  assert.ok(messages[2].content.includes(IMAGE_NOT_ATTACHED_NOTE), messages[2].content);
+  assert.equal(JSON.stringify(messages).includes('base64,'), false, 'no image data on xml');
+  // Native protocols attach the image and add no such note.
+  const native = createFunctionCallingSession({ authMode: 'api-key', apiProtocol: 'anthropic' }, [shotTool]);
+  const nativeTurn = { text: '', protocol: 'anthropic', toolCalls: [shotCall], protocolCalls: [{ id: 'call_shot', name: 'web_screenshot', arguments: '{}' }] };
+  const nativeMessages = native.append([], nativeTurn, [{ call: shotCall, result: shotResult }]);
+  assert.equal(JSON.stringify(nativeMessages).includes(IMAGE_NOT_ATTACHED_NOTE), false);
 });

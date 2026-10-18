@@ -10,7 +10,7 @@ import {withWorkspaceWriter} from './workspaceScheduling.js';
 import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
 import {narrowBudget,remainingMs} from '../runtime/runBudget.js';
 
-export async function runConfiguredMember({profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent}) {
+export async function runConfiguredMember({profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent,chatSource,projectId}) {
  if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
  const parent=await resolveCapabilityContext(currentRequestContext());
  if(!parent)return missingCapabilityScope();
@@ -29,7 +29,7 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  const timer=setTimeout(()=>controller.abort(Object.assign(new Error('Member time budget exhausted'),{code:'MEMBER_TIMEOUT'})),timeoutMs);
  const receipts=[], started=Date.now(), memberId=randomUUID();
  const emit=(type,event)=>sseEmitter?.(type,type==='execution_event'?{...event,id:`member:${memberId}:${event.id}`,name:`${profile.name} · ${event.name || ''}`}:{...event,agentId:profile.id});
- const invoke=()=>run({extraTools,task,instructions,background,agentProfile:profile,config:{...config,model:profile.model || config.model,modelResolvedForTurn:true},workspacePath,signal:controller.signal,sseEmitter:emit,chatId,depth,allowedToolIds:toolIds,capabilities,roleId:profile.id,agentProfiles,collaboration:settings,ancestry:[...ancestry,profile.id],maxDepth,maxIterations:settings.maxIterations,maxTokens:settings.maxTokens,onProviderResponse:r=>{if(!controller.signal.aborted)receipts.push(r);}});
+ const invoke=()=>run({extraTools,task,instructions,background,agentProfile:profile,config:{...config,model:profile.model || config.model,modelResolvedForTurn:true},workspacePath,signal:controller.signal,sseEmitter:emit,chatId,depth,allowedToolIds:toolIds,capabilities,roleId:profile.id,agentProfiles,collaboration:settings,ancestry:[...ancestry,profile.id],maxDepth,maxIterations:settings.maxIterations,maxTokens:settings.maxTokens,chatSource,projectId,onProviderResponse:r=>{if(!controller.signal.aborted)receipts.push(r);}});
  const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,agentId:profile.id,capabilityScope,...(budget?{budget}:{})}),invoke):invoke();
  const writer=capabilities.writeFiles||capabilities.runCommands||capabilities.generateMedia||capabilities.mcpServers.length>0||capabilities.connectors.length>0;
  emit('execution_event',{kind:'pipeline',id:'handoff',name:'成员执行',module:'compute',status:'running',input:task});
@@ -53,7 +53,7 @@ export async function delegateTask(args,context={}) {
  const settings=normalizeCollaboration(context.collaboration), target=context.agentProfiles?.[args.agentId];
  const depth=(context.agentDepth || 0)+1, maxDepth=Math.min(context.maxDelegationDepth ?? settings.maxDelegationDepth,settings.maxDelegationDepth);
  if(!settings.canDelegate || !scopeAllowsTool(narrowCapabilityScope(resolved?.capabilityScope,{capabilities:context.capabilities}),'delegate') || !settings.delegateTargets.includes(args.agentId) || !target || depth>maxDepth || (context.ancestry || [context.agentId]).includes(args.agentId)) return {ok:false,error:'DELEGATION_DENIED',output:'目标 Agent 未授权、已在调用链中或超过委派深度。'};
- const result=await runConfiguredMember({extraTools:context.extraTools,profile:target,parentCapabilities:context.capabilities,allowedToolIds:context.allowedToolIds,config:context.config,task:args.task,instructions:args.instructions,background:context.memberBackground || '',workspacePath:context.workspacePath,signal:context.signal,sseEmitter:context.sseEmitter,chatId:context.chatId,depth,maxDepth,agentProfiles:context.agentProfiles,ancestry:context.ancestry || [context.agentId]});
+ const result=await runConfiguredMember({extraTools:context.extraTools,profile:target,parentCapabilities:context.capabilities,allowedToolIds:context.allowedToolIds,config:context.config,task:args.task,instructions:args.instructions,background:context.memberBackground || '',workspacePath:context.workspacePath,signal:context.signal,sseEmitter:context.sseEmitter,chatId:context.chatId,depth,maxDepth,agentProfiles:context.agentProfiles,ancestry:context.ancestry || [context.agentId],chatSource:context.chatSource,projectId:context.projectId});
  if(result.error)return result;
  return {...result,output:JSON.stringify(result.handoff),meta:{...result.meta,handoff:result.handoff,member:{agentId:result.agentId,name:result.name,memberId:result.memberId,durationMs:result.durationMs},receipts:result.receipts}};
 }

@@ -33,9 +33,16 @@ const MERGE_COSINE = Number(process.env.MELO_MERGE_COSINE || 0.92);
 // protect any pinned row regardless of category.
 const PROTECTED_CATEGORIES = new Set(['correction', 'decision', 'identity']);
 
+// Rows the user edited, promoted or hand-wrote (project memory book
+// `bookStatus` user/confirmed) are user statements: merging one into an
+// `[auto]` survivor would silently discard the user's version (bug audit M2).
+const PROTECTED_BOOK_STATUSES = new Set(['user', 'confirmed']);
+
 function isMergeProtected(candidate) {
   if (!candidate || typeof candidate !== 'object') return false;
   if (candidate.metadata?.pinned) return true;
+  if (candidate.metadata?.userEdited === true) return true;
+  if (PROTECTED_BOOK_STATUSES.has(String(candidate.metadata?.bookStatus || ''))) return true;
   const category = String(
     candidate.metadata?.category || candidate.kind || '',
   ).toLowerCase();

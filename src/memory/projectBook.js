@@ -71,6 +71,13 @@ function withHome(home, work) {
   return runWithRequestContext({ env: { ...requestEnvironment(), MELO_HOME: home } }, work);
 }
 
+/** Rows whose source is the project page, not a chat (hand-written rows, bug audit M1). */
+export function isProjectOriginRow(row) {
+  const m = row?.metadata || {};
+  if (m.chatId) return false;
+  return m.origin === 'project' || m.bookStatus === 'user' || String(row?.sourceId || '').startsWith('project:');
+}
+
 export function isProjectBookRow(row, projectId) {
   const m = row?.metadata || {};
   if (row?.kind !== 'session-fact') return false;
@@ -120,10 +127,15 @@ export function renderProjectBook(rows = [], { maxTokens = 2000, title = 'Projec
     // The same statement promoted by hand and extracted automatically renders once.
     if (!prior || STATUS_RANK[bookStatusOf(row)] < STATUS_RANK[bookStatusOf(prior)] || (STATUS_RANK[bookStatusOf(row)] === STATUS_RANK[bookStatusOf(prior)] && timestamp(row) > timestamp(prior))) seen.set(key, row);
   }
-  let kept = [...seen.values()];
-  const build = () => {
+  // Bug audit M3: one oversized row (a ~2000-char hand-written row) used to
+  // empty the whole book — every other row was dropped first, then the giant
+  // row itself. A single row may take at most a third of the budget; longer
+  // text is truncated (marked with …) so the other rows stay.
+  const rowBudget = Math.max(40, Math.floor(maxTokens / 3));
+  let kept = [...seen.values()].map(row => truncateRowToBudget(row, rowBudget, list => estimateTextTokens(bookLine(list[0]))));
+  const build = (list = kept) => {
     const grouped = new Map(BOOK_SECTIONS.map(section => [section, []]));
-    for (const row of kept) grouped.get(normalizeSection(row.metadata?.section, row.metadata?.category)).push(row);
+    for (const row of list) grouped.get(normalizeSection(row.metadata?.section, row.metadata?.category)).push(row);
     const rendered = [], blocks = [];
     for (const section of BOOK_SECTIONS) {
       const list = grouped.get(section).sort((a, b) => (STATUS_RANK[bookStatusOf(a)] - STATUS_RANK[bookStatusOf(b)]) || (timestamp(b) - timestamp(a)) || String(a.id).localeCompare(String(b.id)));
@@ -140,10 +152,28 @@ export function renderProjectBook(rows = [], { maxTokens = 2000, title = 'Projec
   let result = build();
   while (result.text && estimateTextTokens(result.text) > maxTokens && kept.length) {
     const victim = [...kept].sort((a, b) => (dropPriority(a) - dropPriority(b)) || (timestamp(a) - timestamp(b)))[0];
+    // The last candidate is truncated to the remaining budget, never dropped.
+    if (kept.length === 1) {
+      kept = [truncateRowToBudget(victim, maxTokens, list => estimateTextTokens(build(list).text))];
+      result = build();
+      break;
+    }
     kept = kept.filter(row => row !== victim);
     result = build();
   }
   return result;
+}
+
+function truncateRowToBudget(row, budget, measure) {
+  let text = String(row.text || '').trim(), candidate = row;
+  for (let i = 0; i < 12 && text.length > 20; i += 1) {
+    const used = measure([candidate]);
+    if (used <= budget) return candidate;
+    const ratio = Math.min(0.9, Math.max(0.1, budget / used));
+    text = text.slice(0, Math.max(20, Math.floor(text.length * ratio))).trimEnd();
+    candidate = { ...row, text: `${text}…`, truncated: true };
+  }
+  return candidate;
 }
 
 /**
@@ -207,6 +237,31 @@ export function upsertProjectBookRow(candidate, { home = null, nowMs = Date.now(
   }));
 }
 
+/**
+ * Apply namespace-level supersession for a row that is already stored (bug
+ * audit M4): confirming an auto row, or promoting a chat fact whose auto twin
+ * exists, retires the other rows on the same subject exactly like a fresh
+ * write through upsertProjectBookRow would. Returns the retired changes.
+ */
+export function retireSupersededBookRows(candidate, { nowMs = Date.now() } = {}) {
+  const projectId = candidate?.metadata?.projectId;
+  if (!projectId || !candidate?.id) return [];
+  return withTransaction(() => {
+    const existing = [...iterateMemoryRecords({ namespace: bookNamespace(projectId) })];
+    const plan = planBookSupersession(existing, candidate, { nowMs });
+    for (const change of plan.retire) {
+      const row = existing.find(r => r.id === change.id);
+      if (!row) continue;
+      upsertMemory({ ...row, metadata: { ...row.metadata, validTo: change.validTo, supersededByFact: change.supersededByFact, supersededById: change.supersededById } });
+    }
+    return plan.retire;
+  });
+}
+
+// Hand-written and promoted rows are prompt text on every turn of the project
+// (bug audit M3): keep them short so one row cannot crowd out the book.
+export const BOOK_ROW_MAX_CHARS = 600;
+
 /** Auto path: mirror an extracted chat fact into the book (id `book:<factId>`). */
 export function writeAutoBookRow(entry, chat, { nowMs = Date.now() } = {}) {
   const m = entry?.metadata || {};
@@ -223,16 +278,42 @@ export function writeAutoBookRow(entry, chat, { nowMs = Date.now() } = {}) {
   }, { nowMs });
 }
 
+/**
+ * Bug audit M12: the auto row is written once, when the fact first appears.
+ * When the source chat later joins or changes project, the mirror follows:
+ * a missing row is written, an active row moves to the new namespace (with
+ * supersession there), retired/forgotten rows stay where the user left them.
+ */
+export function moveAutoBookRow(entry, chat, { nowMs = Date.now() } = {}) {
+  if (!entry?.id || !chat?.projectId) return null;
+  const row = getMemoriesByIds([`${BOOK_ID_PREFIX}${entry.id}`])[0];
+  if (!row) return writeAutoBookRow(entry, chat, { nowMs });
+  if (row.kind !== 'session-fact' || row.metadata?.projectId === chat.projectId) return null;
+  if (row.metadata?.forgotten || isEntryInvalidated(row.metadata) || row.metadata?.quarantined) return null;
+  return withTransaction(() => {
+    const moved = upsertProjectBookRow({ ...row, metadata: { ...row.metadata, projectId: chat.projectId, chatTitle: chat.title || row.metadata.chatTitle || '', needsConfirmation: false } }, { nowMs });
+    if (moved && moved.id !== row.id) {
+      // The new project already holds the same statement: retire the old mirror instead of keeping two.
+      upsertMemory({ ...row, metadata: { ...row.metadata, validTo: new Date(nowMs).toISOString(), supersededByFact: moved.text, supersededById: moved.id } });
+    }
+    return moved;
+  });
+}
+
 /** Hand-written path (project page "手写一条"). */
 export function createUserBookRow({ projectId, text, section, category = 'project_context', home = null } = {}) {
   const content = String(text || '').trim();
   if (!projectId) throw new Error('缺少项目。');
-  if (!content || content.length > 2000) throw new Error('记忆内容需要在 1–2000 字之间。');
+  if (!content) throw new Error('记忆内容需要在 1–2000 字之间。');
+  if (content.length > BOOK_ROW_MAX_CHARS) throw new Error(`记忆本手写内容需要在 ${BOOK_ROW_MAX_CHARS} 字以内。`);
   const now = new Date().toISOString();
   const id = `${BOOK_ID_PREFIX}user:${projectId}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const row = upsertProjectBookRow({
     id, text: content, sourceId: `project:${projectId}`, createdAt: now, updatedAt: now,
-    metadata: { category, originalFact: content, projectId, chatId: null, chatTitle: '', agentId: 'main', source: 'desktop', audience: 'local',
+    // `origin:'project'` (bug audit M1): the row's source is the project
+    // itself, whatever scope the user later moves it to; reconcileLegacyFacts
+    // must never quarantine it for lacking a source chat.
+    metadata: { category, originalFact: content, projectId, chatId: null, chatTitle: '', agentId: 'main', source: 'desktop', audience: 'local', origin: 'project',
       scope: 'project', userEdited: true, editedAt: now, bookStatus: 'user', section: normalizeSection(section, category), validFrom: now, validTo: null },
   }, { home });
   if (row?.id !== id) throw new Error('记忆本里已有同样的内容。');
@@ -251,7 +332,7 @@ export function projectBookRecords(projectId, { home = null, state = null } = {}
       needsConfirmation: m.needsConfirmation === true,
       status: m.forgotten ? 'forgotten' : isEntryInvalidated(m) ? 'historical' : 'active',
       sourceChatId: chat?.id || m.chatId || null, sourceMessageId: m.sourceMessageId || null,
-      sourceTitle: chat?.title || m.chatTitle || (m.bookStatus === 'user' ? '项目页手写' : '来源对话已删除'),
+      sourceTitle: chat?.title || m.chatTitle || (m.bookStatus === 'user' || isProjectOriginRow(row) ? '项目页手写' : '来源对话已删除'),
       supersededBy: m.supersededByFact || null, updatedAt: row.updatedAt,
     };
   }).sort((a, b) => BOOK_SECTIONS.indexOf(a.section) - BOOK_SECTIONS.indexOf(b.section) || (STATUS_RANK[a.bookStatus] - STATUS_RANK[b.bookStatus]) || String(b.updatedAt).localeCompare(String(a.updatedAt)));

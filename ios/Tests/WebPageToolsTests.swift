@@ -25,6 +25,41 @@ func json(_ text: String) -> [String: Any] {
         assert(WebPageText.validated("http://192.169.0.1/") != nil)
         assert(WebPageText.validated("https://" + String(repeating: "a", count: 5000) + ".com") == nil, "length bound")
         assert(WebPageText.isPrivateHost("::1") && WebPageText.isPrivateHost("fd00::1") && !WebPageText.isPrivateHost("2001:db8::1"))
+        // Audit I5: every spelling of a local address is judged by its bytes, trailing dots are
+        // stripped, and internal-only name suffixes are refused.
+        for bypass in ["http://localhost./", "http://foo.local./", "http://LOCALHOST/", "http://[::FFFF:7f00:1]/", "http://[0:0:0:0:0:0:0:1]/", "http://[::ffff:127.0.0.1]/",
+                       "http://[::ffff:0:7f00:1]/", "http://[64:ff9b::7f00:1]/", "http://[64:ff9b::a9fe:a9fe]/", "http://[2002:7f00:1::1]/", "http://[2002:c0a8:101::]/",
+                       "http://[fe80::1%25en0]/", "http://[fec0::1]/", "http://[ff02::1]/", "http://[::]/", "http://[::127.0.0.1]/",
+                       "http://0x7f000001/", "http://0x7f.0.0.1/", "http://2130706433/", "http://127.1/", "http://127.0.1/", "http://0177.0.0.1/", "http://017700000001/", "http://0/", "http://1/",
+                       "http://metadata.google.internal/", "http://db.internal/", "http://router.home.arpa/", "http://nas.lan/", "http://pc.localdomain/", "http://host.intranet./",
+                       "http://224.0.0.1/", "http://255.255.255.255/", "http://192.0.0.1/", "http://198.18.0.1/", "http://100.127.255.254/", "http://169.254.169.254./",
+                       "http://3232235777/", "http://0xc0a80101/", "http://0300.0250.0.1/"] {
+            assert(WebPageText.validated(bypass) == nil, "must reject \(bypass)")
+        }
+        for allowed in ["http://[2606:4700::1111]/", "http://[::ffff:8.8.8.8]/", "http://[64:ff9b::808:808]/", "http://[2002:808:808::1]/", "http://0x08080808/", "http://134744072/", "http://1.1/", "http://example.com./", "http://internal.example.com/", "http://lan.example.org/", "http://home.arpa.example.net/"] {
+            assert(WebPageText.validated(allowed) != nil, "public forms stay open: \(allowed)")
+        }
+        assert(WebPageText.ipv4Bytes("127.0.0.1") == [127, 0, 0, 1] && WebPageText.ipv4Bytes("127.1") == nil && WebPageText.ipv4LegacyBytes("127.1") == [127, 0, 0, 1])
+        assert(WebPageText.ipv6Bytes("::1")?.last == 1 && WebPageText.ipv6Bytes("8.8.8.8") == nil)
+        assert(WebPageText.isPrivateHost("") && WebPageText.isPrivateHost("1.2.3.4.5") && WebPageText.isPrivateHost("0x7f.0x0.0x0.0x1") && !WebPageText.isPrivateHost("1.2.3"), "numeric forms that parse nowhere stay closed; 1.2.3 is 1.2.0.3")
+
+        // Audit I1: the model-controlled page number never traps (1e20, NaN, negative, bool, string).
+        assert(WebPageText.pageNumber(2) == 2 && WebPageText.pageNumber(2.9) == 2 && WebPageText.pageNumber(1_000_000_000) == 1_000_000_000)
+        assert(WebPageText.pageNumber(1e20) == 1 && WebPageText.pageNumber(Double.nan) == 1 && WebPageText.pageNumber(Double.infinity) == 1 && WebPageText.pageNumber(-5) == 1 && WebPageText.pageNumber(0) == 1)
+        assert(WebPageText.pageNumber(1_000_000_001) == 1 && WebPageText.pageNumber("3") == 1 && WebPageText.pageNumber(true) == 1 && WebPageText.pageNumber(nil) == 1 && WebPageText.pageNumber(NSNull()) == 1)
+        assert(WebPageText.pageNumber(NSNumber(value: 1e300)) == 1 && WebPageText.pageNumber(NSNumber(value: 7)) == 7)
+
+        // Audit I2: screenshot pixels capped at 1 600 wide and 4 096 on the long side.
+        let small = WebPageText.scaledPixelSize(width: 430, height: 932); assert(small.width == 430 && small.height == 932)
+        let tall = WebPageText.scaledPixelSize(width: 1290, height: 18000); assert(tall.height == 4096 && tall.width == 293, "\(tall)")
+        let wide = WebPageText.scaledPixelSize(width: 4000, height: 1000); assert(wide.width == 1600 && wide.height == 400)
+        let full = WebPageText.scaledPixelSize(width: 430, height: 4096); assert(full.width == 430 && full.height == 4096, "1× full page needs no rescale")
+        let square = WebPageText.scaledPixelSize(width: 9000, height: 9000); assert(square.width == 1600 && square.height == 1600)
+        assert(WebPageText.scaledPixelSize(width: 0, height: 10).width == 0)
+        for (w, h) in [(1290.0, 18000.0), (4000.0, 1000.0), (9000.0, 9000.0), (1.0, 20000.0)] {
+            let size = WebPageText.scaledPixelSize(width: w, height: h)
+            assert(size.width <= WebPageText.maxImageWidth && max(size.width, size.height) <= WebPageText.maxImageLongSide && size.width >= 1 && size.height >= 1)
+        }
 
         // Whitespace collapsing: runs become one space, blank-line runs one paragraph break.
         assert(WebPageText.collapsed("  Hello \t world \r\n\r\n\n  again  \n\n") == "Hello world\n\nagain")
@@ -119,6 +154,35 @@ func json(_ text: String) -> [String: Any] {
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.failure("TIMEOUT", "x"))) == (false, "网页加载超时"))
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.failure("INVALID_URL", "x"))) == (false, "地址不允许打开"))
         assert(WebPageText.summary(PhoneToolResult(output: "nope")) == (false, "结果无法解析"))
-        print("Swift web page tool tests passed: URL policy incl. private hosts, whitespace, 12k paging, result and follow-up shapes, three protocol definitions, summaries")
+        // Audit I9: per-reply screenshot cap, byte budget (oldest dropped first) and demotion of earlier images to captions.
+        assert(WebPageText.maxScreenshotsPerReply == 2 && WebPageText.imageByteBudget == 6 * 1024 * 1024)
+        let refused = json(WebPageText.tooManyScreenshots(url: "https://a.example"))
+        assert(refused["ok"] as? Bool == false && refused["error"] as? String == "TOO_MANY_SCREENSHOTS" && refused["url"] as? String == "https://a.example")
+        assert(WebPageText.summary(PhoneToolResult(output: WebPageText.tooManyScreenshots(url: "u"))) == (false, "本次回复截图已达上限"))
+        assert(WebPageText.keptImages(sizes: [1, 2, 3], budget: 10) == [true, true, true])
+        assert(WebPageText.keptImages(sizes: [5, 4, 3], budget: 7) == [false, true, true])
+        assert(WebPageText.keptImages(sizes: [1, 9, 3], budget: 5) == [false, false, true], "once one image does not fit, it and everything older are dropped")
+        assert(WebPageText.keptImages(sizes: [9], budget: 5) == [false] && WebPageText.keptImages(sizes: [], budget: 5).isEmpty)
+        let userImage: [String: Any] = ["role": "user", "content": [["type": "text", "text": "看这张"], ["type": "image_url", "image_url": ["url": "data:image/png;base64,AA"]]]]
+        let demotedChat = WebPageText.demotedChatMessages([["role": "system", "content": "s"], userImage, WebPageText.chatImageMessage(url: "https://a.example", dataURL: dataURL)])
+        assert(demotedChat[2]["content"] as? String == "[web_screenshot of https://a.example]" && (demotedChat[1]["content"] as? [[String: Any]])?.count == 2, "the user's own images are untouched")
+        let blocks2: [[String: Any]] = [["type": "tool_result", "tool_use_id": "t", "content": "{}"] as [String: Any]] + WebPageText.anthropicImageBlocks(url: "https://a.example", jpeg: jpeg) + [["type": "text", "text": "x"], ["type": "image", "source": ["type": "base64"]]]
+        let demotedClaude = WebPageText.demotedAnthropicMessages([["role": "user", "content": blocks2]])
+        let demotedBlocks = demotedClaude[0]["content"] as! [[String: Any]]
+        assert(demotedBlocks.map { $0["type"] as? String } == ["tool_result", "text", "text", "image"], "only the screenshot image goes: \(demotedBlocks)")
+        let responsesInput: [Any] = [["role": "user", "content": "hi"], ["type": "function_call_output", "call_id": "c", "output": "{}"], WebPageText.followUpImageItem(callID: "c", dataURL: dataURL, url: "https://a.example"), ["role": "user", "content": [["type": "input_text", "text": "mine"], ["type": "input_image", "image_url": "data:x"]]]]
+        let demotedResponses = WebPageText.demotedResponsesInput(responsesInput)
+        assert(((demotedResponses[2] as? [String: Any])?["content"] as? [[String: Any]])?.count == 1 && ((demotedResponses[3] as? [String: Any])?["content"] as? [[String: Any]])?.count == 2)
+        assert(((demotedResponses[2] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String == "[web_screenshot of https://a.example]")
+
+        // Audit I16/I17: HTTP status travels in the result; a runaway title cannot sink the whole result.
+        let notFound = json(WebPageText.openResult(url: "u", finalURL: "u", title: "Not found", description: "", text: "nothing here", page: 1, status: 404))
+        assert(notFound["ok"] as? Bool == true && notFound["status"] as? Int == 404 && WebPageText.summary(PhoneToolResult(output: WebPageText.openResult(url: "u", finalURL: "u", title: "", description: "", text: "t", page: 1, status: 500))).ok)
+        assert(json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1))["status"] == nil)
+        assert(json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", status: 503))["status"] as? Int == 503)
+        let longTitle = json(WebPageText.openResult(url: "u", finalURL: "u", title: String(repeating: "标", count: 30_000), description: String(repeating: "d", count: 30_000), text: "body", page: 1))
+        assert(longTitle["ok"] as? Bool == true && (longTitle["title"] as? String)?.count == WebPageText.maxTitleCharacters && (longTitle["description"] as? String)?.count == WebPageText.maxDescriptionCharacters && longTitle["text"] as? String == "body")
+
+        print("Swift web page tool tests passed: URL policy incl. private hosts and literal-address bypasses, page number, pixel caps, screenshot budget/demotion, status and bounded title, whitespace, 12k paging, result and follow-up shapes, three protocol definitions, summaries")
     }
 }

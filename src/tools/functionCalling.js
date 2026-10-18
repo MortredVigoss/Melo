@@ -41,6 +41,7 @@ function toolOutput(result, maxOutputChars) {
 }
 
 const CONDENSED_MARKER = '[Earlier tool output condensed to fit the context budget; call the tool again for the full result.]';
+export const IMAGE_NOT_ATTACHED_NOTE = '(screenshot not attached for the model on this protocol; read the page with fetch_url)';
 
 function condenseOutput(outputJson, maxChars) {
   try {
@@ -136,7 +137,16 @@ export function createFunctionCallingSession(config, tools = []) {
         return { text: reply, ...parsed };
       }
       if (!native) throw new Error('Invalid model tool response.');
-      const ir = parseAssistantResponse(reply, protocol);
+      // T12: ids synthesized for id-less chat-completions calls stay unique
+      // across the loop (seenCallIds rejects repeats).
+      const synthesized = new Set();
+      const synthesizeId = () => {
+        let n = seenCallIds.size + synthesized.size + 1, id;
+        do { id = `call_${n++}`; } while (seenCallIds.has(id) || synthesized.has(id));
+        synthesized.add(id);
+        return id;
+      };
+      const ir = parseAssistantResponse(reply, protocol, { synthesizeId });
       const calls = ir.toolCalls;
       if (calls.length > MAX_FUNCTION_CALLS_PER_RESPONSE) throw new Error('Model exceeded the per-response tool call limit. No calls in this batch were executed.');
       const ids = new Set();
@@ -179,8 +189,12 @@ export function createFunctionCallingSession(config, tools = []) {
           toolResults: results.map(({ call, result }) => ({ callId: call.id, name: wireNames.get(call.id) || call.name, output: toolOutput(result, maxOutputChars) })),
         }, turn.protocol)];
       }
+      // XML cannot carry the tool image (T10): say so in the text result so
+      // the model does not believe it has seen the page.
+      const textOnly = results.map(({ call, result }) => (typeof result?.meta?.modelImage === 'string' && typeof result.output === 'string'
+        ? { call, result: { ...result, output: `${result.output}\n${IMAGE_NOT_ATTACHED_NOTE}` } } : { call, result }));
       return [...messages, { role: 'assistant', content: turn.text },
-        { role: 'user', content: formatToolResultsMessage(results, { maxOutputChars }), isToolResult: true }];
+        { role: 'user', content: formatToolResultsMessage(textOnly, { maxOutputChars }), isToolResult: true }];
     },
     imagesOf,
     /**

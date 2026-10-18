@@ -85,3 +85,38 @@ test('compaction reports its provenance and labels an extractive fallback as deg
   assert.doesNotMatch(formatCompactContextBlock('x', 12, { source: 'cloud' }), /extractive/);
   assert.doesNotMatch(formatCompactContextBlock('x', 12), /extractive/);
 });
+
+// ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
+
+test('L12: the boundary id is authoritative even when compactSummary is empty, and a lost boundary falls back to the newest card', async () => {
+  const { planIncrementalCompact, compactBoundaryIndex } = await import('./contextCompact.js');
+  const messages = Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: `message ${i} ${'x'.repeat(400)}` }));
+  // Empty summary next to a boundary (a failed render, a manual edit): must not restart at message 0.
+  const chat = { messages, compactSummary: '', compactBoundaryMessageId: 'm9', compactCards: [{ id: 'c1', summary: 'first card', fromMessageId: 'm0', toMessageId: 'm9', source: 'cloud' }] };
+  assert.equal(compactBoundaryIndex(chat), 9);
+  const plan = planIncrementalCompact(chat, { triggerTokens: 0, minKeep: 2 });
+  assert.equal(plan.messages[0].id, 'm10', 'pending history starts after the boundary');
+  assert.match(plan.previousSummary, /first card/);
+  // Boundary message gone (trimmed thread): the newest card whose end still exists takes over.
+  const trimmed = { ...chat, compactBoundaryMessageId: 'gone', compactCards: [...chat.compactCards, { id: 'c2', summary: 'second', fromMessageId: 'm10', toMessageId: 'm13', source: 'cloud' }] };
+  assert.equal(compactBoundaryIndex(trimmed), 13);
+  assert.equal(planIncrementalCompact(trimmed, { triggerTokens: 0, minKeep: 2 }).messages[0].id, 'm14');
+  // No compact state at all → everything is pending.
+  assert.equal(compactBoundaryIndex({ messages }), -1);
+  assert.equal(planIncrementalCompact({ messages }, { triggerTokens: 0, minKeep: 2 }).messages[0].id, 'm0');
+});
+
+test('L14: a folded oversized first turn still reports how many messages it covers', async () => {
+  const { planIncrementalCompact } = await import('./contextCompact.js');
+  const messages = [
+    { id: 'u0', role: 'user', content: 'huge '.repeat(20000) },
+    { id: 'a0', role: 'assistant', content: 'reply' },
+    { id: 'u1', role: 'user', content: 'next' }, { id: 'a1', role: 'assistant', content: 'r' },
+    { id: 'u2', role: 'user', content: 'next2' }, { id: 'a2', role: 'assistant', content: 'r2' },
+  ];
+  const plan = planIncrementalCompact({ messages }, { triggerTokens: 0, minKeep: 2, maxChunkTokens: 4000 });
+  assert.equal(plan.truncated, true);
+  assert.equal(plan.messages.length, 1);
+  assert.equal(plan.coveredCount, 2, 'user turn + its reply');
+  assert.equal(plan.compactedCount, 2);
+});

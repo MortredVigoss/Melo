@@ -119,3 +119,44 @@ test('appendToolInvocationRecord never throws: unwritable directory and invalid 
     await chmod(join(home, 'desktop'), 0o600).catch(() => {});
   } finally { await rm(home, { recursive: true, force: true }); }
 });
+
+// ─── Bug audit 2026-10-18 T6: secrets inside VALUES ──────────────────────────
+
+import { redactSecretsInText } from './secretRedaction.js';
+import { observeTool } from './executionObservation.js';
+import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
+
+const BEARER = 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+const LEAKS = [BEARER.slice(7, 40), 'sk-proj-abcdefghijklmnop', 'ghp_abcdefghijklmnopqrstuvwxyz0123', 'AKIAABCDEFGHIJKLMNOP', 'u:p@h.test', 'token=abc123def', 'hunter2!!'];
+const noLeak = (text, label) => { for (const leak of LEAKS) assert.equal(String(text).includes(leak), false, `${label} leaks ${leak}`); };
+
+test('redactSecretsInText: Bearer, key=value, URL userinfo, ?token=, sk-/ghp_/AKIA shapes; plain text untouched', () => {
+  const text = `curl -H "Authorization: ${BEARER}" https://u:p@h.test/x?token=abc123def&x=1 KEY=sk-proj-abcdefghijklmnop password=hunter2!! ghp_abcdefghijklmnopqrstuvwxyz0123 AKIAABCDEFGHIJKLMNOP`;
+  const out = redactSecretsInText(text);
+  noLeak(out, 'redactSecretsInText');
+  assert.match(out, /Authorization: Bearer \[redacted\]/);
+  assert.match(out, /https:\/\/\[redacted\]@h\.test\/x\?token=\[redacted\]&x=1/);
+  assert.match(out, /KEY=\[redacted\]/);
+  assert.equal(redactSecretsInText('grep "key=" src/ && echo the monkey=banana http://127.0.0.1:1/api/files/signed/a.png?p=1&e=2&s=3'),
+    'grep "key=" src/ && echo the monkey=banana http://127.0.0.1:1/api/files/signed/a.png?p=1&e=2&s=3', 'ordinary text and signed file URLs stay intact');
+  assert.equal(redactSecretsInText(''), '');
+  assert.equal(redactSecretsInText(null), null);
+});
+
+test('T6: record args, meta, output preview and modelFacingOutput never carry secret values', () => {
+  const args = { command: `curl -H "Authorization: ${BEARER}" https://u:p@h.test/x?token=abc123def`, env: 'KEY=sk-proj-abcdefghijklmnop' };
+  const result = finalizeToolResult({ ok: true, output: `exported KEY=sk-proj-abcdefghijklmnop and password=hunter2!! ghp_abcdefghijklmnopqrstuvwxyz0123`, meta: { url: 'https://u:p@h.test/x?token=abc123def', note: `AKIAABCDEFGHIJKLMNOP` } });
+  const record = buildToolInvocationRecord({ runId: 'run', iteration: 0, call: { id: 'c1', name: 'bash', arguments: args }, result,
+    modelFacingOutput: formatToolResult({ id: 'c1', name: 'bash' }, result) });
+  noLeak(JSON.stringify(record.argsRedacted), 'argsRedacted');
+  noLeak(JSON.stringify(record.resultEnvelope), 'resultEnvelope');
+  noLeak(record.modelFacingOutput, 'modelFacingOutput');
+  assert.match(record.argsRedacted.command, /Bearer \[redacted\]/);
+  assert.equal(record.argsHash, hashToolArgs(args), 'the hash is still taken over the raw args');
+  // Execution scene (safeText) and the persisted toolResults summary use the same patterns.
+  const scene = observeTool({ id: 'c1', name: 'bash', args, status: null, result, tool: { id: 'bash', inputKeys: ['command'] } });
+  noLeak(JSON.stringify(scene), 'execution scene');
+  const persisted = projectToolResultForPersist({ id: 'c1', name: 'bash' }, result, record);
+  noLeak(persisted.summary, 'toolResults[].summary');
+  assert.match(persisted.summary, /KEY=\[redacted\]/);
+});

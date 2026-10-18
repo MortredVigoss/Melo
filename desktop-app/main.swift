@@ -624,14 +624,17 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           task.executableURL = URL(fileURLWithPath: "/usr/bin/say")
           // Pick voice by system language
           let lang = Locale.preferredLanguages.first?.lowercased() ?? "en"
+          // Bug audit U11: `--` ends option parsing, so a reply that starts
+          // with `-` is spoken instead of being read as a `say` flag (the
+          // Node side already passes `--`).
           if lang.hasPrefix("zh") {
-            task.arguments = ["-v", "Tingting", text]
+            task.arguments = ["-v", "Tingting", "--", text]
           } else if lang.hasPrefix("ko") {
-            task.arguments = ["-v", "Yuna", text]
+            task.arguments = ["-v", "Yuna", "--", text]
           } else if lang.hasPrefix("ja") {
-            task.arguments = ["-v", "Kyoko", text]
+            task.arguments = ["-v", "Kyoko", "--", text]
           } else {
-            task.arguments = [text]
+            task.arguments = ["--", text]
           }
           self.sayProcess = task
           try? task.run()

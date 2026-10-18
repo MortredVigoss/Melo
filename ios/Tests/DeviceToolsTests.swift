@@ -198,6 +198,18 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         assert(imageParts?[1]["type"] as? String == "input_image" && imageParts?[1]["image_url"] as? String == "data:image/jpeg;base64," + jpeg.base64EncodedString())
         let textOnly = DeviceToolLoop.followUpInput(previous: previous, output: stream.outputItems, results: [("call_1", PhoneToolResult(output: #"{"ok":true}"#))])
         assert(textOnly.count == 4, "no image message without a screenshot")
+        // Audit I21: a completed image_generation_call of the same turn is replayed without its base64 result.
+        let imageCall: [String: Any] = ["type": "image_generation_call", "id": "ig_1", "status": "completed", "result": String(repeating: "A", count: 4000), "revised_prompt": "cat"]
+        let replayed = DeviceToolLoop.followUpInput(previous: previous, output: [imageCall, fc], results: [(callID: "call_1", output: "{}")])
+        let replayedImage = replayed[1] as? [String: Any]
+        assert(replayedImage?["type"] as? String == "image_generation_call" && replayedImage?["id"] as? String == "ig_1" && replayedImage?["result"] == nil && replayedImage?["revised_prompt"] as? String == "cat")
+        assert((replayed[2] as? [String: Any])?["call_id"] as? String == "call_1")
+        // Audit I9: earlier rounds' screenshot items are reduced to their caption; this round's images are byte-budgeted.
+        let secondRound = DeviceToolLoop.followUpInput(previous: withImage, output: [fc], results: [("call_1", PhoneToolResult(output: "{}", imageJPEG: Data(count: 7 * 1024 * 1024), imageURL: "https://big.example"))])
+        assert(((secondRound[5] as? [String: Any])?["content"] as? [[String: Any]])?.count == 1, "old screenshot keeps only its caption")
+        let oversize = secondRound.last as? [String: Any]
+        let oversizeParts = oversize?["content"] as? [[String: Any]]
+        assert(oversize?["role"] as? String == "user" && oversizeParts?.count == 1 && oversizeParts?[0]["text"] as? String == "[web_screenshot of https://big.example]", "an image over the byte budget is replaced by its caption")
 
         // Unified context: web tools follow the Agent's network grant, dispatch by name, device tools otherwise.
         var webCalls = 0, deviceCalls = 0

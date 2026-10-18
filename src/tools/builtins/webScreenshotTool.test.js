@@ -301,3 +301,121 @@ test('without a workspace the PNG lands under <home>/desktop/screenshots', async
     }
   });
 });
+
+// ─── Bug audit 2026-10-18: T2 (redirect / subresource guard), T10 (model image), T16 (IPv6 forms) ──
+
+import { isBlockedRequestUrl, IMAGE_NOT_ATTACHED_NOTE, MODEL_IMAGE_WIDTHS } from './webScreenshotTool.js';
+
+test('T16: IPv4-translated / NAT64 / 6to4 / benchmarking forms are private; their public counterparts are not', () => {
+  for (const bad of ['http://[::ffff:0:7f00:1]/', 'http://[::ffff:0:127.0.0.1]/', 'http://[64:ff9b::7f00:1]/', 'http://[64:ff9b::127.0.0.1]/', 'http://[64:ff9b:1::1]/',
+    'http://[2002:7f00:1::]/', 'http://[2002:c0a8:101::]/', 'http://198.18.0.1/', 'http://198.19.255.254/', 'http://[fec0::1]/', 'http://[2001:db8::1]/',
+    'http://[::7f00:1]/', 'http://192.0.2.1/', 'http://203.0.113.9/', 'http://[::FFFF:7F00:1]/', 'http://[fe80::1%25eth0]/', 'http://[::ffff:169.254.169.254]/']) {
+    assert.equal(isPublicHttpUrl(bad).ok, false, bad);
+  }
+  for (const good of ['http://[2001:4860:4860::8888]/', 'http://[2002:808:808::]/', 'http://[64:ff9b::808:808]/', 'http://[::ffff:8.8.8.8]/', 'http://198.17.0.1/', 'http://198.20.0.1/', 'http://1.1.1.1/']) {
+    assert.equal(isPublicHttpUrl(good).ok, true, good);
+  }
+  assert.equal(isPrivateHostname('[::ffff:0:7f00:1]'), true);
+  assert.equal(isPrivateHostname('[zz::1]'), true, 'unparseable literals fail closed');
+  assert.equal(isBlockedRequestUrl('data:text/html,hi'), false);
+  assert.equal(isBlockedRequestUrl('about:blank'), false);
+  assert.equal(isBlockedRequestUrl('file:///etc/passwd'), true);
+  assert.equal(isBlockedRequestUrl('http://169.254.169.254/latest/meta-data'), true);
+  assert.equal(isBlockedRequestUrl('https://cdn.example.com/a.js'), false);
+});
+
+test('T2: a redirect that lands on a loopback address is refused after goto (INVALID_URL) and nothing is captured', async () => {
+  await withWorkspace(async workspacePath => {
+    let landed = URL_OK;
+    const fixture = fakePage({ goto: async () => { landed = 'http://127.0.0.1:43127/api/local-write'; }, url: undefined });
+    fixture.page.url = () => landed;
+    headlessDeps(fixture);
+    const result = finalizeToolResult(await webScreenshotTool.run({ url: URL_OK }, { workspacePath }));
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'INVALID_URL');
+    assert.match(result.output, /local or private address/);
+    assert.match(result.output, /127\.0\.0\.1/);
+    assert.equal(result.meta.blockedPrivateNavigation, true);
+    assert.equal(fixture.calls.screenshot.length, 0, 'no screenshot of the private page');
+    assert.equal(fixture.calls.closed, 1, 'page still closed');
+  });
+});
+
+test('T2: page.route aborts requests to private hosts (subresources, iframes, blocked main-frame redirects) and continues public ones', async () => {
+  await withWorkspace(async workspacePath => {
+    const routed = [];
+    const makeRequest = (url, navigation = false) => ({ url: () => url, isNavigationRequest: () => navigation, frame: () => 'main' });
+    const fixture = fakePage();
+    let handler = null;
+    fixture.page.mainFrame = () => 'main';
+    fixture.page.route = async (pattern, fn) => { routed.push(pattern); handler = fn; };
+    fixture.page.unroute = async () => { handler = null; };
+    const originalGoto = fixture.page.goto;
+    fixture.page.goto = async (target, options) => {
+      // Simulate the page loading: main frame, a public script, a private iframe and a metadata subresource.
+      const decisions = [];
+      for (const [url, navigation] of [[target, true], ['https://cdn.example.com/app.js', false], ['http://192.168.1.10/panel', false], ['http://169.254.169.254/latest/meta-data', false]]) {
+        await handler({ continue: async () => decisions.push(['continue', url]), abort: async reason => decisions.push(['abort', url, reason]), request: () => makeRequest(url, navigation) }, makeRequest(url, navigation));
+      }
+      fixture.decisions = decisions;
+      return originalGoto(target, options);
+    };
+    headlessDeps(fixture);
+    const result = finalizeToolResult(await webScreenshotTool.run({ url: URL_OK }, { workspacePath }));
+    assert.equal(result.ok, true, result.output);
+    assert.deepEqual(routed, ['**/*'], 'the guard is installed before navigation');
+    assert.equal(handler, null, 'the guard is removed afterwards');
+    assert.deepEqual(fixture.decisions, [
+      ['continue', URL_OK], ['continue', 'https://cdn.example.com/app.js'],
+      ['abort', 'http://192.168.1.10/panel', 'blockedbyclient'], ['abort', 'http://169.254.169.254/latest/meta-data', 'blockedbyclient'],
+    ]);
+    assert.match(result.output, /2 request\(s\) to local\/private hosts were blocked/);
+
+    // A blocked main-frame navigation (the redirect target itself) → INVALID_URL even when goto throws net::ERR_FAILED.
+    const redirect = fakePage({ goto: async () => { throw new Error('net::ERR_FAILED'); } });
+    redirect.page.mainFrame = () => 'main';
+    let redirectHandler = null;
+    redirect.page.route = async (_pattern, fn) => { redirectHandler = fn; };
+    redirect.page.unroute = async () => {};
+    const baseGoto = redirect.page.goto;
+    redirect.page.goto = async (target, options) => {
+      await redirectHandler({ continue: async () => {}, abort: async () => {}, request: () => makeRequest('http://10.0.0.5/admin', true) }, makeRequest('http://10.0.0.5/admin', true));
+      return baseGoto(target, options);
+    };
+    headlessDeps(redirect);
+    const refused = finalizeToolResult(await webScreenshotTool.run({ url: URL_OK }, { workspacePath }));
+    assert.equal(refused.ok, false);
+    assert.equal(refused.code, 'INVALID_URL');
+    assert.match(refused.output, /10\.0\.0\.5/);
+    assert.equal(redirect.calls.screenshot.length, 0);
+  });
+});
+
+test('T10: the model image keeps shrinking (960/720/480 px) until it fits 400 KB; when nothing fits the output says the model has no image', async () => {
+  await withWorkspace(async workspacePath => {
+    // A noisy 1280×4000 full-page capture: ~700 KB at 1280 px / q40, fits only after downscaling.
+    let seed = 42;
+    const noise = Buffer.alloc(1280 * 4000 * 3);
+    for (let i = 0; i < noise.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; noise[i] = seed & 255; }
+    const tallPng = await sharp(noise, { raw: { width: 1280, height: 4000, channels: 3 } }).png().toBuffer();
+    const fixture = fakePage({ image: tallPng, documentHeight: 4000 });
+    headlessDeps(fixture);
+    const result = finalizeToolResult(await webScreenshotTool.run({ url: URL_OK, fullPage: true }, { workspacePath }));
+    assert.equal(result.ok, true, result.output);
+    assert.match(result.meta.modelImage, /^data:image\/jpeg;base64,/);
+    const jpeg = Buffer.from(result.meta.modelImage.slice('data:image/jpeg;base64,'.length), 'base64');
+    assert.ok(jpeg.length <= MODEL_IMAGE_MAX_BYTES, `model image ${jpeg.length} bytes`);
+    const info = await sharp(jpeg).metadata();
+    assert.ok(info.width < MODEL_IMAGE_MAX_WIDTH, `downscaled below 1280 px (got ${info.width})`);
+    assert.ok(MODEL_IMAGE_WIDTHS.includes(info.width), `width ${info.width} is one of the ladder steps`);
+    assert.doesNotMatch(result.output, /screenshot not attached/);
+
+    const none = fakePage();
+    headlessDeps(none, { encodeModelImage: async () => null });
+    const noImage = await webScreenshotTool.run({ url: URL_OK }, { workspacePath });
+    assert.equal(noImage.ok, true);
+    assert.equal('modelImage' in noImage.meta, false);
+    assert.ok(noImage.output.includes(IMAGE_NOT_ATTACHED_NOTE), noImage.output);
+    assert.match(noImage.output, /fetch_url/);
+  });
+});

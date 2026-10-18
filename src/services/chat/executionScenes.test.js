@@ -194,3 +194,42 @@ test('version-two saved scenes reconcile final references on replay without chan
   assert.equal(restored.restSeed, scene.restSeed);
   assert.deepEqual(recoverSceneObservations(restored, history), restored);
 });
+
+// Bug audit 2026-10-18 T15: execution-scenes/<runId>.* (scene JSON + D1 tools.jsonl)
+// are pruned by age (14 days) and count (newest 300 runs); live runs survive.
+test('T15: pruneExecutionScenes drops runs older than 14 days or beyond the newest 300, whole run at a time, never a live run', async () => {
+  const { pruneExecutionScenes, SCENE_RETENTION_DAYS, SCENE_RETENTION_RUNS } = await import('./executionScenes.js');
+  const { utimes, mkdir, readdir } = await import('node:fs/promises');
+  const home = await mkdtemp(join(tmpdir(), 'melo-scene-prune-'));
+  const dir = join(home, 'desktop', 'execution-scenes');
+  await mkdir(dir, { recursive: true });
+  const now = Date.now(), day = 86_400_000;
+  const touch = async (name, ageMs) => { const file = join(dir, name); await writeFile(file, '{}'); await utimes(file, new Date(now - ageMs), new Date(now - ageMs)); };
+  await touch('old.json', 20 * day); await touch('old.tools.jsonl', 20 * day);
+  await touch('edge.json', (SCENE_RETENTION_DAYS + 0.5) * day);
+  await touch('fresh.json', 1 * day); await touch('fresh.tools.jsonl', 1 * day);
+  await touch('unrelated.txt', 30 * day);
+  const first = await pruneExecutionScenes(home, { now });
+  assert.deepEqual(first, { removedRuns: 2, removedFiles: 3 });
+  assert.deepEqual((await readdir(dir)).sort(), ['fresh.json', 'fresh.tools.jsonl', 'unrelated.txt']);
+  // Count cap: 305 fresh runs → only the newest 300 survive (two files per run go together).
+  for (let i = 0; i < 305; i++) { await touch(`run${String(i).padStart(3, '0')}.json`, i * 1000); await touch(`run${String(i).padStart(3, '0')}.tools.jsonl`, i * 1000); }
+  const second = await pruneExecutionScenes(home, { now });
+  assert.equal(second.removedRuns, 306 - SCENE_RETENTION_RUNS, 'fresh + 305 runs minus the newest 300');
+  const left = (await readdir(dir)).filter(n => n.endsWith('.json'));
+  assert.equal(left.length, SCENE_RETENTION_RUNS);
+  assert.ok(left.includes('run000.json') && left.includes('run299.json'), 'newest 300 kept');
+  assert.ok(!left.includes('run300.json') && !left.includes('fresh.json'), 'the 1-day-old run is now the oldest and goes with run300..304');
+  assert.ok(!(await readdir(dir)).includes('run300.tools.jsonl'), 'the run\'s tools.jsonl goes with it');
+  // A run that is still being recorded is never pruned, even when old or beyond the cap.
+  const recorder = createExecutionRecorder({ home, runId: 'live-run', requestId: 'r', chatId: 'c' }, 'q', () => {});
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await utimes(join(dir, 'live-run.json'), new Date(now - 40 * day), new Date(now - 40 * day));
+  const third = await pruneExecutionScenes(home, { now, maxRuns: 1 });
+  assert.ok((await readdir(dir)).includes('live-run.json'), 'live run kept');
+  assert.ok(third.removedRuns > 0);
+  await recorder.finish('completed', { content: '' });
+  // Missing directory: nothing to do, no throw.
+  assert.deepEqual(await pruneExecutionScenes(join(home, 'nope')), { removedRuns: 0, removedFiles: 0 });
+  await rm(home, { recursive: true, force: true });
+});

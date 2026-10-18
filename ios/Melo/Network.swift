@@ -77,23 +77,46 @@ enum Network {
             return ResponsesFunctionCall(callID: id, name: name, arguments: arguments)
         }
     }
+    /// The assistant message echoed back in a Chat Completions tool round:
+    /// only `role`, `content` (string or null), `tool_calls` and, when the
+    /// provider sent one, `reasoning_content` (DeepSeek-style). Extra fields
+    /// such as `refusal: null`, `annotations`, `audio` or `function_call`
+    /// make some providers reject the follow-up request.
+    static func echoedAssistant(_ message: [String: Any]) -> [String: Any] {
+        var row: [String: Any] = ["role": "assistant", "content": (message["content"] as? String).map { $0 as Any } ?? NSNull()]
+        if let calls = message["tool_calls"] as? [[String: Any]], !calls.isEmpty { row["tool_calls"] = calls }
+        if let reasoning = message["reasoning_content"] as? String, !reasoning.isEmpty { row["reasoning_content"] = reasoning }
+        return row
+    }
+    /// Screenshot JPEGs of one round that fit the per-request byte budget
+    /// (oldest dropped first); the dropped ones keep their caption text only.
+    static func budgetedImages(_ results: [(callID: String, result: PhoneToolResult)]) -> [(url: String, jpeg: Data?)] {
+        let images = results.compactMap { item in item.result.imageJPEG.map { (url: item.result.imageURL, jpeg: $0) } }
+        let kept = WebPageText.keptImages(sizes: images.map(\.jpeg.count))
+        return images.enumerated().map { ($0.element.url, kept[$0.offset] ? $0.element.jpeg : nil) }
+    }
     /// Messages appended after a Chat Completions tool round: the assistant
-    /// message verbatim, one tool message per call, then screenshots as a user message.
+    /// message (whitelisted), one tool message per call, then screenshots as a user message.
     static func chatToolRound(assistant: [String: Any], results: [(callID: String, result: PhoneToolResult)]) -> [[String: Any]] {
-        var rows: [[String: Any]] = [assistant]
+        var rows: [[String: Any]] = [echoedAssistant(assistant)]
         rows += results.map { ["role": "tool", "tool_call_id": $0.callID, "content": $0.result.output] as [String: Any] }
-        rows += results.compactMap { item in item.result.imageJPEG.map { WebPageText.chatImageMessage(url: item.result.imageURL, dataURL: WebPageText.dataURL(jpeg: $0)) } }
+        rows += budgetedImages(results).map { image in
+            image.jpeg.map { WebPageText.chatImageMessage(url: image.url, dataURL: WebPageText.dataURL(jpeg: $0)) } ?? ["role": "user", "content": WebPageText.caption(url: image.url)]
+        }
         return rows
     }
     /// Messages appended after an Anthropic tool round: the assistant content
     /// verbatim and one user message of tool_result blocks (+ screenshot blocks).
     static func anthropicToolRound(assistant: [[String: Any]], results: [(callID: String, result: PhoneToolResult)]) -> [[String: Any]] {
         var blocks: [[String: Any]] = results.map { ["type": "tool_result", "tool_use_id": $0.callID, "content": $0.result.output] as [String: Any] }
-        for item in results { if let jpeg = item.result.imageJPEG { blocks += WebPageText.anthropicImageBlocks(url: item.result.imageURL, jpeg: jpeg) } }
+        for image in budgetedImages(results) {
+            if let jpeg = image.jpeg { blocks += WebPageText.anthropicImageBlocks(url: image.url, jpeg: jpeg) }
+            else { blocks.append(["type": "text", "text": WebPageText.caption(url: image.url)]) }
+        }
         return [["role": "assistant", "content": assistant], ["role": "user", "content": blocks]]
     }
 
-    static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, onObservation: ((ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
+    static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
         let tools = (tools?.definitions.isEmpty ?? true) ? nil : tools
@@ -112,22 +135,26 @@ enum Network {
         let url = try self.endpoint(endpoint)
         var observation = ExecutionObservation()
         observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        onObservation?(observation)
+        await onObservation?(observation)
         do {
             var data = Data()
-            var rounds = 0
+            var rounds = 0, screenshots = 0
             while true {
                 let payload = try JSONSerialization.data(withJSONObject: body)
                 data = try await post(url, token: token, body: payload, session: session, headers: headers)
                 try Task.checkCancellation()
                 let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                var finishReason: String?
                 if let receipt {
                     let choices = receipt["choices"] as? [[String: Any]]
-                    observation.apiReceipt(receipt, transport: apiProtocol, finishReason: receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String)
-                    onObservation?(observation)
+                    finishReason = receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String
+                    observation.apiReceipt(receipt, transport: apiProtocol, finishReason: finishReason)
+                    await onObservation?(observation)
                 }
                 // Tool round: run the calls, append the exchange, ask again (bounded).
-                guard let tools, let receipt else { break }
+                // Only a completed tool turn counts; calls cut off by `length` /
+                // `max_tokens` are never executed (the truncation is reported below).
+                guard let tools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") else { break }
                 let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
                 let assistantContent = receipt["content"] as? [[String: Any]] ?? []
                 let calls = anthropic ? anthropicToolCalls(assistantContent) : chatToolCalls(assistantMessage)
@@ -138,16 +165,22 @@ enum Network {
                 var results: [(callID: String, result: PhoneToolResult)] = []
                 for call in calls {
                     try Task.checkCancellation()
+                    if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
+                        results.append((call.callID, PhoneToolResult(output: WebPageText.tooManyScreenshots(url: call.urlArgument)))); continue
+                    }
                     await onStatus?(WebPageToolSpec.named(call.name).map(\.statusText) ?? "正在读取手机数据…")
                     let result = await tools.perform(call)
                     try Task.checkCancellation()
+                    if result.imageJPEG != nil { screenshots += 1 }
                     results.append((call.callID, result))
                 }
                 await onStatus?("正在思考…")
+                // Earlier rounds keep only the caption of their screenshots.
                 let rows = (body["messages"] as? [[String: Any]]) ?? []
-                body["messages"] = rows + (anthropic ? anthropicToolRound(assistant: assistantContent, results: results) : chatToolRound(assistant: assistantMessage, results: results))
+                body["messages"] = (anthropic ? WebPageText.demotedAnthropicMessages(rows) : WebPageText.demotedChatMessages(rows))
+                    + (anthropic ? anthropicToolRound(assistant: assistantContent, results: results) : chatToolRound(assistant: assistantMessage, results: results))
                 observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
-                onObservation?(observation)
+                await onObservation?(observation)
             }
             struct Response: Decodable {
                 struct Choice: Decodable {
@@ -180,16 +213,16 @@ enum Network {
             guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
             observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
             observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
-            onObservation?(observation)
+            await onObservation?(observation)
             let sources = WebReplyFormatter.references(in: text)
             for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
             observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
-            onObservation?(observation)
+            await onObservation?(observation)
             return ModelReply(text: text, sources: sources)
         } catch {
             let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
             observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
-            onObservation?(observation)
+            await onObservation?(observation)
             throw error
         }
     }

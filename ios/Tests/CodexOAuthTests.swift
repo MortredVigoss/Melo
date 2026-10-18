@@ -282,6 +282,22 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true}" })
         do { _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping);fatalError("unbounded loop") } catch {}
         assert(toolRounds==DeviceToolLoop.maxRounds && executed==DeviceToolLoop.maxRounds)
+        // Audit I8: a time-sensitive question keeps the forced web_search on the first round even when
+        // phone tools are offered; the follow-up round opens the choice to phone tools.
+        toolRounds=0; executed=0
+        CodexFixture.handler={ request in
+            toolRounds+=1
+            let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            assert((body["tools"] as? [[String:Any]] ?? []).contains { $0["name"] as? String=="calendar_list_events" })
+            if toolRounds==1 {
+                assert((body["tool_choice"] as? [String:String])?["type"]=="web_search", "forced search must survive the phone tools: \(String(describing: body["tool_choice"]))")
+                return (200,try sse([["type":"web_search_call","id":"ws_1","status":"completed"],["type":"function_call","id":"fc_w","call_id":"call_w","name":"calendar_list_events","arguments":"{}","status":"completed"]]))
+            }
+            assert(body["tool_choice"] as? String=="auto", "follow-up rounds are not forced to search again")
+            return (200,try sse([["type":"message","content":[["type":"output_text","text":"明天多云，日程空着。","annotations":[]]]]]))
+        }
+        let weather=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"悉尼明天天气怎么样")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"count\":0,\"events\":[]}" }))
+        assert(weather.text=="明天多云，日程空着。" && weather.searched && toolRounds==2 && executed==1)
         // Without an enabled policy, no function tools are offered at all.
         toolRounds=0
         CodexFixture.handler={ request in

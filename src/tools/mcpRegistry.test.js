@@ -132,3 +132,25 @@ test('buildMcpTool.run still calls the client with the original MCP tool name', 
   assert.equal(result.ok, true);
   assert.match(String(result.output), /docs\.search:\{"q":"hi"\}/);
 });
+
+// Bug audit 2026-10-18 T14: when the readable name AND the 10-char hashed
+// name both collide, registration used to throw (and the manager swallowed
+// it, so the tool silently vanished). The digest now lengthens instead.
+test('T14: a double collision lengthens the hash instead of throwing; every tool stays registered and resolvable', () => {
+  const a = registerMcpTool(mcpTool('srv', 'a-b'));
+  const digest = createHash('sha1').update('mcp:srv:a_b').digest('hex').slice(0, 10);
+  // A tool literally named after the digest squats the hashed wire name of `a_b`.
+  const squatter = registerMcpTool(mcpTool('srv', digest));
+  assert.equal(squatter.functionName, `mcp__srv__${digest}`);
+  const b = registerMcpTool(mcpTool('srv', 'a_b'));
+  assert.notEqual(b.functionName, a.functionName);
+  assert.notEqual(b.functionName, squatter.functionName);
+  assert.match(b.functionName, /^mcp__srv__[0-9a-f]{14}$/);
+  assert.equal(resolveMcpFunctionName(b.functionName).id, 'mcp:srv:a_b');
+  assert.equal(resolveMcpFunctionName(a.functionName).id, 'mcp:srv:a-b');
+  assert.equal(resolveMcpFunctionName(squatter.functionName).id, `mcp:srv:${digest}`);
+  assert.equal(getAllMcpTools().length, 3);
+  const names = new Set(getAllMcpTools().map(t => t.functionName));
+  assert.equal(names.size, 3, 'wire names are unique');
+  assert.ok([...names].every(name => name.length <= MCP_FUNCTION_NAME_MAX));
+});

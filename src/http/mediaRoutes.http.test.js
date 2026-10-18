@@ -93,3 +93,59 @@ test('GET /api/media/attachments/:name reaches its handler through the real serv
   const missing = await fetch(base + '/api/media/attachments/11111111-2222-4333-8444-555555555559.wav', { signal: AbortSignal.timeout(5000) });
   assert.equal(missing.status, 404);
 });
+
+// ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
+
+test('L11/L20: attachments answer Range with 206 + Accept-Ranges, carry nosniff, and non-raster types download instead of rendering', async t => {
+  const h = await home(t);
+  const bytes = Buffer.from(Array.from({ length: 6000 }, (_, i) => i % 251));
+  const attach = (id, mime) => externalizeAttachments([{ id, kind: 'file', url: `data:${mime};base64,${bytes.toString('base64')}`, mimeType: mime }], { home: h }).then(([a]) => a);
+  const audio = await attach('11111111-2222-4333-8444-66666666660a', 'audio/mpeg');
+  const svg = await attach('11111111-2222-4333-8444-66666666660b', 'image/svg+xml');
+  const pdf = await attach('11111111-2222-4333-8444-66666666660c', 'application/pdf');
+  const png = await attach('11111111-2222-4333-8444-66666666660d', 'image/png');
+  const video = await attach('11111111-2222-4333-8444-66666666660e', 'video/mp4');
+  const routes = createMediaRoutes({ home: h });
+  const server = createServer(async (req, res) => { if (!(await routes.handle(req, res, new URL(req.url, 'http://local'), () => true))) { res.statusCode = 404; res.end(); } });
+  server.listen(0); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const whole = await fetch(base + audio.url);
+  assert.equal(whole.status, 200);
+  assert.equal(whole.headers.get('accept-ranges'), 'bytes');
+  assert.equal(whole.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(whole.headers.get('content-disposition'), null, 'audio plays inline');
+  assert.equal(whole.headers.get('content-type'), 'audio/mpeg');
+
+  const ranged = await fetch(base + audio.url, { headers: { Range: 'bytes=100-199' } });
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.headers.get('content-range'), `bytes 100-199/${bytes.length}`);
+  assert.equal(ranged.headers.get('content-length'), '100');
+  assert.equal(ranged.headers.get('accept-ranges'), 'bytes');
+  assert.equal(ranged.headers.get('cache-control'), 'private, max-age=31536000, immutable');
+  assert.ok(Buffer.from(await ranged.arrayBuffer()).equals(bytes.subarray(100, 200)));
+  const tail = await fetch(base + audio.url, { headers: { Range: 'bytes=5900-' } });
+  assert.equal(tail.status, 206);
+  assert.ok(Buffer.from(await tail.arrayBuffer()).equals(bytes.subarray(5900)));
+  const suffix = await fetch(base + audio.url, { headers: { Range: 'bytes=-50' } });
+  assert.equal(suffix.status, 206);
+  assert.ok(Buffer.from(await suffix.arrayBuffer()).equals(bytes.subarray(bytes.length - 50)));
+  const bad = await fetch(base + audio.url, { headers: { Range: 'bytes=9999-' } });
+  assert.equal(bad.status, 416);
+  assert.equal(bad.headers.get('content-range'), `bytes */${bytes.length}`);
+  const videoRanged = await fetch(base + video.url, { headers: { Range: 'bytes=0-9' } });
+  assert.equal(videoRanged.status, 206);
+  assert.equal(videoRanged.headers.get('content-disposition'), null, 'video plays inline');
+
+  for (const [attachment, type] of [[svg, 'image/svg+xml'], [pdf, 'application/pdf']]) {
+    const response = await fetch(base + attachment.url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), type);
+    assert.match(response.headers.get('content-disposition'), /^attachment; filename="[0-9a-f-]+\.(svg|pdf)"$/);
+    assert.equal(response.headers.get('content-security-policy'), 'sandbox');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  }
+  const image = await fetch(base + png.url);
+  assert.equal(image.headers.get('content-disposition'), null, 'raster images render inline');
+  assert.equal(image.headers.get('x-content-type-options'), 'nosniff');
+});

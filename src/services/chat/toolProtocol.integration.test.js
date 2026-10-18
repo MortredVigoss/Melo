@@ -44,7 +44,8 @@ async function harness(t, { config: configOverrides, respond, env = {}, toolResu
     agentProfiles: { main: { id: 'main', name: 'Fixture', model: 'fixture-model', tools: [], skills: [], channels: {}, identity: '', soulMd: '' } },
     projectAgentOverrides: {}, settings: { selectedChatId: chat.id, selectedAgentId: 'main', activeMode: 'chat', promptHistory: [] } };
   const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config,
-    env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0', ...env } }),
+    // Bug audit T15: the chain is persisted only when replay is enabled.
+    env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0', MELO_TOOL_CHAIN_HISTORY: '1', ...env } }),
     turnBinding: { role: 'main', project: null, taskId: null } });
   const run = signal => runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat, signal,
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
@@ -218,7 +219,7 @@ test('responses: unchanged request shape and the same protocol-neutral chain is 
   const state = { projects: [], chats: [chat], tasks: [], approvals: [], artifacts: [], commandRuns: [], externalConnectors: [],
     agentProfiles: { main: { id: 'main', name: 'Fixture', model: 'fixture-model', tools: [], skills: [], channels: {}, identity: '', soulMd: '' } },
     projectAgentOverrides: {}, settings: { selectedChatId: chat.id, selectedAgentId: 'main', activeMode: 'chat', promptHistory: [] } };
-  const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config, env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0' } }), turnBinding: { role: 'main', project: null, taskId: null } });
+  const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config, env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0', MELO_TOOL_CHAIN_HISTORY: '1' } }), turnBinding: { role: 'main', project: null, taskId: null } });
   const result = await runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat,
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
     connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null }, sseEmitter() {} }));
@@ -296,7 +297,7 @@ test('responses: a result with meta.modelImage becomes an input_image user item 
   const state = { projects: [], chats: [chat], tasks: [], approvals: [], artifacts: [], commandRuns: [], externalConnectors: [],
     agentProfiles: { main: { id: 'main', name: 'Fixture', model: 'fixture-model', tools: [], skills: [], channels: {}, identity: '', soulMd: '' } },
     projectAgentOverrides: {}, settings: { selectedChatId: chat.id, selectedAgentId: 'main', activeMode: 'chat', promptHistory: [] } };
-  const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config, env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0' } }), turnBinding: { role: 'main', project: null, taskId: null } });
+  const context = Object.freeze({ ...createRequestContext({ home, chatId: chat.id, config, env: { MELO_MOCK_RESPONSE: '', MELO_DIAGNOSTICS_RECORD: '0', MELO_FUNCTION_CALLING: '', MELO_PROMPT_DEBUG: '0', MELO_TOOL_CHAIN_HISTORY: '1' } }), turnBinding: { role: 'main', project: null, taskId: null } });
   const result = await runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat,
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
     connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null }, sseEmitter() {} }));
@@ -316,4 +317,38 @@ test('responses: a result with meta.modelImage becomes an input_image user item 
   assert.equal(JSON.stringify(result.normalizedReply.toolChain).includes('base64'), false, 'persisted toolChain carries no base64');
   assert.equal(result.normalizedReply.toolChain.turns[0].images, undefined);
   assertRebuildable(result, chat);
+});
+
+// Bug audit 2026-10-18 T11 / T12 / T13 / T15: a local chat-completions server
+// that omits `tool_calls[].id` and sends `arguments: ""` still gets a full
+// turn; the echo carries `content: null`, synthesized ids and tool `name`;
+// without MELO_TOOL_CHAIN_HISTORY the reply persists no toolChain.
+test('chat-completions: id-less tool_calls and empty arguments survive; strict echo shape; chain not persisted when replay is off', async t => {
+  const h = await harness(t, {
+    config: { apiProtocol: 'chat-completions', toolCalling: 'native' },
+    env: { MELO_TOOL_CHAIN_HISTORY: '' },
+    respond: round => round === 1
+      ? { id: 'cmpl-1', model: 'local', choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [
+        { type: 'function', function: { name: 'fixture_lookup', arguments: '{"query":"A"}' } },
+        { type: 'function', function: { name: 'fixture_lookup', arguments: '' } },
+      ] } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+      : { id: 'cmpl-2', model: 'local', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '核对完成。' } }], usage: { prompt_tokens: 20, completion_tokens: 5 } },
+  });
+  const result = await h.run();
+  assert.equal(result.normalizedReply.content, '核对完成。');
+  assert.deepEqual(h.executions, ['A'], 'the id-less call still ran');
+  const second = h.requests[1].body.messages;
+  const assistantIndex = second.findIndex(m => m.role === 'assistant' && m.tool_calls);
+  assert.ok(assistantIndex > 0);
+  assert.equal(second[assistantIndex].content, null, 'T13: tool-call-only assistant turn echoes content: null');
+  assert.deepEqual(second[assistantIndex].tool_calls.map(c => c.id), ['call_1', 'call_2'], 'T12: synthesized ids');
+  const toolMessages = second.slice(assistantIndex + 1, assistantIndex + 3);
+  assert.deepEqual(toolMessages.map(m => [m.role, m.tool_call_id, m.name]), [['tool', 'call_1', 'fixture_lookup'], ['tool', 'call_2', 'fixture_lookup']], 'T13: tool messages carry name');
+  const outputs = toolMessages.map(m => JSON.parse(m.content));
+  assert.equal(outputs[0].ok, true);
+  // T11: "" parses as {} and then fails the schema (query is required), not the JSON parse.
+  assert.equal(outputs[1].error, 'INVALID_TOOL_ARGUMENTS');
+  assert.match(outputs[1].output, /query|required|Correct the tool arguments/);
+  assert.doesNotMatch(outputs[1].output, /complete JSON object/);
+  assert.equal(result.normalizedReply.toolChain, undefined, 'T15: no toolChain persisted while replay is off');
 });

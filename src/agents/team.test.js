@@ -129,3 +129,31 @@ test('the final member exhausting the token budget also prevents a summary reque
   replyFn:async()=>{summaries++;return 'summary';}});
  assert.equal(summaries,0);assert.equal(team.budgetExceeded,true);assert.equal(team.ok,false);
 });
+// Bug audit 2026-10-18 T8: a plan's maxMinutes/maxTokens used to be silently
+// capped by the parent turn's 20 min / 400k defaults. A top-level turn now
+// grows to the plan; a team inside a member stays capped and says so.
+test('T8: a team plan extends a top-level turn budget; inside a child pool it is capped and a pipeline event reports it',async()=>{
+ const {createRequestContext}=await import('../runtime/requestContext.js');const {runWithRequestContext}=await import('../runtime/requestScope.js');
+ const {createRunBudget,narrowBudget,remainingMs}=await import('../runtime/runBudget.js');
+ let now=1_000_000;const clock=()=>now;
+ const root=createRunBudget({now:clock,overrides:{deadlineMs:20*60_000,maxInputTokens:400_000}});
+ const events=[];let memberRemaining=null;
+ const run=async()=>{const {currentRequestContext}=await import('../runtime/requestScope.js');memberRemaining={ms:remainingMs(currentRequestContext().budget),tokens:currentRequestContext().budget.maxInputTokens};return {ok:true,output:'x'};};
+ await runWithRequestContext(createRequestContext({budget:root}),()=>runAgentTeam({plan:{members:['research'],maxMinutes:60,maxTokens:2_000_000},task:'t',config:{},run,sseEmitter:(type,event)=>events.push({type,event})}));
+ assert.equal(remainingMs(root),60*60_000,'the top-level turn now has the plan\'s 60 minutes');
+ assert.equal(root.maxInputTokens,2_000_000,'and the plan\'s token pool');
+ assert.ok(memberRemaining.ms<=60*60_000&&memberRemaining.ms>0,'the member budget stays within the team budget (its own timeoutMs applies)');
+ assert.equal(memberRemaining.tokens,2_000_000,'the member token pool follows the extended team pool');
+ assert.equal(events.some(e=>e.type==='execution_event'&&e.event.id==='team:budget-capped'),false,'nothing was capped');
+ // Inside a member (child pool) the plan cannot widen the pool: capped, and reported.
+ const child=narrowBudget(root,{deadlineMs:5*60_000,maxInputTokens:50_000});
+ const capped=[];memberRemaining=null;
+ await runWithRequestContext(createRequestContext({budget:child}),()=>runAgentTeam({plan:{members:['research'],maxMinutes:60,maxTokens:2_000_000},task:'t',config:{},run,sseEmitter:(type,event)=>capped.push({type,event})}));
+ assert.ok(memberRemaining.ms<=5*60_000,'member budgets stay ≤ the team (child) budget');
+ assert.equal(memberRemaining.tokens,50_000);
+ const notice=capped.find(e=>e.type==='execution_event'&&e.event.id==='team:budget-capped');
+ assert.ok(notice,'the cap is surfaced as a pipeline event');
+ assert.match(notice.event.output,/60 分钟 \/ 2000000 token/);
+ assert.match(notice.event.output,/约 5 分钟 \/ 50000 token/);
+ assert.equal(remainingMs(root),60*60_000,'the root was not touched by the child team');
+});

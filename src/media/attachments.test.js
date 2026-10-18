@@ -168,3 +168,56 @@ test('the same upload re-attached later maps onto one file; a different payload 
   assert.ok(isFileAttachmentUrl(d.url));
   assert.equal(d.id, '../evil', 'the attachment id itself is left alone');
 });
+
+// ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
+
+test('L16: a different payload of the same length under a reused id gets its own file; identical bytes reuse it', async t => {
+  const { mkdtemp, rm, readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { externalizeAttachments, attachmentsDir } = await import('./attachments.js');
+  const home = await mkdtemp(join(tmpdir(), 'melo-attach-hash-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const id = '22222222-3333-4444-8555-666666666666';
+  const a = Buffer.alloc(6000, 1), b = Buffer.alloc(6000, 2);
+  const [first] = await externalizeAttachments([{ id, kind: 'image', url: `data:image/png;base64,${a.toString('base64')}` }], { home });
+  const [same] = await externalizeAttachments([{ id, kind: 'image', url: `data:image/png;base64,${a.toString('base64')}` }], { home });
+  const [other] = await externalizeAttachments([{ id, kind: 'image', url: `data:image/png;base64,${b.toString('base64')}` }], { home });
+  assert.equal(first.url, `/api/media/attachments/${id}.png`);
+  assert.equal(same.url, first.url, 'identical bytes map onto the same file');
+  assert.notEqual(other.url, first.url, 'same length, different content → new file');
+  assert.match(other.url, /^\/api\/media\/attachments\/[0-9a-f-]{36}\.png$/, 'names keep the <uuid>.<ext> shape');
+  assert.ok((await readFile(join(attachmentsDir(home), `${id}.png`))).equals(a), 'the original file is untouched');
+  assert.ok((await readFile(join(attachmentsDir(home), other.url.split('/').pop()))).equals(b));
+});
+
+test('L17: video keyframes are externalized with the message, migrated for old threads and hydrated back for the model', async t => {
+  const { mkdtemp, rm, readdir } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { externalizeMessageAttachments, migrateInlineAttachments, hydrateMessagesForModel, attachmentsDir, isFileAttachmentUrl } = await import('./attachments.js');
+  const home = await mkdtemp(join(tmpdir(), 'melo-keyframes-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const frame = n => `data:image/jpeg;base64,${Buffer.alloc(9000, n).toString('base64')}`;
+  const tiny = 'data:image/jpeg;base64,AAAA';
+  const message = { id: 'v1', role: 'user', content: 'look at this clip', attachments: [], extractedMedia: [{ kind: 'video', text: 'transcript', attachmentId: 'x', metadata: { source: 'video-keyframes-only', keyframes: [frame(1), frame(2), tiny] } }] };
+  const stored = await externalizeMessageAttachments(message, { home });
+  assert.notEqual(stored, message);
+  const keyframes = stored.extractedMedia[0].metadata.keyframes;
+  assert.ok(isFileAttachmentUrl(keyframes[0]) && isFileAttachmentUrl(keyframes[1]), 'large frames become file URLs');
+  assert.equal(keyframes[2], tiny, 'tiny frames stay inline');
+  assert.equal(stored.extractedMedia[0].text, 'transcript');
+  assert.ok(!JSON.stringify(stored).includes(frame(1).slice(0, 60)));
+  assert.equal((await readdir(attachmentsDir(home))).filter(name => name.endsWith('.jpg')).length, 2);
+  // Model window: frames come back as data URLs, the stored message is untouched.
+  const [hydrated] = await hydrateMessagesForModel([stored], { home });
+  assert.deepEqual(hydrated.extractedMedia[0].metadata.keyframes, [frame(1), frame(2), tiny]);
+  assert.ok(isFileAttachmentUrl(stored.extractedMedia[0].metadata.keyframes[0]));
+  // Lazy migration of an older thread that still inlines keyframes.
+  const chat = { id: 'c', messages: [{ ...message, id: 'old' }, { id: 'plain', role: 'assistant', content: 'ok' }] };
+  const migration = await migrateInlineAttachments(chat, { home });
+  assert.equal(migration.complete, true);
+  assert.equal(migration.patches.length, 1);
+  assert.ok(isFileAttachmentUrl(chat.messages[0].extractedMedia[0].metadata.keyframes[0]));
+  assert.equal(chat.attachmentsExternalized, true);
+});

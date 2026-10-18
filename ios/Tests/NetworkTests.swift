@@ -189,6 +189,57 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(resultBlocks[0]["type"] as? String == "tool_result" && resultBlocks[0]["tool_use_id"] as? String == "toolu_1" && resultBlocks[0]["content"] as? String == #"{"ok":true,"screenshot":"attached"}"#)
         assert(resultBlocks[1]["type"] as? String == "text" && resultBlocks[2]["type"] as? String == "image" && ((resultBlocks[2]["source"] as? [String: Any])?["media_type"] as? String) == "image/jpeg")
 
+        // Audit I11: tool calls cut off by `length` / `max_tokens` are never executed; the truncation is reported.
+        MockProtocol.anthropic = false; MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = ["{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_cut\",\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"https://a.exa\"}}]}}]}"]
+        do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "x")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", tools: toolSet, session: session); fatalError("truncated tool call executed") }
+        catch { assert(performed.isEmpty && MockProtocol.requestBodies.count == 1 && error.localizedDescription.contains("length"), error.localizedDescription) }
+        MockProtocol.anthropic = true; MockProtocol.requestBodies = []
+        MockProtocol.payloads = ["{\"stop_reason\":\"max_tokens\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}"]
+        do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "x")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session); fatalError("truncated tool_use executed") }
+        catch { assert(performed.isEmpty && MockProtocol.requestBodies.count == 1) }
+
+        // Audit I12: the echoed assistant row carries only role/content/tool_calls (+ reasoning_content when sent).
+        MockProtocol.anthropic = false; MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = [
+            "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"refusal\":null,\"annotations\":[],\"audio\":null,\"function_call\":null,\"reasoning_content\":\"let me look\",\"tool_calls\":[{\"id\":\"call_r\",\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}}]}}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}"]
+        _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "x")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", tools: toolSet, session: session)
+        let echoed = (MockProtocol.requestBodies[1]["messages"] as! [[String: Any]])[2]
+        assert(Set(echoed.keys) == ["role", "content", "tool_calls", "reasoning_content"], "\(echoed.keys)")
+        assert(echoed["content"] is NSNull && echoed["reasoning_content"] as? String == "let me look" && (echoed["tool_calls"] as? [[String: Any]])?.count == 1)
+        assert(Set(Network.echoedAssistant(["role": "assistant", "content": "hi", "refusal": NSNull()]).keys) == ["role", "content"])
+        assert(Network.echoedAssistant([:])["content"] is NSNull)
+
+        // Audit I9: at most two screenshots per reply (the third is refused without rendering); earlier
+        // rounds keep only the caption of their screenshots; a round's images are byte-budgeted, oldest first.
+        func shotCall(_ id: String) -> String { "{\"id\":\"\(id)\",\"type\":\"function\",\"function\":{\"name\":\"web_screenshot\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}}" }
+        MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = [
+            "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[\(shotCall("s1")),\(shotCall("s2")),\(shotCall("s3"))]}}]}",
+            "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[\(shotCall("s4"))]}}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"done\"}}]}"]
+        let shots = try await Network.reply(messages: [ChatMessage(role: "user", content: "截图")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", tools: toolSet, session: session)
+        assert(shots.text == "done" && performed.map(\.callID) == ["s1", "s2"], "third and fourth screenshots are refused without rendering: \(performed.map(\.callID))")
+        let second = MockProtocol.requestBodies[1]["messages"] as! [[String: Any]]
+        assert(second.count == 8, "system, user, assistant, tool×3, image×2: \(second.count)")
+        assert((second[5]["content"] as? String)?.contains("TOO_MANY_SCREENSHOTS") == true && second[5]["tool_call_id"] as? String == "s3")
+        assert((second[6]["content"] as? [[String: Any]])?.count == 2 && (second[7]["content"] as? [[String: Any]])?.count == 2)
+        let third = MockProtocol.requestBodies[2]["messages"] as! [[String: Any]]
+        assert(third.count == 10 && third[6]["content"] as? String == "[web_screenshot of https://a.example]" && third[7]["content"] as? String == "[web_screenshot of https://a.example]")
+        assert(!third.contains { ($0["content"] as? [[String: Any]])?.contains { $0["type"] as? String == "image_url" } == true }, "no base64 image is re-sent on a later round")
+        assert((third[9]["content"] as? String)?.contains("TOO_MANY_SCREENSHOTS") == true)
+        let big = PhoneToolResult(output: "{}", imageJPEG: Data(count: 4 * 1024 * 1024), imageURL: "https://old.example")
+        let later = PhoneToolResult(output: "{}", imageJPEG: Data(count: 3 * 1024 * 1024), imageURL: "https://new.example")
+        let budgeted = Network.budgetedImages([("a", big), ("b", later)])
+        assert(budgeted.map(\.url) == ["https://old.example", "https://new.example"] && budgeted[0].jpeg == nil && budgeted[1].jpeg != nil, "oldest dropped first")
+        let budgetRows = Network.chatToolRound(assistant: ["role": "assistant"], results: [("a", big), ("b", later)])
+        assert(budgetRows.count == 5 && budgetRows[3]["content"] as? String == "[web_screenshot of https://old.example]" && (budgetRows[4]["content"] as? [[String: Any]])?.count == 2)
+        let claudeRows = Network.anthropicToolRound(assistant: [], results: [("a", big), ("b", later)])
+        let claudeBlocks = claudeRows[1]["content"] as! [[String: Any]]
+        assert(claudeBlocks.map { $0["type"] as? String } == ["tool_result", "tool_result", "text", "text", "image"])
+        MockProtocol.payloads = []; MockProtocol.anthropic = true
+
         // The loop is bounded: a model that keeps calling tools is stopped after maxRounds.
         MockProtocol.requestBodies = []; performed = []
         MockProtocol.payloads = Array(repeating: "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}", count: 10)

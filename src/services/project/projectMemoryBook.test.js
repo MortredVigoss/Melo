@@ -174,7 +174,10 @@ test('manual promotion to project confirms the row; personal coerces the categor
 
 test('hand-written rows and the management projection', async () => {
   await saveState({projects:[{id:'P',name:'P'}],chats:[],settings:{}});
-  const created=createProjectMemoryBookEntry({projectId:'P',text:'  接口统一 snake_case ',section:'convention'});
+  const created=await createProjectMemoryBookEntry({projectId:'P',text:'  接口统一 snake_case ',section:'convention'});
+  // Bug audit M6: the route validates the project and the section before writing.
+  await assert.rejects(createProjectMemoryBookEntry({projectId:'missing',text:'x'}),/项目不存在/);
+  await assert.rejects(createProjectMemoryBookEntry({projectId:'P',text:'x',section:'nope'}),/分节无效/);
   assert.equal(created.bookStatus,'user'); assert.equal(created.section,'convention'); assert.equal(created.text,'接口统一 snake_case');
   assert.throws(()=>createUserBookRow({projectId:'P',text:'接口统一 snake_case'}),/同样/);
   assert.throws(()=>createUserBookRow({projectId:'P',text:''}),/1–2000/);
@@ -193,4 +196,116 @@ test('hand-written rows and the management projection', async () => {
   assert.deepEqual(listProjectBook('P').map(r=>r.text).sort(),['Timeout 60s','接口统一 snake_case']);
   reconcileLegacyFacts({projects:[],chats:[]});
   assert.equal(listProjectBook('P').length,0,'a deleted project quarantines its hand-written rows');
+});
+
+// ─── Bug audit 2026-10-18, section 3 (memory line) ─────────────────────────
+
+test('M1: a hand-written row moved to personal scope survives the startup legacy reconcile and reaches the profile; 仅原对话 is rejected', async () => {
+  await saveState({projects:[{id:'P',name:'P'}],chats:[],settings:{}});
+  const created=await createProjectMemoryBookEntry({projectId:'P',text:'我偏好简短回答',section:'convention'});
+  const personal=editMemoryFact(created.id,{scope:'personal'});
+  assert.equal(personal.metadata.bookStatus,undefined); assert.equal(personal.metadata.origin,'project'); assert.equal(personal.namespace,'user:local');
+  reconcileLegacyFacts({projects:[{id:'P'}],chats:[]});
+  const after=store.getMemoriesByIds([created.id])[0];
+  assert.equal(after.metadata.quarantined,undefined,'not quarantined for lacking a source chat');
+  assert.equal(after.metadata.sourceDeleted,undefined);
+  const { listPersonalProfile, renderPersonalProfile } = await import('../memory/personalProfile.js');
+  assert.match(renderPersonalProfile(listPersonalProfile()).text,/我偏好简短回答/);
+  // even when the project is gone: the row no longer belongs to the book
+  reconcileLegacyFacts({projects:[],chats:[]});
+  assert.equal(store.getMemoriesByIds([created.id])[0].metadata.quarantined,undefined);
+  assert.throws(()=>editMemoryFact(created.id,{scope:'chat'}),/没有原对话/);
+  // moving back to the project restores the hand-written status
+  const back=editMemoryFact(created.id,{scope:'project'});
+  assert.equal(back.metadata.bookStatus,'user');
+  assert.equal((await memoryFacts({})).records.find(r=>r.id===created.id).sourceChatId,null);
+});
+
+test('M3: one oversized row is truncated to the budget instead of emptying the book; new hand-written / promoted rows are capped at 600 chars', async () => {
+  const giant=row('g','巨'.repeat(1930),{status:'user',section:'goal'});
+  const others=[row('a','auto decision'),row('c','confirmed convention',{status:'confirmed',section:'convention'})];
+  const { text, rows } = renderProjectBook([giant,...others],{maxTokens:2000});
+  assert.ok(text,'book is not empty');
+  assert.match(text,/auto decision/); assert.match(text,/confirmed convention/);
+  const rendered=rows.find(r=>r.id==='g');
+  assert.ok(rendered && rendered.text.endsWith('…') && rendered.text.length<giant.text.length,'giant row rendered truncated');
+  assert.ok(rows.length===3);
+  await saveState({projects:[{id:'P',name:'P'}],chats:[],settings:{}});
+  await assert.rejects(createProjectMemoryBookEntry({projectId:'P',text:'x'.repeat(601)}),/600/);
+  const chat={ id:'c1', title:'chat', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'L'.repeat(700),category:'technical_detail'}] };
+  reconcileChatFacts(chat,'main');
+  const long=[...store.iterateMemoryRecords({chatId:'c1'})][0];
+  assert.throws(()=>editMemoryFact(long.id,{scope:'project'}),/600/);
+  assert.doesNotThrow(()=>editMemoryFact(long.id,{pinned:true}),'other edits of a long chat row still work');
+});
+
+test('M4: promoting a chat fact whose auto mirror exists confirms the mirror — a single project record, supersession applied', () => {
+  const chat={ id:'c1', title:'chat', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Port is 8080',category:'decision',subjectKey:'deploy.port'}] };
+  reconcileChatFacts(chat,'main');
+  reconcileChatFacts({ id:'c2', title:'two', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Port is 9000',category:'decision',subjectKey:'deploy.port'}] },'main');
+  const fact=[...store.iterateMemoryRecords({chatId:'c1'})].find(r=>!r.id.startsWith('book:'));
+  const twinBefore=store.getMemoriesByIds([`book:${fact.id}`])[0];
+  assert.ok(twinBefore.metadata.validTo,'c1 mirror was superseded by the newer c2 decision');
+  const result=editMemoryFact(fact.id,{scope:'project'});
+  assert.equal(result.id,`book:${fact.id}`); assert.equal(result.metadata.bookStatus,'confirmed'); assert.equal(result.metadata.needsConfirmation,false);
+  const chatRow=store.getMemoriesByIds([fact.id])[0];
+  assert.equal(chatRow.metadata.scope,'chat'); assert.equal(chatRow.namespace,'chat:c1'); assert.equal(chatRow.metadata.bookStatus,undefined);
+  const project=listProjectBook('P',{includeInactive:true}).filter(r=>r.text==='Port is 8080');
+  assert.equal(project.length,1,'exactly one project record for the statement');
+  assert.equal(store.getMemoriesByIds([`book:${fact.id}`])[0].metadata.validTo,null,'the confirmed mirror is active again');
+  // supersession: the user's confirmation retires the other row on the same subject
+  const other=listProjectBook('P',{includeInactive:true}).find(r=>r.text==='Port is 9000');
+  assert.ok(other.metadata.validTo); assert.equal(other.metadata.supersededById,`book:${fact.id}`);
+  assert.deepEqual(listProjectBook('P').map(r=>r.text),['Port is 8080']);
+  // confirming an auto row directly also applies supersession
+  reconcileChatFacts({ id:'c3', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Port is 7777',category:'decision',subjectKey:'deploy.port'}] },'main');
+  const flagged=listProjectBook('P').find(r=>r.text==='Port is 7777');
+  assert.equal(flagged.metadata.needsConfirmation,true);
+  editMemoryFact(flagged.id,{bookStatus:'confirmed'});
+  assert.deepEqual(listProjectBook('P').map(r=>r.text),['Port is 7777']);
+});
+
+test('M5: an unchanged legacy category saves; M11: 恢复使用 does not resurrect a superseded row', () => {
+  reconcileChatFacts({ id:'c1', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Loose note'}] },'main');
+  const loose=[...store.iterateMemoryRecords({chatId:'c1'})][0];
+  assert.equal(loose.metadata.category,'general');
+  assert.doesNotThrow(()=>editMemoryFact(loose.id,{text:'Loose note edited',category:'general',pinned:true}));
+  assert.equal(store.getMemoriesByIds([loose.id])[0].metadata.category,'general');
+  assert.throws(()=>editMemoryFact(loose.id,{category:'nonsense'}),/类别无效/);
+  assert.equal(editMemoryFact(loose.id,{category:'decision'}).metadata.category,'decision');
+  // M11
+  reconcileChatFacts({ id:'c2', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Port is 8080',category:'decision',subjectKey:'deploy.port'}] },'main');
+  reconcileChatFacts({ id:'c3', projectId:'P', source:'desktop', messages:[], sessionMemory:[{fact:'Port is 9000',category:'decision',subjectKey:'deploy.port'}] },'main');
+  const superseded=listProjectBook('P',{includeInactive:true}).find(r=>r.text==='Port is 8080');
+  const supersededAt=superseded.metadata.validTo; assert.ok(supersededAt);
+  editMemoryFact(superseded.id,{forgotten:true});
+  const restored=editMemoryFact(superseded.id,{forgotten:false});
+  assert.equal(restored.metadata.forgotten,false);
+  assert.equal(restored.metadata.validTo,supersededAt,'validTo written by the supersession is kept');
+  assert.deepEqual(listProjectBook('P').map(r=>r.text),['Port is 9000']);
+  // a plain forgotten row still comes back active
+  const active=listProjectBook('P').find(r=>r.text==='Port is 9000');
+  editMemoryFact(active.id,{forgotten:true});
+  assert.equal(editMemoryFact(active.id,{forgotten:false}).metadata.validTo,null);
+});
+
+test('M12: the auto mirror follows the chat into a project and across projects', () => {
+  const chat={ id:'c1', title:'chat', source:'desktop', messages:[], sessionMemory:[{fact:'Project uses pnpm',category:'decision',subjectKey:'package.manager'}] };
+  reconcileChatFacts(chat,'main');
+  assert.equal(listProjectBook('P').length,0);
+  chat.projectId='P';
+  reconcileChatFacts(chat,'main');
+  assert.deepEqual(listProjectBook('P').map(r=>r.text),['Project uses pnpm'],'mirror written once the chat joins a project');
+  chat.projectId='Q';
+  reconcileChatFacts(chat,'main');
+  assert.equal(listProjectBook('P').length,0,'moved out of the old project');
+  assert.deepEqual(listProjectBook('Q').map(r=>r.text),['Project uses pnpm']);
+  const moved=listProjectBook('Q')[0];
+  assert.equal(moved.namespace,'project:Q'); assert.equal(moved.metadata.projectId,'Q'); assert.equal(moved.metadata.bookStatus,'auto');
+  // a mirror the user stopped stays where it was
+  editMemoryFact(moved.id,{forgotten:true});
+  chat.projectId='P';
+  reconcileChatFacts(chat,'main');
+  assert.equal(listProjectBook('P').length,0);
+  assert.equal(store.getMemoriesByIds([moved.id])[0].metadata.projectId,'Q');
 });

@@ -162,15 +162,22 @@ export function indexMessage(chatId, chatTitle, message, { audience = DESKTOP_AU
     if (!messageId || !chatId) return;
 
     const database = getDb();
+    const content = toCjkSpaced(text);
 
-    // Skip if already indexed
+    // Already indexed: skip unless the text changed (a mid-turn supplement
+    // appended to the question, a tool-trace rewrite) — then the row is
+    // replaced by message id (audit L19).
     const existing = database
       .prepare('SELECT 1 FROM indexed_message_ids WHERE message_id = ?')
       .get(messageId);
-    if (existing) return;
+    if (existing) {
+      const stored = database.prepare('SELECT content FROM messages_fts WHERE message_id = ? LIMIT 1').get(messageId);
+      if (stored && stored.content === content) return;
+    }
 
     database.exec('BEGIN');
     try {
+      if (existing) database.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(messageId);
       database.prepare(
         `INSERT INTO messages_fts (chat_id, chat_title, message_id, role, content, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -179,7 +186,7 @@ export function indexMessage(chatId, chatTitle, message, { audience = DESKTOP_AU
         toCjkSpaced(String(chatTitle || '')),
         messageId,
         role,
-        toCjkSpaced(text),
+        content,
         String(message?.createdAt || ''),
       );
       database.prepare(

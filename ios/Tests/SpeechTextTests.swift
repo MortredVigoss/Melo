@@ -10,6 +10,23 @@ import Foundation
         assert(SpeechText.voiceLanguage(for: "안녕하세요", preference: "zh-CN") == "ko-KR")
         assert(SpeechText.voiceLanguage(for: "こんにちは", preference: "en-US") == "ja-JP")
         assert(SpeechText.voiceLanguage(for: "", preference: "system", systemLanguage: nil) == "en-US")
+        // Audit I19: script-qualified system tags are reduced to language-REGION, and a missing exact voice
+        // falls back to the first installed voice of the same language.
+        assert(SpeechText.voiceLanguage(for: "Cloudy tomorrow.", preference: "system", systemLanguage: "zh-Hans-CN") == "zh-CN")
+        assert(SpeechText.normalizedLanguage("zh-Hant-TW") == "zh-TW" && SpeechText.normalizedLanguage("en-AU") == "en-AU" && SpeechText.normalizedLanguage("en") == "en" && SpeechText.normalizedLanguage("zh-Hans") == "zh")
+        let installed = ["en-US", "en-AU", "zh-TW", "ja-JP"]
+        assert(SpeechText.matchingVoiceLanguage("en-AU", available: installed) == "en-AU")
+        assert(SpeechText.matchingVoiceLanguage("zh-CN", available: installed) == "zh-TW", "same language prefix")
+        assert(SpeechText.matchingVoiceLanguage("en", available: installed) == "en-US")
+        assert(SpeechText.matchingVoiceLanguage("ko-KR", available: installed) == nil)
+
+        // Audit I13: an ASCII period splits only before whitespace / end, so decimals and versions stay whole.
+        assert(SpeechText.splitSentences("今天涨了3.5%。明天看 v2.1 版本。") == ["今天涨了3.5%。", "明天看 v2.1 版本。"])
+        assert(SpeechText.splitSentences("Pi is 3.14. Done.") == ["Pi is 3.14.", "Done."])
+        assert(SpeechText.splitSentences("See example.com/path now") == ["See example.com/path now"])
+        assert(SpeechText.splitSentences("One. Two!Three?") == ["One.", "Two!", "Three?"])
+        let decimals = (1...8).map { "第\($0)点是过程说明，首先解释一下背景，内容比较长，主要用于说明推理过程而不是结论。" }.joined() + "所以结论是：涨幅 3.5% 左右。"
+        assert(SpeechText.spoken(from: decimals).contains("涨幅 3.5% 左右。"), SpeechText.spoken(from: decimals))
 
         // Cleaning: no URLs, link targets, code, tables, markers or citations.
         let reply = """

@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { recordFailure } from '../runtime/failureCounters.js';
 import { toolCodeHint } from './toolResult.js';
 import { formatToolResult } from './parser.js';
+import { redactSecretsInText } from './secretRedaction.js';
 
 export const MAX_MODEL_FACING_OUTPUT_CHARS = 8000;
 export const MAX_REDACTED_STRING_CHARS = 400;
@@ -39,7 +40,10 @@ function redactValue(value, depth, seen, maxString) {
       const bytes = /;base64/i.test(data[2] || '') ? Math.floor(payload.length * 3 / 4) : payload.length;
       return `data:${data[1] || 'application/octet-stream'} (${bytes} bytes)`;
     }
-    return value.length > maxString ? `${value.slice(0, maxString)}…` : value;
+    // Bug audit T6: secrets inside values (Bearer …, ?token=, KEY=sk-…) are
+    // redacted too, not only secret-looking keys.
+    const text = redactSecretsInText(value);
+    return text.length > maxString ? `${text.slice(0, maxString)}…` : text;
   }
   if (typeof value === 'number' || typeof value === 'boolean') return value;
   if (typeof value === 'bigint') return value.toString();
@@ -119,7 +123,7 @@ function envelopeOf(result) {
   const envelope = { ok, status, ...(code ? { code } : {}) };
   const hint = toolCodeHint(code);
   if (hint) envelope.hint = hint;
-  const preview = typeof result?.output === 'string' ? result.output.replace(/\s+/g, ' ').trim().slice(0, MAX_OUTPUT_PREVIEW_CHARS) : '';
+  const preview = typeof result?.output === 'string' ? redactSecretsInText(result.output.replace(/\s+/g, ' ').trim()).slice(0, MAX_OUTPUT_PREVIEW_CHARS) : '';
   if (preview) envelope.outputPreview = preview;
   if (result?.meta && typeof result.meta === 'object') {
     const meta = redactToolArgs(result.meta, { maxString: 200 });
@@ -148,7 +152,8 @@ export function buildToolInvocationRecord({ runId, iteration, call, args, result
   const startedIso = toIso(startedAt) || new Date().toISOString();
   const finishedIso = toIso(finishedAt) || startedIso;
   const durationMs = Math.max(0, Date.parse(finishedIso) - Date.parse(startedIso));
-  const output = typeof modelFacingOutput === 'string' ? modelFacingOutput : '';
+  // T6: the jsonl line keeps what the model saw, minus secret values.
+  const output = typeof modelFacingOutput === 'string' ? redactSecretsInText(modelFacingOutput) : '';
   const record = {
     version: 1,
     runId: typeof runId === 'string' ? runId : '',

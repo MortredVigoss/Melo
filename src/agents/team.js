@@ -11,7 +11,7 @@ import {recommendedCapabilities,normalizeCollaboration} from '../domain/agent/ca
 import {createOpenAICompatibleReply} from '../openai.js';
 import {modelReplyText} from '../tools/functionCalling.js';
 import {getAllTools,getTool} from '../tools/registryCore.js';
-import {narrowBudget,remainingMs,budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
+import {narrowBudget,extendBudget,remainingMs,budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
 export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
  {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
@@ -94,7 +94,7 @@ async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,back
  } catch { return fallback; }
  finally { signal?.removeEventListener('abort',stopWaiting); }
 }
-async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply,background=''}) {
+async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply,background='',chatSource,projectId}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
  assertTeamLead(lead,plan.members);
  if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
@@ -109,11 +109,24 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const teamController=new AbortController();
  const stop=()=>teamController.abort(signal?.reason);signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
  let budgetExceeded=false, usedTokens=0;
- // Run budget (C1): the plan's maxMinutes/maxTokens still apply, capped by the
- // parent turn's remaining pool; members run on this child pool and every
- // request they make is charged to the parent as well.
+ // Run budget (C1): the plan's maxMinutes/maxTokens apply inside the parent
+ // turn's pool; members run on this child pool and every request they make
+ // is charged to the parent as well. Bug audit T8: a top-level turn (root
+ // budget — the desktop turn that started the team) grows to the plan's
+ // limits instead of silently capping them at the 20 min / 400k defaults;
+ // a team started inside a member or skill stays within that pool and the
+ // cap is reported as a pipeline event so the UI can show it.
  const teamContext=currentRequestContext();
- const teamBudget=narrowBudget(teamContext?.budget||null,{deadlineMs:plan.maxMinutes*60000,maxInputTokens:plan.maxTokens});
+ const parentBudget=teamContext?.budget||null;
+ const planDeadlineMs=plan.maxMinutes*60000;
+ const grown=extendBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens});
+ const teamBudget=narrowBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens});
+ if(teamBudget&&(remainingMs(teamBudget)<planDeadlineMs||teamBudget.maxInputTokens<plan.maxTokens)) {
+  const cappedMinutes=Math.max(1,Math.round(remainingMs(teamBudget)/60000));
+  sseEmitter?.('execution_event',{kind:'pipeline',id:'team:budget-capped',module:'compute',name:'团队预算被父预算封顶',status:'completed',
+   output:`团队计划 ${plan.maxMinutes} 分钟 / ${plan.maxTokens} token，受当前运行预算限制为约 ${cappedMinutes} 分钟 / ${teamBudget.maxInputTokens} token。`,
+   budget:{planMinutes:plan.maxMinutes,planTokens:plan.maxTokens,remainingMs:remainingMs(teamBudget),maxInputTokens:teamBudget.maxInputTokens,extended:grown.extended}});
+ }
  const teamTimeoutMs=Math.max(1,Math.min(plan.maxMinutes*60000,remainingMs(teamBudget)));
  const budgetTimer=setTimeout(()=>{budgetExceeded=true;teamController.abort(Object.assign(new Error('Team time budget exhausted'),{code:'TEAM_BUDGET'}));},teamTimeoutMs);
  const inTeamBudget=work=>teamBudget&&teamContext?runWithRequestContext(Object.freeze({...teamContext,budget:teamBudget}),work):work();
@@ -126,7 +139,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
   }
   // Old plans without a profile map are supported for callers predating Agent definitions.
   const inherited=!agentProfiles&&id!=='builder'?inheritableReadToolIds(extraTools).filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
-  const r=await inTeamBudget(()=>runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run}));
+  const r=await inTeamBudget(()=>runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run,chatSource,projectId}));
   usedTokens+=(Number(r.usage?.input)||0)+(Number(r.usage?.output)||0);
   if(budgetExceeded&&r.handoff&&!signal?.aborted)r.handoff={...r.handoff,status:'budget-exceeded'};
   r.round=round;results.push(r);return r;

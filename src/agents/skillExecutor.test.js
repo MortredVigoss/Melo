@@ -312,3 +312,46 @@ test('skill captures the request connection once across tool-loop awaits',async(
   }}));assert.equal(count,2);
  }finally{unregisterTool(tool.id);if(before===undefined)delete process.env.MELO_MODEL;else process.env.MELO_MODEL=before;}
 });
+
+// ─── Bug audit 2026-10-18 T9 / T17 ───────────────────────────────────────────
+
+test('T9: skill tool_calls_start carries redacted args (secret keys and secret values)', async () => {
+  const { tool } = makeRecordingTool('leaky');
+  registerTool({ ...tool, parametersSchema: { type: 'object', properties: { apiKey: { type: 'string' }, command: { type: 'string' } } } });
+  const events = [];
+  let count = 0;
+  try {
+    await runSkill({ skill: executableSkill(), config: validConfig(), allowedToolIds: ['leaky'], sseEmitter: (type, payload) => events.push({ type, payload }),
+      replyFn: async () => count++ === 0
+        ? '<tool_call>{"id":"c1","name":"leaky","arguments":{"apiKey":"sk-live-123","command":"curl -H \\"Authorization: Bearer eyJabcdefghijklmnop\\" https://u:p@h.test/?token=abc123def"}}</tool_call>'
+        : 'done' });
+  } finally { unregisterTool('leaky'); }
+  const start = events.find(e => e.type === 'tool_calls_start');
+  assert.ok(start, 'tool_calls_start emitted');
+  const text = JSON.stringify(start.payload.calls);
+  assert.equal(start.payload.calls[0].arguments.apiKey, '[redacted]');
+  for (const leak of ['sk-live-123', 'eyJabcdefghijklmnop', 'u:p@', 'token=abc123def']) assert.equal(text.includes(leak), false, `tool_calls_start leaks ${leak}`);
+});
+
+test('T17: a skill honours the MELO_FUNCTION_CALLING override from the request environment', async () => {
+  const { runWithRequestContext } = await import('../runtime/requestScope.js');
+  const { createRequestContext } = await import('../runtime/requestContext.js');
+  const { tool } = makeRecordingTool('fc_probe');
+  registerTool(tool);
+  try {
+    // Native chat-completions config forced back to XML by the env override: no `functionTools` in the request, XML spec in the prompt.
+    let seen = null;
+    await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'legacy' } }), () => runSkill({
+      skill: executableSkill(), config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'native' }, allowedToolIds: ['fc_probe'],
+      replyFn: async options => { seen = options; return 'done'; } }));
+    assert.equal(seen.functionTools, undefined, 'legacy override → XML protocol, no native tool definitions');
+    assert.match(seen.systemPrompt, /<tool_call>/);
+    // And the reverse: an XML config promoted to native by the override.
+    seen = null;
+    await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'native' } }), () => runSkill({
+      skill: executableSkill(), config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, allowedToolIds: ['fc_probe'],
+      replyFn: async options => { seen = options; return 'done'; } }));
+    assert.equal(seen.toolProtocol, 'chat-completions');
+    assert.ok(Array.isArray(seen.functionTools) && seen.functionTools.some(t => t.function?.name === 'fc_probe'));
+  } finally { unregisterTool('fc_probe'); }
+});

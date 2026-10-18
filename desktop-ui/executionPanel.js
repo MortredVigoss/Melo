@@ -1,6 +1,6 @@
 import { t, ui, currentLanguage } from './i18n.js';
 import { renderExecutionDetail, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
-import { EXECUTION_MODULES, moduleActivity, sceneFinished, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
+import { EXECUTION_MODULES, moduleActivity, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
 
@@ -271,6 +271,21 @@ export function liveSceneFor(chatId) {
   let latest = null;
   for (const scene of scenes.values()) if (scene.chatId === chatId && !sceneFinished(scene)) latest = scene;
   return latest;
+}
+// Bug audit U4: a client-side Stop gets no further scene events, so the run
+// would stay `running` here (and feed the next turn's live steps). Finish it
+// locally as cancelled, then re-read the chat's scenes once the server has
+// written its own cancelled scene and the [工具轨迹] message.
+export function cancelLiveScene(runId, { chatId = null, delays = [800, 2500] } = {}) {
+  const scene = runId ? scenes.get(runId) : null;
+  if (scene && !sceneFinished(scene)) {
+    receiveExecutionScene(finishExecutionScene(structuredClone(scene), { status: 'cancelled' }));
+    // No reply message to hand results to; drop the handoff the receive queued.
+    if (pendingHandoff && !pendingHandoff.messageId) pendingHandoff = null;
+  }
+  const target = scene?.chatId || chatId;
+  if (!target) return;
+  for (const delay of delays) setTimeout(() => { void loadScenes(target); }, delay);
 }
 export function receiveExecutionScene(scene) {
   if (!scene?.runId || scene.version !== 1) return;

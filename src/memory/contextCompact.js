@@ -50,9 +50,31 @@ export function shouldCompact(allMessages = [], compactFailures = 0) {
   return estimateMessagesTokens(allMessages) >= COMPACT_TRIGGER_TOKENS;
 }
 
+/**
+ * Index of the message the existing compaction ends at, or -1 when nothing
+ * has been compacted. The boundary id is authoritative (audit L12: an empty
+ * `compactSummary` next to a boundary used to restart from message 0 and
+ * produce overlapping cards); when the boundary message is gone the newest
+ * card whose `toMessageId` still exists takes over.
+ */
+export function compactBoundaryIndex(chat) {
+  const all = Array.isArray(chat?.messages) ? chat.messages : [];
+  const indexOf = id => (typeof id === 'string' && id ? all.findIndex(message => message?.id === id) : -1);
+  const hasCompactState = Boolean(chat?.compactBoundaryMessageId || chat?.compactSummary || (Array.isArray(chat?.compactCards) && chat.compactCards.length));
+  if (!hasCompactState) return -1;
+  const boundary = indexOf(chat?.compactBoundaryMessageId);
+  if (boundary >= 0) return boundary;
+  const cards = ledgerCards(chat);
+  for (let index = cards.length - 1; index >= 0; index -= 1) {
+    const fallback = indexOf(cards[index].toMessageId);
+    if (fallback >= 0) return fallback;
+  }
+  return -1;
+}
+
 export function planIncrementalCompact(chat, { triggerTokens = COMPACT_TRIGGER_TOKENS, minKeep = COMPACT_KEEP_RECENT_MIN, maxChunkTokens = 45000 } = {}) {
   const all = Array.isArray(chat?.messages) ? chat.messages : [];
-  const previousBoundary = chat?.compactSummary ? all.findIndex(message => message.id === chat.compactBoundaryMessageId) : -1;
+  const previousBoundary = compactBoundaryIndex(chat);
   const start = previousBoundary + 1;
   const pending = all.slice(start);
   if ((chat?.compactFailures || 0) >= MAX_COMPACT_FAILURES || estimateMessagesTokens(pending) < triggerTokens) return null;
@@ -82,6 +104,9 @@ export function planIncrementalCompact(chat, { triggerTokens = COMPACT_TRIGGER_T
   return {
     messages: compactMessages || all.slice(start, end),
     truncated,
+    // Original messages the card stands for, even when an oversized turn was
+    // folded into a single excerpt message (audit L14).
+    coveredCount: end - start,
     // Background for the summariser is a digest of the existing cards (titles
     // + first lines), never the whole previous summary: cards are appended,
     // not re-summarised, so early topics stop decaying (design 1D-2).

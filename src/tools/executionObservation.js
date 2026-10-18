@@ -3,9 +3,11 @@ import { verifySignedFileUrl } from '../web/urlSigning.js';
 import { observeShellWeb } from './shellWebObservation.js';
 import { declaredInputKeys, declaredUiModule } from './tool.js';
 import { redactToolArgs } from './toolInvocationRecord.js';
+import { redactSecretsInText } from './secretRedaction.js';
 
-const safeText = (value, max = 2200) => sceneText(value, max).replace(/\b(Bearer\s+)[^\s]+/gi, '$1[redacted]')
-  .replace(/((?:api[_-]?key|password|access[_-]?token|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]');
+// Bug audit T6: one shared value-level pattern set (secretRedaction.js) for
+// scenes, records, the persisted tool chain and tool summaries.
+const safeText = (value, max = 2200) => redactSecretsInText(sceneText(value, max));
 // Fallback summary keys for tools that declare no `inputKeys`.
 const DEFAULT_INPUT_KEYS = Object.freeze(['query', 'url', 'expression', 'action', 'path', 'file_path', 'operation', 'from', 'to', 'value', 'date', 'offset', 'command', 'cwd']);
 export function describeToolInput(args = {}, inputKeys = DEFAULT_INPUT_KEYS) {

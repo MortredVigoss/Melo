@@ -1,3 +1,9 @@
+## 2026-10-18 — 全局 bug 审计后全部修复（五路并行，~95 条）
+
+用户要求先全局审计再"全部"修。审计报告 `docs/bug-audit-20261018.md`（P0 1 / P1 15 / P2 ~30 / P3 ~45），五个区域并行修复，每条在报告里标 ✅ 并配穿过真实层的测试。要点：执行器透传 `status/code`（空结果不再冒充成功）；`urlSafety` 成为唯一守卫并在 `web_screenshot` 的 `goto` 后复查 + `page.route` 拦截私网（跳转/iframe/子资源）；`persistCompactSnapshot` 只写压缩字段、工具组取并集、附件外置标记只升不降；值级脱敏（Bearer/`key=`/userinfo/sk-…）覆盖记录、链、摘要与成员事件；预算在请求中途到期也走 `budget:exhausted`；团队计划可扩展根预算；`read_history` 单条超长可按字符偏移续读；补充消息重建 `blocks`；稳定前缀段不再吃召回预算且 memory/dynamic 有保底；本地模型按实测必需提示词推导窗口与 chunk；压缩熔断持久化；降级卡按卡升级；卡片相关度 IDF 加权；手机账本按字节单独渲染；附件路由 206/nosniff/下载头；记忆本手写行改 scope 不再被隔离、Dreaming 不合并 user/confirmed、巨行截断、促升不再成对、`general` 类别可保存、路由校验项目、稳定行不计 feedback、记忆页按 SQL 分页；iPhone：`page` 溢出崩溃、截图长边上限与 1× 捕获、`onObservation` 回主线程、私网判断按字节解析、`section/bookStatus` 建模避免同步乒乓、预检包含摘要与日期行、强制搜索不被工具覆盖、每回复 ≤2 张截图与 6 MB 图片预算、取消响应、`length` 不进工具轮、回显白名单、分句修正、语音语言映射等；桌面 UI：记忆引用展开态、取消后场景本地收尾并重拉、步骤排序、i18n 覆盖测试与 ~60 条五语目录、记忆本草稿按项目、工具轨迹消息样式、`say --`。（Claude）
+
+未尽：M16 冲突判定在单版本路径仍保留时间戳启发式（寄存器时钟无法区分）；`仅原对话` 因与 native 目录键冲突暂未翻译；WKWebView 可见性与 1× 截图需真机验证。Final commit: 见本条提交.
+
 ## 2026-10-18 — 网页打开与截图：手机 open_url / web_screenshot（三条连接路径）、桌面 web_screenshot
 
 用户问手机端“她能给链接但能不能自己打开、为什么不能截图”。此前手机只有 ChatGPT 服务端 web_search，没有打开/读取/截图网页的工具，API 密钥连接连函数工具都没有。现在：iPhone 新增 `open_url`（隐藏 WKWebView 加载并抽正文，12000 字分页）与 `web_screenshot`（同一 WebView 截图，存入图片库挂在回复下，并作为 input_image 回传给模型），受 Agent 的“联网”权限控制、只读不弹审批；手机函数工具（含日历等设备工具）扩展到 Chat Completions 与 Anthropic 两条 API 密钥路径（各 ≤6 轮、无工具时请求体逐字节不变）。桌面新增 `web_screenshot`：`MELO_CDP_ENABLED=1` 时用已登录的 Melo Chrome，否则无头启动本机 Chrome，PNG 走生成图片目录与签名 URL，模型通过协议层的 tool-images 消息看到 JPEG（Responses input_image / Anthropic image 块 / chat-completions image_url；XML 不传图），持久化工具链不含 base64；新增 `src/tools/urlSafety.js` 私网/本机地址拦截。（Claude）

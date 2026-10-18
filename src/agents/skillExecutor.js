@@ -5,6 +5,7 @@ import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nat
 import {budgetExhausted,narrowBudget,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
 import {estimateMessagesTokens,estimateTextTokens} from '../memory/tokenEstimate.js';
 import { delegatedConfig } from './delegatedConfig.js';
+import { redactToolArgs } from '../tools/toolInvocationRecord.js';
 /**
  * Skill executor.
  *
@@ -160,6 +161,8 @@ async function runSkillLoop({
   capabilities = null,
   extraTools = [],
   replyFn = createOpenAICompatibleReply,
+  // Bug audit T5: conversation audience / project, forwarded to the tools.
+  chatSource, projectId,
 }) {
   const runStartedAt = Date.now();
   const skillIdForTelemetry = (skill && typeof skill === 'object') ? String(skill.id || '') : '';
@@ -293,7 +296,8 @@ async function runSkillLoop({
         calls: toolCalls.map(c => ({
           id: c.id,
           name: `[skill:${skill.id}] ${c.name}`,
-          arguments: c.arguments,
+          // Bug audit T9: same redacted projection as the main loop.
+          arguments: redactToolArgs(c.arguments),
         })),
       });
     }
@@ -330,6 +334,7 @@ async function runSkillLoop({
         allowedToolIds: allowedTools.map(t => t.id),
         capabilities,
         extraTools,
+        chatSource, projectId,
       },
     );
 
@@ -434,6 +439,8 @@ export function buildSkillTool(skill) {
         allowedToolIds: context.allowedToolIds || null,
       capabilities: context.capabilities,
         extraTools: context.extraTools || [],
+        chatSource: context.chatSource,
+        projectId: context.projectId,
       });
     },
   };

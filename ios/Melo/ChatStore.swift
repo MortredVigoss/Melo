@@ -313,9 +313,26 @@ import SwiftUI
         let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
         let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         var instructions = ConversationContext.instructions(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID))
-        // Current local date + continuity rule (2026-10-18); the day-change
-        // note for this turn is appended after the history is known.
+        // Current local date + continuity rule (2026-10-18).
         instructions += "\n\n" + ConversationHistory.dateInstructions()
+        // The final instructions — desktop compact summary, date lines and
+        // recalled memory — are assembled now, before the pre-check and before
+        // the question is stored, so reply() can never reject what the
+        // pre-check accepted (the question used to be saved first, and every
+        // retry failed the same way). The prospective history includes the
+        // question that is about to be appended.
+        let question = ChatMessage(role: "user", content: video.map { clean + "\n" + VideoStudy.chatLine($0) } ?? clean)
+        let prospectiveMessages = retry ? chats[index].messages : chats[index].messages + [question]
+        let dateNote = ConversationHistory.dateChangeNote(prospectiveMessages)
+        if !dateNote.isEmpty { instructions += "\n\n" + dateNote }
+        // Desktop compact sync (design 2026-10-17 手机对齐): only the turns after the
+        // synced boundary go to the model; the desktop summary (≤8 KB) leads the instructions.
+        let compact = ConversationHistory.compactContext(preferences.chatCompact?[chatID], messages: prospectiveMessages)
+        if !compact.summary.isEmpty { instructions = compact.summary + "\n\n" + instructions }
+        var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id)), hasAttachments: !plan.references.isEmpty)
+        let memoryBudget = max(0, ConversationHistory.textByteBudget - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
+        recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
+        instructions += MobileMemoryRecall.instructions(recalled.facts)
         if !plan.makesImage {
             do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions) }
             catch { fail(error.localizedDescription); return }
@@ -340,7 +357,6 @@ import SwiftUI
         }
         if !retry {
             let original = chats[index]
-            let question = ChatMessage(role: "user", content: video.map { clean + "\n" + VideoStudy.chatLine($0) } ?? clean)
             if plan.makesImage || !plan.references.isEmpty {
                 do { try imageLibrary.bind(plan.references.compactMap { imageLibrary.index.assets[$0.id] }, to: question.id, request: plan); imageRevision += 1 }
                 catch { fail(error.localizedDescription); return }
@@ -360,16 +376,6 @@ import SwiftUI
                 }, reportFailure: false)
             }
         }
-        var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id)), hasAttachments: !plan.references.isEmpty)
-        let memoryBudget = max(0, ConversationHistory.textByteBudget - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
-        recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
-        instructions += MobileMemoryRecall.instructions(recalled.facts)
-        let dateNote = ConversationHistory.dateChangeNote(chats[index].messages)
-        if !dateNote.isEmpty { instructions += "\n\n" + dateNote }
-        // Desktop compact sync (design 2026-10-17 手机对齐): only the turns after the
-        // synced boundary go to the model; the desktop summary (≤8 KB) leads the instructions.
-        let compact = ConversationHistory.compactContext(preferences.chatCompact?[chatID], messages: chats[index].messages)
-        if !compact.summary.isEmpty { instructions = compact.summary + "\n\n" + instructions }
         let history = compact.messages
         // The model sees the video as frames plus its transcript; the chat keeps a short line.
         var modelHistory = video.map { digest -> [ChatMessage] in var copy = history; if let last = copy.indices.last { copy[last].content = VideoStudy.modelText(clean, digest: digest) }; return copy } ?? history
@@ -644,9 +650,11 @@ import SwiftUI
     private func deviceToolContext(runID: String, agentID: String, chatID: String? = nil, screenshots: CapturedScreenshots? = nil) -> DeviceToolContext? {
         let permissions = PhoneAgentPermissions.load()
         let policy = permissions.devicePolicy(for: agentID, device: DeviceToolPolicy.load())
-        // Web page tools share the Agent's network switch with web search; read-only, no dialog.
-        let web: WebToolContext? = permissions.allows(agentID, .network) ? WebToolContext(execute: { call in
-            await WebPageToolRunner.run(call: call, allowed: { PhoneAgentPermissions.load().allows(agentID, .network) }).phoneResult
+        // Web page tools share the Agent's network switch with web search and
+        // the device-wide "实时搜索与天气" switch (SettingsView webSearchEnabled); read-only, no dialog.
+        let webAllowed = { PhoneAgentPermissions.load().allows(agentID, .network) && (UserDefaults.standard.object(forKey: "webSearchEnabled") as? Bool ?? true) }
+        let web: WebToolContext? = webAllowed() ? WebToolContext(execute: { call in
+            await WebPageToolRunner.run(call: call, allowed: webAllowed).phoneResult
         }, onCall: { [weak self] call, result in
             let summary = WebPageText.summary(result)
             let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"

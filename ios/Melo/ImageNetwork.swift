@@ -26,21 +26,21 @@ enum ImageNetwork {
         append("--\(boundary)--\r\n")
         return (data,"multipart/form-data; boundary=\(boundary)")
     }
-    static func reply(prompt: String, task: ImageTaskPlan, inputs: [ImageInput], endpoint: String, token: String, session: URLSession = Network.session, onObservation: ((ExecutionObservation)->Void)? = nil) async throws -> ModelReply {
+    static func reply(prompt: String, task: ImageTaskPlan, inputs: [ImageInput], endpoint: String, token: String, session: URLSession = Network.session, onObservation: (@MainActor (ExecutionObservation)->Void)? = nil) async throws -> ModelReply {
         let url = try self.endpoint(from:endpoint,editing:!inputs.isEmpty)
         let (body,type) = try payload(prompt:prompt,task:task,inputs:inputs,boundary:"Melo-"+UUID().uuidString)
         var observation = ExecutionObservation()
-        observation.stage("image:generate",name:task.action.title,status:"running",output:"等待图片服务返回",model:task.model);onObservation?(observation)
+        observation.stage("image:generate",name:task.action.title,status:"running",output:"等待图片服务返回",model:task.model);await onObservation?(observation)
         do {
             let data = try await Network.post(url,token:token,body:body,session:session,headers:["Content-Type":type],maxBytes:48*1024*1024,timeout:180)
             guard let object = try JSONSerialization.jsonObject(with:data) as? [String:Any], let rows = object["data"] as? [[String:Any]], !rows.isEmpty, rows.count <= 4 else { throw MeloError.message("图像服务没有返回完整图片。") }
             let images = try rows.map { try ImagePayload.decode(base64:$0["b64_json"] as? String,model:object["model"] as? String ?? "",prompt:$0["revised_prompt"] as? String ?? "") }
             try Task.checkCancellation()
             observation.returnedModel = object["model"] as? String
-            observation.stage("image:generate",name:task.action.title,status:"completed",output:"已收到 \(images.count) 张完整图片",model:task.model);onObservation?(observation)
+            observation.stage("image:generate",name:task.action.title,status:"completed",output:"已收到 \(images.count) 张完整图片",model:task.model);await onObservation?(observation)
             return ModelReply(text:task.action == .edit ? "图片已修改。" : "图片已生成。",images:images)
         } catch {
-            observation.stage("image:generate",name:task.action.title,status:(error is CancellationError || (error as? URLError)?.code == .cancelled) ? "cancelled" : "failed",output:String(error.localizedDescription.prefix(1000)));onObservation?(observation);throw error
+            observation.stage("image:generate",name:task.action.title,status:(error is CancellationError || (error as? URLError)?.code == .cancelled) ? "cancelled" : "failed",output:String(error.localizedDescription.prefix(1000)));await onObservation?(observation);throw error
         }
     }
 }

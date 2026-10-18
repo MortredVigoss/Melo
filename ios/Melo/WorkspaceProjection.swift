@@ -76,6 +76,20 @@ enum WorkspaceProjection {
         let sources = r.sources.map { s -> [String: Any] in ["id":s.id,"url":s.url,"title":s.title,"titleProvided":s.titleProvided,"order":s.order,"rank":s.rank,"reading":s.reading,"appeared":s.appeared,"accessed":s.accessed,"opened":s.opened,"cited":s.cited,"providers":s.providers,"queries":s.queries] }
         return ["runId":r.runId,"status":r.status,"query":r.query,"startedAt":r.startedAt,"finishedAt":r.finishedAt ?? "","lastModule":r.lastModule ?? "","requestedModel":r.requestedModel,"returnedModel":r.returnedModel ?? "","sourceDevice":r.sourceDevice ?? device,"operations":operations,"pipeline":(r.pipeline ?? []).map(stage),"sources":sources]
     }
+    /// Value with null-valued keys removed (recursively): the wire shape where
+    /// an absent optional and an explicit null mean the same thing.
+    static func comparable(_ value: SyncValue) -> SyncValue {
+        switch value {
+        case .object(let fields): return .object(fields.compactMapValues { $0 == .null ? nil : comparable($0) })
+        case .array(let items): return .array(items.map(comparable))
+        default: return value
+        }
+    }
+    /// Compact `at` stamps compared as instants like the desktop; unparsable stamps fall back to string order.
+    static func isLater(_ a: String, than b: String) -> Bool {
+        if let x = ConversationHistory.parseTimestamp(a), let y = ConversationHistory.parseTimestamp(b) { return x > y }
+        return a > b
+    }
     static func refreshed(_ preferences: MobilePreferences, chats: [Conversation], records: [ExecutionRecord], connections: [PortableConnection], device: String) throws -> SyncWorkspace {
         try prepared(preferences,chats:chats,records:records,connections:connections,device:device).workspace
     }
@@ -103,7 +117,13 @@ enum WorkspaceProjection {
         holds = holds.filter { $0.value.kind != "conversation" || live.contains($0.value.id) }
         for fact in preferences.memoryFacts ?? [] where live.contains(fact.chatId) {
             let data = try JSONEncoder().encode(fact)
-            workspace.put(kind: "memory", id: fact.id, value: try JSONDecoder().decode(SyncValue.self, from: data), device: device)
+            let value = try JSONDecoder().decode(SyncValue.self, from: data)
+            // A re-encoded row that differs from the synced one only by keys
+            // the other side omitted (or sent as null) is the same fact: bumping
+            // the phone clock here made every memory ping-pong between devices.
+            if let row = workspace.records.first(where: { $0.kind == "memory" && $0.id == fact.id }), row.versions.count == 1,
+               Self.comparable(row.versions[0].value) == Self.comparable(value) { continue }
+            workspace.put(kind: "memory", id: fact.id, value: value, device: device)
         }
         var unavailableAgents = Set<String>(), unavailableProjects = Set<String>()
         for a in preferences.agents {
@@ -193,7 +213,7 @@ enum WorkspaceProjection {
                     var incomingCount = 0.0, currentCount = -1.0
                     if case .number(let n) = incoming["compactedCount"] { incomingCount = n }
                     if case .number(let n) = current["compactedCount"] { currentCount = n }
-                    if incomingCount > currentCount || (incomingCount == currentCount && incoming["at"].string > current["at"].string) {
+                    if incomingCount > currentCount || (incomingCount == currentCount && isLater(incoming["at"].string, than: current["at"].string)) {
                         if preferences.chatCompact == nil { preferences.chatCompact = [:] }; preferences.chatCompact?[row.id] = incoming
                     }
                 }

@@ -116,3 +116,82 @@ test('per-turn sections ride in the latest user message and the system prompt st
   assert.match(legacy.systemPrompt, /Tool policy for this turn/);
   assert.equal(legacy.turnContext, '');
 });
+
+// ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
+
+test('L3: a full ledger plus session memory and excerpts no longer truncate memory or drop dynamic context when the request is far below the limit', async () => {
+  const { buildReActPromptSections } = await import('./systemPrompt.js');
+  const { renderCompactLedger, LEDGER_MAX_TOKENS } = await import('../../memory/compactLedger.js');
+  const { formatCompactContextBlock } = await import('../../memory/contextCompact.js');
+  const cards = Array.from({ length: 8 }, (_, i) => ({ id: `c${i}`, title: `话题${i}`, summary: `决定 ${i} 端口 ${5000 + i} 路径 /srv/${i} `.repeat(150), fromMessageId: `f${i}`, toMessageId: `t${i}`, source: 'cloud' }));
+  const ledger = renderCompactLedger(cards);
+  assert.ok(estimateTextTokens(ledger) > LEDGER_MAX_TOKENS / 2 && estimateTextTokens(ledger) <= LEDGER_MAX_TOKENS, `ledger is large (${estimateTextTokens(ledger)})`);
+  const sections = buildReActPromptSections({
+    config: {}, profile: { name: 'main', identity: '', soulMd: '', tools: [], capabilities: {}, collaboration: {} }, modePrompt: '',
+    projectContext: '', projectMemoryBook: '', personalProfile: '', selectedMaterials: '', channelPrompt: '',
+    memoryContext: '记忆行 '.repeat(700), toolRoutingPrompt: '', connectorPrompts: '', skillsPrompts: '',
+    dynamicContext: '动态上下文 '.repeat(500),
+    compactContext: formatCompactContextBlock(ledger, 120),
+    topicExcerpts: '原文摘录 '.repeat(500), toolsPrompt: 'tools', sessionMemoryBlock: '会话记忆 '.repeat(300),
+    languageConstraint: '', dateContext: '', vizInstructions: '', citationInstructions: '', kind: 'chat', isRemoteChannel: false, intent: 'factual',
+  });
+  const budget = resolveContextBudget({}, { config: { authMode: 'codex' } });
+  const fit = fitRequestContext({ sections, messages: [{ role: 'user', content: '继续' }], ...budget, turnContextPlacement: 'message' });
+  assert.equal(budget.inputLimit, 152000);
+  assert.ok(fit.diagnostics.inputTokens < 25000, `request is small (${fit.diagnostics.inputTokens})`);
+  assert.deepEqual(fit.diagnostics.truncatedSections, []);
+  assert.deepEqual(fit.diagnostics.droppedSections, []);
+  for (const id of ['compact', 'session-memory', 'topic-excerpts', 'memory', 'dynamic']) assert.ok(fit.sections.some(section => section.id === id), `${id} present`);
+  assert.match(fit.systemPrompt, /=== End of Summary/, 'ledger footer survives in the stable prefix');
+  // A tight budget still keeps a floor for the lower-priority blocks instead of dropping them.
+  const tight = fitRequestContext({ sections, messages: [{ role: 'user', content: '继续' }], totalTokens: 24000, outputReserve: 2000, turnContextPlacement: 'message' });
+  assert.ok(!tight.diagnostics.droppedSections.includes('dynamic'), 'dynamic keeps its floor');
+  assert.ok(!tight.diagnostics.droppedSections.includes('memory'));
+});
+
+test('L10: the compact section keeps its footer across ledger sizes', async () => {
+  const { buildReActPromptSections } = await import('./systemPrompt.js');
+  const { renderCompactLedger, LEDGER_MAX_TOKENS } = await import('../../memory/compactLedger.js');
+  const { formatCompactContextBlock } = await import('../../memory/contextCompact.js');
+  const budget = resolveContextBudget({}, { config: { authMode: 'codex' } });
+  for (let repeat = 20; repeat <= 420; repeat += 10) {
+    const cards = Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, title: `话题${i}`, summary: `细节 ${i} 数值 ${i * 7} `.repeat(repeat), fromMessageId: `f${i}`, toMessageId: `t${i}`, source: 'cloud' }));
+    const ledger = renderCompactLedger(cards);
+    assert.ok(estimateTextTokens(ledger) <= LEDGER_MAX_TOKENS);
+    const sections = buildReActPromptSections({
+      config: {}, profile: { name: 'main', identity: '', soulMd: '', tools: [], capabilities: {}, collaboration: {} }, modePrompt: '',
+      projectContext: '', projectMemoryBook: '', personalProfile: '', selectedMaterials: '', channelPrompt: '', memoryContext: '', toolRoutingPrompt: '',
+      connectorPrompts: '', skillsPrompts: '', dynamicContext: '', compactContext: formatCompactContextBlock(ledger, 100, { source: 'cloud' }), topicExcerpts: '',
+      toolsPrompt: 'tools', sessionMemoryBlock: '', languageConstraint: '', dateContext: '', vizInstructions: '', citationInstructions: '', kind: 'chat', isRemoteChannel: false, intent: 'factual',
+    });
+    const fit = fitRequestContext({ sections, messages: [{ role: 'user', content: 'hi' }], ...budget, turnContextPlacement: 'message' });
+    const compact = fit.sections.find(section => section.id === 'compact');
+    assert.ok(compact, `compact present at repeat=${repeat}`);
+    assert.ok(!fit.diagnostics.truncatedSections.includes('compact'), `not truncated at repeat=${repeat}`);
+    assert.match(compact.text, /=== End of Summary — continue the conversation from here ===\n\[End reference data: compact\]$/, `footer intact at repeat=${repeat}`);
+    assert.match(compact.text, /## 话题5/, 'newest card present');
+  }
+});
+
+test('L4: budget exposes a chunk size for the summariser and the effective history window follows the required prompt', async () => {
+  const { requiredPromptTokens, effectiveHistoryWindow } = await import('./contextBudget.js');
+  const local = resolveContextBudget({}, { config: { authMode: 'local' } });
+  assert.equal(local.inputLimit, 16000);
+  assert.equal(local.compactChunkTokens, 8000, 'half the input limit');
+  assert.equal(resolveContextBudget({ MELO_CONTEXT_BUDGET_TOKENS: '4096' }).compactChunkTokens, 4000, 'floor');
+  assert.equal(resolveContextBudget({}, { config: { authMode: 'codex' } }).compactChunkTokens, 45000, 'cloud keeps the tuned 45k cap');
+  const sections = [
+    { id: 'base', text: 'word '.repeat(5000), required: true },
+    { id: 'memory', text: 'optional '.repeat(5000), required: false },
+  ];
+  const definitions = Array.from({ length: 21 }, (_, i) => ({ type: 'function', name: `tool_${i}`, description: 'd '.repeat(60), parameters: { type: 'object', properties: { a: { type: 'string', description: 'x'.repeat(80) } } } }));
+  const required = requiredPromptTokens({ sections, toolDefinitions: definitions });
+  const requiredNoTools = requiredPromptTokens({ sections });
+  assert.ok(required > requiredNoTools && requiredNoTools > 5000, `required counts instructions and tools (${required})`);
+  assert.ok(required < 16000);
+  const window = effectiveHistoryWindow(local, required);
+  assert.ok(window < local.windowTokens, `effective window shrinks (${window} < ${local.windowTokens})`);
+  assert.ok(window + required + 512 <= local.inputLimit);
+  assert.equal(effectiveHistoryWindow(local, 100), local.windowTokens, 'a small prompt keeps the nominal window');
+  assert.equal(effectiveHistoryWindow(local, 100000), 1024, 'never below the floor');
+});

@@ -163,3 +163,26 @@ test('receiptInputTokens accepts normalized and raw provider usage shapes', () =
   assert.equal(receiptInputTokens(null), null);
   assert.equal(receiptInputTokens({ usage: { input: -1 } }), null);
 });
+
+// ─── Bug audit 2026-10-18 T8 ─────────────────────────────────────────────────
+
+test('extendBudget: a root budget grows to a plan (max of remaining and requested); children and spent limits never shrink', async () => {
+  const { extendBudget } = await import('./runBudget.js');
+  const now = virtualClock();
+  const root = createRunBudget({ now, overrides: { deadlineMs: 20 * 60_000, maxInputTokens: 400_000 } });
+  recordUsage(root, { inputTokens: 100_000 });
+  now.advance(5 * 60_000);
+  // A 60-minute / 2M-token team plan extends the deadline and the token pool…
+  const grown = extendBudget(root, { deadlineMs: 60 * 60_000, maxInputTokens: 2_000_000 });
+  assert.deepEqual(grown, { extended: true, deadline: true, inputTokens: true, toolCalls: false });
+  assert.equal(remainingMs(root), 60 * 60_000, 'deadline = now + plan');
+  assert.equal(root.maxInputTokens, 100_000 + 2_000_000, 'pool = used + plan');
+  // …a smaller plan never shrinks what is left…
+  assert.deepEqual(extendBudget(root, { deadlineMs: 60_000, maxInputTokens: 1_000 }), { extended: false, deadline: false, inputTokens: false, toolCalls: false });
+  assert.equal(remainingMs(root), 60 * 60_000);
+  // …and a child pool is never widened past its parent.
+  const child = narrowBudget(root, { deadlineMs: 60_000 });
+  assert.equal(extendBudget(child, { deadlineMs: 90 * 60_000, maxInputTokens: 9_000_000 }).extended, false);
+  assert.equal(remainingMs(child), 60_000);
+  assert.equal(extendBudget(null, { deadlineMs: 1 }).extended, false);
+});

@@ -25,11 +25,17 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
     var userEdited = false
     var validTo: String?
     var mergedInto: String?
+    /// Desktop project-book fields (scope "project" only). Modelled so a
+    /// synced row survives decode → encode unchanged; the phone never edits them.
+    var section: String?
+    var bookStatus: String?
+    static let bookSections = ["goal", "convention", "decision", "progress", "todo", "file"]
+    static let bookStatuses = ["auto", "confirmed", "user"]
     var effectiveStatus: String {
         if mergedInto?.isEmpty == false { return "historical" }
         return status == "active" && validTo.flatMap(Self.date).map { $0 <= Date() } == true ? "historical" : status
     }
-    private enum CodingKeys: String, CodingKey { case id, memoryID, text, originalFact, scope, status, chatId, messageId, projectId, agentId, sourceText, category, updatedAt, userEdited, validTo, mergedInto }
+    private enum CodingKeys: String, CodingKey { case id, memoryID, text, originalFact, scope, status, chatId, messageId, projectId, agentId, sourceText, category, updatedAt, userEdited, validTo, mergedInto, section, bookStatus }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id); try c.encode(memoryID, forKey: .memoryID)
@@ -41,6 +47,8 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
         try c.encode(updatedAt, forKey: .updatedAt); try c.encode(userEdited, forKey: .userEdited)
         try c.encode(validTo, forKey: .validTo)
         try c.encodeIfPresent(mergedInto, forKey: .mergedInto)
+        try c.encodeIfPresent(section, forKey: .section)
+        try c.encodeIfPresent(bookStatus, forKey: .bookStatus)
     }
     static func identifier(_ memoryID: String) -> String { "memory_" + SHA256.hash(data: Data(memoryID.utf8)).map { String(format: "%02x", $0) }.joined() }
     func eligible(chat: String, project: String?, agent: String, liveChats: Set<String>) -> Bool {
@@ -65,6 +73,7 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
               messageId.utf16.count <= 180, category.utf16.count <= 100,
               Self.validDate(updatedAt), validTo == nil || Self.validDate(validTo!),
               mergedInto == nil || (!mergedInto!.isEmpty && mergedInto!.utf16.count <= 180),
+              section == nil || Self.bookSections.contains(section!), bookStatus == nil || Self.bookStatuses.contains(bookStatus!),
               ["chat","project","agent","personal"].contains(scope), ["active","forgotten","historical","unconfirmed"].contains(status),
               SyncWorkspace.validID(chatId), SyncWorkspace.validID(agentId), projectId.isEmpty || SyncWorkspace.validID(projectId),
               scope != "project" || !projectId.isEmpty else { throw MeloError.message("记忆内容或共享范围无效，原记录已保留。") }

@@ -15,7 +15,7 @@
 // persisted chat.
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export const URL_PREFIX = '/api/media/attachments/';
 // Data URLs at or below this size are kept inline: the file round trip would
@@ -115,6 +115,51 @@ async function fileSize(path) {
   try { return (await stat(path)).size; } catch { return null; }
 }
 
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+
+async function sameContent(path, bytes) {
+  try { return sha256(await readFile(path)) === sha256(bytes); } catch { return false; }
+}
+
+// Video keyframes (`extractedMedia[].metadata.keyframes[]`) are data URLs
+// too and used to stay inline, so a video turn still bloated the thread
+// file (audit L17). They are written like attachments and read back for
+// the model window by hydrateMessagesForModel.
+function keyframeNeedsExternalizing(url) {
+  return typeof url === 'string' && url.startsWith('data:') && url.length > INLINE_DATA_URL_LIMIT && Boolean(parseDataUrl(url));
+}
+
+async function externalizeKeyframes(extractedMedia, home) {
+  if (!Array.isArray(extractedMedia) || !extractedMedia.length) return extractedMedia;
+  let changed = false;
+  const next = [];
+  for (const entry of extractedMedia) {
+    const keyframes = entry?.metadata?.keyframes;
+    if (!Array.isArray(keyframes) || !keyframes.some(keyframeNeedsExternalizing)) { next.push(entry); continue; }
+    const stored = [];
+    for (const url of keyframes) {
+      if (!keyframeNeedsExternalizing(url)) { stored.push(url); continue; }
+      const parsed = parseDataUrl(url);
+      const bytes = Buffer.from(parsed.payload, 'base64');
+      if (!bytes.length) { stored.push(url); continue; }
+      const name = `${randomUUID()}.${extensionForMime(parsed.mimeType)}`;
+      try {
+        await writeAttachmentFile(home, name, bytes);
+        stored.push(attachmentUrl(name));
+        changed = true;
+      } catch {
+        stored.push(url); // keep inline; the next turn tries again
+      }
+    }
+    next.push({ ...entry, metadata: { ...entry.metadata, keyframes: stored } });
+  }
+  return changed ? next : extractedMedia;
+}
+
+function hasInlineKeyframes(message) {
+  return Array.isArray(message?.extractedMedia) && message.extractedMedia.some(entry => Array.isArray(entry?.metadata?.keyframes) && entry.metadata.keyframes.some(keyframeNeedsExternalizing));
+}
+
 // Externalizes one attachment. Returns the file-backed attachment, or the
 // input untouched when it is small, already file-backed, remote, or when the
 // write fails (the inline bytes are then still the source of truth).
@@ -129,9 +174,11 @@ async function externalizeAttachment(attachment, home) {
     const existing = await fileSize(join(attachmentsDir(home), name));
     // The same upload re-attached to a later turn (image follow-up / retry)
     // maps onto the same file; a different payload under a reused id gets
-    // its own name rather than overwriting.
-    if (existing !== null && existing !== bytes.length) name = `${randomUUID()}.${extension}`;
-    if (existing === null || existing !== bytes.length) await writeAttachmentFile(home, name, bytes);
+    // its own name rather than overwriting. "Same" is decided by content
+    // hash, not by length alone (audit L16); names stay <uuid>.<ext>.
+    const reusable = existing !== null && existing === bytes.length && await sameContent(join(attachmentsDir(home), name), bytes);
+    if (existing !== null && !reusable) name = `${randomUUID()}.${extension}`;
+    if (!reusable) await writeAttachmentFile(home, name, bytes);
   } catch {
     return attachment;
   }
@@ -183,12 +230,14 @@ function rewriteExtractedMediaUrls(extractedMedia, replacements) {
 export async function externalizeMessageAttachments(message, { home } = {}) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
   const next = await externalizeAttachments(attachments, { home });
-  if (next === attachments) return message;
   const replacements = new Map();
   attachments.forEach((attachment, index) => {
     if (next[index] !== attachment) replacements.set(attachment.url, next[index].url);
   });
-  return { ...message, attachments: next, extractedMedia: rewriteExtractedMediaUrls(message.extractedMedia, replacements) };
+  let extractedMedia = next === attachments ? message?.extractedMedia : rewriteExtractedMediaUrls(message.extractedMedia, replacements);
+  if (home) extractedMedia = await externalizeKeyframes(extractedMedia, home);
+  if (next === attachments && extractedMedia === message?.extractedMedia) return message;
+  return { ...message, attachments: next, extractedMedia };
 }
 
 // Reads file-backed attachments back into data URLs. Files are read once per
@@ -233,13 +282,36 @@ export async function hydrateMessagesForModel(messages, { home, tail = MODEL_HYD
   for (let index = start; index < messages.length; index += 1) {
     const message = messages[index];
     const attachments = message?.attachments;
-    if (!Array.isArray(attachments) || !attachments.some(attachment => isFileAttachmentUrl(attachment?.url))) continue;
-    const hydrated = await hydrateAttachments(attachments, { home, cache });
-    if (hydrated === attachments) continue;
+    let next = message;
+    if (Array.isArray(attachments) && attachments.some(attachment => isFileAttachmentUrl(attachment?.url))) {
+      const hydrated = await hydrateAttachments(attachments, { home, cache });
+      if (hydrated !== attachments) next = { ...next, attachments: hydrated };
+    }
+    const extractedMedia = await hydrateKeyframes(message?.extractedMedia, { home, cache });
+    if (extractedMedia !== message?.extractedMedia) next = { ...next, extractedMedia };
+    if (next === message) continue;
     changed = true;
-    result[index] = { ...message, attachments: hydrated };
+    result[index] = next;
   }
   return changed ? result : messages;
+}
+
+// File-backed keyframes back to data URLs (the message builder only emits
+// `data:image/` keyframes to the model).
+async function hydrateKeyframes(extractedMedia, { home, cache }) {
+  if (!Array.isArray(extractedMedia) || !extractedMedia.some(entry => Array.isArray(entry?.metadata?.keyframes) && entry.metadata.keyframes.some(isFileAttachmentUrl))) return extractedMedia;
+  const next = [];
+  let changed = false;
+  for (const entry of extractedMedia) {
+    const keyframes = entry?.metadata?.keyframes;
+    if (!Array.isArray(keyframes) || !keyframes.some(isFileAttachmentUrl)) { next.push(entry); continue; }
+    const hydrated = await hydrateAttachments(keyframes.map(url => ({ url })), { home, cache });
+    const urls = hydrated.map(item => item.url);
+    if (urls.every((url, index) => url === keyframes[index])) { next.push(entry); continue; }
+    changed = true;
+    next.push({ ...entry, metadata: { ...entry.metadata, keyframes: urls } });
+  }
+  return changed ? next : extractedMedia;
 }
 
 // Lazy migration for threads written before externalization. Mutates `chat`
@@ -256,11 +328,11 @@ export async function migrateInlineAttachments(chat, { home } = {}) {
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
     const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
-    if (!attachments.some(shouldExternalize)) continue;
+    if (!attachments.some(shouldExternalize) && !hasInlineKeyframes(message)) continue;
     const next = await externalizeMessageAttachments(message, { home });
-    const remaining = next.attachments.filter(shouldExternalize).length;
+    const remaining = next.attachments.filter(shouldExternalize).length + (hasInlineKeyframes(next) ? 1 : 0);
     migration.failed += remaining;
-    migration.migrated += attachments.filter(shouldExternalize).length - remaining;
+    migration.migrated += attachments.filter(shouldExternalize).length + (hasInlineKeyframes(message) ? 1 : 0) - remaining;
     if (next === message) continue;
     // Patch in place so references held by the caller (the message just
     // pushed for this turn) keep pointing at the same object.

@@ -2148,8 +2148,10 @@ export function recordMemoryFeedback({ candidates = [], usedIds = [], requestId,
 export function recordMemoryRejection(memoryId, { requestId = 'user:forget' } = {}) {
   if (!memoryId) return 0;
   try {
-    return getDb().prepare(`INSERT INTO memory_hits(memory_id,hit_at,query_hash,rank,request_id,outcome) VALUES(?,?,?,?,?,'rejected')`)
-      .run(String(memoryId), new Date().toISOString(), 'user-feedback', 0, `${requestId}:${Date.now()}`).changes;
+    // Bug audit M7: no query hash and no rank — a rejection is not a recall
+    // hit, and rank 0 / a shared hash would inflate the diversity statistics.
+    return getDb().prepare(`INSERT INTO memory_hits(memory_id,hit_at,query_hash,rank,request_id,outcome) VALUES(?,?,NULL,NULL,?,'rejected')`)
+      .run(String(memoryId), new Date().toISOString(), `${requestId}:${Date.now()}`).changes;
   } catch (err) {
     debugWarn('memory.feedback', 'recordMemoryRejection failed', err?.message || err);
     return 0;
@@ -2166,7 +2168,7 @@ export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
     SELECT memory_id AS memoryId,
            COUNT(*)                               AS hits,
            COUNT(DISTINCT query_hash)             AS distinctQueries,
-           AVG(COALESCE(rank, 0))                 AS avgRank,
+           AVG(CASE WHEN outcome='rejected' THEN NULL ELSE COALESCE(rank, 0) END) AS avgRank,
            SUM(CASE WHEN outcome='used' THEN 1 WHEN outcome='rejected' THEN -1 ELSE 0 END) AS goodOutcomes,
            SUM(CASE WHEN outcome='rejected' THEN 1 ELSE 0 END) AS rejectedOutcomes
     FROM memory_hits
@@ -2755,8 +2757,29 @@ export function* iterateMemoryRecords({ kind = 'session-fact', chatId = null, na
 }
 
 // Administrative reads never count as recall or increase importance.
-export function listMemoryRecords({ kind = 'session-fact', limit = 1000, offset = 0, chatId = null } = {}) {
-  const rows=getDb().prepare(`SELECT * FROM memories WHERE kind = ? ${chatId ? "AND json_extract(metadata_json, '$.chatId') = ?" : ''} ORDER BY updated_at DESC, id LIMIT ? OFFSET ?`)
-    .all(kind,...(chatId?[chatId]:[]),Math.max(1,Math.min(10000,Number(limit)||1000)),Math.max(0,Number(offset)||0));
+// Bug audit M10: explicit columns (never the embedding BLOB) and the text /
+// source-title filter pushed into SQL so the memory page pages in the store
+// instead of materialising every row.
+const MEMORY_RECORD_COLUMNS = 'id, namespace, kind, source_id, text, search_text, tokens_estimate, created_at, updated_at, last_used_at, metadata_json';
+const escapeLike = value => String(value).replace(/[\\%_]/g, ch => `\\${ch}`);
+function memoryRecordFilter({ kind, chatId, query }) {
+  const clauses = ['kind = ?'], args = [kind];
+  if (chatId) { clauses.push("json_extract(metadata_json, '$.chatId') = ?"); args.push(chatId); }
+  const q = String(query || '').trim();
+  if (q) {
+    const pattern = `%${escapeLike(q)}%`;
+    clauses.push("(text LIKE ? ESCAPE '\\' OR COALESCE(json_extract(metadata_json, '$.chatTitle'), '') LIKE ? ESCAPE '\\')");
+    args.push(pattern, pattern);
+  }
+  return { where: clauses.join(' AND '), args };
+}
+export function listMemoryRecords({ kind = 'session-fact', limit = 1000, offset = 0, chatId = null, query = '' } = {}) {
+  const { where, args } = memoryRecordFilter({ kind, chatId, query });
+  const rows=getDb().prepare(`SELECT ${MEMORY_RECORD_COLUMNS} FROM memories WHERE ${where} ORDER BY updated_at DESC, id LIMIT ? OFFSET ?`)
+    .all(...args,Math.max(1,Math.min(10000,Number(limit)||1000)),Math.max(0,Number(offset)||0));
   return materializeMemoryRows(rows);
+}
+export function countMemoryRecords({ kind = 'session-fact', chatId = null, query = '' } = {}) {
+  const { where, args } = memoryRecordFilter({ kind, chatId, query });
+  return Number(getDb().prepare(`SELECT COUNT(*) AS n FROM memories WHERE ${where}`).get(...args)?.n) || 0;
 }

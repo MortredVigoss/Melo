@@ -55,6 +55,21 @@ import Foundation
         assert(ConversationHistory.dateChangeNote([dated[0]], now: afterMidnight, timeZone: sydney).isEmpty, "first message → no note")
         assert(ConversationHistory.dateInstructions(now: afterMidnight, timeZone: sydney).contains("当前本地日期：2026-10-18（Australia/Sydney）"))
         assert(ConversationHistory.parseTimestamp(timestamp()) != nil, "fractional-second timestamps parse")
+        // Audit I14/I20: a compact with neither summary nor cards keeps the full history; a boundary at the
+        // pending question (nothing after it) is treated like an unknown boundary.
+        let turns = history(6)
+        let bare: SyncValue = .object(["boundaryMessageId": .string("3"), "compactedCount": .number(4), "source": .string("cloud"), "at": .string("2026-10-18T00:00:00Z"), "summary": .string("")])
+        let bareContext = ConversationHistory.compactContext(bare, messages: turns)
+        assert(bareContext.messages == turns && bareContext.summary.isEmpty, "empty summary and cards → full history")
+        let summarised: SyncValue = .object(["boundaryMessageId": .string("3"), "compactedCount": .number(4), "source": .string("cloud"), "at": .string("2026-10-18T00:00:00Z"), "summary": .string("早先的讨论")])
+        let cut = ConversationHistory.compactContext(summarised, messages: turns)
+        assert(cut.messages.map(\.id) == ["4", "5"] && cut.summary.contains("早先的讨论"))
+        let atQuestion: SyncValue = .object(["boundaryMessageId": .string("4"), "compactedCount": .number(5), "source": .string("cloud"), "at": .string("2026-10-18T00:00:00Z"), "summary": .string("早先的讨论")])
+        let pendingContext = ConversationHistory.compactContext(atQuestion, messages: Array(turns.prefix(5)))
+        assert(pendingContext.messages == Array(turns.prefix(5)) && pendingContext.summary.isEmpty, "boundary == pending question → send the full history")
+        let cardsOnly: SyncValue = .object(["boundaryMessageId": .string("1"), "compactedCount": .number(2), "source": .string("cloud"), "at": .string("2026-10-18T00:00:00Z"), "summary": .string(""), "cards": .array([.object(["id": .string("c1"), "title": .string("T"), "summary": .string("卡片摘要"), "source": .string("cloud")])])])
+        let cardContext = ConversationHistory.compactContext(cardsOnly, messages: turns)
+        assert(cardContext.messages.map(\.id) == ["2", "3", "4", "5"] && cardContext.summary.contains("卡片摘要"))
         print("Conversation history tests passed: whole turns, contiguous suffix, current input, multi-answer turns, soft limit and date context")
     }
 }

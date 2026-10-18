@@ -355,3 +355,19 @@ test('promoted facts remain scoped to the source chat without deleting history a
   });
   assert.equal(rows.length, 205, 'canonical records and tombstones survive checkpoint windows');
 });
+
+test('bug audit M17: the new-fact count is computed against the chat\'s own rows, not a capped global list', async () => {
+  _setGetEmbeddingForTests(async () => null);
+  // 1,050 rows from other chats push this chat's existing row beyond the old
+  // 1,000-row global listing, which made every replay count it as "new".
+  const olderIso = '2020-01-01T00:00:00.000Z';
+  for (let i = 0; i < 1050; i += 1) {
+    upsertMemory({ id: `other-${i}`, namespace: 'chat:other', kind: PROMOTED_KIND, sourceId: 'other', text: `filler ${i}`, searchText: `filler ${i}`,
+      createdAt: new Date(Date.now() + i).toISOString(), updatedAt: new Date(Date.now() + i).toISOString(), metadata: { chatId: 'other', scope: 'chat', audience: 'local' } });
+  }
+  const chat = { id: 'chat-m17', title: 'm17', sessionMemory: [{ fact: 'M17 existing fact', category: 'test', extractedAt: olderIso }] };
+  assert.equal(await promoteAndPersistFacts(chat, 'main', {}), 1, 'first replay: one new fact');
+  assert.equal(await promoteAndPersistFacts(chat, 'main', {}), 0, 'second replay: nothing new');
+  chat.sessionMemory.push({ fact: 'M17 second fact', category: 'test', extractedAt: olderIso });
+  assert.equal(await promoteAndPersistFacts(chat, 'main', {}), 1);
+});

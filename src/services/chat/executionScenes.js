@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, readdir, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, sceneFinished, sceneUrl, sceneSourceUrl, mergeSceneSources } from '../../shared/executionScene.js';
@@ -77,6 +77,55 @@ export function recoverSceneObservations(scene, { message, searchContext = '' } 
   return copyScene;
 }
 
+// Retention for `<home>/desktop/execution-scenes/<runId>.*` (bug audit T15):
+// the scene JSON, the D1 `<runId>.tools.jsonl` record file and any
+// `.selection` variants used to accumulate forever. Runs older than
+// SCENE_RETENTION_DAYS or beyond the newest SCENE_RETENTION_RUNS are deleted
+// (whole run at a time, never a run that is still live). The sweep runs from
+// the recorder's `finish` — the same place scenes are written — at most once
+// per SCENE_PRUNE_INTERVAL_MS per home, and never throws.
+export const SCENE_RETENTION_DAYS = 14;
+export const SCENE_RETENTION_RUNS = 300;
+const SCENE_PRUNE_INTERVAL_MS = 10 * 60_000;
+const lastPrune = new Map();
+const RUN_FILE = /^([a-zA-Z0-9_-]{1,128})(\.json|\.tools\.jsonl|\.json\.selection\.tmp|\.json\.tmp)$/;
+
+export async function pruneExecutionScenes(home, { maxAgeDays = SCENE_RETENTION_DAYS, maxRuns = SCENE_RETENTION_RUNS, now = Date.now() } = {}) {
+  const directory = join(home, 'desktop', 'execution-scenes');
+  let names;
+  try { names = await readdir(directory); } catch { return { removedRuns: 0, removedFiles: 0 }; }
+  const runs = new Map();
+  for (const name of names) {
+    const match = RUN_FILE.exec(name);
+    if (!match) continue;
+    let mtime = 0;
+    try { mtime = (await stat(join(directory, name))).mtimeMs; } catch { continue; }
+    const run = runs.get(match[1]) || { files: [], newest: 0 };
+    run.files.push(name);
+    run.newest = Math.max(run.newest, mtime);
+    runs.set(match[1], run);
+  }
+  const cutoff = now - Math.max(0, maxAgeDays) * 86_400_000;
+  const ordered = [...runs.entries()].sort((a, b) => b[1].newest - a[1].newest);
+  let removedRuns = 0, removedFiles = 0;
+  for (const [index, [runId, run]] of ordered.entries()) {
+    if (live.has(keyFor(home, runId))) continue;
+    if (run.newest >= cutoff && index < Math.max(0, maxRuns)) continue;
+    for (const name of run.files) {
+      try { await rm(join(directory, name), { force: true }); removedFiles++; } catch {}
+    }
+    removedRuns++;
+  }
+  return { removedRuns, removedFiles };
+}
+
+function schedulePrune(home) {
+  const now = Date.now();
+  if (now - (lastPrune.get(home) || 0) < SCENE_PRUNE_INTERVAL_MS) return;
+  lastPrune.set(home, now);
+  pruneExecutionScenes(home, { now }).catch(() => {});
+}
+
 export function createExecutionRecorder(context, query, emit) {
   const scene = createExecutionScene({ ...context, query });
   scene.observationVersion = 2;
@@ -121,6 +170,7 @@ export function createExecutionRecorder(context, query, emit) {
       try { await writes; } catch { scene.persistenceError = '场景保存失败；本次仅可在当前窗口回看'; }
       try { emit?.('execution_scene', { scene: copy(scene) }); } catch {}
       live.delete(key);
+      schedulePrune(context.home);
       return copy(scene);
     },
   };

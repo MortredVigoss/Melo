@@ -29,8 +29,28 @@ enum SpeechText {
         case "zh-CN", "en-US": return preference
         default:
             let system = (systemLanguage ?? "").trimmingCharacters(in: .whitespaces)
-            return system.isEmpty ? "en-US" : system
+            return system.isEmpty ? "en-US" : normalizedLanguage(system)
         }
+    }
+
+    /// `Locale.preferredLanguages` gives script-qualified tags such as
+    /// `zh-Hans-CN`, which `AVSpeechSynthesisVoice(language:)` does not match
+    /// (voices are `zh-CN`, `en-AU`…). Reduce to `language-REGION`; a tag
+    /// without a region keeps the language code only (`en`).
+    static func normalizedLanguage(_ tag: String) -> String {
+        let locale = Locale(identifier: tag)
+        guard let language = locale.language.languageCode?.identifier, !language.isEmpty else { return tag }
+        if let region = locale.language.region?.identifier, !region.isEmpty { return language + "-" + region }
+        return language
+    }
+
+    /// Exact voice language when one is installed, else the first installed
+    /// voice whose language shares the language code (`zh-CN` → `zh-TW`,
+    /// `en` → `en-US`); nil when no voice speaks that language.
+    static func matchingVoiceLanguage(_ language: String, available: [String]) -> String? {
+        if available.contains(language) { return language }
+        let prefix = language.split(separator: "-").first.map(String.init)?.lowercased() ?? language.lowercased()
+        return available.first { $0.lowercased() == prefix || $0.lowercased().hasPrefix(prefix + "-") }
     }
 
     // MARK: Cleaning
@@ -101,16 +121,26 @@ enum SpeechText {
 
     // MARK: Helpers
 
+    /// Sentence boundaries: CJK terminators and `!?` / newline anywhere; an
+    /// ASCII period only when followed by whitespace or the end of the text,
+    /// so decimals (`3.5%`), versions and abbreviations stay in one sentence.
     static func splitSentences(_ text: String) -> [String] {
         var sentences: [String] = []
         var current = ""
-        for character in text {
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
             current.append(character)
-            if "。！？.!?\n".contains(character) {
+            let next = text.index(after: index)
+            let boundary: Bool
+            if character == "." { boundary = next == text.endIndex || text[next].isWhitespace }
+            else { boundary = "。！？!?\n".contains(character) }
+            if boundary {
                 let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { sentences.append(trimmed) }
                 current = ""
             }
+            index = next
         }
         let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
         if !tail.isEmpty { sentences.append(tail) }

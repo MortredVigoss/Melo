@@ -24,6 +24,7 @@ import {normalizeHandoff} from '../../agents/handoff.js';
  */
 
 import { normalizeToSearchTaskResult } from '../search/searchTask.js';
+import { redactSecretsInText } from '../../tools/secretRedaction.js';
 
 // 2026-05-23 架构 audit #2 闭环: the SearchTask adapter (8-code unified
 // error taxonomy in src/services/search/searchTask.js) had zero production
@@ -101,7 +102,9 @@ export function projectToolResultForPersist(call, result, record = null) {
   if (result?.status === 'empty') entry.status = 'empty';
   // Short model-facing conclusion so the compaction transcript can say what a
   // tool call found (design 1D-5); the full output never enters history.
-  const summary = typeof result?.output === 'string' ? result.output.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  // Bug audit T6: the summary enters persisted history, so secret values
+  // (Bearer …, ?token=, KEY=…) are redacted first.
+  const summary = typeof result?.output === 'string' ? redactSecretsInText(result.output.replace(/\s+/g, ' ').trim()).slice(0, 200) : '';
   if (summary) entry.summary = summary;
   if (errorCode) {
     entry.errorCode = errorCode;

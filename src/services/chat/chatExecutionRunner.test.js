@@ -730,6 +730,63 @@ test('run budget (C1): tool-call cap → executor refuses with BUDGET_EXHAUSTED 
   } finally { unregisterTool(probe.id); }
 });
 
+// Bug audit 2026-10-18 T7 / U13: the deadline arriving in the MIDDLE of a model
+// request surfaces as the transport's TimeoutError; that is the budget path
+// (failed-state `budget:exhausted` stage with limit/used in `output`, explicit
+// "继续" reply), not the generic provider-failure card. A tool cut by the
+// deadline reports BUDGET_EXHAUSTED rather than a tool TIMEOUT.
+test('run budget (T7/U13): TimeoutError mid-request at the deadline → budget:exhausted (failed, limit/used in output) and the 继续 reply', async () => {
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'timeout-user', role: 'user', content: '把这个任务做完' }] });
+  state.chats = [chat];
+  await saveState(state);
+  let now = 2_000_000;
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
+  const events = []; let replies = 0;
+  const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+    _dependencies: { getEmbedding: async () => null,
+      createReply: async options => {
+        replies++;
+        // The transport's AbortSignal.timeout(remaining) fires exactly at the deadline.
+        now += options.timeoutMs;
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      } } });
+  assert.equal(replies, 1);
+  assert.match(result.normalizedReply.content, /运行预算/);
+  assert.match(result.normalizedReply.content, /继续/);
+  assert.doesNotMatch(result.normalizedReply.content, /could not complete the model request|模型请求失败/);
+  const exhausted = events.find(e => e.type === 'execution_event' && e.value.id === 'budget:exhausted');
+  assert.ok(exhausted, 'budget:exhausted execution event is emitted on the mid-request timeout');
+  assert.equal(exhausted.value.status, 'failed', 'U13: rendered as a warning, not a ✓');
+  assert.equal(exhausted.value.budget.reason, 'deadline');
+  assert.match(exhausted.value.output, /已用 60s \/ 60s/, 'U13: limit/used travel in output, which the scene keeps');
+});
+
+test('run budget (T7): a tool cut by the run deadline reports BUDGET_EXHAUSTED, not a tool TIMEOUT', async () => {
+  const { executeTool } = await import('../../testSupport/directAgentFixture.js');
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const { createRunBudget } = await import('../../runtime/runBudget.js');
+  const { runWithRequestContext } = await import('../../runtime/requestScope.js');
+  let now = 3_000_000;
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 50 } });
+  const context = createRequestContext({ home: TEST_HOME, chatId: 'deadline-tool', budget });
+  const slow = { id: 'deadline_probe', requiresPermission: false, isConcurrencySafe: true, timeout: 60_000,
+    run: () => new Promise(resolve => setTimeout(() => resolve({ ok: true, output: 'late' }), 400)) };
+  const timer = setInterval(() => { now += 25; }, 10);
+  try {
+    const result = await runWithRequestContext(context, () => executeTool(slow, {}, { requestContext: context }));
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'BUDGET_EXHAUSTED');
+    assert.equal(result.error, 'BUDGET_EXHAUSTED');
+    assert.match(result.output, /Run budget \(deadline\) ran out/);
+    assert.equal(result.meta.timedOut, true);
+    assert.equal(result.meta.budget.reason, 'deadline');
+  } finally { clearInterval(timer); }
+});
+
 test('optional fast judge retains the answer model and contributes its real usage receipt', async () => {
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat];
   const events = []; let judgments = 0, answers = 0;
@@ -799,4 +856,115 @@ test('tool invocation records (D1): 3 calls → 3 jsonl lines whose modelFacingO
     assert.equal(done.value.results[1].errorCode, 'NOT_FOUND');
     assert.ok(!JSON.stringify(events).includes('sk-SECRET-VALUE'), 'no SSE event leaks the raw key');
   } finally { unregisterTool(probe.id); }
+});
+
+// ─── 2026-10-18 bug audit (section 2: long conversations) ───────────────────
+
+const LOCAL_CONFIG = { authMode: 'local', apiKey: '', baseUrl: 'http://127.0.0.1:1/v1', model: 'local-model' };
+const SUMMARISER = /conversation summarizer/;
+const cjkTurns = (count, size, prefix = 'h') => Array.from({ length: count }, (_, i) => ({
+  id: `${prefix}${i}`, role: i % 2 ? 'assistant' : 'user', content: `第 ${i} 轮 ${'讨论内容'.repeat(size)} 端口 ${5000 + i}`, createdAt: new Date(1_700_000_000_000 + i * 1000).toISOString(),
+}));
+
+test('L4/U2: local model — history is compacted against the effective window instead of being dropped, the new card reaches the prompt, and compact:running terminates', async () => {
+  const { createExecutionScene, applyExecutionEvent, finishExecutionScene } = await import('../../shared/executionScene.js');
+  const { resolveContextBudget } = await import('./contextBudget.js');
+  // The real registry (bootstrapBuiltinTools above) supplies the ~7.5k of
+  // core tool definitions the audit measured.
+  const question = '请继续整理工作区文件里的这些讨论，并把之前提到的端口号都列出来，顺便告诉我接下来还有哪些待办';
+  // ~10k final tokens of history: under the nominal 12k local window, over what the required prompt leaves.
+  const chat = fixtureChat({ messages: [...cjkTurns(30, 60), { id: 'now', role: 'user', content: question }] });
+  const state = fixtureState(); state.chats = [chat]; await saveState(state);
+  const events = []; let summariserCalls = 0, systemPrompts = [];
+  {
+    const result = await runChatAgentExecutionGraph({ config: LOCAL_CONFIG, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: question, agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+      _dependencies: { getEmbedding: async () => null, createReply: async options => {
+        if (SUMMARISER.test(options.systemPrompt || '')) { summariserCalls++; return '# 早期讨论\n1. Request and Intent: 端口整理\n2. Facts: 端口 5000 [#h0]'; }
+        systemPrompts.push(options.systemPrompt || '');
+        return '好的，已列出。';
+      } } });
+    const budget = resolveContextBudget({}, { config: LOCAL_CONFIG });
+    const diagnostics = result.promptDiagnostics;
+    assert.equal(diagnostics.droppedMessages, 0, `no history dropped by the fitter (${JSON.stringify(diagnostics)})`);
+    assert.ok(diagnostics.historyWindowTokens < budget.windowTokens, `effective window ${diagnostics.historyWindowTokens} < nominal ${budget.windowTokens}`);
+    assert.ok(diagnostics.requiredTokens > 3000, `required prompt measured (${diagnostics.requiredTokens})`);
+    assert.equal(summariserCalls, 1, 'one in-turn compaction against the effective window');
+    assert.ok(chat.compactCards?.length === 1, 'the chunk became a card');
+    assert.ok(systemPrompts.length >= 1);
+    assert.match(systemPrompts[0], /=== Previous Conversation Summary/, 'the prompt was rebuilt after compaction');
+    assert.match(systemPrompts[0], /早期讨论/);
+    assert.ok(diagnostics.inputTokens <= budget.inputLimit);
+    // U2: the compact stage reaches a terminal status; after the scene finishes nothing is left running.
+    const scene = createExecutionScene({ runId: 'r', chatId: chat.id, query: question });
+    for (const event of events.filter(e => e.type === 'execution_event')) applyExecutionEvent(scene, event.value);
+    const stage = scene.pipeline.find(item => item.id === 'compact:running');
+    assert.ok(stage, 'compact:running stage exists');
+    assert.equal(stage.status, 'completed');
+    assert.ok(stage.startedAt && stage.finishedAt);
+    finishExecutionScene(scene, { status: 'completed' });
+    assert.ok(!scene.pipeline.some(item => ['running', 'queued', 'interrupted'].includes(item.status)), JSON.stringify(scene.pipeline.map(s => [s.id, s.status])));
+    // Persisted: card + boundary + reset breaker.
+    const stored = (await loadState()).chats.find(entry => entry.id === chat.id);
+    assert.equal(stored.compactCards.length, 1);
+    assert.equal(stored.compactFailures, 0);
+    assert.ok(stored.compactedMessageCount > 0);
+  }
+});
+
+test('L5: a tripped breaker makes no summariser call in the turn; a later success resets it in the store', async () => {
+  const { MAX_COMPACT_FAILURES } = await import('../../memory/contextWindow.js');
+  const question = '请继续整理这些讨论，把所有提到的端口号都列出来，并说明还有哪些没做完的事情需要跟进';
+  const chat = fixtureChat({ messages: [...cjkTurns(40, 80), { id: 'now', role: 'user', content: question }] });
+  chat.compactFailures = MAX_COMPACT_FAILURES;
+  const state = fixtureState(); state.chats = [chat]; await saveState(state);
+  let summariserCalls = 0;
+  const run = async target => runChatAgentExecutionGraph({ config: LOCAL_CONFIG, state, chat: target, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: question, agentId: 'main',
+    _dependencies: { getEmbedding: async () => null, createReply: async options => {
+      if (SUMMARISER.test(options.systemPrompt || '')) { summariserCalls++; return '# 卡片\n1. Request: x'; }
+      return '好。';
+    } } });
+  await run(chat);
+  assert.equal(summariserCalls, 0, 'breaker open: the summariser is never called even though history overflows');
+  assert.equal((await loadState()).chats.find(entry => entry.id === chat.id).compactFailures, MAX_COMPACT_FAILURES, 'the count is not touched by a skipped pass');
+  // Operator resets the breaker (or it expires): the next turn compacts and persists 0.
+  const reset = { ...chat, compactFailures: 0 };
+  await run(reset);
+  assert.ok(summariserCalls >= 1);
+  const stored = (await loadState()).chats.find(entry => entry.id === chat.id);
+  assert.equal(stored.compactFailures, 0);
+  assert.ok(stored.compactCards.length >= 1);
+});
+
+test('L6/L7/L13: an older extractive card is upgraded from its own message range; the newest card and the chat-level source are untouched', async () => {
+  const { appendCompactCard } = await import('../../memory/compactLedger.js');
+  const a = cjkTurns(6, 2, 'a'), b = cjkTurns(4, 2, 'b');
+  const chat = fixtureChat({ messages: [...a, ...b, { id: 'now', role: 'user', content: '刚才那段关于端口 5003 的讨论里我们最后定的是什么？请再确认一下并整理成清单' }] });
+  appendCompactCard(chat, { messages: a, boundaryId: 'a5', compactedCount: 6 }, { summary: 'extractive text of the first segment', source: 'rule' });
+  appendCompactCard(chat, { messages: b, boundaryId: 'b3', compactedCount: 10 }, { summary: '# 第二段\ncloud summary of b', source: 'cloud' });
+  assert.equal(chat.compactSummarySource, 'cloud');
+  const state = fixtureState(); state.chats = [chat]; await saveState(state);
+  const transcripts = [];
+  await runChatAgentExecutionGraph({ config: LOCAL_CONFIG, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: chat.messages.at(-1).content, agentId: 'main',
+    _dependencies: { getEmbedding: async () => null, createReply: async options => {
+      if (SUMMARISER.test(options.systemPrompt || '')) { transcripts.push(options.messages[0].content); return 'upgraded without a heading line\n2. Facts: 端口 5000 [#a0]'; }
+      return '确认如下。';
+    } } });
+  assert.equal(transcripts.length, 1, 'exactly one upgrade request');
+  for (const id of ['a0', 'a1', 'a5']) assert.match(transcripts[0], new RegExp(`\\[#${id}\\]`), `the card's own range (${id}) is re-summarised`);
+  for (const id of ['b0', 'b3', 'now']) assert.doesNotMatch(transcripts[0], new RegExp(`\\[#${id}\\]`), `${id} is outside the degraded card`);
+  assert.doesNotMatch(transcripts[0], /cloud summary of b/, 'later cards are not re-summarised');
+  const stored = (await loadState()).chats.find(entry => entry.id === chat.id);
+  assert.equal(stored.compactCards.length, 2);
+  assert.equal(stored.compactCards[0].source, 'cloud');
+  assert.equal(stored.compactCards[0].fromMessageId, 'a0'); assert.equal(stored.compactCards[0].toMessageId, 'a5');
+  assert.equal(stored.compactCards[0].title, '第 0 轮 讨论内容讨论内容 端口 5000', 'no `# ` line → the card keeps its title');
+  assert.match(stored.compactCards[0].summary, /upgraded without a heading/);
+  assert.equal(stored.compactCards[1].summary, 'cloud summary of b', 'newest card untouched');
+  assert.equal(stored.compactSummarySource, 'cloud');
+  assert.equal(stored.compactBoundaryMessageId, 'b3');
+  assert.equal(stored.compactedMessageCount, 10);
+  assert.doesNotMatch(stored.compactSummary, /抽取式摘要/);
 });

@@ -203,18 +203,23 @@ struct ImageSizeRejected: Error {}
         let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone tools (device data + web pages) are offered only for ordinary replies, never image generation.
         let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? [])
+        let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
         if !phoneTools.isEmpty, let deviceTools {
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
-            body["tool_choice"] = "auto" // Allow phone data before a web lookup (e.g. nearby weather).
+            // Allow phone data before a web lookup (e.g. nearby weather, "查一下日程"):
+            // a generic "look up" wording is not forced to web_search. A question that
+            // DeviceToolLoop still deems time-sensitive keeps the forced web_search on
+            // the first round; phone tools are freely offered from the follow-up round.
+            if !mustSearch || body["tool_choice"] == nil || body["tool_choice"] as? String == "auto" { body["tool_choice"] = "auto" }
             let include = (body["include"] as? [String]) ?? []
             body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
             body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + deviceTools.instructions
         }
-        let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
         var priorSources: [WebSource] = []
         var sizeFallback = false
         var searchedEarlier = false
         var openedWebPage = false // A page actually fetched by open_url/web_screenshot counts as real web access.
+        var screenshots = 0 // web_screenshot results in this reply (WebPageText.maxScreenshotsPerReply).
         func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
             let text = try stream.result()
             let searched = searchedEarlier || stream.searched
@@ -279,17 +284,23 @@ struct ImageSizeRejected: Error {}
             for call in calls {
                 try Task.checkCancellation()
                 guard epoch == expectedEpoch else { throw CancellationError() }
+                if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
+                    results.append((call.callID, PhoneToolResult(output: WebPageText.tooManyScreenshots(url: call.urlArgument)))); continue
+                }
                 setStatus(deviceTools.statusText(for: call))
                 let result = await deviceTools.perform(call)
                 try Task.checkCancellation()
                 guard epoch == expectedEpoch else { throw CancellationError() }
                 if WebPageToolSpec.named(call.name) != nil, result.output.contains(#""ok":true"#) { openedWebPage = true }
+                if result.imageJPEG != nil { screenshots += 1 }
                 results.append((call.callID, result))
             }
             setStatus("正在思考…")
             priorSources += stream.sources
             searchedEarlier = searchedEarlier || stream.searched
             body["input"] = DeviceToolLoop.followUpInput(previous: (body["input"] as? [Any]) ?? [], output: stream.outputItems, results: results)
+            // The forced web_search (if any) applied to the first round only.
+            if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
         }
         throw MeloError.message("手机工具操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
     }

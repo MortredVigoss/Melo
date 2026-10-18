@@ -25,6 +25,7 @@ import { buildUncertaintySignalingRules } from '../../retrieval/selfVerification
 import { buildReActOperatingInstructions } from '../../prompts.js';
 import { DEFAULT_CONFIG } from '../../config.js';
 import { renderPromptSections } from './contextBudget.js';
+import { LEDGER_MAX_TOKENS } from '../../memory/compactLedger.js';
 import { CAPABILITY_LABELS } from '../../domain/agent/capabilities.js';
 import { renderAgentIdentity } from '../../domain/agent/agentIdentity.js';
 import {
@@ -249,7 +250,10 @@ export function buildReActPromptSections({
     reference('personal-profile', personalProfile, 106, 400, 'system'),
     // The conversation summary only changes when a new compaction lands, so it
     // belongs to the cacheable prefix as well (it is also the largest block).
-    reference('compact', compactContext, 100, 6000, 'system'),
+    // Its cap is the ledger limit plus room for the summary header/footer and
+    // the reference wrapper, so a full ledger never loses its newest card's
+    // tail or the footer (audit L10).
+    reference('compact', compactContext, 100, LEDGER_MAX_TOKENS + 400, 'system'),
     instruction('current-date', `Current local date: ${new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)} (${timeZone}). ${DATE_CONTINUITY_RULE} For upcoming month/day travel dates without a year, use the current year and state that assumption instead of repeatedly asking. If that date has passed or the context conflicts, clarify. Preserve already supplied passenger, baggage, airport and timing constraints across follow-ups.`),
     // ── Per-turn tail ────────────────────────────────────────────────────
     instruction('skills', skillsPrompts, 'turn'),

@@ -57,13 +57,21 @@ async function defaultSaveArtifact(directory, buffer, options) {
   return saveImageArtifact(directory, buffer, options);
 }
 
+// Bug audit T10: a tall full-page capture rarely fits 400 KB at 1280 px, so
+// after the quality ladder the width steps down too (960 → 720 → 480).
+export const MODEL_IMAGE_WIDTHS = Object.freeze([MODEL_IMAGE_MAX_WIDTH, 960, 720, 480]);
+export const IMAGE_NOT_ATTACHED_NOTE = '(screenshot not attached for the model; read the page with fetch_url)';
+
 async function defaultEncodeModelImage(png) {
   let sharp;
   try { sharp = (await import('sharp')).default; } catch { return null; }
-  const base = sharp(png, { limitInputPixels: 80_000_000 }).resize({ width: MODEL_IMAGE_MAX_WIDTH, withoutEnlargement: true });
-  for (const quality of [72, 55, 40]) {
-    const jpeg = await base.clone().jpeg({ quality, mozjpeg: true }).toBuffer();
-    if (jpeg.length <= MODEL_IMAGE_MAX_BYTES) return jpeg;
+  const source = sharp(png, { limitInputPixels: 80_000_000 });
+  for (const width of MODEL_IMAGE_WIDTHS) {
+    const base = source.clone().resize({ width, withoutEnlargement: true });
+    for (const quality of [72, 55, 40]) {
+      const jpeg = await base.clone().jpeg({ quality, mozjpeg: true }).toBuffer();
+      if (jpeg.length <= MODEL_IMAGE_MAX_BYTES) return jpeg;
+    }
   }
   return null;
 }
@@ -101,12 +109,65 @@ function clampWidth(value) {
   return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(number)));
 }
 
+// Bug audit T2: the URL guard ran only on the address the model supplied; a
+// 302 to 127.0.0.1:<melo port>, the LAN or 169.254.169.254 — or an iframe /
+// subresource pointing there — was rendered with the user's logged-in Chrome.
+// Every request the page makes now passes `isPublicHttpUrl`-style checks
+// (non-http(s) schemes other than data/blob/about are blocked too) and the
+// landed URL is re-checked after navigation.
+const INERT_SCHEMES = new Set(['data:', 'blob:', 'about:']);
+export function isBlockedRequestUrl(value) {
+  let url;
+  try { url = new URL(String(value || '')); } catch { return true; }
+  if (INERT_SCHEMES.has(url.protocol)) return false;
+  return !isPublicHttpUrl(url.href).ok;
+}
+
+function privateNavigationError(target) {
+  return Object.assign(new Error(`Navigation landed on a local or private address (${String(target).slice(0, 200)}); only public web pages can be rendered.`), { code: 'PRIVATE_URL' });
+}
+
+async function installRequestGuard(page, blocked) {
+  const handler = async (route, request) => {
+    const target = typeof request?.url === 'function' ? request.url() : typeof route?.request === 'function' ? route.request().url() : '';
+    if (!isBlockedRequestUrl(target)) return route.continue();
+    let navigation = false;
+    try { navigation = typeof request?.isNavigationRequest === 'function' && request.isNavigationRequest() && (typeof request.frame !== 'function' || typeof page.mainFrame !== 'function' || request.frame() === page.mainFrame()); } catch { navigation = false; }
+    blocked.push({ url: String(target), navigation });
+    return route.abort('blockedbyclient');
+  };
+  const scope = typeof page.route === 'function' ? page : typeof page.context === 'function' && typeof page.context()?.route === 'function' ? page.context() : null;
+  if (!scope) return null;
+  await scope.route('**/*', handler);
+  return async () => { try { if (typeof scope.unroute === 'function') await scope.unroute('**/*', handler); } catch { /* page may already be closed */ } };
+}
+
 /** Load the page on an open Playwright page and capture it. */
 async function capturePage(page, { url, fullPage, width, waitFor, signal, settleMs = SETTLE_MS }) {
   if (typeof page.setViewportSize === 'function') {
     try { await page.setViewportSize({ width, height: Math.round(width * 0.75) }); } catch { /* CDP pages may refuse; keep the window size */ }
   }
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT_MS });
+  const blocked = [];
+  const removeGuard = await installRequestGuard(page, blocked);
+  try {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT_MS });
+    } catch (error) {
+      const redirect = blocked.find(entry => entry.navigation);
+      if (redirect) throw privateNavigationError(redirect.url);
+      throw error;
+    }
+    const landed = typeof page.url === 'function' ? String(page.url() || '') : url;
+    if (landed && landed !== 'about:blank' && isBlockedRequestUrl(landed)) throw privateNavigationError(landed);
+    const navigationBlocked = blocked.find(entry => entry.navigation);
+    if (navigationBlocked) throw privateNavigationError(navigationBlocked.url);
+    return await captureLoadedPage(page, { url, fullPage, width, waitFor, signal, settleMs, blockedRequests: blocked.length });
+  } finally {
+    if (removeGuard) await removeGuard();
+  }
+}
+
+async function captureLoadedPage(page, { url, fullPage, width, waitFor, signal, settleMs, blockedRequests }) {
   if (signal?.aborted) throw abortError();
   if (waitFor) {
     try { await page.waitForSelector(waitFor, { timeout: WAIT_FOR_TIMEOUT_MS }); } catch { /* best effort: screenshot what is there */ }
@@ -126,7 +187,7 @@ async function capturePage(page, { url, fullPage, width, waitFor, signal, settle
   }
   const png = await page.screenshot(options);
   if (signal?.aborted) throw abortError();
-  return { png: Buffer.isBuffer(png) ? png : Buffer.from(png), title: String(title || ''), finalUrl: String(finalUrl || url), capped };
+  return { png: Buffer.isBuffer(png) ? png : Buffer.from(png), title: String(title || ''), finalUrl: String(finalUrl || url), capped, blockedRequests: blockedRequests || 0 };
 }
 
 async function renderViaCdp(deps, options) {
@@ -227,6 +288,7 @@ export const webScreenshotTool = {
       captured = cdpEnabled ? await renderViaCdp(deps, renderOptions) : await renderHeadless(deps, binary, renderOptions);
     } catch (error) {
       if (isAbortError(error, signal)) return { ok: false, error: 'ABORTED', output: 'Screenshot cancelled.', meta: { aborted: true, tier } };
+      if (error?.code === 'PRIVATE_URL') return { ok: false, error: 'INVALID_URL', output: `${error.message} (requested: ${checked.url})`, meta: { tier, url: checked.url, blockedPrivateNavigation: true } };
       if (isTimeoutError(error)) return { ok: false, error: 'TIMEOUT', output: `The page did not finish loading within ${Math.round(GOTO_TIMEOUT_MS / 1000)} s: ${checked.url}`, meta: { timedOut: true, tier, url: checked.url } };
       const message = String(error?.message || error || 'unknown error');
       if (cdpEnabled && /Chrome binary|not found|ENOENT|playwright-core|Cannot find (package|module)/i.test(message)) {
@@ -247,9 +309,12 @@ export const webScreenshotTool = {
     const line = `Screenshot of "${safeTitle}" (${captured.finalUrl}, ${size.width}×${size.height}, tier ${tier}) saved.`;
     const note = captured.capped ? ` Full page capped at ${MAX_FULL_PAGE_HEIGHT} px.` : '';
     const loginNote = tier === 'headless' ? ' Headless render: no login state.' : '';
+    const blockedNote = captured.blockedRequests ? ` ${captured.blockedRequests} request(s) to local/private hosts were blocked.` : '';
+    // T10: never claim the model can see the page when no image is attached.
+    const imageNote = jpeg ? '' : ` ${IMAGE_NOT_ATTACHED_NOTE}`;
     return {
       ok: true,
-      output: `${line}${note}${loginNote}\n\n![${safeTitle}](${saved.url})`,
+      output: `${line}${note}${loginNote}${blockedNote}${imageNote}\n\n![${safeTitle}](${saved.url})`,
       meta: {
         url: checked.url,
         finalUrl: captured.finalUrl,

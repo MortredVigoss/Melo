@@ -103,3 +103,49 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   document.querySelector('[data-execution-action="toggle"]').click();
   await new Promise(resolve => setImmediate(resolve));
 });
+
+// Bug audit 2026-10-18 U4: after a client-side Stop no more scene events
+// arrive, so the run stayed `running` and fed the next turn's live steps.
+test('U4: cancelLiveScene finishes the run locally and re-reads the chat scenes later', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  const calls = [], timers = [];
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: true })); install('setInterval', () => 0);
+  install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; });
+  install('fetch', async url => { calls.push(String(url)); return { ok: true, json: async () => ({ scenes: [] }) }; });
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
+    .replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
+    .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
+    .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
+    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));
+  const panel = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const scene = createExecutionScene({ runId: 'run-stop', chatId: 'chat', query: 'stop me' });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'op1', name: 'bash', module: 'tools', status: 'running', command: 'sleep 100' });
+  panel.receiveExecutionScene(structuredClone(scene));
+  assert.equal(panel.liveSceneFor('chat')?.runId, 'run-stop', 'the running scene is the chat\'s live scene');
+  calls.length = 0; timers.length = 0;
+
+  panel.cancelLiveScene('run-stop', { chatId: 'chat' });
+  assert.equal(panel.liveSceneFor('chat'), null, 'a cancelled scene is never the live steps of the next turn');
+  assert.deepEqual(timers.filter(x => x.delay === 800 || x.delay === 2500).map(x => x.delay), [800, 2500], 'scenes are re-read after 800 ms and once more at 2.5 s');
+  for (const timer of timers.filter(x => x.delay === 800 || x.delay === 2500)) timer.fn();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(url => url.startsWith('/api/chat/scenes?chatId=chat')).length, 2, 'both re-reads hit /api/chat/scenes for the chat');
+
+  // The server's own cancelled scene (same or later sequence) replaces the local one.
+  const serverScene = finishExecutionScene(structuredClone(scene), { status: 'cancelled', message: { id: 'trace-1' } });
+  panel.receiveExecutionScene(serverScene);
+  assert.equal(panel.liveSceneFor('chat'), null);
+  // Unknown run ids and finished runs are no-ops apart from the re-read.
+  timers.length = 0;
+  panel.cancelLiveScene('nope', { chatId: 'chat' });
+  assert.equal(timers.length, 2);
+  panel.cancelLiveScene(null, { chatId: null });
+  assert.equal(timers.length, 2, 'nothing to re-read without a chat');
+});

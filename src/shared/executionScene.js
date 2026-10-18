@@ -143,7 +143,9 @@ export function applyExecutionEvent(scene, event) {
         if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 24000 : 1000);
       }
       if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
-      if (event.status === 'running' && !stage.startedAt) stage.startedAt = at;
+      // Bug audit U5: first sighting of a stage is its start, whatever status
+      // it arrives with (a completed-only stage used to have no time at all).
+      if (!stage.startedAt) stage.startedAt = at;
       if (TERMINAL_SCENE_STATUSES.includes(event.status)) stage.finishedAt = at;
       if (event.channel === 'reasoning-summary') { stage.channel = 'reasoning-summary'; stage.output = publicSummaryText(stage.output); }
       if (event.api) {

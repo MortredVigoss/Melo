@@ -176,6 +176,11 @@ struct ResponsesFunctionCall: Equatable {
     let callID: String
     let name: String
     let arguments: String
+    /// `url` argument (first 300 characters) for messages about a refused call; empty when absent.
+    var urlArgument: String {
+        guard let data = arguments.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return "" }
+        return String((object["url"] as? String ?? "").prefix(300))
+    }
 }
 
 struct DeviceEvent: Equatable {
@@ -379,15 +384,26 @@ enum DeviceToolLoop {
     /// Replays the previous output items verbatim (reasoning, messages and
     /// function calls), then appends one output per call, like the desktop.
     static func followUpInput(previous: [Any], output: [[String: Any]], results: [(callID: String, output: String)]) -> [Any] {
-        previous + output.map { $0 as Any } + results.map { ["type": "function_call_output", "call_id": $0.callID, "output": $0.output] as Any }
+        // A completed image_generation_call in the same turn is replayed
+        // without its base64 `result`: the service keeps the item by id and the
+        // payload would otherwise be re-sent (megabytes) on every round.
+        let replayed = output.map { item -> Any in
+            guard item["type"] as? String == "image_generation_call" else { return item }
+            var copy = item; copy.removeValue(forKey: "result"); return copy
+        }
+        return WebPageText.demotedResponsesInput(previous) + replayed + results.map { ["type": "function_call_output", "call_id": $0.callID, "output": $0.output] as Any }
     }
     /// Same replay; a screenshot result additionally appends a user message
     /// with the image after all function outputs, so the model sees the page.
+    /// Earlier rounds' screenshots are reduced to their caption, and images of
+    /// this round beyond the byte budget are dropped oldest first.
     static func followUpInput(previous: [Any], output: [[String: Any]], results: [(callID: String, result: PhoneToolResult)]) -> [Any] {
         let outputs = followUpInput(previous: previous, output: output, results: results.map { ($0.callID, $0.result.output) })
-        return outputs + results.compactMap { item -> Any? in
-            guard let jpeg = item.result.imageJPEG else { return nil }
-            return WebPageText.followUpImageItem(callID: item.callID, dataURL: WebPageText.dataURL(jpeg: jpeg), url: item.result.imageURL)
+        let images = results.compactMap { item in item.result.imageJPEG.map { (callID: item.callID, url: item.result.imageURL, jpeg: $0) } }
+        let kept = WebPageText.keptImages(sizes: images.map(\.jpeg.count))
+        return outputs + images.enumerated().map { index, image -> Any in
+            guard kept[index] else { return ["role": "user", "content": [["type": "input_text", "text": WebPageText.caption(url: image.url)]]] }
+            return WebPageText.followUpImageItem(callID: image.callID, dataURL: WebPageText.dataURL(jpeg: image.jpeg), url: image.url)
         }
     }
 

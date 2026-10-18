@@ -21,7 +21,7 @@ function lineOf(message) {
   return text ? `[#${message.id}] ${role}: ${text}` : '';
 }
 
-export function buildTopicExcerpts(chat, latestUserMessage, { limit = 2, maxTokensPerCard = 1500, maxMessagesPerCard = 60 } = {}) {
+export function buildTopicExcerpts(chat, latestUserMessage, { limit = 2, maxTokensPerCard = 1500, maxMessagesPerCard = 60, readHistory = true } = {}) {
   const query = String(latestUserMessage || '').trim();
   if (query.length < MIN_QUERY_CHARS) return { text: '', cards: [] };
   const cards = ledgerCards(chat).filter(card => card.fromMessageId || card.toMessageId);
@@ -39,7 +39,7 @@ export function buildTopicExcerpts(chat, latestUserMessage, { limit = 2, maxToke
       const tokens = estimateTextTokens(line);
       if (used + tokens > maxTokensPerCard) {
         if (!kept.length) kept.push(truncateToTokens(line, maxTokensPerCard));
-        else kept.push('…（更多原文用 read_history 读取）');
+        else kept.push(readHistory ? '…（更多原文用 read_history 读取）' : '…（已截断）');
         break;
       }
       kept.push(line);

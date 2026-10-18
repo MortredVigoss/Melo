@@ -159,3 +159,15 @@ test('C-5: cross-kind merge still respects protection (fact-correction pair)', (
   // so there's no partner for the session-fact → no merge.
   assert.equal(plan.length, 0);
 });
+
+test('bug audit M2: user-edited / hand-written / confirmed rows are never merged into an [auto] survivor', () => {
+  const auto = { id: 'auto', namespace: 'project:P', kind: 'session-fact', text: 'x', embedding: vec([1, 0, 0, 0]), metadata: { useCount: 9, bookStatus: 'auto', category: 'project_context' } };
+  const user = { id: 'user', namespace: 'project:P', kind: 'session-fact', text: 'x', embedding: vec([1, 0, 0, 0]), metadata: { useCount: 0, bookStatus: 'user', category: 'project_context' } };
+  const confirmed = { id: 'conf', namespace: 'project:P', kind: 'session-fact', text: 'x', embedding: vec([1, 0, 0, 0]), metadata: { useCount: 0, bookStatus: 'confirmed', category: 'project_context' } };
+  const edited = { id: 'edit', namespace: 'project:P', kind: 'session-fact', text: 'x', embedding: vec([1, 0, 0, 0]), metadata: { useCount: 0, userEdited: true, category: 'technical_detail' } };
+  const plan = planDuplicateMerges([auto, user, confirmed, edited]);
+  assert.equal(plan.length, 0, JSON.stringify(plan));
+  // two plain auto rows still merge
+  const auto2 = { ...auto, id: 'auto2', metadata: { useCount: 1, bookStatus: 'auto', category: 'project_context' } };
+  assert.equal(planDuplicateMerges([auto, auto2, user]).length, 1);
+});

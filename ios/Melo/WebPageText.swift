@@ -61,7 +61,7 @@ struct WebPageToolSpec {
                         description: "Render a web page on this iPhone and attach a screenshot to the conversation; the screenshot is also shown to you as an image. Use it when the user wants to see the page or asks what it looks like.",
                         parameters: ["type": "object", "additionalProperties": false, "required": ["url"], "properties": [
                             "url": ["type": "string", "description": "Absolute http or https address of the page."],
-                            "fullPage": ["type": "boolean", "description": "Capture the whole page (up to 6000 pt tall) instead of the first screen."]]]),
+                            "fullPage": ["type": "boolean", "description": "Capture the whole page (up to 4096 pt tall) instead of the first screen. At most 2 screenshots per reply."]]]),
     ]
     static func named(_ name: String) -> WebPageToolSpec? { all.first { $0.name == name } }
 
@@ -84,19 +84,147 @@ enum WebPageText {
         return url
     }
 
-    static func isPrivateHost(_ host: String) -> Bool {
-        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || host == "0.0.0.0" { return true }
-        if host == "::1" || host == "::" || host.hasPrefix("fe80:") || host.hasPrefix("fc") || host.hasPrefix("fd") { return true }
-        if host.hasPrefix("::ffff:") { return isPrivateHost(String(host.dropFirst(7))) }
-        let parts = host.split(separator: ".").map { Int($0) }
-        guard parts.count == 4, parts.allSatisfy({ $0 != nil && $0! >= 0 && $0! <= 255 }) else { return false }
-        let octets = parts.map { $0! }
-        if octets[0] == 127 || octets[0] == 10 || octets[0] == 0 { return true }
-        if octets[0] == 192 && octets[1] == 168 { return true }
-        if octets[0] == 169 && octets[1] == 254 { return true }
-        if octets[0] == 172 && (16...31).contains(octets[1]) { return true }
-        if octets[0] == 100 && (64...127).contains(octets[1]) { return true }
+    /// Names that never leave the device or the local network. Literal
+    /// addresses are parsed with `inet_pton` and judged by their bytes, so
+    /// every spelling of a loopback/private address (`127.1`, `0x7f000001`,
+    /// `2130706433`, `0177.0.0.1`, `[::ffff:7f00:1]`, `[0:0:0:0:0:0:0:1]`)
+    /// is treated alike. DNS rebinding (a public name that later resolves to a
+    /// private address) is out of scope here.
+    static let privateSuffixes = [".localhost", ".local", ".internal", ".home.arpa", ".lan", ".localdomain", ".intranet", ".private"]
+    static func isPrivateHost(_ rawHost: String) -> Bool {
+        var host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        while host.hasSuffix(".") { host.removeLast() }
+        if let zone = host.firstIndex(of: "%") { host = String(host[..<zone]) } // fe80::1%en0
+        guard !host.isEmpty else { return true }
+        if host == "localhost" || privateSuffixes.contains(where: { host.hasSuffix($0) || host == String($0.dropFirst()) }) { return true }
+        if let bytes = ipv6Bytes(host) { return isPrivateIPv6(bytes) }
+        if let bytes = ipv4Bytes(host) { return isPrivateIPv4(bytes) }
+        // Shorthand, octal, hex or plain-integer IPv4 (inet_aton forms that
+        // the resolver still accepts): private unless they name a public address.
+        if let bytes = ipv4LegacyBytes(host) { return isPrivateIPv4(bytes) }
+        let numericLike = host.allSatisfy { $0.isNumber || $0 == "." } || host.split(separator: ".").allSatisfy { $0.hasPrefix("0x") }
+        return numericLike
+    }
+    /// Strict dotted quad only: four decimal octets without leading zeros.
+    /// (Darwin's `inet_pton` accepts `0177.0.0.1` as 177.0.0.1 while the
+    /// resolver reads it as octal 127.0.0.1, so the check is spelled out.)
+    static func ipv4Bytes(_ host: String) -> [UInt8]? {
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }
+        var bytes: [UInt8] = []
+        for part in parts {
+            guard !part.isEmpty, part.count <= 3, part.allSatisfy({ $0.isASCII && $0.isNumber }), part == "0" || !part.hasPrefix("0"), let value = UInt8(part) else { return nil }
+            bytes.append(value)
+        }
+        return bytes
+    }
+    /// `inet_aton` forms: `127.1`, `0x7f000001`, `0177.0.0.1`, `2130706433`.
+    static func ipv4LegacyBytes(_ host: String) -> [UInt8]? {
+        guard host.allSatisfy({ $0.isHexDigit || $0 == "." || $0 == "x" }), host.first?.isNumber == true else { return nil }
+        var address = in_addr()
+        guard host.withCString({ inet_aton($0, &address) }) == 1 else { return nil }
+        return withUnsafeBytes(of: &address) { Array($0) }
+    }
+    static func ipv6Bytes(_ host: String) -> [UInt8]? {
+        guard host.contains(":") else { return nil }
+        var address = in6_addr()
+        guard host.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
+        return withUnsafeBytes(of: &address) { Array($0) }
+    }
+    static func isPrivateIPv4(_ b: [UInt8]) -> Bool {
+        guard b.count == 4 else { return true }
+        if b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224 { return true }       // this-network, private, loopback, multicast/reserved/broadcast
+        if b[0] == 169 && b[1] == 254 { return true }                                  // link-local (incl. cloud metadata 169.254.169.254)
+        if b[0] == 172 && (16...31).contains(b[1]) { return true }
+        if b[0] == 192 && b[1] == 168 { return true }
+        if b[0] == 192 && b[1] == 0 && b[2] == 0 { return true }                       // IETF protocol assignments
+        if b[0] == 100 && (64...127).contains(b[1]) { return true }                    // CGNAT
+        if b[0] == 198 && (18...19).contains(b[1]) { return true }                     // benchmarking
         return false
+    }
+    static func isPrivateIPv6(_ b: [UInt8]) -> Bool {
+        guard b.count == 16 else { return true }
+        if b[0..<15].allSatisfy({ $0 == 0 }) && (b[15] == 0 || b[15] == 1) { return true }      // :: and ::1
+        if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff { return isPrivateIPv4(Array(b[12...])) }  // ::ffff:a.b.c.d
+        if b[0..<8].allSatisfy({ $0 == 0 }) && b[8] == 0xff && b[9] == 0xff && b[10] == 0 && b[11] == 0 { return isPrivateIPv4(Array(b[12...])) } // ::ffff:0:a.b.c.d (SIIT)
+        if b[0..<12].allSatisfy({ $0 == 0 }) { return isPrivateIPv4(Array(b[12...])) }  // ::a.b.c.d (deprecated v4-compatible)
+        if b[0] == 0 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b {                   // 64:ff9b::/96 NAT64 and 64:ff9b:1::/48
+            if b[4..<12].allSatisfy({ $0 == 0 }) { return isPrivateIPv4(Array(b[12...])) }
+            if b[4] == 0 && b[5] == 1 { return true }
+        }
+        if b[0] & 0xfe == 0xfc { return true }                                            // fc00::/7 ULA
+        if b[0] == 0xfe && b[1] & 0xc0 == 0x80 { return true }                             // fe80::/10 link-local
+        if b[0] == 0xfe && b[1] & 0xc0 == 0xc0 { return true }                             // fec0::/10 site-local
+        if b[0] == 0xff { return true }                                                   // multicast
+        if b[0] == 0x20 && b[1] == 0x02 { return isPrivateIPv4(Array(b[2..<6])) }          // 2002::/16 6to4
+        return false
+    }
+
+    /// `page` argument from the model: any finite number in 1…1e9, else 1.
+    static func pageNumber(_ value: Any?) -> Int {
+        guard let number = value as? NSNumber, !(value is Bool) else { return 1 }
+        let double = number.doubleValue
+        guard double.isFinite, double >= 1, double <= 1e9 else { return 1 }
+        return Int(double)
+    }
+
+    // MARK: Screenshot sizing and per-reply budgets
+
+    /// Pixel caps for a screenshot JPEG: 1 600 px wide and 4 096 px on the
+    /// long side (image inputs beyond 8 000 px are refused upstream, and a
+    /// 3× full-page bitmap would be ~100 MB on the main thread).
+    static let maxImageWidth = 1600.0
+    static let maxImageLongSide = 4096.0
+    static func scaledPixelSize(width: Double, height: Double) -> (width: Double, height: Double) {
+        guard width > 0, height > 0 else { return (0, 0) }
+        let scale = min(1, maxImageWidth / width, maxImageLongSide / max(width, height))
+        return (max(1, (width * scale).rounded(.down)), max(1, (height * scale).rounded(.down)))
+    }
+    /// Screenshots per reply and JPEG bytes per request; older images are
+    /// replaced by their caption text on later rounds (`demoted…`) and the
+    /// oldest ones are dropped first when a round alone exceeds the budget.
+    static let maxScreenshotsPerReply = 2
+    static let imageByteBudget = 6 * 1024 * 1024
+    static func tooManyScreenshots(url: String) -> String {
+        failure("TOO_MANY_SCREENSHOTS", "At most \(maxScreenshotsPerReply) screenshots per reply; use open_url to read further pages.", url: url)
+    }
+    /// Keep flags for images given oldest first; once one does not fit, it and everything older are dropped.
+    static func keptImages(sizes: [Int], budget: Int = imageByteBudget) -> [Bool] {
+        var keep = Array(repeating: false, count: sizes.count), used = 0
+        for index in sizes.indices.reversed() {
+            guard used + sizes[index] <= budget else { break }
+            keep[index] = true; used += sizes[index]
+        }
+        return keep
+    }
+    static func isScreenshotCaption(_ text: String) -> Bool { text.hasPrefix("[web_screenshot") }
+    /// Chat Completions rows: an earlier screenshot message becomes its caption text.
+    static func demotedChatMessages(_ rows: [[String: Any]]) -> [[String: Any]] {
+        rows.map { row in
+            guard row["role"] as? String == "user", let parts = row["content"] as? [[String: Any]],
+                  let caption = parts.first?["text"] as? String, isScreenshotCaption(caption) else { return row }
+            var copy = row; copy["content"] = caption; return copy
+        }
+    }
+    /// Anthropic rows: image blocks that follow a screenshot caption are removed, the caption stays.
+    static func demotedAnthropicMessages(_ rows: [[String: Any]]) -> [[String: Any]] {
+        rows.map { row in
+            guard row["role"] as? String == "user", let blocks = row["content"] as? [[String: Any]] else { return row }
+            var kept: [[String: Any]] = []
+            for block in blocks {
+                if block["type"] as? String == "image", let previous = kept.last, previous["type"] as? String == "text", isScreenshotCaption(previous["text"] as? String ?? "") { continue }
+                kept.append(block)
+            }
+            var copy = row; copy["content"] = kept; return copy
+        }
+    }
+    /// Responses input items: an earlier screenshot item keeps only its caption part.
+    static func demotedResponsesInput(_ items: [Any]) -> [Any] {
+        items.map { item in
+            guard var row = item as? [String: Any], row["role"] as? String == "user", let parts = row["content"] as? [[String: Any]],
+                  let first = parts.first, first["type"] as? String == "input_text", isScreenshotCaption(first["text"] as? String ?? "") else { return item }
+            row["content"] = [first]; return row
+        }
     }
 
     /// Runs of whitespace become one space; blank-line runs become one paragraph break.
@@ -144,15 +272,22 @@ enum WebPageText {
         return encode(object)
     }
 
-    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int) -> String {
+    /// Title and description are bounded so a runaway `<title>` can never
+    /// push the whole result over the output limit.
+    static let maxTitleCharacters = 300
+    static let maxDescriptionCharacters = 1_000
+    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil) -> String {
         let chunk = paged(text, page: requested)
-        var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": title, "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated]
-        if !description.isEmpty { object["description"] = description }
+        var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated]
+        if !description.isEmpty { object["description"] = String(description.prefix(maxDescriptionCharacters)) }
         if let next = chunk.nextPage { object["nextPage"] = next }
+        if let status { object["status"] = status }
         return encode(object)
     }
-    static func screenshotResult(url: String, finalURL: String, title: String) -> String {
-        encode(["ok": true, "url": url, "finalUrl": finalURL, "title": title, "screenshot": "attached"])
+    static func screenshotResult(url: String, finalURL: String, title: String, status: Int? = nil) -> String {
+        var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "screenshot": "attached"]
+        if let status { object["status"] = status }
+        return encode(object)
     }
 
     static func caption(url: String) -> String { "[web_screenshot of \(url)]" }
@@ -182,6 +317,7 @@ enum WebPageText {
             switch object["error"] as? String {
             case "TIMEOUT": return (false, "网页加载超时")
             case "INVALID_URL": return (false, "地址不允许打开")
+            case "TOO_MANY_SCREENSHOTS": return (false, "本次回复截图已达上限")
             default: return (false, "网页加载失败")
             }
         }

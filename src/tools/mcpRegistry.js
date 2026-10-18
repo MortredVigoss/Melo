@@ -51,9 +51,9 @@ export function mcpFunctionName(serverId, toolName) {
   return hashedFunctionName(server, `${serverId}:${toolName}`);
 }
 
-function hashedFunctionName(server, material) {
-  const digest = createHash('sha1').update(String(material)).digest('hex').slice(0, HASH_CHARS);
-  const budget = MCP_FUNCTION_NAME_MAX - MCP_FUNCTION_PREFIX.length - 2 - HASH_CHARS;
+function hashedFunctionName(server, material, hashChars = HASH_CHARS) {
+  const digest = createHash('sha1').update(String(material)).digest('hex').slice(0, hashChars);
+  const budget = MCP_FUNCTION_NAME_MAX - MCP_FUNCTION_PREFIX.length - 2 - hashChars;
   return `${MCP_FUNCTION_PREFIX}${server.slice(0, budget)}__${digest}`;
 }
 
@@ -76,6 +76,13 @@ export function registerMcpTool(tool) {
   // Two different tools may sanitise to the same readable name; the later
   // one falls back to the hashed form so the reverse map stays unambiguous.
   if (_byFunction.has(functionName)) functionName = hashedFunctionName(sanitizeSegment(parsed.server), normalized.id);
+  // Bug audit T14: the hashed form is derived from the full tool id; should
+  // it still collide, lengthen the digest (up to the full sha1) instead of
+  // throwing — a thrown registration used to be swallowed by the manager and
+  // the tool silently vanished.
+  for (let hashChars = HASH_CHARS + 4; _byFunction.has(functionName) && hashChars <= 40; hashChars += 4) {
+    functionName = hashedFunctionName(sanitizeSegment(parsed.server), normalized.id, hashChars);
+  }
   if (_byFunction.has(functionName)) throw new Error(`MCP function name collision for "${normalized.id}"`);
   const stored = { ...normalized, functionName };
   _tools.set(stored.id, stored);

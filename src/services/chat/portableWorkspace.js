@@ -4,7 +4,7 @@ import { withoutDeletedChatContext } from '../../../mobile-sync/protocol.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { portableAgent, portableValue, portableModel, portableScene, putWorkspace, validateWorkspace, stableJSON, mergeWorkspaces, portableCompact, preferCompact, compactAdvances, COMPACT_SUMMARY_LIMIT, COMPACT_CARD_SUMMARY_LIMIT, COMPACT_CARDS_LIMIT } from '../../../mobile-sync/workspaceProtocol.js';
-import { normalizeCompactCards } from '../../memory/compactLedger.js';
+import { normalizeCompactCards, renderCompactLedger, compactCardsEqual, LEDGER_MAX_TOKENS } from '../../memory/compactLedger.js';
 import { effectiveAgentProfile, normalizeAgentProfile } from '../../state/agentProfiles.js';
 import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 import { createExecutionScene } from '../../shared/executionScene.js';
@@ -67,21 +67,55 @@ const clip = (value, limit) => {
   const code = text.charCodeAt(limit - 1);
   return text.slice(0, code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit);
 };
+// The phone prepends `summary` to its instructions and clips it at
+// COMPACT_SUMMARY_LIMIT *bytes*; the desktop ledger is a 6000-token
+// rendering, oldest card first. Clipping that text used to keep the oldest
+// cards and drop the newest (audit L9). The phone gets its own rendering:
+// the ledger re-rendered at a shrinking token budget (oldest cards collapse
+// to a title line first, the newest always stays in full) until it fits the
+// byte limit; only a single oversized card is ever cut mid-text.
+export function renderPhoneLedger(cards, { maxBytes = COMPACT_SUMMARY_LIMIT } = {}) {
+  const list = normalizeCompactCards(cards);
+  if (!list.length) return '';
+  let maxTokens = LEDGER_MAX_TOKENS;
+  let text = renderCompactLedger(list, { maxTokens });
+  while (Buffer.byteLength(text, 'utf8') > maxBytes && maxTokens > 256) {
+    maxTokens = Math.floor(maxTokens * 0.8);
+    text = renderCompactLedger(list, { maxTokens });
+  }
+  return clipBytes(text, maxBytes);
+}
+// Byte-bounded clip on a character boundary (never inside a surrogate pair).
+function clipBytes(value, maxBytes) {
+  const text = typeof value === 'string' ? value : '';
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  let end = Math.min(text.length, maxBytes);
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), 'utf8') > maxBytes) end -= Math.max(1, Math.ceil((Buffer.byteLength(text.slice(0, end), 'utf8') - maxBytes) / 4));
+  const code = text.charCodeAt(end - 1);
+  return text.slice(0, code >= 0xd800 && code <= 0xdbff ? end - 1 : end);
+}
 export function exportCompact(chat, previous = null) {
   const count = Number(chat?.compactedMessageCount) || 0;
   const boundary = typeof chat?.compactBoundaryMessageId === 'string' ? chat.compactBoundaryMessageId : '';
   let current = null;
   if (count > 0 && boundary && chat.messages?.some(message => message.id === boundary)) {
-    const cards = normalizeCompactCards(chat.compactCards).slice(-COMPACT_CARDS_LIMIT).map(card => ({
+    const ledger = normalizeCompactCards(chat.compactCards);
+    const cards = ledger.slice(-COMPACT_CARDS_LIMIT).map(card => ({
       id: card.id, title: clip(card.title, 200), summary: clip(card.summary, COMPACT_CARD_SUMMARY_LIMIT),
       fromMessageId: card.fromMessageId, toMessageId: card.toMessageId, messageCount: card.messageCount, at: card.at, source: card.source,
     }));
+    // The desktop rendering travels as-is while it fits the phone's byte
+    // limit; past that the ledger is re-rendered for the phone (newest card
+    // kept), and a bare legacy summary is clipped on a byte boundary.
+    const desktop = typeof chat.compactSummary === 'string' ? chat.compactSummary : '';
+    const summary = Buffer.byteLength(desktop, 'utf8') <= COMPACT_SUMMARY_LIMIT ? desktop
+      : ledger.length ? renderPhoneLedger(ledger) : clipBytes(desktop, COMPACT_SUMMARY_LIMIT);
     try {
       current = portableCompact({
         boundaryMessageId: boundary, compactedCount: count,
         source: ['cloud','local','rule'].includes(chat.compactSummarySource) ? chat.compactSummarySource : 'cloud',
         at: Number.isFinite(Date.parse(chat.compactedAt)) ? chat.compactedAt : new Date(0).toISOString(),
-        summary: clip(chat.compactSummary, COMPACT_SUMMARY_LIMIT), cards,
+        summary, cards,
       });
     } catch { current = null; }
   }
@@ -95,10 +129,22 @@ export function applyCompact(chat, incoming) {
   const current = exportCompact(chat);
   if (!compactAdvances(current, incoming)) return false;
   if (!chat.messages?.some(message => message.id === incoming.boundaryMessageId)) return false;
-  const cards = normalizeCompactCards(incoming.cards);
+  // Cards already held locally keep their local text (the wire copy is
+  // clipped to 2 KB per card): an incoming card only lands when its id is
+  // new (audit L9). When a local card was preserved over a differing wire
+  // copy, the summary is re-rendered from the merged ledger instead of
+  // taking the phone-sized text.
+  const local = new Map(normalizeCompactCards(chat.compactCards).map(card => [card.id, card]));
+  let preserved = false;
+  const cards = normalizeCompactCards(incoming.cards).map(card => {
+    const mine = local.get(card.id);
+    if (!mine) return card;
+    if (!compactCardsEqual([mine], [card])) preserved = true;
+    return mine;
+  });
   chat.compactBoundaryMessageId = incoming.boundaryMessageId;
   chat.compactedMessageCount = incoming.compactedCount;
-  chat.compactSummary = incoming.summary;
+  chat.compactSummary = preserved ? renderCompactLedger(cards) : incoming.summary;
   chat.compactSummarySource = incoming.source;
   chat.compactedAt = incoming.at;
   chat.compactCards = cards;

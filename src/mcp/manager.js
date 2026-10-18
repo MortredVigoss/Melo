@@ -189,8 +189,10 @@ export async function connectMcpServer(serverName, serverConfig) {
         registerMcpTool(tool);
         _registeredMcpToolIds.add(toolId);
         registered++;
-      } catch {
-        // Duplicate or invalid — skip
+      } catch (error) {
+        // Duplicate or invalid — skip, but say so (bug audit T14: a swallowed
+        // registration error made the tool disappear without a trace).
+        console.warn(`[mcp] ${serverName}: tool "${mcpTool.name}" not registered: ${error?.message || error}`);
       }
     }
 

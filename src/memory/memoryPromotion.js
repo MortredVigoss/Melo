@@ -6,7 +6,7 @@ import { currentRequestContext, requestEnvironment, runWithRequestContext } from
 import { getMeloHome } from '../config.js';
 import { reconcileChatFacts } from './factRecords.js';
 import {
-  listMemoryRecords,
+  iterateMemoryRecords,
   getMemoriesByIds,
   getMemoriesWithoutEmbeddings,
   saveMemoryEmbedding,
@@ -34,7 +34,9 @@ export const PROMOTED_KIND = 'session-fact';
 export async function promoteAndPersistFacts(chat, agentId, config) {
   const context={...currentRequestContext(),env:{...requestEnvironment()}};
   return runWithRequestContext(context,async()=>{
-    const before=new Set(listMemoryRecords().map(r=>r.id));
+    // Bug audit M17: count against this chat's own rows (the global list was
+    // capped at 1000, so the "new facts" telemetry drifted on large stores).
+    const before=new Set([...iterateMemoryRecords({chatId:chat.id})].map(r=>r.id));
     const entries=reconcileChatFacts(chat,agentId);
     for (const entry of entries) {
       if (entry.metadata.validTo || entry.metadata.forgotten) continue;

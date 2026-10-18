@@ -7,7 +7,7 @@ import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
-import { renderMemoryFacts } from './memoryFacts.js';
+import { renderMemoryFacts, defaultCategory } from './memoryFacts.js';
 import { renderProjectMemoryBook } from './projectMemoryBook.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
@@ -19,7 +19,7 @@ import { renderImageSettings, renderImageTaskControls, consumeImageTask, restore
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 import { renderAtomicButton } from './atomicButton.js';
-import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor } from './executionPanel.js';
+import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor, cancelLiveScene } from './executionPanel.js';
 import { sceneSteps, renderRunSteps } from './runSteps.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
 import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
@@ -48,7 +48,8 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
-import { renderMessageMemoryRefs } from './messageMemoryRefs.js';
+import { renderMessageMemoryRefs, personalTargetId } from './messageMemoryRefs.js';
+import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
 import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
@@ -88,6 +89,10 @@ settingsFormEditors.install(document);
 document.addEventListener('toggle', event => {
   const key = event.target.dataset?.agentSection;
   if (key) uiState.agentOpenSections[key] = event.target.open;
+  // Bug audit U3: the reply footer «本回答参考的记忆» is rebuilt by every
+  // render; remember which messages the user opened so it does not snap shut.
+  const refsMessageId = event.target.dataset?.messageMemoryRefs;
+  if (refsMessageId) { if (event.target.open) uiState.memoryRefsOpen[refsMessageId] = true; else delete uiState.memoryRefsOpen[refsMessageId]; }
 }, true);
 installUnsavedSettingsGuard(window);
 
@@ -280,6 +285,8 @@ const uiState = {
   // (chatId → extra messages beyond THREAD_RENDER_WINDOW). See threadWindow.js.
   threadWindow: {},
   memoryRefFeedback: null,
+  // Message ids whose «本回答参考的记忆» footer the user opened (bug audit U3).
+  memoryRefsOpen: {},
   shouldFocusSearch: false,
   lastThreadScrollSignature: '',
   lastThreadChatId: null,
@@ -2653,6 +2660,7 @@ async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}
     if (olderBootstrap(incoming, uiState.bootstrap)) return;
     changedSections = changedBootstrapSections(uiState.bootstrap, incoming);
     uiState.bootstrap = incoming;
+    syncProjectDetailView();
     if (firstBootstrap) {
       uiState.neuralOverview = uiState.bootstrap.settings.activeView === 'chat' && !uiState.bootstrap.settings.selectedChatId;
     }
@@ -3555,6 +3563,7 @@ function applyBootstrap(payload) {
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
+  syncProjectDetailView();
   // Drafts belong to each role and scope; only save/cancel may discard them.
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
@@ -3573,6 +3582,7 @@ function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
   if (olderBootstrap(payload, uiState.bootstrap)) return;
   const changedSections = changedBootstrapSections(uiState.bootstrap, payload);
   uiState.bootstrap = payload;
+  syncProjectDetailView();
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
     stopSearchFileStream();
@@ -4083,6 +4093,11 @@ async function handleSendMessage(prepared = null) {
   } catch (error) {
     if (isAbortError(error)) {
       sendWasAborted = true;
+      // Bug audit U4: no more scene events arrive after Stop — finish the
+      // run's scene locally and re-read scenes + chat once the server has
+      // persisted its cancelled scene and the [工具轨迹] message.
+      cancelLiveScene(uiState.activeTurn?.runId || null, { chatId });
+      for (const delay of [800, 2500]) setTimeout(() => { if (!uiState.sending) loadBootstrap(uiState.searchQuery, { quiet: true }).catch(() => {}); }, delay);
       try {
         await loadBootstrap(uiState.searchQuery, { quiet: true });
       } catch {}
@@ -7115,7 +7130,8 @@ function syncVizBlocks() {
 }
 
 function renderMessageActions(message) {
-  if (message.role !== 'assistant') return '';
+  // Bug audit U12: a tool-trace record has nothing to read aloud.
+  if (message.role !== 'assistant' || isToolTraceMessage(message)) return '';
   const isSpeaking = uiState.ttsSpeakingMessageId === message.id;
   const isLoading = !isSpeaking && uiState.ttsSpeakingLoadingId === message.id;
   return ui`
@@ -7178,18 +7194,18 @@ function renderMessageList(chat) {
           message => ui`
             <article class="message ${message.role} ${
               uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
-            }" data-message-id="${escapeHtml(message.id)}">
-              <div class="message-role">
+            } ${isToolTraceMessage(message) ? 'is-tool-trace' : ''}" data-message-id="${escapeHtml(message.id)}">
+              ${isToolTraceMessage(message) ? ui`${renderToolTraceMessage(message, escapeHtml)}${renderSceneReplay(message)}` : ui`<div class="message-role">
                 ${message.role === 'assistant' ? `${renderAgentAvatar((uiState.bootstrap.customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(uiState.bootstrap.profile, escapeHtml, 24)} ${escapeHtml(uiState.bootstrap.profile.name)}`}
               </div>
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
-              ${renderMessageMemoryRefs(message, { feedback: uiState.memoryRefFeedback, busy: uiState.memoryFactBusy })}
+              ${renderMessageMemoryRefs(message, { feedback: uiState.memoryRefFeedback, busy: uiState.memoryFactBusy, open: Boolean(uiState.memoryRefsOpen[message.id]) })}
               ${renderMessageAttachments(message)}
               ${renderModelReceipt(message, escapeHtml)}
               ${renderSceneReplay(message)}
-              ${renderMessageActions(message)}
+              ${renderMessageActions(message)}`}
             </article>
           `,
         )
@@ -8086,7 +8102,7 @@ function renderProjectsDetailView(project) {
 
           <aside class="project-detail-aside">
             ${renderProjectAgentDefaults(project)}
-            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft })}
+            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft?.projectId === project.id ? uiState.projectBookDraft : null })}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
@@ -9116,7 +9132,7 @@ async function handleMemoryRepairAction(action) {
 
 async function handleMemoryFactAction(action, id) {
   if (uiState.memoryFactBusy) return;
-  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat',category:row?.category||'technical_detail',pinned:Boolean(row?.pinned)}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
+  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat',category:defaultCategory(row?.category),pinned:Boolean(row?.pinned)}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
   if (action === 'memory-fact-cancel') { uiState.memoryFactEditing=null; uiState.memoryFactDraft=null; memoryFactEdit.cancel(); bgRender(); return; }
   if (action === 'memory-fact-search') { uiState.memoryFactQuery=document.getElementById('memory-fact-query')?.value || ''; uiState.memoryFactOffset=0; await refreshMemoryStatus(); return; }
   if (action === 'memory-fact-prev' || action === 'memory-fact-next') { uiState.memoryFactOffset=Math.max(0,(uiState.memoryFactOffset || 0)+(action.endsWith('next')?50:-50)); await refreshMemoryStatus(); return; }
@@ -9125,29 +9141,59 @@ async function handleMemoryFactAction(action, id) {
   const resolveConflict=action==='memory-fact-resolve-desktop'?'desktop':action==='memory-fact-resolve-mobile'?'mobile':null;
   const patch=resolveConflict ? {resolveConflict} : action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
   uiState.memoryFactBusy=true; bgRender();
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;await refreshMemoryStatus(); }
+  // Bug audit U10: acting on row B must not discard row A's unsaved editor.
+  const closesEditor=action==='memory-fact-save'||Boolean(id&&id===uiState.memoryFactEditing);
+  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});if(closesEditor)memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};if(closesEditor){uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;}await refreshMemoryStatus(); }
   catch(error) { memoryFactEdit.failed(error); showError(error.message); }
   finally { uiState.memoryFactBusy=false;bgRender(); }
 }
 
 // Project memory book (design 2B): the project page lists the book and lets
 // the user confirm / re-section / stop an auto row or hand-write one.
+// Bug audit U14: render() only reads the cache; loading happens when the
+// project page is entered / refreshed (syncProjectDetailView).
 function projectBookData(projectId) {
   if (!projectId) return null;
+  return uiState.projectBook?.projectId === projectId ? uiState.projectBook.data || null : null;
+}
+const PROJECT_BOOK_FRESH_MS = 30_000, PROJECT_BOOK_RETRY_MS = 5 * 60_000;
+function loadProjectBook(projectId) {
+  if (!projectId) return;
   const cached = uiState.projectBook?.projectId === projectId ? uiState.projectBook : null;
+  if (cached?.loadingId === projectId) return;
   // Auto rows arrive from chats in the background: re-read after 30s, keeping
-  // the stale list on screen meanwhile.
-  const fresh = cached && Date.now() - (cached.loadedAt || 0) < 30_000;
-  if (!fresh && uiState.projectBook?.loadingId !== projectId) {
-    uiState.projectBook = { ...(uiState.projectBook || {}), loadingId: projectId };
-    api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`)
-      .then(data => { uiState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
-      .catch(error => { uiState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: Date.now() }; showError(error.message); bgRender(); });
-  }
-  return cached?.data || null;
+  // the stale list on screen meanwhile. After a failure, keep what we have and
+  // do not retry (or alert again) for 5 minutes.
+  if (cached && Date.now() - (cached.loadedAt || 0) < PROJECT_BOOK_FRESH_MS) return;
+  if (cached?.failedAt && Date.now() - cached.failedAt < PROJECT_BOOK_RETRY_MS) return;
+  uiState.projectBook = { ...(cached || { projectId, data: null }), projectId, loadingId: projectId };
+  api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`)
+    .then(data => { uiState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
+    .catch(error => {
+      uiState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: cached?.loadedAt || 0, failedAt: Date.now() };
+      if (!cached?.failedAt) showError(error.message);
+      bgRender();
+    });
+}
+// Bug audit U8 / U14: called whenever a bootstrap lands. Entering a project's
+// page loads its memory book; leaving it drops the hand-written draft, which
+// belongs to that project only.
+let projectDetailKey = null;
+function syncProjectDetailView(bootstrap = uiState.bootstrap) {
+  const key = bootstrap?.settings?.activeView === 'projects' && bootstrap?.activeProject?.id ? bootstrap.activeProject.id : null;
+  if (key !== projectDetailKey) { projectDetailKey = key; uiState.projectBookDraft = null; }
+  if (key) loadProjectBook(key);
 }
 async function refreshProjectBook(projectId) {
   uiState.projectBook = { projectId, data: await api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`), loadedAt: Date.now() };
+}
+// Bug audit U7 / U8: the hand-written draft is keyed by the project whose
+// form it was typed into; another project's draft never leaks in.
+function noteProjectBookDraft(form, patch) {
+  const projectId = form?.dataset?.projectId || activeProject()?.id;
+  if (!projectId) return;
+  const current = uiState.projectBookDraft?.projectId === projectId ? uiState.projectBookDraft : {};
+  uiState.projectBookDraft = { ...current, ...patch, projectId };
 }
 async function handleProjectBookAction(action, id, { section = null, form = null } = {}) {
   const projectId = activeProject()?.id;
@@ -9173,13 +9219,24 @@ async function handleProjectBookAction(action, id, { section = null, form = null
 
 // Reply-footer memory actions (design audit M5): promote a referenced fact to
 // the project / personal scope, or stop using it, right where it was seen.
-async function handleMemoryRefAction(action, id, scope) {
+let memoryRefFeedbackTimer = null;
+async function handleMemoryRefAction(action, id, scope, { kind = null, messageId = null } = {}) {
   if (!id || uiState.memoryFactBusy) return;
+  // Bug audit U15: 记成个人 on a project-book mirror row promotes the underlying
+  // chat fact and leaves the book row alone (the mirror would otherwise vanish
+  // from the book and never be re-created).
+  const targetId = action === 'memory-ref-scope' && scope === 'personal' ? personalTargetId({ id, kind }) : id;
+  if (!targetId) return;
   const patch = action === 'memory-ref-forget' ? { forgotten: true } : { scope };
   uiState.memoryFactBusy = true; bgRender();
   try {
-    await api('/api/memory/facts/update', { method: 'POST', body: { id, patch } });
-    uiState.memoryRefFeedback = { id, message: action === 'memory-ref-forget' ? t('已停止使用') : scope === 'project' ? t('已记到项目') : t('已记成个人') };
+    await api('/api/memory/facts/update', { method: 'POST', body: { id: targetId, patch } });
+    // Bug audit M14a / U9: the footer feedback is tied to the message it was
+    // clicked in and clears itself after 8 s (it used to persist across chats).
+    uiState.memoryRefFeedback = { id, messageId, message: action === 'memory-ref-forget' ? t('已停止使用') : scope === 'project' ? t('已记到项目') : t('已记成个人') };
+    const shown = uiState.memoryRefFeedback;
+    clearTimeout(memoryRefFeedbackTimer);
+    memoryRefFeedbackTimer = setTimeout(() => { if (uiState.memoryRefFeedback === shown) { uiState.memoryRefFeedback = null; bgRender(); } }, 8000);
     if (uiState.memoryFacts) await refreshMemoryStatus();
   } catch (error) { showError(error.message); }
   finally { uiState.memoryFactBusy = false; bgRender(); }
@@ -11722,7 +11779,7 @@ document.addEventListener('click', async event => {
         break;
       case 'memory-ref-scope':
       case 'memory-ref-forget':
-        await handleMemoryRefAction(action, trigger.dataset.memoryId, trigger.dataset.scope);
+        await handleMemoryRefAction(action, trigger.dataset.memoryId, trigger.dataset.scope, { kind: trigger.dataset.kind || null, messageId: trigger.closest('[data-message-memory-refs]')?.dataset.messageMemoryRefs || null });
         break;
       case 'project-book-confirm':
       case 'project-book-forget':
@@ -12704,6 +12761,8 @@ document.addEventListener('input', event => {
   // mid-keystroke and cause the "cursor jumped to another input" bug.
   lastUserKeystrokeAt = Date.now();
   if (target.dataset.memoryConnection) { uiState.memoryConnection ||= {}; uiState.memoryConnection[target.dataset.memoryConnection] = target.value; return; }
+  // Bug audit U7: capture the memory-book draft on every keystroke, not only on blur.
+  if (target.form?.id === 'project-book-create' && target.name === 'text') { noteProjectBookDraft(target.form, { text: target.value }); return; }
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editExtraFast(target)) return;
@@ -12924,9 +12983,9 @@ document.addEventListener('change', async event => {
   if (target.dataset?.bookSectionSelect) {
     const record = target.closest('[data-book-record]')?.dataset.bookRecord;
     if (record) { await handleProjectBookAction('project-book-section', record, { section: target.value }); return; }
-    uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), section: target.value }; return;
+    noteProjectBookDraft(target.closest('form[data-form="project-book-create"]'), { section: target.value }); return;
   }
-  if (target.closest?.('form[data-form="project-book-create"]') && target.name === 'text') { uiState.projectBookDraft = { ...(uiState.projectBookDraft || {}), text: target.value }; return; }
+  if (target.closest?.('form[data-form="project-book-create"]') && target.name === 'text') { noteProjectBookDraft(target.closest('form'), { text: target.value }); return; }
   if (target.dataset?.projectDefaultAgent) {
     try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
     catch(error) { showError(error.message); }

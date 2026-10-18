@@ -336,3 +336,36 @@ test('a member that keeps repeating the same failing call is stopped locally aft
     unregisterTool?.('flaky_tool');
   }
 });
+
+// ─── Bug audit 2026-10-18 T9 / T17 ───────────────────────────────────────────
+
+test('T9: member tool_calls_start carries redacted args (secret keys and secret values)', async () => {
+  const { tool } = makeRecordingTool('leaky_member');
+  registerTool({ ...tool, parametersSchema: { type: 'object', properties: { token: { type: 'string' }, url: { type: 'string' } } } });
+  const events = [];
+  try {
+    const reply = makeFakeReply();
+    reply.queue.push('<tool_call>{"id":"c1","name":"leaky_member","arguments":{"token":"tok_secret_123","url":"https://u:p@h.test/?token=abc123def"}}</tool_call>');
+    reply.queue.push('done');
+    await runSubAgent({ task: 't', config: validConfig(), allowedToolIds: ['leaky_member'], replyFn: reply, sseEmitter: (type, payload) => events.push({ type, payload }) });
+  } finally { unregisterTool('leaky_member'); }
+  const start = events.find(e => e.type === 'tool_calls_start');
+  assert.ok(start);
+  assert.equal(start.payload.calls[0].arguments.token, '[redacted]');
+  const text = JSON.stringify(start.payload.calls);
+  for (const leak of ['tok_secret_123', 'u:p@', 'token=abc123def']) assert.equal(text.includes(leak), false, `tool_calls_start leaks ${leak}`);
+});
+
+test('T17: a member honours the MELO_FUNCTION_CALLING override from the request environment', async () => {
+  const { runWithRequestContext } = await import('../runtime/requestScope.js');
+  const { createRequestContext } = await import('../runtime/requestContext.js');
+  let seen = null;
+  await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'legacy' } }), () => runSubAgent({
+    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'native' }, replyFn: async options => { seen = options; return 'done'; } }));
+  assert.equal(seen.functionTools, undefined, 'legacy override → XML protocol for the member too');
+  assert.equal(seen.toolProtocol, undefined);
+  seen = null;
+  await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'native' } }), () => runSubAgent({
+    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, replyFn: async options => { seen = options; return 'done'; } }));
+  assert.equal(seen.toolProtocol, 'chat-completions', 'native override → chat-completions protocol');
+});

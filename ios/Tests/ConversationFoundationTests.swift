@@ -188,6 +188,34 @@ import Foundation
     assert(capSaved.agentSettingsSync?.conflicts.count == 1)
     let legacyUpdate=WorkspaceProjection.readAgent("portable",.object(["name":.string("New"),"instructions":.string("new persona")]),previous:capSaved.agents[0])
     assert(legacyUpdate.capabilities == capSaved.agents[0].capabilities)
+    // Audit I6: a desktop memory row with project-book fields (section/bookStatus, validTo null, no
+    // mergedInto) survives apply → refreshed byte-for-byte, so the phone clock is not bumped and the
+    // row cannot ping-pong between devices. A real edit still bumps it.
+    let memoryID = "promoted:book-1", memoryChat = Conversation(id: "chat-m", messages: [ChatMessage(id: "q", role: "user", content: "目标是上线")])
+    let desktopRow: SyncValue = .object(["id": .string(MobileMemoryFact.identifier(memoryID)), "memoryID": .string(memoryID), "text": .string("目标：本月上线"), "originalFact": .string("目标：本月上线"), "scope": .string("project"), "status": .string("active"),
+        "chatId": .string("chat-m"), "messageId": .string("q"), "projectId": .string("proj"), "agentId": .string("main"), "sourceText": .string("目标是上线"), "category": .string("project_context"),
+        "updatedAt": .string("2026-10-18T00:00:00.000Z"), "userEdited": .bool(false), "validTo": .null, "section": .string("goal"), "bookStatus": .string("confirmed")])
+    let desktopWire = SyncWorkspace(records: [.init(kind: "memory", id: MobileMemoryFact.identifier(memoryID), versions: [.init(clock: ["desktop": 4], value: desktopRow)])])
+    var memoryPreferences = MobilePreferences(); var memoryRecords: [ExecutionRecord] = []
+    try WorkspaceProjection.apply(desktopWire, preferences: &memoryPreferences, records: &memoryRecords, connections: [])
+    assert(memoryPreferences.memoryFacts?.first?.section == "goal" && memoryPreferences.memoryFacts?.first?.bookStatus == "confirmed")
+    let echoedWire = try WorkspaceProjection.refreshed(memoryPreferences, chats: [memoryChat], records: [], connections: [], device: "phone")
+    let echoedRow = echoedWire.records.first { $0.kind == "memory" }!
+    assert(echoedRow.versions.count == 1 && echoedRow.versions[0].clock == ["desktop": 4], "unchanged memory must not bump the phone clock: \(echoedRow.versions[0].clock)")
+    assert(echoedRow.versions[0].value["section"].string == "goal" && echoedRow.versions[0].value["bookStatus"].string == "confirmed" && echoedRow.versions[0].value.object["mergedInto"] == nil)
+    var withoutNull = desktopRow.object; withoutNull.removeValue(forKey: "validTo")
+    let omittedWire = SyncWorkspace(records: [.init(kind: "memory", id: MobileMemoryFact.identifier(memoryID), versions: [.init(clock: ["desktop": 5], value: .object(withoutNull))])])
+    memoryPreferences = MobilePreferences(); try WorkspaceProjection.apply(omittedWire, preferences: &memoryPreferences, records: &memoryRecords, connections: [])
+    let omittedEcho = try WorkspaceProjection.refreshed(memoryPreferences, chats: [memoryChat], records: [], connections: [], device: "phone").records.first { $0.kind == "memory" }!
+    assert(omittedEcho.versions[0].clock == ["desktop": 5], "absent vs null validTo is not a change")
+    memoryPreferences.memoryFacts?[0].text = "目标：下月上线"
+    let editedEcho = try WorkspaceProjection.refreshed(memoryPreferences, chats: [memoryChat], records: [], connections: [], device: "phone").records.first { $0.kind == "memory" }!
+    assert(editedEcho.versions[0].clock == ["desktop": 5, "phone": 1] && editedEcho.versions[0].value["text"].string == "目标：下月上线")
+    var badSection = memoryPreferences.memoryFacts![0]; badSection.section = "chapter"
+    do { _ = try badSection.validated(); fatalError("invalid section accepted") } catch {}
+    // Audit I22: compact `at` is compared as an instant, not as a string.
+    assert(WorkspaceProjection.isLater("2026-10-18T09:00:00.000+08:00", than: "2026-10-18T00:30:00.000Z") && !WorkspaceProjection.isLater("2026-10-18T09:00:00.000+08:00", than: "2026-10-18T02:00:00.000Z"), "string order would say 09:00 > 02:00")
+    assert(WorkspaceProjection.isLater("2026-10-18T00:00:01Z", than: "2026-10-18T00:00:00.500Z") && WorkspaceProjection.isLater("b", than: "a") && !WorkspaceProjection.isLater("", than: ""))
     print("Conversation foundations passed: legacy preferences, avatar/selection persistence, role/project/reference prompts, history attribution and readable tables/code")
  }
 }

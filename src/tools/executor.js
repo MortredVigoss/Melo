@@ -201,10 +201,17 @@ async function runObservedTool(tool, args, options = {}) {
   const timeout = Math.max(1, Math.min(tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS, remainingMs(budget)));
   let timeoutId;
 
-  timeoutId = setTimeout(() => cancel(Object.assign(
-    new Error(`Tool "${tool.id}" timed out after ${timeout / 1000}s.`),
-    { code: 'TOOL_TIMEOUT' },
-  )), timeout);
+  timeoutId = setTimeout(() => {
+    // Bug audit T7: a cut caused by the run deadline is reported as
+    // BUDGET_EXHAUSTED, so the model stops instead of retrying "the tool".
+    const byBudget = budget && remainingMs(budget) <= 0;
+    cancel(Object.assign(
+      new Error(byBudget
+        ? `Run budget (deadline) ran out while tool "${tool.id}" was running (${timeout / 1000}s in); the run budget, not the tool's own time limit, was exhausted.`
+        : `Tool "${tool.id}" timed out after ${timeout / 1000}s.`),
+      { code: byBudget ? 'BUDGET_EXHAUSTED' : 'TOOL_TIMEOUT' },
+    ));
+  }, timeout);
 
   try {
     const rawResult = await Promise.race([
@@ -235,6 +242,12 @@ async function runObservedTool(tool, args, options = {}) {
         error: rawResult.error,
         meta: rawResult.meta ?? {},
       };
+      // Bug audit T1 (2026-10-18): the B1 envelope fields a tool sets itself
+      // (`status:'empty'`, `code:'NO_RESULTS'`) must survive normalisation,
+      // otherwise finalizeToolResult sees a plain `ok:true` and the model
+      // never gets the NO_RESULTS hint for grep/glob/search_history/read_history.
+      if (typeof rawResult.status === 'string') result.status = rawResult.status;
+      if (typeof rawResult.code === 'string') result.code = rawResult.code;
       // Only attach evidenceTrail when the tool actually produced one;
       // avoids polluting all other tools' results with `evidenceTrail: undefined`.
       if (Array.isArray(rawResult.evidenceTrail) && rawResult.evidenceTrail.length > 0) {
@@ -248,11 +261,16 @@ async function runObservedTool(tool, args, options = {}) {
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
+    const byBudget = cancelError?.code === 'BUDGET_EXHAUSTED';
     const result = finalizeToolResult({
       ok: false,
       output: `Tool error: ${err.message}`,
       error: err.code && /^[A-Z][A-Z0-9_]{1,63}$/.test(String(err.code)) ? err.code : err.message,
-      meta: cancelError ? { aborted: true, timedOut: cancelError.code === 'TOOL_TIMEOUT' } : {},
+      ...(byBudget ? { code: 'BUDGET_EXHAUSTED' } : {}),
+      meta: cancelError
+        ? { aborted: true, timedOut: cancelError.code === 'TOOL_TIMEOUT' || byBudget,
+          ...(byBudget ? { budget: { reason: 'deadline', limit: budget.deadlineAt - budget.startedAt, used: (typeof budget.now === 'function' ? budget.now() : Date.now()) - budget.startedAt } } : {}) }
+        : {},
     });
     if (!cancelError) await emitHook('tool:after', { toolId: tool.id, args, result }, { signal });
     return result;

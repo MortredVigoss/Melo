@@ -23,11 +23,13 @@ export function sceneSteps(scene, limit = 6) {
   const steps = [];
   for (const stage of scene.pipeline || []) {
     const detail = stage.channel === 'reasoning-summary' ? oneLine(String(stage.output || '').split('\n').filter(Boolean).at(-1)) : oneLine(stage.output || stage.input);
-    steps.push({ id: `stage:${stage.id}`, title: stage.name || stage.id, detail, state: stepState(stage.status), at: stage.startedAt || '' });
+    // Bug audit U5: a stage that only ever reported `completed` has no
+    // startedAt; fall back to its finish time so the list keeps its order.
+    steps.push({ id: `stage:${stage.id}`, title: stage.name || stage.id, detail, state: stepState(stage.status), at: stage.startedAt || stage.finishedAt || stage.at || '' });
   }
   for (const op of scene.operations || []) {
     const detail = oneLine(op.change?.path || op.command || op.query || op.input || op.resultSummary);
-    steps.push({ id: `op:${op.id}`, title: TOOL_NAMES[op.name] || op.name || '工具', detail, state: stepState(op.status), at: op.startedAt || '' });
+    steps.push({ id: `op:${op.id}`, title: TOOL_NAMES[op.name] || op.name || '工具', detail, state: stepState(op.status), at: op.startedAt || op.finishedAt || op.at || '' });
   }
   const ordered = steps.every(step => step.at) ? [...steps].sort((a, b) => a.at.localeCompare(b.at)) : steps;
   if (ordered.length <= limit) return ordered;

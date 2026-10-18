@@ -67,3 +67,19 @@ test('the search_history tool derives scope from the execution context, not from
     assert.deepEqual(desktop.meta.results.map(r => r.chatId), ['desk']);
   });
 });
+
+// ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
+
+test('L19: a message whose text changed after indexing (mid-turn supplement) is re-indexed by id, unchanged ones are not duplicated', async () => {
+  await withHome(({ indexMessage, searchHistory }) => {
+    indexMessage('c1', 'Chat', message('q1', 'write a poem about autumn'), { audience: 'desktop', projectId: '' });
+    indexMessage('c1', 'Chat', message('q1', 'write a poem about autumn'), { audience: 'desktop', projectId: '' });
+    assert.equal(searchHistory('autumn', { audience: 'desktop' }).length, 1, 'same text indexes once');
+    assert.equal(searchHistory('pentameter', { audience: 'desktop' }).length, 0);
+    indexMessage('c1', 'Chat', message('q1', 'write a poem about autumn\n\n补充：use iambic pentameter'), { audience: 'desktop', projectId: '' });
+    const hits = searchHistory('pentameter', { audience: 'desktop' });
+    assert.equal(hits.length, 1, 'the amended text is searchable');
+    assert.equal(hits[0].messageId || hits[0].id, 'q1');
+    assert.equal(searchHistory('autumn', { audience: 'desktop' }).length, 1, 'still one row for the message');
+  });
+});

@@ -149,6 +149,30 @@ export function narrowBudget(parent, child = {}) {
   };
 }
 
+/**
+ * Let a root budget grow to accommodate an explicit plan (bug audit T8): a
+ * team plan's `maxMinutes` / `maxTokens` used to be silently capped by the
+ * 20 min / 400k turn defaults, so members hit BUDGET_EXHAUSTED although the
+ * user had configured a longer run. Only a top-level budget (no parent) can
+ * be extended — a member/skill pool never widens beyond its parent. Each
+ * limit becomes max(current remaining, requested); nothing ever shrinks.
+ *
+ * @returns {{ extended: boolean, deadline: boolean, inputTokens: boolean }}
+ */
+export function extendBudget(budget, { deadlineMs, maxInputTokens, maxToolCalls } = {}, now) {
+  const result = { extended: false, deadline: false, inputTokens: false, toolCalls: false };
+  if (!budget || budget.parent) return result;
+  const time = currentTime(budget, now);
+  const wantDeadline = positiveInt(deadlineMs);
+  if (wantDeadline && time + wantDeadline > budget.deadlineAt) { budget.deadlineAt = time + wantDeadline; result.deadline = true; }
+  const wantTokens = positiveInt(maxInputTokens);
+  if (wantTokens && budget.used.inputTokens + wantTokens > budget.maxInputTokens) { budget.maxInputTokens = budget.used.inputTokens + wantTokens; result.inputTokens = true; }
+  const wantCalls = positiveInt(maxToolCalls);
+  if (wantCalls && budget.used.toolCalls + wantCalls > budget.maxToolCalls) { budget.maxToolCalls = budget.used.toolCalls + wantCalls; result.toolCalls = true; }
+  result.extended = result.deadline || result.inputTokens || result.toolCalls;
+  return result;
+}
+
 /** Human-readable reason, e.g. "运行时间 20 分钟" / "输入 token 400000" / "工具调用次数 120 次". */
 export function describeBudgetReason(exhausted) {
   if (!exhausted) return '';
