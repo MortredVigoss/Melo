@@ -38,11 +38,13 @@ python3 android/scripts/verify-apk.py android/app/build/outputs/apk/debug/app-de
 2. 创建对话，可绑定角色、项目和该对话使用的连接。支持多轮 Streaming、取消、失败重试、图片输入、系统语音输入、系统 TTS 和回复分享。
 3. 「资料」保存项目指令、文字资料和显式记忆；「任务空间」查看真实请求状态与共享 execution scene。桌面任务可以创建接力请求，同步成功也不会被显示成“已执行”。
 
-## Chat Search / Phone Use（0.7.0）
+## Chat Search / Phone Use（0.7.1）
 
 普通 Chat 的公开查询（例如“Surry Hills 现在营业的餐厅”）先由本机 Shared JS Core 选择已验证的 Hosted Search 或已配置 HTTP Search Backend，不自动占用屏幕。明确说“去小红书搜索这家店”或“用 Google Maps 搜索”才 invoke phone_use，再回当前 Chat。每 Chat 的「对话设置 → 允许调用手机」仍可关闭能力。
 
-0.7.0：`推荐 brunch 并导航 → Search → 按需读取来源 → Phone Use`；只有本轮实际返回来源后才能继续导航。关于上次执行的提问读取已存记录，不重新触发手机操作。缺少 Search Backend 时明确说明；真实检索仍需在「系统 → Web Search」配置或验证能力。
+0.7.1：显式“再试一次 / 继续”会继承最近具体用户任务，重新检查本轮配置与权限；后续“不联网 / 不操作手机”等限制保留，换题或取消不恢复旧任务。
+
+`推荐 brunch 并导航 → Search → 按需读取来源 → Phone Use`；只有本轮实际返回来源后才能继续导航。关于上次执行的提问读取已存记录，不重新触发手机操作。缺少 Search Backend 时明确说明；真实检索仍需在「系统 → Web Search」配置或验证能力。
 
 Chat 答案前默认折叠执行卡，展开显示实际 Tool、来源、耗时和停止原因；来源摘要与网页读取分别记录，重启后保留。公开 Reasoning Summary 仅在服务真实返回时显示。旧记录没有明细就标明未知。回复支持标题、列表、粗体、代码、安全链接和可横向滚动表格，共用仓库 Markdown 解析。
 
@@ -74,7 +76,7 @@ Chat 答案前默认折叠执行卡，展开显示实际 Tool、来源、耗时�
 
 ## Search 配置与当前边界
 
-「系统 → Web Search」可配置 Brave Search API 或兼容 HTTP Backend。Provider 默认值、Tool Schema、Router、来源 / freshness 和 Loop Guard 来自 `shared/agent`；手机不依赖桌面在线。兼容接口使用 POST `{query,maxResults}`，返回 `{results:[{title,url,snippet}]}`；Brave 的 GET / header 编码也由同一 Core 生成。
+「系统 → Web Search」选择 Brave Search API 或兼容 HTTP Backend，**打开「启用 HTTP Search」开关**，填写对应 Search Key 后点击「保存 Search 设置」。只选择 Provider 或填写地址/Key 不会自动启用。Provider 默认值、Tool Schema、Router、来源 / freshness 和 Loop Guard 来自 `shared/agent`；手机不依赖桌面在线。兼容接口使用 POST `{query,maxResults}`，返回 `{results:[{title,url,snippet}]}`；Brave 的 GET / header 编码也由同一 Core 生成。
 
 Responses 连接可点击「验证 Hosted Search」，此操作会发起一次真实模型搜索并计入服务用量；开发验收仅用本地 Fixture。仅选择 Responses / 模型名不代表服务支持 Search，必须观察到结构化 completed 回执；验证绑定 endpoint / model / Key，24 小时后重新验证。没有 Backend 时如实提示不可用。
 
@@ -82,7 +84,7 @@ Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key�
 
 0.6.0 (14) 已完成 Emulator 的 Cover / 展开尺寸检查，并同签名覆盖安装 Fold6 / One UI 8.5；展开模式启动及原 11 Chat / 1 角色、Accessibility 设置保留核对通过。本次仅安装与启动，未发真实模型 / Search 请求，实机 Core 执行、两种姿态功能与切换仍需验证。iOS 同源 bundle 与 Adapter 源码已有，生产 Loop 未切换；Skill 调度 / Context / Memory / Tool history / Task Cache 继续分模块迁移。详见 [开发证据](../docs/shared-agent-search-20261018.md) / [装机证据](../docs/evidence/shared-agent-fold6-install-060-20261018.json)。
 
-0.7.0 (15) 已完成 147 Node / 117 JVM、Lint / Debug / R8、Cover 48 + 展开 10 次 Emulator 测试执行和最终签名 Release UI Smoke；签名及四 ABI 16 KiB alignment 通过。原生导航链路使用 Fixture，没有发送真实模型/Search 请求。Fold6 / One UI 8.5 已同签名覆盖本版，原 13 Chat / 1 角色、UID / 安装历史及两项 Accessibility 设置保留，展开启动通过；没有真实 Search / Maps 任务或姿态切换复测，[装机证据](../docs/evidence/research-fold6-install-070-20261018.json)；[完整边界与交付](../docs/research-execution-markdown-20261018.md)。
+0.7.1 (16) 已通过 153 Node / 117 JVM、Lint / Debug / R8、49 Fixtures 与外屏 18 + 展开 10 次 Emulator 执行，并同签名覆盖 Fold6；原 16 Chat / 1 角色及两项 Accessibility 设置保留。原 Chat 的真实受限重试已触发 Brave Search、返回 5 个来源并读取 1 页，没有导航或操作其他 App。[原因、修复和准确边界](../docs/brave-search-retry-fix-20261019.md)。
 
 ## 数据与跨端同步
 

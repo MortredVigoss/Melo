@@ -1,5 +1,13 @@
 # Android verification — 2026-10-18
 
+## 2026-10-19 — 0.7.1 (16) Brave 与重试续接
+
+153 Node / 117 JVM、Lint 零 Error、Debug / R8 / test APK、49 同源 Fixtures、Emulator 外屏 18 + 展开 10 次最终执行通过。13 项续接回归覆盖当前配置生效、连续重试、限制保持、换题/取消、此前 App 上下文及缺权限/Backend；三协议真实 Android Host + HTTP Fixture 验证重试确实发出 Brave GET 和认证 Header。首轮测试类名错误和此前断言失败保留，未放宽行为。
+
+同签名覆盖 Fold6 / Android 16 / One UI 8.5，实际包与最终 APK hash 一致，原 16 Chat / 1 角色、UID / 首次安装历史及两项 Accessibility 设置保留。原 Chat 受限 live retry completed：1 次 Search（Tool 1317ms）、1 次网页读取（204ms）、5 个来源 / 已读 1 页、3 次模型请求、0 次 phone_use，未新增 QA Chat / 读取 Key / 卸载清数据。此次仅复用 Windows ADB 5037，无重启；自有 Emulator / 5048 已清理。
+
+APK SHA-256 `95439d3f60e8a06e50f3625548220fa0633a5e966c4c036e544b0a72291298b3`，签名 / 四 ABI 16 KiB alignment 通过。真实导航、推荐评分准确性、折叠/姿态切换、iOS 原生和全仓 gate 未验。[专项与分层边界](../docs/brave-search-retry-fix-20261019.md) / [机器回执](../docs/evidence/brave-search-config-20261019.json)。
+
 ## 2026-10-18 — Fold6 覆盖安装 0.7.0 (15)
 
 用户连接解锁并授权后，同证书覆盖实际 Fold6 / Android 16 / One UI property 80500。0.6.0 → 0.7.0 (15) 安装返回 Success，实际 APK hash 与最终 R8 Preview 一致；原 13 Chat / 1 角色、UID / 首次安装时间及两项 Accessibility 设置保留。展开 1856×2160 MainActivity 启动、前台与稳定 PID 核对正常，当前进程 Crash buffer 无 Fatal。未卸载/清数据、未读取私聊正文/配置值/Keystore，未新增 QA Chat 或发真实请求。
