@@ -35,6 +35,8 @@
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
+2026-10-18 Fold6 0.6.0 最新用户记录只读诊断：brunch 推荐 + 导航被 Core 判为 `none / tools=[]`，追问“为什么没打开 Google Map”反被判 `phone / [phone_use]`，得到 `MISSING_TOOL_EVIDENCE`。对话 Phone Use 已开启；本地同源 Router 重放复现，当前未修。另有 Guard 停止仍记 `completed`、执行场景未持久化的记录缺口。详见 [Search 实机诊断](docs/shared-agent-search-20261018.md)。本回合未发模型请求或保存设置。
+
 详细手机证据：[`docs/mobile-image-edit-20261014.md`](docs/mobile-image-edit-20261014.md)。
 
 ## 3. 整体架构与代码地图

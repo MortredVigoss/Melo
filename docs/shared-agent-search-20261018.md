@@ -47,6 +47,14 @@ Desktop 与 Android 有显式保存的 Search 设置和 Hosted Search 测试入�
 - 上游新增 Tool envelope / records、预算、Skill 调度、Context / Memory、摘要 Sync 与 Task Cache 的后续模块迁移。当前仍有平台路径，见 [实施计划](shared-agent-implementation-20261017.md)。
 - Android 直接网页读取仅文本 / 静态 HTML，不跟随 Redirect，不承诺动态页面。HTTP / Hosted 来源不独立证明当前营业状态。需要澄清但未调用工具的任务目前可能统一返回“未验证”；显式 needs_user 终态与更自然的澄清需继续随统一 Loop 处理。
 
+## 后续实机只读诊断：用户 brunch / 导航记录
+
+安装后用户自行请求推荐 brunch 并导航，随后追问使用了哪些工具、为何没有打开 Google Map。2026-10-18 的最新两条原生执行列表时间分别为 `06:06:21Z` 与 `06:07:36Z`，均标 `completed`；Chat 中分别为餐厅推荐 / Maps 路线链接，以及 `MISSING_TOOL_EVIDENCE`。Phone Use 已开启，Fold6 外屏 968×2376、无运行中任务。本回合只读这些 UI 记录与源码，并在本机重放 Router；没有重发提问、实际搜索、操作 Maps 或保存设置，最后返回原 Chat。私人截图 / 对话摘录仅在本会话忽略的 work 目录，不入 Git。
+
+同源 `planRequest` 对原请求给出 `route=none, tools=[]`：当前 lookup 关键词未覆盖 brunch，devicePattern 未覆盖导航。Android `SharedChatAgent` 在空工具列表时直接调用普通 `client.reply`，因此此请求没有 Search / Phone Use。对追问重放则为 `route=phone, tools=[phone_use]`，因“打开”被当成本轮操作指令，缺少对已发生行为的询问识别；模型未调用工具时 Guard 覆盖其解释，返回上述证据错误。此为已复现的 Routing 缺陷，未修复，不能归因于用户关闭 Phone Use 或 Samsung 拦截。
+
+记录另有边界：`ChatEngine` 把正常返回的 ModelReply 统一记为 completed，未区分 Guard 停止与任务达成；`SharedChatAgent` 未保存 Tool trace / plan 到 `RunRecord.sharedScene`。本次任务空间虽显示两次请求，却提示未保存执行场景，因此该图的“0 调用”不能独立证明实际调用次数。本轮工具判断来自真实 Chat 文本、同源路由重放与入口源码，未取得供应商原始 wire log。需要一并修正复合任务规划、解释类追问、终态语义及执行记录，再用这两种真实措辞回归。
+
 ## 接口依据
 
 - [OpenAI Web Search](https://developers.openai.com/api/docs/guides/tools-web-search)：真实 `web_search_call` 与来源 / annotations；不证明任何自定义 Proxy 已支持。
