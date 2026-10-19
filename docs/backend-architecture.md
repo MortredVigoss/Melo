@@ -1,6 +1,6 @@
 # Melo 后端架构约定
 
-更新：2026-10-15。范围：业务、存储、执行与 HTTP/SSE；UI 由独立任务维护。现状入口见 [Melo 总览](../MELO_OVERVIEW.md)，2026-10-13 性能/增量索引演进见 [架构验收](architecture-performance-2026-10-13.md)。本文早期夹具数字保留其原验证口径。
+更新：2026-10-19。范围：业务、存储、执行与 HTTP/SSE；UI 由独立任务维护。现状入口见 [Melo 总览](../MELO_OVERVIEW.md)，2026-10-13 性能/增量索引演进见 [架构验收](architecture-performance-2026-10-13.md)。本文早期夹具数字保留其原验证口径。
 
 ## 设计决定
 
@@ -54,6 +54,23 @@ SSE 保留 `started`、`delta`、`reasoning`、`done`、`error`、`aborted` 等�
 工具审批事件的 `requestId` 继续表示审批 ID；聊天提交 ID 使用 `turnRequestId`，避免破坏现有 UI 的审批回复。流传输不保证断线续传 token；完成后重试返回整条已存回复。
 
 请求账本与助手消息在同一事务完成。它防止已完成请求因响应丢失而再次执行；不宣称外部系统的严格 exactly-once。进程在外部副作用后崩溃时，保留中断记录并拒绝自动重放。
+
+## 业务操作回执与页面查询（2026-10-19，架构方案 P1）
+
+项目命令（`createProject`、`updateProject`）和 Agent 命令（`createCustomAgent`、`updateAgentProfile`，含清除项目覆盖；`testAgentChannelConnection` 透传其结果）返回提交回执，不再构建桌面 bootstrap。字段全部取自 `updateStateAtomically` 返回的已提交状态：
+
+| 字段 | 含义 |
+| --- | --- |
+| `project` / `agent` | 提交后的记录；Agent 为该作用域的全局资料或项目覆盖，覆盖被清除时为 `null`，并带 `agentId`、`scope`、`projectId` |
+| `revision` | 清单 `_revision`：每次真实提交加一，无变化事务保持原值；不新增持久化字段 |
+| `changedIds` / `removedIds` | 与事务开始时相比实际改变或新增、被删除的记录 ID（按规范化 JSON 比较） |
+| `agentExportWarning` | 仅在提交后 Markdown 导出失败时出现 |
+
+旧 URL、请求体和成功响应不变：`src/http/bootstrapAfterCommit.js` 在提交后调用 `getDesktopBootstrap()`，必要时并入 `agentExportWarning`。兼容期内这些请求仍有整页组装开销。
+
+提交后构建页面数据失败时，响应仍为 HTTP 200：`{ ok: true, receipt, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message } }`。不用 5xx，避免客户端把已保存当成失败并重试（重试创建会产生重复项目或 Agent）；客户端应重新读取 `GET /api/bootstrap`。`receipt` 只含 ID、修订号与警告，不含记录正文（Agent 记录含频道凭据）。命令自身的校验或提交错误照旧报错。当前桌面 UI 尚未识别 `bootstrapError`，由页面拆分阶段处理。
+
+`scripts/check-dependencies.js` 禁止已迁移模块直接或经任何链路（含 `desktopStore.js`）到达 `services/desktop/bootstrap.js`，失败信息列出导入链。仍直接导入它的业务模块列在例外清单中，只能减少：新增直接导入或清单中已不再导入的条目都会使检查失败。
 
 ## 存储提交与迁移
 

@@ -10,6 +10,9 @@ import { pingTelegramChannel } from '../remote/telegramApi.js';
 import { pingDiscordChannel } from '../remote/discordApi.js';
 import { updateAgentProfile } from './agentMutations.js';
 
+// Saves the probe result through updateAgentProfile and returns its commit
+// receipt (architecture plan P1); the HTTP route rebuilds the legacy bootstrap.
+/** @returns {Promise<import('./agentMutations.js').AgentCommitReceipt>} */
 export async function testAgentChannelConnection(agentId, channelId, patch = {}, options = {}) {
   assertAgentChannelAvailable(channelId);
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => testAgentChannelConnection(...arguments));

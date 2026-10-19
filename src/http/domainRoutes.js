@@ -16,6 +16,7 @@ import { startOpenRouterOAuth, openRouterOAuthStatus } from '../providers/openRo
 import { prepareTaskExecution } from '../services/task/prepareTaskExecution.js';
 import { applyArtifactToWorkspaceFile, createCustomAgent, createArtifact, updateArtifact, deleteArtifact, restoreArtifact, createApproval, createExternalConnector, createProject, createTask, executeApproval, invokeExternalConnectorTool, pingExternalConnector, previewExternalConnectorPrompt, readExternalConnectorResource, rejectApproval, removeExternalConnector, runTask, runTaskLane, runLocalCommand, saveWorkspaceFile, selectWorkspaceFile, readWorkspaceFilePreview, createCustomSkill, updateCustomSkill, removeCustomSkill, exportSkillAsMarkdown, importSkillFromMarkdown, promoteSkillToDisk, reloadDiskSkills, scanRecentChatsForSkillProposals, applySkillProposal, draftSkillFromChat, toggleConnector, toggleSkill, testAgentChannelConnection, updateAgentProfile, updateTask, updateDesktopSettings, updateExternalConnector, updateModelConfig, updateProject, refreshModelCatalog } from '../desktopStore.js';
 import { sendJson, readJsonBody } from './transport.js';
+import { sendBootstrapAfterCommit } from './bootstrapAfterCommit.js';
 import { startCodexOAuthLogin } from '../codexAuth.js';
 import { defaultSkillProposalStore } from '../agents/skillProposals.js';
 import { getSkillRunStats } from '../agents/skillRuns.js';
@@ -80,13 +81,13 @@ const router = createRouteRegistry([
 
     { method: 'POST', paths: ["/api/projects"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await createProject(body));
+      await sendBootstrapAfterCommit(response, await createProject(body));
       return;
     } },
 
     { method: 'POST', paths: ["/api/projects/update"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await updateProject(body.projectId, body.patch || {}));
+      await sendBootstrapAfterCommit(response, await updateProject(body.projectId, body.patch || {}));
       return;
     } },
 
@@ -548,9 +549,8 @@ const router = createRouteRegistry([
 
     { method: 'POST', paths: ["/api/agents/update"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const body = await readJsonBody(request);
-      sendJson(
+      await sendBootstrapAfterCommit(
         response,
-        200,
         await updateAgentProfile(body.agentId, body.patch || {}, {
           scope: body.scope,
           projectId: body.projectId,
@@ -562,15 +562,14 @@ const router = createRouteRegistry([
     } },
 
     { method: 'POST', paths: ["/api/agents/create-custom"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      sendJson(response, 200, await createCustomAgent());
+      await sendBootstrapAfterCommit(response, await createCustomAgent());
       return;
     } },
 
     { method: 'POST', paths: ["/api/agents/channel/test"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const body = await readJsonBody(request);
-      sendJson(
+      await sendBootstrapAfterCommit(
         response,
-        200,
         await testAgentChannelConnection(
           body.agentId,
           body.channelId,

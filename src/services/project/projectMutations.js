@@ -8,7 +8,7 @@ import { mkdir } from 'node:fs/promises';
 import { nowIso } from '../../shared/helpers.js';
 import { updateStateAtomically } from '../../state/stateStore.js';
 import { findProjectById } from '../../state/stateLookups.js';
-import { getDesktopBootstrap } from '../desktop/bootstrap.js';
+import { committedRevision, diffRecords, recordSnapshot } from '../../state/commitReceipt.js';
 import { validateConversationSelection } from '../chat/conversationSelection.js';
 // `normalizeProject` here is the 1-arg wrapper from stateHydration.js
 // (which binds sanitizeWorkspacePath / fallbackWorkspaceRoot /
@@ -18,12 +18,34 @@ import { normalizeProject } from '../../state/stateHydration.js';
 import { validateTeamPlan } from '../../agents/team.js';
 import { allAgentIdsFromProfiles } from '../../domain/agent/agentLibrary.js';
 
+// Architecture plan P1 (2026-10-19): project commands return a commit receipt
+// instead of the desktop bootstrap. Legacy HTTP responses are rebuilt by
+// src/http/bootstrapAfterCommit.js; this module must not reach
+// services/desktop/bootstrap.js (enforced by scripts/check-dependencies.js).
+/**
+ * @typedef {object} ProjectCommitReceipt
+ * @property {object|null} project  The project record as committed.
+ * @property {number} revision      Manifest `_revision` after the transaction.
+ * @property {string[]} changedIds  Project ids whose committed record changed or was added.
+ * @property {string[]} removedIds  Project ids removed by the transaction.
+ */
+function projectReceipt(committed, projectId, before) {
+  return {
+    project: findProjectById(committed, projectId) || null,
+    revision: committedRevision(committed),
+    ...diffRecords(before, committed.projects),
+  };
+}
+
+/** @returns {Promise<ProjectCommitReceipt>} */
 export async function createProject({ name, summary, instructions, tag, workspacePath }) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createProject(...arguments));
   const id = randomUUID();
   const projectPath = workspacePath?.trim() || join(currentRequestContext().home, 'workspaces', id);
   if (!workspacePath?.trim()) await mkdir(projectPath, { recursive:true, mode:0o700 });
-  await updateStateAtomically(state => {
+  let before;
+  const committed = await updateStateAtomically(state => {
+    before = recordSnapshot(state.projects);
     const timestamp = nowIso();
     const project = normalizeProject({
       id,
@@ -44,12 +66,15 @@ export async function createProject({ name, summary, instructions, tag, workspac
     state.settings.selectedFilePath = null;
     return state;
   });
-  return getDesktopBootstrap();
+  return projectReceipt(committed, id, before);
 }
 
+/** @returns {Promise<ProjectCommitReceipt>} */
 export async function updateProject(projectId, patch) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => updateProject(...arguments));
-  await updateStateAtomically(async state => {
+  let before;
+  const committed = await updateStateAtomically(async state => {
+    before = recordSnapshot(state.projects);
     const project = findProjectById(state, projectId);
     if (!project) {
       throw new Error('Project not found.');
@@ -84,5 +109,5 @@ export async function updateProject(projectId, patch) {
 
     return state;
   });
-  return getDesktopBootstrap();
+  return projectReceipt(committed, projectId, before);
 }

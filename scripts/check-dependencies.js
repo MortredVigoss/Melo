@@ -44,6 +44,7 @@ export async function checkDependencies(root=resolve('src')) {
   const graph=await sourceGraph(root), cycles=findCycles(graph);
   if(cycles.length)throw new Error('Static import cycles:\n'+cycles.map(group=>group.map(p=>relative(root,p)).join(' -> ')).join('\n'));
   checkLayerDirections(graph, root);
+  checkBootstrapBoundary(graph, root);
   // Configuration must stay independent of provider clients and execution.
   const seen=new Set();
   function dependencies(file){if(seen.has(file))return;seen.add(file);for(const next of graph.get(file)||[])dependencies(next);}
@@ -93,6 +94,66 @@ export function checkTransitiveLayers(graph, root) {
     if (!LOWER_LAYERS.test(source)) continue;
     const chain = reach(file);
     if (chain) throw Error(`Lower layer reaches an upper layer transitively: ${chain.map(p => relative(root, p)).join(' -> ')}`);
+  }
+}
+
+// 2026-10-19 architecture plan P1: business operations return commit receipts;
+// the whole-page desktop query (bootstrap) is assembled by transport
+// (src/http/bootstrapAfterCommit.js) for legacy responses.
+export const BOOTSTRAP_MODULE = 'services/desktop/bootstrap.js';
+// Migrated modules must not reach the bootstrap directly or through any import
+// chain, including the desktopStore.js compatibility facade.
+export const BOOTSTRAP_FREE_MODULES = Object.freeze([
+  'services/project/projectMutations.js',
+  'services/agent/agentMutations.js',
+  'services/agent/channelConnection.js', // returns updateAgentProfile's receipt
+  'state/commitReceipt.js',
+]);
+// Composition roots and transport may build the page query.
+const BOOTSTRAP_COMPOSERS = /^(?:http\/|services\/desktop\/|desktopStore\.js$|server\.js$|index\.js$)/;
+// Legacy exception list: business modules that still import the bootstrap
+// directly and still return it from their commands. It may only shrink: a new
+// direct importer fails the check, and an entry that stops importing the
+// bootstrap must be deleted here (scripts/check-dependencies.test.js pins the
+// maximum length).
+export const BOOTSTRAP_LEGACY_IMPORTERS = Object.freeze([
+  'services/approval/approvalMutations.js', // approval create/reject/execute
+  'services/chat/chatMutations.js', // chat create/update/delete
+  'services/chat/sendChatMessage.js', // chat reply payload embeds the bootstrap
+  'services/connector/externalConnectorMutations.js', // external connector commands
+  'services/settings/desktopSettings.js', // desktop settings, connector toggles, launch state
+  'services/settings/localProfile.js', // local profile save
+  'services/settings/modelSettings.js', // model config and catalog refresh
+  'services/skill/skillMutations.js', // skill commands
+  'services/task/prepareTaskExecution.js', // task run preparation
+  'services/task/taskMutations.js', // task commands
+  'services/workspace/workspaceMutations.js', // workspace files, artifacts, local commands
+]);
+
+export function checkBootstrapBoundary(graph, root, { migrated = BOOTSTRAP_FREE_MODULES, legacy = BOOTSTRAP_LEGACY_IMPORTERS } = {}) {
+  const bootstrap = resolve(root, BOOTSTRAP_MODULE);
+  const name = file => relative(root, file);
+  for (const entry of migrated) {
+    if (legacy.includes(entry)) throw Error(`Bootstrap boundary: ${entry} is listed as migrated and as a legacy exception.`);
+    const start = resolve(root, entry);
+    if (!graph.has(start)) throw Error(`Bootstrap boundary: migrated module ${entry} no longer exists; update BOOTSTRAP_FREE_MODULES.`);
+    const previous = new Map([[start, null]]), queue = [start];
+    while (queue.length && !previous.has(bootstrap)) {
+      const file = queue.shift();
+      for (const next of graph.get(file) || []) if (!previous.has(next)) { previous.set(next, file); queue.push(next); }
+    }
+    if (!previous.has(bootstrap)) continue;
+    const chain = [];
+    for (let file = bootstrap; file; file = previous.get(file)) chain.unshift(name(file));
+    throw Error(`Migrated module reaches the desktop bootstrap: ${chain.join(' -> ')}. Return a commit receipt and let src/http build the bootstrap (docs/backend-architecture.md).`);
+  }
+  const importers = new Set([...graph].filter(([, imports]) => imports.includes(bootstrap)).map(([file]) => name(file)));
+  for (const source of [...importers].sort()) {
+    if (BOOTSTRAP_COMPOSERS.test(source) || legacy.includes(source)) continue;
+    throw Error(`New business module imports the desktop bootstrap: ${source} -> ${BOOTSTRAP_MODULE}. Return a commit receipt; the legacy exception list may only shrink.`);
+  }
+  for (const entry of legacy) {
+    if (!importers.has(entry)) throw Error(`Bootstrap exception list is stale: ${entry} no longer imports ${BOOTSTRAP_MODULE}; remove it from BOOTSTRAP_LEGACY_IMPORTERS.`);
   }
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {

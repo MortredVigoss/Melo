@@ -23,7 +23,11 @@ import { join } from 'node:path';
 const TEMP_HOME = mkdtempSync(join(tmpdir(), 'melo-concurrency-test-'));
 process.env.MELO_HOME = TEMP_HOME;
 
-const { updateAgentProfile } = await import('./desktopStore.js');
+const store = await import('./desktopStore.js');
+// Architecture plan P1: the mutation returns a commit receipt. These checks
+// read the desktop query projection, so build the bootstrap after each save
+// exactly as the HTTP route does.
+const updateAgentProfile = async (...args) => { await store.updateAgentProfile(...args); return store.getDesktopBootstrap(); };
 
 function agentFromBootstrap(bootstrap, agentId) {
   return (bootstrap?.customize?.agents || []).find(a => a.id === agentId) || null;

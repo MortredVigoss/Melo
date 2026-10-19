@@ -60,7 +60,8 @@ test('legacy program workspace is blocked before execution and can be explicitly
  await updateProject('a',{confirmWorkspace:true});const accepted=await runWithRequestContext(await turn(home,b.activeChat.id,'confirmed'),()=>executeTool(tool,{}));assert.equal(accepted.ok,true,accepted.output);assert.equal(ran,1);
 }));
 test('empty project text stays empty; exact legacy placeholders are hidden without rewriting stored text',t=>fixture(t,async home=>{
- const fresh=await createProject({name:'New'});assert.equal(fresh.activeProject.summary,'');assert.equal(fresh.activeProject.instructions,'');
+ const fresh=await createProject({name:'New'});assert.equal(fresh.project.summary,'');assert.equal(fresh.project.instructions,'');
+ const freshView=(await (await import('../desktop/bootstrap.js')).getDesktopBootstrap()).activeProject;assert.equal(freshView.id,fresh.project.id);assert.equal(freshView.summary,'');assert.equal(freshView.instructions,'');
  const old={summary:'归拢相关对话、资料与目标。',instructions:'Keep this project focused, actionable, and easy to continue later.'};
  await updateStateAtomically(s=>{Object.assign(s.projects.find(p=>p.id==='a'),old);});
  const {getDesktopBootstrap}=await import('../desktop/bootstrap.js');const view=await getDesktopBootstrap();assert.equal(view.projects.find(p=>p.id==='a').summary,'');
