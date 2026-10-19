@@ -24,6 +24,12 @@ async function sync() {
       const remoteCaps=await exchange(settingsRemote,caps);
       await exchange(settingsLocal,remoteCaps);
     }catch(error){console.error('Chat synced; Agent settings pending: '+error.message);}
+    try {
+      const memoryLocal=local.replace('/api/mobile-sync','/api/project-memory-sync');
+      const memoryRemote=new URL(endpoint);memoryRemote.pathname=memoryRemote.pathname.replace(/\/sync$/, '/project-memory');
+      const outgoingMemory=await exchange(memoryLocal);
+      await exchange(memoryLocal,await exchange(memoryRemote,outgoingMemory));
+    }catch(error){console.error('Chat synced; Project memory pending: '+error.message);}
     console.log(outgoing.workspace && remote.workspace ? 'Chat and context sync complete' : 'Chat text synced; update both sync endpoints to support roles, models, knowledge and execution sources');
   }
   catch (error) { console.error(error.message); }

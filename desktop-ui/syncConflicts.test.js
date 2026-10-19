@@ -12,3 +12,12 @@ test('conflict choices retain content and literal text without executing it or e
  assert.match(describeSyncVersion({model:{model:'chosen',name:'Provider'}}),/chosen/);
  assert.equal(describeSyncVersion({name:'Agent',mood:'sharp'}),describeSyncVersion({name:'Agent'}));
 });
+
+
+test('project-memory conflicts show readable versions and target their separate resolver',()=>{
+ const value={kind:'project-memory-v1',content:JSON.stringify({text:'<script>literal memory</script>',scope:'project',status:'active',updatedAt:'2026-10-19'})};
+ const document=new JSDOM(renderSyncConflicts([{kind:'knowledge',id:'memory_test',versions:[{value}]}],escape,'project-memory')).window.document;
+ assert.equal(document.querySelectorAll('script').length,0);
+ assert.match(document.querySelector('pre').textContent,/literal memory/);
+ assert.equal(document.querySelector('button').dataset.settings,'project-memory');
+});

@@ -1358,6 +1358,126 @@
           "$ref": "#/$defs/agentContextSources"
         }
       }
+    },
+    "projectMemory": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "chatId": {
+          "const": ""
+        },
+        "agentId": {
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "enum": [
+            "project",
+            "agent",
+            "personal"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "forgotten",
+            "historical",
+            "unconfirmed"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "x-minUtf16Length": 1,
+          "x-maxUtf16Length": 2000
+        },
+        "memoryID": {
+          "type": "string",
+          "x-minUtf16Length": 1,
+          "x-maxUtf16Length": 180
+        },
+        "originalFact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-maxUtf16Length": 2000
+        },
+        "sourceText": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-maxUtf16Length": 1600
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-maxUtf16Length": 100
+        },
+        "messageId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-maxUtf16Length": 180
+        },
+        "projectId": {
+          "$ref": "#/$defs/id"
+        },
+        "validTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-maxUtf16Length": 100
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userEdited": {
+          "type": "boolean"
+        },
+        "mergedInto": {
+          "type": "string",
+          "x-minUtf16Length": 1,
+          "x-maxUtf16Length": 180
+        },
+        "section": {
+          "enum": [
+            "goal",
+            "convention",
+            "decision",
+            "progress",
+            "todo",
+            "file"
+          ]
+        },
+        "bookStatus": {
+          "enum": [
+            "auto",
+            "confirmed",
+            "user"
+          ]
+        },
+        "origin": {
+          "const": "project"
+        }
+      },
+      "required": [
+        "id",
+        "chatId",
+        "agentId",
+        "scope",
+        "status",
+        "text",
+        "memoryID",
+        "updatedAt",
+        "origin",
+        "projectId"
+      ]
     }
   }
 }

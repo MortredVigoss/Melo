@@ -10863,6 +10863,7 @@ function render({ background = false, changedSections = null } = {}) {
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
         ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
+        ${renderSyncConflicts(uiState.bootstrap.projectMemoryConflicts,escapeHtml,'project-memory')}
         ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
         <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
@@ -11736,10 +11737,10 @@ document.addEventListener('click', async event => {
         applyBootstrap(await api('/api/bootstrap')); break;
       }
       case 'resolve-sync-conflict': {
-        const settings=trigger.dataset.settings==='true';
-        const row=(settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
+        const settings=trigger.dataset.settings==='true', projectMemory=trigger.dataset.settings==='project-memory';
+        const row=(projectMemory?uiState.bootstrap.projectMemoryConflicts:settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
         const index=Number(trigger.dataset.index);
-        await api(settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
+        await api(projectMemory?'/api/project-memory-sync/resolve':settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
         applyBootstrap(await api('/api/bootstrap')); break;
       }
       case 'toggle-project-form':

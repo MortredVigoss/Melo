@@ -1,3 +1,4 @@
+import {validateProjectMemory} from './projectMemoryProtocol.js';
 import {validateAgentSettings} from './agentSettingsProtocol.js';
 import {mergeWorkspaces} from './workspaceProtocol.js';
 import { createServer } from 'node:http';
@@ -21,8 +22,10 @@ export function createSyncServer({ token, directory }) {
   };
   return createServer(async (request, response) => {
     const reply = (status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
-    const settings=request.url==='/v1/agent-settings';
-    const targetFile=settings?join(directory,'agent-settings.json'):file;
+    const projectMemory=request.url==='/v1/project-memory';
+    const settings=request.url==='/v1/agent-settings'||projectMemory;
+    const validateExtension=projectMemory?validateProjectMemory:validateAgentSettings;
+    const targetFile=settings?join(directory,projectMemory?'project-memory.json':'agent-settings.json'):file;
     if ((!settings && request.url !== '/v1/sync') || request.method !== 'POST') return reply(404, { error: 'Not found' });
     if (!authorized(request, token)) return reply(401, { error: 'Unauthorized' });
     try {
@@ -33,12 +36,12 @@ export function createSyncServer({ token, directory }) {
         chunks.push(chunk);
       }
       let incoming;
-      try { incoming = (settings?validateAgentSettings:validateSnapshot)(JSON.parse(Buffer.concat(chunks).toString())); }
+      try { incoming = (settings?validateExtension:validateSnapshot)(JSON.parse(Buffer.concat(chunks).toString())); }
       catch { return reply(400, { error: 'Invalid snapshot' }); }
       const transaction = queue.then(async () => {
         let stored;
-        if(settings){try{stored=validateAgentSettings(JSON.parse(await readFile(targetFile,'utf8')));}catch(e){if(e.code!=='ENOENT')throw e;stored={version:1,records:[]};}}
-        const merged = settings?validateAgentSettings(mergeWorkspaces(stored,incoming)):mergeSnapshots(await read(), incoming);
+        if(settings){try{stored=validateExtension(JSON.parse(await readFile(targetFile,'utf8')));}catch(e){if(e.code!=='ENOENT')throw e;stored={version:1,records:[]};}}
+        const merged = settings?validateExtension(mergeWorkspaces(stored,incoming)):mergeSnapshots(await read(), incoming);
         const serialized = JSON.stringify(merged);
         if (Buffer.byteLength(serialized) > 8 * 1024 * 1024) throw Object.assign(new Error('Storage limit'), { status: 413 });
         await mkdir(directory, { recursive: true, mode: 0o700 });

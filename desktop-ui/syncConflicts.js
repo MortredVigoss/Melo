@@ -2,6 +2,9 @@ import { t, ui } from './i18n.js';
 const labels={agent:'Agent',project:'项目',knowledge:'资料',conversation:'对话设置',message:'回复来源'};
 const fields={name:'名称',title:'标题',subtitle:'一句话描述',content:'内容',instructions:'回复要求 / 项目指引',goal:'目标',identity:'身份',soul:'回复风格',systemPrompt:'补充要求',symbol:'图标',model:'模型',agentId:'Agent',projectId:'项目',chatId:'对话'};
 export function describeSyncVersion(value) {
+  if(value.kind==='project-memory-v1') {
+    try {const fact=JSON.parse(value.content);return `${fact.text}\n${fact.scope} · ${fact.status}\n${fact.updatedAt}`;}catch{}
+  }
   const lines=[];
   for(const [key,label] of Object.entries(fields))if(typeof value[key]==='string'&&value[key])lines.push(`${label}：${value[key]}`);
   if(Object.hasOwn(value,'deleted'))lines.push(`资料状态：${value.deleted?'已删除':'可选用'}`);
@@ -18,5 +21,5 @@ export function describeSyncVersion(value) {
 }
 export function renderSyncConflicts(records=[],escape,settings=false) {
   if(!records.length)return '';
-  return ui`<details class="sync-conflicts"><summary>有 ${records.length} 项跨设备修改冲突 · 所有版本均已保留</summary><p>以下内容尚未互相覆盖。选择要继续使用的版本，下次同步会把选择发送到其他设备。</p>${records.map(row=>ui`<details><summary>${labels[row.kind] || '记录'} · ${escape(row.versions[0]?.value?.name || row.versions[0]?.value?.title || row.id)}</summary><div class="sync-version-grid">${row.versions.map((version,index)=>ui`<section><strong>版本 ${index+1}</strong>${version.value.avatarData?ui`<img alt="此版本的头像" width="56" height="56" src="data:image/jpeg;base64,${escape(version.value.avatarData)}">`:""}<pre>${escape(describeSyncVersion(version.value))}</pre><button class="small-button" data-action="resolve-sync-conflict" data-settings="${settings?'true':'false'}" data-kind="${escape(row.kind)}" data-id="${escape(row.id)}" data-index="${index}">采用版本 ${index+1}</button></section>`).join('')}</div></details>`).join('')}</details>`;
+  return ui`<details class="sync-conflicts"><summary>有 ${records.length} 项跨设备修改冲突 · 所有版本均已保留</summary><p>以下内容尚未互相覆盖。选择要继续使用的版本，下次同步会把选择发送到其他设备。</p>${records.map(row=>ui`<details><summary>${labels[row.kind] || '记录'} · ${escape(row.versions[0]?.value?.name || row.versions[0]?.value?.title || row.id)}</summary><div class="sync-version-grid">${row.versions.map((version,index)=>ui`<section><strong>版本 ${index+1}</strong>${version.value.avatarData?ui`<img alt="此版本的头像" width="56" height="56" src="data:image/jpeg;base64,${escape(version.value.avatarData)}">`:""}<pre>${escape(describeSyncVersion(version.value))}</pre><button class="small-button" data-action="resolve-sync-conflict" data-settings="${settings==='project-memory'?'project-memory':settings?'true':'false'}" data-kind="${escape(row.kind)}" data-id="${escape(row.id)}" data-index="${index}">采用版本 ${index+1}</button></section>`).join('')}</div></details>`).join('')}</details>`;
 }

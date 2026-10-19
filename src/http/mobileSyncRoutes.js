@@ -1,3 +1,4 @@
+import {projectMemoryFor} from '../services/chat/projectMemorySync.js';
 import {validateAgentSettings,refreshAgentSettings,applyAgentSettings,confirmAgentSettings} from '../../mobile-sync/agentSettings.js';
 import {mergeWorkspaces} from '../../mobile-sync/workspaceProtocol.js';
 import { finishChatDeletions } from '../services/chat/chatDeletion.js';
@@ -17,9 +18,30 @@ import { exportMobileSnapshot, importMobileSnapshot, preloadMobileScenes, verifi
 export { exportMobileSnapshot, importMobileSnapshot, preloadMobileScenes, verifiedMobileScenes, persistPortableFiles };
 const token = process.env.MELO_SYNC_TOKEN || '';
 export async function handleMobileSyncRoute(request, response, url) {
-  if (!['/api/mobile-sync','/api/mobile-sync/resolve','/api/agent-settings-sync','/api/agent-settings-sync/resolve','/api/agent-settings-sync/confirm'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
+  if (!['/api/mobile-sync','/api/mobile-sync/resolve','/api/agent-settings-sync','/api/agent-settings-sync/resolve','/api/agent-settings-sync/confirm','/api/project-memory-sync','/api/project-memory-sync/resolve'].includes(url.pathname) || !['GET','POST'].includes(request.method)) return false;
   // Capture home before any asynchronous work; all imported files remain here.
   const home=getMeloHome();
+  if(url.pathname.startsWith('/api/project-memory-sync')) {
+    const memory=projectMemoryFor(home);
+    const resolving=url.pathname.endsWith('/resolve');
+    if(!resolving&&!authorized(request,token)){sendJson(response,401,{error:'Unauthorized'});return true;}
+    if(resolving&&request.method!=='POST'){sendJson(response,405,{error:'POST required'});return true;}
+    const incoming=request.method==='POST'?await readJsonBody(request,{maxBytes:8*1024*1024}):null;
+    await updateStateAtomically(state=>{memory.replay(state);return state;},{home});
+    await updateStateAtomically(state=>{
+      if(resolving){
+        memory.refresh(state);
+        const row=state.projectMemorySync.records.find(r=>r.id===incoming.id);
+        if(!incoming.expected||stableJSON(row?.versions[incoming.index])!==stableJSON(incoming.expected))throw Object.assign(new Error('同步冲突已变化，请刷新后重新选择。'),{statusCode:409});
+        const selected=resolveWorkspace(state.projectMemorySync,'knowledge',incoming.id,incoming.index,state.mobileWorkspaceDevice);
+        memory.stage(state,selected);
+      }else if(incoming)memory.stage(state,incoming);else memory.refresh(state);
+      if(Buffer.byteLength(JSON.stringify(state.projectMemorySync))>8*1024*1024)throw Object.assign(new Error('Project memory exceeds capacity'),{statusCode:413});
+      return state;
+    },{home});
+    const result=await updateStateAtomically(state=>{memory.replay(state);return state;},{home});
+    sendJson(response,200,result.projectMemorySync);return true;
+  }
   if(url.pathname.startsWith('/api/agent-settings-sync')) {
     if(url.pathname.endsWith('/confirm')) {
       // Sync bearer credentials cannot be used at the desktop approval entry.

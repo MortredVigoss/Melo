@@ -13,11 +13,11 @@ function portableValidTo(v, prior) {
   if (v.status === 'active' && (prior?.metadata.forgotten || prior?.metadata.quarantined)) return null;
   return prior?.metadata.validTo || (['historical','forgotten'].includes(v.status) ? v.updatedAt : null);
 }
-function value(row) {
+export function portableMemoryValue(row) {
   const m=row.metadata || {};
   return {id:portableMemoryID(row.id),memoryID:row.id,text:row.text,originalFact:m.originalFact || row.text,
     scope:m.scope || 'chat',status:m.mergedInto?'historical':m.forgotten?'forgotten':m.quarantined?'unconfirmed':m.validTo && Date.parse(m.validTo)<=Date.now()?'historical':'active',
-    chatId:m.chatId,messageId:m.sourceMessageId || '',projectId:m.projectId || '',agentId:m.agentId || 'main',
+    chatId:m.origin==='project'?'':m.chatId,...(m.origin==='project'?{origin:'project'}:{}),messageId:m.sourceMessageId || '',projectId:m.projectId || '',agentId:m.agentId || 'main',
     sourceText:String(m.sourceText || '').slice(0,1600),category:m.category || 'general',updatedAt:row.updatedAt,userEdited:m.userEdited===true,validTo:m.validTo || null,
     ...(m.mergedInto ? {mergedInto:m.mergedInto} : {}),
     // Project memory book projection (design 2B): optional on the wire.
@@ -28,7 +28,7 @@ export function refreshPortableMemory(state) {
   const live=new Set(state.chats.filter(c=>!c.externalThreadKey).map(c=>c.id)), expected=new Map();
   for(const row of iterateMemoryRecords()) {
     if(!live.has(row.metadata.chatId) || row.metadata.audience==='remote')continue;
-    const v=value(row); if(!v.text || v.text.length>2000 || v.originalFact.length>2000)continue;
+    const v=portableMemoryValue(row); if(!v.text || v.text.length>2000 || v.originalFact.length>2000)continue;
     expected.set(row.id,stableJSON(v));
     putWorkspace(state.mobileWorkspaceSync,'memory',v.id,v,state.mobileWorkspaceDevice);
   }
@@ -72,12 +72,12 @@ export function replayPortableMemory(state) {
   for (const r of state.mobileWorkspaceSync?.records || []) {
     if (r.kind !== 'memory') continue;
     const v = r.versions[0].value, prior = getMemoriesByIds([v.memoryID])[0];
-    if (!prior || stableJSON(value(prior)) === expected.get(v.memoryID) || r.versions.some(x => stableJSON(x.value) === stableJSON(value(prior)))) continue;
+    if (!prior || stableJSON(portableMemoryValue(prior)) === expected.get(v.memoryID) || r.versions.some(x => stableJSON(x.value) === stableJSON(portableMemoryValue(prior)))) continue;
     // A desktop edit after the durable handoff is a concurrent version, never
     // an excuse to overwrite either edit. This actor only advances on recovery.
     const clock = {...pending.clocks[r.id]};
     clock['memory-recovery'] = (clock['memory-recovery'] || 0) + 1;
-    state.mobileWorkspaceSync = mergeWorkspaces(state.mobileWorkspaceSync, {version:1,records:[{kind:'memory',id:r.id,versions:[{clock,value:value(prior)}]}]});
+    state.mobileWorkspaceSync = mergeWorkspaces(state.mobileWorkspaceSync, {version:1,records:[{kind:'memory',id:r.id,versions:[{clock,value:portableMemoryValue(prior)}]}]});
   }
   applyPortableMemory(state, null, { clocks: pending.clocks || {} });
   state.mobileMemoryPending = null;
@@ -118,12 +118,12 @@ export function hasMemoryConflict(prior, v, { clock = null, baseClock = null, de
 function portableBookMetadata(v, prior) {
   if (v.scope!=='project') return {section:undefined,bookStatus:undefined,needsConfirmation:undefined};
   const priorStatus = prior?.metadata.bookStatus;
-  const status = v.bookStatus==='user' ? (priorStatus==='user' ? 'user' : 'confirmed')
+  const status = v.bookStatus==='user' ? (priorStatus==='user' || v.origin==='project' ? 'user' : 'confirmed')
     : BOOK_STATUSES.includes(v.bookStatus) ? v.bookStatus
     : BOOK_STATUSES.includes(priorStatus) ? priorStatus : 'confirmed';
   return {section:normalizeSection(v.section || prior?.metadata.section, v.category),bookStatus:status};
 }
-export function applyPortableMemory(state, expected=null, { clocks=null } = {}) {
+export function applyPortableMemory(state, expected=null, { clocks=null, projectSources=false } = {}) {
   const rows=(state.mobileWorkspaceSync?.records || []).filter(r=>r.kind==='memory');
   const local=new Map(state.chats.filter(c=>!c.externalThreadKey).map(c=>[c.id,c]));
   withTransaction(()=>{
@@ -132,24 +132,25 @@ export function applyPortableMemory(state, expected=null, { clocks=null } = {}) 
     for(const register of rows) {
       const v=register.versions[0].value;
       if(register.id!==portableMemoryID(v.memoryID) || v.id!==register.id)throw new Error('Memory identity mismatch');
-      if(!local.has(v.chatId))continue;
+      const projectSource=projectSources && v.origin==='project' && !v.chatId && state.projects?.some(p=>p.id===v.projectId&&!p.deletedAt);
+      if(!projectSource&&!local.has(v.chatId))continue;
       const prior=getMemoriesByIds([v.memoryID])[0];
-      if(prior && (prior.kind!=='session-fact' || prior.metadata.chatId!==v.chatId || prior.metadata.audience==='remote'))throw new Error('Memory source mismatch');
+      if(prior && (prior.kind!=='session-fact' || (projectSource ? prior.metadata.origin!=='project'||prior.metadata.projectId!==v.projectId : prior.metadata.chatId!==v.chatId) || prior.metadata.audience==='remote'))throw new Error('Memory source mismatch');
       if(v.mergedInto!==undefined && v.mergedInto!==prior?.metadata.mergedInto)throw new Error('Memory merge source mismatch');
-      if(expected && (prior ? stableJSON(value(prior)) : undefined)!==expected.get(v.memoryID))throw Object.assign(new Error('记忆在同步期间变化，请重新同步；新内容未被覆盖。'),{statusCode:409});
+      if(expected && (prior ? stableJSON(portableMemoryValue(prior)) : undefined)!==expected.get(v.memoryID))throw Object.assign(new Error('记忆在同步期间变化，请重新同步；新内容未被覆盖。'),{statusCode:409});
       if(register.versions.length>1) {
         // Concurrent desktop/phone edits (design 2026-10-17 §3.4 冲突): keep
         // the workspace-level conflict and expose the phone version on the row
         // so the memory page can offer 采用桌面版 / 采用手机版.
         if(prior) {
-          const mine=stableJSON(value(prior));
+          const mine=stableJSON(portableMemoryValue(prior));
           const other=register.versions.map(x=>x.value).find(x=>stableJSON(x)!==mine) || null;
           const conflict=other ? memoryConflict(other) : prior.metadata.conflict || null;
           if(!prior.metadata.mobileSyncConflict || stableJSON(conflict)!==stableJSON(prior.metadata.conflict || null)) upsertMemory({...prior,metadata:{...prior.metadata,mobileSyncConflict:true,...(conflict ? {conflict} : {})}});
         }
         continue;
       }
-      if(prior && stableJSON(value(prior))===stableJSON(v)) {
+      if(prior && stableJSON(portableMemoryValue(prior))===stableJSON(v)) {
         // The register settled on the desktop version (sync conflict UI): lift
         // the workspace flag; a pending row-level conflict stays until resolved.
         if(prior.metadata.mobileSyncConflict) { const metadata={...prior.metadata,mobileSyncConflict:false}; delete metadata.conflict; upsertMemory({...prior,metadata}); }
@@ -162,12 +163,12 @@ export function applyPortableMemory(state, expected=null, { clocks=null } = {}) 
       }
       const chat=local.get(v.chatId);
       const category=v.scope==='personal' && !PERSONAL_PROFILE_CATEGORIES.includes(v.category) ? 'user_preference' : v.category;
-      const metadata={...prior?.metadata,originalFact:v.originalFact,chatId:v.chatId,chatTitle:chat.title,projectId:v.projectId || null,agentId:v.agentId,
-        sourceMessageId:v.messageId || null,sourceText:v.sourceText,sourceRole:'user',source:chat.source || 'desktop',audience:'local',category,
+      const metadata={...prior?.metadata,originalFact:v.originalFact,chatId:projectSource?null:v.chatId,...(projectSource?{origin:'project'}:{}),chatTitle:chat?.title || '',projectId:v.projectId || null,agentId:v.agentId,
+        sourceMessageId:v.messageId || null,sourceText:v.sourceText,sourceRole:'user',source:chat?.source || 'desktop',audience:'local',category,
         scope:v.scope,userEdited:v.userEdited,forgotten:v.status==='forgotten',quarantined:v.status==='unconfirmed',validTo:portableValidTo(v, prior),mobileSyncConflict:false,
         ...portableBookMetadata({...v,category}, prior)};
       for (const key of ['conflict','section','bookStatus','needsConfirmation']) if (metadata[key]===undefined) delete metadata[key];
-      upsertMemory({id:v.memoryID,namespace:factNamespace({id:v.chatId,projectId:v.projectId},v.scope,v.agentId),kind:'session-fact',sourceId:v.chatId,text:v.text,searchText:normalizedFact(v.text),createdAt:prior?.createdAt || v.updatedAt,updatedAt:v.updatedAt,metadata});
+      upsertMemory({id:v.memoryID,namespace:factNamespace({id:v.chatId,projectId:v.projectId},v.scope,v.agentId),kind:'session-fact',sourceId:projectSource?`project:${v.projectId}`:v.chatId,text:v.text,searchText:normalizedFact(v.text),createdAt:prior?.createdAt || v.updatedAt,updatedAt:v.updatedAt,metadata});
     }
   });
   attachMemoryFacts(state);

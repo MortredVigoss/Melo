@@ -1066,6 +1066,26 @@ export function withTransaction(work) {
   return runInTransaction(() => work());
 }
 
+// A synchronous service operation bound to a home captured before an await.
+// Reuses the existing disposable-store initialization without replacing or
+// closing the production singleton. Never hold this binding across an await.
+export function withMemoryHome(home, work) {
+  if (typeof home !== 'string' || !home) throw new Error('A captured memory home is required');
+  const storePath = join(home, 'desktop', 'store.sqlite');
+  if (db && _openedStorePath === storePath) return work();
+  return withDisposableStoreAt(storePath, (database, vecLoaded) => {
+    const previous = [db, _openedStorePath, _vecLoaded, _txDepth];
+    db = database; _openedStorePath = storePath; _vecLoaded = vecLoaded; _txDepth = 0;
+    try {
+      const value = work();
+      if (value && typeof value.then === 'function') throw new Error('Memory home operations must be synchronous');
+      return value;
+    } finally {
+      [db, _openedStorePath, _vecLoaded, _txDepth] = previous;
+    }
+  });
+}
+
 /**
  * Insert or update a single memory entry without touching other entries.
  * Used by the promotion pipeline to add cross-session facts incrementally.

@@ -572,3 +572,17 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 实际入口：`AgentLoop.swift` / `AgentLoopRuntime.swift`、`ChatStore.swift`、`ConversationHistory.swift` / `AgentProfile.swift`，对照桌面 runner/executor/memberBackground 与 `portableMemory.js`。修复顺序与逐项证据见报告；全部未修。
 - 31 Swift 套件、27 JS 定向回归、4 场景校验通过；26 份共享资源散列一致。独立 Swift 探针复现崩溃、40ms 预算工具仍执行至约 271ms、关闭资料仍进入核实；隔离 home 复现手写记忆 1 条导出 0 条。证据 `.tmp/mobile-desktop-audit-20261019/`。
 - 仅审计/交接文档本地提交，无推送、git pp、真实模型请求、双端安装或用户数据变更；源码/隔离测试证据不代表真机验收。下一步需按用户后续修复指示推进。
+
+### 2026-10-19 — melo主线 — 七项对齐缺口开始修复
+
+- 用户已授权全部修复、保留账号和数据、测试后推送；开工 `2a96cc2`，工作树干净。
+- 范围与顺序见 [本轮实施计划](docs/mobile-desktop-alignment.md)：数字边界、截止与授权、上下文/检索/压缩、团队与项目来源记忆同步。
+- 当前为计划 WIP；使用隔离数据，尚无产品改动/新验收，不运行 git pp，不安装覆盖。下一步逐项实现并以生产入口回归。
+
+### 2026-10-19 — melo主线 — 七项修复的第一轮实证
+
+- 七项源码均已落地为 WIP；手机主路径使用过滤后的上下文、按问题检索、容量预算和可回读话题卡，成员继承背景/工具范围并执行独立上限。手机完整 Swift 回归仍在运行。
+- `projectMemorySync.js`、`projectMemoryProtocol.js` 与 `/api/project-memory-sync` / `/v1/project-memory` 为手写项目记忆提供独立可选扩展；原 v1 聊天记忆形状保持。断线/旧服务保留待同步，冲突保留版本，数据库应用使用持久日志和捕获的 home。
+- 18 项定向 JS 与真实桌面 HTTP 冷启动回归通过（`.tmp/mobile-fixes-targeted.log`、`.tmp/mobile-fixes-http.log`）；真实 HTTP 回归发现并修正首次同步未初始化设备标识。首次全量 JS 有翻译漏项及并行时限失败，翻译已补，3 个时限相关文件串行重跑 6 项通过；最终全量仍待重跑。
+- 新建隔离 iPhone 模拟器运行真实 `ChatStore.send`：本机压缩/原文保留/重载、关闭资料、审批超时后迟到点击零写入、下一轮恢复通过；Debug 模拟器构建通过。回执 `.tmp/mobile-desktop-fixes-20261019/parity-verification.json`。不涉及真实账号、实体机、安装覆盖或真实模型。
+- 下一步完成 32 组 Swift、最终日常测试与差异复核，按用户授权 git push；不运行 git pp。

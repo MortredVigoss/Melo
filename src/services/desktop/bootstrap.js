@@ -364,6 +364,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
     activeChat: selectedChat,
     syncPendingPersonas: pendingPersonaRecords(state),
     agentPersonaRecoveries: state.agentPersonaRecoveries || [],
+    projectMemoryConflicts: (state.projectMemorySync?.records || []).filter(r=>r.versions.length>1),
     agentSettingsConflicts: (state.agentSettingsSync?.records || []).filter(r=>r.versions.length>1),
     syncConflicts: (state.mobileWorkspaceSync?.records || []).filter(r=>r.versions.length>1),
     projects: state.projects.map(project => summarizeProject(project, chats, visibleArtifactRows)),
