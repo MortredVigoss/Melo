@@ -11,7 +11,7 @@ const dom = new JSDOM('<!doctype html><body></body>');
 globalThis.document = dom.window.document;
 globalThis.FormData = dom.window.FormData;
 
-function harness({ responses = {}, activeProject = { id: 'P' } } = {}) {
+function harness({ responses = {}, activeProject = { id: 'P' }, onRender = null } = {}) {
   const calls = [], errors = [];
   let renders = 0;
   const api = async (path, options = {}) => {
@@ -21,7 +21,7 @@ function harness({ responses = {}, activeProject = { id: 'P' } } = {}) {
     if (value instanceof Error) throw value;
     return typeof value === 'function' ? value(path, options) : structuredClone(value);
   };
-  const context = { api, render: () => { renders++; }, bgRender: () => { renders++; }, showError: message => errors.push(message), activeProject: () => activeProject, escapeHtml: value => String(value ?? '') };
+  const context = { api, render: () => { renders++; onRender?.(); }, bgRender: () => { renders++; onRender?.(); }, showError: message => errors.push(message), activeProject: () => activeProject, escapeHtml: value => String(value ?? '') };
   const feature = installMemoryFeature(context);
   const actions = createActionRegistry('action');
   actions.register(feature.actions, 'memory');
@@ -123,4 +123,50 @@ test('project memory book: entering the page loads it once, leaving drops the dr
   assert.deepEqual(h.calls[0], ['/api/projects/memory-book', 'POST', { projectId: 'P', text: 'Ship Friday', section: 'decision' }]);
   assert.equal(h.feature.getState().projectBookFeedback, '已写入记忆本');
   assert.equal(h.feature.handleChange(element('<input name="other">')), false, 'unrelated changes return synchronously, never a promise');
+});
+
+test('手写一条: the row is read before the busy repaint disables the form, and the box is emptied once saved', async () => {
+  // Mirrors render(): while the book is busy its controls are disabled, and
+  // the page update keeps a textarea's typed value when the declared markup
+  // did not change. Before the fix the busy repaint made FormData skip the
+  // textarea (an empty row was posted) and a saved row stayed in the box.
+  let state = null, form = null;
+  const repaint = () => { if (form && state) for (const control of form.elements) control.disabled = state.projectBookBusy; };
+  const h = harness({ onRender: repaint, responses: { '/api/projects/memory-book?': { records: [] } } });
+  state = h.feature.getState();
+  form = element('<form id="project-book-create" data-form="project-book-create" data-project-id="P"><textarea name="text"></textarea><select name="section" data-book-section-select="1"><option value="convention">c</option><option value="goal">g</option></select><button type="submit">写入记忆本</button></form>');
+  const text = form.querySelector('textarea');
+  text.value = 'Release on Friday';
+  h.feature.handleInput(text);
+  form.querySelector('select').value = 'goal';
+  h.feature.handleChange(form.querySelector('select'));
+  await h.forms.dispatch('project-book-create', { form });
+  assert.deepEqual(h.calls[0], ['/api/projects/memory-book', 'POST', { projectId: 'P', text: 'Release on Friday', section: 'goal' }], 'the typed row is posted, not an empty one');
+  assert.equal(text.value, '', 'the saved row no longer sits in the box');
+  assert.equal(text.disabled, false);
+  assert.equal(state.projectBookDraft, null);
+  assert.equal(state.projectBookFeedback, '已写入记忆本');
+  assert.deepEqual(h.errors, []);
+});
+
+test('手写一条: a failed save keeps the text and its draft; another project\'s box is never emptied', async () => {
+  const failing = harness({ responses: { '/api/projects/memory-book': new Error('offline') } });
+  const form = element('<form id="project-book-create" data-form="project-book-create" data-project-id="P"><textarea name="text"></textarea><select name="section" data-book-section-select="1"><option value="convention">c</option></select></form>');
+  const text = form.querySelector('textarea');
+  text.value = 'Keep me';
+  failing.feature.handleInput(text);
+  await failing.forms.dispatch('project-book-create', { form });
+  assert.equal(text.value, 'Keep me');
+  assert.deepEqual(failing.feature.getState().projectBookDraft, { text: 'Keep me', projectId: 'P' });
+  assert.deepEqual(failing.errors, ['offline']);
+  // The save resolves after the same form element was re-rendered for project Q.
+  let release;
+  const slow = harness({ responses: { '/api/projects/memory-book?': { records: [] }, '/api/projects/memory-book': () => new Promise(resolve => { release = resolve; }) } });
+  const other = element('<form id="project-book-create" data-form="project-book-create" data-project-id="P"><textarea name="text">Row for P</textarea><select name="section"><option value="convention">c</option></select></form>');
+  const pending = slow.forms.dispatch('project-book-create', { form: other });
+  other.dataset.projectId = 'Q';
+  other.querySelector('textarea').value = 'Typing for Q';
+  release({ ok: true });
+  await pending;
+  assert.equal(other.querySelector('textarea').value, 'Typing for Q');
 });

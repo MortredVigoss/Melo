@@ -119,15 +119,29 @@ function noteProjectBookDraft(form, patch) {
   const current = memoryState.projectBookDraft?.projectId === projectId ? memoryState.projectBookDraft : {};
   memoryState.projectBookDraft = { ...current, ...patch, projectId };
 }
+// After a hand-written row is saved, empty the box. The page update keeps a
+// textarea's typed value whenever the markup it declares did not change
+// (neuralDom morph), so clearing the draft alone left the saved text on
+// screen. Skipped when the form has meanwhile been re-rendered for another
+// project.
+function clearWrittenBookRow(form, projectId) {
+  const text = form?.elements?.namedItem('text');
+  if (text && form.dataset.projectId === projectId) text.value = '';
+}
 async function handleProjectBookAction(action, id, { section = null, form = null } = {}) {
   const projectId = activeProject()?.id;
   if (!projectId || memoryState.projectBookBusy) return;
+  // Read the hand-written row before the busy repaint disables the form:
+  // FormData skips disabled controls, so reading it afterwards posted an
+  // empty row whenever that repaint was not deferred.
+  const written = action === 'project-book-create' ? new FormData(form) : null;
   memoryState.projectBookBusy = true; memoryState.projectBookFeedback = null; bgRender();
   try {
     if (action === 'project-book-create') {
-      const data = new FormData(form);
-      await memoryApi.addProjectBookRow({ projectId, text: String(data.get('text') || ''), section: String(data.get('section') || 'convention') });
-      memoryState.projectBookDraft = null; memoryState.projectBookFeedback = t('已写入记忆本');
+      await memoryApi.addProjectBookRow({ projectId, text: String(written.get('text') || ''), section: String(written.get('section') || 'convention') });
+      if (memoryState.projectBookDraft?.projectId === projectId) memoryState.projectBookDraft = null;
+      memoryState.projectBookFeedback = t('已写入记忆本');
+      clearWrittenBookRow(form, projectId);
     } else {
       const patch = action === 'project-book-confirm' ? { bookStatus: 'confirmed' }
         : action === 'project-book-section' ? { section }
