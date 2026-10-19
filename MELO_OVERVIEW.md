@@ -595,3 +595,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 完整日常 GREEN：3975 JS、959 文件语法、两组浏览器、4 项场景、32 Swift；iOS Debug 模拟器构建无警告。真实 `ChatStore.send` 夹具证明压缩后原文与重载保留、关闭来源不入请求、超时审批零写入并可继续、15 份资料下团队带入项目与成员配置。
 - 证据 `.tmp/mobile-fixes-daily.log`、`.tmp/mobile-fixes-build.log`、`.tmp/mobile-desktop-fixes-20261019/{source-verification,parity-verification}.json`。原账号/聊天/图片等没有迁移清理；只操作隔离 home 与新模拟器，不重装双端，不运行 git pp。
 - 本记录随代码交付 `origin/master`。未部署远端同步服务；新版项目记忆扩展在服务升级后生效，旧服务保留待同步并继续原有聊天同步。真机、真实供应商与长后台仍单列，不能把源码/模拟器证据当作装机验收。
+
+### 2026-10-19 — melo主线 — 双端覆盖安装开始
+
+- 用户明确授权双端重装并 git push；基线 `5772c0a`、工作树干净，实体查询当前 0.7.2 (34)。[本轮计划](docs/dual-reinstall-20261019.md)按备份、构建、同包覆盖、启动/保留核对执行。
+- 沿用原 bundle/team 和桌面 home；私有备份留用户 Library，不卸载、不清理账号/数据、不运行 git pp。当前为安装计划 WIP，尚未覆盖。
+
+### 2026-10-19 — melo主线 — 双端签名构建通过
+
+- 手机 0.7.4 (36) Release 零警告、原 bundle/team 严格签名通过；桌面构建/签名通过，32 Swift 全部通过。运行时代码与七项修复日常验收一致，仅工程版本递增。
+- 桌面完整 home/旧 app 私有备份完成，14 对话/6 Agent/1 项目/26 成果及 239 文件散列已记录；手机锁屏导致读取拒绝，现解锁重新备份持久数据。证据与安装边界见 [专项回执](docs/dual-reinstall-20261019.md)。下一步同包覆盖并核对保留。
