@@ -4,6 +4,15 @@
 
 其中的测试数字只属于当次源码，不代表当前树。现行状态、功能索引与最新交接见 [总览](../../MELO_OVERVIEW.md)；新的交接追加在总览“最新交接”节，上一条移入本目录新的历史文件或本文件顶部。
 
+## 重整后从总览移出的最新交接（新者在后）
+
+### 2026-10-19 — melo审计修复（Cowork · Claude）— 架构方案 P0 执行
+- 线程 ID：`01a11623-b29c-70c7-8ee0-bb21a1e6eef3`；状态：WIP，未提交。同期 P1（项目 / Agent 提交回执、兼容适配器、bootstrap 导入 gate）由另一工程师进行，不在本条。
+- 行为：`MELO_OVERVIEW.md`、`AGENTS.md`、`CHANGELOG.md`、`ios/README.md`、`ios/VERIFICATION.md`、`docs/handoffs/**` 改动不再触发全部 JS / 浏览器 / Swift，只检查改动文档的相对链接；运行时读取或打包的 Markdown 仍按代码处理。新增生成的功能地图（`--check` 随 scripts 测试进入日常全量组）、`npm run scope`（只报告）与 `npm run boundaries`；本总览改为当前事实 + 功能索引 + 最新交接，原第 2 节表与第 8 节全部按日期交接原文移入本文件（历史交接）。
+- 文件 / 接口：`scripts/test-plan.js`、`verify-daily.js`、`check-doc-links.js`、`generate-module-map.js`、`scope.js`、`boundary-report.js` 及测试；`architecture/`；三个 npm 命令。无运行时代码改动；地图登记双端对应与 agent-loop 共享契约。
+- 验证（10-19，本机共享树）：`node --test` 选组 / 地图 / scope / 边界 / 链接相关 scripts 测试 18/18，`node scripts/check-dependencies.js` 0 环，`npm run generate:module-map -- --check` 通过；`npm run scope -- MELO_OVERVIEW.md` 报告纯文档 0 个 JS 测试、仅链接检查。Linux 沙箱 scripts 目录 51 项：44 过 / 3 跳过 / 4 败，失败均因沙箱不含 `ios/`（同步契约、原生词条、Swift 缓存、测试发现）。未运行完整 `npm test` / `npm run test:full`。
+- 未完 / 下一步：地图已按当时共享树（含 P1 当时的改动）生成；之后新增文件 / 路由 / 跨功能 import 时 `--check` 会报过期，运行 `npm run generate:module-map`；P2 按方案第 8 节从记忆页开始。单独的 desktop-ui / iOS 改动在日常 UI / iOS 组内不跑地图检查（与现有生成契约检查相同），全量组和发布 gate 会检查。
+
 ## 重整前的“当前交付与阻塞”表（原总览第 2 节，2026-10-19 原文）
 
 | 项目 | 当前事实 | 下一步 / 边界 |

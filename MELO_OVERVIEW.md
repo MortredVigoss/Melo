@@ -17,10 +17,10 @@
 
 | 功能 | 现行状态 | 证据 / 待验 |
 | --- | --- | --- |
-| 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 项目提交回执按[架构方案](docs/architecture-maintainability-plan-20261019.md)推进 |
+| 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队 | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)；真实模型协作与真机单列 |
 | 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），限额/预算/工具信封只在 `shared/protocol/agent-loop.json` 定义；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端 | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；真实供应商与长后台另验 |
-| 记忆 | 项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步 | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
+| 记忆 | 项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
 | 双端同步 | v1 线协议冻结；Agent 能力与项目记忆走可选通道，旧服务只让扩展待同步，聊天同步照常 | [双端修复](docs/mobile-desktop-alignment.md)；私人同步服务需部署本版代码后启用新通道 |
@@ -28,10 +28,10 @@
 | 图片、视频与附件 | 桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-15 复现的生成图预览旧签名 403 记录为未修复，此后无修复记录（待核对），见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
 | 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
 | 授权、审批与任务 | 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7` | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
-| 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff` | [双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（P2 拆分） |
+| 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff` | [双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口；记忆 / 项目页已拆到 `desktop-ui/features/`（P2a），Agent 设置与聊天待拆 |
 | iPhone | 实体机 0.7.4 (36) 已覆盖并启动，登录标识与对话 / Agent / 图片保留 | [双端安装](docs/dual-reinstall-20261019.md)；`ChatStore.swift` 仍集中协调（P4 拆分）；真实服务与长后台另验 |
 | 远程渠道 | Telegram（10-16）、Discord（10-17）按用户决定归档，配置与历史保留 | [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md) |
-| 架构维护 | 方案已获批执行 P0–P2；P0 已交付：生成的功能地图、`npm run scope`、`npm run boundaries`、纯文档选组纠正与本总览重整 | [方案与第 8 节执行修订](docs/architecture-maintainability-plan-20261019.md)；P1 / P2 状态以最新交接为准 |
+| 架构维护 | 方案已获批执行 P0–P2；P0 已交付：生成的功能地图、`npm run scope`、`npm run boundaries`、纯文档选组纠正与本总览重整；P1 项目 / Agent 提交回执已交付；P2a 记忆页、项目页拆入 `desktop-ui/features/` 并补齐 `bootstrapError` 重新拉取 | [方案与第 8 节执行修订](docs/architecture-maintainability-plan-20261019.md)；P1 / P2 状态以最新交接为准 |
 | 发布 gate | `npm test` 为日常按边界检查（纯文档只查相对链接），`npm run test:full` 为完整发布 gate | [测试分层](docs/testing-workflow.md) |
 
 ## 3. 功能索引
@@ -40,10 +40,10 @@
 
 | 功能（地图 ID） | 桌面主要入口 | 手机对应 | 共享契约 · 测试组 |
 | --- | --- | --- | --- |
-| `projects` | `src/services/project/projectMutations.js`、`projectService.js`；`src/services/workspace/` | `PersonalWorkspace.swift`、`WorkspaceProjection.swift` | sync-schema · `test:conversation-foundations` |
+| `projects` | `src/services/project/projectMutations.js`、`projectService.js`；`src/services/workspace/`；`desktop-ui/features/projects/` | `PersonalWorkspace.swift`、`WorkspaceProjection.swift` | sync-schema · `test:conversation-foundations` |
 | `agents` | `src/services/agent/agentMutations.js`、`src/agents/team.js`；`desktop-ui/agentDraft.js`、`teamPanel.js` | `AgentProfile.swift`、`AgentEditSession.swift`、`AgentTeam.swift` | sync-schema、cross-platform · `test:markdown-files` |
 | `chat` | `src/services/chat/chatExecutionRunner.js`、`sendChatMessage.js`、`src/runtime/agentLoopContract.js` | `AgentLoop.swift`、`AgentLoopRuntime.swift`、`AgentLoopContract.swift`（生成） | **agent-loop**（`shared/protocol/agent-loop.json`）、reply-document · `test:prompt-pipeline`、`test:function-calling` |
-| `memory` | `src/memory/`、`src/services/memory/memoryManagement.js`；`desktop-ui/memoryFacts.js`、`projectMemoryBook.js`、`messageMemoryRefs.js` | `MemoryFacts.swift`、`MemoryFactsView.swift` | sync-schema · `test:memory` |
+| `memory` | `src/memory/`、`src/services/memory/memoryManagement.js`；`desktop-ui/features/memory/` | `MemoryFacts.swift`、`MemoryFactsView.swift` | sync-schema · `test:memory` |
 | `knowledge` | `src/memory/knowledgeIndex.js`、`src/services/chat/knowledgeContext.js`、`src/services/artifact/` | `AgentProfile.swift`（MobileKnowledge）、`PersonalWorkspace.swift` | — |
 | `settings` | `src/services/settings/`、`src/config.js`；`desktop-ui/localSettings.js`、`settingsEdit.js`、`llmConnections.js` | `SettingsView.swift`、`LLMConnections.swift`、`CodexOAuth.swift`、`EditDraft.swift` | `test:models`、`test:settings-design` |
 | `sync` | `mobile-sync/`、`src/services/remote/mobileSync.js`、`src/http/mobileSyncRoutes.js` | `SyncWorkspace.swift`（含生成段）、`WorkspaceProjection.swift` | sync-schema · `test:mobile-sync`、`test:sync-contract` |
@@ -58,14 +58,14 @@
 
 ## 4. 最新交接
 
-### 2026-10-19 — melo审计修复（Cowork · Claude）— 架构方案 P0 执行
-- 线程 ID：`01a11623-b29c-70c7-8ee0-bb21a1e6eef3`；状态：WIP，未提交。同期 P1（项目 / Agent 提交回执、兼容适配器、bootstrap 导入 gate）由另一工程师进行，不在本条。
-- 行为：`MELO_OVERVIEW.md`、`AGENTS.md`、`CHANGELOG.md`、`ios/README.md`、`ios/VERIFICATION.md`、`docs/handoffs/**` 改动不再触发全部 JS / 浏览器 / Swift，只检查改动文档的相对链接；运行时读取或打包的 Markdown 仍按代码处理。新增生成的功能地图（`--check` 随 scripts 测试进入日常全量组）、`npm run scope`（只报告）与 `npm run boundaries`；本总览改为当前事实 + 功能索引 + 最新交接，原第 2 节表与第 8 节全部按日期交接原文移入[历史交接](docs/handoffs/overview-history-20261019.md)。
-- 文件 / 接口：`scripts/test-plan.js`、`verify-daily.js`、`check-doc-links.js`、`generate-module-map.js`、`scope.js`、`boundary-report.js` 及测试；`architecture/`；三个 npm 命令。无运行时代码改动；地图登记双端对应与 agent-loop 共享契约。
-- 验证（10-19，本机共享树）：`node --test` 选组 / 地图 / scope / 边界 / 链接相关 scripts 测试 18/18，`node scripts/check-dependencies.js` 0 环，`npm run generate:module-map -- --check` 通过；`npm run scope -- MELO_OVERVIEW.md` 报告纯文档 0 个 JS 测试、仅链接检查。Linux 沙箱 scripts 目录 51 项：44 过 / 3 跳过 / 4 败，失败均因沙箱不含 `ios/`（同步契约、原生词条、Swift 缓存、测试发现）。未运行完整 `npm test` / `npm run test:full`。
-- 未完 / 下一步：地图已按当时共享树（含 P1 当时的改动）生成；之后新增文件 / 路由 / 跨功能 import 时 `--check` 会报过期，运行 `npm run generate:module-map`；P2 按方案第 8 节从记忆页开始。单独的 desktop-ui / iOS 改动在日常 UI / iOS 组内不跑地图检查（与现有生成契约检查相同），全量组和发布 gate 会检查。
+### 2026-10-19 — melo审计修复（Cowork · Claude）— 架构方案 P2a：记忆页与项目页拆出 app.js
+- 线程 ID：`01a11623-b29c-70c7-8ee0-bb21a1e6eef3`；状态：已提交 `4dd3ec1`（记忆逐字节搬迁）、`4af937a`（项目逐字节搬迁）、`6d5e00e`（状态 / 窄上下文 / `bootstrapError`）、`be08ee9`（样式）及本条文档提交；未推送、未运行 git pp。P1 由另一工程师完成（`7285eec`）。
+- 行为：记忆面板、事实编辑、项目记忆本、回复页脚与项目列表 / 详情迁入 `desktop-ui/features/{memory,projects}/`（state / controller / api / view / css / index）；各自持有原 `uiState` 字段，只接收命名的读取器与回调（拒收 `uiState`），动作与表单经 `features/registry.js` 一次登记，`app.js` 不再有它们的 `case`。DOM、类名、data 属性、id、动作名、整页 `render()` 及其保护不变；跨页导航 `focus-project` / `select-project` 与 `startProjectSession` 留在 `app.js`。共享 `api()` 识别 P1 的 `{ok, receipt, bootstrapError}`：改为重新拉取 bootstrap，再失败保留当前数据并提示“已保存”，不报保存失败。
+- 文件 / 接口：`desktop-ui/features/`（含 README：模式与仍共享的字段）、`app.js`、`bootstrapPatch.js`、`index.html`（两份功能样式紧随 `styles.css`）、`styles.css`；测试随文件迁移，源码文本测试改为行为测试；`architecture/` 注释与地图。跨端无影响（未改协议、服务端与 iOS）。
+- 验证（10-19，Mac 本机）：`npm test -- --base a5f03aa`（P2a 全部改动的完整日常）GREEN：455 个 JS 测试文件 4012 过 / 12 跳过 / 0 败（含浏览器测试），语法、文档链接、设置与加速设置浏览器验收、iOS 共用渲染 4/4、32 个 Swift 套件；已退出并重开 `~/Applications/Melo.app`，`/api/health` 正常，只读 Playwright 核对（拦截全部写请求）新界面加载两份功能样式与入口模块、项目总览 / 详情 / 记忆面板按真实数据渲染，无页面或控制台错误；记忆 / 项目 / Agent 设置浏览器测试与冒烟（项目创建 / 搜索 / 记忆本写入 / 记忆搜索）与 `a5f03aa` 一致；计算样式探针 13 场景 1,411 元素三种宽度前后一致，阻断新样式的反证有差异。`app.js` 13,711 → 12,833 行，点击分发 case 171 → 140，`uiState` 写入 498 → 439（`npm run boundaries`）。
+- 未完 / 下一步：P2b Agent 设置、P2c 聊天状态 / 事件与其余 CSS，沿用 `features/README.md` 的结构；注册表必须先同步 `has()` 再 `await`（无条件 await 曾让 Agent 表单晚于重渲染读取）。已存在的现象（非本次引入）：记忆本手写一条保存后输入框仍显示原文，基线 `a5f03aa` 相同。
 
-此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对。
+此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行。
 
 ## 5. 整体架构与代码地图
 
@@ -148,7 +148,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P0 见第 4 节最新交接（WIP） |
+| melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2a 见第 4 节最新交接，P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对 | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节） |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP（10-17 已随全部 WIP 收入 `8cd3eff`）；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
