@@ -14,6 +14,8 @@
 
 ## 2. 当前交付与阻塞
 
+2026-10-19 Refactor 讨论基线：已 fetch 默认分支 `origin/master` 至 `83654dd1d59e854c3d347924bf604258b44eaab1`，未合并到当前 Android 分支；两支各有 39 / 16 个独立提交。该主分支含 JS / Swift 两套 Loop 与共享 JSON Contract，尚无 Android / `shared/agent`。已有回归测试、Memory Retrieval Bench 与 stub Turn Benchmark；`EVALUATION.md` 是代码审查评分，尚未找到覆盖完整 Agent 任务质量的统一 Dataset / Runner / Scorer。隔离该 SHA 运行共享 Contract / 生成一致性 / 架构边界 12 tests 全通过；未跑完整 gate、真实模型或设备。本轮仅讨论，先确定 Eval baseline 和生产 Loop 收敛边界，再批准实施。
+
 | 项目 | 当前事实 | 下一步 / 边界 |
 | --- | --- | --- |
 | Android / Mobile Use | 0.4.0 Task Cache 已实现并覆盖安装 Fold6：Exact / 模板零 LLM、Similar 一次改写、Miss Probe、自动写回及 Chat 编辑 / 删除 | 91 JVM / 33 runtime / 4 viewport UI、Lint / R8 / 签名通过；Fold6 Exact 0 请求 1.182s、Similar 1 请求 7.169s、冷启动及 CRUD 实测。入口变化会停止或安全转 Probe；[Cache 证据](docs/android-task-cache-20261016.md)。不等同全部 repo / Samsung 场景验收 |
