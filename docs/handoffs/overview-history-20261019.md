@@ -13,6 +13,13 @@
 - 验证（10-19，本机共享树）：`node --test` 选组 / 地图 / scope / 边界 / 链接相关 scripts 测试 18/18，`node scripts/check-dependencies.js` 0 环，`npm run generate:module-map -- --check` 通过；`npm run scope -- MELO_OVERVIEW.md` 报告纯文档 0 个 JS 测试、仅链接检查。Linux 沙箱 scripts 目录 51 项：44 过 / 3 跳过 / 4 败，失败均因沙箱不含 `ios/`（同步契约、原生词条、Swift 缓存、测试发现）。未运行完整 `npm test` / `npm run test:full`。
 - 未完 / 下一步：地图已按当时共享树（含 P1 当时的改动）生成；之后新增文件 / 路由 / 跨功能 import 时 `--check` 会报过期，运行 `npm run generate:module-map`；P2 按方案第 8 节从记忆页开始。单独的 desktop-ui / iOS 改动在日常 UI / iOS 组内不跑地图检查（与现有生成契约检查相同），全量组和发布 gate 会检查。
 
+### 2026-10-19 — melo审计修复（Cowork · Claude）— 架构方案 P2a：记忆页与项目页拆出 app.js
+- 线程 ID：`01a11623-b29c-70c7-8ee0-bb21a1e6eef3`；状态：已提交 `4dd3ec1`（记忆逐字节搬迁）、`4af937a`（项目逐字节搬迁）、`6d5e00e`（状态 / 窄上下文 / `bootstrapError`）、`be08ee9`（样式）及本条文档提交；未推送、未运行 git pp。P1 由另一工程师完成（`7285eec`）。
+- 行为：记忆面板、事实编辑、项目记忆本、回复页脚与项目列表 / 详情迁入 `desktop-ui/features/{memory,projects}/`（state / controller / api / view / css / index）；各自持有原 `uiState` 字段，只接收命名的读取器与回调（拒收 `uiState`），动作与表单经 `features/registry.js` 一次登记，`app.js` 不再有它们的 `case`。DOM、类名、data 属性、id、动作名、整页 `render()` 及其保护不变；跨页导航 `focus-project` / `select-project` 与 `startProjectSession` 留在 `app.js`。共享 `api()` 识别 P1 的 `{ok, receipt, bootstrapError}`：改为重新拉取 bootstrap，再失败保留当前数据并提示“已保存”，不报保存失败。
+- 文件 / 接口：`desktop-ui/features/`（含 README：模式与仍共享的字段）、`app.js`、`bootstrapPatch.js`、`index.html`（两份功能样式紧随 `styles.css`）、`styles.css`；测试随文件迁移，源码文本测试改为行为测试；`architecture/` 注释与地图。跨端无影响（未改协议、服务端与 iOS）。
+- 验证（10-19，Mac 本机）：`npm test -- --base a5f03aa`（P2a 全部改动的完整日常）GREEN：455 个 JS 测试文件 4012 过 / 12 跳过 / 0 败（含浏览器测试），语法、文档链接、设置与加速设置浏览器验收、iOS 共用渲染 4/4、32 个 Swift 套件；已退出并重开 `~/Applications/Melo.app`，`/api/health` 正常，只读 Playwright 核对（拦截全部写请求）新界面加载两份功能样式与入口模块、项目总览 / 详情 / 记忆面板按真实数据渲染，无页面或控制台错误；记忆 / 项目 / Agent 设置浏览器测试与冒烟（项目创建 / 搜索 / 记忆本写入 / 记忆搜索）与 `a5f03aa` 一致；计算样式探针 13 场景 1,411 元素三种宽度前后一致，阻断新样式的反证有差异。`app.js` 13,711 → 12,833 行，点击分发 case 171 → 140，`uiState` 写入 498 → 439（`npm run boundaries`）。
+- 未完 / 下一步：P2b Agent 设置、P2c 聊天状态 / 事件与其余 CSS，沿用 `features/README.md` 的结构；注册表必须先同步 `has()` 再 `await`（无条件 await 曾让 Agent 表单晚于重渲染读取）。已存在的现象（非本次引入）：记忆本手写一条保存后输入框仍显示原文，基线 `a5f03aa` 相同。
+
 ## 重整前的“当前交付与阻塞”表（原总览第 2 节，2026-10-19 原文）
 
 | 项目 | 当前事实 | 下一步 / 边界 |
