@@ -29,11 +29,39 @@
 set -euo pipefail
 
 # ─── Prerequisites ───────────────────────────────────────────────────────────
-if ! command -v codex >/dev/null 2>&1; then
-  echo "❌ codex CLI not found. Install with: npm install -g @openai/codex" >&2
-  echo "   (then run \`codex login\` if it prompts)." >&2
+# Which Codex CLI to run, first one that actually starts:
+#   1. $CODEX_BIN (explicit override)
+#   2. the CLI bundled with the ChatGPT / Codex desktop app (kept up to date by
+#      the app and already signed in through ~/.codex)
+#   3. `codex` on PATH (npm global install)
+# A candidate counts only if `--version` succeeds: a broken npm install keeps
+# the `codex` launcher but loses its native binary (2026-10-19: spawn ENOENT),
+# and `command -v` alone would happily pick it.
+resolve_codex_bin() {
+  local candidate
+  for candidate in \
+    "${CODEX_BIN:-}" \
+    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex" \
+    "$HOME/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex" \
+    "/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex" \
+    "$HOME/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex" \
+    "$(command -v codex 2>/dev/null || true)"; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    if "$candidate" --version >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! CODEX="$(resolve_codex_bin)"; then
+  echo "❌ No working Codex CLI found." >&2
+  echo "   Install the ChatGPT/Codex desktop app, or set CODEX_BIN=/path/to/codex," >&2
+  echo "   or reinstall the npm CLI: npm install -g @openai/codex (then \`codex login\`)." >&2
   exit 127
 fi
+echo "ℹ️  Codex CLI: $CODEX ($("$CODEX" --version 2>/dev/null | head -1))"
 
 # ─── Refuse extra arguments ─────────────────────────────────────────────────
 # git pp is intentionally narrow. Forwarding arbitrary push args (refspec,
@@ -61,7 +89,7 @@ run_codex_range_review() {
   # exec` in read-only sandbox and let the agent invoke `git show / git log`
   # itself to inspect the range. Read-only sandbox keeps it from touching the
   # working tree even by accident.
-  codex exec --sandbox read-only - <<PROMPT
+  "$CODEX" exec --sandbox read-only - <<PROMPT
 # 任务
 审查仓库中从 commit \`${review_short_base}\` 到 \`${review_short_head}\` 之间这 ${review_count} 个 commit 的所有改动，给出一次**正式**的代码审查，并按 \`EVALUATION.md\` 的 D/C/B/A/S 标准评分。
 

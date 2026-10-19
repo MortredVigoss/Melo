@@ -24,7 +24,7 @@
 git config --local alias.pp '!./scripts/codex-review.sh'
 ```
 
-脚本本身 (`scripts/codex-review.sh`) 已经入库，不用单独拷贝。前置依赖：`codex` CLI（`npm i -g @openai/codex`）并已登录。
+脚本本身 (`scripts/codex-review.sh`) 已经入库，不用单独拷贝。前置依赖：可用的 Codex CLI 并已登录。脚本按顺序取第一个能启动的：`CODEX_BIN` → ChatGPT/Codex 桌面 App 自带的 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` → PATH 上的 `codex`（npm 全局安装）。
 
 ## 2. PROGRESS.md 作为状态看板
 
