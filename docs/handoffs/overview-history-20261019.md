@@ -20,6 +20,13 @@
 - 验证（10-19，Mac 本机）：`npm test -- --base a5f03aa`（P2a 全部改动的完整日常）GREEN：455 个 JS 测试文件 4012 过 / 12 跳过 / 0 败（含浏览器测试），语法、文档链接、设置与加速设置浏览器验收、iOS 共用渲染 4/4、32 个 Swift 套件；已退出并重开 `~/Applications/Melo.app`，`/api/health` 正常，只读 Playwright 核对（拦截全部写请求）新界面加载两份功能样式与入口模块、项目总览 / 详情 / 记忆面板按真实数据渲染，无页面或控制台错误；记忆 / 项目 / Agent 设置浏览器测试与冒烟（项目创建 / 搜索 / 记忆本写入 / 记忆搜索）与 `a5f03aa` 一致；计算样式探针 13 场景 1,411 元素三种宽度前后一致，阻断新样式的反证有差异。`app.js` 13,711 → 12,833 行，点击分发 case 171 → 140，`uiState` 写入 498 → 439（`npm run boundaries`）。
 - 未完 / 下一步：P2b Agent 设置、P2c 聊天状态 / 事件与其余 CSS，沿用 `features/README.md` 的结构；注册表必须先同步 `has()` 再 `await`（无条件 await 曾让 Agent 表单晚于重渲染读取）。已存在的现象（非本次引入）：记忆本手写一条保存后输入框仍显示原文，基线 `a5f03aa` 相同。
 
+### 2026-10-19 — melo审计修复（Cowork · Claude）— 架构方案 P2b：Agent 设置拆出 app.js
+- 线程 ID：`01a11623-b29c-70c7-8ee0-bb21a1e6eef3`；状态：已提交 `82cf1a1`（Agent 逐字节搬迁）、`b99ab90`（状态 / 窄上下文 / render 钩子）、`482cc90`（记忆本手写一条修复）、`575f5c3`（样式）及本条文档提交；未推送、未运行 git pp。
+- 行为：Agent 页与自定义里的 Agent（草稿、保存与项目覆盖、新增、恢复全局、Markdown 导入导出、头像、能力与协作、同步权限确认、渠道语音卡与渠道测试、自动保存与 flush）迁入 `desktop-ui/features/agents/`，连同只供 Agent 用的 `agentDraft.js`、`agentProfilePatch.js`、`agentMcpAuthorise.js`、`capabilityChoices.js`；原 `uiState.agent*` 字段由功能持有，窄上下文拒收 `uiState`，18 个动作与 agent-profile-update 表单一次登记。`render()` 的全部保护原样保留，只在原位置调用 `captureBeforeRender` / `restoreScrollAfterRender` / `syncRuntimeRefresh` / `restoreEditorAfterRender`；离页 / 关窗改调 `flushPending()` / `flushOnUnload()`；settingsFormEditors 对 agent-profile-update 的草稿归属改问功能。`select-agent-profile`（跨页导航）留在 `app.js`。记忆本“手写一条”：先读表单再忙碌重绘（原先停顿后点击会发空行），保存成功后清空输入框。DOM、类名、data 属性、id、动作名与时序不变。
+- 文件 / 接口：`desktop-ui/features/agents/`（index / context / state / controller / api / view / agents.css / agentSettings.css / 测试）、`app.js`、`index.html`（agents.css 紧随 memory.css，agentSettings.css 仍最后载入）、`styles.css`、`features/memory/controller.js`、`features/README.md`；`architecture/` 注释与地图。跨端无影响（未改协议、服务端与 iOS）。
+- 验证（10-19，Mac 本机）：`npm test -- --base 390ae14`（P2b 全部改动的完整日常）GREEN：456 个 JS 测试文件 4023 过 / 12 跳过 / 0 败（含浏览器测试），语法、设置与加速设置浏览器验收、iOS 共用渲染 4/4、32 个 Swift 套件；Agent 冒烟（区块展开 / 详情滚动跨重绘、项目覆盖保存与恢复、Markdown 导入与取消、光标、导航）与 `390ae14` 一致；Agent 计算样式探针 12 场景 1,818 元素三种宽度前后一致，阻断 agents.css 的反证 11,722 处差异，P2a 探针 13 场景 1,411 元素一致；记忆本浏览器复现修复前后对比（修复前保留原文 / 发出空行，修复后均保存并清空）。已退出并重开 `~/Applications/Melo.app`，`/api/health` 正常，只读 Playwright（拦截全部写请求）核对现有 Agent、项目覆盖范围与自定义 → Agent 均正常渲染，两份 Agent 样式与入口模块已加载，无页面或控制台错误。`app.js` 12,833 → 11,361 行，点击分发 case 140 → 122，`uiState` 写入 439 → 411，`styles.css` 5,840 → 5,537 行。证据在 `.tmp/p2b-agents/`。
+- 未完 / 下一步：P2c 聊天状态 / 事件与其余 CSS，沿用 `features/README.md`。Agent 两个自动保存调度函数自 10-17 起无调用者、若干旧动作已无界面入口，按“只搬不简化”保留并登记，清理需单独带测试提交。
+
 ## 重整前的“当前交付与阻塞”表（原总览第 2 节，2026-10-19 原文）
 
 | 项目 | 当前事实 | 下一步 / 边界 |
