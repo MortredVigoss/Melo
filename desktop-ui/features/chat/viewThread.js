@@ -15,7 +15,8 @@ import { sceneSteps, renderRunSteps } from '../../runSteps.js';
 import { replyPlainText } from '../../replyDocument.js';
 import { mountVizBlocks } from '../../viz/vizRenderer.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from '../../activeToolCallsStrip.js';
-import { uiState, app, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, memoryFeature, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderComposerCard, renderWorkspaceExplorer } from './context.js';
+import { uiState, app, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, memoryFeature, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
+import { renderComposerCard } from './viewComposer.js';
 import { renderRichText, renderMessageBlocks, extractSourceCitations, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults } from './viewMessage.js';
 
 function renderThinkingMessage() {

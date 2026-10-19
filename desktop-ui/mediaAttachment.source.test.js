@@ -16,11 +16,15 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(join(here, 'app.js'), 'utf8');
+// The composer, voice input, send pipeline and handleCreateChat moved to the
+// chat feature in P2c; handleOpenNewChatHome and the link/PDF cards stay in app.js.
+const chatSource = readFileSync(join(here, 'features', 'chat', 'controller.js'), 'utf8');
 
 // ─── Fix #1: voice transcript ↔ audio attachment id linkage ────────────────
 
 test('dictation inserts into the existing composer and never auto-submits audio', () => {
-  assert.match(appSource, /onCommit: text => \{\s*appendComposerText\(text\)/);
+  assert.match(chatSource, /onCommit: text => \{\s*appendComposerText\(text\)/);
+  assert.doesNotMatch(chatSource, /function handleVoiceMessageAutoSubmit/);
   assert.doesNotMatch(appSource, /function handleVoiceMessageAutoSubmit/);
 });
 
@@ -28,7 +32,7 @@ test('voice transcript entry references the audio attachment id (attachmentId li
   // The prefilled extractedMedia transcript entry must carry attachmentId =
   // the same voice attachment id, so describeAudioExtractionStatus matches.
   assert.match(
-    appSource,
+    chatSource,
     /attachmentId: voiceAttachmentId[\s\S]*?kind: 'transcript'[\s\S]*?source: 'speech-recognition'/,
     'the prefilled voice transcript entry must link attachmentId to the audio attachment',
   );
@@ -36,7 +40,7 @@ test('voice transcript entry references the audio attachment id (attachmentId li
 
 test('voice attachment id is captured-then-cleared in the send path (parallel to voiceTranscript)', () => {
   assert.match(
-    appSource,
+    chatSource,
     /const voiceAttachmentId = \(prepared \? null : uiState\.composerVoiceAttachmentId\) \|\| null;\s*\n\s*if \(!prepared\) uiState\.composerVoiceAttachmentId = null;/,
     'send path must capture + clear composerVoiceAttachmentId, mirroring composerVoiceTranscript',
   );
@@ -61,7 +65,7 @@ function functionBody(src, declRegex) {
 }
 
 test('handleCreateChat clears BOTH pending voice fields (entry-point-specific)', () => {
-  const body = functionBody(appSource, /async function handleCreateChat\(/);
+  const body = functionBody(chatSource, /async function handleCreateChat\(/);
   assert.ok(body, 'handleCreateChat must exist');
   assert.match(body, /uiState\.composerVoiceTranscript = null;/,
     'handleCreateChat must clear composerVoiceTranscript');
@@ -85,7 +89,7 @@ test('all callers of new-chat route through the two reset functions (no unguarde
   // entry point that creates a chat inline and re-introduces the leak.
   // Heuristic: there must be no inline POST to /api/chats outside
   // handleCreateChat.
-  const chatPosts = (appSource.match(/api\('\/api\/chats'/g) || []).length;
+  const chatPosts = (appSource.match(/api\('\/api\/chats'/g) || []).length + (chatSource.match(/api\('\/api\/chats'/g) || []).length;
   assert.equal(chatPosts, 1,
     `only handleCreateChat may POST /api/chats; found ${chatPosts} sites — a second inline creator would bypass the voice-field reset`);
 });

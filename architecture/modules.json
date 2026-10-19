@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 557,
-      "edges": 1687,
+      "modules": 559,
+      "edges": 1705,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 30,
+      "detected": 29,
       "unannotated": []
     }
   },
@@ -273,6 +273,7 @@
         {
           "module": "desktop-ui/teamPanel.js",
           "importedBy": [
+            "chat",
             "desktop-shell",
             "projects"
           ]
@@ -528,8 +529,8 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 26,
-        "desktop-shell": 13,
+        "chat": 29,
+        "desktop-shell": 12,
         "memory": 2,
         "platform": 31,
         "projects": 4,
@@ -691,17 +692,11 @@
         "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 24,
+        "desktop-ui": 26,
         "shared": 1,
         "src": 61
       },
       "entryModules": [
-        {
-          "module": "desktop-ui/conversationContext.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
         {
           "module": "desktop-ui/executionPanel.js",
           "importedBy": [
@@ -723,12 +718,6 @@
           ]
         },
         {
-          "module": "desktop-ui/replyDelivery.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
           "module": "desktop-ui/replyDocument.js",
           "importedBy": [
             "desktop-shell"
@@ -736,18 +725,6 @@
         },
         {
           "module": "desktop-ui/scrollPreservation.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/transferCopy.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/turnPresentation.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -935,23 +912,24 @@
         }
       ],
       "dependsOn": {
-        "agents": 26,
+        "agents": 29,
         "approvals": 7,
         "channels": 2,
-        "desktop-shell": 12,
+        "desktop-shell": 14,
         "knowledge": 5,
-        "media": 22,
+        "media": 24,
         "memory": 27,
         "platform": 54,
         "projects": 9,
-        "settings": 7,
+        "settings": 9,
         "sync": 2,
-        "tools": 30
+        "tools": 30,
+        "voice": 2
       },
       "usedBy": {
         "agents": 13,
         "channels": 9,
-        "desktop-shell": 12,
+        "desktop-shell": 8,
         "media": 9,
         "memory": 10,
         "platform": 15,
@@ -981,9 +959,11 @@
         "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
         "desktop-ui/executionViewport.js",
+        "desktop-ui/features/chat/api.js",
         "desktop-ui/features/chat/context.js",
         "desktop-ui/features/chat/controller.js",
         "desktop-ui/features/chat/index.js",
+        "desktop-ui/features/chat/viewComposer.js",
         "desktop-ui/features/chat/viewMessage.js",
         "desktop-ui/features/chat/viewThread.js",
         "desktop-ui/linkActions.js",
@@ -1124,7 +1104,7 @@
         "gen-agent-loop",
         "gen-ios-scene",
         "served-shared-modules",
-        "source-tests-app-js",
+        "source-tests-chat-feature",
         "source-tests-cross-module",
         "source-tests-index-html",
         "source-tests-self"
@@ -1775,7 +1755,7 @@
         "agents": 2,
         "approvals": 8,
         "channels": 2,
-        "chat": 7,
+        "chat": 9,
         "desktop-shell": 12,
         "knowledge": 1,
         "media": 7,
@@ -2577,6 +2557,7 @@
         {
           "module": "desktop-ui/imageControls.js",
           "importedBy": [
+            "chat",
             "desktop-shell"
           ]
         },
@@ -2714,7 +2695,7 @@
       },
       "usedBy": {
         "channels": 3,
-        "chat": 22,
+        "chat": 24,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
@@ -2796,7 +2777,8 @@
       },
       "implicit": [
         "served-shared-modules",
-        "source-tests-app-js"
+        "source-tests-app-js",
+        "source-tests-chat-feature"
       ],
       "notes": [
         "分析/生成/编辑意图明确、绑定真实原图；语言模型名不是图片型号。原件/衍生/缓存生命周期见 docs/image-capacity-plan-20261015.md。"
@@ -2832,6 +2814,7 @@
         {
           "module": "desktop-ui/voiceInput.js",
           "importedBy": [
+            "chat",
             "desktop-shell"
           ]
         },
@@ -2879,6 +2862,7 @@
       },
       "usedBy": {
         "channels": 5,
+        "chat": 2,
         "desktop-shell": 3,
         "platform": 2
       },
@@ -3242,6 +3226,7 @@
       },
       "implicit": [
         "source-tests-app-js",
+        "source-tests-chat-feature",
         "source-tests-cross-module"
       ],
       "notes": [
@@ -3265,6 +3250,12 @@
         "src": 2
       },
       "entryModules": [
+        {
+          "module": "desktop-ui/atomicButton.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
         {
           "module": "desktop-ui/features/featureContext.js",
           "importedBy": [
@@ -3312,10 +3303,10 @@
         }
       ],
       "dependsOn": {
-        "agents": 13,
+        "agents": 12,
         "approvals": 3,
         "channels": 2,
-        "chat": 12,
+        "chat": 8,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
@@ -3329,7 +3320,7 @@
       "usedBy": {
         "agents": 6,
         "approvals": 3,
-        "chat": 12,
+        "chat": 14,
         "media": 4,
         "memory": 6,
         "platform": 2,
@@ -4800,21 +4791,36 @@
         "desktop-ui/features/agents/controller.test.js",
         "desktop-ui/features/registry.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
-        "desktop-ui/newChatComposer.test.js",
-        "desktop-ui/sendRecovery.test.js",
         "desktop-ui/streamTtsOnToolCall.test.js",
-        "desktop-ui/turnPresentation.test.js",
         "src/safety/fileSafetyGate.production.test.js"
       ],
       "note": "按源码文本断言 app.js；P2 从 app.js 迁出代码时这些测试需同批改为行为测试或跟随新文件",
       "features": [
         "agents",
         "approvals",
-        "chat",
         "desktop-shell",
         "media",
         "tools",
         "voice"
+      ]
+    },
+    {
+      "id": "source-tests-chat-feature",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/features/chat/controller.js"
+      ],
+      "tests": [
+        "desktop-ui/mediaAttachment.source.test.js",
+        "desktop-ui/newChatComposer.test.js",
+        "desktop-ui/sendRecovery.test.js",
+        "src/safety/fileSafetyGate.production.test.js"
+      ],
+      "note": "P2c 机械搬迁后按源码文本读取聊天功能控制器；改为行为测试后移除",
+      "features": [
+        "approvals",
+        "chat",
+        "media"
       ]
     },
     {
@@ -4833,6 +4839,7 @@
         ],
         "src/safety/fileSafetyGate.production.test.js": [
           "desktop-ui/app.js",
+          "desktop-ui/features/chat/controller.js",
           "src/openai.js",
           "src/server.js"
         ]
@@ -4847,6 +4854,7 @@
       "reads": [
         "desktop-ui/app.js",
         "desktop-ui/executionPanel.js",
+        "desktop-ui/features/chat/controller.js",
         "ios/SceneSource/mobile.js",
         "src/http/ttsRoutes.js",
         "src/openai.js",

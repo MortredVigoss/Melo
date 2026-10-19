@@ -11,7 +11,8 @@ import { describeAudioExtractionStatus, describeVideoExtractionStatus } from '..
 import { renderVizMountHtml } from '../../viz/vizRenderer.js';
 import { isToolTraceMessage } from '../../messageToolTrace.js';
 import { renderMessageToolResults as _renderMessageToolResultsFromModule } from '../../messageToolResults.js';
-import { uiState, escapeHtml, truncate, icon, renderTextBlock, attachmentLabel, isPdfAttachment, extractTextUrls } from './context.js';
+import { uiState, escapeHtml, truncate, icon, renderTextBlock, extractTextUrls } from './context.js';
+import { attachmentLabel, isPdfAttachment } from './controller.js';
 
 function parseRenderableMessageBlocks(value = '') {
   const blocks = [];

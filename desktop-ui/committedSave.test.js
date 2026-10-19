@@ -47,7 +47,7 @@ test('if the reload fails too, the save is not reported as failed: current data 
 function loadApi({ uiState, responses, errors }) {
   const source = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   const start = source.indexOf('async function api(path, options = {}) {');
-  const end = source.indexOf('\nfunction parseEventStreamBlock', start);
+  const end = source.indexOf('\nasync function loadBootstrap', start);
   assert.ok(start > 0 && end > start, 'app.js still defines the shared api()');
   const requests = [];
   const fetch = async (path, init) => {

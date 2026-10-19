@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import { readFileSync } from 'node:fs';
-import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
+import { createTurnPresentation, receiveTurnPresentation, turnLabel } from './turnPresentation.js';
+import { streamApi } from './features/chat/api.js';
 
 test('transport acceptance is waiting, not evidence that generation has started', () => {
   const turn = createTurnPresentation('turn-1');
@@ -24,15 +23,16 @@ test('approval identity never replaces the chat request identity', () => {
   assert.equal(turnLabel(turn), '正在思考');
 });
 
-const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
-const streamSource = app.slice(app.indexOf('function parseEventStreamBlock('), app.indexOf('async function loadBootstrap('));
-function stream(body) {
-  const context = vm.createContext({
-    TextDecoder, DOMException, chatStreamError,
-    fetch: async () => new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
-  });
-  vm.runInContext(streamSource, context);
-  return context.streamApi('/test');
+// The chat SSE client (features/chat/api.js, moved out of app.js in P2c) with
+// a stubbed fetch.
+async function stream(body) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  try {
+    return await streamApi('/test');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 test('SSE disconnect without done is not treated as a successful reply', async () => {

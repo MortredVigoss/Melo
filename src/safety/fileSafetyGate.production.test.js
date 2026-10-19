@@ -23,6 +23,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..', '..');
 const serverSrc = readFileSync(join(repoRoot, 'src', 'server.js'), 'utf8');
 const appSrc = readFileSync(join(repoRoot, 'desktop-ui', 'app.js'), 'utf8');
+// The send pipeline (SSE tool_permission handling) moved to the chat feature (P2c).
+const chatSrc = readFileSync(join(repoRoot, 'desktop-ui', 'features', 'chat', 'controller.js'), 'utf8');
 
 test('server.js imports resolveFileSafety from fileSafetyGate', () => {
   const ok = /import\s*\{\s*resolveFileSafety\s*\}\s*from\s*['"]\.\/safety\/fileSafetyGate\.js['"]/.test(serverSrc);
@@ -58,11 +60,11 @@ test('server.js exposes /api/safety/file-allowlist GET + remove endpoints', () =
     'remove endpoint missing');
 });
 
-test('desktop-ui/app.js dispatches tool_permission events on payload.kind === "file_safety"', () => {
+test('the chat send pipeline (desktop-ui/features/chat) dispatches tool_permission events on payload.kind === "file_safety"', () => {
   // Pre-Phase-3a, the SSE handler destructured `{ requestId, toolId, args }`
   // and dropped any payload that lacked toolId — which was every
   // file_safety prompt. The fix branches on payload.kind. Pin it.
-  assert.ok(/payload\.kind\s*===\s*['"]file_safety['"]/.test(appSrc),
+  assert.ok(/payload\.kind\s*===\s*['"]file_safety['"]/.test(chatSrc),
     'SSE handler must branch on payload.kind === "file_safety"');
 });
 

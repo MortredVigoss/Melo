@@ -14,17 +14,13 @@ import { installChatFeature } from './features/chat/index.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
-import { renderConversationContext } from './conversationContext.js';
-import { renderAgentAvatar } from './agentAvatar.js';
 import { renderReplyDocument } from './replyDocument.js';
-import { renderImageSettings, renderImageTaskControls, consumeImageTask, restoreImageTask, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
-import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
+import { renderImageSettings, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
+import { voiceInputSupported, voiceInputActive } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
-import { renderAtomicButton } from './atomicButton.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor, cancelLiveScene } from './executionPanel.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
-import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
-import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from './neuralDom.js';
 import { resolveWorkspaceStage } from './neuralLayout.js';
 import { captureNeuralLayout, animateNeuralLayout } from './neuralMotion.js';
@@ -44,11 +40,9 @@ import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { renderAdvancedPage } from './advancedPage.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
-import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
-import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -430,19 +424,6 @@ const agentsFeature = installAgentsFeature({
 });
 featureActions.register(agentsFeature.actions, 'agents');
 featureForms.register(agentsFeature.forms, 'agents');
-const chatFeature = installChatFeature({
-  uiState, app, api, render, showError, applyBootstrap, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, memoryFeature,
-  renderTextBlock, renderComposerCard, renderWorkspaceExplorer, attachmentLabel, isPdfAttachment, extractTextUrls,
-  liveSceneFor, renderSceneReplay, selectedMessagePresentation, handleSpeakMessage, handleDeleteChat,
-  // createScrollPreservation() runs further down; resolve at call time.
-  captureThreadAnchor: scroller => captureThreadAnchor(scroller),
-  restoreThreadAnchor: anchor => restoreThreadAnchor(anchor),
-});
-featureActions.register(chatFeature.actions, 'chat');
-featureForms.register(chatFeature.forms, 'chat');
-// The send pipeline below still lives here until the composer move.
-const { renderStreamingFast, patchLiveRunSteps } = chatFeature;
-
 const HOME_PROMPT_PRESETS = [
   {
     id: 'write',
@@ -502,29 +483,6 @@ function escapeHtml(value = '') {
 
 function truncate(value = '', max = 180) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-}
-
-function isAbortError(error) {
-  return Boolean(
-    error &&
-      typeof error === 'object' &&
-      (error.name === 'AbortError' || error.code === 'ABORT_ERR'),
-  );
-}
-
-function thinkingLabel() {
-  if (!uiState.sending) {
-    return '';
-  }
-
-  const label = turnLabel(uiState.activeTurn, { permission: uiState.pendingToolPermissions.length > 0, tools: uiState.activeToolCalls.some(tool => tool.status === 'running') });
-  if (!uiState.thinkingSince) return label;
-
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - uiState.thinkingSince) / 1000),
-  );
-  return `${label} · ${t('已用时 {time}', { time: t('{seconds} 秒', { seconds: elapsedSeconds }) })}`;
 }
 
 function renderTextBlock(value = '') {
@@ -689,81 +647,6 @@ function renderPatchPreviewBlock(title, filePath, beforeText, afterText) {
           })
           .join('')}
       </div>
-    </div>
-  `;
-}
-
-function renderAttachmentPreviewList(attachments = []) {
-  if (!attachments.length) {
-    return '';
-  }
-
-  return ui`
-    <div class="composer-attachment-list">
-      ${attachments
-        .map(
-          attachment => ui`
-            <div class="composer-attachment-chip">
-              <span class="chip-icon">${attachmentIcon(attachment.kind, attachment)}</span>
-              <span class="composer-attachment-label">${escapeHtml(attachmentLabel(attachment))}</span>
-              ${
-                attachment.sizeLabel
-                  ? ui`<span class="meta-label">${escapeHtml(attachment.sizeLabel)}</span>`
-                  : ''
-              }
-              <button
-                class="composer-attachment-remove"
-                type="button"
-                data-action="remove-composer-attachment"
-                data-attachment-id="${attachment.id}"
-                title="Remove attachment"
-              >
-                ×
-              </button>
-            </div>
-          `,
-        )
-        .join('')}
-    </div>
-  `;
-}
-
-function renderComposerAttachmentMenu() {
-  if (!uiState.composerAttachmentMenuOpen) {
-    return '';
-  }
-
-  return ui`
-    <div class="composer-attachment-menu">
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="image/*">
-        <span class="chip-icon">${icon.image}</span>
-        Image
-      </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Direct video files are parsed best-effort: audio is transcribed and keyframes are sent when the media is accessible. Platform links may fall back to preview text.">
-        <span class="chip-icon">${icon.video}</span>
-        <span class="composer-menu-item-text">
-          <span>Video</span>
-          <span class="composer-menu-item-hint">best-effort transcript + keyframes</span>
-        </span>
-      </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*" title="Audio is transcribed first, then the transcript is sent to the model. Raw audio is only used when the selected backend supports it.">
-        <span class="chip-icon">${icon.audio}</span>
-        <span class="composer-menu-item-text">
-          <span>Audio</span>
-          <span class="composer-menu-item-hint">transcribed first</span>
-        </span>
-      </button>
-      <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="application/pdf,.pdf" title="Text-based PDFs are extracted via pdf-parse and the text is sent to the model. Scanned image-only PDFs may need OCR.">
-        <span class="chip-icon">${icon.file}</span>
-        <span class="composer-menu-item-text">
-          <span>PDF</span>
-          <span class="composer-menu-item-hint">text-based PDFs</span>
-        </span>
-      </button>
-      <button class="composer-menu-item" type="button" data-action="add-link-attachment">
-        <span class="chip-icon">${icon.link}</span>
-        Link
-      </button>
     </div>
   `;
 }
@@ -1018,124 +901,6 @@ function activeProjectArtifacts() {
   return uiState.bootstrap?.projectArtifacts || [];
 }
 
-function cloneBootstrapState(bootstrap) {
-  if (!bootstrap) {
-    return null;
-  }
-
-  if (typeof structuredClone === 'function') {
-    return structuredClone(bootstrap);
-  }
-
-  return JSON.parse(JSON.stringify(bootstrap));
-}
-
-function optimisticMessagePreview(message) {
-  const content = String(message?.content || '').trim();
-  if (content) {
-    return content.slice(0, 140);
-  }
-
-  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
-  if (attachments.length) {
-    const attachmentKinds = [...new Set(attachments.map(attachment => attachment.kind).filter(Boolean))];
-    return `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}${
-      attachmentKinds.length ? ` · ${attachmentKinds.join(', ')}` : ''
-    }`;
-  }
-
-  return 'No messages yet.';
-}
-
-function optimisticChatTitle(message) {
-  const content = String(message?.content || '').trim();
-  if (!content) {
-    return 'New chat';
-  }
-
-  const normalized = content
-    .replace(/\s+/g, ' ')
-    .replace(/[?!.。！？]+$/u, '')
-    .trim();
-
-  return truncate(normalized, 48) || 'New chat';
-}
-
-function resetStreamingAssistant() {
-  uiState.streamingChatId = null;
-  uiState.streamingAssistantText = '';
-}
-
-function applyOptimisticUserMessage({ chatId, content, attachments }) {
-  const bootstrap = uiState.bootstrap;
-  if (!bootstrap) {
-    return null;
-  }
-
-  const optimisticMessage = {
-    id: `optimistic-user-${Date.now()}`,
-    role: 'user',
-    content,
-    attachments,
-    createdAt: new Date().toISOString(),
-  };
-
-  const chats = Array.isArray(bootstrap.chats) ? [...bootstrap.chats] : [];
-  const chatIndex = chats.findIndex(chat => chat.id === chatId);
-  const activeChatMatches = bootstrap.activeChat?.id === chatId;
-  const baseChat =
-    (activeChatMatches ? bootstrap.activeChat : null) ||
-    (chatIndex >= 0 ? chats[chatIndex] : null);
-
-  if (!baseChat) {
-    return null;
-  }
-
-  const nextChat = {
-    ...baseChat,
-    messages: [...(Array.isArray(baseChat.messages) ? baseChat.messages : []), optimisticMessage],
-    updatedAt: optimisticMessage.createdAt,
-  };
-
-  if (!String(nextChat.title || '').trim() || nextChat.title === 'New chat') {
-    nextChat.title = optimisticChatTitle(optimisticMessage);
-  }
-
-  const nextChats =
-    chatIndex >= 0
-      ? [nextChat, ...chats.filter(chat => chat.id !== chatId)]
-      : [nextChat, ...chats];
-
-  const nextSummary = {
-    id: nextChat.id,
-    title: nextChat.title,
-    projectId: nextChat.projectId || null,
-    mode: nextChat.mode,
-    locked: Boolean(nextChat.locked),
-    updatedAt: nextChat.updatedAt,
-    updatedLabel: 'Just now',
-    preview: optimisticMessagePreview(optimisticMessage),
-    messageCount: nextChat.messages.length,
-  };
-
-  const recents = Array.isArray(bootstrap.recents) ? bootstrap.recents : [];
-  const nextRecents = [nextSummary, ...recents.filter(chat => chat.id !== chatId)].slice(0, 10);
-
-  uiState.bootstrap = {
-    ...bootstrap,
-    activeChat: nextChat,
-    chats: nextChats,
-    recents: nextRecents,
-    settings: {
-      ...bootstrap.settings,
-      selectedChatId: chatId,
-      activeView: 'chat',
-    },
-  };
-
-  return optimisticMessage.id;
-}
-
 function agentProfileById(agentId) {
   return uiState.bootstrap?.customize?.agents?.find(agent => agent.id === agentId) || null;
 }
@@ -1322,41 +1087,6 @@ function filteredSkills() {
 
     return true;
   });
-}
-
-// Phase 3.3.3 — the composer value qualifies for the slash palette when it
-// starts with "/" followed by at most 40 chars of id-safe text and no
-// whitespace. Returns the query (the text after the slash) or null.
-function parseSlashQuery(composerValue) {
-  if (typeof composerValue !== 'string') return null;
-  const match = composerValue.match(/^\/([a-z0-9_-]{0,40})$/i);
-  return match ? match[1].toLowerCase() : null;
-}
-
-// Skills that match the current slash query, ranked: exact id match first,
-// then prefix matches on id, then prefix matches on name, then substring
-// matches. Only enabled skills participate (a disabled skill can't be
-// invoked anyway, so including it would be misleading).
-function slashPaletteMatches() {
-  const all = uiState.bootstrap?.customize?.skills || [];
-  const query = (uiState.slashPalette.query || '').toLowerCase();
-  const pool = all.filter(s => s.enabled);
-  if (!query) return pool.slice(0, 12);
-
-  const scored = [];
-  for (const skill of pool) {
-    const id = String(skill.id || '').toLowerCase();
-    const name = String(skill.name || '').toLowerCase();
-    let score = 0;
-    if (id === query) score = 100;
-    else if (id.startsWith(query)) score = 80;
-    else if (name.startsWith(query)) score = 60;
-    else if (id.includes(query)) score = 40;
-    else if (name.includes(query)) score = 20;
-    if (score > 0) scored.push({ skill, score });
-  }
-  scored.sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id));
-  return scored.slice(0, 12).map(s => s.skill);
 }
 
 // All unique tags across the current skill set, sorted alphabetically.
@@ -1745,126 +1475,6 @@ async function api(path, options = {}) {
   });
 }
 
-function parseEventStreamBlock(block) {
-  const lines = block
-    .split(/\r?\n/)
-    .map(line => line.trimEnd());
-  let event = 'message';
-  const dataLines = [];
-
-  for (const line of lines) {
-    if (!line || line.startsWith(':')) {
-      continue;
-    }
-
-    if (line.startsWith('event:')) {
-      event = line.slice(6).trimStart() || event;
-      continue;
-    }
-
-    if (line.startsWith('data:')) {
-      dataLines.push(line.slice(5).trimStart());
-    }
-  }
-
-  if (!dataLines.length) {
-    return null;
-  }
-
-  const raw = dataLines.join('\n').trim();
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return {
-      event,
-      payload: JSON.parse(raw),
-    };
-  } catch {
-    return {
-      event,
-      payload: { value: raw },
-    };
-  }
-}
-
-async function streamApi(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method || 'GET',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers || {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal,
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw chatStreamError(payload);
-  }
-
-  if (!response.body) {
-    throw new Error('Streaming request returned no response body.');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let donePayload = null;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      while (true) {
-        const separatorIndex = buffer.search(/\r?\n\r?\n/);
-        if (separatorIndex === -1) {
-          break;
-        }
-
-        const block = buffer.slice(0, separatorIndex);
-        const separatorLength = buffer.startsWith('\r\n\r\n', separatorIndex) ? 4 : 2;
-        buffer = buffer.slice(separatorIndex + separatorLength);
-
-        const message = parseEventStreamBlock(block);
-        if (!message) {
-          continue;
-        }
-
-        if (typeof options.onEvent === 'function') {
-          options.onEvent(message);
-        }
-
-        if (message.event === 'done') {
-          donePayload = message.payload;
-        } else if (message.event === 'error') {
-          throw chatStreamError(message.payload);
-        } else if (message.event === 'aborted') {
-          throw new DOMException('The request was stopped.', 'AbortError');
-        }
-      }
-    }
-
-    if (!donePayload) throw chatStreamError({ code: 'STREAM_INTERRUPTED' });
-    return donePayload;
-  } finally {
-    try {
-      await reader.cancel();
-    } catch {}
-
-    try {
-      reader.releaseLock();
-    } catch {}
-  }
-}
-
 async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}) {
   if (!quiet && !uiState.bootstrap) {
     uiState.loading = true;
@@ -2026,10 +1636,6 @@ function showError(message) {
   }, 4800);
 }
 
-function voiceBridgeSupported() {
-  return Boolean(globalThis.webkit?.messageHandlers?.meloVoice);
-}
-
 function openExternalUrl(url) {
   const normalized = String(url || '').trim();
   if (!/^https?:\/\//i.test(normalized)) {
@@ -2057,135 +1663,8 @@ window.addEventListener('melo-external-link', event => {
   if (event.detail?.ok === false) showError('浏览器未能打开，请点击链接旁的「复制链接」后粘贴到浏览器。');
 });
 
-function composerHintText({ inline = false } = {}) {
-  if (uiState.attachmentUploading) {
-    return t('正在上传视频「{name}」，完成后可发送。', { name: uiState.attachmentUploading });
-  }
-  if (uiState.sending) {
-    return t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
-  }
-  if (uiState.voice.recording) {
-    return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
-  }
-  if (uiState.voice.preview) {
-    return '转写完成后可编辑，再点击发送。';
-  }
-  if (!inline && !uiState.composer.trim()) {
-    return 'Type / for Melo commands, files, projects, and actions.';
-  }
-  if (inline) {
-    return 'Reply in this thread';
-  }
-  return 'Enter to send. Shift+Enter for a new line.';
-}
-
-function appendComposerText(text = '') {
-  const normalized = String(text).trim();
-  if (!normalized) {
-    return;
-  }
-
-  const current = uiState.composer.trim();
-  uiState.composer = current ? `${current}\n${normalized}` : normalized;
-}
-
-function promptHistoryEntries() {
-  return (uiState.bootstrap?.settings?.promptHistory || [])
-    .map(entry => String(entry?.content || '').trim())
-    .filter(Boolean);
-}
-
-function resetComposerHistoryNavigation() {
-  uiState.composerHistoryIndex = -1;
-  uiState.composerHistoryDraft = '';
-}
-
-function navigateComposerHistory(direction = 'older') {
-  const entries = promptHistoryEntries();
-  if (!entries.length) {
-    return false;
-  }
-
-  if (uiState.composerHistoryIndex < 0) {
-    uiState.composerHistoryDraft = uiState.composer;
-  }
-
-  if (direction === 'older') {
-    uiState.composerHistoryIndex = Math.min(
-      entries.length - 1,
-      uiState.composerHistoryIndex + 1,
-    );
-  } else if (uiState.composerHistoryIndex <= 0) {
-    uiState.composerHistoryIndex = -1;
-    uiState.composer = uiState.composerHistoryDraft;
-    uiState.composerHistoryDraft = '';
-    render();
-    focusComposerSoon();
-    return true;
-  } else {
-    uiState.composerHistoryIndex -= 1;
-  }
-
-  if (uiState.composerHistoryIndex >= 0) {
-    uiState.composer = entries[uiState.composerHistoryIndex] || '';
-  }
-
-  render();
-  focusComposerSoon();
-  return true;
-}
-
 function homePromptPresetById(presetId) {
   return HOME_PROMPT_PRESETS.find(preset => preset.id === presetId) || null;
-}
-
-function focusComposerSoon() {
-  window.requestAnimationFrame(() => {
-    const composer = document.querySelector('#composer');
-    if (!(composer instanceof HTMLTextAreaElement)) {
-      return;
-    }
-    composer.focus();
-    composer.selectionStart = composer.selectionEnd = composer.value.length;
-  });
-}
-
-let composerResizeObserver;
-let observedComposer;
-let observedComposerWidth = 0;
-
-function syncComposerTextareaHeight() {
-  const composer = document.querySelector('#composer');
-  if (composer !== observedComposer) {
-    composerResizeObserver?.disconnect();
-    observedComposer = composer;
-    observedComposerWidth = composer?.clientWidth || 0;
-    if (composer && typeof ResizeObserver !== 'undefined') {
-      composerResizeObserver ||= new ResizeObserver(entries => {
-        if (entries[0]?.target !== observedComposer) return;
-        const width = observedComposer.clientWidth;
-        if (width === observedComposerWidth) return;
-        observedComposerWidth = width;
-        syncComposerTextareaHeight();
-      });
-      composerResizeObserver.observe(composer);
-    }
-  }
-  if (!(composer instanceof HTMLTextAreaElement)) {
-    return;
-  }
-
-  const computedStyle = window.getComputedStyle(composer);
-  const minHeight = Number.parseFloat(computedStyle.minHeight) || 48;
-  const maxHeight = Number.parseFloat(computedStyle.maxHeight) || 88;
-  const scrollTop = composer.scrollTop;
-
-  composer.style.height = 'auto';
-  const contentHeight = composer.scrollHeight;
-  const nextHeight = Math.min(maxHeight, Math.max(minHeight, contentHeight));
-  composer.style.height = `${nextHeight}px`;
-  composer.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
-  composer.scrollTop = scrollTop;
 }
 
 function renderEditContextMenu() {
@@ -2536,227 +2015,9 @@ async function handleEditableContextAction(action) {
   closeEditableContextMenu();
 }
 
-function setVoiceState(patch = {}) {
-  uiState.voice = {
-    ...uiState.voice,
-    ...patch,
-    supported: patch.supported ?? (voiceBridgeSupported() || uiState.voice.supported),
-  };
-}
-
-function isPdfAttachment(attachment = {}) {
-  const mimeType = String(attachment?.mimeType || '').toLowerCase();
-  const fileName = String(attachment?.fileName || attachment?.title || attachment?.url || '');
-  return mimeType.includes('pdf') || /\.pdf(?:\?|$)/i.test(fileName);
-}
-
-function isPdfFile(file) {
-  return String(file?.type || '').toLowerCase().includes('pdf') || /\.pdf$/i.test(file?.name || '');
-}
-
-function attachmentIcon(kind, attachment = null) {
-  if (attachment && isPdfAttachment(attachment)) return icon.file;
-  switch (kind) {
-    case 'image':
-      return icon.image;
-    case 'video':
-      return icon.video;
-    case 'audio':
-      return icon.audio;
-    case 'link':
-    default:
-      return icon.link;
-  }
-}
-
-function attachmentLabel(attachment) {
-  return attachment.title || attachment.fileName || `${attachment.kind} attachment`;
-}
-
-function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '';
-  }
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
-  }
-  return `${bytes} B`;
-}
-
-function detectAttachmentKindFromFile(file) {
-  if (file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('video/')) return 'video';
-  if (file.type.startsWith('audio/')) return 'audio';
-  if (isPdfFile(file)) return 'link';
-  return null;
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function queueComposerFiles(fileList) {
-  const files = Array.from(fileList || []);
-  if (!files.length) {
-    return;
-  }
-
-  const nextAttachments = [];
-  for (const file of files) {
-    const kind = detectAttachmentKindFromFile(file);
-    if (!kind) {
-      showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
-      continue;
-    }
-    // Photos up to 100 MB are sent as a bounded copy; videos up to 500 MB are uploaded as a file; other files keep 20 MB.
-    const limit = kind === 'image' || kind === 'video' ? attachmentLimit(kind) : 20 * MB;
-    if (file.size > limit) {
-      showError(t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB }));
-      continue;
-    }
-    const copy = kind === 'image' ? await makeTransferCopy(file).catch(() => null) : null;
-    let url = copy?.url;
-    if (kind === 'video') {
-      uiState.attachmentUploading = file.name; render();
-      try { url = (await uploadVideoFile(file)).url; }
-      catch (error) { showError(t('{name} 上传失败：{reason}', { name: file.name, reason: error.message })); continue; }
-      finally { uiState.attachmentUploading = null; }
-    }
-    url ||= await readFileAsDataUrl(file);
-    nextAttachments.push({
-      id: crypto.randomUUID(),
-      kind,
-      url,
-      title: file.name,
-      fileName: file.name,
-      mimeType: copy?.mimeType || file.type || (isPdfFile(file) ? 'application/pdf' : ''),
-      sizeLabel: copy ? t('{size} · 发送 {width}×{height} 副本', { size: formatFileSize(file.size), width: copy.width, height: copy.height }) : formatFileSize(file.size),
-    });
-  }
-
-  if (nextAttachments.length) {
-    uiState.composerAttachments = [...uiState.composerAttachments, ...nextAttachments].slice(0, 8);
-    uiState.composerAttachmentMenuOpen = false;
-    render();
-  }
-}
-
-function openComposerAttachmentPicker(accept) {
-  const input = document.querySelector('#composer-attachment-input');
-  if (!(input instanceof HTMLInputElement)) {
-    showError('Attachment picker is unavailable right now.');
-    return;
-  }
-  uiState.composerAttachmentMenuOpen = false;
-  input.accept = accept;
-  input.value = '';
-  input.click();
-  render();
-}
-
-function promptComposerLinkAttachment() {
-  const value = window.prompt('Paste a link to attach to this chat', 'https://');
-  const url = String(value || '').trim();
-  if (!url) {
-    return;
-  }
-  if (!/^https?:\/\//i.test(url)) {
-    showError('Please paste a full http or https link.');
-    return;
-  }
-  // Reuse the same classifier as text-paste promotion so YouTube / audio /
-  // video / PDF / plain web pages produce identical kind / mimeType / title
-  // regardless of how the user attached them.
-  const promoted = promoteTextUrlsToAttachments(url, uiState.composerAttachments);
-  if (!promoted.length) {
-    // URL was already in composerAttachments — silently no-op.
-    uiState.composerAttachmentMenuOpen = false;
-    render();
-    return;
-  }
-  const enriched = promoted.map(a => ({
-    ...a,
-    id: crypto.randomUUID(),
-    sizeLabel: '',
-  }));
-  uiState.composerAttachments = [...uiState.composerAttachments, ...enriched].slice(0, 8);
-  uiState.composerAttachmentMenuOpen = false;
-  render();
-}
-
-function hasFileTransfer(event) {
-  const types = Array.from(event.dataTransfer?.types || []);
-  return types.includes('Files');
-}
-
-function composerDropTargetFromEvent(event) {
-  if (!(event.target instanceof Element)) {
-    return null;
-  }
-  return event.target.closest('.composer-input-frame');
-}
-
-function setComposerDragActive(active) {
-  const nextValue = Boolean(active);
-  if (uiState.composerDragActive === nextValue) {
-    return;
-  }
-  uiState.composerDragActive = nextValue;
-  render();
-}
-
-function voiceContext() {
-  const settings = uiState.bootstrap?.settings || {};
-  return [settings.activeView, settings.selectedProjectId, settings.selectedChatId, uiState.activeChatAgentId].join('|');
-}
-
-const voiceInput = createVoiceInput({
-  getContext: voiceContext,
-  onChange: state => {
-    const samePhase = state.status === uiState.voice.status && state.sessionID === uiState.voice.sessionID;
-    setVoiceState(state);
-    const preview = document.querySelector('.voice-preview-body');
-    if (samePhase && voiceInputActive(state) && preview) {
-      // Partial words must not rebuild the chat, interrupt scrolling or break IME typing.
-      preview.textContent = state.preview || '识别内容将进入输入框，不会自动发送。';
-      return;
-    }
-    render();
-  },
-  onCommit: text => {
-    appendComposerText(text);
-    window.requestAnimationFrame(() => {
-      const composer = document.querySelector('#composer');
-      if (!(composer instanceof HTMLTextAreaElement)) return;
-      composer.focus();
-      composer.selectionStart = composer.selectionEnd = composer.value.length;
-    });
-  },
-});
-
-function stopVoiceCaptureIfNeeded() {
-  if (voiceInputActive(uiState.voice)) voiceInput.cancel();
-}
-
-function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
-
-function toggleVoiceInput() {
-  if (voiceInputActive(uiState.voice)) { voiceInput.stop(); return; }
-  stopCurrentTts();
-  voiceInput.start(uiState.voiceLanguage || 'zh-CN');
-}
-
 function applyBootstrap(payload) {
   if (olderBootstrap(payload, uiState.bootstrap)) return;
-  if (voiceInputActive(uiState.voice) && ['activeView', 'selectedChatId', 'selectedProjectId'].some(key => payload?.settings?.[key] !== uiState.bootstrap?.settings?.[key])) stopVoiceCaptureIfNeeded();
+  if (voiceInputActive(uiState.voice) && ['activeView', 'selectedChatId', 'selectedProjectId'].some(key => payload?.settings?.[key] !== uiState.bootstrap?.settings?.[key])) chatFeature.stopVoiceCapture();
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
@@ -2790,7 +2051,7 @@ function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
 }
 
 async function patchSettings(patch) {
-  if (['activeView', 'selectedChatId', 'selectedProjectId'].some(key => key in patch && patch[key] !== uiState.bootstrap?.settings?.[key])) stopVoiceCaptureIfNeeded();
+  if (['activeView', 'selectedChatId', 'selectedProjectId'].some(key => key in patch && patch[key] !== uiState.bootstrap?.settings?.[key])) chatFeature.stopVoiceCapture();
   if (patch.activeView) {
     uiState.neuralOverview = false;
     uiState.neuralGroup = null;
@@ -2802,40 +2063,18 @@ async function patchSettings(patch) {
   applyBootstrap(payload);
 }
 
-async function handleCreateChat({
-  mode = uiState.bootstrap.settings.activeMode,
-  projectId = uiState.newChatProjectId ?? null,
-  agentId = uiState.activeChatAgentId || 'main',
-} = {}) {
-  const payload = await api('/api/chats', {
-    method: 'POST',
-    body: { mode, projectId, agentId, modelSelection:uiState.newChatModel, contextArtifactIds:uiState.newChatArtifactIds },
-  });
-  uiState.composer = '';
-  uiState.composerAttachments = [];
-  resetComposerHistoryNavigation();
-  // 2026-06-04 audit闭环: clear pending voice transcript + its linking id when
-  // switching chats. Without this a recorded-but-unsent voice message leaves
-  // composerVoiceTranscript/Id set; the next plain-text send would carry a
-  // stale extractedMedia transcript referencing an orphan attachmentId.
-  // Parallels the send-path reset (handleSendMessage).
-  uiState.composerVoiceTranscript = null;
-  uiState.composerVoiceAttachmentId = null;
-  applyBootstrap(payload);
-}
-
 async function handleOpenNewChatHome() {
   uiState.neuralOverview = false;
   uiState.neuralGroup = null;
-  stopVoiceCaptureIfNeeded();
-  setVoiceState({
+  chatFeature.stopVoiceCapture();
+  chatFeature.setVoiceState({
     recording: false,
     preview: '',
     error: '',
     status: uiState.voice.supported ? 'ready' : 'idle',
   });
   uiState.composer = '';
-  resetComposerHistoryNavigation();
+  chatFeature.resetComposerHistoryNavigation();
   uiState.composerAttachments = [];
   // 2026-06-04 audit闭环: also clear pending voice transcript + linking id
   // (same stale-transcript leak as handleCreateChat) — composerAttachments
@@ -3032,331 +2271,7 @@ function showTranscriptToast(text) {
 }
 
 async function startProjectSession(projectId, mode) {
-  await handleCreateChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
-}
-
-// A supplement for the reply running in this chat. The server adds it before the
-// next model step; if the turn has no further step it comes back and is sent next.
-async function sendSupplement(chatId, text) {
-  uiState.composer = '';
-  try {
-    const response = await fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, content: text }) });
-    if (response.ok) (uiState.supplementsSent ||= []).push(text);
-    else (uiState.supplementsAfterTurn ||= []).push(text);
-  } catch { (uiState.supplementsAfterTurn ||= []).push(text); }
-  // The turn may have ended while the request was in flight: send it as the next message now.
-  if (!uiState.sending && uiState.supplementsAfterTurn?.length) {
-    const queued = uiState.supplementsAfterTurn.splice(0);
-    uiState.supplementsSent = [];
-    await handleSendMessage({ chatId, content: queued.join('\n') });
-    return;
-  }
-  render();
-}
-
-async function handleSendMessage(prepared = null) {
-  if (!prepared && uiState.sending && !voiceInputActive(uiState.voice) && uiState.composer.trim() && uiState.streamingChatId && uiState.streamingChatId === activeChat()?.id) {
-    await sendSupplement(uiState.streamingChatId, uiState.composer.trim());
-    return;
-  }
-  if (uiState.sending || uiState.agentSelectionSaving || (!prepared && voiceInputActive(uiState.voice))) return;
-  const content = prepared?.content || uiState.composer.trim();
-  const attachments = prepared ? [] : [...uiState.composerAttachments];
-  if (!content && !attachments.length) return;
-
-  const fromOverview = prepared ? false : uiState.neuralOverview;
-  uiState.neuralOverview = false;
-  uiState.neuralGroup = null;
-  if (content && (await handleComposerCommand())) {
-    return;
-  }
-
-  // Tracks whether the user clicked Stop mid-stream. Read in the finally
-  // block to decide between flushing the buffered TTS tail (good run) and
-  // dropping it (aborted run — a half-finished sentence would otherwise
-  // play seconds after the Stop click).
-  const imageTask = prepared?.imageTask || consumeImageTask();
-  const teamPlan = prepared?.teamPlan || null;
-  let sendWasAborted = false;
-  let sendSucceeded = false;
-  const replyDelivery = createReplyDelivery();
-
-  // Capture and clear the voice transcript before resetting composer state.
-  const voiceTranscript = (prepared ? null : uiState.composerVoiceTranscript) || null;
-  if (!prepared) uiState.composerVoiceTranscript = null;
-  // Same for the linking id (2026-05-23 Codex C 闭环) — capture before reset
-  // so the prefilled transcript entry can reference the audio attachment.
-  const voiceAttachmentId = (prepared ? null : uiState.composerVoiceAttachmentId) || null;
-  if (!prepared) uiState.composerVoiceAttachmentId = null;
-
-  let chatId = prepared?.chatId || (fromOverview ? null : uiState.bootstrap?.settings?.selectedChatId || null);
-  const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
-    voiceTranscript, voiceAttachmentId, mode: uiState.bootstrap?.settings?.activeMode,
-    agentId: activeChat()?.agentId || uiState.bootstrap?.settings?.selectedAgentId,
-    modelSelection: activeChat()?.modelSelection || null });
-  const retry = !prepared && uiState.composerRetry?.key === submissionKey(chatId) ? uiState.composerRetry : null;
-  uiState.sending = true;
-  uiState.activeTurn = createTurnPresentation(prepared?.requestId || retry?.requestId || crypto.randomUUID());
-  uiState.modelPickerOpen = false;
-  uiState.thinkingSince = Date.now();
-  uiState.sendAbortController = new AbortController();
-  let previousBootstrap = cloneBootstrapState(uiState.bootstrap);
-  const turnRequestId = uiState.activeTurn.requestId;
-  resetStreamingAssistant();
-  uiState.composer = '';
-  resetComposerHistoryNavigation();
-  uiState.composerAttachments = [];
-  uiState.composerAttachmentMenuOpen = false;
-  if (chatId) {
-    applyOptimisticUserMessage({
-      chatId,
-      content,
-      attachments,
-    });
-  }
-  render();
-
-  try {
-    if (!chatId) {
-      await handleCreateChat();
-      chatId = uiState.bootstrap.settings.selectedChatId;
-      previousBootstrap = cloneBootstrapState(uiState.bootstrap);
-      applyOptimisticUserMessage({
-        chatId,
-        content,
-        attachments,
-      });
-      render();
-    }
-
-    uiState.streamingChatId = chatId;
-    uiState.streamingAssistantText = '';
-    render();
-
-    // Start streaming TTS session
-    if (_isTtsActive()) await _streamTtsStart();
-
-    const result = await streamApi('/api/chat/send/stream', {
-      method: 'POST',
-      body: {
-        requestId: turnRequestId,
-        chatId,
-        content,
-        attachments,
-        ...(imageTask ? { imageTask } : {}),
-        ...(teamPlan ? {teamPlan} : {}),
-        ...(voiceTranscript
-          ? {
-              extractedMedia: [
-                {
-                  // attachmentId links this transcript to the voice audio
-                  // attachment so describeAudioExtractionStatus matches them
-                  // (2026-05-23 Codex C 闭环).
-                  ...(voiceAttachmentId ? { attachmentId: voiceAttachmentId } : {}),
-                  kind: 'transcript',
-                  text: voiceTranscript,
-                  metadata: { source: 'speech-recognition', fileName: 'voice-message.wav' },
-                },
-              ],
-            }
-          : {}),
-        mode: uiState.bootstrap.settings.activeMode,
-
-      },
-      signal: uiState.sendAbortController.signal,
-      onEvent: message => {
-        if (message.event === 'execution_scene') { receiveExecutionScene(message.payload?.scene); patchLiveRunSteps(message.payload?.scene?.chatId); }
-        const previousPhase = uiState.activeTurn?.phase;
-        receiveTurnPresentation(uiState.activeTurn, message.event, message.payload);
-        if (previousPhase !== uiState.activeTurn?.phase) render();
-        const delivery = receiveReplyDelivery(replyDelivery, message.event, message.payload);
-        if (delivery.speechDelta) _streamTtsPushChunk(delivery.speechDelta);
-        if (typeof delivery.finalSpeechText === 'string' && _isTtsActive()) {
-          _streamTts.buffer = delivery.finalSpeechText;
-        }
-        if (message.event === 'delta') {
-          uiState.streamingChatId = chatId;
-          // payload.delta is always the incremental text; payload.text is the accumulated total.
-          // Use payload.delta directly for TTS — the derived `delta` below can be null when
-          // both fields are present (which all streaming paths do), causing TTS to never fire.
-          const payloadDelta = String(message.payload?.delta || '');
-          const delta = typeof message.payload?.text === 'string'
-            ? null // full-text replace for display accumulation
-            : payloadDelta;
-          uiState.streamingAssistantText =
-            typeof message.payload?.text === 'string'
-              ? message.payload.text
-              : `${uiState.streamingAssistantText}${delta}`;
-          // Feed incremental delta to streaming TTS
-          // Fast path: during a pure-delta stream frame, patch ONLY the
-          // streaming bubble instead of doing a full `app.innerHTML = ...`
-          // rebuild. Falls back to render() the first time through (DOM
-          // shell doesn't exist yet) or when the bubble node can't be
-          // found. This is what kills the 闪屏 the user reported.
-          if (!renderStreamingFast()) render();
-        } else if (message.event === 'tool_permission') {
-          // Tool permission request: show dialog. Two payload shapes:
-          //   tool-runner  → { requestId, toolId, args }
-          //   file-safety  → { requestId, kind: 'file_safety', operation, ...payload }
-          const payload = message.payload || {};
-          const { requestId } = payload;
-          if (!requestId) {
-            // Malformed event — ignore.
-          } else if (payload.kind === 'file_safety') {
-            const { operation, ...rest } = payload;
-            // De-dupe by requestId only — multiple distinct file ops can be
-            // pending in parallel (e.g. delete stage 1 + a separate write).
-            uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-              p => p.requestId !== requestId,
-            );
-            uiState.pendingToolPermissions.push({
-              kind: 'file_safety',
-              requestId,
-              operation,
-              payload: rest,
-            });
-            render();
-          } else if (payload.toolId) {
-            const { toolId, args } = payload;
-            // Retransmissions replace only themselves; parallel calls need distinct decisions.
-            uiState.pendingToolPermissions = uiState.pendingToolPermissions.filter(
-              p => p.requestId !== requestId,
-            );
-            uiState.pendingToolPermissions.push({
-              kind: 'tool',
-              requestId,
-              toolId,
-              args: args || {},
-            });
-            render();
-          }
-        } else if (message.event === 'reply_text') {
-          // Speech is handled by replyDelivery only after the finalized event.
-        } else if (message.event === 'tool_calls_start') {
-          // Tools about to execute — strip <tool_call> XML from the streaming display
-          uiState.streamingAssistantText = uiState.streamingAssistantText
-            .replace(/<tool_call>[\s\S]*$/, '')
-            .trim();
-          // Discard intermediate TTS text ("我正在搜索...")
-          _streamTtsOnToolCall();
-          // Mark as running
-          const calls = message.payload?.calls || [];
-          for (const c of calls) {
-            const existing = uiState.activeToolCalls.find(t => t.id === c.id);
-            if (existing) {
-              existing.status = 'running';
-            } else {
-              uiState.activeToolCalls.push({ id: c.id, name: c.name, arguments: c.arguments, status: 'running' });
-            }
-          }
-          render();
-        } else if (message.event === 'tool_calls_done') {
-          // Tools finished: update status.  G-1d slice 1.5 (2026-05-11):
-          // capture `evidenceTrail` when present so devtools / a future
-          // debug overlay (G-1f) can show which fallback tiers a search
-          // tool walked through.  Field is optional — only the 3 search
-          // tools (fetch_url / social_link / web_search) populate it.
-          const results = message.payload?.results || [];
-          for (const r of results) {
-            const existing = uiState.activeToolCalls.find(t => t.id === r.id);
-            if (existing) {
-              existing.status = r.ok ? 'ok' : 'error';
-              existing.output = r.output;
-              if (Number.isFinite(r.durationMs)) existing.durationMs = r.durationMs;
-              if (Array.isArray(r.evidenceTrail) && r.evidenceTrail.length > 0) {
-                existing.evidenceTrail = r.evidenceTrail;
-              }
-            }
-          }
-          // Clear completed calls after a short delay so user sees the checkmarks
-          setTimeout(() => {
-            uiState.activeToolCalls = uiState.activeToolCalls.filter(t => t.status === 'running');
-            bgRender();
-          }, 1800);
-          bgRender();
-        }
-      },
-    });
-
-    sendSucceeded = true;
-    if (result?.unusedSupplements?.length) (uiState.supplementsAfterTurn ||= []).push(...result.unusedSupplements);
-    if (!prepared) uiState.composerRetry = null;
-    notifyLocalCompletion();
-    if (result?.bootstrap) {
-      applyBootstrap(result.bootstrap);
-    } else {
-      await loadBootstrap(uiState.searchQuery, { quiet: true });
-    }
-  } catch (error) {
-    if (isAbortError(error)) {
-      sendWasAborted = true;
-      // Bug audit U4: no more scene events arrive after Stop — finish the
-      // run's scene locally and re-read scenes + chat once the server has
-      // persisted its cancelled scene and the [工具轨迹] message.
-      cancelLiveScene(uiState.activeTurn?.runId || null, { chatId });
-      for (const delay of [800, 2500]) setTimeout(() => { if (!uiState.sending) loadBootstrap(uiState.searchQuery, { quiet: true }).catch(() => {}); }, delay);
-      try {
-        await loadBootstrap(uiState.searchQuery, { quiet: true });
-      } catch {}
-      return;
-    }
-    try {
-      await loadBootstrap(uiState.searchQuery, { quiet: true });
-    } catch {
-      if (previousBootstrap) {
-        uiState.bootstrap = previousBootstrap;
-      }
-    }
-    uiState.composer = content;
-    uiState.composerAttachments = attachments;
-    uiState.composerVoiceTranscript = voiceTranscript;
-    uiState.composerVoiceAttachmentId = voiceAttachmentId;
-    if (!prepared) uiState.composerRetry = { requestId: turnRequestId, chatId, key: submissionKey(chatId),
-      interrupted: error.code === 'REQUEST_INTERRUPTED' };
-    restoreImageTask(imageTask);
-    uiState.composerAttachmentMenuOpen = false;
-    showError(error.message);
-  } finally {
-    uiState.sending = false;
-    // Supplements the turn could not use are sent as the next message of the same chat.
-    // A stopped or failed turn returns every supplement to the composer instead of dropping it.
-    const followUp = sendSucceeded ? (uiState.supplementsAfterTurn || []) : [];
-    const returned = sendSucceeded ? [] : [...(uiState.supplementsSent || []), ...(uiState.supplementsAfterTurn || [])];
-    uiState.supplementsSent = [];
-    uiState.supplementsAfterTurn = [];
-    if (returned.length) uiState.composer = [uiState.composer.trim(), ...returned.map(text => t('补充：{text}', { text }))].filter(Boolean).join('\n');
-    if (followUp.length && chatId) setTimeout(() => handleSendMessage({ chatId, content: followUp.join('\n') }), 0);
-    uiState.activeTurn = null;
-    uiState.sendAbortController = null;
-    uiState.thinkingSince = 0;
-    uiState.activeToolCalls = [];
-    uiState.pendingToolPermissions = [];
-
-    // Stop button behaviour: when the user aborted the stream, the buffered
-    // partial sentence in _streamTts.buffer is half a thought — flushing it
-    // would have the assistant speak garbled fragments seconds after the
-    // click. Discard the buffer AND tell the server to abort any synthesis
-    // already on its way (covers the queue path + speak-text fast paths).
-    if (sendWasAborted || !sendSucceeded) {
-      try { await api('/api/tts/queue-clear', { method: 'POST', body: {} }); } catch {}
-      try { await api('/api/tts/speak-stop', { method: 'POST', body: {} }); } catch {}
-      _streamTtsReset();
-    } else if (_isTtsActive()) {
-      await _streamTtsFlush(); // sends accumulated text / remaining tail to TTS
-    } else {
-      _streamTtsReset();
-    }
-    resetStreamingAssistant();
-    render();
-  }
-}
-
-function handleStopSending() {
-  if (!uiState.sending || !uiState.sendAbortController) {
-    return;
-  }
-
-  uiState.sendAbortController.abort();
+  await chatFeature.createChat({ projectId, mode, agentId: projectDefaultAgentId(projectId) || uiState.activeChatAgentId || 'main' });
 }
 
 // ── TTS helpers ──────────────────────────────────────────────────────────────
@@ -4670,7 +3585,7 @@ async function handleRunTask(taskId, teamPlan = null) {
   const attachments = uiState.composerAttachments;
   const payload = await api('/api/tasks/prepare', { method: 'POST', body: { taskId, teamPlan } });
   applyBootstrap(payload.bootstrap);
-  await handleSendMessage(payload.execution);
+  await chatFeature.sendMessage(payload.execution);
   if (!uiState.composer || uiState.composer === payload.execution.content) {
     uiState.composer = draft;
     uiState.composerAttachments = attachments;
@@ -4938,7 +3853,7 @@ async function executePaletteCommand(command) {
 
   switch (command.action) {
     case 'new-chat':
-      await handleCreateChat();
+      await chatFeature.createChat();
       break;
     case 'open-view':
       await patchSettings({ activeView: command.payload.view });
@@ -5299,63 +4214,6 @@ function syncModelPickerPosition() {
 }
 window.addEventListener('resize', syncModelPickerPosition);
 
-function composerPlaceholder() {
-  if (!activeChat()) {
-    return t("问问 Melo，或输入 / 使用命令…");
-  }
-
-  switch (uiState.bootstrap?.settings.activeMode) {
-    case 'cowork':
-      return 'What are we solving together?';
-    case 'code':
-      return 'Ask about files, builds, code changes, or your workspace...';
-    case 'chat':
-    default:
-      return t("今天有什么可以帮你？");
-  }
-}
-
-// Phase 3.3.3 — slash-command palette popover. Rendered inside the
-// composer input frame above the textarea. Returns empty string when the
-// palette isn't open OR there's nothing to show; this is the normal state.
-function renderSlashPalette() {
-  if (!uiState.slashPalette.open) return '';
-  const matches = slashPaletteMatches();
-  if (!matches.length) {
-    return ui`
-      <div class="slash-palette" role="listbox">
-        <div class="slash-palette-empty">No skills match /${escapeHtml(uiState.slashPalette.query)}</div>
-      </div>
-    `;
-  }
-  const selectedIndex = Math.min(
-    Math.max(0, uiState.slashPalette.selectedIndex | 0),
-    matches.length - 1,
-  );
-  return ui`
-    <div class="slash-palette" role="listbox">
-      ${matches
-        .map((skill, i) => ui`
-          <button
-            type="button"
-            class="slash-palette-item ${i === selectedIndex ? 'is-active' : ''}"
-            data-action="pick-slash-skill"
-            data-skill-id="${escapeHtml(skill.id)}"
-            role="option"
-          >
-            <span class="slash-palette-id">/${escapeHtml(skill.id)}</span>
-            <span class="slash-palette-name">${escapeHtml(skill.name)}</span>
-            ${skill.description
-              ? ui`<span class="slash-palette-desc">${escapeHtml(skill.description)}</span>`
-              : ''}
-          </button>
-        `)
-        .join('')}
-      <div class="slash-palette-hint">↑↓ to move · Enter to pick · Esc to close</div>
-    </div>
-  `;
-}
-
 function effectiveModelSetupDraft() {
   // Pure merge lives in `connectorDraft.js` so node:test can pin the
   // saved-config + live-draft + masked-secret semantics that Customize
@@ -5676,192 +4534,6 @@ function renderApprovalPanel({ compact = false } = {}) {
   `;
 }
 
-function renderComposerCard({ inline = false } = {}) {
-  const data = uiState.bootstrap;
-  const composerChat = !uiState.neuralOverview ? activeChat() : null;
-  const project = data.projects.find(p=>p.id===(composerChat ? composerChat.projectId : uiState.newChatProjectId));
-  const workspace = data.workspace || {};
-  const selectedFile = workspace.selectedFile;
-  const voiceSupported = voiceInputSupported();
-  const isHomeComposer = !inline;
-  const voicePreviewMarkup = renderVoiceInput(uiState.voice, escapeHtml);
-  const footerMarkup =
-    isHomeComposer || selectedFile
-      ? ui`
-        <div class="composer-footer">
-          <div class="composer-footer-copy">
-            ${project ? `Project: ${escapeHtml(project.name)}` : 'Local-first Melo chat is ready.'}
-          </div>
-          ${
-            selectedFile
-              ? ui`<div class="composer-footer-copy is-secondary">Selected file: ${escapeHtml(selectedFile.path)}</div>`
-              : ''
-          }
-        </div>
-      `
-      : '';
-
-  return ui`
-    <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
-      ${renderImageTaskControls(uiState.composerAttachments)}
-      ${renderExecutionPanel()}
-      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
-      ${
-        !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : uiState.newChatModel)
-          ? ui`
-            <div class="alert">
-              ${
-                data.settings.config.authMode === 'codex'
-                  ? 'OAuth is not configured yet. Open Model and start the Codex login flow.'
-                  : data.settings.config.authMode === 'local'
-                    ? 'Local model mode is not configured yet. Open Model and enter your local endpoint and model.'
-                    : 'API mode is not configured yet. Open Model and add your API key.'
-              }
-            </div>
-          `
-          : ''
-      }
-
-      ${uiState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
-
-      <div class="composer-card ${inline ? 'is-thread' : ''}">
-        <form data-form="composer" class="composer-form">
-          <div class="composer-core">
-            ${footerMarkup}
-            <div class="composer-actions">
-              <div class="composer-bottom-left">
-                <button
-                  class="composer-icon-button"
-                  type="button"
-                  data-action="toggle-composer-attachment-menu"
-                  title="添加附件"
-                >
-                  <span class="toolbar-icon">${icon.plus}</span>
-                </button>
-                ${renderComposerAttachmentMenu()}
-                <span class="composer-status-copy">${escapeHtml(composerHintText({ inline }))}</span>
-              </div>
-
-              <div class="composer-bottom-right">
-                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
-                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
-                ${renderModelPicker({
-                  config: data.settings.config,
-                  selection:!uiState.neuralOverview && activeChat() ? activeChat().modelSelection : uiState.newChatModel,
-                  models: modelOptionsForAuthMode(data.settings.config.authMode),
-                  agent: conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId }),
-                  open: uiState.modelPickerOpen,
-                  saving: uiState.modelPickerSaving,
-                }, escapeHtml)}
-
-                <div class="tts-voice-panel-anchor">
-                  ${renderTtsVoicePanel()}
-                  ${renderAtomicButton()}
-                </div>
-
-                <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
-                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
-                </select>
-                <button
-                  class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
-                  type="button"
-                  data-action="toggle-voice-input"
-                  ${uiState.voice.status !== 'stopping' ? '' : 'disabled'}
-                  aria-label="${escapeHtml(voiceInputLabel(uiState.voice))}"
-                  aria-pressed="${voiceInputActive(uiState.voice)}"
-                  title="${voiceSupported ? escapeHtml(voiceInputLabel(uiState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
-                >
-                  <span class="toolbar-icon">${uiState.voice.recording ? icon.stop : icon.mic}</span>
-                </button>
-
-                ${
-                  uiState.sending
-                    ? ui`
-                      <button class="composer-icon-button" type="submit" title="补充到正在进行的回复">
-                        <span class="toolbar-icon">${icon.send}</span>
-                      </button>
-                      <button class="composer-icon-button is-stop" type="button" data-action="stop-send" title="停止生成">
-                        <span class="toolbar-icon">${icon.stop}</span>
-                      </button>
-                    `
-                    : ui`
-                      <button class="composer-icon-button is-primary" type="submit" title="发送消息" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
-                        <span class="toolbar-icon">${icon.send}</span>
-                      </button>
-                    `
-                }
-              </div>
-            </div>
-
-            ${voicePreviewMarkup}
-
-            <div
-              class="composer-input-frame ${uiState.voice.recording ? 'is-recording' : ''} ${
-                uiState.composerDragActive ? 'is-drop-target' : ''
-              }"
-            >
-              ${renderSlashPalette()}
-              <textarea
-                id="composer"
-                class="composer-textarea"
-                rows="2"
-                placeholder="${escapeHtml(uiState.sending ? t("输入补充要求") : inline ? t("回复…") : composerPlaceholder())}"
-                aria-label="消息输入框"
-              >${escapeHtml(uiState.composer)}</textarea>
-            </div>
-
-            ${renderAttachmentPreviewList(uiState.composerAttachments)}
-            ${
-              uiState.composerDragActive
-                ? ui`
-                  <div class="composer-drop-banner">
-                    Drop image, audio, video, or PDF here. Media extraction runs best-effort before the model sees it.
-                  </div>
-                `
-                : ''
-            }
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
-}
-
-function renderAgentSelectorChip() {
-  const agent = activeChatAgentProfile();
-  if (!agent) return '';
-  return ui`
-    <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
-            data-action="toggle-agent-selector"
-            aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.agentSelectionSaving ? 'disabled' : ''}>
-      <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
-      <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
-    </button>
-  `;
-}
-
-function renderAgentSelectorDropdown() {
-  if (!uiState.agentSelectorOpen) return '';
-  const agents = allChatAgentProfiles();
-  if (!agents.length) return '';
-  return ui`
-    <div id="agent-selector-panel" class="agent-selector-dropdown agent-selector-slide-up" popover="manual" role="dialog" aria-label="选择对话Agent">
-      <header><strong>选择对话 Agent</strong><p>默认Agent和你创建的Agent都在这里。切换只影响后续回复。</p></header>
-      ${agents.map(agent => ui`
-        <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
-                data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
-                data-agent-id="${escapeHtml(agent.id)}">
-          ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
-
-          ${agent.id === 'main' ? ui`<span class="agent-selector-tag">默认</span>` : agent.isCustom ? ui`<span class="agent-selector-tag">自定义</span>` : ''}
-        </button>
-      `).join('')}
-    </div>
-  `;
-}
-
 function renderWorkspaceExplorer() {
   const workspace = uiState.bootstrap.workspace;
 
@@ -6145,7 +4817,7 @@ function renderCodePage() {
             }
 
             ${chatFeature.renderThreadArtifactStrip(uiState.bootstrap.activeChatArtifacts || [])}
-            ${renderComposerCard({ inline: true })}
+            ${chatFeature.renderComposer({ inline: true })}
           </section>
         </div>
 
@@ -8136,23 +6808,26 @@ async function handleFileSafetyResponse(requestId, granted, scope, confirmInput 
   return submitPermission(requestId, { granted, scope, kind: 'file_safety', confirmInput, persistent });
 }
 
-function _positionAgentDropdown() {
-  const chip = document.querySelector('[data-action="toggle-agent-selector"]');
-  const dropdown = document.querySelector('.agent-selector-dropdown');
-  if (!chip || !dropdown) return;
-  // A fixed child of the transformed composer still inherits its containing
-  // block; the top layer gives this menu actual viewport coordinates.
-  if (typeof dropdown.showPopover === 'function') {
-    if (!dropdown.matches(':popover-open')) dropdown.showPopover();
-  } else {
-    document.querySelector('#app').appendChild(dropdown);
-  }
-  const position = modelPanelPosition(chip.getBoundingClientRect(), { width: dropdown.offsetWidth, height: dropdown.offsetHeight }, { width: innerWidth, height: innerHeight });
-  dropdown.style.top = `${position.top}px`;
-  dropdown.style.left = `${position.left}px`;
-}
-window.addEventListener('resize', _positionAgentDropdown);
-window.addEventListener('scroll', _positionAgentDropdown, { capture: true, passive: true });
+// The chat feature (features/chat/) is installed here rather than with the
+// features above: its send pipeline feeds the TTS stream helpers declared
+// above (_streamTts). Still before any listener or render that uses it.
+const chatFeature = installChatFeature({
+  uiState, app, api, render, bgRender, showError, applyBootstrap, applyBootstrapPreservingDrafts, loadBootstrap,
+  activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, truncate, icon, memoryFeature,
+  renderTextBlock, renderWorkspaceExplorer, renderTtsVoicePanel, modelOptionsForAuthMode, handleComposerCommand,
+  handleSpeakMessage, handleDeleteChat,
+  // createScrollPreservation() runs just below; resolve at call time.
+  captureThreadAnchor: scroller => captureThreadAnchor(scroller),
+  restoreThreadAnchor: anchor => restoreThreadAnchor(anchor),
+  stopCurrentTts, _isTtsActive, _streamTts, _streamTtsStart, _streamTtsPushChunk, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush,
+  notifyLocalCompletion, shouldSendOnEnter, extractTextUrls, promoteTextUrlsToAttachments,
+  renderExecutionPanel, receiveExecutionScene, liveSceneFor, cancelLiveScene, renderSceneReplay, selectedMessagePresentation,
+});
+featureActions.register(chatFeature.actions, 'chat');
+featureForms.register(chatFeature.forms, 'chat');
+
+window.addEventListener('resize', chatFeature.positionAgentDropdown);
+window.addEventListener('scroll', chatFeature.positionAgentDropdown, { capture: true, passive: true });
 
 // Generic scroll preservation: any nested scrollable pane that isn't already
 // covered by a dedicated capture/restore path would reset to 0 whenever
@@ -8334,13 +7009,13 @@ function render({ background = false, changedSections = null } = {}) {
   const keepPage = background && changedSections && !uiState.neuralOverview && !uiState.sending &&
     !pageAffected(uiState.bootstrap.settings.activeView, changedSections) && currentPage;
   const pageHtml = keepPage ? preserveNeuralRegion(currentPage) :
-    ui`<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: renderComposerCard() }) : renderPage()}</main>`;
+    ui`<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: chatFeature.renderComposer() }) : renderPage()}</main>`;
   updateNeuralWorkspace(app, ui`
     <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${uiState.sending}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
       <div class="neural-cosmos" aria-hidden="true"></div>
       <div class="neural-core-anchor" aria-hidden="true"></div>
       ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
-      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(thinkingLabel()) : t("本地工作空间")}</div>
+      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(chatFeature.thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
@@ -8356,7 +7031,7 @@ function render({ background = false, changedSections = null } = {}) {
         </div>
       </div>
     </div>
-    ${renderAgentSelectorDropdown()}
+    ${chatFeature.renderAgentSelectorDropdown()}
     <input id="composer-attachment-input" class="hidden-file-input" type="file" multiple />
     ${renderCommandPalette()}
     ${renderEditContextMenu()}
@@ -8371,7 +7046,7 @@ function render({ background = false, changedSections = null } = {}) {
   syncNeuralComposer(app, uiState.composer);
   animateNeuralLayout(neuralBefore, uiState.neuralStill);
   syncNeuralScene(uiState.neuralStill);
-  syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: retryMissingImages, onSelectionChanged: bgRender });
+  syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: chatFeature.retryMissingImages, onSelectionChanged: bgRender });
   syncModelPickerPosition();
 
   activeEditableContextTarget = null;
@@ -8410,7 +7085,7 @@ function render({ background = false, changedSections = null } = {}) {
   agentsFeature.syncRuntimeRefresh();
   syncSearchFieldFocus();
   syncFileEditorGoToLine();
-  syncComposerTextareaHeight();
+  chatFeature.syncComposerTextareaHeight();
   const _newComposer = document.querySelector('#composer');
   if (_newComposer && _savedComposerScroll?.value === _newComposer.value) {
     _newComposer.scrollTop = _savedComposerScroll.top;
@@ -8421,7 +7096,7 @@ function render({ background = false, changedSections = null } = {}) {
   // textarea restore wins for that one input; this helper covers everything
   // else (Discord Guild ID, Telegram bot token, nickname lists, etc.).
   restoreFocusedInputState(_savedFocusedInput);
-  _positionAgentDropdown();
+  chatFeature.positionAgentDropdown();
   // Mount Demon viz blocks (projectile, tree, ...) into the message bubbles
   // that carry a validated `viz` spec. Runs AFTER the DOM swap so it can
   // query freshly rendered `.viz-mount` shells and attach canvases/SVGs.
@@ -8915,13 +7590,6 @@ document.addEventListener('click', async event => {
       case 'new-chat':
         await handleOpenNewChatHome();
         break;
-      case 'restart-interrupted-send':
-        uiState.composerRetry = null;
-        await handleSendMessage();
-        break;
-      case 'stop-send':
-        handleStopSending();
-        break;
       case 'open-view':
         uiState.highlightedMessageId = null;
         uiState.shouldFocusSearch = trigger.dataset.view === 'search';
@@ -9064,7 +7732,7 @@ document.addEventListener('click', async event => {
         }
         uiState.composer = preset.prompt;
         render();
-        focusComposerSoon();
+        chatFeature.focusComposerSoon();
         break;
       }
       case 'open-chat': {
@@ -9259,28 +7927,6 @@ document.addEventListener('click', async event => {
         uiState.skillFilter = { query: '', tag: null, state: 'all' };
         render();
         break;
-      case 'pick-slash-skill': {
-        // Phase 3.3.3 — replace the "/<query>" prefix with "/<skillId> " and
-        // close the palette. Leaving a trailing space lets the user type args
-        // immediately (e.g., "/pdf-maker summarize <file>").
-        const skillId = trigger.dataset.skillId || '';
-        if (skillId) {
-          uiState.composer = `/${skillId} `;
-          uiState.slashPalette.open = false;
-          uiState.slashPalette.query = '';
-          uiState.slashPalette.selectedIndex = 0;
-          render();
-          // Refocus the composer and move cursor to end after render.
-          queueMicrotask(() => {
-            const ta = document.querySelector('#composer');
-            if (ta) {
-              ta.focus();
-              ta.setSelectionRange(ta.value.length, ta.value.length);
-            }
-          });
-        }
-        break;
-      }
       case 'refresh-skill-runs':
         refreshSkillRunStats();
         break;
@@ -9538,13 +8184,6 @@ document.addEventListener('click', async event => {
       case 'task-operation-retry':
         try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
         break;
-      case 'run-chat-team': {
-        const chat=activeChat(), content=uiState.composer.trim();
-        if(!content) {showError(t('请先在输入框写下团队任务。'));break;}
-        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
-        if(team.error) {showError(t(team.error));break;}
-        await handleSendMessage({chatId:chat?.id,content,teamPlan:team.plan});break;
-      }
       case 'run-task-team': {
         const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
         if(team.error) {showError(t(team.error));break;}
@@ -9567,28 +8206,6 @@ document.addEventListener('click', async event => {
       case 'insert-command':
         uiState.composer = trigger.dataset.command || '/';
         render();
-        break;
-      case 'toggle-composer-attachment-menu':
-        uiState.composerAttachmentMenuOpen = !uiState.composerAttachmentMenuOpen;
-        render();
-        break;
-      case 'pick-composer-attachment':
-        openComposerAttachmentPicker(trigger.dataset.accept || 'image/*,video/*,audio/*');
-        break;
-      case 'add-link-attachment':
-        promptComposerLinkAttachment();
-        break;
-      case 'remove-composer-attachment':
-        uiState.composerAttachments = uiState.composerAttachments.filter(
-          attachment => attachment.id !== trigger.dataset.attachmentId,
-        );
-        render();
-        break;
-      case 'cancel-voice-input':
-        voiceInput.cancel();
-        break;
-      case 'toggle-voice-input':
-        toggleVoiceInput();
         break;
       case 'toggle-tts-autoplay':
         uiState.ttsVoicePanelOpen = !uiState.ttsVoicePanelOpen;
@@ -9747,25 +8364,6 @@ document.addEventListener('click', async event => {
         render();
         break;
       }
-      case 'toggle-agent-selector': {
-        uiState.agentSelectorOpen = !uiState.agentSelectorOpen;
-        render();
-        if (uiState.agentSelectorOpen) document.querySelector('.agent-selector-row.is-selected')?.focus({ preventScroll: true });
-        break;
-      }
-      case 'select-chat-agent': {
-        const agentId = trigger.dataset.agentId;
-        // Allowed during a reply: the running turn keeps the Agent it started with; this applies next.
-        if (uiState.agentSelectionSaving || !allChatAgentProfiles().some(a=>a.id===agentId)) break;
-        const chat = !uiState.neuralOverview ? activeChat() : null;
-        uiState.agentSelectionSaving=true; render();
-        try {
-          if(chat) applyBootstrapPreservingDrafts(await api('/api/chats/update',{method:'POST',body:{chatId:chat.id,patch:{agentId}}}));
-          else {uiState.activeChatAgentId=agentId;localStorage.setItem('melo-active-chat-agent',agentId);}
-          uiState.agentSelectorOpen=false;
-        } finally {uiState.agentSelectionSaving=false;render();}
-        break;
-      }
       case 'select-palette-command': {
         const command = filteredPaletteCommands().find(
           item => item.id === trigger.dataset.commandId,
@@ -9804,28 +8402,7 @@ document.addEventListener('input', event => {
   if (editExtraFast(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
 
-  if (target.id === 'composer') {
-    uiState.composer = target.value;
-    resetComposerHistoryNavigation();
-    syncComposerTextareaHeight();
-    // Phase 3.3.3 — open/close slash palette based on current composer value.
-    const slashQuery = parseSlashQuery(target.value);
-    if (slashQuery !== null) {
-      if (!uiState.slashPalette.open
-          || uiState.slashPalette.query !== slashQuery) {
-        uiState.slashPalette.open = true;
-        uiState.slashPalette.query = slashQuery;
-        uiState.slashPalette.selectedIndex = 0;
-        render();
-      }
-    } else if (uiState.slashPalette.open) {
-      uiState.slashPalette.open = false;
-      uiState.slashPalette.query = '';
-      uiState.slashPalette.selectedIndex = 0;
-      render();
-    }
-    return;
-  }
+  if (chatFeature.handleComposerInput(target)) return;
 
   if (projectsFeature.handleSearchInput(target)) return;
 
@@ -9990,8 +8567,9 @@ document.addEventListener('change', async event => {
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
 
   try {
-    if (target.id === 'composer-attachment-input') {
-      await queueComposerFiles(target.files);
+    const composerFiles = chatFeature.handleComposerFileChange(target);
+    if (composerFiles) {
+      await composerFiles;
       return;
     }
 
@@ -10116,60 +8694,13 @@ document.addEventListener('change', async event => {
   }
 });
 
-document.addEventListener('dragover', event => {
-  if (!hasFileTransfer(event)) {
-    return;
-  }
+document.addEventListener('dragover', event => chatFeature.handleComposerDragOver(event));
 
-  event.preventDefault();
-  const isComposerTarget = Boolean(composerDropTargetFromEvent(event));
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = isComposerTarget ? 'copy' : 'none';
-  }
-  setComposerDragActive(isComposerTarget);
-});
+document.addEventListener('dragleave', event => chatFeature.handleComposerDragLeave(event));
 
-document.addEventListener('dragleave', event => {
-  if (!hasFileTransfer(event)) {
-    return;
-  }
+document.addEventListener('drop', event => chatFeature.handleComposerDrop(event));
 
-  const relatedTarget = event.relatedTarget;
-  if (
-    relatedTarget instanceof Element &&
-    relatedTarget.closest('.composer-input-frame')
-  ) {
-    return;
-  }
-
-  if (!composerDropTargetFromEvent(event)) {
-    setComposerDragActive(false);
-  }
-});
-
-document.addEventListener('drop', async event => {
-  if (!hasFileTransfer(event)) {
-    return;
-  }
-
-  event.preventDefault();
-  const isComposerTarget = Boolean(composerDropTargetFromEvent(event));
-  setComposerDragActive(false);
-
-  if (!isComposerTarget) {
-    return;
-  }
-
-  try {
-    await queueComposerFiles(event.dataTransfer?.files);
-  } catch (error) {
-    showError(error.message);
-  }
-});
-
-document.addEventListener('dragend', () => {
-  setComposerDragActive(false);
-});
+document.addEventListener('dragend', () => chatFeature.handleComposerDragEnd());
 
 document.addEventListener('submit', async event => {
   const form = event.target;
@@ -10183,9 +8714,6 @@ document.addEventListener('submit', async event => {
   try {
     if (featureForms.has(form.dataset.form)) { await featureForms.dispatch(form.dataset.form, { form, event }); return; }
     switch (form.dataset.form) {
-      case 'composer':
-        await handleSendMessage();
-        break;
       case 'task-pricing': {
         const body=Object.fromEntries(new FormData(form));
         await api('/api/tasks/pricing',{method:'POST',body});
@@ -10264,21 +8792,7 @@ document.addEventListener('keydown', async event => {
     document.querySelector('.model-picker-trigger')?.focus();
     return;
   }
-  if (uiState.agentSelectorOpen && event.key === 'Escape') {
-    event.preventDefault();
-    uiState.agentSelectorOpen = false;
-    render();
-    document.querySelector('[data-action="toggle-agent-selector"]')?.focus({ preventScroll: true });
-    return;
-  }
-  if (uiState.agentSelectorOpen && target?.closest('#agent-selector-panel') && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault();
-    const options = [...document.querySelectorAll('.agent-selector-row:not(:disabled)')];
-    const index = options.indexOf(target);
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-    options[next]?.focus();
-    return;
-  }
+  if (chatFeature.handleAgentSelectorKeydown(event, target)) return;
   if (uiState.modelPickerOpen && target?.closest('.model-picker-panel') && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
     event.preventDefault();
     const options = [...document.querySelectorAll('.model-picker-option:not(:disabled)')];
@@ -10288,96 +8802,9 @@ document.addEventListener('keydown', async event => {
     return;
   }
 
-  // Phase 3.3.3 — slash palette keyboard navigation. Intercepts arrow keys,
-  // Enter, and Escape when the palette is open so they don't fall through to
-  // composer history, send, or other handlers.
-  if (target?.id === 'composer' && uiState.slashPalette.open) {
-    const matches = slashPaletteMatches();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      uiState.slashPalette.open = false;
-      uiState.slashPalette.query = '';
-      uiState.slashPalette.selectedIndex = 0;
-      render();
-      return;
-    }
-    if (event.key === 'ArrowDown' && matches.length) {
-      event.preventDefault();
-      uiState.slashPalette.selectedIndex =
-        (uiState.slashPalette.selectedIndex + 1) % matches.length;
-      render();
-      return;
-    }
-    if (event.key === 'ArrowUp' && matches.length) {
-      event.preventDefault();
-      uiState.slashPalette.selectedIndex =
-        (uiState.slashPalette.selectedIndex - 1 + matches.length) % matches.length;
-      render();
-      return;
-    }
-    if ((event.key === 'Enter' || event.key === 'Tab') && matches.length && !event.shiftKey) {
-      event.preventDefault();
-      const pick = matches[
-        Math.min(
-          Math.max(0, uiState.slashPalette.selectedIndex | 0),
-          matches.length - 1,
-        )
-      ];
-      if (pick) {
-        uiState.composer = `/${pick.id} `;
-        uiState.slashPalette.open = false;
-        uiState.slashPalette.query = '';
-        uiState.slashPalette.selectedIndex = 0;
-        render();
-        queueMicrotask(() => {
-          const ta = document.querySelector('#composer');
-          if (ta) {
-            ta.focus();
-            ta.setSelectionRange(ta.value.length, ta.value.length);
-          }
-        });
-      }
-      return;
-    }
-  }
-
-  if (
-    target?.id === 'composer' &&
-    event.key === 'ArrowUp' &&
-    !event.shiftKey &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey &&
-    target.selectionStart === 0 &&
-    target.selectionEnd === 0
-  ) {
-    event.preventDefault();
-    navigateComposerHistory('older');
-    return;
-  }
-
-  if (
-    target?.id === 'composer' &&
-    event.key === 'ArrowDown' &&
-    !event.shiftKey &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey &&
-    target.selectionStart === target.value.length &&
-    target.selectionEnd === target.value.length
-  ) {
-    event.preventDefault();
-    navigateComposerHistory('newer');
-    return;
-  }
-
-  if (
-    target?.id === 'composer' &&
-    shouldSendOnEnter(event, uiState.bootstrap?.settings?.localPreferences) &&
-    !uiState.commandPalette.open
-  ) {
-    event.preventDefault();
-    await handleSendMessage();
+  const composerKey = chatFeature.handleComposerKeydown(event, target);
+  if (composerKey) {
+    await composerKey;
     return;
   }
 
@@ -10440,7 +8867,7 @@ document.addEventListener('keydown', async event => {
 });
 
 window.addEventListener('melo-voice', event => {
-  handleVoiceBridgeEvent(event.detail || {});
+  chatFeature.handleVoiceBridgeEvent(event.detail || {});
 });
 
 // TTS playback events from Swift's AVAudioPlayerDelegate / `say` exit.
@@ -10534,19 +8961,14 @@ loadBootstrap();
 initBrowserVoices();
 
 // Stop capture when the page leaves; reopening a chat never restarts listening.
-window.addEventListener('pagehide', () => stopVoiceCaptureIfNeeded());
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopVoiceCaptureIfNeeded(); });
+window.addEventListener('pagehide', () => chatFeature.stopVoiceCapture());
+document.addEventListener('visibilitychange', () => { if (document.hidden) chatFeature.stopVoiceCapture(); });
 document.addEventListener('change', event => {
   if (event.target.matches?.('[data-voice-language]')) {
     uiState.voiceLanguage = event.target.value;
     api('/api/settings/local',{method:'POST',body:{preferences:{voiceLanguage:event.target.value}}}).then(data=>applyBootstrapPreservingDrafts(data)).catch(error=>showError(error.message));
   }
 });
-
-function retryMissingImages({ chatId, query, task }) {
-  if (uiState.sending || chatId !== uiState.bootstrap?.settings?.selectedChatId || !task?.retryOf) return;
-  handleSendMessage({ chatId, content: query || '继续图片任务', imageTask: task });
-}
 
 installLanguageControls({api,applyBootstrap,render});
 installLocalSettings({api,uiState,render,stopSpeech:stopCurrentTts,applyBootstrap,patchSettings,reload:()=>loadBootstrap(),openVoice:async()=>{await patchSettings({activeView:'chat'});uiState.ttsVoicePanelOpen=true;loadMacosVoices();render();}});
@@ -10557,5 +8979,5 @@ window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'sett
 // A silent provider must still advance the visible wait timer.
 setInterval(() => {
   if (!uiState.sending || document.hidden) return;
-  for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = thinkingLabel();
+  for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = chatFeature.thinkingLabel();
 }, 1000);

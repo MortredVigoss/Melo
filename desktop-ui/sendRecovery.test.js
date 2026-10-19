@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createTurnPresentation, receiveTurnPresentation } from './turnPresentation.js';
-const source=readFileSync(new URL('./app.js',import.meta.url),'utf8');
+const source=readFileSync(new URL('./features/chat/controller.js',import.meta.url),'utf8');
 const send=source.slice(source.indexOf('async function handleSendMessage('),source.indexOf('\nfunction handleStopSending'));
 function fixture(stream) {
   let serial=0;

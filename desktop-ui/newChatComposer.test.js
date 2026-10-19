@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 test('new-chat action clears unsent attachments only after successful creation', async () => {
-  const source = await readFile(new URL('./app.js', import.meta.url), 'utf8');
-  const code = source.slice(source.indexOf('async function handleCreateChat('), source.indexOf('async function handleOpenNewChatHome('));
+  const source = await readFile(new URL('./features/chat/controller.js', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('async function handleCreateChat('), source.indexOf('// A supplement for the reply running in this chat.'));
   const uiState = {bootstrap:{settings:{}},composer:'draft',composerAttachments:[{id:'private-file'}]};
   let reject = true;
   const context=vm.createContext({uiState,resetComposerHistoryNavigation(){},applyBootstrap(){},api:async()=>{if(reject)throw new Error('offline');return {};}});
