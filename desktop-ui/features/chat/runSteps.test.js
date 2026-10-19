@@ -46,7 +46,7 @@ test('U5: completed-only stages keep their chronological place among tool operat
 });
 
 test('U5: applyExecutionEvent stamps startedAt on the first sighting of a stage, whatever its status', async () => {
-  const { createExecutionScene, applyExecutionEvent } = await import('../src/shared/executionScene.js');
+  const { createExecutionScene, applyExecutionEvent } = await import('../../../src/shared/executionScene.js');
   const scene = createExecutionScene({ runId: 'r', requestId: 'q', chatId: 'c' });
   applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1', name: '模型请求', status: 'completed', at: '2026-10-18T00:00:05Z' });
   assert.equal(scene.pipeline[0].startedAt, '2026-10-18T00:00:05Z');

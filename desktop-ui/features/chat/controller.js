@@ -12,12 +12,12 @@
 // generic protections and calls the hooks below at the positions the chat
 // code used to have. See features/README.md.
 import { t } from '../../i18n.js';
-import { expandThreadWindow } from '../../threadWindow.js';
+import { expandThreadWindow } from './threadWindow.js';
 import { videoExtraction, videoKnowledgeNote } from '../../videoKnowledge.js';
-import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from '../../transferCopy.js';
+import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
 import { consumeImageTask, restoreImageTask } from '../../imageControls.js';
 import { createReplyDelivery, receiveReplyDelivery } from '../../replyDelivery.js';
-import { createTurnPresentation, receiveTurnPresentation } from '../../turnPresentation.js';
+import { createTurnPresentation, receiveTurnPresentation } from './turnPresentation.js';
 import { createVoiceInput, voiceInputActive } from '../../voiceInput.js';
 import { modelPanelPosition } from '../../modelPresentation.js';
 import { isRenderableViz } from '../../viz/vizRenderer.js';

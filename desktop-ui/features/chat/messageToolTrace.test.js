@@ -27,7 +27,7 @@ test('renders a compact status chip plus the escaped trace text, without avatar 
 
 // 2026-10-19: a trace written on the iPhone syncs as plain id/role/content.
 test('a synced phone trace is recognised by the shared prefix and its header label', () => {
-  const contract = JSON.parse(readFileSync(new URL('../shared/protocol/agent-loop.json', import.meta.url), 'utf8'));
+  const contract = JSON.parse(readFileSync(new URL('../../../shared/protocol/agent-loop.json', import.meta.url), 'utf8'));
   assert.equal(TOOL_TRACE_PREFIX, contract.toolTrace.prefix);
   assert.equal(isToolTraceMessage({ role: 'assistant', content: '[工具轨迹] 本轮已取消，之前已执行 1 次工具调用（可据此继续，不必重复）：\n1. open_url(url=https://a.example) ✓' }), true);
   assert.equal(isToolTraceMessage({ role: 'user', content: '[工具轨迹] x' }), false);

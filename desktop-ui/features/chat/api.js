@@ -5,7 +5,7 @@
 // /api/chat/send/stream (`done` resolves; `error` or a missing `done` reject
 // with chatStreamError; `aborted` rejects with an AbortError), moved out of
 // desktop-ui/app.js byte-for-byte.
-import { chatStreamError } from '../../turnPresentation.js';
+import { chatStreamError } from './turnPresentation.js';
 
 export function createChatApi(api) {
   return {

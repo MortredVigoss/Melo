@@ -3,7 +3,7 @@
 // record for the next turn, not a reply. It renders compactly: no avatar, no
 // model receipt, no read-aloud button; TTS never streams it either. Pure
 // renderer so it can be tested without a DOM.
-import { t, ui } from './i18n.js';
+import { t, ui } from '../../i18n.js';
 
 //
 // 2026-10-19: the iPhone writes the same trace text (shared/protocol/

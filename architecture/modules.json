@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 560,
-      "edges": 1711,
+      "modules": 561,
+      "edges": 1714,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 27,
+      "detected": 25,
       "unannotated": []
     }
   },
@@ -644,7 +644,6 @@
         ]
       },
       "implicit": [
-        "source-tests-app-js",
         "source-tests-cross-module",
         "source-tests-self"
       ],
@@ -676,8 +675,7 @@
         "shared/protocol/agent-loop.json",
         "shared/protocol/contracts.json",
         "scripts/generate-agent-loop-contract.js",
-        "desktop-ui/{activeToolCallsStrip,conversationContext,evidenceTrailMarkup,linkActions,replyDelivery,replyDocument,runSteps,scrollPreservation,threadWindow,transferCopy,turnPresentation}.js",
-        "desktop-ui/messageTool*.js",
+        "desktop-ui/{linkActions,replyDelivery,replyDocument,scrollPreservation}.js",
         "desktop-ui/features/chat/**",
         "desktop-ui/execution*.js",
         "desktop-ui/execution*.css",
@@ -948,9 +946,6 @@
         "POST /api/chats/update ← src/server.js"
       ],
       "desktopUi": [
-        "desktop-ui/activeToolCallsStrip.js",
-        "desktop-ui/conversationContext.js",
-        "desktop-ui/evidenceTrailMarkup.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",
@@ -958,24 +953,27 @@
         "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
         "desktop-ui/executionViewport.js",
+        "desktop-ui/features/chat/activeToolCallsStrip.js",
         "desktop-ui/features/chat/api.js",
         "desktop-ui/features/chat/context.js",
         "desktop-ui/features/chat/controller.js",
+        "desktop-ui/features/chat/conversationContext.js",
+        "desktop-ui/features/chat/evidenceTrailMarkup.js",
         "desktop-ui/features/chat/index.js",
+        "desktop-ui/features/chat/messageToolResults.js",
+        "desktop-ui/features/chat/messageToolTrace.js",
+        "desktop-ui/features/chat/runSteps.js",
         "desktop-ui/features/chat/state.js",
+        "desktop-ui/features/chat/threadWindow.js",
+        "desktop-ui/features/chat/transferCopy.js",
+        "desktop-ui/features/chat/turnPresentation.js",
         "desktop-ui/features/chat/viewComposer.js",
         "desktop-ui/features/chat/viewMessage.js",
         "desktop-ui/features/chat/viewThread.js",
         "desktop-ui/linkActions.js",
-        "desktop-ui/messageToolResults.js",
-        "desktop-ui/messageToolTrace.js",
         "desktop-ui/replyDelivery.js",
         "desktop-ui/replyDocument.js",
-        "desktop-ui/runSteps.js",
-        "desktop-ui/scrollPreservation.js",
-        "desktop-ui/threadWindow.js",
-        "desktop-ui/transferCopy.js",
-        "desktop-ui/turnPresentation.js"
+        "desktop-ui/scrollPreservation.js"
       ],
       "iphone": {
         "owned": [
@@ -1018,26 +1016,26 @@
           "npm run test:architecture"
         ],
         "js": [
-          "desktop-ui/activeToolCallsStrip.test.js",
           "desktop-ui/chatDensity.browser.test.js",
-          "desktop-ui/evidenceTrailMarkup.test.js",
           "desktop-ui/executionPanel.test.js",
           "desktop-ui/executionPicking.test.js",
           "desktop-ui/executionTelemetry.browser.test.js",
           "desktop-ui/executionTiming.browser.test.js",
           "desktop-ui/executionTiming.test.js",
           "desktop-ui/executionViewport.test.js",
+          "desktop-ui/features/chat/activeToolCallsStrip.test.js",
           "desktop-ui/features/chat/controller.test.js",
+          "desktop-ui/features/chat/evidenceTrailMarkup.test.js",
+          "desktop-ui/features/chat/messageToolResults.test.js",
+          "desktop-ui/features/chat/messageToolTrace.test.js",
+          "desktop-ui/features/chat/runSteps.test.js",
+          "desktop-ui/features/chat/threadWindow.test.js",
+          "desktop-ui/features/chat/transferCopy.test.js",
+          "desktop-ui/features/chat/turnPresentation.test.js",
           "desktop-ui/linkActions.test.js",
           "desktop-ui/liveRun.browser.test.js",
-          "desktop-ui/messageToolResults.test.js",
-          "desktop-ui/messageToolTrace.test.js",
           "desktop-ui/replyDelivery.test.js",
           "desktop-ui/replyDocument.test.js",
-          "desktop-ui/runSteps.test.js",
-          "desktop-ui/threadWindow.test.js",
-          "desktop-ui/transferCopy.test.js",
-          "desktop-ui/turnPresentation.test.js",
           "scripts/generate-agent-loop-contract.test.js",
           "src/judge/fastJudge.test.js",
           "src/judge/fastTransport.test.js",
@@ -3243,7 +3241,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 21,
+        "desktop-ui": 22,
         "src": 2
       },
       "entryModules": [
@@ -3368,6 +3366,7 @@
         "desktop-ui/neuralShell.js",
         "desktop-ui/runtimePanel.js",
         "desktop-ui/searchPage.js",
+        "desktop-ui/sharedApi.js",
         "desktop-ui/styles.css",
         "desktop-ui/synapticBody.js",
         "desktop-ui/translations.js",
@@ -4784,17 +4783,14 @@
         "desktop-ui/app.js"
       ],
       "tests": [
-        "desktop-ui/committedSave.test.js",
         "desktop-ui/connectorDraftDispatch.test.js",
-        "desktop-ui/features/agents/controller.test.js",
         "desktop-ui/features/registry.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
         "desktop-ui/streamTtsOnToolCall.test.js",
         "src/safety/fileSafetyGate.production.test.js"
       ],
-      "note": "按源码文本断言 app.js；P2 从 app.js 迁出代码时这些测试需同批改为行为测试或跟随新文件",
+      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框与安全设置；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）",
       "features": [
-        "agents",
         "approvals",
         "desktop-shell",
         "media",

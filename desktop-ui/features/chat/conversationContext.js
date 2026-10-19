@@ -1,4 +1,4 @@
-import { t, ui } from './i18n.js';
+import { t, ui } from '../../i18n.js';
 export function renderConversationContext({chat,projectId,artifactIds,projects=[],artifacts=[],disabled=false}, escape) {
   const selected = new Set(chat?.contextArtifactIds || artifactIds || []);
   const currentProject = chat ? chat.projectId : projectId;

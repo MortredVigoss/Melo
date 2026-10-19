@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createActionRegistry } from '../registry.js';
-import { decodeBootstrap, settleCommittedSave } from '../../bootstrapPatch.js';
+import { createSharedApi } from '../../sharedApi.js';
 import { installAgentsFeature } from './index.js';
 import { scheduleAgentChannelAutosave, scheduleAgentMarkdownAutosave } from './controller.js';
 
@@ -236,22 +235,17 @@ test('the Agent page renders from feature state: creating, open sections and the
   assert.equal(state.agentOpenSections['research:channels'], false);
 });
 
-// The real app.js api() (the shared request layer) with a stubbed fetch: a
-// committed Agent save whose page data could not be rebuilt reloads the
-// bootstrap, keeps the export warning and clears the draft.
+// The real shared request layer (sharedApi.js, app.js's api() until P2c) with
+// a stubbed fetch: a committed Agent save whose page data could not be rebuilt
+// reloads the bootstrap, keeps the export warning and clears the draft.
 function sharedApi({ uiState, responses, errors }) {
-  const source = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
-  const start = source.indexOf('async function api(path, options = {}) {');
-  const end = source.indexOf('\nasync function loadBootstrap', start);
-  assert.ok(start > 0 && end > start, 'app.js still defines the shared api()');
   const requests = [];
-  const fetch = async (path, init) => {
+  const request = async (path, init) => {
     requests.push([path, init.method]);
     const next = responses.shift();
     return { ok: next.status < 400, json: async () => next.body };
   };
-  const api = new Function('uiState', 'fetch', 'decodeBootstrap', 'settleCommittedSave', 'showError', 't', `${source.slice(start, end)}\nreturn api;`)(
-    uiState, fetch, decodeBootstrap, settleCommittedSave, message => errors.push(message), text => text);
+  const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, showError: message => errors.push(message), request });
   return { api, requests };
 }
 

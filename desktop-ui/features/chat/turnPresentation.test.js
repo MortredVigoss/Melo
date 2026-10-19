@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel } from './turnPresentation.js';
-import { streamApi } from './features/chat/api.js';
+import { streamApi } from './api.js';
 
 test('transport acceptance is waiting, not evidence that generation has started', () => {
   const turn = createTurnPresentation('turn-1');

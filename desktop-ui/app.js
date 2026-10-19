@@ -4,7 +4,8 @@ import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
-import { decodeBootstrap, settleCommittedSave, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
+import { olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
+import { createSharedApi } from './sharedApi.js';
 import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { createActionRegistry } from './features/registry.js';
 import { installMemoryFeature } from './features/memory/index.js';
@@ -340,6 +341,9 @@ const icon = {
 // once, and the click / submit listeners ask these registries before their
 // own switch. Installed here, after uiState and icon exist, before any
 // listener or render can run.
+// The shared request layer (sharedApi.js): the one request helper app.js
+// and every feature use. Created before the features below receive it.
+const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, showError: message => showError(message) });
 const featureActions = createActionRegistry('action');
 const featureForms = createActionRegistry('form');
 const memoryFeature = installMemoryFeature({ api, render, bgRender, showError, activeProject, escapeHtml });
@@ -1426,35 +1430,6 @@ function startSelectedFileEdit() {
   uiState.fileDraftPath = selectedFile.path;
   uiState.fileDraftContent = selectedFile.content;
   render();
-}
-
-async function api(path, options = {}) {
-  // Keep the request's exact baseline even if another response arrives first.
-  const base = uiState.bootstrap?._snapshot ? structuredClone(uiState.bootstrap) : null;
-  const response = await fetch(path, {
-    method: options.method || 'GET',
-    headers: {
-      'content-type': 'application/json',
-      ...(base ? { 'x-melo-bootstrap-base': base._snapshot.token } : {}),
-      ...(options.headers || {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal,
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || 'Request failed.');
-  }
-
-  // A project/Agent save that committed but could not rebuild the page data
-  // answers { ok, receipt, bootstrapError } (P1, src/http/bootstrapAfterCommit.js):
-  // reload the bootstrap instead of applying the receipt, for every caller.
-  return settleCommittedSave(decodeBootstrap(payload, base), {
-    reload: () => api('/api/bootstrap'),
-    current: () => uiState.bootstrap,
-    notify: error => showError(`${t('已保存')} · ${error.message}`),
-  });
 }
 
 async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}) {

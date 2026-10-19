@@ -10,12 +10,12 @@
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { conversationAgent, renderModelReceipt } from '../../modelPresentation.js';
-import { visibleMessageWindow, ensureMessageInThreadWindow } from '../../threadWindow.js';
-import { isToolTraceMessage, renderToolTraceMessage } from '../../messageToolTrace.js';
-import { sceneSteps, renderRunSteps } from '../../runSteps.js';
+import { visibleMessageWindow, ensureMessageInThreadWindow } from './threadWindow.js';
+import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
+import { sceneSteps, renderRunSteps } from './runSteps.js';
 import { replyPlainText } from '../../replyDocument.js';
 import { mountVizBlocks } from '../../viz/vizRenderer.js';
-import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from '../../activeToolCallsStrip.js';
+import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
 import { getBootstrap, app, activeChat, activeChatAgentProfile, newChatSelection, escapeHtml, truncate, icon, renderMessageRefs, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
 import { chatState } from './state.js';
 import { renderComposerCard } from './viewComposer.js';

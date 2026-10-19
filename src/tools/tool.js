@@ -35,7 +35,7 @@
  *   - inputKeys:      string[] — argument keys shown in the observation input
  *                     summary. Fallback: executionObservation default key list.
  *   - concurrency:    see above. Fallback: isConcurrencySafe.
- * desktop-ui/runSteps.js labels cannot read tool objects and stay hand-maintained.
+ * desktop-ui/features/chat/runSteps.js labels cannot read tool objects and stay hand-maintained.
  */
 
 import { CAPABILITY_LABELS } from '../domain/agent/capabilities.js';
