@@ -26,7 +26,7 @@
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要与 API 白名单回执；手机已补独立 Responses/兼容 API/Anthropic 回执并保留历史 | 手机 `2afe9dd`，0.5.18 (24) 已装；协议/持久化/模拟器详情通过，真实服务回执本轮未发请求；v1 同步不传新增 api 字段 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
-| 手机 agent loop | 10-19 三种连接接入 `ios/Melo/AgentLoop.swift`，共享限额、信封、重复拦截、补充与核实契约；独立审计确认这只是部分对齐，工具中途超时、参数边界与核实上下文仍有缺口 | [双端审计](docs/mobile-desktop-audit-20261019.md)：3 项 P1、4 项 P2 未修；31 Swift / 27 JS / 4 场景校验通过，新增隔离探针复现缺口；真实账号与真机未验 |
+| 手机 agent loop / 对齐修复 | 七项审计缺口已有实现：安全分页、可中断工具/授权、统一过滤的证据、按容量压缩与原文读取、按问题检索、完整成员配置和项目来源记忆 | [修复记录](docs/mobile-desktop-alignment.md)：代码 `ee8eb3f` / `3ad091c`；3975 JS / 32 Swift 日常、真实桌面 HTTP、模拟器发送与团队通过；未覆盖已安装版本、真实服务与真机 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
@@ -76,6 +76,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 手机原生 | `ios/Melo/ChatStore.swift`、`ContentView.swift`、`SettingsView.swift`、`MeloApp.swift` | 本机聊天、角色、草稿、设置、图片和前后台；桌面关机不应阻断独立聊天 |
 | 手机授权 | `CodexOAuth.swift`、`ChatGPTAccount.swift`、`CodexLoginView.swift`、`Keychain.swift` | 设备码 / PKCE / 身份签名 / 刷新；新键 `codexAccounts`，连接 ID 保留 `chatgpt`；不复制桌面 token |
 | 手机同步 / 共享渲染 | `mobile-sync/`、`ios/Melo/SyncWorkspace.swift`、`ios/Melo/Scene/`、`ios/scripts/build-scene.py` | schema 生成 JS/Swift 约束与共用样例；共享资源 manifest/hash；同步不是模型登录 |
+| 手机上下文与团队 | `PhoneContext.swift`、`AgentProfile.swift`、`AgentTeam.swift`、`ChatStore.swift` | 与桌面共用容量默认值；消息原文保留、话题卡可回读；同一份过滤证据用于主请求/核实/成员，成员读取项目覆盖并受父级工具范围与自己的预算限制 |
+| 项目来源记忆扩展 | `mobile-sync/projectMemoryProtocol.js`、`src/services/chat/projectMemorySync.js`、`ProjectMemoryProjection` | `/v1/project-memory` 和 `/api/project-memory-sync` 独立可选通道；不伪造聊天来源；旧服务继续同步聊天，该扩展保留待同步；冲突与恢复日志保留 |
 | 手机文件 | `ios/Melo/LocalFileAccess.swift`、`LocalFilesView.swift`、`LocalPermissionsView.swift` | 本机目录书签、撤销、路径约束、预览与确认导入；授权不自动上传 |
 | 外部官网原型 | `/Users/mortred/Documents/New project/melo-universe/src/{data,neural-geometry,scene,navigation,main}.js`、`styles.css` | 独立 Three.js / Vite SPA；连通神经图、真实投影命中、History API 管理三级 hash 路由，`onFrame` 进度协调相机/滚动/正文；不接产品模型、账号或收款，旧站与桌面导出分别保留 |
 | 外部 SWE-bench 适配 | `/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/{run_melo.mjs,container_tools.py,run_batch.py}` | 调用产品正常消息入口，在独立基准进程替换六个工具运行函数并自动授权；产品仓库没有Docker功能改动或接入提交；评分不覆盖桌面权限/手机 |
@@ -586,3 +588,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 18 项定向 JS 与真实桌面 HTTP 冷启动回归通过（`.tmp/mobile-fixes-targeted.log`、`.tmp/mobile-fixes-http.log`）；真实 HTTP 回归发现并修正首次同步未初始化设备标识。首次全量 JS 有翻译漏项及并行时限失败，翻译已补，3 个时限相关文件串行重跑 6 项通过；最终全量仍待重跑。
 - 新建隔离 iPhone 模拟器运行真实 `ChatStore.send`：本机压缩/原文保留/重载、关闭资料、审批超时后迟到点击零写入、下一轮恢复通过；Debug 模拟器构建通过。回执 `.tmp/mobile-desktop-fixes-20261019/parity-verification.json`。不涉及真实账号、实体机、安装覆盖或真实模型。
 - 下一步完成 32 组 Swift、最终日常测试与差异复核，按用户授权 git push；不运行 git pp。
+
+### 2026-10-19 — melo主线 — 七项修复完成并通过最终日常
+
+- 代码 `ee8eb3f` / `3ad091c`，[逐项回执](docs/mobile-desktop-alignment.md#最终验证与交付)覆盖 A1–A7；最终补齐 `ConversationControls.swift`、`PersonalWorkspace.swift`、桌面选择器与 `conversationSelection.js`，解除旧数量/字数前置阻断，统一按问题与上下文预算选片段。
+- 完整日常 GREEN：3975 JS、959 文件语法、两组浏览器、4 项场景、32 Swift；iOS Debug 模拟器构建无警告。真实 `ChatStore.send` 夹具证明压缩后原文与重载保留、关闭来源不入请求、超时审批零写入并可继续、15 份资料下团队带入项目与成员配置。
+- 证据 `.tmp/mobile-fixes-daily.log`、`.tmp/mobile-fixes-build.log`、`.tmp/mobile-desktop-fixes-20261019/{source-verification,parity-verification}.json`。原账号/聊天/图片等没有迁移清理；只操作隔离 home 与新模拟器，不重装双端，不运行 git pp。
+- 本记录随代码交付 `origin/master`。未部署远端同步服务；新版项目记忆扩展在服务升级后生效，旧服务保留待同步并继续原有聊天同步。真机、真实供应商与长后台仍单列，不能把源码/模拟器证据当作装机验收。
