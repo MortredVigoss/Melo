@@ -14,6 +14,8 @@
 
 ## 2. 当前交付与阻塞
 
+2026-10-19 GitHub Backlog 已发布：用户授权后创建并回读确认 14 个 Open Issues（#1–#14），[编号索引与状态修订](docs/github-issue-index-20261019.md)。核对最新 `master@b64fe54`：UI P2 已完成；项目记忆 HTTP/独立保存本轮通过，A02 降为并发调查；A05 已修不建单，A13 仅跟踪剩余 Backend。文件身份两项 RED 仍复现；未实现产品改动或合并主线。
+
 2026-10-19 Mobile 分支收尾：用户授权整理并 Push `codex/mobile-use-features`，主线不合并。已修 A05 Node Parser 32 / Core 8 冲突、daily CLI Fixture Test Root 遗漏与 Search 注册示例缺失；最终专项 128 通过，语法与生成一致性通过。整仓 daily 未绿；最终非 Browser 3921 pass / 9 fail / 20 skipped，文件身份与其余环境 / Fixture 故障保留。Android 二进制未变，本次未重验设备；[收尾与主线交接](docs/mobile-branch-wrap-20261019.md)。
 
 2026-10-19 Repo Backlog（仅分析）：用户要求仔细核对后续工作，未授权合并或实施。固定远端 `master@83654dd` / 本地 Mobile `bcdb276`，GitHub Open Issues / PR 均为 0；[15 个建议 Issue 与验收](docs/repo-backlog-audit-20261019.md)。本机 WSL 复现文件身份检查在 inode 复用时漏拦截（8/8 临时探针）、项目手写记忆保存 HTTP 500；另确认主线自然推荐 Search 路由、历史签名访问与分支 8/32 批次边界。Shared Core 84 项通过，主线无强制 Offline 串行专项 229 通过 / 9 失败；环境与 Fixture 失败已分类，不能称完整验收。先修明确 RED，再收敛 Core，Eval 后置；本轮只保存审查与交接文档，不改产品代码、操作手机、使用真实模型凭证、合并或 Push。

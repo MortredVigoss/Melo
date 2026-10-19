@@ -1,5 +1,7 @@
 # Melo 下一步 Issue Backlog
 
+发布更新（2026-10-19）：已按最新主线 `b64fe54` 修订并创建 14 个 GitHub Issues，见 [编号索引](github-issue-index-20261019.md)。A05 已修不建单；A02 当前复测通过，转并发调查；UI P2 已完成，A13 收窄至 Backend。本文件下文保留原固定 SHA 审查，不代表每项仍是当前未修故障。
+
 基线：`master @ 83654dd1d59e854c3d347924bf604258b44eaab1`；`codex/mobile-use-features @ bcdb276f9d9a9282c9cecc69e4a58875ec34cb72`。日期：2026-10-19（Australia/Sydney）。
 
 只读分析固定 master 与 Android 工作分支，检查真实入口、最近改动、历史待办和离线回归。不是全部源码逐行审查、完整安全审计或真实任务成功率测评。未合并、改产品代码、Push、创建 GitHub Issue、操作手机或使用真实模型凭证。
