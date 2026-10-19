@@ -14,6 +14,8 @@
 
 ## 2. 当前交付与阻塞
 
+2026-10-19 Repo Backlog（仅分析）：用户要求仔细核对后续工作，未授权合并或实施。固定远端 `master@83654dd` / 本地 Mobile `bcdb276`，GitHub Open Issues / PR 均为 0；[15 个建议 Issue 与验收](docs/repo-backlog-audit-20261019.md)。本机 WSL 复现文件身份检查在 inode 复用时漏拦截（8/8 临时探针）、项目手写记忆保存 HTTP 500；另确认主线自然推荐 Search 路由、历史签名访问与分支 8/32 批次边界。Shared Core 84 项通过，主线无强制 Offline 串行专项 229 通过 / 9 失败；环境与 Fixture 失败已分类，不能称完整验收。先修明确 RED，再收敛 Core，Eval 后置；本轮只保存审查与交接文档，不改产品代码、操作手机、使用真实模型凭证、合并或 Push。
+
 2026-10-19 Refactor 讨论基线：已 fetch 默认分支 `origin/master` 至 `83654dd1d59e854c3d347924bf604258b44eaab1`，未合并到当前 Android 分支；两支各有 39 / 16 个独立提交。该主分支含 JS / Swift 两套 Loop 与共享 JSON Contract，尚无 Android / `shared/agent`。已有回归测试、Memory Retrieval Bench 与 stub Turn Benchmark；`EVALUATION.md` 是代码审查评分，尚未找到覆盖完整 Agent 任务质量的统一 Dataset / Runner / Scorer。隔离该 SHA 运行共享 Contract / 生成一致性 / 架构边界 12 tests 全通过；未跑完整 gate、真实模型或设备。本轮仅讨论，先确定 Eval baseline 和生产 Loop 收敛边界，再批准实施。
 
 | 项目 | 当前事实 | 下一步 / 边界 |

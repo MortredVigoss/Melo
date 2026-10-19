@@ -1,0 +1,52 @@
+{
+  "branch": "codex/mobile-use-features",
+  "probes": [
+    {
+      "name": "native-batch-versus-core",
+      "calls": 8,
+      "parserLimit": 32,
+      "parserAccepted": 8,
+      "accepted": true
+    },
+    {
+      "name": "native-batch-versus-core",
+      "calls": 9,
+      "parserLimit": 32,
+      "parserAccepted": 9,
+      "accepted": false,
+      "code": "INVALID_BATCH",
+      "message": "Invalid tool batch size."
+    },
+    {
+      "name": "native-batch-versus-core",
+      "calls": 32,
+      "parserLimit": 32,
+      "parserAccepted": 32,
+      "accepted": false,
+      "code": "INVALID_BATCH",
+      "message": "Invalid tool batch size."
+    },
+    {
+      "name": "completion-evidence-scope",
+      "status": "completed",
+      "successfulTools": [
+        "web_search"
+      ],
+      "note": "Core tracks tool names and success receipts; it does not receive or grade task-specific source contents."
+    },
+    {
+      "name": "default-test-discovery",
+      "total": 437,
+      "coreTests": 5,
+      "coreDiscovered": 5,
+      "missing": []
+    },
+    {
+      "name": "signed-image-url-lifetime",
+      "initiallyValid": true,
+      "validAfterExpiry": false,
+      "validInFreshModule": false,
+      "note": "Expected signing behavior. Preview UI reuses the original src and has no renewal path."
+    }
+  ]
+}
