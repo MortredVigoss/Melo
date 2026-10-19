@@ -131,10 +131,12 @@ export function renderAttachmentCards(message, { savedVideoKnowledge = {}, escap
       ${attachments
         .map(attachment => {
           if (attachment.kind === 'image') {
+            const reference = message.id && attachment.id
+              ? ` data-image-ref="${escapeHtml(JSON.stringify({ messageId: message.id, attachmentId: attachment.id, ...(message.metadata?.chatId ? { chatId: message.metadata.chatId } : {}) }))}"` : '';
             return ui`
               <figure class="message-attachment-card media-card image-card">
                 <button type="button" class="message-image-preview" data-image-preview aria-label="预览图片：${escapeHtml(attachmentLabel(attachment))}" title="点击放大预览">
-                  <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image" />
+                  <img src="${escapeHtml(attachment.url)}" alt="${escapeHtml(attachmentLabel(attachment))}" class="message-image"${reference} />
                 </button>
                 <figcaption>${escapeHtml(attachmentLabel(attachment))}</figcaption>
               </figure>

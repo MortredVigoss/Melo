@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 561,
-      "edges": 1715,
+      "modules": 564,
+      "edges": 1725,
       "roots": [
         "src",
         "desktop-ui",
@@ -32,7 +32,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 151,
+    "routes": 153,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -127,7 +127,8 @@
           "module": "src/services/workspace/toolWorkspace.js",
           "importedBy": [
             "chat",
-            "tools"
+            "tools",
+            "voice"
           ]
         },
         {
@@ -165,12 +166,13 @@
       },
       "usedBy": {
         "approvals": 4,
-        "chat": 9,
+        "chat": 10,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 5,
         "sync": 1,
-        "tools": 5
+        "tools": 5,
+        "voice": 1
       },
       "httpRoutes": [
         "POST /api/chats/delete-preview ← src/http/domainRoutes.js",
@@ -863,7 +865,8 @@
           "module": "src/services/chat/executionScenes.js",
           "importedBy": [
             "media",
-            "sync"
+            "sync",
+            "voice"
           ]
         },
         {
@@ -914,10 +917,10 @@
         "channels": 2,
         "desktop-shell": 15,
         "knowledge": 5,
-        "media": 24,
+        "media": 25,
         "memory": 27,
         "platform": 54,
-        "projects": 9,
+        "projects": 10,
         "settings": 9,
         "sync": 2,
         "tools": 31,
@@ -934,7 +937,7 @@
         "settings": 5,
         "sync": 4,
         "tools": 11,
-        "voice": 1
+        "voice": 2
       },
       "httpRoutes": [
         "GET /api/chat/scenes ← src/http/executionRoutes.js",
@@ -2541,8 +2544,8 @@
         "ios/Tests/{ImagePhotoSaveTests,ImageWorkflowTests,VideoStudyTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 5,
-        "src": 35
+        "desktop-ui": 6,
+        "src": 36
       },
       "entryModules": [
         {
@@ -2623,6 +2626,13 @@
           ]
         },
         {
+          "module": "src/media/imageRecords.js",
+          "importedBy": [
+            "chat",
+            "voice"
+          ]
+        },
+        {
           "module": "src/media/index.js",
           "importedBy": [
             "channels",
@@ -2683,26 +2693,30 @@
       "dependsOn": {
         "approvals": 1,
         "chat": 9,
-        "desktop-shell": 4,
+        "desktop-shell": 5,
         "knowledge": 1,
         "memory": 1,
         "platform": 9,
         "settings": 7,
-        "tools": 4
+        "tools": 4,
+        "voice": 1
       },
       "usedBy": {
         "channels": 3,
-        "chat": 24,
+        "chat": 25,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
         "settings": 1,
-        "tools": 2
+        "tools": 2,
+        "voice": 1
       },
       "httpRoutes": [
         "* /api/chat/scenes/select-image ← src/http/executionRoutes.js",
         "GET /api/files/signed* ← src/server.js",
         "GET /api/media/attachments/:name ← src/http/mediaRoutes.js",
+        "GET /api/media/images/:scope/:run/:image ← src/http/mediaRoutes.js",
+        "GET /api/media/images/resolve ← src/http/mediaRoutes.js",
         "POST /api/media/upload ← src/http/mediaRoutes.js",
         "GET /api/media/uploads/:name ← src/http/mediaRoutes.js"
       ],
@@ -2710,6 +2724,7 @@
         "desktop-ui/attachmentCards.js",
         "desktop-ui/imageControls.js",
         "desktop-ui/imagePreview.js",
+        "desktop-ui/imageResource.js",
         "desktop-ui/imageZoom.js",
         "desktop-ui/videoStatus.js"
       ],
@@ -2738,6 +2753,7 @@
         "js": [
           "desktop-ui/imageControls.test.js",
           "desktop-ui/imagePreview.browser.test.js",
+          "desktop-ui/imageRecovery.browser.test.js",
           "desktop-ui/mediaAttachment.source.test.js",
           "desktop-ui/videoStatus.test.js",
           "src/desktopStore.vision.test.js",
@@ -2799,7 +2815,7 @@
       ],
       "modules": {
         "desktop-ui": 2,
-        "src": 7
+        "src": 8
       },
       "entryModules": [
         {
@@ -2824,6 +2840,12 @@
           "module": "src/services/media/discordVoiceAudio.js",
           "importedBy": [
             "channels"
+          ]
+        },
+        {
+          "module": "src/services/media/savedImages.js",
+          "importedBy": [
+            "media"
           ]
         },
         {
@@ -2852,14 +2874,18 @@
         }
       ],
       "dependsOn": {
-        "chat": 1,
-        "platform": 2,
+        "approvals": 1,
+        "chat": 2,
+        "media": 1,
+        "platform": 3,
+        "projects": 1,
         "settings": 1
       },
       "usedBy": {
         "channels": 5,
         "chat": 3,
         "desktop-shell": 2,
+        "media": 1,
         "platform": 2
       },
       "httpRoutes": [
@@ -3015,7 +3041,8 @@
           "module": "src/safety/dirfdOps.js",
           "importedBy": [
             "knowledge",
-            "tools"
+            "tools",
+            "voice"
           ]
         },
         {
@@ -3147,7 +3174,8 @@
         "platform": 18,
         "projects": 1,
         "settings": 1,
-        "tools": 33
+        "tools": 33,
+        "voice": 1
       },
       "httpRoutes": [
         "POST /api/approvals ← src/http/domainRoutes.js",
@@ -3327,7 +3355,7 @@
         "agents": 7,
         "approvals": 3,
         "chat": 15,
-        "media": 4,
+        "media": 5,
         "memory": 6,
         "platform": 2,
         "projects": 5,
@@ -3732,7 +3760,8 @@
             "projects",
             "settings",
             "sync",
-            "tools"
+            "tools",
+            "voice"
           ]
         },
         {
@@ -3772,7 +3801,7 @@
         "settings": 22,
         "sync": 4,
         "tools": 34,
-        "voice": 2
+        "voice": 3
       },
       "httpRoutes": [],
       "desktopUi": [],
@@ -3800,6 +3829,7 @@
           "src/http/projectAgentRoutes.http.test.js",
           "src/http/projectMemorySync.http.test.js",
           "src/http/routeRegistry.test.js",
+          "src/http/savedImages.http.test.js",
           "src/modelAlignment.test.js",
           "src/runtime/architectureBoundary.test.js",
           "src/runtime/auditFixes.http.test.js",

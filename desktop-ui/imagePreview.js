@@ -1,5 +1,6 @@
 import { t, ui } from './i18n.js';
 import { installImageZoom } from './imageZoom.js';
+import { resolveImageSource, imageResponseError, installImageRecovery } from './imageResource.js';
 const supportedTypes = new Map([
   ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'],
   ['image/gif', 'gif'], ['image/avif', 'avif'], ['image/heic', 'heic'],
@@ -13,6 +14,7 @@ export function imageDownloadName(label, type) {
 
 // Keep the modal outside #app so streaming updates cannot close it or reset zoom.
 export function installImagePreview({ saveNativeImage } = {}) {
+  installImageRecovery();
   let current;
   document.addEventListener('click', event => {
     const trigger = event.target.closest('[data-image-preview]');
@@ -37,8 +39,7 @@ export function installImagePreview({ saveNativeImage } = {}) {
     dialog.querySelector('.image-preview-title').textContent = label;
     bitmap.alt = label;
     bitmap.onload = () => { dimensions.textContent = `${bitmap.naturalWidth} × ${bitmap.naturalHeight}`; };
-    bitmap.onerror = () => { dimensions.textContent = t("图片无法载入，文件可能已过期或不可用。"); };
-    bitmap.src = url.href;
+    bitmap.onerror = () => { dimensions.textContent = t("图片已损坏或浏览器不支持此格式。"); };
     dialog.querySelector('[data-preview-close]').onclick = () => dialog.close();
     dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
     const abort = new AbortController();
@@ -50,8 +51,9 @@ export function installImagePreview({ saveNativeImage } = {}) {
     download.onclick = async () => {
       download.disabled = true; status.textContent = t("正在准备原图…");
       try {
-        const response = await fetch(url.href, { signal: abort.signal });
-        if (!response.ok) throw new Error(t("图片无法下载，请确认文件仍可用后重试。"));
+        const sourceUrl = await resolveImageSource(source, { signal: abort.signal });
+        const response = await fetch(sourceUrl, { signal: abort.signal });
+        if (!response.ok) throw new Error(await imageResponseError(response, "图片无法下载，请确认文件仍可用后重试。"));
         const blob = await response.blob();
         if (!supportedTypes.has(blob.type.toLowerCase())) throw new Error('返回的文件不是支持的图片格式。');
         if (blob.size > 64 * 1024 * 1024) throw new Error('图片超过 64 MB，暂时无法下载。');
@@ -79,5 +81,8 @@ export function installImagePreview({ saveNativeImage } = {}) {
     };
     document.body.append(dialog); dialog.showModal();
     disposeZoom = installImageZoom(dialog.querySelector('.image-preview-stage'), bitmap, zoom);
+    resolveImageSource(source, { signal: abort.signal }).then(sourceUrl => {
+      if (dialog.open) bitmap.src = sourceUrl;
+    }).catch(error => { if (!abort.signal.aborted) dimensions.textContent = error.message; });
   }, true);
 }

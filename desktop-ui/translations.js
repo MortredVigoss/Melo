@@ -1,6 +1,19 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["未找到这张图片的可信保存记录。", "No trusted saved record was found for this image.", "この画像の信頼できる保存記録が見つかりません。", "이 이미지의 신뢰할 수 있는 저장 기록을 찾을 수 없습니다.", "No se encontró un registro guardado fiable de esta imagen."],
+["图片位置不在已登记的工作目录内。", "The image is outside its registered workspace.", "画像は登録された作業フォルダの外にあります。", "이미지가 등록된 작업 폴더 밖에 있습니다.", "La imagen está fuera de su carpeta de trabajo registrada."],
+["图片原文件已不存在。", "The original image file no longer exists.", "元の画像ファイルが見つかりません。", "원본 이미지 파일이 더 이상 존재하지 않습니다.", "El archivo de imagen original ya no existe."],
+["图片工作目录已变化，无法安全打开。", "The image workspace has changed and cannot be opened safely.", "画像の作業フォルダが変更されたため、安全に開けません。", "이미지 작업 폴더가 변경되어 안전하게 열 수 없습니다.", "La carpeta de la imagen ha cambiado y no se puede abrir de forma segura."],
+["图片路径包含软链接，无法安全打开。", "The image path contains a symbolic link and cannot be opened safely.", "画像パスにシンボリックリンクが含まれるため、安全に開けません。", "이미지 경로에 심볼릭 링크가 있어 안전하게 열 수 없습니다.", "La ruta contiene un enlace simbólico y no se puede abrir de forma segura."],
+["图片位置不是普通文件。", "The image location is not a regular file.", "画像の場所は通常のファイルではありません。", "이미지 위치가 일반 파일이 아닙니다.", "La ubicación de la imagen no es un archivo normal."],
+["图片文件已损坏，无法读取。", "The image file is damaged and cannot be read.", "画像ファイルが破損しているため、読み込めません。", "이미지 파일이 손상되어 읽을 수 없습니다.", "La imagen está dañada y no se puede leer."],
+["图片文件已损坏或格式不受支持。", "The image is damaged or its format is unsupported.", "画像が破損しているか、形式が対応していません。", "이미지가 손상되었거나 지원하지 않는 형식입니다.", "La imagen está dañada o su formato no es compatible."],
+["图片格式不受支持。", "This image format is unsupported.", "この画像形式には対応していません。", "지원하지 않는 이미지 형식입니다.", "Este formato de imagen no es compatible."],
+["图片超过 64 MB，暂时无法打开。", "Images larger than 64 MB cannot be opened yet.", "64 MB を超える画像は現在開けません。", "64 MB를 초과하는 이미지는 아직 열 수 없습니다.", "Aún no se pueden abrir imágenes de más de 64 MB."],
+["图片暂时无法读取，请重试。", "The image could not be read. Please try again.", "画像を読み込めません。もう一度お試しください。", "이미지를 읽을 수 없습니다. 다시 시도하세요.", "No se pudo leer la imagen. Inténtalo de nuevo."],
+["图片访问地址无效。", "The image access address is invalid.", "画像のアクセス先が無効です。", "이미지 접근 주소가 유효하지 않습니다.", "La dirección de acceso a la imagen no es válida."],
+["图片已损坏或浏览器不支持此格式。", "The image is damaged or this browser does not support its format.", "画像が破損しているか、このブラウザで形式に対応していません。", "이미지가 손상되었거나 브라우저에서 지원하지 않는 형식입니다.", "La imagen está dañada o el navegador no admite su formato."],
 ["已保存，等待刷新页面", "Saved. Waiting to refresh the page.", "保存済みです。ページの更新をお待ちください。", "저장되었습니다. 페이지 새로 고침을 기다리는 중입니다.", "Guardado. Pendiente de actualizar la página."],
 ["刷新只读取已保存的内容。", "Refreshing only reads the saved content.", "更新では保存済みの内容のみを読み込みます。", "새로 고침은 저장된 내용만 읽습니다.", "Al actualizar solo se lee el contenido guardado."],
 ["正在刷新…", "Refreshing…", "更新中…", "새로 고치는 중…", "Actualizando…"],

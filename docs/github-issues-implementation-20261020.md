@@ -6,8 +6,8 @@
 
 | 顺序 | Issue | 状态 / 完成条件 |
 | --- | --- | --- |
-| 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 修复与最终验证通过，待本次提交推送及 GitHub 回执 |
-| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 待执行；受信资源身份重新解析、过期/重启/端口回归 |
+| 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
+| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 修复已完成，最终日常已通过，待本条提交推送；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 待执行；自然推荐和否定/引用/本地意图边界 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #1 同步加入最小双平台文件安全工作流；完整平台矩阵与并发复现仍待完成 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | 待执行；按 Host 适配与对照验收，不删现有行为 |
@@ -28,6 +28,20 @@
 - `linux-baseline.log`：原主线 `b64fe54` 的 6 项 checked 回归独立复现 2 项失败（父目录重建后的删除/建链接）。
 - `mac-safety-final.log`：最终文件安全组 376/376；`linux-safety.log`：Debian Node 22 容器最终同组 375/375。包含 21 条新增身份/生命周期回归，原生 addon 分平台构建。
 - `daily.log`：日常全量 JS 4070/4070、语法、文档链接、两项设置浏览器、共享渲染 4/4、32 组 Swift 通过；之后的令牌/清理补强由上述最终专项复测，最终语法再次通过。
-- 没有运行会打包安装的 `test:full`，没有运行 `git pp`；远端 CI 状态推送后单列。
+- 没有运行会打包安装的 `test:full`，没有运行 `git pp`；GitHub Actions run `39260200905` 两个平台均通过；issue #1 已评论并关闭。
 
 边界：此项解决审批窗口与异步备份/恢复之间的身份复用，不声称 POSIX `statat` 与 `unlinkat/renameat` 具有按叶子 inode 条件执行的通用原子语义。真实目录不搬迁，备份/回收格式不变；iOS 沙盒文件实现不使用这个原生 addon。
+
+
+## #4 实施与验收
+
+由服务器依据已持久化的执行成果或附件登记解析图片身份，生成当前端口下可用的访问入口；聊天卡片、预览和保存使用同一身份。图片登记独立于短期执行场景清理，避免旧成果只剩失效 URL。只从当前 home 的受信记录取路径，拒绝跨 home、越界和软链接，不接受客户端解码 p 后重签。
+
+验证覆盖 TTL、服务重启/端口变更、旧历史读取与原图 SHA；网络/文件缺失/图片损坏要有明确状态，自动恢复次数有界。保留已有缩放、下载及原生保存行为。
+
+- `src/media/imageRecords.js` 将工具登记的图片身份独立持久化，清理执行场景前先保留登记；串行合并同一 run 的并发回填。`sendChatMessage` 捕获本轮工作目录。
+- `src/services/media/savedImages.js` / `GET /api/media/images/resolve` 根据已保存的助手消息与附件解析；`GET /api/media/images/:scope/:run/:image` 读取原始字节。路径限制到登记根目录，逐级拒绝软链接，检查文件类型/大小；home 隔离。旧消息和原图不改写。
+- 旧场景已清理时，仅可恢复所属工作区 `generated/` 内、文件名和服务端计算编码都与已保存附件一致的图片；不解码客户端 p 来授权任意文件。缺少可信记录的其他路径明确报不可用。
+- 聊天卡片、预览、保存共享 `desktop-ui/imageResource.js`；自动恢复每个图片节点一次，缓存成功解析，下载保留原始字节。错误区分记录缺失、原图丢失、损坏、越界；五语与 iPhone 共用翻译资源同步。
+- 7 项 HTTP 回归覆盖真正 TTL 过期、场景清理、两个真实服务进程重启和换端口、并发回填、越界/跨 home/叶子及祖先软链接；浏览器覆盖历史卡片/弹窗/原生保存桥、原图 SHA/字节一致及失败无重试循环。全部包含在 `image-daily.log` 的 JS 4079/4079 中。
+- 边界：测试使用隔离 home 和临时图片；没有重装应用，没有操作用户历史图片。执行面板仍按既有逻辑在读取场景时更新签名；手机本机图片存储流程不改写。

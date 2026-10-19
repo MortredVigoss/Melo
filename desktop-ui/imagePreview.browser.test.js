@@ -18,7 +18,7 @@ test('image preview preserves original downloads, focus, zoom and retry feedback
   let unavailable = false;
   const server = createServer(async (req, res) => {
     if (req.url === '/original.png') { res.writeHead(unavailable ? 404 : 200, { 'content-type': 'image/png' }); res.end(unavailable ? '' : bytes); return; }
-    if (['/imagePreview.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
+    if (['/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
       res.writeHead(200, { 'content-type': req.url.endsWith('.js') ? 'text/javascript' : 'text/css' });
       res.end(await readFile(resolve('desktop-ui' + req.url))); return;
     }

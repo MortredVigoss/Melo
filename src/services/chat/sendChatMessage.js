@@ -3,6 +3,7 @@ import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/perform
 import { conversationConfig, selectedMaterials } from './conversationSelection.js';
 import { visionConnection } from '../../images/imageSettings.js';
 import { createExecutionRecorder } from './executionScenes.js';
+import { chatWorkspacePath } from '../workspace/toolWorkspace.js';
 import { persistSessionMemorySnapshot } from './derivedState.js';
 import { createRequestContext, requestIdentity } from '../../runtime/requestContext.js';
 import { runWithRequestContext } from '../../runtime/requestScope.js';
@@ -119,7 +120,9 @@ export function sendChatMessage(options) {
       };
       const identity = requestIdentity(context);
       const emit = (event, data) => options.sseEmitter?.(event, { ...identity, ...data });
-      const executionRecorder = createExecutionRecorder(context, options.content, emit);
+      const executionRecorder = createExecutionRecorder({ ...context,
+        workspacePath: turnBinding.workspace?.workspacePath || chatWorkspacePath(context.home, context.chatId),
+      }, options.content, emit);
       try {
         const turnContext=Object.freeze({ ...context, turnBinding, capabilityScope:turnBinding.capabilityScope });
         const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,

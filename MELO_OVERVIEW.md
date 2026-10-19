@@ -25,9 +25,9 @@
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
 | 双端同步 | v1 线协议冻结；Agent 能力与项目记忆走可选通道，旧服务只让扩展待同步，聊天同步照常 | [双端修复](docs/mobile-desktop-alignment.md)；私人同步服务需部署本版代码后启用新通道 |
 | 工具、MCP 与网页 | 免费 MCP 默认启动 `f3dba1a`；连接器 / MCP / 会话授权 / 技能管理 `7ae2292`；手机系统数据工具 `2e47868`（默认全关）；两端网页打开与截图（10-18） | [MCP 启动](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md)；实体数据调用与真机 WKWebView 待验 |
-| 图片、视频与附件 | 桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 核对确认旧签名过期/进程更换后仍失效，预览复用旧 URL；见 [#4 核对](docs/github-issues-review-20261020.md)，未重做用户历史图片实点，见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
+| 图片、视频与附件 | 桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 已加入稳定图片登记及旧历史恢复，聊天/预览/保存共用受信入口，原图不改写；[实施证据](docs/github-issues-implementation-20261020.md)，未重做用户历史图片实点；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
 | 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
-| 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（验证通过、待推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（JS 仍在 app.js，P2c） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
+| 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（JS 仍在 app.js，P2c） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff` | [双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
 | iPhone | 实体机 0.7.4 (36) 已覆盖并启动，登录标识与对话 / Agent / 图片保留 | [双端安装](docs/dual-reinstall-20261019.md)；`ChatStore.swift` 仍集中协调（P4 拆分）；真实服务与长后台另验 |
 | 远程渠道 | Telegram（10-16）、Discord（10-17）按用户决定归档，配置与历史保留 | [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md) |
@@ -58,12 +58,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— 按序实施 GitHub issues：#1 文件身份
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；用户授权逐项修复、验证、推送并在 GitHub 完成；修复与最终验证通过，待本次推送及 GitHub 回执。
-- #1：审批前持有父目录及叶子对象的内核身份句柄，随令牌移交给操作；覆盖写入、编辑、mkdir、移动、回收及恢复。取消、超时、失败、令牌到期清理；令牌同步取走，禁止并发重复消费。敏感路径规则与备份格式保留。
-- 实际文件：`native/dirfd_ops.cc`、`src/safety/{dirfdOps,fileSafetyGate,backup,trash}.js`、四个文件修改工具；新增身份回归和双平台 `.github/workflows/file-safety.yml`。实施顺序与细证见[实施记录](docs/github-issues-implementation-20261020.md)。
-- 验证：Linux 容器对原主线 6 项 checked 回归独立复现 2 项失败；最终 Linux 安全组 375/375、macOS 376/376；日常 JS 4070/4070、语法/文档/两项浏览器/共享渲染/32 组 Swift 通过，最后补强已专项复测。源于真实临时文件系统，不接用户数据；不是实体应用/真实模型验收。
-- 下一步：推送并关闭 #1，继续 #4/#3，再完成其余已授权项。最小 CI 不能代表完整 #9 已完成；不运行 git pp，不重装应用。
+### 2026-10-20 — melo主线（Codex）— GitHub #4 历史图片恢复
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；用户授权逐项修复、测试、推送并关闭 issues；#1 `47da231` 已完成且双平台 CI 通过。#4 当前为本线程 WIP，最终日常已通过，待本条提交推送。
+- 旧签名过期/重启换端口后，聊天卡片、预览、保存改用当前服务按保存记录解析的图片身份；登记保留时间不依赖执行场景清理。缺失或损坏有明确提示；原图、账号及已有消息不改写。
+- 实际入口：`src/media/imageRecords.js`、`src/services/media/savedImages.js`、`src/http/mediaRoutes.js`、`desktop-ui/imageResource.js`；记录/调用链与旧数据边界见[实施记录](docs/github-issues-implementation-20261020.md)。共用五语资源同步到 iPhone。
+- 验证：最终 JS 4079/4079；覆盖真实服务重启/换端口、TTL、场景清理、路径隔离、并发及浏览器保存原图。语法/文档/两项设置浏览器/共用渲染 4/4 与 32 组 Swift 全通过。隔离 home/图片，不是用户真图与实体应用验收。
+- 下一步：#4 推送并在 GitHub 完成，然后 #3 自然搜索、#9/#2 及余下已授权项。不运行 git pp，不重装应用。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 
@@ -149,7 +149,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复、跨平台专项与日常检查已通过，待推送及 GitHub 回执 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 修复与专项回归通过，最终日常通过，待提交推送 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP（10-17 已随全部 WIP 收入 `8cd3eff`）；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |

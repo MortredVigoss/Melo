@@ -3,6 +3,7 @@ import { createRouteRegistry } from './routeRegistry.js';
 import { sendJson } from './transport.js';
 import { saveUpload, uploadPath, uploadSize } from '../media/uploads.js';
 import { attachmentPath, mimeTypeForName } from '../media/attachments.js';
+import { resolveSavedImage, readSavedImage } from '../services/media/savedImages.js';
 
 const TYPES = { mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v', webm: 'video/webm', mkv: 'video/x-matroska' };
 
@@ -34,6 +35,21 @@ export function serveFileWithRanges(request, response, { path, size, type, heade
 // `home` is captured when the server starts (§6), never read per request.
 export function createMediaRoutes({ home }) {
   return createRouteRegistry([
+    { method: 'GET', path: '/api/media/images/resolve', auth: 'local-read', handler: async ({ response, url }) => {
+      try {
+        const reference = Object.fromEntries(['chatId', 'messageId', 'attachmentId', 'url'].map(key => [key, url.searchParams.get(key)]));
+        response.setHeader('Cache-Control', 'no-store');
+        sendJson(response, 200, await resolveSavedImage(home, reference));
+      } catch (error) { sendJson(response, error.statusCode || 500, { error: error.message, code: error.code || 'IMAGE_READ_FAILED' }); }
+    } },
+    { method: 'GET', id: 'GET /api/media/images/:scope/:run/:image', match: url => url.pathname.startsWith('/api/media/images/'), auth: 'local-read', handler: async ({ response, url }) => {
+      try {
+        const image = await readSavedImage(home, url.pathname);
+        response.writeHead(200, { 'Content-Type': image.type, 'Content-Length': image.bytes.length,
+          'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' });
+        response.end(image.bytes);
+      } catch (error) { sendJson(response, error.statusCode || 500, { error: error.message, code: error.code || 'IMAGE_READ_FAILED' }); }
+    } },
     { method: 'POST', path: '/api/media/upload', auth: 'local-write', handler: async ({ request, response, url }) => {
       try {
         const saved = await saveUpload(request, { home, mimeType: String(request.headers['content-type'] || '').split(';')[0], fileName: url.searchParams.get('name') || '' });

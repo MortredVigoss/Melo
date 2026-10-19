@@ -5,6 +5,7 @@ import { createExecutionScene, applyExecutionEvent, finishExecutionScene, sceneF
 import { extractTextUrls } from '../../media/textUrls.js';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
 import { observeShellWeb } from '../../tools/shellWebObservation.js';
+import { archiveSceneImages } from '../../media/imageRecords.js';
 
 const live = new Map();
 const keyFor = (home, runId) => `${home}\0${runId}`;
@@ -111,6 +112,12 @@ export async function pruneExecutionScenes(home, { maxAgeDays = SCENE_RETENTION_
   for (const [index, [runId, run]] of ordered.entries()) {
     if (live.has(keyFor(home, runId))) continue;
     if (run.newest >= cutoff && index < Math.max(0, maxRuns)) continue;
+    // Keep image identities when detailed execution telemetry expires.
+    // Refuse to prune this run if its image record cannot be preserved.
+    try {
+      const scene = JSON.parse(await readFile(fileFor(home, runId), 'utf8'));
+      await archiveSceneImages(home, scene);
+    } catch (error) { if (error.code !== 'ENOENT') continue; }
     for (const name of run.files) {
       try { await rm(join(directory, name), { force: true }); removedFiles++; } catch {}
     }
@@ -141,6 +148,7 @@ export function createExecutionRecorder(context, query, emit) {
       await mkdir(directory, { recursive: true });
       await writeFile(`${file}.tmp`, snapshot, { mode: 0o600 });
       await rename(`${file}.tmp`, file);
+      await archiveSceneImages(context.home, JSON.parse(snapshot), context.workspacePath);
     });
     writes.catch(() => {});
   }
