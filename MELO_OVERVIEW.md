@@ -26,7 +26,7 @@
 | 手机权限 / 文件 | 权限状态、文件/目录授权、预览、确认导入已接入；10-15 当前树 21 组 Swift / 共享渲染和模拟器编译通过 | 源码仍 WIP；10-14 模拟器交互证据与本次编译分开；iCloud/第三方文件授权及实体权限流程待验，不把后续集成包等同专项真机验收 |
 | 执行面板 | 桌面多段公开摘要与 API 白名单回执；手机已补独立 Responses/兼容 API/Anthropic 回执并保留历史 | 手机 `2afe9dd`，0.5.18 (24) 已装；协议/持久化/模拟器详情通过，真实服务回执本轮未发请求；v1 同步不传新增 api 字段 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
-| 手机 agent loop | 10-19 手机两套循环合并为 `ios/Melo/AgentLoop.swift`，与桌面同三段、同限额/预算/重复拦截/结果信封/补充不重启/工具轨迹/不确定性核实；限额与文案在 `shared/protocol/agent-loop.json`，桌面运行时读取、手机生成内嵌，两端跑同一 fixture | 真实账号三条路径与真机未复验；手机工具串行执行（桌面可并行）；见 `ios/README.md` 10-19 段 |
+| 手机 agent loop | 10-19 三种连接接入 `ios/Melo/AgentLoop.swift`，共享限额、信封、重复拦截、补充与核实契约；独立审计确认这只是部分对齐，工具中途超时、参数边界与核实上下文仍有缺口 | [双端审计](docs/mobile-desktop-audit-20261019.md)：3 项 P1、4 项 P2 未修；31 Swift / 27 JS / 4 场景校验通过，新增隔离探针复现缺口；真实账号与真机未验 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
@@ -112,7 +112,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 架构 A/B、文件生命周期/能力配置/管理入口已对齐；10-18 核对主要源码后精简 GitHub 产品介绍与更新记录 | 功能历史证据见[实施回执](docs/ui-function-alignment-20261016.md)；本轮仅文档与 About，源码基线 `e4fed5c`，链接/命令/GitHub Markdown 渲染通过，详见末尾交接 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 10-18 GitHub 介绍已发布；10-19 只读审计手机/电脑代码与逻辑，核实共享循环之外的简化和缺口 | [双端审计](docs/mobile-desktop-audit-20261019.md)，基线 `b5d889f`；7 项未修，定向回归与隔离复现，未修改产品代码/安装/推送 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
@@ -564,3 +564,11 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - GitHub About 已更新并读回一致，突出 Claude / OpenAI / OpenRouter / 本地模型兼容。公开文案继续英文；以后更新只写用户可感知的变化，内部实现细节留在专项文档。
 - 文档相对链接、安装/测试命令、英文与格式检查通过；GitHub Markdown 渲染的标题、7 个章节、6 行兼容表和 3 个命令块通过。证据 `.tmp/github-copy-20261018/`；本条随文档提交，发布目标为 GitHub `master`，远端提交及文件散列在发布后核对。
 - 仅文档/仓库元数据；未运行 `git pp`、产品回归、真实模型请求或双端安装，未修改用户数据。
+
+### 2026-10-19 — melo主线 — 手机/电脑代码与逻辑对齐只读审计
+
+- 用户要求先审计。核对 `a43836a` 的共享循环与实际调用路径；期间 `b5d889f` 仅提交手机版本号，随后保存源码散列基线，未改产品实现。
+- [报告](docs/mobile-desktop-audit-20261019.md)区分共享契约、功能简化与平台限制。3 项 P1：历史参数越界崩溃、工具/审批无运行中截止保护、核实阶段绕过知识/项目开关。4 项 P2：纯手机长历史回读缺口、知识仅取前缀、团队背景/配置丢失、手写项目记忆漏同步。
+- 实际入口：`AgentLoop.swift` / `AgentLoopRuntime.swift`、`ChatStore.swift`、`ConversationHistory.swift` / `AgentProfile.swift`，对照桌面 runner/executor/memberBackground 与 `portableMemory.js`。修复顺序与逐项证据见报告；全部未修。
+- 31 Swift 套件、27 JS 定向回归、4 场景校验通过；26 份共享资源散列一致。独立 Swift 探针复现崩溃、40ms 预算工具仍执行至约 271ms、关闭资料仍进入核实；隔离 home 复现手写记忆 1 条导出 0 条。证据 `.tmp/mobile-desktop-audit-20261019/`。
+- 仅审计/交接文档本地提交，无推送、git pp、真实模型请求、双端安装或用户数据变更；源码/隔离测试证据不代表真机验收。下一步需按用户后续修复指示推进。
