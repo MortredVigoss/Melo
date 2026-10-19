@@ -37,7 +37,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { unlinkatChecked, symlinkatChecked, openParentDirFd, _raw, C } from './dirfdOps.js';
+import { unlinkatChecked, symlinkatChecked, openParentDirFd, FileIdentityOwner, _raw, C } from './dirfdOps.js';
 
 async function withTmpParent(fn) {
   // realpathSync canonicalizes ancestor symlinks (e.g. macOS /tmp →
@@ -49,25 +49,26 @@ async function withTmpParent(fn) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'dirfd-checked-')));
   const parent = join(root, 'parent');
   mkdirSync(parent);
-  try { await fn({ root, parent }); }
-  finally { try { rmSync(root, { recursive: true, force: true }); } catch {} }
+  const identities = new FileIdentityOwner();
+  try { await fn({ root, parent, identities }); }
+  finally { identities.close(); try { rmSync(root, { recursive: true, force: true }); } catch {} }
 }
 
 test('unlinkatChecked: parent {dev, ino} match → unlinkat succeeds', async () => {
-  await withTmpParent(async ({ parent }) => {
+  await withTmpParent(async ({ parent, identities }) => {
     const leaf = 'a.txt';
     writeFileSync(join(parent, leaf), 'data');
-    const st = statSync(parent);
-    await unlinkatChecked(parent, leaf, st.dev, st.ino);
+    const identity = identities.capture(join(parent, leaf));
+    await unlinkatChecked(parent, leaf, identity);
     assert.equal(existsSync(join(parent, leaf)), false);
   });
 });
 
 test('unlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, leaf NOT deleted', async () => {
-  await withTmpParent(async ({ parent }) => {
+  await withTmpParent(async ({ parent, identities }) => {
     const leaf = 'a.txt';
     writeFileSync(join(parent, leaf), 'real');
-    const stOld = statSync(parent);
+    const identity = identities.capture(join(parent, leaf));
 
     // Simulate "between probe and unlink" attacker swap: rmdir +
     // mkdir same path. New parent has a different inode + an
@@ -79,7 +80,7 @@ test('unlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, leaf NOT delet
     // Caller passes the OLD (stale) {dev, ino} — checked primitive
     // must catch it before unlinkat fires.
     let caught = null;
-    try { await unlinkatChecked(parent, leaf, stOld.dev, stOld.ino); }
+    try { await unlinkatChecked(parent, leaf, identity); }
     catch (err) { caught = err; }
     assert.ok(caught, 'expected FILE_SAFETY_DENIED throw');
     assert.equal(caught.code, 'FILE_SAFETY_DENIED');
@@ -92,24 +93,24 @@ test('unlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, leaf NOT delet
 });
 
 test('symlinkatChecked: parent {dev, ino} match → symlink created with target string', async () => {
-  await withTmpParent(async ({ parent }) => {
+  await withTmpParent(async ({ parent, identities }) => {
     const leaf = 'mylink';
-    const st = statSync(parent);
-    await symlinkatChecked(parent, leaf, '/some/target/path', st.dev, st.ino);
+    const identity = identities.capture(join(parent, leaf));
+    await symlinkatChecked(parent, leaf, '/some/target/path', identity);
     assert.equal(readlinkSync(join(parent, leaf)), '/some/target/path');
   });
 });
 
 test('symlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, no link created', async () => {
-  await withTmpParent(async ({ parent }) => {
+  await withTmpParent(async ({ parent, identities }) => {
     const leaf = 'mylink';
-    const stOld = statSync(parent);
+    const identity = identities.capture(join(parent, leaf));
 
     rmSync(parent, { recursive: true });
     mkdirSync(parent);
 
     let caught = null;
-    try { await symlinkatChecked(parent, leaf, '/etc/hosts', stOld.dev, stOld.ino); }
+    try { await symlinkatChecked(parent, leaf, '/etc/hosts', identity); }
     catch (err) { caught = err; }
     assert.ok(caught, 'expected FILE_SAFETY_DENIED throw');
     assert.equal(caught.code, 'FILE_SAFETY_DENIED');

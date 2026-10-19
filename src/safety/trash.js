@@ -1,3 +1,4 @@
+import { FileIdentityOwner } from './dirfdOps.js';
 /**
  * trash.js — safe-delete to a 7-day quarantine area.
  *
@@ -177,52 +178,60 @@ async function fileSha256(absPath) {
 // Returns the same shape as the legacy raw call:
 //   { operationId, folderName, opDir, manifestPath, removed[], failed[] }.
 export async function safeDeleteToTrash({ operationTokens, ctx = {} } = {}) {
-  if (!Array.isArray(operationTokens) || !operationTokens.length) {
-    throw new Error('safeDeleteToTrash requires a non-empty operationTokens[] array.');
-  }
-
-  const gate = await import('./fileSafetyGate.js');
-
-  // Atomic commit phase: all-or-nothing. If any token commit throws
-  // (mismatch / expired / unknown / wrong-kind), we rethrow before
-  // _unsafeRaw touches disk — no partial trash entry is ever
-  // produced.
-  //
-  // Codex D round 6 (2026-05-03): every token MUST be a DELETE
-  // token. Without this enforcement, a write/edit/move token from
-  // the same chat could be replayed here to skip requestDelete's
-  // two-stage filename confirmation.
-  //
-  // Codex D round 7 (2026-05-03): the actual fs op uses the LEXICAL
-  // path the user requested, NOT the realpath. realPath is used
-  // only for sensitivity classification and TOCTOU verification.
-  // Using the resolvedTarget here was a data-loss bug — for a
-  // workspace symlink → outside/file, rm'ing the resolvedTarget
-  // deleted the external file the link pointed to and left the
-  // symlink behind.
-  const lexicalPaths = [];
-  for (const token of operationTokens) {
-    const committed = await gate.commitOperation(token, {
-      expectedKind: gate.OP_KIND.DELETE,
-    });
-    // Defence-in-depth: re-check sensitivity on BOTH lexical and
-    // resolvedReal RIGHT BEFORE the actual fs op. A future refactor
-    // that loosens the gate must not be able to weaken this layer.
-    for (const pair of committed.targets) {
-      if (
-        isHardBlockedDelete(pair.lexical) ||
-        isHardBlockedDelete(pair.resolvedReal)
-      ) {
-        throw new Error(
-          `safeDeleteToTrash refuses to delete sensitive path ` +
-          `(lexical=${pair.lexical}, real=${pair.resolvedReal}).`,
-        );
-      }
-      lexicalPaths.push(pair.lexical);
+  const identityOwner = new FileIdentityOwner();
+  try {
+    if (!Array.isArray(operationTokens) || !operationTokens.length) {
+      throw new Error('safeDeleteToTrash requires a non-empty operationTokens[] array.');
     }
-  }
 
-  return _unsafeRawDelete(lexicalPaths, ctx);
+    const gate = await import('./fileSafetyGate.js');
+
+    // Atomic commit phase: all-or-nothing. If any token commit throws
+    // (mismatch / expired / unknown / wrong-kind), we rethrow before
+    // _unsafeRaw touches disk — no partial trash entry is ever
+    // produced.
+    //
+    // Codex D round 6 (2026-05-03): every token MUST be a DELETE
+    // token. Without this enforcement, a write/edit/move token from
+    // the same chat could be replayed here to skip requestDelete's
+    // two-stage filename confirmation.
+    //
+    // Codex D round 7 (2026-05-03): the actual fs op uses the LEXICAL
+    // path the user requested, NOT the realpath. realPath is used
+    // only for sensitivity classification and TOCTOU verification.
+    // Using the resolvedTarget here was a data-loss bug — for a
+    // workspace symlink → outside/file, rm'ing the resolvedTarget
+    // deleted the external file the link pointed to and left the
+    // symlink behind.
+    const lexicalPaths = [];
+    for (const token of operationTokens) {
+      const committed = await gate.commitOperation(token, {
+        identityOwner,
+        expectedKind: gate.OP_KIND.DELETE,
+      });
+      // Defence-in-depth: re-check sensitivity on BOTH lexical and
+      // resolvedReal RIGHT BEFORE the actual fs op. A future refactor
+      // that loosens the gate must not be able to weaken this layer.
+      for (const pair of committed.targets) {
+        if (
+          isHardBlockedDelete(pair.lexical) ||
+          isHardBlockedDelete(pair.resolvedReal)
+        ) {
+          throw new Error(
+            `safeDeleteToTrash refuses to delete sensitive path ` +
+            `(lexical=${pair.lexical}, real=${pair.resolvedReal}).`,
+          );
+        }
+        lexicalPaths.push(pair.lexical);
+      }
+    }
+
+    return await _unsafeRawDelete(lexicalPaths, { ...ctx, identityOwner });
+  } finally {
+    identityOwner.close();
+    const gate = await import('./fileSafetyGate.js');
+    for (const token of operationTokens || []) gate.discardOperationToken(token);
+  }
 }
 
 // ── _unsafeRawDelete (module-private) ────────────────────────────────
@@ -361,7 +370,8 @@ async function _unsafeRawDelete(paths, ctx = {}) {
     } finally {
       if (probefd != null) try { closeFdSync(probefd); } catch {}
     }
-    parentInoByPath.set(absPath, { dev: parentDev, ino: parentIno });
+    const identity = ctx.identityOwner.capture(absPath);
+    parentInoByPath.set(absPath, identity);
 
     if (lst.isSymbolicLink()) {
       // Read the symlink target atomically through the parent dirfd.
@@ -372,6 +382,7 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       let targetString;
       try {
         pdfd = openParentDirFd(parent);
+        identity.assertEntry(pdfd);
         targetString = _raw.readlinkat(pdfd, leaf);
       } catch (err) {
         await rm(opDir, { recursive: true, force: true }).catch(() => {});
@@ -402,7 +413,7 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       // via fd, sha256 the buffer in-memory, then writeFile to trash.
       let openLeaf;
       try {
-        openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY);
+        openLeaf = await atomicOpenLeaf(parent, leaf, DC.O_RDONLY, 0o644, identity);
       } catch (err) {
         await rm(opDir, { recursive: true, force: true }).catch(() => {});
         throw new Error(
@@ -497,7 +508,7 @@ async function _unsafeRawDelete(paths, ctx = {}) {
       // rmdir+mkdir between our prior probe and that re-open could
       // bind unlinkat to the new (different-inode) parent and delete
       // the wrong file at the same leaf name.
-      await unlinkatChecked(parent, leaf, parentSnapshot.dev, parentSnapshot.ino);
+      await unlinkatChecked(parent, leaf, parentSnapshot);
       removed.push(entry.originalPath);
     } catch (err) {
       failed.push({
@@ -562,258 +573,255 @@ export async function listTrash() {
 // folder is removed. If anything was skipped, the folder stays so a
 // retry is possible.
 export async function restoreFromTrash(operationId, opts = {}) {
-  assertValidOperationId(operationId);
+  const identityOwner = new FileIdentityOwner();
+  try {
+    assertValidOperationId(operationId);
 
-  const all = await listTrash();
-  const target = all.find(x => x.operationId === operationId);
-  if (!target) {
-    throw new Error(`No trash entry with operationId=${operationId}.`);
-  }
-  if (!target.restorable) {
-    throw new Error(`Trash entry is marked non-restorable.`);
-  }
-
-  const meloHome = getMeloHome();
-  const root = trashRoot(meloHome);
-  const opDir = join(root, target.folderName);
-  await assertWithinRoot(opDir, root);
-  const filesDir = join(opDir, 'files');
-
-  // Round 13 (2026-05-03): parent inode anchor captured via dirfd
-  // probe; final fs op binds parent through openat/unlinkat.
-  const expectedRealByLexical = new Map();
-  const parentInoByLexical = new Map();
-  for (const entry of target.files) {
-    const { realPath, hasSymlinkInChain } = await safeResolvePath(entry.originalPath);
-    if (
-      isHardBlockedWrite(entry.originalPath) ||
-      isHardBlockedWrite(realPath)
-    ) {
-      const lexCat = classifyPath(entry.originalPath);
-      const realC = classifyPath(realPath);
-      throw new Error(
-        `Refusing to restore to ${entry.originalPath} ` +
-        (hasSymlinkInChain ? `(real target: ${realPath}) ` : '') +
-        `— manifest target classified as ${lexCat}/${realC}.`,
-      );
+    const all = await listTrash();
+    const target = all.find(x => x.operationId === operationId);
+    if (!target) {
+      throw new Error(`No trash entry with operationId=${operationId}.`);
     }
-    expectedRealByLexical.set(entry.originalPath, realPath);
+    if (!target.restorable) {
+      throw new Error(`Trash entry is marked non-restorable.`);
+    }
 
-    // Codex C round 8 (2026-05-03): wasSymlink entries need an extra
-    // sensitivity check on the symlinkTarget itself — otherwise a
-    // tampered manifest could redirect us to recreate a symlink
-    // pointing at /etc/hosts / ~/.ssh / etc. The originalPath check
-    // above protects the LINK location; this protects the LINK's
-    // TARGET. Both must be safe before we rebuild.
-    if (entry.wasSymlink) {
-      if (typeof entry.symlinkTarget !== 'string' || !entry.symlinkTarget) {
-        throw new Error(
-          `Refusing to restore symlink ${entry.originalPath}: ` +
-          `manifest is missing a symlinkTarget field.`,
-        );
-      }
-      const targetResolved = await safeResolvePath(
-        entry.symlinkTarget.startsWith('/')
-          ? entry.symlinkTarget
-          // Relative symlink — resolve relative to the link's parent
-          // directory (mirrors how the kernel would interpret it).
-          : join(dirname(entry.originalPath), entry.symlinkTarget),
-      );
+    const meloHome = getMeloHome();
+    const root = trashRoot(meloHome);
+    const opDir = join(root, target.folderName);
+    await assertWithinRoot(opDir, root);
+    const filesDir = join(opDir, 'files');
+
+    // Round 13 (2026-05-03): parent inode anchor captured via dirfd
+    // probe; final fs op binds parent through openat/unlinkat.
+    const expectedRealByLexical = new Map();
+    const parentInoByLexical = new Map();
+    for (const entry of target.files) {
+      const { realPath, hasSymlinkInChain } = await safeResolvePath(entry.originalPath);
       if (
-        isHardBlockedWrite(entry.symlinkTarget) ||
-        isHardBlockedWrite(targetResolved.realPath)
+        isHardBlockedWrite(entry.originalPath) ||
+        isHardBlockedWrite(realPath)
       ) {
-        const targetCat = classifyPath(entry.symlinkTarget);
-        const realC = classifyPath(targetResolved.realPath);
+        const lexCat = classifyPath(entry.originalPath);
+        const realC = classifyPath(realPath);
         throw new Error(
-          `Refusing to restore symlink ${entry.originalPath} → ` +
-          `${entry.symlinkTarget} (real target: ${targetResolved.realPath}) ` +
-          `— symlink target classified as ${targetCat}/${realC}.`,
+          `Refusing to restore to ${entry.originalPath} ` +
+          (hasSymlinkInChain ? `(real target: ${realPath}) ` : '') +
+          `— manifest target classified as ${lexCat}/${realC}.`,
         );
       }
-      // Manifest-tamper detection: resolvedPathAtDelete must still
-      // match the freshly-resolved target. A mismatch means either
-      // the symlinkTarget field was modified (attack) OR the
-      // outside-world filesystem moved (legit, but require explicit
-      // user confirmation rather than silent restore).
-      if (
-        typeof entry.resolvedPathAtDelete === 'string' &&
-        entry.resolvedPathAtDelete !== targetResolved.realPath
-      ) {
-        throw new Error(
-          `Refusing to restore symlink ${entry.originalPath}: ` +
-          `manifest resolvedPathAtDelete=${entry.resolvedPathAtDelete} ` +
-          `does not match current resolution ${targetResolved.realPath} ` +
-          `of symlinkTarget=${entry.symlinkTarget}.`,
-        );
-      }
-    }
+      expectedRealByLexical.set(entry.originalPath, realPath);
 
-    // After sensitivity passes, capture parent inode via a dirfd
-    // probe (race detection at the final fs op).
-    const parentDir = dirname(entry.originalPath);
-    let probefd;
-    try {
-      probefd = openParentDirFd(parentDir);
-      const st = fstatSync(probefd);
-      parentInoByLexical.set(entry.originalPath, { ino: st.ino, dev: st.dev });
-    } catch (err) {
-      throw new Error(
-        `Refusing to restore ${entry.originalPath}: cannot open parent ` +
-        `${parentDir}: ${err.message}.`,
-      );
-    } finally {
-      if (probefd != null) try { closeFdSync(probefd); } catch {}
-    }
-  }
-
-  // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
-  // round 5 (2026-05-03): no-UI path now uses module-private
-  // _commitRestore (no gate token mint exposure). UI path still
-  // uses gate.requestWrite + gate.commitOperation. Both paths
-  // operate on the commit-issued resolvedTarget, never on the
-  // lexical entry.originalPath.
-  const wantsUi = Boolean(opts.sseEmitter && opts.chatId);
-  const gate = wantsUi ? await import('./fileSafetyGate.js') : null;
-
-  const restored = [];
-  const skipped = [];
-  for (const entry of target.files) {
-    let exists = false;
-    try { await stat(entry.originalPath); exists = true; } catch {}
-    if (exists && !opts.overwrite) {
-      skipped.push({ path: entry.originalPath, reason: 'already exists' });
-      continue;
-    }
-
-    // Codex ⚪ round 4 (2026-05-03): test-only swap seam, fired
-    // per-entry between the layer-(b) sensitivity check and this
-    // entry's commit. Lets integration tests prove the commit
-    // catches an inserted swap. No-op in production.
-    if (_restoreSwapHookForTests) {
-      await _restoreSwapHookForTests({
-        originalPath: entry.originalPath,
-        expectedReal: expectedRealByLexical.get(entry.originalPath),
-      });
-    }
-
-    let resolvedTarget;
-    if (wantsUi) {
-      const ui = await gate.requestWrite({
-        path: entry.originalPath,
-        chatId: opts.chatId,
-        sseEmitter: opts.sseEmitter,
-        signal: opts.signal,
-        workspacePath: opts.workspacePath,
-        isCreate: !exists,
-        contentSize: entry.size ?? null,
-        newHash: entry.sha256 || null,
-      });
-      // Codex D round 6 (2026-05-03): enforce kind.
-      const committed = await gate.commitOperation(ui.operationToken, {
-        expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
-      });
-      resolvedTarget = committed.resolvedTarget;
-    } else {
-      // No-UI path: module-private atomic re-resolve, no gate token mint.
-      resolvedTarget = await _commitRestore(
-        entry.originalPath,
-        expectedRealByLexical.get(entry.originalPath),
-      );
-    }
-
-    const src = join(filesDir, entry.trashedAs);
-    const parentSnapshot = parentInoByLexical.get(entry.originalPath);
-
-    if (entry.wasSymlink) {
-      // Round 13 follow-up #5 (Codex 🟠): symlink restore uses
-      // symlinkatChecked so the parent {dev, ino} verification and
-      // the symlinkat syscall both go through the same dirfd. Same
-      // for the overwrite-slot unlink (unlinkatChecked). Bare
-      // atomicSymlink/atomicUnlink would re-open the parent and
-      // leave a probe→reopen race window.
-      const parentDir = dirname(entry.originalPath);
-      const leaf = entry.originalPath.slice(parentDir.length + 1);
-      if (exists && opts.overwrite) {
-        try {
-          await unlinkatChecked(parentDir, leaf, parentSnapshot.dev, parentSnapshot.ino);
-        } catch (err) {
+      // Codex C round 8 (2026-05-03): wasSymlink entries need an extra
+      // sensitivity check on the symlinkTarget itself — otherwise a
+      // tampered manifest could redirect us to recreate a symlink
+      // pointing at /etc/hosts / ~/.ssh / etc. The originalPath check
+      // above protects the LINK location; this protects the LINK's
+      // TARGET. Both must be safe before we rebuild.
+      if (entry.wasSymlink) {
+        if (typeof entry.symlinkTarget !== 'string' || !entry.symlinkTarget) {
           throw new Error(
-            `Cannot remove existing entry at ${entry.originalPath} before ` +
-            `symlink restore: ${err.message}`,
+            `Refusing to restore symlink ${entry.originalPath}: ` +
+            `manifest is missing a symlinkTarget field.`,
           );
         }
-      }
-      await symlinkatChecked(parentDir, leaf, entry.symlinkTarget, parentSnapshot.dev, parentSnapshot.ino);
-      restored.push(entry.originalPath);
-    } else if (entry.wasDirectory) {
-      // Round 13 follow-up #2 (2026-05-03): directory restore is
-      // refused along with directory delete. Legacy manifests
-      // (pre-round-13-followup-2) may contain wasDirectory entries;
-      // they're surfaced as DIR_RESTORE_DISABLED so the user knows
-      // to recreate manually (or via bash + Phase 2D gate).
-      throw new Error(
-        `DIR_RESTORE_DISABLED: directory restore at ${entry.originalPath} ` +
-        `is refused — recursive directory ops need dirfd-walk semantics ` +
-        `not yet implemented in melo's atomic ops layer. Use file_mkdir + ` +
-        `file_write per-entry, or bash (with Phase 2D safety gate).`,
-      );
-    } else {
-      // File restore: atomicOpenLeaf binds parent through dirfd and
-      // openat-creates the leaf. Cross-check parent {dev, ino}
-      // matches precheck. Then writeSync via fd.
-      const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
-      let openLeaf;
-      try {
-        openLeaf = await atomicOpenLeaf(
-          resolvedParent,
-          resolvedLeaf,
-          DC.O_WRONLY | DC.O_CREAT | DC.O_TRUNC,
-          0o644,
+        const targetResolved = await safeResolvePath(
+          entry.symlinkTarget.startsWith('/')
+            ? entry.symlinkTarget
+            // Relative symlink — resolve relative to the link's parent
+            // directory (mirrors how the kernel would interpret it).
+            : join(dirname(entry.originalPath), entry.symlinkTarget),
         );
-      } catch (err) {
-        if (err.code === 'ELOOP') {
-          throw new Error(
-            `Refusing to restore over symlink at ${resolvedTarget} ` +
-            `(kernel ELOOP via O_NOFOLLOW).`,
-          );
-        }
-        throw err;
-      }
-      try {
         if (
-          openLeaf.parentDev !== parentSnapshot.dev ||
-          openLeaf.parentIno !== parentSnapshot.ino
+          isHardBlockedWrite(entry.symlinkTarget) ||
+          isHardBlockedWrite(targetResolved.realPath)
+        ) {
+          const targetCat = classifyPath(entry.symlinkTarget);
+          const realC = classifyPath(targetResolved.realPath);
+          throw new Error(
+            `Refusing to restore symlink ${entry.originalPath} → ` +
+            `${entry.symlinkTarget} (real target: ${targetResolved.realPath}) ` +
+            `— symlink target classified as ${targetCat}/${realC}.`,
+          );
+        }
+        // Manifest-tamper detection: resolvedPathAtDelete must still
+        // match the freshly-resolved target. A mismatch means either
+        // the symlinkTarget field was modified (attack) OR the
+        // outside-world filesystem moved (legit, but require explicit
+        // user confirmation rather than silent restore).
+        if (
+          typeof entry.resolvedPathAtDelete === 'string' &&
+          entry.resolvedPathAtDelete !== targetResolved.realPath
         ) {
           throw new Error(
-            `Parent ${resolvedParent} was replaced (inode/device changed) between approval and restore.`,
+            `Refusing to restore symlink ${entry.originalPath}: ` +
+            `manifest resolvedPathAtDelete=${entry.resolvedPathAtDelete} ` +
+            `does not match current resolution ${targetResolved.realPath} ` +
+            `of symlinkTarget=${entry.symlinkTarget}.`,
           );
         }
-        const buf = await readFile(src);
-        writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
-      } finally {
-        openLeaf.closeLeaf();
       }
-      restored.push(resolvedTarget);
-    }
-  }
 
-  const fullyRestored = skipped.length === 0;
-  if (fullyRestored && opts.purgeAfterRestore !== false) {
-    await rm(opDir, { recursive: true, force: true });
-  }
-  // Codex C round 4 (2026-05-03): expose both lexical and resolved
-  // paths per restored entry so the UI / Phase 2 caller can reason
-  // about symlink aliases. `restored` (resolved real paths) stays
-  // first-class for back-compat.
-  return {
-    restored,
-    skipped,
-    fullyRestored,
-    originalPaths: target.files.map(f => f.originalPath),
-    hasSymlinks: target.files
-      .map(f => expectedRealByLexical.get(f.originalPath) !== f.originalPath),
-  };
+      // After sensitivity passes, capture parent inode via a dirfd
+      // probe (race detection at the final fs op).
+      const parentDir = dirname(entry.originalPath);
+      let probefd;
+      try {
+        probefd = openParentDirFd(parentDir);
+        const st = fstatSync(probefd);
+        parentInoByLexical.set(entry.originalPath, identityOwner.capture(entry.originalPath));
+      } catch (err) {
+        throw new Error(
+          `Refusing to restore ${entry.originalPath}: cannot open parent ` +
+          `${parentDir}: ${err.message}.`,
+        );
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
+      }
+    }
+
+    // Layer (c)+(d): optional UI approval, then atomic commit. Codex C
+    // round 5 (2026-05-03): no-UI path now uses module-private
+    // _commitRestore (no gate token mint exposure). UI path still
+    // uses gate.requestWrite + gate.commitOperation. Both paths
+    // operate on the commit-issued resolvedTarget, never on the
+    // lexical entry.originalPath.
+    const wantsUi = Boolean(opts.sseEmitter && opts.chatId);
+    const gate = wantsUi ? await import('./fileSafetyGate.js') : null;
+
+    const restored = [];
+    const skipped = [];
+    for (const entry of target.files) {
+      let exists = false;
+      try { await stat(entry.originalPath); exists = true; } catch {}
+      if (exists && !opts.overwrite) {
+        skipped.push({ path: entry.originalPath, reason: 'already exists' });
+        continue;
+      }
+
+      // Codex ⚪ round 4 (2026-05-03): test-only swap seam, fired
+      // per-entry between the layer-(b) sensitivity check and this
+      // entry's commit. Lets integration tests prove the commit
+      // catches an inserted swap. No-op in production.
+      if (_restoreSwapHookForTests) {
+        await _restoreSwapHookForTests({
+          originalPath: entry.originalPath,
+          expectedReal: expectedRealByLexical.get(entry.originalPath),
+        });
+      }
+
+      let resolvedTarget;
+      if (wantsUi) {
+        const ui = await gate.requestWrite({
+          path: entry.originalPath,
+          chatId: opts.chatId,
+          sseEmitter: opts.sseEmitter,
+          signal: opts.signal,
+          workspacePath: opts.workspacePath,
+          isCreate: !exists,
+          contentSize: entry.size ?? null,
+          newHash: entry.sha256 || null,
+        });
+        // Codex D round 6 (2026-05-03): enforce kind.
+        const committed = await gate.commitOperation(ui.operationToken, {
+          identityOwner,
+          expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
+        });
+        resolvedTarget = committed.resolvedTarget;
+      } else {
+        // No-UI path: module-private atomic re-resolve, no gate token mint.
+        resolvedTarget = await _commitRestore(
+          entry.originalPath,
+          expectedRealByLexical.get(entry.originalPath),
+        );
+      }
+
+      const src = join(filesDir, entry.trashedAs);
+      const parentSnapshot = parentInoByLexical.get(entry.originalPath);
+
+      if (entry.wasSymlink) {
+        // Round 13 follow-up #5 (Codex 🟠): symlink restore uses
+        // symlinkatChecked so the parent {dev, ino} verification and
+        // the symlinkat syscall both go through the same dirfd. Same
+        // for the overwrite-slot unlink (unlinkatChecked). Bare
+        // atomicSymlink/atomicUnlink would re-open the parent and
+        // leave a probe→reopen race window.
+        const parentDir = dirname(entry.originalPath);
+        const leaf = entry.originalPath.slice(parentDir.length + 1);
+        if (exists && opts.overwrite) {
+          try {
+            await unlinkatChecked(parentDir, leaf, parentSnapshot);
+          } catch (err) {
+            throw new Error(
+              `Cannot remove existing entry at ${entry.originalPath} before ` +
+              `symlink restore: ${err.message}`,
+            );
+          }
+        }
+        await symlinkatChecked(parentDir, leaf, entry.symlinkTarget, parentSnapshot);
+        restored.push(entry.originalPath);
+      } else if (entry.wasDirectory) {
+        // Round 13 follow-up #2 (2026-05-03): directory restore is
+        // refused along with directory delete. Legacy manifests
+        // (pre-round-13-followup-2) may contain wasDirectory entries;
+        // they're surfaced as DIR_RESTORE_DISABLED so the user knows
+        // to recreate manually (or via bash + Phase 2D gate).
+        throw new Error(
+          `DIR_RESTORE_DISABLED: directory restore at ${entry.originalPath} ` +
+          `is refused — recursive directory ops need dirfd-walk semantics ` +
+          `not yet implemented in melo's atomic ops layer. Use file_mkdir + ` +
+          `file_write per-entry, or bash (with Phase 2D safety gate).`,
+        );
+      } else {
+        // File restore: atomicOpenLeaf binds parent through dirfd and
+        // openat-creates the leaf. Cross-check parent {dev, ino}
+        // matches precheck. Then writeSync via fd.
+        const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
+        let openLeaf;
+        try {
+          openLeaf = await atomicOpenLeaf(
+            resolvedParent,
+            resolvedLeaf,
+            DC.O_WRONLY | DC.O_TRUNC | (exists ? 0 : DC.O_CREAT | DC.O_EXCL),
+            0o644,
+            parentSnapshot,
+          );
+        } catch (err) {
+          if (err.code === 'ELOOP') {
+            throw new Error(
+              `Refusing to restore over symlink at ${resolvedTarget} ` +
+              `(kernel ELOOP via O_NOFOLLOW).`,
+            );
+          }
+          throw err;
+        }
+        try {
+          const buf = await readFile(src);
+          writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
+        } finally {
+          openLeaf.closeLeaf();
+        }
+        restored.push(resolvedTarget);
+      }
+    }
+
+    const fullyRestored = skipped.length === 0;
+    if (fullyRestored && opts.purgeAfterRestore !== false) {
+      await rm(opDir, { recursive: true, force: true });
+    }
+    // Codex C round 4 (2026-05-03): expose both lexical and resolved
+    // paths per restored entry so the UI / Phase 2 caller can reason
+    // about symlink aliases. `restored` (resolved real paths) stays
+    // first-class for back-compat.
+    return {
+      restored,
+      skipped,
+      fullyRestored,
+      originalPaths: target.files.map(f => f.originalPath),
+      hasSymlinks: target.files
+        .map(f => expectedRealByLexical.get(f.originalPath) !== f.originalPath),
+    };
+  } finally { identityOwner.close(); }
 }
 
 // ── purgeTrashEntry ──────────────────────────────────────────────────

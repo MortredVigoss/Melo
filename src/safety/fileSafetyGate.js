@@ -1,3 +1,4 @@
+import { FileIdentityOwner } from './dirfdOps.js';
 import { commandTemplate, findCommandRule, saveCommandRule } from './commandRules.js';
 import { recordPermission } from './permissionAudit.js';
 import { permissionReceipt, rememberPermissionDecision } from './permissionReceipts.js';
@@ -206,13 +207,15 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
     });
 
     if (typeof sseEmitter === 'function') {
-      sseEmitter('tool_permission', {
+      try { sseEmitter('tool_permission', {
         requestId,
         kind: 'file_safety',
         operation: kind,
         ...payload,
         persistentAllowed: canPersist,
-      });
+      }); } catch (error) {
+        _pending.get(requestId)?.reject(error.message || String(error));
+      }
     }
   });
 }
@@ -424,7 +427,7 @@ export function _clearPendingForTests() {
     try { entry.reject('Test cleanup.'); } catch {}
   }
   _pending.clear();
-  _committedOps.clear();
+  for (const token of _committedOps.keys()) discardOperationToken(token);
 }
 
 // Issue an operation token after a successful approval. Phase 2
@@ -442,9 +445,13 @@ export function _clearPendingForTests() {
 // flow. backup.js + trash.js do their own no-UI atomic re-resolve
 // via a small local helper instead of reaching into this module's
 // internals.
-function _issueOperationToken({ kind, chatId, targets }) {
+function _issueOperationToken({ kind, chatId, targets, identities = [], signal }) {
   if (!Array.isArray(targets) || !targets.length) {
     throw new Error('_issueOperationToken requires a non-empty targets[] array.');
+  }
+  if (signal?.aborted) {
+    for (const identity of identities) identity.close();
+    throw denyError('Operation cancelled before issuing approval token.');
   }
   const token = randomUUID();
   _committedOps.set(token, {
@@ -454,13 +461,33 @@ function _issueOperationToken({ kind, chatId, targets }) {
       lexical: t.lexical,
       expectedReal: t.expectedReal,
     })),
+    identities,
     issuedAt: Date.now(),
   });
   // Auto-purge expired tokens. unref() keeps the timer from holding
   // the event loop open if the process tries to exit.
-  const t = setTimeout(() => _committedOps.delete(token), COMMIT_TTL_MS);
+  const t = setTimeout(() => discardOperationToken(token), COMMIT_TTL_MS);
+  const entry = _committedOps.get(token);
+  entry.timer = t;
+  entry.signal = signal;
+  entry.onAbort = () => discardOperationToken(token);
+  signal?.addEventListener('abort', entry.onAbort, { once: true });
   if (typeof t.unref === 'function') t.unref();
   return token;
+}
+
+// Tokens own the approval handles until consumed or expired.
+export function discardOperationToken(token) {
+  const entry = _committedOps.get(token);
+  if (!entry) return;
+  _committedOps.delete(token);
+  releaseOperationEntry(entry);
+}
+
+function releaseOperationEntry(entry) {
+  clearTimeout(entry.timer);
+  entry.signal?.removeEventListener('abort', entry.onAbort);
+  for (const identity of entry.identities) identity.close();
 }
 
 // Re-verify the lexical→real mapping captured at approval time.
@@ -496,52 +523,60 @@ export async function commitOperation(token, opts = {}) {
   if (!entry) {
     throw denyError('Operation token unknown or already consumed.');
   }
-  if (Date.now() - entry.issuedAt > COMMIT_TTL_MS) {
-    _committedOps.delete(token);
-    throw denyError('Operation token expired; re-approval required.');
-  }
-  // Kind enforcement (Codex D round 6). Done BEFORE re-resolve so a
-  // mismatched token is consumed without giving a future caller a
-  // window to misuse it.
-  const expected = Array.isArray(opts.expectedKinds)
-    ? opts.expectedKinds
-    : opts.expectedKind != null
-      ? [opts.expectedKind]
-      : null;
-  if (expected && !expected.includes(entry.kind)) {
-    _committedOps.delete(token);
-    throw denyError(
-      `Operation kind mismatch: token is for "${entry.kind}", ` +
-      `consumer expected one of [${expected.join(', ')}]. ` +
-      `A token issued for one operation cannot be replayed as another.`,
-    );
-  }
-  const resolved = [];
-  const targetPairs = [];
-  for (const target of entry.targets) {
-    const fresh = await safeResolvePath(target.lexical);
-    if (fresh.realPath !== target.expectedReal) {
-      _committedOps.delete(token);
+  // Claim before the first await: concurrent consumers cannot share a token.
+  _committedOps.delete(token);
+  clearTimeout(entry.timer);
+  entry.signal?.removeEventListener('abort', entry.onAbort);
+  try {
+    if (Date.now() - entry.issuedAt > COMMIT_TTL_MS) {
+      throw denyError('Operation token expired; re-approval required.');
+    }
+    // Kind enforcement (Codex D round 6). Done BEFORE re-resolve so a
+    // mismatched token is consumed without giving a future caller a
+    // window to misuse it.
+    const expected = Array.isArray(opts.expectedKinds)
+      ? opts.expectedKinds
+      : opts.expectedKind != null
+        ? [opts.expectedKind]
+        : null;
+    if (expected && !expected.includes(entry.kind)) {
       throw denyError(
-        `Path mapping changed between approval and execution: ` +
-        `lexical=${target.lexical} approvedReal=${target.expectedReal} nowReal=${fresh.realPath}`,
+        `Operation kind mismatch: token is for "${entry.kind}", ` +
+        `consumer expected one of [${expected.join(', ')}]. ` +
+        `A token issued for one operation cannot be replayed as another.`,
       );
     }
-    resolved.push(fresh.realPath);
-    targetPairs.push({ lexical: target.lexical, resolvedReal: fresh.realPath });
-  }
-  // Single-use: consume on success so a token can never be replayed.
-  _committedOps.delete(token);
-  return {
-    resolvedTarget: resolved[0],
-    resolvedTargets: resolved,
-    // Codex C round 4 (2026-05-03): expose the lexical→real pair so
-    // downstream consumers (safeDeleteToTrash) can run defence-in-depth
-    // hard-block checks against BOTH ends, not just the resolved
-    // target the gate originally vetted.
-    targets: targetPairs,
-    kind: entry.kind,
-  };
+    const resolved = [];
+    const targetPairs = [];
+    for (const target of entry.targets) {
+      const fresh = await safeResolvePath(target.lexical);
+      if (fresh.realPath !== target.expectedReal) {
+          throw denyError(
+          `Path mapping changed between approval and execution: ` +
+          `lexical=${target.lexical} approvedReal=${target.expectedReal} nowReal=${fresh.realPath}`,
+        );
+      }
+      resolved.push(fresh.realPath);
+      targetPairs.push({ lexical: target.lexical, resolvedReal: fresh.realPath });
+    }
+    if (entry.signal?.aborted) throw denyError('Operation cancelled before commit.');
+    for (const identity of entry.identities) identity.assertCurrent();
+    // Transfer ownership before finally disposes the single-use token.
+    if (opts.identityOwner) {
+      for (const identity of entry.identities) opts.identityOwner.add(identity);
+      entry.identities = [];
+    }
+    return {
+      resolvedTarget: resolved[0],
+      resolvedTargets: resolved,
+      // Codex C round 4 (2026-05-03): expose the lexical→real pair so
+      // downstream consumers (safeDeleteToTrash) can run defence-in-depth
+      // hard-block checks against BOTH ends, not just the resolved
+      // target the gate originally vetted.
+      targets: targetPairs,
+      kind: entry.kind,
+    };
+  } finally { releaseOperationEntry(entry); }
 }
 
 // ── Per-operation entrypoints ─────────────────────────────────────────
@@ -791,84 +826,95 @@ export async function requestWrite({
   diffPreview = null,
   bypassGrants = false,
 }) {
-  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
-    ? await realpath(workspacePath).catch(() => null) : null;
-  const abs = toAbsolute(path, baseDir);
-  if (!abs) throw denyError('Write requested with empty path.');
+  const identityOwner = new FileIdentityOwner();
+  try {
+    const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+      ? await realpath(workspacePath).catch(() => null) : null;
+    const abs = toAbsolute(path, baseDir);
+    if (!abs) throw denyError('Write requested with empty path.');
 
-  const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
+    const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
 
-  if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
-    const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
-    throw denyError(
-      `Write to ${abs} is blocked by safety policy (category: ${cat}` +
-      (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
-    );
-  }
+    if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
+      const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
+      throw denyError(
+        `Write to ${abs} is blocked by safety policy (category: ${cat}` +
+        (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
+      );
+    }
 
-  // Grants are keyed on realPath so re-pointing a symlink invalidates
-  // prior approvals (defence against TOCTOU within a long chat).
-  // Codex Phase 2A round 10 (2026-05-03): callers that must always
-  // prompt (file_mkdir's "every dir level approved separately"
-  // contract) pass bypassGrants:true.
-  if (!bypassGrants && hasGrant(chatId, realPath, GRANT_KIND.WRITE)) {
+    identityOwner.capture(realPath);
+
+    // Grants are keyed on realPath so re-pointing a symlink invalidates
+    // prior approvals (defence against TOCTOU within a long chat).
+    // Codex Phase 2A round 10 (2026-05-03): callers that must always
+    // prompt (file_mkdir's "every dir level approved separately"
+    // contract) pass bypassGrants:true.
+    if (!bypassGrants && hasGrant(chatId, realPath, GRANT_KIND.WRITE)) {
+      const operationToken = _issueOperationToken({
+        signal,
+        identities: identityOwner.takeAll(),
+        kind: OP_KIND.WRITE_OVERWRITE,
+        chatId,
+        targets: [{ lexical: abs, expectedReal: realPath }],
+        });
+      return { resolvedTarget: realPath, operationToken };
+    }
+    // Phase 3b: persistent allowlist hit also bypasses the prompt, with
+    // the same bypassGrants suppression and the same realPath-keyed
+    // invalidation guarantee.
+    if (!bypassGrants) {
+      const persistentRule = await findMatchingFileSafetyRule('write', realPath);
+      if (persistentRule) {
+        const operationToken = _issueOperationToken({
+        signal,
+        identities: identityOwner.takeAll(),
+          kind: OP_KIND.WRITE_OVERWRITE,
+          chatId,
+          targets: [{ lexical: abs, expectedReal: realPath }],
+        });
+        return { resolvedTarget: realPath, operationToken };
+      }
+    }
+
+    const decision = await _prompt({
+      sseEmitter, signal, chatId,
+      kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
+      payload: {
+        path: abs,
+        realPath,
+        hasSymlinkInChain,
+        isCreate: !!isCreate,
+        contentSize,
+        contentPreview: clipText(contentPreview, 4000),
+        oldHash,
+        newHash,
+        diffPreview: clipText(diffPreview, 8000),
+        withinWorkspace:
+          isWithinWorkspace(abs, workspacePath) &&
+          isWithinWorkspace(realPath, realWorkspace),
+      },
+    });
+
+    if (!decision.persistent && decision.scope === SCOPE.FILE) {
+      grantFile(chatId, realPath, [GRANT_KIND.WRITE]);
+    } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
+      grantDir(chatId, parentDir(realPath), [GRANT_KIND.WRITE]);
+    }
+    // Phase 3b: persistent flag stacks an exact-file rule on top of the
+    // per-chat grant. We deliberately do NOT support a persistent dir
+    // rule for write/edit — granting "agent may write anywhere under X
+    // forever" is the exact blast-radius the gate exists to prevent.
+
     const operationToken = _issueOperationToken({
-      kind: OP_KIND.WRITE_OVERWRITE,
+        signal,
+        identities: identityOwner.takeAll(),
+      kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
       chatId,
       targets: [{ lexical: abs, expectedReal: realPath }],
       });
     return { resolvedTarget: realPath, operationToken };
-  }
-  // Phase 3b: persistent allowlist hit also bypasses the prompt, with
-  // the same bypassGrants suppression and the same realPath-keyed
-  // invalidation guarantee.
-  if (!bypassGrants) {
-    const persistentRule = await findMatchingFileSafetyRule('write', realPath);
-    if (persistentRule) {
-      const operationToken = _issueOperationToken({
-        kind: OP_KIND.WRITE_OVERWRITE,
-        chatId,
-        targets: [{ lexical: abs, expectedReal: realPath }],
-      });
-      return { resolvedTarget: realPath, operationToken };
-    }
-  }
-
-  const decision = await _prompt({
-    sseEmitter, signal, chatId,
-    kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
-    payload: {
-      path: abs,
-      realPath,
-      hasSymlinkInChain,
-      isCreate: !!isCreate,
-      contentSize,
-      contentPreview: clipText(contentPreview, 4000),
-      oldHash,
-      newHash,
-      diffPreview: clipText(diffPreview, 8000),
-      withinWorkspace:
-        isWithinWorkspace(abs, workspacePath) &&
-        isWithinWorkspace(realPath, realWorkspace),
-    },
-  });
-
-  if (!decision.persistent && decision.scope === SCOPE.FILE) {
-    grantFile(chatId, realPath, [GRANT_KIND.WRITE]);
-  } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(realPath), [GRANT_KIND.WRITE]);
-  }
-  // Phase 3b: persistent flag stacks an exact-file rule on top of the
-  // per-chat grant. We deliberately do NOT support a persistent dir
-  // rule for write/edit — granting "agent may write anywhere under X
-  // forever" is the exact blast-radius the gate exists to prevent.
-
-  const operationToken = _issueOperationToken({
-    kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
-    chatId,
-    targets: [{ lexical: abs, expectedReal: realPath }],
-    });
-  return { resolvedTarget: realPath, operationToken };
+  } finally { identityOwner.close(); }
 }
 
 // Edit — precise old/new substring replacement.
@@ -883,79 +929,90 @@ export async function requestEdit({
   newString = null,
   diffPreview = null,
 }) {
-  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
-    ? await realpath(workspacePath).catch(() => null) : null;
-  const abs = toAbsolute(path, baseDir);
-  if (!abs) throw denyError('Edit requested with empty path.');
+  const identityOwner = new FileIdentityOwner();
+  try {
+    const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+      ? await realpath(workspacePath).catch(() => null) : null;
+    const abs = toAbsolute(path, baseDir);
+    if (!abs) throw denyError('Edit requested with empty path.');
 
-  const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
+    const { realPath, hasSymlinkInChain } = await safeResolvePath(abs);
 
-  if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
-    const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
-    throw denyError(
-      `Edit of ${abs} is blocked by safety policy (category: ${cat}` +
-      (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
-    );
-  }
+    if (isAnySensitive(abs, realPath, isHardBlockedWrite)) {
+      const cat = moreRestrictiveCategory(classifyPath(abs), classifyPath(realPath));
+      throw denyError(
+        `Edit of ${abs} is blocked by safety policy (category: ${cat}` +
+        (hasSymlinkInChain ? `, real target: ${realPath}` : '') + ').',
+      );
+    }
 
-  if (
-    hasGrant(chatId, realPath, GRANT_KIND.EDIT) ||
-    // A WRITE grant also covers EDIT — same blast radius, narrower op.
-    hasGrant(chatId, realPath, GRANT_KIND.WRITE)
-  ) {
+    identityOwner.capture(realPath);
+
+    if (
+      hasGrant(chatId, realPath, GRANT_KIND.EDIT) ||
+      // A WRITE grant also covers EDIT — same blast radius, narrower op.
+      hasGrant(chatId, realPath, GRANT_KIND.WRITE)
+    ) {
+      const operationToken = _issueOperationToken({
+        signal,
+        identities: identityOwner.takeAll(),
+        kind: OP_KIND.EDIT,
+        chatId,
+        targets: [{ lexical: abs, expectedReal: realPath }],
+        });
+      return { resolvedTarget: realPath, operationToken };
+    }
+    // Phase 3b: persistent allowlist. findMatchingFileSafetyRule treats
+    // a 'write' rule as covering 'edit' (same write-grant-covers-edit
+    // semantics as chatScopedGrants).
+    {
+      const persistentRule = await findMatchingFileSafetyRule('edit', realPath);
+      if (persistentRule) {
+        const operationToken = _issueOperationToken({
+        signal,
+        identities: identityOwner.takeAll(),
+          kind: OP_KIND.EDIT,
+          chatId,
+          targets: [{ lexical: abs, expectedReal: realPath }],
+        });
+        return { resolvedTarget: realPath, operationToken };
+      }
+    }
+
+    const decision = await _prompt({
+      sseEmitter, signal, chatId,
+      kind: OP_KIND.EDIT,
+      payload: {
+        path: abs,
+        realPath,
+        hasSymlinkInChain,
+        oldExcerpt: clipText(oldString, 4000),
+        newExcerpt: clipText(newString, 4000),
+        diffPreview: clipText(diffPreview, 8000),
+        withinWorkspace:
+          isWithinWorkspace(abs, workspacePath) &&
+          isWithinWorkspace(realPath, realWorkspace),
+      },
+    });
+
+    if (!decision.persistent && decision.scope === SCOPE.FILE) {
+      grantFile(chatId, realPath, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
+    } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
+      grantDir(chatId, parentDir(realPath), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
+    }
+    // Phase 3b: persistent rule for edit is stored under operation:'edit'
+    // (write-rules already cover edit at lookup time). Same no-dir-persistent
+    // policy as the write path.
+
     const operationToken = _issueOperationToken({
+        signal,
+        identities: identityOwner.takeAll(),
       kind: OP_KIND.EDIT,
       chatId,
       targets: [{ lexical: abs, expectedReal: realPath }],
       });
     return { resolvedTarget: realPath, operationToken };
-  }
-  // Phase 3b: persistent allowlist. findMatchingFileSafetyRule treats
-  // a 'write' rule as covering 'edit' (same write-grant-covers-edit
-  // semantics as chatScopedGrants).
-  {
-    const persistentRule = await findMatchingFileSafetyRule('edit', realPath);
-    if (persistentRule) {
-      const operationToken = _issueOperationToken({
-        kind: OP_KIND.EDIT,
-        chatId,
-        targets: [{ lexical: abs, expectedReal: realPath }],
-      });
-      return { resolvedTarget: realPath, operationToken };
-    }
-  }
-
-  const decision = await _prompt({
-    sseEmitter, signal, chatId,
-    kind: OP_KIND.EDIT,
-    payload: {
-      path: abs,
-      realPath,
-      hasSymlinkInChain,
-      oldExcerpt: clipText(oldString, 4000),
-      newExcerpt: clipText(newString, 4000),
-      diffPreview: clipText(diffPreview, 8000),
-      withinWorkspace:
-        isWithinWorkspace(abs, workspacePath) &&
-        isWithinWorkspace(realPath, realWorkspace),
-    },
-  });
-
-  if (!decision.persistent && decision.scope === SCOPE.FILE) {
-    grantFile(chatId, realPath, [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
-  } else if (!decision.persistent && decision.scope === SCOPE.DIR) {
-    grantDir(chatId, parentDir(realPath), [GRANT_KIND.EDIT, GRANT_KIND.WRITE]);
-  }
-  // Phase 3b: persistent rule for edit is stored under operation:'edit'
-  // (write-rules already cover edit at lookup time). Same no-dir-persistent
-  // policy as the write path.
-
-  const operationToken = _issueOperationToken({
-    kind: OP_KIND.EDIT,
-    chatId,
-    targets: [{ lexical: abs, expectedReal: realPath }],
-    });
-  return { resolvedTarget: realPath, operationToken };
+  } finally { identityOwner.close(); }
 }
 
 // Move / rename. Always interactive; no session grants — every move is
@@ -970,76 +1027,87 @@ export async function requestMove({
   workspacePath,
   baseDir,
 }) {
-  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
-    ? await realpath(workspacePath).catch(() => null) : null;
-  const absSrc = toAbsolute(src, baseDir);
-  const absDst = toAbsolute(dst, baseDir);
-  if (!absSrc || !absDst) throw denyError('Move requested with empty src or dst.');
+  const identityOwner = new FileIdentityOwner();
+  try {
+    const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+      ? await realpath(workspacePath).catch(() => null) : null;
+    const absSrc = toAbsolute(src, baseDir);
+    const absDst = toAbsolute(dst, baseDir);
+    if (!absSrc || !absDst) throw denyError('Move requested with empty src or dst.');
 
-  const srcResolved = await safeResolvePath(absSrc);
-  const dstResolved = await safeResolvePath(absDst);
+    const srcResolved = await safeResolvePath(absSrc);
+    const dstResolved = await safeResolvePath(absDst);
 
-  if (isAnySensitive(absSrc, srcResolved.realPath, isHardBlockedWrite)) {
-    const cat = moreRestrictiveCategory(
-      classifyPath(absSrc),
-      classifyPath(srcResolved.realPath),
-    );
-    throw denyError(
-      `Move source ${absSrc} is blocked by safety policy (category: ${cat}).`,
-    );
-  }
-  if (isAnySensitive(absDst, dstResolved.realPath, isHardBlockedWrite)) {
-    const cat = moreRestrictiveCategory(
-      classifyPath(absDst),
-      classifyPath(dstResolved.realPath),
-    );
-    throw denyError(
-      `Move destination ${absDst} is blocked by safety policy (category: ${cat}).`,
-    );
-  }
-
-  await _prompt({
-    sseEmitter, signal, chatId,
-    kind: OP_KIND.MOVE,
-    payload: {
-      src: absSrc,
-      dst: absDst,
-      srcRealPath: srcResolved.realPath,
-      dstRealPath: dstResolved.realPath,
-      srcHasSymlinkInChain: srcResolved.hasSymlinkInChain,
-      dstHasSymlinkInChain: dstResolved.hasSymlinkInChain,
-      srcCategory: moreRestrictiveCategory(
+    if (isAnySensitive(absSrc, srcResolved.realPath, isHardBlockedWrite)) {
+      const cat = moreRestrictiveCategory(
         classifyPath(absSrc),
         classifyPath(srcResolved.realPath),
-      ),
-      dstCategory: moreRestrictiveCategory(
+      );
+      throw denyError(
+        `Move source ${absSrc} is blocked by safety policy (category: ${cat}).`,
+      );
+    }
+    if (isAnySensitive(absDst, dstResolved.realPath, isHardBlockedWrite)) {
+      const cat = moreRestrictiveCategory(
         classifyPath(absDst),
         classifyPath(dstResolved.realPath),
-      ),
-      withinWorkspace:
-        isWithinWorkspace(absSrc, workspacePath) &&
-        isWithinWorkspace(absDst, workspacePath) &&
-        isWithinWorkspace(srcResolved.realPath, realWorkspace) &&
-        isWithinWorkspace(dstResolved.realPath, realWorkspace),
-    },
-  });
-  // No session grants for move — see header. Codex D round 3 (2026-05-03)
-  // Q2A: token binds BOTH src and dst. commit-time re-resolves both;
-  // if EITHER end gets symlink-swapped between approval and rename,
-  // commitOperation throws. resolvedTargets[0] = src, [1] = dst.
-  const operationToken = _issueOperationToken({
-    kind: OP_KIND.MOVE,
-    chatId,
-    targets: [
-      { lexical: absSrc, expectedReal: srcResolved.realPath },
-      { lexical: absDst, expectedReal: dstResolved.realPath },
-    ],
-  });
-  return {
-    resolvedSrc: srcResolved.realPath,
-    resolvedDst: dstResolved.realPath,
-    operationToken,
-  };
+      );
+      throw denyError(
+        `Move destination ${absDst} is blocked by safety policy (category: ${cat}).`,
+      );
+    }
+
+    // Pin lexical entries (move acts on links, not their targets).
+    for (const abs of [absSrc, absDst]) {
+      const parent = await realpath(parentDir(abs));
+      identityOwner.capture(resolve(parent, basename(abs)));
+    }
+
+    await _prompt({
+      sseEmitter, signal, chatId,
+      kind: OP_KIND.MOVE,
+      payload: {
+        src: absSrc,
+        dst: absDst,
+        srcRealPath: srcResolved.realPath,
+        dstRealPath: dstResolved.realPath,
+        srcHasSymlinkInChain: srcResolved.hasSymlinkInChain,
+        dstHasSymlinkInChain: dstResolved.hasSymlinkInChain,
+        srcCategory: moreRestrictiveCategory(
+          classifyPath(absSrc),
+          classifyPath(srcResolved.realPath),
+        ),
+        dstCategory: moreRestrictiveCategory(
+          classifyPath(absDst),
+          classifyPath(dstResolved.realPath),
+        ),
+        withinWorkspace:
+          isWithinWorkspace(absSrc, workspacePath) &&
+          isWithinWorkspace(absDst, workspacePath) &&
+          isWithinWorkspace(srcResolved.realPath, realWorkspace) &&
+          isWithinWorkspace(dstResolved.realPath, realWorkspace),
+      },
+    });
+    // No session grants for move — see header. Codex D round 3 (2026-05-03)
+    // Q2A: token binds BOTH src and dst. commit-time re-resolves both;
+    // if EITHER end gets symlink-swapped between approval and rename,
+    // commitOperation throws. resolvedTargets[0] = src, [1] = dst.
+    const operationToken = _issueOperationToken({
+        signal,
+      identities: identityOwner.takeAll(),
+      kind: OP_KIND.MOVE,
+      chatId,
+      targets: [
+        { lexical: absSrc, expectedReal: srcResolved.realPath },
+        { lexical: absDst, expectedReal: dstResolved.realPath },
+      ],
+    });
+    return {
+      resolvedSrc: srcResolved.realPath,
+      resolvedDst: dstResolved.realPath,
+      operationToken,
+    };
+  } finally { identityOwner.close(); }
 }
 
 // Delete — two-stage. Stage 1 confirms intent. Stage 2 requires the
@@ -1059,85 +1127,92 @@ export async function requestDelete({
   baseDir,
   reason = null,
 }) {
-  const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
-    ? await realpath(workspacePath).catch(() => null) : null;
-  const inputPaths = Array.isArray(paths) ? paths : [paths];
-  const absPaths = inputPaths
-    .map(p => toAbsolute(p, baseDir))
-    .filter(Boolean);
-  if (!absPaths.length) throw denyError('Delete requested with no paths.');
+  const identityOwner = new FileIdentityOwner();
+  try {
+    const realWorkspace = typeof workspacePath === 'string' && isAbsolute(workspacePath)
+      ? await realpath(workspacePath).catch(() => null) : null;
+    const inputPaths = Array.isArray(paths) ? paths : [paths];
+    const absPaths = [...new Set(inputPaths
+      .map(p => toAbsolute(p, baseDir))
+      .filter(Boolean))];
+    if (!absPaths.length) throw denyError('Delete requested with no paths.');
 
-  // Resolve every path. Hard-block check runs against BOTH lexical
-  // and real (Codex C 2026-05-03 — symlink to /etc/hosts must reject).
-  const resolved = [];
-  for (const p of absPaths) {
-    const r = await safeResolvePath(p);
-    if (isAnySensitive(p, r.realPath, isHardBlockedDelete)) {
-      const cat = moreRestrictiveCategory(
-        classifyPath(p),
-        classifyPath(r.realPath),
-      );
-      throw denyError(
-        `Delete of ${p} is blocked by safety policy (category: ${cat}` +
-        (r.hasSymlinkInChain ? `, real target: ${r.realPath}` : '') + ').',
-      );
+    // Resolve every path. Hard-block check runs against BOTH lexical
+    // and real (Codex C 2026-05-03 — symlink to /etc/hosts must reject).
+    const resolved = [];
+    for (const p of absPaths) {
+      const r = await safeResolvePath(p);
+      if (isAnySensitive(p, r.realPath, isHardBlockedDelete)) {
+        const cat = moreRestrictiveCategory(
+          classifyPath(p),
+          classifyPath(r.realPath),
+        );
+        throw denyError(
+          `Delete of ${p} is blocked by safety policy (category: ${cat}` +
+          (r.hasSymlinkInChain ? `, real target: ${r.realPath}` : '') + ').',
+        );
+      }
+      const parent = await realpath(parentDir(p));
+      const identity = identityOwner.capture(resolve(parent, basename(p)));
+      resolved.push({ identity, lexicalPath: p, realPath: r.realPath, hasSymlinkInChain: r.hasSymlinkInChain });
     }
-    resolved.push({ lexicalPath: p, realPath: r.realPath, hasSymlinkInChain: r.hasSymlinkInChain });
-  }
 
-  const expectedConfirmation =
-    absPaths.length === 1 ? basename(absPaths[0]) : 'DELETE';
+    const expectedConfirmation =
+      absPaths.length === 1 ? basename(absPaths[0]) : 'DELETE';
 
-  // Stage 1 — intent.
-  await _prompt({
-    sseEmitter, signal, chatId,
-    kind: OP_KIND.DELETE,
-    payload: {
-      stage: 'intent',
-      paths: absPaths,
-      realPaths: resolved.map(r => r.realPath),
-      hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
-      reason,
-      expectedConfirmation,
-      withinWorkspace: resolved.every(r =>
-        isWithinWorkspace(r.lexicalPath, workspacePath) &&
-        isWithinWorkspace(r.realPath, realWorkspace),
-      ),
-    },
-  });
-
-  // Stage 2 — string confirmation. Note expectedConfirmation is
-  // captured into the entry so resolveFileSafety can validate.
-  await _prompt({
-    sseEmitter, signal, chatId,
-    kind: OP_KIND.DELETE,
-    expectedConfirmation,
-    payload: {
-      stage: 'confirm',
-      paths: absPaths,
-      realPaths: resolved.map(r => r.realPath),
-      hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
-      expectedConfirmation,
-    },
-  });
-
-  // Per-path commit tokens — Phase 2 fileDeleteTool uses these to
-  // re-verify each target hasn't been symlink-swapped before
-  // safeDeleteToTrash actually moves it to quarantine.
-  const operationTokens = resolved.map((r, i) =>
-    _issueOperationToken({
+    // Stage 1 — intent.
+    await _prompt({
+      sseEmitter, signal, chatId,
       kind: OP_KIND.DELETE,
-      chatId,
-      targets: [{ lexical: absPaths[i], expectedReal: r.realPath }],
-      }),
-  );
+      payload: {
+        stage: 'intent',
+        paths: absPaths,
+        realPaths: resolved.map(r => r.realPath),
+        hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
+        reason,
+        expectedConfirmation,
+        withinWorkspace: resolved.every(r =>
+          isWithinWorkspace(r.lexicalPath, workspacePath) &&
+          isWithinWorkspace(r.realPath, realWorkspace),
+        ),
+      },
+    });
 
-  return {
-    confirmedPaths: absPaths,
-    confirmedRealPaths: resolved.map(r => r.realPath),
-    operationTokens,
-    expectedConfirmation,
-  };
+    // Stage 2 — string confirmation. Note expectedConfirmation is
+    // captured into the entry so resolveFileSafety can validate.
+    await _prompt({
+      sseEmitter, signal, chatId,
+      kind: OP_KIND.DELETE,
+      expectedConfirmation,
+      payload: {
+        stage: 'confirm',
+        paths: absPaths,
+        realPaths: resolved.map(r => r.realPath),
+        hasSymlinks: resolved.some(r => r.hasSymlinkInChain),
+        expectedConfirmation,
+      },
+    });
+
+    // Per-path commit tokens — Phase 2 fileDeleteTool uses these to
+    // re-verify each target hasn't been symlink-swapped before
+    // safeDeleteToTrash actually moves it to quarantine.
+    const operationTokens = resolved.map((r, i) =>
+      _issueOperationToken({
+        signal,
+        identities: [identityOwner.take(r.identity)],
+        kind: OP_KIND.DELETE,
+        chatId,
+        targets: [{ lexical: absPaths[i], expectedReal: r.realPath }],
+        }),
+    );
+
+    return {
+      confirmedPaths: absPaths,
+      confirmedRealPaths: resolved.map(r => r.realPath),
+      operationTokens,
+      expectedConfirmation,
+    };
+  } finally { identityOwner.close(); }
 }
 
 // Bash command containing risky file ops. The caller (bashTool, Phase

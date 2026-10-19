@@ -1,3 +1,4 @@
+import { FileIdentityOwner } from '../../safety/dirfdOps.js';
 import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_edit
@@ -149,64 +150,164 @@ export const fileEditTool = {
   ],
 
   async run(args, context = {}) {
-    const { path: filePath, old_string, new_string, replace_all = false } = args;
-    const { workspacePath, sseEmitter, signal, chatId } = context;
+    const identityOwner = new FileIdentityOwner();
+    try {
+      const { path: filePath, old_string, new_string, replace_all = false } = args;
+      const { workspacePath, sseEmitter, signal, chatId } = context;
 
-    const missingWorkspace = missingWorkspaceResult(workspacePath);
-    if (missingWorkspace) return missingWorkspace;
+      const missingWorkspace = missingWorkspaceResult(workspacePath);
+      if (missingWorkspace) return missingWorkspace;
 
-    const absPath = isAbsolute(filePath)
-      ? filePath
-      : resolve(workspacePath, filePath);
+      const absPath = isAbsolute(filePath)
+        ? filePath
+        : resolve(workspacePath, filePath);
 
-    // ── 1. Sensitivity pre-check ───────────────────────────────────────
-    const precheck = await precheckHardBlockedWrite(absPath);
-    if (precheck.blocked) {
-      return {
-        ok: false,
-        output: precheck.denyReason,
-        error: 'DENIED',
-        meta: { denied: true, category: precheck.category },
-      };
-    }
-    if (!precheck.exists) {
-      return {
-        ok: false,
-        output: `Cannot read file: ${absPath} does not exist.`,
-        error: 'NOT_FOUND',
-      };
-    }
-
-    const realPath = precheck.realPath;
-    const [parentDir, leafName] = splitParentLeaf(realPath);
-
-    // ── 2. Parent dirfd open (sanity + capture {dev,ino}) ────────────
-    const parentIdent = fetchParentInoIdent(parentDir);
-    if (!parentIdent.ok) {
-      const err = parentIdent.error;
-      if (err.code === 'ELOOP') {
-        return { ok: false, output: `Parent ${parentDir} is a symlink.`, error: 'PARENT_NOT_DIR' };
+      // ── 1. Sensitivity pre-check ───────────────────────────────────────
+      const precheck = await precheckHardBlockedWrite(absPath);
+      if (precheck.blocked) {
+        return {
+          ok: false,
+          output: precheck.denyReason,
+          error: 'DENIED',
+          meta: { denied: true, category: precheck.category },
+        };
       }
-      if (err.code === 'ENOENT') {
-        return { ok: false, output: `Parent ${parentDir} does not exist.`, error: 'PARENT_NOT_FOUND' };
+      if (!precheck.exists) {
+        return {
+          ok: false,
+          output: `Cannot read file: ${absPath} does not exist.`,
+          error: 'NOT_FOUND',
+        };
       }
-      return { ok: false, output: `Cannot open parent ${parentDir}: ${err.message}`, error: err.message };
-    }
-    const parentInoAtPrecheck = parentIdent.ino;
-    const parentDevAtPrecheck = parentIdent.dev;
 
-    // ── 3. Pre-approval read ──────────────────────────────────────────
-    let oldBuffer;
-    let preReadInoIdent;
-    {
-      let preLeaf;
+      const realPath = precheck.realPath;
+      const [parentDir, leafName] = splitParentLeaf(realPath);
+
+      // ── 2. Parent dirfd open (sanity + capture {dev,ino}) ────────────
+      const parentIdent = fetchParentInoIdent(parentDir);
+      if (!parentIdent.ok) {
+        const err = parentIdent.error;
+        if (err.code === 'ELOOP') {
+          return { ok: false, output: `Parent ${parentDir} is a symlink.`, error: 'PARENT_NOT_DIR' };
+        }
+        if (err.code === 'ENOENT') {
+          return { ok: false, output: `Parent ${parentDir} does not exist.`, error: 'PARENT_NOT_FOUND' };
+        }
+        return { ok: false, output: `Cannot open parent ${parentDir}: ${err.message}`, error: err.message };
+      }
+      const identity = identityOwner.capture(realPath);
+      const parentInoAtPrecheck = parentIdent.ino;
+      const parentDevAtPrecheck = parentIdent.dev;
+
+      // ── 3. Pre-approval read ──────────────────────────────────────────
+      let oldBuffer;
+      let preReadInoIdent;
+      {
+        let preLeaf;
+        try {
+          preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY, 0o644, identity);
+        } catch (err) {
+          if (err.code === 'ELOOP') {
+            return {
+              ok: false,
+              output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
+              error: 'COMMIT_FAILED',
+              meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+            };
+          }
+          if (err.code === 'ENOENT') {
+            return {
+              ok: false,
+              output: `Target ${realPath} disappeared between precheck and read.`,
+              error: 'COMMIT_FAILED',
+              meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+            };
+          }
+          if (err.code === 'EISDIR') {
+            return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
+          }
+          return { ok: false, output: `Open error: ${err.message}`,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'COMMIT_FAILED' : err.message,
+          meta: { raceKind: err.raceKind } };
+        }
+        try {
+          oldBuffer = readFromStartFd(preLeaf.leafFd);
+          preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
+        } finally {
+          preLeaf.closeLeaf();
+        }
+      }
+
+      const original = oldBuffer.toString('utf8');
+
+      const count = original.split(old_string).length - 1;
+      if (count === 0) {
+        return {
+          ok: false,
+          output: `old_string not found in ${realPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
+          error: 'NOT_FOUND',
+        };
+      }
+      if (count > 1 && !replace_all) {
+        return {
+          ok: false,
+          output: `old_string appears ${count} times in ${realPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
+          error: 'AMBIGUOUS',
+        };
+      }
+
+      const updated = replace_all
+        ? original.split(old_string).join(new_string)
+        : original.replace(old_string, new_string);
+
+      const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
+
+      // ── 4. UI approval — until this returns, ZERO disk side-effect ────
+      let approved;
       try {
-        preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY);
+        approved = await requestEdit({
+          path: absPath,
+          chatId,
+          sseEmitter,
+          signal,
+          workspacePath,
+          baseDir: workspacePath,
+          oldString: old_string,
+          newString: new_string,
+          diffPreview,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          output: err.message,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+          meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+        };
+      }
+
+      // ── 5. Commit ────────────────────────────────────────────────────
+      try {
+        await commitOperation(approved.operationToken, {
+          identityOwner,
+          expectedKinds: [OP_KIND.EDIT],
+        });
+      } catch (err) {
+        return { ok: false, output: `Atomic commit failed: ${err.message}`, error: 'COMMIT_FAILED', meta: { raceKind: err.raceKind } };
+      }
+
+      if (_postCommitHookForTests) {
+        try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
+      }
+
+      // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
+      let openLeaf;
+      try {
+        openLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDWR, 0o644, identity);
       } catch (err) {
         if (err.code === 'ELOOP') {
           return {
             ok: false,
-            output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
+            output: `Parent or leaf became a symlink between approval and edit — kernel refused via O_NOFOLLOW.`,
             error: 'COMMIT_FAILED',
             meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };
@@ -214,7 +315,7 @@ export const fileEditTool = {
         if (err.code === 'ENOENT') {
           return {
             ok: false,
-            output: `Target ${realPath} disappeared between precheck and read.`,
+            output: `Target ${realPath} disappeared between approval and edit.`,
             error: 'COMMIT_FAILED',
             meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
           };
@@ -222,232 +323,143 @@ export const fileEditTool = {
         if (err.code === 'EISDIR') {
           return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
         }
-        return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-      }
-      try {
-        oldBuffer = readFromStartFd(preLeaf.leafFd);
-        preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
-      } finally {
-        preLeaf.closeLeaf();
-      }
-    }
-
-    const original = oldBuffer.toString('utf8');
-
-    const count = original.split(old_string).length - 1;
-    if (count === 0) {
-      return {
-        ok: false,
-        output: `old_string not found in ${realPath}.\nMake sure to copy the exact text (including whitespace) from file_read output.`,
-        error: 'NOT_FOUND',
-      };
-    }
-    if (count > 1 && !replace_all) {
-      return {
-        ok: false,
-        output: `old_string appears ${count} times in ${realPath}. Provide more surrounding context to make it unique, or set replace_all: true to replace all occurrences.`,
-        error: 'AMBIGUOUS',
-      };
-    }
-
-    const updated = replace_all
-      ? original.split(old_string).join(new_string)
-      : original.replace(old_string, new_string);
-
-    const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
-
-    // ── 4. UI approval — until this returns, ZERO disk side-effect ────
-    let approved;
-    try {
-      approved = await requestEdit({
-        path: absPath,
-        chatId,
-        sseEmitter,
-        signal,
-        workspacePath,
-        baseDir: workspacePath,
-        oldString: old_string,
-        newString: new_string,
-        diffPreview,
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        output: err.message,
-        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
-      };
-    }
-
-    // ── 5. Commit ────────────────────────────────────────────────────
-    try {
-      await commitOperation(approved.operationToken, {
-        expectedKinds: [OP_KIND.EDIT],
-      });
-    } catch (err) {
-      return { ok: false, output: `Atomic commit failed: ${err.message}`, error: 'COMMIT_FAILED' };
-    }
-
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ realPath, lexicalPath: absPath }); } catch {}
-    }
-
-    // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
-    let openLeaf;
-    try {
-      openLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDWR);
-    } catch (err) {
-      if (err.code === 'ELOOP') {
-        return {
-          ok: false,
-          output: `Parent or leaf became a symlink between approval and edit — kernel refused via O_NOFOLLOW.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
-        };
-      }
-      if (err.code === 'ENOENT') {
-        return {
-          ok: false,
-          output: `Target ${realPath} disappeared between approval and edit.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
-        };
-      }
-      if (err.code === 'EISDIR') {
-        return { ok: false, output: `${realPath} is a directory, not a file.`, error: 'TARGET_IS_DIR' };
-      }
-      if (err.code === 'ENOTDIR') {
-        return {
-          ok: false,
-          output: `Parent ${parentDir} stopped being a directory between approval and edit.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-    }
-
-    const leafFd = openLeaf.leafFd;
-    try {
-      // ── 6b. Cross-check parent {dev, ino} matches precheck ──────────
-      if (
-        openLeaf.parentDev !== parentDevAtPrecheck ||
-        openLeaf.parentIno !== parentInoAtPrecheck
-      ) {
-        return {
-          ok: false,
-          output: `Parent ${parentDir} was replaced (inode/device changed) between approval and edit.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-
-      // ── 7. Inode anchor: leafStat ↔ preReadInoIdent ─────────────────
-      if (
-        openLeaf.leafStat.ino !== preReadInoIdent.ino ||
-        openLeaf.leafStat.dev !== preReadInoIdent.dev
-      ) {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} was replaced (inode/device changed) ` +
-            `between approval and edit — kernel-level race detected.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
-        };
-      }
-
-      // ── 8. Stale check via leafFd ───────────────────────────────────
-      const currentBuffer = readFromStartFd(leafFd);
-      const currentOriginal = currentBuffer.toString('utf8');
-      if (currentOriginal !== original) {
-        return {
-          ok: false,
-          output:
-            `File at ${realPath} changed between approval and edit — ` +
-            `stale-content check failed. Re-run file_edit with the latest content.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, realPath },
-        };
-      }
-
-      // ── 9. Snapshot from oldBuffer ──────────────────────────────────
-      const snap = await snapshotBeforeWrite(realPath, {
-        chatId,
-        requestedBy: 'file_edit',
-        reason: replace_all ? `edit ${count}×` : 'edit 1×',
-        lexicalPath: absPath,
-        preReadContent: oldBuffer,
-      });
-
-      // ── 10. Truncate + write via leafFd ─────────────────────────────
-      const writeBuf = Buffer.from(updated, 'utf8');
-      ftruncateSync(leafFd, 0);
-      writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
-
-      // ── 10b. Post-write semantic check ──────────────────────────────
-      // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing is
-      // ALSO an orphan signal — don't silently report success.
-      let orphanReason = null;
-      try {
-        const postLst = await atomicLstat(parentDir, leafName);
-        const postFhStat = fstatSync(leafFd);
-        if (
-          !postLst ||
-          postLst.isSymlink ||
-          postLst.ino !== postFhStat.ino ||
-          postLst.dev !== postFhStat.dev
-        ) {
-          orphanReason = !postLst
-            ? 'leaf no longer present at parent'
-            : postLst.isSymlink
-              ? 'leaf now a symlink'
-              : 'leaf inode/device changed';
+        if (err.code === 'ENOTDIR') {
+          return {
+            ok: false,
+            output: `Parent ${parentDir} stopped being a directory between approval and edit.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+          };
         }
-      } catch (err) {
-        orphanReason = `parent stat failed: ${err.message}`;
+        return { ok: false, output: `Open error: ${err.message}`,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'COMMIT_FAILED' : err.message,
+          meta: { raceKind: err.raceKind } };
       }
-      if (orphanReason !== null) {
+
+      const leafFd = openLeaf.leafFd;
+      try {
+        // ── 6b. Cross-check parent {dev, ino} matches precheck ──────────
+        if (
+          openLeaf.parentDev !== parentDevAtPrecheck ||
+          openLeaf.parentIno !== parentInoAtPrecheck
+        ) {
+          return {
+            ok: false,
+            output: `Parent ${parentDir} was replaced (inode/device changed) between approval and edit.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+          };
+        }
+
+        // ── 7. Inode anchor: leafStat ↔ preReadInoIdent ─────────────────
+        if (
+          openLeaf.leafStat.ino !== preReadInoIdent.ino ||
+          openLeaf.leafStat.dev !== preReadInoIdent.dev
+        ) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was replaced (inode/device changed) ` +
+              `between approval and edit — kernel-level race detected.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
+          };
+        }
+
+        // ── 8. Stale check via leafFd ───────────────────────────────────
+        const currentBuffer = readFromStartFd(leafFd);
+        const currentOriginal = currentBuffer.toString('utf8');
+        if (currentOriginal !== original) {
+          return {
+            ok: false,
+            output:
+              `File at ${realPath} changed between approval and edit — ` +
+              `stale-content check failed. Re-run file_edit with the latest content.`,
+            error: 'STALE_CONTENT',
+            meta: { lexicalPath: absPath, realPath },
+          };
+        }
+
+        // ── 9. Snapshot from oldBuffer ──────────────────────────────────
+        const snap = await snapshotBeforeWrite(realPath, {
+          chatId,
+          requestedBy: 'file_edit',
+          reason: replace_all ? `edit ${count}×` : 'edit 1×',
+          lexicalPath: absPath,
+          preReadContent: oldBuffer,
+        });
+
+        // ── 10. Truncate + write via leafFd ─────────────────────────────
+        const writeBuf = Buffer.from(updated, 'utf8');
+        ftruncateSync(leafFd, 0);
+        writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
+
+        // ── 10b. Post-write semantic check ──────────────────────────────
+        // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing is
+        // ALSO an orphan signal — don't silently report success.
+        let orphanReason = null;
+        try {
+          const postLst = await atomicLstat(parentDir, leafName);
+          const postFhStat = fstatSync(leafFd);
+          if (
+            !postLst ||
+            postLst.isSymlink ||
+            postLst.ino !== postFhStat.ino ||
+            postLst.dev !== postFhStat.dev
+          ) {
+            orphanReason = !postLst
+              ? 'leaf no longer present at parent'
+              : postLst.isSymlink
+                ? 'leaf now a symlink'
+                : 'leaf inode/device changed';
+          }
+        } catch (err) {
+          orphanReason = `parent stat failed: ${err.message}`;
+        }
+        if (orphanReason !== null) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was unlinked or replaced after edit completed ` +
+              `(${orphanReason}); our content is at the inode you reviewed but the ` +
+              `user-visible path now points elsewhere or is gone. ` +
+              `Backup retained at operationId=${snap.operationId}.`,
+            error: 'COMMIT_FAILED',
+            meta: {
+              lexicalPath: absPath, realPath,
+              raceKind: 'post-write-orphaned',
+              backupOperationId: snap.operationId,
+            },
+          };
+        }
+
+        // ── 11. recordAfterDiff ─────────────────────────────────────────
+        try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
+
+        const oldLines = old_string.split('\n').length;
+        const newLines = new_string.split('\n').length;
+        const replaced = replace_all ? count : 1;
+
         return {
-          ok: false,
-          output:
-            `Target ${realPath} was unlinked or replaced after edit completed ` +
-            `(${orphanReason}); our content is at the inode you reviewed but the ` +
-            `user-visible path now points elsewhere or is gone. ` +
-            `Backup retained at operationId=${snap.operationId}.`,
-          error: 'COMMIT_FAILED',
+          ok: true,
+          output: `Edited ${realPath} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
           meta: {
-            lexicalPath: absPath, realPath,
-            raceKind: 'post-write-orphaned',
+            path: realPath,
+            lexicalPath: absPath,
+            oldLines,
+            newLines,
+            occurrencesReplaced: replaced,
+            change: { kind: 'replacement', path: realPath, before: old_string.slice(0, 8000), after: new_string.slice(0, 8000), truncated: old_string.length > 8000 || new_string.length > 8000 },
             backupOperationId: snap.operationId,
           },
         };
+      } catch (err) {
+        return { ok: false, output: `Edit error: ${err.message}`, error: err.message };
+      } finally {
+        openLeaf.closeLeaf();
       }
-
-      // ── 11. recordAfterDiff ─────────────────────────────────────────
-      try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
-
-      const oldLines = old_string.split('\n').length;
-      const newLines = new_string.split('\n').length;
-      const replaced = replace_all ? count : 1;
-
-      return {
-        ok: true,
-        output: `Edited ${realPath} — replaced ${replaced} occurrence(s) of ${oldLines} line(s) with ${newLines} line(s).`,
-        meta: {
-          path: realPath,
-          lexicalPath: absPath,
-          oldLines,
-          newLines,
-          occurrencesReplaced: replaced,
-          change: { kind: 'replacement', path: realPath, before: old_string.slice(0, 8000), after: new_string.slice(0, 8000), truncated: old_string.length > 8000 || new_string.length > 8000 },
-          backupOperationId: snap.operationId,
-        },
-      };
-    } catch (err) {
-      return { ok: false, output: `Edit error: ${err.message}`, error: err.message };
-    } finally {
-      openLeaf.closeLeaf();
-    }
+    } catch (error) {
+      return { ok: false, error: 'COMMIT_FAILED', output: error.message };
+    } finally { identityOwner.close(); }
   },
 };

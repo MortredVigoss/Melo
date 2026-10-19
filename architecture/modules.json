@@ -23,7 +23,7 @@
     ],
     "graph": {
       "modules": 561,
-      "edges": 1714,
+      "edges": 1715,
       "roots": [
         "src",
         "desktop-ui",
@@ -3201,6 +3201,7 @@
           "src/safety/commitToken.test.js",
           "src/safety/dirfdOps.checked.test.js",
           "src/safety/dirfdOps.errno.test.js",
+          "src/safety/fileIdentity.test.js",
           "src/safety/fileSafetyAllowlist.test.js",
           "src/safety/fileSafetyGate.production.test.js",
           "src/safety/fileSafetyGate.test.js",

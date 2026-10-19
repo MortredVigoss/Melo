@@ -46,6 +46,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, basename, join } from 'node:path';
+import { fstatSync, closeSync } from 'node:fs';
 
 const requireCjs = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -76,6 +77,7 @@ export const C = addon.constants;
 // ─── Raw bindings (test seam) ──────────────────────────────────────────
 export const _raw = {
   openat: addon.openat,
+  openIdentityAt: addon.openIdentityAt,
   mkdirat: addon.mkdirat,
   unlinkat: addon.unlinkat,
   renameat: addon.renameat,
@@ -96,6 +98,7 @@ function wrapErr(err, ctx) {
   wrapped.syscall = err.syscall;
   wrapped.code = err.code;
   wrapped.cause = err;
+  wrapped.raceKind = err.raceKind;
   return wrapped;
 }
 
@@ -226,17 +229,21 @@ export async function withParentDirFd(parentPath, fn) {
  * @param {number} [mode] file mode for O_CREAT
  * @returns {Promise<{leafFd: number, leafStat: object, parentDev: number, parentIno: number, closeLeaf: () => void}>}
  */
-export async function atomicOpenLeaf(parentPath, leafName, flags, mode = 0o644) {
+export async function atomicOpenLeaf(parentPath, leafName, flags, mode = 0o644, identity = null) {
   const fs = requireCjs('node:fs');
   const dirfd = openParentDirFd(parentPath);
   let parentStat;
   try {
     parentStat = fs.fstatSync(dirfd);
+    if (identity) requireFileIdentity(identity, parentPath, leafName).assertEntry(dirfd);
   } catch (err) {
     safeCloseFd(dirfd);
     throw wrapErr(err, `fstat parent dirfd (${parentPath})`);
   }
-  const flagsWithNoFollow = flags | C.O_NOFOLLOW;
+  // Delay truncation until the opened inode is checked. Missing targets use
+  // O_EXCL at their call sites, so a raced creation cannot be overwritten.
+  const flagsWithNoFollow = (identity ? flags & ~C.O_TRUNC : flags) | C.O_NOFOLLOW
+    | (identity && !identity.existed && (flags & C.O_CREAT) ? C.O_EXCL : 0);
   let leafFd;
   try {
     leafFd = addon.openat(dirfd, leafName, flagsWithNoFollow, mode);
@@ -247,6 +254,10 @@ export async function atomicOpenLeaf(parentPath, leafName, flags, mode = 0o644) 
   let leafStat;
   try {
     leafStat = fs.fstatSync(leafFd);
+    if (identity) {
+      identity.assertOpened(leafFd);
+      if (flags & C.O_TRUNC) fs.ftruncateSync(leafFd, 0);
+    }
   } catch (err) {
     safeCloseFd(leafFd);
     safeCloseFd(dirfd);
@@ -353,35 +364,16 @@ export async function atomicSymlink(parentPath, leafName, target) {
 }
 
 /**
- * Round 13 follow-up #5 (Codex 🔴): same-dirfd "checked" variants
- * of atomicUnlink / atomicSymlink. The caller passes the parent
- * {dev, ino} captured during a prior approval / backup phase; the
- * helper opens the parent dirfd ONCE, fstat's it, compares against
- * the expected snapshot, and then runs the destructive/create
- * syscall on the SAME dirfd. The bare atomicUnlink / atomicSymlink
- * helpers re-open the parent each call — that's safe for fresh
- * approval flows but unsafe when the caller has already validated
- * the parent inode in an earlier phase, because rmdir+mkdir between
- * the validation and the bare call would silently rebind to the
- * new (different-inode) parent.
- *
- * Throws FILE_SAFETY_DENIED with a parent-swap message on
- * {dev, ino} mismatch — the syscall does NOT run.
+ * Checked operations require a live identity captured BEFORE approval/backup.
+ * Holding the parent prevents inode reuse; holding the entry detects same-
+ * content replacement. Recheck the freshly opened parent, then use that same
+ * dirfd for the syscall. A bare dev/ino snapshot is never an authority.
  */
-export async function unlinkatChecked(parentPath, leafName, expectedDev, expectedIno, { removeDir = false } = {}) {
-  const fs = requireCjs('node:fs');
+export async function unlinkatChecked(parentPath, leafName, identity, { removeDir = false } = {}) {
+  requireFileIdentity(identity, parentPath, leafName);
   const dirfd = openParentDirFd(parentPath);
   try {
-    const st = fs.fstatSync(dirfd);
-    if (st.dev !== expectedDev || st.ino !== expectedIno) {
-      const err = new Error(
-        `Parent ${parentPath} was replaced (inode/device changed) ` +
-        `between approval and unlink — refusing to unlinkat through ` +
-        `a different parent.`,
-      );
-      err.code = 'FILE_SAFETY_DENIED';
-      throw err;
-    }
+    identity.assertEntry(dirfd);
     addon.unlinkat(dirfd, leafName, removeDir ? C.AT_REMOVEDIR : 0);
   } catch (err) {
     if (err.code === 'FILE_SAFETY_DENIED') throw err;
@@ -391,26 +383,39 @@ export async function unlinkatChecked(parentPath, leafName, expectedDev, expecte
   }
 }
 
-export async function symlinkatChecked(parentPath, leafName, target, expectedDev, expectedIno) {
-  const fs = requireCjs('node:fs');
+export async function symlinkatChecked(parentPath, leafName, target, identity) {
+  requireFileIdentity(identity, parentPath, leafName);
   const dirfd = openParentDirFd(parentPath);
   try {
-    const st = fs.fstatSync(dirfd);
-    if (st.dev !== expectedDev || st.ino !== expectedIno) {
-      const err = new Error(
-        `Parent ${parentPath} was replaced (inode/device changed) ` +
-        `between approval and symlink restore — refusing to symlinkat ` +
-        `through a different parent.`,
-      );
-      err.code = 'FILE_SAFETY_DENIED';
-      throw err;
-    }
+    // A restore may have just unlinked the old slot under this same lease.
+    // symlinkat itself refuses any entry created in the gap (EEXIST).
+    identity.assertParent(dirfd);
     addon.symlinkat(target, dirfd, leafName);
   } catch (err) {
     if (err.code === 'FILE_SAFETY_DENIED') throw err;
     throw wrapErr(err, `symlinkatChecked ${parentPath}/${leafName} → ${target}`);
   } finally {
     safeCloseFd(dirfd);
+  }
+}
+
+// Roll back a failed create only while its original FD is still held. A path
+// may already refer to somebody else's replacement; never unlink that entry.
+export function unlinkOpenedLeaf(parentPath, leafName, leafFd, identity) {
+  requireFileIdentity(identity, parentPath, leafName);
+  const fd = openParentDirFd(parentPath);
+  let current = null;
+  try {
+    identity.assertParent(fd);
+    current = identityAt(fd, leafName);
+    if (current === null) return;
+    if (!same(fstatSync(leafFd, { bigint: true }), fstatSync(current, { bigint: true }))) {
+      throw denied('Failed-create cleanup refuses to remove a replacement file.', 'inode-mismatch');
+    }
+    addon.unlinkat(fd, leafName, 0);
+  } finally {
+    safeCloseFd(current);
+    safeCloseFd(fd);
   }
 }
 
@@ -454,4 +459,93 @@ export function splitParentLeaf(absPath) {
     throw new Error(`splitParentLeaf: empty leaf in ${JSON.stringify(absPath)}`);
   }
   return [parent, leaf];
+}
+
+const live = new WeakSet();
+const same = (a, b) => a.dev === b.dev && a.ino === b.ino;
+function denied(message, raceKind = null) {
+  return Object.assign(new Error(message), { code: 'FILE_SAFETY_DENIED', raceKind });
+}
+function identityAt(fd, name) {
+  try { return _raw.openIdentityAt(fd, name); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+
+// A snapshot of numbers is insufficient: an unlinked inode can be reused.
+// Keep the actual parent AND existing entry open until the operation ends.
+// Missing entries are also an explicit precondition; a late create is refused.
+export function captureFileIdentity(path) {
+  const parent = dirname(path);
+  const leaf = basename(path);
+  const parentFd = openParentDirFd(parent);
+  let leafFd = null;
+  try {
+    leafFd = identityAt(parentFd, leaf);
+    const parentStat = fstatSync(parentFd, { bigint: true });
+    const leafStat = leafFd === null ? null : fstatSync(leafFd, { bigint: true });
+    const lease = {
+      path, parent, leaf, existed: leafStat !== null,
+      assertParent(fd) {
+        if (!live.has(lease)) throw denied('File identity is missing or already released.');
+        if (!same(parentStat, fstatSync(fd, { bigint: true }))) {
+          throw denied(`Parent ${parent} was replaced (inode/device changed) during approval.`, 'parent-swap');
+        }
+      },
+      assertEntry(fd) {
+        lease.assertParent(fd);
+        const current = identityAt(fd, leaf);
+        try {
+          const st = current === null ? null : fstatSync(current, { bigint: true });
+          if (leafStat === null ? st !== null : st === null || !same(leafStat, st)) {
+            throw denied(`File ${path} was replaced during approval.`,
+              leafStat === null ? 'create-eexist' : st?.isSymbolicLink() ? 'symlink-eloop' : 'inode-mismatch');
+          }
+        } finally { if (current !== null) closeSync(current); }
+      },
+      assertOpened(fd) {
+        if (!live.has(lease)) throw denied('File identity is already released.');
+        if (leafStat !== null && !same(leafStat, fstatSync(fd, { bigint: true }))) {
+          throw denied(`File ${path} was replaced before open.`, 'inode-mismatch');
+        }
+      },
+      assertCurrent() {
+        const fd = openParentDirFd(parent);
+        try { lease.assertEntry(fd); } finally { closeSync(fd); }
+      },
+      close() {
+        if (!live.delete(lease)) return;
+        safeCloseFd(leafFd);
+        safeCloseFd(parentFd);
+      },
+    };
+    live.add(lease);
+    return lease;
+  } catch (error) {
+    if (leafFd !== null) closeSync(leafFd);
+    closeSync(parentFd);
+    throw error;
+  }
+}
+
+export function requireFileIdentity(identity, parent, leaf) {
+  if (!live.has(identity) || identity.parent !== parent || identity.leaf !== leaf) {
+    throw denied('A live file identity for this path is required; numeric inode snapshots are not accepted.');
+  }
+  return identity;
+}
+
+// Explicit operation ownership. Token → consumer transfer removes the lease
+// from its old owner, so finally/expiry cleanup cannot close a live consumer FD.
+export class FileIdentityOwner {
+  #leases = new Set();
+  capture(path) {
+    const existing = this.get(path);
+    if (existing) { existing.assertCurrent(); return existing; }
+    return this.add(captureFileIdentity(path));
+  }
+  add(lease) { this.#leases.add(lease); return lease; }
+  get(path) { return [...this.#leases].find(lease => lease.path === path); }
+  take(lease) { this.#leases.delete(lease); return lease; }
+  takeAll() { const all = [...this.#leases]; this.#leases.clear(); return all; }
+  close() { for (const lease of this.takeAll()) lease.close(); }
 }

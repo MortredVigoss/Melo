@@ -12,12 +12,23 @@
  * (deny / mismatch).
  */
 
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, realpath, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+
+let fixtureRoot;
+before(async () => {
+  fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), 'fsg-paths-')));
+  await mkdir(join(fixtureRoot, 'elsewhere'));
+  await mkdir(join(fixtureRoot, 'x'));
+});
+after(async () => {
+  (await import('./fileSafetyGate.js'))._clearPendingForTests();
+  await rm(fixtureRoot, { recursive: true, force: true });
+});
 
 const HOME = homedir();
 
@@ -146,10 +157,10 @@ test('requestRead OUTSIDE workspace prompts the user', async () => {
   const { gate } = await freshGate();
   const { sse, events } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(events.length, 1);
   assert.equal(events[0].event, 'tool_permission');
@@ -177,20 +188,20 @@ test('after Allow this file in chat, second read of same file does NOT prompt', 
   const { gate } = await freshGate();
   const { sse: sse1, events: e1 } = makeAutoResolver(gate, [{ scope: 'file' }]);
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse1,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e1.length, 1);
 
   // Second call: silent allow.
   const e2 = [];
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: (e, p) => e2.push({ e, p }),
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e2.length, 0);
 });
@@ -199,18 +210,18 @@ test('after Allow this folder in chat, sibling files in same folder do NOT promp
   const { gate } = await freshGate();
   const { sse: sse1 } = makeAutoResolver(gate, [{ scope: 'dir' }]);
   await gate.requestRead({
-    path: '/tmp/proj/a.txt',
+    path: `${fixtureRoot}/proj/a.txt`,
     chatId: 'chat-A',
     sseEmitter: sse1,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
 
   const e2 = [];
   await gate.requestRead({
-    path: '/tmp/proj/b.txt',
+    path: `${fixtureRoot}/proj/b.txt`,
     chatId: 'chat-A',
     sseEmitter: (e, p) => e2.push({ e, p }),
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e2.length, 0);
 });
@@ -219,19 +230,19 @@ test('grant from chat-A does NOT silently authorize chat-B', async () => {
   const { gate } = await freshGate();
   const { sse: sse1 } = makeAutoResolver(gate, [{ scope: 'file' }]);
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse1,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
 
   // chat-B must still prompt.
   const { sse: sse2, events: e2 } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-B',
     sseEmitter: sse2,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e2.length, 1);
 });
@@ -240,18 +251,18 @@ test('read-grant does NOT silently authorize write of same file', async () => {
   const { gate } = await freshGate();
   const { sse: sse1 } = makeAutoResolver(gate, [{ scope: 'file' }]);
   await gate.requestRead({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse1,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
 
   const { sse: sse2, events: e2 } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestWrite({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse2,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e2.length, 1, 'write of read-granted file must re-prompt');
 });
@@ -260,18 +271,18 @@ test('write-grant covers later edits of the same file (write ⊇ edit)', async (
   const { gate } = await freshGate();
   const { sse: sse1 } = makeAutoResolver(gate, [{ scope: 'file' }]);
   await gate.requestWrite({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: sse1,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
 
   const e2 = [];
   await gate.requestEdit({
-    path: '/tmp/elsewhere/foo.txt',
+    path: `${fixtureRoot}/elsewhere/foo.txt`,
     chatId: 'chat-A',
     sseEmitter: (e, p) => e2.push({ e, p }),
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(e2.length, 0, 'edit must be silent under prior write grant');
 });
@@ -283,10 +294,10 @@ test('user clicking Deny rejects with FILE_SAFETY_DENIED', async () => {
   const { sse } = makeAutoResolver(gate, [{ scope: 'deny' }]);
   await assert.rejects(
     gate.requestWrite({
-      path: '/tmp/elsewhere/foo.txt',
+      path: `${fixtureRoot}/elsewhere/foo.txt`,
       chatId: 'chat-A',
       sseEmitter: sse,
-      workspacePath: '/tmp/ws',
+      workspacePath: `${fixtureRoot}/ws`,
     }),
     (err) => err.code === 'FILE_SAFETY_DENIED',
   );
@@ -302,11 +313,11 @@ test('AbortSignal cancels an in-flight prompt', async () => {
   };
   await assert.rejects(
     gate.requestWrite({
-      path: '/tmp/elsewhere/foo.txt',
+      path: `${fixtureRoot}/elsewhere/foo.txt`,
       chatId: 'chat-A',
       sseEmitter: sse,
       signal: ctrl.signal,
-      workspacePath: '/tmp/ws',
+      workspacePath: `${fixtureRoot}/ws`,
     }),
     (err) => err.code === 'FILE_SAFETY_DENIED' && /aborted/i.test(err.message),
   );
@@ -321,15 +332,15 @@ test('requestDelete: stage 1 + stage 2 with correct filename → resolves', asyn
     { scope: 'once', confirmInput: 'foo.txt' }, // stage 2 — single file: must type basename
   ]);
   const result = await gate.requestDelete({
-    paths: ['/tmp/elsewhere/foo.txt'],
+    paths: [`${fixtureRoot}/elsewhere/foo.txt`],
     chatId: 'chat-A',
     sseEmitter: sse,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(events.length, 2);
   assert.equal(events[0].payload.stage, 'intent');
   assert.equal(events[1].payload.stage, 'confirm');
-  assert.deepEqual(result.confirmedPaths, ['/tmp/elsewhere/foo.txt']);
+  assert.deepEqual(result.confirmedPaths, [`${fixtureRoot}/elsewhere/foo.txt`]);
   assert.equal(result.expectedConfirmation, 'foo.txt');
 });
 
@@ -367,12 +378,12 @@ test('requestDelete: stage 2 mismatch returns ok:false reason=CONFIRMATION_MISMA
     }
   };
   const result = await gate.requestDelete({
-    paths: ['/tmp/elsewhere/foo.txt'],
+    paths: [`${fixtureRoot}/elsewhere/foo.txt`],
     chatId: 'chat-A',
     sseEmitter: sse,
   });
   assert.ok(capturedRequestId, 'stage 2 should have fired before retry succeeded');
-  assert.deepEqual(result.confirmedPaths, ['/tmp/elsewhere/foo.txt']);
+  assert.deepEqual(result.confirmedPaths, [`${fixtureRoot}/elsewhere/foo.txt`]);
 });
 
 test('requestDelete: explicit Deny still rejects after a confirmInput mismatch', async () => {
@@ -395,7 +406,7 @@ test('requestDelete: explicit Deny still rejects after a confirmInput mismatch',
   };
   await assert.rejects(
     gate.requestDelete({
-      paths: ['/tmp/elsewhere/foo.txt'],
+      paths: [`${fixtureRoot}/elsewhere/foo.txt`],
       chatId: 'chat-A',
       sseEmitter: sse,
     }),
@@ -410,7 +421,7 @@ test('requestDelete multi-file: confirmation token is "DELETE" not a filename', 
     { scope: 'once', confirmInput: 'DELETE' },
   ]);
   const result = await gate.requestDelete({
-    paths: ['/tmp/x/a.txt', '/tmp/x/b.txt'],
+    paths: [`${fixtureRoot}/x/a.txt`, `${fixtureRoot}/x/b.txt`],
     chatId: 'chat-A',
     sseEmitter: sse,
   });
@@ -421,7 +432,7 @@ test('requestDelete: any sensitive path in batch → entire batch hard-rejected'
   const { gate } = await freshGate();
   await assert.rejects(
     gate.requestDelete({
-      paths: ['/tmp/safe.txt', join(HOME, '.ssh/id_rsa')],
+      paths: [`${fixtureRoot}/safe.txt`, join(HOME, '.ssh/id_rsa')],
       chatId: 'chat-A',
       sseEmitter: () => {},
     }),
@@ -435,8 +446,8 @@ test('requestMove prompts (no session grant), allowed once → resolves', async 
   const { gate } = await freshGate();
   const { sse, events } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestMove({
-    src: '/tmp/a.txt',
-    dst: '/tmp/b.txt',
+    src: `${fixtureRoot}/a.txt`,
+    dst: `${fixtureRoot}/b.txt`,
     chatId: 'chat-A',
     sseEmitter: sse,
   });
@@ -448,7 +459,7 @@ test('requestMove with destination in /etc → hard-rejects', async () => {
   const { gate } = await freshGate();
   await assert.rejects(
     gate.requestMove({
-      src: '/tmp/a.txt',
+      src: `${fixtureRoot}/a.txt`,
       dst: '/etc/a.txt',
       chatId: 'chat-A',
       sseEmitter: () => {},
@@ -506,15 +517,15 @@ test('requestReadBatch requires concrete paths[] and prompts once for benign bat
   const { gate } = await freshGate();
   const { sse, events } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestReadBatch({
-    paths: ['/tmp/proj/a.js', '/tmp/proj/b.js', '/tmp/proj/c.ts'],
+    paths: [`${fixtureRoot}/proj/a.js`, `${fixtureRoot}/proj/b.js`, `${fixtureRoot}/proj/c.ts`],
     summary: {
-      dir: '/tmp/proj',
+      dir: `${fixtureRoot}/proj`,
       extensions: ['.js', '.ts'],
       byteRange: { min: 100, max: 50_000, total: 1_000_000 },
     },
     chatId: 'chat-A',
     sseEmitter: sse,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(events.length, 1);
   assert.equal(events[0].payload.operation, 'read_batch');
@@ -527,7 +538,7 @@ test('requestReadBatch rejects when paths[] is missing or empty', async () => {
   const { gate } = await freshGate();
   await assert.rejects(
     gate.requestReadBatch({
-      summary: { dir: '/tmp/proj' },
+      summary: { dir: `${fixtureRoot}/proj` },
       chatId: 'chat-A',
       sseEmitter: () => {},
     }),
@@ -550,10 +561,10 @@ test('requestReadBatch with a sensitive path: each sensitive hit gets its own ap
     { scope: 'once' }, // benign batch
   ]);
   await gate.requestReadBatch({
-    paths: ['/tmp/proj/a.js', join(HOME, '.ssh/id_rsa'), '/tmp/proj/b.js'],
+    paths: [`${fixtureRoot}/proj/a.js`, join(HOME, '.ssh/id_rsa'), `${fixtureRoot}/proj/b.js`],
     chatId: 'chat-A',
     sseEmitter: sse,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(events.length, 2, 'one sensitive prompt + one benign batch prompt');
   // First event = sensitive single read (kind=read), second = batch.
@@ -582,10 +593,10 @@ test('resolveFileSafety with bogus scope rejects the in-flight prompt', async ()
   };
   await assert.rejects(
     gate.requestWrite({
-      path: '/tmp/foo.txt',
+      path: `${fixtureRoot}/foo.txt`,
       chatId: 'chat-A',
       sseEmitter: sse,
-      workspacePath: '/tmp/ws',
+      workspacePath: `${fixtureRoot}/ws`,
     }),
     (err) => err.code === 'FILE_SAFETY_DENIED',
   );
@@ -597,10 +608,10 @@ test('requestRead on a missing file still prompts (no fs throw)', async () => {
   const { gate } = await freshGate();
   const { sse, events } = makeAutoResolver(gate, [{ scope: 'once' }]);
   await gate.requestRead({
-    path: '/tmp/__nope__/never-existed.txt',
+    path: `${fixtureRoot}/__nope__/never-existed.txt`,
     chatId: 'chat-A',
     sseEmitter: sse,
-    workspacePath: '/tmp/ws',
+    workspacePath: `${fixtureRoot}/ws`,
   });
   assert.equal(events.length, 1);
   assert.equal(events[0].payload.size, null);

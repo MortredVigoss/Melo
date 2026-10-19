@@ -1,3 +1,4 @@
+import { FileIdentityOwner } from '../../safety/dirfdOps.js';
 import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: file_write
@@ -80,7 +81,7 @@ import {
 } from '../../safety/backup.js';
 import {
   atomicOpenLeaf,
-  atomicUnlink,
+  unlinkOpenedLeaf,
   atomicLstat,
   openParentDirFd,
   splitParentLeaf,
@@ -184,100 +185,200 @@ export const fileWriteTool = {
   ],
 
   async run(args, context = {}) {
-    const { path: filePath, content } = args;
-    const { workspacePath, sseEmitter, signal, chatId } = context;
+    const identityOwner = new FileIdentityOwner();
+    try {
+      const { path: filePath, content } = args;
+      const { workspacePath, sseEmitter, signal, chatId } = context;
 
-    if (typeof content !== 'string') {
-      return { ok: false, output: 'content must be a string.', error: 'INVALID_CONTENT' };
-    }
+      if (typeof content !== 'string') {
+        return { ok: false, output: 'content must be a string.', error: 'INVALID_CONTENT' };
+      }
 
-    const missingWorkspace = missingWorkspaceResult(workspacePath);
-    if (missingWorkspace) return missingWorkspace;
+      const missingWorkspace = missingWorkspaceResult(workspacePath);
+      if (missingWorkspace) return missingWorkspace;
 
-    const absPath = isAbsolute(filePath)
-      ? filePath
-      : resolve(workspacePath, filePath);
+      const absPath = isAbsolute(filePath)
+        ? filePath
+        : resolve(workspacePath, filePath);
 
-    // ── 1. Sensitivity pre-check ───────────────────────────────────────
-    const precheck = await precheckHardBlockedWrite(absPath);
-    if (precheck.blocked) {
-      return {
-        ok: false,
-        output: precheck.denyReason,
-        error: 'DENIED',
-        meta: { denied: true, category: precheck.category },
-      };
-    }
-
-    const isCreate = !precheck.exists;
-    const realPath = precheck.realPath;
-    const [parentDir, leafName] = splitParentLeaf(realPath);
-
-    // ── 2. Parent dir must exist + be a regular directory ─────────────
-    // openParentDirFd uses O_DIRECTORY|O_NOFOLLOW so a symlinked
-    // parent throws ELOOP, a missing parent throws ENOENT, a
-    // non-dir throws ENOTDIR — all surface as PARENT_*. We capture
-    // {dev, ino} for cross-check in step 5 (catches "parent dir
-    // entirely replaced between precheck and open").
-    const parentIdent = fetchParentInoIdent(parentDir);
-    if (!parentIdent.ok) {
-      const err = parentIdent.error;
-      if (err.code === 'ELOOP') {
+      // ── 1. Sensitivity pre-check ───────────────────────────────────────
+      const precheck = await precheckHardBlockedWrite(absPath);
+      if (precheck.blocked) {
         return {
           ok: false,
-          output: `Parent directory ${parentDir} is a symlink — refusing to write under symlinked parent.`,
-          error: 'PARENT_NOT_DIR',
+          output: precheck.denyReason,
+          error: 'DENIED',
+          meta: { denied: true, category: precheck.category },
         };
       }
-      if (err.code === 'ENOENT') {
-        return {
-          ok: false,
-          output: `Parent directory ${parentDir} does not exist. Create it first via file_mkdir.`,
-          error: 'PARENT_NOT_FOUND',
-        };
-      }
-      if (err.code === 'ENOTDIR') {
-        return {
-          ok: false,
-          output: `Parent ${parentDir} is not a directory.`,
-          error: 'PARENT_NOT_DIR',
-        };
-      }
-      return {
-        ok: false,
-        output: `Cannot open parent directory ${parentDir}: ${err.message}`,
-        error: err.message,
-      };
-    }
-    const parentInoAtPrecheck = parentIdent.ino;
-    const parentDevAtPrecheck = parentIdent.dev;
 
-    // ── 3. Pre-approval read (overwrite only) ─────────────────────────
-    // atomicOpenLeaf opens parent + openat leaf with O_NOFOLLOW.
-    // ELOOP if leaf became a symlink, ENOENT if the file is gone.
-    // The fd is closed inside this block; preReadInoIdent records
-    // the inode the user is about to review.
-    let oldBuffer = Buffer.alloc(0);
-    let preReadInoIdent = null;
-    if (!isCreate) {
-      let preLeaf;
-      try {
-        preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY);
-      } catch (err) {
-        if (err.code === 'ELOOP' || err.code === 'Too many levels of symbolic links') {
+      const isCreate = !precheck.exists;
+      const realPath = precheck.realPath;
+      const [parentDir, leafName] = splitParentLeaf(realPath);
+
+      // ── 2. Parent dir must exist + be a regular directory ─────────────
+      // openParentDirFd uses O_DIRECTORY|O_NOFOLLOW so a symlinked
+      // parent throws ELOOP, a missing parent throws ENOENT, a
+      // non-dir throws ENOTDIR — all surface as PARENT_*. We capture
+      // {dev, ino} for cross-check in step 5 (catches "parent dir
+      // entirely replaced between precheck and open").
+      const parentIdent = fetchParentInoIdent(parentDir);
+      if (!parentIdent.ok) {
+        const err = parentIdent.error;
+        if (err.code === 'ELOOP') {
           return {
             ok: false,
-            output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
-            error: 'COMMIT_FAILED',
-            meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+            output: `Parent directory ${parentDir} is a symlink — refusing to write under symlinked parent.`,
+            error: 'PARENT_NOT_DIR',
           };
         }
         if (err.code === 'ENOENT') {
           return {
             ok: false,
-            output: `Target ${realPath} disappeared between precheck and read.`,
+            output: `Parent directory ${parentDir} does not exist. Create it first via file_mkdir.`,
+            error: 'PARENT_NOT_FOUND',
+          };
+        }
+        if (err.code === 'ENOTDIR') {
+          return {
+            ok: false,
+            output: `Parent ${parentDir} is not a directory.`,
+            error: 'PARENT_NOT_DIR',
+          };
+        }
+        return {
+          ok: false,
+          output: `Cannot open parent directory ${parentDir}: ${err.message}`,
+          error: err.message,
+        };
+      }
+      const identity = identityOwner.capture(realPath);
+      const parentInoAtPrecheck = parentIdent.ino;
+      const parentDevAtPrecheck = parentIdent.dev;
+
+      // ── 3. Pre-approval read (overwrite only) ─────────────────────────
+      // atomicOpenLeaf opens parent + openat leaf with O_NOFOLLOW.
+      // ELOOP if leaf became a symlink, ENOENT if the file is gone.
+      // The fd is closed inside this block; preReadInoIdent records
+      // the inode the user is about to review.
+      let oldBuffer = Buffer.alloc(0);
+      let preReadInoIdent = null;
+      if (!isCreate) {
+        let preLeaf;
+        try {
+          preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY, 0o644, identity);
+        } catch (err) {
+          if (err.code === 'ELOOP' || err.code === 'Too many levels of symbolic links') {
+            return {
+              ok: false,
+              output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,
+              error: 'COMMIT_FAILED',
+              meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
+            };
+          }
+          if (err.code === 'ENOENT') {
+            return {
+              ok: false,
+              output: `Target ${realPath} disappeared between precheck and read.`,
+              error: 'COMMIT_FAILED',
+              meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+            };
+          }
+          if (err.code === 'EISDIR') {
+            return {
+              ok: false,
+              output: `Refusing to overwrite directory ${realPath} with file content.`,
+              error: 'TARGET_IS_DIR',
+            };
+          }
+          return { ok: false, output: `Open error: ${err.message}`,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'COMMIT_FAILED' : err.message,
+          meta: { raceKind: err.raceKind } };
+        }
+        try {
+          oldBuffer = readFromStartFd(preLeaf.leafFd);
+          preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
+        } finally {
+          preLeaf.closeLeaf();
+        }
+      }
+
+      const oldContent = oldBuffer.toString('utf8');
+      const oldHash = isCreate ? null : sha256(oldContent);
+      const newHash = sha256(content);
+      const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
+
+      // ── 4. UI approval — until this returns, ZERO disk side-effect ────
+      let approved;
+      try {
+        approved = await requestWrite({
+          path: absPath,
+          chatId,
+          sseEmitter,
+          signal,
+          workspacePath,
+          baseDir: workspacePath,
+          isCreate,
+          contentSize: content.length,
+          contentPreview: isCreate ? content.slice(0, 4000) : null,
+          oldHash,
+          newHash,
+          diffPreview,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          output: err.message,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
+          meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+        };
+      }
+
+      // ── 5. Commit verifies lexical→real mapping unchanged ────────────
+      try {
+        await commitOperation(approved.operationToken, {
+          identityOwner,
+          expectedKinds: [OP_KIND.WRITE_NEW, OP_KIND.WRITE_OVERWRITE],
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          output: `Atomic commit failed: ${err.message}`,
+          error: err.raceKind === 'create-eexist' ? 'STALE_CONTENT' : 'COMMIT_FAILED',
+          meta: { raceKind: err.raceKind },
+        };
+      }
+
+      if (_postCommitHookForTests) {
+        try { await _postCommitHookForTests({ realPath, isCreate, lexicalPath: absPath }); } catch {}
+      }
+
+      // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
+      // openParentDirFd inside atomicOpenLeaf does O_DIRECTORY|O_NOFOLLOW;
+      // a parent-symlink swap during the approval window throws ELOOP.
+      // The returned parentDev/Ino lets us cross-check that the parent
+      // dir wasn't replaced with a *different* dir (different inode).
+      let openLeaf;
+      try {
+        const flags = isCreate
+          ? DC.O_RDWR | DC.O_CREAT | DC.O_EXCL
+          : DC.O_RDWR;
+        openLeaf = await atomicOpenLeaf(parentDir, leafName, flags, 0o644, identity);
+      } catch (err) {
+        if (err.code === 'EEXIST') {
+          return {
+            ok: false,
+            output: `Target ${realPath} appeared between approval and write — re-run as overwrite or pick a different path.`,
+            error: 'STALE_CONTENT',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'create-eexist' },
+          };
+        }
+        if (err.code === 'ELOOP') {
+          return {
+            ok: false,
+            output: `Parent or leaf became a symlink between approval and write — kernel refused via O_NOFOLLOW.`,
             error: 'COMMIT_FAILED',
-            meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+            meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
           };
         }
         if (err.code === 'EISDIR') {
@@ -287,277 +388,190 @@ export const fileWriteTool = {
             error: 'TARGET_IS_DIR',
           };
         }
-        return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-      }
-      try {
-        oldBuffer = readFromStartFd(preLeaf.leafFd);
-        preReadInoIdent = { ino: preLeaf.leafStat.ino, dev: preLeaf.leafStat.dev };
-      } finally {
-        preLeaf.closeLeaf();
-      }
-    }
-
-    const oldContent = oldBuffer.toString('utf8');
-    const oldHash = isCreate ? null : sha256(oldContent);
-    const newHash = sha256(content);
-    const diffPreview = isCreate ? null : buildDiffPreview(oldContent, content);
-
-    // ── 4. UI approval — until this returns, ZERO disk side-effect ────
-    let approved;
-    try {
-      approved = await requestWrite({
-        path: absPath,
-        chatId,
-        sseEmitter,
-        signal,
-        workspacePath,
-        baseDir: workspacePath,
-        isCreate,
-        contentSize: content.length,
-        contentPreview: isCreate ? content.slice(0, 4000) : null,
-        oldHash,
-        newHash,
-        diffPreview,
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        output: err.message,
-        error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-        meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
-      };
-    }
-
-    // ── 5. Commit verifies lexical→real mapping unchanged ────────────
-    try {
-      await commitOperation(approved.operationToken, {
-        expectedKinds: [OP_KIND.WRITE_NEW, OP_KIND.WRITE_OVERWRITE],
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Atomic commit failed: ${err.message}`,
-        error: 'COMMIT_FAILED',
-      };
-    }
-
-    if (_postCommitHookForTests) {
-      try { await _postCommitHookForTests({ realPath, isCreate, lexicalPath: absPath }); } catch {}
-    }
-
-    // ── 6. Post-approval atomicOpenLeaf — bind through parent dirfd ──
-    // openParentDirFd inside atomicOpenLeaf does O_DIRECTORY|O_NOFOLLOW;
-    // a parent-symlink swap during the approval window throws ELOOP.
-    // The returned parentDev/Ino lets us cross-check that the parent
-    // dir wasn't replaced with a *different* dir (different inode).
-    let openLeaf;
-    try {
-      const flags = isCreate
-        ? DC.O_RDWR | DC.O_CREAT | DC.O_EXCL
-        : DC.O_RDWR;
-      openLeaf = await atomicOpenLeaf(parentDir, leafName, flags, 0o644);
-    } catch (err) {
-      if (err.code === 'EEXIST') {
-        return {
-          ok: false,
-          output: `Target ${realPath} appeared between approval and write — re-run as overwrite or pick a different path.`,
-          error: 'STALE_CONTENT',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'create-eexist' },
-        };
-      }
-      if (err.code === 'ELOOP') {
-        return {
-          ok: false,
-          output: `Parent or leaf became a symlink between approval and write — kernel refused via O_NOFOLLOW.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'symlink-eloop' },
-        };
-      }
-      if (err.code === 'EISDIR') {
-        return {
-          ok: false,
-          output: `Refusing to overwrite directory ${realPath} with file content.`,
-          error: 'TARGET_IS_DIR',
-        };
-      }
-      if (err.code === 'ENOENT') {
-        return {
-          ok: false,
-          output: `Target ${realPath} disappeared between approval and write.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
-        };
-      }
-      if (err.code === 'ENOTDIR') {
-        return {
-          ok: false,
-          output: `Parent ${parentDir} stopped being a directory between approval and write.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-      return { ok: false, output: `Open error: ${err.message}`, error: err.message };
-    }
-
-    const leafFd = openLeaf.leafFd;
-    let createdEmptyFile = isCreate;
-    let staleContentDetected = false;
-
-    try {
-      // ── 6b. Cross-check: parent {dev, ino} matches precheck ──────────
-      // Catches "parent dir was entirely replaced (different inode)
-      // during the approval window". O_NOFOLLOW already catches the
-      // parent-now-symlink case (ELOOP above); this catches the
-      // parent-now-different-real-dir case (e.g. attacker rmdir
-      // parent + mkdir parent — same path, new inode).
-      if (
-        openLeaf.parentDev !== parentDevAtPrecheck ||
-        openLeaf.parentIno !== parentInoAtPrecheck
-      ) {
-        return {
-          ok: false,
-          output:
-            `Parent directory ${parentDir} was replaced (inode/device changed) ` +
-            `between approval and write — kernel-level race detected.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
-        };
-      }
-
-      // ── 7. Inode anchor (overwrite only) ─────────────────────────────
-      // For create, leafStat is ours by construction (O_EXCL).
-      // For overwrite, leafStat must match preReadInoIdent — catches
-      // rm+recreate-same-path-same-content (sha256 matches, inode
-      // doesn't). The leaf has been openat'd through the dirfd, so
-      // it's bound to a specific inode regardless of path swaps.
-      if (!isCreate && preReadInoIdent && (
-        openLeaf.leafStat.ino !== preReadInoIdent.ino ||
-        openLeaf.leafStat.dev !== preReadInoIdent.dev
-      )) {
-        return {
-          ok: false,
-          output:
-            `Target ${realPath} was replaced (inode/device changed) ` +
-            `between approval and write — kernel-level race detected.`,
-          error: 'COMMIT_FAILED',
-          meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
-        };
-      }
-
-      // ── 8. Stale check via leafFd (bound to the inode) ───────────────
-      const baselineHash = isCreate ? sha256('') : oldHash;
-      const currentBuffer = readFromStartFd(leafFd);
-      if (sha256(currentBuffer.toString('utf8')) !== baselineHash) {
-        staleContentDetected = true;
-        if (isCreate) createdEmptyFile = false; // racer's bytes are at our inode
-        return {
-          ok: false,
-          output:
-            `File at ${realPath} changed between approval and write — ` +
-            `stale-content check failed. Re-run file_write with the latest content.`,
-          error: 'STALE_CONTENT',
-          meta: {
-            lexicalPath: absPath,
-            realPath,
-            raceKind: isCreate ? 'create-eexist' : undefined,
-          },
-        };
-      }
-
-      // ── 9. Snapshot from buffer we already have ──────────────────────
-      const snap = await snapshotBeforeWrite(realPath, {
-        chatId,
-        requestedBy: 'file_write',
-        reason: isCreate ? 'create' : 'overwrite',
-        lexicalPath: absPath,
-        preReadContent: isCreate ? null : oldBuffer,
-      });
-
-      // ── 10. Truncate + write via leafFd (bound to inode) ─────────────
-      const writeBuf = Buffer.from(content, 'utf8');
-      if (!isCreate) {
-        ftruncateSync(leafFd, 0);
-      }
-      writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
-
-      // ── 10b. Post-write semantic check ───────────────────────────────
-      // Not a safety race (our writes went to the inode the user
-      // reviewed — leafFd is bound to it). But if the leaf path now
-      // points elsewhere, the user-visible file no longer reflects
-      // our write. Tell the caller. Keep the backup so the agent /
-      // user can decide what to do.
-      //
-      // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing
-      // (parent gone, parent now non-dir, etc.) is ALSO an orphan
-      // signal — silently swallowing it would falsely report success.
-      let orphanReason = null;
-      try {
-        const postLst = await atomicLstat(parentDir, leafName);
-        const postFhStat = fstatSync(leafFd);
-        if (
-          !postLst ||
-          postLst.isSymlink ||
-          postLst.ino !== postFhStat.ino ||
-          postLst.dev !== postFhStat.dev
-        ) {
-          orphanReason = !postLst
-            ? 'leaf no longer present at parent'
-            : postLst.isSymlink
-              ? 'leaf now a symlink'
-              : 'leaf inode/device changed';
+        if (err.code === 'ENOENT') {
+          return {
+            ok: false,
+            output: `Target ${realPath} disappeared between approval and write.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'enoent' },
+          };
         }
-      } catch (err) {
-        orphanReason = `parent stat failed: ${err.message}`;
+        if (err.code === 'ENOTDIR') {
+          return {
+            ok: false,
+            output: `Parent ${parentDir} stopped being a directory between approval and write.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+          };
+        }
+        return { ok: false, output: `Open error: ${err.message}`,
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'COMMIT_FAILED' : err.message,
+          meta: { raceKind: err.raceKind } };
       }
-      if (orphanReason !== null) {
+
+      const leafFd = openLeaf.leafFd;
+      let createdEmptyFile = isCreate;
+      let staleContentDetected = false;
+
+      try {
+        // ── 6b. Cross-check: parent {dev, ino} matches precheck ──────────
+        // Catches "parent dir was entirely replaced (different inode)
+        // during the approval window". O_NOFOLLOW already catches the
+        // parent-now-symlink case (ELOOP above); this catches the
+        // parent-now-different-real-dir case (e.g. attacker rmdir
+        // parent + mkdir parent — same path, new inode).
+        if (
+          openLeaf.parentDev !== parentDevAtPrecheck ||
+          openLeaf.parentIno !== parentInoAtPrecheck
+        ) {
+          return {
+            ok: false,
+            output:
+              `Parent directory ${parentDir} was replaced (inode/device changed) ` +
+              `between approval and write — kernel-level race detected.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'parent-swap' },
+          };
+        }
+
+        // ── 7. Inode anchor (overwrite only) ─────────────────────────────
+        // For create, leafStat is ours by construction (O_EXCL).
+        // For overwrite, leafStat must match preReadInoIdent — catches
+        // rm+recreate-same-path-same-content (sha256 matches, inode
+        // doesn't). The leaf has been openat'd through the dirfd, so
+        // it's bound to a specific inode regardless of path swaps.
+        if (!isCreate && preReadInoIdent && (
+          openLeaf.leafStat.ino !== preReadInoIdent.ino ||
+          openLeaf.leafStat.dev !== preReadInoIdent.dev
+        )) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was replaced (inode/device changed) ` +
+              `between approval and write — kernel-level race detected.`,
+            error: 'COMMIT_FAILED',
+            meta: { lexicalPath: absPath, realPath, raceKind: 'inode-mismatch' },
+          };
+        }
+
+        // ── 8. Stale check via leafFd (bound to the inode) ───────────────
+        const baselineHash = isCreate ? sha256('') : oldHash;
+        const currentBuffer = readFromStartFd(leafFd);
+        if (sha256(currentBuffer.toString('utf8')) !== baselineHash) {
+          staleContentDetected = true;
+          if (isCreate) createdEmptyFile = false; // racer's bytes are at our inode
+          return {
+            ok: false,
+            output:
+              `File at ${realPath} changed between approval and write — ` +
+              `stale-content check failed. Re-run file_write with the latest content.`,
+            error: 'STALE_CONTENT',
+            meta: {
+              lexicalPath: absPath,
+              realPath,
+              raceKind: isCreate ? 'create-eexist' : undefined,
+            },
+          };
+        }
+
+        // ── 9. Snapshot from buffer we already have ──────────────────────
+        const snap = await snapshotBeforeWrite(realPath, {
+          chatId,
+          requestedBy: 'file_write',
+          reason: isCreate ? 'create' : 'overwrite',
+          lexicalPath: absPath,
+          preReadContent: isCreate ? null : oldBuffer,
+        });
+
+        // ── 10. Truncate + write via leafFd (bound to inode) ─────────────
+        const writeBuf = Buffer.from(content, 'utf8');
+        if (!isCreate) {
+          ftruncateSync(leafFd, 0);
+        }
+        writeSync(leafFd, writeBuf, 0, writeBuf.length, 0);
+
+        // ── 10b. Post-write semantic check ───────────────────────────────
+        // Not a safety race (our writes went to the inode the user
+        // reviewed — leafFd is bound to it). But if the leaf path now
+        // points elsewhere, the user-visible file no longer reflects
+        // our write. Tell the caller. Keep the backup so the agent /
+        // user can decide what to do.
+        //
+        // Round 13 follow-up #2 (Codex 🟡): atomicLstat throwing
+        // (parent gone, parent now non-dir, etc.) is ALSO an orphan
+        // signal — silently swallowing it would falsely report success.
+        let orphanReason = null;
+        try {
+          const postLst = await atomicLstat(parentDir, leafName);
+          const postFhStat = fstatSync(leafFd);
+          if (
+            !postLst ||
+            postLst.isSymlink ||
+            postLst.ino !== postFhStat.ino ||
+            postLst.dev !== postFhStat.dev
+          ) {
+            orphanReason = !postLst
+              ? 'leaf no longer present at parent'
+              : postLst.isSymlink
+                ? 'leaf now a symlink'
+                : 'leaf inode/device changed';
+          }
+        } catch (err) {
+          orphanReason = `parent stat failed: ${err.message}`;
+        }
+        if (orphanReason !== null) {
+          return {
+            ok: false,
+            output:
+              `Target ${realPath} was unlinked or replaced after write completed ` +
+              `(${orphanReason}); our content is at the inode you reviewed but the ` +
+              `user-visible path now points elsewhere or is gone. ` +
+              `Backup retained at operationId=${snap.operationId}.`,
+            error: 'COMMIT_FAILED',
+            meta: {
+              lexicalPath: absPath, realPath,
+              raceKind: 'post-write-orphaned',
+              backupOperationId: snap.operationId,
+            },
+          };
+        }
+
+        // ── 11. Record diff for restore-with-context ─────────────────────
+        if (!isCreate && diffPreview) {
+          try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
+        }
+
+        createdEmptyFile = false; // success — keep the file we wrote
+
+        const lineCount = content.split('\n').length;
         return {
-          ok: false,
-          output:
-            `Target ${realPath} was unlinked or replaced after write completed ` +
-            `(${orphanReason}); our content is at the inode you reviewed but the ` +
-            `user-visible path now points elsewhere or is gone. ` +
-            `Backup retained at operationId=${snap.operationId}.`,
-          error: 'COMMIT_FAILED',
+          ok: true,
+          output: `Written ${realPath} — ${lineCount} line(s), ${content.length} bytes.`,
           meta: {
-            lexicalPath: absPath, realPath,
-            raceKind: 'post-write-orphaned',
+            path: realPath,
+            lexicalPath: absPath,
+            lines: lineCount,
+            bytes: content.length,
             backupOperationId: snap.operationId,
+            wasCreate: isCreate,
+            change: { kind: isCreate ? 'created' : 'overwrite', path: realPath, before: currentBuffer.toString('utf8').slice(0, 8000), after: content.slice(0, 8000), truncated: currentBuffer.length > 8000 || content.length > 8000 },
           },
         };
+      } catch (err) {
+        return {
+          ok: false,
+          output: `Write error: ${err.message}`,
+          error: err.message,
+        };
+      } finally {
+        try {
+          if (createdEmptyFile && !staleContentDetected) {
+            try { unlinkOpenedLeaf(parentDir, leafName, leafFd, identity); } catch {}
+          }
+        } finally { openLeaf.closeLeaf(); }
       }
-
-      // ── 11. Record diff for restore-with-context ─────────────────────
-      if (!isCreate && diffPreview) {
-        try { await recordAfterDiff(snap.operationId, diffPreview); } catch {}
-      }
-
-      createdEmptyFile = false; // success — keep the file we wrote
-
-      const lineCount = content.split('\n').length;
-      return {
-        ok: true,
-        output: `Written ${realPath} — ${lineCount} line(s), ${content.length} bytes.`,
-        meta: {
-          path: realPath,
-          lexicalPath: absPath,
-          lines: lineCount,
-          bytes: content.length,
-          backupOperationId: snap.operationId,
-          wasCreate: isCreate,
-          change: { kind: isCreate ? 'created' : 'overwrite', path: realPath, before: currentBuffer.toString('utf8').slice(0, 8000), after: content.slice(0, 8000), truncated: currentBuffer.length > 8000 || content.length > 8000 },
-        },
-      };
-    } catch (err) {
-      return {
-        ok: false,
-        output: `Write error: ${err.message}`,
-        error: err.message,
-      };
-    } finally {
-      openLeaf.closeLeaf();
-      if (createdEmptyFile && !staleContentDetected) {
-        try { await atomicUnlink(parentDir, leafName); } catch {}
-      }
-    }
+    } catch (error) {
+      return { ok: false, error: 'COMMIT_FAILED', output: error.message };
+    } finally { identityOwner.close(); }
   },
 };

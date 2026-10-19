@@ -116,6 +116,28 @@ Napi::Value OpenAt(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, fd);
 }
 
+// Pin an entry without following links or opening its contents. These handles
+// keep an unlinked inode alive throughout approval, preventing inode reuse.
+Napi::Value OpenIdentityAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
+    Napi::TypeError::New(env, "openIdentityAt(dirfd, name) — bad args").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+#ifdef __APPLE__
+  int flags = O_EVTONLY | O_SYMLINK | O_CLOEXEC;
+#else
+  int flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
+#endif
+  int fd = openat(info[0].As<Napi::Number>().Int32Value(),
+                  info[1].As<Napi::String>().Utf8Value().c_str(), flags);
+  if (fd < 0) {
+    MakeErrnoError(env, errno, "openIdentityAt").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  return Napi::Number::New(env, fd);
+}
+
 // mkdirat(dirfd, name, mode) → void
 Napi::Value MkdirAt(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -348,6 +370,7 @@ Napi::Value CloseFd(const Napi::CallbackInfo& info) {
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("openat", Napi::Function::New(env, OpenAt));
+  exports.Set("openIdentityAt", Napi::Function::New(env, OpenIdentityAt));
   exports.Set("mkdirat", Napi::Function::New(env, MkdirAt));
   exports.Set("unlinkat", Napi::Function::New(env, UnlinkAt));
   exports.Set("renameat", Napi::Function::New(env, RenameAt));

@@ -1,3 +1,4 @@
+import { FileIdentityOwner } from './dirfdOps.js';
 /**
  * backup.js — auto-snapshot a file before a write/edit so it can be
  * rolled back even if the change isn't a "delete".
@@ -378,180 +379,187 @@ export async function listBackups() {
 // By default removes the backup folder after a successful restore;
 // pass { purgeAfterRestore: false } to keep it for repeat restores.
 export async function restoreFromBackup(operationId, opts = {}) {
-  assertValidOperationId(operationId);
+  const identityOwner = new FileIdentityOwner();
+  try {
+    assertValidOperationId(operationId);
 
-  const list = await listBackups();
-  const target = list.find(b => b.operationId === operationId);
-  if (!target) {
-    throw new Error(`No backup with operationId=${operationId}.`);
-  }
+    const list = await listBackups();
+    const target = list.find(b => b.operationId === operationId);
+    if (!target) {
+      throw new Error(`No backup with operationId=${operationId}.`);
+    }
 
-  const meloHome = getMeloHome();
-  const root = backupRoot(meloHome);
-  await assertWithinRoot(target.opDir || join(root, operationId), root);
+    const meloHome = getMeloHome();
+    const root = backupRoot(meloHome);
+    await assertWithinRoot(target.opDir || join(root, operationId), root);
 
-  // Layer (b): reject a tampered manifest pointing at a sensitive path.
-  const { realPath: realOriginal, hasSymlinkInChain: originalHasSymlink } =
-    await safeResolvePath(target.originalPath);
-  if (
-    isHardBlockedWrite(target.originalPath) ||
-    isHardBlockedWrite(realOriginal)
-  ) {
-    const lexCat = classifyPath(target.originalPath);
-    const realC = classifyPath(realOriginal);
-    throw new Error(
-      `Refusing to restore to ${target.originalPath} ` +
-      (originalHasSymlink ? `(real target: ${realOriginal}) ` : '') +
-      `— manifest target classified as ${lexCat}/${realC}.`,
-    );
-  }
-
-  // Codex ⚪ round 4 (2026-05-03): test-only seam — fired AFTER the
-  // sensitivity check but BEFORE the commit. Lets integration tests
-  // simulate an attacker racing the gap by re-pointing a symlink
-  // here; the commit step below MUST then detect the mismatch and
-  // abort. No-op in production.
-  if (_restoreSwapHookForTests) {
-    await _restoreSwapHookForTests({
-      originalPath: target.originalPath,
-      expectedReal: realOriginal,
-    });
-  }
-
-  // Round 13 (2026-05-03): parent-dir is bound through a dirfd via
-  // dirfdOps. We capture parent {dev, ino} once, then reopen the
-  // dirfd right before the fs op and cross-check {dev, ino} match.
-  // Combined with the fact that the fs op uses *at() syscalls bound
-  // to that dirfd, no parent-dir swap during the approval window
-  // can redirect us.
-  const parentDir = dirname(target.originalPath);
-  let parentDevAtPrecheck;
-  let parentInoAtPrecheck;
-  {
-    let probefd;
-    try {
-      probefd = openParentDirFd(parentDir);
-      const st = fstatSync(probefd);
-      parentDevAtPrecheck = st.dev;
-      parentInoAtPrecheck = st.ino;
-    } catch (err) {
+    // Layer (b): reject a tampered manifest pointing at a sensitive path.
+    const { realPath: realOriginal, hasSymlinkInChain: originalHasSymlink } =
+      await safeResolvePath(target.originalPath);
+    if (
+      isHardBlockedWrite(target.originalPath) ||
+      isHardBlockedWrite(realOriginal)
+    ) {
+      const lexCat = classifyPath(target.originalPath);
+      const realC = classifyPath(realOriginal);
       throw new Error(
-        `Refusing to restore to ${target.originalPath}: cannot open parent ` +
-        `${parentDir}: ${err.message}.`,
+        `Refusing to restore to ${target.originalPath} ` +
+        (originalHasSymlink ? `(real target: ${realOriginal}) ` : '') +
+        `— manifest target classified as ${lexCat}/${realC}.`,
       );
-    } finally {
-      if (probefd != null) try { closeFdSync(probefd); } catch {}
     }
-  }
 
-  // Layer (c) + (d): atomic approval-and-commit. Codex C round 5
-  // (2026-05-03): the no-UI path uses a module-private _commitRestore
-  // helper instead of reaching into gate internals.
-  let resolvedTarget;
-  if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
-    const gate = await import('./fileSafetyGate.js');
-    const ui = await gate.requestWrite({
-      path: target.originalPath,
-      chatId: opts.chatId,
-      sseEmitter: opts.sseEmitter,
-      signal: opts.signal,
-      workspacePath: opts.workspacePath,
-      isCreate: false,
-      contentSize: target.size ?? null,
-      newHash: target.sha256 || null,
-    });
-    const committed = await gate.commitOperation(ui.operationToken, {
-      expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
-    });
-    resolvedTarget = committed.resolvedTarget;
-  } else {
-    resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
-  }
+    const identity = identityOwner.capture(target.originalPath);
 
-  // Final fs op: atomicOpenLeaf opens parent + openat leaf — kernel
-  // resolves the leaf relative to the dirfd's INODE, not its path.
-  // Cross-check parent dirfd {dev, ino} against precheck snapshot
-  // (catches "parent dir was rmdir'd + new dir mkdir'd at same path",
-  // which would have a different inode).
-  const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
-
-  if (target.wasMissing) {
-    if ('expectedCurrentHash' in opts) {
-      const bytes = await readFile(resolvedTarget).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-      if ((bytes ? createHash('sha256').update(bytes).digest('hex') : null) !== opts.expectedCurrentHash) throw new Error('文件在恢复前发生变化，请重新预览。');
+    // Codex ⚪ round 4 (2026-05-03): test-only seam — fired AFTER the
+    // sensitivity check but BEFORE the commit. Lets integration tests
+    // simulate an attacker racing the gap by re-pointing a symlink
+    // here; the commit step below MUST then detect the mismatch and
+    // abort. No-op in production.
+    if (_restoreSwapHookForTests) {
+      await _restoreSwapHookForTests({
+        originalPath: target.originalPath,
+        expectedReal: realOriginal,
+      });
     }
-    // Round 13 follow-up #5 (Codex 🔴): undo-create unlink uses
-    // unlinkatChecked so the {dev, ino} probe and the unlinkat
-    // syscall happen on the SAME dirfd. Bare atomicUnlink would
-    // re-open the parent and leave a probe→reopen race window where
-    // a parent rmdir+mkdir could redirect the unlink to the wrong
-    // dir's same-named leaf.
-    try {
-      await unlinkatChecked(resolvedParent, resolvedLeaf, parentDevAtPrecheck, parentInoAtPrecheck);
-    } catch (err) {
-      if (err && err.code === 'ENOENT') {
-        // Already gone — undo-create is idempotent in this case.
-      } else {
+
+    // Round 13 (2026-05-03): parent-dir is bound through a dirfd via
+    // dirfdOps. We capture parent {dev, ino} once, then reopen the
+    // dirfd right before the fs op and cross-check {dev, ino} match.
+    // Combined with the fact that the fs op uses *at() syscalls bound
+    // to that dirfd, no parent-dir swap during the approval window
+    // can redirect us.
+    const parentDir = dirname(target.originalPath);
+    let parentDevAtPrecheck;
+    let parentInoAtPrecheck;
+    {
+      let probefd;
+      try {
+        probefd = openParentDirFd(parentDir);
+        const st = fstatSync(probefd);
+        parentDevAtPrecheck = st.dev;
+        parentInoAtPrecheck = st.ino;
+      } catch (err) {
+        throw new Error(
+          `Refusing to restore to ${target.originalPath}: cannot open parent ` +
+          `${parentDir}: ${err.message}.`,
+        );
+      } finally {
+        if (probefd != null) try { closeFdSync(probefd); } catch {}
+      }
+    }
+
+    // Layer (c) + (d): atomic approval-and-commit. Codex C round 5
+    // (2026-05-03): the no-UI path uses a module-private _commitRestore
+    // helper instead of reaching into gate internals.
+    let resolvedTarget;
+    if (opts.sseEmitter && opts.chatId && !target.wasMissing) {
+      const gate = await import('./fileSafetyGate.js');
+      const ui = await gate.requestWrite({
+        path: target.originalPath,
+        chatId: opts.chatId,
+        sseEmitter: opts.sseEmitter,
+        signal: opts.signal,
+        workspacePath: opts.workspacePath,
+        isCreate: false,
+        contentSize: target.size ?? null,
+        newHash: target.sha256 || null,
+      });
+      const committed = await gate.commitOperation(ui.operationToken, {
+        identityOwner,
+        expectedKinds: [gate.OP_KIND.WRITE_NEW, gate.OP_KIND.WRITE_OVERWRITE],
+      });
+      resolvedTarget = committed.resolvedTarget;
+    } else {
+      resolvedTarget = await _commitRestore(target.originalPath, realOriginal);
+    }
+
+    // Final fs op: atomicOpenLeaf opens parent + openat leaf — kernel
+    // resolves the leaf relative to the dirfd's INODE, not its path.
+    // Cross-check parent dirfd {dev, ino} against precheck snapshot
+    // (catches "parent dir was rmdir'd + new dir mkdir'd at same path",
+    // which would have a different inode).
+    const [resolvedParent, resolvedLeaf] = splitParentLeaf(resolvedTarget);
+
+    if (target.wasMissing) {
+      if ('expectedCurrentHash' in opts) {
+        const bytes = await readFile(resolvedTarget).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+        if ((bytes ? createHash('sha256').update(bytes).digest('hex') : null) !== opts.expectedCurrentHash) throw new Error('文件在恢复前发生变化，请重新预览。');
+      }
+      // Round 13 follow-up #5 (Codex 🔴): undo-create unlink uses
+      // unlinkatChecked so the {dev, ino} probe and the unlinkat
+      // syscall happen on the SAME dirfd. Bare atomicUnlink would
+      // re-open the parent and leave a probe→reopen race window where
+      // a parent rmdir+mkdir could redirect the unlink to the wrong
+      // dir's same-named leaf.
+      try {
+        await unlinkatChecked(resolvedParent, resolvedLeaf, identity);
+      } catch (err) {
+        if (err && err.code === 'ENOENT') {
+          // Already gone — undo-create is idempotent in this case.
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      const beforePath = join(target.opDir, 'before', basename(target.originalPath));
+      // atomicOpenLeaf with O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW (added
+      // automatically). Parent dirfd is opened atomically inside; cross-
+      // check parent {dev, ino} against precheck.
+      let openLeaf;
+      try {
+        openLeaf = await atomicOpenLeaf(
+          resolvedParent,
+          resolvedLeaf,
+          DC.O_RDWR | DC.O_CREAT,
+          0o644,
+          identity,
+        );
+      } catch (err) {
+        if (err.code === 'ELOOP') {
+          throw new Error(
+            `Refusing to restore over symlink at ${resolvedTarget} ` +
+            `(kernel ELOOP via O_NOFOLLOW).`,
+          );
+        }
         throw err;
       }
-    }
-  } else {
-    const beforePath = join(target.opDir, 'before', basename(target.originalPath));
-    // atomicOpenLeaf with O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW (added
-    // automatically). Parent dirfd is opened atomically inside; cross-
-    // check parent {dev, ino} against precheck.
-    let openLeaf;
-    try {
-      openLeaf = await atomicOpenLeaf(
-        resolvedParent,
-        resolvedLeaf,
-        DC.O_RDWR | DC.O_CREAT,
-        0o644,
-      );
-    } catch (err) {
-      if (err.code === 'ELOOP') {
-        throw new Error(
-          `Refusing to restore over symlink at ${resolvedTarget} ` +
-          `(kernel ELOOP via O_NOFOLLOW).`,
-        );
+      try {
+        if (
+          openLeaf.parentDev !== parentDevAtPrecheck ||
+          openLeaf.parentIno !== parentInoAtPrecheck
+        ) {
+          throw new Error(
+            `Parent ${resolvedParent} was replaced (inode/device changed) ` +
+            `between approval and restore — kernel-level race detected.`,
+          );
+        }
+        const buf = await readFile(beforePath);
+        if ('expectedCurrentHash' in opts) {
+          const current = readFileSync(openLeaf.leafFd);
+          const hash = createHash('sha256').update(current).digest('hex');
+          if (hash !== opts.expectedCurrentHash && !(opts.expectedCurrentHash === null && current.length === 0)) throw new Error('文件在恢复前发生变化，请重新预览。');
+        }
+        ftruncateSync(openLeaf.leafFd, 0);
+        writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
+      } finally {
+        openLeaf.closeLeaf();
       }
-      throw err;
     }
-    try {
-      if (
-        openLeaf.parentDev !== parentDevAtPrecheck ||
-        openLeaf.parentIno !== parentInoAtPrecheck
-      ) {
-        throw new Error(
-          `Parent ${resolvedParent} was replaced (inode/device changed) ` +
-          `between approval and restore — kernel-level race detected.`,
-        );
-      }
-      const buf = await readFile(beforePath);
-      if ('expectedCurrentHash' in opts) {
-        const current = readFileSync(openLeaf.leafFd);
-        const hash = createHash('sha256').update(current).digest('hex');
-        if (hash !== opts.expectedCurrentHash && !(opts.expectedCurrentHash === null && current.length === 0)) throw new Error('文件在恢复前发生变化，请重新预览。');
-      }
-      ftruncateSync(openLeaf.leafFd, 0);
-      writeSync(openLeaf.leafFd, buf, 0, buf.length, 0);
-    } finally {
-      openLeaf.closeLeaf();
-    }
-  }
 
-  if (opts.purgeAfterRestore !== false) {
-    await rm(target.opDir, { recursive: true, force: true });
-  }
-  // Codex C round 4 (2026-05-03): unify return shape with trash —
-  // `restored` is the commit-resolved real path actually written;
-  // `originalPath` is the lexical path the manifest captured at
-  // backup time; `hasSymlinkInChain` lets the UI flag the alias.
-  return {
-    restored: resolvedTarget,
-    originalPath: target.originalPath,
-    hasSymlinkInChain: originalHasSymlink,
-  };
+    if (opts.purgeAfterRestore !== false) {
+      await rm(target.opDir, { recursive: true, force: true });
+    }
+    // Codex C round 4 (2026-05-03): unify return shape with trash —
+    // `restored` is the commit-resolved real path actually written;
+    // `originalPath` is the lexical path the manifest captured at
+    // backup time; `hasSymlinkInChain` lets the UI flag the alias.
+    return {
+      restored: resolvedTarget,
+      originalPath: target.originalPath,
+      hasSymlinkInChain: originalHasSymlink,
+    };
+  } finally { identityOwner.close(); }
 }
 
 // ── purgeBackup ──────────────────────────────────────────────────────

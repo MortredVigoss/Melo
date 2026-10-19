@@ -1,0 +1,31 @@
+name: File safety
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Build the local addon on each OS. Other install hooks (media downloads)
+      # are unnecessary for this focused gate; no host binary is reused.
+      - run: npm ci --ignore-scripts
+      - run: npm run build:native
+      - name: Approval, identity, backup and trash regressions
+        run: node --test src/safety/*.test.js src/tools/builtins/phase2a.fileTools.test.js
