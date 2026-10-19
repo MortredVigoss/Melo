@@ -1,3 +1,9 @@
+## 2026-10-20 — 让 Android CI 真正到达构建与设备回归
+
+用户授权按序修复 GitHub issues 并逐项完成，#9 需要修复目前在 SDK 环境准备就失败的工作流。（Codex melo主线）
+本项留在 Mobile 分支，不捆绑合并全部主线代码；核心脚本变动也应触发 Android 验证。真实设备与账号不动，不运行 git pp。
+共享 Core 84/84、生成一致性与 YAML 解析通过；远端 JVM/Lint/两种 APK/Emulator 待本提交后执行。Final commit: 本条提交。
+
 ## 2026-10-19 — 把审查变成可追踪工单，先去除已过期范围
 
 用户授权创建 GitHub Issues；Codex 核对最新主线、重跑记忆/文件身份专项后发布 14 项，远端正文、Labels 和依赖均回读一致。

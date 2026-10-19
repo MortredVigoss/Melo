@@ -14,6 +14,8 @@
 
 ## 2. 当前交付与阻塞
 
+2026-10-20 — GitHub #9 CI 修复进行中（Codex melo主线）：本机隔离工作树 `.tmp/github-issues-mobile` 基于本分支 `22db576`，只修 CI，不合并全部主线。原 Android run `39253909144` 失败于旧 setup-android 默认安装已下架的 `tools`；更新 action、显式 platform-tools、Node 22.22.2，增加共享 Core 源码/生成一致性检查和正确的路径触发范围。共享 Core 84/84 与 bundle 检查通过；JVM/Lint/APK/Emulator 以本次远端 run 为准，尚待执行。未操作真实 Fold6/账号/数据。
+
 2026-10-19 GitHub Backlog 已发布：用户授权后创建并回读确认 14 个 Open Issues（#1–#14），[编号索引与状态修订](docs/github-issue-index-20261019.md)。核对最新 `master@b64fe54`：UI P2 已完成；项目记忆 HTTP/独立保存本轮通过，A02 降为并发调查；A05 已修不建单，A13 仅跟踪剩余 Backend。文件身份两项 RED 仍复现；未实现产品改动或合并主线。
 
 2026-10-19 Mobile 分支收尾：用户授权整理并 Push `codex/mobile-use-features`，主线不合并。已修 A05 Node Parser 32 / Core 8 冲突、daily CLI Fixture Test Root 遗漏与 Search 注册示例缺失；最终专项 128 通过，语法与生成一致性通过。整仓 daily 未绿；最终非 Browser 3921 pass / 9 fail / 20 skipped，文件身份与其余环境 / Fixture 故障保留。Android 二进制未变，本次未重验设备；[收尾与主线交接](docs/mobile-branch-wrap-20261019.md)。
