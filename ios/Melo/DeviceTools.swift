@@ -239,41 +239,46 @@ enum DeviceToolRunner {
         String(((value as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
     }
 
-    /// Executes one model call. Every failure becomes a JSON result for the
-    /// model; nothing reaches the data source unless the kind is enabled, the
-    /// arguments validate, and (for writes) the user approved this exact call.
+    /// Executes one model call. The result is the shared tool envelope
+    /// (`{ok,status,code,output,hint}`, shared/protocol/agent-loop.json): the
+    /// tool's JSON payload in `output`, `empty` when a read found nothing, and
+    /// canonical codes for failures. Nothing reaches the data source unless the
+    /// kind is enabled, the arguments validate, and (for writes) the user
+    /// approved this exact call.
     static func run(_ call: ResponsesFunctionCall, policy: DeviceToolPolicy, source: DeviceDataSource,
                     approve: (DeviceActionRequest) async -> Bool, timeZone: TimeZone = .current,
                     isAllowed: (() -> Bool)? = nil) async -> String {
         func encode(_ object: [String: Any]) -> String {
             var bounded = object
+            bounded.removeValue(forKey: "ok")
             let rowsKey = ["events", "reminders", "contacts"].first { bounded[$0] is [[String: Any]] }
             if let key = rowsKey, let rows = bounded[key] as? [[String: Any]] {
                 bounded["returnedCount"] = rows.count
                 bounded["truncated"] = (bounded["count"] as? Int ?? rows.count) > rows.count
             }
+            let empty = rowsKey != nil && (bounded["count"] as? Int ?? 0) == 0
             // Remove complete rows, never bytes from serialized JSON. The model
             // can narrow its query when returnedCount is smaller than count.
             while let data = try? JSONSerialization.data(withJSONObject: bounded, options: [.sortedKeys]),
                   let text = String(data: data, encoding: .utf8) {
-                if text.count <= maxOutputCharacters { return text }
+                if text.count <= maxOutputCharacters { return PhoneToolEnvelope.success(text, empty: empty) }
                 guard let key = rowsKey, var rows = bounded[key] as? [[String: Any]], !rows.isEmpty else {
-                    return #"{"ok":false,"error":"RESULT_TOO_LARGE","message":"Narrow the query to return less data."}"#
+                    return PhoneToolEnvelope.failure("RESULT_TOO_LARGE", "Narrow the query to return less data.")
                 }
                 rows.removeLast(); bounded[key] = rows
                 bounded["returnedCount"] = rows.count; bounded["truncated"] = true
             }
-            return #"{"ok":false,"error":"ENCODING_FAILED"}"#
+            return PhoneToolEnvelope.failure("UNKNOWN", "The result could not be encoded.")
         }
-        func failure(_ code: String, _ message: String) -> String { encode(["ok": false, "error": code, "message": message]) }
+        func failure(_ code: String, _ message: String) -> String { PhoneToolEnvelope.failure(code, message) }
         func checkAccess() throws {
             try Task.checkCancellation()
             guard isAllowed?() ?? true else { throw AccessRevoked() }
         }
         guard let spec = DeviceToolSpec.named(call.name) else { return failure("UNKNOWN_TOOL", "This phone tool does not exist.") }
-        guard policy.enabled.contains(spec.kind) else { return failure("NOT_ENABLED", "The user has not enabled \(spec.kind.label) access for Melo on this iPhone.") }
+        guard policy.enabled.contains(spec.kind) else { return failure("CAPABILITY_DENIED", "The user has not enabled \(spec.kind.label) access for Melo on this iPhone.") }
         guard let data = call.arguments.data(using: .utf8),
-              let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return failure("INVALID_ARGUMENTS", "Arguments must be a JSON object.") }
+              let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return failure("INVALID_ARGS", "Arguments must be a JSON object.") }
         let date = { (date: Date) in format(date, timeZone: timeZone) }
         do {
             try checkAccess()
@@ -292,7 +297,7 @@ enum DeviceToolRunner {
                 guard !title.isEmpty, let start = parseDate(args["start"]), let end = parseDate(args["end"]), end > start else { throw DeviceToolError.invalid("title, start and end are required and end must be after start.") }
                 let location = text(args["location"], limit: 200), notes = text(args["notes"], limit: 2000)
                 let detail = "\(title)\n\(date(start)) – \(date(end))" + (location.isEmpty ? "" : "\n地点：\(location)") + (notes.isEmpty ? "" : "\n备注：\(notes)")
-                guard await approve(DeviceActionRequest(tool: spec.name, title: "新建日程", detail: detail)) else { return failure("USER_DECLINED", "The user declined to create this event.") }
+                guard await approve(DeviceActionRequest(tool: spec.name, title: "新建日程", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this event.") }
                 try checkAccess()
                 let event = try await source.createEvent(title: title, start: start, end: end, location: location, notes: notes)
                 return encode(["ok": true, "event": ["id": event.id, "title": event.title, "start": date(event.start), "end": date(event.end), "calendar": event.calendar]])
@@ -315,7 +320,7 @@ enum DeviceToolRunner {
                 if args["due"] != nil, !(args["due"] is NSNull), due == nil { throw DeviceToolError.invalid("due must be an ISO 8601 date.") }
                 let notes = text(args["notes"], limit: 2000)
                 let detail = title + (due.map { "\n截止：\(date($0))" } ?? "") + (notes.isEmpty ? "" : "\n备注：\(notes)")
-                guard await approve(DeviceActionRequest(tool: spec.name, title: "新建提醒", detail: detail)) else { return failure("USER_DECLINED", "The user declined to create this reminder.") }
+                guard await approve(DeviceActionRequest(tool: spec.name, title: "新建提醒", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this reminder.") }
                 try checkAccess()
                 let item = try await source.createReminder(title: title, due: due, notes: notes)
                 return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "list": item.list]])
@@ -325,7 +330,7 @@ enum DeviceToolRunner {
                 let current = try await source.reminders(includeCompleted: true).first { $0.id == id }
                 try checkAccess()
                 guard let current else { throw DeviceToolError.invalid("No reminder has this id. Call reminders_list first.") }
-                guard await approve(DeviceActionRequest(tool: spec.name, title: "完成提醒", detail: current.title)) else { return failure("USER_DECLINED", "The user declined to complete this reminder.") }
+                guard await approve(DeviceActionRequest(tool: spec.name, title: "完成提醒", detail: current.title)) else { return failure("PERMISSION_DENIED", "The user declined to complete this reminder.") }
                 try checkAccess()
                 let item = try await source.completeReminder(id: id)
                 return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "completed": item.completed]])
@@ -343,21 +348,20 @@ enum DeviceToolRunner {
                 return failure("UNKNOWN_TOOL", "This phone tool does not exist.")
             }
         } catch is CancellationError {
-            return failure("CANCELLED", "The request was cancelled.")
+            return failure("ABORTED", "The request was cancelled.")
         } catch is AccessRevoked {
-            return failure("NOT_ENABLED", "The user disabled this phone data access during the request.")
+            return failure("CAPABILITY_DENIED", "The user disabled this phone data access during the request.")
         } catch let error as DeviceToolError {
-            return failure("INVALID_ARGUMENTS", error.localizedDescription)
+            return failure("INVALID_ARGS", error.localizedDescription)
         } catch {
-            return failure("DEVICE_ERROR", error.localizedDescription)
+            return failure("UNKNOWN", error.localizedDescription)
         }
     }
 }
 
-/// Responses-protocol plumbing for a stateless (store:false) tool loop.
+/// Responses-protocol plumbing for a stateless (store:false) tool loop. The
+/// loop itself (limits, budget, envelopes) is AgentLoop.swift.
 enum DeviceToolLoop {
-    static let maxRounds = 6
-    static let maxCallsPerRound = 8
 
     static func requiresWebSearch(_ messages: [ChatMessage], policy: DeviceToolPolicy) -> Bool {
         guard ChatGPTRequest.requiresSearch(messages) else { return false }
@@ -408,7 +412,8 @@ enum DeviceToolLoop {
     }
 
     static func validateBatch(_ calls: [ResponsesFunctionCall]) throws {
-        guard calls.count <= maxCallsPerRound else { throw MeloError.message("模型一次请求了过多手机数据操作，已全部拦截，未执行任何操作。") }
+        let limit = AgentLoopContract.shared.maxCallsPerResponse
+        guard calls.count <= limit else { throw MeloError.message("模型一次请求了过多工具调用（超过 \(limit) 个），已全部拦截，未执行任何操作。") }
         var seen = Set<String>()
         for call in calls where call.callID.isEmpty || call.callID.count > 256 || !seen.insert(call.callID).inserted {
             throw MeloError.message("模型返回的工具调用编号无效，已全部拦截，未执行任何操作。")
@@ -424,37 +429,52 @@ struct WebToolContext {
     var onCall: (@MainActor (ResponsesFunctionCall, PhoneToolResult) -> Void)? = nil
 }
 
+/// read_history on this iPhone: the current chat's own messages, offered when
+/// the desktop compact summary (which names message ranges) leads the turn.
+struct HistoryToolContext {
+    var execute: @MainActor (ResponsesFunctionCall) async -> String
+    var onCall: (@MainActor (ResponsesFunctionCall, String) -> Void)? = nil
+}
+
 /// Everything a reply needs to run phone tools: device data (gated by the
-/// device switches and per-Agent grants) plus, optionally, the web page tools.
+/// device switches and per-Agent grants) plus, optionally, the web page tools
+/// and read_history.
 struct DeviceToolContext {
     var policy: DeviceToolPolicy
     var execute: @MainActor (ResponsesFunctionCall) async -> String
     var onCall: (@MainActor (ResponsesFunctionCall, String) -> Void)? = nil
     var web: WebToolContext? = nil
+    var history: HistoryToolContext? = nil
 
-    /// Protocol-neutral definitions: device tools first, then web tools.
-    var definitions: [PhoneToolDefinition] { policy.tools.map(\.definition) + (web?.tools.map(\.definition) ?? []) }
+    /// Protocol-neutral definitions: device tools first, then web tools, then read_history.
+    var definitions: [PhoneToolDefinition] { policy.tools.map(\.definition) + (web?.tools.map(\.definition) ?? []) + (history == nil ? [] : [PhoneReadHistory.definition]) }
     var instructions: String {
-        [DeviceToolLoop.instructions(policy), web == nil ? "" : WebPageToolSpec.instructions].filter { !$0.isEmpty }.joined(separator: "\n")
+        [DeviceToolLoop.instructions(policy), web == nil ? "" : WebPageToolSpec.instructions, history == nil ? "" : PhoneReadHistory.instructions].filter { !$0.isEmpty }.joined(separator: "\n")
     }
     /// Loop status while a call runs.
     func statusText(for call: ResponsesFunctionCall) -> String {
-        WebPageToolSpec.named(call.name).map(\.statusText) ?? "正在读取手机数据…"
+        if call.name == PhoneReadHistory.name { return "正在读取早期对话…" }
+        return WebPageToolSpec.named(call.name).map(\.statusText) ?? "正在读取手机数据…"
     }
-    /// Dispatches one call (web tools by name first, then device tools) and
-    /// reports it for the run record.
+    /// Dispatches one call (web tools by name first, then read_history, then
+    /// device tools) and reports it for the run record.
     @MainActor func perform(_ call: ResponsesFunctionCall) async -> PhoneToolResult {
         if let web, WebPageToolSpec.named(call.name) != nil {
             let result = await web.execute(call)
             web.onCall?(call, result)
             return result
         }
+        if let history, call.name == PhoneReadHistory.name {
+            let output = await history.execute(call)
+            history.onCall?(call, output)
+            return PhoneToolResult(output: output)
+        }
         let output = await execute(call)
         onCall?(call, output)
         return PhoneToolResult(output: output)
     }
     /// The same tools for the API-key protocols in Network.reply.
-    var toolSet: PhoneToolSet { PhoneToolSet(definitions: definitions, instructions: instructions, perform: perform) }
+    var toolSet: PhoneToolSet { PhoneToolSet(definitions: definitions, instructions: instructions, perform: perform, statusText: statusText) }
 }
 
 /// Function tools for Chat Completions and Anthropic connections. `perform`
@@ -463,6 +483,9 @@ struct PhoneToolSet {
     var definitions: [PhoneToolDefinition]
     var instructions: String
     var perform: @MainActor (ResponsesFunctionCall) async -> PhoneToolResult
+    var statusText: (ResponsesFunctionCall) -> String = { WebPageToolSpec.named($0.name).map(\.statusText) ?? "正在读取手机数据…" }
+    /// The loop's view of these tools (the shared envelope note is added to the instructions).
+    var loopTools: AgentLoopTools { AgentLoopTools(definitions: definitions, instructions: instructions, perform: perform, statusText: statusText) }
 }
 
 extension DeviceToolSpec {
@@ -472,12 +495,14 @@ extension DeviceToolSpec {
 /// Short, human-readable outcome for the execution record.
 enum DeviceToolSummary {
     static func of(_ output: String) -> (ok: Bool, text: String) {
-        guard let data = output.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return (false, "结果无法解析") }
-        if object["ok"] as? Bool == true {
-            if let count = (object["returnedCount"] ?? object["count"]) as? Int { return (true, "已读取 \(count) 条") }
+        guard let data = output.data(using: .utf8), (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else { return (false, "结果无法解析") }
+        let outcome = PhoneToolEnvelope.parse(output)
+        if outcome.ok {
+            let payload = PhoneToolEnvelope.payload(output)
+            if let count = (payload["returnedCount"] ?? payload["count"]) as? Int { return (true, "已读取 \(count) 条") }
             return (true, "已完成")
         }
-        if object["error"] as? String == "USER_DECLINED" { return (false, "用户已拒绝") }
+        if outcome.code == "PERMISSION_DENIED" { return (false, "用户已拒绝") }
         return (false, "执行失败") // Do not persist tool data or OS error details.
     }
 }

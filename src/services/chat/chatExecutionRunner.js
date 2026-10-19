@@ -19,6 +19,7 @@ import { createRequestContext, requestIdentity } from '../../runtime/requestCont
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
 import { armBudget, budgetExhausted, budgetExhaustedReply, describeBudgetReason, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../../runtime/agentLoopContract.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -800,7 +801,8 @@ export async function runChatAgentExecutionGraph({
           return { reply: fastPathReply, next: 'finalize' };
         }
 
-        const MAX_TOOL_ITERATIONS = 10;
+        // Shared with the iPhone loop (shared/protocol/agent-loop.json).
+        const MAX_TOOL_ITERATIONS = AGENT_LOOP_CONTRACT.loop.maxIterations;
         const functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
         const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
@@ -1156,9 +1158,9 @@ export async function runChatAgentExecutionGraph({
 
         // Exhaustion is not success; never publish a tool-call block as an answer.
         if (!finalReply) {
-          finalReply = /[\u3400-\u9fff]/.test(latestUserMessage)
-            ? '本轮已达到工具执行上限，尚未完成核实。请缩小问题范围后继续；我不会把未完成的尝试当成结果。'
-            : 'This turn reached its tool execution limit before verification finished. Please narrow the request; incomplete attempts are not confirmed results.';
+          finalReply = contractRegExp(AGENT_LOOP_CONTRACT.cjkPattern).test(latestUserMessage)
+            ? AGENT_LOOP_CONTRACT.loop.toolLimitReply.zh
+            : AGENT_LOOP_CONTRACT.loop.toolLimitReply.en;
         }
 
         // Only finalize may publish reply_text to the speech channel.

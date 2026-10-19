@@ -188,6 +188,8 @@ enum WebPageText {
     static func tooManyScreenshots(url: String) -> String {
         failure("TOO_MANY_SCREENSHOTS", "At most \(maxScreenshotsPerReply) screenshots per reply; use open_url to read further pages.", url: url)
     }
+    /// A tool result for the model: the payload JSON wrapped in the shared envelope.
+    static func envelope(_ payload: String) -> String { PhoneToolEnvelope.success(payload, maxOutputChars: maxOutputCharacters) }
     /// Keep flags for images given oldest first; once one does not fit, it and everything older are dropped.
     static func keptImages(sizes: [Int], budget: Int = imageByteBudget) -> [Bool] {
         var keep = Array(repeating: false, count: sizes.count), used = 0
@@ -256,7 +258,7 @@ enum WebPageText {
         return Page(text: start < end ? String(characters[start..<end]) : "", page: page, pageCount: pageCount)
     }
 
-    /// JSON for the model, with the `text` field bounded like the device tools.
+    /// Payload JSON (inside the envelope's `output`), with the `text` field bounded like the device tools.
     static func encode(_ object: [String: Any]) -> String {
         var bounded = object
         while let data = try? JSONSerialization.data(withJSONObject: bounded, options: [.sortedKeys]), let text = String(data: data, encoding: .utf8) {
@@ -266,10 +268,10 @@ enum WebPageText {
         }
         return #"{"ok":false,"error":"ENCODING_FAILED"}"#
     }
+    /// A failed call as the shared envelope: phone codes become canonical codes
+    /// (INVALID_URL → INVALID_ARGS, kept in `detail`); the address is in the text.
     static func failure(_ code: String, _ message: String, url: String = "") -> String {
-        var object: [String: Any] = ["ok": false, "error": code, "message": message]
-        if !url.isEmpty { object["url"] = url }
-        return encode(object)
+        PhoneToolEnvelope.failure(code, url.isEmpty ? message : message + " (url: " + String(url.prefix(300)) + ")")
     }
 
     /// Title and description are bounded so a runaway `<title>` can never
@@ -312,16 +314,18 @@ enum WebPageText {
 
     /// Short outcome for the run record; never persists page text.
     static func summary(_ result: PhoneToolResult) -> (ok: Bool, text: String) {
-        guard let data = result.output.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return (false, "结果无法解析") }
-        guard object["ok"] as? Bool == true else {
-            switch object["error"] as? String {
+        guard let data = result.output.data(using: .utf8), (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else { return (false, "结果无法解析") }
+        let outcome = PhoneToolEnvelope.parse(result.output)
+        guard outcome.ok else {
+            switch outcome.detail ?? outcome.code {
             case "TIMEOUT": return (false, "网页加载超时")
             case "INVALID_URL": return (false, "地址不允许打开")
             case "TOO_MANY_SCREENSHOTS": return (false, "本次回复截图已达上限")
-            default: return (false, "网页加载失败")
+            default: return (false, outcome.code == "TIMEOUT" ? "网页加载超时" : "网页加载失败")
             }
         }
         if result.imageJPEG != nil { return (true, "已截图") }
+        let object = PhoneToolEnvelope.payload(result.output)
         if let page = object["page"] as? Int, let count = object["pageCount"] as? Int, count > 1 { return (true, "已读取 \(page)/\(count) 页") }
         return (true, "已读取网页")
     }

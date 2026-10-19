@@ -28,6 +28,7 @@ import { emitHook } from '../plugins/hooks.js';
 import { finalizeToolResult } from './toolResult.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
 import { budgetExhausted, recordUsage, remainingMs } from '../runtime/runBudget.js';
+import { AGENT_LOOP_CONTRACT, fillTemplate } from '../runtime/agentLoopContract.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
@@ -136,7 +137,7 @@ async function runObservedTool(tool, args, options = {}) {
   if (exhausted) {
     return finalizeToolResult({
       ok: false,
-      output: `Run budget exhausted (${exhausted.reason}); tool "${tool.id}" was not executed.`,
+      output: fillTemplate(AGENT_LOOP_CONTRACT.budget.toolSkippedTemplate, { reason: exhausted.reason, tool: tool.id }),
       error: 'BUDGET_EXHAUSTED',
       meta: { executionStarted: false, budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } },
     });

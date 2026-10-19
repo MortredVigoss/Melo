@@ -10,8 +10,12 @@
 // model to change approach or stop. Successful calls reset their fingerprint.
 
 import { createHash } from 'node:crypto';
+import { AGENT_LOOP_CONTRACT, fillTemplate } from '../runtime/agentLoopContract.js';
 
-const DEFAULT_LIMIT = 2;
+// Limit, code and the model-facing text are shared with the iPhone loop
+// (shared/protocol/agent-loop.json).
+const GUARD = AGENT_LOOP_CONTRACT.repeatGuard;
+const DEFAULT_LIMIT = GUARD.limit;
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -24,7 +28,7 @@ function errorClass(result) {
   // only for results that never went through the executor.
   const code = String(result?.code || result?.error || result?.errorCode || '').trim();
   if (code) return code;
-  return String(result?.output || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return String(result?.output || '').replace(/\s+/g, ' ').trim().slice(0, GUARD.errorClassMaxChars);
 }
 
 export function toolCallFingerprint(name, args) {
@@ -41,8 +45,8 @@ export function createRepeatGuard({ limit = DEFAULT_LIMIT } = {}) {
       if (!entry || entry.count < limit) return null;
       return {
         ok: false,
-        error: 'REPEATED_FAILURE',
-        output: `Tool "${name}" already failed ${entry.count} times with identical arguments (${entry.errorClass || 'same error'}). It was not run again. Change the arguments or the approach, or tell the user what is blocking you.`,
+        error: GUARD.code,
+        output: fillTemplate(GUARD.outputTemplate, { name, count: entry.count, errorClass: entry.errorClass || GUARD.sameErrorFallback }),
       };
     },
     /** Record an executed call's outcome. */

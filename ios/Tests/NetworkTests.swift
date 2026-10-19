@@ -163,7 +163,10 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         let secondChat = MockProtocol.requestBodies[1]["messages"] as! [[String: Any]]
         assert(secondChat.count == 6, "system, user, assistant(tool_calls), tool, tool, user(image)")
         assert(secondChat[2]["role"] as? String == "assistant" && (secondChat[2]["tool_calls"] as? [[String: Any]])?.count == 2 && secondChat[2]["content"] is NSNull)
-        assert(secondChat[3]["role"] as? String == "tool" && secondChat[3]["tool_call_id"] as? String == "call_a" && secondChat[3]["content"] as? String == #"{"ok":true,"text":"page text"}"#)
+        // Tool results reach the model as the shared envelope (2026-10-19); the tool's own JSON is its `output`.
+        let toolContent = json(secondChat[3]["content"] as? String ?? "")
+        assert(secondChat[3]["role"] as? String == "tool" && secondChat[3]["tool_call_id"] as? String == "call_a" && toolContent["status"] as? String == "ok" && toolContent["output"] as? String == #"{"ok":true,"text":"page text"}"#)
+        assert(systemLine?.contains(AgentLoopContract.shared.contractNote) == true, "the envelope note joins the tool instructions")
         assert(secondChat[4]["tool_call_id"] as? String == "call_b")
         let chatImage = secondChat[5]["content"] as? [[String: Any]]
         assert(secondChat[5]["role"] as? String == "user" && chatImage?[0]["text"] as? String == "[web_screenshot of https://a.example]" && ((chatImage?[1]["image_url"] as? [String: Any])?["url"] as? String)?.hasPrefix("data:image/jpeg;base64,") == true)
@@ -186,7 +189,7 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(secondClaude[1]["role"] as? String == "assistant" && (secondClaude[1]["content"] as? [[String: Any]])?.count == 2)
         let resultBlocks = secondClaude[2]["content"] as! [[String: Any]]
         assert(secondClaude[2]["role"] as? String == "user" && resultBlocks.count == 3)
-        assert(resultBlocks[0]["type"] as? String == "tool_result" && resultBlocks[0]["tool_use_id"] as? String == "toolu_1" && resultBlocks[0]["content"] as? String == #"{"ok":true,"screenshot":"attached"}"#)
+        assert(resultBlocks[0]["type"] as? String == "tool_result" && resultBlocks[0]["tool_use_id"] as? String == "toolu_1" && json(resultBlocks[0]["content"] as? String ?? "")["output"] as? String == #"{"ok":true,"screenshot":"attached"}"#)
         assert(resultBlocks[1]["type"] as? String == "text" && resultBlocks[2]["type"] as? String == "image" && ((resultBlocks[2]["source"] as? [String: Any])?["media_type"] as? String) == "image/jpeg")
 
         // Audit I11: tool calls cut off by `length` / `max_tokens` are never executed; the truncation is reported.
@@ -240,12 +243,17 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(claudeBlocks.map { $0["type"] as? String } == ["tool_result", "tool_result", "text", "text", "image"])
         MockProtocol.payloads = []; MockProtocol.anthropic = true
 
-        // The loop is bounded: a model that keeps calling tools is stopped after maxRounds.
+        // The loop is bounded like the desktop (2026-10-19; was 6 rounds and an error): 10 model calls,
+        // then the shared tool-limit reply — attempts are never presented as results.
         MockProtocol.requestBodies = []; performed = []
-        MockProtocol.payloads = Array(repeating: "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}", count: 10)
-        do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "一直查")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session); fatalError("unbounded tool loop") }
-        catch { assert(error.localizedDescription.contains("\(DeviceToolLoop.maxRounds) 轮")) }
-        assert(performed.count == DeviceToolLoop.maxRounds)
+        MockProtocol.payloads = (0..<12).map { "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\($0)\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}" }
+        let limited = try await Network.reply(messages: [ChatMessage(role: "user", content: "一直查")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session)
+        assert(limited.text == AgentLoopContract.shared.toolLimitReplyZH && performed.count == AgentLoopContract.shared.maxIterations && MockProtocol.requestBodies.count == AgentLoopContract.shared.maxIterations)
+        // A call id the model already used in this turn is refused before anything runs (desktop T12).
+        MockProtocol.requestBodies = []; performed = []
+        MockProtocol.payloads = Array(repeating: "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"same\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}", count: 2)
+        do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "x")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session); fatalError("reused call id executed") }
+        catch { assert(performed.count == 1 && MockProtocol.requestBodies.count == 2) }
         MockProtocol.payloads = []; MockProtocol.anthropic = false
         print("Swift network tests passed: compatible + Anthropic protocols, whole-turn request history, actual model, complete/empty/truncated replies, source evidence, pipeline persistence, transport cancellation, authorization and endpoint safety, phone tool rounds on both API protocols")
     }

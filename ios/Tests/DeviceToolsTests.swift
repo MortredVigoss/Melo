@@ -29,6 +29,8 @@ final class FakeSource: DeviceDataSource {
 func json(_ text: String) -> [String: Any] {
     (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
 }
+/// The tool's own JSON inside the shared envelope (`output`).
+func payload(_ text: String) -> [String: Any] { PhoneToolEnvelope.payload(text) }
 func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctionCall { ResponsesFunctionCall(callID: id, name: name, arguments: args) }
 
 @main struct DeviceToolsTests {
@@ -61,50 +63,51 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let approveYes: (DeviceActionRequest) async -> Bool = { _ in prompts += 1; return true }
         let approveNo: (DeviceActionRequest) async -> Bool = { _ in prompts += 1; return false }
         var out = await DeviceToolRunner.run(call("calendar_list_events", #"{"start":"2026-10-16T00:00:00+11:00","end":"2026-10-17T00:00:00+11:00"}"#), policy: none, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.reads == 0 && prompts == 0)
+        // Results are the shared envelope (2026-10-19): canonical codes from the contract, a hint the model can act on.
+        assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && json(out)["status"] as? String == "error" && (json(out)["hint"] as? String)?.isEmpty == false && source.reads == 0 && prompts == 0)
 
         // Unknown tool and malformed arguments never reach the source.
         out = await DeviceToolRunner.run(call("shell_exec", "{}"), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "UNKNOWN_TOOL")
+        assert(json(out)["code"] as? String == "UNKNOWN_TOOL")
         out = await DeviceToolRunner.run(call("calendar_list_events", "not json"), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS")
+        assert(json(out)["code"] as? String == "INVALID_ARGS")
         out = await DeviceToolRunner.run(call("calendar_list_events", #"{"start":"tomorrow","end":"2026-10-17T00:00:00Z"}"#), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS")
+        assert(json(out)["code"] as? String == "INVALID_ARGS")
         out = await DeviceToolRunner.run(call("calendar_list_events", #"{"start":"2026-01-01T00:00:00Z","end":"2026-12-31T00:00:00Z"}"#), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS", "ranges over 92 days are refused")
+        assert(json(out)["code"] as? String == "INVALID_ARGS", "ranges over 92 days are refused")
         assert(source.reads == 0 && source.writes == 0 && prompts == 0)
 
         // Reads run without an approval prompt and honour the query filter.
         out = await DeviceToolRunner.run(call("calendar_list_events", #"{"start":"2026-10-16T00:00:00+11:00","end":"2026-10-17T00:00:00+11:00","query":"牙"}"#), policy: all, source: source, approve: approveYes)
-        let listed = json(out)
-        assert(listed["ok"] as? Bool == true && listed["count"] as? Int == 1 && source.reads == 1 && prompts == 0)
+        let listed = payload(out)
+        assert(json(out)["ok"] as? Bool == true && json(out)["status"] as? String == "ok" && listed["count"] as? Int == 1 && source.reads == 1 && prompts == 0)
         assert(((listed["events"] as? [[String: Any]])?.first?["title"] as? String) == "牙医")
 
         // Writes: declined → zero side effects; approved → exactly one.
         source = FakeSource(); prompts = 0
         let create = call("calendar_create_event", #"{"title":"看牙","start":"2026-10-20T09:00:00+11:00","end":"2026-10-20T10:00:00+11:00","location":"诊所"}"#)
         out = await DeviceToolRunner.run(create, policy: all, source: source, approve: approveNo)
-        assert(json(out)["error"] as? String == "USER_DECLINED" && source.writes == 0 && prompts == 1)
+        assert(json(out)["code"] as? String == "PERMISSION_DENIED" && source.writes == 0 && prompts == 1)
         out = await DeviceToolRunner.run(create, policy: all, source: source, approve: approveYes)
         assert(json(out)["ok"] as? Bool == true && source.writes == 1 && prompts == 2)
         // Invalid write arguments are refused before asking the user.
         out = await DeviceToolRunner.run(call("calendar_create_event", #"{"title":"x","start":"2026-10-20T10:00:00Z","end":"2026-10-20T09:00:00Z"}"#), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS" && source.writes == 1 && prompts == 2)
+        assert(json(out)["code"] as? String == "INVALID_ARGS" && source.writes == 1 && prompts == 2)
         out = await DeviceToolRunner.run(call("reminders_create", #"{"title":"买牛奶","due":"someday"}"#), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS" && source.writes == 1 && prompts == 2)
+        assert(json(out)["code"] as? String == "INVALID_ARGS" && source.writes == 1 && prompts == 2)
 
         // Completing an unknown reminder never prompts or writes.
         out = await DeviceToolRunner.run(call("reminders_complete", #"{"id":"missing"}"#), policy: all, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "INVALID_ARGUMENTS" && source.writes == 1 && prompts == 2)
+        assert(json(out)["code"] as? String == "INVALID_ARGS" && source.writes == 1 && prompts == 2)
         out = await DeviceToolRunner.run(call("reminders_complete", #"{"id":"r1"}"#), policy: all, source: source, approve: approveYes)
         assert(json(out)["ok"] as? Bool == true && source.writes == 2 && prompts == 3)
 
         // Kind isolation: enabling contacts does not allow reminders writes.
         source = FakeSource(); prompts = 0
         out = await DeviceToolRunner.run(call("reminders_create", #"{"title":"x"}"#), policy: DeviceToolPolicy(enabled: [.contacts]), source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.writes == 0 && prompts == 0)
+        assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && source.writes == 0 && prompts == 0)
         out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"张"}"#), policy: DeviceToolPolicy(enabled: [.contacts]), source: source, approve: approveYes)
-        assert(json(out)["count"] as? Int == 1 && source.reads == 1)
+        assert(payload(out)["count"] as? Int == 1 && source.reads == 1)
         out = await DeviceToolRunner.run(call("location_current", "{}"), policy: all, source: source, approve: approveYes)
         assert(DeviceToolSummary.of(out) == (true, "已完成"), "Do not persist location names in execution records")
         assert(DeviceToolSummary.of(#"{"ok":false,"error":"USER_DECLINED"}"#).text == "用户已拒绝")
@@ -113,37 +116,42 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         source = FakeSource()
         source.stored = (0..<100).map { DeviceReminder(id: "r\($0)", title: String(repeating: "较长标题", count: 25), due: nil, completed: false, list: "测试", notes: String(repeating: "长备注", count: 200)) }
         out = await DeviceToolRunner.run(call("reminders_list", "{}"), policy: all, source: source, approve: approveYes)
-        let bounded = json(out), rows = json(out)["reminders"] as? [[String: Any]] ?? []
-        assert(bounded["ok"] as? Bool == true && bounded["truncated"] as? Bool == true)
+        let bounded = payload(out), rows = bounded["reminders"] as? [[String: Any]] ?? []
+        assert(json(out)["ok"] as? Bool == true && bounded["truncated"] as? Bool == true)
         assert(bounded["count"] as? Int == 100 && !rows.isEmpty && rows.count < 100)
-        assert(bounded["returnedCount"] as? Int == rows.count && out.count <= DeviceToolRunner.maxOutputCharacters)
+        assert(bounded["returnedCount"] as? Int == rows.count && PhoneToolEnvelope.parse(out).output.count <= DeviceToolRunner.maxOutputCharacters)
         assert(DeviceToolSummary.of(out).text == "已读取 \(rows.count) 条")
+        // A read that found nothing is `empty` (NO_RESULTS), not a failure.
+        let emptySource = FakeSource(); emptySource.stored = []
+        let nothing = await DeviceToolRunner.run(call("reminders_list", "{}"), policy: all, source: emptySource, approve: approveYes)
+        assert(json(nothing)["ok"] as? Bool == true && json(nothing)["status"] as? String == "empty" && json(nothing)["code"] as? String == "NO_RESULTS" && payload(nothing)["count"] as? Int == 0)
         assert(DeviceToolSummary.of(#"{"ok":false,"message":"private address"}"#).text == "执行失败")
 
         // A switch revoked before execution or while approval is open stops all access.
         source = FakeSource(); prompts = 0
         out = await DeviceToolRunner.run(create, policy: all, source: source, approve: approveYes, isAllowed: { false })
-        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.writes == 0 && prompts == 0)
+        assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && source.writes == 0 && prompts == 0)
         var enabled = true
         out = await DeviceToolRunner.run(create, policy: all, source: source, approve: { _ in enabled = false; return true }, isAllowed: { enabled })
-        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.writes == 0)
+        assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && source.writes == 0)
         let cancelledSource = FakeSource()
         let cancelledOutput = await Task {
             await DeviceToolRunner.run(create, policy: all, source: cancelledSource, approve: { _ in
                 withUnsafeCurrentTask { $0?.cancel() }; return true
             })
         }.value
-        assert(json(cancelledOutput)["error"] as? String == "CANCELLED" && cancelledSource.writes == 0)
+        assert(json(cancelledOutput)["code"] as? String == "ABORTED" && cancelledSource.writes == 0)
         // Approval must show every user-visible field that will be written.
         let withNotes = call("reminders_create", #"{"title":"测试提醒","notes":"需确认的备注"}"#)
         out = await DeviceToolRunner.run(withNotes, policy: all, source: source, approve: { request in
             assert(request.detail.contains("需确认的备注")); return false
         })
-        assert(json(out)["error"] as? String == "USER_DECLINED")
+        assert(json(out)["code"] as? String == "PERMISSION_DENIED")
 
-        // Batch validation happens before any call executes.
+        // Batch validation happens before any call executes (32 calls per response, shared contract; was 8).
         do { try DeviceToolLoop.validateBatch([call("a", "{}", id: "x"), call("b", "{}", id: "x")]); assert(false, "duplicate ids") } catch {}
-        do { try DeviceToolLoop.validateBatch((0..<9).map { call("a", "{}", id: "id\($0)") }); assert(false, "too many calls") } catch {}
+        do { try DeviceToolLoop.validateBatch((0..<33).map { call("a", "{}", id: "id\($0)") }); assert(false, "too many calls") } catch {}
+        do { try DeviceToolLoop.validateBatch((0..<32).map { call("a", "{}", id: "id\($0)") }) } catch { assert(false, "32 calls are allowed") }
         do { try DeviceToolLoop.validateBatch([call("a", "{}", id: "")]); assert(false, "empty id") } catch {}
         do { try DeviceToolLoop.validateBatch([call("a", "{}", id: "1"), call("b", "{}", id: "2")]) } catch { assert(false, "valid batch") }
 
@@ -216,6 +224,12 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let webContext = WebToolContext(execute: { call in webCalls += 1; return PhoneToolResult(output: #"{"ok":true,"url":"\#(call.name)"}"#) })
         let unified = DeviceToolContext(policy: DeviceToolPolicy(enabled: [.contacts]), execute: { _ in deviceCalls += 1; return #"{"ok":true}"# }, web: webContext)
         assert(unified.definitions.map(\.name) == ["contacts_search", "open_url", "web_screenshot"])
+        // read_history joins only when the turn carries the desktop summary (ChatStore decides).
+        var historyCalls = 0
+        let withHistory = DeviceToolContext(policy: DeviceToolPolicy(), execute: { _ in "{}" }, history: HistoryToolContext(execute: { _ in historyCalls += 1; return PhoneToolEnvelope.success("ok") }))
+        assert(withHistory.definitions.map(\.name) == ["read_history"] && withHistory.instructions.contains("read_history") && withHistory.statusText(for: call("read_history", "{}")) == "正在读取早期对话…")
+        _ = await withHistory.perform(call("read_history", "{}"))
+        assert(historyCalls == 1)
         assert(unified.definitions.allSatisfy { $0.responsesDefinition["type"] as? String == "function" && ($0.chatCompletionsDefinition["function"] as? [String: Any])?["name"] as? String == $0.name && $0.anthropicDefinition["input_schema"] != nil })
         assert(unified.instructions.contains("通讯录") && unified.instructions.contains("open_url"))
         assert(unified.statusText(for: call("web_screenshot", "{}")) == "正在截图网页…" && unified.statusText(for: call("open_url", "{}")) == "正在打开网页…" && unified.statusText(for: call("contacts_search", "{}")) == "正在读取手机数据…")
@@ -275,7 +289,7 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
             let effective = PhoneAgentPermissions.load(defaults).devicePolicy(for: "melo", device: DeviceToolPolicy.load(defaults))
             source = FakeSource(); prompts = 0
             out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"fixture"}"#), policy: effective, source: source, approve: approveYes)
-            assert(json(out)["error"] as? String == "NOT_ENABLED" && source.reads == 0 && prompts == 0)
+            assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && source.reads == 0 && prompts == 0)
         }
         // Existing explicit revocations survive an unfinished migration and
         // subsequent launches; a device-level grant cannot overwrite them.
@@ -299,7 +313,7 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         let reenabled = afterRevoke.devicePolicy(for: "writer", device: DeviceToolPolicy(enabled: [.contacts]))
         source = FakeSource(); prompts = 0
         out = await DeviceToolRunner.run(call("contacts_search", #"{"query":"fixture"}"#), policy: reenabled, source: source, approve: approveYes)
-        assert(json(out)["error"] as? String == "NOT_ENABLED" && source.reads == 0 && prompts == 0)
+        assert(json(out)["code"] as? String == "CAPABILITY_DENIED" && source.reads == 0 && prompts == 0)
         assert(afterRevoke.canEdit("writer", .contacts, device: DeviceToolPolicy(enabled: [.contacts])))
         assert(afterRevoke.canEdit("writer", .network, device: DeviceToolPolicy()))
 

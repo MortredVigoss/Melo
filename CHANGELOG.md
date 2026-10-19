@@ -2,6 +2,10 @@
 
 A brief overview of user-facing updates. Technical details live in the project documentation and commit history.
 
+## 2026-10-19
+
+- iPhone agent loop now works like the desktop: one loop for Codex sign-in and API-key connections with the same limits (10 model calls, 32 tool calls per response), run budget (20 min / 400k input tokens / 120 tool calls), repeat-failure guard, `{ok,status,code,output,hint}` tool results, condensation of older tool output when a request is too large, supplements that join the next step instead of restarting the reply, a `[工具轨迹]` note after a stopped reply, uncertainty verification for factual answers, and a phone `read_history` for synced desktop summaries; limits and texts are shared with the desktop through `shared/protocol/agent-loop.json`.
+
 ## 2026-10-18 — iPhone 0.7.0 (32)
 
 - Global bug audit (`docs/bug-audit-20261018.md`) and fixes across tools, long conversations, memory, iPhone and desktop UI: tool results keep their `empty` status; the screenshot tools re-check redirects and block private hosts on both platforms; background compaction no longer clobbers per-chat runtime fields; secrets inside tool arguments and outputs are redacted in records; stable prompt blocks no longer crowd out memory recall; local models get a window derived from the measured prompt; hand-written memory-book rows survive scope changes; iPhone screenshot size caps, cancellation, request-shape and sync-convergence fixes; UI state and i18n coverage.

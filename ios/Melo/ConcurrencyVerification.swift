@@ -59,17 +59,19 @@ import Foundation
             guard store.agent(for: a).id == "analyst", store.preferences.chatModels?[a]?.model == "next-model" else { throw MeloError.message("回复中无法切换 Agent 或模型") }
             await settle()
             guard let third = store.chats.first(where: { $0.id == a })?.messages.last, store.preferences.messageAgents?[third.id]?.agentID == "melo" else { throw MeloError.message("正在进行的回复不应改署名") }
-            // A supplement typed during a reply restarts it with the question plus the supplement; one answer remains.
+            // A supplement typed during a reply joins its next model step without a restart (desktop parity);
+            // this fake model takes no further step, so the supplement is sent as the next message when the reply ends.
             let before = log.snapshot.filter { $0.hasPrefix("start:") }.count
             let answersBefore = store.chats.first(where: { $0.id == b })?.messages.filter { $0.role == "assistant" }.count ?? 0
             store.send("B 慢任务写一首诗", chatID: b)
             try await Task.sleep(nanoseconds: 300_000_000)
             store.supplement("改成五言", chatID: b)
+            guard store.isSending(b), store.pendingSupplements[b] == ["改成五言"] else { throw MeloError.message("补充没有送达正在进行的回复，或回复被重新开始") }
             await settle()
             let messagesB = store.chats.first(where: { $0.id == b })?.messages ?? []
-            guard let question = messagesB.dropLast().last, question.content.hasSuffix("补充：改成五言"), messagesB.last?.content.contains("补充：改成五言") == true else { throw MeloError.message("补充没有并入问题并重新开始：\(messagesB.suffix(2).map(\.content))") }
-            guard messagesB.filter({ $0.role == "assistant" }).count == answersBefore + 1, log.snapshot.filter({ $0.hasPrefix("start:") }).count == before + 2 else { throw MeloError.message("补充后应只保留一条回答") }
-            guard store.scenes(for: b).dropLast().last?.pipeline?.contains(where: { $0.id == "supplement" }) == true else { throw MeloError.message("被替换的那次运行没有记录补充") }
+            guard messagesB.suffix(4).map(\.content) == ["B 慢任务写一首诗", "回复：B 慢任务写一首诗", "改成五言", "回复：改成五言"] else { throw MeloError.message("未用上的补充应在回复结束后作为下一条消息发送：\(messagesB.suffix(4).map(\.content))") }
+            guard messagesB.filter({ $0.role == "assistant" }).count == answersBefore + 2, log.snapshot.filter({ $0.hasPrefix("start:") }).count == before + 2 else { throw MeloError.message("补充不应重启原回复") }
+            guard store.scenes(for: b).dropLast().last?.status == "completed" else { throw MeloError.message("原回复应完整结束，不被补充打断") }
             ticker.cancel()
             result["events"] = log.snapshot
             result["longestMainThreadGapMs"] = Int(longestGap * 1000)

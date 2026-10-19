@@ -17,17 +17,23 @@ import { normalizeMessageBlocks } from '../../domain/message/messageBlocks.js';
 import { refreshChatMemorySummary } from '../../memory/chatThreadContext.js';
 import { isProviderFailureAssistantMessage } from './messageBuilder.js';
 import { requestIdentity } from '../../runtime/requestContext.js';
+import { AGENT_LOOP_CONTRACT, fillTemplate } from '../../runtime/agentLoopContract.js';
 
-export const TOOL_TRACE_PREFIX = '[工具轨迹]';
-export const TOOL_TRACE_MAX_CHARS = 600;
+// Prefix, labels, line format and size are shared with the iPhone loop
+// (shared/protocol/agent-loop.json); both write the same trace text.
+const TRACE = AGENT_LOOP_CONTRACT.toolTrace;
 
-const STATUS_LABEL = Object.freeze({ cancelled: '本轮已取消', failed: '本轮失败', completed: '本轮完成' });
+export const TOOL_TRACE_PREFIX = TRACE.prefix;
+export const TOOL_TRACE_MAX_CHARS = TRACE.maxChars;
+
+const STATUS_LABEL = TRACE.statusLabels;
 
 function recordLine(record, index) {
   const envelope = record.resultEnvelope || {};
-  const digest = toolArgsDigest(record.argsRedacted, { maxEntries: 2, maxValue: 60, maxChars: 90 });
-  const status = envelope.status === 'ok' ? '✓' : envelope.status === 'empty' ? '○ empty' : `✗ ${envelope.code || 'error'}`;
-  return `${index + 1}. ${record.toolId}(${digest}) ${status}`;
+  const digest = toolArgsDigest(record.argsRedacted, TRACE.digest);
+  const status = envelope.status === 'ok' ? TRACE.statusMarks.ok : envelope.status === 'empty' ? TRACE.statusMarks.empty
+    : fillTemplate(TRACE.statusMarks.error, { code: envelope.code || TRACE.errorCodeFallback });
+  return fillTemplate(TRACE.lineTemplate, { index: index + 1, tool: record.toolId, digest, status });
 }
 
 /**
@@ -37,23 +43,24 @@ function recordLine(record, index) {
 export function buildToolTraceText(records = [], { status = 'cancelled', maxChars = TOOL_TRACE_MAX_CHARS } = {}) {
   const list = (Array.isArray(records) ? records : []).filter(record => record && typeof record === 'object' && record.toolId);
   if (!list.length) return '';
-  const header = `${TOOL_TRACE_PREFIX} ${STATUS_LABEL[status] || STATUS_LABEL.cancelled}，之前已执行 ${list.length} 次工具调用（可据此继续，不必重复）：`;
+  const label = Object.hasOwn(STATUS_LABEL, status) ? STATUS_LABEL[status] : STATUS_LABEL.cancelled;
+  const header = fillTemplate(TRACE.headerTemplate, { prefix: TOOL_TRACE_PREFIX, label, count: list.length });
   const lines = [];
   let used = header.length;
   for (let index = 0; index < list.length; index++) {
     const line = recordLine(list[index], index);
     const remaining = list.length - index;
-    const tail = remaining > 1 ? `；…等 ${remaining - 1} 次` : '';
+    const tail = remaining > 1 ? TRACE.separator + fillTemplate(TRACE.moreTemplate, { count: remaining - 1 }) : '';
     if (used + 1 + line.length + (index + 1 < list.length ? tail.length : 0) > maxChars) {
-      if (!lines.length) lines.push(line.slice(0, Math.max(20, maxChars - used - tail.length - 1)));
-      lines.push(`…等 ${list.length - lines.length} 次`);
+      if (!lines.length) lines.push(line.slice(0, Math.max(TRACE.minFirstLineChars, maxChars - used - tail.length - 1)));
+      lines.push(fillTemplate(TRACE.moreTemplate, { count: list.length - lines.length }));
       break;
     }
     lines.push(line);
     used += 1 + line.length;
   }
-  const text = `${header}\n${lines.join('；')}`;
-  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+  const text = `${header}\n${lines.join(TRACE.separator)}`;
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}${TRACE.ellipsis}` : text;
 }
 
 /** Trace text for a run, read from its jsonl; '' when no tool ran. */

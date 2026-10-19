@@ -240,6 +240,7 @@ enum WorkspaceProjection {
                                 let id = record.pipeline![stage].id
                                 record.pipeline?[stage].api = local.first { $0.id == id }?.api
                             }
+                            record.toolCalls = records[index].toolCalls
                             records[index]=record
                         }
                     } else { records.append(record) }

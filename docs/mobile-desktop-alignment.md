@@ -1,3 +1,15 @@
+# 2026-10-19 · 手机 agent loop 对齐桌面（未装机）
+
+| 顺序 | 桌面行为 / 用户要求 | 手机改动 | 依赖与平台差异 | 验收方式 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 循环限额、预算、重复拦截、信封、补充、工具轨迹、核实文案需两端一致 | 新增 `shared/protocol/agent-loop.json`；桌面模块运行时读取，手机内嵌（`npm run generate:agent-loop-contract`） | 无 | 两端同一批 fixture（JS `agentLoopContract.test.js` / Swift `SharedContractTests`） | 完成 |
+| 2 | `chatExecutionRunner` 三段 + 工具循环 | `ios/Melo/AgentLoop.swift`；Codex/Chat/Anthropic 为单轮适配器 | 手机工具串行（主线程 WebKit/EventKit/确认弹窗）；截图 ≤2、6 MB 图片预算保留 | `AgentLoopTests`、Network/Codex/DeviceTools/WebPageTools 测试 | 完成 |
+| 3 | 补充在下一次模型调用前加入，未用的作为下一条发送 | `ChatStore.supplement` 不再停止重开 | 无 | `AgentLoopTests` 6、模拟器 `ConcurrencyVerification` 更新 | 完成（模拟器夹具未在本轮运行） |
+| 4 | 取消/失败写 `[工具轨迹]` | 本机运行记录 `toolCalls` + 轨迹消息；桌面按前缀识别同步来的轨迹 | v1 同步消息无 `kind` | `AgentLoopTests` 8、`messageToolTrace.test.js` | 完成 |
+| 5 | finalize 不确定性核实；`read_history` | 同一连接再请求一次；手机 `read_history` 只读当前对话 | 歧义意图仅在出现标记时才请求分类模型 | `AgentLoopTests` 9、fixture | 完成 |
+
+真实账号三条路径、实体 iPhone 与长后台未验；详见 `ios/README.md` 10-19 段。
+
 # 2026-10-15 · 对齐并覆盖 0.5.18 (24)
 
 核对三线程总览与实际增量，合入 Agent 人设/能力只读、知识成果区分、五语和阅读密度，复用 25 项共享神经/执行资源。补齐成果原文入口和手机独立 API 回执，图片保存成功及重复确认、文件权限一起进入安装包。

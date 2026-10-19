@@ -1,3 +1,11 @@
+# 2026-10-19 · 手机 agent loop 对齐桌面
+
+手机原先两套循环（Codex Responses 与 API 密钥连接）合并为 `AgentLoop.swift`，按桌面 `chatExecutionRunner` 的三段运行：prepare（工具集 + 统一结果约定说明、意图规则决定是否附不确定性标注规则、运行预算）→ invoke-model（≤10 次模型调用、每次回复 ≤32 个工具调用、每次模型调用和工具调用前检查运行预算 20 分钟 / 40 万输入 token / 120 次工具、重复失败拦截、上下文超限时压缩较早工具输出后重试一次、执行中补充在下一次模型调用前加入而不再停止重开）→ finalize（带 `[UNCERTAIN: …]` 且意图需核实时，经同一连接再请求一次核实；预算用完则跳过）。三条协议改为单轮适配器，无工具时请求体不变；限额、文案、错误码与提示、补充包装、工具轨迹格式、核实提示词与意图规则都来自共享约定 `shared/protocol/agent-loop.json`（桌面运行时读取，手机由 `npm run generate:agent-loop-contract` 内嵌，两端跑同一套 fixture）。
+
+所有手机工具（手机数据、网页、新增 `read_history`）统一返回 `{ok,status,code,output,hint}`；每次调用写入本机运行记录（脱敏参数摘要、argsHash、耗时、status/code，不随 v1 同步），取消或失败且已执行工具时写入 `[工具轨迹]` 助手消息（同步消息无 `kind`，两端按前缀紧凑显示，重试时排在问题之前）。`read_history` 只读当前对话，仅在带桌面摘要且 Agent 未关闭记忆来源时提供。团队成员在收窄的团队预算内经同一循环运行。保留：每次回复 ≤2 张截图、6 MB 图片预算、设备写入确认、实时搜索开关、图片与视频流程。
+
+验证：31 组 Swift（新增 `AgentLoopTests`，`SharedContractTests` 跑 126 条 agent-loop fixture）、模拟器 Debug 构建 0 警告、Mac `npm test` 日常层级通过；真实账号三条路径、实体 iPhone 与模拟器 `ConcurrencyVerification` 夹具未在本轮运行。
+
 # 2026-10-18 · 网页工具
 
 手机端新增两个只读函数工具：`open_url`（隐藏 WKWebView 打开公开 http/https 页面，返回标题、最终地址和正文，每页 12 000 字，`page` 取下一段）和 `web_screenshot`（截图，JPEG ≤ 1 600 px；截图绑定到回答下方，并作为图片随后续请求发给模型）。拒绝 `file:`/`javascript:`/data URL、localhost 与私有/链路本地地址，超时 20 s。跟随 Agent 的"联网搜索"手机权限，无确认弹窗。工具现在在三条路径都提供：Codex Responses（函数工具 + `function_call_output` + 截图用户消息）、Chat Completions（`tools`/`tool_choice:auto`、`tool_calls` 回显、`role:tool`，截图为 `image_url` 用户消息）、Anthropic（`tools`/`input_schema`、`tool_use`→`tool_result`，同一条用户消息里附 `image` block），均 ≤ 6 轮；手机数据工具也随之进入 API 密钥连接。无工具时请求体与此前逐字节一致。纯逻辑在 `WebPageText.swift`（`WebPageToolsTests`），WebKit 部分在 `WebPageTools.swift`（模拟器编译通过，真机渲染未复验）。

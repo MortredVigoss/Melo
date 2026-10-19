@@ -93,10 +93,15 @@ func json(_ text: String) -> [String: Any] {
         let huge = WebPageText.encode(["ok": true, "text": String(repeating: "é", count: 20_000)])
         assert(huge.count <= WebPageText.maxOutputCharacters && json(huge)["truncated"] as? Bool == true)
 
-        // Failures carry a code and the offending address.
+        // Failures are the shared envelope (2026-10-19): canonical code + hint, the phone code in `detail`, the address in the text.
         let bad = json(WebPageText.failure("INVALID_URL", "Only public http or https pages can be opened.", url: "file:///x"))
-        assert(bad["ok"] as? Bool == false && bad["error"] as? String == "INVALID_URL" && bad["url"] as? String == "file:///x")
-        assert(json(WebPageText.failure("TIMEOUT", "slow"))["url"] == nil)
+        assert(bad["ok"] as? Bool == false && bad["status"] as? String == "error" && bad["code"] as? String == "INVALID_ARGS" && bad["detail"] as? String == "INVALID_URL")
+        assert((bad["output"] as? String)?.contains("file:///x") == true && (bad["hint"] as? String)?.isEmpty == false)
+        let slow = json(WebPageText.failure("TIMEOUT", "slow"))
+        assert(slow["code"] as? String == "TIMEOUT" && slow["detail"] == nil && slow["output"] as? String == "slow")
+        // Successful payloads go inside the envelope's `output` unchanged.
+        let wrapped = json(WebPageText.envelope(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t")))
+        assert(wrapped["ok"] as? Bool == true && wrapped["status"] as? String == "ok" && json(wrapped["output"] as? String ?? "")["screenshot"] as? String == "attached")
 
         // Screenshot result and follow-up item shape (Responses).
         let shot = json(WebPageText.screenshotResult(url: "https://a.example", finalURL: "https://a.example/", title: "A"))
@@ -153,11 +158,12 @@ func json(_ text: String) -> [String: Any] {
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.screenshotResult(url: "u", finalURL: "u", title: ""), imageJPEG: jpeg, imageURL: "u")) == (true, "已截图"))
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.failure("TIMEOUT", "x"))) == (false, "网页加载超时"))
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.failure("INVALID_URL", "x"))) == (false, "地址不允许打开"))
+        assert(WebPageText.summary(PhoneToolResult(output: WebPageText.envelope(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: longer, page: 2)))) == (true, "已读取 2/2 页"))
         assert(WebPageText.summary(PhoneToolResult(output: "nope")) == (false, "结果无法解析"))
         // Audit I9: per-reply screenshot cap, byte budget (oldest dropped first) and demotion of earlier images to captions.
         assert(WebPageText.maxScreenshotsPerReply == 2 && WebPageText.imageByteBudget == 6 * 1024 * 1024)
         let refused = json(WebPageText.tooManyScreenshots(url: "https://a.example"))
-        assert(refused["ok"] as? Bool == false && refused["error"] as? String == "TOO_MANY_SCREENSHOTS" && refused["url"] as? String == "https://a.example")
+        assert(refused["ok"] as? Bool == false && refused["code"] as? String == "TOO_MANY_SCREENSHOTS" && (refused["output"] as? String)?.contains("https://a.example") == true)
         assert(WebPageText.summary(PhoneToolResult(output: WebPageText.tooManyScreenshots(url: "u"))) == (false, "本次回复截图已达上限"))
         assert(WebPageText.keptImages(sizes: [1, 2, 3], budget: 10) == [true, true, true])
         assert(WebPageText.keptImages(sizes: [5, 4, 3], budget: 7) == [false, true, true])

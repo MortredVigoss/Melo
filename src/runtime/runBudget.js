@@ -11,19 +11,21 @@
 // usage propagates back to the parent.
 //
 // Pure module: no imports from services/state/http; the clock is injectable.
+// Defaults, reason words and the reply text come from the shared agent-loop
+// contract (shared/protocol/agent-loop.json) — the iPhone loop uses the same.
 
-export const DEFAULT_RUN_DEADLINE_MS = 20 * 60_000;
-export const DEFAULT_RUN_MAX_INPUT_TOKENS = 400_000;
-export const DEFAULT_RUN_MAX_TOOL_CALLS = 120;
-export const DEFAULT_REQUEST_TIMEOUT_CAP_MS = 600_000;
+import { AGENT_LOOP_CONTRACT, fillTemplate } from './agentLoopContract.js';
 
-export const BUDGET_EXHAUSTED = 'BUDGET_EXHAUSTED';
+const BUDGET = AGENT_LOOP_CONTRACT.budget;
 
-const REASON_TEXT = Object.freeze({
-  deadline: '运行时间',
-  'input-tokens': '输入 token',
-  'tool-calls': '工具调用次数',
-});
+export const DEFAULT_RUN_DEADLINE_MS = BUDGET.deadlineMs;
+export const DEFAULT_RUN_MAX_INPUT_TOKENS = BUDGET.maxInputTokens;
+export const DEFAULT_RUN_MAX_TOOL_CALLS = BUDGET.maxToolCalls;
+export const DEFAULT_REQUEST_TIMEOUT_CAP_MS = BUDGET.requestTimeoutCapMs;
+
+export const BUDGET_EXHAUSTED = BUDGET.code;
+
+const REASON_TEXT = Object.freeze({ ...BUDGET.reasonText });
 
 function positiveInt(value) {
   if (value === undefined || value === null || value === '') return null;
@@ -178,15 +180,17 @@ export function describeBudgetReason(exhausted) {
   if (!exhausted) return '';
   if (exhausted.reason === 'deadline') {
     const minutes = Math.round(exhausted.limit / 60_000);
-    return `${exhausted.reasonText} ${minutes >= 1 ? `${minutes} 分钟` : `${Math.round(exhausted.limit / 1000)} 秒`}`;
+    return minutes >= 1
+      ? fillTemplate(BUDGET.reasonFormat.deadlineMinutes, { text: exhausted.reasonText, minutes })
+      : fillTemplate(BUDGET.reasonFormat.deadlineSeconds, { text: exhausted.reasonText, seconds: Math.round(exhausted.limit / 1000) });
   }
-  if (exhausted.reason === 'tool-calls') return `${exhausted.reasonText} ${exhausted.limit} 次`;
-  return `${exhausted.reasonText} ${exhausted.limit}`;
+  if (exhausted.reason === 'tool-calls') return fillTemplate(BUDGET.reasonFormat['tool-calls'], { text: exhausted.reasonText, limit: exhausted.limit });
+  return fillTemplate(BUDGET.reasonFormat['input-tokens'], { text: exhausted.reasonText, limit: exhausted.limit });
 }
 
 /** The explicit assistant reply the chat loop publishes when the budget is gone. */
 export function budgetExhaustedReply(exhausted) {
-  return `这轮对话已达到运行预算（${describeBudgetReason(exhausted)}），已停止。你可以发送“继续”接着做。`;
+  return fillTemplate(BUDGET.replyTemplate, { reason: describeBudgetReason(exhausted) });
 }
 
 /** Input tokens of one provider receipt; raw or normalized usage shapes. */

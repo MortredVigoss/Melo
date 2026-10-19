@@ -5,12 +5,13 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 }
 enum Network {
     struct ExtensionUnavailable: Error {}
-    static func contextLimitError(_ data: Data) -> MeloError? {
+    /// A context-length rejection; the loop condenses older tool outputs and retries once.
+    static func contextLimitError(_ data: Data) -> RequestTooLarge? {
         guard data.count <= 16_384, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let error = json["error"] as? [String: Any] else { return nil }
         let code = (error["code"] as? String ?? "").lowercased()
         let message = (error["message"] as? String ?? "").lowercased()
         guard ["context_length_exceeded", "max_tokens_exceeded", "prompt_too_long"].contains(code) || ["maximum context length", "context window", "prompt is too long", "input is too long"].contains(where: { message.contains($0) }) else { return nil }
-        return .message("对话或引用资料超出此模型的上下文上限。请减少资料、缩短本次输入，或新建对话；原记录已保留。")
+        return RequestTooLarge(message: "对话或引用资料超出此模型的上下文上限。请减少资料、缩短本次输入，或新建对话；原记录已保留。")
     }
     // Keep diagnostic codes, not the provider's arbitrary message or echoed request data.
     static func rejectionDetail(_ data: Data) -> String {
@@ -44,7 +45,7 @@ enum Network {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
             switch http.statusCode {
             case 400, 422: throw MeloError.message("服务拒绝了本次请求（\(http.statusCode)）\(rejectionDetail(data))，请检查所选模型、工具或输入内容；原记录已保留。")
-            case 413: throw MeloError.message("资料超过服务容量限制（413），原记录已保留。请先导出备份，再减少同步资料或本次输入。")
+            case 413: throw RequestTooLarge(message: "资料超过服务容量限制（413），原记录已保留。请先导出备份，再减少同步资料或本次输入。")
             case 401, 403: throw MeloError.message("服务拒绝了登录凭证，请检查设置中的密钥。")
             case 409: throw MeloError.message("同步内容发生冲突，原有记录已保留。")
             case 429: throw MeloError.message("请求过于频繁或额度不足，请稍后重试。")
@@ -55,10 +56,19 @@ enum Network {
         return data
     }
     /// System line for API connections. Without tools it is byte-identical to
-    /// the historical text; with tools it names them instead of denying them.
-    static func systemLine(tools: PhoneToolSet?) -> String {
-        guard let tools, !tools.definitions.isEmpty else { return "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" }
-        return "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字，并可以调用下面提供的手机工具；除这些工具外不能声称已经操作电脑、读取未提供的文件或执行其他工具。\n" + tools.instructions + "\n"
+    /// the historical text; with tools it names them instead of denying them
+    /// (the tool instructions end with the shared envelope note).
+    static func systemLine(toolInstructions: String?) -> String {
+        guard let toolInstructions else { return "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字；不能声称已经操作电脑、读取未提供的文件或执行工具。\n" }
+        return "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字，并可以调用下面提供的手机工具；除这些工具外不能声称已经操作电脑、读取未提供的文件或执行其他工具。\n" + toolInstructions + "\n"
+    }
+    /// Provider-reported input tokens of one response (chat-completions or Anthropic, cache reads included).
+    static func usageInputTokens(_ receipt: [String: Any]?) -> Int? {
+        guard let usage = receipt?["usage"] as? [String: Any] else { return nil }
+        if let input = (usage["input_tokens"] as? NSNumber)?.intValue {
+            return input + ((usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0) + ((usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0)
+        }
+        return (usage["prompt_tokens"] as? NSNumber)?.intValue
     }
 
     /// Tool calls of one Chat Completions assistant message.
@@ -116,114 +126,168 @@ enum Network {
         return [["role": "assistant", "content": assistant], ["role": "user", "content": blocks]]
     }
 
-    static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
+    /// One reply on an API-key connection (chat-completions or Anthropic). The
+    /// request body without tools is unchanged; with phone tools the turn runs
+    /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
+    static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
-        let tools = (tools?.definitions.isEmpty ?? true) ? nil : tools
+        let loopTools = (tools?.definitions.isEmpty ?? true) ? nil : tools?.loopTools
         let anthropic = apiProtocol == "anthropic"
-        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": systemLine(tools: tools) + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: anthropic, instructions: instructions)]
+        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": systemLine(toolInstructions: loopTools?.instructionsWithContract) + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: anthropic, instructions: instructions)]
         var headers: [String: String] = [:]
         if anthropic {
             let original = body["messages"] as! [[String: Any]]
             body = ["model": model, "stream": false, "max_tokens": 8192, "system": original[0]["content"] ?? "", "messages": Array(original.dropFirst())]
             headers = ["x-api-key": token, "anthropic-version": "2023-06-01"]
         }
-        if let tools {
-            if anthropic { body["tools"] = tools.definitions.map(\.anthropicDefinition) }
-            else { body["tools"] = tools.definitions.map(\.chatCompletionsDefinition); body["tool_choice"] = "auto" }
+        if let loopTools {
+            if anthropic { body["tools"] = loopTools.definitions.map(\.anthropicDefinition) }
+            else { body["tools"] = loopTools.definitions.map(\.chatCompletionsDefinition); body["tool_choice"] = "auto" }
         }
         let url = try self.endpoint(endpoint)
-        var observation = ExecutionObservation()
-        observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        await onObservation?(observation)
+        let transport = APIChatTransport(url: url, token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: loopTools != nil, onObservation: onObservation)
+        transport.observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+        await onObservation?(transport.observation)
+        var loopHooks = hooks
+        if loopHooks.onStatus == nil { loopHooks.onStatus = onStatus }
+        let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: messages.last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
         do {
-            var data = Data()
-            var rounds = 0, screenshots = 0
-            while true {
-                let payload = try JSONSerialization.data(withJSONObject: body)
-                data = try await post(url, token: token, body: payload, session: session, headers: headers)
-                try Task.checkCancellation()
-                let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                var finishReason: String?
-                if let receipt {
-                    let choices = receipt["choices"] as? [[String: Any]]
-                    finishReason = receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String
-                    observation.apiReceipt(receipt, transport: apiProtocol, finishReason: finishReason)
-                    await onObservation?(observation)
-                }
-                // Tool round: run the calls, append the exchange, ask again (bounded).
-                // Only a completed tool turn counts; calls cut off by `length` /
-                // `max_tokens` are never executed (the truncation is reported below).
-                guard let tools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") else { break }
-                let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
-                let assistantContent = receipt["content"] as? [[String: Any]] ?? []
-                let calls = anthropic ? anthropicToolCalls(assistantContent) : chatToolCalls(assistantMessage)
-                guard !calls.isEmpty else { break }
-                rounds += 1
-                guard rounds <= DeviceToolLoop.maxRounds else { throw MeloError.message("手机工具操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。") }
-                try DeviceToolLoop.validateBatch(calls)
-                var results: [(callID: String, result: PhoneToolResult)] = []
-                for call in calls {
-                    try Task.checkCancellation()
-                    if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
-                        results.append((call.callID, PhoneToolResult(output: WebPageText.tooManyScreenshots(url: call.urlArgument)))); continue
-                    }
-                    await onStatus?(WebPageToolSpec.named(call.name).map(\.statusText) ?? "正在读取手机数据…")
-                    let result = await tools.perform(call)
-                    try Task.checkCancellation()
-                    if result.imageJPEG != nil { screenshots += 1 }
-                    results.append((call.callID, result))
-                }
-                await onStatus?("正在思考…")
-                // Earlier rounds keep only the caption of their screenshots.
-                let rows = (body["messages"] as? [[String: Any]]) ?? []
-                body["messages"] = (anthropic ? WebPageText.demotedAnthropicMessages(rows) : WebPageText.demotedChatMessages(rows))
-                    + (anthropic ? anthropicToolRound(assistant: assistantContent, results: results) : chatToolRound(assistant: assistantMessage, results: results))
-                observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
-                await onObservation?(observation)
+            let outcome = try await loop.run()
+            if outcome.stop != .answered {
+                transport.observation.stage("model:response", name: "模型请求", status: "completed", output: outcome.stop == .toolLimit ? "已达到工具执行上限，本轮停止" : "运行预算已用完，本轮停止")
+                await onObservation?(transport.observation)
             }
-            struct Response: Decodable {
-                struct Choice: Decodable {
-                    struct Message: Decodable { var content: String? }
-                    var message: Message
-                    var finish_reason: String?
-                }
-                var model: String?
-                var choices: [Choice]
-            }
-            let response: Response
-            do {
-                if apiProtocol == "anthropic" {
-                    struct Native: Decodable {
-                        struct Block: Decodable { var type: String; var text: String? }
-                        var content: [Block]; var model: String?; var stop_reason: String?
-                    }
-                    let native = try JSONDecoder().decode(Native.self, from: data)
-                    guard ["end_turn", "stop_sequence"].contains(native.stop_reason ?? "") else { throw MeloError.message("模型未完成回复。") }
-                    response = Response(model: native.model, choices: [.init(message: .init(content: native.content.filter { $0.type == "text" }.compactMap(\.text).joined()), finish_reason: "stop")])
-                } else { response = try JSONDecoder().decode(Response.self, from: data) }
-            }
-            catch { throw MeloError.message("模型响应格式无效，未保存为完整回答。") }
-            let returned = response.model?.trimmingCharacters(in: .whitespacesAndNewlines)
-            observation.returnedModel = returned?.isEmpty == false ? returned : nil
-            guard let choice = response.choices.first else { throw MeloError.message("模型没有返回文字内容。") }
-            if let reason = choice.finish_reason, !reason.isEmpty, reason != "stop" {
-                throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
-            }
-            guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
-            observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
-            observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
-            await onObservation?(observation)
-            let sources = WebReplyFormatter.references(in: text)
-            for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
-            observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
-            await onObservation?(observation)
-            return ModelReply(text: text, sources: sources)
+            return ModelReply(text: outcome.text, sources: outcome.finalRound?.sources ?? [])
         } catch {
             let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
-            observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
-            await onObservation?(observation)
+            transport.observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
+            await onObservation?(transport.observation)
             throw error
         }
+    }
+}
+
+/// Chat-completions and Anthropic as single-round AgentLoop transports. Each
+/// round re-renders the turn: the base body, then every tool round (assistant
+/// echo, tool results first, this round's screenshots; earlier screenshots
+/// reduced to their caption), then supplements as user text.
+final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
+    let url: URL, token: String, headers: [String: String], session: URLSession
+    let anthropic: Bool, apiProtocol: String, model: String
+    let base: [String: Any]
+    let offersTools: Bool
+    let timeoutCap: TimeInterval = 120
+    var observation = ExecutionObservation()
+    let onObservation: (@MainActor (ExecutionObservation) -> Void)?
+
+    init(url: URL, token: String, headers: [String: String], session: URLSession, anthropic: Bool, apiProtocol: String, model: String, base: [String: Any], offersTools: Bool, onObservation: (@MainActor (ExecutionObservation) -> Void)?) {
+        self.url = url; self.token = token; self.headers = headers; self.session = session
+        self.anthropic = anthropic; self.apiProtocol = apiProtocol; self.model = model
+        self.base = base; self.offersTools = offersTools; self.onObservation = onObservation
+    }
+
+    /// Messages for one request: the base rows plus the rendered transcript.
+    static func rendered(_ rows: [[String: Any]], transcript: [AgentTranscriptItem], anthropic: Bool) -> [[String: Any]] {
+        var rows = rows
+        for item in transcript {
+            switch item {
+            case .toolRound(let round, let results):
+                let pairs = results.map { (callID: $0.call.callID, result: $0.phoneResult) }
+                if anthropic {
+                    guard case .anthropic(let content) = round.echo else { continue }
+                    rows = WebPageText.demotedAnthropicMessages(rows) + Network.anthropicToolRound(assistant: content, results: pairs)
+                } else {
+                    guard case .chat(let message) = round.echo else { continue }
+                    rows = WebPageText.demotedChatMessages(rows) + Network.chatToolRound(assistant: message, results: pairs)
+                }
+            case .userText(let text):
+                // Anthropic keeps strict turn order: the supplement joins the tool_result message, after its blocks.
+                if anthropic, var last = rows.last, last["role"] as? String == "user", var blocks = last["content"] as? [[String: Any]] {
+                    blocks.append(["type": "text", "text": text]); last["content"] = blocks; rows[rows.count - 1] = last
+                } else { rows.append(["role": "user", "content": text]) }
+            }
+        }
+        return rows
+    }
+
+    func round(_ input: AgentLoopRequest) async throws -> AgentRound {
+        if input.iteration > 0 {
+            observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
+            await onObservation?(observation)
+        }
+        var body = base
+        if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
+        try Task.checkCancellation()
+        let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        var finishReason: String?
+        if let receipt {
+            let choices = receipt["choices"] as? [[String: Any]]
+            finishReason = receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String
+            observation.apiReceipt(receipt, transport: apiProtocol, finishReason: finishReason)
+            await onObservation?(observation)
+        }
+        let usage = Network.usageInputTokens(receipt), estimate = RequestSizeEstimate.tokens(payload)
+        // Tool round: only a completed tool turn counts; calls cut off by `length` /
+        // `max_tokens` are never executed (the truncation is reported below).
+        if offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
+            let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
+            let assistantContent = receipt["content"] as? [[String: Any]] ?? []
+            let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)
+            if !calls.isEmpty {
+                let text = anthropic ? assistantContent.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() : assistantMessage["content"] as? String ?? ""
+                return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate)
+            }
+        }
+        struct Response: Decodable {
+            struct Choice: Decodable {
+                struct Message: Decodable { var content: String? }
+                var message: Message
+                var finish_reason: String?
+            }
+            var model: String?
+            var choices: [Choice]
+        }
+        let response: Response
+        do {
+            if anthropic {
+                struct Native: Decodable {
+                    struct Block: Decodable { var type: String; var text: String? }
+                    var content: [Block]; var model: String?; var stop_reason: String?
+                }
+                let native = try JSONDecoder().decode(Native.self, from: data)
+                guard ["end_turn", "stop_sequence"].contains(native.stop_reason ?? "") else { throw MeloError.message("模型未完成回复。") }
+                response = Response(model: native.model, choices: [.init(message: .init(content: native.content.filter { $0.type == "text" }.compactMap(\.text).joined()), finish_reason: "stop")])
+            } else { response = try JSONDecoder().decode(Response.self, from: data) }
+        }
+        catch { throw MeloError.message("模型响应格式无效，未保存为完整回答。") }
+        let returned = response.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        observation.returnedModel = returned?.isEmpty == false ? returned : nil
+        guard let choice = response.choices.first else { throw MeloError.message("模型没有返回文字内容。") }
+        if let reason = choice.finish_reason, !reason.isEmpty, reason != "stop" {
+            throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
+        }
+        guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
+        observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
+        observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
+        await onObservation?(observation)
+        let sources = WebReplyFormatter.references(in: text)
+        for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
+        observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
+        await onObservation?(observation)
+        return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate)
+    }
+
+    func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {
+        let rows = messages.map { ["role": $0.role, "content": $0.content] as [String: Any] }
+        let body: [String: Any] = anthropic
+            ? ["model": model, "stream": false, "max_tokens": 2048, "system": system, "messages": rows]
+            : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + rows]
+        let data = try await Network.post(url, token: token, body: JSONSerialization.data(withJSONObject: body), session: session, headers: headers, timeout: max(1, min(timeoutCap, timeout)))
+        let receipt = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        if anthropic { return (receipt["content"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() }
+        return (((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) ?? ""
     }
 }

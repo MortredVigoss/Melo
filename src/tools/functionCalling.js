@@ -3,8 +3,12 @@ import { toolCodeHint } from './toolResult.js';
 import { parseModelResponse, formatToolResultsMessage, _shouldEmitEvidenceTrail } from './parser.js';
 import { resolveToolProtocol, toolDefinitionsForProtocol, parseAssistantResponse, toLoopMessages, toolImagesMessage, normalizeToolImages, condenseToolImagesMessage } from './toolProtocol.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
+import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 
-export const MAX_FUNCTION_CALLS_PER_RESPONSE = 32;
+// Per-response call limit, envelope truncation and condensation texts are
+// shared with the iPhone loop (shared/protocol/agent-loop.json).
+const RESULT_CONTRACT = AGENT_LOOP_CONTRACT.toolResult;
+export const MAX_FUNCTION_CALLS_PER_RESPONSE = AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse;
 
 // Protocol adapter (design audit E1): the old boolean is now derived from the
 // resolved protocol. `supportsResponsesFunctions` keeps its historical meaning
@@ -29,9 +33,9 @@ function toolOutput(result, maxOutputChars) {
   const hint = toolCodeHint(code);
   return JSON.stringify({ ok: result.ok === true, status,
     ...(code ? { code, ...(status === 'error' ? { error: code } : {}) } : {}),
-    output: raw.length > maxOutputChars ? raw.slice(0, maxOutputChars) + '\n[Tool output truncated; request a narrower excerpt if needed.]' : raw,
+    output: raw.length > maxOutputChars ? raw.slice(0, maxOutputChars) + RESULT_CONTRACT.truncatedMarker : raw,
     ...(hint ? { hint } : {}),
-    ...(result.meta?.detail ? { detail: String(result.meta.detail).slice(0, 300) } : {}),
+    ...(result.meta?.detail ? { detail: String(result.meta.detail).slice(0, RESULT_CONTRACT.detailMaxChars) } : {}),
     ...(_shouldEmitEvidenceTrail(result) ? { evidenceTrail: result.evidenceTrail.slice(0, 20).map(item => ({
       tier: String(item?.tier || '').slice(0, 100), outcome: String(item?.outcome || '').slice(0, 100),
       ...(item?.reason ? { reason: String(item.reason).slice(0, 300) } : {}),
@@ -40,7 +44,7 @@ function toolOutput(result, maxOutputChars) {
   });
 }
 
-const CONDENSED_MARKER = '[Earlier tool output condensed to fit the context budget; call the tool again for the full result.]';
+const CONDENSED_MARKER = RESULT_CONTRACT.condense.marker;
 export const IMAGE_NOT_ATTACHED_NOTE = '(screenshot not attached for the model on this protocol; read the page with fetch_url)';
 
 function condenseOutput(outputJson, maxChars) {
@@ -61,7 +65,7 @@ function condenseOutput(outputJson, maxChars) {
  * result messages are left intact; call ids are never touched so the
  * Responses chain stays valid.
  */
-export function compactToolChain(messages = [], { keepRecentResults = 2, maxOutputChars = 600 } = {}) {
+export function compactToolChain(messages = [], { keepRecentResults = RESULT_CONTRACT.condense.keepRecentResults, maxOutputChars = RESULT_CONTRACT.condense.maxOutputChars } = {}) {
   const resultIndices = [];
   messages.forEach((message, index) => { if (message?.isToolResult) resultIndices.push(index); });
   const protect = new Set(resultIndices.slice(-keepRecentResults));
@@ -160,7 +164,7 @@ export function createFunctionCallingSession(config, tools = []) {
       const toolCalls = calls.map(item => {
         const entry = byName.get(item.name);
         const parsed = entry?.parse(item.arguments, { strict: strictArgs });
-        const error = !entry ? { error: 'UNKNOWN_TOOL', output: 'This function is not available in the current role and turn.' }
+        const error = !entry ? { error: 'UNKNOWN_TOOL', output: RESULT_CONTRACT.unknownToolOutput }
           : parsed.error ? parsed : null;
         return { id: item.id, name: entry?.tool.id || item.name, arguments: parsed?.args || {},
           ...(error ? { rejectedResult: { ok: false, error: error.error, output: error.output } } : {}) };

@@ -311,6 +311,7 @@ struct ChatView: View {
                         }.padding(.top, 45).padding(.horizontal, 8)
                     }
                     ForEach(chat?.messages ?? []) { message in
+                        if PhoneToolTrace.isTrace(message) { ToolTraceRow(content: message.content).id(message.id) } else {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack { if message.role == "user" { LocalProfileBadge(size: 24) } else if let persona = store.preferences.messageAgents?[message.id], let agent = store.preferences.agents.first(where: { $0.id == persona.agentID }) { AgentAvatar(agent: agent, size: 24) } else { Image(systemName: "sparkles") }; Text(message.role == "user" ? localName : (store.preferences.messageAgents?[message.id]?.name ?? "Melo")).font(.caption.weight(.semibold)); Spacer(); Button { UIPasteboard.general.string = ReplyDocument.plainText(message.content) } label: { Image(systemName: "doc.on.doc").font(.caption2).foregroundStyle(.tertiary) }.accessibilityLabel("复制消息") }.foregroundStyle(message.role == "user" ? Color.secondary : meloAccent)
                             ReplyContentView(content: message.content)
@@ -352,12 +353,13 @@ struct ChatView: View {
                             VStack(spacing: 6) { Circle().fill(meloGold.opacity(0.7)).frame(width: 4, height: 4); Rectangle().fill(LinearGradient(colors: [meloGold.opacity(0.3), meloGold.opacity(0.04)], startPoint: .top, endPoint: .bottom)).frame(width: 0.5) }.padding(.vertical, 20).padding(.leading, 10)
                         }.id(message.id)
                         .onAppear { if message.role == "assistant" { store.markRendered(message.id) } }
+                        }
                     }
                     if store.isSending(chatID) { VStack(alignment: .leading, spacing: 6) {
-                        HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); RunProgressList(steps: store.liveSteps(for: chatID)); Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }
+                        HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); RunProgressList(steps: store.liveSteps(for: chatID)); ForEach(Array((store.pendingSupplements[chatID] ?? []).enumerated()), id: \.offset) { _, text in Text("补充已送达，会在下一步加入：\(text)").font(.caption2).foregroundStyle(meloGold).lineLimit(2) }; Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }
                         if let run = store.scenes(for: chatID).last { ExecutionTimingView(record: run) }
                     }.padding() }
-                    else if chat?.messages.last?.role == "user" {
+                    else if store.awaitingReply(chatID) {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
                         Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
                     }
@@ -517,5 +519,25 @@ struct TaskHandoffView: View {
                 }
             }.padding(20)
         }.refreshable { await store.sync() }
+    }
+}
+
+/// A `[工具轨迹]` record (shared/protocol/agent-loop.json): what a stopped reply
+/// had already run, kept for the next turn. Compact, like the desktop: no
+/// avatar, model receipt, copy or read-aloud.
+struct ToolTraceRow: View {
+    let content: String
+    private var failed: Bool {
+        content.split(separator: "\n", maxSplits: 1).first?.contains(AgentLoopContract.shared.traceStatusLabels["failed"] ?? "本轮失败") == true
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(failed ? LocalizedStringKey("失败") : LocalizedStringKey("已取消"), systemImage: "wrench.and.screwdriver").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text(verbatim: content).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        }
+        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("工具轨迹")
     }
 }

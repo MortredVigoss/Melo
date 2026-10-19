@@ -2,6 +2,7 @@ import { createOpenAICompatibleReply } from '../openai.js';
 import { judgeFast } from '../judge/fastJudge.js';
 import { debugWarn } from '../debug.js';
 import { isTranslationRequest } from './requestPolicy.js';
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContract.js';
 
 // Real LRU: Map preserves insertion order, so we delete-and-reinsert on every
 // read to move the entry to the "most recently used" tail.  Without that step
@@ -36,12 +37,17 @@ export function _resetIntentCacheForTests() {
   INTENT_CACHE.clear();
 }
 
-const HIGH_STAKES_PATTERN = /(?:\b(invest|investment|medical|medication|diagnose|prescri|lawsuit|legal|contract|tax|dosage)\b|药|诊断|处方|投资|法律|诉讼|合同|税务|剂量)/i;
-const CREATIVE_PATTERN = /(?:\b(write|draft|compose|poem|story|novel|lyrics?|brainstorm|imagine|screenplay)\b|写一|写个|写首|创作|想象|脑暴|剧本)/i;
-const CODING_PATTERN = /(?:\b(code|function|class|typescript|javascript|python|bug|debug|refactor|implement)\b|编码|代码|函数|调试|重构|实现)/i;
-const FACTUAL_MARKERS = /\b(what|who|when|where|why|how|which|is|are|was|were|did|does|do)\b/i;
-const FACTUAL_CN_MARKERS = /(是什么|是谁|什么时候|在哪|为什么|怎么|哪个|哪些|多少|如何|什么是|是否|能否|能确定|能确认)/;
-const SHORT_ACK_PATTERN = /^(ok|okay|yes|no|sure|thanks|thank you|好的|好|嗯|对|是|不是|谢谢)[\s!.?。！？]*$/i;
+// Rule patterns, thresholds and the classifier prompt are shared with the
+// iPhone finalize step (shared/protocol/agent-loop.json).
+const INTENT = AGENT_LOOP_CONTRACT.intent;
+const HIGH_STAKES_PATTERN = contractRegExp(INTENT.patterns.highStakes);
+const CREATIVE_PATTERN = contractRegExp(INTENT.patterns.creative);
+const CODING_PATTERN = contractRegExp(INTENT.patterns.coding);
+const FACTUAL_MARKERS = contractRegExp(INTENT.patterns.factualEn);
+const FACTUAL_CN_MARKERS = contractRegExp(INTENT.patterns.factualCn);
+const SHORT_ACK_PATTERN = contractRegExp(INTENT.patterns.shortAck);
+const CONTEXTUAL_REPLY_PATTERN = contractRegExp(INTENT.patterns.contextualReply);
+const QUESTION_MARK_PATTERN = contractRegExp(INTENT.patterns.questionMark);
 
 export function classifyRisk(query = '') {
   return HIGH_STAKES_PATTERN.test(String(query)) ? 'high' : 'normal';
@@ -50,7 +56,7 @@ export function classifyRisk(query = '') {
 export async function classifyRequest(userMessage, options = {}) {
   let taskType = await classifyIntent(userMessage, options);
   let riskText = String(userMessage || '');
-  const contextualReply = /^(?:ok|okay|yes|sure|continue|go ahead|please do|好|好的|是|对|继续|继续说|再说说)[\s!.?。！？]*$/i.test(riskText.trim());
+  const contextualReply = CONTEXTUAL_REPLY_PATTERN.test(riskText.trim());
   if (contextualReply && Array.isArray(options.contextMessages)) {
     const turns = options.contextMessages.filter(message => message?.role === 'user');
     if (turns.at(-1)?.content === userMessage) turns.pop();
@@ -64,16 +70,11 @@ export async function classifyRequest(userMessage, options = {}) {
   return { taskType, riskLevel, requiresVerification: intentRequiresVerification({ taskType, riskLevel }) };
 }
 
-const FALLBACK_SYSTEM_PROMPT = `Classify the user message into exactly one category:
-- factual: asking for facts, information, explanations about real things/people/events
-- creative: asking for writing, brainstorming, stories, imagination
-- coding: programming, debugging, technical implementation
-- high-stakes: medical, legal, financial, or safety-critical advice
-- casual: greetings, small talk, simple acknowledgments
+const FALLBACK_SYSTEM_PROMPT = INTENT.fallbackSystemPrompt;
 
-Output ONLY the single category word. No punctuation. No explanation.`;
-
-function classifyByRules(query) {
+// Exported for the shared agent-loop contract fixtures (the iPhone ports this
+// rule step; null means "ambiguous — ask the classifier model").
+export function classifyByRules(query) {
   const text = String(query || '').trim();
   if (!text) {
     return 'casual';
@@ -98,14 +99,14 @@ function classifyByRules(query) {
     return 'high-stakes';
   }
 
-  const hasQuestionMark = /[?？]$/.test(text);
+  const hasQuestionMark = QUESTION_MARK_PATTERN.test(text);
   const hasFactualEn = FACTUAL_MARKERS.test(text);
   const hasFactualCn = FACTUAL_CN_MARKERS.test(text);
   if (hasQuestionMark || hasFactualEn || hasFactualCn) {
     return 'factual';
   }
 
-  if (text.length < 8) {
+  if (text.length < INTENT.shortTextChars) {
     return 'casual';
   }
 
@@ -114,7 +115,7 @@ function classifyByRules(query) {
   // so we avoid an extra API round-trip for the large majority of messages.
   // Only genuinely ambiguous short-to-medium messages (8–80 chars, no markers)
   // fall through to the API classifier.
-  if (text.length > 80) {
+  if (text.length > INTENT.longTextChars) {
     return 'factual';
   }
 
@@ -168,7 +169,7 @@ export async function classifyIntent(userMessage, { config, signal, onDecision, 
       .toLowerCase()
       .trim()
       .split(/\s+/)[0] || 'factual';
-    const allowed = ['factual', 'creative', 'coding', 'high-stakes', 'casual'];
+    const allowed = INTENT.categories;
     const intent = allowed.includes(normalized) ? normalized : 'factual';
 
     lruSet(INTENT_CACHE, cacheKey, intent, INTENT_CACHE_MAX);

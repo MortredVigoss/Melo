@@ -170,7 +170,7 @@ struct ImageSizeRejected: Error {}
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         func setStatus(_ value: String) {
@@ -201,10 +201,13 @@ struct ImageSizeRejected: Error {}
             body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n你可以调用 image_generation 生成或修改图片。用户要求做图，或附上图片并提出修改要求时，直接调用它交付图片，不要说缺少工具；只是提问或看图分析时不要生成。用户提到之前的图片（如“第二张”“原图”）而本轮没有附带那张图时，不要凭空生成新图，请说明需要哪一张。"
         }
         let imageMode = imageTask?.makesImage == true || offersImageTool
-        // Phone tools (device data + web pages) are offered only for ordinary replies, never image generation.
+        // Phone tools (device data + web pages + read_history) are offered only for ordinary replies, never image generation.
         let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? [])
         let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
+        var loopTools: AgentLoopTools?
         if !phoneTools.isEmpty, let deviceTools {
+            let tools = AgentLoopTools(definitions: phoneTools, instructions: deviceTools.instructions, perform: deviceTools.perform, statusText: deviceTools.statusText)
+            loopTools = tools
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
             // Allow phone data before a web lookup (e.g. nearby weather, "查一下日程"):
             // a generic "look up" wording is not forced to web_search. A question that
@@ -213,96 +216,33 @@ struct ImageSizeRejected: Error {}
             if !mustSearch || body["tool_choice"] == nil || body["tool_choice"] as? String == "auto" { body["tool_choice"] = "auto" }
             let include = (body["include"] as? [String]) ?? []
             body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
-            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + deviceTools.instructions
+            body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + tools.instructionsWithContract
         }
-        var priorSources: [WebSource] = []
-        var sizeFallback = false
-        var searchedEarlier = false
-        var openedWebPage = false // A page actually fetched by open_url/web_screenshot counts as real web access.
-        var screenshots = 0 // web_screenshot results in this reply (WebPageText.maxScreenshotsPerReply).
-        func replyResult(_ stream: ChatGPTStream) throws -> ModelReply {
-            let text = try stream.result()
-            let searched = searchedEarlier || stream.searched
-            if imageTask?.makesImage == true && stream.images.isEmpty { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
-            if mustSearch && !searched && !openedWebPage { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
-            if !stream.images.isEmpty {
-                defaults.set(true, forKey: "codexImageVerified:" + account.id)
-                imageVerified = true
-            }
-            let sources = WebReplyFormatter.references(in: "", annotations: priorSources + stream.sources)
-            let note = sizeFallback ? "服务未接受所选尺寸 \(imageTask?.size ?? "")，已按服务默认尺寸生成；需要 2K/4K 可改用支持该尺寸的图像 API 连接。" : ""
-            return ModelReply(text: [text, note].filter { !$0.isEmpty }.joined(separator: "\n\n"), sources: sources, searched: searched, images: stream.images)
+        let updates = StreamUpdates(onObservation: onObservation, onReceiving: onReceiving, setStatus: setStatus)
+        let transport = CodexResponsesTransport(account: account, session: session, sessionID: sessionID, model: model, base: body, offersTools: loopTools != nil, imageMode: imageMode, updates: updates,
+                                                isCurrent: { [weak self] in self?.epoch == expectedEpoch })
+        var loopHooks = hooks
+        if loopHooks.onStatus == nil { loopHooks.onStatus = { setStatus($0) } }
+        let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: messages.last(where: { $0.role == "user" })?.content ?? "", verification: imageTask?.makesImage == true ? nil : verification, hooks: loopHooks)
+        let makesImage = imageTask?.makesImage == true
+        loop.validate = { outcome in
+            guard outcome.stop == .answered else { return }
+            if makesImage && (outcome.finalRound?.images.isEmpty ?? true) { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
+            // A page actually fetched by open_url/web_screenshot counts as real web access.
+            let openedWebPage = outcome.calls.contains { $0.executed && $0.status != "error" && WebPageToolSpec.named($0.toolId) != nil }
+            if mustSearch && !outcome.searched && !openedWebPage { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
         }
-        func streamOnce(_ body: [String: Any]) async throws -> ChatGPTStream {
-            try Task.checkCancellation()
-            guard epoch == expectedEpoch else { throw CancellationError() }
-            var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
-            request.timeoutInterval = imageMode ? 180 : 120
-            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-            request.setValue(sessionID, forHTTPHeaderField: "session_id")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            var requestObservation = ExecutionObservation()
-            requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-            onObservation?(requestObservation)
-            let requestStarted = ProcessInfo.processInfo.systemUptime
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
-            guard http.statusCode == 200 else {
-                if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
-                if http.statusCode == 400, ((body["tools"] as? [[String: Any]]) ?? []).contains(where: { $0["type"] as? String == "image_generation" && $0["size"] != nil }) { throw ImageSizeRejected() }
-                if [400, 413, 422].contains(http.statusCode) {
-                    var errorBody = Data()
-                    for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
-                    if let contextError = Network.contextLimitError(errorBody) { throw contextError }
-                    throw MeloError.message("当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）\(Network.rejectionDetail(errorBody))；本次要求和图片已保留。")
-                }
-                if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
-                throw MeloError.message("模型服务暂时不可用，请稍后重试。")
-            }
-            // Read and parse off the main thread: an image reply is megabytes of
-            // base64, and byte-by-byte work here would stall the interface.
-            let updates = StreamUpdates(onObservation: onObservation, onReceiving: onReceiving, setStatus: setStatus)
-            let stream = try await Self.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, updates: updates)
-            try Task.checkCancellation()
-            guard epoch == expectedEpoch else { throw CancellationError() }
-            return stream
+        let outcome = try await loop.run()
+        try Task.checkCancellation()
+        guard epoch == expectedEpoch else { throw CancellationError() }
+        let images = outcome.stop == .answered ? (outcome.finalRound?.images ?? []) : []
+        if !images.isEmpty {
+            defaults.set(true, forKey: "codexImageVerified:" + account.id)
+            imageVerified = true
         }
-        for _ in 0..<DeviceToolLoop.maxRounds {
-            let stream: ChatGPTStream
-            do { stream = try await streamOnce(body) }
-            catch is ImageSizeRejected {
-                // Retry once at the service's default size; the reply says so.
-                body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
-                sizeFallback = true
-                stream = try await streamOnce(body)
-            }
-            let calls = phoneTools.isEmpty ? [] : stream.functionCalls
-            guard !calls.isEmpty, let deviceTools else { return try replyResult(stream) }
-            // Validate the whole batch before any side effect, then run sequentially.
-            try DeviceToolLoop.validateBatch(calls)
-            var results: [(callID: String, result: PhoneToolResult)] = []
-            for call in calls {
-                try Task.checkCancellation()
-                guard epoch == expectedEpoch else { throw CancellationError() }
-                if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
-                    results.append((call.callID, PhoneToolResult(output: WebPageText.tooManyScreenshots(url: call.urlArgument)))); continue
-                }
-                setStatus(deviceTools.statusText(for: call))
-                let result = await deviceTools.perform(call)
-                try Task.checkCancellation()
-                guard epoch == expectedEpoch else { throw CancellationError() }
-                if WebPageToolSpec.named(call.name) != nil, result.output.contains(#""ok":true"#) { openedWebPage = true }
-                if result.imageJPEG != nil { screenshots += 1 }
-                results.append((call.callID, result))
-            }
-            setStatus("正在思考…")
-            priorSources += stream.sources
-            searchedEarlier = searchedEarlier || stream.searched
-            body["input"] = DeviceToolLoop.followUpInput(previous: (body["input"] as? [Any]) ?? [], output: stream.outputItems, results: results)
-            // The forced web_search (if any) applied to the first round only.
-            if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
-        }
-        throw MeloError.message("手机工具操作超过 \(DeviceToolLoop.maxRounds) 轮仍未得到回答，已停止。已执行的操作见运行记录。")
+        let sources = WebReplyFormatter.references(in: "", annotations: outcome.sources)
+        let note = transport.sizeFallback ? "服务未接受所选尺寸 \(imageTask?.size ?? "")，已按服务默认尺寸生成；需要 2K/4K 可改用支持该尺寸的图像 API 连接。" : ""
+        return ModelReply(text: [outcome.text, note].filter { !$0.isEmpty }.joined(separator: "\n\n"), sources: sources, searched: outcome.searched, images: images)
     }
     /// Hands parser progress to the main actor at most every 150 ms (and always for the first text and the end).
     final class StreamUpdates: @unchecked Sendable {
@@ -346,4 +286,116 @@ struct ImageSizeRejected: Error {}
         return parser.stream
     }
 
+}
+
+/// Codex Responses (streaming, store:false) as a single-round AgentLoop
+/// transport. Round 1 sends the body built by ChatGPTAccount.reply unchanged
+/// (forced web_search, `reasoning.encrypted_content`, image items); later
+/// rounds replay every output item verbatim, one function_call_output per call
+/// and this round's screenshots, with the forced search reset to "auto".
+final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
+    let account: CodexRegistration, session: URLSession, sessionID: String, model: String
+    private(set) var base: [String: Any]
+    let offersTools: Bool
+    let imageMode: Bool
+    var timeoutCap: TimeInterval { imageMode ? 180 : 120 }
+    private(set) var sizeFallback = false
+    let updates: ChatGPTAccount.StreamUpdates
+    let isCurrent: @MainActor () -> Bool
+
+    init(account: CodexRegistration, session: URLSession, sessionID: String, model: String, base: [String: Any], offersTools: Bool, imageMode: Bool, updates: ChatGPTAccount.StreamUpdates, isCurrent: @escaping @MainActor () -> Bool) {
+        self.account = account; self.session = session; self.sessionID = sessionID; self.model = model
+        self.base = base; self.offersTools = offersTools; self.imageMode = imageMode; self.updates = updates; self.isCurrent = isCurrent
+    }
+
+    /// Input items for one request: the base input plus the rendered transcript.
+    static func rendered(_ input: [Any], transcript: [AgentTranscriptItem]) -> [Any] {
+        var items = input
+        for item in transcript {
+            switch item {
+            case .toolRound(let round, let results):
+                guard case .responses(let output) = round.echo else { continue }
+                items = DeviceToolLoop.followUpInput(previous: items, output: output, results: results.map { (callID: $0.call.callID, result: $0.phoneResult) })
+            case .userText(let text): items.append(["role": "user", "content": text])
+            }
+        }
+        return items
+    }
+
+    private func checkCurrent() async throws {
+        try Task.checkCancellation()
+        guard await isCurrent() else { throw CancellationError() }
+    }
+
+    private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool) async throws -> (ChatGPTStream, Int) {
+        try await checkCurrent()
+        var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
+        request.timeoutInterval = max(1, min(timeoutCap, timeout))
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue(sessionID, forHTTPHeaderField: "session_id")
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = payload
+        if observe {
+            var requestObservation = ExecutionObservation()
+            requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+            let updates = self.updates, snapshot = requestObservation
+            await MainActor.run { updates.onObservation?(snapshot) }
+        }
+        let requestStarted = ProcessInfo.processInfo.systemUptime
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw MeloError.message("模型服务没有响应。") }
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw MeloError.message("Codex 登录已失效或此账号未获所选能力（\(http.statusCode)），请到设置重新授权或检查账号权限。") }
+            if http.statusCode == 400, ((body["tools"] as? [[String: Any]]) ?? []).contains(where: { $0["type"] as? String == "image_generation" && $0["size"] != nil }) { throw ImageSizeRejected() }
+            if [400, 413, 422].contains(http.statusCode) {
+                var errorBody = Data()
+                for try await byte in bytes { errorBody.append(byte); if errorBody.count > 16_384 { break } }
+                if let contextError = Network.contextLimitError(errorBody) { throw contextError }
+                let message = "当前账号或模型未接受所选工具、图片或输入内容（\(http.statusCode)）\(Network.rejectionDetail(errorBody))；本次要求和图片已保留。"
+                if http.statusCode == 413 { throw RequestTooLarge(message: message) }
+                throw MeloError.message(message)
+            }
+            if http.statusCode == 429 { throw MeloError.message("已达到 Codex 使用限额，请检查 ChatGPT 订阅与 Codex 用量。") }
+            throw MeloError.message("模型服务暂时不可用，请稍后重试。")
+        }
+        // Read and parse off the main thread: an image reply is megabytes of
+        // base64, and byte-by-byte work here would stall the interface.
+        let quiet = ChatGPTAccount.StreamUpdates(onObservation: nil, onReceiving: nil, setStatus: { _ in })
+        let stream = try await ChatGPTAccount.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, updates: observe ? updates : quiet)
+        try await checkCurrent()
+        return (stream, RequestSizeEstimate.tokens(payload))
+    }
+    /// Input tokens the service reported for this response, when it did.
+    static func inputTokens(_ stream: ChatGPTStream) -> Int? {
+        guard let usage = stream.observation.pipeline.first(where: { $0.id == "model:response" })?.api?["usage"], case .number(let value) = usage["input"] else { return nil }
+        return Int(value)
+    }
+
+    func round(_ input: AgentLoopRequest) async throws -> AgentRound {
+        var body = base
+        if !input.transcript.isEmpty {
+            body["input"] = Self.rendered(base["input"] as? [Any] ?? [], transcript: input.transcript)
+            // The forced web_search (if any) applied to the first round only.
+            if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
+        }
+        var result: (ChatGPTStream, Int)
+        do { result = try await stream(body, timeout: input.timeout, observe: true) }
+        catch is ImageSizeRejected {
+            // Retry once at the service's default size; the reply says so.
+            base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
+            body["tools"] = base["tools"]
+            sizeFallback = true
+            result = try await stream(body, timeout: input.timeout, observe: true)
+        }
+        let (stream, estimate) = result
+        let calls = offersTools ? stream.functionCalls : []
+        let text = calls.isEmpty ? try stream.result() : stream.text
+        return AgentRound(text: text, calls: calls, echo: .responses(stream.outputItems), sources: stream.sources, searched: stream.searched, images: stream.images,
+                          inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate)
+    }
+
+    func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {
+        let body: [String: Any] = ["model": model, "stream": true, "store": false, "instructions": system, "input": messages.map { ["role": $0.role, "content": $0.content] }]
+        return try await stream(body, timeout: timeout, observe: false).0.result()
+    }
 }

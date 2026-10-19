@@ -18,8 +18,13 @@ import { normalizeAudience, DESKTOP_AUDIENCE } from '../../memory/conversationIn
 import { estimateTextTokens } from '../../memory/tokenEstimate.js';
 import { toolFactsLine } from '../../memory/contextCompact.js';
 
-export const READ_HISTORY_MAX_TOKENS = 8000;
-const DEFAULT_LIMIT = 40;
+import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
+
+// Limits and the cut marker are shared with the iPhone read_history tool
+// (shared/protocol/agent-loop.json, `readHistory`).
+const READ_HISTORY = AGENT_LOOP_CONTRACT.readHistory;
+export const READ_HISTORY_MAX_TOKENS = READ_HISTORY.maxTokens;
+const DEFAULT_LIMIT = READ_HISTORY.defaultLimit;
 
 function messageText(message) {
   if (typeof message?.content === 'string') return message.content.trim();
@@ -43,7 +48,7 @@ function renderMessage(message, fromChar = 0) {
   return header + body;
 }
 
-const CUT_MARKER = '\n[message cut here — continue with fromChar]';
+const CUT_MARKER = READ_HISTORY.cutMarker;
 
 /**
  * Bug audit T3 (2026-10-18): a single message larger than the whole budget
@@ -71,7 +76,7 @@ export function cutMessageToBudget(message, fromChar, budget) {
 export function sliceHistory(messages = [], { fromMessageId, toMessageId, aroundMessageId, before = 0, after = 0, limit = DEFAULT_LIMIT } = {}) {
   const list = (Array.isArray(messages) ? messages : []).filter(message => message?.id && (message.role === 'user' || message.role === 'assistant'));
   const indexOf = id => (id ? list.findIndex(message => message.id === id) : -1);
-  const max = Math.max(1, Math.min(200, Math.floor(limit) || DEFAULT_LIMIT));
+  const max = Math.max(1, Math.min(READ_HISTORY.maxLimit, Math.floor(limit) || DEFAULT_LIMIT));
   let start, end;
   if (aroundMessageId) {
     const center = indexOf(aroundMessageId);

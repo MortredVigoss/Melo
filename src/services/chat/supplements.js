@@ -3,6 +3,10 @@
 // handed back so the client sends it as the next message. Only exists for the
 // duration of a turn, so nothing leaks into a later turn.
 import { randomUUID } from 'node:crypto';
+import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
+
+// Wrapper text and size are shared with the iPhone loop (shared/protocol/agent-loop.json).
+const SUPPLEMENT = AGENT_LOOP_CONTRACT.supplement;
 
 const runs = new Map(); // chatId -> { queued: [{id,text}], used: [{id,text}] }
 
@@ -10,7 +14,7 @@ export function beginSupplements(chatId) {
   if (chatId) runs.set(chatId, { queued: [], used: [] });
 }
 export function addSupplement(chatId, text) {
-  const run = runs.get(chatId), clean = String(text || '').trim().slice(0, 4000);
+  const run = runs.get(chatId), clean = String(text || '').trim().slice(0, SUPPLEMENT.maxChars);
   if (!run || !clean) return null;
   const entry = { id: randomUUID(), text: clean };
   run.queued.push(entry);
@@ -32,4 +36,4 @@ export function endSupplements(chatId) {
   runs.delete(chatId);
   return run ? run.queued : [];
 }
-export const supplementMessage = entries => `【用户在执行过程中补充，请结合已完成的步骤调整后续工作】\n${entries.map(entry => entry.text).join('\n')}`;
+export const supplementMessage = entries => `${SUPPLEMENT.prefix}${SUPPLEMENT.separator}${entries.map(entry => entry.text).join(SUPPLEMENT.separator)}`;

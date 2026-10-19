@@ -19,14 +19,18 @@ import { recordFailure } from '../runtime/failureCounters.js';
 import { toolCodeHint } from './toolResult.js';
 import { formatToolResult } from './parser.js';
 import { redactSecretsInText } from './secretRedaction.js';
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContract.js';
 
-export const MAX_MODEL_FACING_OUTPUT_CHARS = 8000;
-export const MAX_REDACTED_STRING_CHARS = 400;
+// Output/arg limits and the sensitive-key rule are shared with the iPhone run
+// records (shared/protocol/agent-loop.json, `records` / `toolResult`).
+const RECORDS = AGENT_LOOP_CONTRACT.records;
+export const MAX_MODEL_FACING_OUTPUT_CHARS = AGENT_LOOP_CONTRACT.toolResult.maxModelFacingOutputChars;
+export const MAX_REDACTED_STRING_CHARS = RECORDS.maxRedactedStringChars;
 const MAX_META_JSON_CHARS = 2000;
 const MAX_OUTPUT_PREVIEW_CHARS = 500;
-const MAX_ARRAY_ITEMS = 100;
-const MAX_DEPTH = 8;
-const SENSITIVE_KEY = /key|token|secret|password|authorization|cookie/i;
+const MAX_ARRAY_ITEMS = RECORDS.maxArrayItems;
+const MAX_DEPTH = RECORDS.maxDepth;
+const SENSITIVE_KEY = contractRegExp(RECORDS.sensitiveKey);
 const DATA_URL = /^data:([^;,]*)((?:;[^;,]*)*),([\s\S]*)$/;
 const CANONICAL_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
 const VALID_RUN_ID = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -87,7 +91,7 @@ export function hashToolArgs(args) {
   let text;
   try { text = canonicalJson(args && typeof args === 'object' ? args : {}); }
   catch { text = '{}'; }
-  return createHash('sha256').update(text).digest('hex').slice(0, 16);
+  return createHash('sha256').update(text).digest('hex').slice(0, RECORDS.argsHashChars);
 }
 
 /**

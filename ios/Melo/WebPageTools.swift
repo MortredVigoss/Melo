@@ -186,15 +186,15 @@ enum WebPageLoadError: Error {
     }
 }
 
-/// Executes open_url / web_screenshot for the model. Every failure is a JSON
-/// result; nothing loads unless the address passes WebPageText.validated and
-/// the Agent's network permission is still on.
+/// Executes open_url / web_screenshot for the model. Every result is the
+/// shared tool envelope; nothing loads unless the address passes
+/// WebPageText.validated and the Agent's network permission is still on.
 @MainActor enum WebPageToolRunner {
     static func run(call: ResponsesFunctionCall, allowed: () -> Bool) async -> WebPageToolResult {
         guard let spec = WebPageToolSpec.named(call.name) else { return WebPageToolResult(output: WebPageText.failure("UNKNOWN_TOOL", "This phone tool does not exist.")) }
-        guard allowed() else { return WebPageToolResult(output: WebPageText.failure("NOT_ENABLED", "The user has not allowed web access for this Agent on this iPhone.")) }
+        guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user has not allowed web access for this Agent on this iPhone.")) }
         guard let data = call.arguments.data(using: .utf8), let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            return WebPageToolResult(output: WebPageText.failure("INVALID_ARGUMENTS", "Arguments must be a JSON object."))
+            return WebPageToolResult(output: WebPageText.failure("INVALID_ARGS", "Arguments must be a JSON object."))
         }
         let raw = (args["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = WebPageText.validated(raw) else {
@@ -206,21 +206,21 @@ enum WebPageLoadError: Error {
             try Task.checkCancellation()
             try await loader.load(url)
             try Task.checkCancellation()
-            guard allowed() else { return WebPageToolResult(output: WebPageText.failure("NOT_ENABLED", "The user disabled web access during the request.", url: raw), url: raw) }
+            guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user disabled web access during the request.", url: raw), url: raw) }
             if spec.name == WebPageToolSpec.openURL {
                 // Model-controlled number: 1e20 or NaN must not trap in Int().
                 let page = WebPageText.pageNumber(args["page"])
                 let extracted = try await loader.extractText()
-                return WebPageToolResult(output: WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode), url: url.absoluteString)
+                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode)), url: url.absoluteString)
             }
             let fullPage = args["fullPage"] as? Bool ?? false
             let image = try await loader.snapshot(fullPage: fullPage)
             try Task.checkCancellation()
             guard let jpeg = await WebPageLoader.jpeg(image) else { return WebPageToolResult(output: WebPageText.failure("LOAD_FAILED", "The page rendered but the screenshot could not be encoded.", url: raw), url: raw) }
             let title = (try? await loader.extractText().title) ?? ""
-            return WebPageToolResult(output: WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode), image: image, jpeg: jpeg, url: url.absoluteString)
+            return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode)), image: image, jpeg: jpeg, url: url.absoluteString)
         } catch is CancellationError {
-            return WebPageToolResult(output: WebPageText.failure("CANCELLED", "The request was cancelled.", url: raw), url: raw)
+            return WebPageToolResult(output: WebPageText.failure("ABORTED", "The request was cancelled.", url: raw), url: raw)
         } catch WebPageLoadError.timeout {
             return WebPageToolResult(output: WebPageText.failure("TIMEOUT", "The page did not finish loading within \(Int(WebPageLoader.timeoutSeconds)) seconds.", url: raw), url: raw)
         } catch WebPageLoadError.failed(let message) {

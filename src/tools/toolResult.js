@@ -18,39 +18,21 @@
 //   error  : kept equal to `code` for existing `result.error === 'X'` checks
 // Pure module: no imports from services/state/http.
 
-export const TOOL_ERROR_CODES = Object.freeze([
-  'INVALID_ARGS',
-  'NOT_FOUND',
-  'NO_RESULTS',
-  'PERMISSION_DENIED',
-  'CAPABILITY_DENIED',
-  'TIMEOUT',
-  'ABORTED',
-  'NETWORK',
-  'PROVIDER_DOWN',
-  'EXIT_NONZERO',
-  'BUDGET_EXHAUSTED',
-  'BROWSER_UNAVAILABLE',
-  'LOAD_FAILED',
-  'UNKNOWN',
-]);
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContract.js';
 
-const CANONICAL = /^[A-Z][A-Z0-9_]{1,63}$/;
+// Codes, hints and the contract note are shared with the iPhone loop
+// (shared/protocol/agent-loop.json); this module stays the desktop's API.
+const RESULT_CONTRACT = AGENT_LOOP_CONTRACT.toolResult;
+
+export const TOOL_ERROR_CODES = Object.freeze([...RESULT_CONTRACT.errorCodes]);
+
+const CANONICAL = contractRegExp(RESULT_CONTRACT.canonicalCode);
 
 // Canonical-looking legacy codes that are renamed to the generic set.
-const LEGACY_ALIASES = Object.freeze({ DENIED: 'PERMISSION_DENIED', TOOL_TIMEOUT: 'TIMEOUT', SEARCH_FAILED: 'PROVIDER_DOWN', TOOL_EXECUTION_FAILED: 'UNKNOWN' });
+const LEGACY_ALIASES = RESULT_CONTRACT.legacyAliases;
 
 // Free-text error → canonical code. Matched in order; first hit wins.
-const LEGACY_PATTERNS = [
-  [/^Exit code /i, 'EXIT_NONZERO'],
-  [/timed? ?out|ETIMEDOUT|deadline/i, 'TIMEOUT'],
-  [/\babort/i, 'ABORTED'],
-  [/ENOENT|no such file|not found|does not exist|missing file/i, 'NOT_FOUND'],
-  [/EACCES|EPERM|permission denied|not permitted|denied by/i, 'PERMISSION_DENIED'],
-  [/ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket hang up|certificate/i, 'NETWORK'],
-  [/rate.?limit|\b429\b|\b5\d\d\b|unavailable|provider/i, 'PROVIDER_DOWN'],
-  [/invalid|must be|required|unsupported|malformed|schema/i, 'INVALID_ARGS'],
-];
+const LEGACY_PATTERNS = RESULT_CONTRACT.legacyPatterns.map(entry => [contractRegExp(entry), entry.code]);
 
 export function canonicalToolCode(rawError, { aborted = false, timedOut = false } = {}) {
   if (timedOut) return 'TIMEOUT';
@@ -62,7 +44,7 @@ export function canonicalToolCode(rawError, { aborted = false, timedOut = false 
   // codes, …) stay as-is: they carry more meaning than the generic set. Only
   // the few legacy aliases are rewritten.
   if (CANONICAL.test(text)) {
-    const alias = LEGACY_ALIASES[text];
+    const alias = Object.hasOwn(LEGACY_ALIASES, text) ? LEGACY_ALIASES[text] : undefined;
     return alias || text;
   }
   for (const [pattern, code] of LEGACY_PATTERNS) if (pattern.test(text)) return code;
@@ -104,24 +86,8 @@ export function finalizeToolResult(result) {
 
 /** One-line hint the model can act on, per code. */
 export function toolCodeHint(code) {
-  switch (code) {
-    case 'NO_RESULTS': return 'The tool ran successfully and found nothing; broaden or change the query rather than retrying the same call.';
-    case 'NOT_FOUND': return 'The target does not exist at that path or id; check the location before retrying.';
-    case 'PERMISSION_DENIED': return 'The user or policy denied this action; do not retry it, explain or choose another approach.';
-    case 'CAPABILITY_DENIED': return 'This agent is not allowed to use this tool; tell the user instead of retrying.';
-    case 'TIMEOUT': return 'The tool exceeded its time limit; retry only with a narrower request.';
-    case 'ABORTED': return 'The run was cancelled; stop.';
-    case 'NETWORK': return 'A network error occurred; one retry may help, repeated failures mean the resource is unreachable.';
-    case 'PROVIDER_DOWN': return 'The backing service is unavailable; do not keep retrying — report it.';
-    case 'EXIT_NONZERO': return 'The command ran but exited non-zero; read stderr before retrying.';
-    case 'INVALID_ARGS': return 'The arguments were rejected; fix them according to the schema.';
-    case 'BUDGET_EXHAUSTED': return 'This turn has used up its run budget (time, tokens or tool calls); do not call more tools — summarise what is done and what is left.';
-    case 'BROWSER_UNAVAILABLE': return 'No local browser is available for rendering; do not retry — read the page with fetch_url instead.';
-    case 'LOAD_FAILED': return 'The page could not be loaded in the browser; check the URL, or read it with fetch_url instead of retrying the same call.';
-    default: return '';
-  }
+  return typeof code === 'string' && Object.hasOwn(RESULT_CONTRACT.hints, code) ? RESULT_CONTRACT.hints[code] : '';
 }
 
 // Model-facing status explanation, appended to the tool instructions.
-export const TOOL_RESULT_CONTRACT_NOTE =
-  'Every tool result carries status and code: status "ok" means it worked, "empty" means it ran correctly but found nothing (do not retry the same call; change the query or move on), "error" means it failed with a code (NOT_FOUND, PERMISSION_DENIED, TIMEOUT, NETWORK, PROVIDER_DOWN, EXIT_NONZERO, INVALID_ARGS, …) and a hint. Treat denials and provider outages as final for this turn.';
+export const TOOL_RESULT_CONTRACT_NOTE = RESULT_CONTRACT.contractNote;

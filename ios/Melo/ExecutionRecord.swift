@@ -286,6 +286,9 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     var returnedModel: String?
     var observationNote = "手机直连 · 真实工具与交付记录，非模型内部思维"
     var sourceDevice: String?
+    /// Phone tool calls of this run (redacted digest, hash, status/code, timing).
+    /// Local only: the frozen v1 sync scene does not carry them.
+    var toolCalls: [ExecutionToolCall]?
     var terminal: Bool { ["completed", "failed", "cancelled", "interrupted"].contains(status) }
     func elapsedMilliseconds(now: Date = Date()) -> Double? {
         guard !runId.hasPrefix("legacy-") else { return nil }
@@ -376,6 +379,12 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
         mergeStage(ExecutionStage(id: id, name: name, status: status, output: output, model: model,
             startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp()))
         lastModule = "create"; sequence += 1
+    }
+    /// Adds one tool-call record; ignored once the run has ended.
+    mutating func recordToolCall(_ call: ExecutionToolCall) {
+        guard !terminal else { return }
+        if toolCalls == nil { toolCalls = [] }
+        toolCalls?.append(call); sequence += 1
     }
     mutating func markRendered(messageID: String) {
         guard terminal, messageId == messageID, pipeline?.contains(where: { $0.id == "reply:render" }) != true else { return }

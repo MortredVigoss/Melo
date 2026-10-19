@@ -5,11 +5,21 @@
 // renderer so it can be tested without a DOM.
 import { t, ui } from './i18n.js';
 
-export const isToolTraceMessage = message => message?.role === 'assistant' && message?.kind === 'tool-trace';
+//
+// 2026-10-19: the iPhone writes the same trace text (shared/protocol/
+// agent-loop.json `toolTrace`), but the v1 sync message carries only
+// id/role/content/createdAt, so a synced phone trace has no `kind`: it is
+// recognised by the shared prefix and its status by the header label.
+export const TOOL_TRACE_PREFIX = '[工具轨迹]';
+const FAILED_LABEL = '本轮失败';
+
+export const isToolTraceMessage = message => message?.role === 'assistant'
+  && (message?.kind === 'tool-trace' || (typeof message?.content === 'string' && message.content.startsWith(TOOL_TRACE_PREFIX)));
 
 export function renderToolTraceMessage(message, escape) {
   if (!isToolTraceMessage(message)) return '';
-  const status = String(message?.metadata?.toolTrace?.status || 'cancelled');
+  const header = String(message?.content || '').split('\n', 1)[0];
+  const status = String(message?.metadata?.toolTrace?.status || (message?.kind !== 'tool-trace' && header.includes(FAILED_LABEL) ? 'failed' : 'cancelled'));
   const label = status === 'failed' ? t('失败') : status === 'interrupted' ? t('已中断') : t('已取消');
   return ui`<div class="tool-trace-body"><span class="chip is-muted tool-trace-status">${escape(label)}</span><p class="tool-trace-text">${escape(message.content || '')}</p></div>`;
 }
