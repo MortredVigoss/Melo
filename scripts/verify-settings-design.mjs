@@ -1,4 +1,5 @@
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir,writeFile,mkdtemp } from 'node:fs/promises';
@@ -15,7 +16,7 @@ try {
  const created=await post('/api/agents/create-custom',{});const custom=created.customize.agents.find(a=>a.isCustom).id;
  await post('/api/agents/update',{agentId:custom,patch:{name:'验收角色',description:'修改前描述',rolePrompt:'使用简短中文回复'}});
  await post('/api/settings',{activeView:'settings'});
- browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ browser=await launchTestChrome(chromium);const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
 
  const out={};
  async function go(settings){await post('/api/settings',settings);await page.reload();await page.locator('#app').waitFor();await page.waitForTimeout(900);}

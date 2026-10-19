@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { resolve } from 'node:path';
 import sharp from 'sharp';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { renderAttachmentCards } from './attachmentCards.js';
 import { imageDownloadName } from './imagePreview.js';
 
@@ -26,7 +27,7 @@ test('image preview preserves original downloads, focus, zoom and retry feedback
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch({ executablePath: process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  const browser = await launchTestChrome(chromium);
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
     page.setDefaultTimeout(5000);

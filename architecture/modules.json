@@ -22,7 +22,7 @@
       "tooling"
     ],
     "graph": {
-      "modules": 531,
+      "modules": 532,
       "edges": 1621,
       "roots": [
         "src",
@@ -3497,7 +3497,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 47
+        "src": 48
       },
       "entryModules": [
         {
@@ -3836,7 +3836,8 @@
           "src/state/stateHydration.test.js",
           "src/state/stateLoadContextChain.test.js",
           "src/state/stateSelections.customizeSection.test.js",
-          "src/state/stateStoreHomeIsolation.test.js"
+          "src/state/stateStoreHomeIsolation.test.js",
+          "src/testSupport/testChrome.test.js"
         ],
         "swift": []
       },

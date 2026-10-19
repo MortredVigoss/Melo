@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 
 const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';
 const execFileAsync = promisify(execFile);
@@ -38,10 +39,7 @@ await request('/api/agents/update', {
 });
 await request('/api/settings', { activeView: 'customize', selectedCustomizeSection: 'agents', selectedAgentId: agentId });
 
-const browser = await chromium.launch({
-  executablePath: process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  headless: true,
-});
+const browser = await launchTestChrome(chromium);
 const errors = [];
 let page;
 try {

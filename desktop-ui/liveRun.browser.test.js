@@ -6,6 +6,7 @@ import {mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium} from 'playwright-core';
+import {launchTestChrome} from '../src/testSupport/testChrome.js';
 import {createServer} from 'node:http';
 
 // While a reply runs: the steps show in the chat, Agent/model stay changeable, and
@@ -38,12 +39,13 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  const child=spawn(process.execPath,['src/server.js','--host','127.0.0.1','--port','0'],{env:{...process.env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_MEMORY_RUNTIME:'0',MELO_DREAMING_ENABLED:'0',
   MELO_AUTH_MODE:'api-key',MELO_BASE_URL:`http://127.0.0.1:${model.address().port}/v1`,MELO_API_KEY:'fixture-key',MELO_MODEL:'fixture-model'},stdio:['ignore','pipe','pipe']});
  const closed=once(child,'exit');
- t.after(async()=>{await browser?.close();model.closeAllConnections();model.close();child.kill('SIGTERM');await closed;await rm(home,{recursive:true,force:true});});
+ // The server is stopped (and awaited) even when closing the browser fails, so a failed run never orphans it.
+ t.after(async()=>{try{await browser?.close();}finally{model.closeAllConnections();model.close();const kill=setTimeout(()=>child.kill('SIGKILL'),5000);child.kill('SIGTERM');await closed;clearTimeout(kill);await rm(home,{recursive:true,force:true,maxRetries:5});}});
  const base=await new Promise((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error('Startup timeout '+log)),15000);child.stdout.on('data',chunk=>{log+=chunk;const m=log.match(/listening at (http:\/\/[^\s]+)/i)||log.match(/(http:\/\/127\.0\.0\.1:\d+)/);if(m){clearTimeout(timer);resolve(m[1].replace(/\/$/,''));}});child.stderr.on('data',chunk=>{log+=chunk;});});
  const post=async(path,body)=>{const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(r.status,200,path);return r.json();};
  const chatId=(await post('/api/chats',{projectId:null,mode:'chat'})).activeChat.id;
  await post('/api/settings',{activeMode:'chat',activeView:'chat',selectedChatId:chatId});
- browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ browser=await launchTestChrome(chromium);
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);
  const composer=page.locator('#composer');await composer.waitFor();

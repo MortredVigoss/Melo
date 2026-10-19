@@ -6,6 +6,7 @@ import { mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 
 test('built-in Agent persona saves once, failed saves retain drafts, and Markdown import stays a draft', {timeout:60000}, async t => {
   const home=await mkdtemp(join(tmpdir(),'melo-agent-ui-'));
@@ -20,7 +21,7 @@ test('built-in Agent persona saves once, failed saves retain drafts, and Markdow
   const post=async(path,body)=>{const response=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(response.status,200);return response.json();};
   const saved=async()=>{const response=await fetch(base+'/api/bootstrap');return (await response.json()).customize.agents.find(agent=>agent.id==='main');};
   await post('/api/settings',{activeView:'agent',selectedAgentId:'main'});
-  browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+  browser=await launchTestChrome(chromium);
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base);

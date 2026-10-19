@@ -6,6 +6,7 @@ import {mkdtemp,rm,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium} from 'playwright-core';
+import {launchTestChrome} from '../src/testSupport/testChrome.js';
 
 test('Agent editor: visible creation, shared routes, saved capabilities/channels and responsive layout', {timeout:90000}, async t=>{
   const home=await mkdtemp(join(tmpdir(),'melo-agent-settings-'));
@@ -22,7 +23,7 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await post('/api/agents/update',{agentId:'research',patch:{mood:'sharp',instructions:'Keep my own warm writing style.',model:'fixture-model'}});
   const initial=(await boot()).customize.agents.find(a=>a.id==='research');
   await post('/api/settings',{activeView:'customize',selectedCustomizeSection:'agents',selectedAgentId:'research'});
-  browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+  browser=await launchTestChrome(chromium);
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));await page.goto(base);
   const form=page.locator('form[data-form=agent-profile-update]');await form.waitFor();

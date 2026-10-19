@@ -6,6 +6,7 @@ import {mkdtemp,rm,mkdir,writeFile,readFile,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium} from 'playwright-core';
+import {launchTestChrome} from '../src/testSupport/testChrome.js';
 import {createServer} from 'node:http';
 
 test('chat files, explicit deletion decisions and management actions work through the desktop UI', {timeout:120000}, async t=>{
@@ -33,7 +34,7 @@ test('chat files, explicit deletion decisions and management actions work throug
  const approval=pending.approvals.find(a=>a.title==='Save fixture');await post('/api/approvals/execute',{approvalId:approval.id});
  assert.equal(await readFile(join(path,'approved.txt'),'utf8'),'approved output');
  await post('/api/settings',{activeMode:'chat',activeView:'chat',selectedChatId:chatId});
- browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ browser=await launchTestChrome(chromium);
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',async r=>{if(r.url().includes('/api/workspace/select-file'))t.diagnostic('select '+r.status());});await page.goto(base);
  const files=page.locator('.chat-files-panel');await files.waitFor();await files.locator('summary').click();await files.locator('[data-file-path="result.txt"]').click();await files.locator('pre').filter({hasText:'visible output'}).waitFor({timeout:10000}).catch(async error=>{t.diagnostic(JSON.stringify({errors,html:await files.innerHTML(),open:await files.getAttribute('open'),selected:(await boot()).workspace.selectedFilePath,body:(await page.locator('body').innerText()).slice(-1800)}));throw error;});
  assert.equal(await files.locator('[data-action=open-chat-files]').count(),1);await page.screenshot({path:join(proof,'chat-files.png')});

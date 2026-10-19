@@ -6,6 +6,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium} from 'playwright-core';
+import {launchTestChrome} from '../src/testSupport/testChrome.js';
 import {putWorkspace,stableJSON} from '../mobile-sync/workspaceProtocol.js';
 
 test('sync token cannot approve capability grants; only explicit desktop approval survives cold restart', {timeout:60000},async t=>{
@@ -35,7 +36,7 @@ test('sync token cannot approve capability grants; only explicit desktop approva
  assert.equal((await request('/api/agent-settings-sync/confirm',{...body,expected:'stale'},{origin:base})).status,409);
  await stop();await start();updated=profile(await boot());assert.equal(updated.capabilities.runCommands,false);assert.ok(updated.pendingCapabilityChange);
  assert.equal((await request('/api/settings',{activeView:'agent',selectedAgentId:'research'})).status,200);
- browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ browser=await launchTestChrome(chromium);
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base);
  await page.getByText('同步权限变更待桌面确认',{exact:true}).first().waitFor();
  const confirm=page.locator('[data-action="confirm-agent-settings"][data-accept="true"]').first();

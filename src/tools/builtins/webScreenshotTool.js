@@ -206,6 +206,20 @@ async function renderViaCdp(deps, options) {
   }
 }
 
+// Google Chrome hands its stdout/stderr to helpers that can outlive it
+// (chrome_crashpad_handler, the GoogleUpdater processes it wakes), and
+// playwright-core resolves browser.close() only once every holder of those
+// pipes is gone — minutes while the updater runs (2026-10-19, daily gate).
+// Chrome has already been told to quit and Playwright still reaps its process
+// group, so the finished capture is not held hostage past this wait.
+export const BROWSER_CLOSE_WAIT_MS = 5_000;
+async function closeLaunchedBrowser(browser, waitMs = BROWSER_CLOSE_WAIT_MS) {
+  let timer;
+  const waited = new Promise(resolve => { timer = setTimeout(resolve, waitMs); });
+  try { await Promise.race([Promise.resolve().then(() => browser.close()).catch(() => { /* best-effort */ }), waited]); }
+  finally { clearTimeout(timer); }
+}
+
 async function renderHeadless(deps, executablePath, options) {
   const browser = await deps.launch({ executablePath, headless: true, args: ['--disable-gpu'] });
   try {
@@ -214,7 +228,7 @@ async function renderHeadless(deps, executablePath, options) {
     try { return await capturePage(page, options); }
     finally { try { await page.close(); } catch { /* best-effort */ } }
   } finally {
-    try { await browser.close(); } catch { /* best-effort */ }
+    await closeLaunchedBrowser(browser, deps.browserCloseWaitMs);
   }
 }
 
@@ -264,6 +278,7 @@ export const webScreenshotTool = {
       pngSize: defaultPngSize,
       env: null,
       settleMs: undefined,
+      browserCloseWaitMs: undefined,
       ..._deps,
       ...(context._screenshotDeps && typeof context._screenshotDeps === 'object' ? context._screenshotDeps : {}),
     };

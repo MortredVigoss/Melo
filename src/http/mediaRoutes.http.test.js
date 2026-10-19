@@ -60,21 +60,30 @@ test('externalized attachments are served with their mime type and immutable cac
 });
 
 test('GET /api/media/attachments/:name reaches its handler through the real server dispatch', { timeout: 45000 }, async t => {
-  const h = await home(t);
+  // One cleanup hook: the server is stopped and awaited before its home is
+  // removed. t.after hooks run in registration order and stop at the first
+  // failure; with home(t)'s rm registered first it raced the live server's
+  // writes into desktop/ (ENOTEMPTY, 2026-10-19 gate), the kill hook never
+  // ran, and the orphaned server held the file open until the 120 s timeout.
+  const h = await mkdtemp(join(tmpdir(), 'melo-attachment-route-'));
+  let child, closed;
+  t.after(async () => {
+    if (child) {
+      const kill = setTimeout(() => child.kill('SIGKILL'), 5000);
+      child.kill('SIGTERM');
+      await closed;
+      clearTimeout(kill);
+    }
+    await rm(h, { recursive: true, force: true, maxRetries: 5 });
+  });
   const bytes = Buffer.alloc(5000, 3);
   const [stored] = await externalizeAttachments([{ id: '11111111-2222-4333-8444-555555555558', kind: 'audio', url: `data:audio/wav;base64,${bytes.toString('base64')}` }], { home: h });
-  const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], {
+  child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)),
     env: { ...process.env, MELO_HOME: h, MELO_TEST_MODE: '1', MELO_MEMORY_RUNTIME: '0', MELO_DREAMING_ENABLED: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const closed = once(child, 'exit');
-  t.after(async () => {
-    const kill = setTimeout(() => child.kill('SIGKILL'), 5000);
-    child.kill('SIGTERM');
-    await closed;
-    clearTimeout(kill);
-  });
+  closed = once(child, 'exit');
   let log = '';
   child.stderr.on('data', chunk => { log += chunk; });
   const base = await new Promise((resolve, reject) => {

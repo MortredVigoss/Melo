@@ -7,6 +7,7 @@ import { mkdtemp, rm, mkdir, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 
 test('Telegram archive survives startup, HTTP tests and Agent edits without deleting history', { timeout: 60000 }, async t => {
   const home = await mkdtemp(join(tmpdir(), 'melo-telegram-ui-'));
@@ -45,7 +46,7 @@ test('Telegram archive survives startup, HTTP tests and Agent edits without dele
   await assert.rejects(access(join(home, 'discord-poller.lock')), { code: 'ENOENT' });
   const blockedDiscord = await fetch(base + '/api/agents/channel/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId: 'main', channelId: 'discord', patch: { botToken: 'do-not-save' } }) });
   assert.equal(blockedDiscord.status, 410); assert.equal((await blockedDiscord.json()).code, 'CHANNEL_ARCHIVED');
-  browser = await chromium.launch({ executablePath: process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  browser = await launchTestChrome(chromium);
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await fetch(base + '/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ activeView: 'agent', selectedAgentId: 'main' }) });

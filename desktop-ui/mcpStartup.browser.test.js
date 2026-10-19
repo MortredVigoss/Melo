@@ -6,6 +6,7 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 
 test('startup has no MCP dialog or enable requests, and manual disable survives server restart', { timeout: 90000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'melo-mcp-browser-'));
@@ -29,7 +30,7 @@ test('startup has no MCP dialog or enable requests, and manual disable survives 
   const stop = async () => { child?.kill('SIGTERM'); await exited; child = null; };
   try {
     let base = await start();
-    browser = await chromium.launch({ executablePath: process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+    browser = await launchTestChrome(chromium);
     const page = await browser.newPage();
     const writes = [], errors = [];
     page.on('request', r => { if (r.method() === 'POST' && /\/api\/(mcp|settings\/model)/.test(r.url())) writes.push(r.url()); });

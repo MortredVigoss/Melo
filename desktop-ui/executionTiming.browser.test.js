@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
+import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -19,7 +20,7 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
       child.stdout.on('data', c => { log += c; const found = log.match(/listening at (http:\/\/127\.0\.0\.1:\d+)/); if (found) { clearTimeout(timer); resolve(found[1]); } });
       child.once('exit', () => { clearTimeout(timer); reject(new Error(log.slice(-1500))); });
     });
-    browser = await chromium.launch({ executablePath: env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+    browser = await launchTestChrome(chromium);
     const page = await browser.newPage({ viewport: { width: 1200, height: 850 }, reducedMotion: 'reduce' });
     page.setDefaultTimeout(8000);
     const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -74,7 +75,7 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
 });
 
 test('shared popup and dialog materials keep secondary text distinct', {timeout:30000}, async()=>{
- const browser=await chromium.launch({executablePath:process.env.MELO_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ const browser=await launchTestChrome(chromium);
  try {
   const page=await browser.newPage({viewport:{width:1100,height:750}});
   const html=await readFile('desktop-ui/index.html','utf8');

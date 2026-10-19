@@ -158,6 +158,22 @@ test('flag off → headless tier with the local Chrome binary, one-shot browser 
   });
 });
 
+test('headless tier: a browser.close() that never settles (Chrome helpers holding its stdio) does not hold the captured screenshot', async () => {
+  await withWorkspace(async workspacePath => {
+    const fixture = fakePage();
+    let closeCalls = 0;
+    headlessDeps(fixture, {
+      browserCloseWaitMs: 50,
+      launch: async () => ({ newContext: async () => ({ newPage: async () => fixture.page }), close: () => { closeCalls += 1; return new Promise(() => {}); } }),
+    });
+    const started = Date.now();
+    const result = finalizeToolResult(await webScreenshotTool.run({ url: URL_OK }, { workspacePath }));
+    assert.equal(result.ok, true, result.output);
+    assert.equal(closeCalls, 1, 'Chrome is still asked to quit');
+    assert.ok(Date.now() - started < 2000, `run took ${Date.now() - started} ms`);
+  });
+});
+
 test('width is clamped to 480–1920 and defaults to 1280', async () => {
   await withWorkspace(async workspacePath => {
     for (const [input, expected] of [[100, 480], [5000, 1920], ['abc', 1280], [undefined, 1280], [800.4, 800]]) {
